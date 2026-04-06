@@ -249,6 +249,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "loki-ooxml"
+version = "0.1.0"
+dependencies = [
+ "appthere-color",
+ "chrono",
+ "indexmap",
+ "loki-doc-model",
+ "loki-opc",
+ "loki-primitives",
+ "quick-xml",
+ "thiserror",
+]
+
+[[package]]
 name = "loki-opc"
 version = "0.1.0"
 dependencies = [
