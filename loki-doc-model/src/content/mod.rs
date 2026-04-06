@@ -28,4 +28,4 @@ pub mod table;
 
 pub use attr::{ExtensionBag, ExtensionKey, NodeAttr};
 pub use block::Block;
-pub use inline::Inline;
+pub use inline::{Inline, NoteKind};

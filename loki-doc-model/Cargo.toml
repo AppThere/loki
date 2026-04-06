@@ -1,6 +1,6 @@
 [package]
 name = "loki-doc-model"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "Apache-2.0"
 description = "Format-neutral document model for the Loki suite (text documents)"
