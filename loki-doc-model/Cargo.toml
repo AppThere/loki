@@ -1,0 +1,10 @@
+[package]
+name = "loki-doc-model"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

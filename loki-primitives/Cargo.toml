@@ -1,0 +1,30 @@
+[package]
+name = "loki-primitives"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Document color semantics, measurement units, and 2D geometry for the Loki suite"
+repository = "https://github.com/appthere/loki-primitives"
+keywords = ["document", "color", "units", "geometry", "loki"]
+categories = ["graphics", "mathematics", "data-structures"]
+
+[features]
+default = []
+serde = ["dep:serde", "appthere-color/serde"]
+
+[dependencies]
+appthere-color = "0.1.1"
+thiserror = "2"
+
+[dependencies.serde]
+version = "1"
+features = ["derive"]
+optional = true
+
+[dev-dependencies]
+serde_json = "1"
+approx = "0.5"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
