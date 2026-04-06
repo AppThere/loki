@@ -1,0 +1,3 @@
+[workspace]
+resolver = "3"
+members = ["loki-doc-model","loki-opc","loki-primitives"]
