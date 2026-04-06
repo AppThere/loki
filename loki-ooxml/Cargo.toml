@@ -1,0 +1,36 @@
+[package]
+name = "loki-ooxml"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "OOXML (DOCX/XLSX/PPTX) import/export for the Loki suite"
+repository = "https://github.com/appthere/loki"
+keywords = ["docx", "ooxml", "document", "office", "loki"]
+categories = ["encoding", "parser-implementations", "text-processing"]
+
+[features]
+default = ["docx"]
+docx = []
+xlsx = []
+pptx = []
+
+[dependencies]
+loki-opc       = { path = "../loki-opc" }
+loki-doc-model = { path = "../loki-doc-model" }
+loki-primitives = { path = "../loki-primitives" }
+appthere-color = "0.1.1"
+quick-xml      = { version = "0.36", features = ["serialize"] }
+thiserror      = "2"
+indexmap       = "2"
+
+[dependencies.chrono]
+version = "0.4"
+default-features = false
+features = ["std"]
+
+[dev-dependencies]
+loki-opc = { path = "../loki-opc" }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
