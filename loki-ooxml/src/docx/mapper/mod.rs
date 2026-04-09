@@ -22,6 +22,10 @@
 //! Entry point: [`document::map_document`].
 
 pub(crate) mod document;
+pub(crate) mod images;
+pub(crate) mod inline;
 pub(crate) mod numbering;
+pub(crate) mod paragraph;
 pub(crate) mod props;
 pub(crate) mod styles;
+pub(crate) mod table;

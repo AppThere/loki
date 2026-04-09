@@ -31,12 +31,14 @@ use crate::docx::import::DocxImportOptions;
 use crate::docx::model::document::{DocxBodyChild, DocxDocument};
 use crate::docx::model::footnotes::{DocxNoteType, DocxNotes};
 use crate::docx::model::numbering::DocxNumbering;
-use crate::docx::model::paragraph::{DocxParagraph, DocxSectPr};
-use crate::docx::model::styles::{DocxTableModel, DocxStyles};
+use crate::docx::model::paragraph::DocxSectPr;
+use crate::docx::model::styles::DocxStyles;
 use crate::error::OoxmlWarning;
 
 use super::numbering::map_numbering;
+use super::paragraph::map_paragraph;
 use super::styles::map_styles;
+use super::table::map_table;
 
 // ── Context ───────────────────────────────────────────────────────────────────
 
@@ -56,32 +58,6 @@ pub(crate) struct MappingContext<'a> {
     pub options: &'a DocxImportOptions,
     /// Non-fatal warnings accumulated during mapping.
     pub warnings: Vec<OoxmlWarning>,
-}
-
-// ── Stub content mappers ──────────────────────────────────────────────────────
-
-/// Maps a `w:p` paragraph to zero or more [`Block`]s.
-///
-/// **Implementation pending Session B.**  Currently returns an empty
-/// `Vec` so that the section-splitting logic and integration tests can
-/// run without panicking. The full implementation will produce
-/// `Block::Paragraph`, `Block::Heading`, and `Block::StyledParagraph`
-/// variants populated from the paragraph's runs and properties.
-#[allow(unused_variables)]
-pub(crate) fn map_paragraph(p: &DocxParagraph, ctx: &mut MappingContext<'_>) -> Vec<Block> {
-    // TODO: implement in Session B
-    Vec::new()
-}
-
-/// Maps a `w:tbl` table to a single [`Block`].
-///
-/// **Implementation pending Session B.**  Currently returns
-/// [`Block::HorizontalRule`] as a placeholder marker so callers can
-/// detect that a table was present.
-#[allow(unused_variables)]
-pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Block {
-    // TODO: implement in Session B
-    Block::HorizontalRule
 }
 
 // ── Page layout ───────────────────────────────────────────────────────────────
@@ -129,12 +105,15 @@ fn map_page_layout(sect_pr: Option<&DocxSectPr>) -> PageLayout {
 
 // ── Note pre-processing ───────────────────────────────────────────────────────
 
-/// Pre-processes a notes part into a `HashMap<id, Vec<Block>>`.
+/// Maps a notes part to a `HashMap<id, Vec<Block>>` using the given context.
 ///
-/// Only `Normal`-type notes are included; separators are skipped.
-/// Full paragraph mapping is deferred to Session B — each note's
-/// content is stored as an empty `Vec<Block>` until then.
-fn preprocess_notes(notes: Option<&DocxNotes>) -> HashMap<i32, Vec<Block>> {
+/// Only `Normal`-type notes are included; separators and continuation
+/// separators are skipped. The context should use empty note maps to avoid
+/// circular dependencies (notes referencing notes is not supported in v0.1.0).
+fn map_notes_to_blocks(
+    notes: Option<&DocxNotes>,
+    ctx: &mut MappingContext<'_>,
+) -> HashMap<i32, Vec<Block>> {
     let Some(notes) = notes else {
         return HashMap::new();
     };
@@ -142,7 +121,12 @@ fn preprocess_notes(notes: Option<&DocxNotes>) -> HashMap<i32, Vec<Block>> {
         .notes
         .iter()
         .filter(|n| n.note_type == DocxNoteType::Normal)
-        .map(|n| (n.id, Vec::new()))
+        .map(|n| {
+            let blocks: Vec<Block> = n.paragraphs.iter()
+                .flat_map(|p| map_paragraph(p, ctx))
+                .collect();
+            (n.id, blocks)
+        })
         .collect()
 }
 
@@ -199,8 +183,37 @@ pub(crate) fn map_document(
     }
 
     // ── 3. Notes ───────────────────────────────────────────────────────────
-    let footnote_map = preprocess_notes(raw_footnotes);
-    let endnote_map = preprocess_notes(raw_endnotes);
+    // Map note paragraphs using a temporary context with empty note maps.
+    // Notes that cross-reference other notes are not supported in v0.1.0.
+    let empty_notes: HashMap<i32, Vec<Block>> = HashMap::new();
+    let footnote_map = {
+        let mut note_ctx = MappingContext {
+            styles: &catalog,
+            footnotes: &empty_notes,
+            endnotes: &empty_notes,
+            hyperlinks: &hyperlinks,
+            images: &images,
+            options,
+            warnings: Vec::new(),
+        };
+        let result = map_notes_to_blocks(raw_footnotes, &mut note_ctx);
+        all_warnings.extend(note_ctx.warnings);
+        result
+    };
+    let endnote_map = {
+        let mut note_ctx = MappingContext {
+            styles: &catalog,
+            footnotes: &empty_notes,
+            endnotes: &empty_notes,
+            hyperlinks: &hyperlinks,
+            images: &images,
+            options,
+            warnings: Vec::new(),
+        };
+        let result = map_notes_to_blocks(raw_endnotes, &mut note_ctx);
+        all_warnings.extend(note_ctx.warnings);
+        result
+    };
 
     // ── 4+5. Section-split body walk ───────────────────────────────────────
     let mut ctx = MappingContext {
@@ -268,7 +281,7 @@ pub(crate) fn map_document(
 mod tests {
     use super::*;
     use crate::docx::model::document::{DocxBody, DocxDocument};
-    use crate::docx::model::paragraph::{DocxPPr, DocxPgMar, DocxPgSz, DocxSectPr};
+    use crate::docx::model::paragraph::{DocxPPr, DocxParagraph, DocxPgMar, DocxPgSz, DocxSectPr};
     use crate::docx::model::styles::DocxStyles;
     use loki_doc_model::layout::page::PageSize;
 
