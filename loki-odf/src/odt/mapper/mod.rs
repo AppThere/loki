@@ -20,7 +20,9 @@
 //! - [`props`] — paragraph and character property conversion
 //! - [`styles`] — stylesheet → [`StyleCatalog`] mapping
 //! - [`lists`] — list-style → [`ListStyle`] mapping
+//! - [`document`] — full document → [`loki_doc_model::Document`] mapping
 
+pub(crate) mod document;
 pub(crate) mod lists;
 pub(crate) mod props;
 pub(crate) mod styles;

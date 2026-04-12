@@ -47,6 +47,17 @@ pub(crate) struct OdfStylesheet {
     pub master_pages: Vec<OdfMasterPage>,
 }
 
+impl OdfStylesheet {
+    /// Append additional automatic styles (from `content.xml`) to this
+    /// stylesheet's [`auto_styles`][Self::auto_styles] list.
+    ///
+    /// Called by [`crate::odt::import::OdtImporter::run`] after reading the
+    /// `office:automatic-styles` section of `content.xml`.
+    pub(crate) fn merge_auto(&mut self, styles: Vec<OdfStyle>) {
+        self.auto_styles.extend(styles);
+    }
+}
+
 /// A single named or automatic ODF style.
 ///
 /// ODF 1.3 §14.1 `style:style`. Both named styles (from `office:styles`)
