@@ -36,6 +36,7 @@
 
 pub mod color;
 pub mod error;
+pub mod flow;
 pub mod font;
 pub mod geometry;
 pub mod items;
@@ -52,6 +53,7 @@ pub use items::{
     PositionedBorderRect, PositionedDecoration, PositionedGlyphRun, PositionedImage,
     PositionedItem, PositionedRect,
 };
+pub use flow::{flow_section, LayoutWarning};
 pub use font::FontResources;
 pub use mode::LayoutMode;
 pub use para::{layout_paragraph, ParagraphLayout, ResolvedParaProps, StyleSpan};
