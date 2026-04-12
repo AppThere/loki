@@ -35,7 +35,6 @@ use std::io::{Read, Seek};
 use loki_doc_model::document::Document;
 use loki_doc_model::io::source::DocumentSource;
 use loki_doc_model::io::DocumentImport;
-use loki_doc_model::meta::DocumentMeta;
 
 use crate::error::{OdfError, OdfResult, OdfWarning};
 use crate::package::OdfPackage;
@@ -145,12 +144,9 @@ impl OdtImporter {
         Self { options }
     }
 
-    /// Opens the ODT container, validates the package structure, and returns
-    /// an [`OdtImportResult`].
-    ///
-    /// The document body is currently empty (content parsing is implemented in
-    /// later sessions). The [`OdtImportResult::source_version`] is always
-    /// populated from the detected `office:version`.
+    /// Opens the ODT container, validates the package structure, parses all
+    /// XML parts, and returns an [`OdtImportResult`] with a fully populated
+    /// [`Document`].
     ///
     /// # Errors
     ///
@@ -160,6 +156,7 @@ impl OdtImporter {
     ///   `META-INF/manifest.xml` is absent.
     /// - [`OdfError::UnsupportedVersion`] — `strict_version` is `true` and
     ///   the version attribute holds an unrecognised value.
+    /// - [`OdfError::Xml`] — any part contains malformed XML.
     ///
     /// ODF 1.3 §3 (package conventions).
     pub fn run(
@@ -170,15 +167,16 @@ impl OdtImporter {
 
         let package = OdfPackage::open(reader)?;
 
+        // ── Version detection ─────────────────────────────────────────────
         // If the version was absent and strict mode is off, that is valid
         // (ODF 1.1). If it was present but unrecognised and strict mode is
         // on, raise an error.
         let source_version = if !package.version_was_absent
             && package.version == OdfVersion::V1_3
         {
-            // Check whether the raw version string was actually recognised.
-            // detect_version returns V1_3 as a fallback for unknown strings.
-            // We need to re-examine the raw content to surface this correctly.
+            // detect_version returns V1_3 as a fallback for unknown strings;
+            // re-examine the raw attribute to surface an
+            // UnrecognisedVersion warning when appropriate.
             let raw = raw_version_attr(&package.content);
             match raw {
                 Some(ref s) if OdfVersion::from_attr(s).is_none() => {
@@ -198,13 +196,41 @@ impl OdtImporter {
             package.version
         };
 
-        // Build a minimal Document with source metadata.
-        let source = DocumentSource::new("odf")
-            .with_version(source_version.as_str());
+        // ── Parse XML parts ───────────────────────────────────────────────
+        let odf_doc =
+            crate::odt::reader::document::read_document(&package.content)?;
 
-        let mut document = Document::new();
-        document.meta = DocumentMeta::default();
-        document.source = Some(source);
+        let mut stylesheet =
+            crate::odt::reader::styles::read_stylesheet(&package.styles, false)?;
+
+        // Merge automatic styles from content.xml (paragraph/span-level styles
+        // that are specific to this document instance).
+        let auto_styles =
+            crate::odt::reader::styles::read_auto_styles(&package.content)?;
+        stylesheet.merge_auto(auto_styles);
+
+        let odf_meta = package
+            .meta
+            .as_deref()
+            .map(crate::odt::reader::meta::read_meta)
+            .transpose()?;
+
+        // ── Map to document model ─────────────────────────────────────────
+        let (mut document, mut mapper_warnings) =
+            crate::odt::mapper::document::map_document(
+                &odf_doc,
+                &stylesheet,
+                odf_meta.as_ref(),
+                &package.images,
+                &self.options,
+            );
+        warnings.append(&mut mapper_warnings);
+
+        // Set provenance (version detected above overrides any version the
+        // mapper may have computed from the body XML).
+        document.source = Some(
+            DocumentSource::new("odf").with_version(source_version.as_str()),
+        );
 
         Ok(OdtImportResult {
             document,
