@@ -41,6 +41,7 @@ pub mod geometry;
 pub mod items;
 pub mod mode;
 pub mod para;
+pub mod resolve;
 pub mod result;
 
 pub use color::LayoutColor;
@@ -54,4 +55,5 @@ pub use items::{
 pub use font::FontResources;
 pub use mode::LayoutMode;
 pub use para::{layout_paragraph, ParagraphLayout, ResolvedParaProps, StyleSpan};
+pub use resolve::{flatten_paragraph, pts_to_f32, resolve_char_props, resolve_color, resolve_para_props};
 pub use result::{ContinuousLayout, DocumentLayout, LayoutPage, PaginatedLayout};
