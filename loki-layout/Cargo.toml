@@ -1,0 +1,21 @@
+[package]
+name = "loki-layout"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Renderer-agnostic layout engine for the Loki suite"
+repository = "https://github.com/appthere/loki"
+keywords = ["document", "layout", "text", "loki"]
+categories = ["graphics", "text-processing"]
+
+[dependencies]
+loki-doc-model = { path = "../loki-doc-model" }
+loki-primitives = { path = "../loki-primitives" }
+appthere-color = "0.1.1"
+parley = "0.8"
+fontique = "0.8"
+thiserror = "2"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
