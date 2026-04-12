@@ -19,5 +19,6 @@
 //! significant whitespace inside `text:span` and similar elements is
 //! preserved verbatim.
 
+pub(crate) mod document;
 pub(crate) mod meta;
 pub(crate) mod styles;
