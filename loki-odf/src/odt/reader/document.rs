@@ -12,15 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Reader for `content.xml` — paragraph-level and inline-level parsing.
+//! Reader for `content.xml` — paragraph-level, inline-level, and body-level
+//! parsing.
 //!
 //! # Caller contract
 //!
 //! Every `read_X(reader, tag)` function is called **after** its opening
 //! `Start` event has been consumed. It reads until — and including — the
-//! matching `End` event at the same nesting depth. Body-level parsing
-//! (`read_document`, `read_list`, `read_table`, etc.) is implemented in a
-//! later session.
+//! matching `End` event at the same nesting depth.
 // Functions are not yet called from outside this module; suppress lint.
 #![allow(dead_code)]
 // `drop(ref_binding)` is a deliberate NLL-boundary hint that has no runtime
@@ -31,12 +30,20 @@ use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
 use crate::error::{OdfError, OdfResult};
+use crate::odt::model::document::{
+    OdfBodyChild, OdfDocument, OdfList, OdfListItem, OdfListItemChild,
+    OdfSection, OdfTableOfContent,
+};
 use crate::odt::model::fields::OdfField;
 use crate::odt::model::frames::{OdfFrame, OdfFrameKind};
 use crate::odt::model::notes::{OdfNote, OdfNoteClass};
 use crate::odt::model::paragraph::{
-    OdfHyperlink, OdfParagraph, OdfParagraphChild, OdfSpan,
+    OdfHyperlink, OdfListContext, OdfParagraph, OdfParagraphChild, OdfSpan,
 };
+use crate::odt::model::tables::{
+    OdfTable, OdfTableCell, OdfTableColDef, OdfTableRow,
+};
+use crate::version::OdfVersion;
 use crate::xml_util::local_attr_val;
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -660,6 +667,642 @@ fn read_text_box_paragraphs(
     Ok(paragraphs)
 }
 
+// ── Table ─────────────────────────────────────────────────────────────────────
+
+/// Parse a `table:table` element. ODF 1.3 §9.1.
+///
+/// Called after consuming the `Start` event for `table:table`.
+pub(crate) fn read_table(
+    reader: &mut Reader<&[u8]>,
+    tag: &BytesStart<'_>,
+) -> OdfResult<OdfTable> {
+    let name = local_attr_val(tag, b"name");
+    let style_name = local_attr_val(tag, b"style-name");
+    let mut col_defs: Vec<OdfTableColDef> = Vec::new();
+    let mut rows: Vec<OdfTableRow> = Vec::new();
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                let local = e.local_name().into_inner().to_vec();
+                match local.as_slice() {
+                    b"table-column" => {
+                        let col_style = local_attr_val(e, b"style-name");
+                        let columns_repeated: u32 =
+                            local_attr_val(e, b"number-columns-repeated")
+                                .and_then(|s| s.parse().ok())
+                                .unwrap_or(1);
+                        drop(e);
+                        skip_element(reader)?;
+                        col_defs.push(OdfTableColDef {
+                            style_name: col_style,
+                            columns_repeated,
+                        });
+                    }
+                    b"table-header-rows" => {
+                        drop(e);
+                        read_table_header_rows(reader, &mut rows)?;
+                    }
+                    b"table-row" => {
+                        let row = read_table_row(reader, e, false)?;
+                        rows.push(row);
+                    }
+                    _ => {
+                        drop(e);
+                        skip_element(reader)?;
+                    }
+                }
+            }
+            Ok(Event::Empty(ref e)) => {
+                let local = e.local_name().into_inner();
+                if local == b"table-column" {
+                    let col_style = local_attr_val(e, b"style-name");
+                    let columns_repeated: u32 =
+                        local_attr_val(e, b"number-columns-repeated")
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(1);
+                    col_defs.push(OdfTableColDef {
+                        style_name: col_style,
+                        columns_repeated,
+                    });
+                }
+            }
+            Ok(Event::End(_)) => break,
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(OdfError::Xml {
+                    part: "content.xml".to_string(),
+                    source: e,
+                })
+            }
+            _ => {}
+        }
+    }
+    Ok(OdfTable { name, style_name, col_defs, rows })
+}
+
+/// Read rows inside `table:table-header-rows`, marking each as `is_header`.
+fn read_table_header_rows(
+    reader: &mut Reader<&[u8]>,
+    rows: &mut Vec<OdfTableRow>,
+) -> OdfResult<()> {
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                if e.local_name().into_inner() == b"table-row" {
+                    let row = read_table_row(reader, e, true)?;
+                    rows.push(row);
+                } else {
+                    drop(e);
+                    skip_element(reader)?;
+                }
+            }
+            Ok(Event::End(_)) => break,
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(OdfError::Xml {
+                    part: "content.xml".to_string(),
+                    source: e,
+                })
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Parse a `table:table-row` element. ODF 1.3 §9.3.
+fn read_table_row(
+    reader: &mut Reader<&[u8]>,
+    tag: &BytesStart<'_>,
+    _is_header: bool,
+) -> OdfResult<OdfTableRow> {
+    let style_name = local_attr_val(tag, b"style-name");
+    let mut cells: Vec<OdfTableCell> = Vec::new();
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                let local = e.local_name().into_inner().to_vec();
+                match local.as_slice() {
+                    b"table-cell" => {
+                        let cell = read_table_cell(reader, e, false)?;
+                        cells.push(cell);
+                    }
+                    b"covered-table-cell" => {
+                        drop(e);
+                        skip_element(reader)?;
+                        cells.push(OdfTableCell {
+                            is_covered: true,
+                            col_span: 1,
+                            row_span: 1,
+                            style_name: None,
+                            value_type: None,
+                            paragraphs: vec![],
+                        });
+                    }
+                    _ => {
+                        drop(e);
+                        skip_element(reader)?;
+                    }
+                }
+            }
+            Ok(Event::Empty(ref e)) => {
+                let local = e.local_name().into_inner();
+                match local {
+                    b"table-cell" => {
+                        let style_name = local_attr_val(e, b"style-name");
+                        let col_span: u32 =
+                            local_attr_val(e, b"number-columns-spanned")
+                                .and_then(|s| s.parse().ok())
+                                .unwrap_or(1);
+                        let row_span: u32 =
+                            local_attr_val(e, b"number-rows-spanned")
+                                .and_then(|s| s.parse().ok())
+                                .unwrap_or(1);
+                        let value_type = local_attr_val(e, b"value-type");
+                        cells.push(OdfTableCell {
+                            style_name,
+                            col_span,
+                            row_span,
+                            is_covered: false,
+                            value_type,
+                            paragraphs: vec![],
+                        });
+                    }
+                    b"covered-table-cell" => {
+                        cells.push(OdfTableCell {
+                            is_covered: true,
+                            col_span: 1,
+                            row_span: 1,
+                            style_name: None,
+                            value_type: None,
+                            paragraphs: vec![],
+                        });
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::End(_)) => break,
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(OdfError::Xml {
+                    part: "content.xml".to_string(),
+                    source: e,
+                })
+            }
+            _ => {}
+        }
+    }
+    Ok(OdfTableRow { style_name, cells })
+}
+
+/// Parse a `table:table-cell` element. ODF 1.3 §9.4.
+fn read_table_cell(
+    reader: &mut Reader<&[u8]>,
+    tag: &BytesStart<'_>,
+    is_covered: bool,
+) -> OdfResult<OdfTableCell> {
+    let style_name = local_attr_val(tag, b"style-name");
+    let col_span: u32 = local_attr_val(tag, b"number-columns-spanned")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
+    let row_span: u32 = local_attr_val(tag, b"number-rows-spanned")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
+    let value_type = local_attr_val(tag, b"value-type");
+    let mut paragraphs: Vec<OdfParagraph> = Vec::new();
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                let local = e.local_name().into_inner().to_vec();
+                match local.as_slice() {
+                    b"p" | b"h" => {
+                        let para = read_paragraph(reader, e)?;
+                        paragraphs.push(para);
+                    }
+                    b"list" => {
+                        let list = read_list(reader, e, None, 0)?;
+                        collect_list_paragraphs(&list, &mut paragraphs);
+                    }
+                    _ => {
+                        drop(e);
+                        skip_element(reader)?;
+                    }
+                }
+            }
+            Ok(Event::End(_)) => break,
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(OdfError::Xml {
+                    part: "content.xml".to_string(),
+                    source: e,
+                })
+            }
+            _ => {}
+        }
+    }
+    Ok(OdfTableCell { style_name, col_span, row_span, is_covered, value_type, paragraphs })
+}
+
+/// Recursively flatten all paragraphs out of a list into `out`.
+fn collect_list_paragraphs(list: &OdfList, out: &mut Vec<OdfParagraph>) {
+    for item in &list.items {
+        for child in &item.children {
+            match child {
+                OdfListItemChild::Paragraph(p) | OdfListItemChild::Heading(p) => {
+                    out.push(p.clone());
+                }
+                OdfListItemChild::List(nested) => {
+                    collect_list_paragraphs(nested, out);
+                }
+            }
+        }
+    }
+}
+
+// ── List ──────────────────────────────────────────────────────────────────────
+
+/// Parse a `text:list` element. ODF 1.3 §5.3.
+///
+/// Called after consuming the `Start` event. `parent_style` is the inherited
+/// style from an enclosing list (used when this list has no explicit
+/// `text:style-name`). `depth` is the 0-indexed nesting depth.
+pub(crate) fn read_list(
+    reader: &mut Reader<&[u8]>,
+    tag: &BytesStart<'_>,
+    parent_style: Option<&str>,
+    depth: u8,
+) -> OdfResult<OdfList> {
+    let style_name = local_attr_val(tag, b"style-name");
+    let xml_id = local_attr_val(tag, b"id");
+    let continue_list = local_attr_val(tag, b"continue-list");
+    let continue_numbering = local_attr_val(tag, b"continue-numbering")
+        .map(|s| s == "true")
+        .unwrap_or(false);
+
+    let effective: Option<String> = style_name
+        .clone()
+        .or_else(|| parent_style.map(String::from));
+
+    let mut items: Vec<OdfListItem> = Vec::new();
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                let local = e.local_name().into_inner().to_vec();
+                match local.as_slice() {
+                    b"list-item" | b"list-header" => {
+                        let item = read_list_item(
+                            reader,
+                            e,
+                            effective.as_deref(),
+                            depth,
+                        )?;
+                        items.push(item);
+                    }
+                    _ => {
+                        drop(e);
+                        skip_element(reader)?;
+                    }
+                }
+            }
+            Ok(Event::End(_)) => break,
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(OdfError::Xml {
+                    part: "content.xml".to_string(),
+                    source: e,
+                })
+            }
+            _ => {}
+        }
+    }
+    Ok(OdfList { xml_id, style_name, continue_list, continue_numbering, items })
+}
+
+/// Parse a `text:list-item` or `text:list-header` element. ODF 1.3 §5.3.
+fn read_list_item(
+    reader: &mut Reader<&[u8]>,
+    tag: &BytesStart<'_>,
+    list_style: Option<&str>,
+    depth: u8,
+) -> OdfResult<OdfListItem> {
+    let start_value: Option<u32> = local_attr_val(tag, b"start-value")
+        .and_then(|s| s.parse().ok());
+    let mut children: Vec<OdfListItemChild> = Vec::new();
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                let local = e.local_name().into_inner().to_vec();
+                match local.as_slice() {
+                    b"p" => {
+                        let mut para = read_paragraph(reader, e)?;
+                        para.list_context = Some(OdfListContext {
+                            style_name: list_style.map(String::from),
+                            level: depth,
+                            item_id: None,
+                        });
+                        children.push(OdfListItemChild::Paragraph(para));
+                    }
+                    b"h" => {
+                        let mut para = read_paragraph(reader, e)?;
+                        para.list_context = Some(OdfListContext {
+                            style_name: list_style.map(String::from),
+                            level: depth,
+                            item_id: None,
+                        });
+                        children.push(OdfListItemChild::Heading(para));
+                    }
+                    b"list" => {
+                        let nested = read_list(
+                            reader,
+                            e,
+                            list_style,
+                            depth.saturating_add(1),
+                        )?;
+                        children.push(OdfListItemChild::List(nested));
+                    }
+                    _ => {
+                        drop(e);
+                        skip_element(reader)?;
+                    }
+                }
+            }
+            Ok(Event::End(_)) => break,
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(OdfError::Xml {
+                    part: "content.xml".to_string(),
+                    source: e,
+                })
+            }
+            _ => {}
+        }
+    }
+    Ok(OdfListItem { start_value, children })
+}
+
+// ── Table of contents ─────────────────────────────────────────────────────────
+
+/// Parse a `text:table-of-content` element. ODF 1.3 §7.5.
+pub(crate) fn read_toc(
+    reader: &mut Reader<&[u8]>,
+    tag: &BytesStart<'_>,
+) -> OdfResult<OdfTableOfContent> {
+    let name = local_attr_val(tag, b"name");
+    let mut source_outline_level: u8 = 3;
+    let mut body_paragraphs: Vec<OdfParagraph> = Vec::new();
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                let local = e.local_name().into_inner().to_vec();
+                match local.as_slice() {
+                    b"table-of-content-source" => {
+                        source_outline_level =
+                            local_attr_val(e, b"outline-level")
+                                .and_then(|s| s.parse().ok())
+                                .unwrap_or(3);
+                        drop(e);
+                        skip_element(reader)?;
+                    }
+                    b"index-body" => {
+                        drop(e);
+                        read_index_body(reader, &mut body_paragraphs)?;
+                    }
+                    _ => {
+                        drop(e);
+                        skip_element(reader)?;
+                    }
+                }
+            }
+            Ok(Event::Empty(ref e)) => {
+                if e.local_name().into_inner() == b"table-of-content-source" {
+                    source_outline_level =
+                        local_attr_val(e, b"outline-level")
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(3);
+                }
+            }
+            Ok(Event::End(_)) => break,
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(OdfError::Xml {
+                    part: "content.xml".to_string(),
+                    source: e,
+                })
+            }
+            _ => {}
+        }
+    }
+    Ok(OdfTableOfContent { name, source_outline_level, body_paragraphs })
+}
+
+/// Read `text:p` / `text:h` paragraphs inside `text:index-body`.
+fn read_index_body(
+    reader: &mut Reader<&[u8]>,
+    paragraphs: &mut Vec<OdfParagraph>,
+) -> OdfResult<()> {
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                let local = e.local_name().into_inner();
+                if local == b"p" || local == b"h" {
+                    paragraphs.push(read_paragraph(reader, e)?);
+                } else {
+                    drop(e);
+                    skip_element(reader)?;
+                }
+            }
+            Ok(Event::End(_)) => break,
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(OdfError::Xml {
+                    part: "content.xml".to_string(),
+                    source: e,
+                })
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+// ── Section ───────────────────────────────────────────────────────────────────
+
+/// Parse a `text:section` element. ODF 1.3 §5.4.
+fn read_section(
+    reader: &mut Reader<&[u8]>,
+    tag: &BytesStart<'_>,
+) -> OdfResult<OdfSection> {
+    let name = local_attr_val(tag, b"name");
+    let style_name = local_attr_val(tag, b"style-name");
+    drop(tag);
+    let children = read_body_children(reader, b"section")?;
+    Ok(OdfSection { name, style_name, children })
+}
+
+// ── Body children shared dispatcher ──────────────────────────────────────────
+
+/// Read body-level children until the `End` event whose local name matches
+/// `end_tag`.
+///
+/// Dispatches `text:p`, `text:h`, `text:list`, `table:table`,
+/// `text:table-of-content`, `text:section`, and silently skips everything
+/// else. ODF 1.3 §3.1.
+fn read_body_children(
+    reader: &mut Reader<&[u8]>,
+    end_tag: &[u8],
+) -> OdfResult<Vec<OdfBodyChild>> {
+    let mut children: Vec<OdfBodyChild> = Vec::new();
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                let local = e.local_name().into_inner().to_vec();
+                match local.as_slice() {
+                    b"p" => {
+                        let para = read_paragraph(reader, e)?;
+                        children.push(OdfBodyChild::Paragraph(para));
+                    }
+                    b"h" => {
+                        let para = read_paragraph(reader, e)?;
+                        children.push(OdfBodyChild::Heading(para));
+                    }
+                    b"list" => {
+                        let list = read_list(reader, e, None, 0)?;
+                        children.push(OdfBodyChild::List(list));
+                    }
+                    b"table" => {
+                        let table = read_table(reader, e)?;
+                        children.push(OdfBodyChild::Table(table));
+                    }
+                    b"table-of-content" => {
+                        let toc = read_toc(reader, e)?;
+                        children.push(OdfBodyChild::TableOfContent(toc));
+                    }
+                    b"section" => {
+                        let section = read_section(reader, e)?;
+                        children.push(OdfBodyChild::Section(section));
+                    }
+                    // Known skippable block-level elements
+                    b"sequence-decls"
+                    | b"user-field-decls"
+                    | b"dde-connection-decls"
+                    | b"alphabetical-index-auto-mark-file"
+                    | b"tracked-changes" => {
+                        drop(e);
+                        skip_element(reader)?;
+                    }
+                    _ => {
+                        drop(e);
+                        skip_element(reader)?;
+                    }
+                }
+            }
+            Ok(Event::Empty(ref e)) => {
+                // text:soft-page-break may appear between block elements
+                let local = e.local_name().into_inner();
+                if local != b"soft-page-break" {
+                    // ignore other empty block-level elements
+                }
+            }
+            Ok(Event::End(ref e)) => {
+                if e.local_name().into_inner() == end_tag {
+                    break;
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(OdfError::Xml {
+                    part: "content.xml".to_string(),
+                    source: e,
+                })
+            }
+            _ => {}
+        }
+    }
+    Ok(children)
+}
+
+// ── Document entry point ──────────────────────────────────────────────────────
+
+/// Parse `content.xml` bytes and return the top-level [`OdfDocument`].
+///
+/// Reads the `office:version` attribute from `office:document-content` (or
+/// `office:document`) and the body children from `office:text`. All other
+/// top-level sections (`office:automatic-styles`, `office:font-face-decls`,
+/// etc.) are skipped here — they are read separately by the importer via
+/// [`super::styles::read_stylesheet`] and [`super::styles::read_auto_styles`].
+///
+/// ODF 1.3 §3.1.
+pub(crate) fn read_document(xml: &[u8]) -> OdfResult<OdfDocument> {
+    let mut reader = Reader::from_reader(xml);
+    reader.config_mut().trim_text(false);
+    let mut buf = Vec::new();
+    let mut version = OdfVersion::V1_1;
+    let mut version_was_absent = true;
+    let mut body_children: Vec<OdfBodyChild> = Vec::new();
+
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                let local = e.local_name().into_inner().to_vec();
+                match local.as_slice() {
+                    b"document-content" | b"document" => {
+                        if let Some(v) = local_attr_val(e, b"version") {
+                            version_was_absent = false;
+                            version = OdfVersion::from_attr(&v)
+                                .unwrap_or(OdfVersion::V1_3);
+                        }
+                        // do not skip — descend into children
+                    }
+                    b"text" => {
+                        // office:text — the document body
+                        drop(e);
+                        body_children =
+                            read_body_children(&mut reader, b"text")?;
+                    }
+                    // office:body is a thin wrapper around office:text;
+                    // descend without skipping
+                    b"body" => {}
+                    // Skip all other top-level sections
+                    _ => {
+                        drop(e);
+                        skip_element(&mut reader)?;
+                    }
+                }
+            }
+            Ok(Event::End(_)) | Ok(Event::Empty(_)) => {}
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(OdfError::Xml {
+                    part: "content.xml".to_string(),
+                    source: e,
+                })
+            }
+            _ => {}
+        }
+    }
+
+    Ok(OdfDocument { version, version_was_absent, body_children })
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -668,8 +1311,10 @@ mod tests {
     use quick_xml::events::Event;
     use quick_xml::Reader;
 
+    use crate::odt::model::document::{OdfBodyChild, OdfListItemChild};
     use crate::odt::model::frames::OdfFrameKind;
     use crate::odt::model::notes::OdfNoteClass;
+    use crate::version::OdfVersion;
 
     // ── Test helper ───────────────────────────────────────────────────────────
 
@@ -907,6 +1552,208 @@ mod tests {
         match &inner.children[0] {
             OdfParagraphChild::Text(t) => assert_eq!(t, "deep"),
             other => panic!("expected Text in inner span, got {:?}", other),
+        }
+    }
+
+    // ── Body-level tests ──────────────────────────────────────────────────────
+
+    #[test]
+    fn table_2x2_with_covered_cell() {
+        let xml = br#"<?xml version="1.0"?>
+<root xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+      xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+  <table:table table:name="T1">
+    <table:table-column/>
+    <table:table-column/>
+    <table:table-row>
+      <table:table-cell table:number-columns-spanned="1">
+        <text:p>Cell A1</text:p>
+      </table:table-cell>
+      <table:table-cell>
+        <text:p>Cell A2</text:p>
+      </table:table-cell>
+    </table:table-row>
+    <table:table-row>
+      <table:table-cell>
+        <text:p>Cell B1</text:p>
+      </table:table-cell>
+      <table:covered-table-cell/>
+    </table:table-row>
+  </table:table>
+</root>"#;
+        let mut reader = Reader::from_reader(xml.as_ref());
+        reader.config_mut().trim_text(false);
+        let mut buf = Vec::new();
+        let table = loop {
+            buf.clear();
+            match reader.read_event_into(&mut buf).unwrap() {
+                Event::Start(ref e)
+                    if e.local_name().into_inner() == b"table" =>
+                {
+                    break read_table(&mut reader, e).unwrap();
+                }
+                Event::Eof => panic!("no table found"),
+                _ => {}
+            }
+        };
+        assert_eq!(table.name.as_deref(), Some("T1"));
+        assert_eq!(table.col_defs.len(), 2);
+        assert_eq!(table.rows.len(), 2);
+
+        let row0 = &table.rows[0];
+        assert_eq!(row0.cells.len(), 2);
+        assert!(!row0.cells[0].is_covered);
+        assert_eq!(row0.cells[0].col_span, 1);
+        match &row0.cells[0].paragraphs[0].children[0] {
+            OdfParagraphChild::Text(s) => assert_eq!(s, "Cell A1"),
+            other => panic!("{:?}", other),
+        }
+
+        let row1 = &table.rows[1];
+        assert_eq!(row1.cells.len(), 2);
+        assert!(!row1.cells[0].is_covered);
+        assert!(row1.cells[1].is_covered);
+    }
+
+    #[test]
+    fn list_with_nesting() {
+        let xml = br#"<?xml version="1.0"?>
+<root xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+  <text:list text:style-name="List1">
+    <text:list-item>
+      <text:p>Item 1</text:p>
+      <text:list>
+        <text:list-item>
+          <text:p>Item 1.1</text:p>
+        </text:list-item>
+      </text:list>
+    </text:list-item>
+  </text:list>
+</root>"#;
+        let mut reader = Reader::from_reader(xml.as_ref());
+        reader.config_mut().trim_text(false);
+        let mut buf = Vec::new();
+        let list = loop {
+            buf.clear();
+            match reader.read_event_into(&mut buf).unwrap() {
+                Event::Start(ref e)
+                    if e.local_name().into_inner() == b"list" =>
+                {
+                    break read_list(&mut reader, e, None, 0).unwrap();
+                }
+                Event::Eof => panic!("no list found"),
+                _ => {}
+            }
+        };
+        assert_eq!(list.style_name.as_deref(), Some("List1"));
+        assert_eq!(list.items.len(), 1);
+        let item = &list.items[0];
+        // children: Paragraph("Item 1"), List(nested)
+        assert_eq!(item.children.len(), 2);
+        match &item.children[0] {
+            OdfListItemChild::Paragraph(p) => {
+                assert_eq!(
+                    p.list_context.as_ref().unwrap().level,
+                    0
+                );
+                match &p.children[0] {
+                    OdfParagraphChild::Text(s) => assert_eq!(s, "Item 1"),
+                    other => panic!("{:?}", other),
+                }
+            }
+            other => panic!("expected Paragraph, got {:?}", other),
+        }
+        match &item.children[1] {
+            OdfListItemChild::List(nested) => {
+                assert_eq!(nested.items.len(), 1);
+                match &nested.items[0].children[0] {
+                    OdfListItemChild::Paragraph(p) => {
+                        assert_eq!(
+                            p.list_context.as_ref().unwrap().level,
+                            1
+                        );
+                    }
+                    other => panic!("{:?}", other),
+                }
+            }
+            other => panic!("expected nested List, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn read_document_version_present() {
+        let xml = br#"<?xml version="1.0"?>
+<office:document-content
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  office:version="1.2">
+  <office:body>
+    <office:text>
+      <text:p text:style-name="Standard">Hello</text:p>
+    </office:text>
+  </office:body>
+</office:document-content>"#;
+        let doc = read_document(xml).unwrap();
+        assert_eq!(doc.version, OdfVersion::V1_2);
+        assert!(!doc.version_was_absent);
+        assert_eq!(doc.body_children.len(), 1);
+        assert!(matches!(
+            &doc.body_children[0],
+            OdfBodyChild::Paragraph(p) if p.style_name.as_deref() == Some("Standard")
+        ));
+    }
+
+    #[test]
+    fn read_document_version_absent() {
+        let xml = br#"<?xml version="1.0"?>
+<office:document-content
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+  <office:body>
+    <office:text>
+      <text:p>No version</text:p>
+    </office:text>
+  </office:body>
+</office:document-content>"#;
+        let doc = read_document(xml).unwrap();
+        assert_eq!(doc.version, OdfVersion::V1_1);
+        assert!(doc.version_was_absent);
+        assert_eq!(doc.body_children.len(), 1);
+    }
+
+    #[test]
+    fn toc_parsing() {
+        let xml = br#"<?xml version="1.0"?>
+<root xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+  <text:table-of-content text:name="TOC1">
+    <text:table-of-content-source text:outline-level="2"/>
+    <text:index-body>
+      <text:p>Entry one</text:p>
+      <text:p>Entry two</text:p>
+    </text:index-body>
+  </text:table-of-content>
+</root>"#;
+        let mut reader = Reader::from_reader(xml.as_ref());
+        reader.config_mut().trim_text(false);
+        let mut buf = Vec::new();
+        let toc = loop {
+            buf.clear();
+            match reader.read_event_into(&mut buf).unwrap() {
+                Event::Start(ref e)
+                    if e.local_name().into_inner() == b"table-of-content" =>
+                {
+                    break read_toc(&mut reader, e).unwrap();
+                }
+                Event::Eof => panic!("no toc found"),
+                _ => {}
+            }
+        };
+        assert_eq!(toc.name.as_deref(), Some("TOC1"));
+        assert_eq!(toc.source_outline_level, 2);
+        assert_eq!(toc.body_paragraphs.len(), 2);
+        match &toc.body_paragraphs[0].children[0] {
+            OdfParagraphChild::Text(s) => assert_eq!(s, "Entry one"),
+            other => panic!("{:?}", other),
         }
     }
 }
