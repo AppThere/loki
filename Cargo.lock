@@ -255,6 +255,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "loki-odf"
+version = "0.1.0"
+dependencies = [
+ "appthere-color",
+ "base64",
+ "chrono",
+ "indexmap",
+ "loki-doc-model",
+ "loki-primitives",
+ "quick-xml",
+ "thiserror",
+ "zip",
+]
+
+[[package]]
 name = "loki-ooxml"
 version = "0.1.0"
 dependencies = [
