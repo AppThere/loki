@@ -86,6 +86,23 @@ pub struct Citation {
     pub suffix: Vec<Inline>,
 }
 
+/// Distinguishes a footnote from an endnote in [`Inline::Note`].
+///
+/// Using an explicit enum instead of a stringly-typed `NodeAttr.classes`
+/// convention ensures every consumer handles both cases at compile time.
+/// ODF: `text:note/@text:note-class`. OOXML: `w:footnote` vs `w:endnote`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum NoteKind {
+    /// A footnote: appears at the bottom of the page containing the reference.
+    /// ODF: `text:note-class="footnote"`. OOXML: `w:footnote`.
+    Footnote,
+    /// An endnote: collected at the end of the document or section.
+    /// ODF: `text:note-class="endnote"`. OOXML: `w:endnote`.
+    Endnote,
+}
+
 /// Whether a bookmark anchor is a start or end marker.
 ///
 /// Used by [`Inline::Bookmark`].
@@ -195,9 +212,11 @@ pub enum Inline {
     Image(NodeAttr, Vec<Inline>, LinkTarget),
 
     /// A footnote or endnote reference and its content.
-    /// Corresponds to pandoc `Note`.
+    /// Corresponds to pandoc `Note`, extended with a [`NoteKind`] discriminant
+    /// so consumers can distinguish footnotes from endnotes without inspecting
+    /// stringly-typed `NodeAttr` classes.
     /// ODF: `text:note`. OOXML: `w:footnote`/`w:endnote` reference.
-    Note(Vec<Block>),
+    Note(NoteKind, Vec<Block>),
 
     /// A generic inline container with attributes. Corresponds to pandoc `Span`.
     Span(NodeAttr, Vec<Inline>),
@@ -258,11 +277,19 @@ mod tests {
     #[test]
     fn inline_note_stores_blocks() {
         use crate::content::block::Block;
-        let note = Inline::Note(vec![Block::HorizontalRule]);
-        if let Inline::Note(blocks) = &note {
+        let note = Inline::Note(NoteKind::Footnote, vec![Block::HorizontalRule]);
+        if let Inline::Note(kind, blocks) = &note {
+            assert_eq!(*kind, NoteKind::Footnote);
             assert_eq!(blocks.len(), 1);
         } else {
             panic!("expected Note");
         }
+    }
+
+    #[test]
+    fn inline_note_endnote_kind() {
+        use crate::content::block::Block;
+        let note = Inline::Note(NoteKind::Endnote, vec![Block::HorizontalRule]);
+        assert!(matches!(note, Inline::Note(NoteKind::Endnote, _)));
     }
 }
