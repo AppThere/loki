@@ -36,9 +36,11 @@
 
 pub mod color;
 pub mod error;
+pub mod font;
 pub mod geometry;
 pub mod items;
 pub mod mode;
+pub mod para;
 pub mod result;
 
 pub use color::LayoutColor;
@@ -49,5 +51,7 @@ pub use items::{
     PositionedBorderRect, PositionedDecoration, PositionedGlyphRun, PositionedImage,
     PositionedItem, PositionedRect,
 };
+pub use font::FontResources;
 pub use mode::LayoutMode;
+pub use para::{layout_paragraph, ParagraphLayout, ResolvedParaProps, StyleSpan};
 pub use result::{ContinuousLayout, DocumentLayout, LayoutPage, PaginatedLayout};
