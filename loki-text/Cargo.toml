@@ -1,0 +1,27 @@
+[package]
+name = "loki-text"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Dioxus Native word-processor application for the Loki document suite"
+repository = "https://github.com/appthere/loki"
+
+[[bin]]
+name = "loki-text"
+path = "src/main.rs"
+
+[dependencies]
+# Dioxus Native (Blitz renderer) with client-side router.
+dioxus          = { version = "0.7", features = ["native", "router"] }
+# In-workspace Vello GPU rendering backend.
+loki-vello      = { path = "../loki-vello" }
+# Cross-platform file picker (crates.io).
+loki-file-access = "0.1.0"
+# Typed error derivation.
+thiserror       = "2"
+# Force fontconfig-dlopen on fontique v0.8 so it uses the same dlopen path as
+# fontique v0.6 (pulled in by blitz-dom), which activates
+# yeslogic-fontconfig-sys/dlopen for the whole workspace.  Without this,
+# fontique v0.8 would try to use static C function symbols that are absent when
+# dlopen mode is in effect.
+fontique        = { version = "0.8", features = ["fontconfig-dlopen"] }
