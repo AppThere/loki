@@ -1,0 +1,28 @@
+[package]
+name = "loki-vello"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Vello rendering backend for the Loki document suite"
+repository = "https://github.com/appthere/loki"
+keywords = ["document", "vello", "rendering", "loki"]
+categories = ["graphics", "rendering"]
+
+[dependencies]
+loki-layout    = { path = "../loki-layout" }
+vello          = "0.6"
+peniko         = "0.5"
+kurbo          = "0.12"
+thiserror      = "2"
+image          = "0.25"
+base64         = "0.22"
+
+[dev-dependencies]
+wgpu           = "26"
+pollster       = "0.4"
+image          = "0.25"
+loki-ooxml     = { path = "../loki-ooxml" }
+loki-odf       = { path = "../loki-odf" }
+
+[[example]]
+name = "render_to_png"
