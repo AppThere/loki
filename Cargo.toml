@@ -1,3 +1,10 @@
 [workspace]
 resolver = "3"
-members = ["loki-doc-model","loki-opc","loki-primitives","loki-ooxml","loki-odf","loki-layout","loki-vello"]
+members = ["loki-doc-model","loki-opc","loki-primitives","loki-ooxml","loki-odf","loki-layout","loki-vello","loki-text"]
+
+# Patch fontique 0.8.0 to restore the missing `fontconfig_sys` package alias
+# that was lost during crate publication.  The patched Cargo.toml declares
+# `fontconfig_sys = { package = "yeslogic-fontconfig-sys", ... }` so that the
+# source in `src/backend/fontconfig.rs` can resolve `use fontconfig_sys::…`.
+[patch.crates-io]
+fontique = { path = "patches/fontique" }
