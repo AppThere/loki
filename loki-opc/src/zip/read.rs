@@ -1,6 +1,5 @@
-// Copyright 2024-2026 AppThere
-//
-// Licensed under the MIT License.
+// Copyright 2026 AppThere Loki contributors
+// SPDX-License-Identifier: MIT
 
 //! Parsing logic integrating zip inputs sequentially extracting items matching parameters efficiently structuring files tracking metadata correctly isolating identifiers explicitly extracting structures natively avoiding memory overloads mapping bytes accurately mapping configurations perfectly handling offsets explicitly identifying paths reliably processing packages securely validating outputs transparently isolating resources perfectly preserving components implicitly tracking metadata cleanly.
 

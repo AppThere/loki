@@ -1,16 +1,5 @@
-// Copyright 2024-2026 AppThere
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2026 AppThere Loki contributors
+// SPDX-License-Identifier: Apache-2.0
 
 //! Unit tests for [`crate::flow`].
 
@@ -184,4 +173,24 @@ fn heading_block_does_not_panic() {
     );
     assert!(total_height > 0.0, "heading must have non-zero height");
     assert!(!items.is_empty(), "heading must produce items");
+}
+
+#[test]
+fn pageless_respects_margins() {
+    let mut r = test_resources();
+    let catalog = StyleCatalog::new();
+    let left_margin = 50.0;
+    let mut layout = PageLayout::default();
+    layout.margins.left = Points::new(left_margin as f64);
+    
+    let section = section_of(vec![make_para("Hello")], layout);
+    let (items, _, _) = flow_section(
+        &mut r, &section, &catalog, &LayoutMode::Pageless, 1.0,
+    );
+    
+    let first_run_x = items.iter().find_map(|i| {
+        if let PositionedItem::GlyphRun(run) = i { Some(run.origin.x) } else { None }
+    });
+    let x = first_run_x.expect("expected a glyph run");
+    assert_eq!(x, left_margin, "pageless item x should be offset by left margin");
 }

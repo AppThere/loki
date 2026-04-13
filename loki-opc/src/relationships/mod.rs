@@ -1,6 +1,5 @@
-// Copyright 2024-2026 AppThere
-//
-// Licensed under the MIT License.
+// Copyright 2026 AppThere Loki contributors
+// SPDX-License-Identifier: MIT
 
 //! Relationships mapping and resolution configuration handling targeting components within elements recursively.
 

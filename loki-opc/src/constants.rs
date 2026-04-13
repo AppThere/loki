@@ -1,6 +1,5 @@
-// Copyright 2024-2026 AppThere
-//
-// Licensed under the MIT License.
+// Copyright 2026 AppThere Loki contributors
+// SPDX-License-Identifier: MIT
 
 //! Namespace URIs and defined standard Media types mapped exactly into the registry specifications described under ISO/IEC 29500-2:2021 Annex E.
 

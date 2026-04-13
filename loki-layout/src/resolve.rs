@@ -1,16 +1,5 @@
-// Copyright 2024-2026 AppThere
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2026 AppThere Loki contributors
+// SPDX-License-Identifier: Apache-2.0
 
 //! Style resolution — bridges `loki-doc-model` types to the renderer-agnostic
 //! layout types.
@@ -36,7 +25,7 @@ use parley::Alignment;
 use crate::color::LayoutColor;
 use crate::geometry::LayoutInsets;
 use crate::items::{BorderEdge, BorderStyle};
-use crate::para::{ResolvedParaProps, StyleSpan};
+use crate::para::{ResolvedLineHeight, ResolvedParaProps, StyleSpan};
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -275,7 +264,25 @@ fn map_para_props(p: &ParaProps) -> ResolvedParaProps {
         indent_end: p.indent_end.map(pts_to_f32).unwrap_or(0.0),
         indent_first_line: p.indent_first_line.map(pts_to_f32).unwrap_or(0.0),
         line_height: p.line_height.and_then(|lh| match lh {
-            DocLineHeight::Multiple(pct) => Some(pct / 100.0),
+            // IMPORTANT: The OOXML mapper stores Multiple as a ratio, NOT a
+            // percentage, despite the doc-model comment (e.g. line=240 →
+            // Multiple(1.0), line=360 → Multiple(1.5)). Do NOT divide by 100.
+            //
+            // lineRule="auto" with line=240 (single spacing) is the most common
+            // case. Return None so Parley uses natural font metrics
+            // (ascender + descender + leading — exactly what "auto" means).
+            // For non-unity multipliers, MetricsRelative scales those natural
+            // metrics (1.5 = one-and-a-half spacing, 2.0 = double spacing).
+            DocLineHeight::Multiple(m) => {
+                if (m - 1.0).abs() < 0.02 {
+                    None // Single spacing — let Parley default take over
+                } else {
+                    Some(ResolvedLineHeight::MetricsRelative(m))
+                }
+            }
+            DocLineHeight::Exact(pts) => Some(ResolvedLineHeight::Exact(pts_to_f32(pts))),
+            DocLineHeight::AtLeast(pts) => Some(ResolvedLineHeight::AtLeast(pts_to_f32(pts))),
+            // Future variants — fall back to natural metrics.
             _ => None,
         }),
         background_color: p.background_color.as_ref().map(|c| resolve_color(Some(c))),

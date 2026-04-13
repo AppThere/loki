@@ -1,16 +1,5 @@
-// Copyright 2024-2026 AppThere
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2026 AppThere Loki contributors
+// SPDX-License-Identifier: Apache-2.0
 
 //! Renderer-agnostic positioned draw items.
 //!
@@ -43,6 +32,34 @@ pub enum PositionedItem {
     Decoration(PositionedDecoration),
     /// A horizontal rule.
     HorizontalRule(PositionedRect),
+}
+
+impl PositionedItem {
+    /// Applies a translation to the item's coordinates.
+    pub fn translate(&mut self, dx: f32, dy: f32) {
+        match self {
+            Self::GlyphRun(r) => {
+                r.origin.x += dx;
+                r.origin.y += dy;
+            }
+            Self::FilledRect(r) | Self::HorizontalRule(r) => {
+                r.rect.origin.x += dx;
+                r.rect.origin.y += dy;
+            }
+            Self::BorderRect(r) => {
+                r.rect.origin.x += dx;
+                r.rect.origin.y += dy;
+            }
+            Self::Image(r) => {
+                r.rect.origin.x += dx;
+                r.rect.origin.y += dy;
+            }
+            Self::Decoration(d) => {
+                d.x += dx;
+                d.y += dy;
+            }
+        }
+    }
 }
 
 /// A positioned and shaped glyph run ready for rendering.

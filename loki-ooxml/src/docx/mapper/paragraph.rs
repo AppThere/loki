@@ -1,16 +1,5 @@
-// Copyright 2024-2026 AppThere
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2026 AppThere Loki contributors
+// SPDX-License-Identifier: Apache-2.0
 
 //! Paragraph mapper: `w:p` → `Vec<Block>`.
 
@@ -47,15 +36,24 @@ pub(crate) fn map_paragraph(p: &DocxParagraph, ctx: &mut MappingContext<'_>) -> 
 
     if ctx.options.emit_heading_blocks {
         if let Some(level) = outline_level {
-            let heading = Block::Heading(level, NodeAttr::default(), inlines.clone());
-            let styled = Block::StyledPara(StyledParagraph {
-                style_id,
-                direct_para_props: para_props.map(Box::new),
-                direct_char_props: None,
-                inlines,
-                attr: NodeAttr::default(),
-            });
-            return vec![heading, styled];
+            // Promote to a structural heading block.
+            // Preserve any direct paragraph alignment in NodeAttr.kv so the
+            // layout engine can restore it when synthesising the StyledParagraph.
+            let mut attr = NodeAttr::default();
+            if let Some(ref pp) = para_props {
+                use loki_doc_model::style::props::para_props::ParagraphAlignment;
+                if let Some(align) = pp.alignment {
+                    let val = match align {
+                        ParagraphAlignment::Center => "center",
+                        ParagraphAlignment::Right | ParagraphAlignment::Distribute => "right",
+                        ParagraphAlignment::Justify => "justify",
+                        ParagraphAlignment::Left => "left",
+                        _ => "left",
+                    };
+                    attr.kv.push(("jc".into(), val.into()));
+                }
+            }
+            return vec![Block::Heading(level, attr, inlines)];
         }
     }
 
@@ -163,10 +161,9 @@ mod tests {
             children: vec![text_child("Title")],
         };
         let blocks = map_paragraph(&p, &mut ctx);
-        // Should produce [Heading(1, ...), StyledPara(...)]
-        assert_eq!(blocks.len(), 2);
+        // Should produce [Heading(1, ...)]
+        assert_eq!(blocks.len(), 1);
         assert!(matches!(&blocks[0], Block::Heading(1, _, _)));
-        assert!(matches!(&blocks[1], Block::StyledPara(_)));
     }
 
     #[test]
@@ -194,7 +191,7 @@ mod tests {
             children: vec![text_child("Chapter 1")],
         };
         let blocks = map_paragraph(&p, &mut ctx);
-        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks.len(), 1);
         assert!(matches!(&blocks[0], Block::Heading(1, _, _)));
     }
 

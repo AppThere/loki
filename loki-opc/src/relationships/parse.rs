@@ -1,6 +1,5 @@
-// Copyright 2024-2026 AppThere
-//
-// Licensed under the MIT License.
+// Copyright 2026 AppThere Loki contributors
+// SPDX-License-Identifier: MIT
 
 //! `quick-xml` event mode parsing implementing ISO metadata structure extraction targeting relationship types specifically.
 

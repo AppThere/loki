@@ -1,6 +1,5 @@
-// Copyright 2024-2026 AppThere
-//
-// Licensed under the MIT License.
+// Copyright 2026 AppThere Loki contributors
+// SPDX-License-Identifier: MIT
 
 //! Maps chronological definitions formatting attributes exactly translating strings sequentially defining output layouts explicitly targeting compatibility tracking bounds efficiently utilizing serializers strictly validating payloads correctly identifying configuration logic reliably.
 

@@ -1,16 +1,5 @@
-// Copyright 2024-2026 AppThere
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2026 AppThere Loki contributors
+// SPDX-License-Identifier: Apache-2.0
 
 //! Flow engine — places blocks sequentially and handles page breaking.
 //!
@@ -21,7 +10,7 @@
 
 use loki_doc_model::content::block::StyledParagraph;
 use loki_doc_model::content::inline::Inline;
-use loki_doc_model::{Block, NodeAttr, Section, StyleCatalog, StyleId};
+use loki_doc_model::{Block, NodeAttr, Section, StyleCatalog};
 
 use crate::color::LayoutColor;
 use crate::font::FontResources;
@@ -80,6 +69,8 @@ struct FlowState<'a> {
     pending_keep_with_next: bool,
     /// Accumulated warnings.
     warnings: Vec<LayoutWarning>,
+    /// Accumulated horizontal indentation in points.
+    current_indent: f32,
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -131,6 +122,7 @@ pub fn flow_section(
         page_number: 1,
         pending_keep_with_next: false,
         warnings: Vec::new(),
+        current_indent: 0.0,
     };
 
     for (idx, block) in section.blocks.iter().enumerate() {
@@ -146,12 +138,18 @@ pub fn flow_section(
             let dx = state.margins.left;
             for item in &page.content_items {
                 let mut item = item.clone();
-                translate_item(&mut item, dx, dy);
+                item.translate(dx, dy);
                 flat.push(item);
             }
         }
         (flat, total_height, state.warnings)
     } else {
+        if matches!(mode, LayoutMode::Pageless) {
+            let dx = margins.left;
+            for item in &mut state.current_items {
+                item.translate(dx, 0.0);
+            }
+        }
         (state.current_items, state.cursor_y, state.warnings)
     }
 }
@@ -164,27 +162,54 @@ fn flow_block(state: &mut FlowState, block: &Block, idx: usize) {
         Block::Para(i) | Block::Plain(i) => {
             flow_paragraph(state, &synthesize_plain_para(i), idx);
         }
-        Block::Heading(lvl, _, i) => {
-            flow_paragraph(state, &synthesize_heading_para(*lvl, i), idx);
+        Block::Heading(lvl, attr, i) => {
+            flow_paragraph(state, &synthesize_heading_para(*lvl, attr, i), idx);
         }
         Block::BulletList(items) => {
+            let old_indent = state.current_indent;
+            state.current_indent += 18.0; // 1/4 inch indent
             for item in items {
-                for b in item {
+                for (b_idx, b) in item.iter().enumerate() {
+                    if b_idx == 0 {
+                        // Prepend bullet to the first block if it's a paragraph
+                        if let Block::StyledPara(p) = b {
+                            let mut p = p.clone();
+                            p.inlines.insert(0, Inline::Str("• ".into()));
+                            flow_paragraph(state, &p, idx);
+                            continue;
+                        }
+                    }
                     flow_block(state, b, idx);
                 }
             }
+            state.current_indent = old_indent;
         }
-        Block::OrderedList(_, items) => {
-            for item in items {
-                for b in item {
+        Block::OrderedList(attrs, items) => {
+            let old_indent = state.current_indent;
+            state.current_indent += 18.0;
+            for (i, item) in items.iter().enumerate() {
+                let marker = format!("{}. ", attrs.start_number + i as i32);
+                for (b_idx, b) in item.iter().enumerate() {
+                    if b_idx == 0 {
+                        if let Block::StyledPara(p) = b {
+                            let mut p = p.clone();
+                            p.inlines.insert(0, Inline::Str(marker.clone().into()));
+                            flow_paragraph(state, &p, idx);
+                            continue;
+                        }
+                    }
                     flow_block(state, b, idx);
                 }
             }
+            state.current_indent = old_indent;
         }
         Block::BlockQuote(blocks) => {
+            let old_indent = state.current_indent;
+            state.current_indent += 18.0;
             for b in blocks {
                 flow_block(state, b, idx);
             }
+            state.current_indent = old_indent;
         }
         Block::Div(_, blocks) => {
             for b in blocks {
@@ -196,8 +221,8 @@ fn flow_block(state: &mut FlowState, block: &Block, idx: usize) {
                 flow_block(state, b, idx);
             }
         }
+        Block::Table(tbl) => flow_table(state, tbl, idx),
         Block::HorizontalRule => flow_hrule(state),
-        Block::Table(_) => {} // TODO: Session 5 — table layout
         _ => {}               // CodeBlock, RawBlock, etc. — skip silently
     }
 }
@@ -247,8 +272,9 @@ fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, block_index: us
 
     // Translate items from paragraph-relative to page-content-area-relative.
     let dy = state.cursor_y;
+    let dx = state.current_indent;
     for mut item in para_layout.items {
-        translate_item(&mut item, 0.0, dy);
+        item.translate(dx, dy);
         state.current_items.push(item);
     }
     state.cursor_y += para_layout.height + resolved.space_after;
@@ -272,30 +298,6 @@ fn finish_page(state: &mut FlowState) {
 
 // ── Coordinate translation ────────────────────────────────────────────────────
 
-fn translate_item(item: &mut PositionedItem, dx: f32, dy: f32) {
-    match item {
-        PositionedItem::GlyphRun(r) => {
-            r.origin.x += dx;
-            r.origin.y += dy;
-        }
-        PositionedItem::FilledRect(r) | PositionedItem::HorizontalRule(r) => {
-            r.rect.origin.x += dx;
-            r.rect.origin.y += dy;
-        }
-        PositionedItem::BorderRect(r) => {
-            r.rect.origin.x += dx;
-            r.rect.origin.y += dy;
-        }
-        PositionedItem::Image(r) => {
-            r.rect.origin.x += dx;
-            r.rect.origin.y += dy;
-        }
-        PositionedItem::Decoration(d) => {
-            d.x += dx;
-            d.y += dy;
-        }
-    }
-}
 
 // ── Miscellaneous block renderers ─────────────────────────────────────────────
 
@@ -321,7 +323,9 @@ fn synthesize_plain_para(inlines: &[Inline]) -> StyledParagraph {
     }
 }
 
-fn synthesize_heading_para(level: u8, inlines: &[Inline]) -> StyledParagraph {
+fn synthesize_heading_para(level: u8, attr: &NodeAttr, inlines: &[Inline]) -> StyledParagraph {
+    use loki_doc_model::style::catalog::StyleId;
+    use loki_doc_model::style::props::para_props::{ParagraphAlignment, ParaProps};
     let style_name = match level {
         1 => "Heading1",
         2 => "Heading2",
@@ -330,12 +334,62 @@ fn synthesize_heading_para(level: u8, inlines: &[Inline]) -> StyledParagraph {
         5 => "Heading5",
         _ => "Heading6",
     };
+    // Restore any alignment that was carried forward in NodeAttr.kv.
+    let direct_alignment = attr.kv.iter().find(|(k, _)| k == "jc").and_then(|(_, v)| match v.as_str() {
+        "center" => Some(ParagraphAlignment::Center),
+        "right" => Some(ParagraphAlignment::Right),
+        "justify" => Some(ParagraphAlignment::Justify),
+        _ => None,
+    });
+    let direct_para_props = direct_alignment.map(|align| {
+        Box::new(ParaProps { alignment: Some(align), ..Default::default() })
+    });
     StyledParagraph {
         style_id: Some(StyleId::new(style_name)),
-        direct_para_props: None,
+        direct_para_props,
         direct_char_props: None,
         inlines: inlines.to_vec(),
         attr: NodeAttr::default(),
+    }
+}
+
+// ── Table layout ─────────────────────────────────────────────────────────────
+
+fn flow_table(state: &mut FlowState, tbl: &loki_doc_model::content::table::core::Table, idx: usize) {
+    let col_count = tbl.col_count().max(1);
+    let col_w = state.content_width / col_count as f32;
+
+    let mut rows = Vec::new();
+    rows.extend(&tbl.head.rows);
+    for body in &tbl.bodies {
+        rows.extend(&body.head_rows);
+        rows.extend(&body.body_rows);
+    }
+    rows.extend(&tbl.foot.rows);
+
+    for row in rows {
+        let row_y_start = state.cursor_y;
+        let mut row_max_h = 0.0f32;
+
+        for (c_idx, cell) in row.cells.iter().enumerate() {
+            let old_indent = state.current_indent;
+            let old_width = state.content_width;
+
+            state.current_indent = old_indent + (c_idx as f32 * col_w);
+            state.content_width = col_w;
+            state.cursor_y = row_y_start;
+
+            for block in &cell.blocks {
+                flow_block(state, block, idx);
+            }
+
+            let cell_h = state.cursor_y - row_y_start;
+            row_max_h = row_max_h.max(cell_h);
+
+            state.current_indent = old_indent;
+            state.content_width = old_width;
+        }
+        state.cursor_y = row_y_start + row_max_h;
     }
 }
 

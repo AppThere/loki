@@ -1,6 +1,5 @@
-// Copyright 2024-2026 AppThere
-//
-// Licensed under the MIT License.
+// Copyright 2026 AppThere Loki contributors
+// SPDX-License-Identifier: MIT
 
 //! Extends media type references parsing components mapping fallbacks evaluating bounds enforcing restrictions providing metadata attributes tracking parameters efficiently supporting missing properties cleanly mapping identifiers natively supporting [MS-OI29500] / [MS-OE376].
 

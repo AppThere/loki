@@ -1,6 +1,5 @@
-// Copyright 2024-2026 AppThere
-//
-// Licensed under the MIT License.
+// Copyright 2026 AppThere Loki contributors
+// SPDX-License-Identifier: MIT
 
 //! Resolves duplicate metadata identifiers securely discarding limits resolving values successfully handling errors mapping data efficiently explicitly checking structures supporting [MS-OI29500] / [MS-OE376].
 

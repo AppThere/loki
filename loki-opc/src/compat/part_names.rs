@@ -1,6 +1,5 @@
-// Copyright 2024-2026 AppThere
-//
-// Licensed under the MIT License.
+// Copyright 2026 AppThere Loki contributors
+// SPDX-License-Identifier: MIT
 
 //! Fallbacks correcting percent escaped character combinations enforcing URI standardizations handling malformed files structurally preserving content boundaries strictly avoiding data losses generating tracking parameters mapping equivalents efficiently protecting integrity explicitly executing limits transparently executing [MS-OI29500] / [MS-OE376] conventions reliably.
 

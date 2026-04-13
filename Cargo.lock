@@ -1304,6 +1304,7 @@ dependencies = [
  "base64",
  "image",
  "kurbo",
+ "loki-doc-model",
  "loki-layout",
  "loki-odf",
  "loki-ooxml",

@@ -1,6 +1,5 @@
-// Copyright 2024-2026 AppThere
-//
-// Licensed under the MIT License.
+// Copyright 2026 AppThere Loki contributors
+// SPDX-License-Identifier: MIT
 
 //! Handles backslash substitutions identifying non-compliant ZIP paths locally ensuring standardizations mapping files transparently supporting [MS-OI29500] / [MS-OE376].
 

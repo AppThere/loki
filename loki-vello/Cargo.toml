@@ -23,6 +23,7 @@ pollster       = "0.4"
 image          = "0.25"
 loki-ooxml     = { path = "../loki-ooxml" }
 loki-odf       = { path = "../loki-odf" }
+loki-doc-model = { path = "../loki-doc-model" }
 
 [[example]]
 name = "render_to_png"

@@ -1,22 +1,14 @@
-// Copyright 2024-2026 AppThere
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2026 AppThere Loki contributors
+// SPDX-License-Identifier: Apache-2.0
 
 //! Shared Parley font and layout context.
 //!
 //! [`FontResources`] wraps a [`parley::FontContext`] (font database) and a
 //! [`parley::LayoutContext`] (shaping scratch space). Both are expensive to
 //! construct and should be reused across many layout calls.
+
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::color::LayoutColor;
 
@@ -31,7 +23,17 @@ pub struct FontResources {
     pub font_cx: parley::FontContext,
     /// Parley shaping scratch space: reused across layout calls.
     pub layout_cx: parley::LayoutContext<LayoutColor>,
+    /// Font data cache: maps raw Parley font-data pointer → shared Arc.
+    ///
+    /// Parley hands back a `&[u8]` slice per glyph run pointing into its
+    /// internal storage. Without this cache, `layout_paragraph` would copy
+    /// the entire font file into a fresh `Arc<Vec<u8>>` for every glyph run
+    /// (often millions of bytes × thousands of runs = most of the render time).
+    /// Keying by the slice's base pointer (cast to `u64`) ensures that glyph
+    /// runs from the same Parley-internal blob share a single `Arc`.
+    pub(crate) font_data_cache: HashMap<u64, Arc<Vec<u8>>>,
 }
+
 
 impl FontResources {
     /// Creates a new `FontResources`, loading system fonts via Fontique.
@@ -39,6 +41,7 @@ impl FontResources {
         Self {
             font_cx: parley::FontContext::new(),
             layout_cx: parley::LayoutContext::new(),
+            font_data_cache: HashMap::new(),
         }
     }
 

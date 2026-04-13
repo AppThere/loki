@@ -1,6 +1,5 @@
-// Copyright 2024-2026 AppThere
-//
-// Licensed under the MIT License.
+// Copyright 2026 AppThere Loki contributors
+// SPDX-License-Identifier: MIT
 
 //! Implements serde structural XML extraction directly utilizing derivations correctly isolating bounds dynamically loading properties efficiently.
 
