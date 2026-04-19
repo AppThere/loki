@@ -3574,6 +3574,7 @@ dependencies = [
 name = "loki-text"
 version = "0.1.0"
 dependencies = [
+ "anyrender_vello",
  "dioxus",
  "fontique 0.8.0",
  "kurbo 0.12.0",
@@ -3585,7 +3586,9 @@ dependencies = [
  "loki-vello",
  "peniko",
  "thiserror 2.0.18",
+ "tracing",
  "vello",
+ "wgpu_context",
 ]
 
 [[package]]

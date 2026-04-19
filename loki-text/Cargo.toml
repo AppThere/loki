@@ -6,6 +6,10 @@ license = "Apache-2.0"
 description = "Dioxus Native word-processor application for the Loki document suite"
 repository = "https://github.com/appthere/loki"
 
+[lib]
+name = "loki_text"
+path = "src/lib.rs"
+
 [[bin]]
 name = "loki-text"
 path = "src/main.rs"
@@ -27,6 +31,12 @@ loki-theme      = { path = "../loki-theme" }
 loki-file-access = "0.1.0"
 # Typed error derivation.
 thiserror       = "2"
+# Vello/wgpu integration point for custom GPU paint sources (CustomPaintSource).
+anyrender_vello  = "0.6.2"
+# wgpu device + queue handle passed to CustomPaintSource::resume().
+wgpu_context     = "0.1.2"
+# Async event tracing — used for warn!/error! in document_source.
+tracing          = "0.1"
 # Vello scene builder — used in WgpuSurface to paint the blank A4 rect.
 vello           = "0.6"
 # Peniko brush / fill types (re-used directly so the API surface is explicit).
