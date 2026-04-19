@@ -25,6 +25,14 @@ pub const PAGE_HEIGHT_PX: f32 = 1123.0;
 /// Vertical gap between stacked pages in the editor scroll canvas (px).
 pub const PAGE_GAP_PX: f32 = 24.0;
 
+/// Standard document page margin in CSS pixels (≈ 1 inch at 96 dpi).
+///
+/// Used to derive the text content width: `PAGE_WIDTH_PX - 2 × PAGE_MARGIN_PX = 650 px`.
+/// The layout engine reads margins from the document's own [`PageLayout`]; this
+/// constant is provided for UI components that need to reflect the margin visually
+/// (e.g., ruler, margin handles, scroll-gutter calculations).
+pub const PAGE_MARGIN_PX: f32 = 72.0;
+
 // ── Responsive breakpoints ────────────────────────────────────────────────────
 
 /// Viewport width above which the UI switches to the desktop two-column layout.
