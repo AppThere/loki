@@ -10,8 +10,13 @@
 //! │      Top Toolbar        │  flex-shrink: 0
 //! ├─────────────────────────┤
 //! │                         │
-//! │    WGPU Canvas          │  flex: 1, overflow: hidden
-//! │    (loki-vello)         │
+//! │  ┌───────────────────┐  │  flex: 1, overflow-y: auto (scroll container)
+//! │  │   Page 1          │  │
+//! │  └───────────────────┘  │
+//! │  ┌───────────────────┐  │
+//! │  │   Page 2          │  │
+//! │  └───────────────────┘  │
+//! │         …               │
 //! │                         │
 //! ├─────────────────────────┤
 //! │     Bottom Toolbar      │  flex-shrink: 0
@@ -31,7 +36,8 @@
 //                       -> Result<loki_doc_model::Document, OoxmlError>
 //                   (via loki_doc_model::io::DocumentImport trait)
 // loki_vello:       paint_layout(scene: &mut vello::Scene, layout: &DocumentLayout,
-//                       font_cache: &mut FontDataCache, offset: (f32, f32), scale: f32)
+//                       font_cache: &mut FontDataCache, offset: (f32, f32), scale: f32,
+//                       page_index: Option<usize>)
 //                   (called inside WgpuSurface — see components/wgpu_surface.rs)
 
 use dioxus::prelude::*;
@@ -50,11 +56,11 @@ use crate::utils::display_title_from_path;
 ///
 /// Receives the `path` route parameter (a serialised
 /// [`loki_file_access::FileAccessToken`]) and renders the three-panel editor
-/// layout: top toolbar, WGPU canvas area, and bottom status bar.
+/// layout: top toolbar, scrollable page canvas area, and bottom status bar.
 ///
 /// Document loading runs asynchronously via [`use_resource`]:
 /// - **Loading** — toolbars are shown immediately; canvas shows "Opening
-///   document\u{2026}".
+///   document\u{2026}" placeholder via [`WgpuSurface`].
 /// - **Error** — inline error message with a "Go back" button; no panic.
 /// - **Loaded** — document is passed to [`WgpuSurface`] for scene building.
 #[component]
@@ -85,72 +91,65 @@ pub fn Editor(path: String) -> Element {
             // ── Top toolbar (flex-shrink: 0) ───────────────────────────────────
             TopToolbar { title }
 
-            // ── Canvas area (flex: 1) — switches on load state ─────────────────
-            match &*document_load.value().read_unchecked() {
-                // Resource is still running.
-                None => rsx! {
-                    div {
-                        style: format!(
-                            "flex: 1; display: flex; justify-content: center; \
-                             align-items: center; background: {bg};",
-                            bg = tokens::COLOR_SURFACE_BASE,
-                        ),
-                        span {
-                            style: format!(
-                                "font-size: {size}px; color: {fg};",
-                                size = tokens::FONT_SIZE_BODY,
-                                fg   = tokens::COLOR_TEXT_SECONDARY,
-                            ),
-                            "Opening document\u{2026}"
-                        }
-                    }
-                },
+            // ── Scroll container (flex: 1, overflow-y: auto) ──────────────────
+            div {
+                style: format!(
+                    "flex: 1; overflow-y: auto; background: {bg}; padding: {p}px 0;",
+                    bg = tokens::COLOR_SURFACE_BASE,
+                    p  = tokens::SPACE_6,
+                ),
 
-                // Import pipeline failed.
-                Some(Err(e)) => {
-                    let msg = e.to_string();
-                    rsx! {
-                        div {
-                            style: format!(
-                                "flex: 1; display: flex; flex-direction: column; \
-                                 justify-content: center; align-items: center; \
-                                 gap: {gap}px; background: {bg};",
-                                gap = tokens::SPACE_4,
-                                bg  = tokens::COLOR_SURFACE_BASE,
-                            ),
-                            span {
+                match &*document_load.value().read_unchecked() {
+                    // Resource is still running — show placeholder via WgpuSurface.
+                    None => rsx! {
+                        WgpuSurface { document: None, visible_rect: None }
+                    },
+
+                    // Import pipeline failed.
+                    Some(Err(e)) => {
+                        let msg = e.to_string();
+                        rsx! {
+                            div {
                                 style: format!(
-                                    "font-size: {size}px; color: {fg};",
-                                    size = tokens::FONT_SIZE_BODY,
-                                    fg   = tokens::COLOR_TEXT_PRIMARY,
+                                    "display: flex; flex-direction: column; \
+                                     justify-content: center; align-items: center; \
+                                     gap: {gap}px;",
+                                    gap = tokens::SPACE_4,
                                 ),
-                                "Could not open document: {msg}"
-                            }
-                            button {
-                                style: format!(
-                                    "padding: {p}px {p2}px; background: {bg}; \
-                                     border: 1px solid {border}; border-radius: 4px; \
-                                     font-size: {size}px; cursor: pointer;",
-                                    p      = tokens::SPACE_2,
-                                    p2     = tokens::SPACE_4,
-                                    bg     = tokens::COLOR_SURFACE_PAGE,
-                                    border = tokens::COLOR_BORDER_DEFAULT,
-                                    size   = tokens::FONT_SIZE_BODY,
-                                ),
-                                onclick: move |_| { navigator.push(crate::routes::Route::Home {}); },
-                                "Go back"
+                                span {
+                                    style: format!(
+                                        "font-size: {size}px; color: {fg};",
+                                        size = tokens::FONT_SIZE_BODY,
+                                        fg   = tokens::COLOR_TEXT_PRIMARY,
+                                    ),
+                                    "Could not open document: {msg}"
+                                }
+                                button {
+                                    style: format!(
+                                        "padding: {p}px {p2}px; background: {bg}; \
+                                         border: 1px solid {border}; border-radius: 4px; \
+                                         font-size: {size}px; cursor: pointer;",
+                                        p      = tokens::SPACE_2,
+                                        p2     = tokens::SPACE_4,
+                                        bg     = tokens::COLOR_SURFACE_PAGE,
+                                        border = tokens::COLOR_BORDER_DEFAULT,
+                                        size   = tokens::FONT_SIZE_BODY,
+                                    ),
+                                    onclick: move |_| { navigator.push(crate::routes::Route::Home {}); },
+                                    "Go back"
+                                }
                             }
                         }
-                    }
-                },
+                    },
 
-                // Document loaded — hand to WgpuSurface for scene building.
-                Some(Ok(doc)) => rsx! {
-                    WgpuSurface {
-                        document: Some(doc.clone()),
-                        visible_rect: None,
-                    }
-                },
+                    // Document loaded — hand to WgpuSurface for scene building.
+                    Some(Ok(doc)) => rsx! {
+                        WgpuSurface {
+                            document: Some(doc.clone()),
+                            visible_rect: None,
+                        }
+                    },
+                }
             }
 
             // ── Bottom status bar (flex-shrink: 0) ────────────────────────────

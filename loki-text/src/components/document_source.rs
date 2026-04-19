@@ -19,12 +19,11 @@ use anyrender_vello::wgpu::{
     Extent3d, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor,
 };
 use anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle};
-use kurbo::{Affine, Rect, Stroke};
+use kurbo::Rect;
 use loki_doc_model::document::Document;
 use loki_layout::{layout_document, DocumentLayout, FontResources, LayoutMode};
-use loki_theme::tokens;
 use loki_vello::{paint_layout, FontDataCache};
-use peniko::{Brush, Color, Fill};
+use peniko::Color;
 use vello::{AaConfig, AaSupport, RenderParams, RendererOptions, Scene};
 
 // ── Shared state ──────────────────────────────────────────────────────────────
@@ -39,12 +38,14 @@ pub struct DocumentState {
     pub document: Option<Document>,
     /// Bumped each time `document` changes; drives layout-cache invalidation.
     pub generation: u64,
+    /// Number of pages in the current paginated layout; 0 when no document is loaded.
+    pub page_count: usize,
     /// Visible viewport in document-space coordinates — future partial-render
     /// seam.  Set to `None` until scroll infrastructure is implemented.
     pub visible_rect: Option<Rect>,
 }
 
-// ── Cached layout ──────────────────────────────────────────────────────────────
+// ── Cached layout ─────────────────────────────────────────────────────────────
 
 struct CachedLayout {
     generation: u64,
@@ -54,7 +55,7 @@ struct CachedLayout {
 
 // ── LokiDocumentSource ────────────────────────────────────────────────────────
 
-/// `CustomPaintSource` that renders a [`Document`] to a wgpu texture each frame.
+/// `CustomPaintSource` that renders one page of a [`Document`] to a wgpu texture each frame.
 ///
 /// Lifecycle:
 /// - `resume()` — GPU device is available; create `vello::Renderer` and
@@ -66,6 +67,8 @@ struct CachedLayout {
 pub(crate) struct LokiDocumentSource {
     /// Shared document state — updated by the Dioxus component when props change.
     document: Arc<Mutex<DocumentState>>,
+    /// Index of the page this source renders (0-based).
+    page_index: usize,
     /// wgpu device, cloned from [`DeviceHandle`] in `resume()`.
     device: Option<anyrender_vello::wgpu::Device>,
     /// wgpu queue, cloned from [`DeviceHandle`] in `resume()`.
@@ -80,10 +83,11 @@ pub(crate) struct LokiDocumentSource {
 }
 
 impl LokiDocumentSource {
-    /// Create a new source sharing state with the Dioxus component.
-    pub(crate) fn new(document: Arc<Mutex<DocumentState>>) -> Self {
+    /// Create a new source for `page_index`, sharing state with the Dioxus component.
+    pub(crate) fn new(document: Arc<Mutex<DocumentState>>, page_index: usize) -> Self {
         Self {
             document,
+            page_index,
             device: None,
             queue: None,
             renderer: None,
@@ -97,21 +101,6 @@ impl LokiDocumentSource {
         self.layout_cache
             .as_ref()
             .map_or(true, |c| c.generation != generation)
-    }
-
-    /// Build a blank A4 placeholder scene (white fill + 1 px border).
-    fn build_placeholder_scene(scene: &mut Scene) {
-        let page = Rect::new(
-            0.0,
-            0.0,
-            tokens::PAGE_WIDTH_PX as f64,
-            tokens::PAGE_HEIGHT_PX as f64,
-        );
-        let white = Brush::Solid(Color::new([1.0_f32, 1.0, 1.0, 1.0]));
-        scene.fill(Fill::NonZero, Affine::IDENTITY, &white, None, &page);
-        // 1 px border (#E0E0E0).
-        let border = Brush::Solid(Color::new([0.878_f32, 0.878, 0.878, 1.0]));
-        scene.stroke(&Stroke::new(1.0), Affine::IDENTITY, &border, None, &page);
     }
 }
 
@@ -161,53 +150,64 @@ impl CustomPaintSource for LokiDocumentSource {
             return None;
         }
 
-        let state = match self.document.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                tracing::warn!("LokiDocumentSource: document lock poisoned: {e}");
-                return None;
-            }
+        // Phase 1: Read document state under lock, then release before layout work.
+        // Cloning the document avoids a borrow conflict when we later write
+        // page_count back to state (can't hold an immutable borrow of
+        // state.document while mutably borrowing state.page_count through the
+        // same MutexGuard).
+        let (doc_opt, current_gen) = {
+            let state = match self.document.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    tracing::warn!("LokiDocumentSource: document lock poisoned: {e}");
+                    return None;
+                }
+            };
+            (state.document.clone(), state.generation)
         };
 
-        let mut scene = Scene::new();
+        // No document loaded — WgpuSurface shows a placeholder div instead.
+        let doc = doc_opt?;
 
-        if let Some(doc) = state.document.as_ref() {
-            let current_gen = state.generation;
+        // Phase 2: Rebuild paginated layout when generation advances.
+        if self.needs_relayout(current_gen) {
+            let font_resources = self.font_resources.get_or_insert_with(FontResources::new);
+            let layout =
+                layout_document(font_resources, &doc, LayoutMode::Paginated, scale as f32);
+            let page_count = match &layout {
+                DocumentLayout::Paginated(pl) => pl.pages.len(),
+                _ => 0,
+            };
+            self.layout_cache = Some(CachedLayout {
+                generation: current_gen,
+                layout,
+                font_cache: FontDataCache::new(),
+            });
 
-            // needs_relayout borrows self immutably; perform before any &mut self
-            // borrow so the borrow checker sees no overlap with renderer.as_mut().
-            if self.needs_relayout(current_gen) {
-                let font_resources =
-                    self.font_resources.get_or_insert_with(FontResources::new);
-                let layout =
-                    layout_document(font_resources, doc, LayoutMode::Pageless, scale as f32);
-                self.layout_cache = Some(CachedLayout {
-                    generation: current_gen,
-                    layout,
-                    font_cache: FontDataCache::new(),
-                });
+            // Phase 3: Publish page_count to shared state (used by toolbar and
+            // WgpuSurface for display purposes).
+            if let Ok(mut state) = self.document.lock() {
+                state.page_count = page_count;
             }
-
-            // TODO(partial-render): pass visible_rect as clip region to paint_layout
-            // when the partial render pipeline is implemented.
-            if let Some(cached) = self.layout_cache.as_mut() {
-                paint_layout(
-                    &mut scene,
-                    &cached.layout,
-                    &mut cached.font_cache,
-                    (0.0, 0.0),
-                    scale as f32,
-                );
-            }
-        } else {
-            Self::build_placeholder_scene(&mut scene);
         }
 
-        // Release the mutex before GPU work to minimise contention.
-        drop(state);
+        // Phase 4: Paint this page's scene.
+        let mut scene = Scene::new();
+        // TODO(partial-render): pass visible_rect as clip region to paint_layout
+        // when the partial render pipeline is implemented.
+        let cached = self.layout_cache.as_mut()?;
+        paint_layout(
+            &mut scene,
+            &cached.layout,
+            &mut cached.font_cache,
+            (0.0, 0.0),
+            scale as f32,
+            Some(self.page_index),
+        );
 
-        // Borrow GPU resources mutably only after all immutable self-borrows above
-        // are complete (borrow checker requires non-overlapping borrows on self).
+        // Phase 5: GPU work — borrow GPU resources mutably only after all
+        // immutable self-borrows above are complete (borrow checker requires
+        // non-overlapping borrows on self).
         let device = self.device.as_ref()?;
         let queue = self.queue.as_ref()?;
         let renderer = self.renderer.as_mut()?;
@@ -259,11 +259,15 @@ mod tests {
     use loki_layout::LayoutMode;
 
     fn make_source() -> LokiDocumentSource {
-        LokiDocumentSource::new(Arc::new(Mutex::new(DocumentState {
-            document: None,
-            generation: 0,
-            visible_rect: None,
-        })))
+        LokiDocumentSource::new(
+            Arc::new(Mutex::new(DocumentState {
+                document: None,
+                generation: 0,
+                page_count: 0,
+                visible_rect: None,
+            })),
+            0,
+        )
     }
 
     /// Constructs a `CachedLayout` by running the real layout pipeline on an
@@ -271,7 +275,7 @@ mod tests {
     fn make_cached_layout(generation: u64) -> CachedLayout {
         let doc = Document::new();
         let mut resources = FontResources::new();
-        let layout = layout_document(&mut resources, &doc, LayoutMode::Pageless, 1.0);
+        let layout = layout_document(&mut resources, &doc, LayoutMode::Paginated, 1.0);
         CachedLayout {
             generation,
             layout,
@@ -310,6 +314,7 @@ mod tests {
         let state = Arc::new(Mutex::new(DocumentState {
             document: None,
             generation: 0,
+            page_count: 0,
             visible_rect: None,
         }));
         // Simulate the component bumping the generation counter.

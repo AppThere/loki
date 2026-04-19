@@ -88,7 +88,7 @@ fn main() {
     let t1 = std::time::Instant::now();
     let mut scene = vello::Scene::new();
     let mut font_cache = FontDataCache::new();
-    paint_layout(&mut scene, &layout, &mut font_cache, (16.0, 16.0), 1.0);
+    paint_layout(&mut scene, &layout, &mut font_cache, (16.0, 16.0), 1.0, None);
     let t_scene = t1.elapsed();
 
     // ── 3. Set up wgpu ────────────────────────────────────────────────────────

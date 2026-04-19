@@ -22,6 +22,9 @@ pub const PAGE_WIDTH_PX: f32 = 794.0;
 /// A4 page height in CSS pixels at 96 dpi equivalent (297 mm → ~1123 px).
 pub const PAGE_HEIGHT_PX: f32 = 1123.0;
 
+/// Vertical gap between stacked pages in the editor scroll canvas (px).
+pub const PAGE_GAP_PX: f32 = 24.0;
+
 // ── Responsive breakpoints ────────────────────────────────────────────────────
 
 /// Viewport width above which the UI switches to the desktop two-column layout.
