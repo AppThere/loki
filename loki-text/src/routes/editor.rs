@@ -10,7 +10,7 @@
 //! │      Top Toolbar        │  flex-shrink: 0
 //! ├─────────────────────────┤
 //! │                         │
-//! │  ┌───────────────────┐  │  flex: 1, overflow-y: auto (scroll container)
+//! │  ┌───────────────────┐  │  height: calc(100vh - chrome), overflow-y: auto
 //! │  │   Page 1          │  │
 //! │  └───────────────────┘  │
 //! │  ┌───────────────────┐  │
@@ -80,6 +80,45 @@ pub fn Editor(path: String) -> Element {
 
     let navigator = use_navigator();
 
+    // ── Scroll container height ───────────────────────────────────────────────
+    //
+    // Blitz scroll event path (blitz-shell-0.2.3/src/window.rs:388):
+    //   WindowEvent::MouseWheel
+    //     → scroll_node_by_has_changed(hover_node_id)   [document.rs:1258]
+    //     → bubbles DOM tree until a node with can_y_scroll=true is found
+    //     → updates node.scroll_offset when scroll_height() > 0
+    //     → blitz-paint applies offset as a translate    [render.rs:235-245]
+    //
+    // Scrollability (blitz-dom-0.2.4/src/document.rs:1272-1277):
+    //   can_y_scroll = overflow_y ∈ {Scroll, Auto}
+    //   Both values map to taffy::Overflow::Scroll in
+    //   stylo_taffy-0.2.0/src/convert.rs:227-228.
+    //
+    // scroll_height() = max(0, content_size.height − size.height)
+    //   (taffy-0.9.2/src/tree/layout.rs:339-344)
+    //   For scroll to engage, content (pages) must exceed the container's
+    //   computed height.
+    //
+    // ROOT CAUSE of prior non-functional scroll:
+    //   Using `flex: 1` left the scroll container's taffy height indefinite
+    //   when Blitz failed to propagate the `height: 100vh` definite size from
+    //   the root div through the flex chain.  With an indefinite height taffy
+    //   expands the container to fit all children → content_size == size →
+    //   scroll_height() == 0 → scroll_node_by_has_changed returns false.
+    //
+    // FIX: explicit `height: calc(100vh - Npx)` gives taffy a concrete
+    //   Dimension::Length(n), bypassing the flex chain entirely.  The pages
+    //   overflow the finite box → scroll_height > 0 → scrolling works.
+    //
+    // KNOWN LIMITATION: no public API in dioxus-native-0.7.4 exposes
+    //   node.scroll_offset back to Dioxus components, so visible_rect stays
+    //   None.  onwheel handlers never fire; scroll is driven entirely by
+    //   blitz-shell's WindowEvent::MouseWheel handler.
+    //   TODO(partial-render): wire scroll_offset → visible_rect once Blitz
+    //   exposes a scroll-position hook to Dioxus components.
+    let chrome_px =
+        tokens::TOOLBAR_HEIGHT_TOP as u32 + tokens::TOOLBAR_HEIGHT_BOTTOM as u32;
+
     rsx! {
         div {
             style: format!(
@@ -91,16 +130,11 @@ pub fn Editor(path: String) -> Element {
             // ── Top toolbar (flex-shrink: 0) ───────────────────────────────────
             TopToolbar { title }
 
-            // ── Scroll container (flex: 1, overflow-y: auto) ──────────────────
-            // min-height: 0 overrides the flex default (min-height: auto) so
-            // the container can shrink below its content size; without it
-            // overflow-y: auto never engages and scrolling does not work.
-            // Scroll events reach blitz-shell directly (MouseWheel →
-            // scroll_node_by_has_changed); they do not go through the Dioxus
-            // event system, so onwheel handlers would never fire here.
+            // ── Scroll container ──────────────────────────────────────────────
             div {
                 style: format!(
-                    "flex: 1; min-height: 0; overflow-y: auto; background: {bg}; padding: {p}px 0;",
+                    "height: calc(100vh - {chrome_px}px); min-height: 0; \
+                     overflow-y: auto; background: {bg}; padding: {p}px 0;",
                     bg = tokens::COLOR_SURFACE_BASE,
                     p  = tokens::SPACE_6,
                 ),
