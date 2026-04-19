@@ -4,10 +4,14 @@
 //! WGPU document canvas component.
 //!
 //! [`WgpuSurface`] is the integration point between the Dioxus Native UI tree
-//! and the [`loki_vello`] GPU rendering pipeline.  For this session the surface
-//! builds a [`vello::Scene`] containing a blank white A4 page rectangle (white
-//! fill + 1 px border), establishing the Vello render loop.  Scene submission
-//! to a real GPU surface is stubbed pending Dioxus Native canvas API stability.
+//! and the [`loki_vello`] GPU rendering pipeline.  When a
+//! [`loki_doc_model::Document`] is available the surface builds a real Vello
+//! scene via `loki-layout` → `loki-vello`.  While no document is loaded (or
+//! while the document is still loading) a blank white A4 placeholder scene is
+//! produced instead.
+//!
+//! Scene submission to a live GPU surface is blocked pending Dioxus Native
+//! canvas API stability — see the BLOCKED comment in [`WgpuSurface`].
 //!
 //! # Integration seam
 //!
@@ -18,12 +22,18 @@
 //! 2. Create (or reuse across renders) a `vello::Renderer`.
 //! 3. Submit via `renderer.render_to_surface(&device, &queue, &scene, &surface, &params)`.
 //!
-//! `loki_vello::paint_layout` can then populate the scene with real document
-//! content once a [`loki_layout::DocumentLayout`] is available.
+//! `loki_vello::paint_layout` already populates the scene with real document
+//! content when a [`loki_doc_model::Document`] is present.
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use dioxus::prelude::*;
 use kurbo::{Affine, Rect, Stroke};
+use loki_doc_model::document::Document;
+use loki_layout::{layout_document, FontResources, LayoutMode};
 use loki_theme::tokens;
+use loki_vello::{paint_layout, FontDataCache};
 use peniko::{Brush, Color, Fill};
 use vello::Scene;
 
@@ -45,39 +55,19 @@ pub struct ViewportRect {
     pub height: f32,
 }
 
-// ── WgpuSurface ───────────────────────────────────────────────────────────────
+// ── WgpuSurface props ─────────────────────────────────────────────────────────
 
-/// WGPU document canvas component.
+/// Props for [`WgpuSurface`].
 ///
-/// Occupies the `flex: 1` region between the top and bottom toolbars.  Each
-/// render call builds a [`vello::Scene`] containing a blank A4 page (white fill
-/// + 1 px border) via [`kurbo`] geometry primitives.  The scene is not yet
-/// submitted to a GPU surface — see the module-level doc for the pending steps.
-///
-/// # Props
-///
-/// * `document_path` — serialised [`loki_file_access::FileAccessToken`] for the
-///   document to render.  `None` renders a blank white page.
-///
-/// * `visible_rect` — see the **Future work** section below.
-///
-/// # Future work — `visible_rect`
-///
-/// When scroll infrastructure is wired up, `visible_rect` will be populated
-/// with the viewport region in document-space coordinates by the parent
-/// component.  The rendering backend should restrict the Vello scene to items
-/// whose bounding boxes intersect `visible_rect`, avoiding GPU work proportional
-/// to the full document size.  Concrete steps:
-///
-/// 1. Compute `visible_rect` from the scroll offset and canvas viewport size.
-/// 2. Pass it to `loki_vello::paint_layout` as a clipping hint.
-/// 3. Cull [`loki_layout::PositionedItem`]s that fall entirely outside the rect
-///    before appending them to the Vello scene.
-///
-/// Until then, leave `visible_rect` as `None`.
-#[component]
-pub fn WgpuSurface(
-    document_path: Option<String>,
+/// [`Document`] does not implement [`PartialEq`], so the props struct provides
+/// a conservative `PartialEq` (always `false`) ensuring re-renders are never
+/// incorrectly skipped.
+#[derive(Clone, Props)]
+pub struct WgpuSurfaceProps {
+    /// Document to render.  `None` shows a blank A4 placeholder (used during
+    /// loading and when no file is open).
+    pub document: Option<Document>,
+
     /// Currently visible portion of the document canvas.
     ///
     /// # Future work
@@ -86,14 +76,52 @@ pub fn WgpuSurface(
     /// The renderer should cull items outside this rect before building the
     /// Vello scene, reducing GPU work for large multi-page documents.
     /// Leave as `None` until scroll infrastructure is implemented.
-    visible_rect: Option<ViewportRect>,
-) -> Element {
-    // Build the Vello scene for this render cycle.
-    let _scene = build_page_scene(document_path.as_deref(), visible_rect.as_ref());
+    pub visible_rect: Option<ViewportRect>,
+}
 
-    // TODO: When Dioxus Native canvas API is stable, obtain a wgpu::Surface
-    // from the window handle and submit `_scene`:
+// Document does not implement PartialEq; conservatively always re-render.
+impl PartialEq for WgpuSurfaceProps {
+    fn eq(&self, _: &Self) -> bool {
+        false
+    }
+}
+
+// ── WgpuSurface ───────────────────────────────────────────────────────────────
+
+/// WGPU document canvas component.
+///
+/// Occupies the `flex: 1` region between the top and bottom toolbars.
+///
+/// When `document` is `Some`, the component:
+/// 1. Runs `loki-layout` to produce a [`loki_layout::DocumentLayout`].
+/// 2. Calls [`loki_vello::paint_layout`] to translate layout items into a
+///    Vello scene.
+///
+/// When `document` is `None`, a blank white A4 page placeholder scene is used.
+///
+/// In both cases, scene submission to a real GPU surface is **blocked** —
+/// see the BLOCKED comment in the function body.
+#[allow(non_snake_case)]
+pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
+    let WgpuSurfaceProps { document, visible_rect } = props;
+
+    // FontResources is expensive to create (system font discovery via fontique).
+    // Cache it across renders with Rc<RefCell<>> since FontResources: !Clone.
+    let font_resources = use_hook(|| Rc::new(RefCell::new(FontResources::new())));
+
+    // Build the Vello scene for this render cycle.
+    //
+    // BLOCKED(canvas-api): Dioxus Native 0.7 does not yet expose a stable
+    // wgpu::Surface from the window handle. The scene is constructed but not
+    // submitted to the GPU. Replace `_scene` with the submission sequence once
+    // the canvas API stabilises:
     //     renderer.render_to_surface(&device, &queue, &_scene, &surface, &params)?;
+    // Adapted from loki-vello/examples/render_to_png.rs — submission point.
+    let _scene = build_page_scene(
+        document.as_ref(),
+        visible_rect.as_ref(),
+        &mut *font_resources.borrow_mut(),
+    );
 
     rsx! {
         // Canvas scroll container — flex: 1 fills the space between toolbars.
@@ -125,17 +153,37 @@ pub fn WgpuSurface(
 
 // ── Scene construction ────────────────────────────────────────────────────────
 
-/// Build a [`vello::Scene`] containing a blank A4 page.
+/// Build a [`vello::Scene`] for the current document state.
 ///
-/// Draws a white-filled rectangle at A4 dimensions with a 1 px border.
-/// When document content is available, `loki_vello::paint_layout` should be
-/// called after this to layer real content on top.
-fn build_page_scene(_path: Option<&str>, visible_rect: Option<&ViewportRect>) -> Scene {
+/// When `document` is `Some`, runs the full layout + paint pipeline:
+/// [`layout_document`] → [`paint_layout`].
+///
+/// When `document` is `None`, falls back to a blank A4 placeholder (white fill
+/// + 1 px border).
+///
+/// `font_resources` is borrowed mutably so font-discovery state is reused
+/// across calls without re-scanning system fonts each render.
+fn build_page_scene(
+    document: Option<&Document>,
+    visible_rect: Option<&ViewportRect>,
+    font_resources: &mut FontResources,
+) -> Scene {
     let mut scene = Scene::new();
 
     // TODO(partial-render): replace with viewport-clipped scene when visible_rect is Some.
     let _ = visible_rect;
 
+    if let Some(doc) = document {
+        // Full pipeline: Document → DocumentLayout → vello::Scene.
+        // FontDataCache is cheap to create (empty HashMap); a fresh instance
+        // per call is acceptable while GPU submission is blocked.
+        let layout = layout_document(font_resources, doc, LayoutMode::Pageless, 1.0);
+        let mut font_cache = FontDataCache::new();
+        paint_layout(&mut scene, &layout, &mut font_cache, (0.0, 0.0), 1.0);
+        return scene;
+    }
+
+    // Placeholder: blank white A4 page with a 1 px border.
     let page = Rect::new(
         0.0,
         0.0,
@@ -143,7 +191,6 @@ fn build_page_scene(_path: Option<&str>, visible_rect: Option<&ViewportRect>) ->
         tokens::PAGE_HEIGHT_PX as f64,
     );
 
-    // White page fill.
     let white = Brush::Solid(Color::new([1.0_f32, 1.0, 1.0, 1.0]));
     scene.fill(Fill::NonZero, Affine::IDENTITY, &white, None, &page);
 

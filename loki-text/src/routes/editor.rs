@@ -19,16 +19,31 @@
 //! ```
 //!
 //! The `path` route parameter carries a serialised
-//! [`loki_file_access::FileAccessToken`].  Actual document loading is out of
-//! scope for this session — the token is passed through to [`WgpuSurface`] as
-//! a stub.
+//! [`loki_file_access::FileAccessToken`].  Document loading runs in a
+//! [`use_resource`] async task so the shell renders immediately while the
+//! import pipeline runs in the background.
+
+// Pipeline entry points (confirmed from source):
+// loki_file_access: FileAccessToken::deserialize(s: &str) -> Result<FileAccessToken, TokenParseError>
+//                   token.open_read() -> Result<Box<dyn ReadSeek>, AccessError>
+//                   where ReadSeek: std::io::Read + std::io::Seek + Send
+// loki_ooxml:       DocxImport::import(reader: impl Read + Seek, options: DocxImportOptions)
+//                       -> Result<loki_doc_model::Document, OoxmlError>
+//                   (via loki_doc_model::io::DocumentImport trait)
+// loki_vello:       paint_layout(scene: &mut vello::Scene, layout: &DocumentLayout,
+//                       font_cache: &mut FontDataCache, offset: (f32, f32), scale: f32)
+//                   (called inside WgpuSurface — see components/wgpu_surface.rs)
 
 use dioxus::prelude::*;
-
+use loki_doc_model::document::Document;
+use loki_doc_model::io::DocumentImport;
+use loki_file_access::FileAccessToken;
+use loki_ooxml::docx::import::{DocxImport, DocxImportOptions};
 use loki_theme::tokens;
 
 use crate::components::toolbar::{BottomToolbar, TopToolbar};
 use crate::components::wgpu_surface::WgpuSurface;
+use crate::error::LoadError;
 use crate::utils::display_title_from_path;
 
 /// Document editor shell component.
@@ -37,15 +52,27 @@ use crate::utils::display_title_from_path;
 /// [`loki_file_access::FileAccessToken`]) and renders the three-panel editor
 /// layout: top toolbar, WGPU canvas area, and bottom status bar.
 ///
-/// # Out of scope
-///
-/// * Document parsing / loading (deferred to a future session).
-/// * Text editing, selection, or cursor logic.
-/// * Scroll-linked partial rendering (the seam is present in [`WgpuSurface`];
-///   the implementation is not).
+/// Document loading runs asynchronously via [`use_resource`]:
+/// - **Loading** — toolbars are shown immediately; canvas shows "Opening
+///   document\u{2026}".
+/// - **Error** — inline error message with a "Go back" button; no panic.
+/// - **Loaded** — document is passed to [`WgpuSurface`] for scene building.
 #[component]
 pub fn Editor(path: String) -> Element {
     let title = display_title_from_path(&path);
+
+    // Kick off the document-loading pipeline.  The future is async but all
+    // I/O is synchronous under the hood; a spawn_blocking wrapper would be
+    // appropriate for large files once the executor supports it.
+    let document_load: Resource<Result<Document, LoadError>> = {
+        let path = path.clone();
+        use_resource(move || {
+            let path = path.clone();
+            async move { load_document(path) }
+        })
+    };
+
+    let navigator = use_navigator();
 
     rsx! {
         div {
@@ -58,10 +85,72 @@ pub fn Editor(path: String) -> Element {
             // ── Top toolbar (flex-shrink: 0) ───────────────────────────────────
             TopToolbar { title }
 
-            // ── WGPU canvas area (flex: 1) ─────────────────────────────────────
-            WgpuSurface {
-                document_path: Some(path),
-                visible_rect: None,
+            // ── Canvas area (flex: 1) — switches on load state ─────────────────
+            match &*document_load.value().read_unchecked() {
+                // Resource is still running.
+                None => rsx! {
+                    div {
+                        style: format!(
+                            "flex: 1; display: flex; justify-content: center; \
+                             align-items: center; background: {bg};",
+                            bg = tokens::COLOR_SURFACE_BASE,
+                        ),
+                        span {
+                            style: format!(
+                                "font-size: {size}px; color: {fg};",
+                                size = tokens::FONT_SIZE_BODY,
+                                fg   = tokens::COLOR_TEXT_SECONDARY,
+                            ),
+                            "Opening document\u{2026}"
+                        }
+                    }
+                },
+
+                // Import pipeline failed.
+                Some(Err(e)) => {
+                    let msg = e.to_string();
+                    rsx! {
+                        div {
+                            style: format!(
+                                "flex: 1; display: flex; flex-direction: column; \
+                                 justify-content: center; align-items: center; \
+                                 gap: {gap}px; background: {bg};",
+                                gap = tokens::SPACE_4,
+                                bg  = tokens::COLOR_SURFACE_BASE,
+                            ),
+                            span {
+                                style: format!(
+                                    "font-size: {size}px; color: {fg};",
+                                    size = tokens::FONT_SIZE_BODY,
+                                    fg   = tokens::COLOR_TEXT_PRIMARY,
+                                ),
+                                "Could not open document: {msg}"
+                            }
+                            button {
+                                style: format!(
+                                    "padding: {p}px {p2}px; background: {bg}; \
+                                     border: 1px solid {border}; border-radius: 4px; \
+                                     font-size: {size}px; cursor: pointer;",
+                                    p      = tokens::SPACE_2,
+                                    p2     = tokens::SPACE_4,
+                                    bg     = tokens::COLOR_SURFACE_PAGE,
+                                    border = tokens::COLOR_BORDER_DEFAULT,
+                                    size   = tokens::FONT_SIZE_BODY,
+                                ),
+                                onclick: move |_| { navigator.push(crate::routes::Route::Home {}); },
+                                "Go back"
+                            }
+                        }
+                    }
+                },
+
+                // Document loaded — hand to WgpuSurface for scene building.
+                Some(Ok(doc)) => rsx! {
+                    WgpuSurface {
+                        document: Some(doc.clone()),
+                        visible_rect: None,
+                    }
+                },
             }
 
             // ── Bottom status bar (flex-shrink: 0) ────────────────────────────
@@ -73,3 +162,16 @@ pub fn Editor(path: String) -> Element {
     }
 }
 
+// ── Loading pipeline ──────────────────────────────────────────────────────────
+
+/// Deserialise `path` → open file → import DOCX → return [`Document`].
+///
+/// All three steps are synchronous; the function is called inside an
+/// `async move` block in [`use_resource`] so that loading does not block the
+/// initial render of the editor shell.
+fn load_document(path: String) -> Result<Document, LoadError> {
+    let token = FileAccessToken::deserialize(&path)?;
+    let reader = token.open_read()?;
+    let doc = DocxImport::import(reader, DocxImportOptions::default())?;
+    Ok(doc)
+}

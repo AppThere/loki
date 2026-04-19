@@ -13,6 +13,12 @@ path = "src/main.rs"
 [dependencies]
 # Dioxus Native (Blitz renderer) with client-side router.
 dioxus          = { version = "0.7", features = ["native", "router"] }
+# Format-neutral document model — passed to WgpuSurface after import.
+loki-doc-model  = { path = "../loki-doc-model" }
+# DOCX/OOXML import — converts file bytes to loki_doc_model::Document.
+loki-ooxml      = { path = "../loki-ooxml" }
+# Layout engine — converts Document to DocumentLayout for scene painting.
+loki-layout     = { path = "../loki-layout" }
 # In-workspace Vello GPU rendering backend.
 loki-vello      = { path = "../loki-vello" }
 # Shared design tokens and UI primitives.

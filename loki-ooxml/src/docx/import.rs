@@ -124,123 +124,137 @@ impl DocxImporter {
     /// cannot be parsed.
     pub fn run(self, reader: impl Read + Seek) -> OoxmlResult<DocxImportResult> {
         let package = Package::open(reader)?;
+        let (document, warnings) = parse_and_map_package(&package, &self.options)?;
+        Ok(DocxImportResult { document, warnings })
+    }
+}
 
-        // ── Locate the main document part ─────────────────────────────────
-        let doc_rel = package
-            .relationships()
-            .by_type(REL_OFFICE_DOCUMENT)
-            .next()
-            .ok_or_else(|| OoxmlError::MissingPart {
-                relationship_type: REL_OFFICE_DOCUMENT.to_owned(),
-            })?
-            .clone();
+// ── Shared parse-and-map pipeline ─────────────────────────────────────────────
 
-        let doc_part_name = resolve_part_name("/", &doc_rel.target)?;
+/// Parses all DOCX parts from an open OPC [`Package`] and maps them to a
+/// [`loki_doc_model::Document`].
+///
+/// Used by both [`DocxImporter::run`] and the public
+/// [`crate::docx::mapper::map_document`] entry point.
+pub(crate) fn parse_and_map_package(
+    package: &Package,
+    options: &DocxImportOptions,
+) -> OoxmlResult<(loki_doc_model::document::Document, Vec<OoxmlWarning>)> {
+    // ── Locate the main document part ─────────────────────────────────
+    let doc_rel = package
+        .relationships()
+        .by_type(REL_OFFICE_DOCUMENT)
+        .next()
+        .ok_or_else(|| OoxmlError::MissingPart {
+            relationship_type: REL_OFFICE_DOCUMENT.to_owned(),
+        })?
+        .clone();
 
-        let doc_bytes = package
-            .part(&doc_part_name)
-            .ok_or_else(|| OoxmlError::MissingPart {
-                relationship_type: doc_part_name.as_str().to_owned(),
-            })?
-            .bytes
-            .clone();
+    let doc_part_name = resolve_part_name("/", &doc_rel.target)?;
 
-        // ── Parse main document ────────────────────────────────────────────
-        let raw_doc = parse_document(&doc_bytes)
-            .map_err(|e| map_xml_err(e, doc_part_name.as_str()))?;
+    let doc_bytes = package
+        .part(&doc_part_name)
+        .ok_or_else(|| OoxmlError::MissingPart {
+            relationship_type: doc_part_name.as_str().to_owned(),
+        })?
+        .bytes
+        .clone();
 
-        // ── Parse optional related parts ──────────────────────────────────
-        let doc_rels = package.part_relationships(&doc_part_name);
+    // ── Parse main document ────────────────────────────────────────────
+    let raw_doc = parse_document(&doc_bytes)
+        .map_err(|e| map_xml_err(e, doc_part_name.as_str()))?;
 
-        let raw_styles = if let Some(rels) = doc_rels {
-            if let Some(rel) = rels.by_type(REL_STYLES).next() {
-                let name = resolve_part_name(doc_part_name.as_str(), &rel.target)?;
-                if let Some(part) = package.part(&name) {
-                    Some(
-                        parse_styles(&part.bytes)
-                            .map_err(|e| map_xml_err(e, name.as_str()))?,
-                    )
-                } else {
-                    None
-                }
+    // ── Parse optional related parts ──────────────────────────────────
+    let doc_rels = package.part_relationships(&doc_part_name);
+
+    let raw_styles = if let Some(rels) = doc_rels {
+        if let Some(rel) = rels.by_type(REL_STYLES).next() {
+            let name = resolve_part_name(doc_part_name.as_str(), &rel.target)?;
+            if let Some(part) = package.part(&name) {
+                Some(
+                    parse_styles(&part.bytes)
+                        .map_err(|e| map_xml_err(e, name.as_str()))?,
+                )
             } else {
                 None
             }
         } else {
             None
-        };
-        let raw_styles = raw_styles.unwrap_or_default();
+        }
+    } else {
+        None
+    };
+    let raw_styles = raw_styles.unwrap_or_default();
 
-        let raw_numbering = resolve_optional_part(
-            &package,
-            doc_rels,
-            REL_NUMBERING,
-            doc_part_name.as_str(),
-            |bytes, _part| parse_numbering(bytes),
-        )?;
+    let raw_numbering = resolve_optional_part(
+        package,
+        doc_rels,
+        REL_NUMBERING,
+        doc_part_name.as_str(),
+        |bytes, _part| parse_numbering(bytes),
+    )?;
 
-        let raw_footnotes = resolve_optional_part(
-            &package,
-            doc_rels,
-            REL_FOOTNOTES,
-            doc_part_name.as_str(),
-            |bytes, part| parse_notes(bytes, part),
-        )?;
+    let raw_footnotes = resolve_optional_part(
+        package,
+        doc_rels,
+        REL_FOOTNOTES,
+        doc_part_name.as_str(),
+        |bytes, part| parse_notes(bytes, part),
+    )?;
 
-        let raw_endnotes = resolve_optional_part(
-            &package,
-            doc_rels,
-            REL_ENDNOTES,
-            doc_part_name.as_str(),
-            |bytes, part| parse_notes(bytes, part),
-        )?;
+    let raw_endnotes = resolve_optional_part(
+        package,
+        doc_rels,
+        REL_ENDNOTES,
+        doc_part_name.as_str(),
+        |bytes, part| parse_notes(bytes, part),
+    )?;
 
-        // Settings are parsed but not yet used downstream.
-        let _raw_settings = resolve_optional_part(
-            &package,
-            doc_rels,
-            REL_SETTINGS,
-            doc_part_name.as_str(),
-            |bytes, _part| parse_settings(bytes),
-        )?;
+    // Settings are parsed but not yet used downstream.
+    let _raw_settings = resolve_optional_part(
+        package,
+        doc_rels,
+        REL_SETTINGS,
+        doc_part_name.as_str(),
+        |bytes, _part| parse_settings(bytes),
+    )?;
 
-        // ── Build hyperlinks and images maps ──────────────────────────────
-        let mut hyperlinks: HashMap<String, String> = HashMap::new();
-        let mut images: HashMap<String, PartData> = HashMap::new();
+    // ── Build hyperlinks and images maps ──────────────────────────────
+    let mut hyperlinks: HashMap<String, String> = HashMap::new();
+    let mut images: HashMap<String, PartData> = HashMap::new();
 
-        if let Some(rels) = doc_rels {
-            for rel in rels.by_type(REL_HYPERLINK) {
-                hyperlinks.insert(rel.id.clone(), rel.target.clone());
-            }
+    if let Some(rels) = doc_rels {
+        for rel in rels.by_type(REL_HYPERLINK) {
+            hyperlinks.insert(rel.id.clone(), rel.target.clone());
+        }
 
-            if self.options.embed_images {
-                for rel in rels.by_type(REL_IMAGE) {
-                    if let Ok(img_name) =
-                        resolve_part_name(doc_part_name.as_str(), &rel.target)
-                    {
-                        if let Some(part) = package.part(&img_name) {
-                            images.insert(rel.id.clone(), part.clone());
-                        }
+        if options.embed_images {
+            for rel in rels.by_type(REL_IMAGE) {
+                if let Ok(img_name) =
+                    resolve_part_name(doc_part_name.as_str(), &rel.target)
+                {
+                    if let Some(part) = package.part(&img_name) {
+                        images.insert(rel.id.clone(), part.clone());
                     }
                 }
             }
         }
-
-        // ── Map everything to the abstract model ──────────────────────────
-        let (document, warnings) = map_document(
-            &raw_doc,
-            &raw_styles,
-            raw_numbering.as_ref(),
-            raw_footnotes.as_ref(),
-            raw_endnotes.as_ref(),
-            images,
-            hyperlinks,
-            package.core_properties(),
-            &self.options,
-        );
-
-        Ok(DocxImportResult { document, warnings })
     }
+
+    // ── Map everything to the abstract model ──────────────────────────
+    let result = map_document(
+        &raw_doc,
+        &raw_styles,
+        raw_numbering.as_ref(),
+        raw_footnotes.as_ref(),
+        raw_endnotes.as_ref(),
+        images,
+        hyperlinks,
+        package.core_properties(),
+        options,
+    );
+
+    Ok(result)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
