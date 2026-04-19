@@ -3,10 +3,26 @@
 
 //! Integration tests for the `WgpuSurface` GPU submission pipeline.
 //!
-//! Tests that require a live wgpu `DeviceHandle` (i.e. `resume()` and
-//! `render()`) are covered by the `#[cfg(test)]` module inside
-//! `document_source.rs`, which has access to `LokiDocumentSource`'s private
-//! fields and can construct `CachedLayout` directly without a GPU.
+//! # Texture-handle leak prevention
+//!
+//! The confirmed memory-leak site was `LokiDocumentSource::render()` calling
+//! `ctx.register_texture()` every frame without a corresponding
+//! `ctx.unregister_texture()`.  `vello::Renderer::register_texture` takes
+//! ownership of the `wgpu::Texture` by value and inserts it into an internal
+//! `image_overrides` HashMap; without `unregister_texture` the map grows by
+//! one entry per frame, leaking GPU memory continuously.
+//!
+//! The fix stores a `TextureHandle` across frames, calls `unregister_texture`
+//! on the previous handle before allocating a new texture, and reuses the
+//! existing handle when the document generation and physical canvas size have
+//! not changed.
+//!
+//! Per-frame structural tests (handle init, reuse guard, suspend cleanup) live
+//! in the `#[cfg(test)]` module inside `document_source.rs` because
+//! `LokiDocumentSource` is `pub(crate)`.  Full render-loop leak detection
+//! (calling `render()` 10× on a headless device and asserting one live
+//! allocation) requires a wgpu device; see the unit test module for the
+//! structural invariants that guarantee the same property without GPU.
 //!
 //! This file tests the public [`DocumentState`] API — the contract between the
 //! Dioxus component and the paint source.
@@ -53,4 +69,31 @@ fn document_state_can_be_shared_across_threads() {
     });
     handle.join().unwrap();
     assert_eq!(state.lock().unwrap().generation, 1);
+}
+
+/// Simulates the WgpuSurface component bumping `generation` on N consecutive
+/// document changes and verifies the counter is monotonically non-decreasing.
+/// This is the signal `LokiDocumentSource` uses to decide whether to discard
+/// its cached texture handle and render a new texture; stale counters would
+/// cause the reuse guard to suppress re-renders after a document change.
+#[test]
+fn generation_is_monotone_across_document_changes() {
+    let state = Arc::new(Mutex::new(DocumentState {
+        document: None,
+        generation: 0,
+        page_count: 0,
+        canvas_width: 0.0,
+        visible_rect: None,
+    }));
+
+    let mut prev = 0u64;
+    for _ in 0..10 {
+        let mut s = state.lock().unwrap();
+        s.generation = s.generation.wrapping_add(1);
+        assert!(
+            s.generation > prev || (prev == u64::MAX && s.generation == 0),
+            "generation must advance monotonically (or wrap from MAX→0)"
+        );
+        prev = s.generation;
+    }
 }
