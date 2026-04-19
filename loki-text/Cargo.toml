@@ -18,7 +18,7 @@ loki-vello      = { path = "../loki-vello" }
 # Shared design tokens and UI primitives.
 loki-theme      = { path = "../loki-theme" }
 # Cross-platform file picker (crates.io).
-loki-file-access = "0.1.0"
+loki-file-access = "0.1.1"
 # Typed error derivation.
 thiserror       = "2"
 # Vello scene builder — used in WgpuSurface to paint the blank A4 rect.
