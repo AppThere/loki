@@ -52,3 +52,5 @@ pub use error::{NoteKind, OoxmlError, OoxmlResult, OoxmlWarning};
 pub use docx::export::DocxExport;
 #[cfg(feature = "docx")]
 pub use docx::import::{DocxImport, DocxImportOptions, DocxImportResult};
+#[cfg(feature = "docx")]
+pub use docx::mapper::{map_document, MapperError};

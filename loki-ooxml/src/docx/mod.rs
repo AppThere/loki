@@ -19,6 +19,6 @@
 
 pub mod export;
 pub mod import;
-pub(crate) mod mapper;
+pub mod mapper;
 pub(crate) mod model;
 pub(crate) mod reader;
