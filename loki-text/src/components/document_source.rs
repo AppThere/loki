@@ -97,6 +97,14 @@ pub struct DocumentState {
     /// Visible viewport in document-space coordinates — future partial-render
     /// seam.  Set to `None` until scroll infrastructure is implemented.
     pub visible_rect: Option<Rect>,
+    /// Page width in CSS logical pixels derived from the document's `<w:pgSz>`.
+    /// Kept in sync with `WgpuSurface` so the canvas element and the GPU
+    /// texture agree on the page boundary.  Falls back to A4 (794 px) until a
+    /// document is loaded.
+    pub page_width_px: f32,
+    /// Page height in CSS logical pixels derived from the document's `<w:pgSz>`.
+    /// Falls back to A4 (1123 px) until a document is loaded.
+    pub page_height_px: f32,
 }
 
 // ── Cached layout ─────────────────────────────────────────────────────────────
@@ -317,12 +325,17 @@ impl CustomPaintSource for LokiDocumentSource {
         // TODO(partial-render): pass visible_rect as clip region to paint_layout
         // when the partial render pipeline is implemented.
         let cached = self.layout_cache.as_mut()?;
+        // loki-layout coordinates are in points (1 pt = 1/72 inch).
+        // CSS pixels use 96 dpi (1 CSS px = 1/96 inch), so 1 pt = 96/72 CSS px.
+        // Multiplying by (96/72) converts the point coordinate space to CSS
+        // pixels; Blitz's `scale` (DPR) then converts CSS pixels to physical
+        // pixels, filling the physical texture exactly.
         paint_layout(
             &mut scene,
             &cached.layout,
             &mut cached.font_cache,
             (0.0, 0.0),
-            scale as f32,
+            scale as f32 * (96.0 / 72.0),
             Some(self.page_index),
         );
 
@@ -399,6 +412,8 @@ mod tests {
                 page_count: 0,
                 canvas_width: 0.0,
                 visible_rect: None,
+                page_width_px: 0.0,
+                page_height_px: 0.0,
             })),
             0,
         )
@@ -460,6 +475,8 @@ mod tests {
             page_count: 0,
             canvas_width: 0.0,
             visible_rect: None,
+            page_width_px: 0.0,
+            page_height_px: 0.0,
         }));
         // Simulate the component bumping the generation counter.
         {
