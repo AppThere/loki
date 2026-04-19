@@ -1,0 +1,11 @@
+[package]
+name = "loki-theme"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Shared design tokens and Dioxus UI primitives for the Loki document suite"
+repository = "https://github.com/appthere/loki"
+
+[dependencies]
+# Dioxus Native — required for shared component primitives.
+dioxus = { version = "0.7", features = ["native", "router"] }

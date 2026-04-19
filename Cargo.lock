@@ -3576,9 +3576,20 @@ version = "0.1.0"
 dependencies = [
  "dioxus",
  "fontique 0.8.0",
+ "kurbo 0.12.0",
  "loki-file-access",
+ "loki-theme",
  "loki-vello",
+ "peniko",
  "thiserror 2.0.18",
+ "vello",
+]
+
+[[package]]
+name = "loki-theme"
+version = "0.1.0"
+dependencies = [
+ "dioxus",
 ]
 
 [[package]]

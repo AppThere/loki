@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["loki-doc-model","loki-opc","loki-primitives","loki-ooxml","loki-odf","loki-layout","loki-vello","loki-text"]
+members = ["loki-doc-model","loki-opc","loki-primitives","loki-ooxml","loki-odf","loki-layout","loki-vello","loki-theme","loki-text"]
 
 # Patch fontique 0.8.0 to restore the missing `fontconfig_sys` package alias
 # that was lost during crate publication.  The patched Cargo.toml declares

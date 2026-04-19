@@ -10,14 +10,14 @@
 //! 4. Open File button — invokes the platform file picker and navigates to the
 //!    editor on selection.
 //!
-//! On viewports wider than [`crate::theme::DESKTOP_BREAKPOINT`], sections 2
-//! and 3 are displayed side-by-side in a two-column layout.
+//! On viewports wider than [`loki_theme::tokens::BREAKPOINT_DESKTOP_PX`],
+//! sections 2 and 3 are displayed side-by-side in a two-column layout.
 
 use dioxus::prelude::*;
 use loki_file_access::{FilePicker, PickOptions};
+use loki_theme::tokens;
 
 use crate::routes::Route;
-use crate::theme;
 
 // ── Placeholder data ──────────────────────────────────────────────────────────
 
@@ -73,10 +73,10 @@ const RECENT_FILES: &[RecentFile] = &[
 ///
 /// # Responsive layout
 ///
-/// * **Mobile (< [`theme::DESKTOP_BREAKPOINT`] px):** single-column; template
-///   gallery scrolls horizontally above the recent-files list.
-/// * **Desktop (≥ [`theme::DESKTOP_BREAKPOINT`] px):** template gallery and
-///   recent-files list are displayed side-by-side.
+/// * **Mobile (< [`tokens::BREAKPOINT_DESKTOP_PX`] px):** single-column;
+///   template gallery scrolls horizontally above the recent-files list.
+/// * **Desktop (≥ [`tokens::BREAKPOINT_DESKTOP_PX`] px):** template gallery
+///   and recent-files list are displayed side-by-side.
 ///
 /// # Viewport width signal
 ///
@@ -97,7 +97,7 @@ pub fn Home() -> Element {
     // Defaults to a mobile width; update via a window-resize event when the
     // Dioxus Native resize hook is available.
     let viewport_width = use_signal(|| 375.0_f32);
-    let is_desktop = viewport_width() >= theme::DESKTOP_BREAKPOINT;
+    let is_desktop = viewport_width() >= tokens::BREAKPOINT_DESKTOP_PX;
 
     // ── Navigation ───────────────────────────────────────────────────────────
     let navigator = use_navigator();
@@ -140,25 +140,25 @@ pub fn Home() -> Element {
         format!(
             "display: flex; flex-direction: row; gap: {gap}px; \
              padding: {pad}px; flex: 1; overflow: hidden; min-height: 0;",
-            gap = theme::SPACING_16,
-            pad = theme::SPACING_16,
+            gap = tokens::SPACE_4,
+            pad = tokens::SPACE_4,
         )
     } else {
         format!(
             "display: flex; flex-direction: column; \
              padding: {pad}px; flex: 1; overflow-y: auto;",
-            pad = theme::SPACING_16,
+            pad = tokens::SPACE_4,
         )
     };
 
     let open_btn_bg = if open_btn_hovered() {
-        theme::COLOR_ACCENT_HOVER
+        tokens::COLOR_ACCENT_PRIMARY_HOVER
     } else {
-        theme::COLOR_ACCENT
+        tokens::COLOR_ACCENT_PRIMARY
     };
 
     let open_btn_width = if is_desktop {
-        format!("{}px", theme::DESKTOP_BUTTON_MAX_WIDTH)
+        format!("{}px", tokens::BUTTON_WIDTH_DESKTOP_MAX)
     } else {
         "100%".to_string()
     };
@@ -166,11 +166,11 @@ pub fn Home() -> Element {
     rsx! {
         div {
             style: format!(
-                "display: flex; flex-direction: column; height: 100vh; \
+                "display: flex; flex-direction: column; flex: 1; \
                  background: {bg}; font-family: system-ui, sans-serif; \
                  color: {fg};",
-                bg = theme::COLOR_SURFACE,
-                fg = theme::COLOR_TEXT_PRIMARY,
+                bg = tokens::COLOR_SURFACE_BASE,
+                fg = tokens::COLOR_TEXT_PRIMARY,
             ),
 
             // ── Header bar ────────────────────────────────────────────────────
@@ -180,17 +180,17 @@ pub fn Home() -> Element {
                      border-bottom: 1px solid {border}; \
                      display: flex; align-items: center; \
                      padding: 0 {pad}px; flex-shrink: 0;",
-                    h      = theme::TOOLBAR_HEIGHT_TOP,
-                    bg     = theme::COLOR_PAGE_WHITE,
-                    border = theme::COLOR_BORDER,
-                    pad    = theme::SPACING_16,
+                    h      = tokens::TOOLBAR_HEIGHT_TOP,
+                    bg     = tokens::COLOR_SURFACE_PAGE,
+                    border = tokens::COLOR_BORDER_DEFAULT,
+                    pad    = tokens::SPACE_4,
                 ),
                 span {
                     style: format!(
                         "font-size: {size}px; font-weight: 700; \
                          color: {fg}; flex: 1;",
-                        size = theme::FONT_SIZE_HEADING,
-                        fg   = theme::COLOR_TEXT_PRIMARY,
+                        size = tokens::FONT_SIZE_HEADING,
+                        fg   = tokens::COLOR_TEXT_PRIMARY,
                     ),
                     "Loki"
                 }
@@ -200,9 +200,9 @@ pub fn Home() -> Element {
                         "background: transparent; border: none; \
                          color: {fg}; font-size: {size}px; \
                          cursor: pointer; padding: {pad}px;",
-                        fg   = theme::COLOR_TEXT_SECONDARY,
-                        size = theme::FONT_SIZE_HEADING,
-                        pad  = theme::SPACING_8,
+                        fg   = tokens::COLOR_TEXT_SECONDARY,
+                        size = tokens::FONT_SIZE_HEADING,
+                        pad  = tokens::SPACE_2,
                     ),
                     "⚙"
                 }
@@ -217,15 +217,15 @@ pub fn Home() -> Element {
                     style: if is_desktop {
                         "flex: 1; min-width: 0;".to_string()
                     } else {
-                        format!("margin-bottom: {mb}px;", mb = theme::SPACING_24)
+                        format!("margin-bottom: {mb}px;", mb = tokens::SPACE_6)
                     },
                     h2 {
                         style: format!(
                             "font-size: {size}px; color: {fg}; \
                              margin: 0 0 {mb}px 0; font-weight: 600;",
-                            size = theme::FONT_SIZE_BODY,
-                            fg   = theme::COLOR_TEXT_SECONDARY,
-                            mb   = theme::SPACING_8,
+                            size = tokens::FONT_SIZE_BODY,
+                            fg   = tokens::COLOR_TEXT_SECONDARY,
+                            mb   = tokens::SPACE_2,
                         ),
                         "Templates"
                     }
@@ -234,8 +234,8 @@ pub fn Home() -> Element {
                             "display: flex; flex-direction: row; \
                              gap: {gap}px; overflow-x: auto; \
                              padding-bottom: {pb}px;",
-                            gap = theme::SPACING_12,
-                            pb  = theme::SPACING_8,
+                            gap = tokens::SPACE_3,
+                            pb  = tokens::SPACE_2,
                         ),
                         for entry in TEMPLATES {
                             div {
@@ -246,9 +246,9 @@ pub fn Home() -> Element {
                                      padding: {pad}px; \
                                      display: flex; flex-direction: column; \
                                      align-items: center; gap: {gap}px;",
-                                    bg  = theme::COLOR_PAGE_WHITE,
-                                    pad = theme::SPACING_12,
-                                    gap = theme::SPACING_8,
+                                    bg  = tokens::COLOR_SURFACE_PAGE,
+                                    pad = tokens::SPACE_3,
+                                    gap = tokens::SPACE_2,
                                 ),
                                 // Coloured swatch representing the template type
                                 div {
@@ -262,8 +262,8 @@ pub fn Home() -> Element {
                                     style: format!(
                                         "font-size: {size}px; \
                                          color: {fg}; text-align: center;",
-                                        size = theme::FONT_SIZE_LABEL,
-                                        fg   = theme::COLOR_TEXT_PRIMARY,
+                                        size = tokens::FONT_SIZE_LABEL,
+                                        fg   = tokens::COLOR_TEXT_PRIMARY,
                                     ),
                                     "{entry.title}"
                                 }
@@ -283,9 +283,9 @@ pub fn Home() -> Element {
                         style: format!(
                             "font-size: {size}px; color: {fg}; \
                              margin: 0 0 {mb}px 0; font-weight: 600;",
-                            size = theme::FONT_SIZE_BODY,
-                            fg   = theme::COLOR_TEXT_SECONDARY,
-                            mb   = theme::SPACING_8,
+                            size = tokens::FONT_SIZE_BODY,
+                            fg   = tokens::COLOR_TEXT_SECONDARY,
+                            mb   = tokens::SPACE_2,
                         ),
                         "Recent"
                     }
@@ -293,7 +293,7 @@ pub fn Home() -> Element {
                         style: format!(
                             "display: flex; flex-direction: column; \
                              gap: {gap}px;",
-                            gap = theme::SPACING_8,
+                            gap = tokens::SPACE_2,
                         ),
                         for file in RECENT_FILES {
                             div {
@@ -303,33 +303,33 @@ pub fn Home() -> Element {
                                      padding: {pv}px {ph}px; \
                                      display: flex; flex-direction: column; \
                                      gap: {gap}px;",
-                                    bg  = theme::COLOR_PAGE_WHITE,
-                                    pv  = theme::SPACING_12,
-                                    ph  = theme::SPACING_16,
-                                    gap = theme::SPACING_4,
+                                    bg  = tokens::COLOR_SURFACE_PAGE,
+                                    pv  = tokens::SPACE_3,
+                                    ph  = tokens::SPACE_4,
+                                    gap = tokens::SPACE_1,
                                 ),
                                 span {
                                     style: format!(
                                         "font-size: {size}px; font-weight: 600; \
                                          color: {fg};",
-                                        size = theme::FONT_SIZE_BODY,
-                                        fg   = theme::COLOR_TEXT_PRIMARY,
+                                        size = tokens::FONT_SIZE_BODY,
+                                        fg   = tokens::COLOR_TEXT_PRIMARY,
                                     ),
                                     "{file.name}"
                                 }
                                 span {
                                     style: format!(
                                         "font-size: {size}px; color: {fg};",
-                                        size = theme::FONT_SIZE_LABEL,
-                                        fg   = theme::COLOR_TEXT_SECONDARY,
+                                        size = tokens::FONT_SIZE_LABEL,
+                                        fg   = tokens::COLOR_TEXT_SECONDARY,
                                     ),
                                     "{file.path}"
                                 }
                                 span {
                                     style: format!(
                                         "font-size: {size}px; color: {fg};",
-                                        size = theme::FONT_SIZE_LABEL,
-                                        fg   = theme::COLOR_TEXT_SECONDARY,
+                                        size = tokens::FONT_SIZE_LABEL,
+                                        fg   = tokens::COLOR_TEXT_SECONDARY,
                                     ),
                                     "{file.modified}"
                                 }
@@ -346,12 +346,12 @@ pub fn Home() -> Element {
                         "background: {bg}; border: 1px solid {border}; \
                          margin: {m}px; padding: {p}px; border-radius: 4px; \
                          color: {fg}; font-size: {size}px;",
-                        bg     = theme::COLOR_ERROR_BG,
-                        border = theme::COLOR_ERROR_BORDER,
-                        m      = theme::SPACING_16,
-                        p      = theme::SPACING_12,
-                        fg     = theme::COLOR_ERROR_TEXT,
-                        size   = theme::FONT_SIZE_LABEL,
+                        bg     = tokens::COLOR_STATUS_ERROR_BG,
+                        border = tokens::COLOR_STATUS_ERROR_BORDER,
+                        m      = tokens::SPACE_4,
+                        p      = tokens::SPACE_3,
+                        fg     = tokens::COLOR_STATUS_ERROR_TEXT,
+                        size   = tokens::FONT_SIZE_LABEL,
                     ),
                     "Could not open file picker: {err}"
                 }
@@ -361,7 +361,7 @@ pub fn Home() -> Element {
             div {
                 style: format!(
                     "padding: {p}px; flex-shrink: 0;",
-                    p = theme::SPACING_16,
+                    p = tokens::SPACE_4,
                 ),
                 button {
                     style: format!(
@@ -372,8 +372,8 @@ pub fn Home() -> Element {
                          font-weight: 600; cursor: pointer;",
                         w    = open_btn_width,
                         bg   = open_btn_bg,
-                        fg   = theme::COLOR_PAGE_WHITE,
-                        size = theme::FONT_SIZE_BODY,
+                        fg   = tokens::COLOR_SURFACE_PAGE,
+                        size = tokens::FONT_SIZE_BODY,
                     ),
                     onmouseenter: move |_| { open_btn_hovered.set(true); },
                     onmouseleave: move |_| { open_btn_hovered.set(false); },

@@ -25,9 +25,11 @@
 
 use dioxus::prelude::*;
 
+use loki_theme::tokens;
+
 use crate::components::toolbar::{BottomToolbar, TopToolbar};
 use crate::components::wgpu_surface::WgpuSurface;
-use crate::theme;
+use crate::utils::display_title_from_path;
 
 /// Document editor shell component.
 ///
@@ -43,17 +45,14 @@ use crate::theme;
 ///   the implementation is not).
 #[component]
 pub fn Editor(path: String) -> Element {
-    // Derive a human-readable title from the path segment.
-    // When real token parsing is implemented this should call
-    // `FileAccessToken::deserialize(&path).map(|t| t.display_name())`.
-    let title = derive_title(&path);
+    let title = display_title_from_path(&path);
 
     rsx! {
         div {
             style: format!(
-                "display: flex; flex-direction: column; height: 100vh; \
+                "display: flex; flex-direction: column; flex: 1; \
                  background: {bg}; font-family: system-ui, sans-serif;",
-                bg = theme::COLOR_SURFACE,
+                bg = tokens::COLOR_SURFACE_BASE,
             ),
 
             // ── Top toolbar (flex-shrink: 0) ───────────────────────────────────
@@ -74,20 +73,3 @@ pub fn Editor(path: String) -> Element {
     }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/// Derive a display title from the raw `path` route segment.
-///
-/// The `path` segment is a URL-safe base64 token, not a human-readable string.
-/// This function returns a placeholder label until real token parsing is wired
-/// in.
-fn derive_title(path: &str) -> String {
-    // Keep the last ≤ 20 characters of the token as a short identifier for now.
-    // Replace with `FileAccessToken::deserialize(path)?.display_name()` once
-    // the document-loading pipeline is implemented.
-    if path.len() > 20 {
-        format!("…{}", &path[path.len() - 20..])
-    } else {
-        path.to_string()
-    }
-}
