@@ -21,6 +21,8 @@ dioxus          = { version = "0.7", features = ["native", "router"] }
 loki-doc-model  = { path = "../loki-doc-model" }
 # DOCX/OOXML import — converts file bytes to loki_doc_model::Document.
 loki-ooxml      = { path = "../loki-ooxml" }
+# ODT/ODF import — converts OpenDocument Text files to loki_doc_model::Document.
+loki-odf        = { path = "../loki-odf" }
 # Layout engine — converts Document to DocumentLayout for scene painting.
 loki-layout     = { path = "../loki-layout" }
 # In-workspace Vello GPU rendering backend.

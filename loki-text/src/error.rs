@@ -5,7 +5,7 @@
 //!
 //! [`AppError`] is the top-level error enum for UI-level failures (e.g. the
 //! file picker).  [`LoadError`] covers the document-loading pipeline:
-//! token parse → file open → OOXML import.
+//! token parse → file open → format detection → OOXML or ODF import.
 
 use thiserror::Error;
 
@@ -51,8 +51,19 @@ pub enum LoadError {
     FileAccess(#[from] loki_file_access::AccessError),
 
     /// The DOCX import pipeline failed (malformed ZIP, missing parts, etc.).
-    #[error("document import failed: {0}")]
-    Import(#[from] loki_ooxml::OoxmlError),
+    #[error("DOCX import failed: {0}")]
+    Ooxml(loki_ooxml::OoxmlError),
+
+    /// The ODT import pipeline failed (malformed ZIP, missing XML parts, etc.).
+    #[error("ODT import failed: {0}")]
+    Odt(loki_odf::OdfError),
+
+    /// The file extension is not a supported document format.
+    ///
+    /// The inner string is the raw extension (without the leading dot) so that
+    /// the UI can display "'.<ext>' files are not yet supported".
+    #[error("'.{0}' files are not yet supported")]
+    UnsupportedFormat(String),
 }
 
 /// Convenience `Result` alias using [`LoadError`].

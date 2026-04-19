@@ -44,6 +44,7 @@ use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 use loki_doc_model::io::DocumentImport;
 use loki_file_access::FileAccessToken;
+use loki_odf::odt::import::{OdtImport, OdtImportOptions};
 use loki_ooxml::docx::import::{DocxImport, DocxImportOptions};
 use loki_theme::tokens;
 
@@ -203,14 +204,58 @@ pub fn Editor(path: String) -> Element {
 
 // ── Loading pipeline ──────────────────────────────────────────────────────────
 
-/// Deserialise `path` → open file → import DOCX → return [`Document`].
+/// Detected document format, derived from the file extension in the token's
+/// display name.
+enum DocumentFormat {
+    Docx,
+    Odt,
+    Unsupported(String),
+}
+
+/// Inspect the display name on `token` and return the [`DocumentFormat`] for
+/// this file.  The extension comparison is case-insensitive.
+fn detect_format(token: &FileAccessToken) -> DocumentFormat {
+    match token
+        .display_name()
+        .rsplit('.')
+        .next()
+        .map(|e| e.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("docx") => DocumentFormat::Docx,
+        Some("odt") => DocumentFormat::Odt,
+        Some(ext) => DocumentFormat::Unsupported(ext.to_string()),
+        None => DocumentFormat::Unsupported(String::new()),
+    }
+}
+
+/// Deserialise `path` → detect format → open file → import → return
+/// [`Document`].
 ///
-/// All three steps are synchronous; the function is called inside an
-/// `async move` block in [`use_resource`] so that loading does not block the
-/// initial render of the editor shell.
+/// Format is determined from the file extension in the
+/// [`FileAccessToken`] display name before the file is opened, so the
+/// reader is only consumed once.  All I/O is synchronous; this function is
+/// called inside an `async move` block in [`use_resource`] so that loading
+/// does not block the initial render of the editor shell.
 fn load_document(path: String) -> Result<Document, LoadError> {
     let token = FileAccessToken::deserialize(&path)?;
+    let format = detect_format(&token);
     let reader = token.open_read()?;
-    let doc = DocxImport::import(reader, DocxImportOptions::default())?;
+    let doc = match format {
+        DocumentFormat::Docx => {
+            DocxImport::import(reader, DocxImportOptions::default())
+                .map_err(LoadError::Ooxml)?
+            // TODO(odt-fidelity): DOCX rendering gaps (styles, page size) tracked separately.
+        }
+        DocumentFormat::Odt => {
+            OdtImport::import(reader, OdtImportOptions::default())
+                .map_err(LoadError::Odt)?
+            // TODO(odt-fidelity): ODT rendering gaps — some paragraph styles, list
+            // indents, and image placement may not render correctly yet.
+        }
+        DocumentFormat::Unsupported(ext) => {
+            return Err(LoadError::UnsupportedFormat(ext));
+        }
+    };
     Ok(doc)
 }

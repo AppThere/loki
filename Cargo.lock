@@ -3580,6 +3580,7 @@ dependencies = [
  "loki-doc-model",
  "loki-file-access",
  "loki-layout",
+ "loki-odf",
  "loki-ooxml",
  "loki-theme",
  "loki-vello",
