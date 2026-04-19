@@ -3483,9 +3483,9 @@ dependencies = [
 
 [[package]]
 name = "loki-file-access"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dac12f938b8a3b58bba1992649c792f8b249fd875ed128f3512a2356b6cf8323"
+checksum = "a0a1426a98ce242115b9edb8880b47bec44a5f2f14ca951c227c6687a8ca2286"
 dependencies = [
  "base64",
  "jni 0.21.1",
@@ -3494,7 +3494,6 @@ dependencies = [
  "objc2 0.6.4",
  "objc2-foundation 0.3.2",
  "objc2-ui-kit 0.3.2",
- "pollster 0.4.0",
  "rfd 0.15.4",
  "serde",
  "serde_json",
