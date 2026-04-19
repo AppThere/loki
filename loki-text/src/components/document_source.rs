@@ -40,6 +40,9 @@ pub struct DocumentState {
     pub generation: u64,
     /// Number of pages in the current paginated layout; 0 when no document is loaded.
     pub page_count: usize,
+    /// Canvas width in CSS pixels from the last `render()` call.  Used to
+    /// detect when the container resizes so the layout cache is invalidated.
+    pub canvas_width: f32,
     /// Visible viewport in document-space coordinates — future partial-render
     /// seam.  Set to `None` until scroll infrastructure is implemented.
     pub visible_rect: Option<Rect>,
@@ -49,6 +52,7 @@ pub struct DocumentState {
 
 struct CachedLayout {
     generation: u64,
+    canvas_width: f32,
     layout: DocumentLayout,
     font_cache: FontDataCache,
 }
@@ -96,11 +100,11 @@ impl LokiDocumentSource {
         }
     }
 
-    /// Returns `true` if `layout_cache` must be rebuilt for `generation`.
-    fn needs_relayout(&self, generation: u64) -> bool {
-        self.layout_cache
-            .as_ref()
-            .map_or(true, |c| c.generation != generation)
+    /// Returns `true` if `layout_cache` must be rebuilt.
+    fn needs_relayout(&self, generation: u64, canvas_width: f32) -> bool {
+        self.layout_cache.as_ref().map_or(true, |c| {
+            c.generation != generation || (c.canvas_width - canvas_width).abs() > 0.5
+        })
     }
 }
 
@@ -150,6 +154,14 @@ impl CustomPaintSource for LokiDocumentSource {
             return None;
         }
 
+        // Canvas width in CSS pixels — used for layout invalidation on resize.
+        let canvas_width = width as f32;
+
+        // Physical (HiDPI) texture dimensions: CSS pixels × DPI scale factor.
+        // Layout font metrics are computed at `scale` so textures must match.
+        let w_phys = ((width as f64 * scale).round() as u32).max(1);
+        let h_phys = ((height as f64 * scale).round() as u32).max(1);
+
         // Phase 1: Read document state under lock, then release before layout work.
         // Cloning the document avoids a borrow conflict when we later write
         // page_count back to state (can't hold an immutable borrow of
@@ -169,8 +181,8 @@ impl CustomPaintSource for LokiDocumentSource {
         // No document loaded — WgpuSurface shows a placeholder div instead.
         let doc = doc_opt?;
 
-        // Phase 2: Rebuild paginated layout when generation advances.
-        if self.needs_relayout(current_gen) {
+        // Phase 2: Rebuild paginated layout when generation or canvas width changes.
+        if self.needs_relayout(current_gen, canvas_width) {
             let font_resources = self.font_resources.get_or_insert_with(FontResources::new);
             let layout =
                 layout_document(font_resources, &doc, LayoutMode::Paginated, scale as f32);
@@ -180,14 +192,15 @@ impl CustomPaintSource for LokiDocumentSource {
             };
             self.layout_cache = Some(CachedLayout {
                 generation: current_gen,
+                canvas_width,
                 layout,
                 font_cache: FontDataCache::new(),
             });
 
-            // Phase 3: Publish page_count to shared state (used by toolbar and
-            // WgpuSurface for display purposes).
+            // Phase 3: Publish page_count and canvas_width to shared state.
             if let Ok(mut state) = self.document.lock() {
                 state.page_count = page_count;
+                state.canvas_width = canvas_width;
             }
         }
 
@@ -219,8 +232,8 @@ impl CustomPaintSource for LokiDocumentSource {
         let texture = device.create_texture(&anyrender_vello::wgpu::TextureDescriptor {
             label: Some("loki_document_source"),
             size: Extent3d {
-                width,
-                height,
+                width: w_phys,
+                height: h_phys,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -236,8 +249,8 @@ impl CustomPaintSource for LokiDocumentSource {
         let view = texture.create_view(&TextureViewDescriptor::default());
         let params = RenderParams {
             base_color: Color::WHITE,
-            width,
-            height,
+            width: w_phys,
+            height: h_phys,
             antialiasing_method: AaConfig::Msaa16,
         };
 
@@ -264,6 +277,7 @@ mod tests {
                 document: None,
                 generation: 0,
                 page_count: 0,
+                canvas_width: 0.0,
                 visible_rect: None,
             })),
             0,
@@ -278,6 +292,7 @@ mod tests {
         let layout = layout_document(&mut resources, &doc, LayoutMode::Paginated, 1.0);
         CachedLayout {
             generation,
+            canvas_width: 0.0,
             layout,
             font_cache: FontDataCache::new(),
         }
@@ -291,22 +306,30 @@ mod tests {
     #[test]
     fn needs_relayout_when_cache_empty() {
         let source = make_source();
-        assert!(source.needs_relayout(0));
-        assert!(source.needs_relayout(42));
+        assert!(source.needs_relayout(0, 0.0));
+        assert!(source.needs_relayout(42, 0.0));
     }
 
     #[test]
     fn no_relayout_when_generation_matches() {
         let mut source = make_source();
         source.layout_cache = Some(make_cached_layout(7));
-        assert!(!source.needs_relayout(7), "same generation → no relayout");
+        assert!(!source.needs_relayout(7, 0.0), "same generation → no relayout");
     }
 
     #[test]
     fn relayout_when_generation_advances() {
         let mut source = make_source();
         source.layout_cache = Some(make_cached_layout(7));
-        assert!(source.needs_relayout(8), "advanced generation → relayout");
+        assert!(source.needs_relayout(8, 0.0), "advanced generation → relayout");
+    }
+
+    #[test]
+    fn relayout_when_canvas_width_changes() {
+        let mut source = make_source();
+        source.layout_cache = Some(make_cached_layout(7));
+        assert!(source.needs_relayout(7, 800.0), "width change → relayout");
+        assert!(!source.needs_relayout(7, 0.4), "sub-pixel diff → no relayout");
     }
 
     #[test]
@@ -315,6 +338,7 @@ mod tests {
             document: None,
             generation: 0,
             page_count: 0,
+            canvas_width: 0.0,
             visible_rect: None,
         }));
         // Simulate the component bumping the generation counter.

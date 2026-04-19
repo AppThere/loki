@@ -22,14 +22,16 @@
 //!
 //! # Integration seam
 //!
-//! `visible_rect` is preserved as a `None` placeholder until scroll
-//! infrastructure is implemented.  When available, pass the current scroll
-//! viewport into [`DocumentState::visible_rect`] so that
-//! [`LokiDocumentSource::render`] can cull items outside the viewport before
-//! building the Vello scene.
+//! `visible_rect` is preserved as a `None` placeholder.  Blitz's scroll events
+//! are handled directly in blitz-shell (`MouseWheel` → `scroll_node_by_has_changed`)
+//! without going through the Dioxus event system, so `onwheel` handlers never
+//! fire and the scroll offset is not observable from a Dioxus component.
+//! Native `overflow-y: auto` on the scroll container does work (blitz-paint
+//! applies `node.scroll_offset` as a translation), but the offset cannot be
+//! read back to populate `visible_rect`.
 //!
 //! TODO(partial-render): wire scroll-position → visible_rect → LokiDocumentSource
-//! clip region.
+//! clip region once blitz exposes scroll offset to Dioxus components.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -104,12 +106,9 @@ fn PageCanvas(props: PageCanvasProps) -> Element {
         canvas {
             "src": "{canvas_id}",
             style: format!(
-                "width: min({page_w}px, calc(100vw - {margin}px)); \
-                 aspect-ratio: {pw} / {ph}; display: block;",
-                page_w = tokens::PAGE_WIDTH_PX,
-                margin = tokens::SPACE_4 * 2.0,
-                pw     = tokens::PAGE_WIDTH_PX,
-                ph     = tokens::PAGE_HEIGHT_PX,
+                "width: {w}px; height: {h}px; display: block;",
+                w = tokens::PAGE_WIDTH_PX,
+                h = tokens::PAGE_HEIGHT_PX,
             ),
         }
     }
@@ -133,6 +132,7 @@ pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
             document: None,
             generation: 0,
             page_count: 0,
+            canvas_width: 0.0,
             visible_rect: None,
         }))
     });
