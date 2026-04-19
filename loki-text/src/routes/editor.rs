@@ -92,9 +92,15 @@ pub fn Editor(path: String) -> Element {
             TopToolbar { title }
 
             // ── Scroll container (flex: 1, overflow-y: auto) ──────────────────
+            // min-height: 0 overrides the flex default (min-height: auto) so
+            // the container can shrink below its content size; without it
+            // overflow-y: auto never engages and scrolling does not work.
+            // Scroll events reach blitz-shell directly (MouseWheel →
+            // scroll_node_by_has_changed); they do not go through the Dioxus
+            // event system, so onwheel handlers would never fire here.
             div {
                 style: format!(
-                    "flex: 1; overflow-y: auto; background: {bg}; padding: {p}px 0;",
+                    "flex: 1; min-height: 0; overflow-y: auto; background: {bg}; padding: {p}px 0;",
                     bg = tokens::COLOR_SURFACE_BASE,
                     p  = tokens::SPACE_6,
                 ),

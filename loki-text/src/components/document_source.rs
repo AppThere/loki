@@ -286,8 +286,12 @@ impl CustomPaintSource for LokiDocumentSource {
         // Phase 2: Rebuild paginated layout when generation or canvas width changes.
         if needs_relayout {
             let font_resources = self.font_resources.get_or_insert_with(FontResources::new);
+            // Layout at scale=1.0 keeps all coordinates in CSS pixels.
+            // paint_layout multiplies by `scale` to convert to physical pixels;
+            // passing the device scale here would apply it twice (Parley 0.6.0
+            // already multiplies font sizes by display_scale internally).
             let layout =
-                layout_document(font_resources, &doc, LayoutMode::Paginated, scale as f32);
+                layout_document(font_resources, &doc, LayoutMode::Paginated, 1.0);
             let page_count = match &layout {
                 DocumentLayout::Paginated(pl) => pl.pages.len(),
                 _ => 0,
