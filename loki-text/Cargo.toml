@@ -15,10 +15,18 @@ path = "src/main.rs"
 dioxus          = { version = "0.7", features = ["native", "router"] }
 # In-workspace Vello GPU rendering backend.
 loki-vello      = { path = "../loki-vello" }
+# Shared design tokens and UI primitives.
+loki-theme      = { path = "../loki-theme" }
 # Cross-platform file picker (crates.io).
 loki-file-access = "0.1.0"
 # Typed error derivation.
 thiserror       = "2"
+# Vello scene builder — used in WgpuSurface to paint the blank A4 rect.
+vello           = "0.6"
+# Peniko brush / fill types (re-used directly so the API surface is explicit).
+peniko          = "0.5"
+# Kurbo geometry primitives (Rect, Stroke, Affine) for scene construction.
+kurbo           = "0.12"
 # Force fontconfig-dlopen on fontique v0.8 so it uses the same dlopen path as
 # fontique v0.6 (pulled in by blitz-dom), which activates
 # yeslogic-fontconfig-sys/dlopen for the whole workspace.  Without this,

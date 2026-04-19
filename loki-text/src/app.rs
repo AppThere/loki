@@ -19,9 +19,17 @@ use crate::routes::Route;
 /// Mounts the [`Router`] with the [`Route`] enum as its type parameter.
 /// All navigation state lives inside the router; components call
 /// [`use_navigator`] to push or replace routes programmatically.
+///
+/// The outermost `div` applies a CSS reset so Blitz's browser-like defaults
+/// (implicit body margin, scrollable root) do not leak into the UI.
 #[component]
 pub fn App() -> Element {
     rsx! {
-        Router::<Route> {}
+        div {
+            style: "margin: 0; padding: 0; width: 100vw; height: 100vh; \
+                    overflow: hidden; display: flex; flex-direction: column; \
+                    box-sizing: border-box;",
+            Router::<Route> {}
+        }
     }
 }

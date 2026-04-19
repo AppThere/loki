@@ -4,24 +4,28 @@
 //! WGPU document canvas component.
 //!
 //! [`WgpuSurface`] is the integration point between the Dioxus Native UI tree
-//! and the [`loki_vello`] GPU rendering pipeline.  For this scaffold session
-//! the surface renders a blank white A4 page at fixed dimensions.  The WGPU
-//! context acquisition and Vello scene submission are stubbed with clearly
-//! marked `TODO` comments.
+//! and the [`loki_vello`] GPU rendering pipeline.  For this session the surface
+//! builds a [`vello::Scene`] containing a blank white A4 page rectangle (white
+//! fill + 1 px border), establishing the Vello render loop.  Scene submission
+//! to a real GPU surface is stubbed pending Dioxus Native canvas API stability.
 //!
 //! # Integration seam
 //!
-//! Future work should replace the placeholder `div` with a native canvas
-//! element acquired from Dioxus Native's windowing layer, then:
+//! When Dioxus Native exposes stable window-handle access, replace the
+//! `_scene` binding with:
 //!
 //! 1. Obtain a `wgpu::Surface` from the window handle.
-//! 2. Create (or reuse) a `vello::Renderer`.
-//! 3. Build a `vello::Scene` and call `loki_vello::paint_layout(…)`.
-//! 4. Submit via `vello::Renderer::render_to_surface(…)`.
+//! 2. Create (or reuse across renders) a `vello::Renderer`.
+//! 3. Submit via `renderer.render_to_surface(&device, &queue, &scene, &surface, &params)`.
+//!
+//! `loki_vello::paint_layout` can then populate the scene with real document
+//! content once a [`loki_layout::DocumentLayout`] is available.
 
 use dioxus::prelude::*;
-
-use crate::theme;
+use kurbo::{Affine, Rect, Stroke};
+use loki_theme::tokens;
+use peniko::{Brush, Color, Fill};
+use vello::Scene;
 
 // ── ViewportRect ─────────────────────────────────────────────────────────────
 
@@ -45,10 +49,10 @@ pub struct ViewportRect {
 
 /// WGPU document canvas component.
 ///
-/// Occupies the `flex: 1` region between the top and bottom toolbars.  The
-/// component is statically sized to the document dimensions (A4 by default) and
-/// centred in the available space.  Scroll behaviour is **not** implemented in
-/// this session.
+/// Occupies the `flex: 1` region between the top and bottom toolbars.  Each
+/// render call builds a [`vello::Scene`] containing a blank A4 page (white fill
+/// + 1 px border) via [`kurbo`] geometry primitives.  The scene is not yet
+/// submitted to a GPU surface — see the module-level doc for the pending steps.
 ///
 /// # Props
 ///
@@ -84,60 +88,68 @@ pub fn WgpuSurface(
     /// Leave as `None` until scroll infrastructure is implemented.
     visible_rect: Option<ViewportRect>,
 ) -> Element {
-    // `visible_rect` is intentionally unused until the scroll pipeline lands.
-    // Suppress the unused-variable warning explicitly so the seam stays visible.
-    let _visible_rect = visible_rect;
+    // Build the Vello scene for this render cycle.
+    let _scene = build_page_scene(document_path.as_deref(), visible_rect.as_ref());
 
-    // `document_path` will be passed to the WGPU/Vello pipeline once real
-    // document loading is implemented.
-    let _document_path = document_path;
-
-    // TODO: Acquire WGPU surface from Dioxus Native's windowing layer.
-    //
-    // When the Dioxus Native canvas API is stable, replace this div with:
-    //   1. A native canvas element tied to a `wgpu::Surface`.
-    //   2. A `vello::Renderer` created from the surface's device/queue.
-    //   3. A `vello::Scene` populated via:
-    //        loki_vello::paint_layout(&mut scene, &layout, &mut font_cache, (0.0, 0.0), scale);
-    //   4. A render submission:
-    //        renderer.render_to_surface(&device, &queue, &scene, &surface, &params)?;
-    //
-    // See `loki_vello::paint_layout` for the full rendering API.
+    // TODO: When Dioxus Native canvas API is stable, obtain a wgpu::Surface
+    // from the window handle and submit `_scene`:
+    //     renderer.render_to_surface(&device, &queue, &_scene, &surface, &params)?;
 
     rsx! {
-        // Canvas scroll container — flex: 1 lets it fill the space between
-        // the two toolbars.  overflow: hidden prevents the page stub from
-        // expanding the editor shell.
+        // Canvas scroll container — flex: 1 fills the space between toolbars.
         div {
             style: format!(
                 "flex: 1; overflow: hidden; background: {bg}; \
                  display: flex; justify-content: center; \
                  align-items: flex-start; padding: {pad}px;",
-                bg  = theme::COLOR_SURFACE,
-                pad = theme::SPACING_24,
+                bg  = tokens::COLOR_SURFACE_BASE,
+                pad = tokens::SPACE_6,
             ),
 
-            // A4 page stub — replace with a real WGPU canvas.
-            // Dimensions: 794 × 1123 px (A4 at 96 dpi equivalent).
+            // A4 page placeholder — rendered as a div until the wgpu canvas
+            // API is available to display the Vello scene directly.
             div {
                 style: format!(
                     "width: {w}px; height: {h}px; \
-                     background: {bg}; flex-shrink: 0;",
-                    w  = theme::PAGE_WIDTH_PX,
-                    h  = theme::PAGE_HEIGHT_PX,
-                    bg = theme::COLOR_PAGE_WHITE,
+                     background: {bg}; flex-shrink: 0; \
+                     border: 1px solid {border};",
+                    w      = tokens::PAGE_WIDTH_PX,
+                    h      = tokens::PAGE_HEIGHT_PX,
+                    bg     = tokens::COLOR_SURFACE_PAGE,
+                    border = tokens::COLOR_BORDER_DEFAULT,
                 ),
-                // TODO: invoke loki_vello::render(scene, surface)
-                //
-                // Interface boundary:
-                //   paint_layout(
-                //       scene:      &mut vello::Scene,
-                //       layout:     &loki_layout::DocumentLayout,
-                //       font_cache: &mut loki_vello::FontDataCache,
-                //       offset:     (f32, f32),   // document origin on canvas
-                //       scale:      f32,           // HiDPI scale factor
-                //   )
             }
         }
     }
+}
+
+// ── Scene construction ────────────────────────────────────────────────────────
+
+/// Build a [`vello::Scene`] containing a blank A4 page.
+///
+/// Draws a white-filled rectangle at A4 dimensions with a 1 px border.
+/// When document content is available, `loki_vello::paint_layout` should be
+/// called after this to layer real content on top.
+fn build_page_scene(_path: Option<&str>, visible_rect: Option<&ViewportRect>) -> Scene {
+    let mut scene = Scene::new();
+
+    // TODO(partial-render): replace with viewport-clipped scene when visible_rect is Some.
+    let _ = visible_rect;
+
+    let page = Rect::new(
+        0.0,
+        0.0,
+        tokens::PAGE_WIDTH_PX as f64,
+        tokens::PAGE_HEIGHT_PX as f64,
+    );
+
+    // White page fill.
+    let white = Brush::Solid(Color::new([1.0_f32, 1.0, 1.0, 1.0]));
+    scene.fill(Fill::NonZero, Affine::IDENTITY, &white, None, &page);
+
+    // 1 px border (#E0E0E0 — COLOR_BORDER equivalent as linear f32).
+    let border = Brush::Solid(Color::new([0.878_f32, 0.878, 0.878, 1.0]));
+    scene.stroke(&Stroke::new(1.0), Affine::IDENTITY, &border, None, &page);
+
+    scene
 }

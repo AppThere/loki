@@ -14,9 +14,11 @@
 //!   and [`Editor`](routes::editor::Editor) components.
 //! * [`components`] — shared UI primitives ([`toolbar`](components::toolbar),
 //!   [`wgpu_surface`](components::wgpu_surface)).
-//! * [`theme`] — design-token constants (colors, spacing, type scale).
+//! * [`utils`] — utility functions (e.g. [`display_title_from_path`](utils::display_title_from_path)).
 //! * [`error`] — [`AppError`](error::AppError) and
 //!   [`AppResult`](error::AppResult).
+//!
+//! Design tokens live in the `loki-theme` workspace crate (`loki_theme::tokens`).
 
 #![warn(missing_docs)]
 
@@ -24,7 +26,7 @@ mod app;
 mod components;
 mod error;
 mod routes;
-mod theme;
+pub mod utils;
 
 fn main() {
     dioxus::launch(app::App);

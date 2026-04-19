@@ -14,9 +14,9 @@
 //! Blitz does not support.
 
 use dioxus::prelude::*;
+use loki_theme::tokens;
 
 use crate::routes::Route;
-use crate::theme;
 
 // ── TopToolbar ────────────────────────────────────────────────────────────────
 
@@ -40,19 +40,19 @@ pub fn TopToolbar(title: String) -> Element {
     let mut back_hovered  = use_signal(|| false);
 
     let back_bg = if back_hovered() {
-        theme::COLOR_SURFACE
+        tokens::COLOR_SURFACE_BASE
     } else {
         "transparent"
     };
 
     let save_bg = if save_hovered() {
-        theme::COLOR_SURFACE
+        tokens::COLOR_SURFACE_BASE
     } else {
         "transparent"
     };
 
     let share_bg = if share_hovered() {
-        theme::COLOR_SURFACE
+        tokens::COLOR_SURFACE_BASE
     } else {
         "transparent"
     };
@@ -64,11 +64,11 @@ pub fn TopToolbar(title: String) -> Element {
                  border-bottom: 1px solid {border}; \
                  display: flex; align-items: center; \
                  padding: 0 {pad}px; flex-shrink: 0; gap: {gap}px;",
-                h      = theme::TOOLBAR_HEIGHT_TOP,
-                bg     = theme::COLOR_PAGE_WHITE,
-                border = theme::COLOR_BORDER,
-                pad    = theme::SPACING_8,
-                gap    = theme::SPACING_8,
+                h      = tokens::TOOLBAR_HEIGHT_TOP,
+                bg     = tokens::COLOR_SURFACE_PAGE,
+                border = tokens::COLOR_BORDER_DEFAULT,
+                pad    = tokens::SPACE_2,
+                gap    = tokens::SPACE_2,
             ),
 
             // Back / close button
@@ -78,10 +78,10 @@ pub fn TopToolbar(title: String) -> Element {
                      color: {fg}; font-size: {size}px; cursor: pointer; \
                      padding: {p}px {p2}px; flex-shrink: 0;",
                     bg   = back_bg,
-                    fg   = theme::COLOR_TEXT_PRIMARY,
-                    size = theme::FONT_SIZE_BODY,
-                    p    = theme::SPACING_4,
-                    p2   = theme::SPACING_8,
+                    fg   = tokens::COLOR_TEXT_PRIMARY,
+                    size = tokens::FONT_SIZE_BODY,
+                    p    = tokens::SPACE_1,
+                    p2   = tokens::SPACE_2,
                 ),
                 onmouseenter: move |_| { back_hovered.set(true); },
                 onmouseleave: move |_| { back_hovered.set(false); },
@@ -95,8 +95,8 @@ pub fn TopToolbar(title: String) -> Element {
                     "flex: 1; font-size: {size}px; font-weight: 600; \
                      color: {fg}; text-align: center; \
                      overflow: hidden;",
-                    size = theme::FONT_SIZE_BODY,
-                    fg   = theme::COLOR_TEXT_PRIMARY,
+                    size = tokens::FONT_SIZE_BODY,
+                    fg   = tokens::COLOR_TEXT_PRIMARY,
                 ),
                 "{title}"
             }
@@ -108,9 +108,9 @@ pub fn TopToolbar(title: String) -> Element {
                      color: {fg}; font-size: {size}px; cursor: pointer; \
                      padding: {p}px; flex-shrink: 0;",
                     bg   = save_bg,
-                    fg   = theme::COLOR_TEXT_SECONDARY,
-                    size = theme::FONT_SIZE_HEADING,
-                    p    = theme::SPACING_8,
+                    fg   = tokens::COLOR_TEXT_SECONDARY,
+                    size = tokens::FONT_SIZE_HEADING,
+                    p    = tokens::SPACE_2,
                 ),
                 onmouseenter: move |_| { save_hovered.set(true); },
                 onmouseleave: move |_| { save_hovered.set(false); },
@@ -125,9 +125,9 @@ pub fn TopToolbar(title: String) -> Element {
                      color: {fg}; font-size: {size}px; cursor: pointer; \
                      padding: {p}px; flex-shrink: 0;",
                     bg   = share_bg,
-                    fg   = theme::COLOR_TEXT_SECONDARY,
-                    size = theme::FONT_SIZE_HEADING,
-                    p    = theme::SPACING_8,
+                    fg   = tokens::COLOR_TEXT_SECONDARY,
+                    size = tokens::FONT_SIZE_HEADING,
+                    p    = tokens::SPACE_2,
                 ),
                 onmouseenter: move |_| { share_hovered.set(true); },
                 onmouseleave: move |_| { share_hovered.set(false); },
@@ -162,19 +162,19 @@ pub fn BottomToolbar(
                  border-top: 1px solid {border}; \
                  display: flex; align-items: center; \
                  padding: 0 {pad}px; flex-shrink: 0; gap: {gap}px;",
-                h      = theme::TOOLBAR_HEIGHT_BOTTOM,
-                bg     = theme::COLOR_PAGE_WHITE,
-                border = theme::COLOR_BORDER,
-                pad    = theme::SPACING_16,
-                gap    = theme::SPACING_16,
+                h      = tokens::TOOLBAR_HEIGHT_BOTTOM,
+                bg     = tokens::COLOR_SURFACE_PAGE,
+                border = tokens::COLOR_BORDER_DEFAULT,
+                pad    = tokens::SPACE_4,
+                gap    = tokens::SPACE_4,
             ),
 
             // Page count indicator
             span {
                 style: format!(
                     "font-size: {size}px; color: {fg};",
-                    size = theme::FONT_SIZE_LABEL,
-                    fg   = theme::COLOR_TEXT_SECONDARY,
+                    size = tokens::FONT_SIZE_LABEL,
+                    fg   = tokens::COLOR_TEXT_SECONDARY,
                 ),
                 "{page_info}"
             }
@@ -183,8 +183,8 @@ pub fn BottomToolbar(
             span {
                 style: format!(
                     "font-size: {size}px; color: {fg};",
-                    size = theme::FONT_SIZE_LABEL,
-                    fg   = theme::COLOR_TEXT_SECONDARY,
+                    size = tokens::FONT_SIZE_LABEL,
+                    fg   = tokens::COLOR_TEXT_SECONDARY,
                 ),
                 "Zoom: {zoom_info}"
             }
@@ -196,8 +196,8 @@ pub fn BottomToolbar(
             span {
                 style: format!(
                     "font-size: {size}px; color: {fg};",
-                    size = theme::FONT_SIZE_LABEL,
-                    fg   = theme::COLOR_BORDER,
+                    size = tokens::FONT_SIZE_LABEL,
+                    fg   = tokens::COLOR_BORDER_DEFAULT,
                 ),
                 // Non-functional stub — editing mode toggles are out of scope.
                 "[ mode ]"
