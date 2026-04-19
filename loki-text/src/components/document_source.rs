@@ -232,13 +232,15 @@ impl CustomPaintSource for LokiDocumentSource {
             return None;
         }
 
-        // Canvas width in CSS pixels — used for layout invalidation on resize.
-        let canvas_width = width as f32;
+        // blitz-paint-0.2.1/src/render.rs:606-607 casts content_box dimensions
+        // (which create_css_rect already multiplied by scale, line 779) to u32,
+        // so `width` and `height` here are already physical (device) pixels.
+        // Dividing by scale converts back to logical CSS pixels for layout.
+        let canvas_width = width as f32 / scale as f32;
 
-        // Physical (HiDPI) texture dimensions: CSS pixels × DPI scale factor.
-        // Layout font metrics are computed at `scale` so textures must match.
-        let w_phys = ((width as f64 * scale).round() as u32).max(1);
-        let h_phys = ((height as f64 * scale).round() as u32).max(1);
+        // Physical texture dimensions — already provided in physical pixels.
+        let w_phys = width.max(1);
+        let h_phys = height.max(1);
 
         // Phase 1: Read document state under lock, then release before layout work.
         // Cloning the document avoids a borrow conflict when we later write
