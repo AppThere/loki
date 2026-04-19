@@ -17,7 +17,8 @@
 //! fn render(layout: &DocumentLayout) {
 //!     let mut scene = vello::Scene::new();
 //!     let mut font_cache = FontDataCache::new();
-//!     paint_layout(&mut scene, layout, &mut font_cache, (0.0, 0.0), 1.0);
+//!     // `None` renders all pages; `Some(0)` renders only the first page.
+//!     paint_layout(&mut scene, layout, &mut font_cache, (0.0, 0.0), 1.0, None);
 //!     // Pass `scene` to vello::Renderer::render_to_texture(…)
 //! }
 //! ```
@@ -36,4 +37,4 @@ pub mod scene;
 
 pub use error::{VelloError, VelloResult};
 pub use font_cache::FontDataCache;
-pub use scene::{paint_continuous, paint_layout, paint_paginated};
+pub use scene::{paint_continuous, paint_layout, paint_paginated, paint_single_page};

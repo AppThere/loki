@@ -38,19 +38,77 @@ const PAGE_BG_COLOR: LayoutColor = LayoutColor { r: 1.0, g: 1.0, b: 1.0, a: 1.0 
 /// * `offset` – `(x, y)` translation in layout points applied to the entire
 ///   document. Useful for placing the document canvas inside a larger UI.
 /// * `scale` – display scale factor (`1.0` for 1× displays, `2.0` for HiDPI).
+/// * `page_index` – when `Some(n)`, render only page `n` of a paginated layout
+///   at the given `offset`; when `None`, render all pages stacked vertically.
+///   Ignored for continuous layouts (all content is always painted).
+///
+/// # TODO(partial-render)
+///
+/// `page_index` is the first step toward viewport clipping: once per-page
+/// canvases are in place, the scroll viewport can be compared against page
+/// positions to skip rendering pages entirely outside the visible area.
 pub fn paint_layout(
     scene: &mut vello::Scene,
     layout: &DocumentLayout,
     font_cache: &mut FontDataCache,
     offset: (f32, f32),
     scale: f32,
+    page_index: Option<usize>,
 ) {
     match layout {
-        DocumentLayout::Paginated(pl) => paint_paginated(scene, pl, font_cache, offset, scale),
+        DocumentLayout::Paginated(pl) => {
+            if let Some(idx) = page_index {
+                paint_single_page(scene, pl, font_cache, offset, scale, idx);
+            } else {
+                paint_paginated(scene, pl, font_cache, offset, scale);
+            }
+        }
         DocumentLayout::Continuous(cl) => paint_continuous(scene, cl, font_cache, offset, scale),
         // `DocumentLayout` is `#[non_exhaustive]`; silently ignore future variants.
         _ => {}
     }
+}
+
+/// Paint a single page from a paginated layout at the given `offset`.
+///
+/// Content items in the layout are already page-local (translated by
+/// [`loki_layout::layout_document`]). This function renders the page
+/// background and shadow as if the page top-left is at `offset`.
+///
+/// Out-of-range `page_index` values are silently ignored.
+pub fn paint_single_page(
+    scene: &mut vello::Scene,
+    layout: &PaginatedLayout,
+    font_cache: &mut FontDataCache,
+    offset: (f32, f32),
+    scale: f32,
+    page_index: usize,
+) {
+    let Some(page) = layout.pages.get(page_index) else {
+        return;
+    };
+
+    let page_width = layout.page_size.width;
+    let page_height = layout.page_size.height;
+
+    // Drop shadow slightly behind the page.
+    let shadow = PositionedRect {
+        rect: LayoutRect::new(offset.0 + 4.0, offset.1 + 4.0, page_width, page_height),
+        color: PAGE_SHADOW_COLOR,
+    };
+    crate::rect::paint_filled_rect(scene, &shadow, scale);
+
+    // White page background.
+    let page_bg = PositionedRect {
+        rect: LayoutRect::new(offset.0, offset.1, page_width, page_height),
+        color: PAGE_BG_COLOR,
+    };
+    crate::rect::paint_filled_rect(scene, &page_bg, scale);
+
+    let page_offset = (offset.0, offset.1);
+    paint_items(scene, &page.content_items, font_cache, page_offset, scale);
+    paint_items(scene, &page.header_items, font_cache, page_offset, scale);
+    paint_items(scene, &page.footer_items, font_cache, page_offset, scale);
 }
 
 /// Paint a paginated layout.
@@ -218,7 +276,7 @@ mod tests {
         let layout = make_continuous_layout(vec![]);
         let mut scene = vello::Scene::new();
         let mut font_cache = FontDataCache::new();
-        paint_layout(&mut scene, &layout, &mut font_cache, (0.0, 0.0), 1.0);
+        paint_layout(&mut scene, &layout, &mut font_cache, (0.0, 0.0), 1.0, None);
         // Reaching here without panic = pass.
     }
 
@@ -230,7 +288,7 @@ mod tests {
         })]);
         let mut scene = vello::Scene::new();
         let mut font_cache = FontDataCache::new();
-        paint_layout(&mut scene, &layout, &mut font_cache, (0.0, 0.0), 1.0);
+        paint_layout(&mut scene, &layout, &mut font_cache, (0.0, 0.0), 1.0, None);
         // No panic = pass.
     }
 
@@ -278,7 +336,7 @@ mod tests {
         let mut scene = vello::Scene::new();
         let mut font_cache = FontDataCache::new();
         // 2× HiDPI scale.
-        paint_layout(&mut scene, &layout, &mut font_cache, (0.0, 0.0), 2.0);
+        paint_layout(&mut scene, &layout, &mut font_cache, (0.0, 0.0), 2.0, None);
         // No panic = pass.
     }
 }

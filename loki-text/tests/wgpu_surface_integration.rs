@@ -19,10 +19,12 @@ fn document_state_default_has_no_document() {
     let state = DocumentState {
         document: None,
         generation: 0,
+        page_count: 0,
         visible_rect: None,
     };
     assert!(state.document.is_none());
     assert_eq!(state.generation, 0);
+    assert_eq!(state.page_count, 0);
     assert!(state.visible_rect.is_none());
 }
 
@@ -38,6 +40,7 @@ fn document_state_can_be_shared_across_threads() {
     let state = Arc::new(Mutex::new(DocumentState {
         document: None,
         generation: 0,
+        page_count: 0,
         visible_rect: None,
     }));
     let state2 = Arc::clone(&state);
