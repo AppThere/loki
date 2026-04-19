@@ -22,16 +22,17 @@
 //!
 //! # Integration seam
 //!
-//! `visible_rect` is preserved as a `None` placeholder.  Blitz's scroll events
-//! are handled directly in blitz-shell (`MouseWheel` → `scroll_node_by_has_changed`)
-//! without going through the Dioxus event system, so `onwheel` handlers never
-//! fire and the scroll offset is not observable from a Dioxus component.
-//! Native `overflow-y: auto` on the scroll container does work (blitz-paint
-//! applies `node.scroll_offset` as a translation), but the offset cannot be
-//! read back to populate `visible_rect`.
+//! `visible_rect` is `None` because `node.scroll_offset` is internal to
+//! blitz-dom and no public API in dioxus-native-0.7.4 exposes it to Dioxus
+//! components.  Blitz handles `WindowEvent::MouseWheel` in blitz-shell directly
+//! (`scroll_node_by_has_changed`, blitz-shell-0.2.3/src/window.rs:388) without
+//! routing through the Dioxus event system, so `onwheel` handlers never fire.
+//! The scroll container in `editor.rs` uses `height: calc(100vh - Npx)` to give
+//! taffy a concrete `Dimension::Length` — without this, flex-chain propagation
+//! leaves the height indefinite and `scroll_height()` stays zero.
 //!
-//! TODO(partial-render): wire scroll-position → visible_rect → LokiDocumentSource
-//! clip region once blitz exposes scroll offset to Dioxus components.
+//! TODO(partial-render): wire scroll_offset → visible_rect → LokiDocumentSource
+//! clip region once Blitz exposes a scroll-position hook to Dioxus components.
 
 use std::cell::RefCell;
 use std::rc::Rc;
