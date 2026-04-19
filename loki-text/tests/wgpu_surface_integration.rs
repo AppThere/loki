@@ -20,11 +20,13 @@ fn document_state_default_has_no_document() {
         document: None,
         generation: 0,
         page_count: 0,
+        canvas_width: 0.0,
         visible_rect: None,
     };
     assert!(state.document.is_none());
     assert_eq!(state.generation, 0);
     assert_eq!(state.page_count, 0);
+    assert_eq!(state.canvas_width, 0.0);
     assert!(state.visible_rect.is_none());
 }
 
@@ -41,6 +43,7 @@ fn document_state_can_be_shared_across_threads() {
         document: None,
         generation: 0,
         page_count: 0,
+        canvas_width: 0.0,
         visible_rect: None,
     }));
     let state2 = Arc::clone(&state);

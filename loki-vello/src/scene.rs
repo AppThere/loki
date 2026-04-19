@@ -18,7 +18,12 @@ use crate::font_cache::FontDataCache;
 // ── Visual constants for paginated layout ────────────────────────────────────
 
 const PAGE_GAP_PT: f32 = 16.0;
-const PAGE_SHADOW_COLOR: LayoutColor = LayoutColor { r: 0.6, g: 0.6, b: 0.6, a: 0.4 };
+// TODO(shadow): replace with Vello blur filter once rendering is verified stable.
+// rgba8(0,0,0,40) — darker than before and placed only on right/bottom edges to
+// avoid the gray vertical bar caused by the old shadow rect extending 4 px past
+// the page background's right edge.
+const PAGE_SHADOW_COLOR: LayoutColor = LayoutColor { r: 0.0, g: 0.0, b: 0.0, a: 40.0 / 255.0 };
+const PAGE_SHADOW_OFFSET: f32 = 3.0;
 const PAGE_BG_COLOR: LayoutColor = LayoutColor { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -91,14 +96,37 @@ pub fn paint_single_page(
     let page_width = layout.page_size.width;
     let page_height = layout.page_size.height;
 
-    // Drop shadow slightly behind the page.
-    let shadow = PositionedRect {
-        rect: LayoutRect::new(offset.0 + 4.0, offset.1 + 4.0, page_width, page_height),
-        color: PAGE_SHADOW_COLOR,
-    };
-    crate::rect::paint_filled_rect(scene, &shadow, scale);
+    // L-shaped drop shadow: right strip and bottom strip, each PAGE_SHADOW_OFFSET
+    // wide, placed flush with the page bg edges. Never extends past max_x of the
+    // page bg, eliminating the gray vertical bar visible on wide canvases.
+    crate::rect::paint_filled_rect(
+        scene,
+        &PositionedRect {
+            rect: LayoutRect::new(
+                offset.0 + page_width,
+                offset.1 + PAGE_SHADOW_OFFSET,
+                PAGE_SHADOW_OFFSET,
+                page_height,
+            ),
+            color: PAGE_SHADOW_COLOR,
+        },
+        scale,
+    );
+    crate::rect::paint_filled_rect(
+        scene,
+        &PositionedRect {
+            rect: LayoutRect::new(
+                offset.0 + PAGE_SHADOW_OFFSET,
+                offset.1 + page_height,
+                page_width,
+                PAGE_SHADOW_OFFSET,
+            ),
+            color: PAGE_SHADOW_COLOR,
+        },
+        scale,
+    );
 
-    // White page background.
+    // White page background (painted after shadow so it covers the top-left corner).
     let page_bg = PositionedRect {
         rect: LayoutRect::new(offset.0, offset.1, page_width, page_height),
         color: PAGE_BG_COLOR,
@@ -129,14 +157,35 @@ pub fn paint_paginated(
         let page_width = layout.page_size.width;
         let page_height = layout.page_size.height;
 
-        // Draw the drop shadow behind the page (slightly offset, semi-transparent).
-        let shadow = PositionedRect {
-            rect: LayoutRect::new(offset.0 + 4.0, y_cursor + 4.0, page_width, page_height),
-            color: PAGE_SHADOW_COLOR,
-        };
-        crate::rect::paint_filled_rect(scene, &shadow, scale);
+        // L-shaped drop shadow (right strip + bottom strip).
+        crate::rect::paint_filled_rect(
+            scene,
+            &PositionedRect {
+                rect: LayoutRect::new(
+                    offset.0 + page_width,
+                    y_cursor + PAGE_SHADOW_OFFSET,
+                    PAGE_SHADOW_OFFSET,
+                    page_height,
+                ),
+                color: PAGE_SHADOW_COLOR,
+            },
+            scale,
+        );
+        crate::rect::paint_filled_rect(
+            scene,
+            &PositionedRect {
+                rect: LayoutRect::new(
+                    offset.0 + PAGE_SHADOW_OFFSET,
+                    y_cursor + page_height,
+                    page_width,
+                    PAGE_SHADOW_OFFSET,
+                ),
+                color: PAGE_SHADOW_COLOR,
+            },
+            scale,
+        );
 
-        // Draw the white page background on top of the shadow.
+        // White page background (painted after shadow).
         let page_bg = PositionedRect {
             rect: LayoutRect::new(offset.0, y_cursor, page_width, page_height),
             color: PAGE_BG_COLOR,
