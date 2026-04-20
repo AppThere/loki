@@ -73,8 +73,9 @@
 
 use std::ops::Range;
 
-use loki_doc_model::content::block::StyledParagraph;
-use loki_doc_model::content::inline::{Inline, StyledRun};
+use loki_doc_model::content::block::{Block, StyledParagraph};
+use loki_doc_model::content::field::types::{Field, FieldKind};
+use loki_doc_model::content::inline::{Inline, NoteKind, StyledRun};
 use loki_doc_model::style::catalog::{StyleCatalog, StyleId};
 use loki_doc_model::style::props::border::{Border as DocBorder, BorderStyle as DocBorderStyle};
 use loki_doc_model::style::props::char_props::{
@@ -148,6 +149,21 @@ pub struct CollectedImage {
     pub cy_emu: u64,
 }
 
+/// A footnote or endnote body collected during paragraph flattening.
+///
+/// Gathered by [`flatten_paragraph`] / `walk_inlines` when an [`Inline::Note`]
+/// is encountered. Passed back to the flow engine so it can render the note
+/// body at the end of the section.
+#[derive(Debug, Clone)]
+pub struct CollectedNote {
+    /// Sequential note number within the section (1-based).
+    pub number: u32,
+    /// Whether this is a footnote or an endnote.
+    pub kind: NoteKind,
+    /// The note body blocks.
+    pub blocks: Vec<Block>,
+}
+
 /// Resolve the effective [`ResolvedParaProps`] for a [`StyledParagraph`].
 ///
 /// Resolution order (child wins):
@@ -183,15 +199,20 @@ pub fn resolve_char_props(
 }
 
 /// Flatten all inline content of a [`StyledParagraph`] into a UTF-8 string,
-/// a matching list of [`StyleSpan`]s, and any inline images found.
+/// a matching list of [`StyleSpan`]s, inline images, and collected notes.
 ///
 /// Each span's `range` is a byte range within the returned string.
 /// Images are returned separately because Parley has no inline image support;
-/// they are placed by the flow engine after text layout.
+/// they are placed by the flow engine after text layout. Notes are rendered
+/// at the end of the section by the flow engine.
+///
+/// `note_counter` is updated in place; the caller must pass the session-wide
+/// counter so that note numbers are unique across paragraphs within a section.
 pub fn flatten_paragraph(
     block: &StyledParagraph,
     catalog: &StyleCatalog,
-) -> (String, Vec<StyleSpan>, Vec<CollectedImage>) {
+    note_counter: &mut u32,
+) -> (String, Vec<StyleSpan>, Vec<CollectedImage>, Vec<CollectedNote>) {
     let base: CharProps = block
         .style_id
         .as_ref()
@@ -204,8 +225,19 @@ pub fn flatten_paragraph(
     let mut buf = String::new();
     let mut spans: Vec<StyleSpan> = Vec::new();
     let mut images: Vec<CollectedImage> = Vec::new();
-    walk_inlines(&block.inlines, &base, catalog, &mut buf, &mut spans, None, &mut images);
-    (buf, spans, images)
+    let mut notes: Vec<CollectedNote> = Vec::new();
+    walk_inlines(
+        &block.inlines,
+        &base,
+        catalog,
+        &mut buf,
+        &mut spans,
+        None,
+        &mut images,
+        note_counter,
+        &mut notes,
+    );
+    (buf, spans, images, notes)
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
@@ -402,7 +434,9 @@ fn push_text(
 /// `active_link_url` carries the URL of the enclosing `Inline::Link`, if any;
 /// it is threaded through recursive calls so all text inside a link gets
 /// `StyleSpan::link_url` set. `images` collects any `Inline::Image` nodes
-/// encountered for post-Parley placement (gap #9).
+/// encountered for post-Parley placement (gap #9). `notes` collects footnotes
+/// and endnotes; `note_counter` is incremented for each note (gap #2).
+#[allow(clippy::too_many_arguments)]
 fn walk_inlines(
     inlines: &[Inline],
     effective: &CharProps,
@@ -411,6 +445,8 @@ fn walk_inlines(
     spans: &mut Vec<StyleSpan>,
     active_link_url: Option<&str>,
     images: &mut Vec<CollectedImage>,
+    note_counter: &mut u32,
+    notes: &mut Vec<CollectedNote>,
 ) {
     for inline in inlines {
         match inline {
@@ -421,54 +457,54 @@ fn walk_inlines(
             Inline::Code(_, s) => push_text(buf, spans, s, effective, active_link_url),
             Inline::StyledRun(run) => {
                 let p = effective_run_char_props(run, catalog, effective);
-                walk_inlines(&run.content, &p, catalog, buf, spans, active_link_url, images);
+                walk_inlines(&run.content, &p, catalog, buf, spans, active_link_url, images, note_counter, notes);
             }
             Inline::Strong(ch) => {
                 let mut p = effective.clone();
                 p.bold = Some(true);
-                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images);
+                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images, note_counter, notes);
             }
             Inline::Emph(ch) => {
                 let mut p = effective.clone();
                 p.italic = Some(true);
-                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images);
+                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images, note_counter, notes);
             }
             Inline::Underline(ch) => {
                 let mut p = effective.clone();
                 p.underline = Some(DocUnderlineStyle::Single);
-                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images);
+                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images, note_counter, notes);
             }
             Inline::Strikeout(ch) => {
                 let mut p = effective.clone();
                 p.strikethrough = Some(DocStrikethroughStyle::Single);
-                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images);
+                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images, note_counter, notes);
             }
             // Superscript (gap #3): set vertical_align on the effective props.
             Inline::Superscript(ch) => {
                 let mut p = effective.clone();
                 p.vertical_align = Some(DocVerticalAlign::Superscript);
-                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images);
+                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images, note_counter, notes);
             }
             // Subscript (gap #3): set vertical_align on the effective props.
             Inline::Subscript(ch) => {
                 let mut p = effective.clone();
                 p.vertical_align = Some(DocVerticalAlign::Subscript);
-                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images);
+                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images, note_counter, notes);
             }
             // SmallCaps (gap #15): set small_caps so StyleSpan gets FontVariant::SmallCaps.
             Inline::SmallCaps(ch) => {
                 let mut p = effective.clone();
                 p.small_caps = Some(true);
-                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images);
+                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images, note_counter, notes);
             }
             Inline::Quoted(_, ch) | Inline::Span(_, ch) => {
-                walk_inlines(ch, effective, catalog, buf, spans, active_link_url, images);
+                walk_inlines(ch, effective, catalog, buf, spans, active_link_url, images, note_counter, notes);
             }
             // Link (gap #11): thread the resolved URL into child spans.
             // TODO(link-click): interactive hit-testing deferred; only visual hint rendered.
             Inline::Link(_, ch, target) => {
                 let url = target.url.as_str();
-                walk_inlines(ch, effective, catalog, buf, spans, Some(url), images);
+                walk_inlines(ch, effective, catalog, buf, spans, Some(url), images, note_counter, notes);
             }
             // Image (gap #9): collect for post-Parley placement; do not emit text.
             // TODO(floating-image): check NodeAttr.classes for "floating"; deferred (gap #12).
@@ -487,7 +523,9 @@ fn walk_inlines(
                 let mut alt_buf = String::new();
                 let mut alt_spans: Vec<StyleSpan> = Vec::new();
                 let mut alt_images: Vec<CollectedImage> = Vec::new();
-                walk_inlines(alt_inlines, effective, catalog, &mut alt_buf, &mut alt_spans, None, &mut alt_images);
+                let mut _dummy_counter = 0u32;
+                let mut _dummy_notes: Vec<CollectedNote> = Vec::new();
+                walk_inlines(alt_inlines, effective, catalog, &mut alt_buf, &mut alt_spans, None, &mut alt_images, &mut _dummy_counter, &mut _dummy_notes);
                 let alt = if alt_buf.is_empty() { None } else { Some(alt_buf) };
                 if !target.url.is_empty() {
                     images.push(CollectedImage {
@@ -498,11 +536,71 @@ fn walk_inlines(
                     });
                 }
             }
-            Inline::Cite(_, ch) => walk_inlines(ch, effective, catalog, buf, spans, active_link_url, images),
-            // Math, RawInline, Note, Field, Comment, Bookmark, and any
+            Inline::Cite(_, ch) => walk_inlines(ch, effective, catalog, buf, spans, active_link_url, images, note_counter, notes),
+            // Field (gap #4): emit current_value snapshot, or a kind-based fallback.
+            Inline::Field(f) => {
+                let text = field_display_text(f);
+                if !text.is_empty() {
+                    push_text(buf, spans, &text, effective, active_link_url);
+                }
+            }
+            // Note (gap #2): emit a superscript reference mark and collect the body.
+            Inline::Note(kind, blocks) => {
+                *note_counter += 1;
+                let mark = superscript_mark(*note_counter);
+                let mut mark_props = effective.clone();
+                mark_props.vertical_align = Some(DocVerticalAlign::Superscript);
+                push_text(buf, spans, &mark, &mark_props, active_link_url);
+                notes.push(CollectedNote {
+                    number: *note_counter,
+                    kind: *kind,
+                    blocks: blocks.clone(),
+                });
+            }
+            // Math, RawInline, Comment, Bookmark, and any
             // future #[non_exhaustive] variants are not text runs — skip.
             _ => {}
         }
+    }
+}
+
+/// Return display text for a [`Field`]: use `current_value` if available,
+/// otherwise fall back to a kind-specific placeholder.
+fn field_display_text(f: &Field) -> String {
+    if let Some(ref v) = f.current_value {
+        return v.clone();
+    }
+    match &f.kind {
+        FieldKind::PageNumber => "1".to_string(),
+        FieldKind::PageCount => "1".to_string(),
+        FieldKind::Date { .. } => String::new(),
+        FieldKind::Time { .. } => String::new(),
+        FieldKind::Title | FieldKind::Author | FieldKind::Subject | FieldKind::FileName => {
+            String::new()
+        }
+        FieldKind::WordCount => String::new(),
+        FieldKind::CrossReference { .. } => String::new(),
+        FieldKind::Raw { .. } => String::new(),
+        _ => String::new(),
+    }
+}
+
+/// Return the Unicode superscript string for note number `n`.
+///
+/// Uses Unicode superscript digits (U+00B9, U+00B2, U+00B3, U+2074–U+2079)
+/// for n ≤ 9, and `[n]` for larger numbers.
+fn superscript_mark(n: u32) -> String {
+    match n {
+        1 => "\u{00B9}".to_string(),
+        2 => "\u{00B2}".to_string(),
+        3 => "\u{00B3}".to_string(),
+        4 => "\u{2074}".to_string(),
+        5 => "\u{2075}".to_string(),
+        6 => "\u{2076}".to_string(),
+        7 => "\u{2077}".to_string(),
+        8 => "\u{2078}".to_string(),
+        9 => "\u{2079}".to_string(),
+        _ => format!("[{n}]"),
     }
 }
 

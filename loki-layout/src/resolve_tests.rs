@@ -7,8 +7,9 @@ use super::*;
 
 use appthere_color::RgbColor;
 use loki_doc_model::content::attr::{ExtensionBag, NodeAttr};
-use loki_doc_model::content::block::StyledParagraph;
-use loki_doc_model::content::inline::{Inline, LinkTarget, StyledRun};
+use loki_doc_model::content::block::{Block, StyledParagraph};
+use loki_doc_model::content::field::types::{Field, FieldKind};
+use loki_doc_model::content::inline::{Inline, LinkTarget, NoteKind, StyledRun};
 use loki_doc_model::style::catalog::{StyleCatalog, StyleId};
 use loki_doc_model::style::para_style::ParagraphStyle;
 use loki_doc_model::style::props::char_props::{
@@ -66,7 +67,7 @@ fn pts_to_f32_value() {
 fn flatten_plain_str() {
     let catalog = StyleCatalog::new();
     let para = empty_para(vec![Inline::Str("hello".into())]);
-    let (text, spans, _images) = flatten_paragraph(&para, &catalog);
+    let (text, spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
     assert_eq!(text, "hello");
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].range, 0..5);
@@ -80,7 +81,7 @@ fn flatten_str_space_str() {
         Inline::Space,
         Inline::Str("world".into()),
     ]);
-    let (text, _spans, _images) = flatten_paragraph(&para, &catalog);
+    let (text, _spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
     assert_eq!(text, "hello world");
 }
 
@@ -88,7 +89,7 @@ fn flatten_str_space_str() {
 fn flatten_strong_sets_bold() {
     let catalog = StyleCatalog::new();
     let para = empty_para(vec![Inline::Strong(vec![Inline::Str("bold".into())])]);
-    let (text, spans, _images) = flatten_paragraph(&para, &catalog);
+    let (text, spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
     assert_eq!(text, "bold");
     assert!(!spans.is_empty());
     assert!(spans[0].bold, "Strong should produce bold=true");
@@ -98,7 +99,7 @@ fn flatten_strong_sets_bold() {
 fn flatten_emph_sets_italic() {
     let catalog = StyleCatalog::new();
     let para = empty_para(vec![Inline::Emph(vec![Inline::Str("italic".into())])]);
-    let (_, spans, _images) = flatten_paragraph(&para, &catalog);
+    let (_, spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
     assert!(!spans.is_empty());
     assert!(spans[0].italic, "Emph should produce italic=true");
 }
@@ -117,7 +118,7 @@ fn flatten_styled_run_applies_direct_props() {
         attr: NodeAttr::default(),
     };
     let para = empty_para(vec![Inline::StyledRun(run)]);
-    let (_, spans, _images) = flatten_paragraph(&para, &catalog);
+    let (_, spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
     assert!(!spans.is_empty());
     assert!((spans[0].font_size - 24.0).abs() < 1e-5, "font_size should be 24pt");
     assert!(spans[0].bold, "bold should be true");
@@ -203,7 +204,7 @@ fn flatten_all_caps_uppercases_text() {
         attr: NodeAttr::default(),
     };
     let para = empty_para(vec![Inline::StyledRun(run)]);
-    let (text, spans, _images) = flatten_paragraph(&para, &catalog);
+    let (text, spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
     assert_eq!(text, "HELLO", "all_caps must uppercase text during flatten");
     assert_eq!(spans[0].font_variant, Some(crate::para::FontVariant::AllCaps));
 }
@@ -212,7 +213,7 @@ fn flatten_all_caps_uppercases_text() {
 fn flatten_superscript_inline_sets_vertical_align() {
     let catalog = StyleCatalog::new();
     let para = empty_para(vec![Inline::Superscript(vec![Inline::Str("2".into())])]);
-    let (text, spans, _images) = flatten_paragraph(&para, &catalog);
+    let (text, spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
     assert_eq!(text, "2");
     assert_eq!(
         spans[0].vertical_align,
@@ -231,7 +232,7 @@ fn flatten_image_collects_emu_dimensions() {
     attr.kv.push(("cy_emu".to_string(), "457200".to_string())); // 36 pt
     let target = LinkTarget::new("data:image/png;base64,ABC");
     let para = empty_para(vec![Inline::Image(attr, vec![], target)]);
-    let (_text, _spans, images) = flatten_paragraph(&para, &catalog);
+    let (_text, _spans, images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
     assert_eq!(images.len(), 1, "one image must be collected");
     assert_eq!(images[0].src, "data:image/png;base64,ABC");
     assert_eq!(images[0].cx_emu, 914400);
@@ -248,7 +249,7 @@ fn flatten_image_zero_size_does_not_panic() {
     let attr = NodeAttr::default(); // no kv — cx_emu/cy_emu default to 0
     let target = LinkTarget::new("data:image/png;base64,ABC");
     let para = empty_para(vec![Inline::Image(attr, vec![], target)]);
-    let (_text, _spans, images) = flatten_paragraph(&para, &catalog);
+    let (_text, _spans, images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
     assert_eq!(images.len(), 1, "zero-size image still collected");
     assert_eq!(images[0].cx_emu, 0);
     assert_eq!(images[0].cy_emu, 0);
@@ -260,7 +261,7 @@ fn flatten_image_empty_src_not_collected() {
     let attr = NodeAttr::default();
     let target = LinkTarget::new(""); // empty URL
     let para = empty_para(vec![Inline::Image(attr, vec![], target)]);
-    let (_text, _spans, images) = flatten_paragraph(&para, &catalog);
+    let (_text, _spans, images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
     assert!(images.is_empty(), "image with empty URL must not be collected");
 }
 
@@ -271,7 +272,7 @@ fn flatten_image_alt_text_captured() {
     let alt_inlines = vec![Inline::Str("logo".into())];
     let target = LinkTarget::new("data:image/png;base64,XYZ");
     let para = empty_para(vec![Inline::Image(attr, alt_inlines, target)]);
-    let (_text, _spans, images) = flatten_paragraph(&para, &catalog);
+    let (_text, _spans, images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
     assert_eq!(images[0].alt.as_deref(), Some("logo"), "alt text must be captured");
 }
 
@@ -283,7 +284,7 @@ fn flatten_link_sets_link_url_on_spans() {
     let target = LinkTarget::new("https://example.com");
     let link_children = vec![Inline::Str("click".into())];
     let para = empty_para(vec![Inline::Link(NodeAttr::default(), link_children, target)]);
-    let (_text, spans, _images) = flatten_paragraph(&para, &catalog);
+    let (_text, spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
     assert!(!spans.is_empty(), "link must produce at least one span");
     assert_eq!(
         spans[0].link_url.as_deref(),
@@ -298,7 +299,7 @@ fn flatten_link_auto_underlines_when_no_underline() {
     let target = LinkTarget::new("https://example.com");
     let link_children = vec![Inline::Str("text".into())];
     let para = empty_para(vec![Inline::Link(NodeAttr::default(), link_children, target)]);
-    let (_text, spans, _images) = flatten_paragraph(&para, &catalog);
+    let (_text, spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
     assert!(
         spans[0].underline.is_some(),
         "link spans without explicit underline must be auto-underlined"
@@ -309,9 +310,95 @@ fn flatten_link_auto_underlines_when_no_underline() {
 fn flatten_non_link_text_has_no_link_url() {
     let catalog = StyleCatalog::new();
     let para = empty_para(vec![Inline::Str("plain".into())]);
-    let (_text, spans, _images) = flatten_paragraph(&para, &catalog);
+    let (_text, spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
     assert!(
         spans[0].link_url.is_none(),
         "non-link spans must not have link_url set"
     );
+}
+
+// ── gap #4: field codes ───────────────────────────────────────────────────────
+
+#[test]
+fn flatten_field_uses_current_value() {
+    let catalog = StyleCatalog::new();
+    let field = Field::new(FieldKind::PageNumber).with_current_value("42");
+    let para = empty_para(vec![Inline::Field(field)]);
+    let (text, _spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
+    assert_eq!(text, "42", "Field with current_value should emit that value");
+}
+
+#[test]
+fn flatten_field_page_number_fallback() {
+    let catalog = StyleCatalog::new();
+    let field = Field::new(FieldKind::PageNumber); // no current_value
+    let para = empty_para(vec![Inline::Field(field)]);
+    let (text, _spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
+    assert_eq!(text, "1", "PageNumber without current_value should fall back to \"1\"");
+}
+
+#[test]
+fn flatten_field_raw_no_current_value_emits_nothing() {
+    let catalog = StyleCatalog::new();
+    let field = Field::new(FieldKind::Raw { instruction: "HYPERLINK".into() });
+    let para = empty_para(vec![Inline::Field(field)]);
+    let (text, _spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
+    assert!(text.is_empty(), "Raw field without current_value should emit empty string");
+}
+
+// ── gap #2: footnotes ─────────────────────────────────────────────────────────
+
+#[test]
+fn flatten_footnote_emits_superscript_mark_and_collects_body() {
+    let catalog = StyleCatalog::new();
+    let body = vec![Block::StyledPara(StyledParagraph {
+        style_id: None,
+        direct_para_props: None,
+        direct_char_props: None,
+        inlines: vec![Inline::Str("note body".into())],
+        attr: NodeAttr::default(),
+    })];
+    let para = empty_para(vec![
+        Inline::Str("text".into()),
+        Inline::Note(NoteKind::Footnote, body.clone()),
+    ]);
+    let mut counter = 0u32;
+    let (text, _spans, _images, notes) = flatten_paragraph(&para, &catalog, &mut counter);
+    assert!(text.contains("text"), "main text must be present");
+    assert!(text.contains('\u{00B9}'), "superscript ¹ must be emitted for note 1");
+    assert_eq!(notes.len(), 1, "one note must be collected");
+    assert_eq!(notes[0].number, 1);
+    assert!(matches!(notes[0].kind, NoteKind::Footnote));
+    assert_eq!(counter, 1);
+}
+
+#[test]
+fn flatten_multiple_footnotes_increment_counter() {
+    let catalog = StyleCatalog::new();
+    let note1 = Inline::Note(NoteKind::Footnote, vec![]);
+    let note2 = Inline::Note(NoteKind::Endnote, vec![]);
+    let para = empty_para(vec![note1, note2]);
+    let mut counter = 0u32;
+    let (text, _spans, _images, notes) = flatten_paragraph(&para, &catalog, &mut counter);
+    assert_eq!(counter, 2);
+    assert_eq!(notes.len(), 2);
+    assert_eq!(notes[0].number, 1);
+    assert_eq!(notes[1].number, 2);
+    // ¹ = U+00B9, ² = U+00B2
+    assert!(text.contains('\u{00B9}'));
+    assert!(text.contains('\u{00B2}'));
+}
+
+#[test]
+fn flatten_footnote_mark_superscript_vertical_align() {
+    let catalog = StyleCatalog::new();
+    let para = empty_para(vec![
+        Inline::Note(NoteKind::Footnote, vec![]),
+    ]);
+    let (text, spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
+    assert!(!text.is_empty(), "mark must be emitted");
+    let mark_span = spans.iter().find(|s| {
+        s.vertical_align == Some(crate::para::VerticalAlign::Superscript)
+    });
+    assert!(mark_span.is_some(), "note mark span must have Superscript vertical_align");
 }

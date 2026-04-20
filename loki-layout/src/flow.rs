@@ -26,7 +26,7 @@ use crate::font::FontResources;
 use crate::geometry::{LayoutInsets, LayoutRect, LayoutSize};
 use crate::items::{PositionedItem, PositionedRect};
 use crate::mode::LayoutMode;
-use crate::resolve::{pts_to_f32, resolve_para_props};
+use crate::resolve::{pts_to_f32, resolve_para_props, CollectedNote};
 use crate::result::LayoutPage;
 
 use para_impl::{flow_keep_with_next_chain, flow_paragraph};
@@ -131,6 +131,12 @@ pub(super) struct FlowState<'a> {
     /// The `ListId` of the most recently placed list item, used to detect
     /// list-id changes and reset counters for the new list.
     pub(super) prev_list_id: Option<ListId>,
+    /// Monotonically-increasing counter for footnotes and endnotes within
+    /// the current section. Incremented by `walk_inlines` when a `Note` is met.
+    pub(super) note_counter: u32,
+    /// Footnotes and endnotes collected while flowing the current section.
+    /// Rendered at the end of the section by `flow_footnotes`.
+    pub(super) pending_footnotes: Vec<CollectedNote>,
 }
 
 impl<'a> FlowState<'a> {
@@ -209,6 +215,8 @@ pub fn flow_section(
         current_indent: 0.0,
         list_counters: HashMap::new(),
         prev_list_id: None,
+        note_counter: 0,
+        pending_footnotes: Vec::new(),
     };
 
     if mode.is_paginated() {
@@ -233,6 +241,8 @@ pub fn flow_section(
             flow_block(&mut state, block, idx);
         }
     }
+
+    flow_footnotes(&mut state);
 
     if mode.is_paginated() {
         finish_page(&mut state);
@@ -346,6 +356,64 @@ fn flow_hrule(state: &mut FlowState) {
         color: LayoutColor::BLACK,
     }));
     state.cursor_y += RULE_HEIGHT + RULE_SPACING;
+}
+
+// ── Footnote rendering ────────────────────────────────────────────────────────
+
+/// Render all accumulated footnotes at the end of the section.
+///
+/// Places a 1/3-width separator rule followed by each note body. The note
+/// reference mark (e.g. "¹") is prepended to the first block of each note.
+/// End-of-section placement is used for v0.1; end-of-page is deferred.
+fn flow_footnotes(state: &mut FlowState) {
+    if state.pending_footnotes.is_empty() {
+        return;
+    }
+    let notes = std::mem::take(&mut state.pending_footnotes);
+
+    // Separator: 1/3-width, 0.5 pt tall, 4 pt spacing above and below.
+    const SEP_HEIGHT: f32 = 0.5;
+    const SEP_GAP: f32 = 4.0;
+    let sep_w = state.content_width / 3.0;
+    state.cursor_y += SEP_GAP;
+    state.current_items.push(PositionedItem::HorizontalRule(PositionedRect {
+        rect: LayoutRect::new(0.0, state.cursor_y, sep_w, SEP_HEIGHT),
+        color: LayoutColor::BLACK,
+    }));
+    state.cursor_y += SEP_HEIGHT + SEP_GAP;
+
+    for note in notes {
+        let mark = format!("{} ", &footnote_mark(note.number));
+        let mut first = true;
+        for block in &note.blocks {
+            if first {
+                first = false;
+                if let Block::StyledPara(p) = block {
+                    let mut p = p.clone();
+                    p.inlines.insert(0, Inline::Str(mark.clone().into()));
+                    flow_paragraph(state, &p, 0);
+                    continue;
+                }
+            }
+            flow_block(state, block, 0);
+        }
+    }
+}
+
+/// Return the Unicode superscript mark for note number `n`.
+fn footnote_mark(n: u32) -> String {
+    match n {
+        1 => "\u{00B9}".to_string(),
+        2 => "\u{00B2}".to_string(),
+        3 => "\u{00B3}".to_string(),
+        4 => "\u{2074}".to_string(),
+        5 => "\u{2075}".to_string(),
+        6 => "\u{2076}".to_string(),
+        7 => "\u{2077}".to_string(),
+        8 => "\u{2078}".to_string(),
+        9 => "\u{2079}".to_string(),
+        _ => format!("[{n}]"),
+    }
 }
 
 // ── Paragraph synthesisers ────────────────────────────────────────────────────

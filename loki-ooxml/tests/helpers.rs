@@ -172,6 +172,7 @@ fn footnotes_xml() -> Vec<u8> {
 /// | Lists (bullet + numbered)| #1    |
 /// | Hyperlink                | #11   |
 /// | Footnote reference       | #2    |
+/// | Field code (PAGE)        | #4    |
 /// | Paragraph border (box)   | #6    |
 /// | Tab stops                | #7    |
 /// | Page breaks (3 pages)    | —     |
@@ -337,6 +338,17 @@ fn document_xml() -> Vec<u8> {
           <w:t>https://example.com</w:t>
         </w:r>
       </w:hyperlink>
+    </w:p>
+
+    <!-- field code PAGE (gap #4): complex field with snapshot value "1" -->
+    <w:p>
+      <w:r><w:t xml:space="preserve">Page </w:t></w:r>
+      <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+      <w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>
+      <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+      <w:r><w:t>1</w:t></w:r>
+      <w:r><w:fldChar w:fldCharType="end"/></w:r>
+      <w:r><w:t xml:space="preserve"> of document.</w:t></w:r>
     </w:p>
 
     <!-- footnote reference (gap #2) -->

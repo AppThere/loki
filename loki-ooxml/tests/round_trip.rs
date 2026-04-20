@@ -8,7 +8,7 @@ mod helpers;
 use std::io::Cursor;
 
 use loki_doc_model::content::block::Block;
-use loki_doc_model::content::inline::Inline;
+use loki_doc_model::content::inline::{Inline, NoteKind};
 use loki_ooxml::docx::import::{DocxImporter, DocxImportOptions};
 
 /// Import the reference DOCX and validate the high-level document shape.
@@ -20,6 +20,8 @@ use loki_ooxml::docx::import::{DocxImporter, DocxImportOptions};
 /// 4. First section page size is approximately A4 (595 × 842 pt, ±1 pt).
 /// 5. At least one paragraph has `border_top` set (gap #6).
 /// 6. At least one paragraph has two explicit tab stops (gap #7).
+/// 7. At least one paragraph contains `Inline::Note(Footnote, _)` (gap #2).
+/// 8. At least one paragraph contains `Inline::Field` with `kind == PageNumber` (gap #4).
 #[test]
 fn import_reference_docx_smoke() {
     let bytes = helpers::build_reference_docx();
@@ -88,6 +90,14 @@ fn import_reference_docx_smoke() {
         }
     });
     assert!(has_tab_stops, "at least one paragraph with ≥2 tab stops must be present (gap #7)");
+
+    // ── 7. Footnote present (gap #2) ────────────────────────────────────────
+    let has_footnote = all_blocks.iter().any(|b| block_has_footnote(b));
+    assert!(has_footnote, "at least one paragraph with Inline::Note(Footnote) must be present (gap #2)");
+
+    // ── 8. Field code present (gap #4) ──────────────────────────────────────
+    let has_field = all_blocks.iter().any(|b| block_has_field(b));
+    assert!(has_field, "at least one paragraph with Inline::Field must be present (gap #4)");
 }
 
 fn block_has_bold_run(block: &Block) -> bool {
@@ -107,4 +117,38 @@ fn inline_is_bold_styled_run(inline: &Inline) -> bool {
     } else {
         false
     }
+}
+
+fn block_has_footnote(block: &Block) -> bool {
+    let inlines = match block {
+        Block::StyledPara(p) => p.inlines.as_slice(),
+        Block::Heading(_, _, inlines) => inlines.as_slice(),
+        _ => return false,
+    };
+    inlines_have_footnote(inlines)
+}
+
+fn inlines_have_footnote(inlines: &[Inline]) -> bool {
+    inlines.iter().any(|i| match i {
+        Inline::Note(NoteKind::Footnote, _) => true,
+        Inline::StyledRun(run) => inlines_have_footnote(&run.content),
+        _ => false,
+    })
+}
+
+fn block_has_field(block: &Block) -> bool {
+    let inlines = match block {
+        Block::StyledPara(p) => p.inlines.as_slice(),
+        Block::Heading(_, _, inlines) => inlines.as_slice(),
+        _ => return false,
+    };
+    inlines_have_field(inlines)
+}
+
+fn inlines_have_field(inlines: &[Inline]) -> bool {
+    inlines.iter().any(|i| match i {
+        Inline::Field(_) => true,
+        Inline::StyledRun(run) => inlines_have_field(&run.content),
+        _ => false,
+    })
 }
