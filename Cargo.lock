@@ -3513,6 +3513,7 @@ dependencies = [
  "loki-primitives",
  "parley 0.8.0",
  "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]

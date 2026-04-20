@@ -144,6 +144,15 @@ pub struct ParagraphLayout {
     pub first_baseline: f32,
     /// Baseline of the last line, measured from the top of the paragraph.
     pub last_baseline: f32,
+    /// Per-line `(min_coord, max_coord)` in paragraph-local layout units.
+    /// Populated from Parley line metrics after `break_all_lines`.
+    /// Empty for empty paragraphs.
+    ///
+    /// Used by `flow_section` to find clean split points at line boundaries.
+    /// `TODO(split-optimise)`: Option B y-range item filter can use this field
+    /// to avoid rendering clipped content to the GPU once the Option A baseline
+    /// is stable and profiled.
+    pub line_boundaries: Vec<(f32, f32)>,
 }
 
 /// Lay out a single paragraph using Parley.
@@ -161,7 +170,14 @@ pub fn layout_paragraph(
     display_scale: f32,
 ) -> ParagraphLayout {
     if text_content.is_empty() {
-        return ParagraphLayout { height: 0.0, width: 0.0, items: vec![], first_baseline: 0.0, last_baseline: 0.0 };
+        return ParagraphLayout {
+            height: 0.0,
+            width: 0.0,
+            items: vec![],
+            first_baseline: 0.0,
+            last_baseline: 0.0,
+            line_boundaries: vec![],
+        };
     }
 
     let mut builder = resources.layout_cx.ranged_builder(
@@ -233,6 +249,10 @@ pub fn layout_paragraph(
     let total_width = layout.width();
     let first_baseline = layout.lines().next().map(|l| l.metrics().baseline).unwrap_or(0.0);
     let last_baseline = layout.lines().last().map(|l| l.metrics().baseline).unwrap_or(0.0);
+    let line_boundaries: Vec<(f32, f32)> = layout
+        .lines()
+        .map(|l| (l.metrics().min_coord, l.metrics().max_coord))
+        .collect();
 
     let mut items: Vec<PositionedItem> = Vec::new();
 
@@ -329,7 +349,7 @@ pub fn layout_paragraph(
         }));
     }
 
-    ParagraphLayout { height: total_height, width: total_width, items, first_baseline, last_baseline }
+    ParagraphLayout { height: total_height, width: total_width, items, first_baseline, last_baseline, line_boundaries }
 }
 
 #[cfg(test)]

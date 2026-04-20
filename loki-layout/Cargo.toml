@@ -15,6 +15,7 @@ appthere-color = "0.1.1"
 parley = "0.8"
 fontique = "0.8"
 thiserror = "2"
+tracing = "0.1"
 
 [package.metadata.docs.rs]
 all-features = true
