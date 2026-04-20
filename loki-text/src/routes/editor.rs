@@ -117,6 +117,28 @@ pub fn Editor(path: String) -> Element {
     //   blitz-shell's WindowEvent::MouseWheel handler.
     //   TODO(partial-render): wire scroll_offset → visible_rect once Blitz
     //   exposes a scroll-position hook to Dioxus components.
+    //
+    // ── Toolbar hit-test overlap when scrolled ────────────────────────────────
+    //
+    // BUG (Blitz): Node::hit() [blitz-dom-0.2.4/src/node/node.rs:716-773]
+    //   adjusts incoming coordinates by +scroll_offset before checking bounds:
+    //     adjusted_y = pointer_y - container_y + scroll_offset_y
+    //     matches_self = !(adjusted_y < 0 || …)
+    //   When scroll_offset_y ≥ container_y (= TOOLBAR_HEIGHT_TOP), adjusted_y
+    //   is always ≥ 0 for any pointer_y ≥ 0, so the scroll container claims
+    //   every click including those in the toolbar row.
+    //
+    //   pointer-events:none is NOT implemented in this Blitz version
+    //   (blitz-dom-0.2.4/src/node/node.rs has no reference to PointerEvents).
+    //
+    // FIX: paint_children are sorted ascending by z_index
+    //   [blitz-dom-0.2.4/src/layout/damage.rs:353-383].  Hit testing iterates
+    //   paint_children in REVERSE, so the highest z_index wins.  TopToolbar
+    //   carries `position: relative; z-index: 10` (see toolbar.rs); the scroll
+    //   container has the default z_index: 0.  After sorting, TopToolbar is the
+    //   last entry in paint_children and therefore the FIRST tested — it
+    //   captures clicks in its own (correct) bounds before the scroll container
+    //   is tried.
     let chrome_px =
         tokens::TOOLBAR_HEIGHT_TOP as u32 + tokens::TOOLBAR_HEIGHT_BOTTOM as u32;
 
