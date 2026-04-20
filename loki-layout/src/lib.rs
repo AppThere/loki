@@ -84,10 +84,21 @@ pub fn layout_document(
                     unreachable!("flow_section in Paginated mode always returns Pages");
                 };
 
+                // Renumber pages first so select_header/select_footer receive
+                // the correct absolute page number for first/even selection.
                 let section_page_count = pages.len();
                 for page in &mut pages {
                     page.page_number = global_page_count + page.page_number;
                 }
+
+                flow::assign_headers_footers(
+                    &mut pages,
+                    &section.layout,
+                    resources,
+                    &doc.styles,
+                    display_scale,
+                );
+
                 all_pages.extend(pages);
                 global_page_count += section_page_count;
             }

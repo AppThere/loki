@@ -246,6 +246,8 @@ pub struct DocxSectPr {
     pub header_refs: Vec<DocxHdrFtrRef>,
     /// Footer references.
     pub footer_refs: Vec<DocxHdrFtrRef>,
+    /// `<w:titlePg/>` — distinct first-page header/footer active (ECMA-376 §17.6.17).
+    pub title_page: bool,
 }
 
 /// `w:pgSz` page size (ECMA-376 §17.6.13).

@@ -16,8 +16,11 @@ mod para_impl;
 
 use std::collections::HashMap;
 
+use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::content::block::StyledParagraph;
 use loki_doc_model::content::inline::Inline;
+use loki_doc_model::layout::header_footer::HeaderFooter;
+use loki_doc_model::layout::page::PageLayout;
 use loki_doc_model::style::list_style::ListId;
 use loki_doc_model::{Block, NodeAttr, Section, StyleCatalog};
 
@@ -340,10 +343,151 @@ pub(super) fn finish_page(state: &mut FlowState) {
         content_items: std::mem::take(&mut state.current_items),
         header_items: vec![],
         footer_items: vec![],
+        header_height: 0.0,
+        footer_height: 0.0,
     };
     state.pages.push(page);
     state.page_number += 1;
     state.cursor_y = 0.0;
+}
+
+// ── Header / footer layout helpers ───────────────────────────────────────────
+
+/// Lay out `blocks` in reflow mode using `available_width`.
+///
+/// Returns the positioned items (in `(0,0)`-origin canvas coordinates) and the
+/// total canvas height. Items have no Y offset applied — the caller translates
+/// them to page-local coordinates.
+fn layout_blocks_reflow(
+    resources: &mut FontResources,
+    blocks: &[Block],
+    catalog: &StyleCatalog,
+    available_width: f32,
+    display_scale: f32,
+) -> (Vec<PositionedItem>, f32) {
+    let synthetic = Section {
+        layout: PageLayout::default(),
+        blocks: blocks.to_vec(),
+        extensions: ExtensionBag::default(),
+    };
+    let mode = LayoutMode::Reflow { available_width };
+    match flow_section(resources, &synthetic, catalog, &mode, display_scale) {
+        FlowOutput::Canvas { items, height, .. } => (items, height),
+        FlowOutput::Pages { .. } => unreachable!("Reflow mode always returns Canvas"),
+    }
+}
+
+/// Select the appropriate header for a page given page number and layout.
+fn select_header(layout: &PageLayout, page_number: usize) -> Option<&HeaderFooter> {
+    if page_number == 1 {
+        if let Some(ref hf) = layout.header_first {
+            return Some(hf);
+        }
+    }
+    if page_number % 2 == 0 {
+        if let Some(ref hf) = layout.header_even {
+            return Some(hf);
+        }
+    }
+    layout.header.as_ref()
+}
+
+/// Select the appropriate footer for a page given page number and layout.
+fn select_footer(layout: &PageLayout, page_number: usize) -> Option<&HeaderFooter> {
+    if page_number == 1 {
+        if let Some(ref hf) = layout.footer_first {
+            return Some(hf);
+        }
+    }
+    if page_number % 2 == 0 {
+        if let Some(ref hf) = layout.footer_even {
+            return Some(hf);
+        }
+    }
+    layout.footer.as_ref()
+}
+
+/// Populate header/footer items for each page in `pages`.
+///
+/// Pre-lays-out all unique header/footer variants once (in reflow mode), then
+/// assigns translated copies to each page. Items are translated to page-local
+/// coordinates:
+/// - Header top: `margins.header`
+/// - Footer top: `page_height - margins.footer - footer_height`
+pub(crate) fn assign_headers_footers(
+    pages: &mut Vec<LayoutPage>,
+    layout: &PageLayout,
+    resources: &mut FontResources,
+    catalog: &StyleCatalog,
+    display_scale: f32,
+) {
+    // Pre-layout each variant that is present.
+    let content_width = pages
+        .first()
+        .map(|p| (p.page_size.width - p.margins.horizontal()).max(0.0))
+        .unwrap_or(0.0);
+
+    let mut lay = |hf: &HeaderFooter| -> (Vec<PositionedItem>, f32) {
+        layout_blocks_reflow(resources, &hf.blocks, catalog, content_width, display_scale)
+    };
+
+    let hdr_default: Option<(Vec<PositionedItem>, f32)> =
+        layout.header.as_ref().map(|hf| lay(hf));
+    let hdr_first: Option<(Vec<PositionedItem>, f32)> =
+        layout.header_first.as_ref().map(|hf| lay(hf));
+    let hdr_even: Option<(Vec<PositionedItem>, f32)> =
+        layout.header_even.as_ref().map(|hf| lay(hf));
+    let ftr_default: Option<(Vec<PositionedItem>, f32)> =
+        layout.footer.as_ref().map(|hf| lay(hf));
+    let ftr_first: Option<(Vec<PositionedItem>, f32)> =
+        layout.footer_first.as_ref().map(|hf| lay(hf));
+    let ftr_even: Option<(Vec<PositionedItem>, f32)> =
+        layout.footer_even.as_ref().map(|hf| lay(hf));
+
+    use crate::resolve::pts_to_f32;
+    let hdr_margin_y = pts_to_f32(layout.margins.header);
+    let ftr_margin   = pts_to_f32(layout.margins.footer);
+    let left_margin  = pts_to_f32(layout.margins.left);
+
+    for page in pages.iter_mut() {
+        let page_h = page.page_size.height;
+        let pn = page.page_number;
+
+        let hdr = if pn == 1 && hdr_first.is_some() {
+            hdr_first.as_ref()
+        } else if pn % 2 == 0 && hdr_even.is_some() {
+            hdr_even.as_ref()
+        } else {
+            hdr_default.as_ref()
+        };
+
+        let ftr = if pn == 1 && ftr_first.is_some() {
+            ftr_first.as_ref()
+        } else if pn % 2 == 0 && ftr_even.is_some() {
+            ftr_even.as_ref()
+        } else {
+            ftr_default.as_ref()
+        };
+
+        if let Some((items, h)) = hdr {
+            let mut translated: Vec<PositionedItem> = items.clone();
+            for item in &mut translated {
+                item.translate(left_margin, hdr_margin_y);
+            }
+            page.header_items = translated;
+            page.header_height = *h;
+        }
+
+        if let Some((items, h)) = ftr {
+            let footer_y = page_h - ftr_margin - h;
+            let mut translated: Vec<PositionedItem> = items.clone();
+            for item in &mut translated {
+                item.translate(left_margin, footer_y);
+            }
+            page.footer_items = translated;
+            page.footer_height = *h;
+        }
+    }
 }
 
 // ── Miscellaneous block renderers ─────────────────────────────────────────────

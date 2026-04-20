@@ -678,6 +678,11 @@ pub(crate) fn parse_sect_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxSectP
                             sect.footer_refs.push(DocxHdrFtrRef { hf_type, rel_id });
                         }
                     }
+                    b"titlePg" => {
+                        // Presence enables first-page variant; w:val="0" disables.
+                        sect.title_page = attr_val(e, b"val")
+                            .map_or(true, |v| !matches!(v.as_str(), "0" | "false" | "off"));
+                    }
                     _ => {}
                 }
             }

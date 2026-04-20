@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::document::Document;
+use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
 use loki_doc_model::layout::page::{PageLayout, PageMargins, PageOrientation, PageSize};
 use loki_doc_model::layout::section::Section;
 use loki_doc_model::meta::core::DocumentMeta;
@@ -20,7 +21,8 @@ use crate::docx::import::DocxImportOptions;
 use crate::docx::model::document::{DocxBodyChild, DocxDocument};
 use crate::docx::model::footnotes::{DocxNoteType, DocxNotes};
 use crate::docx::model::numbering::DocxNumbering;
-use crate::docx::model::paragraph::DocxSectPr;
+use crate::docx::model::paragraph::{DocxParagraph, DocxSectPr};
+use crate::docx::model::settings::DocxSettings;
 use crate::docx::model::styles::DocxStyles;
 use crate::error::OoxmlWarning;
 
@@ -92,6 +94,80 @@ fn map_page_layout(sect_pr: Option<&DocxSectPr>) -> PageLayout {
     layout
 }
 
+// ── Header / footer helpers ───────────────────────────────────────────────────
+
+fn map_hf_blocks(
+    paragraphs: &[DocxParagraph],
+    kind: HeaderFooterKind,
+    ctx: &mut MappingContext<'_>,
+) -> HeaderFooter {
+    let blocks: Vec<Block> = paragraphs
+        .iter()
+        .flat_map(|p| map_paragraph(p, ctx))
+        .collect();
+    HeaderFooter { kind, blocks }
+}
+
+/// Converts a [`DocxSectPr`] to a [`PageLayout`], populating header/footer
+/// variants from `header_parts`/`footer_parts` (keyed by relationship ID).
+///
+/// `even_and_odd` mirrors `w:evenAndOddHeaders` in `w:settings`.
+fn map_page_layout_with_hf(
+    sect_pr: Option<&DocxSectPr>,
+    header_parts: &HashMap<String, Vec<DocxParagraph>>,
+    footer_parts: &HashMap<String, Vec<DocxParagraph>>,
+    even_and_odd: bool,
+    ctx: &mut MappingContext<'_>,
+) -> PageLayout {
+    let mut layout = map_page_layout(sect_pr);
+
+    let Some(sp) = sect_pr else {
+        return layout;
+    };
+
+    for hf_ref in &sp.header_refs {
+        if let Some(paras) = header_parts.get(&hf_ref.rel_id) {
+            match hf_ref.hf_type.as_str() {
+                "default" => {
+                    layout.header =
+                        Some(map_hf_blocks(paras, HeaderFooterKind::Default, ctx));
+                }
+                "first" if sp.title_page => {
+                    layout.header_first =
+                        Some(map_hf_blocks(paras, HeaderFooterKind::First, ctx));
+                }
+                "even" if even_and_odd => {
+                    layout.header_even =
+                        Some(map_hf_blocks(paras, HeaderFooterKind::Even, ctx));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    for hf_ref in &sp.footer_refs {
+        if let Some(paras) = footer_parts.get(&hf_ref.rel_id) {
+            match hf_ref.hf_type.as_str() {
+                "default" => {
+                    layout.footer =
+                        Some(map_hf_blocks(paras, HeaderFooterKind::Default, ctx));
+                }
+                "first" if sp.title_page => {
+                    layout.footer_first =
+                        Some(map_hf_blocks(paras, HeaderFooterKind::First, ctx));
+                }
+                "even" if even_and_odd => {
+                    layout.footer_even =
+                        Some(map_hf_blocks(paras, HeaderFooterKind::Even, ctx));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    layout
+}
+
 // ── Note pre-processing ───────────────────────────────────────────────────────
 
 /// Maps a notes part to a `HashMap<id, Vec<Block>>` using the given context.
@@ -158,6 +234,9 @@ pub(crate) fn map_document(
     raw_endnotes: Option<&DocxNotes>,
     images: HashMap<String, PartData>,
     hyperlinks: HashMap<String, String>,
+    header_parts: &HashMap<String, Vec<DocxParagraph>>,
+    footer_parts: &HashMap<String, Vec<DocxParagraph>>,
+    raw_settings: Option<&DocxSettings>,
     core_props: Option<&loki_opc::CoreProperties>,
     options: &DocxImportOptions,
 ) -> (Document, Vec<OoxmlWarning>) {
@@ -204,6 +283,8 @@ pub(crate) fn map_document(
         result
     };
 
+    let even_and_odd = raw_settings.map_or(false, |s| s.even_and_odd_headers);
+
     // ── 4+5. Section-split body walk ───────────────────────────────────────
     let mut ctx = MappingContext {
         styles: &catalog,
@@ -225,7 +306,13 @@ pub(crate) fn map_document(
                 let blocks = map_paragraph(p, &mut ctx);
                 current_blocks.extend(blocks);
                 if let Some(sp) = sect_pr {
-                    let layout = map_page_layout(Some(sp));
+                    let layout = map_page_layout_with_hf(
+                        Some(sp),
+                        header_parts,
+                        footer_parts,
+                        even_and_odd,
+                        &mut ctx,
+                    );
                     sections.push(Section {
                         layout,
                         blocks: std::mem::take(&mut current_blocks),
@@ -242,7 +329,13 @@ pub(crate) fn map_document(
     }
 
     // Close the final section.
-    let final_layout = map_page_layout(doc.body.final_sect_pr.as_ref());
+    let final_layout = map_page_layout_with_hf(
+        doc.body.final_sect_pr.as_ref(),
+        header_parts,
+        footer_parts,
+        even_and_odd,
+        &mut ctx,
+    );
     sections.push(Section {
         layout: final_layout,
         blocks: current_blocks,
@@ -294,6 +387,7 @@ mod tests {
             }),
             header_refs: vec![],
             footer_refs: vec![],
+            title_page: false,
         }
     }
 
@@ -308,6 +402,9 @@ mod tests {
             None,
             HashMap::new(),
             HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            None,
             None,
             &DocxImportOptions::default(),
         )
@@ -343,6 +440,9 @@ mod tests {
             None,
             HashMap::new(),
             HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            None,
             None,
             &DocxImportOptions::default(),
         );
@@ -373,6 +473,9 @@ mod tests {
             None,
             HashMap::new(),
             HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            None,
             Some(&cp),
             &DocxImportOptions::default(),
         );

@@ -3540,6 +3540,7 @@ dependencies = [
  "chrono",
  "indexmap",
  "loki-doc-model",
+ "loki-layout",
  "loki-opc",
  "loki-primitives",
  "quick-xml 0.36.2",

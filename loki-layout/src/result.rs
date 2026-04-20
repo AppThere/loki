@@ -86,10 +86,14 @@ pub struct LayoutPage {
     /// the content-area top-left (i.e. page origin offset by `margins`).
     /// The painter is responsible for adding the margin offset at render time.
     pub content_items: Vec<PositionedItem>,
-    /// Items in the header area.
+    /// Items in the header area. Origins are page-local (top-left of page).
     pub header_items: Vec<PositionedItem>,
-    /// Items in the footer area.
+    /// Items in the footer area. Origins are page-local (top-left of page).
     pub footer_items: Vec<PositionedItem>,
+    /// Rendered height of the header content in points (0.0 if no header).
+    pub header_height: f32,
+    /// Rendered height of the footer content in points (0.0 if no footer).
+    pub footer_height: f32,
 }
 
 impl LayoutPage {
@@ -159,6 +163,8 @@ mod tests {
             content_items: vec![make_filled(0.0), make_filled(10.0)],
             header_items: vec![make_filled(20.0)],
             footer_items: vec![],
+            header_height: 0.0,
+            footer_height: 0.0,
         };
         let page2 = LayoutPage {
             page_number: 2,
@@ -167,6 +173,8 @@ mod tests {
             content_items: vec![make_filled(0.0)],
             header_items: vec![],
             footer_items: vec![make_filled(30.0)],
+            header_height: 0.0,
+            footer_height: 0.0,
         };
         let layout = DocumentLayout::Paginated(PaginatedLayout {
             page_size: LayoutSize::new(595.0, 842.0),
@@ -185,6 +193,8 @@ mod tests {
             content_items: vec![],
             header_items: vec![],
             footer_items: vec![],
+            header_height: 0.0,
+            footer_height: 0.0,
         };
         let cr = page.content_rect();
         assert_eq!(cr.x(), 72.0);
@@ -202,6 +212,8 @@ mod tests {
             content_items: vec![],
             header_items: vec![],
             footer_items: vec![],
+            header_height: 0.0,
+            footer_height: 0.0,
         };
         let layout = DocumentLayout::Paginated(PaginatedLayout {
             page_size: LayoutSize::new(595.0, 842.0),

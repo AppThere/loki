@@ -31,7 +31,8 @@ default-features = false
 features = ["std"]
 
 [dev-dependencies]
-loki-opc = { path = "../loki-opc" }
+loki-opc    = { path = "../loki-opc" }
+loki-layout = { path = "../loki-layout" }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [package.metadata.docs.rs]
