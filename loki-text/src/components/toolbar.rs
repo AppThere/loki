@@ -12,6 +12,24 @@
 //! Both components use `flex-shrink: 0` to maintain a constant height inside
 //! the editor's vertical flex layout.  Neither uses `position: fixed`, which
 //! Blitz does not support.
+//!
+//! ## TopToolbar z-index
+//!
+//! `TopToolbar` sets `position: relative; z-index: 10` on its root div.  This
+//! is required to beat the scroll container in Blitz hit testing.
+//!
+//! Root cause: `blitz-dom-0.2.4/src/node/node.rs Node::hit()` adjusts the
+//! incoming y-coordinate by `+scroll_offset.y`, then uses `y < 0` as the
+//! upper-boundary guard.  Once `scroll_offset.y ≥ TOOLBAR_HEIGHT_TOP` that
+//! guard is never triggered for any click in the viewport, so the scroll
+//! container incorrectly claims hits in the toolbar row.
+//!
+//! Mitigation: `paint_children` are sorted ascending by (z_index,
+//! position_to_order) in `blitz-dom-0.2.4/src/layout/damage.rs:353-383`.
+//! Hit testing reverses that list, so the element with the *highest* z_index
+//! is tested first.  `z-index: 10` on the toolbar (vs. the default 0 on the
+//! scroll container) ensures the toolbar always wins when the cursor is in its
+//! row, regardless of how far the document has been scrolled.
 
 use dioxus::prelude::*;
 use loki_theme::tokens;
@@ -60,7 +78,11 @@ pub fn TopToolbar(title: String) -> Element {
     rsx! {
         div {
             style: format!(
-                "height: {h}px; background: {bg}; \
+                // position:relative + z-index:10 — required for correct hit
+                // testing when the scroll container is scrolled; see module
+                // doc for the full explanation.
+                "position: relative; z-index: 10; \
+                 height: {h}px; background: {bg}; \
                  border-bottom: 1px solid {border}; \
                  display: flex; align-items: center; \
                  padding: 0 {pad}px; flex-shrink: 0; gap: {gap}px;",
