@@ -154,6 +154,73 @@ pub fn rich_fixture_content_xml(version: &str) -> Vec<u8> {
     .into_bytes()
 }
 
+/// `styles.xml` that declares an A4 page layout, a heading style named
+/// `"Heading_20_1"` (LibreOffice encoding of "Heading 1") with 18 pt bold
+/// Liberation Sans, and a body style with `fo:font-family`.
+///
+/// Used by gap-coverage tests for page size, heading style resolution, and
+/// font property propagation.
+pub fn rich_styles_xml() -> Vec<u8> {
+    b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-styles \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" \
+        xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\">\
+      <office:automatic-styles>\
+        <style:page-layout style:name=\"pm1\">\
+          <style:page-layout-properties \
+            fo:page-width=\"21cm\" fo:page-height=\"29.7cm\" \
+            fo:margin-top=\"2.54cm\" fo:margin-bottom=\"2.54cm\" \
+            fo:margin-left=\"3.17cm\" fo:margin-right=\"3.17cm\"/>\
+        </style:page-layout>\
+      </office:automatic-styles>\
+      <office:styles>\
+        <style:style style:name=\"Heading_20_1\" style:display-name=\"Heading 1\" \
+          style:family=\"paragraph\">\
+          <style:paragraph-properties fo:margin-left=\"0cm\" fo:text-indent=\"0cm\"/>\
+          <style:text-properties style:font-name=\"Liberation Sans\" \
+            fo:font-size=\"18pt\" fo:font-weight=\"bold\"/>\
+        </style:style>\
+        <style:style style:name=\"BodyText\" style:family=\"paragraph\">\
+          <style:text-properties fo:font-family=\"Liberation Serif\" \
+            fo:font-size=\"11pt\"/>\
+        </style:style>\
+      </office:styles>\
+      <office:master-styles>\
+        <style:master-page style:name=\"Standard\" \
+          style:page-layout-name=\"pm1\"/>\
+      </office:master-styles>\
+      </office:document-styles>"
+        .to_vec()
+}
+
+/// `content.xml` that uses the styles defined in [`rich_styles_xml`]:
+/// a heading at level 1 with `text:style-name="Heading_20_1"` and a body
+/// paragraph with `text:style-name="BodyText"` and an indented paragraph.
+pub fn rich_content_xml_with_styles() -> Vec<u8> {
+    b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-content \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" \
+        xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" \
+        xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\">\
+      <office:automatic-styles>\
+        <style:style style:name=\"P1\" style:family=\"paragraph\">\
+          <style:paragraph-properties fo:margin-left=\"1cm\" fo:text-indent=\"0cm\"/>\
+        </style:style>\
+      </office:automatic-styles>\
+      <office:body><office:text>\
+        <text:h text:outline-level=\"1\" text:style-name=\"Heading_20_1\"\
+          >Chapter One</text:h>\
+        <text:p text:style-name=\"BodyText\">Body paragraph text.</text:p>\
+        <text:p text:style-name=\"P1\">Indented paragraph.</text:p>\
+      </office:text></office:body>\
+      </office:document-content>"
+        .to_vec()
+}
+
 /// `content.xml` with a single paragraph and **no** `office:version`
 /// attribute — valid for ODF 1.1 documents.
 pub fn v1_1_content_xml() -> Vec<u8> {

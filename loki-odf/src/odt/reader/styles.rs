@@ -210,6 +210,21 @@ pub(crate) fn read_stylesheet(
                             levels: Vec::new(),
                         });
                     }
+                    b"master-page" => {
+                        // Self-closing <style:master-page .../> — no header/footer content.
+                        // TODO(odf-master-page): style:master-page-name transitions not implemented.
+                        let name = local_attr_val(e, b"name")
+                            .unwrap_or_default();
+                        let page_layout_name =
+                            local_attr_val(e, b"page-layout-name")
+                                .unwrap_or_default();
+                        sheet.master_pages.push(OdfMasterPage {
+                            name,
+                            page_layout_name,
+                            header: None,
+                            footer: None,
+                        });
+                    }
                     _ => {}
                 }
             }
@@ -428,6 +443,7 @@ fn parse_tab_stops(
 fn parse_text_props_attrs(e: &quick_xml::events::BytesStart<'_>) -> OdfTextProps {
     OdfTextProps {
         font_name: local_attr_val(e, b"font-name"),
+        font_family: local_attr_val(e, b"font-family"),
         font_size: local_attr_val(e, b"font-size"),
         font_weight: local_attr_val(e, b"font-weight"),
         font_style: local_attr_val(e, b"font-style"),
