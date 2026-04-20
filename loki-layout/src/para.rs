@@ -211,6 +211,9 @@ pub struct ResolvedParaProps {
     pub keep_with_next: bool,
     /// Insert a page break before this paragraph.
     pub page_break_before: bool,
+    /// If `true` and layout mode is paginated, force a page break immediately
+    /// after this paragraph. Gap #20.
+    pub page_break_after: bool,
     /// Hanging indent in points: the first line extends this far to the LEFT of
     /// `indent_start` (where the list marker is placed). `0.0` = no hanging.
     /// OOXML `w:ind w:hanging`; gap #8.
@@ -238,6 +241,7 @@ impl Default for ResolvedParaProps {
             keep_together: false,
             keep_with_next: false,
             page_break_before: false,
+            page_break_after: false,
             indent_hanging: 0.0,
             list_marker: None,
         }
@@ -397,6 +401,13 @@ pub fn layout_paragraph(
 
     let mut layout = builder.build(text_content);
 
+    // NOTE(indent-hanging-width): Parley 0.6 does not expose per-line width
+    // control. The first line of a hanging-indent paragraph wraps at the same
+    // `line_w` as subsequent lines, meaning it gets `indent_hanging` px less
+    // space than it should. This causes premature wrapping on line 0 for
+    // paragraphs with large hanging indents. Fix requires Parley to expose
+    // per-line measure — revisit when Parley adds this capability.
+    // Tracked: fidelity audit gap #8 (partial).
     let line_w = (available_width - para_props.indent_start - para_props.indent_end).max(0.0);
     layout.break_all_lines(Some(line_w));
     layout.align(Some(line_w), para_props.alignment, AlignmentOptions::default());

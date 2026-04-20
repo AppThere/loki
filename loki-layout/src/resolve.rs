@@ -437,6 +437,15 @@ fn map_para_props(p: &ParaProps) -> ResolvedParaProps {
         keep_together: p.keep_together.unwrap_or(false),
         keep_with_next: p.keep_with_next.unwrap_or(false),
         page_break_before: p.page_break_before.unwrap_or(false),
+        page_break_after: p.page_break_after.unwrap_or(false),
+        // NOTE(bidi): `ParaProps.bidi` (RTL paragraph direction) is not forwarded.
+        // Parley 0.6 has no `StyleProperty` for text direction and exposes no
+        // public bidi level API (`BidiLevel`/`BidiResolver` are pub(crate)).
+        // Parley runs BiDi automatically from Unicode character classes, so
+        // purely RTL text in RTL scripts will display correctly without explicit
+        // direction. Explicit `bidi: true` paragraphs in mixed-direction documents
+        // may render incorrectly. Revisit when Parley exposes a direction API.
+        // Tracked: fidelity audit gap #19 (deferred).
         indent_hanging: p.indent_hanging.map(pts_to_f32).unwrap_or(0.0),
         list_marker: match (&p.list_id, p.list_level) {
             (Some(id), Some(level)) => Some(ResolvedListMarker {
