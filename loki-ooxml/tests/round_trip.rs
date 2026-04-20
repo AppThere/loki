@@ -172,6 +172,36 @@ fn inlines_have_field(inlines: &[Inline]) -> bool {
     })
 }
 
+/// Verify that a document with two manual page breaks produces at least three
+/// layout pages (the reference DOCX has exactly two `<w:br w:type="page"/>`).
+#[test]
+fn page_breaks_produce_multiple_layout_pages() {
+    use loki_layout::{layout_document, FontResources, LayoutMode};
+
+    let bytes = helpers::build_reference_docx();
+    let result = DocxImporter::new(DocxImportOptions::default())
+        .run(Cursor::new(bytes))
+        .expect("reference DOCX should import without error");
+
+    let mut resources = FontResources::default();
+    let layout = layout_document(
+        &mut resources,
+        &result.document,
+        LayoutMode::Paginated,
+        1.0,
+    );
+
+    let loki_layout::DocumentLayout::Paginated(paginated) = layout else {
+        panic!("expected paginated layout");
+    };
+
+    assert!(
+        paginated.pages.len() >= 3,
+        "two manual page breaks should yield ≥3 layout pages, got {}",
+        paginated.pages.len()
+    );
+}
+
 /// Verify that the layout engine assigns header/footer items to pages after
 /// import — specifically that the first page gets the first-page header and
 /// subsequent pages get the default header (gap #5).

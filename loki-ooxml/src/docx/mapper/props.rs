@@ -95,7 +95,7 @@ fn map_highlight(val: &str) -> HighlightColor {
 ///
 /// `"nil"` and `"none"` produce [`BorderStyle::None`]. `@w:sz` is in eighths
 /// of a point (ECMA-376 §17.3.4); `@w:space` is in points (not twips).
-fn map_border_edge(edge: &DocxBorderEdge) -> Border {
+pub(crate) fn map_border_edge(edge: &DocxBorderEdge) -> Border {
     let style = match edge.val.as_str() {
         "nil" | "none" => BorderStyle::None,
         "double" => BorderStyle::Double,

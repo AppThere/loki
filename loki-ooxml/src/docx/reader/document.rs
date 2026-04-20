@@ -11,7 +11,7 @@ use quick_xml::Reader;
 
 use crate::docx::model::document::{DocxBodyChild, DocxDocument};
 use crate::docx::model::paragraph::*;
-use crate::docx::model::styles::{DocxTableCell, DocxTableModel, DocxTableRow, DocxTrPr};
+use crate::docx::model::styles::{DocxTableCell, DocxTableModel, DocxTableRow, DocxTcBorders, DocxTcPr, DocxTrPr};
 use crate::docx::reader::util::{attr_val, local_name, parse_emu, toggle_prop};
 use crate::error::{OoxmlError, OoxmlResult};
 
@@ -861,6 +861,9 @@ fn parse_table_cell(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTableCell> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => match local_name(e.local_name().as_ref()) {
+                b"tcPr" => {
+                    cell.tc_pr = Some(parse_tc_pr(reader)?);
+                }
                 b"p" => {
                     let para = parse_paragraph(reader)?;
                     cell.paragraphs.push(para);
@@ -884,6 +887,99 @@ fn parse_table_cell(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTableCell> {
         buf.clear();
     }
     Ok(cell)
+}
+
+/// Parses a `w:tcPr` element. Called after Start("tcPr") is consumed.
+fn parse_tc_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTcPr> {
+    let mut tc_pr = DocxTcPr::default();
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e)) => {
+                match local_name(e.local_name().as_ref()) {
+                    b"gridSpan" => {
+                        tc_pr.grid_span = attr_val(e, b"val").and_then(|v| v.parse().ok());
+                    }
+                    b"vMerge" => {
+                        use crate::docx::model::styles::DocxVMerge;
+                        tc_pr.v_merge = Some(
+                            if attr_val(e, b"val").as_deref() == Some("restart") {
+                                DocxVMerge::Restart
+                            } else {
+                                DocxVMerge::Continue
+                            },
+                        );
+                    }
+                    b"shd" => {
+                        tc_pr.shd_fill = attr_val(e, b"fill");
+                    }
+                    b"tcBorders" => {
+                        tc_pr.tc_borders = Some(parse_tc_borders(reader)?);
+                        // parse_tc_borders consumes until </tcBorders>, so skip
+                        // the fallthrough End event that would match here.
+                        buf.clear();
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::End(ref e))
+                if local_name(e.local_name().as_ref()) == b"tcPr" =>
+            {
+                break;
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(OoxmlError::Xml {
+                    part: "word/document.xml".into(),
+                    source: e,
+                });
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok(tc_pr)
+}
+
+/// Parses a `w:tcBorders` element. Called after Start("tcBorders") is consumed.
+fn parse_tc_borders(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTcBorders> {
+    let mut borders = DocxTcBorders::default();
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e)) => {
+                let edge = DocxBorderEdge {
+                    val: attr_val(e, b"val").unwrap_or_default(),
+                    sz: attr_val(e, b"sz").and_then(|v| v.parse().ok()),
+                    color: attr_val(e, b"color"),
+                    space: attr_val(e, b"space").and_then(|v| v.parse().ok()),
+                };
+                match local_name(e.local_name().as_ref()) {
+                    b"top" => borders.top = Some(edge),
+                    b"bottom" => borders.bottom = Some(edge),
+                    b"left" | b"start" => borders.left = Some(edge),
+                    b"right" | b"end" => borders.right = Some(edge),
+                    _ => {}
+                }
+            }
+            Ok(Event::End(ref e))
+                if local_name(e.local_name().as_ref()) == b"tcBorders" =>
+            {
+                break;
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(OoxmlError::Xml {
+                    part: "word/document.xml".into(),
+                    source: e,
+                });
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok(borders)
 }
 
 /// Skips all content inside an element until its matching end tag.

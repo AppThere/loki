@@ -606,7 +606,7 @@ fn superscript_mark(n: u32) -> String {
 
 /// Map a doc [`Border`][DocBorder] to a layout [`BorderEdge`], or `None` when
 /// the border style is [`DocBorderStyle::None`].
-fn convert_border(border: &DocBorder) -> Option<BorderEdge> {
+pub(crate) fn convert_border(border: &DocBorder) -> Option<BorderEdge> {
     if border.style == DocBorderStyle::None {
         return None;
     }

@@ -8,13 +8,18 @@ use super::*;
 use loki_doc_model::content::attr::{ExtensionBag, NodeAttr};
 use loki_doc_model::content::block::{Block, StyledParagraph};
 use loki_doc_model::content::inline::Inline;
+use loki_doc_model::content::table::col::{ColAlignment, ColSpec, ColWidth};
+use loki_doc_model::content::table::core::{Table, TableBody, TableFoot, TableHead};
+use loki_doc_model::content::table::row::{Cell, CellProps, Row};
 use loki_doc_model::layout::page::{PageLayout, PageMargins, PageSize};
 use loki_doc_model::layout::Section;
 use loki_doc_model::style::catalog::StyleCatalog;
 use loki_doc_model::style::list_style::{
     BulletChar, LabelAlignment, ListId, ListLevel, ListLevelKind, ListStyle, NumberingScheme,
 };
+use loki_doc_model::style::props::border::{Border, BorderStyle};
 use loki_doc_model::style::props::para_props::{ParaProps, Spacing};
+use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 
 use crate::font::FontResources;
@@ -624,4 +629,97 @@ fn new_list_resets_counter() {
     let (items, _, _) = flow_with_catalog(&mut r, &section, &catalog);
     let runs = items.iter().filter(|i| matches!(i, PositionedItem::GlyphRun(_))).count();
     assert!(runs >= 4, "four paragraphs must produce ≥4 glyph runs, got {runs}");
+}
+
+// ── Table tests ───────────────────────────────────────────────────────────────
+
+fn make_cell(text: &str) -> Cell {
+    Cell {
+        attr: NodeAttr::default(),
+        alignment: ColAlignment::Default,
+        row_span: 1,
+        col_span: 1,
+        blocks: vec![Block::StyledPara(make_para(text))],
+        props: CellProps::default(),
+    }
+}
+
+fn make_table_2x2(cell_props: Option<CellProps>) -> Block {
+    let make = |text: &str| -> Cell {
+        let mut c = make_cell(text);
+        if let Some(ref p) = cell_props {
+            c.props = p.clone();
+        }
+        c
+    };
+    let row1 = Row::new(vec![make("R1C1"), make("R1C2")]);
+    let row2 = Row::new(vec![make("R2C1"), make("R2C2")]);
+    Block::Table(Box::new(Table {
+        attr: NodeAttr::default(),
+        caption: Default::default(),
+        col_specs: vec![
+            ColSpec { alignment: ColAlignment::Default, width: ColWidth::Default },
+            ColSpec { alignment: ColAlignment::Default, width: ColWidth::Default },
+        ],
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![row1, row2])],
+        foot: TableFoot::empty(),
+    }))
+}
+
+/// A 2×2 table with short text cells should fit on one page and produce glyph runs.
+#[test]
+fn table_2x2_renders_on_one_page() {
+    let mut r = test_resources();
+    let section = Section {
+        layout: PageLayout::default(),
+        blocks: vec![make_table_2x2(None)],
+        extensions: ExtensionBag::default(),
+    };
+    let (pages, _) = flow_paginated(&mut r, &section);
+    assert_eq!(pages.len(), 1, "2×2 table should fit on one page, got {}", pages.len());
+    let has_runs = pages[0].content_items.iter().any(|i| matches!(i, PositionedItem::GlyphRun(_)));
+    assert!(has_runs, "table cells must produce glyph runs");
+}
+
+/// A cell with a red background should produce a `FilledRect` item.
+#[test]
+fn table_cell_background_produces_filled_rect() {
+    use appthere_color::RgbColor;
+    let mut r = test_resources();
+    let mut props = CellProps::default();
+    props.background_color = Some(DocumentColor::Rgb(RgbColor::new(1.0, 0.0, 0.0)));
+    let section = Section {
+        layout: PageLayout::default(),
+        blocks: vec![make_table_2x2(Some(props))],
+        extensions: ExtensionBag::default(),
+    };
+    let (items, _, _) = flow_pageless(&mut r, &section);
+    let filled_rects = items.iter().filter(|i| matches!(i, PositionedItem::FilledRect(_))).count();
+    assert!(filled_rects >= 2, "2×2 table with bg should produce ≥2 FilledRect items (one per cell in first row), got {filled_rects}");
+}
+
+/// A cell with borders should produce a `BorderRect` item.
+#[test]
+fn table_cell_borders_produce_border_rect() {
+    let mut r = test_resources();
+    let mut props = CellProps::default();
+    let border = Border {
+        style: BorderStyle::Solid,
+        width: Points::new(1.0),
+        color: None,
+        spacing: None,
+    };
+    props.border_top = Some(border.clone());
+    props.border_bottom = Some(border.clone());
+    props.border_left = Some(border.clone());
+    props.border_right = Some(border);
+    let section = Section {
+        layout: PageLayout::default(),
+        blocks: vec![make_table_2x2(Some(props))],
+        extensions: ExtensionBag::default(),
+    };
+    let (items, _, _) = flow_pageless(&mut r, &section);
+    let border_rects = items.iter().filter(|i| matches!(i, PositionedItem::BorderRect(_))).count();
+    assert!(border_rects >= 2, "2×2 table with borders should produce ≥2 BorderRect items, got {border_rects}");
 }

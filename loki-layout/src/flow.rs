@@ -26,10 +26,10 @@ use loki_doc_model::{Block, NodeAttr, Section, StyleCatalog};
 
 use crate::color::LayoutColor;
 use crate::font::FontResources;
-use crate::geometry::{LayoutInsets, LayoutRect, LayoutSize};
-use crate::items::{PositionedItem, PositionedRect};
+use crate::geometry::{LayoutInsets, LayoutPoint, LayoutRect, LayoutSize};
+use crate::items::{PositionedBorderRect, PositionedItem, PositionedRect};
 use crate::mode::LayoutMode;
-use crate::resolve::{pts_to_f32, resolve_para_props, CollectedNote};
+use crate::resolve::{convert_border, pts_to_f32, resolve_color, resolve_para_props, CollectedNote};
 use crate::result::LayoutPage;
 
 use para_impl::{flow_keep_with_next_chain, flow_paragraph};
@@ -631,7 +631,11 @@ fn flow_table(
     rows.extend(&tbl.foot.rows);
 
     for row in rows {
-        let row_y_start = state.cursor_y;
+        // Track the row's starting position and page so that when a cell
+        // triggers a page break, subsequent cells start from the top of the
+        // new page rather than resetting to a stale position on the previous page.
+        let mut row_y_start = state.cursor_y;
+        let mut row_page = state.page_number;
         let mut row_max_h = 0.0f32;
 
         for (c_idx, cell) in row.cells.iter().enumerate() {
@@ -640,7 +644,18 @@ fn flow_table(
 
             state.current_indent = old_indent + (c_idx as f32 * col_w);
             state.content_width = col_w;
+            // If a previous cell caused a page break, update row_y_start to the
+            // top of the new page so this cell doesn't land in the wrong position.
+            if state.page_number != row_page {
+                row_y_start = state.cursor_y;
+                row_page = state.page_number;
+                row_max_h = 0.0;
+            }
             state.cursor_y = row_y_start;
+
+            // Record the insertion index before flowing cell content so we can
+            // prepend background and border items in the correct Z-order later.
+            let cell_item_start = state.current_items.len();
 
             for block in &cell.blocks {
                 flow_block(state, block, idx);
@@ -648,6 +663,39 @@ fn flow_table(
 
             let cell_h = state.cursor_y - row_y_start;
             row_max_h = row_max_h.max(cell_h);
+
+            // Emit background and border decorations for this cell.
+            // Z-order: insert border at cell_item_start first, then background
+            // at cell_item_start so background sits below border (renders first).
+            let cell_rect = LayoutRect {
+                origin: LayoutPoint { x: state.current_indent, y: row_y_start },
+                size: LayoutSize { width: col_w, height: cell_h },
+            };
+            let has_borders = cell.props.border_top.is_some()
+                || cell.props.border_bottom.is_some()
+                || cell.props.border_left.is_some()
+                || cell.props.border_right.is_some();
+            if has_borders {
+                state.current_items.insert(
+                    cell_item_start,
+                    PositionedItem::BorderRect(PositionedBorderRect {
+                        rect: cell_rect,
+                        top: cell.props.border_top.as_ref().and_then(convert_border),
+                        bottom: cell.props.border_bottom.as_ref().and_then(convert_border),
+                        left: cell.props.border_left.as_ref().and_then(convert_border),
+                        right: cell.props.border_right.as_ref().and_then(convert_border),
+                    }),
+                );
+            }
+            if let Some(bg) = cell.props.background_color.as_ref() {
+                state.current_items.insert(
+                    cell_item_start,
+                    PositionedItem::FilledRect(PositionedRect {
+                        rect: cell_rect,
+                        color: resolve_color(Some(bg)),
+                    }),
+                );
+            }
 
             state.current_indent = old_indent;
             state.content_width = old_width;

@@ -7,7 +7,7 @@ use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::{Block, StyledParagraph};
 use loki_doc_model::style::catalog::StyleId;
 
-use crate::docx::model::paragraph::DocxParagraph;
+use crate::docx::model::paragraph::{DocxParagraph, DocxParaChild, DocxRunChild};
 
 use super::document::MappingContext;
 use super::inline::map_inlines;
@@ -20,7 +20,22 @@ use super::props::map_ppr;
 /// has an outline level, a [`Block::Heading`] is emitted first so that
 /// consumers that prefer structural heading blocks can use them directly.
 pub(crate) fn map_paragraph(p: &DocxParagraph, ctx: &mut MappingContext<'_>) -> Vec<Block> {
-    let para_props = p.ppr.as_ref().map(|ppr| map_ppr(ppr));
+    let mut para_props = p.ppr.as_ref().map(|ppr| map_ppr(ppr));
+
+    // Detect `<w:br w:type="page"/>` inside any run child and promote it to
+    // a paragraph-level page_break_after flag so the layout engine can honour it.
+    let has_page_break = p.children.iter().any(|child| match child {
+        DocxParaChild::Run(run) => run.children.iter().any(|rc| {
+            matches!(rc, DocxRunChild::Break { break_type: Some(t) } if t == "page")
+        }),
+        _ => false,
+    });
+    if has_page_break {
+        para_props
+            .get_or_insert_with(Default::default)
+            .page_break_after = Some(true);
+    }
+
     let style_id = p.ppr.as_ref()
         .and_then(|ppr| ppr.style_id.as_ref())
         .map(|s| StyleId::new(s.clone()));
