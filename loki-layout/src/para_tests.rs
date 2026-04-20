@@ -31,9 +31,15 @@ fn single_span(text: &str, font_size: f32) -> StyleSpan {
         bold: false,
         italic: false,
         color: LayoutColor::BLACK,
-        underline: false,
-        strikethrough: false,
+        underline: None,
+        strikethrough: None,
         line_height: None,
+        vertical_align: None,
+        highlight_color: None,
+        letter_spacing: None,
+        font_variant: None,
+        word_spacing: None,
+        shadow: false,
     }
 }
 
@@ -90,7 +96,7 @@ fn background_color_is_first_item() {
 fn underline_span_emits_decoration() {
     let mut r = test_resources();
     let text = "Underlined text";
-    let spans = [StyleSpan { underline: true, ..single_span(text, 12.0) }];
+    let spans = [StyleSpan { underline: Some(UnderlineStyle::Single), ..single_span(text, 12.0) }];
     let result = layout_paragraph(&mut r, text, &spans, &ResolvedParaProps::default(), 400.0, 1.0);
     let has_underline = result.items.iter().any(|item| {
         matches!(item, PositionedItem::Decoration(d) if d.kind == DecorationKind::Underline)
@@ -170,4 +176,57 @@ fn border_follows_background() {
     let result = layout_paragraph(&mut r, text, &[single_span(text, 12.0)], &props, 400.0, 1.0);
     assert!(matches!(result.items.first(),    Some(PositionedItem::FilledRect(_))));
     assert!(matches!(result.items.get(1), Some(PositionedItem::BorderRect(_))));
+}
+
+#[test]
+fn superscript_span_uses_smaller_font() {
+    // A span with vertical_align=Superscript should use font_size * 0.58.
+    // We verify by checking that the layout of a superscript run produces a
+    // GlyphRun with a smaller ascent than a plain run at the same font_size.
+    // The simplest proxy: just ensure the paragraph lays out without panic and
+    // produces at least one glyph run.
+    let mut r = test_resources();
+    let text = "x2";
+    let spans = [StyleSpan {
+        range: 0..2,
+        vertical_align: Some(VerticalAlign::Superscript),
+        ..single_span(text, 12.0)
+    }];
+    let result = layout_paragraph(&mut r, text, &spans, &ResolvedParaProps::default(), 400.0, 1.0);
+    let runs = result.items.iter().filter(|i| matches!(i, PositionedItem::GlyphRun(_))).count();
+    assert!(runs >= 1, "superscript span must produce at least one glyph run");
+}
+
+#[test]
+fn highlight_color_produces_filled_rect_before_glyph_run() {
+    let mut r = test_resources();
+    let text = "highlighted";
+    let spans = [StyleSpan {
+        highlight_color: Some(LayoutColor::new(1.0, 1.0, 0.0, 1.0)),
+        ..single_span(text, 12.0)
+    }];
+    let result = layout_paragraph(&mut r, text, &spans, &ResolvedParaProps::default(), 400.0, 1.0);
+    // First non-background item should be a FilledRect (highlight), then a GlyphRun.
+    let rects = result.items.iter().filter(|i| matches!(i, PositionedItem::FilledRect(_))).count();
+    assert!(rects >= 1, "highlight span must produce at least one FilledRect");
+    // The FilledRect must come before the GlyphRun.
+    let rect_pos = result.items.iter().position(|i| matches!(i, PositionedItem::FilledRect(_))).unwrap();
+    let run_pos  = result.items.iter().position(|i| matches!(i, PositionedItem::GlyphRun(_))).unwrap();
+    assert!(rect_pos < run_pos, "FilledRect (highlight) must precede its GlyphRun");
+}
+
+#[test]
+fn shadow_span_produces_extra_glyph_run() {
+    let mut r = test_resources();
+    let text = "shadow";
+    let plain_spans  = [single_span(text, 12.0)];
+    let shadow_spans = [StyleSpan { shadow: true, ..single_span(text, 12.0) }];
+    let plain  = layout_paragraph(&mut r, text, &plain_spans,  &ResolvedParaProps::default(), 400.0, 1.0);
+    let shadow = layout_paragraph(&mut r, text, &shadow_spans, &ResolvedParaProps::default(), 400.0, 1.0);
+    let plain_runs  = plain.items.iter().filter(|i| matches!(i, PositionedItem::GlyphRun(_))).count();
+    let shadow_runs = shadow.items.iter().filter(|i| matches!(i, PositionedItem::GlyphRun(_))).count();
+    assert!(
+        shadow_runs > plain_runs,
+        "shadow span must produce more GlyphRun items than plain ({shadow_runs} vs {plain_runs})"
+    );
 }

@@ -3544,6 +3544,7 @@ dependencies = [
  "loki-primitives",
  "quick-xml 0.36.2",
  "thiserror 2.0.18",
+ "zip",
 ]
 
 [[package]]

@@ -11,7 +11,12 @@ use loki_doc_model::content::block::StyledParagraph;
 use loki_doc_model::content::inline::{Inline, StyledRun};
 use loki_doc_model::style::catalog::{StyleCatalog, StyleId};
 use loki_doc_model::style::para_style::ParagraphStyle;
-use loki_doc_model::style::props::char_props::CharProps;
+use loki_doc_model::style::props::char_props::{
+    CharProps, HighlightColor,
+    StrikethroughStyle as DocStrikethroughStyle,
+    UnderlineStyle as DocUnderlineStyle,
+    VerticalAlign as DocVerticalAlign,
+};
 use loki_doc_model::style::props::para_props::{ParagraphAlignment, ParaProps};
 use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
@@ -158,4 +163,60 @@ fn resolve_para_props_center_from_style() {
     };
     let resolved = resolve_para_props(&para, &catalog);
     assert_eq!(resolved.alignment, parley::Alignment::Center);
+}
+
+#[test]
+fn char_props_to_style_span_maps_new_fields() {
+    let props = CharProps {
+        vertical_align: Some(DocVerticalAlign::Superscript),
+        highlight_color: Some(HighlightColor::Yellow),
+        letter_spacing: Some(Points::new(2.0)),
+        small_caps: Some(true),
+        word_spacing: Some(Points::new(3.0)),
+        shadow: Some(true),
+        underline: Some(DocUnderlineStyle::Double),
+        strikethrough: Some(DocStrikethroughStyle::Single),
+        ..Default::default()
+    };
+    let span = char_props_to_style_span(&props, 0..1);
+
+    assert_eq!(span.vertical_align, Some(crate::para::VerticalAlign::Superscript));
+    assert!(span.highlight_color.is_some(), "highlight_color must be mapped");
+    assert!((span.letter_spacing.unwrap() - 2.0).abs() < 1e-5);
+    assert_eq!(span.font_variant, Some(crate::para::FontVariant::SmallCaps));
+    assert!((span.word_spacing.unwrap() - 3.0).abs() < 1e-5);
+    assert!(span.shadow, "shadow must be true");
+    assert!(span.underline.is_some(), "underline must be mapped");
+    assert!(span.strikethrough.is_some(), "strikethrough must be mapped");
+}
+
+#[test]
+fn flatten_all_caps_uppercases_text() {
+    let catalog = StyleCatalog::new();
+    let run = StyledRun {
+        style_id: None,
+        direct_props: Some(Box::new(CharProps {
+            all_caps: Some(true),
+            ..Default::default()
+        })),
+        content: vec![Inline::Str("hello".into())],
+        attr: NodeAttr::default(),
+    };
+    let para = empty_para(vec![Inline::StyledRun(run)]);
+    let (text, spans) = flatten_paragraph(&para, &catalog);
+    assert_eq!(text, "HELLO", "all_caps must uppercase text during flatten");
+    assert_eq!(spans[0].font_variant, Some(crate::para::FontVariant::AllCaps));
+}
+
+#[test]
+fn flatten_superscript_inline_sets_vertical_align() {
+    let catalog = StyleCatalog::new();
+    let para = empty_para(vec![Inline::Superscript(vec![Inline::Str("2".into())])]);
+    let (text, spans) = flatten_paragraph(&para, &catalog);
+    assert_eq!(text, "2");
+    assert_eq!(
+        spans[0].vertical_align,
+        Some(crate::para::VerticalAlign::Superscript),
+        "Inline::Superscript must set vertical_align=Superscript"
+    );
 }
