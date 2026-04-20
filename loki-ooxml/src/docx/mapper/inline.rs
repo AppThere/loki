@@ -173,7 +173,10 @@ fn process_run_child(
             if matches!(state, FieldState::Normal) {
                 match break_type.as_deref() {
                     None | Some("textWrapping") => raw.push(Inline::LineBreak),
-                    Some("page" | "column") => raw.push(Inline::Str("\n".to_string())),
+                    // Page break is surfaced at the paragraph level via page_break_after.
+                    Some("page") => {}
+                    // TODO(column-break): column breaks are not yet modelled; treat as no-op.
+                    Some("column") => {}
                     _ => raw.push(Inline::LineBreak),
                 }
             }

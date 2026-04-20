@@ -14,6 +14,7 @@ use crate::docx::model::styles::DocxTableModel;
 
 use super::document::MappingContext;
 use super::paragraph::map_paragraph;
+use super::props::map_border_edge;
 
 /// Maps a `w:tbl` to a `Block::Table`.
 ///
@@ -93,13 +94,32 @@ fn map_cell(
     let blocks: Vec<Block> = tc.paragraphs.iter()
         .flat_map(|p| map_paragraph(p, ctx))
         .collect();
+
+    let mut props = CellProps::default();
+    if let Some(tc_pr) = tc.tc_pr.as_ref() {
+        // Cell background from `w:shd @w:fill`.
+        if let Some(ref hex) = tc_pr.shd_fill {
+            if let Some(rgb) = crate::xml_util::hex_color(hex) {
+                use loki_primitives::color::DocumentColor;
+                props.background_color = Some(DocumentColor::Rgb(rgb));
+            }
+        }
+        // Cell borders from `w:tcBorders`.
+        if let Some(ref borders) = tc_pr.tc_borders {
+            props.border_top = borders.top.as_ref().map(map_border_edge);
+            props.border_bottom = borders.bottom.as_ref().map(map_border_edge);
+            props.border_left = borders.left.as_ref().map(map_border_edge);
+            props.border_right = borders.right.as_ref().map(map_border_edge);
+        }
+    }
+
     Cell {
         attr: NodeAttr::default(),
         alignment: ColAlignment::Default,
         row_span: 1, // v0.1.0: vMerge tracking not yet implemented
         col_span,
         blocks,
-        props: CellProps::default(),
+        props,
     }
 }
 
@@ -214,7 +234,7 @@ mod tests {
         let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
 
         let cell_with_span = DocxTableCell {
-            tc_pr: Some(DocxTcPr { grid_span: Some(3), v_merge: None }),
+            tc_pr: Some(DocxTcPr { grid_span: Some(3), v_merge: None, ..Default::default() }),
             paragraphs: vec![],
         };
         let t = DocxTableModel {

@@ -25,11 +25,13 @@ use loki_doc_model::document::Document;
 use loki_doc_model::io::DocumentImport;
 use loki_opc::{Package, PartData, PartName};
 
-use crate::constants::{REL_ENDNOTES, REL_FOOTNOTES, REL_HYPERLINK, REL_IMAGE, REL_NUMBERING,
-    REL_OFFICE_DOCUMENT, REL_SETTINGS, REL_STYLES};
+use crate::constants::{REL_ENDNOTES, REL_FOOTER, REL_FOOTNOTES, REL_HEADER, REL_HYPERLINK,
+    REL_IMAGE, REL_NUMBERING, REL_OFFICE_DOCUMENT, REL_SETTINGS, REL_STYLES};
 use crate::docx::mapper::document::map_document;
+use crate::docx::model::paragraph::DocxParagraph;
 use crate::docx::reader::document::parse_document;
 use crate::docx::reader::footnotes::parse_notes;
+use crate::docx::reader::header_footer::parse_header_footer;
 use crate::docx::reader::numbering::parse_numbering;
 use crate::docx::reader::settings::parse_settings;
 use crate::docx::reader::styles::parse_styles;
@@ -210,8 +212,7 @@ pub(crate) fn parse_and_map_package(
         |bytes, part| parse_notes(bytes, part),
     )?;
 
-    // Settings are parsed but not yet used downstream.
-    let _raw_settings = resolve_optional_part(
+    let raw_settings = resolve_optional_part(
         package,
         doc_rels,
         REL_SETTINGS,
@@ -222,6 +223,8 @@ pub(crate) fn parse_and_map_package(
     // ── Build hyperlinks and images maps ──────────────────────────────
     let mut hyperlinks: HashMap<String, String> = HashMap::new();
     let mut images: HashMap<String, PartData> = HashMap::new();
+    let mut header_parts: HashMap<String, Vec<DocxParagraph>> = HashMap::new();
+    let mut footer_parts: HashMap<String, Vec<DocxParagraph>> = HashMap::new();
 
     if let Some(rels) = doc_rels {
         for rel in rels.by_type(REL_HYPERLINK) {
@@ -239,6 +242,26 @@ pub(crate) fn parse_and_map_package(
                 }
             }
         }
+
+        for rel in rels.by_type(REL_HEADER) {
+            if let Ok(name) = resolve_part_name(doc_part_name.as_str(), &rel.target) {
+                if let Some(part) = package.part(&name) {
+                    if let Ok(paras) = parse_header_footer(&part.bytes, name.as_str()) {
+                        header_parts.insert(rel.id.clone(), paras);
+                    }
+                }
+            }
+        }
+
+        for rel in rels.by_type(REL_FOOTER) {
+            if let Ok(name) = resolve_part_name(doc_part_name.as_str(), &rel.target) {
+                if let Some(part) = package.part(&name) {
+                    if let Ok(paras) = parse_header_footer(&part.bytes, name.as_str()) {
+                        footer_parts.insert(rel.id.clone(), paras);
+                    }
+                }
+            }
+        }
     }
 
     // ── Map everything to the abstract model ──────────────────────────
@@ -250,6 +273,9 @@ pub(crate) fn parse_and_map_package(
         raw_endnotes.as_ref(),
         images,
         hyperlinks,
+        &header_parts,
+        &footer_parts,
+        raw_settings.as_ref(),
         package.core_properties(),
         options,
     );

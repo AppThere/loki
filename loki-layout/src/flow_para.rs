@@ -114,7 +114,8 @@ pub(super) fn flow_paragraph(
     let effective_para: &StyledParagraph = owned_para.as_ref().unwrap_or(para);
     // ────────────────────────────────────────────────────────────────────────
 
-    let (text, spans, images) = flatten_paragraph(effective_para, state.catalog);
+    let (text, spans, images, notes) = flatten_paragraph(effective_para, state.catalog, &mut state.note_counter);
+    state.pending_footnotes.extend(notes);
 
     state.cursor_y += resolved.space_before;
 
@@ -313,7 +314,8 @@ fn build_chain_layouts<'s>(
         .map(|idx| {
             if let Block::StyledPara(para) = &blocks[idx] {
                 let resolved = resolve_para_props(para, state.catalog);
-                let (text, spans, _images) = flatten_paragraph(para, state.catalog);
+                let mut temp_counter = state.note_counter;
+                let (text, spans, _images, _notes) = flatten_paragraph(para, state.catalog, &mut temp_counter);
                 let layout = layout_paragraph(
                     state.resources,
                     &text,

@@ -16,17 +16,20 @@ mod para_impl;
 
 use std::collections::HashMap;
 
+use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::content::block::StyledParagraph;
 use loki_doc_model::content::inline::Inline;
+use loki_doc_model::layout::header_footer::HeaderFooter;
+use loki_doc_model::layout::page::PageLayout;
 use loki_doc_model::style::list_style::ListId;
 use loki_doc_model::{Block, NodeAttr, Section, StyleCatalog};
 
 use crate::color::LayoutColor;
 use crate::font::FontResources;
-use crate::geometry::{LayoutInsets, LayoutRect, LayoutSize};
-use crate::items::{PositionedItem, PositionedRect};
+use crate::geometry::{LayoutInsets, LayoutPoint, LayoutRect, LayoutSize};
+use crate::items::{PositionedBorderRect, PositionedItem, PositionedRect};
 use crate::mode::LayoutMode;
-use crate::resolve::{pts_to_f32, resolve_para_props};
+use crate::resolve::{convert_border, pts_to_f32, resolve_color, resolve_para_props, CollectedNote};
 use crate::result::LayoutPage;
 
 use para_impl::{flow_keep_with_next_chain, flow_paragraph};
@@ -131,6 +134,12 @@ pub(super) struct FlowState<'a> {
     /// The `ListId` of the most recently placed list item, used to detect
     /// list-id changes and reset counters for the new list.
     pub(super) prev_list_id: Option<ListId>,
+    /// Monotonically-increasing counter for footnotes and endnotes within
+    /// the current section. Incremented by `walk_inlines` when a `Note` is met.
+    pub(super) note_counter: u32,
+    /// Footnotes and endnotes collected while flowing the current section.
+    /// Rendered at the end of the section by `flow_footnotes`.
+    pub(super) pending_footnotes: Vec<CollectedNote>,
 }
 
 impl<'a> FlowState<'a> {
@@ -209,6 +218,8 @@ pub fn flow_section(
         current_indent: 0.0,
         list_counters: HashMap::new(),
         prev_list_id: None,
+        note_counter: 0,
+        pending_footnotes: Vec::new(),
     };
 
     if mode.is_paginated() {
@@ -233,6 +244,8 @@ pub fn flow_section(
             flow_block(&mut state, block, idx);
         }
     }
+
+    flow_footnotes(&mut state);
 
     if mode.is_paginated() {
         finish_page(&mut state);
@@ -330,10 +343,151 @@ pub(super) fn finish_page(state: &mut FlowState) {
         content_items: std::mem::take(&mut state.current_items),
         header_items: vec![],
         footer_items: vec![],
+        header_height: 0.0,
+        footer_height: 0.0,
     };
     state.pages.push(page);
     state.page_number += 1;
     state.cursor_y = 0.0;
+}
+
+// ── Header / footer layout helpers ───────────────────────────────────────────
+
+/// Lay out `blocks` in reflow mode using `available_width`.
+///
+/// Returns the positioned items (in `(0,0)`-origin canvas coordinates) and the
+/// total canvas height. Items have no Y offset applied — the caller translates
+/// them to page-local coordinates.
+fn layout_blocks_reflow(
+    resources: &mut FontResources,
+    blocks: &[Block],
+    catalog: &StyleCatalog,
+    available_width: f32,
+    display_scale: f32,
+) -> (Vec<PositionedItem>, f32) {
+    let synthetic = Section {
+        layout: PageLayout::default(),
+        blocks: blocks.to_vec(),
+        extensions: ExtensionBag::default(),
+    };
+    let mode = LayoutMode::Reflow { available_width };
+    match flow_section(resources, &synthetic, catalog, &mode, display_scale) {
+        FlowOutput::Canvas { items, height, .. } => (items, height),
+        FlowOutput::Pages { .. } => unreachable!("Reflow mode always returns Canvas"),
+    }
+}
+
+/// Select the appropriate header for a page given page number and layout.
+fn select_header(layout: &PageLayout, page_number: usize) -> Option<&HeaderFooter> {
+    if page_number == 1 {
+        if let Some(ref hf) = layout.header_first {
+            return Some(hf);
+        }
+    }
+    if page_number % 2 == 0 {
+        if let Some(ref hf) = layout.header_even {
+            return Some(hf);
+        }
+    }
+    layout.header.as_ref()
+}
+
+/// Select the appropriate footer for a page given page number and layout.
+fn select_footer(layout: &PageLayout, page_number: usize) -> Option<&HeaderFooter> {
+    if page_number == 1 {
+        if let Some(ref hf) = layout.footer_first {
+            return Some(hf);
+        }
+    }
+    if page_number % 2 == 0 {
+        if let Some(ref hf) = layout.footer_even {
+            return Some(hf);
+        }
+    }
+    layout.footer.as_ref()
+}
+
+/// Populate header/footer items for each page in `pages`.
+///
+/// Pre-lays-out all unique header/footer variants once (in reflow mode), then
+/// assigns translated copies to each page. Items are translated to page-local
+/// coordinates:
+/// - Header top: `margins.header`
+/// - Footer top: `page_height - margins.footer - footer_height`
+pub(crate) fn assign_headers_footers(
+    pages: &mut Vec<LayoutPage>,
+    layout: &PageLayout,
+    resources: &mut FontResources,
+    catalog: &StyleCatalog,
+    display_scale: f32,
+) {
+    // Pre-layout each variant that is present.
+    let content_width = pages
+        .first()
+        .map(|p| (p.page_size.width - p.margins.horizontal()).max(0.0))
+        .unwrap_or(0.0);
+
+    let mut lay = |hf: &HeaderFooter| -> (Vec<PositionedItem>, f32) {
+        layout_blocks_reflow(resources, &hf.blocks, catalog, content_width, display_scale)
+    };
+
+    let hdr_default: Option<(Vec<PositionedItem>, f32)> =
+        layout.header.as_ref().map(|hf| lay(hf));
+    let hdr_first: Option<(Vec<PositionedItem>, f32)> =
+        layout.header_first.as_ref().map(|hf| lay(hf));
+    let hdr_even: Option<(Vec<PositionedItem>, f32)> =
+        layout.header_even.as_ref().map(|hf| lay(hf));
+    let ftr_default: Option<(Vec<PositionedItem>, f32)> =
+        layout.footer.as_ref().map(|hf| lay(hf));
+    let ftr_first: Option<(Vec<PositionedItem>, f32)> =
+        layout.footer_first.as_ref().map(|hf| lay(hf));
+    let ftr_even: Option<(Vec<PositionedItem>, f32)> =
+        layout.footer_even.as_ref().map(|hf| lay(hf));
+
+    use crate::resolve::pts_to_f32;
+    let hdr_margin_y = pts_to_f32(layout.margins.header);
+    let ftr_margin   = pts_to_f32(layout.margins.footer);
+    let left_margin  = pts_to_f32(layout.margins.left);
+
+    for page in pages.iter_mut() {
+        let page_h = page.page_size.height;
+        let pn = page.page_number;
+
+        let hdr = if pn == 1 && hdr_first.is_some() {
+            hdr_first.as_ref()
+        } else if pn % 2 == 0 && hdr_even.is_some() {
+            hdr_even.as_ref()
+        } else {
+            hdr_default.as_ref()
+        };
+
+        let ftr = if pn == 1 && ftr_first.is_some() {
+            ftr_first.as_ref()
+        } else if pn % 2 == 0 && ftr_even.is_some() {
+            ftr_even.as_ref()
+        } else {
+            ftr_default.as_ref()
+        };
+
+        if let Some((items, h)) = hdr {
+            let mut translated: Vec<PositionedItem> = items.clone();
+            for item in &mut translated {
+                item.translate(left_margin, hdr_margin_y);
+            }
+            page.header_items = translated;
+            page.header_height = *h;
+        }
+
+        if let Some((items, h)) = ftr {
+            let footer_y = page_h - ftr_margin - h;
+            let mut translated: Vec<PositionedItem> = items.clone();
+            for item in &mut translated {
+                item.translate(left_margin, footer_y);
+            }
+            page.footer_items = translated;
+            page.footer_height = *h;
+        }
+    }
 }
 
 // ── Miscellaneous block renderers ─────────────────────────────────────────────
@@ -346,6 +500,64 @@ fn flow_hrule(state: &mut FlowState) {
         color: LayoutColor::BLACK,
     }));
     state.cursor_y += RULE_HEIGHT + RULE_SPACING;
+}
+
+// ── Footnote rendering ────────────────────────────────────────────────────────
+
+/// Render all accumulated footnotes at the end of the section.
+///
+/// Places a 1/3-width separator rule followed by each note body. The note
+/// reference mark (e.g. "¹") is prepended to the first block of each note.
+/// End-of-section placement is used for v0.1; end-of-page is deferred.
+fn flow_footnotes(state: &mut FlowState) {
+    if state.pending_footnotes.is_empty() {
+        return;
+    }
+    let notes = std::mem::take(&mut state.pending_footnotes);
+
+    // Separator: 1/3-width, 0.5 pt tall, 4 pt spacing above and below.
+    const SEP_HEIGHT: f32 = 0.5;
+    const SEP_GAP: f32 = 4.0;
+    let sep_w = state.content_width / 3.0;
+    state.cursor_y += SEP_GAP;
+    state.current_items.push(PositionedItem::HorizontalRule(PositionedRect {
+        rect: LayoutRect::new(0.0, state.cursor_y, sep_w, SEP_HEIGHT),
+        color: LayoutColor::BLACK,
+    }));
+    state.cursor_y += SEP_HEIGHT + SEP_GAP;
+
+    for note in notes {
+        let mark = format!("{} ", &footnote_mark(note.number));
+        let mut first = true;
+        for block in &note.blocks {
+            if first {
+                first = false;
+                if let Block::StyledPara(p) = block {
+                    let mut p = p.clone();
+                    p.inlines.insert(0, Inline::Str(mark.clone().into()));
+                    flow_paragraph(state, &p, 0);
+                    continue;
+                }
+            }
+            flow_block(state, block, 0);
+        }
+    }
+}
+
+/// Return the Unicode superscript mark for note number `n`.
+fn footnote_mark(n: u32) -> String {
+    match n {
+        1 => "\u{00B9}".to_string(),
+        2 => "\u{00B2}".to_string(),
+        3 => "\u{00B3}".to_string(),
+        4 => "\u{2074}".to_string(),
+        5 => "\u{2075}".to_string(),
+        6 => "\u{2076}".to_string(),
+        7 => "\u{2077}".to_string(),
+        8 => "\u{2078}".to_string(),
+        9 => "\u{2079}".to_string(),
+        _ => format!("[{n}]"),
+    }
 }
 
 // ── Paragraph synthesisers ────────────────────────────────────────────────────
@@ -419,7 +631,11 @@ fn flow_table(
     rows.extend(&tbl.foot.rows);
 
     for row in rows {
-        let row_y_start = state.cursor_y;
+        // Track the row's starting position and page so that when a cell
+        // triggers a page break, subsequent cells start from the top of the
+        // new page rather than resetting to a stale position on the previous page.
+        let mut row_y_start = state.cursor_y;
+        let mut row_page = state.page_number;
         let mut row_max_h = 0.0f32;
 
         for (c_idx, cell) in row.cells.iter().enumerate() {
@@ -428,7 +644,18 @@ fn flow_table(
 
             state.current_indent = old_indent + (c_idx as f32 * col_w);
             state.content_width = col_w;
+            // If a previous cell caused a page break, update row_y_start to the
+            // top of the new page so this cell doesn't land in the wrong position.
+            if state.page_number != row_page {
+                row_y_start = state.cursor_y;
+                row_page = state.page_number;
+                row_max_h = 0.0;
+            }
             state.cursor_y = row_y_start;
+
+            // Record the insertion index before flowing cell content so we can
+            // prepend background and border items in the correct Z-order later.
+            let cell_item_start = state.current_items.len();
 
             for block in &cell.blocks {
                 flow_block(state, block, idx);
@@ -436,6 +663,39 @@ fn flow_table(
 
             let cell_h = state.cursor_y - row_y_start;
             row_max_h = row_max_h.max(cell_h);
+
+            // Emit background and border decorations for this cell.
+            // Z-order: insert border at cell_item_start first, then background
+            // at cell_item_start so background sits below border (renders first).
+            let cell_rect = LayoutRect {
+                origin: LayoutPoint { x: state.current_indent, y: row_y_start },
+                size: LayoutSize { width: col_w, height: cell_h },
+            };
+            let has_borders = cell.props.border_top.is_some()
+                || cell.props.border_bottom.is_some()
+                || cell.props.border_left.is_some()
+                || cell.props.border_right.is_some();
+            if has_borders {
+                state.current_items.insert(
+                    cell_item_start,
+                    PositionedItem::BorderRect(PositionedBorderRect {
+                        rect: cell_rect,
+                        top: cell.props.border_top.as_ref().and_then(convert_border),
+                        bottom: cell.props.border_bottom.as_ref().and_then(convert_border),
+                        left: cell.props.border_left.as_ref().and_then(convert_border),
+                        right: cell.props.border_right.as_ref().and_then(convert_border),
+                    }),
+                );
+            }
+            if let Some(bg) = cell.props.background_color.as_ref() {
+                state.current_items.insert(
+                    cell_item_start,
+                    PositionedItem::FilledRect(PositionedRect {
+                        rect: cell_rect,
+                        color: resolve_color(Some(bg)),
+                    }),
+                );
+            }
 
             state.current_indent = old_indent;
             state.content_width = old_width;

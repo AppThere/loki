@@ -34,6 +34,14 @@ fn content_types_xml() -> Vec<u8> {
     ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>
   <Override PartName="/word/footnotes.xml"
     ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/>
+  <Override PartName="/word/header1.xml"
+    ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>
+  <Override PartName="/word/header2.xml"
+    ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>
+  <Override PartName="/word/footer1.xml"
+    ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>
+  <Override PartName="/word/footer2.xml"
+    ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>
 </Types>"#.to_vec()
 }
 
@@ -65,6 +73,18 @@ fn doc_rels_xml() -> Vec<u8> {
     Type="{NS_R}/hyperlink"
     Target="https://example.com"
     TargetMode="External"/>
+  <Relationship Id="rId5"
+    Type="{NS_R}/header"
+    Target="header1.xml"/>
+  <Relationship Id="rId6"
+    Type="{NS_R}/footer"
+    Target="footer1.xml"/>
+  <Relationship Id="rId7"
+    Type="{NS_R}/header"
+    Target="header2.xml"/>
+  <Relationship Id="rId8"
+    Type="{NS_R}/footer"
+    Target="footer2.xml"/>
 </Relationships>"#
     ).into_bytes()
 }
@@ -131,6 +151,42 @@ fn numbering_xml() -> Vec<u8> {
     ).into_bytes()
 }
 
+fn header_default_xml() -> Vec<u8> {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:hdr xmlns:w="{NS_W}">
+  <w:p><w:r><w:t>Test Document Header</w:t></w:r></w:p>
+</w:hdr>"#
+    ).into_bytes()
+}
+
+fn footer_default_xml() -> Vec<u8> {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:ftr xmlns:w="{NS_W}">
+  <w:p><w:r><w:t>Test Document Footer</w:t></w:r></w:p>
+</w:ftr>"#
+    ).into_bytes()
+}
+
+fn header_first_xml() -> Vec<u8> {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:hdr xmlns:w="{NS_W}">
+  <w:p><w:r><w:t>First Page Header</w:t></w:r></w:p>
+</w:hdr>"#
+    ).into_bytes()
+}
+
+fn footer_first_xml() -> Vec<u8> {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:ftr xmlns:w="{NS_W}">
+  <w:p><w:r><w:t>First Page Footer</w:t></w:r></w:p>
+</w:ftr>"#
+    ).into_bytes()
+}
+
 fn footnotes_xml() -> Vec<u8> {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -172,6 +228,9 @@ fn footnotes_xml() -> Vec<u8> {
 /// | Lists (bullet + numbered)| #1    |
 /// | Hyperlink                | #11   |
 /// | Footnote reference       | #2    |
+/// | Field code (PAGE)        | #4    |
+/// | Paragraph border (box)   | #6    |
+/// | Tab stops                | #7    |
 /// | Page breaks (3 pages)    | —     |
 /// | A4 page size             | —     |
 fn document_xml() -> Vec<u8> {
@@ -337,6 +396,17 @@ fn document_xml() -> Vec<u8> {
       </w:hyperlink>
     </w:p>
 
+    <!-- field code PAGE (gap #4): complex field with snapshot value "1" -->
+    <w:p>
+      <w:r><w:t xml:space="preserve">Page </w:t></w:r>
+      <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+      <w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>
+      <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+      <w:r><w:t>1</w:t></w:r>
+      <w:r><w:fldChar w:fldCharType="end"/></w:r>
+      <w:r><w:t xml:space="preserve"> of document.</w:t></w:r>
+    </w:p>
+
     <!-- footnote reference (gap #2) -->
     <w:p>
       <w:r><w:t xml:space="preserve">This sentence has a footnote</w:t></w:r>
@@ -345,6 +415,34 @@ fn document_xml() -> Vec<u8> {
         <w:footnoteReference w:id="1"/>
       </w:r>
       <w:r><w:t xml:space="preserve"> appended to it.</w:t></w:r>
+    </w:p>
+
+    <!-- ── Paragraph border (gap #6): single-line box border, 1pt, black, 4pt space ── -->
+    <w:p>
+      <w:pPr>
+        <w:pBdr>
+          <w:top w:val="single" w:sz="8" w:color="000000" w:space="4"/>
+          <w:bottom w:val="single" w:sz="8" w:color="000000" w:space="4"/>
+          <w:left w:val="single" w:sz="8" w:color="000000" w:space="4"/>
+          <w:right w:val="single" w:sz="8" w:color="000000" w:space="4"/>
+        </w:pBdr>
+      </w:pPr>
+      <w:r><w:t>This paragraph has a single-line border on all four sides (gap #6).</w:t></w:r>
+    </w:p>
+
+    <!-- ── Tab stops (gap #7): explicit stops at 1 inch (1440 twips) and 3 inch (4320 twips) ── -->
+    <w:p>
+      <w:pPr>
+        <w:tabs>
+          <w:tab w:val="left" w:pos="1440"/>
+          <w:tab w:val="left" w:pos="4320"/>
+        </w:tabs>
+      </w:pPr>
+      <w:r><w:t xml:space="preserve">Column A</w:t></w:r>
+      <w:r><w:tab/></w:r>
+      <w:r><w:t xml:space="preserve">Column B</w:t></w:r>
+      <w:r><w:tab/></w:r>
+      <w:r><w:t>Column C</w:t></w:r>
     </w:p>
 
     <!-- ── Page break → page 2 ──────────────────────────────────────── -->
@@ -368,11 +466,18 @@ fn document_xml() -> Vec<u8> {
     <w:p><w:r><w:t>Body text on page three. At least three pages of content are required so that the paginated layout engine can be tested for multi-page rendering and page-boundary correctness.</w:t></w:r></w:p>
     <w:p><w:r><w:t>Final paragraph of the reference document.</w:t></w:r></w:p>
 
-    <!-- ── Section properties: A4 page size ─────────────────────────── -->
+    <!-- ── Section properties: A4 page size + headers/footers ──────── -->
     <!-- A4: 595.28pt × 841.89pt → 11906 × 16838 twips -->
+    <!-- w:titlePg enables the distinct first-page header/footer (gap #5) -->
     <w:sectPr>
+      <w:headerReference w:type="default" r:id="rId5"/>
+      <w:headerReference w:type="first" r:id="rId7"/>
+      <w:footerReference w:type="default" r:id="rId6"/>
+      <w:footerReference w:type="first" r:id="rId8"/>
+      <w:titlePg/>
       <w:pgSz w:w="11906" w:h="16838"/>
-      <w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134"/>
+      <w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134"
+               w:header="720" w:footer="720" w:gutter="0"/>
     </w:sectPr>
 
   </w:body>
@@ -412,6 +517,18 @@ pub fn build_reference_docx() -> Vec<u8> {
 
     zip.start_file("word/document.xml", d).unwrap();
     zip.write_all(&document_xml()).unwrap();
+
+    zip.start_file("word/header1.xml", d).unwrap();
+    zip.write_all(&header_default_xml()).unwrap();
+
+    zip.start_file("word/footer1.xml", d).unwrap();
+    zip.write_all(&footer_default_xml()).unwrap();
+
+    zip.start_file("word/header2.xml", d).unwrap();
+    zip.write_all(&header_first_xml()).unwrap();
+
+    zip.start_file("word/footer2.xml", d).unwrap();
+    zip.write_all(&footer_first_xml()).unwrap();
 
     zip.finish().unwrap();
     buf

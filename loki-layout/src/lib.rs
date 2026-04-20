@@ -46,7 +46,7 @@ pub use flow::{flow_section, FlowOutput, LayoutWarning};
 pub use font::FontResources;
 pub use mode::LayoutMode;
 pub use para::{layout_paragraph, ParagraphLayout, ResolvedLineHeight, ResolvedParaProps, StyleSpan};
-pub use resolve::{CollectedImage, emu_to_pt, flatten_paragraph, pts_to_f32, resolve_char_props, resolve_color, resolve_para_props};
+pub use resolve::{CollectedImage, CollectedNote, emu_to_pt, flatten_paragraph, pts_to_f32, resolve_char_props, resolve_color, resolve_para_props};
 pub use result::{ContinuousLayout, DocumentLayout, LayoutPage, PaginatedLayout};
 
 /// Lays out a full document into absolute positions.
@@ -84,10 +84,21 @@ pub fn layout_document(
                     unreachable!("flow_section in Paginated mode always returns Pages");
                 };
 
+                // Renumber pages first so select_header/select_footer receive
+                // the correct absolute page number for first/even selection.
                 let section_page_count = pages.len();
                 for page in &mut pages {
                     page.page_number = global_page_count + page.page_number;
                 }
+
+                flow::assign_headers_footers(
+                    &mut pages,
+                    &section.layout,
+                    resources,
+                    &doc.styles,
+                    display_scale,
+                );
+
                 all_pages.extend(pages);
                 global_page_count += section_page_count;
             }

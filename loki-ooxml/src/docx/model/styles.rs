@@ -5,7 +5,7 @@
 //!
 //! Mirrors ECMA-376 §17.7 (document styles).
 
-use super::paragraph::{DocxPPr, DocxRPr};
+use super::paragraph::{DocxBorderEdge, DocxPPr, DocxRPr};
 
 /// Top-level model for `w:styles` (ECMA-376 §17.7.4.18).
 #[derive(Debug, Clone, Default)]
@@ -119,6 +119,19 @@ pub struct DocxTcPr {
     pub grid_span: Option<u32>,
     /// Vertical merge from `w:vMerge`.
     pub v_merge: Option<DocxVMerge>,
+    /// Cell shading fill color from `w:shd @w:fill` (hex, no `#`).
+    pub shd_fill: Option<String>,
+    /// Cell borders from `w:tcBorders`.
+    pub tc_borders: Option<DocxTcBorders>,
+}
+
+/// Table cell borders from `w:tcBorders` (ECMA-376 §17.4.67).
+#[derive(Debug, Clone, Default)]
+pub struct DocxTcBorders {
+    pub top: Option<DocxBorderEdge>,
+    pub bottom: Option<DocxBorderEdge>,
+    pub left: Option<DocxBorderEdge>,
+    pub right: Option<DocxBorderEdge>,
 }
 
 /// Vertical merge information from `w:vMerge`.

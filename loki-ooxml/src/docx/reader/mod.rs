@@ -8,6 +8,7 @@
 
 pub mod document;
 pub mod footnotes;
+pub mod header_footer;
 pub mod numbering;
 pub mod settings;
 pub mod styles;

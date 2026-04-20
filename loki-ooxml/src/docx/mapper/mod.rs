@@ -139,14 +139,40 @@
 // ┌──────────────────────────┬────────────────────────────────┬──────────────────┐
 // │ OOXML source             │ Status                         │ Reason           │
 // ├──────────────────────────┼────────────────────────────────┼──────────────────┤
-// │ DocxSectPr header/footer │ Stubbed — header_refs dropped  │ No model type    │
+// │ DocxSectPr header/footer │ Implemented — Session 7        │ gap #5 P1        │
 // │ DocxStyle (Numbering)    │ Skipped silently               │ Handled via num. │
 // │ DocxBodyChild::Sdt       │ Skipped                        │ No model equiv.  │
 // │ DocxTcPr.v_merge         │ Stubbed row_span = 1           │ Track NYI v0.1.0 │
-// │ DocxSettings             │ Parsed, not used               │ No model target  │
+// │ DocxSettings             │ even_and_odd_headers wired     │ Session 7        │
 // │ DocxNote (Separator)     │ Filtered out                   │ Not semantic     │
 // │ TrackDel content         │ Dropped                        │ Deleted content  │
 // └──────────────────────────┴────────────────────────────────┴──────────────────┘
+//
+// ── Session 7 audit (2026-04-20) — gap #5: headers and footers ───────────────
+//
+// Readiness table before any Session 7 code was written:
+//
+// | Item                          | Pre-S7 status | Action needed              |
+// |-------------------------------|---------------|----------------------------|
+// | DocxSectPr header/footer refs | Parsed        | Part loading missing       |
+// | titlePg in DocxSectPr         | Missing       | Add field + parse          |
+// | evenAndOddHeaders             | Parsed        | Thread through pipeline    |
+// | Rel ID → XML part path        | Missing       | Load via REL_HEADER/FOOTER |
+// | Header/footer XML parser      | Missing       | New reader/header_footer.rs|
+// | loki-doc-model HF type        | Complete      | HeaderFooter, PageLayout.* |
+// | LayoutPage.header_items type  | Vec<PI>       | Add header_height f32      |
+// | paint_single_page HF render   | Complete      | Use page-local coords      |
+//
+// Design decisions:
+// • title_page: per-section (ECMA-376 §17.6.17), added to DocxSectPr.
+// • even_and_odd_headers: document-level (§17.15.1.25), from DocxSettings.
+// • PageLayout already has all 6 HF fields; no new doc-model types needed.
+// • Header/footer XML reuses parse_paragraph from document.rs (same structure).
+// • All header/footer parts pre-loaded in import.rs by REL_HEADER / REL_FOOTER.
+// • layout_blocks_reflow in flow.rs calls flow_section in Reflow mode to lay out
+//   HF content; synthetic section has no HF fields → no infinite recursion.
+// • HF items translated to page-local coords before storing in LayoutPage.
+// • LayoutPage gains header_height / footer_height for downstream use.
 //
 // IMPEDANCE MISMATCHES (resolved as follows)
 // • Style inheritance: OOXML uses named `basedOn` chains. doc-model stores
@@ -180,9 +206,8 @@ pub(crate) mod props;
 pub(crate) mod styles;
 pub(crate) mod table;
 
-// TODO(mapper): DocxSettings has no loki-doc-model equivalent yet — skipped.
-// When the model gains a document-settings type (default tab stop, odd/even
-// header toggle, etc.), wire DocxSettings through MappingContext.
+// DocxSettings.even_and_odd_headers is now wired through map_document (Session 7).
+// DocxSettings.default_tab_stop and title_pg remain unused pending further work.
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Public entry point

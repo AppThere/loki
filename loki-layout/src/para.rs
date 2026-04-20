@@ -14,8 +14,8 @@ use std::sync::Arc;
 
 use loki_doc_model::style::list_style::{BulletChar, ListId, ListLevel, ListLevelKind, NumberingScheme};
 use parley::{
-    Alignment, AlignmentOptions, FontFamily, FontStyle, FontWeight, LineHeight,
-    PositionedLayoutItem, StyleProperty,
+    Alignment, AlignmentOptions, FontFamily, FontStyle, FontWeight, InlineBox, LineHeight,
+    PositionedLayoutItem, RangedBuilder, StyleProperty,
 };
 
 use crate::color::LayoutColor;
@@ -99,6 +99,17 @@ pub struct ResolvedListMarker {
     pub list_id: ListId,
     /// Zero-based nesting level within the list (0 = outermost).
     pub level: u8,
+}
+
+/// A resolved tab stop for paragraph layout.
+///
+/// Parley 0.8 has no native tab stop API; tab characters are expanded
+/// to [`InlineBox`] widths in [`layout_paragraph`] using a two-pass approach.
+/// TR 29166 §6.2.2. ECMA-376 §17.3.1.37; ODF §16.29.
+#[derive(Debug, Clone, Copy)]
+pub struct ResolvedTabStop {
+    /// Tab stop position from the content-area start edge, in points.
+    pub position: f32,
 }
 
 /// Resolved line-height specification for a paragraph.
@@ -226,6 +237,9 @@ pub struct ResolvedParaProps {
     pub indent_hanging: f32,
     /// List membership for this paragraph. `None` for non-list paragraphs.
     pub list_marker: Option<ResolvedListMarker>,
+    /// Explicit tab stops, sorted ascending by position. Empty = use the
+    /// default 36 pt (0.5 inch) grid. Gap #7.
+    pub tab_stops: Vec<ResolvedTabStop>,
 }
 
 impl Default for ResolvedParaProps {
@@ -250,6 +264,7 @@ impl Default for ResolvedParaProps {
             page_break_after: false,
             indent_hanging: 0.0,
             list_marker: None,
+            tab_stops: Vec::new(),
         }
     }
 }
@@ -281,6 +296,92 @@ pub struct ParagraphLayout {
     pub line_boundaries: Vec<(f32, f32)>,
 }
 
+// ── Tab stop helpers (gap #7) ─────────────────────────────────────────────────
+
+/// Default tab stop interval: 0.5 inch = 36 pt = 720 twips (Word default).
+const DEFAULT_TAB_INTERVAL: f32 = 36.0;
+
+/// Return the next tab stop position strictly greater than `x`.
+///
+/// Searches `stops` (sorted ascending) first; falls back to the default
+/// 36 pt grid when no explicit stop is defined beyond `x`.
+fn next_tab_stop(stops: &[ResolvedTabStop], x: f32) -> f32 {
+    if let Some(s) = stops.iter().find(|s| s.position > x + 0.5) {
+        s.position
+    } else {
+        ((x / DEFAULT_TAB_INTERVAL).floor() + 1.0) * DEFAULT_TAB_INTERVAL
+    }
+}
+
+/// Push paragraph-level defaults and per-span character styles onto `builder`.
+///
+/// Extracted so the same styles can be applied in both the probe pass (pass 1)
+/// and the final pass (pass 2) of the two-pass tab stop expansion.
+fn push_para_styles(
+    builder: &mut RangedBuilder<'_, LayoutColor>,
+    para_props: &ResolvedParaProps,
+    style_spans: &[StyleSpan],
+) {
+    builder.push_default(StyleProperty::Brush(LayoutColor::BLACK));
+    builder.push_default(StyleProperty::FontSize(12.0));
+    match para_props.line_height {
+        // MetricsRelative(1.0) is Parley's default — single-spacing from natural
+        // font metrics. Correct for OOXML lineRule="auto" w:line="240".
+        Some(ResolvedLineHeight::MetricsRelative(m)) => {
+            builder.push_default(StyleProperty::LineHeight(LineHeight::MetricsRelative(m)));
+        }
+        Some(ResolvedLineHeight::Exact(pts)) => {
+            builder.push_default(StyleProperty::LineHeight(LineHeight::Absolute(pts)));
+        }
+        // AtLeast: let Parley use natural metrics (always ≥ author intent for body text).
+        // None: natural font metrics — always correct.
+        Some(ResolvedLineHeight::AtLeast(_)) | None => {}
+    }
+
+    for span in style_spans {
+        let r = span.range.clone();
+        // For super/subscript (gap #3), reduce font size to 58 %.
+        // TODO(super-sub): Parley does not expose baseline-shift.
+        let effective_font_size = if span.vertical_align.is_some() {
+            span.font_size * 0.58
+        } else {
+            span.font_size
+        };
+        builder.push(StyleProperty::FontSize(effective_font_size), r.clone());
+        builder.push(StyleProperty::Brush(span.color), r.clone());
+        if span.bold {
+            builder.push(StyleProperty::FontWeight(FontWeight::BOLD), r.clone());
+        }
+        if span.italic {
+            builder.push(StyleProperty::FontStyle(FontStyle::Italic), r.clone());
+        }
+        if let Some(ref name) = span.font_name {
+            builder.push(StyleProperty::FontFamily(FontFamily::named(name.as_str())), r.clone());
+        }
+        if let Some(lh) = span.line_height {
+            builder.push(StyleProperty::LineHeight(LineHeight::FontSizeRelative(lh)), r.clone());
+        }
+        // Underline (gap #17): all variants map to Parley's single underline.
+        if span.underline.is_some() {
+            builder.push(StyleProperty::Underline(true), r.clone());
+        }
+        // Strikethrough (gap #18): both variants map to Parley's one variant.
+        if span.strikethrough.is_some() {
+            builder.push(StyleProperty::Strikethrough(true), r.clone());
+        }
+        // Letter spacing (gap #13).
+        if let Some(ls) = span.letter_spacing {
+            builder.push(StyleProperty::LetterSpacing(ls), r.clone());
+        }
+        // Word spacing (gap #22).
+        if let Some(ws) = span.word_spacing {
+            builder.push(StyleProperty::WordSpacing(ws), r.clone());
+        }
+        // Caps variant (gaps #15, #16): SmallCaps stored but not applied (no Parley API).
+        // AllCaps: text was already uppercased during flatten_paragraph.
+    }
+}
+
 /// Lay out a single paragraph using Parley.
 ///
 /// `text_content` is the flattened text from all inline runs. `style_spans`
@@ -306,115 +407,70 @@ pub fn layout_paragraph(
         };
     }
 
+    // NOTE(indent-hanging-width): Parley 0.6 does not expose per-line width
+    // control. The first line of a hanging-indent paragraph wraps at the same
+    // `line_w` as subsequent lines, meaning it gets `indent_hanging` px less
+    // space than it should. Fix requires Parley to expose per-line measure.
+    // Tracked: fidelity audit gap #8 (partial).
+    let line_w = (available_width - para_props.indent_start - para_props.indent_end).max(0.0);
+
+    // ── Tab stop expansion (gap #7) ───────────────────────────────────────────
+    // Parley 0.8 has no native tab stop API. Two-pass approach:
+    //   Pass 1 (probe): zero-width InlineBoxes at each \t → measure x-positions.
+    //   Pass 2 (final): InlineBoxes sized to advance to the next tab stop.
+    let tab_char_positions: Vec<usize> = text_content
+        .char_indices()
+        .filter(|(_, c)| *c == '\t')
+        .map(|(i, _)| i)
+        .collect();
+
+    let tab_inline_widths: Vec<f32> = if !tab_char_positions.is_empty() {
+        let mut probe = resources.layout_cx.ranged_builder(
+            &mut resources.font_cx,
+            text_content,
+            display_scale,
+            true,
+        );
+        push_para_styles(&mut probe, para_props, style_spans);
+        for (idx, &pos) in tab_char_positions.iter().enumerate() {
+            probe.push_inline_box(InlineBox { id: idx as u64, index: pos, width: 0.0, height: 0.0 });
+        }
+        let mut probe_layout = probe.build(text_content);
+        probe_layout.break_all_lines(Some(line_w));
+
+        let mut x_positions = vec![0.0f32; tab_char_positions.len()];
+        for line in probe_layout.lines() {
+            for item in line.items() {
+                if let PositionedLayoutItem::InlineBox(pib) = item {
+                    let idx = pib.id as usize;
+                    if idx < x_positions.len() {
+                        x_positions[idx] = pib.x;
+                    }
+                }
+            }
+        }
+        x_positions
+            .iter()
+            .map(|&x| (next_tab_stop(&para_props.tab_stops, x) - x).max(0.0))
+            .collect()
+    } else {
+        vec![]
+    };
+
+    // ── Main (final) layout pass ──────────────────────────────────────────────
     let mut builder = resources.layout_cx.ranged_builder(
         &mut resources.font_cx,
         text_content,
         display_scale,
         true,
     );
-
-    // Paragraph-level defaults.
-    builder.push_default(StyleProperty::Brush(LayoutColor::BLACK));
-    builder.push_default(StyleProperty::FontSize(12.0));
-    match para_props.line_height {
-        // MetricsRelative(1.0) is Parley's default — single-spacing from natural
-        // font metrics (ascender + descender + leading). This is correct for
-        // OOXML lineRule="auto" w:line="240", the most common case.
-        Some(ResolvedLineHeight::MetricsRelative(m)) => {
-            builder.push_default(StyleProperty::LineHeight(LineHeight::MetricsRelative(m)));
-        }
-        // Exact points — OOXML lineRule="exact". May clip descenders.
-        Some(ResolvedLineHeight::Exact(pts)) => {
-            builder.push_default(StyleProperty::LineHeight(LineHeight::Absolute(pts)));
-        }
-        // AtLeast points — OOXML lineRule="atLeast". Use metrics but honour
-        // the minimum by taking the larger of the two. Parley has no native
-        // "at-least" variant, so we use MetricsRelative and let the caller
-        // check the resulting height if needed (good enough for v0.1).
-        Some(ResolvedLineHeight::AtLeast(_pts)) => {
-            // No override — let Parley use natural metrics; they are always ≥
-            // the author's intent for typical body-text sizes.
-        }
-        None => {
-            // No override — natural font metrics. Always correct.
-        }
-    }
-
-    // Per-span styles.
-    for span in style_spans {
-        let r = span.range.clone();
-
-        // For super/subscript (gap #3), reduce font size to 58 %.
-        // TODO(super-sub): Parley does not expose baseline-shift; only font-size
-        // reduction applied. Revisit when Parley adds StyleProperty::BaselineShift.
-        let effective_font_size = if span.vertical_align.is_some() {
-            span.font_size * 0.58
-        } else {
-            span.font_size
-        };
-        builder.push(StyleProperty::FontSize(effective_font_size), r.clone());
-        builder.push(StyleProperty::Brush(span.color), r.clone());
-
-        if span.bold {
-            builder.push(StyleProperty::FontWeight(FontWeight::BOLD), r.clone());
-        }
-        if span.italic {
-            builder.push(StyleProperty::FontStyle(FontStyle::Italic), r.clone());
-        }
-        if let Some(ref name) = span.font_name {
-            builder.push(StyleProperty::FontFamily(FontFamily::named(name.as_str())), r.clone());
-        }
-        if let Some(lh) = span.line_height {
-            builder.push(StyleProperty::LineHeight(LineHeight::FontSizeRelative(lh)), r.clone());
-        }
-
-        // Underline (gap #17): all style variants map to Parley's single underline.
-        // TODO(underline-style): Parley exposes a single underline decoration;
-        // Double/Dotted/Dash/Wave variants all render as Single for now.
-        if span.underline.is_some() {
-            builder.push(StyleProperty::Underline(true), r.clone());
-        }
-
-        // Strikethrough (gap #18): both Single and Double map to Parley's one variant.
-        // TODO(strikethrough-style): Parley exposes a single strikethrough decoration;
-        // Double variant renders as Single for now.
-        if span.strikethrough.is_some() {
-            builder.push(StyleProperty::Strikethrough(true), r.clone());
-        }
-
-        // Letter spacing (gap #13).
-        if let Some(ls) = span.letter_spacing {
-            builder.push(StyleProperty::LetterSpacing(ls), r.clone());
-        }
-
-        // Word spacing (gap #22).
-        if let Some(ws) = span.word_spacing {
-            builder.push(StyleProperty::WordSpacing(ws), r.clone());
-        }
-
-        // Caps variant (gaps #15, #16).
-        match span.font_variant {
-            Some(FontVariant::SmallCaps) => {
-                // TODO(small-caps): Parley does not expose StyleProperty::FontVariantCaps;
-                // SmallCaps stored but not applied. Revisit when Parley adds support.
-            }
-            Some(FontVariant::AllCaps) | None => {
-                // AllCaps: text was already uppercased during flatten_paragraph.
-                // None: no caps variant, nothing to do.
-            }
-        }
+    push_para_styles(&mut builder, para_props, style_spans);
+    for (idx, &pos) in tab_char_positions.iter().enumerate() {
+        let width = tab_inline_widths.get(idx).copied().unwrap_or(0.0);
+        builder.push_inline_box(InlineBox { id: idx as u64, index: pos, width, height: 0.0 });
     }
 
     let mut layout = builder.build(text_content);
-
-    // NOTE(indent-hanging-width): Parley 0.6 does not expose per-line width
-    // control. The first line of a hanging-indent paragraph wraps at the same
-    // `line_w` as subsequent lines, meaning it gets `indent_hanging` px less
-    // space than it should. This causes premature wrapping on line 0 for
-    // paragraphs with large hanging indents. Fix requires Parley to expose
-    // per-line measure — revisit when Parley adds this capability.
-    // Tracked: fidelity audit gap #8 (partial).
-    let line_w = (available_width - para_props.indent_start - para_props.indent_end).max(0.0);
     layout.break_all_lines(Some(line_w));
     layout.align(Some(line_w), para_props.alignment, AlignmentOptions::default());
 
