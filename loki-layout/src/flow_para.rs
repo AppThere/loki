@@ -41,7 +41,7 @@
 //! Adding it is a 4-line change: add `page_break_after: bool` to
 //! `ResolvedParaProps` (para.rs), forward from `ParaProps` in `map_para_props`
 //! (resolve.rs), and add after `place_paragraph_layout`:
-//! ```rust
+//! ```text
 //! if resolved.page_break_after && state.mode.is_paginated() {
 //!     finish_page(state);
 //! }
@@ -52,9 +52,9 @@ use loki_doc_model::content::inline::Inline;
 use loki_doc_model::style::list_style::ListLevelKind;
 
 use crate::geometry::LayoutRect;
-use crate::items::PositionedItem;
+use crate::items::{PositionedImage, PositionedItem};
 use crate::para::{format_list_marker, layout_paragraph, ParagraphLayout, ResolvedParaProps};
-use crate::resolve::{flatten_paragraph, resolve_para_props};
+use crate::resolve::{emu_to_pt, flatten_paragraph, resolve_para_props};
 
 use super::{finish_page, FlowState, LayoutWarning};
 
@@ -114,7 +114,7 @@ pub(super) fn flow_paragraph(
     let effective_para: &StyledParagraph = owned_para.as_ref().unwrap_or(para);
     // ────────────────────────────────────────────────────────────────────────
 
-    let (text, spans) = flatten_paragraph(effective_para, state.catalog);
+    let (text, spans, images) = flatten_paragraph(effective_para, state.catalog);
 
     state.cursor_y += resolved.space_before;
 
@@ -122,7 +122,7 @@ pub(super) fn flow_paragraph(
         finish_page(state);
     }
 
-    let para_layout = layout_paragraph(
+    let mut para_layout = layout_paragraph(
         state.resources,
         &text,
         &spans,
@@ -130,6 +130,40 @@ pub(super) fn flow_paragraph(
         state.content_width,
         state.display_scale,
     );
+
+    // ── Inline image placement (gap #9) ──────────────────────────────────────
+    // TODO(inline-image-flow): Parley has no inline image box support.
+    // Images are prepended as a block-level prefix before paragraph text;
+    // all existing items are shifted down to make room.
+    let mut total_image_height = 0.0f32;
+    let mut image_items: Vec<PositionedItem> = Vec::new();
+    for img in &images {
+        if img.cx_emu == 0 && img.cy_emu == 0 {
+            continue; // zero-size image — skip without crashing
+        }
+        let w = emu_to_pt(img.cx_emu);
+        let h = emu_to_pt(img.cy_emu);
+        image_items.push(PositionedItem::Image(PositionedImage {
+            rect: LayoutRect::new(0.0, total_image_height, w, h),
+            src: img.src.clone(),
+            alt: img.alt.clone(),
+        }));
+        total_image_height += h;
+    }
+    if total_image_height > 0.0 {
+        // Expand background fill to cover image area (first item when present).
+        if let Some(PositionedItem::FilledRect(bg)) = para_layout.items.first_mut() {
+            bg.rect.size.height += total_image_height;
+        }
+        // Shift all existing paragraph items down by total image height.
+        for item in &mut para_layout.items {
+            item.translate(0.0, total_image_height);
+        }
+        para_layout.height += total_image_height;
+        // Prepend image items (they render before paragraph text).
+        image_items.extend(para_layout.items.drain(..));
+        para_layout.items = image_items;
+    }
 
     place_paragraph_layout(state, &resolved, para_layout, block_index);
 
@@ -279,7 +313,7 @@ fn build_chain_layouts<'s>(
         .map(|idx| {
             if let Block::StyledPara(para) = &blocks[idx] {
                 let resolved = resolve_para_props(para, state.catalog);
-                let (text, spans) = flatten_paragraph(para, state.catalog);
+                let (text, spans, _images) = flatten_paragraph(para, state.catalog);
                 let layout = layout_paragraph(
                     state.resources,
                     &text,

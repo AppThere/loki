@@ -7,6 +7,69 @@
 //! The public functions take a [`StyledParagraph`] / [`StyledRun`] plus a
 //! [`StyleCatalog`] and produce the flattened representations consumed by
 //! [`crate::para::layout_paragraph`].
+//!
+//! # Session 4 pre-audit findings (2026-04-20)
+//!
+//! ## Q1 — Inline::Image data resolution
+//!
+//! `Inline::Image` is defined as `Image(NodeAttr, Vec<Inline>, LinkTarget)`
+//! where `LinkTarget.url` carries either:
+//! - A **data URI** (`"data:image/png;base64,…"`) when
+//!   `DocxImportOptions::embed_images == true` (the default). The OOXML mapper
+//!   (`loki-ooxml/src/docx/mapper/images.rs:38–44`) resolves the `a:blip
+//!   r:embed` relationship ID against the OPC package, base64-encodes the raw
+//!   bytes, and stores the data URI in `LinkTarget.url`.
+//! - An **unresolved relationship ID** (e.g. `"rId1"`) when
+//!   `embed_images == false`.
+//! Width and height in EMUs are stored in `NodeAttr.kv` as `("cx_emu", val)`
+//! and `("cy_emu", val)`. Alt text is the `Vec<Inline>` second field.
+//! `loki-vello` (`loki-vello/src/image.rs:34`) only renders data URIs; external
+//! URLs produce a grey placeholder rectangle. **With `embed_images` on (the
+//! default), image data is available at layout time — Session 4 is a one-session
+//! wire-up.**
+//!
+//! `walk_inlines` currently treats `Inline::Image` like `Inline::Link` — it
+//! recurses into the alt-text child inlines and silently discards the `src` and
+//! dimensions (`resolve.rs:351`). The fix is to extract `LinkTarget.url`,
+//! `cx_emu`/`cy_emu`, and emit a `PositionedImage` into the paragraph's item
+//! list. `PositionedItem::Image(PositionedImage)` already exists in
+//! `loki-layout/src/items.rs:30` with fields `rect: LayoutRect`, `src: String`,
+//! `alt: Option<String>`.
+//!
+//! ## Q2 — Inline::Link current behaviour
+//!
+//! `Inline::Link` is `Link(NodeAttr, Vec<Inline>, LinkTarget)`. The OOXML mapper
+//! (`loki-ooxml/src/docx/mapper/inline.rs:57–64`) resolves `w:hyperlink
+//! r:id` relationship IDs against `ctx.hyperlinks` to produce a resolved HTTP
+//! URL; bookmark-only anchors become `"#anchor_name"`.
+//! `walk_inlines` (`resolve.rs:351`) recurses into display children and discards
+//! the URL — identical to the image arm. No `PositionedItem::Link` variant
+//! exists; hyperlink metadata is completely lost after flattening.
+//! Fixing gap #11 requires either: (a) adding `PositionedItem::Link` with a
+//! URL-annotated byte-range rect produced after glyph layout, or (b) threading
+//! URL metadata through `StyleSpan` and attaching it to glyph runs so the
+//! renderer can emit clickable regions. Option (b) is simpler — `StyleSpan`
+//! already carries per-run metadata; adding `link_url: Option<String>` keeps
+//! the URL co-located with the text run that displays it.
+//!
+//! ## Q3 — Image placement model for inline images
+//!
+//! Inline images in OOXML are inline drawings (`<wp:inline>`) sized in EMUs.
+//! Parley has no concept of inline image boxes; it lays out text only. The
+//! practical placement strategy is: at `walk_inlines` time, when an
+//! `Inline::Image` is encountered, emit a `PositionedImage` with its origin
+//! relative to the paragraph top-left and dimensions converted from EMUs
+//! (1 EMU = 1/914400 inch = 1/12700 pt). Because Parley has already been built
+//! by the time the glyph-run loop runs, the image must be placed either
+//! (a) before the paragraph text (treating the image as a block-level
+//! interruption — crude but functional for most docs), or (b) using Parley's
+//! inline-box callback if the API exposes it in a future version. For v0.1,
+//! option (a) is used: collect images encountered during `walk_inlines` with
+//! their EMU dimensions; after `layout_paragraph` returns, prepend
+//! `PositionedItem::Image` entries to the paragraph's item list at `cursor_y`.
+//! Floating drawings (`NodeAttr.classes` contains `"floating"`) are placed as
+//! absolute overlays at `(0, 0)` within the page content area — also deferred
+//! to a follow-up session (gap #12 partial).
 
 use std::ops::Range;
 
@@ -15,7 +78,7 @@ use loki_doc_model::content::inline::{Inline, StyledRun};
 use loki_doc_model::style::catalog::{StyleCatalog, StyleId};
 use loki_doc_model::style::props::border::{Border as DocBorder, BorderStyle as DocBorderStyle};
 use loki_doc_model::style::props::char_props::{
-    CharProps, HighlightColor,
+    CharProps,
     StrikethroughStyle as DocStrikethroughStyle,
     UnderlineStyle as DocUnderlineStyle,
     VerticalAlign as DocVerticalAlign,
@@ -59,6 +122,31 @@ pub fn pts_to_f32(pts: Points) -> f32 {
     pts.value() as f32
 }
 
+/// Convert English Metric Units (EMU) to points. 1 EMU = 1/12700 pt.
+///
+/// OOXML stores image dimensions in EMU. This converts to the `f32` points
+/// used by `loki-layout` geometry types.
+pub fn emu_to_pt(emu: u64) -> f32 {
+    emu as f32 / 12700.0
+}
+
+/// An inline image collected during paragraph flattening.
+///
+/// Gathered by [`flatten_paragraph`] / `walk_inlines` when an [`Inline::Image`]
+/// is encountered. Passed back to the flow engine so it can emit a
+/// [`crate::items::PositionedImage`] after Parley text layout.
+#[derive(Debug, Clone)]
+pub struct CollectedImage {
+    /// Data URI (`"data:image/…;base64,…"`) or external URL.
+    pub src: String,
+    /// Alt text flattened from the image's alt-text inline children.
+    pub alt: Option<String>,
+    /// Width in English Metric Units.
+    pub cx_emu: u64,
+    /// Height in English Metric Units.
+    pub cy_emu: u64,
+}
+
 /// Resolve the effective [`ResolvedParaProps`] for a [`StyledParagraph`].
 ///
 /// Resolution order (child wins):
@@ -93,14 +181,16 @@ pub fn resolve_char_props(
     char_props_to_style_span(&effective_run_char_props(run, catalog, para_char_defaults), 0..0)
 }
 
-/// Flatten all inline content of a [`StyledParagraph`] into a UTF-8 string
-/// and a matching list of [`StyleSpan`]s.
+/// Flatten all inline content of a [`StyledParagraph`] into a UTF-8 string,
+/// a matching list of [`StyleSpan`]s, and any inline images found.
 ///
 /// Each span's `range` is a byte range within the returned string.
+/// Images are returned separately because Parley has no inline image support;
+/// they are placed by the flow engine after text layout.
 pub fn flatten_paragraph(
     block: &StyledParagraph,
     catalog: &StyleCatalog,
-) -> (String, Vec<StyleSpan>) {
+) -> (String, Vec<StyleSpan>, Vec<CollectedImage>) {
     let base: CharProps = block
         .style_id
         .as_ref()
@@ -112,8 +202,9 @@ pub fn flatten_paragraph(
     };
     let mut buf = String::new();
     let mut spans: Vec<StyleSpan> = Vec::new();
-    walk_inlines(&block.inlines, &base, catalog, &mut buf, &mut spans);
-    (buf, spans)
+    let mut images: Vec<CollectedImage> = Vec::new();
+    walk_inlines(&block.inlines, &base, catalog, &mut buf, &mut spans, None, &mut images);
+    (buf, spans, images)
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
@@ -240,6 +331,7 @@ fn char_props_to_style_span(props: &CharProps, range: Range<usize>) -> StyleSpan
         font_variant,
         word_spacing: props.word_spacing.map(pts_to_f32),     // gap #22
         shadow: props.shadow.unwrap_or(false),                 // gap #24
+        link_url: None, // set by walk_inlines when inside Inline::Link (gap #11)
     }
 }
 
@@ -274,8 +366,16 @@ fn map_highlight_color(hc: Option<loki_doc_model::style::props::char_props::High
 ///
 /// When `props.all_caps` is set, `text` is uppercased before appending
 /// (gap #16 fallback — Parley has no `FontVariantCaps` property).
+/// When `active_link_url` is `Some`, the span gets `link_url` set and an
+/// auto-underline if not already underlined (gap #11).
 #[inline]
-fn push_text(buf: &mut String, spans: &mut Vec<StyleSpan>, text: &str, props: &CharProps) {
+fn push_text(
+    buf: &mut String,
+    spans: &mut Vec<StyleSpan>,
+    text: &str,
+    props: &CharProps,
+    active_link_url: Option<&str>,
+) {
     if text.is_empty() {
         return;
     }
@@ -285,73 +385,119 @@ fn push_text(buf: &mut String, spans: &mut Vec<StyleSpan>, text: &str, props: &C
     } else {
         buf.push_str(text);
     }
-    spans.push(char_props_to_style_span(props, start..buf.len()));
+    let mut span = char_props_to_style_span(props, start..buf.len());
+    if let Some(url) = active_link_url {
+        span.link_url = Some(url.to_string());
+        // Auto-underline link text that has no explicit underline decoration.
+        if span.underline.is_none() {
+            span.underline = Some(UnderlineStyle::Single);
+        }
+    }
+    spans.push(span);
 }
 
 /// Recursively collect text from an [`Inline`] tree, building `buf` + `spans`.
+///
+/// `active_link_url` carries the URL of the enclosing `Inline::Link`, if any;
+/// it is threaded through recursive calls so all text inside a link gets
+/// `StyleSpan::link_url` set. `images` collects any `Inline::Image` nodes
+/// encountered for post-Parley placement (gap #9).
 fn walk_inlines(
     inlines: &[Inline],
     effective: &CharProps,
     catalog: &StyleCatalog,
     buf: &mut String,
     spans: &mut Vec<StyleSpan>,
+    active_link_url: Option<&str>,
+    images: &mut Vec<CollectedImage>,
 ) {
     for inline in inlines {
         match inline {
-            Inline::Str(s) => push_text(buf, spans, s, effective),
-            Inline::Space => push_text(buf, spans, " ", effective),
-            Inline::SoftBreak => push_text(buf, spans, " ", effective),
-            Inline::LineBreak => push_text(buf, spans, "\n", effective),
-            Inline::Code(_, s) => push_text(buf, spans, s, effective),
+            Inline::Str(s) => push_text(buf, spans, s, effective, active_link_url),
+            Inline::Space => push_text(buf, spans, " ", effective, active_link_url),
+            Inline::SoftBreak => push_text(buf, spans, " ", effective, active_link_url),
+            Inline::LineBreak => push_text(buf, spans, "\n", effective, active_link_url),
+            Inline::Code(_, s) => push_text(buf, spans, s, effective, active_link_url),
             Inline::StyledRun(run) => {
                 let p = effective_run_char_props(run, catalog, effective);
-                walk_inlines(&run.content, &p, catalog, buf, spans);
+                walk_inlines(&run.content, &p, catalog, buf, spans, active_link_url, images);
             }
             Inline::Strong(ch) => {
                 let mut p = effective.clone();
                 p.bold = Some(true);
-                walk_inlines(ch, &p, catalog, buf, spans);
+                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images);
             }
             Inline::Emph(ch) => {
                 let mut p = effective.clone();
                 p.italic = Some(true);
-                walk_inlines(ch, &p, catalog, buf, spans);
+                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images);
             }
             Inline::Underline(ch) => {
                 let mut p = effective.clone();
                 p.underline = Some(DocUnderlineStyle::Single);
-                walk_inlines(ch, &p, catalog, buf, spans);
+                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images);
             }
             Inline::Strikeout(ch) => {
                 let mut p = effective.clone();
                 p.strikethrough = Some(DocStrikethroughStyle::Single);
-                walk_inlines(ch, &p, catalog, buf, spans);
+                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images);
             }
             // Superscript (gap #3): set vertical_align on the effective props.
             Inline::Superscript(ch) => {
                 let mut p = effective.clone();
                 p.vertical_align = Some(DocVerticalAlign::Superscript);
-                walk_inlines(ch, &p, catalog, buf, spans);
+                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images);
             }
             // Subscript (gap #3): set vertical_align on the effective props.
             Inline::Subscript(ch) => {
                 let mut p = effective.clone();
                 p.vertical_align = Some(DocVerticalAlign::Subscript);
-                walk_inlines(ch, &p, catalog, buf, spans);
+                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images);
             }
             // SmallCaps (gap #15): set small_caps so StyleSpan gets FontVariant::SmallCaps.
             Inline::SmallCaps(ch) => {
                 let mut p = effective.clone();
                 p.small_caps = Some(true);
-                walk_inlines(ch, &p, catalog, buf, spans);
+                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images);
             }
             Inline::Quoted(_, ch) | Inline::Span(_, ch) => {
-                walk_inlines(ch, effective, catalog, buf, spans);
+                walk_inlines(ch, effective, catalog, buf, spans, active_link_url, images);
             }
-            Inline::Link(_, ch, _) | Inline::Image(_, ch, _) => {
-                walk_inlines(ch, effective, catalog, buf, spans);
+            // Link (gap #11): thread the resolved URL into child spans.
+            // TODO(link-click): interactive hit-testing deferred; only visual hint rendered.
+            Inline::Link(_, ch, target) => {
+                let url = target.url.as_str();
+                walk_inlines(ch, effective, catalog, buf, spans, Some(url), images);
             }
-            Inline::Cite(_, ch) => walk_inlines(ch, effective, catalog, buf, spans),
+            // Image (gap #9): collect for post-Parley placement; do not emit text.
+            // TODO(floating-image): check NodeAttr.classes for "floating"; deferred (gap #12).
+            // TODO(inline-image-flow): Parley has no inline box support; images placed
+            //   as block-level prefix after layout_paragraph returns.
+            Inline::Image(attr, alt_inlines, target) => {
+                let cx_emu = attr.kv.iter()
+                    .find(|(k, _)| k == "cx_emu")
+                    .and_then(|(_, v)| v.parse::<u64>().ok())
+                    .unwrap_or(0);
+                let cy_emu = attr.kv.iter()
+                    .find(|(k, _)| k == "cy_emu")
+                    .and_then(|(_, v)| v.parse::<u64>().ok())
+                    .unwrap_or(0);
+                // Flatten alt-text inlines into a plain string (no spans, not main text).
+                let mut alt_buf = String::new();
+                let mut alt_spans: Vec<StyleSpan> = Vec::new();
+                let mut alt_images: Vec<CollectedImage> = Vec::new();
+                walk_inlines(alt_inlines, effective, catalog, &mut alt_buf, &mut alt_spans, None, &mut alt_images);
+                let alt = if alt_buf.is_empty() { None } else { Some(alt_buf) };
+                if !target.url.is_empty() {
+                    images.push(CollectedImage {
+                        src: target.url.clone(),
+                        alt,
+                        cx_emu,
+                        cy_emu,
+                    });
+                }
+            }
+            Inline::Cite(_, ch) => walk_inlines(ch, effective, catalog, buf, spans, active_link_url, images),
             // Math, RawInline, Note, Field, Comment, Bookmark, and any
             // future #[non_exhaustive] variants are not text runs — skip.
             _ => {}

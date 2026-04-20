@@ -42,6 +42,7 @@ fn single_span(text: &str, font_size: f32) -> StyleSpan {
         font_variant: None,
         word_spacing: None,
         shadow: false,
+        link_url: None,
     }
 }
 
