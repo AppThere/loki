@@ -172,6 +172,8 @@ fn footnotes_xml() -> Vec<u8> {
 /// | Lists (bullet + numbered)| #1    |
 /// | Hyperlink                | #11   |
 /// | Footnote reference       | #2    |
+/// | Paragraph border (box)   | #6    |
+/// | Tab stops                | #7    |
 /// | Page breaks (3 pages)    | —     |
 /// | A4 page size             | —     |
 fn document_xml() -> Vec<u8> {
@@ -345,6 +347,34 @@ fn document_xml() -> Vec<u8> {
         <w:footnoteReference w:id="1"/>
       </w:r>
       <w:r><w:t xml:space="preserve"> appended to it.</w:t></w:r>
+    </w:p>
+
+    <!-- ── Paragraph border (gap #6): single-line box border, 1pt, black, 4pt space ── -->
+    <w:p>
+      <w:pPr>
+        <w:pBdr>
+          <w:top w:val="single" w:sz="8" w:color="000000" w:space="4"/>
+          <w:bottom w:val="single" w:sz="8" w:color="000000" w:space="4"/>
+          <w:left w:val="single" w:sz="8" w:color="000000" w:space="4"/>
+          <w:right w:val="single" w:sz="8" w:color="000000" w:space="4"/>
+        </w:pBdr>
+      </w:pPr>
+      <w:r><w:t>This paragraph has a single-line border on all four sides (gap #6).</w:t></w:r>
+    </w:p>
+
+    <!-- ── Tab stops (gap #7): explicit stops at 1 inch (1440 twips) and 3 inch (4320 twips) ── -->
+    <w:p>
+      <w:pPr>
+        <w:tabs>
+          <w:tab w:val="left" w:pos="1440"/>
+          <w:tab w:val="left" w:pos="4320"/>
+        </w:tabs>
+      </w:pPr>
+      <w:r><w:t xml:space="preserve">Column A</w:t></w:r>
+      <w:r><w:tab/></w:r>
+      <w:r><w:t xml:space="preserve">Column B</w:t></w:r>
+      <w:r><w:tab/></w:r>
+      <w:r><w:t>Column C</w:t></w:r>
     </w:p>
 
     <!-- ── Page break → page 2 ──────────────────────────────────────── -->

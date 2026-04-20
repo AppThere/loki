@@ -87,6 +87,7 @@ use loki_doc_model::style::list_style::ListId;
 use loki_doc_model::style::props::para_props::{
     LineHeight as DocLineHeight, ParagraphAlignment, ParaProps, Spacing,
 };
+use loki_doc_model::style::props::tab_stop::TabAlignment;
 use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 use parley::Alignment;
@@ -95,8 +96,8 @@ use crate::color::LayoutColor;
 use crate::geometry::LayoutInsets;
 use crate::items::{BorderEdge, BorderStyle};
 use crate::para::{
-    FontVariant, ResolvedLineHeight, ResolvedListMarker, ResolvedParaProps, StrikethroughStyle,
-    StyleSpan, UnderlineStyle, VerticalAlign,
+    FontVariant, ResolvedLineHeight, ResolvedListMarker, ResolvedParaProps, ResolvedTabStop,
+    StrikethroughStyle, StyleSpan, UnderlineStyle, VerticalAlign,
 };
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -599,6 +600,20 @@ fn map_para_props(p: &ParaProps) -> ResolvedParaProps {
                 level,
             }),
             _ => None,
+        },
+        // Tab stops (gap #7): convert from Points to f32, sort ascending,
+        // drop Clear entries (already filtered by the OOXML mapper).
+        tab_stops: {
+            let mut stops: Vec<ResolvedTabStop> = p
+                .tab_stops
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .filter(|s| s.alignment != TabAlignment::Clear)
+                .map(|s| ResolvedTabStop { position: pts_to_f32(s.position) })
+                .collect();
+            stops.sort_by(|a, b| a.position.partial_cmp(&b.position).unwrap_or(std::cmp::Ordering::Equal));
+            stops
         },
     }
 }

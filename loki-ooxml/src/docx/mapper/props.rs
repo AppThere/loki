@@ -9,14 +9,16 @@
 
 use loki_doc_model::meta::LanguageTag;
 use loki_doc_model::style::list_style::ListId;
+use loki_doc_model::style::props::border::{Border, BorderStyle};
 use loki_doc_model::style::props::char_props::{
     CharProps, HighlightColor, StrikethroughStyle, UnderlineStyle, VerticalAlign,
 };
 use loki_doc_model::style::props::para_props::{LineHeight, ParagraphAlignment, ParaProps, Spacing};
+use loki_doc_model::style::props::tab_stop::{TabAlignment, TabLeader, TabStop};
 use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 
-use crate::docx::model::paragraph::{DocxPPr, DocxRPr};
+use crate::docx::model::paragraph::{DocxBorderEdge, DocxPPr, DocxRPr};
 use crate::xml_util::hex_color;
 
 // ── Internal conversion helpers ───────────────────────────────────────────────
@@ -89,6 +91,28 @@ fn map_highlight(val: &str) -> HighlightColor {
     }
 }
 
+/// Maps a `DocxBorderEdge` to a doc-model [`Border`].
+///
+/// `"nil"` and `"none"` produce [`BorderStyle::None`]. `@w:sz` is in eighths
+/// of a point (ECMA-376 §17.3.4); `@w:space` is in points (not twips).
+fn map_border_edge(edge: &DocxBorderEdge) -> Border {
+    let style = match edge.val.as_str() {
+        "nil" | "none" => BorderStyle::None,
+        "double" => BorderStyle::Double,
+        "dashed" | "dashSmallGap" | "dashDot" | "dashDotDot" | "dotDash"
+        | "dotDotDash" | "dashDotStroked" => BorderStyle::Dashed,
+        "dotted" | "dottedHeavy" => BorderStyle::Dotted,
+        "wave" | "wavyHeavy" | "wavyDouble" => BorderStyle::Wave,
+        _ => BorderStyle::Solid,
+    };
+    Border {
+        style,
+        width: Points::new(edge.sz.unwrap_or(8) as f64 / 8.0),
+        color: edge.color.as_deref().and_then(hex_color).map(DocumentColor::Rgb),
+        spacing: edge.space.map(|s| Points::new(s as f64)),
+    }
+}
+
 // ── Public mappers ────────────────────────────────────────────────────────────
 
 /// Maps a [`DocxPPr`] (OOXML paragraph properties) to [`ParaProps`].
@@ -132,6 +156,50 @@ pub(crate) fn map_ppr(ppr: &DocxPPr) -> ParaProps {
         if np.num_id != 0 {
             props.list_id = Some(ListId::new(np.num_id.to_string()));
             props.list_level = Some(np.ilvl);
+        }
+    }
+
+    // Paragraph borders (gap #6): w:pBdr → ParaProps border_* + padding_*.
+    if let Some(ref pbdr) = ppr.p_bdr {
+        props.border_top = pbdr.top.as_ref().map(map_border_edge);
+        props.border_bottom = pbdr.bottom.as_ref().map(map_border_edge);
+        props.border_left = pbdr.left.as_ref().map(map_border_edge);
+        props.border_right = pbdr.right.as_ref().map(map_border_edge);
+        props.border_between = pbdr.between.as_ref().map(map_border_edge);
+        // w:space is in points (not twips) — use directly.
+        props.padding_top = pbdr.top.as_ref().and_then(|e| e.space).map(|s| Points::new(s as f64));
+        props.padding_bottom = pbdr.bottom.as_ref().and_then(|e| e.space).map(|s| Points::new(s as f64));
+        props.padding_left = pbdr.left.as_ref().and_then(|e| e.space).map(|s| Points::new(s as f64));
+        props.padding_right = pbdr.right.as_ref().and_then(|e| e.space).map(|s| Points::new(s as f64));
+    }
+
+    // Tab stops (gap #7): w:tabs → ParaProps.tab_stops.
+    // "clear" entries remove inherited stops and are not forwarded as explicit stops.
+    if !ppr.tabs.is_empty() {
+        let stops: Vec<TabStop> = ppr
+            .tabs
+            .iter()
+            .filter(|t| t.val != "clear")
+            .map(|t| TabStop {
+                position: twips_to_pt(t.pos),
+                alignment: match t.val.as_str() {
+                    "right" => TabAlignment::Right,
+                    "center" => TabAlignment::Center,
+                    "decimal" => TabAlignment::Decimal,
+                    _ => TabAlignment::Left,
+                },
+                leader: match t.leader.as_deref() {
+                    Some("dot") => TabLeader::Dot,
+                    Some("hyphen") | Some("dash") => TabLeader::Dash,
+                    Some("underscore") => TabLeader::Underscore,
+                    Some("heavy") => TabLeader::Heavy,
+                    Some("middleDot") => TabLeader::MiddleDot,
+                    _ => TabLeader::None,
+                },
+            })
+            .collect();
+        if !stops.is_empty() {
+            props.tab_stops = Some(stops);
         }
     }
 

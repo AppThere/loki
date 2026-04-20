@@ -54,6 +54,8 @@ pub struct DocxPPr {
     pub num_pr: Option<DocxNumPr>,
     /// Tab stop list from `w:tabs`.
     pub tabs: Vec<DocxTab>,
+    /// Paragraph borders from `w:pBdr`.
+    pub p_bdr: Option<DocxPBdr>,
     /// Section properties from `w:sectPr` (section break mid-document).
     pub sect_pr: Option<DocxSectPr>,
     /// BiDi paragraph direction (`w:bidi`).
@@ -106,6 +108,34 @@ pub struct DocxTab {
     pub pos: i32,
     /// `@w:leader` — leader character.
     pub leader: Option<String>,
+}
+
+/// `w:pBdr` paragraph border group (ECMA-376 §17.3.1.24).
+#[derive(Debug, Clone, Default)]
+pub struct DocxPBdr {
+    /// `w:top` top border.
+    pub top: Option<DocxBorderEdge>,
+    /// `w:bottom` bottom border.
+    pub bottom: Option<DocxBorderEdge>,
+    /// `w:left` start border.
+    pub left: Option<DocxBorderEdge>,
+    /// `w:right` end border.
+    pub right: Option<DocxBorderEdge>,
+    /// `w:between` inter-paragraph border.
+    pub between: Option<DocxBorderEdge>,
+}
+
+/// A single border edge within `w:pBdr` (ECMA-376 §17.3.1.24).
+#[derive(Debug, Clone)]
+pub struct DocxBorderEdge {
+    /// `@w:val` — border style name (`"single"`, `"double"`, `"dashed"`, `"nil"`, etc.).
+    pub val: String,
+    /// `@w:sz` — border width in eighths of a point.
+    pub sz: Option<i32>,
+    /// `@w:color` — hex color string (without `#`).
+    pub color: Option<String>,
+    /// `@w:space` — paragraph-to-border spacing in points.
+    pub space: Option<i32>,
 }
 
 /// Intermediate model for `w:r` (ECMA-376 §17.3.2.25).

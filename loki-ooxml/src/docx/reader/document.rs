@@ -200,6 +200,12 @@ pub(crate) fn parse_ppr_element(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxP
                         }
                         ppr.num_pr = Some(DocxNumPr { ilvl, num_id });
                     }
+                    b"pBdr" => {
+                        ppr.p_bdr = Some(parse_pbdr(reader)?);
+                    }
+                    b"tabs" => {
+                        parse_tabs(reader, &mut ppr.tabs)?;
+                    }
                     b"sectPr" => {
                         ppr.sect_pr = Some(parse_sect_pr(reader)?);
                     }
@@ -533,6 +539,85 @@ fn parse_tracked_runs(
         buf.clear();
     }
     Ok(runs)
+}
+
+/// Parses a `w:pBdr` element. Called after Start("pBdr") is consumed.
+fn parse_pbdr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxPBdr> {
+    let mut pbdr = DocxPBdr::default();
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e)) => {
+                let edge = DocxBorderEdge {
+                    val: attr_val(e, b"val").unwrap_or_default(),
+                    sz: attr_val(e, b"sz").and_then(|v| v.parse().ok()),
+                    color: attr_val(e, b"color"),
+                    space: attr_val(e, b"space").and_then(|v| v.parse().ok()),
+                };
+                match local_name(e.local_name().as_ref()) {
+                    b"top" => pbdr.top = Some(edge),
+                    b"bottom" => pbdr.bottom = Some(edge),
+                    b"left" => pbdr.left = Some(edge),
+                    b"right" => pbdr.right = Some(edge),
+                    b"between" => pbdr.between = Some(edge),
+                    _ => {}
+                }
+            }
+            Ok(Event::End(ref e))
+                if local_name(e.local_name().as_ref()) == b"pBdr" =>
+            {
+                break;
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(OoxmlError::Xml {
+                    part: "word/document.xml".into(),
+                    source: e,
+                });
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok(pbdr)
+}
+
+/// Parses a `w:tabs` element and appends each `w:tab` to `out`.
+/// Called after Start("tabs") is consumed.
+fn parse_tabs(reader: &mut Reader<&[u8]>, out: &mut Vec<DocxTab>) -> OoxmlResult<()> {
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e))
+                if local_name(e.local_name().as_ref()) == b"tab" =>
+            {
+                if let Some(val) = attr_val(e, b"val") {
+                    out.push(DocxTab {
+                        val,
+                        pos: attr_val(e, b"pos")
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(0),
+                        leader: attr_val(e, b"leader"),
+                    });
+                }
+            }
+            Ok(Event::End(ref e))
+                if local_name(e.local_name().as_ref()) == b"tabs" =>
+            {
+                break;
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(OoxmlError::Xml {
+                    part: "word/document.xml".into(),
+                    source: e,
+                });
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok(())
 }
 
 /// Parses a `w:sectPr` element. Called after Start("sectPr") is consumed.

@@ -18,6 +18,8 @@ use loki_ooxml::docx::import::{DocxImporter, DocxImportOptions};
 /// 2. At least one `StyledRun` has `direct_props.bold == Some(true)`.
 /// 3. At least one `StyledParagraph` has `direct_para_props.list_id` set.
 /// 4. First section page size is approximately A4 (595 × 842 pt, ±1 pt).
+/// 5. At least one paragraph has `border_top` set (gap #6).
+/// 6. At least one paragraph has two explicit tab stops (gap #7).
 #[test]
 fn import_reference_docx_smoke() {
     let bytes = helpers::build_reference_docx();
@@ -60,6 +62,32 @@ fn import_reference_docx_smoke() {
         (h - 842.0).abs() < 1.0,
         "A4 height expected ~842 pt, got {h:.2}"
     );
+
+    // ── 5. Paragraph border present (gap #6) ────────────────────────────────
+    let has_border = all_blocks.iter().any(|b| {
+        if let Block::StyledPara(p) = b {
+            p.direct_para_props
+                .as_ref()
+                .map_or(false, |pp| pp.border_top.is_some())
+        } else {
+            false
+        }
+    });
+    assert!(has_border, "at least one paragraph with border_top must be present (gap #6)");
+
+    // ── 6. Tab stops present (gap #7) ───────────────────────────────────────
+    let has_tab_stops = all_blocks.iter().any(|b| {
+        if let Block::StyledPara(p) = b {
+            p.direct_para_props
+                .as_ref()
+                .map_or(false, |pp| {
+                    pp.tab_stops.as_ref().map_or(false, |ts| ts.len() >= 2)
+                })
+        } else {
+            false
+        }
+    });
+    assert!(has_tab_stops, "at least one paragraph with ≥2 tab stops must be present (gap #7)");
 }
 
 fn block_has_bold_run(block: &Block) -> bool {
