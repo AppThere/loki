@@ -179,6 +179,8 @@ pub(crate) struct OdfTabStop {
 pub(crate) struct OdfTextProps {
     /// `style:font-name` — font face name from the font declarations.
     pub font_name: Option<String>,
+    /// `fo:font-family` — raw font family name (fallback when `font_name` absent).
+    pub font_family: Option<String>,
     /// `fo:font-size` — font size (e.g. `"12pt"`).
     pub font_size: Option<String>,
     /// `fo:font-weight` — `"bold"`, `"normal"`, or numeric weight.

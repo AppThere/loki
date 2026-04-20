@@ -363,14 +363,23 @@ fn synthesize_plain_para(inlines: &[Inline]) -> StyledParagraph {
 fn synthesize_heading_para(level: u8, attr: &NodeAttr, inlines: &[Inline]) -> StyledParagraph {
     use loki_doc_model::style::catalog::StyleId;
     use loki_doc_model::style::props::para_props::{ParagraphAlignment, ParaProps};
-    let style_name = match level {
-        1 => "Heading1",
-        2 => "Heading2",
-        3 => "Heading3",
-        4 => "Heading4",
-        5 => "Heading5",
-        _ => "Heading6",
-    };
+    // Prefer the style name carried in NodeAttr (set by the ODF mapper from
+    // text:style-name so the catalog can resolve ODF heading properties like
+    // font-size and bold). Fall back to the canonical OOXML/internal names.
+    let style_id: StyleId = attr.kv.iter()
+        .find(|(k, _)| k == "style")
+        .map(|(_, v)| StyleId::new(v.as_str()))
+        .unwrap_or_else(|| {
+            let hardcoded = match level {
+                1 => "Heading1",
+                2 => "Heading2",
+                3 => "Heading3",
+                4 => "Heading4",
+                5 => "Heading5",
+                _ => "Heading6",
+            };
+            StyleId::new(hardcoded)
+        });
     let direct_alignment = attr.kv.iter().find(|(k, _)| k == "jc").and_then(|(_, v)| {
         match v.as_str() {
             "center" => Some(ParagraphAlignment::Center),
@@ -383,7 +392,7 @@ fn synthesize_heading_para(level: u8, attr: &NodeAttr, inlines: &[Inline]) -> St
         Box::new(ParaProps { alignment: Some(align), ..Default::default() })
     });
     StyledParagraph {
-        style_id: Some(StyleId::new(style_name)),
+        style_id: Some(style_id),
         direct_para_props,
         direct_char_props: None,
         inlines: inlines.to_vec(),

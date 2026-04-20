@@ -125,7 +125,9 @@ pub(crate) fn map_text_props(props: &OdfTextProps) -> CharProps {
     let mut out = CharProps::default();
 
     // ── Font ───────────────────────────────────────────────────────────────
-    out.font_name = props.font_name.clone();
+    // Prefer style:font-name (the font face alias, typically matching the actual
+    // family name); fall back to fo:font-family when only that is present.
+    out.font_name = props.font_name.clone().or_else(|| props.font_family.clone());
     out.font_name_complex = props.font_name_complex.clone();
 
     if let Some(pts) = props.font_size.as_deref().and_then(parse_length) {

@@ -184,7 +184,15 @@ fn map_paragraph(para: &OdfParagraph, ctx: &mut OdfMappingContext<'_>) -> Block 
 
     if para.is_heading && ctx.options.emit_heading_blocks {
         let level = para.outline_level.unwrap_or(1).clamp(1, 6);
-        Block::Heading(level, NodeAttr::default(), inlines)
+        // Store the ODF style name in NodeAttr so the layout engine can look up
+        // heading style properties from the catalog. Without this, the flow engine
+        // falls back to hardcoded "Heading1"/"Heading2" IDs which don't match ODF
+        // names like "Heading_20_1" (LibreOffice-encoded space).
+        let mut attr = NodeAttr::default();
+        if let Some(ref sn) = para.style_name {
+            attr.kv.push(("style".to_string(), sn.clone()));
+        }
+        Block::Heading(level, attr, inlines)
     } else {
         let style_id = para.style_name.as_deref().map(StyleId::new);
         Block::StyledPara(StyledParagraph {
