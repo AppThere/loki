@@ -653,8 +653,10 @@ fn flow_table(
             }
             state.cursor_y = row_y_start;
 
-            // Record the insertion index before flowing cell content so we can
-            // prepend background and border items in the correct Z-order later.
+            // Record the insertion index and page before flowing cell content.
+            // If a page break fires inside flow_block, finish_page() resets
+            // current_items; the pre-cell index would then be out-of-bounds.
+            let cell_page_start = state.page_number;
             let cell_item_start = state.current_items.len();
 
             for block in &cell.blocks {
@@ -665,8 +667,13 @@ fn flow_table(
             row_max_h = row_max_h.max(cell_h);
 
             // Emit background and border decorations for this cell.
-            // Z-order: insert border at cell_item_start first, then background
-            // at cell_item_start so background sits below border (renders first).
+            // Z-order: insert border first, then background at same index so
+            // background renders first (behind), border on top.
+            //
+            // When a page break occurred inside the cell, current_items was
+            // flushed and reset; use 0 to prepend before the cell's new-page
+            // content rather than using the now-stale pre-break index.
+            let insert_at = if state.page_number != cell_page_start { 0 } else { cell_item_start };
             let cell_rect = LayoutRect {
                 origin: LayoutPoint { x: state.current_indent, y: row_y_start },
                 size: LayoutSize { width: col_w, height: cell_h },
@@ -677,7 +684,7 @@ fn flow_table(
                 || cell.props.border_right.is_some();
             if has_borders {
                 state.current_items.insert(
-                    cell_item_start,
+                    insert_at,
                     PositionedItem::BorderRect(PositionedBorderRect {
                         rect: cell_rect,
                         top: cell.props.border_top.as_ref().and_then(convert_border),
@@ -689,7 +696,7 @@ fn flow_table(
             }
             if let Some(bg) = cell.props.background_color.as_ref() {
                 state.current_items.insert(
-                    cell_item_start,
+                    insert_at,
                     PositionedItem::FilledRect(PositionedRect {
                         rect: cell_rect,
                         color: resolve_color(Some(bg)),
