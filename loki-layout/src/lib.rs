@@ -46,7 +46,7 @@ pub use flow::{flow_section, FlowOutput, LayoutWarning};
 pub use font::FontResources;
 pub use mode::LayoutMode;
 pub use para::{layout_paragraph, ParagraphLayout, ResolvedLineHeight, ResolvedParaProps, StyleSpan};
-pub use resolve::{flatten_paragraph, pts_to_f32, resolve_char_props, resolve_color, resolve_para_props};
+pub use resolve::{CollectedImage, emu_to_pt, flatten_paragraph, pts_to_f32, resolve_char_props, resolve_color, resolve_para_props};
 pub use result::{ContinuousLayout, DocumentLayout, LayoutPage, PaginatedLayout};
 
 /// Lays out a full document into absolute positions.

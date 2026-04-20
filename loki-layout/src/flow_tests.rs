@@ -20,7 +20,6 @@ use loki_primitives::units::Points;
 use crate::font::FontResources;
 use crate::items::PositionedItem;
 use crate::mode::LayoutMode;
-use crate::resolve::pts_to_f32;
 
 /// Helper: run flow_section in Pageless mode and return (items, height, warnings).
 fn flow_pageless(

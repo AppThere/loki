@@ -172,6 +172,12 @@ pub struct StyleSpan {
     /// TODO(shadow): replace with Vello blur filter for soft shadow once
     /// scene.rs blur pipeline is verified stable (see TODO in scene.rs).
     pub shadow: bool,
+    /// Hyperlink URL if this run belongs to a link inline. `None` otherwise.
+    ///
+    /// Set by `resolve.rs` `walk_inlines` when recursing into `Inline::Link`
+    /// children. Used to render a visual link hint and (eventually) hit-test
+    /// regions. TODO(link-click): interactive hit-testing deferred.
+    pub link_url: Option<String>,
 }
 
 /// Resolved paragraph-level properties passed to [`layout_paragraph`].
@@ -462,6 +468,7 @@ pub fn layout_paragraph(
                 .collect();
 
             let text_range = run.text_range();
+            let link_url = span_link_url_for_range(style_spans, text_range.clone());
 
             // ── Highlight colour (gap #10) ──────────────────────────────────────
             // Emit a filled rect sized to the run's ink extent BEFORE the glyph
@@ -499,6 +506,7 @@ pub fn layout_paragraph(
                         bold: synthesis.embolden(),
                         italic: synthesis.skew().is_some(),
                     },
+                    link_url: None, // shadows don't carry link metadata
                 }));
             }
 
@@ -511,6 +519,7 @@ pub fn layout_paragraph(
                 glyphs,
                 color: style.brush.clone(),
                 synthesis: GlyphSynthesis { bold: synthesis.embolden(), italic: synthesis.skew().is_some() },
+                link_url,
             }));
 
             // Underline decoration.
@@ -699,6 +708,15 @@ fn span_highlight_for_range(spans: &[StyleSpan], text_range: Range<usize>) -> Op
         .iter()
         .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
         .and_then(|s| s.highlight_color)
+}
+
+/// Returns the link URL for the first span fully containing `text_range`,
+/// or `None` if no span in that range carries a link URL.
+fn span_link_url_for_range(spans: &[StyleSpan], text_range: Range<usize>) -> Option<String> {
+    spans
+        .iter()
+        .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
+        .and_then(|s| s.link_url.clone())
 }
 
 /// Returns `true` if the first span fully containing `text_range` has

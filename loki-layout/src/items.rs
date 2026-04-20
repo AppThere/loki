@@ -102,6 +102,11 @@ pub struct PositionedGlyphRun {
     pub color: LayoutColor,
     /// Synthesis flags (bold/italic synthesis).
     pub synthesis: GlyphSynthesis,
+    /// Hyperlink URL if this run is part of a link. `None` for non-link text.
+    ///
+    /// TODO(link-click): interactive hit-testing deferred; only a visual hint
+    /// (blue tint underlay) is rendered by `loki-vello`.
+    pub link_url: Option<String>,
 }
 
 /// A single glyph with its position relative to the run origin.

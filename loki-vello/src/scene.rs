@@ -12,8 +12,8 @@ use vello::kurbo::Affine;
 use vello::peniko::BlendMode;
 
 use loki_layout::{
-    ContinuousLayout, DocumentLayout, LayoutColor, LayoutRect, PaginatedLayout, PositionedItem,
-    PositionedRect,
+    ContinuousLayout, DocumentLayout, LayoutColor, LayoutRect, PaginatedLayout, PositionedGlyphRun,
+    PositionedItem, PositionedRect,
 };
 
 use crate::font_cache::FontDataCache;
@@ -241,6 +241,12 @@ fn paint_items(
         translate_item(&mut item, offset.0, offset.1);
         match &item {
             PositionedItem::GlyphRun(r) => {
+                // Link visual hint (gap #11): paint a translucent blue underlay
+                // behind runs that carry a hyperlink URL.
+                // TODO(link-click): interactive hit-testing deferred.
+                if r.link_url.is_some() {
+                    paint_link_hint(scene, r, scale);
+                }
                 crate::glyph::paint_glyph_run(scene, r, font_cache, scale);
             }
             PositionedItem::FilledRect(r) => {
@@ -292,6 +298,27 @@ fn paint_items(
             }
         }
     }
+}
+
+/// Paint a translucent blue underlay rect behind a link glyph run (gap #11).
+///
+/// The hint uses the run's ascent and descent metrics to cover the text extent.
+/// `PositionedGlyphRun` does not carry font metrics directly; a fixed-height
+/// estimate based on font size is used (ascent ≈ 0.8 × font_size, descent ≈
+/// 0.2 × font_size). This is approximate but sufficient for the visual hint.
+fn paint_link_hint(scene: &mut vello::Scene, r: &PositionedGlyphRun, scale: f32) {
+    let ascent = r.font_size * 0.8;
+    let descent = r.font_size * 0.2;
+    // Sum advance of all glyphs for the run width.
+    let width: f32 = r.glyphs.iter().map(|g| g.advance).sum();
+    if width <= 0.0 {
+        return;
+    }
+    let hint = PositionedRect {
+        rect: LayoutRect::new(r.origin.x, r.origin.y - ascent, width, ascent + descent),
+        color: LayoutColor { r: 0.0, g: 0.4, b: 1.0, a: 0.15 },
+    };
+    crate::rect::paint_filled_rect(scene, &hint, scale);
 }
 
 /// Apply an `(dx, dy)` translation to a [`PositionedItem`] in place.
@@ -390,6 +417,7 @@ mod tests {
             glyphs: vec![],
             color: LayoutColor::BLACK,
             synthesis: GlyphSynthesis::default(),
+            link_url: None,
         });
         translate_item(&mut item, 5.0, 3.0);
         if let PositionedItem::GlyphRun(r) = &item {

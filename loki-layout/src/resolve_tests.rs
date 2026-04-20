@@ -8,7 +8,7 @@ use super::*;
 use appthere_color::RgbColor;
 use loki_doc_model::content::attr::{ExtensionBag, NodeAttr};
 use loki_doc_model::content::block::StyledParagraph;
-use loki_doc_model::content::inline::{Inline, StyledRun};
+use loki_doc_model::content::inline::{Inline, LinkTarget, StyledRun};
 use loki_doc_model::style::catalog::{StyleCatalog, StyleId};
 use loki_doc_model::style::para_style::ParagraphStyle;
 use loki_doc_model::style::props::char_props::{
@@ -66,7 +66,7 @@ fn pts_to_f32_value() {
 fn flatten_plain_str() {
     let catalog = StyleCatalog::new();
     let para = empty_para(vec![Inline::Str("hello".into())]);
-    let (text, spans) = flatten_paragraph(&para, &catalog);
+    let (text, spans, _images) = flatten_paragraph(&para, &catalog);
     assert_eq!(text, "hello");
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].range, 0..5);
@@ -80,7 +80,7 @@ fn flatten_str_space_str() {
         Inline::Space,
         Inline::Str("world".into()),
     ]);
-    let (text, _spans) = flatten_paragraph(&para, &catalog);
+    let (text, _spans, _images) = flatten_paragraph(&para, &catalog);
     assert_eq!(text, "hello world");
 }
 
@@ -88,7 +88,7 @@ fn flatten_str_space_str() {
 fn flatten_strong_sets_bold() {
     let catalog = StyleCatalog::new();
     let para = empty_para(vec![Inline::Strong(vec![Inline::Str("bold".into())])]);
-    let (text, spans) = flatten_paragraph(&para, &catalog);
+    let (text, spans, _images) = flatten_paragraph(&para, &catalog);
     assert_eq!(text, "bold");
     assert!(!spans.is_empty());
     assert!(spans[0].bold, "Strong should produce bold=true");
@@ -98,7 +98,7 @@ fn flatten_strong_sets_bold() {
 fn flatten_emph_sets_italic() {
     let catalog = StyleCatalog::new();
     let para = empty_para(vec![Inline::Emph(vec![Inline::Str("italic".into())])]);
-    let (_, spans) = flatten_paragraph(&para, &catalog);
+    let (_, spans, _images) = flatten_paragraph(&para, &catalog);
     assert!(!spans.is_empty());
     assert!(spans[0].italic, "Emph should produce italic=true");
 }
@@ -117,7 +117,7 @@ fn flatten_styled_run_applies_direct_props() {
         attr: NodeAttr::default(),
     };
     let para = empty_para(vec![Inline::StyledRun(run)]);
-    let (_, spans) = flatten_paragraph(&para, &catalog);
+    let (_, spans, _images) = flatten_paragraph(&para, &catalog);
     assert!(!spans.is_empty());
     assert!((spans[0].font_size - 24.0).abs() < 1e-5, "font_size should be 24pt");
     assert!(spans[0].bold, "bold should be true");
@@ -203,7 +203,7 @@ fn flatten_all_caps_uppercases_text() {
         attr: NodeAttr::default(),
     };
     let para = empty_para(vec![Inline::StyledRun(run)]);
-    let (text, spans) = flatten_paragraph(&para, &catalog);
+    let (text, spans, _images) = flatten_paragraph(&para, &catalog);
     assert_eq!(text, "HELLO", "all_caps must uppercase text during flatten");
     assert_eq!(spans[0].font_variant, Some(crate::para::FontVariant::AllCaps));
 }
@@ -212,11 +212,106 @@ fn flatten_all_caps_uppercases_text() {
 fn flatten_superscript_inline_sets_vertical_align() {
     let catalog = StyleCatalog::new();
     let para = empty_para(vec![Inline::Superscript(vec![Inline::Str("2".into())])]);
-    let (text, spans) = flatten_paragraph(&para, &catalog);
+    let (text, spans, _images) = flatten_paragraph(&para, &catalog);
     assert_eq!(text, "2");
     assert_eq!(
         spans[0].vertical_align,
         Some(crate::para::VerticalAlign::Superscript),
         "Inline::Superscript must set vertical_align=Superscript"
+    );
+}
+
+// ── gap #9: inline image collection ──────────────────────────────────────────
+
+#[test]
+fn flatten_image_collects_emu_dimensions() {
+    let catalog = StyleCatalog::new();
+    let mut attr = NodeAttr::default();
+    attr.kv.push(("cx_emu".to_string(), "914400".to_string())); // 72 pt
+    attr.kv.push(("cy_emu".to_string(), "457200".to_string())); // 36 pt
+    let target = LinkTarget::new("data:image/png;base64,ABC");
+    let para = empty_para(vec![Inline::Image(attr, vec![], target)]);
+    let (_text, _spans, images) = flatten_paragraph(&para, &catalog);
+    assert_eq!(images.len(), 1, "one image must be collected");
+    assert_eq!(images[0].src, "data:image/png;base64,ABC");
+    assert_eq!(images[0].cx_emu, 914400);
+    assert_eq!(images[0].cy_emu, 457200);
+    let w = emu_to_pt(images[0].cx_emu);
+    let h = emu_to_pt(images[0].cy_emu);
+    assert!((w - 72.0).abs() < 0.1, "914400 EMU should be ~72 pt, got {w}");
+    assert!((h - 36.0).abs() < 0.1, "457200 EMU should be ~36 pt, got {h}");
+}
+
+#[test]
+fn flatten_image_zero_size_does_not_panic() {
+    let catalog = StyleCatalog::new();
+    let attr = NodeAttr::default(); // no kv — cx_emu/cy_emu default to 0
+    let target = LinkTarget::new("data:image/png;base64,ABC");
+    let para = empty_para(vec![Inline::Image(attr, vec![], target)]);
+    let (_text, _spans, images) = flatten_paragraph(&para, &catalog);
+    assert_eq!(images.len(), 1, "zero-size image still collected");
+    assert_eq!(images[0].cx_emu, 0);
+    assert_eq!(images[0].cy_emu, 0);
+}
+
+#[test]
+fn flatten_image_empty_src_not_collected() {
+    let catalog = StyleCatalog::new();
+    let attr = NodeAttr::default();
+    let target = LinkTarget::new(""); // empty URL
+    let para = empty_para(vec![Inline::Image(attr, vec![], target)]);
+    let (_text, _spans, images) = flatten_paragraph(&para, &catalog);
+    assert!(images.is_empty(), "image with empty URL must not be collected");
+}
+
+#[test]
+fn flatten_image_alt_text_captured() {
+    let catalog = StyleCatalog::new();
+    let attr = NodeAttr::default();
+    let alt_inlines = vec![Inline::Str("logo".into())];
+    let target = LinkTarget::new("data:image/png;base64,XYZ");
+    let para = empty_para(vec![Inline::Image(attr, alt_inlines, target)]);
+    let (_text, _spans, images) = flatten_paragraph(&para, &catalog);
+    assert_eq!(images[0].alt.as_deref(), Some("logo"), "alt text must be captured");
+}
+
+// ── gap #11: hyperlink URL propagation ───────────────────────────────────────
+
+#[test]
+fn flatten_link_sets_link_url_on_spans() {
+    let catalog = StyleCatalog::new();
+    let target = LinkTarget::new("https://example.com");
+    let link_children = vec![Inline::Str("click".into())];
+    let para = empty_para(vec![Inline::Link(NodeAttr::default(), link_children, target)]);
+    let (_text, spans, _images) = flatten_paragraph(&para, &catalog);
+    assert!(!spans.is_empty(), "link must produce at least one span");
+    assert_eq!(
+        spans[0].link_url.as_deref(),
+        Some("https://example.com"),
+        "link_url must be set on spans inside Inline::Link"
+    );
+}
+
+#[test]
+fn flatten_link_auto_underlines_when_no_underline() {
+    let catalog = StyleCatalog::new();
+    let target = LinkTarget::new("https://example.com");
+    let link_children = vec![Inline::Str("text".into())];
+    let para = empty_para(vec![Inline::Link(NodeAttr::default(), link_children, target)]);
+    let (_text, spans, _images) = flatten_paragraph(&para, &catalog);
+    assert!(
+        spans[0].underline.is_some(),
+        "link spans without explicit underline must be auto-underlined"
+    );
+}
+
+#[test]
+fn flatten_non_link_text_has_no_link_url() {
+    let catalog = StyleCatalog::new();
+    let para = empty_para(vec![Inline::Str("plain".into())]);
+    let (_text, spans, _images) = flatten_paragraph(&para, &catalog);
+    assert!(
+        spans[0].link_url.is_none(),
+        "non-link spans must not have link_url set"
     );
 }
