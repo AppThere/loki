@@ -386,7 +386,14 @@ fn emit_fragment(
     split_y: f32,
     dx: f32,
 ) {
-    let clip_height = split_y - frag_start;
+    // Floor to prevent sub-pixel clip expansion.  Parley's max_coord equals
+    // baseline + descent + leading_below; glyphs never reach max_coord, so
+    // flooring by up to 1 pt never clips visible ink.  Without this, a
+    // fractional max_coord × display-scale rounds up one physical pixel and
+    // leaks the top row of the next line through the clip.
+    // Fragment B uses unrounded split_y for its translation (ty = -split_y)
+    // so there is no corresponding gap at the top of the next page.
+    let clip_height = (split_y - frag_start).floor();
     let clip_rect = LayoutRect::new(0.0, state.cursor_y, state.content_width, clip_height);
     let ty = state.cursor_y - frag_start;
     let mut items = para_layout.items.clone();

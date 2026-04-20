@@ -79,9 +79,10 @@ pub fn paint_layout(
 
 /// Paint a single page from a paginated layout at the given `offset`.
 ///
-/// Content items in the layout are already page-local (translated by
-/// [`loki_layout::layout_document`]). This function renders the page
-/// background and shadow as if the page top-left is at `offset`.
+/// Content items are in content-area-local coordinates (origin `(0, 0)` at
+/// the content-area top-left). This function applies `page.margins` when
+/// translating items onto the full page canvas, so the caller only needs to
+/// supply the page top-left as `offset`.
 ///
 /// Out-of-range `page_index` values are silently ignored.
 pub fn paint_single_page(
@@ -136,10 +137,14 @@ pub fn paint_single_page(
     };
     crate::rect::paint_filled_rect(scene, &page_bg, scale);
 
-    let page_offset = (offset.0, offset.1);
-    paint_items(scene, &page.content_items, font_cache, page_offset, scale);
-    paint_items(scene, &page.header_items, font_cache, page_offset, scale);
-    paint_items(scene, &page.footer_items, font_cache, page_offset, scale);
+    // content_items are in content-area-local coordinates; apply margins to
+    // position within the full page.  header/footer items use page-local
+    // coordinates, so they receive the raw page origin.
+    let page_origin = (offset.0, offset.1);
+    let content_origin = (offset.0 + page.margins.left, offset.1 + page.margins.top);
+    paint_items(scene, &page.content_items, font_cache, content_origin, scale);
+    paint_items(scene, &page.header_items, font_cache, page_origin, scale);
+    paint_items(scene, &page.footer_items, font_cache, page_origin, scale);
 }
 
 /// Paint a paginated layout.
@@ -195,11 +200,13 @@ pub fn paint_paginated(
         };
         crate::rect::paint_filled_rect(scene, &page_bg, scale);
 
-        // Paint all three item lists using the page's top-left as the origin.
-        let page_offset = (offset.0, y_cursor);
-        paint_items(scene, &page.content_items, font_cache, page_offset, scale);
-        paint_items(scene, &page.header_items, font_cache, page_offset, scale);
-        paint_items(scene, &page.footer_items, font_cache, page_offset, scale);
+        // content_items are content-area-local; apply per-page margins.
+        // header/footer items use page-local coordinates.
+        let page_origin = (offset.0, y_cursor);
+        let content_origin = (offset.0 + page.margins.left, y_cursor + page.margins.top);
+        paint_items(scene, &page.content_items, font_cache, content_origin, scale);
+        paint_items(scene, &page.header_items, font_cache, page_origin, scale);
+        paint_items(scene, &page.footer_items, font_cache, page_origin, scale);
 
         y_cursor += page_height + PAGE_GAP_PT;
     }

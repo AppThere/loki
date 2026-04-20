@@ -82,7 +82,9 @@ pub struct LayoutPage {
     pub page_size: LayoutSize,
     /// Margins applied to this page.
     pub margins: LayoutInsets,
-    /// Items in the content area. Origins are absolute within the page.
+    /// Items in the content area. Origins are content-area-local: `(0, 0)` is
+    /// the content-area top-left (i.e. page origin offset by `margins`).
+    /// The painter is responsible for adding the margin offset at render time.
     pub content_items: Vec<PositionedItem>,
     /// Items in the header area.
     pub header_items: Vec<PositionedItem>,
