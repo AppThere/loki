@@ -9,10 +9,12 @@
 //! background and border items are clipped correctly.
 
 use loki_doc_model::content::block::{Block, StyledParagraph};
+use loki_doc_model::content::inline::Inline;
+use loki_doc_model::style::list_style::ListLevelKind;
 
 use crate::geometry::LayoutRect;
 use crate::items::PositionedItem;
-use crate::para::{layout_paragraph, ParagraphLayout, ResolvedParaProps};
+use crate::para::{format_list_marker, layout_paragraph, ParagraphLayout, ResolvedParaProps};
 use crate::resolve::{flatten_paragraph, resolve_para_props};
 
 use super::{finish_page, FlowState, LayoutWarning};
@@ -29,7 +31,51 @@ pub(super) fn flow_paragraph(
     block_index: usize,
 ) {
     let resolved = resolve_para_props(para, state.catalog);
-    let (text, spans) = flatten_paragraph(para, state.catalog);
+
+    // ── List marker synthesis ────────────────────────────────────────────────
+    // When the paragraph carries list membership, look up the list style,
+    // advance the per-list counter, format the marker string, and prepend it
+    // as an `Inline::Str` followed by a tab. Non-list paragraphs reset
+    // `prev_list_id` so the next list starts fresh.
+    let owned_para: Option<StyledParagraph> = if let Some(ref lm) = resolved.list_marker {
+        if let Some(list_style) = state.catalog.list_styles.get(&lm.list_id) {
+            if let Some(level_def) = list_style.levels.get(lm.level as usize) {
+                let start_value = match &level_def.kind {
+                    ListLevelKind::Numbered { start_value, .. } => *start_value,
+                    _ => 1,
+                };
+                // New-list detection: a different list_id means a new list
+                // is starting, so counters for this id are cleared.
+                if state.prev_list_id.as_ref() != Some(&lm.list_id) {
+                    state.list_counters.remove(&lm.list_id);
+                }
+                state.prev_list_id = Some(lm.list_id.clone());
+                state.advance_counter(&lm.list_id, lm.level, start_value);
+                let counters = state.list_counters
+                    .get(&lm.list_id)
+                    .copied()
+                    .unwrap_or([1u32; 9]);
+                let marker_text =
+                    format_list_marker(&list_style.levels, lm.level, &counters);
+                let mut cloned = para.clone();
+                cloned.inlines.insert(0, Inline::Str(format!("{}\t", marker_text).into()));
+                Some(cloned)
+            } else {
+                state.prev_list_id = None;
+                None
+            }
+        } else {
+            state.prev_list_id = None;
+            None
+        }
+    } else {
+        state.prev_list_id = None;
+        None
+    };
+    let effective_para: &StyledParagraph = owned_para.as_ref().unwrap_or(para);
+    // ────────────────────────────────────────────────────────────────────────
+
+    let (text, spans) = flatten_paragraph(effective_para, state.catalog);
 
     state.cursor_y += resolved.space_before;
 

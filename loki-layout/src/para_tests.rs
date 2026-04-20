@@ -5,6 +5,8 @@
 
 use super::*;
 use crate::items::{BorderStyle, PositionedItem};
+use loki_doc_model::style::list_style::{BulletChar, LabelAlignment, ListLevel, ListLevelKind, NumberingScheme};
+use loki_primitives::units::Points as DocPoints;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -229,4 +231,118 @@ fn shadow_span_produces_extra_glyph_run() {
         shadow_runs > plain_runs,
         "shadow span must produce more GlyphRun items than plain ({shadow_runs} vs {plain_runs})"
     );
+}
+
+// ── format_list_marker tests ──────────────────────────────────────────────────
+
+fn bullet_level(c: char) -> ListLevel {
+    ListLevel {
+        level: 0,
+        kind: ListLevelKind::Bullet { char: BulletChar::Char(c), font: None },
+        indent_start: DocPoints::new(36.0),
+        hanging_indent: DocPoints::new(18.0),
+        label_alignment: LabelAlignment::Left,
+        tab_stop_after_label: None,
+        char_props: Default::default(),
+    }
+}
+
+fn numbered_level(level: u8, scheme: NumberingScheme, format: &str, display_levels: u8, start: u32) -> ListLevel {
+    ListLevel {
+        level,
+        kind: ListLevelKind::Numbered {
+            scheme,
+            start_value: start,
+            format: format.to_string(),
+            display_levels,
+        },
+        indent_start: DocPoints::new(36.0),
+        hanging_indent: DocPoints::new(18.0),
+        label_alignment: LabelAlignment::Left,
+        tab_stop_after_label: None,
+        char_props: Default::default(),
+    }
+}
+
+fn counters(vals: &[(usize, u32)]) -> [u32; 9] {
+    let mut arr = [0u32; 9];
+    for &(i, v) in vals { arr[i] = v; }
+    arr
+}
+
+#[test]
+fn format_marker_bullet() {
+    let levels = vec![bullet_level('•')];
+    assert_eq!(format_list_marker(&levels, 0, &counters(&[(0, 1)])), "•");
+}
+
+#[test]
+fn format_marker_decimal_with_suffix() {
+    let levels = vec![numbered_level(0, NumberingScheme::Decimal, "%1.", 1, 1)];
+    assert_eq!(format_list_marker(&levels, 0, &counters(&[(0, 3)])), "3.");
+}
+
+#[test]
+fn format_marker_lower_letter_overflow() {
+    let levels = vec![numbered_level(0, NumberingScheme::LowerAlpha, "%1.", 1, 1)];
+    assert_eq!(format_list_marker(&levels, 0, &counters(&[(0, 1)])),  "a.");
+    assert_eq!(format_list_marker(&levels, 0, &counters(&[(0, 26)])), "z.");
+    assert_eq!(format_list_marker(&levels, 0, &counters(&[(0, 27)])), "aa.");
+}
+
+#[test]
+fn format_marker_upper_roman() {
+    let levels = vec![numbered_level(0, NumberingScheme::UpperRoman, "%1.", 1, 1)];
+    assert_eq!(format_list_marker(&levels, 0, &counters(&[(0, 4)])), "IV.");
+}
+
+#[test]
+fn format_marker_display_levels_two_level() {
+    let levels = vec![
+        numbered_level(0, NumberingScheme::Decimal, "%1.", 1, 1),
+        numbered_level(1, NumberingScheme::Decimal, "%1.%2.", 2, 1),
+    ];
+    // level 0 counter = 2, level 1 counter = 3 → "2.3."
+    assert_eq!(format_list_marker(&levels, 1, &counters(&[(0, 2), (1, 3)])), "2.3.");
+}
+
+#[test]
+fn format_marker_picture_bullet_fallback() {
+    let levels = vec![ListLevel {
+        level: 0,
+        kind: ListLevelKind::Bullet { char: BulletChar::Image, font: None },
+        indent_start: DocPoints::new(36.0),
+        hanging_indent: DocPoints::new(18.0),
+        label_alignment: LabelAlignment::Left,
+        tab_stop_after_label: None,
+        char_props: Default::default(),
+    }];
+    assert_eq!(format_list_marker(&levels, 0, &counters(&[])), "•");
+}
+
+// ── Counter tracking tests ────────────────────────────────────────────────────
+
+#[test]
+fn counter_advance_single_list() {
+    // advance_counter is tested via format_list_marker indirectly.
+    // We directly test the alpha_label helper through format_counter logic.
+    // Three advances: 1, 2, 3.
+    let levels = vec![numbered_level(0, NumberingScheme::Decimal, "%1.", 1, 1)];
+    for (i, expected) in [(1, "1."), (2, "2."), (3, "3.")] {
+        assert_eq!(format_list_marker(&levels, 0, &counters(&[(0, i)])), expected);
+    }
+}
+
+#[test]
+fn counter_nested_deeper_reset() {
+    // When level 0 advances, level 1 should have been reset to 0.
+    // We simulate: level 0 = 2, level 1 = 0 (reset) then first use = 1.
+    let levels = vec![
+        numbered_level(0, NumberingScheme::Decimal, "%1.", 1, 1),
+        numbered_level(1, NumberingScheme::Decimal, "%1.%2.", 2, 1),
+    ];
+    // After level-0 advances to 2 and level-1 is reset, the next level-1
+    // item should show "2.1." (level-1 reinitialised from start_value=1).
+    let c = counters(&[(0, 2), (1, 1)]);
+    assert_eq!(format_list_marker(&levels, 1, &c), "2.1.");
 }

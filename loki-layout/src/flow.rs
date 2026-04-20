@@ -14,8 +14,11 @@
 #[path = "flow_para.rs"]
 mod para_impl;
 
+use std::collections::HashMap;
+
 use loki_doc_model::content::block::StyledParagraph;
 use loki_doc_model::content::inline::Inline;
+use loki_doc_model::style::list_style::ListId;
 use loki_doc_model::{Block, NodeAttr, Section, StyleCatalog};
 
 use crate::color::LayoutColor;
@@ -121,6 +124,39 @@ pub(super) struct FlowState<'a> {
     pub(super) warnings: Vec<LayoutWarning>,
     /// Accumulated horizontal indentation in points.
     pub(super) current_indent: f32,
+    /// Per-list counter arrays. Each entry maps a `ListId` to a 9-element
+    /// array where index = level (0-based) and value = current counter (1-based
+    /// after first advance, 0 = not yet initialised).
+    pub(super) list_counters: HashMap<ListId, [u32; 9]>,
+    /// The `ListId` of the most recently placed list item, used to detect
+    /// list-id changes and reset counters for the new list.
+    pub(super) prev_list_id: Option<ListId>,
+}
+
+impl<'a> FlowState<'a> {
+    /// Advance the counter for `list_id` at `level` and return the new value.
+    ///
+    /// - Initialises the counter from `start_value` on first use.
+    /// - Resets all deeper-level counters to 0 so they re-initialise from
+    ///   their own `start_value` when next encountered.
+    pub(super) fn advance_counter(
+        &mut self,
+        list_id: &ListId,
+        level: u8,
+        start_value: u32,
+    ) -> u32 {
+        let counters = self.list_counters.entry(list_id.clone()).or_insert([0u32; 9]);
+        let lvl = level as usize;
+        if counters[lvl] == 0 {
+            counters[lvl] = start_value;
+        } else {
+            counters[lvl] += 1;
+        }
+        for deeper in (lvl + 1)..9 {
+            counters[deeper] = 0;
+        }
+        counters[lvl]
+    }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -171,6 +207,8 @@ pub fn flow_section(
         page_number: 1,
         warnings: Vec::new(),
         current_indent: 0.0,
+        list_counters: HashMap::new(),
+        prev_list_id: None,
     };
 
     if mode.is_paginated() {

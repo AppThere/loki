@@ -12,6 +12,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use loki_doc_model::style::list_style::{BulletChar, ListId, ListLevel, ListLevelKind, NumberingScheme};
 use parley::{
     Alignment, AlignmentOptions, FontFamily, FontStyle, FontWeight, LineHeight,
     PositionedLayoutItem, StyleProperty,
@@ -82,6 +83,22 @@ pub enum StrikethroughStyle {
     Single,
     /// A double strikethrough line.
     Double,
+}
+
+/// Resolved list membership for a list-item paragraph.
+///
+/// Carries the minimum data the flow engine needs to look up the [`ListStyle`]
+/// in [`StyleCatalog`], advance the per-list counter, and synthesise the
+/// marker text. Stored in [`ResolvedParaProps::list_marker`].
+///
+/// [`ListStyle`]: loki_doc_model::style::list_style::ListStyle
+/// [`StyleCatalog`]: loki_doc_model::style::catalog::StyleCatalog
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedListMarker {
+    /// Which list this paragraph belongs to.
+    pub list_id: ListId,
+    /// Zero-based nesting level within the list (0 = outermost).
+    pub level: u8,
 }
 
 /// Resolved line-height specification for a paragraph.
@@ -194,6 +211,12 @@ pub struct ResolvedParaProps {
     pub keep_with_next: bool,
     /// Insert a page break before this paragraph.
     pub page_break_before: bool,
+    /// Hanging indent in points: the first line extends this far to the LEFT of
+    /// `indent_start` (where the list marker is placed). `0.0` = no hanging.
+    /// OOXML `w:ind w:hanging`; gap #8.
+    pub indent_hanging: f32,
+    /// List membership for this paragraph. `None` for non-list paragraphs.
+    pub list_marker: Option<ResolvedListMarker>,
 }
 
 impl Default for ResolvedParaProps {
@@ -215,6 +238,8 @@ impl Default for ResolvedParaProps {
             keep_together: false,
             keep_with_next: false,
             page_break_before: false,
+            indent_hanging: 0.0,
+            list_marker: None,
         }
     }
 }
@@ -386,8 +411,16 @@ pub fn layout_paragraph(
         .collect();
 
     let mut items: Vec<PositionedItem> = Vec::new();
+    let mut line_index: usize = 0;
 
     for line in layout.lines() {
+        // Hanging indent: the first line shifts left so the marker is visible to
+        // the left of `indent_start`. Subsequent lines use the full `indent_start`.
+        let indent_x = if line_index == 0 && para_props.indent_hanging > 0.0 {
+            para_props.indent_start - para_props.indent_hanging
+        } else {
+            para_props.indent_start
+        };
         for item in line.items() {
             let PositionedLayoutItem::GlyphRun(glyph_run) = item else { continue };
             let run = glyph_run.run();
@@ -426,7 +459,7 @@ pub fn layout_paragraph(
                 let m = run.metrics();
                 items.push(PositionedItem::FilledRect(PositionedRect {
                     rect: LayoutRect::new(
-                        run_offset + para_props.indent_start,
+                        run_offset + indent_x,
                         run_baseline - m.ascent,
                         glyph_run.advance(),
                         m.ascent + m.descent,
@@ -443,7 +476,7 @@ pub fn layout_paragraph(
             if span_has_shadow(style_spans, text_range.clone()) {
                 items.push(PositionedItem::GlyphRun(PositionedGlyphRun {
                     origin: LayoutPoint {
-                        x: run_offset + para_props.indent_start + 0.5,
+                        x: run_offset + indent_x + 0.5,
                         y: run_baseline + 0.5,
                     },
                     font_data: font_data.clone(),
@@ -460,7 +493,7 @@ pub fn layout_paragraph(
 
             // ── Main glyph run ──────────────────────────────────────────────────
             items.push(PositionedItem::GlyphRun(PositionedGlyphRun {
-                origin: LayoutPoint { x: run_offset + para_props.indent_start, y: run_baseline },
+                origin: LayoutPoint { x: run_offset + indent_x, y: run_baseline },
                 font_data,
                 font_index: run.font().index,
                 font_size: run.font_size(),
@@ -473,7 +506,7 @@ pub fn layout_paragraph(
             if let Some(deco) = &style.underline {
                 let m = run.metrics();
                 items.push(PositionedItem::Decoration(PositionedDecoration {
-                    x: run_offset + para_props.indent_start,
+                    x: run_offset + indent_x,
                     y: run_baseline + deco.offset.unwrap_or(m.underline_offset),
                     width: glyph_run.advance(),
                     thickness: deco.size.unwrap_or(m.underline_size),
@@ -486,7 +519,7 @@ pub fn layout_paragraph(
             if let Some(deco) = &style.strikethrough {
                 let m = run.metrics();
                 items.push(PositionedItem::Decoration(PositionedDecoration {
-                    x: run_offset + para_props.indent_start,
+                    x: run_offset + indent_x,
                     y: run_baseline + deco.offset.unwrap_or(m.strikethrough_offset),
                     width: glyph_run.advance(),
                     thickness: deco.size.unwrap_or(m.strikethrough_size),
@@ -495,6 +528,7 @@ pub fn layout_paragraph(
                 }));
             }
         }
+        line_index += 1;
     }
 
     // Prepend border (below background so it renders on top).
@@ -523,6 +557,126 @@ pub fn layout_paragraph(
     }
 
     ParagraphLayout { height: total_height, width: total_width, items, first_baseline, last_baseline, line_boundaries }
+}
+
+// ── List marker synthesis ─────────────────────────────────────────────────────
+
+/// Produce the display string for a list marker at `level` in `list_levels`.
+///
+/// Handles bullet characters, all six [`NumberingScheme`] variants, and
+/// multi-level `%N`-style format strings (OOXML `w:lvlText`, ODF
+/// `text:num-format`). Picture bullets fall back to `"•"`.
+///
+/// # Arguments
+/// * `list_levels` – all level definitions for the list (from `ListStyle.levels`)
+/// * `level`       – the zero-based level being rendered
+/// * `counters`    – current per-level counter array (all 9 levels)
+///
+/// Returns an empty string for `ListLevelKind::None`.
+pub fn format_list_marker(list_levels: &[ListLevel], level: u8, counters: &[u32; 9]) -> String {
+    let Some(level_def) = list_levels.get(level as usize) else {
+        return String::new();
+    };
+    match &level_def.kind {
+        ListLevelKind::Bullet { char: BulletChar::Char(c), .. } => c.to_string(),
+        ListLevelKind::Bullet { char: BulletChar::Image, .. } => {
+            // TODO(list-picture-bullet): picture bullets not yet supported; render as •
+            "•".to_string()
+        }
+        ListLevelKind::Numbered { format, .. } => {
+            format_numbered_label(list_levels, format, counters)
+        }
+        ListLevelKind::None => String::new(),
+        // Non-exhaustive guard.
+        _ => String::new(),
+    }
+}
+
+/// Expand a `w:lvlText`-style format string, replacing `%N` tokens with
+/// the counter at 0-based level N-1 formatted by that level's scheme.
+fn format_numbered_label(list_levels: &[ListLevel], format: &str, counters: &[u32; 9]) -> String {
+    let mut result = String::with_capacity(format.len() + 4);
+    let mut chars = format.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            if let Some(&d) = chars.peek() {
+                if d.is_ascii_digit() && d != '0' {
+                    chars.next();
+                    let level_idx = (d as u8 - b'1') as usize; // 1-based → 0-based
+                    let counter = counters.get(level_idx).copied().unwrap_or(1);
+                    let scheme = list_levels
+                        .get(level_idx)
+                        .map(|l| match &l.kind {
+                            ListLevelKind::Numbered { scheme, .. } => *scheme,
+                            _ => NumberingScheme::Decimal,
+                        })
+                        .unwrap_or(NumberingScheme::Decimal);
+                    result.push_str(&format_counter(counter, scheme));
+                    continue;
+                }
+            }
+        }
+        result.push(c);
+    }
+    result
+}
+
+/// Format a single counter value according to its numbering scheme.
+fn format_counter(n: u32, scheme: NumberingScheme) -> String {
+    match scheme {
+        NumberingScheme::Decimal => n.to_string(),
+        NumberingScheme::LowerAlpha => alpha_label(n, false),
+        NumberingScheme::UpperAlpha => alpha_label(n, true),
+        NumberingScheme::LowerRoman => roman_numeral(n, false),
+        NumberingScheme::UpperRoman => roman_numeral(n, true),
+        NumberingScheme::Ordinal => format!("{}{}", n, ordinal_suffix(n)),
+        NumberingScheme::None => String::new(),
+        _ => n.to_string(), // non-exhaustive fallback
+    }
+}
+
+/// Convert `n` to an alphabetic label: 1→a, 2→b, …, 26→z, 27→aa, 28→ab, …
+fn alpha_label(mut n: u32, upper: bool) -> String {
+    let mut buf = Vec::new();
+    while n > 0 {
+        n -= 1;
+        let byte = b'a' + (n % 26) as u8;
+        buf.push(if upper { byte.to_ascii_uppercase() } else { byte });
+        n /= 26;
+    }
+    buf.reverse();
+    String::from_utf8(buf).unwrap_or_default()
+}
+
+/// Convert `n` to a Roman numeral string.
+fn roman_numeral(n: u32, upper: bool) -> String {
+    const TABLE: &[(u32, &str)] = &[
+        (1000, "m"), (900, "cm"), (500, "d"), (400, "cd"),
+        (100,  "c"), (90,  "xc"), (50,  "l"), (40,  "xl"),
+        (10,   "x"), (9,   "ix"), (5,   "v"), (4,   "iv"), (1, "i"),
+    ];
+    let mut n = n;
+    let mut s = String::new();
+    for &(val, sym) in TABLE {
+        while n >= val {
+            s.push_str(sym);
+            n -= val;
+        }
+    }
+    if upper { s.to_uppercase() } else { s }
+}
+
+/// Return the English ordinal suffix for `n` (1st, 2nd, 3rd, …, 11th, …).
+fn ordinal_suffix(n: u32) -> &'static str {
+    match n % 100 {
+        11..=13 => "th",
+        _ => match n % 10 {
+            1 => "st",
+            2 => "nd",
+            3 => "rd",
+            _ => "th",
+        },
+    }
 }
 
 // ── Private helpers for span → glyph-run lookups ──────────────────────────────
