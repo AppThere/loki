@@ -7,6 +7,69 @@
 //! The public functions take a [`StyledParagraph`] / [`StyledRun`] plus a
 //! [`StyleCatalog`] and produce the flattened representations consumed by
 //! [`crate::para::layout_paragraph`].
+//!
+//! # Session 4 pre-audit findings (2026-04-20)
+//!
+//! ## Q1 — Inline::Image data resolution
+//!
+//! `Inline::Image` is defined as `Image(NodeAttr, Vec<Inline>, LinkTarget)`
+//! where `LinkTarget.url` carries either:
+//! - A **data URI** (`"data:image/png;base64,…"`) when
+//!   `DocxImportOptions::embed_images == true` (the default). The OOXML mapper
+//!   (`loki-ooxml/src/docx/mapper/images.rs:38–44`) resolves the `a:blip
+//!   r:embed` relationship ID against the OPC package, base64-encodes the raw
+//!   bytes, and stores the data URI in `LinkTarget.url`.
+//! - An **unresolved relationship ID** (e.g. `"rId1"`) when
+//!   `embed_images == false`.
+//! Width and height in EMUs are stored in `NodeAttr.kv` as `("cx_emu", val)`
+//! and `("cy_emu", val)`. Alt text is the `Vec<Inline>` second field.
+//! `loki-vello` (`loki-vello/src/image.rs:34`) only renders data URIs; external
+//! URLs produce a grey placeholder rectangle. **With `embed_images` on (the
+//! default), image data is available at layout time — Session 4 is a one-session
+//! wire-up.**
+//!
+//! `walk_inlines` currently treats `Inline::Image` like `Inline::Link` — it
+//! recurses into the alt-text child inlines and silently discards the `src` and
+//! dimensions (`resolve.rs:351`). The fix is to extract `LinkTarget.url`,
+//! `cx_emu`/`cy_emu`, and emit a `PositionedImage` into the paragraph's item
+//! list. `PositionedItem::Image(PositionedImage)` already exists in
+//! `loki-layout/src/items.rs:30` with fields `rect: LayoutRect`, `src: String`,
+//! `alt: Option<String>`.
+//!
+//! ## Q2 — Inline::Link current behaviour
+//!
+//! `Inline::Link` is `Link(NodeAttr, Vec<Inline>, LinkTarget)`. The OOXML mapper
+//! (`loki-ooxml/src/docx/mapper/inline.rs:57–64`) resolves `w:hyperlink
+//! r:id` relationship IDs against `ctx.hyperlinks` to produce a resolved HTTP
+//! URL; bookmark-only anchors become `"#anchor_name"`.
+//! `walk_inlines` (`resolve.rs:351`) recurses into display children and discards
+//! the URL — identical to the image arm. No `PositionedItem::Link` variant
+//! exists; hyperlink metadata is completely lost after flattening.
+//! Fixing gap #11 requires either: (a) adding `PositionedItem::Link` with a
+//! URL-annotated byte-range rect produced after glyph layout, or (b) threading
+//! URL metadata through `StyleSpan` and attaching it to glyph runs so the
+//! renderer can emit clickable regions. Option (b) is simpler — `StyleSpan`
+//! already carries per-run metadata; adding `link_url: Option<String>` keeps
+//! the URL co-located with the text run that displays it.
+//!
+//! ## Q3 — Image placement model for inline images
+//!
+//! Inline images in OOXML are inline drawings (`<wp:inline>`) sized in EMUs.
+//! Parley has no concept of inline image boxes; it lays out text only. The
+//! practical placement strategy is: at `walk_inlines` time, when an
+//! `Inline::Image` is encountered, emit a `PositionedImage` with its origin
+//! relative to the paragraph top-left and dimensions converted from EMUs
+//! (1 EMU = 1/914400 inch = 1/12700 pt). Because Parley has already been built
+//! by the time the glyph-run loop runs, the image must be placed either
+//! (a) before the paragraph text (treating the image as a block-level
+//! interruption — crude but functional for most docs), or (b) using Parley's
+//! inline-box callback if the API exposes it in a future version. For v0.1,
+//! option (a) is used: collect images encountered during `walk_inlines` with
+//! their EMU dimensions; after `layout_paragraph` returns, prepend
+//! `PositionedItem::Image` entries to the paragraph's item list at `cursor_y`.
+//! Floating drawings (`NodeAttr.classes` contains `"floating"`) are placed as
+//! absolute overlays at `(0, 0)` within the page content area — also deferred
+//! to a follow-up session (gap #12 partial).
 
 use std::ops::Range;
 
