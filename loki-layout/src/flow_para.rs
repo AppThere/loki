@@ -132,6 +132,10 @@ pub(super) fn flow_paragraph(
     );
 
     place_paragraph_layout(state, &resolved, para_layout, block_index);
+
+    if resolved.page_break_after && state.mode.is_paginated() {
+        finish_page(state);
+    }
 }
 
 /// Place a pre-computed paragraph layout, handling `keep_together` and splitting.

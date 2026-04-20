@@ -151,6 +151,20 @@ fn page_break_before_splits_onto_second_page() {
 }
 
 #[test]
+fn page_break_after_splits_onto_second_page() {
+    let mut r = test_resources();
+    let para1 = make_para_with_props(
+        "Page one",
+        ParaProps { page_break_after: Some(true), ..Default::default() },
+    );
+    let para2 = make_para("Page two");
+    let section = section_of(vec![para1, para2], PageLayout::default());
+    let (pages, _) = flow_paginated(&mut r, &section);
+    assert_eq!(pages.len(), 2, "page_break_after must produce a second page");
+    assert!(!pages[1].content_items.is_empty(), "page 2 must have content from para2");
+}
+
+#[test]
 fn block_taller_than_page_emits_warning() {
     let mut r = test_resources();
     // Repeat enough text to exceed the 90 pt content height on a tiny page.
