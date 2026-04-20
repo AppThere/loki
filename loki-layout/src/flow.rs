@@ -3,10 +3,16 @@
 
 //! Flow engine — places blocks sequentially and handles page breaking.
 //!
-//! [`flow_section`] converts a stream of [`Block`]s into a flat list of
-//! [`PositionedItem`]s. In paginated mode the engine splits content across
-//! pages; the returned flat list offsets each page's items vertically by
-//! `page_index × page_height` so renderers can treat it as a stacked canvas.
+//! [`flow_section`] converts a stream of [`Block`]s into positioned items.
+//! In paginated mode the engine splits paragraphs at Parley line boundaries
+//! and uses [`PositionedItem::ClippedGroup`] to render each page fragment
+//! correctly. Page objects are built directly (no re-binning pass).
+//!
+//! Paragraph placement, splitting, and keep-with-next chain logic live in
+//! the `para_impl` submodule (`flow_para.rs`).
+
+#[path = "flow_para.rs"]
+mod para_impl;
 
 use loki_doc_model::content::block::StyledParagraph;
 use loki_doc_model::content::inline::Inline;
@@ -17,11 +23,35 @@ use crate::font::FontResources;
 use crate::geometry::{LayoutInsets, LayoutRect, LayoutSize};
 use crate::items::{PositionedItem, PositionedRect};
 use crate::mode::LayoutMode;
-use crate::para::layout_paragraph;
-use crate::resolve::{flatten_paragraph, pts_to_f32, resolve_para_props};
+use crate::resolve::{pts_to_f32, resolve_para_props};
 use crate::result::LayoutPage;
 
+use para_impl::{flow_keep_with_next_chain, flow_paragraph};
+
 // ── Public types ──────────────────────────────────────────────────────────────
+
+/// Output of [`flow_section`], discriminated by layout mode.
+pub enum FlowOutput {
+    /// Returned when `mode.is_paginated()`.
+    ///
+    /// Item origins in each page are relative to the page content-area
+    /// top-left `(0, 0)` — no further translation is needed by the caller.
+    Pages {
+        /// Completed pages with content items in page-local coordinates.
+        pages: Vec<LayoutPage>,
+        /// Non-fatal warnings collected during layout.
+        warnings: Vec<LayoutWarning>,
+    },
+    /// Returned for `Pageless` and `Reflow` modes.
+    Canvas {
+        /// All positioned items on the single canvas.
+        items: Vec<PositionedItem>,
+        /// Total canvas height in points.
+        height: f32,
+        /// Non-fatal warnings collected during layout.
+        warnings: Vec<LayoutWarning>,
+    },
+}
 
 /// Non-fatal layout issues collected during [`flow_section`].
 #[non_exhaustive]
@@ -39,60 +69,79 @@ pub enum LayoutWarning {
         /// Source URL or data URI that could not be resolved.
         src: String,
     },
+    /// A `keep_together` paragraph was split because it exceeds full page
+    /// height. The block could not be kept together on any single page.
+    KeepTogetherOverride {
+        /// 0-indexed position of the block in the section.
+        block_index: usize,
+        /// Measured block height in points.
+        block_height: f32,
+    },
+    /// A `keep_with_next` chain was truncated at the chain limit of 5 blocks.
+    KeepWithNextChainTruncated {
+        /// 0-indexed position of the first block in the chain.
+        start_block: usize,
+        /// Number of blocks in the chain before truncation.
+        chain_length: usize,
+    },
+    /// A `keep_with_next` chain was too tall to fit on one page; the chain
+    /// was broken at the last block that fits.
+    KeepWithNextChainTooTall {
+        /// 0-indexed position of the first block in the chain.
+        start_block: usize,
+        /// Index of the block where the chain was broken.
+        break_at: usize,
+    },
 }
 
 // ── Private flow state ────────────────────────────────────────────────────────
 
-struct FlowState<'a> {
-    resources: &'a mut FontResources,
-    catalog: &'a StyleCatalog,
-    mode: &'a LayoutMode,
-    display_scale: f32,
+pub(super) struct FlowState<'a> {
+    pub(super) resources: &'a mut FontResources,
+    pub(super) catalog: &'a StyleCatalog,
+    pub(super) mode: &'a LayoutMode,
+    pub(super) display_scale: f32,
     /// Current y within the current page content area (or canvas).
-    cursor_y: f32,
-    /// Available width for content (page width minus margins, or reflow width).
-    content_width: f32,
+    pub(super) cursor_y: f32,
+    /// Available width for content.
+    pub(super) content_width: f32,
     /// Items accumulating in the current page (or entire canvas for continuous).
-    current_items: Vec<PositionedItem>,
+    pub(super) current_items: Vec<PositionedItem>,
     /// Completed pages (paginated mode only).
-    pages: Vec<LayoutPage>,
+    pub(super) pages: Vec<LayoutPage>,
     /// Physical page dimensions in points.
-    page_size: LayoutSize,
+    pub(super) page_size: LayoutSize,
     /// Content-area margins derived from the section's `PageLayout`.
-    margins: LayoutInsets,
+    pub(super) margins: LayoutInsets,
     /// Height of the content area within a page (page_height − v_margins).
-    page_content_height: f32,
+    pub(super) page_content_height: f32,
     /// 1-indexed current page number.
-    page_number: usize,
-    /// Whether the previous block set keep_with_next (reserved for Session 6).
-    #[allow(dead_code)]
-    pending_keep_with_next: bool,
+    pub(super) page_number: usize,
     /// Accumulated warnings.
-    warnings: Vec<LayoutWarning>,
+    pub(super) warnings: Vec<LayoutWarning>,
     /// Accumulated horizontal indentation in points.
-    current_indent: f32,
+    pub(super) current_indent: f32,
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /// Flow all blocks from a section into positioned items.
 ///
-/// Returns `(items, total_height, warnings)`.
+/// Returns a [`FlowOutput`] discriminated by layout mode:
 ///
-/// For continuous modes (`Pageless`, `Reflow`) the items are absolute on a
-/// single canvas and `total_height` is the total canvas height.
-///
-/// For `Paginated` mode items from page *n* (0-indexed) are translated by
-/// `n × page_height + margins.top` vertically and `margins.left` horizontally
-/// so the flat list represents a vertically stacked view of all pages.
-/// `total_height` equals `page_count × page_height`.
+/// - [`FlowOutput::Pages`]: each page's items are in page-content-area-local
+///   coordinates (origin `(0, 0)` at the content-area top-left). The `margins`
+///   field on each [`LayoutPage`] carries the insets. No further translation
+///   by the caller is needed.
+/// - [`FlowOutput::Canvas`]: all items on a single canvas. In `Pageless` mode
+///   items are offset by `margins.left`; in `Reflow` mode there is no offset.
 pub fn flow_section(
     resources: &mut FontResources,
     section: &Section,
     catalog: &StyleCatalog,
     mode: &LayoutMode,
     display_scale: f32,
-) -> (Vec<PositionedItem>, f32, Vec<LayoutWarning>) {
+) -> FlowOutput {
     let pl = &section.layout;
     let page_w = pts_to_f32(pl.page_size.width);
     let page_h = pts_to_f32(pl.page_size.height);
@@ -120,29 +169,36 @@ pub fn flow_section(
         margins,
         page_content_height: (page_h - margins.vertical()).max(0.0),
         page_number: 1,
-        pending_keep_with_next: false,
         warnings: Vec::new(),
         current_indent: 0.0,
     };
 
-    for (idx, block) in section.blocks.iter().enumerate() {
-        flow_block(&mut state, block, idx);
+    if mode.is_paginated() {
+        // In paginated mode, intercept keep_with_next chains at the top level
+        // before dispatching to flow_block.
+        let mut i = 0;
+        while i < section.blocks.len() {
+            let block = &section.blocks[i];
+            if let Block::StyledPara(para) = block {
+                if resolve_para_props(para, catalog).keep_with_next {
+                    let consumed =
+                        flow_keep_with_next_chain(&mut state, &section.blocks, i);
+                    i += consumed;
+                    continue;
+                }
+            }
+            flow_block(&mut state, block, i);
+            i += 1;
+        }
+    } else {
+        for (idx, block) in section.blocks.iter().enumerate() {
+            flow_block(&mut state, block, idx);
+        }
     }
 
     if mode.is_paginated() {
         finish_page(&mut state);
-        let total_height = state.pages.len() as f32 * page_h;
-        let mut flat: Vec<PositionedItem> = Vec::new();
-        for (i, page) in state.pages.iter().enumerate() {
-            let dy = i as f32 * page_h + state.margins.top;
-            let dx = state.margins.left;
-            for item in &page.content_items {
-                let mut item = item.clone();
-                item.translate(dx, dy);
-                flat.push(item);
-            }
-        }
-        (flat, total_height, state.warnings)
+        FlowOutput::Pages { pages: state.pages, warnings: state.warnings }
     } else {
         if matches!(mode, LayoutMode::Pageless) {
             let dx = margins.left;
@@ -150,7 +206,7 @@ pub fn flow_section(
                 item.translate(dx, 0.0);
             }
         }
-        (state.current_items, state.cursor_y, state.warnings)
+        FlowOutput::Canvas { items: state.current_items, height: state.cursor_y, warnings: state.warnings }
     }
 }
 
@@ -167,11 +223,10 @@ fn flow_block(state: &mut FlowState, block: &Block, idx: usize) {
         }
         Block::BulletList(items) => {
             let old_indent = state.current_indent;
-            state.current_indent += 18.0; // 1/4 inch indent
+            state.current_indent += 18.0;
             for item in items {
                 for (b_idx, b) in item.iter().enumerate() {
                     if b_idx == 0 {
-                        // Prepend bullet to the first block if it's a paragraph
                         if let Block::StyledPara(p) = b {
                             let mut p = p.clone();
                             p.inlines.insert(0, Inline::Str("• ".into()));
@@ -223,81 +278,25 @@ fn flow_block(state: &mut FlowState, block: &Block, idx: usize) {
         }
         Block::Table(tbl) => flow_table(state, tbl, idx),
         Block::HorizontalRule => flow_hrule(state),
-        _ => {}               // CodeBlock, RawBlock, etc. — skip silently
+        _ => {}
     }
-}
-
-// ── Paragraph placement ───────────────────────────────────────────────────────
-
-fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, block_index: usize) {
-    let resolved = resolve_para_props(para, state.catalog);
-    let (text, spans) = flatten_paragraph(para, state.catalog);
-
-    // Apply space_before.
-    state.cursor_y += resolved.space_before;
-
-    // Honour explicit page break.
-    if resolved.page_break_before && state.mode.is_paginated() {
-        finish_page(state);
-        // space_before is intentionally not re-applied after an explicit break.
-    }
-
-    let para_layout = layout_paragraph(
-        state.resources,
-        &text,
-        &spans,
-        &resolved,
-        state.content_width,
-        state.display_scale,
-    );
-
-    // Check if the paragraph fits on the current page (paginated mode only).
-    if state.mode.is_paginated() {
-        if para_layout.height > state.page_content_height {
-            // Block is taller than a full page: warn and place anyway.
-            state.warnings.push(LayoutWarning::BlockExceedsPageHeight {
-                block_index,
-                block_height: para_layout.height,
-            });
-        } else {
-            let needed = para_layout.height + resolved.space_after;
-            let available = state.page_content_height - state.cursor_y;
-            if needed > available && state.cursor_y > 0.0 {
-                finish_page(state);
-                // Re-apply space_before on the new page.
-                state.cursor_y += resolved.space_before;
-            }
-        }
-    }
-
-    // Translate items from paragraph-relative to page-content-area-relative.
-    let dy = state.cursor_y;
-    let dx = state.current_indent;
-    for mut item in para_layout.items {
-        item.translate(dx, dy);
-        state.current_items.push(item);
-    }
-    state.cursor_y += para_layout.height + resolved.space_after;
 }
 
 // ── Page management ───────────────────────────────────────────────────────────
 
-fn finish_page(state: &mut FlowState) {
+pub(super) fn finish_page(state: &mut FlowState) {
     let page = LayoutPage {
         page_number: state.page_number,
         page_size: state.page_size,
         margins: state.margins,
         content_items: std::mem::take(&mut state.current_items),
-        header_items: vec![], // TODO: Session 6 — headers/footers
+        header_items: vec![],
         footer_items: vec![],
     };
     state.pages.push(page);
     state.page_number += 1;
     state.cursor_y = 0.0;
 }
-
-// ── Coordinate translation ────────────────────────────────────────────────────
-
 
 // ── Miscellaneous block renderers ─────────────────────────────────────────────
 
@@ -334,12 +333,13 @@ fn synthesize_heading_para(level: u8, attr: &NodeAttr, inlines: &[Inline]) -> St
         5 => "Heading5",
         _ => "Heading6",
     };
-    // Restore any alignment that was carried forward in NodeAttr.kv.
-    let direct_alignment = attr.kv.iter().find(|(k, _)| k == "jc").and_then(|(_, v)| match v.as_str() {
-        "center" => Some(ParagraphAlignment::Center),
-        "right" => Some(ParagraphAlignment::Right),
-        "justify" => Some(ParagraphAlignment::Justify),
-        _ => None,
+    let direct_alignment = attr.kv.iter().find(|(k, _)| k == "jc").and_then(|(_, v)| {
+        match v.as_str() {
+            "center" => Some(ParagraphAlignment::Center),
+            "right" => Some(ParagraphAlignment::Right),
+            "justify" => Some(ParagraphAlignment::Justify),
+            _ => None,
+        }
     });
     let direct_para_props = direct_alignment.map(|align| {
         Box::new(ParaProps { alignment: Some(align), ..Default::default() })
@@ -355,7 +355,11 @@ fn synthesize_heading_para(level: u8, attr: &NodeAttr, inlines: &[Inline]) -> St
 
 // ── Table layout ─────────────────────────────────────────────────────────────
 
-fn flow_table(state: &mut FlowState, tbl: &loki_doc_model::content::table::core::Table, idx: usize) {
+fn flow_table(
+    state: &mut FlowState,
+    tbl: &loki_doc_model::content::table::core::Table,
+    idx: usize,
+) {
     let col_count = tbl.col_count().max(1);
     let col_w = state.content_width / col_count as f32;
 

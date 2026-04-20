@@ -8,6 +8,9 @@
 //! These functions translate a [`loki_layout::DocumentLayout`] into Vello draw
 //! commands appended to a [`vello::Scene`].
 
+use vello::kurbo::Affine;
+use vello::peniko::BlendMode;
+
 use loki_layout::{
     ContinuousLayout, DocumentLayout, LayoutColor, LayoutRect, PaginatedLayout, PositionedItem,
     PositionedRect,
@@ -255,6 +258,28 @@ fn paint_items(
                 };
                 crate::rect::paint_filled_rect(scene, &rule, scale);
             }
+            PositionedItem::ClippedGroup { clip_rect, items } => {
+                // ADR 004 open question 1: verified Vello 0.6 push_layer signature:
+                //   fn push_layer(&mut self, blend: impl Into<BlendMode>, alpha: f32,
+                //                 transform: Affine, clip: &impl Shape)
+                // This matches the ADR §2 design exactly. clip_rect.origin is already
+                // translated by `translate_item` above, so no further offset is needed.
+                scene.push_layer(
+                    BlendMode::default(),
+                    1.0,
+                    Affine::IDENTITY,
+                    &vello::kurbo::Rect::new(
+                        (clip_rect.x() * scale) as f64,
+                        (clip_rect.y() * scale) as f64,
+                        (clip_rect.max_x() * scale) as f64,
+                        (clip_rect.max_y() * scale) as f64,
+                    ),
+                );
+                // Child items were already translated by `translate_item` above;
+                // pass offset (0, 0) so they are not translated a second time.
+                paint_items(scene, items, font_cache, (0.0, 0.0), scale);
+                scene.pop_layer();
+            }
             _ => {
                 // `PositionedItem` is `#[non_exhaustive]`; ignore unknown variants.
             }
@@ -292,8 +317,15 @@ fn translate_item(item: &mut PositionedItem, dx: f32, dy: f32) {
             r.rect.origin.x += dx;
             r.rect.origin.y += dy;
         }
+        PositionedItem::ClippedGroup { clip_rect, items } => {
+            clip_rect.origin.x += dx;
+            clip_rect.origin.y += dy;
+            for item in items {
+                translate_item(item, dx, dy);
+            }
+        }
         _ => {
-            // `PositionedItem` is `#[non_exhaustive]`; no translation for unknown variants.
+            // `PositionedItem` is `#[non_exhaustive]`; ignore unknown variants.
         }
     }
 }
@@ -387,5 +419,48 @@ mod tests {
         // 2× HiDPI scale.
         paint_layout(&mut scene, &layout, &mut font_cache, (0.0, 0.0), 2.0, None);
         // No panic = pass.
+    }
+
+    #[test]
+    fn test_paint_clipped_group_does_not_panic() {
+        // Construct a ClippedGroup containing a FilledRect and verify paint_items
+        // does not panic. Full visual correctness is verified manually.
+        let inner_rect = PositionedItem::FilledRect(PositionedRect {
+            rect: LayoutRect::new(0.0, 0.0, 100.0, 20.0),
+            color: LayoutColor { r: 0.0, g: 0.5, b: 1.0, a: 1.0 },
+        });
+        let layout = make_continuous_layout(vec![
+            PositionedItem::ClippedGroup {
+                clip_rect: LayoutRect::new(0.0, 0.0, 100.0, 15.0),
+                items: vec![inner_rect],
+            },
+        ]);
+        let mut scene = vello::Scene::new();
+        let mut font_cache = FontDataCache::new();
+        paint_layout(&mut scene, &layout, &mut font_cache, (5.0, 10.0), 1.0, None);
+        // No panic = pass.
+    }
+
+    #[test]
+    fn test_translate_item_clipped_group() {
+        // Verify that translate_item shifts both clip_rect.origin and child items.
+        let mut item = PositionedItem::ClippedGroup {
+            clip_rect: LayoutRect::new(10.0, 20.0, 100.0, 50.0),
+            items: vec![PositionedItem::FilledRect(PositionedRect {
+                rect: LayoutRect::new(0.0, 0.0, 50.0, 25.0),
+                color: LayoutColor::WHITE,
+            })],
+        };
+        translate_item(&mut item, 5.0, 3.0);
+        if let PositionedItem::ClippedGroup { clip_rect, items } = &item {
+            assert_eq!(clip_rect.x(), 15.0, "clip_rect x should be shifted");
+            assert_eq!(clip_rect.y(), 23.0, "clip_rect y should be shifted");
+            if let PositionedItem::FilledRect(r) = &items[0] {
+                assert_eq!(r.rect.x(), 5.0, "child item x should be shifted");
+                assert_eq!(r.rect.y(), 3.0, "child item y should be shifted");
+            }
+        } else {
+            panic!("expected ClippedGroup");
+        }
     }
 }

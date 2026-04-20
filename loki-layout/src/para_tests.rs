@@ -114,6 +114,50 @@ fn space_before_after_not_in_height() {
 }
 
 #[test]
+fn line_boundaries_populated_for_multiline_paragraph() {
+    let mut r = test_resources();
+    let text = "The quick brown fox jumps over the lazy dog and continues for many more words to force wrapping";
+    let spans = [single_span(text, 12.0)];
+    // Narrow width forces several lines.
+    let result = layout_paragraph(&mut r, text, &spans, &ResolvedParaProps::default(), 100.0, 1.0);
+    assert!(
+        result.line_boundaries.len() >= 2,
+        "expected multiple lines, got {}",
+        result.line_boundaries.len()
+    );
+    // Each line's max_coord must be greater than its min_coord.
+    for (i, &(min, max)) in result.line_boundaries.iter().enumerate() {
+        assert!(max > min, "line {i}: max_coord ({max}) must exceed min_coord ({min})");
+    }
+    // max_coords must be strictly increasing (each line's bottom is further down).
+    for i in 1..result.line_boundaries.len() {
+        let prev_max = result.line_boundaries[i - 1].1;
+        let curr_max = result.line_boundaries[i].1;
+        assert!(
+            curr_max > prev_max,
+            "line {i} max_coord ({curr_max}) must exceed previous line max_coord ({prev_max})"
+        );
+    }
+    // Last line's max_coord should approximate the total paragraph height.
+    let last_max = result.line_boundaries.last().unwrap().1;
+    assert!(
+        (last_max - result.height).abs() < 1.0,
+        "last line max_coord ({last_max}) should equal paragraph height ({})",
+        result.height
+    );
+}
+
+#[test]
+fn empty_paragraph_has_no_line_boundaries() {
+    let mut r = test_resources();
+    let result = layout_paragraph(&mut r, "", &[], &ResolvedParaProps::default(), 400.0, 1.0);
+    assert!(
+        result.line_boundaries.is_empty(),
+        "empty paragraph must have no line boundaries"
+    );
+}
+
+#[test]
 fn border_follows_background() {
     let mut r = test_resources();
     let text = "Border test";

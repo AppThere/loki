@@ -32,6 +32,18 @@ pub enum PositionedItem {
     Decoration(PositionedDecoration),
     /// A horizontal rule.
     HorizontalRule(PositionedRect),
+    /// A group of items rendered inside a Vello clip layer.
+    ///
+    /// `clip_rect` is in page-content-area-local coordinates (same space as
+    /// the child items' origins). Used to render paragraph fragments that
+    /// span a page boundary: each fragment carries all paragraph items but
+    /// the clip rect masks lines belonging to the other page.
+    ClippedGroup {
+        /// Clip rectangle in page-content-area coordinates.
+        clip_rect: LayoutRect,
+        /// Items to render inside the clip.
+        items: Vec<PositionedItem>,
+    },
 }
 
 impl PositionedItem {
@@ -57,6 +69,13 @@ impl PositionedItem {
             Self::Decoration(d) => {
                 d.x += dx;
                 d.y += dy;
+            }
+            Self::ClippedGroup { clip_rect, items } => {
+                clip_rect.origin.x += dx;
+                clip_rect.origin.y += dy;
+                for item in items {
+                    item.translate(dx, dy);
+                }
             }
         }
     }
