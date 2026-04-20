@@ -20,6 +20,7 @@ use loki_doc_model::style::props::char_props::{
     UnderlineStyle as DocUnderlineStyle,
     VerticalAlign as DocVerticalAlign,
 };
+use loki_doc_model::style::list_style::ListId;
 use loki_doc_model::style::props::para_props::{
     LineHeight as DocLineHeight, ParagraphAlignment, ParaProps, Spacing,
 };
@@ -31,8 +32,8 @@ use crate::color::LayoutColor;
 use crate::geometry::LayoutInsets;
 use crate::items::{BorderEdge, BorderStyle};
 use crate::para::{
-    FontVariant, ResolvedLineHeight, ResolvedParaProps, StrikethroughStyle, StyleSpan,
-    UnderlineStyle, VerticalAlign,
+    FontVariant, ResolvedLineHeight, ResolvedListMarker, ResolvedParaProps, StrikethroughStyle,
+    StyleSpan, UnderlineStyle, VerticalAlign,
 };
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -436,6 +437,14 @@ fn map_para_props(p: &ParaProps) -> ResolvedParaProps {
         keep_together: p.keep_together.unwrap_or(false),
         keep_with_next: p.keep_with_next.unwrap_or(false),
         page_break_before: p.page_break_before.unwrap_or(false),
+        indent_hanging: p.indent_hanging.map(pts_to_f32).unwrap_or(0.0),
+        list_marker: match (&p.list_id, p.list_level) {
+            (Some(id), Some(level)) => Some(ResolvedListMarker {
+                list_id: ListId::new(id.as_str()),
+                level,
+            }),
+            _ => None,
+        },
     }
 }
 
