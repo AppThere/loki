@@ -25,6 +25,65 @@ use crate::items::{
     PositionedDecoration, PositionedGlyphRun, PositionedItem, PositionedRect,
 };
 
+/// Vertical text position for superscript / subscript runs.
+///
+/// Mirrors [`loki_doc_model::style::props::char_props::VerticalAlign`].
+/// TR 29166 §6.2.1. ODF `style:text-position`; OOXML `w:vertAlign`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerticalAlign {
+    /// Text raised above the baseline (superscript).
+    Superscript,
+    /// Text lowered below the baseline (subscript).
+    Subscript,
+}
+
+/// Caps variant for a text run.
+///
+/// TR 29166 §6.2.1. ODF `fo:font-variant` / `fo:text-transform`;
+/// OOXML `w:smallCaps` / `w:caps`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FontVariant {
+    /// Render lowercase letters as small capitals.
+    SmallCaps,
+    /// All characters uppercased (text transform applied at build time).
+    AllCaps,
+}
+
+/// Underline decoration style, mirroring the doc-model enum.
+///
+/// Parley 0.6 only renders a single solid underline; variant information is
+/// preserved for when the renderer gains multi-style support.
+/// TR 29166 §6.2.1. ODF `style:text-underline-style`; OOXML `w:u`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnderlineStyle {
+    /// A single solid underline.
+    Single,
+    /// A double underline.
+    Double,
+    /// A dotted underline.
+    Dotted,
+    /// A dashed underline.
+    Dash,
+    /// A wavy underline.
+    Wave,
+    /// A thick solid underline.
+    Thick,
+}
+
+/// Strikethrough decoration style, mirroring the doc-model enum.
+///
+/// Parley 0.6 only renders a single strikethrough; double style is preserved
+/// for future rendering.
+/// TR 29166 §6.2.1. ODF `style:text-line-through-style`;
+/// OOXML `w:strike` / `w:dstrike`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StrikethroughStyle {
+    /// A single strikethrough line.
+    Single,
+    /// A double strikethrough line.
+    Double,
+}
+
 /// Resolved line-height specification for a paragraph.
 ///
 /// Carries the semantic from the source format through to the Parley call
@@ -58,12 +117,44 @@ pub struct StyleSpan {
     pub italic: bool,
     /// Text colour.
     pub color: LayoutColor,
-    /// Draw an underline.
-    pub underline: bool,
-    /// Draw a strikethrough.
-    pub strikethrough: bool,
+    /// Underline decoration style. `None` = no underline.
+    ///
+    /// Parley 0.6 renders all variants identically (single solid underline).
+    /// TODO(underline-style): Parley exposes a single underline decoration;
+    /// Double/Dotted/Dash/Wave variants all render as Single for now.
+    pub underline: Option<UnderlineStyle>,
+    /// Strikethrough decoration style. `None` = no strikethrough.
+    ///
+    /// Parley 0.6 renders all variants identically (single strikethrough).
+    /// TODO(strikethrough-style): Parley exposes a single strikethrough decoration;
+    /// Double variant renders as Single for now.
+    pub strikethrough: Option<StrikethroughStyle>,
     /// Line-height multiplier (e.g. `1.5`). `None` = paragraph default.
     pub line_height: Option<f32>,
+    /// Vertical alignment for super/subscript. Font size is reduced to 58%.
+    ///
+    /// TODO(super-sub): Parley does not expose baseline-shift; only font-size
+    /// reduction applied. Revisit when Parley adds StyleProperty::BaselineShift.
+    pub vertical_align: Option<VerticalAlign>,
+    /// Highlight colour to paint behind the run. `None` = no highlight.
+    pub highlight_color: Option<LayoutColor>,
+    /// Letter spacing (tracking) in points. `None` = font default.
+    pub letter_spacing: Option<f32>,
+    /// Caps variant for this run.
+    ///
+    /// `SmallCaps`: OpenType `smcp` feature would be ideal; currently stored
+    /// only. TODO(small-caps): Parley does not expose StyleProperty::FontVariantCaps.
+    ///
+    /// `AllCaps`: text is uppercased during `flatten_paragraph` in resolve.rs;
+    /// this field is retained as metadata.
+    pub font_variant: Option<FontVariant>,
+    /// Word spacing in points. `None` = font default.
+    pub word_spacing: Option<f32>,
+    /// Draw a dark-grey shadow offset by `(0.5 pt, 0.5 pt)` behind the run.
+    ///
+    /// TODO(shadow): replace with Vello blur filter for soft shadow once
+    /// scene.rs blur pipeline is verified stable (see TODO in scene.rs).
+    pub shadow: bool,
 }
 
 /// Resolved paragraph-level properties passed to [`layout_paragraph`].
@@ -217,8 +308,18 @@ pub fn layout_paragraph(
     // Per-span styles.
     for span in style_spans {
         let r = span.range.clone();
-        builder.push(StyleProperty::FontSize(span.font_size), r.clone());
+
+        // For super/subscript (gap #3), reduce font size to 58 %.
+        // TODO(super-sub): Parley does not expose baseline-shift; only font-size
+        // reduction applied. Revisit when Parley adds StyleProperty::BaselineShift.
+        let effective_font_size = if span.vertical_align.is_some() {
+            span.font_size * 0.58
+        } else {
+            span.font_size
+        };
+        builder.push(StyleProperty::FontSize(effective_font_size), r.clone());
         builder.push(StyleProperty::Brush(span.color), r.clone());
+
         if span.bold {
             builder.push(StyleProperty::FontWeight(FontWeight::BOLD), r.clone());
         }
@@ -231,11 +332,41 @@ pub fn layout_paragraph(
         if let Some(lh) = span.line_height {
             builder.push(StyleProperty::LineHeight(LineHeight::FontSizeRelative(lh)), r.clone());
         }
-        if span.underline {
+
+        // Underline (gap #17): all style variants map to Parley's single underline.
+        // TODO(underline-style): Parley exposes a single underline decoration;
+        // Double/Dotted/Dash/Wave variants all render as Single for now.
+        if span.underline.is_some() {
             builder.push(StyleProperty::Underline(true), r.clone());
         }
-        if span.strikethrough {
+
+        // Strikethrough (gap #18): both Single and Double map to Parley's one variant.
+        // TODO(strikethrough-style): Parley exposes a single strikethrough decoration;
+        // Double variant renders as Single for now.
+        if span.strikethrough.is_some() {
             builder.push(StyleProperty::Strikethrough(true), r.clone());
+        }
+
+        // Letter spacing (gap #13).
+        if let Some(ls) = span.letter_spacing {
+            builder.push(StyleProperty::LetterSpacing(ls), r.clone());
+        }
+
+        // Word spacing (gap #22).
+        if let Some(ws) = span.word_spacing {
+            builder.push(StyleProperty::WordSpacing(ws), r.clone());
+        }
+
+        // Caps variant (gaps #15, #16).
+        match span.font_variant {
+            Some(FontVariant::SmallCaps) => {
+                // TODO(small-caps): Parley does not expose StyleProperty::FontVariantCaps;
+                // SmallCaps stored but not applied. Revisit when Parley adds support.
+            }
+            Some(FontVariant::AllCaps) | None => {
+                // AllCaps: text was already uppercased during flatten_paragraph.
+                // None: no caps variant, nothing to do.
+            }
         }
     }
 
@@ -286,6 +417,48 @@ pub fn layout_paragraph(
                 })
                 .collect();
 
+            let text_range = run.text_range();
+
+            // ── Highlight colour (gap #10) ──────────────────────────────────────
+            // Emit a filled rect sized to the run's ink extent BEFORE the glyph
+            // run so the background renders below the text.
+            if let Some(hl_color) = span_highlight_for_range(style_spans, text_range.clone()) {
+                let m = run.metrics();
+                items.push(PositionedItem::FilledRect(PositionedRect {
+                    rect: LayoutRect::new(
+                        run_offset + para_props.indent_start,
+                        run_baseline - m.ascent,
+                        glyph_run.advance(),
+                        m.ascent + m.descent,
+                    ),
+                    color: hl_color,
+                }));
+            }
+
+            // ── Shadow copy (gap #24) ───────────────────────────────────────────
+            // Emit a dark-grey copy of the run offset by (0.5 pt, 0.5 pt) so
+            // it appears as a hard shadow behind the main run.
+            // TODO(shadow): replace with Vello blur filter for soft shadow once
+            // scene.rs blur pipeline is verified stable (see TODO in scene.rs).
+            if span_has_shadow(style_spans, text_range.clone()) {
+                items.push(PositionedItem::GlyphRun(PositionedGlyphRun {
+                    origin: LayoutPoint {
+                        x: run_offset + para_props.indent_start + 0.5,
+                        y: run_baseline + 0.5,
+                    },
+                    font_data: font_data.clone(),
+                    font_index: run.font().index,
+                    font_size: run.font_size(),
+                    glyphs: glyphs.clone(),
+                    color: LayoutColor::new(0.4, 0.4, 0.4, 1.0),
+                    synthesis: GlyphSynthesis {
+                        bold: synthesis.embolden(),
+                        italic: synthesis.skew().is_some(),
+                    },
+                }));
+            }
+
+            // ── Main glyph run ──────────────────────────────────────────────────
             items.push(PositionedItem::GlyphRun(PositionedGlyphRun {
                 origin: LayoutPoint { x: run_offset + para_props.indent_start, y: run_baseline },
                 font_data,
@@ -350,6 +523,26 @@ pub fn layout_paragraph(
     }
 
     ParagraphLayout { height: total_height, width: total_width, items, first_baseline, last_baseline, line_boundaries }
+}
+
+// ── Private helpers for span → glyph-run lookups ──────────────────────────────
+
+/// Returns the highlight colour for the first span fully containing
+/// `text_range`, or `None` if no such span has a highlight.
+fn span_highlight_for_range(spans: &[StyleSpan], text_range: Range<usize>) -> Option<LayoutColor> {
+    spans
+        .iter()
+        .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
+        .and_then(|s| s.highlight_color)
+}
+
+/// Returns `true` if the first span fully containing `text_range` has
+/// `shadow = true`.
+fn span_has_shadow(spans: &[StyleSpan], text_range: Range<usize>) -> bool {
+    spans
+        .iter()
+        .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
+        .map_or(false, |s| s.shadow)
 }
 
 #[cfg(test)]
