@@ -108,6 +108,52 @@ pub fn heading_and_paragraphs_content_xml(version: &str) -> Vec<u8> {
     .into_bytes()
 }
 
+/// `content.xml` with a heading, a paragraph with bold/italic spans, and a
+/// bullet list — used by the `round_trip` smoke tests.
+///
+/// Produces:
+/// ```text
+/// Introduction          (heading level 1)
+/// Bold text and italic. (styled paragraph)
+/// • Item one            (BulletList)
+/// • Item two
+/// ```
+pub fn rich_fixture_content_xml(version: &str) -> Vec<u8> {
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+         <office:document-content office:version=\"{version}\" \
+         xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+         xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" \
+         xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\">\
+         <office:automatic-styles>\
+           <style:style style:name=\"bold_span\" style:family=\"text\" \
+             xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\">\
+             <style:text-properties fo:font-weight=\"bold\"/>\
+           </style:style>\
+           <style:style style:name=\"italic_span\" style:family=\"text\" \
+             xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\">\
+             <style:text-properties fo:font-style=\"italic\"/>\
+           </style:style>\
+         </office:automatic-styles>\
+         <office:body><office:text>\
+         <text:h text:outline-level=\"1\">Introduction</text:h>\
+         <text:p>\
+           <text:span text:style-name=\"bold_span\">Bold text</text:span>\
+           <text:s/>\
+           and\
+           <text:s/>\
+           <text:span text:style-name=\"italic_span\">italic text</text:span>.\
+         </text:p>\
+         <text:list>\
+           <text:list-item><text:p>Item one</text:p></text:list-item>\
+           <text:list-item><text:p>Item two</text:p></text:list-item>\
+         </text:list>\
+         </office:text></office:body>\
+         </office:document-content>"
+    )
+    .into_bytes()
+}
+
 /// `content.xml` with a single paragraph and **no** `office:version`
 /// attribute — valid for ODF 1.1 documents.
 pub fn v1_1_content_xml() -> Vec<u8> {
