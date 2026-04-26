@@ -14,8 +14,8 @@
 /// Pure white — document page surface and card backgrounds.
 pub const COLOR_SURFACE_PAGE: &str = "#FFFFFF";
 
-/// Light gray — application background behind document pages and cards.
-pub const COLOR_SURFACE_BASE: &str = "#F5F5F5";
+/// Gray — application background behind document pages and cards.
+pub const COLOR_SURFACE_BASE: &str = "#555555";
 
 // ── Border ────────────────────────────────────────────────────────────────────
 
@@ -47,4 +47,4 @@ pub const COLOR_STATUS_ERROR_BG: &str = "#FFEBEE";
 pub const COLOR_STATUS_ERROR_TEXT: &str = "#C62828";
 
 /// Error banner border color.
-pub const COLOR_STATUS_ERROR_BORDER: &str = "#EF9A9A";
+pub const COLOR_STATUS_ERROR_BORDER: &str = "#BB4433";
