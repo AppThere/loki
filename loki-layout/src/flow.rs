@@ -31,6 +31,7 @@ use crate::items::{PositionedBorderRect, PositionedItem, PositionedRect};
 use crate::mode::LayoutMode;
 use crate::resolve::{convert_border, pts_to_f32, resolve_color, resolve_para_props, CollectedNote};
 use crate::result::LayoutPage;
+use crate::LayoutOptions;
 
 use para_impl::{flow_keep_with_next_chain, flow_paragraph};
 
@@ -107,6 +108,8 @@ pub(super) struct FlowState<'a> {
     pub(super) catalog: &'a StyleCatalog,
     pub(super) mode: &'a LayoutMode,
     pub(super) display_scale: f32,
+    /// Layout options forwarded from the [`layout_document`] caller.
+    pub(super) options: &'a LayoutOptions,
     /// Current y within the current page content area (or canvas).
     pub(super) cursor_y: f32,
     /// Available width for content.
@@ -186,6 +189,7 @@ pub fn flow_section(
     catalog: &StyleCatalog,
     mode: &LayoutMode,
     display_scale: f32,
+    options: &LayoutOptions,
 ) -> FlowOutput {
     let pl = &section.layout;
     let page_w = pts_to_f32(pl.page_size.width);
@@ -206,6 +210,7 @@ pub fn flow_section(
         catalog,
         mode,
         display_scale,
+        options,
         cursor_y: 0.0,
         content_width,
         current_items: Vec::new(),
@@ -345,6 +350,7 @@ pub(super) fn finish_page(state: &mut FlowState) {
         footer_items: vec![],
         header_height: 0.0,
         footer_height: 0.0,
+        editing_data: None,
     };
     state.pages.push(page);
     state.page_number += 1;
@@ -365,13 +371,16 @@ fn layout_blocks_reflow(
     available_width: f32,
     display_scale: f32,
 ) -> (Vec<PositionedItem>, f32) {
+    use crate::LayoutOptions;
     let synthetic = Section {
         layout: PageLayout::default(),
         blocks: blocks.to_vec(),
         extensions: ExtensionBag::default(),
     };
     let mode = LayoutMode::Reflow { available_width };
-    match flow_section(resources, &synthetic, catalog, &mode, display_scale) {
+    // Headers/footers are read-only; always use default (no editing overhead).
+    let options = LayoutOptions::default();
+    match flow_section(resources, &synthetic, catalog, &mode, display_scale, &options) {
         FlowOutput::Canvas { items, height, .. } => (items, height),
         FlowOutput::Pages { .. } => unreachable!("Reflow mode always returns Canvas"),
     }

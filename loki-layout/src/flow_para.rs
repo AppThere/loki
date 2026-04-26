@@ -130,6 +130,7 @@ pub(super) fn flow_paragraph(
         &resolved,
         state.content_width,
         state.display_scale,
+        state.options.preserve_for_editing,
     );
 
     // ── Inline image placement (gap #9) ──────────────────────────────────────
@@ -323,6 +324,7 @@ fn build_chain_layouts<'s>(
                     &resolved,
                     state.content_width,
                     state.display_scale,
+                    state.options.preserve_for_editing,
                 );
                 (resolved, layout)
             } else {
@@ -334,6 +336,7 @@ fn build_chain_layouts<'s>(
                     first_baseline: 0.0,
                     last_baseline: 0.0,
                     line_boundaries: vec![],
+                    parley_layout: None,
                 })
             }
         })

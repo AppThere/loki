@@ -45,19 +45,47 @@ pub use items::{
 pub use flow::{flow_section, FlowOutput, LayoutWarning};
 pub use font::FontResources;
 pub use mode::LayoutMode;
-pub use para::{layout_paragraph, ParagraphLayout, ResolvedLineHeight, ResolvedParaProps, StyleSpan};
-pub use resolve::{CollectedImage, CollectedNote, emu_to_pt, flatten_paragraph, pts_to_f32, resolve_char_props, resolve_color, resolve_para_props};
-pub use result::{ContinuousLayout, DocumentLayout, LayoutPage, PaginatedLayout};
+pub use para::{
+    layout_paragraph, Affinity, CursorRect, HitTestResult, ParagraphLayout,
+    ResolvedLineHeight, ResolvedParaProps, StyleSpan,
+};
+pub use resolve::{
+    CollectedImage, CollectedNote, emu_to_pt, flatten_paragraph, pts_to_f32,
+    resolve_char_props, resolve_color, resolve_para_props,
+};
+pub use result::{ContinuousLayout, DocumentLayout, LayoutPage, PageEditingData, PaginatedLayout};
+
+/// Options that control the layout pipeline's memory / feature trade-offs.
+///
+/// Pass to [`layout_document`] or [`flow_section`]. The default (all fields
+/// `false`) is the read-only rendering mode — zero overhead for features the
+/// renderer does not need.
+#[derive(Debug, Clone, Default)]
+pub struct LayoutOptions {
+    /// When `true`, the Parley `Layout` object is retained inside each
+    /// [`ParagraphLayout`] so that [`ParagraphLayout::hit_test_point`] and
+    /// [`ParagraphLayout::cursor_rect`] can be called afterwards.
+    ///
+    /// Has a memory cost proportional to document size. Use `false` (the
+    /// default) for read-only document viewing. Editing sessions pass `true`.
+    pub preserve_for_editing: bool,
+}
 
 /// Lays out a full document into absolute positions.
 ///
 /// This processes all sections in the document and returns a single [`DocumentLayout`].
 /// In the current implementation, sections are stacked vertically.
+///
+/// Pass [`LayoutOptions::default()`] for read-only rendering. Pass
+/// `LayoutOptions { preserve_for_editing: true, .. }` when the result
+/// needs to support [`ParagraphLayout::hit_test_point`] /
+/// [`ParagraphLayout::cursor_rect`].
 pub fn layout_document(
     resources: &mut FontResources,
     doc: &loki_doc_model::Document,
     mode: LayoutMode,
     display_scale: f32,
+    options: &LayoutOptions,
 ) -> DocumentLayout {
     match mode {
         LayoutMode::Paginated => {
@@ -79,7 +107,7 @@ pub fn layout_document(
                 // as-is (no re-binning). This fixes the margins.top offset
                 // bug described in ADR 004 §Context B.3.
                 let FlowOutput::Pages { mut pages, .. } =
-                    flow_section(resources, section, &doc.styles, &mode, display_scale)
+                    flow_section(resources, section, &doc.styles, &mode, display_scale, options)
                 else {
                     unreachable!("flow_section in Paginated mode always returns Pages");
                 };
@@ -115,7 +143,7 @@ pub fn layout_document(
 
             for section in &doc.sections {
                 let FlowOutput::Canvas { mut items, height, .. } =
-                    flow_section(resources, section, &doc.styles, &mode, display_scale)
+                    flow_section(resources, section, &doc.styles, &mode, display_scale, options)
                 else {
                     unreachable!("flow_section in non-paginated mode always returns Canvas");
                 };

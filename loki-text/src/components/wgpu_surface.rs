@@ -50,7 +50,7 @@ use dioxus::native::use_wgpu;
 use dioxus::prelude::*;
 use kurbo::Rect;
 use loki_doc_model::document::Document;
-use loki_layout::{layout_document, DocumentLayout, FontResources, LayoutMode};
+use loki_layout::{layout_document, DocumentLayout, FontResources, LayoutMode, LayoutOptions};
 use loki_theme::tokens;
 
 use crate::components::document_source::{DocumentState, LokiDocumentSource};
@@ -194,6 +194,7 @@ pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
                 doc,
                 LayoutMode::Paginated,
                 1.0,
+                &LayoutOptions::default(),
             );
             match &layout {
                 DocumentLayout::Paginated(pl) => {

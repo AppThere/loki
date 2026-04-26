@@ -25,6 +25,7 @@ use loki_primitives::units::Points;
 use crate::font::FontResources;
 use crate::items::PositionedItem;
 use crate::mode::LayoutMode;
+use crate::LayoutOptions;
 
 /// Helper: run flow_section in Pageless mode and return (items, height, warnings).
 fn flow_pageless(
@@ -32,7 +33,7 @@ fn flow_pageless(
     section: &Section,
 ) -> (Vec<PositionedItem>, f32, Vec<LayoutWarning>) {
     let catalog = StyleCatalog::new();
-    match flow_section(r, section, &catalog, &LayoutMode::Pageless, 1.0) {
+    match flow_section(r, section, &catalog, &LayoutMode::Pageless, 1.0, &LayoutOptions::default()) {
         FlowOutput::Canvas { items, height, warnings } => (items, height, warnings),
         _ => panic!("expected Canvas output"),
     }
@@ -44,7 +45,7 @@ fn flow_paginated(
     section: &Section,
 ) -> (Vec<crate::result::LayoutPage>, Vec<LayoutWarning>) {
     let catalog = StyleCatalog::new();
-    match flow_section(r, section, &catalog, &LayoutMode::Paginated, 1.0) {
+    match flow_section(r, section, &catalog, &LayoutMode::Paginated, 1.0, &LayoutOptions::default()) {
         FlowOutput::Pages { pages, warnings } => (pages, warnings),
         _ => panic!("expected Pages output"),
     }
@@ -555,7 +556,7 @@ fn flow_with_catalog(
     section: &Section,
     catalog: &StyleCatalog,
 ) -> (Vec<PositionedItem>, f32, Vec<LayoutWarning>) {
-    match flow_section(r, section, catalog, &LayoutMode::Pageless, 1.0) {
+    match flow_section(r, section, catalog, &LayoutMode::Pageless, 1.0, &LayoutOptions::default()) {
         FlowOutput::Canvas { items, height, warnings } => (items, height, warnings),
         _ => panic!("expected Canvas"),
     }

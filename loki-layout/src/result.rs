@@ -8,8 +8,30 @@
 //! [`PaginatedLayout`] (multiple fixed-size pages) or a [`ContinuousLayout`]
 //! (a single infinite canvas).
 
+use std::sync::Arc;
+
 use crate::geometry::{LayoutInsets, LayoutRect, LayoutSize};
 use crate::items::PositionedItem;
+use crate::para::ParagraphLayout;
+
+/// Per-page editing data that maps page-local coordinates to paragraph layouts.
+///
+/// Only populated when `LayoutOptions::preserve_for_editing` is `true`.
+/// Indexed in the same order as `LayoutPage::content_items`.
+#[derive(Debug, Clone)]
+pub struct PageEditingData {
+    /// `Arc`-wrapped `ParagraphLayout` for each content item on the page,
+    /// in the same order as `LayoutPage::content_items`.
+    ///
+    /// An entry is `None` when the corresponding content item is not a
+    /// paragraph (e.g. a table cell placeholder from a prior pipeline stage).
+    pub paragraph_layouts: Vec<Option<Arc<ParagraphLayout>>>,
+    /// Page-local `(x, y)` origin of each paragraph, in points.
+    ///
+    /// Used by the editing layer to translate a page-local pointer position
+    /// into paragraph-local coordinates before calling `hit_test_point`.
+    pub paragraph_origins: Vec<(f32, f32)>,
+}
 
 /// The result of laying out a document.
 #[non_exhaustive]
@@ -94,6 +116,12 @@ pub struct LayoutPage {
     pub header_height: f32,
     /// Rendered height of the footer content in points (0.0 if no footer).
     pub footer_height: f32,
+    /// Paragraph layout data for hit testing and cursor positioning.
+    ///
+    /// `None` when `LayoutOptions::preserve_for_editing` was `false`
+    /// (read-only mode). When `Some`, each entry corresponds to a paragraph
+    /// placed on this page, in the same order they were flowed.
+    pub editing_data: Option<PageEditingData>,
 }
 
 impl LayoutPage {
@@ -165,6 +193,7 @@ mod tests {
             footer_items: vec![],
             header_height: 0.0,
             footer_height: 0.0,
+            editing_data: None,
         };
         let page2 = LayoutPage {
             page_number: 2,
@@ -175,6 +204,7 @@ mod tests {
             footer_items: vec![make_filled(30.0)],
             header_height: 0.0,
             footer_height: 0.0,
+            editing_data: None,
         };
         let layout = DocumentLayout::Paginated(PaginatedLayout {
             page_size: LayoutSize::new(595.0, 842.0),
@@ -195,6 +225,7 @@ mod tests {
             footer_items: vec![],
             header_height: 0.0,
             footer_height: 0.0,
+            editing_data: None,
         };
         let cr = page.content_rect();
         assert_eq!(cr.x(), 72.0);
@@ -214,6 +245,7 @@ mod tests {
             footer_items: vec![],
             header_height: 0.0,
             footer_height: 0.0,
+            editing_data: None,
         };
         let layout = DocumentLayout::Paginated(PaginatedLayout {
             page_size: LayoutSize::new(595.0, 842.0),

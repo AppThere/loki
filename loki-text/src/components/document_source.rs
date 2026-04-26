@@ -72,7 +72,7 @@ use anyrender_vello::wgpu::{
 use anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle};
 use kurbo::Rect;
 use loki_doc_model::document::Document;
-use loki_layout::{layout_document, DocumentLayout, FontResources, LayoutMode};
+use loki_layout::{layout_document, DocumentLayout, FontResources, LayoutMode, LayoutOptions};
 use loki_vello::{paint_layout, FontDataCache};
 use peniko::Color;
 use vello::{AaConfig, AaSupport, RenderParams, RendererOptions, Scene};
@@ -301,7 +301,7 @@ impl CustomPaintSource for LokiDocumentSource {
             // passing the device scale here would apply it twice (Parley 0.6.0
             // already multiplies font sizes by display_scale internally).
             let layout =
-                layout_document(font_resources, &doc, LayoutMode::Paginated, 1.0);
+                layout_document(font_resources, &doc, LayoutMode::Paginated, 1.0, &LayoutOptions::default());
             let page_count = match &layout {
                 DocumentLayout::Paginated(pl) => pl.pages.len(),
                 _ => 0,
@@ -424,7 +424,7 @@ mod tests {
     fn make_cached_layout(generation: u64) -> CachedLayout {
         let doc = Document::new();
         let mut resources = FontResources::new();
-        let layout = layout_document(&mut resources, &doc, LayoutMode::Paginated, 1.0);
+        let layout = layout_document(&mut resources, &doc, LayoutMode::Paginated, 1.0, &LayoutOptions::default());
         CachedLayout {
             generation,
             canvas_width: 0.0,

@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use loki_doc_model::style::list_style::{BulletChar, ListId, ListLevel, ListLevelKind, NumberingScheme};
 use parley::{
-    Alignment, AlignmentOptions, FontFamily, FontStyle, FontWeight, InlineBox, LineHeight,
+    Alignment, AlignmentOptions, Cursor, FontFamily, FontStyle, FontWeight, InlineBox, LineHeight,
     PositionedLayoutItem, RangedBuilder, StyleProperty,
 };
 
@@ -269,8 +269,48 @@ impl Default for ResolvedParaProps {
     }
 }
 
+// ── Hit-testing result types ──────────────────────────────────────────────────
+
+/// Cursor affinity — which side of a character cluster a cursor sits on.
+///
+/// Mirrors `parley::Affinity` but defined in our public API so callers
+/// need not depend on the Parley crate directly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Affinity {
+    /// The cursor sits on the upstream (trailing) edge of the cluster.
+    Upstream,
+    /// The cursor sits on the downstream (leading) edge of the cluster.
+    Downstream,
+}
+
+/// Result of a hit test against a paragraph.
+///
+/// All positions are in paragraph-local coordinates.
+#[derive(Debug, Clone, Copy)]
+pub struct HitTestResult {
+    /// Byte offset into the paragraph's text content.
+    pub byte_offset: usize,
+    /// Whether the hit falls on the leading or trailing edge of the glyph cluster.
+    pub affinity: Affinity,
+    /// Zero-based index of the line containing the hit point.
+    pub line_index: usize,
+}
+
+/// Visual rectangle for a cursor at a given byte offset.
+///
+/// All positions are in paragraph-local coordinates (points).
+#[derive(Debug, Clone, Copy)]
+pub struct CursorRect {
+    /// X position of the cursor's left edge in paragraph-local coordinates.
+    pub x: f32,
+    /// Y position of the cursor's top edge in paragraph-local coordinates.
+    pub y: f32,
+    /// Cursor height (typically the line height).
+    pub height: f32,
+}
+
 /// The measured result of laying out one paragraph.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ParagraphLayout {
     /// Total height of this paragraph including internal line spacing.
     /// Does **not** include [`ResolvedParaProps::space_before`] /
@@ -294,6 +334,70 @@ pub struct ParagraphLayout {
     /// to avoid rendering clipped content to the GPU once the Option A baseline
     /// is stable and profiled.
     pub line_boundaries: Vec<(f32, f32)>,
+    /// Parley layout object retained for hit testing and cursor positioning.
+    ///
+    /// `None` in read-only rendering mode (when `preserve_for_editing` is
+    /// `false` on the `layout_paragraph` call). Populated only when the caller
+    /// opts in so that long read-only documents pay no memory cost.
+    ///
+    /// Wrapped in `Arc` so `ParagraphLayout` remains cheaply cloneable when
+    /// the editing layer shares layouts across the page editing index.
+    pub parley_layout: Option<Arc<parley::Layout<LayoutColor>>>,
+}
+
+impl std::fmt::Debug for ParagraphLayout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ParagraphLayout")
+            .field("height", &self.height)
+            .field("width", &self.width)
+            .field("items", &self.items)
+            .field("first_baseline", &self.first_baseline)
+            .field("last_baseline", &self.last_baseline)
+            .field("line_boundaries", &self.line_boundaries)
+            .field("parley_layout", &self.parley_layout.as_ref().map(|_| "<Layout>"))
+            .finish()
+    }
+}
+
+impl ParagraphLayout {
+    /// Returns the character byte offset closest to the given point in
+    /// paragraph-local coordinates.
+    ///
+    /// Returns `None` when hit-test data is not available, i.e. when the
+    /// layout was produced with `preserve_for_editing: false` (read-only mode).
+    pub fn hit_test_point(&self, x: f32, y: f32) -> Option<HitTestResult> {
+        let layout = self.parley_layout.as_deref()?;
+        let cursor = Cursor::from_point(layout, x, y);
+        let byte_offset = cursor.index();
+        let affinity = match cursor.affinity() {
+            parley::Affinity::Upstream => Affinity::Upstream,
+            parley::Affinity::Downstream => Affinity::Downstream,
+        };
+        // Derive the line index from `line_boundaries`: find the first line
+        // whose `max_coord` is strictly above the hit y, or clamp to the last line.
+        let line_index = self
+            .line_boundaries
+            .iter()
+            .position(|&(_, max_y)| y < max_y)
+            .unwrap_or_else(|| self.line_boundaries.len().saturating_sub(1));
+        Some(HitTestResult { byte_offset, affinity, line_index })
+    }
+
+    /// Returns the visual rectangle for a cursor at the given byte offset in
+    /// paragraph-local coordinates.
+    ///
+    /// Returns `None` when hit-test data is not available (read-only mode).
+    /// When `byte_offset` is out of range it is clamped to the nearest valid
+    /// position by Parley.
+    pub fn cursor_rect(&self, byte_offset: usize) -> Option<CursorRect> {
+        let layout = self.parley_layout.as_deref()?;
+        let cursor = Cursor::from_byte_index(layout, byte_offset, parley::Affinity::Downstream);
+        // width=1.0 requests a 1-point wide caret geometry.
+        let bb = cursor.geometry(layout, 1.0);
+        let y = bb.y0 as f32;
+        let height = (bb.y1 - bb.y0) as f32;
+        Some(CursorRect { x: bb.x0 as f32, y, height })
+    }
 }
 
 // ── Tab stop helpers (gap #7) ─────────────────────────────────────────────────
@@ -388,6 +492,12 @@ fn push_para_styles(
 /// maps byte ranges to resolved character properties. `available_width` is
 /// the maximum line width in points. `display_scale` is the HiDPI scale
 /// factor (use `1.0` for layout-only / headless use).
+///
+/// When `preserve_for_editing` is `true`, the Parley `Layout` object is
+/// retained in [`ParagraphLayout::parley_layout`] so that subsequent editing
+/// sessions can call [`ParagraphLayout::hit_test_point`] and
+/// [`ParagraphLayout::cursor_rect`]. In read-only rendering mode pass
+/// `false` to avoid the memory cost on large documents.
 pub fn layout_paragraph(
     resources: &mut FontResources,
     text_content: &str,
@@ -395,6 +505,7 @@ pub fn layout_paragraph(
     para_props: &ResolvedParaProps,
     available_width: f32,
     display_scale: f32,
+    preserve_for_editing: bool,
 ) -> ParagraphLayout {
     if text_content.is_empty() {
         return ParagraphLayout {
@@ -404,6 +515,7 @@ pub fn layout_paragraph(
             first_baseline: 0.0,
             last_baseline: 0.0,
             line_boundaries: vec![],
+            parley_layout: None,
         };
     }
 
@@ -632,7 +744,13 @@ pub fn layout_paragraph(
         }));
     }
 
-    ParagraphLayout { height: total_height, width: total_width, items, first_baseline, last_baseline, line_boundaries }
+    let parley_layout = if preserve_for_editing {
+        Some(Arc::new(layout))
+    } else {
+        None
+    };
+
+    ParagraphLayout { height: total_height, width: total_width, items, first_baseline, last_baseline, line_boundaries, parley_layout }
 }
 
 // ── List marker synthesis ─────────────────────────────────────────────────────
