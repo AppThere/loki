@@ -97,7 +97,7 @@ fn map_block(block: &Block, index: usize, map: &LoroMap) -> Result<(), BridgeErr
                 map_para_props(para_props, &props_map)?;
             }
             // Add direct_char_props if present
-            if let Some(char_props) = &para.direct_char_props {
+            if let Some(_char_props) = &para.direct_char_props {
                 let _props_map = map.insert_container(KEY_DIRECT_CHAR_PROPS, LoroMap::new())?;
                 // In full implementation we might map CharProps flat into here.
             }
@@ -414,11 +414,11 @@ fn reconstruct_inlines(map: &LoroMap) -> Result<Vec<Inline>, BridgeError> {
                         let mut has_props = false;
                         
                         // Try to parse boolean marks
-                        if let Some(v) = attrs.get(MARK_BOLD) { 
+                        if let Some(_v) = attrs.get(MARK_BOLD) { 
                             props.bold = Some(true); // Since it was in the map as truthy
                             has_props = true;
                         }
-                        if let Some(v) = attrs.get(MARK_ITALIC) { 
+                        if let Some(_v) = attrs.get(MARK_ITALIC) { 
                             props.italic = Some(true);
                             has_props = true;
                         }

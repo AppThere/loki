@@ -101,10 +101,10 @@ fn map_level_kind(
     match num_fmt {
         "bullet" => {
             let bullet_char = match lvl_text {
-                Some("•") | Some("\u{2022}") => BulletChar::Char('•'),
-                Some("–") | Some("\u{2013}") => BulletChar::Char('–'),
-                Some("○") | Some("\u{25CB}") => BulletChar::Char('○'),
-                Some("▪") | Some("\u{25AA}") => BulletChar::Char('▪'),
+                Some("•") => BulletChar::Char('•'),
+                Some("–") => BulletChar::Char('–'),
+                Some("○") => BulletChar::Char('○'),
+                Some("▪") => BulletChar::Char('▪'),
                 Some(s) => {
                     // Take first Unicode scalar; fall back to bullet.
                     BulletChar::Char(s.chars().next().unwrap_or('•'))

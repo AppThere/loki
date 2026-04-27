@@ -3,11 +3,8 @@ use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::{Inline, StyledRun};
 use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::style::props::char_props::CharProps;
-use loki_doc_model::layout::section::Section;
 use loki_doc_model::loro_bridge::document_to_loro;
-use loki_doc_model::loro_schema::*;
 use loki_primitives::color::DocumentColor;
-use loro::{LoroDoc, LoroList, LoroMap, LoroText, LoroMovableList, LoroValue};
 
 fn doc_to_json_string(doc: &Document) -> String {
     let loro = document_to_loro(doc).expect("should convert");

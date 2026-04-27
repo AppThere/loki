@@ -189,6 +189,7 @@ fn page_breaks_produce_multiple_layout_pages() {
         &result.document,
         LayoutMode::Paginated,
         1.0,
+        &loki_layout::LayoutOptions::default(),
     );
 
     let loki_layout::DocumentLayout::Paginated(paginated) = layout else {
@@ -220,6 +221,7 @@ fn layout_assigns_header_footer_per_page() {
         &result.document,
         LayoutMode::Paginated,
         1.0,
+        &loki_layout::LayoutOptions::default(),
     );
 
     let loki_layout::DocumentLayout::Paginated(paginated) = layout else {

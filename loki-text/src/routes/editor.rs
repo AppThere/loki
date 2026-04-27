@@ -72,7 +72,7 @@ use crate::utils::display_title_from_path;
 pub fn Editor(path: String) -> Element {
     let title = display_title_from_path(&path);
 
-    let mut editor_mode = use_signal(|| EditorMode::Reading);
+    let editor_mode = use_signal(|| EditorMode::Reading);
     let mut loro_doc: Signal<Option<loro::LoroDoc>> = use_signal(|| None);
 
     // Kick off the document-loading pipeline.  The future is async but all

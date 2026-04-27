@@ -8,8 +8,6 @@ use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::style::catalog::{StyleCatalog, StyleId};
 use loki_doc_model::style::char_style::CharacterStyle;
 use loki_doc_model::style::para_style::ParagraphStyle;
-use loki_doc_model::style::props::char_props::CharProps;
-use loki_doc_model::style::props::para_props::ParaProps;
 
 use crate::odt::mapper::props::{map_para_props, map_text_props};
 use crate::odt::model::styles::{OdfStyleFamily, OdfStylesheet};
