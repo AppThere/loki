@@ -52,3 +52,4 @@ kurbo           = "0.12"
 # dlopen mode is in effect.
 fontique        = { version = "0.8", features = ["fontconfig-dlopen"] }
 loro = "1.11.1"
+unicode-segmentation = "1"

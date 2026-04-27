@@ -28,6 +28,7 @@ pub mod error;
 pub mod flow;
 pub mod font;
 pub mod geometry;
+pub mod incremental;
 pub mod items;
 pub mod mode;
 pub mod para;
@@ -43,6 +44,7 @@ pub use items::{
     PositionedItem, PositionedRect,
 };
 pub use flow::{flow_section, FlowOutput, LayoutWarning};
+pub use incremental::{incremental_layout, IncrementalLayoutResult};
 pub use font::FontResources;
 pub use mode::LayoutMode;
 pub use para::{

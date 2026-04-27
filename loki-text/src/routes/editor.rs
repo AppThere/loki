@@ -46,6 +46,7 @@ use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 use loki_doc_model::io::DocumentImport;
 use loki_doc_model::loro_bridge::derive_loro_cursor;
+use loki_doc_model::loro_mutation::{delete_text, get_paragraph_text, insert_text};
 use loki_file_access::FileAccessToken;
 use loki_odf::odt::import::{OdtImport, OdtImportOptions};
 use loki_ooxml::docx::import::{DocxImport, DocxImportOptions};
@@ -55,7 +56,7 @@ use loki_theme::tokens;
 use crate::components::document_source::DocumentState;
 use crate::components::toolbar::{BottomToolbar, TopToolbar};
 use crate::components::wgpu_surface::WgpuSurface;
-use crate::editing::cursor::CursorState;
+use crate::editing::cursor::{prev_grapheme_boundary, next_grapheme_boundary, CursorState, DocumentPosition};
 use crate::editing::hit_test::hit_test_document;
 
 #[derive(Clone, PartialEq, Copy)]
@@ -228,6 +229,7 @@ pub fn Editor(path: String) -> Element {
     // Pre-clone the Arc so each move closure owns an independent reference.
     let doc_state_down = Arc::clone(&doc_state);
     let doc_state_move = Arc::clone(&doc_state);
+    let doc_state_kbd = Arc::clone(&doc_state);
 
     rsx! {
         div {
@@ -251,6 +253,110 @@ pub fn Editor(path: String) -> Element {
                     bg = tokens::COLOR_SURFACE_BASE,
                     p  = tokens::SPACE_6,
                 ),
+                // tabindex makes the scroll container focusable so onkeydown fires.
+                tabindex: "0",
+
+                // ── Keyboard handler for text insertion / deletion ─────────────
+                //
+                // Guarded on EditorMode::Editing; no-op in read-only mode.
+                // Relies on the LoroDoc having been initialised by the use_effect
+                // below (document_to_loro).  Mutations update the LoroDoc then
+                // re-derive the Document snapshot and bump doc_state.generation so
+                // that LokiDocumentSource::render() picks up the change on the
+                // next frame.
+                //
+                // MVP limitation: single-section documents only.
+                // paragraph_index from DocumentPosition is used directly as the
+                // block_index within section 0.
+                onkeydown: move |evt| {
+                    if editor_mode() != EditorMode::Editing { return; }
+
+                    let Some(focus) = cursor_state.read().focus.clone() else { return; };
+                    // MVP: single-section assumption — paragraph_index == block_index.
+                    let block_idx = focus.paragraph_index;
+
+                    match evt.key() {
+                        Key::Character(s) if !s.is_empty() => {
+                            let new_pos = {
+                                let guard = loro_doc.read();
+                                let Some(ldoc) = guard.as_ref() else { return; };
+                                if let Err(e) = insert_text(ldoc, 0, block_idx, focus.byte_offset, &s) {
+                                    tracing::warn!("insert_text failed: {e}");
+                                    return;
+                                }
+                                match loki_doc_model::loro_bridge::loro_to_document(ldoc) {
+                                    Ok(new_doc) => {
+                                        if let Ok(mut state) = doc_state_kbd.lock() {
+                                            state.document = Some(new_doc);
+                                            state.generation = state.generation.wrapping_add(1);
+                                        }
+                                    }
+                                    Err(e) => tracing::warn!("loro_to_document failed: {e}"),
+                                }
+                                DocumentPosition {
+                                    page_index: focus.page_index,
+                                    paragraph_index: focus.paragraph_index,
+                                    byte_offset: focus.byte_offset + s.len(),
+                                }
+                            };
+                            cursor_state.write().anchor = Some(new_pos.clone());
+                            cursor_state.write().focus = Some(new_pos);
+                        }
+                        Key::Backspace => {
+                            if focus.byte_offset == 0 { return; }
+                            let new_pos = {
+                                let guard = loro_doc.read();
+                                let Some(ldoc) = guard.as_ref() else { return; };
+                                let Ok(text) = get_paragraph_text(ldoc, 0, block_idx) else { return; };
+                                let prev = prev_grapheme_boundary(&text, focus.byte_offset);
+                                let del_len = focus.byte_offset - prev;
+                                if let Err(e) = delete_text(ldoc, 0, block_idx, prev, del_len) {
+                                    tracing::warn!("delete_text (backspace) failed: {e}");
+                                    return;
+                                }
+                                match loki_doc_model::loro_bridge::loro_to_document(ldoc) {
+                                    Ok(new_doc) => {
+                                        if let Ok(mut state) = doc_state_kbd.lock() {
+                                            state.document = Some(new_doc);
+                                            state.generation = state.generation.wrapping_add(1);
+                                        }
+                                    }
+                                    Err(e) => tracing::warn!("loro_to_document failed: {e}"),
+                                }
+                                DocumentPosition {
+                                    page_index: focus.page_index,
+                                    paragraph_index: focus.paragraph_index,
+                                    byte_offset: prev,
+                                }
+                            };
+                            cursor_state.write().anchor = Some(new_pos.clone());
+                            cursor_state.write().focus = Some(new_pos);
+                        }
+                        Key::Delete => {
+                            let guard = loro_doc.read();
+                            let Some(ldoc) = guard.as_ref() else { return; };
+                            let Ok(text) = get_paragraph_text(ldoc, 0, block_idx) else { return; };
+                            if focus.byte_offset >= text.len() { return; }
+                            let next = next_grapheme_boundary(&text, focus.byte_offset);
+                            let del_len = next - focus.byte_offset;
+                            if let Err(e) = delete_text(ldoc, 0, block_idx, focus.byte_offset, del_len) {
+                                tracing::warn!("delete_text (delete-fwd) failed: {e}");
+                                return;
+                            }
+                            match loki_doc_model::loro_bridge::loro_to_document(ldoc) {
+                                Ok(new_doc) => {
+                                    if let Ok(mut state) = doc_state_kbd.lock() {
+                                        state.document = Some(new_doc);
+                                        state.generation = state.generation.wrapping_add(1);
+                                    }
+                                }
+                                Err(e) => tracing::warn!("loro_to_document failed: {e}"),
+                            }
+                            // Cursor stays at the same byte_offset.
+                        }
+                        _ => {}
+                    }
+                },
 
                 // ── Pointer event handlers for cursor / selection ──────────────
                 //
