@@ -43,14 +43,20 @@
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 use loki_doc_model::io::DocumentImport;
+use loki_doc_model::loro_bridge::derive_loro_cursor;
 use loki_file_access::FileAccessToken;
 use loki_odf::odt::import::{OdtImport, OdtImportOptions};
 use loki_ooxml::docx::import::{DocxImport, DocxImportOptions};
+use loki_layout::LayoutOptions;
 use loki_theme::tokens;
 
 use crate::components::toolbar::{BottomToolbar, TopToolbar};
 use crate::components::wgpu_surface::WgpuSurface;
-use loki_layout::LayoutOptions;
+use crate::editing::cursor::{CursorState, DocumentPosition};
+// hit_test_document is available for direct use once layout caching is wired in.
+// TODO(cursor-layout-access): use hit_test_document directly via cached layout.
+#[allow(unused_imports)]
+use crate::editing::hit_test::hit_test_document;
 
 #[derive(Clone, PartialEq, Copy)]
 pub enum EditorMode { Reading, Editing }
@@ -74,6 +80,27 @@ pub fn Editor(path: String) -> Element {
 
     let editor_mode = use_signal(|| EditorMode::Reading);
     let mut loro_doc: Signal<Option<loro::LoroDoc>> = use_signal(|| None);
+
+    // ── Cursor / selection state ──────────────────────────────────────────────
+    let mut cursor_state: Signal<CursorState> = use_signal(CursorState::new);
+    let mut is_dragging: Signal<bool> = use_signal(|| false);
+
+    // Canvas origin in window-relative CSS pixels (Strategy C — calculated).
+    //
+    // canvas_origin.y is exact: TOOLBAR_HEIGHT_TOP + SPACE_6 (top padding of
+    // the scroll container).
+    //
+    // canvas_origin.x depends on the window inner width, which Blitz/Dioxus
+    // native does not yet expose to Dioxus components (no window-size hook).
+    // A default of 1280 px is assumed; update `window_width` when a resize
+    // API becomes available.
+    //
+    // TODO(window-size): subscribe to window resize events and update
+    // `window_width` once Blitz exposes inner_size to Dioxus components.
+    let window_width: Signal<f32> = use_signal(|| 1280.0_f32);
+    // scroll_offset is always 0.0: Blitz does not expose node.scroll_offset
+    // to Dioxus components (see wgpu_surface.rs TODO(partial-render)).
+    let scroll_offset: Signal<f32> = use_signal(|| 0.0_f32);
 
     // Kick off the document-loading pipeline.  The future is async but all
     // I/O is synchronous under the hood; a spawn_blocking wrapper would be
@@ -103,6 +130,21 @@ pub fn Editor(path: String) -> Element {
         EditorMode::Reading  => LayoutOptions::default(),
         EditorMode::Editing  => LayoutOptions { preserve_for_editing: true },
     };
+
+    // ── Canvas origin (Strategy C) ────────────────────────────────────────────
+    // The canvas is flex-centered within the full-width scroll container.
+    // canvas_origin.x = (window_width - page_width_px) / 2
+    // canvas_origin.y = TOOLBAR_HEIGHT_TOP + SPACE_6  (top padding of scroll container)
+    //
+    // page_width_px is approximated with the A4 default; a loaded document will
+    // typically match this or be close enough for the MVP.  A future improvement
+    // can read the actual page dimensions from the layout result.
+    let canvas_origin_y = tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6;
+    let canvas_origin_x = (window_width() - tokens::PAGE_WIDTH_PX) / 2.0;
+    let canvas_origin = (canvas_origin_x, canvas_origin_y);
+    let page_width_px = tokens::PAGE_WIDTH_PX;
+    let page_height_px = tokens::PAGE_HEIGHT_PX;
+    let page_gap_px = tokens::PAGE_GAP_PX;
 
     // ── Scroll container height ───────────────────────────────────────────────
     //
@@ -188,13 +230,88 @@ pub fn Editor(path: String) -> Element {
                     p  = tokens::SPACE_6,
                 ),
 
+                // ── Pointer event handlers for cursor / selection ──────────────
+                //
+                // All three handlers guard on EditorMode::Editing so no cursor
+                // state is modified in read-only mode.  client_coordinates()
+                // provides window-relative CSS logical pixels (Strategy C).
+
+                onmousedown: move |evt| {
+                    if editor_mode() != EditorMode::Editing {
+                        return;
+                    }
+                    is_dragging.set(true);
+
+                    if let Some(doc_layout) = document_load
+                        .value()
+                        .read_unchecked()
+                        .as_ref()
+                        .and_then(|r| r.as_ref().ok())
+                        .map(|_| ())
+                    {
+                        let _ = doc_layout; // layout lives in DocumentState; hit-test uses it below
+                    }
+
+                    // Perform hit test only when we have a paginated layout with editing data.
+                    // The layout is computed with preserve_for_editing=true in Editing mode.
+                    let coords = evt.client_coordinates();
+                    let pos = if let Some(Ok(_doc)) = &*document_load.value().read_unchecked() {
+                        // Build a temporary layout to hit-test against.
+                        // In a future iteration this will be replaced by reading
+                        // the cached layout from DocumentState directly.
+                        // For now we use the known page dimensions and rely on the
+                        // layout stored in DocumentState being up to date.
+                        // We can't access DocumentState's cached layout here without
+                        // threading it through more state — use a stub for this call.
+                        // The actual hit testing path is fully implemented in
+                        // editing::hit_test; it just needs the PaginatedLayout.
+                        // TODO(cursor-layout-access): thread the cached PaginatedLayout
+                        // from DocumentState to the editor route for direct hit testing.
+                        None::<DocumentPosition>
+                    } else {
+                        None
+                    };
+
+                    // If we obtained a position, update cursor state.
+                    if let Some(p) = pos {
+                        let loro_cursor = loro_doc.read().as_ref().and_then(|ldoc| {
+                            derive_loro_cursor(
+                                ldoc,
+                                p.page_index,
+                                p.paragraph_index,
+                                p.byte_offset,
+                            )
+                        });
+                        let mut cs = cursor_state.write();
+                        cs.loro_cursor = loro_cursor;
+                        cs.anchor = Some(p.clone());
+                        cs.focus = Some(p);
+                    }
+                    // Store client coords for potential future use.
+                    let _ = (coords, canvas_origin, page_width_px, page_height_px, page_gap_px, scroll_offset);
+                },
+
+                onmousemove: move |evt| {
+                    if !is_dragging() || editor_mode() != EditorMode::Editing {
+                        return;
+                    }
+                    // TODO(cursor-layout-access): same as onmousedown — needs
+                    // PaginatedLayout from DocumentState.
+                    let _ = (evt, canvas_origin, page_width_px, page_height_px, page_gap_px, scroll_offset);
+                },
+
+                onmouseup: move |_| {
+                    is_dragging.set(false);
+                },
+
                 match &*document_load.value().read_unchecked() {
                     // Resource is still running — show placeholder via WgpuSurface.
                     None => rsx! {
-                        WgpuSurface { 
-                            document: None, 
+                        WgpuSurface {
+                            document: None,
                             layout_opts: layout_opts.clone(),
-                            visible_rect: None 
+                            visible_rect: None,
+                            cursor_state: None,
                         }
                     },
 
@@ -235,11 +352,19 @@ pub fn Editor(path: String) -> Element {
                         }
                     },
 
-                    Some(Ok(doc)) => rsx! {
-                        WgpuSurface {
-                            document: Some(doc.clone()),
-                            layout_opts: layout_opts.clone(),
-                            visible_rect: None,
+                    Some(Ok(doc)) => {
+                        let cs = if editor_mode() == EditorMode::Editing {
+                            Some(cursor_state.read().clone())
+                        } else {
+                            None
+                        };
+                        rsx! {
+                            WgpuSurface {
+                                document: Some(doc.clone()),
+                                layout_opts: layout_opts.clone(),
+                                visible_rect: None,
+                                cursor_state: cs,
+                            }
                         }
                     },
                 }

@@ -9,14 +9,49 @@
 //! commands appended to a [`vello::Scene`].
 
 use vello::kurbo::Affine;
-use vello::peniko::BlendMode;
+use vello::peniko::{BlendMode, Brush, Color, Fill};
 
 use loki_layout::{
-    ContinuousLayout, DocumentLayout, LayoutColor, LayoutRect, PaginatedLayout, PositionedGlyphRun,
-    PositionedItem, PositionedRect,
+    ContinuousLayout, CursorRect, DocumentLayout, LayoutColor, LayoutRect, PaginatedLayout,
+    PositionedGlyphRun, PositionedItem, PositionedRect,
 };
 
 use crate::font_cache::FontDataCache;
+
+// ── Cursor and selection rendering types ─────────────────────────────────────
+
+/// A highlight rectangle for a selection range, in paragraph-local coordinates
+/// (points).
+#[derive(Debug, Clone, Copy)]
+pub struct SelectionRect {
+    /// X position of the rectangle's left edge in paragraph-local coordinates.
+    pub x: f32,
+    /// Y position of the rectangle's top edge in paragraph-local coordinates.
+    pub y: f32,
+    /// Width of the rectangle in points.
+    pub width: f32,
+    /// Height of the rectangle in points.
+    pub height: f32,
+}
+
+/// Cursor and selection highlight data for a single paragraph on one page.
+///
+/// All rects are in paragraph-local coordinates (points, origin at the
+/// paragraph's `(0, 0)` top-left). The painter applies the paragraph origin
+/// and page content-area offset at render time.
+#[derive(Debug, Clone)]
+pub struct CursorPaint {
+    /// Visual cursor rect, or `None` when the cursor has no position in this
+    /// paragraph.
+    pub cursor_rect: Option<CursorRect>,
+    /// Zero or more selection highlight rects.  Empty when no range selection
+    /// is active.
+    pub selection_rects: Vec<SelectionRect>,
+    /// Index of the paragraph (into `PageEditingData::paragraph_origins`) that
+    /// this data belongs to.  Used by the painter to look up the paragraph's
+    /// content-area origin.
+    pub paragraph_index: usize,
+}
 
 // ── Visual constants for paginated layout ────────────────────────────────────
 
@@ -50,6 +85,9 @@ const PAGE_BG_COLOR: LayoutColor = LayoutColor { r: 1.0, g: 1.0, b: 1.0, a: 1.0 
 ///   at the given `offset`; when `None`, render all pages stacked vertically.
 ///   Ignored for continuous layouts (all content is always painted).
 ///
+/// Cursor and selection paint data are not supported through this entry point;
+/// call [`paint_single_page`] directly when cursor rendering is needed.
+///
 /// # TODO(partial-render)
 ///
 /// `page_index` is the first step toward viewport clipping: once per-page
@@ -66,7 +104,7 @@ pub fn paint_layout(
     match layout {
         DocumentLayout::Paginated(pl) => {
             if let Some(idx) = page_index {
-                paint_single_page(scene, pl, font_cache, offset, scale, idx);
+                paint_single_page(scene, pl, font_cache, offset, scale, idx, None);
             } else {
                 paint_paginated(scene, pl, font_cache, offset, scale);
             }
@@ -84,6 +122,9 @@ pub fn paint_layout(
 /// translating items onto the full page canvas, so the caller only needs to
 /// supply the page top-left as `offset`.
 ///
+/// `cursor_paint` carries optional cursor and selection highlight data for
+/// the editing layer. Pass `None` in read-only mode — no cursor is drawn.
+///
 /// Out-of-range `page_index` values are silently ignored.
 pub fn paint_single_page(
     scene: &mut vello::Scene,
@@ -92,6 +133,7 @@ pub fn paint_single_page(
     offset: (f32, f32),
     scale: f32,
     page_index: usize,
+    cursor_paint: Option<&CursorPaint>,
 ) {
     let Some(page) = layout.pages.get(page_index) else {
         return;
@@ -145,6 +187,102 @@ pub fn paint_single_page(
     paint_items(scene, &page.content_items, font_cache, content_origin, scale);
     paint_items(scene, &page.header_items, font_cache, page_origin, scale);
     paint_items(scene, &page.footer_items, font_cache, page_origin, scale);
+
+    // Cursor and selection highlights — painted after content so they appear
+    // on top of glyphs.
+    if let Some(cp) = cursor_paint {
+        // The cursor rect and selection rects are in paragraph-local coordinates.
+        // The paragraph origin (from PageEditingData) is in content-area-local
+        // coordinates. We combine both to get the full scene offset.
+        let para_origin = page
+            .editing_data
+            .as_ref()
+            .and_then(|ed| ed.paragraph_origins.get(cp.paragraph_index))
+            .copied()
+            .unwrap_or((0.0, 0.0));
+
+        let para_offset = (
+            content_origin.0 + para_origin.0,
+            content_origin.1 + para_origin.1,
+        );
+
+        if let Some(cr) = cp.cursor_rect.as_ref() {
+            paint_cursor(scene, cr, &cp.selection_rects, para_offset, scale);
+        } else if !cp.selection_rects.is_empty() {
+            paint_cursor(
+                scene,
+                // Dummy zero-size rect when only selection highlights are needed.
+                &CursorRect { x: 0.0, y: 0.0, height: 0.0 },
+                &cp.selection_rects,
+                para_offset,
+                scale,
+            );
+        }
+    }
+}
+
+/// Paint a cursor line and optional selection highlight rects into the scene.
+///
+/// All coordinates are in paragraph-local layout points. `offset` is the
+/// paragraph's origin in scene coordinates (content-area origin + paragraph
+/// origin from `PageEditingData`). `scale` converts layout points to physical
+/// pixels.
+///
+/// The cursor is a 2-point-wide vertical line in the document accent colour.
+/// Each selection rect is a semi-transparent blue fill.
+pub fn paint_cursor(
+    scene: &mut vello::Scene,
+    cursor_rect: &CursorRect,
+    selection_rects: &[SelectionRect],
+    offset: (f32, f32),
+    scale: f32,
+) {
+    // ── Selection highlight rects ─────────────────────────────────────────────
+    // Painted before the cursor so the cursor line appears on top.
+    let sel_brush = Brush::Solid(Color::new([
+        30.0 / 255.0,
+        100.0 / 255.0,
+        200.0 / 255.0,
+        60.0 / 255.0,
+    ]));
+    for sel in selection_rects {
+        let x = (offset.0 + sel.x) * scale;
+        let y = (offset.1 + sel.y) * scale;
+        let w = sel.width * scale;
+        let h = sel.height * scale;
+        if w <= 0.0 || h <= 0.0 {
+            continue;
+        }
+        scene.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            &sel_brush,
+            None,
+            &vello::kurbo::Rect::new(x as f64, y as f64, (x + w) as f64, (y + h) as f64),
+        );
+    }
+
+    // ── Cursor line ───────────────────────────────────────────────────────────
+    // 2-point-wide vertical bar in the document accent colour.
+    if cursor_rect.height > 0.0 {
+        let x = (offset.0 + cursor_rect.x) * scale;
+        let y = (offset.1 + cursor_rect.y) * scale;
+        let h = cursor_rect.height * scale;
+        let w = 2.0 * scale;
+        let cursor_brush = Brush::Solid(Color::new([
+            30.0 / 255.0,
+            100.0 / 255.0,
+            200.0 / 255.0,
+            1.0,
+        ]));
+        scene.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            &cursor_brush,
+            None,
+            &vello::kurbo::Rect::new(x as f64, y as f64, (x + w) as f64, (y + h) as f64),
+        );
+    }
 }
 
 /// Paint a paginated layout.

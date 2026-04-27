@@ -277,6 +277,45 @@ fn map_para_props(props: &ParaProps, map: &LoroMap) -> Result<(), BridgeError> {
     Ok(())
 }
 
+/// Derives a stable Loro [`Cursor`] from a document position.
+///
+/// The cursor anchors to a Fugue element ID (not an integer offset) so it
+/// remains valid after concurrent insertions and deletions.
+///
+/// # Parameters
+///
+/// * `loro` — the live [`LoroDoc`] for this editing session.
+/// * `page_index` — zero-based page index (unused in current stub; pages are
+///   layout concepts, not Loro container boundaries).
+/// * `paragraph_index` — the paragraph's index within
+///   [`PageEditingData::paragraph_layouts`] for the given page.  This is a
+///   **page-local** index; the mapping to the global Loro block index requires
+///   a table that the layout engine does not yet expose.
+/// * `byte_offset` — byte offset into the paragraph's flattened text.
+///
+/// # Current limitations
+///
+/// This MVP returns `None` because the mapping from `(page_index,
+/// paragraph_index)` to the corresponding Loro `LoroText` container requires
+/// a block-ID lookup table that is not yet threaded through the layout
+/// pipeline. The cursor visual rendering works via `DocumentPosition`
+/// anchor/focus fields, which do not require Loro cursor resolution.
+///
+/// TODO(loro-cursor-mapping): implement once `PageEditingData` carries stable
+/// block identifiers alongside `paragraph_origins`.
+///
+/// [`Cursor`]: loro::Cursor
+pub fn derive_loro_cursor(
+    _loro: &LoroDoc,
+    _page_index: usize,
+    _paragraph_index: usize,
+    _byte_offset: usize,
+) -> Option<loro::cursor::Cursor> {
+    // TODO(loro-cursor-mapping): navigate sections[?].blocks[block_id].content
+    // (LoroText), call text.get_cursor(byte_offset, Side::Right).
+    None
+}
+
 /// Derives a Document snapshot from a LoroDoc for layout and rendering.
 /// Re-derive when the LoroDoc changes — not kept in sync automatically.
 pub fn loro_to_document(loro: &LoroDoc) -> Result<Document, BridgeError> {

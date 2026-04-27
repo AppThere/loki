@@ -40,6 +40,7 @@ fn document_state_default_has_no_document() {
         visible_rect: None,
         page_width_px: 0.0,
         page_height_px: 0.0,
+        cursor_state: None,
     };
     assert!(state.document.is_none());
     assert_eq!(state.generation, 0);
@@ -65,6 +66,7 @@ fn document_state_can_be_shared_across_threads() {
         visible_rect: None,
         page_width_px: 0.0,
         page_height_px: 0.0,
+        cursor_state: None,
     }));
     let state2 = Arc::clone(&state);
     let handle = std::thread::spawn(move || {
@@ -90,6 +92,7 @@ fn generation_is_monotone_across_document_changes() {
         visible_rect: None,
         page_width_px: 0.0,
         page_height_px: 0.0,
+        cursor_state: None,
     }));
 
     let mut prev = 0u64;

@@ -54,6 +54,7 @@ use loki_layout::{layout_document, DocumentLayout, FontResources, LayoutMode, La
 use loki_theme::tokens;
 
 use crate::components::document_source::{DocumentState, LokiDocumentSource};
+use crate::editing::cursor::CursorState;
 
 // ── WgpuSurfaceProps ──────────────────────────────────────────────────────────
 
@@ -80,6 +81,12 @@ pub struct WgpuSurfaceProps {
     /// reducing GPU work for large documents.  Leave as `None` until scroll
     /// infrastructure is implemented.
     pub visible_rect: Option<Rect>,
+
+    /// Current cursor and selection state from the editing layer.
+    ///
+    /// `None` in read-only mode. When `Some`, the GPU canvas paints a cursor
+    /// caret and optional selection highlights on top of the document content.
+    pub cursor_state: Option<CursorState>,
 }
 
 // Document does not implement PartialEq; conservatively always re-render.
@@ -145,7 +152,7 @@ fn PageCanvas(props: PageCanvasProps) -> Element {
 /// pages, an "Opening document…" placeholder is shown instead.
 #[allow(non_snake_case)]
 pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
-    let WgpuSurfaceProps { document, layout_opts, visible_rect } = props;
+    let WgpuSurfaceProps { document, layout_opts, visible_rect, cursor_state } = props;
 
     // Shared state between this component and all LokiDocumentSource instances.
     let doc_state: Arc<Mutex<DocumentState>> = use_hook(|| {
@@ -157,6 +164,7 @@ pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
             visible_rect: None,
             page_width_px: tokens::PAGE_WIDTH_PX,
             page_height_px: tokens::PAGE_HEIGHT_PX,
+            cursor_state: None,
         }))
     });
 
@@ -215,7 +223,8 @@ pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
         *page_dims_rc.borrow_mut() = new_dims;
     }
 
-    // Propagate document + visible_rect + page dimensions into shared state.
+    // Propagate document + visible_rect + cursor_state + page dimensions into
+    // shared state.
     if let Ok(mut state) = doc_state.lock() {
         if key_changed {
             state.document = document;
@@ -226,6 +235,7 @@ pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
             state.page_height_px = ph;
         }
         state.visible_rect = visible_rect;
+        state.cursor_state = cursor_state;
     }
 
     let current_page_count = *page_count_rc.borrow();
