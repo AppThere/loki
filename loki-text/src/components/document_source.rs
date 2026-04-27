@@ -73,9 +73,11 @@ use anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHa
 use kurbo::Rect;
 use loki_doc_model::document::Document;
 use loki_layout::{layout_document, DocumentLayout, FontResources, LayoutMode, LayoutOptions};
-use loki_vello::{paint_layout, FontDataCache};
+use loki_vello::{paint_layout, paint_single_page, CursorPaint, FontDataCache, SelectionRect};
 use peniko::Color;
 use vello::{AaConfig, AaSupport, RenderParams, RendererOptions, Scene};
+
+use crate::editing::cursor::CursorState;
 
 // ── Shared state ──────────────────────────────────────────────────────────────
 
@@ -105,6 +107,11 @@ pub struct DocumentState {
     /// Page height in CSS logical pixels derived from the document's `<w:pgSz>`.
     /// Falls back to A4 (1123 px) until a document is loaded.
     pub page_height_px: f32,
+    /// Current cursor and selection state from the editing layer.
+    ///
+    /// `None` in read-only mode (no cursor is painted).  Updated by the
+    /// `WgpuSurface` component whenever `cursor_state` props change.
+    pub cursor_state: Option<CursorState>,
 }
 
 // ── Cached layout ─────────────────────────────────────────────────────────────
@@ -187,6 +194,142 @@ impl LokiDocumentSource {
     }
 }
 
+// ── Cursor paint resolution ───────────────────────────────────────────────────
+
+/// Resolves a [`CursorState`] into a [`CursorPaint`] for a specific page.
+///
+/// Returns `None` when:
+/// - `cursor_state` is `None` (read-only mode),
+/// - the focus position is not on `page_index`,
+/// - `editing_data` is absent (layout was run without `preserve_for_editing`),
+/// - the paragraph's Parley layout is absent (same reason).
+fn resolve_cursor_paint(
+    cursor_state: &CursorState,
+    editing_data: &Option<loki_layout::PageEditingData>,
+    page_index: usize,
+) -> Option<CursorPaint> {
+    let focus = cursor_state.focus.as_ref()?;
+    if focus.page_index != page_index {
+        return None;
+    }
+    let ed = editing_data.as_ref()?;
+    let para_layout = ed.paragraph_layouts.get(focus.paragraph_index)?.as_ref()?;
+
+    let cursor_rect = para_layout.cursor_rect(focus.byte_offset);
+
+    // Build selection highlight rects when anchor and focus differ.
+    let selection_rects = if cursor_state.has_selection() {
+        build_selection_rects(cursor_state, ed, para_layout, page_index)
+    } else {
+        Vec::new()
+    };
+
+    Some(CursorPaint {
+        cursor_rect,
+        selection_rects,
+        paragraph_index: focus.paragraph_index,
+    })
+}
+
+/// Build selection highlight [`SelectionRect`]s for the given `CursorState`.
+///
+/// Only intra-paragraph selection (anchor and focus on the same paragraph) is
+/// supported in this MVP. Cross-paragraph selection produces no rects.
+fn build_selection_rects(
+    cursor_state: &CursorState,
+    editing_data: &loki_layout::PageEditingData,
+    para_layout: &loki_layout::ParagraphLayout,
+    page_index: usize,
+) -> Vec<SelectionRect> {
+    let anchor = match cursor_state.anchor.as_ref() {
+        Some(a) => a,
+        None => return Vec::new(),
+    };
+    let focus = match cursor_state.focus.as_ref() {
+        Some(f) => f,
+        None => return Vec::new(),
+    };
+
+    // Cross-page or cross-paragraph selection: not supported in MVP.
+    if anchor.page_index != page_index || anchor.paragraph_index != focus.paragraph_index {
+        return Vec::new();
+    }
+
+    let (start_offset, end_offset) = if anchor.byte_offset <= focus.byte_offset {
+        (anchor.byte_offset, focus.byte_offset)
+    } else {
+        (focus.byte_offset, anchor.byte_offset)
+    };
+
+    if start_offset == end_offset {
+        return Vec::new();
+    }
+
+    let start_rect = match para_layout.cursor_rect(start_offset) {
+        Some(r) => r,
+        None => return Vec::new(),
+    };
+    let end_rect = match para_layout.cursor_rect(end_offset) {
+        Some(r) => r,
+        None => return Vec::new(),
+    };
+
+    // Same line: single rect between the two cursor x positions.
+    if (start_rect.y - end_rect.y).abs() < 0.5 {
+        let x = start_rect.x.min(end_rect.x);
+        let width = (start_rect.x - end_rect.x).abs();
+        if width > 0.0 {
+            return vec![SelectionRect {
+                x,
+                y: start_rect.y,
+                width,
+                height: start_rect.height,
+            }];
+        }
+        return Vec::new();
+    }
+
+    // Multi-line selection: three rects (start-line tail, middle block, end-line head).
+    // paragraph_origins carries (x_origin, y_origin); we need paragraph width.
+    // Use the paragraph_layout width as an approximation.
+    let para_width = para_layout.width.max(1.0);
+
+    let mut rects = Vec::with_capacity(3);
+    // Start line: from start_rect.x to end of line.
+    let start_width = (para_width - start_rect.x).max(0.0);
+    if start_width > 0.0 {
+        rects.push(SelectionRect {
+            x: start_rect.x,
+            y: start_rect.y,
+            width: start_width,
+            height: start_rect.height,
+        });
+    }
+    // Middle lines: full width.
+    let middle_top = start_rect.y + start_rect.height;
+    let middle_bottom = end_rect.y;
+    if middle_bottom > middle_top {
+        rects.push(SelectionRect {
+            x: 0.0,
+            y: middle_top,
+            width: para_width,
+            height: middle_bottom - middle_top,
+        });
+    }
+    // End line: from 0 to end_rect.x.
+    if end_rect.x > 0.0 {
+        rects.push(SelectionRect {
+            x: 0.0,
+            y: end_rect.y,
+            width: end_rect.x,
+            height: end_rect.height,
+        });
+    }
+    // Suppress unused import warning when editing_data isn't used in the MVP path.
+    let _ = editing_data;
+    rects
+}
+
 // ── CustomPaintSource impl ────────────────────────────────────────────────────
 
 impl CustomPaintSource for LokiDocumentSource {
@@ -255,7 +398,7 @@ impl CustomPaintSource for LokiDocumentSource {
         // page_count back to state (can't hold an immutable borrow of
         // state.document while mutably borrowing state.page_count through the
         // same MutexGuard).
-        let (doc_opt, current_gen) = {
+        let (doc_opt, current_gen, cursor_state_opt) = {
             let state = match self.document.lock() {
                 Ok(g) => g,
                 Err(e) => {
@@ -263,7 +406,7 @@ impl CustomPaintSource for LokiDocumentSource {
                     return None;
                 }
             };
-            (state.document.clone(), state.generation)
+            (state.document.clone(), state.generation, state.cursor_state.clone())
         };
 
         // No document loaded — WgpuSurface shows a placeholder div instead.
@@ -300,8 +443,14 @@ impl CustomPaintSource for LokiDocumentSource {
             // paint_layout multiplies by `scale` to convert to physical pixels;
             // passing the device scale here would apply it twice (Parley 0.6.0
             // already multiplies font sizes by display_scale internally).
+            //
+            // preserve_for_editing=true when a cursor is active so that
+            // ParagraphLayout retains Parley data for hit testing and cursor
+            // geometry. In read-only mode, use the lighter default (false).
+            let preserve = cursor_state_opt.is_some();
+            let layout_opts = LayoutOptions { preserve_for_editing: preserve };
             let layout =
-                layout_document(font_resources, &doc, LayoutMode::Paginated, 1.0, &LayoutOptions::default());
+                layout_document(font_resources, &doc, LayoutMode::Paginated, 1.0, &layout_opts);
             let page_count = match &layout {
                 DocumentLayout::Paginated(pl) => pl.pages.len(),
                 _ => 0,
@@ -330,14 +479,36 @@ impl CustomPaintSource for LokiDocumentSource {
         // Multiplying by (96/72) converts the point coordinate space to CSS
         // pixels; Blitz's `scale` (DPR) then converts CSS pixels to physical
         // pixels, filling the physical texture exactly.
-        paint_layout(
-            &mut scene,
-            &cached.layout,
-            &mut cached.font_cache,
-            (0.0, 0.0),
-            scale as f32 * (96.0 / 72.0),
-            Some(self.page_index),
-        );
+        let render_scale = scale as f32 * (96.0 / 72.0);
+        match &cached.layout {
+            DocumentLayout::Paginated(pl) => {
+                // Resolve cursor paint for this specific page and call
+                // paint_single_page directly so cursor data can be threaded in.
+                let cursor_paint = cursor_state_opt.as_ref().and_then(|cs| {
+                    let page = pl.pages.get(self.page_index)?;
+                    resolve_cursor_paint(cs, &page.editing_data, self.page_index)
+                });
+                paint_single_page(
+                    &mut scene,
+                    pl,
+                    &mut cached.font_cache,
+                    (0.0, 0.0),
+                    render_scale,
+                    self.page_index,
+                    cursor_paint.as_ref(),
+                );
+            }
+            _ => {
+                paint_layout(
+                    &mut scene,
+                    &cached.layout,
+                    &mut cached.font_cache,
+                    (0.0, 0.0),
+                    render_scale,
+                    Some(self.page_index),
+                );
+            }
+        }
 
         // Phase 5: GPU work — borrow GPU resources mutably only after all
         // immutable self-borrows above are complete (borrow checker requires
@@ -414,6 +585,7 @@ mod tests {
                 visible_rect: None,
                 page_width_px: 0.0,
                 page_height_px: 0.0,
+                cursor_state: None,
             })),
             0,
         )
@@ -477,6 +649,7 @@ mod tests {
             visible_rect: None,
             page_width_px: 0.0,
             page_height_px: 0.0,
+            cursor_state: None,
         }));
         // Simulate the component bumping the generation counter.
         {
@@ -559,5 +732,101 @@ mod tests {
         assert!(s.device.is_none());
         assert!(s.queue.is_none());
         assert!(s.renderer.is_none());
+    }
+
+    // ── Cursor paint resolution tests ─────────────────────────────────────────
+
+    fn make_para_with_text(text: &str) -> loki_layout::ParagraphLayout {
+        let mut res = loki_layout::FontResources::new();
+        let spans = vec![loki_layout::StyleSpan {
+            range: 0..text.len(),
+            font_name: None,
+            font_size: 12.0,
+            bold: false,
+            italic: false,
+            color: loki_layout::LayoutColor::BLACK,
+            underline: None,
+            strikethrough: None,
+            line_height: None,
+            vertical_align: None,
+            highlight_color: None,
+            letter_spacing: None,
+            font_variant: None,
+            word_spacing: None,
+            shadow: false,
+            link_url: None,
+        }];
+        loki_layout::layout_paragraph(
+            &mut res,
+            text,
+            &spans,
+            &loki_layout::ResolvedParaProps::default(),
+            400.0,
+            1.0,
+            true,
+        )
+    }
+
+    fn make_editing_data_single(
+        para: loki_layout::ParagraphLayout,
+    ) -> Option<loki_layout::PageEditingData> {
+        Some(loki_layout::PageEditingData {
+            paragraph_layouts: vec![Some(Arc::new(para))],
+            paragraph_origins: vec![(0.0, 0.0)],
+        })
+    }
+
+    #[test]
+    fn cursor_paint_focus_on_page_returns_some_with_height() {
+        use crate::editing::cursor::DocumentPosition;
+        let para = make_para_with_text("Hello world");
+        let ed = make_editing_data_single(para);
+        let state = CursorState {
+            loro_cursor: None,
+            anchor: Some(DocumentPosition { page_index: 0, paragraph_index: 0, byte_offset: 0 }),
+            focus: Some(DocumentPosition { page_index: 0, paragraph_index: 0, byte_offset: 0 }),
+        };
+        let result = resolve_cursor_paint(&state, &ed, 0);
+        assert!(result.is_some(), "focus on page 0 should return Some");
+        let cr = result.unwrap().cursor_rect.expect("cursor rect present for non-empty text");
+        assert!(cr.height > 0.0, "cursor height should be positive");
+    }
+
+    #[test]
+    fn cursor_paint_focus_on_different_page_returns_none() {
+        use crate::editing::cursor::DocumentPosition;
+        let para = make_para_with_text("Hello world");
+        let ed = make_editing_data_single(para);
+        let state = CursorState {
+            loro_cursor: None,
+            anchor: None,
+            focus: Some(DocumentPosition { page_index: 1, paragraph_index: 0, byte_offset: 0 }),
+        };
+        assert!(
+            resolve_cursor_paint(&state, &ed, 0).is_none(),
+            "focus on page 1 must return None when querying page 0"
+        );
+    }
+
+    #[test]
+    fn cursor_paint_selection_produces_positive_width_rect() {
+        use crate::editing::cursor::DocumentPosition;
+        let para = make_para_with_text("Hello world");
+        let ed = make_editing_data_single(para);
+        let state = CursorState {
+            loro_cursor: None,
+            anchor: Some(DocumentPosition { page_index: 0, paragraph_index: 0, byte_offset: 0 }),
+            focus: Some(DocumentPosition { page_index: 0, paragraph_index: 0, byte_offset: 5 }),
+        };
+        let paint =
+            resolve_cursor_paint(&state, &ed, 0).expect("selection on page 0 should return Some");
+        assert!(
+            !paint.selection_rects.is_empty(),
+            "selection from byte 0..5 should produce at least one SelectionRect"
+        );
+        assert!(
+            paint.selection_rects.iter().any(|r| r.width > 0.0),
+            "at least one SelectionRect must have positive width"
+        );
     }
 }

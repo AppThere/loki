@@ -8,6 +8,7 @@
 
 pub mod app;
 pub mod components;
+pub mod editing;
 pub mod error;
 pub mod routes;
 pub mod utils;

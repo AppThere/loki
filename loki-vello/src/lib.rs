@@ -37,4 +37,7 @@ pub mod scene;
 
 pub use error::{VelloError, VelloResult};
 pub use font_cache::FontDataCache;
-pub use scene::{paint_continuous, paint_layout, paint_paginated, paint_single_page};
+pub use scene::{
+    paint_continuous, paint_cursor, paint_layout, paint_paginated, paint_single_page,
+    CursorPaint, SelectionRect,
+};
