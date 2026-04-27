@@ -51,3 +51,4 @@ kurbo           = "0.12"
 # fontique v0.8 would try to use static C function symbols that are absent when
 # dlopen mode is in effect.
 fontique        = { version = "0.8", features = ["fontconfig-dlopen"] }
+loro = "1.11.1"

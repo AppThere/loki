@@ -35,6 +35,7 @@ use dioxus::prelude::*;
 use loki_theme::tokens;
 
 use crate::routes::Route;
+use crate::routes::editor::EditorMode;
 
 // ── TopToolbar ────────────────────────────────────────────────────────────────
 
@@ -50,7 +51,7 @@ use crate::routes::Route;
 /// Uses `flex-shrink: 0` so the bar never collapses inside the editor's
 /// `flex-direction: column` container.
 #[component]
-pub fn TopToolbar(title: String) -> Element {
+pub fn TopToolbar(title: String, mut editor_mode: Signal<EditorMode>) -> Element {
     let navigator = use_navigator();
 
     let mut save_hovered  = use_signal(|| false);
@@ -155,6 +156,30 @@ pub fn TopToolbar(title: String) -> Element {
                 onmouseleave: move |_| { share_hovered.set(false); },
                 // Non-functional stub — sharing is out of scope.
                 "↗"
+            }
+
+            // Mode toggle button
+            button {
+                style: format!(
+                    "background: {bg}; border: 1px solid {border}; border-radius: 4px; \
+                     color: {fg}; font-size: {size}px; font-weight: 500; cursor: pointer; \
+                     padding: {p}px {p2}px; flex-shrink: 0; margin-left: {m}px;",
+                    bg   = if editor_mode() == EditorMode::Editing { tokens::COLOR_SURFACE_BASE } else { tokens::COLOR_SURFACE_PAGE },
+                    border = tokens::COLOR_BORDER_DEFAULT,
+                    fg   = tokens::COLOR_TEXT_PRIMARY,
+                    size = tokens::FONT_SIZE_BODY,
+                    p    = tokens::SPACE_1,
+                    p2   = tokens::SPACE_2,
+                    m    = tokens::SPACE_2,
+                ),
+                onclick: move |_| { 
+                    editor_mode.set(if editor_mode() == EditorMode::Reading {
+                        EditorMode::Editing
+                    } else {
+                        EditorMode::Reading
+                    });
+                },
+                if editor_mode() == EditorMode::Reading { "Editor Mode" } else { "Read Mode" }
             }
         }
     }

@@ -50,6 +50,10 @@ use loki_theme::tokens;
 
 use crate::components::toolbar::{BottomToolbar, TopToolbar};
 use crate::components::wgpu_surface::WgpuSurface;
+use loki_layout::LayoutOptions;
+
+#[derive(Clone, PartialEq, Copy)]
+pub enum EditorMode { Reading, Editing }
 use crate::error::LoadError;
 use crate::utils::display_title_from_path;
 
@@ -68,6 +72,9 @@ use crate::utils::display_title_from_path;
 pub fn Editor(path: String) -> Element {
     let title = display_title_from_path(&path);
 
+    let mut editor_mode = use_signal(|| EditorMode::Reading);
+    let mut loro_doc: Signal<Option<loro::LoroDoc>> = use_signal(|| None);
+
     // Kick off the document-loading pipeline.  The future is async but all
     // I/O is synchronous under the hood; a spawn_blocking wrapper would be
     // appropriate for large files once the executor supports it.
@@ -80,6 +87,22 @@ pub fn Editor(path: String) -> Element {
     };
 
     let navigator = use_navigator();
+    
+    use_effect(move || {
+        if let Some(Ok(doc)) = &*document_load.value().read_unchecked() {
+            if loro_doc().is_none() {
+                match loki_doc_model::loro_bridge::document_to_loro(doc) {
+                    Ok(l_doc) => loro_doc.set(Some(l_doc)),
+                    Err(e) => tracing::warn!("Failed to initialize Loro sync bridge: {}", e),
+                }
+            }
+        }
+    });
+
+    let layout_opts = match editor_mode() {
+        EditorMode::Reading  => LayoutOptions::default(),
+        EditorMode::Editing  => LayoutOptions { preserve_for_editing: true },
+    };
 
     // ── Scroll container height ───────────────────────────────────────────────
     //
@@ -151,7 +174,10 @@ pub fn Editor(path: String) -> Element {
             ),
 
             // ── Top toolbar (flex-shrink: 0) ───────────────────────────────────
-            TopToolbar { title }
+            TopToolbar { 
+                title: title, 
+                editor_mode: editor_mode 
+            }
 
             // ── Scroll container ──────────────────────────────────────────────
             div {
@@ -165,7 +191,11 @@ pub fn Editor(path: String) -> Element {
                 match &*document_load.value().read_unchecked() {
                     // Resource is still running — show placeholder via WgpuSurface.
                     None => rsx! {
-                        WgpuSurface { document: None, visible_rect: None }
+                        WgpuSurface { 
+                            document: None, 
+                            layout_opts: layout_opts.clone(),
+                            visible_rect: None 
+                        }
                     },
 
                     // Import pipeline failed.
@@ -205,10 +235,10 @@ pub fn Editor(path: String) -> Element {
                         }
                     },
 
-                    // Document loaded — hand to WgpuSurface for scene building.
                     Some(Ok(doc)) => rsx! {
                         WgpuSurface {
                             document: Some(doc.clone()),
+                            layout_opts: layout_opts.clone(),
                             visible_rect: None,
                         }
                     },

@@ -67,6 +67,9 @@ pub struct WgpuSurfaceProps {
     /// Document to render.  `None` shows a placeholder until loading completes.
     pub document: Option<Document>,
 
+    /// Options used for document layout generation.
+    pub layout_opts: LayoutOptions,
+
     /// Currently visible portion of the document canvas in document-space
     /// coordinates.
     ///
@@ -142,7 +145,7 @@ fn PageCanvas(props: PageCanvasProps) -> Element {
 /// pages, an "Opening document…" placeholder is shown instead.
 #[allow(non_snake_case)]
 pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
-    let WgpuSurfaceProps { document, visible_rect } = props;
+    let WgpuSurfaceProps { document, layout_opts, visible_rect } = props;
 
     // Shared state between this component and all LokiDocumentSource instances.
     let doc_state: Arc<Mutex<DocumentState>> = use_hook(|| {
@@ -194,7 +197,7 @@ pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
                 doc,
                 LayoutMode::Paginated,
                 1.0,
-                &LayoutOptions::default(),
+                &layout_opts,
             );
             match &layout {
                 DocumentLayout::Paginated(pl) => {

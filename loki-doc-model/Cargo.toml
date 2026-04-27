@@ -24,6 +24,8 @@ loki-primitives = { path = "../loki-primitives" }
 appthere-color = "0.1.1"
 thiserror = "2"
 indexmap = "2"
+loro = "1.11.1"
+tracing = "0.1"
 
 [dependencies.chrono]
 version = "0.4"

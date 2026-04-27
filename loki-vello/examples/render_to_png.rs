@@ -48,7 +48,7 @@ fn main() {
         let document = DocxImport::import(file, DocxImportOptions::default())
             .expect("DOCX import failed");
         
-        layout_document(&mut font_resources, &document, LayoutMode::Pageless, 1.0)
+        layout_document(&mut font_resources, &document, LayoutMode::Pageless, 1.0, &loki_layout::LayoutOptions::default())
     } else {
         // Fallback to a minimal layout if no input file is provided
         DocumentLayout::Continuous(ContinuousLayout {
