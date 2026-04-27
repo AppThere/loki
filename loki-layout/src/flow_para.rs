@@ -187,6 +187,14 @@ pub(super) fn place_paragraph_layout(
     para_layout: ParagraphLayout,
     block_index: usize,
 ) {
+    // Capture paragraph layout for editing before any code moves its fields.
+    // Only in paginated mode — cursor placement is not supported in continuous
+    // (pageless / reflow) mode.  Only when preserve_for_editing was requested.
+    if state.mode.is_paginated() && state.options.preserve_for_editing {
+        let origin = (state.current_indent, state.cursor_y);
+        state.current_editing_paragraphs.push((para_layout.clone(), origin));
+    }
+
     if !state.mode.is_paginated() {
         let dy = state.cursor_y;
         let dx = state.current_indent;

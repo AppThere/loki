@@ -72,7 +72,7 @@ use anyrender_vello::wgpu::{
 use anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle};
 use kurbo::Rect;
 use loki_doc_model::document::Document;
-use loki_layout::{layout_document, DocumentLayout, FontResources, LayoutMode, LayoutOptions};
+use loki_layout::{layout_document, DocumentLayout, FontResources, LayoutMode, LayoutOptions, PaginatedLayout};
 use loki_vello::{paint_layout, paint_single_page, CursorPaint, FontDataCache, SelectionRect};
 use peniko::Color;
 use vello::{AaConfig, AaSupport, RenderParams, RendererOptions, Scene};
@@ -112,6 +112,13 @@ pub struct DocumentState {
     /// `None` in read-only mode (no cursor is painted).  Updated by the
     /// `WgpuSurface` component whenever `cursor_state` props change.
     pub cursor_state: Option<CursorState>,
+    /// Most recently computed paginated layout, wrapped in `Arc` for cheap
+    /// cloning into mouse handler closures in the editor route.
+    ///
+    /// Written by `LokiDocumentSource::render()` after every layout rebuild so
+    /// that `editor.rs` mouse handlers can call `hit_test_document` without
+    /// holding the GPU render lock.  `None` until the first render completes.
+    pub paginated_layout: Option<Arc<PaginatedLayout>>,
 }
 
 // ── Cached layout ─────────────────────────────────────────────────────────────
@@ -462,10 +469,16 @@ impl CustomPaintSource for LokiDocumentSource {
                 font_cache: FontDataCache::new(),
             });
 
-            // Phase 3: Publish page_count and canvas_width to shared state.
+            // Phase 3: Publish page_count, canvas_width, and paginated_layout
+            // to shared state so editor route mouse handlers can hit-test.
             if let Ok(mut state) = self.document.lock() {
                 state.page_count = page_count;
                 state.canvas_width = canvas_width;
+                if let Some(cached) = &self.layout_cache {
+                    if let DocumentLayout::Paginated(pl) = &cached.layout {
+                        state.paginated_layout = Some(Arc::new(pl.clone()));
+                    }
+                }
             }
         }
 
@@ -586,6 +599,7 @@ mod tests {
                 page_width_px: 0.0,
                 page_height_px: 0.0,
                 cursor_state: None,
+                paginated_layout: None,
             })),
             0,
         )
@@ -650,6 +664,7 @@ mod tests {
             page_width_px: 0.0,
             page_height_px: 0.0,
             cursor_state: None,
+            paginated_layout: None,
         }));
         // Simulate the component bumping the generation counter.
         {

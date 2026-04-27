@@ -15,6 +15,7 @@
 mod para_impl;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::content::block::StyledParagraph;
@@ -30,7 +31,8 @@ use crate::geometry::{LayoutInsets, LayoutPoint, LayoutRect, LayoutSize};
 use crate::items::{PositionedBorderRect, PositionedItem, PositionedRect};
 use crate::mode::LayoutMode;
 use crate::resolve::{convert_border, pts_to_f32, resolve_color, resolve_para_props, CollectedNote};
-use crate::result::LayoutPage;
+use crate::para::ParagraphLayout;
+use crate::result::{LayoutPage, PageEditingData};
 use crate::LayoutOptions;
 
 use para_impl::{flow_keep_with_next_chain, flow_paragraph};
@@ -143,6 +145,10 @@ pub(super) struct FlowState<'a> {
     /// Footnotes and endnotes collected while flowing the current section.
     /// Rendered at the end of the section by `flow_footnotes`.
     pub(super) pending_footnotes: Vec<CollectedNote>,
+    /// Paragraph layouts accumulated for the current page, with their
+    /// content-area-local `(x, y)` origins.  Drained in `finish_page` to build
+    /// `PageEditingData`.  Only populated when `options.preserve_for_editing`.
+    pub(super) current_editing_paragraphs: Vec<(ParagraphLayout, (f32, f32))>,
 }
 
 impl<'a> FlowState<'a> {
@@ -225,6 +231,7 @@ pub fn flow_section(
         prev_list_id: None,
         note_counter: 0,
         pending_footnotes: Vec::new(),
+        current_editing_paragraphs: Vec::new(),
     };
 
     if mode.is_paginated() {
@@ -341,6 +348,23 @@ fn flow_block(state: &mut FlowState, block: &Block, idx: usize) {
 // ── Page management ───────────────────────────────────────────────────────────
 
 pub(super) fn finish_page(state: &mut FlowState) {
+    // Build editing_data from paragraphs accumulated since the last page.
+    // Only when preserve_for_editing is set — otherwise keep None (read-only mode).
+    let editing_data = if state.options.preserve_for_editing
+        && !state.current_editing_paragraphs.is_empty()
+    {
+        let mut paragraph_layouts = Vec::with_capacity(state.current_editing_paragraphs.len());
+        let mut paragraph_origins = Vec::with_capacity(state.current_editing_paragraphs.len());
+        for (pl, origin) in state.current_editing_paragraphs.drain(..) {
+            paragraph_origins.push(origin);
+            paragraph_layouts.push(Some(Arc::new(pl)));
+        }
+        Some(PageEditingData { paragraph_layouts, paragraph_origins })
+    } else {
+        state.current_editing_paragraphs.clear();
+        None
+    };
+
     let page = LayoutPage {
         page_number: state.page_number,
         page_size: state.page_size,
@@ -350,7 +374,7 @@ pub(super) fn finish_page(state: &mut FlowState) {
         footer_items: vec![],
         header_height: 0.0,
         footer_height: 0.0,
-        editing_data: None,
+        editing_data,
     };
     state.pages.push(page);
     state.page_number += 1;

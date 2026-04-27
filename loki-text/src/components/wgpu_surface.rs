@@ -87,6 +87,13 @@ pub struct WgpuSurfaceProps {
     /// `None` in read-only mode. When `Some`, the GPU canvas paints a cursor
     /// caret and optional selection highlights on top of the document content.
     pub cursor_state: Option<CursorState>,
+
+    /// Shared document state created by the editor route.
+    ///
+    /// Lifted out of `WgpuSurface` so the editor's mouse handlers can read
+    /// `paginated_layout` from the same `Arc<Mutex<DocumentState>>` that
+    /// `LokiDocumentSource` writes to after each layout rebuild.
+    pub doc_state: Arc<Mutex<DocumentState>>,
 }
 
 // Document does not implement PartialEq; conservatively always re-render.
@@ -152,21 +159,10 @@ fn PageCanvas(props: PageCanvasProps) -> Element {
 /// pages, an "Opening document…" placeholder is shown instead.
 #[allow(non_snake_case)]
 pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
-    let WgpuSurfaceProps { document, layout_opts, visible_rect, cursor_state } = props;
-
-    // Shared state between this component and all LokiDocumentSource instances.
-    let doc_state: Arc<Mutex<DocumentState>> = use_hook(|| {
-        Arc::new(Mutex::new(DocumentState {
-            document: None,
-            generation: 0,
-            page_count: 0,
-            canvas_width: 0.0,
-            visible_rect: None,
-            page_width_px: tokens::PAGE_WIDTH_PX,
-            page_height_px: tokens::PAGE_HEIGHT_PX,
-            cursor_state: None,
-        }))
-    });
+    let WgpuSurfaceProps { document, layout_opts, visible_rect, cursor_state, doc_state } = props;
+    // doc_state is created by the editor route via use_hook and passed in as a
+    // prop so the editor's mouse handlers can read paginated_layout from the
+    // same Arc<Mutex<DocumentState>> that LokiDocumentSource writes to.
 
     // Cheap comparable key for the current document.
     // Using (title, section_count) avoids deriving PartialEq on Document.
