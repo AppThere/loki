@@ -54,6 +54,12 @@ impl From<loro::LoroError> for MutationError {
 ///
 /// Path: `sections_list[0] → LoroMap → blocks[block_index] → LoroMap → "content"`
 ///
+/// **Index scheme:** For single-section documents `block_index` equals the
+/// flat block index from [`Document::block_at_flat`]. For multi-section
+/// documents use [`Document::flat_index_to_section_block`] to convert a flat
+/// index into `(section_idx, block_idx)`; this function only handles section 0
+/// until multi-section support is added (deferred, see module-level comment).
+///
 /// Returns `Err(MutationError::BlockIndexOutOfRange)` when `block_index`
 /// exceeds the number of blocks in section 0, or
 /// `Err(MutationError::TextNotFound)` when the container is absent or is not
