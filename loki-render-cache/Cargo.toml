@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
 description = "Tiered page render cache policy for Loki's Vello renderer"
+
+[features]
+default = ["mock-texture"]
+mock-texture = []
