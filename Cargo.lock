@@ -3800,6 +3800,11 @@ dependencies = [
 [[package]]
 name = "loki-render-cache"
 version = "0.1.0"
+dependencies = [
+ "pollster 0.4.0",
+ "thiserror 2.0.18",
+ "wgpu 26.0.1",
+]
 
 [[package]]
 name = "loki-text"

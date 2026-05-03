@@ -95,7 +95,7 @@ impl PageCache {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "mock-texture"))]
 mod tests {
     use super::*;
     use crate::mock_texture::MockTexture;

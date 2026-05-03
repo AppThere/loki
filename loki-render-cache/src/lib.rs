@@ -1,38 +1,46 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tiered page render cache policy for Loki's Vello renderer.
+//! Tiered page render cache for Loki's Vello renderer.
 //!
-//! This crate provides the pure-logic layer that decides which cache tier each
-//! document page belongs to based on scroll position. No GPU, no windowing —
-//! just data structures and algorithms.
+//! # Features
 //!
-//! # Overview
+//! | Feature | Effect |
+//! |---------|--------|
+//! | `mock-texture` (default) | Uses [`MockTexture`] as [`PageTexture`]. Pure-std, no GPU deps. |
+//! | `gpu` | Uses [`texture::GpuTexture`] backed by `wgpu`. Enables [`render_queue`] and [`page_source`]. |
 //!
-//! ```text
-//! ┌─────────────────────────────────────────────────────────────────┐
-//! │  Hot zone   │ 2 × viewport height centred on the visible area   │
-//! │  Warm zone  │ Hot zone ± 3 × viewport height                    │
-//! │  Cold zone  │ everything else                                    │
-//! └─────────────────────────────────────────────────────────────────┘
-//! ```
-//!
-//! When scrolling stops for [`scroll_state::SETTLE_DURATION`], the phase
-//! transitions to [`scroll_state::ScrollPhase::Settling`] and the cache
-//! should begin upgrading pages in the hot zone to full resolution via
-//! [`page_cache::PageCache::retier`].
+//! The two features are **mutually exclusive** — enabling both is a compile error.
+
+#[cfg(all(feature = "mock-texture", feature = "gpu"))]
+compile_error!("`mock-texture` and `gpu` features are mutually exclusive; \
+                disable `default-features` when enabling `gpu`");
 
 pub mod mock_texture;
 pub mod page_cache;
+pub mod page_source;
 pub mod retier;
 pub mod scroll_state;
 pub mod tier_policy;
 
+#[cfg(feature = "gpu")]
+pub mod render_queue;
+#[cfg(feature = "gpu")]
+pub mod texture;
+
 pub use mock_texture::MockTexture;
 pub use page_cache::{CachedPage, PageCache};
+pub use page_source::RenderError;
 pub use retier::RetierResult;
 pub use scroll_state::{SETTLE_DURATION, ScrollPhase, ScrollState};
 pub use tier_policy::{CacheTier, PageGeometry, assign_tier};
+
+#[cfg(feature = "gpu")]
+pub use page_source::PageSource;
+#[cfg(feature = "gpu")]
+pub use render_queue::RenderQueue;
+#[cfg(feature = "gpu")]
+pub use texture::{GpuTexture, allocate_texture, downsample_texture};
 
 /// Opaque index identifying a document page within the cache.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -40,8 +48,10 @@ pub struct PageIndex(pub u32);
 
 /// The texture type used throughout the cache.
 ///
-/// Resolves to [`MockTexture`] when the `mock-texture` feature is active
-/// (the default). Session 3 will introduce the real `wgpu::Texture` variant
-/// behind a separate feature flag.
+/// Resolves to [`MockTexture`] under `mock-texture` (default), or
+/// [`texture::GpuTexture`] under `gpu`.
 #[cfg(feature = "mock-texture")]
 pub type PageTexture = MockTexture;
+
+#[cfg(feature = "gpu")]
+pub type PageTexture = texture::GpuTexture;
