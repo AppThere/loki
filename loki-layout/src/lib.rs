@@ -53,7 +53,7 @@ pub use resolve::{
     CollectedImage, CollectedNote, emu_to_pt, flatten_paragraph, pts_to_f32,
     resolve_char_props, resolve_color, resolve_para_props,
 };
-pub use result::{ContinuousLayout, DocumentLayout, LayoutPage, PageEditingData, PaginatedLayout};
+pub use result::{ContinuousLayout, DocumentLayout, LayoutPage, PageEditingData, PageParagraphData, PaginatedLayout};
 
 /// Options that control the layout pipeline's memory / feature trade-offs.
 ///

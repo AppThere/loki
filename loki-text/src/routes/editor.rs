@@ -40,28 +40,35 @@
 //                       page_index: Option<usize>)
 //                   (called inside WgpuSurface — see components/wgpu_surface.rs)
 
+use std::sync::{Arc, Mutex};
+
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 use loki_doc_model::io::DocumentImport;
-use loki_doc_model::loro_bridge::derive_loro_cursor;
+use loki_doc_model::loro_bridge::{derive_loro_cursor, document_to_loro};
+use loki_doc_model::loro_mutation::{delete_text, get_block_text, insert_text};
 use loki_file_access::FileAccessToken;
+use loki_layout::LayoutOptions;
 use loki_odf::odt::import::{OdtImport, OdtImportOptions};
 use loki_ooxml::docx::import::{DocxImport, DocxImportOptions};
-use loki_layout::LayoutOptions;
 use loki_theme::tokens;
 
+use crate::components::document_source::{apply_mutation_and_relayout, DocumentState};
 use crate::components::toolbar::{BottomToolbar, TopToolbar};
 use crate::components::wgpu_surface::WgpuSurface;
-use crate::editing::cursor::{CursorState, DocumentPosition};
-// hit_test_document is available for direct use once layout caching is wired in.
-// TODO(cursor-layout-access): use hit_test_document directly via cached layout.
-#[allow(unused_imports)]
+use crate::editing::cursor::{
+    next_grapheme_boundary, prev_grapheme_boundary, CursorState, DocumentPosition,
+};
 use crate::editing::hit_test::hit_test_document;
-
-#[derive(Clone, PartialEq, Copy)]
-pub enum EditorMode { Reading, Editing }
 use crate::error::LoadError;
 use crate::utils::display_title_from_path;
+
+/// Editor view mode toggle.
+#[derive(Clone, PartialEq, Copy)]
+pub enum EditorMode {
+    Reading,
+    Editing,
+}
 
 /// Document editor shell component.
 ///
@@ -71,7 +78,7 @@ use crate::utils::display_title_from_path;
 ///
 /// Document loading runs asynchronously via [`use_resource`]:
 /// - **Loading** — toolbars are shown immediately; canvas shows "Opening
-///   document\u{2026}" placeholder via [`WgpuSurface`].
+///   document…" placeholder via [`WgpuSurface`].
 /// - **Error** — inline error message with a "Go back" button; no panic.
 /// - **Loaded** — document is passed to [`WgpuSurface`] for scene building.
 #[component]
@@ -81,25 +88,54 @@ pub fn Editor(path: String) -> Element {
     let editor_mode = use_signal(|| EditorMode::Reading);
     let mut loro_doc: Signal<Option<loro::LoroDoc>> = use_signal(|| None);
 
+    // ── Shared document state ─────────────────────────────────────────────────
+    //
+    // Created here (not inside WgpuSurface) so that mouse and keyboard handlers
+    // can close over the Arc and read `paginated_layout` for hit-testing, or
+    // bump `generation` after a Loro mutation to trigger a GPU re-render.
+    let doc_state: Arc<Mutex<DocumentState>> = use_hook(|| {
+        Arc::new(Mutex::new(DocumentState {
+            document: None,
+            generation: 0,
+            page_count: 0,
+            canvas_width: 0.0,
+            visible_rect: None,
+            page_width_px: tokens::PAGE_WIDTH_PX,
+            page_height_px: tokens::PAGE_HEIGHT_PX,
+            cursor_state: None,
+            paginated_layout: None,
+            preserve_for_editing: false,
+        }))
+    });
+
+    // Pre-clone the Arc once so closures below can each capture their own clone.
+    let doc_state_mousemove = Arc::clone(&doc_state);
+    let doc_state_keys = Arc::clone(&doc_state);
+    let doc_state_prop = Arc::clone(&doc_state);
+
     // ── Cursor / selection state ──────────────────────────────────────────────
     let mut cursor_state: Signal<CursorState> = use_signal(CursorState::new);
+    // `is_dragging`: mouse button is currently held down.
     let mut is_dragging: Signal<bool> = use_signal(|| false);
+    // Client-coordinate position of the most recent mousedown.  Used to gate
+    // focus updates in `onmousemove` behind a drag threshold so that tiny
+    // cursor jitter during a click does not create a spurious text selection.
+    let mut drag_origin: Signal<Option<(f32, f32)>> = use_signal(|| None);
 
-    // Canvas origin in window-relative CSS pixels (Strategy C — calculated).
+    // window_width and scroll_offset are used only by the onmousemove drag
+    // selection handler via hit_test_document.  Click placement (onmousedown)
+    // now uses element_coordinates() from the patched dioxus-native-dom and
+    // no longer needs these values.
     //
-    // canvas_origin.y is exact: TOOLBAR_HEIGHT_TOP + SPACE_6 (top padding of
-    // the scroll container).
+    // window_width: window inner width in CSS px for centering the hit-test
+    // origin.  Still defaults to 1280 because Blitz does not expose a
+    // window-resize hook to Dioxus components.
+    // TODO(window-size): update once Blitz exposes inner_size.
     //
-    // canvas_origin.x depends on the window inner width, which Blitz/Dioxus
-    // native does not yet expose to Dioxus components (no window-size hook).
-    // A default of 1280 px is assumed; update `window_width` when a resize
-    // API becomes available.
-    //
-    // TODO(window-size): subscribe to window resize events and update
-    // `window_width` once Blitz exposes inner_size to Dioxus components.
+    // scroll_offset: always 0.0 because Blitz does not route scroll events
+    // through Dioxus; drag selection will be imprecise after scrolling.
+    // TODO(partial-render): wire when Blitz exposes node.scroll_offset.
     let window_width: Signal<f32> = use_signal(|| 1280.0_f32);
-    // scroll_offset is always 0.0: Blitz does not expose node.scroll_offset
-    // to Dioxus components (see wgpu_surface.rs TODO(partial-render)).
     let scroll_offset: Signal<f32> = use_signal(|| 0.0_f32);
 
     // Kick off the document-loading pipeline.  The future is async but all
@@ -114,11 +150,11 @@ pub fn Editor(path: String) -> Element {
     };
 
     let navigator = use_navigator();
-    
+
     use_effect(move || {
         if let Some(Ok(doc)) = &*document_load.value().read_unchecked() {
             if loro_doc().is_none() {
-                match loki_doc_model::loro_bridge::document_to_loro(doc) {
+                match document_to_loro(doc) {
                     Ok(l_doc) => loro_doc.set(Some(l_doc)),
                     Err(e) => tracing::warn!("Failed to initialize Loro sync bridge: {}", e),
                 }
@@ -127,23 +163,10 @@ pub fn Editor(path: String) -> Element {
     });
 
     let layout_opts = match editor_mode() {
-        EditorMode::Reading  => LayoutOptions::default(),
-        EditorMode::Editing  => LayoutOptions { preserve_for_editing: true },
+        EditorMode::Reading => LayoutOptions::default(),
+        EditorMode::Editing => LayoutOptions { preserve_for_editing: true },
     };
 
-    // ── Canvas origin (Strategy C) ────────────────────────────────────────────
-    // The canvas is flex-centered within the full-width scroll container.
-    // canvas_origin.x = (window_width - page_width_px) / 2
-    // canvas_origin.y = TOOLBAR_HEIGHT_TOP + SPACE_6  (top padding of scroll container)
-    //
-    // page_width_px is approximated with the A4 default; a loaded document will
-    // typically match this or be close enough for the MVP.  A future improvement
-    // can read the actual page dimensions from the layout result.
-    let canvas_origin_y = tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6;
-    let canvas_origin_x = (window_width() - tokens::PAGE_WIDTH_PX) / 2.0;
-    let canvas_origin = (canvas_origin_x, canvas_origin_y);
-    let page_width_px = tokens::PAGE_WIDTH_PX;
-    let page_height_px = tokens::PAGE_HEIGHT_PX;
     let page_gap_px = tokens::PAGE_GAP_PX;
 
     // ── Scroll container height ───────────────────────────────────────────────
@@ -216,9 +239,9 @@ pub fn Editor(path: String) -> Element {
             ),
 
             // ── Top toolbar (flex-shrink: 0) ───────────────────────────────────
-            TopToolbar { 
-                title: title, 
-                editor_mode: editor_mode 
+            TopToolbar {
+                title: title,
+                editor_mode: editor_mode
             }
 
             // ── Scroll container ──────────────────────────────────────────────
@@ -230,88 +253,248 @@ pub fn Editor(path: String) -> Element {
                     p  = tokens::SPACE_6,
                 ),
 
+                // tabindex="0" is required for this div to receive keyboard
+                // focus (and therefore onkeydown events) in Blitz/Dioxus.
+                tabindex: "0",
+
                 // ── Pointer event handlers for cursor / selection ──────────────
                 //
                 // All three handlers guard on EditorMode::Editing so no cursor
                 // state is modified in read-only mode.  client_coordinates()
-                // provides window-relative CSS logical pixels (Strategy C).
-
+                // provides window-relative CSS logical pixels.
+                //
+                // onmousedown on the scroll container fires via bubbling from
+                // child canvas elements.  It records the raw client position so
+                // that onmousemove can apply a drag threshold before extending
+                // the selection — preventing cursor jitter during a plain click
+                // from creating a spurious text selection.
                 onmousedown: move |evt| {
-                    if editor_mode() != EditorMode::Editing {
-                        return;
-                    }
-                    is_dragging.set(true);
-
-                    if let Some(doc_layout) = document_load
-                        .value()
-                        .read_unchecked()
-                        .as_ref()
-                        .and_then(|r| r.as_ref().ok())
-                        .map(|_| ())
-                    {
-                        let _ = doc_layout; // layout lives in DocumentState; hit-test uses it below
-                    }
-
-                    // Perform hit test only when we have a paginated layout with editing data.
-                    // The layout is computed with preserve_for_editing=true in Editing mode.
-                    let coords = evt.client_coordinates();
-                    let pos = if let Some(Ok(_doc)) = &*document_load.value().read_unchecked() {
-                        // Build a temporary layout to hit-test against.
-                        // In a future iteration this will be replaced by reading
-                        // the cached layout from DocumentState directly.
-                        // For now we use the known page dimensions and rely on the
-                        // layout stored in DocumentState being up to date.
-                        // We can't access DocumentState's cached layout here without
-                        // threading it through more state — use a stub for this call.
-                        // The actual hit testing path is fully implemented in
-                        // editing::hit_test; it just needs the PaginatedLayout.
-                        // TODO(cursor-layout-access): thread the cached PaginatedLayout
-                        // from DocumentState to the editor route for direct hit testing.
-                        None::<DocumentPosition>
-                    } else {
-                        None
-                    };
-
-                    // If we obtained a position, update cursor state.
-                    if let Some(p) = pos {
-                        let loro_cursor = loro_doc.read().as_ref().and_then(|ldoc| {
-                            derive_loro_cursor(
-                                ldoc,
-                                p.page_index,
-                                p.paragraph_index,
-                                p.byte_offset,
-                            )
-                        });
-                        let mut cs = cursor_state.write();
-                        cs.loro_cursor = loro_cursor;
-                        cs.anchor = Some(p.clone());
-                        cs.focus = Some(p);
-                    }
-                    // Store client coords for potential future use.
-                    let _ = (coords, canvas_origin, page_width_px, page_height_px, page_gap_px, scroll_offset);
+                    let c = evt.client_coordinates();
+                    drag_origin.set(Some((c.x as f32, c.y as f32)));
                 },
 
-                onmousemove: move |evt| {
-                    if !is_dragging() || editor_mode() != EditorMode::Editing {
-                        return;
+                onmousemove: {
+                    let doc_state = Arc::clone(&doc_state_mousemove);
+                    move |evt| {
+                        if !is_dragging() || editor_mode() != EditorMode::Editing {
+                            return;
+                        }
+
+                        // Only extend the selection once the pointer has moved
+                        // beyond DRAG_THRESHOLD_PX from the mousedown origin.
+                        // This prevents tiny cursor jitter during a click from
+                        // creating a spurious selection via hit_test_document.
+                        const DRAG_THRESHOLD_SQ: f32 = 4.0 * 4.0; // 4 CSS px
+                        let coords = evt.client_coordinates();
+                        let cx = coords.x as f32;
+                        let cy = coords.y as f32;
+                        if let Some((ox, oy)) = drag_origin() {
+                            let dx = cx - ox;
+                            let dy = cy - oy;
+                            if dx * dx + dy * dy < DRAG_THRESHOLD_SQ {
+                                return;
+                            }
+                        }
+
+                        // Read layout and page dimensions from shared state.
+                        let (layout_opt, page_width_px, page_height_px) = {
+                            let Ok(state) = doc_state.lock() else { return; };
+                            (
+                                state.paginated_layout.clone(),
+                                state.page_width_px,
+                                state.page_height_px,
+                            )
+                        };
+
+                        let Some(layout) = layout_opt else { return; };
+
+                        let x_off = (window_width() - page_width_px).max(0.0) / 2.0;
+                        let origin = (x_off, tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6);
+
+                        let pos = hit_test_document(
+                            cx,
+                            cy,
+                            origin,
+                            scroll_offset(),
+                            &layout,
+                            page_width_px,
+                            page_height_px,
+                            page_gap_px,
+                        );
+
+                        // During drag: update focus only, anchor stays fixed.
+                        if let Some(p) = pos {
+                            cursor_state.write().focus = Some(p);
+                        }
                     }
-                    // TODO(cursor-layout-access): same as onmousedown — needs
-                    // PaginatedLayout from DocumentState.
-                    let _ = (evt, canvas_origin, page_width_px, page_height_px, page_gap_px, scroll_offset);
                 },
 
                 onmouseup: move |_| {
                     is_dragging.set(false);
+                    drag_origin.set(None);
+                },
+
+                // ── Keyboard input ─────────────────────────────────────────────
+                //
+                // Requires tabindex="0" on the scroll container (above) to
+                // receive focus.  Guards on EditorMode::Editing so keys in
+                // read-only mode are ignored.
+                onkeydown: {
+                    let doc_state = Arc::clone(&doc_state_keys);
+                    let loro_doc = loro_doc.clone();
+                    move |evt| {
+                        tracing::info!("Editor: onkeydown fired: {:?}", evt.key());
+                        if editor_mode() != EditorMode::Editing {
+                            return;
+                        }
+
+                        let focus = cursor_state.read().focus.clone();
+                        let Some(focus) = focus else { return; };
+
+                        match evt.key() {
+                            // ── Printable characters ───────────────────────────
+                            Key::Character(ref ch) => {
+                                // Ctrl/Meta key combinations are formatting
+                                // shortcuts — deferred to Session 4.
+                                if evt.modifiers().ctrl() || evt.modifiers().meta() {
+                                    return;
+                                }
+                                let ch = ch.clone();
+
+                                // Insert into Loro.
+                                {
+                                    let ldoc_guard = loro_doc.read();
+                                    let Some(ldoc) = ldoc_guard.as_ref() else { return; };
+                                    if insert_text(ldoc, focus.paragraph_index, focus.byte_offset, &ch).is_err() {
+                                        return;
+                                    }
+                                }
+
+                                // Re-layout and update shared state.
+                                {
+                                    let ldoc_guard = loro_doc.read();
+                                    let Some(ldoc) = ldoc_guard.as_ref() else { return; };
+                                    apply_mutation_and_relayout(&doc_state, ldoc);
+                                }
+
+                                // Advance cursor by the inserted string length.
+                                let new_offset = focus.byte_offset + ch.len();
+                                let new_pos = DocumentPosition {
+                                    byte_offset: new_offset,
+                                    ..focus
+                                };
+                                let mut cs = cursor_state.write();
+                                cs.focus = Some(new_pos.clone());
+                                cs.anchor = Some(new_pos);
+                            }
+
+                            // ── Backspace ──────────────────────────────────────
+                            Key::Backspace => {
+                                if focus.byte_offset == 0 {
+                                    // TODO(3b): merge with previous paragraph
+                                    return;
+                                }
+
+                                let text = {
+                                    let ldoc_guard = loro_doc.read();
+                                    ldoc_guard
+                                        .as_ref()
+                                        .map(|l| get_block_text(l, focus.paragraph_index))
+                                        .unwrap_or_default()
+                                };
+                                let prev = prev_grapheme_boundary(&text, focus.byte_offset);
+                                let len = focus.byte_offset - prev;
+
+                                {
+                                    let ldoc_guard = loro_doc.read();
+                                    let Some(ldoc) = ldoc_guard.as_ref() else { return; };
+                                    if delete_text(ldoc, focus.paragraph_index, prev, len).is_err() {
+                                        return;
+                                    }
+                                }
+
+                                {
+                                    let ldoc_guard = loro_doc.read();
+                                    let Some(ldoc) = ldoc_guard.as_ref() else { return; };
+                                    apply_mutation_and_relayout(&doc_state, ldoc);
+                                }
+
+                                let new_pos = DocumentPosition {
+                                    byte_offset: prev,
+                                    ..focus
+                                };
+                                let mut cs = cursor_state.write();
+                                cs.focus = Some(new_pos.clone());
+                                cs.anchor = Some(new_pos);
+                            }
+
+                            // ── Forward delete ─────────────────────────────────
+                            Key::Delete => {
+                                let text = {
+                                    let ldoc_guard = loro_doc.read();
+                                    ldoc_guard
+                                        .as_ref()
+                                        .map(|l| get_block_text(l, focus.paragraph_index))
+                                        .unwrap_or_default()
+                                };
+                                if focus.byte_offset >= text.len() {
+                                    return;
+                                }
+                                let next = next_grapheme_boundary(&text, focus.byte_offset);
+                                let len = next - focus.byte_offset;
+
+                                {
+                                    let ldoc_guard = loro_doc.read();
+                                    let Some(ldoc) = ldoc_guard.as_ref() else { return; };
+                                    if delete_text(
+                                        ldoc,
+                                        focus.paragraph_index,
+                                        focus.byte_offset,
+                                        len,
+                                    )
+                                    .is_err()
+                                    {
+                                        return;
+                                    }
+                                }
+
+                                {
+                                    let ldoc_guard = loro_doc.read();
+                                    let Some(ldoc) = ldoc_guard.as_ref() else { return; };
+                                    apply_mutation_and_relayout(&doc_state, ldoc);
+                                }
+                                // Cursor stays at the same offset after forward delete.
+                            }
+
+                            // ── Navigation — deferred to Session 3b ───────────
+                            Key::ArrowLeft
+                            | Key::ArrowRight
+                            | Key::ArrowUp
+                            | Key::ArrowDown
+                            | Key::Home
+                            | Key::End => {
+                                // TODO(3b): arrow key navigation
+                            }
+
+                            Key::Enter => {
+                                // TODO(3b): paragraph split
+                            }
+
+                            _ => {}
+                        }
+                    }
                 },
 
                 match &*document_load.value().read_unchecked() {
                     // Resource is still running — show placeholder via WgpuSurface.
                     None => rsx! {
                         WgpuSurface {
+                            doc_state: Arc::clone(&doc_state_prop),
                             document: None,
                             layout_opts: layout_opts.clone(),
                             visible_rect: None,
                             cursor_state: None,
+                            on_mousedown: |_| {},
                         }
                     },
 
@@ -360,10 +543,25 @@ pub fn Editor(path: String) -> Element {
                         };
                         rsx! {
                             WgpuSurface {
+                                doc_state: Arc::clone(&doc_state_prop),
                                 document: Some(doc.clone()),
                                 layout_opts: layout_opts.clone(),
                                 visible_rect: None,
                                 cursor_state: cs,
+                                on_mousedown: move |p: DocumentPosition| {
+                                    if editor_mode() != EditorMode::Editing {
+                                        return;
+                                    }
+                                    is_dragging.set(true);
+                                    
+                                    let loro_cursor = loro_doc.read().as_ref().and_then(|ldoc| {
+                                        derive_loro_cursor(ldoc, p.paragraph_index, p.byte_offset)
+                                    });
+                                    let mut cs = cursor_state.write();
+                                    cs.loro_cursor = loro_cursor;
+                                    cs.anchor = Some(p.clone());
+                                    cs.focus = Some(p);
+                                }
                             }
                         }
                     },

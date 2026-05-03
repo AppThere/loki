@@ -17,20 +17,22 @@ use crate::para::ParagraphLayout;
 /// Per-page editing data that maps page-local coordinates to paragraph layouts.
 ///
 /// Only populated when `LayoutOptions::preserve_for_editing` is `true`.
-/// Indexed in the same order as `LayoutPage::content_items`.
 #[derive(Debug, Clone)]
 pub struct PageEditingData {
-    /// `Arc`-wrapped `ParagraphLayout` for each content item on the page,
-    /// in the same order as `LayoutPage::content_items`.
-    ///
-    /// An entry is `None` when the corresponding content item is not a
-    /// paragraph (e.g. a table cell placeholder from a prior pipeline stage).
-    pub paragraph_layouts: Vec<Option<Arc<ParagraphLayout>>>,
-    /// Page-local `(x, y)` origin of each paragraph, in points.
-    ///
-    /// Used by the editing layer to translate a page-local pointer position
-    /// into paragraph-local coordinates before calling `hit_test_point`.
-    pub paragraph_origins: Vec<(f32, f32)>,
+    /// Data for each paragraph that appears (even partially) on this page.
+    pub paragraphs: Vec<PageParagraphData>,
+}
+
+/// Metadata for a single paragraph fragment on a page.
+#[derive(Debug, Clone)]
+pub struct PageParagraphData {
+    /// Global index of the paragraph block in the document.
+    pub block_index: usize,
+    /// The preserved layout data for hit-testing and cursor positioning.
+    pub layout: Arc<ParagraphLayout>,
+    /// Page-local `(x, y)` origin of the paragraph in points, relative to
+    /// the page content area (i.e. after margins).
+    pub origin: (f32, f32),
 }
 
 /// The result of laying out a document.

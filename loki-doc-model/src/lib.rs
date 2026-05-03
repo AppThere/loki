@@ -140,6 +140,8 @@ pub mod loro_schema;
 pub use loro_schema::*;
 pub mod loro_bridge;
 pub use loro_bridge::{document_to_loro, BridgeError};
+pub mod loro_mutation;
+pub use loro_mutation::{delete_text, get_block_text, insert_text, MutationError};
 pub mod error;
 pub mod io;
 pub mod layout;

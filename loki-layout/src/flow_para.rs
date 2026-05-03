@@ -47,6 +47,8 @@
 //! }
 //! ```
 
+use std::sync::Arc;
+
 use loki_doc_model::content::block::{Block, StyledParagraph};
 use loki_doc_model::content::inline::Inline;
 use loki_doc_model::style::list_style::ListLevelKind;
@@ -55,6 +57,7 @@ use crate::geometry::LayoutRect;
 use crate::items::{PositionedImage, PositionedItem};
 use crate::para::{format_list_marker, layout_paragraph, ParagraphLayout, ResolvedParaProps};
 use crate::resolve::{emu_to_pt, flatten_paragraph, resolve_para_props};
+use crate::result::PageParagraphData;
 
 use super::{finish_page, FlowState, LayoutWarning};
 
@@ -190,6 +193,13 @@ pub(super) fn place_paragraph_layout(
     if !state.mode.is_paginated() {
         let dy = state.cursor_y;
         let dx = state.current_indent;
+        if state.options.preserve_for_editing {
+            state.current_paragraphs.push(PageParagraphData {
+                block_index,
+                layout: Arc::new(para_layout.clone()),
+                origin: (0.0, dy),
+            });
+        }
         for mut item in para_layout.items {
             item.translate(dx, dy);
             state.current_items.push(item);
@@ -222,6 +232,13 @@ pub(super) fn place_paragraph_layout(
             // Fits on current (or freshly flushed) page.
             let dy = state.cursor_y;
             let dx = state.current_indent;
+            if state.options.preserve_for_editing {
+                state.current_paragraphs.push(PageParagraphData {
+                    block_index,
+                    layout: Arc::new(para_layout.clone()),
+                    origin: (0.0, dy),
+                });
+            }
             for mut item in para_layout.items {
                 item.translate(dx, dy);
                 state.current_items.push(item);
@@ -240,7 +257,12 @@ pub(super) fn place_paragraph_layout(
     }
 
     let dx = state.current_indent;
-    split_and_place_loop(state, resolved, &para_layout, dx);
+    let arc_layout = if state.options.preserve_for_editing {
+        Some(Arc::new(para_layout.clone()))
+    } else {
+        None
+    };
+    split_and_place_loop(state, resolved, &para_layout, arc_layout, block_index, dx);
     state.cursor_y += resolved.space_after;
 }
 
@@ -416,6 +438,8 @@ fn split_and_place_loop(
     state: &mut FlowState,
     resolved: &ResolvedParaProps,
     para_layout: &ParagraphLayout,
+    arc_layout: Option<Arc<ParagraphLayout>>,
+    block_index: usize,
     dx: f32,
 ) {
     // paragraph-local y of the current fragment's top edge.
@@ -430,6 +454,13 @@ fn split_and_place_loop(
             let ty = state.cursor_y - frag_start;
             if frag_start < f32::EPSILON {
                 // First (and only) fragment: emit items directly without clip.
+                if let Some(ref al) = arc_layout {
+                    state.current_paragraphs.push(PageParagraphData {
+                        block_index,
+                        layout: al.clone(),
+                        origin: (0.0, ty),
+                    });
+                }
                 for item in &para_layout.items {
                     let mut item = item.clone();
                     item.translate(dx, ty);
@@ -437,6 +468,13 @@ fn split_and_place_loop(
                 }
             } else {
                 // Continuation fragment: clip to hide content from prior pages.
+                if let Some(ref al) = arc_layout {
+                    state.current_paragraphs.push(PageParagraphData {
+                        block_index,
+                        layout: al.clone(),
+                        origin: (0.0, ty),
+                    });
+                }
                 let clip_rect = LayoutRect::new(
                     0.0,
                     state.cursor_y,
@@ -478,6 +516,13 @@ fn split_and_place_loop(
                 if split_y <= frag_start {
                     // Still no progress: emit remainder and bail.
                     let ty = state.cursor_y - frag_start;
+                    if let Some(ref al) = arc_layout {
+                        state.current_paragraphs.push(PageParagraphData {
+                            block_index,
+                            layout: al.clone(),
+                            origin: (0.0, ty),
+                        });
+                    }
                     for item in &para_layout.items {
                         let mut item = item.clone();
                         item.translate(dx, ty);
@@ -486,14 +531,14 @@ fn split_and_place_loop(
                     state.cursor_y += frag_height;
                     return;
                 }
-                emit_fragment(state, para_layout, frag_start, split_y, dx);
+                emit_fragment(state, para_layout, arc_layout.clone(), block_index, frag_start, split_y, dx);
                 finish_page(state);
                 frag_start = split_y;
             }
             Some(k) => {
                 // Emit Fragment A covering para-local [frag_start, split_y).
                 let split_y = para_layout.line_boundaries[k].1;
-                emit_fragment(state, para_layout, frag_start, split_y, dx);
+                emit_fragment(state, para_layout, arc_layout.clone(), block_index, frag_start, split_y, dx);
                 finish_page(state);
                 frag_start = split_y;
                 // space_before is NOT re-applied between split fragments; only
@@ -510,6 +555,8 @@ fn split_and_place_loop(
 fn emit_fragment(
     state: &mut FlowState,
     para_layout: &ParagraphLayout,
+    arc_layout: Option<Arc<ParagraphLayout>>,
+    block_index: usize,
     frag_start: f32,
     split_y: f32,
     dx: f32,
@@ -524,6 +571,13 @@ fn emit_fragment(
     let clip_height = (split_y - frag_start).floor();
     let clip_rect = LayoutRect::new(0.0, state.cursor_y, state.content_width, clip_height);
     let ty = state.cursor_y - frag_start;
+    if let Some(al) = arc_layout {
+        state.current_paragraphs.push(PageParagraphData {
+            block_index,
+            layout: al,
+            origin: (0.0, ty),
+        });
+    }
     let mut items = para_layout.items.clone();
     for item in &mut items {
         item.translate(dx, ty);

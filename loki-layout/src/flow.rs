@@ -17,12 +17,12 @@ mod para_impl;
 use std::collections::HashMap;
 
 use loki_doc_model::content::attr::ExtensionBag;
-use loki_doc_model::content::block::StyledParagraph;
+use loki_doc_model::content::block::{Block, StyledParagraph};
 use loki_doc_model::content::inline::Inline;
 use loki_doc_model::layout::header_footer::HeaderFooter;
 use loki_doc_model::layout::page::PageLayout;
 use loki_doc_model::style::list_style::ListId;
-use loki_doc_model::{Block, NodeAttr, Section, StyleCatalog};
+use loki_doc_model::{NodeAttr, Section, StyleCatalog};
 
 use crate::color::LayoutColor;
 use crate::font::FontResources;
@@ -30,7 +30,7 @@ use crate::geometry::{LayoutInsets, LayoutPoint, LayoutRect, LayoutSize};
 use crate::items::{PositionedBorderRect, PositionedItem, PositionedRect};
 use crate::mode::LayoutMode;
 use crate::resolve::{convert_border, pts_to_f32, resolve_color, resolve_para_props, CollectedNote};
-use crate::result::LayoutPage;
+use crate::result::{LayoutPage, PageEditingData, PageParagraphData};
 use crate::LayoutOptions;
 
 use para_impl::{flow_keep_with_next_chain, flow_paragraph};
@@ -143,6 +143,8 @@ pub(super) struct FlowState<'a> {
     /// Footnotes and endnotes collected while flowing the current section.
     /// Rendered at the end of the section by `flow_footnotes`.
     pub(super) pending_footnotes: Vec<CollectedNote>,
+    /// Paragraph metadata for the current page (block index, layout, origin).
+    pub(super) current_paragraphs: Vec<PageParagraphData>,
 }
 
 impl<'a> FlowState<'a> {
@@ -225,6 +227,7 @@ pub fn flow_section(
         prev_list_id: None,
         note_counter: 0,
         pending_footnotes: Vec::new(),
+        current_paragraphs: Vec::new(),
     };
 
     if mode.is_paginated() {
@@ -350,10 +353,17 @@ pub(super) fn finish_page(state: &mut FlowState) {
         footer_items: vec![],
         header_height: 0.0,
         footer_height: 0.0,
-        editing_data: None,
+        editing_data: if state.options.preserve_for_editing {
+            Some(PageEditingData {
+                paragraphs: state.current_paragraphs.clone(),
+            })
+        } else {
+            None
+        },
     };
     state.pages.push(page);
     state.page_number += 1;
+    state.current_paragraphs.clear();
     state.cursor_y = 0.0;
 }
 

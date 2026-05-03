@@ -8,3 +8,4 @@ members = ["loki-doc-model","loki-opc","loki-primitives","loki-ooxml","loki-odf"
 # source in `src/backend/fontconfig.rs` can resolve `use fontconfig_sys::…`.
 [patch.crates-io]
 fontique = { path = "patches/fontique" }
+dioxus-native-dom = { path = "patches/dioxus-native-dom" }

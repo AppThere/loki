@@ -47,9 +47,8 @@ pub struct CursorPaint {
     /// Zero or more selection highlight rects.  Empty when no range selection
     /// is active.
     pub selection_rects: Vec<SelectionRect>,
-    /// Index of the paragraph (into `PageEditingData::paragraph_origins`) that
-    /// this data belongs to.  Used by the painter to look up the paragraph's
-    /// content-area origin.
+    /// Global index of the paragraph block that this data belongs to.
+    /// Used by the painter to look up the paragraph's page-local origin.
     pub paragraph_index: usize,
 }
 
@@ -192,14 +191,18 @@ pub fn paint_single_page(
     // on top of glyphs.
     if let Some(cp) = cursor_paint {
         // The cursor rect and selection rects are in paragraph-local coordinates.
-        // The paragraph origin (from PageEditingData) is in content-area-local
-        // coordinates. We combine both to get the full scene offset.
-        let para_origin = page
+        // Find the paragraph fragment on this page that matches the global
+        // paragraph_index, and use its origin.
+        let para_data = page
             .editing_data
             .as_ref()
-            .and_then(|ed| ed.paragraph_origins.get(cp.paragraph_index))
-            .copied()
-            .unwrap_or((0.0, 0.0));
+            .and_then(|ed| {
+                ed.paragraphs
+                    .iter()
+                    .find(|p| p.block_index == cp.paragraph_index)
+            });
+
+        let para_origin = para_data.map(|p| p.origin).unwrap_or((0.0, 0.0));
 
         let para_offset = (
             content_origin.0 + para_origin.0,

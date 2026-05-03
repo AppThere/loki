@@ -72,7 +72,9 @@ use anyrender_vello::wgpu::{
 use anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle};
 use kurbo::Rect;
 use loki_doc_model::document::Document;
-use loki_layout::{layout_document, DocumentLayout, FontResources, LayoutMode, LayoutOptions};
+use loki_layout::{
+    layout_document, DocumentLayout, FontResources, LayoutMode, LayoutOptions, PaginatedLayout,
+};
 use loki_vello::{paint_layout, paint_single_page, CursorPaint, FontDataCache, SelectionRect};
 use peniko::Color;
 use vello::{AaConfig, AaSupport, RenderParams, RendererOptions, Scene};
@@ -112,6 +114,15 @@ pub struct DocumentState {
     /// `None` in read-only mode (no cursor is painted).  Updated by the
     /// `WgpuSurface` component whenever `cursor_state` props change.
     pub cursor_state: Option<CursorState>,
+    /// When `true`, layout passes must retain Parley data for hit-testing.
+    pub preserve_for_editing: bool,
+    /// Most recently computed paginated layout, shared with the editor route
+    /// so that mouse click handlers can call `hit_test_document` without
+    /// re-running the layout pipeline.
+    ///
+    /// Populated by [`LokiDocumentSource::render()`] on the first GPU frame
+    /// after a document load or mutation. `None` until the first render.
+    pub paginated_layout: Option<Arc<PaginatedLayout>>,
 }
 
 // ── Cached layout ─────────────────────────────────────────────────────────────
@@ -121,6 +132,8 @@ struct CachedLayout {
     canvas_width: f32,
     layout: DocumentLayout,
     font_cache: FontDataCache,
+    /// Whether this layout was run with `preserve_for_editing: true`.
+    preserve_for_editing: bool,
 }
 
 // ── LokiDocumentSource ────────────────────────────────────────────────────────
@@ -161,6 +174,8 @@ pub(crate) struct LokiDocumentSource {
     texture_generation: u64,
     /// Physical pixel dimensions `(w_phys, h_phys)` of `texture_handle`.
     texture_size: (u32, u32),
+    /// Cursor state at which `texture_handle` was rendered.
+    texture_cursor: Option<CursorState>,
     /// Counts completed `render()` calls.  Used in unit tests to verify that
     /// the reuse guard short-circuits correctly.
     #[cfg(test)]
@@ -181,16 +196,20 @@ impl LokiDocumentSource {
             texture_handle: None,
             texture_generation: 0,
             texture_size: (0, 0),
+            texture_cursor: None,
             #[cfg(test)]
             frames_rendered: 0,
         }
     }
 
     /// Returns `true` if `layout_cache` must be rebuilt.
-    fn needs_relayout(&self, generation: u64, canvas_width: f32) -> bool {
-        self.layout_cache.as_ref().map_or(true, |c| {
-            c.generation != generation || (c.canvas_width - canvas_width).abs() > 0.5
-        })
+    fn needs_relayout(&self, generation: u64, canvas_width: f32, preserve: bool) -> bool {
+        let Some(cached) = &self.layout_cache else {
+            return true;
+        };
+        cached.generation != generation
+            || (cached.canvas_width - canvas_width).abs() > 0.001
+            || cached.preserve_for_editing != preserve
     }
 }
 
@@ -212,14 +231,27 @@ fn resolve_cursor_paint(
     if focus.page_index != page_index {
         return None;
     }
-    let ed = editing_data.as_ref()?;
-    let para_layout = ed.paragraph_layouts.get(focus.paragraph_index)?.as_ref()?;
+    let ed = match editing_data.as_ref() {
+        Some(e) => e,
+        None => {
+            tracing::warn!("LokiDocumentSource: resolve_cursor_paint failed: editing_data is None for page {page_index}");
+            return None;
+        }
+    };
+    let para_data = ed.paragraphs.iter().find(|p| p.block_index == focus.paragraph_index);
+    let Some(pd) = para_data else {
+        // This is expected if the focus is on a different page.
+        return None;
+    };
 
-    let cursor_rect = para_layout.cursor_rect(focus.byte_offset);
+    let cursor_rect = pd.layout.cursor_rect(focus.byte_offset);
+    if cursor_rect.is_none() {
+        tracing::warn!("LokiDocumentSource: resolve_cursor_paint: pd.layout.cursor_rect returned None for offset {}", focus.byte_offset);
+    }
 
     // Build selection highlight rects when anchor and focus differ.
     let selection_rects = if cursor_state.has_selection() {
-        build_selection_rects(cursor_state, ed, para_layout, page_index)
+        build_selection_rects(cursor_state, ed, &pd.layout, page_index)
     } else {
         Vec::new()
     };
@@ -330,6 +362,73 @@ fn build_selection_rects(
     rects
 }
 
+// ── Mutation + re-layout helper ───────────────────────────────────────────────
+
+/// Re-derives the document from `loro_doc` after a mutation, runs a full
+/// layout pass with `preserve_for_editing: true`, and publishes the updated
+/// state to `doc_state`.
+///
+/// This is called by the keyboard handler in `editor.rs` after every successful
+/// `insert_text` or `delete_text` call.  It bumps the `generation` counter so
+/// that [`LokiDocumentSource::render`] picks up the change on the next GPU
+/// frame.
+///
+/// Returns `true` on success.  Logs a warning and returns `false` when
+/// `loro_to_document` or the lock fails — the editor remains in its current
+/// visual state and the user can retry.
+///
+/// # TODO(incremental-layout)
+///
+/// The current implementation rebuilds the full layout for the entire
+/// document.  A future iteration should invalidate only the dirty paragraph
+/// and re-flow affected pages, reducing latency for large documents.
+pub fn apply_mutation_and_relayout(
+    doc_state: &std::sync::Arc<std::sync::Mutex<DocumentState>>,
+    loro_doc: &loro::LoroDoc,
+) -> bool {
+    // Step 1: Derive updated Document from Loro CRDT state.
+    let doc = match loki_doc_model::loro_bridge::loro_to_document(loro_doc) {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!("apply_mutation_and_relayout: loro_to_document failed: {e}");
+            return false;
+        }
+    };
+
+    // Step 2: Full layout pass with editing data preserved.
+    let mut font_resources = FontResources::new();
+    let layout = layout_document(
+        &mut font_resources,
+        &doc,
+        LayoutMode::Paginated,
+        1.0,
+        &LayoutOptions { preserve_for_editing: true },
+    );
+
+    let (page_count, paginated_layout, page_width_px, page_height_px) = match &layout {
+        DocumentLayout::Paginated(pl) => {
+            let w_px = pl.page_size.width * (96.0 / 72.0);
+            let h_px = pl.page_size.height * (96.0 / 72.0);
+            let count = pl.pages.len();
+            (count, Some(std::sync::Arc::new(pl.clone())), w_px, h_px)
+        }
+        _ => (0, None, loki_theme::tokens::PAGE_WIDTH_PX, loki_theme::tokens::PAGE_HEIGHT_PX),
+    };
+
+    // Step 3: Publish to shared state and bump generation.
+    let Ok(mut state) = doc_state.lock() else {
+        tracing::warn!("apply_mutation_and_relayout: doc_state lock poisoned");
+        return false;
+    };
+    state.document = Some(doc);
+    state.paginated_layout = paginated_layout;
+    state.page_count = page_count;
+    state.page_width_px = page_width_px;
+    state.page_height_px = page_height_px;
+    state.generation = state.generation.wrapping_add(1);
+    true
+}
+
 // ── CustomPaintSource impl ────────────────────────────────────────────────────
 
 impl CustomPaintSource for LokiDocumentSource {
@@ -368,6 +467,7 @@ impl CustomPaintSource for LokiDocumentSource {
         self.texture_handle = None;
         self.texture_generation = 0;
         self.texture_size = (0, 0);
+        self.texture_cursor = None;
         // font_resources is retained — it has no GPU dependency.
     }
 
@@ -398,7 +498,7 @@ impl CustomPaintSource for LokiDocumentSource {
         // page_count back to state (can't hold an immutable borrow of
         // state.document while mutably borrowing state.page_count through the
         // same MutexGuard).
-        let (doc_opt, current_gen, cursor_state_opt) = {
+        let (doc_opt, current_gen, cursor_state_opt, preserve_for_editing) = {
             let state = match self.document.lock() {
                 Ok(g) => g,
                 Err(e) => {
@@ -406,7 +506,7 @@ impl CustomPaintSource for LokiDocumentSource {
                     return None;
                 }
             };
-            (state.document.clone(), state.generation, state.cursor_state.clone())
+            (state.document.clone(), state.generation, state.cursor_state.clone(), state.preserve_for_editing)
         };
 
         // No document loaded — WgpuSurface shows a placeholder div instead.
@@ -414,13 +514,14 @@ impl CustomPaintSource for LokiDocumentSource {
             return None;
         }
 
-        // Texture reuse: if the document generation and physical dimensions have
-        // not changed, the existing texture is still valid — skip layout, scene
-        // painting, and GPU allocation entirely.
-        let needs_relayout = self.needs_relayout(current_gen, canvas_width);
+        // Texture reuse: if the document generation, physical dimensions, and
+        // cursor state have not changed, the existing texture is still valid —
+        // skip layout, scene painting, and GPU allocation entirely.
+        let needs_relayout = self.needs_relayout(current_gen, canvas_width, preserve_for_editing);
         if !needs_relayout
             && self.texture_handle.is_some()
             && self.texture_size == (w_phys, h_phys)
+            && self.texture_cursor == cursor_state_opt
         {
             return self.texture_handle.clone();
         }
@@ -444,10 +545,9 @@ impl CustomPaintSource for LokiDocumentSource {
             // passing the device scale here would apply it twice (Parley 0.6.0
             // already multiplies font sizes by display_scale internally).
             //
-            // preserve_for_editing=true when a cursor is active so that
-            // ParagraphLayout retains Parley data for hit testing and cursor
-            // geometry. In read-only mode, use the lighter default (false).
-            let preserve = cursor_state_opt.is_some();
+            // preserve_for_editing=true when a cursor is active OR when the
+            // state flag is set (e.g. in Editor mode before first click).
+            let preserve = preserve_for_editing || cursor_state_opt.is_some();
             let layout_opts = LayoutOptions { preserve_for_editing: preserve };
             let layout =
                 layout_document(font_resources, &doc, LayoutMode::Paginated, 1.0, &layout_opts);
@@ -455,17 +555,26 @@ impl CustomPaintSource for LokiDocumentSource {
                 DocumentLayout::Paginated(pl) => pl.pages.len(),
                 _ => 0,
             };
+            // Snapshot the paginated layout for the editor route's hit-tester.
+            let paginated_layout_snapshot = match &layout {
+                DocumentLayout::Paginated(pl) => Some(Arc::new(pl.clone())),
+                _ => None,
+            };
+
             self.layout_cache = Some(CachedLayout {
                 generation: current_gen,
                 canvas_width,
                 layout,
                 font_cache: FontDataCache::new(),
+                preserve_for_editing: preserve,
             });
 
-            // Phase 3: Publish page_count and canvas_width to shared state.
+            // Phase 3: Publish page_count, canvas_width, and the paginated
+            // layout snapshot to shared state.
             if let Ok(mut state) = self.document.lock() {
                 state.page_count = page_count;
                 state.canvas_width = canvas_width;
+                state.paginated_layout = paginated_layout_snapshot;
             }
         }
 
@@ -477,8 +586,6 @@ impl CustomPaintSource for LokiDocumentSource {
         // loki-layout coordinates are in points (1 pt = 1/72 inch).
         // CSS pixels use 96 dpi (1 CSS px = 1/96 inch), so 1 pt = 96/72 CSS px.
         // Multiplying by (96/72) converts the point coordinate space to CSS
-        // pixels; Blitz's `scale` (DPR) then converts CSS pixels to physical
-        // pixels, filling the physical texture exactly.
         let render_scale = scale as f32 * (96.0 / 72.0);
         match &cached.layout {
             DocumentLayout::Paginated(pl) => {
@@ -557,6 +664,7 @@ impl CustomPaintSource for LokiDocumentSource {
         self.texture_handle = Some(handle.clone());
         self.texture_generation = current_gen;
         self.texture_size = (w_phys, h_phys);
+        self.texture_cursor = cursor_state_opt;
 
         #[cfg(test)]
         {
@@ -586,6 +694,8 @@ mod tests {
                 page_width_px: 0.0,
                 page_height_px: 0.0,
                 cursor_state: None,
+                preserve_for_editing: false,
+                paginated_layout: None,
             })),
             0,
         )
@@ -602,6 +712,7 @@ mod tests {
             canvas_width: 0.0,
             layout,
             font_cache: FontDataCache::new(),
+            preserve_for_editing: false,
         }
     }
 
@@ -613,30 +724,42 @@ mod tests {
     #[test]
     fn needs_relayout_when_cache_empty() {
         let source = make_source();
-        assert!(source.needs_relayout(0, 0.0));
-        assert!(source.needs_relayout(42, 0.0));
+        assert!(source.needs_relayout(0, 0.0, false));
+        assert!(source.needs_relayout(42, 0.0, false));
     }
 
     #[test]
     fn no_relayout_when_generation_matches() {
         let mut source = make_source();
         source.layout_cache = Some(make_cached_layout(7));
-        assert!(!source.needs_relayout(7, 0.0), "same generation → no relayout");
+        assert!(!source.needs_relayout(7, 0.0, false), "same generation → no relayout");
     }
 
     #[test]
     fn relayout_when_generation_advances() {
         let mut source = make_source();
         source.layout_cache = Some(make_cached_layout(7));
-        assert!(source.needs_relayout(8, 0.0), "advanced generation → relayout");
+        assert!(source.needs_relayout(8, 0.0, false), "advanced generation → relayout");
     }
 
     #[test]
     fn relayout_when_canvas_width_changes() {
         let mut source = make_source();
         source.layout_cache = Some(make_cached_layout(7));
-        assert!(source.needs_relayout(7, 800.0), "width change → relayout");
-        assert!(!source.needs_relayout(7, 0.4), "sub-pixel diff → no relayout");
+        assert!(source.needs_relayout(7, 800.0, false), "width change → relayout");
+        // Diff of 0.0005 is below the 0.001 threshold → no relayout.
+        assert!(!source.needs_relayout(7, 0.0005, false), "sub-threshold diff → no relayout");
+    }
+
+    #[test]
+    fn relayout_when_preserve_for_editing_changes() {
+        let mut source = make_source();
+        source.layout_cache = Some(make_cached_layout(7));
+        assert!(!source.needs_relayout(7, 0.0, false), "matching preserve → no relayout");
+        assert!(
+            source.needs_relayout(7, 0.0, true),
+            "preserve change false→true must trigger relayout"
+        );
     }
 
     #[test]
@@ -650,6 +773,8 @@ mod tests {
             page_width_px: 0.0,
             page_height_px: 0.0,
             cursor_state: None,
+            preserve_for_editing: false,
+            paginated_layout: None,
         }));
         // Simulate the component bumping the generation counter.
         {
@@ -691,7 +816,7 @@ mod tests {
         // Even if generation and size match, no handle → guard must not fire.
         let s = make_source();
         let would_reuse = s.texture_handle.is_some()
-            && !s.needs_relayout(0, 0.0)
+            && !s.needs_relayout(0, 0.0, false)
             && s.texture_size == (0, 0);
         assert!(!would_reuse, "no handle means no reuse");
     }
@@ -771,8 +896,11 @@ mod tests {
         para: loki_layout::ParagraphLayout,
     ) -> Option<loki_layout::PageEditingData> {
         Some(loki_layout::PageEditingData {
-            paragraph_layouts: vec![Some(Arc::new(para))],
-            paragraph_origins: vec![(0.0, 0.0)],
+            paragraphs: vec![loki_layout::PageParagraphData {
+                block_index: 0,
+                layout: Arc::new(para),
+                origin: (0.0, 0.0),
+            }],
         })
     }
 

@@ -297,23 +297,58 @@ fn map_para_props(props: &ParaProps, map: &LoroMap) -> Result<(), BridgeError> {
 ///
 /// This MVP returns `None` because the mapping from `(page_index,
 /// paragraph_index)` to the corresponding Loro `LoroText` container requires
-/// a block-ID lookup table that is not yet threaded through the layout
-/// pipeline. The cursor visual rendering works via `DocumentPosition`
-/// anchor/focus fields, which do not require Loro cursor resolution.
+/// Derives a stable Loro [`Cursor`] from a document position identified by
+/// `block_index` (paragraph index, section 0) and a UTF-8 `byte_offset`.
 ///
-/// TODO(loro-cursor-mapping): implement once `PageEditingData` carries stable
-/// block identifiers alongside `paragraph_origins`.
+/// The cursor survives concurrent remote edits, making it suitable for
+/// collaborative editing.  Returns `None` when the block or text container
+/// cannot be found (e.g. a stub block type that has no `LoroText`).
+///
+/// # Session 3a limitation
+///
+/// Uses `block_index` as a direct index into section 0's block list.
+/// Multi-section support (where `paragraph_index` must be mapped to a
+/// `(section_idx, block_idx)` pair) is deferred to a later session once
+/// `PageEditingData` carries stable block identifiers.
 ///
 /// [`Cursor`]: loro::Cursor
 pub fn derive_loro_cursor(
-    _loro: &LoroDoc,
-    _page_index: usize,
-    _paragraph_index: usize,
-    _byte_offset: usize,
+    loro: &LoroDoc,
+    block_index: usize,
+    byte_offset: usize,
 ) -> Option<loro::cursor::Cursor> {
-    // TODO(loro-cursor-mapping): navigate sections[?].blocks[block_id].content
-    // (LoroText), call text.get_cursor(byte_offset, Side::Right).
-    None
+    // Navigate sections[0].blocks[block_index]["content"] → LoroText.
+    let sections_list = loro.get_list(KEY_SECTIONS);
+    let sec_val = sections_list.get(0)?;
+    let sec_map = sec_val
+        .into_container()
+        .ok()
+        .and_then(|c| c.into_map().ok())?;
+
+    let blocks_val = sec_map.get(KEY_BLOCKS)?;
+    let blocks_list = blocks_val
+        .into_container()
+        .ok()
+        .and_then(|c| c.into_movable_list().ok())?;
+
+    if block_index >= blocks_list.len() {
+        return None;
+    }
+
+    let block_val = blocks_list.get(block_index)?;
+    let block_map = block_val
+        .into_container()
+        .ok()
+        .and_then(|c| c.into_map().ok())?;
+
+    let content_val = block_map.get(KEY_CONTENT)?;
+    let text = content_val
+        .into_container()
+        .ok()
+        .and_then(|c| c.into_text().ok())?;
+
+    // Side::Right places the cursor just after the character at byte_offset.
+    text.get_cursor(byte_offset, loro::cursor::Side::Right)
 }
 
 /// Derives a Document snapshot from a LoroDoc for layout and rendering.

@@ -25,7 +25,7 @@
 //! The conversion from CSS logical pixels is applied once at entry:
 //! `pt = px × (72/96)`.
 
-use loki_layout::{PaginatedLayout, HitTestResult};
+use loki_layout::PaginatedLayout;
 
 use super::cursor::DocumentPosition;
 
@@ -60,7 +60,7 @@ pub fn hit_test_document(
     canvas_origin: (f32, f32),
     scroll_offset: f32,
     layout: &PaginatedLayout,
-    page_width_px: f32,
+    _page_width_px: f32,
     page_height_px: f32,
     page_gap_px: f32,
 ) -> Option<DocumentPosition> {
@@ -68,8 +68,7 @@ pub fn hit_test_document(
     let canvas_x_px = client_x - canvas_origin.0;
     let canvas_y_px = client_y - canvas_origin.1 + scroll_offset;
 
-    // Reject clicks outside the page canvas horizontally.
-    if canvas_x_px < 0.0 || canvas_x_px > page_width_px {
+    if canvas_x_px < 0.0 {
         return None;
     }
 
@@ -89,39 +88,57 @@ pub fn hit_test_document(
     let y_in_page = canvas_y - (page_index as f32 * page_and_gap);
 
     // Reject clicks in the gap between pages.
-    if y_in_page > page_height_pt {
+    if y_in_page > page_height_pt || y_in_page < 0.0 {
         return None;
     }
 
+    hit_test_page(
+        page_index,
+        canvas_x,
+        y_in_page,
+        layout,
+    )
+}
+
+/// Hit-test a single page using coordinates already relative to the page's
+/// content area top-left (in layout points).
+///
+/// This is used by the per-page event handlers to bypass window-relative
+/// origin and scroll offset calculations.
+pub fn hit_test_page(
+    page_index: usize,
+    canvas_x: f32, // in layout points, relative to page left
+    canvas_y: f32, // in layout points, relative to page top
+    layout: &PaginatedLayout,
+) -> Option<DocumentPosition> {
     let page = layout.pages.get(page_index)?;
-    let editing_data = page.editing_data.as_ref()?;
+    let editing_data = match page.editing_data.as_ref() {
+        Some(ed) => ed,
+        None => return None,
+    };
 
     // ── 4. Page-content-area-local coordinates ────────────────────────────────
     // page.margins is in layout points; margins.left/top are already in pt.
     let content_x = canvas_x - page.margins.left;
-    let content_y = y_in_page - page.margins.top;
+    let content_y = canvas_y - page.margins.top;
 
     // ── 5. Identify the paragraph under the click ─────────────────────────────
-    // paragraph_origins are content-area-local (x, y) in layout points.
-    // Find the last paragraph whose origin.y ≤ content_y.
-    let para_index = editing_data
-        .paragraph_origins
-        .iter()
-        .enumerate()
-        .rev()
-        .find(|(_, origin)| origin.1 <= content_y)
-        .map(|(i, _)| i)?;
+    // paragraphs are content-area-local (x, y) in layout points.
+    let para_data = editing_data.paragraphs.iter().rev().find(|p| {
+        p.origin.1 <= content_y && content_y <= p.origin.1 + p.layout.height
+    })?;
 
-    // ── 6. Paragraph-local coordinates ───────────────────────────────────────
-    let origin = editing_data.paragraph_origins[para_index];
-    let para_x = content_x - origin.0;
-    let para_y = content_y - origin.1;
+    // ── 6. Map to byte offset within the paragraph ────────────────────────────
+    let x_in_para = content_x - para_data.origin.0;
+    let y_in_para = content_y - para_data.origin.1;
 
-    // ── 7. Hit test against the Parley layout ─────────────────────────────────
-    let para_layout = editing_data.paragraph_layouts.get(para_index)?.as_ref()?;
-    let HitTestResult { byte_offset, .. } = para_layout.hit_test_point(para_x, para_y)?;
+    let hit = para_data.layout.hit_test_point(x_in_para, y_in_para)?;
 
-    Some(DocumentPosition { page_index, paragraph_index: para_index, byte_offset })
+    Some(DocumentPosition {
+        page_index,
+        paragraph_index: para_data.block_index,
+        byte_offset: hit.byte_offset,
+    })
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -131,8 +148,9 @@ mod tests {
     use std::sync::Arc;
 
     use loki_layout::{
-        layout_paragraph, FontResources, LayoutInsets, LayoutOptions, LayoutPage, LayoutSize,
-        PaginatedLayout, PageEditingData, ResolvedParaProps, StyleSpan, LayoutColor,
+        layout_paragraph, FontResources, LayoutInsets, LayoutPage, LayoutSize,
+        PaginatedLayout, PageEditingData, PageParagraphData, ResolvedParaProps, StyleSpan,
+        LayoutColor,
     };
 
     use super::*;
@@ -167,10 +185,12 @@ mod tests {
             1.0,
             true, // preserve_for_editing
         );
-        let para_height = para.height;
         let editing_data = PageEditingData {
-            paragraph_layouts: vec![Some(Arc::new(para))],
-            paragraph_origins: vec![(0.0, 0.0)],
+            paragraphs: vec![PageParagraphData {
+                block_index: 0,
+                layout: Arc::new(para),
+                origin: (0.0, 0.0),
+            }],
         };
         let page_size = LayoutSize::new(595.0, 842.0);
         let margins = LayoutInsets { top: 72.0, right: 72.0, bottom: 72.0, left: 72.0 };
@@ -185,7 +205,6 @@ mod tests {
             footer_height: 0.0,
             editing_data: Some(editing_data),
         };
-        let _ = para_height; // used above; suppress warning
         PaginatedLayout { page_size, pages: vec![page] }
     }
 
@@ -281,5 +300,101 @@ mod tests {
         );
         let pos = result.expect("click on page 2 should succeed");
         assert_eq!(pos.page_index, 1, "should land on page 1 (0-based)");
+    }
+
+    /// Verifies that a negative canvas_y (which occurs when scroll_offset is not
+    /// subtracted from page_top_y in the click handler) causes hit_test_page to
+    /// return None.  This documents the root cause of the multi-page cursor bug
+    /// when scroll_offset is zero but the user has scrolled.
+    #[test]
+    fn hit_test_page_negative_y_returns_none() {
+        let layout = make_test_layout();
+        // y < 0 means the click is above the page canvas — should return None.
+        let result = hit_test_page(0, 100.0, -10.0, &layout);
+        assert!(result.is_none(), "negative y_in_page must return None");
+    }
+
+    /// Verifies that passing the correct scroll_offset to hit_test_document
+    /// allows a click on page 2 to be resolved when the user has scrolled.
+    ///
+    /// This tests the mathematical contract of the coordinate transform, not
+    /// Blitz scroll tracking (which is currently unimplemented — see
+    /// TODO(partial-render) in editor.rs).
+    #[test]
+    fn scroll_offset_corrects_page2_click() {
+        let layout = {
+            let single = make_test_layout();
+            let page0 = single.pages[0].clone();
+            let mut page1 = page0.clone();
+            page1.page_number = 2;
+            PaginatedLayout { page_size: single.page_size, pages: vec![page0, page1] }
+        };
+        let page = &layout.pages[0];
+        let page_h_px = pt_to_px(page.page_size.height);
+        let page_w_px = pt_to_px(page.page_size.width);
+        let page_gap_px = pt_to_px(24.0);
+        let margin_left_px = pt_to_px(page.margins.left);
+        let margin_top_px = pt_to_px(page.margins.top);
+
+        // User has scrolled so that page 2 is at the top of the viewport.
+        let scroll_offset = page_h_px + page_gap_px;
+
+        // With this scroll, a click at client_y = canvas_origin.y + margin_top
+        // should resolve to the top-left content area of page 2.
+        let canvas_origin = canvas_origin_for_test();
+        let click_y = canvas_origin.1 + margin_top_px;
+
+        let result = hit_test_document(
+            margin_left_px,
+            click_y,
+            canvas_origin,
+            scroll_offset,
+            &layout,
+            page_w_px,
+            page_h_px,
+            page_gap_px,
+        );
+        let pos = result.expect("correct scroll_offset must resolve page 2 click");
+        assert_eq!(pos.page_index, 1, "scroll-adjusted click must land on page 1 (0-based)");
+    }
+
+    /// Verifies that omitting scroll_offset (passing 0) for a click that should
+    /// land on page 2 returns None or lands on the wrong page — confirming that
+    /// scroll_offset is required for correct multi-page hit testing.
+    #[test]
+    fn missing_scroll_offset_misses_page2_click() {
+        let layout = {
+            let single = make_test_layout();
+            let page0 = single.pages[0].clone();
+            let mut page1 = page0.clone();
+            page1.page_number = 2;
+            PaginatedLayout { page_size: single.page_size, pages: vec![page0, page1] }
+        };
+        let page = &layout.pages[0];
+        let page_h_px = pt_to_px(page.page_size.height);
+        let page_w_px = pt_to_px(page.page_size.width);
+        let page_gap_px = pt_to_px(24.0);
+        let margin_left_px = pt_to_px(page.margins.left);
+        let margin_top_px = pt_to_px(page.margins.top);
+
+        // Same scenario as above but scroll_offset is incorrectly left as 0.
+        let canvas_origin = canvas_origin_for_test();
+        let click_y = canvas_origin.1 + margin_top_px; // top of viewport when scrolled to page 2
+
+        let result = hit_test_document(
+            margin_left_px,
+            click_y,
+            canvas_origin,
+            0.0, // wrong: no scroll_offset applied
+            &layout,
+            page_w_px,
+            page_h_px,
+            page_gap_px,
+        );
+        // Without scroll_offset, click_y maps to page 0 content (near top),
+        // so result is either page 0 or None — never page 1.
+        if let Some(pos) = result {
+            assert_ne!(pos.page_index, 1, "without scroll_offset, click must not reach page 1");
+        }
     }
 }
