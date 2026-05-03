@@ -163,10 +163,8 @@ fn map_inlines(inlines: &[Inline], text: &LoroText) -> Result<(), BridgeError> {
                 let text_str = extract_plain_text(&run.content);
                 text.insert(start, &text_str)?;
                 let end = text.len_unicode();
-                if start < end {
-                    if let Some(props) = &run.direct_props {
-                        apply_char_props_marks(props, start, end, text)?;
-                    }
+                if start < end && let Some(props) = &run.direct_props {
+                    apply_char_props_marks(props, start, end, text)?;
                 }
             }
             Inline::Emph(inner) => {
@@ -195,7 +193,7 @@ fn map_inlines(inlines: &[Inline], text: &LoroText) -> Result<(), BridgeError> {
             }
             _ => {
                 // Ignore unsupported inline contents for this stub (or extract plain text implicitly)
-                let text_str = extract_plain_text(&[inline.clone()]);
+                let text_str = extract_plain_text(std::slice::from_ref(inline));
                 if !text_str.is_empty() {
                     text.insert(start, &text_str)?;
                 }
@@ -369,26 +367,25 @@ pub fn loro_to_document(loro: &LoroDoc) -> Result<Document, BridgeError> {
     doc.sections.clear(); // Clear the default section
     
     for i in 0..sections_list.len() {
-        if let Some(sec_val) = sections_list.get(i) {
-            if let Some(sec_map) = sec_val.into_container().ok().and_then(|c| c.into_map().ok()) {
-                let mut section = crate::layout::section::Section::new();
-                
-                if let Some(blocks_val) = sec_map.get(KEY_BLOCKS) {
-                    if let Some(blocks_list) = blocks_val.into_container().ok().and_then(|c| c.into_movable_list().ok()) {
-                        for j in 0..blocks_list.len() {
-                            if let Some(block_val) = blocks_list.get(j) {
-                                if let Some(block_map) = block_val.into_container().ok().and_then(|c| c.into_map().ok()) {
-                                    if let Ok(block) = map_loro_block(&block_map) {
-                                        section.blocks.push(block);
-                                    }
-                                }
-                            }
-                        }
+        if let Some(sec_val) = sections_list.get(i)
+            && let Some(sec_map) = sec_val.into_container().ok().and_then(|c| c.into_map().ok())
+        {
+            let mut section = crate::layout::section::Section::new();
+            
+            if let Some(blocks_val) = sec_map.get(KEY_BLOCKS)
+                && let Some(blocks_list) = blocks_val.into_container().ok().and_then(|c| c.into_movable_list().ok())
+            {
+                for j in 0..blocks_list.len() {
+                    if let Some(block_val) = blocks_list.get(j)
+                        && let Some(block_map) = block_val.into_container().ok().and_then(|c| c.into_map().ok())
+                        && let Ok(block) = map_loro_block(&block_map)
+                    {
+                        section.blocks.push(block);
                     }
                 }
-                
-                doc.sections.push(section);
             }
+            
+            doc.sections.push(section);
         }
     }
     
@@ -476,9 +473,10 @@ fn map_loro_block(map: &LoroMap) -> Result<Block, BridgeError> {
 
 fn reconstruct_inlines(map: &LoroMap) -> Result<Vec<Inline>, BridgeError> {
     let mut inlines = Vec::new();
-    if let Some(content_val) = map.get(KEY_CONTENT) {
-        if let Some(text_container) = content_val.into_container().ok().and_then(|c| c.into_text().ok()) {
-            let delta = text_container.to_delta();
+    if let Some(content_val) = map.get(KEY_CONTENT)
+        && let Some(text_container) = content_val.into_container().ok().and_then(|c| c.into_text().ok())
+    {
+        let delta = text_container.to_delta();
             for span in delta {
                 // span might be an enum DeltaItem::Insert
                 if let loro::TextDelta::Insert { insert, attributes } = span {
@@ -514,7 +512,6 @@ fn reconstruct_inlines(map: &LoroMap) -> Result<Vec<Inline>, BridgeError> {
                     }
                 }
             }
-        }
     }
     Ok(inlines)
 }
