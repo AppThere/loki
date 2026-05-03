@@ -3,58 +3,104 @@
 
 //! DocumentView component for rendering pages from loki-renderer cache.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use dioxus::native::use_wgpu;
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
-use loki_render_cache::PageIndex;
+use loki_render_cache::PageCache;
 use loki_theme::tokens;
 
+use crate::doc_page_source::DocPageSource;
+use crate::page_paint_source::LokiPageSource;
 use crate::renderer_state::RendererState;
 use crate::scroll_driver::{on_scroll_event, use_settle_detector};
+
+// ── DocumentViewProps ─────────────────────────────────────────────────────────
 
 /// Props for the DocumentView component.
 #[derive(Props, Clone)]
 pub struct DocumentViewProps {
     pub doc: Arc<Document>,
     pub viewport_height_px: f64,
-    pub device: Arc<wgpu::Device>,
-    pub wgpu_queue: Arc<wgpu::Queue>,
 }
 
 impl PartialEq for DocumentViewProps {
     fn eq(&self, _other: &Self) -> bool {
-        false // Conservatively always re-render, Document doesn't implement PartialEq
+        false // Conservatively always re-render
     }
 }
 
-/// Snapshot of one page's display state, built under the cache lock and used
-/// after the lock is released.
-struct PageSnapshot {
-    index: PageIndex,
+// ── PageTile ──────────────────────────────────────────────────────────────────
+
+#[derive(Clone, Props)]
+struct PageTileProps {
+    /// Shared tier-and-dirty metadata store from `RendererState`.
+    cache: Arc<Mutex<PageCache>>,
+    /// Document layout + page-size source.
+    source: Arc<DocPageSource>,
+    page_index: usize,
     top: f64,
     w: f64,
     h: f64,
-    /// PNG data URI ready for `img.src`, or `None` while the page is still
-    /// rendering or has never been settled.
-    data_uri: Option<Arc<String>>,
 }
+
+impl PartialEq for PageTileProps {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.cache, &other.cache)
+            && Arc::ptr_eq(&self.source, &other.source)
+            && self.page_index == other.page_index
+            && self.w == other.w
+            && self.h == other.h
+    }
+}
+
+/// A single page rendered into a Blitz GPU canvas.
+///
+/// Calls `use_wgpu` exactly once per instance — the hook-count invariant is
+/// satisfied by Dioxus's key-based reconciliation in `DocumentView`.
+#[allow(non_snake_case)]
+fn PageTile(props: PageTileProps) -> Element {
+    let cache = props.cache.clone();
+    let source = props.source.clone();
+    let page_index = props.page_index;
+
+    let canvas_id = use_wgpu(move || LokiPageSource::new(cache, source, page_index));
+
+    rsx! {
+        div {
+            style: format!(
+                "position: absolute; top: {top}px; left: 50%; \
+                 transform: translateX(-50%); width: {w}px; height: {h}px;",
+                top = props.top,
+                w   = props.w,
+                h   = props.h,
+            ),
+            canvas {
+                "src": "{canvas_id}",
+                style: format!(
+                    "width: {w}px; height: {h}px; display: block;",
+                    w = props.w,
+                    h = props.h,
+                ),
+            }
+        }
+    }
+}
+
+// ── DocumentView ──────────────────────────────────────────────────────────────
 
 /// Root document rendering component.
 ///
 /// - Initialises `RendererState` via `use_hook` and provides it as context.
 /// - Launches the settle detector via `use_settle_detector`.
-/// - Renders visible page tiles from the cache.
+/// - Renders one `PageTile` per page; each tile registers a `LokiPageSource`
+///   via `use_wgpu` and Blitz drives rendering each frame.
 /// - Passes scroll events to `on_scroll_event`.
 #[component]
 pub fn DocumentView(props: DocumentViewProps) -> Element {
     let renderer = use_hook(|| {
-        RendererState::new(
-            props.doc.clone(),
-            props.viewport_height_px,
-            props.device.clone(),
-            props.wgpu_queue.clone(),
-        )
+        RendererState::new(props.doc.clone(), props.viewport_height_px)
     });
     provide_context(renderer.clone());
 
@@ -69,50 +115,26 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
     };
 
     let layout = renderer.source.layout();
+    let mut total_height = 0.0f64;
 
-    // Snapshot cache state into a Vec, then drop the guard before rsx! so the
-    // render thread does not hold the mutex across the Dioxus diffing pass.
-    let (pages, total_height) = {
-        let cache = renderer.cache.lock().unwrap_or_else(|e| e.into_inner());
-        let mut top = 0.0f64;
-        let mut hot = 0u32;
-        let mut warm = 0u32;
-        let mut cold = 0u32;
+    let pages: Vec<(usize, f64, f64, f64)> = layout
+        .pages
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let h = p.page_size.height as f64;
+            let top = total_height;
+            total_height += h + tokens::PAGE_GAP_PX as f64;
+            (i, top, p.page_size.width as f64, h)
+        })
+        .collect();
 
-        let snaps: Vec<PageSnapshot> = layout
-            .pages
-            .iter()
-            .enumerate()
-            .map(|(i, p)| {
-                let h = p.page_size.height as f64;
-                let page_top = top;
-                top += h + tokens::PAGE_GAP_PX as f64;
-
-                let index = PageIndex(i as u32);
-                let cached = cache.get(index);
-                let data_uri = cached.and_then(|cp| {
-                    match cp.tier {
-                        loki_render_cache::CacheTier::Hot => hot += 1,
-                        loki_render_cache::CacheTier::Warm => warm += 1,
-                        loki_render_cache::CacheTier::Cold => cold += 1,
-                    }
-                    cp.data_uri.clone()
-                });
-
-                PageSnapshot {
-                    index,
-                    top: page_top,
-                    w: p.page_size.width as f64,
-                    h,
-                    data_uri,
-                }
-            })
-            .collect();
-
-        tracing::debug!(hot, warm, cold, "Document view rendered");
-        (snaps, top)
-    };
-    // Cache guard dropped here — rsx! runs without holding the mutex.
+    let (hot, warm, cold) = renderer
+        .cache
+        .lock()
+        .map(|g| g.page_count_by_tier())
+        .unwrap_or((0, 0, 0));
+    tracing::debug!(hot, warm, cold, "DocumentView rendered");
 
     rsx! {
         div {
@@ -120,38 +142,15 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
             onscroll: onscroll,
             div {
                 style: "position: relative; width: 100%; height: {total_height}px;",
-                for snap in pages {
-                    if let Some(ref uri) = snap.data_uri {
-                        div {
-                            key: "{snap.index.0}",
-                            style: format!(
-                                "position: absolute; top: {top}px; left: 50%; \
-                                 transform: translateX(-50%); width: {w}px; height: {h}px;",
-                                top = snap.top,
-                                w = snap.w,
-                                h = snap.h,
-                            ),
-                            img {
-                                src: "{uri}",
-                                width: "{snap.w}",
-                                height: "{snap.h}",
-                                style: "display: block; width: 100%; height: 100%;",
-                            }
-                        }
-                    } else {
-                        div {
-                            key: "{snap.index.0}",
-                            style: format!(
-                                "position: absolute; top: {top}px; left: 50%; \
-                                 transform: translateX(-50%); width: {w}px; height: {h}px; \
-                                 background: {bg}; display: flex; \
-                                 align-items: center; justify-content: center;",
-                                top = snap.top,
-                                w = snap.w,
-                                h = snap.h,
-                                bg = tokens::COLOR_SURFACE_PAGE,
-                            ),
-                        }
+                for (idx, top, w, h) in pages {
+                    PageTile {
+                        key: "{idx}",
+                        cache: renderer.cache.clone(),
+                        source: renderer.source.clone(),
+                        page_index: idx,
+                        top,
+                        w,
+                        h,
                     }
                 }
             }

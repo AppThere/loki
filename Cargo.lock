@@ -3801,8 +3801,6 @@ dependencies = [
 name = "loki-render-cache"
 version = "0.1.0"
 dependencies = [
- "base64",
- "image",
  "pollster 0.4.0",
  "thiserror 2.0.18",
  "tracing",
@@ -3813,6 +3811,7 @@ dependencies = [
 name = "loki-renderer"
 version = "0.1.0"
 dependencies = [
+ "anyrender_vello",
  "dioxus",
  "loki-doc-model",
  "loki-layout",
