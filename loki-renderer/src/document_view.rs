@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
-use loki_render_cache::{CacheTier, PageIndex};
+use loki_render_cache::PageIndex;
 use loki_theme::tokens;
 
 use crate::renderer_state::RendererState;
@@ -26,6 +26,18 @@ impl PartialEq for DocumentViewProps {
     fn eq(&self, _other: &Self) -> bool {
         false // Conservatively always re-render, Document doesn't implement PartialEq
     }
+}
+
+/// Snapshot of one page's display state, built under the cache lock and used
+/// after the lock is released.
+struct PageSnapshot {
+    index: PageIndex,
+    top: f64,
+    w: f64,
+    h: f64,
+    /// PNG data URI ready for `img.src`, or `None` while the page is still
+    /// rendering or has never been settled.
+    data_uri: Option<Arc<String>>,
 }
 
 /// Root document rendering component.
@@ -57,43 +69,50 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
     };
 
     let layout = renderer.source.layout();
-    let mut total_height = 0.0;
-    
-    let mut hot_count = 0;
-    let mut warm_count = 0;
-    let mut cold_count = 0;
 
-    let cache_guard = renderer.cache.lock().unwrap();
+    // Snapshot cache state into a Vec, then drop the guard before rsx! so the
+    // render thread does not hold the mutex across the Dioxus diffing pass.
+    let (pages, total_height) = {
+        let cache = renderer.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut top = 0.0f64;
+        let mut hot = 0u32;
+        let mut warm = 0u32;
+        let mut cold = 0u32;
 
-    let pages = layout.pages.iter().enumerate().map(|(i, p)| {
-        let h = p.page_size.height as f64;
-        let top = total_height;
-        total_height += h + tokens::PAGE_GAP_PX as f64;
-        
-        let index = PageIndex(i as u32);
-        let cached = cache_guard.get(index);
-        
-        let tier = match cached {
-            Some(cp) => {
-                match cp.tier {
-                    CacheTier::Hot => hot_count += 1,
-                    CacheTier::Warm => warm_count += 1,
-                    CacheTier::Cold => cold_count += 1,
+        let snaps: Vec<PageSnapshot> = layout
+            .pages
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let h = p.page_size.height as f64;
+                let page_top = top;
+                top += h + tokens::PAGE_GAP_PX as f64;
+
+                let index = PageIndex(i as u32);
+                let cached = cache.get(index);
+                let data_uri = cached.and_then(|cp| {
+                    match cp.tier {
+                        loki_render_cache::CacheTier::Hot => hot += 1,
+                        loki_render_cache::CacheTier::Warm => warm += 1,
+                        loki_render_cache::CacheTier::Cold => cold += 1,
+                    }
+                    cp.data_uri.clone()
+                });
+
+                PageSnapshot {
+                    index,
+                    top: page_top,
+                    w: p.page_size.width as f64,
+                    h,
+                    data_uri,
                 }
-                Some(cp.tier)
-            },
-            None => None
-        };
-        
-        (index, top, p.page_size.width as f64, h, tier)
-    }).collect::<Vec<_>>();
+            })
+            .collect();
 
-    tracing::debug!(
-        hot = hot_count,
-        warm = warm_count,
-        cold = cold_count,
-        "Document view rendered"
-    );
+        tracing::debug!(hot, warm, cold, "Document view rendered");
+        (snaps, top)
+    };
+    // Cache guard dropped here — rsx! runs without holding the mutex.
 
     rsx! {
         div {
@@ -101,27 +120,37 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
             onscroll: onscroll,
             div {
                 style: "position: relative; width: 100%; height: {total_height}px;",
-                for (idx, top, w, h, tier) in pages {
-                    if matches!(tier, Some(CacheTier::Hot) | Some(CacheTier::Warm)) {
+                for snap in pages {
+                    if let Some(ref uri) = snap.data_uri {
                         div {
-                            key: "{idx.0}",
+                            key: "{snap.index.0}",
                             style: format!(
                                 "position: absolute; top: {top}px; left: 50%; \
-                                 transform: translateX(-50%); width: {w}px; height: {h}px; \
-                                 background: {bg}; display: flex; align-items: center; justify-content: center;",
-                                bg = tokens::COLOR_SURFACE_PAGE,
+                                 transform: translateX(-50%); width: {w}px; height: {h}px;",
+                                top = snap.top,
+                                w = snap.w,
+                                h = snap.h,
                             ),
-                            span { "Page {idx.0} ({tier:?})" }
+                            img {
+                                src: "{uri}",
+                                width: "{snap.w}",
+                                height: "{snap.h}",
+                                style: "display: block; width: 100%; height: 100%;",
+                            }
                         }
                     } else {
                         div {
-                            key: "{idx.0}",
+                            key: "{snap.index.0}",
                             style: format!(
                                 "position: absolute; top: {top}px; left: 50%; \
                                  transform: translateX(-50%); width: {w}px; height: {h}px; \
-                                 background: #f0f0f0; display: flex; align-items: center; justify-content: center;"
+                                 background: {bg}; display: flex; \
+                                 align-items: center; justify-content: center;",
+                                top = snap.top,
+                                w = snap.w,
+                                h = snap.h,
+                                bg = tokens::COLOR_SURFACE_PAGE,
                             ),
-                            span { "Page {idx.0} (Cold/None)" }
                         }
                     }
                 }

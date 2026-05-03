@@ -9,8 +9,10 @@ description = "Tiered page render cache policy for Loki's Vello renderer"
 [dependencies]
 thiserror = "2"
 tracing   = "0.1"
-wgpu    = { version = "26", optional = true }
+wgpu     = { version = "26", optional = true }
 pollster = { version = "0.4", optional = true }
+image    = { version = "0.25", optional = true }
+base64   = { version = "0.22", optional = true }
 
 
 [features]
@@ -18,7 +20,7 @@ default = ["mock-texture"]
 mock-texture = []
 # `gpu` and `mock-texture` are mutually exclusive.
 # Enforced by a compile_error! guard in src/lib.rs.
-gpu = ["dep:wgpu", "dep:pollster"]
+gpu = ["dep:wgpu", "dep:pollster", "dep:image", "dep:base64"]
 
 [dev-dependencies]
 pollster = "0.4"

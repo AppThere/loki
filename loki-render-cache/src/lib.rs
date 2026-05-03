@@ -24,6 +24,8 @@ pub mod scroll_state;
 pub mod tier_policy;
 
 #[cfg(feature = "gpu")]
+pub mod readback;
+#[cfg(feature = "gpu")]
 pub mod render_queue;
 #[cfg(feature = "gpu")]
 pub mod texture;
@@ -37,6 +39,8 @@ pub use tier_policy::{CacheTier, PageGeometry, assign_tier};
 
 #[cfg(feature = "gpu")]
 pub use page_source::PageSource;
+#[cfg(feature = "gpu")]
+pub use readback::ReadbackError;
 #[cfg(feature = "gpu")]
 pub use render_queue::RenderQueue;
 #[cfg(feature = "gpu")]

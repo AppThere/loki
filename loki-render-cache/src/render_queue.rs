@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex, mpsc};
 
 use crate::page_cache::PageCache;
 use crate::page_source::PageSource;
+use crate::readback::texture_to_data_uri;
 use crate::retier::RetierResult;
 use crate::texture::downsample_texture;
 use crate::{CacheTier, PageIndex};
@@ -107,8 +108,22 @@ fn worker_loop(
                 );
                 match source.render(index, tier.scale_factor(), &device, &queue) {
                     Ok(texture) => {
+                        let data_uri = match texture_to_data_uri(&device, &queue, &texture) {
+                            Ok(uri) => Some(uri),
+                            Err(e) => {
+                                tracing::warn!(
+                                    index = index.0,
+                                    error = %e,
+                                    "worker: readback failed; page will show placeholder",
+                                );
+                                None
+                            }
+                        };
                         let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
                         guard.insert(index, tier, texture);
+                        if let Some(uri) = data_uri {
+                            guard.set_data_uri(index, uri);
+                        }
                         tracing::debug!(index = index.0, "worker: Rerender complete");
                     }
                     Err(e) => {
@@ -139,8 +154,22 @@ fn worker_loop(
                 let blit_scale = (target_tier.scale_factor() / src_scale).clamp(f32::EPSILON, 1.0);
 
                 let new_texture = downsample_texture(&device, &queue, &entry.texture, blit_scale);
+                let data_uri = match texture_to_data_uri(&device, &queue, &new_texture) {
+                    Ok(uri) => Some(uri),
+                    Err(e) => {
+                        tracing::warn!(
+                            index = index.0,
+                            error = %e,
+                            "worker: readback failed after downsample; page will show placeholder",
+                        );
+                        None
+                    }
+                };
                 let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
                 guard.insert(index, target_tier, new_texture);
+                if let Some(uri) = data_uri {
+                    guard.set_data_uri(index, uri);
+                }
                 tracing::debug!(index = index.0, "worker: Downsample complete");
             }
 

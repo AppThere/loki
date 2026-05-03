@@ -4,6 +4,7 @@
 //! LRU-tracked per-page texture store.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::{CacheTier, PageIndex, PageTexture};
 
@@ -20,6 +21,10 @@ pub struct CachedPage {
     /// LRU clock value at the time this page was last accessed or inserted.
     /// Higher values are more recently used.
     pub(crate) last_access: u64,
+    /// PNG data URI (`data:image/png;base64,...`) for display in an `img`
+    /// element.  Set asynchronously by the render worker after readback;
+    /// `None` until the first readback completes or after eviction.
+    pub data_uri: Option<Arc<String>>,
 }
 
 /// Texture store for all document pages, with an LRU clock and Cold-tier
@@ -51,8 +56,18 @@ impl PageCache {
         self.clock += 1;
         self.pages.insert(
             index,
-            CachedPage { tier, texture, dirty: false, last_access: self.clock },
+            CachedPage { tier, texture, dirty: false, last_access: self.clock, data_uri: None },
         );
+    }
+
+    /// Stores the PNG data URI for `index` after a GPU readback completes.
+    ///
+    /// Has no effect if the page is not in the cache (e.g. evicted between
+    /// render completion and this call).
+    pub fn set_data_uri(&mut self, index: PageIndex, uri: Arc<String>) {
+        if let Some(page) = self.pages.get_mut(&index) {
+            page.data_uri = Some(uri);
+        }
     }
 
     /// Marks the page at `index` as dirty.
