@@ -3803,6 +3803,24 @@ version = "0.1.0"
 dependencies = [
  "pollster 0.4.0",
  "thiserror 2.0.18",
+ "tracing",
+ "wgpu 26.0.1",
+]
+
+[[package]]
+name = "loki-renderer"
+version = "0.1.0"
+dependencies = [
+ "dioxus",
+ "loki-doc-model",
+ "loki-layout",
+ "loki-render-cache",
+ "loki-theme",
+ "loki-vello",
+ "pollster 0.4.0",
+ "tokio",
+ "tracing",
+ "vello",
  "wgpu 26.0.1",
 ]
 

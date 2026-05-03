@@ -1,13 +1,10 @@
-use loro::*;
-fn test(doc: LoroDoc) {
-    let t = doc.get_text("t");
-    let d = t.to_delta();
-    for span in d {
-        match span {
-            TextDelta::Insert { insert, attributes } => {
-                let _i: String = insert;
+use dioxus::prelude::*;
+fn app() -> Element {
+    rsx! {
+        div {
+            onscroll: |evt| {
+                let _ = evt.get_scroll_offset(); // Check if this exists
             }
-            _ => {}
         }
     }
 }

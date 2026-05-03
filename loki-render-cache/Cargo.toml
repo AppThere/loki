@@ -8,8 +8,10 @@ description = "Tiered page render cache policy for Loki's Vello renderer"
 # thiserror is used by RenderError regardless of GPU feature.
 [dependencies]
 thiserror = "2"
+tracing   = "0.1"
 wgpu    = { version = "26", optional = true }
 pollster = { version = "0.4", optional = true }
+
 
 [features]
 default = ["mock-texture"]

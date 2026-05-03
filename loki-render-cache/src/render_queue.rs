@@ -5,7 +5,7 @@
 //!
 //! Only compiled when the `gpu` feature is active.
 
-#![cfg(feature = "gpu")]
+
 
 use std::sync::{Arc, Mutex, mpsc};
 
@@ -99,22 +99,39 @@ fn worker_loop(
     for job in receiver {
         match job {
             RenderJob::Rerender { index, tier } => {
+                tracing::debug!(
+                    index = index.0,
+                    tier  = ?tier,
+                    scale = tier.scale_factor(),
+                    "worker: dequeued Rerender",
+                );
                 match source.render(index, tier.scale_factor(), &device, &queue) {
                     Ok(texture) => {
                         let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
                         guard.insert(index, tier, texture);
+                        tracing::debug!(index = index.0, "worker: Rerender complete");
                     }
-                    Err(e) => eprintln!("loki-render-cache: rerender error {index:?}: {e}"),
+                    Err(e) => {
+                        tracing::warn!(index = index.0, error = %e, "worker: Rerender failed");
+                    }
                 }
             }
 
             RenderJob::Downsample { index, target_tier } => {
+                tracing::debug!(
+                    index       = index.0,
+                    target_tier = ?target_tier,
+                    "worker: dequeued Downsample",
+                );
                 // Remove the page to take ownership of its texture for the blit.
                 let entry = {
                     let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
                     guard.pages.remove(&index)
                 };
-                let Some(entry) = entry else { continue };
+                let Some(entry) = entry else {
+                    tracing::debug!(index = index.0, "worker: Downsample skipped (page evicted)");
+                    continue;
+                };
 
                 // Compute blit scale: target pixel size / current texture size.
                 let (orig_w, _) = source.page_size_px(index);
@@ -124,9 +141,13 @@ fn worker_loop(
                 let new_texture = downsample_texture(&device, &queue, &entry.texture, blit_scale);
                 let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
                 guard.insert(index, target_tier, new_texture);
+                tracing::debug!(index = index.0, "worker: Downsample complete");
             }
 
-            RenderJob::Shutdown => break,
+            RenderJob::Shutdown => {
+                tracing::debug!("worker: received Shutdown, exiting");
+                break;
+            }
         }
     }
 }

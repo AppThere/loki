@@ -5,7 +5,7 @@
 //!
 //! Only compiled when the `gpu` feature is active.
 
-#![cfg(feature = "gpu")]
+
 
 /// Fullscreen-triangle blit shader (WGSL).
 ///

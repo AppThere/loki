@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["loki-doc-model","loki-opc","loki-primitives","loki-ooxml","loki-odf","loki-layout","loki-vello","loki-theme","loki-text","loki-render-cache"]
+members = ["loki-doc-model","loki-opc","loki-primitives","loki-ooxml","loki-odf","loki-layout","loki-vello","loki-theme","loki-text","loki-render-cache","loki-renderer"]
 
 [patch.crates-io]
 # PATCH: fixes missing fontconfig_sys alias and dlopen/static feature-unification
