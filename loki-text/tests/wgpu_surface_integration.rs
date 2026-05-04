@@ -28,11 +28,11 @@
 //! Dioxus component and the paint source.
 
 use loki_text::components::document_source::DocumentState;
+use loki_vello::FontDataCache;
 use std::sync::{Arc, Mutex};
 
-#[test]
-fn document_state_default_has_no_document() {
-    let state = DocumentState {
+fn make_state() -> DocumentState {
+    DocumentState {
         document: None,
         generation: 0,
         page_count: 0,
@@ -44,12 +44,23 @@ fn document_state_default_has_no_document() {
         preserve_for_editing: false,
         paginated_layout: None,
         shared_renderer: Arc::new(Mutex::new(None)),
-    };
+        shared_font_cache: Arc::new(Mutex::new(FontDataCache::new())),
+        layout_stamp: 0,
+        layout_generation: 0,
+        layout_canvas_width: 0.0,
+        layout_preserve_for_editing: false,
+    }
+}
+
+#[test]
+fn document_state_default_has_no_document() {
+    let state = make_state();
     assert!(state.document.is_none());
     assert_eq!(state.generation, 0);
     assert_eq!(state.page_count, 0);
     assert_eq!(state.canvas_width, 0.0);
     assert!(state.visible_rect.is_none());
+    assert_eq!(state.layout_stamp, 0);
 }
 
 #[test]
@@ -61,19 +72,7 @@ fn generation_wraps_without_panic() {
 
 #[test]
 fn document_state_can_be_shared_across_threads() {
-    let state = Arc::new(Mutex::new(DocumentState {
-        document: None,
-        generation: 0,
-        page_count: 0,
-        canvas_width: 0.0,
-        visible_rect: None,
-        page_width_px: 0.0,
-        page_height_px: 0.0,
-        cursor_state: None,
-        preserve_for_editing: false,
-        paginated_layout: None,
-        shared_renderer: Arc::new(Mutex::new(None)),
-    }));
+    let state = Arc::new(Mutex::new(make_state()));
     let state2 = Arc::clone(&state);
     let handle = std::thread::spawn(move || {
         let mut s = state2.lock().unwrap();
@@ -85,24 +84,9 @@ fn document_state_can_be_shared_across_threads() {
 
 /// Simulates the WgpuSurface component bumping `generation` on N consecutive
 /// document changes and verifies the counter is monotonically non-decreasing.
-/// This is the signal `LokiDocumentSource` uses to decide whether to discard
-/// its cached texture handle and render a new texture; stale counters would
-/// cause the reuse guard to suppress re-renders after a document change.
 #[test]
 fn generation_is_monotone_across_document_changes() {
-    let state = Arc::new(Mutex::new(DocumentState {
-        document: None,
-        generation: 0,
-        page_count: 0,
-        canvas_width: 0.0,
-        visible_rect: None,
-        page_width_px: 0.0,
-        page_height_px: 0.0,
-        cursor_state: None,
-        preserve_for_editing: false,
-        paginated_layout: None,
-        shared_renderer: Arc::new(Mutex::new(None)),
-    }));
+    let state = Arc::new(Mutex::new(make_state()));
 
     let mut prev = 0u64;
     for _ in 0..10 {

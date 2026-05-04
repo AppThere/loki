@@ -106,6 +106,11 @@ pub fn Editor(path: String) -> Element {
             paginated_layout: None,
             preserve_for_editing: false,
             shared_renderer: Arc::new(Mutex::new(None)),
+            shared_font_cache: Arc::new(Mutex::new(loki_vello::FontDataCache::new())),
+            layout_stamp: 0,
+            layout_generation: 0,
+            layout_canvas_width: 0.0,
+            layout_preserve_for_editing: false,
         }))
     });
 
