@@ -50,6 +50,10 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         let mut hover_node_id = self.doc().hover_node_id;
         let focussed_node_id = self.doc().focus_node_id;
 
+        if matches!(event, UiEvent::KeyDown(_)) {
+            println!("DBG1 KEYDOWN: focussed_node_id={:?}", focussed_node_id);
+        }
+
         // Update document input state (hover, focus, active, etc)
         match &event {
             UiEvent::MouseMove(event) => {
