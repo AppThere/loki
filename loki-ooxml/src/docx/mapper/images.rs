@@ -19,20 +19,14 @@ pub(crate) fn map_drawing(
     drawing: &DocxDrawing,
     ctx: &mut MappingContext<'_>,
 ) -> Option<Inline> {
-    let rel_id = match &drawing.rel_id {
-        Some(id) => id.clone(),
-        None => {
-            ctx.warnings.push(OoxmlWarning::UnresolvedImage { rel_id: String::new() });
-            return None;
-        }
+    let Some(rel_id) = drawing.rel_id.clone() else {
+        ctx.warnings.push(OoxmlWarning::UnresolvedImage { rel_id: String::new() });
+        return None;
     };
 
-    let part = match ctx.images.get(&rel_id) {
-        Some(p) => p,
-        None => {
-            ctx.warnings.push(OoxmlWarning::UnresolvedImage { rel_id });
-            return None;
-        }
+    let Some(part) = ctx.images.get(&rel_id) else {
+        ctx.warnings.push(OoxmlWarning::UnresolvedImage { rel_id });
+        return None;
     };
 
     let uri = if ctx.options.embed_images {

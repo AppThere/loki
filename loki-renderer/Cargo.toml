@@ -1,0 +1,23 @@
+[package]
+name = "loki-renderer"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Dioxus signal integration and tracing orchestration layer for Loki's render cache"
+
+[dependencies]
+loki-render-cache = { path = "../loki-render-cache", features = ["gpu"] }
+loki-doc-model    = { path = "../loki-doc-model" }
+loki-layout       = { path = "../loki-layout" }
+loki-vello        = { path = "../loki-vello" }
+loki-theme        = { path = "../loki-theme" }
+dioxus            = { version = "0.7", features = ["native"] }
+# CustomPaintSource / CustomPaintCtx / TextureHandle / DeviceHandle for LokiPageSource.
+anyrender_vello   = "0.6.2"
+tracing           = "0.1"
+wgpu              = "26"
+vello             = "0.6"
+tokio             = { version = "1", features = ["time"] }
+
+[dev-dependencies]
+pollster = "0.4"

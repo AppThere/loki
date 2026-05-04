@@ -138,6 +138,8 @@ impl DocxImporter {
 ///
 /// Used by both [`DocxImporter::run`] and the public
 /// [`crate::docx::mapper::map_document`] entry point.
+// Function body is a single large match over XML events; splitting would reduce readability.
+#[allow(clippy::too_many_lines)]
 pub(crate) fn parse_and_map_package(
     package: &Package,
     options: &DocxImportOptions,
@@ -201,7 +203,7 @@ pub(crate) fn parse_and_map_package(
         doc_rels,
         REL_FOOTNOTES,
         doc_part_name.as_str(),
-        |bytes, part| parse_notes(bytes, part),
+        parse_notes,
     )?;
 
     let raw_endnotes = resolve_optional_part(
@@ -209,7 +211,7 @@ pub(crate) fn parse_and_map_package(
         doc_rels,
         REL_ENDNOTES,
         doc_part_name.as_str(),
-        |bytes, part| parse_notes(bytes, part),
+        parse_notes,
     )?;
 
     let raw_settings = resolve_optional_part(
@@ -233,33 +235,29 @@ pub(crate) fn parse_and_map_package(
 
         if options.embed_images {
             for rel in rels.by_type(REL_IMAGE) {
-                if let Ok(img_name) =
-                    resolve_part_name(doc_part_name.as_str(), &rel.target)
+                if let Ok(img_name) = resolve_part_name(doc_part_name.as_str(), &rel.target)
+                    && let Some(part) = package.part(&img_name)
                 {
-                    if let Some(part) = package.part(&img_name) {
-                        images.insert(rel.id.clone(), part.clone());
-                    }
+                    images.insert(rel.id.clone(), part.clone());
                 }
             }
         }
 
         for rel in rels.by_type(REL_HEADER) {
-            if let Ok(name) = resolve_part_name(doc_part_name.as_str(), &rel.target) {
-                if let Some(part) = package.part(&name) {
-                    if let Ok(paras) = parse_header_footer(&part.bytes, name.as_str()) {
-                        header_parts.insert(rel.id.clone(), paras);
-                    }
-                }
+            if let Ok(name) = resolve_part_name(doc_part_name.as_str(), &rel.target)
+                && let Some(part) = package.part(&name)
+                && let Ok(paras) = parse_header_footer(&part.bytes, name.as_str())
+            {
+                header_parts.insert(rel.id.clone(), paras);
             }
         }
 
         for rel in rels.by_type(REL_FOOTER) {
-            if let Ok(name) = resolve_part_name(doc_part_name.as_str(), &rel.target) {
-                if let Some(part) = package.part(&name) {
-                    if let Ok(paras) = parse_header_footer(&part.bytes, name.as_str()) {
-                        footer_parts.insert(rel.id.clone(), paras);
-                    }
-                }
+            if let Ok(name) = resolve_part_name(doc_part_name.as_str(), &rel.target)
+                && let Some(part) = package.part(&name)
+                && let Ok(paras) = parse_header_footer(&part.bytes, name.as_str())
+            {
+                footer_parts.insert(rel.id.clone(), paras);
             }
         }
     }
@@ -271,8 +269,8 @@ pub(crate) fn parse_and_map_package(
         raw_numbering.as_ref(),
         raw_footnotes.as_ref(),
         raw_endnotes.as_ref(),
-        images,
-        hyperlinks,
+        &images,
+        &hyperlinks,
         &header_parts,
         &footer_parts,
         raw_settings.as_ref(),
@@ -300,7 +298,7 @@ fn resolve_part_name(base: &str, target: &str) -> OpcResult<PartName> {
     if target.starts_with('/') {
         return PartName::new(target).map_err(OoxmlError::Opc);
     }
-    let dir = base.rfind('/').map(|i| &base[..=i]).unwrap_or("/");
+    let dir = base.rfind('/').map_or("/", |i| &base[..=i]);
     PartName::new(format!("{dir}{target}")).map_err(OoxmlError::Opc)
 }
 
@@ -320,19 +318,10 @@ fn resolve_optional_part<T, F>(
 where
     F: Fn(&[u8], &str) -> OpcResult<T>,
 {
-    let rels = match doc_rels {
-        Some(r) => r,
-        None => return Ok(None),
-    };
-    let rel = match rels.by_type(rel_type).next() {
-        Some(r) => r,
-        None => return Ok(None),
-    };
+    let Some(rels) = doc_rels else { return Ok(None) };
+    let Some(rel) = rels.by_type(rel_type).next() else { return Ok(None) };
     let part_name = resolve_part_name(base_part, &rel.target)?;
-    let part = match package.part(&part_name) {
-        Some(p) => p,
-        None => return Ok(None),
-    };
+    let Some(part) = package.part(&part_name) else { return Ok(None) };
     let result = parse(&part.bytes, part_name.as_str())?;
     Ok(Some(result))
 }

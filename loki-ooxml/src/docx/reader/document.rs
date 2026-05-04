@@ -10,7 +10,11 @@ use quick_xml::events::Event;
 use quick_xml::Reader;
 
 use crate::docx::model::document::{DocxBodyChild, DocxDocument};
-use crate::docx::model::paragraph::*;
+use crate::docx::model::paragraph::{
+    DocxBorderEdge, DocxDrawing, DocxHdrFtrRef, DocxHyperlink, DocxInd, DocxNumPr, DocxPBdr,
+    DocxPPr, DocxParagraph, DocxParaChild, DocxPgMar, DocxPgSz, DocxRFonts, DocxRPr, DocxRun,
+    DocxRunChild, DocxSectPr, DocxSpacing, DocxTab,
+};
 use crate::docx::model::styles::{DocxTableCell, DocxTableModel, DocxTableRow, DocxTcBorders, DocxTcPr, DocxTrPr};
 use crate::docx::reader::util::{attr_val, local_name, parse_emu, toggle_prop};
 use crate::error::{OoxmlError, OoxmlResult};
@@ -171,7 +175,7 @@ pub(crate) fn parse_ppr_element(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxP
                         let mut nbuf = Vec::new();
                         loop {
                             match reader.read_event_into(&mut nbuf) {
-                                Ok(Event::Empty(ref ne)) | Ok(Event::Start(ref ne)) => {
+                                Ok(Event::Empty(ref ne) | Event::Start(ref ne)) => {
                                     match local_name(ne.local_name().as_ref()) {
                                         b"ilvl" => {
                                             ilvl = attr_val(ne, b"val")
@@ -262,18 +266,18 @@ fn apply_ppr_attr(name: &[u8], e: &quick_xml::events::BytesStart<'_>, ppr: &mut 
                 line_rule: attr_val(e, b"lineRule"),
             });
         }
-        b"keepLines" => ppr.keep_lines = toggle_prop(attr_val(e, b"val").as_deref()),
-        b"keepNext" => ppr.keep_next = toggle_prop(attr_val(e, b"val").as_deref()),
+        b"keepLines" => ppr.keep_lines = Some(toggle_prop(attr_val(e, b"val").as_deref())),
+        b"keepNext" => ppr.keep_next = Some(toggle_prop(attr_val(e, b"val").as_deref())),
         b"pageBreakBefore" => {
-            ppr.page_break_before = toggle_prop(attr_val(e, b"val").as_deref());
+            ppr.page_break_before = Some(toggle_prop(attr_val(e, b"val").as_deref()));
         }
         b"outlineLvl" => {
             ppr.outline_lvl = attr_val(e, b"val")
                 .as_deref()
                 .and_then(|v| v.parse::<u8>().ok());
         }
-        b"bidi" => ppr.bidi = toggle_prop(attr_val(e, b"val").as_deref()),
-        b"widowControl" => ppr.widow_control = toggle_prop(attr_val(e, b"val").as_deref()),
+        b"bidi" => ppr.bidi = Some(toggle_prop(attr_val(e, b"val").as_deref())),
+        b"widowControl" => ppr.widow_control = Some(toggle_prop(attr_val(e, b"val").as_deref())),
         _ => {}
     }
 }
@@ -285,26 +289,26 @@ pub(crate) fn parse_rpr_element(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxR
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+            Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
                 match local_name(e.local_name().as_ref()) {
                     b"rStyle" => rpr.style_id = attr_val(e, b"val"),
-                    b"b" => rpr.bold = toggle_prop(attr_val(e, b"val").as_deref()),
-                    b"i" => rpr.italic = toggle_prop(attr_val(e, b"val").as_deref()),
+                    b"b" => rpr.bold = Some(toggle_prop(attr_val(e, b"val").as_deref())),
+                    b"i" => rpr.italic = Some(toggle_prop(attr_val(e, b"val").as_deref())),
                     b"u" => rpr.underline = attr_val(e, b"val"),
                     b"strike" => {
-                        rpr.strike = toggle_prop(attr_val(e, b"val").as_deref());
+                        rpr.strike = Some(toggle_prop(attr_val(e, b"val").as_deref()));
                     }
                     b"dstrike" => {
-                        rpr.dstrike = toggle_prop(attr_val(e, b"val").as_deref());
+                        rpr.dstrike = Some(toggle_prop(attr_val(e, b"val").as_deref()));
                     }
                     b"smallCaps" => {
-                        rpr.small_caps = toggle_prop(attr_val(e, b"val").as_deref());
+                        rpr.small_caps = Some(toggle_prop(attr_val(e, b"val").as_deref()));
                     }
                     b"caps" => {
-                        rpr.all_caps = toggle_prop(attr_val(e, b"val").as_deref());
+                        rpr.all_caps = Some(toggle_prop(attr_val(e, b"val").as_deref()));
                     }
                     b"shadow" => {
-                        rpr.shadow = toggle_prop(attr_val(e, b"val").as_deref());
+                        rpr.shadow = Some(toggle_prop(attr_val(e, b"val").as_deref()));
                     }
                     b"color" => rpr.color = attr_val(e, b"val"),
                     b"highlight" => rpr.highlight = attr_val(e, b"val"),
@@ -366,6 +370,8 @@ pub(crate) fn parse_rpr_element(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxR
 }
 
 /// Parses a `w:r` element. Called after the Start("r") event is consumed.
+// Function body is a single large match over XML events; splitting would reduce readability.
+#[allow(clippy::too_many_lines)]
 fn parse_run(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxRun> {
     let mut run = DocxRun::default();
     let mut buf = Vec::new();
@@ -382,7 +388,7 @@ fn parse_run(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxRun> {
                 }
                 b"t" => {
                     let preserve = attr_val(e, b"space")
-                        .map_or(false, |v| v == "preserve");
+                        .is_some_and(|v| v == "preserve");
                     let mut text = String::new();
                     let mut tbuf = Vec::new();
                     loop {
@@ -547,7 +553,7 @@ fn parse_pbdr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxPBdr> {
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e)) => {
+            Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
                 let edge = DocxBorderEdge {
                     val: attr_val(e, b"val").unwrap_or_default(),
                     sz: attr_val(e, b"sz").and_then(|v| v.parse().ok()),
@@ -588,7 +594,7 @@ fn parse_tabs(reader: &mut Reader<&[u8]>, out: &mut Vec<DocxTab>) -> OoxmlResult
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e))
+            Ok(Event::Empty(ref e) | Event::Start(ref e))
                 if local_name(e.local_name().as_ref()) == b"tab" =>
             {
                 if let Some(val) = attr_val(e, b"val") {
@@ -626,7 +632,7 @@ pub(crate) fn parse_sect_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxSectP
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e)) => {
+            Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
                 match local_name(e.local_name().as_ref()) {
                     b"pgSz" => {
                         sect.pg_sz = Some(DocxPgSz {
@@ -681,7 +687,7 @@ pub(crate) fn parse_sect_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxSectP
                     b"titlePg" => {
                         // Presence enables first-page variant; w:val="0" disables.
                         sect.title_page = attr_val(e, b"val")
-                            .map_or(true, |v| !matches!(v.as_str(), "0" | "false" | "off"));
+                            .is_none_or(|v| !matches!(v.as_str(), "0" | "false" | "off"));
                     }
                     _ => {}
                 }
@@ -718,7 +724,7 @@ fn parse_drawing(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxDrawing> {
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+            Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
                 match local_name(e.local_name().as_ref()) {
                     b"anchor" => drawing.is_anchor = true,
                     b"extent" => {
@@ -764,17 +770,13 @@ fn parse_table(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTableModel> {
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => match local_name(e.local_name().as_ref()) {
-                b"tr" => {
+            Ok(Event::Start(ref e)) => {
+                if local_name(e.local_name().as_ref()) == b"tr" {
                     let row = parse_table_row(reader)?;
                     tbl.rows.push(row);
                 }
-                b"tblGrid" => {} // handle below
-                b"gridCol" => {
-                    // parse later
-                }
-                _ => {}
-            },
+                // tblGrid and gridCol: handled via Empty event below
+            }
             Ok(Event::Empty(ref e)) if local_name(e.local_name().as_ref()) == b"gridCol" => {
                 let w: i32 = attr_val(e, b"w")
                     .and_then(|v| v.parse().ok())
@@ -895,7 +897,7 @@ fn parse_tc_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTcPr> {
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e)) => {
+            Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
                 match local_name(e.local_name().as_ref()) {
                     b"gridSpan" => {
                         tc_pr.grid_span = attr_val(e, b"val").and_then(|v| v.parse().ok());
@@ -948,7 +950,7 @@ fn parse_tc_borders(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTcBorders> {
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e)) => {
+            Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
                 let edge = DocxBorderEdge {
                     val: attr_val(e, b"val").unwrap_or_default(),
                     sz: attr_val(e, b"sz").and_then(|v| v.parse().ok()),

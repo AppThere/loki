@@ -75,7 +75,7 @@ use loki_doc_model::document::Document;
 use loki_layout::{
     layout_document, DocumentLayout, FontResources, LayoutMode, LayoutOptions, PaginatedLayout,
 };
-use loki_vello::{paint_layout, paint_single_page, CursorPaint, FontDataCache, SelectionRect};
+use loki_vello::{paint_single_page, CursorPaint, FontDataCache, SelectionRect};
 use peniko::Color;
 use vello::{AaConfig, AaSupport, RenderParams, RendererOptions, Scene};
 
@@ -120,20 +120,37 @@ pub struct DocumentState {
     /// so that mouse click handlers can call `hit_test_document` without
     /// re-running the layout pipeline.
     ///
-    /// Populated by [`LokiDocumentSource::render()`] on the first GPU frame
-    /// after a document load or mutation. `None` until the first render.
+    /// Populated by the first [`LokiDocumentSource::render()`] to find it stale,
+    /// or by [`apply_mutation_and_relayout`].  `None` until the first render.
     pub paginated_layout: Option<Arc<PaginatedLayout>>,
-}
-
-// ── Cached layout ─────────────────────────────────────────────────────────────
-
-struct CachedLayout {
-    generation: u64,
-    canvas_width: f32,
-    layout: DocumentLayout,
-    font_cache: FontDataCache,
-    /// Whether this layout was run with `preserve_for_editing: true`.
-    preserve_for_editing: bool,
+    /// One `vello::Renderer` shared across all `LokiDocumentSource` instances
+    /// for this document.  Keyed to the wgpu `Device`; cleared on suspend and
+    /// re-created by the first source to call `resume()`.
+    ///
+    /// Sharing avoids allocating one renderer per page canvas (≈141 MB each).
+    /// Blitz calls sources sequentially so there is no lock contention.
+    pub shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
+    /// Shared font glyph cache for painting.  Invalidated (reset) whenever
+    /// `paginated_layout` is recomputed.  All page sources share one cache so
+    /// glyphs loaded while painting page 0 are reused for pages 1-N.
+    pub shared_font_cache: Arc<Mutex<FontDataCache>>,
+    /// Monotonically increasing counter bumped every time `paginated_layout` is
+    /// recomputed (generation change, resize, or `preserve_for_editing` change).
+    /// Each source compares its `texture_stamp` against this to detect staleness.
+    pub layout_stamp: u64,
+    /// Document generation at which `paginated_layout` was last computed.
+    pub layout_generation: u64,
+    /// Canvas width (logical CSS px) at which `paginated_layout` was last computed.
+    pub layout_canvas_width: f32,
+    /// Whether `paginated_layout` was computed with `preserve_for_editing: true`.
+    pub layout_preserve_for_editing: bool,
+    /// Shared Parley font + shaping context.  `parley::FontContext` discovers and
+    /// caches system fonts; `parley::LayoutContext` is shaping scratch space.
+    /// Both are designed as one-per-application globals — sharing eliminates one
+    /// `FontResources` per page canvas (≈20 MB each from the Fontique font scan).
+    /// Locked for the duration of `layout_document`; sequential rendering means
+    /// no contention.
+    pub shared_font_resources: Arc<Mutex<FontResources>>,
 }
 
 // ── LokiDocumentSource ────────────────────────────────────────────────────────
@@ -142,7 +159,6 @@ struct CachedLayout {
 ///
 /// Lifecycle:
 /// - `resume()` — GPU device is available; create `vello::Renderer` and
-///   `FontResources`.
 /// - `render()` — called each frame by Blitz; runs layout + paint → texture →
 ///   `ctx.register_texture`.  Reuses the existing texture when the document
 ///   and canvas size are unchanged.  Calls `ctx.unregister_texture` on the
@@ -158,24 +174,32 @@ pub(crate) struct LokiDocumentSource {
     device: Option<anyrender_vello::wgpu::Device>,
     /// wgpu queue, cloned from [`DeviceHandle`] in `resume()`.
     queue: Option<anyrender_vello::wgpu::Queue>,
-    /// Own Vello renderer — created in `resume()` from the device.
-    renderer: Option<vello::Renderer>,
-    /// Cached layout — invalidated when the generation counter advances.
-    layout_cache: Option<CachedLayout>,
-    /// Font resources — initialized in `resume()`, persisted across frames to
-    /// avoid re-scanning system fonts on every render call.
-    font_resources: Option<FontResources>,
+    /// Shared Vello renderer, cloned from [`DocumentState::shared_renderer`] at
+    /// construction.  All page sources for the same document hold the same Arc.
+    shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
+    /// Shared font glyph cache, cloned from [`DocumentState::shared_font_cache`]
+    /// at construction.  Locked during `paint_single_page`; sequential execution
+    /// means no contention.
+    shared_font_cache: Arc<Mutex<FontDataCache>>,
+    /// Shared font + shaping context, cloned from [`DocumentState::shared_font_resources`]
+    /// at construction.  Locked during `layout_document`; sequential rendering
+    /// guarantees no contention.
+    shared_font_resources: Arc<Mutex<FontResources>>,
     /// Handle to the texture currently registered with the Vello renderer.
     /// Unregistered at the start of the next `render()` call before a new
     /// texture is allocated.  Set to `None` in `suspend()` — the Vello
     /// renderer is dropped there, which frees the underlying wgpu allocation.
     texture_handle: Option<TextureHandle>,
-    /// Document generation at which `texture_handle` was rendered.
-    texture_generation: u64,
+    /// [`DocumentState::layout_stamp`] value at which `texture_handle` was rendered.
+    /// If this differs from the current stamp, the texture is stale.
+    texture_stamp: u64,
     /// Physical pixel dimensions `(w_phys, h_phys)` of `texture_handle`.
     texture_size: (u32, u32),
     /// Cursor state at which `texture_handle` was rendered.
     texture_cursor: Option<CursorState>,
+    /// `preserve_for_editing` flag at which `texture_handle` was rendered.
+    /// A change here forces re-layout and re-render even without a generation bump.
+    texture_preserve_effective: bool,
     /// Counts completed `render()` calls.  Used in unit tests to verify that
     /// the reuse guard short-circuits correctly.
     #[cfg(test)]
@@ -185,31 +209,28 @@ pub(crate) struct LokiDocumentSource {
 impl LokiDocumentSource {
     /// Create a new source for `page_index`, sharing state with the Dioxus component.
     pub(crate) fn new(document: Arc<Mutex<DocumentState>>, page_index: usize) -> Self {
+        let (shared_renderer, shared_font_cache, shared_font_resources) = {
+            let s = document
+                .lock()
+                .expect("DocumentState lock poisoned in LokiDocumentSource::new");
+            (s.shared_renderer.clone(), s.shared_font_cache.clone(), s.shared_font_resources.clone())
+        };
         Self {
             document,
             page_index,
             device: None,
             queue: None,
-            renderer: None,
-            layout_cache: None,
-            font_resources: None,
+            shared_renderer,
+            shared_font_cache,
+            shared_font_resources,
             texture_handle: None,
-            texture_generation: 0,
+            texture_stamp: 0,
             texture_size: (0, 0),
             texture_cursor: None,
+            texture_preserve_effective: false,
             #[cfg(test)]
             frames_rendered: 0,
         }
-    }
-
-    /// Returns `true` if `layout_cache` must be rebuilt.
-    fn needs_relayout(&self, generation: u64, canvas_width: f32, preserve: bool) -> bool {
-        let Some(cached) = &self.layout_cache else {
-            return true;
-        };
-        cached.generation != generation
-            || (cached.canvas_width - canvas_width).abs() > 0.001
-            || cached.preserve_for_editing != preserve
     }
 }
 
@@ -387,7 +408,7 @@ pub fn apply_mutation_and_relayout(
     loro_doc: &loro::LoroDoc,
 ) -> bool {
     // Step 1: Derive updated Document from Loro CRDT state.
-    let doc = match loki_doc_model::loro_bridge::loro_to_document(loro_doc) {
+    let mut doc = match loki_doc_model::loro_bridge::loro_to_document(loro_doc) {
         Ok(d) => d,
         Err(e) => {
             tracing::warn!("apply_mutation_and_relayout: loro_to_document failed: {e}");
@@ -395,15 +416,39 @@ pub fn apply_mutation_and_relayout(
         }
     };
 
+    // Step 1b: Restore the style catalog from the original document.
+    // loro_to_document() produces Document::new() with an empty StyleCatalog
+    // because the catalog is not stored in the CRDT.  Without this the layout
+    // engine falls back to minimal default styles and the document appearance
+    // changes completely on the first edit.
+    {
+        let Ok(state) = doc_state.lock() else {
+            tracing::warn!("apply_mutation_and_relayout: doc_state lock poisoned (catalog)");
+            return false;
+        };
+        if let Some(orig) = &state.document {
+            doc.styles = orig.styles.clone();
+            doc.source = orig.source.clone();
+        }
+    }
+
     // Step 2: Full layout pass with editing data preserved.
-    let mut font_resources = FontResources::new();
-    let layout = layout_document(
-        &mut font_resources,
-        &doc,
-        LayoutMode::Paginated,
-        1.0,
-        &LayoutOptions { preserve_for_editing: true },
-    );
+    let layout = {
+        let Ok(state) = doc_state.lock() else {
+            tracing::warn!("apply_mutation_and_relayout: doc_state lock poisoned (font resources)");
+            return false;
+        };
+        let fr_arc = state.shared_font_resources.clone();
+        drop(state); // release doc_state lock before acquiring font resources lock
+        let mut fr = fr_arc.lock().unwrap_or_else(|e| e.into_inner());
+        layout_document(
+            &mut fr,
+            &doc,
+            LayoutMode::Paginated,
+            1.0,
+            &LayoutOptions { preserve_for_editing: true },
+        )
+    };
 
     let (page_count, paginated_layout, page_width_px, page_height_px) = match &layout {
         DocumentLayout::Paginated(pl) => {
@@ -436,39 +481,50 @@ impl CustomPaintSource for LokiDocumentSource {
         self.device = Some(device_handle.device.clone());
         self.queue = Some(device_handle.queue.clone());
 
-        match vello::Renderer::new(
-            &device_handle.device,
-            RendererOptions {
-                use_cpu: false,
-                antialiasing_support: AaSupport::all(),
-                num_init_threads: NonZeroUsize::new(1),
-                pipeline_cache: None,
-            },
-        ) {
-            Ok(r) => self.renderer = Some(r),
-            Err(e) => {
-                tracing::warn!("LokiDocumentSource: vello renderer init failed: {e}");
-                self.renderer = None;
+        // Only the first page source to resume creates the renderer; the rest
+        // find it already initialised and skip.  The renderer is tied to the
+        // Device, which is the same Arc clone across all page sources.
+        let mut renderer_guard = self
+            .shared_renderer
+            .lock()
+            .expect("renderer lock poisoned in resume()");
+        if renderer_guard.is_none() {
+            match vello::Renderer::new(
+                &device_handle.device,
+                RendererOptions {
+                    use_cpu: false,
+                    antialiasing_support: AaSupport::all(),
+                    num_init_threads: NonZeroUsize::new(1),
+                    pipeline_cache: None,
+                },
+            ) {
+                Ok(r) => *renderer_guard = Some(r),
+                Err(e) => tracing::warn!("LokiDocumentSource: vello renderer init failed: {e}"),
             }
         }
 
-        self.font_resources = Some(FontResources::new());
     }
 
     fn suspend(&mut self) {
         self.device = None;
         self.queue = None;
-        self.renderer = None;
-        self.layout_cache = None;
+        // Drop the shared renderer.  The first source to call suspend() does
+        // the actual drop; subsequent sources find None and return immediately.
+        // Blitz calls suspend() on all sources before entering Suspended state,
+        // so resume() is guaranteed before the next render().
+        *self
+            .shared_renderer
+            .lock()
+            .expect("renderer lock poisoned in suspend()") = None;
         // The Vello renderer dropped above owns the registered texture via
         // engine.image_overrides; it is freed when the renderer is dropped.
         // Clear the stale handle and metadata so the next render() after
         // resume() does not attempt to reuse a handle from a dead renderer.
         self.texture_handle = None;
-        self.texture_generation = 0;
+        self.texture_stamp = 0;
         self.texture_size = (0, 0);
         self.texture_cursor = None;
-        // font_resources is retained — it has no GPU dependency.
+        self.texture_preserve_effective = false;
     }
 
     fn render(
@@ -479,7 +535,7 @@ impl CustomPaintSource for LokiDocumentSource {
         scale: f64,
     ) -> Option<TextureHandle> {
         // Guard: GPU resources must be present.
-        if self.device.is_none() || self.queue.is_none() || self.renderer.is_none() {
+        if self.device.is_none() || self.queue.is_none() {
             return None;
         }
 
@@ -494,11 +550,7 @@ impl CustomPaintSource for LokiDocumentSource {
         let h_phys = height.max(1);
 
         // Phase 1: Read document state under lock, then release before layout work.
-        // Cloning the document avoids a borrow conflict when we later write
-        // page_count back to state (can't hold an immutable borrow of
-        // state.document while mutably borrowing state.page_count through the
-        // same MutexGuard).
-        let (doc_opt, current_gen, cursor_state_opt, preserve_for_editing) = {
+        let (doc_opt, current_gen, cursor_state_opt, preserve_for_editing, layout_stamp) = {
             let state = match self.document.lock() {
                 Ok(g) => g,
                 Err(e) => {
@@ -506,20 +558,26 @@ impl CustomPaintSource for LokiDocumentSource {
                     return None;
                 }
             };
-            (state.document.clone(), state.generation, state.cursor_state.clone(), state.preserve_for_editing)
+            (
+                state.document.clone(),
+                state.generation,
+                state.cursor_state.clone(),
+                state.preserve_for_editing,
+                state.layout_stamp,
+            )
         };
 
         // No document loaded — WgpuSurface shows a placeholder div instead.
-        if doc_opt.is_none() {
-            return None;
-        }
+        doc_opt.as_ref()?;
 
-        // Texture reuse: if the document generation, physical dimensions, and
-        // cursor state have not changed, the existing texture is still valid —
-        // skip layout, scene painting, and GPU allocation entirely.
-        let needs_relayout = self.needs_relayout(current_gen, canvas_width, preserve_for_editing);
-        if !needs_relayout
-            && self.texture_handle.is_some()
+        let preserve_effective = preserve_for_editing || cursor_state_opt.is_some();
+
+        // Texture reuse: if layout stamp, physical dimensions, cursor, and preserve
+        // flag are all unchanged the existing texture is still valid — skip layout,
+        // scene painting, and GPU allocation entirely.
+        if self.texture_handle.is_some()
+            && self.texture_stamp == layout_stamp
+            && self.texture_preserve_effective == preserve_effective
             && self.texture_size == (w_phys, h_phys)
             && self.texture_cursor == cursor_state_opt
         {
@@ -534,87 +592,95 @@ impl CustomPaintSource for LokiDocumentSource {
             ctx.unregister_texture(old_handle);
         }
 
-        // Need the owned document for layout.
-        let doc = doc_opt?;
+        // Phase 2: Ensure the shared layout is current.  The first source to find
+        // it stale recomputes; all others on the same frame read the fresh copy.
+        // Sources execute sequentially (Blitz values_mut()), so this is race-free.
+        let needs_recompute = {
+            let s = match self.document.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    tracing::warn!("LokiDocumentSource: document lock poisoned: {e}");
+                    return None;
+                }
+            };
+            s.paginated_layout.is_none()
+                || s.layout_generation != current_gen
+                || (s.layout_canvas_width - canvas_width).abs() > 0.001
+                || s.layout_preserve_for_editing != preserve_effective
+        };
 
-        // Phase 2: Rebuild paginated layout when generation or canvas width changes.
-        if needs_relayout {
-            let font_resources = self.font_resources.get_or_insert_with(FontResources::new);
+        if needs_recompute {
+            let doc = doc_opt?;
             // Layout at scale=1.0 keeps all coordinates in CSS pixels.
             // paint_layout multiplies by `scale` to convert to physical pixels;
             // passing the device scale here would apply it twice (Parley 0.6.0
             // already multiplies font sizes by display_scale internally).
-            //
-            // preserve_for_editing=true when a cursor is active OR when the
-            // state flag is set (e.g. in Editor mode before first click).
-            let preserve = preserve_for_editing || cursor_state_opt.is_some();
-            let layout_opts = LayoutOptions { preserve_for_editing: preserve };
-            let layout =
-                layout_document(font_resources, &doc, LayoutMode::Paginated, 1.0, &layout_opts);
-            let page_count = match &layout {
-                DocumentLayout::Paginated(pl) => pl.pages.len(),
-                _ => 0,
+            let layout_opts = LayoutOptions { preserve_for_editing: preserve_effective };
+            let layout = {
+                let mut fr = self
+                    .shared_font_resources
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                layout_document(&mut fr, &doc, LayoutMode::Paginated, 1.0, &layout_opts)
             };
-            // Snapshot the paginated layout for the editor route's hit-tester.
-            let paginated_layout_snapshot = match &layout {
-                DocumentLayout::Paginated(pl) => Some(Arc::new(pl.clone())),
-                _ => None,
+            let (page_count, paginated_layout) = match layout {
+                DocumentLayout::Paginated(pl) => (pl.pages.len(), Some(Arc::new(pl))),
+                _ => (0, None),
             };
-
-            self.layout_cache = Some(CachedLayout {
-                generation: current_gen,
-                canvas_width,
-                layout,
-                font_cache: FontDataCache::new(),
-                preserve_for_editing: preserve,
-            });
-
-            // Phase 3: Publish page_count, canvas_width, and the paginated
-            // layout snapshot to shared state.
+            // Reset shared font cache — glyphs belong to the old layout.
+            *self
+                .shared_font_cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = FontDataCache::new();
+            // Publish updated layout and metadata to shared state.
             if let Ok(mut state) = self.document.lock() {
+                state.paginated_layout = paginated_layout;
                 state.page_count = page_count;
                 state.canvas_width = canvas_width;
-                state.paginated_layout = paginated_layout_snapshot;
+                state.layout_generation = current_gen;
+                state.layout_canvas_width = canvas_width;
+                state.layout_preserve_for_editing = preserve_effective;
+                state.layout_stamp = state.layout_stamp.wrapping_add(1);
             }
         }
 
+        // Read the current layout and stamp (may have just been updated above).
+        let (paginated_layout, current_stamp) = {
+            let s = match self.document.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    tracing::warn!("LokiDocumentSource: document lock poisoned: {e}");
+                    return None;
+                }
+            };
+            let pl = s.paginated_layout.as_ref()?.clone();
+            (pl, s.layout_stamp)
+        };
+
         // Phase 4: Paint this page's scene.
+        // TODO(partial-render): pass visible_rect as clip region to paint_single_page.
         let mut scene = Scene::new();
-        // TODO(partial-render): pass visible_rect as clip region to paint_layout
-        // when the partial render pipeline is implemented.
-        let cached = self.layout_cache.as_mut()?;
         // loki-layout coordinates are in points (1 pt = 1/72 inch).
         // CSS pixels use 96 dpi (1 CSS px = 1/96 inch), so 1 pt = 96/72 CSS px.
-        // Multiplying by (96/72) converts the point coordinate space to CSS
         let render_scale = scale as f32 * (96.0 / 72.0);
-        match &cached.layout {
-            DocumentLayout::Paginated(pl) => {
-                // Resolve cursor paint for this specific page and call
-                // paint_single_page directly so cursor data can be threaded in.
-                let cursor_paint = cursor_state_opt.as_ref().and_then(|cs| {
-                    let page = pl.pages.get(self.page_index)?;
-                    resolve_cursor_paint(cs, &page.editing_data, self.page_index)
-                });
-                paint_single_page(
-                    &mut scene,
-                    pl,
-                    &mut cached.font_cache,
-                    (0.0, 0.0),
-                    render_scale,
-                    self.page_index,
-                    cursor_paint.as_ref(),
-                );
-            }
-            _ => {
-                paint_layout(
-                    &mut scene,
-                    &cached.layout,
-                    &mut cached.font_cache,
-                    (0.0, 0.0),
-                    render_scale,
-                    Some(self.page_index),
-                );
-            }
+        let cursor_paint = cursor_state_opt.as_ref().and_then(|cs| {
+            let page = paginated_layout.pages.get(self.page_index)?;
+            resolve_cursor_paint(cs, &page.editing_data, self.page_index)
+        });
+        {
+            let mut font_cache_guard = self
+                .shared_font_cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            paint_single_page(
+                &mut scene,
+                &paginated_layout,
+                &mut font_cache_guard,
+                (0.0, 0.0),
+                render_scale,
+                self.page_index,
+                cursor_paint.as_ref(),
+            );
         }
 
         // Phase 5: GPU work — borrow GPU resources mutably only after all
@@ -622,7 +688,13 @@ impl CustomPaintSource for LokiDocumentSource {
         // non-overlapping borrows on self).
         let device = self.device.as_ref()?;
         let queue = self.queue.as_ref()?;
-        let renderer = self.renderer.as_mut()?;
+        // Lock the shared renderer.  Sources render sequentially (Blitz uses a
+        // single-threaded values_mut() loop), so this never contends in practice.
+        let mut renderer_guard = self
+            .shared_renderer
+            .lock()
+            .expect("renderer lock poisoned in render()");
+        let renderer = renderer_guard.as_mut()?;
 
         // COMPAT(blitz): Rgba8Unorm with STORAGE_BINDING|TEXTURE_BINDING is the
         // format expected by vello render_to_texture and register_texture in
@@ -662,7 +734,8 @@ impl CustomPaintSource for LokiDocumentSource {
         // either reuse it (static document) or unregister it (changed document).
         let handle = ctx.register_texture(texture);
         self.texture_handle = Some(handle.clone());
-        self.texture_generation = current_gen;
+        self.texture_stamp = current_stamp;
+        self.texture_preserve_effective = preserve_effective;
         self.texture_size = (w_phys, h_phys);
         self.texture_cursor = cursor_state_opt;
 
@@ -681,7 +754,6 @@ impl CustomPaintSource for LokiDocumentSource {
 mod tests {
     use super::*;
     use loki_doc_model::document::Document;
-    use loki_layout::LayoutMode;
 
     fn make_source() -> LokiDocumentSource {
         LokiDocumentSource::new(
@@ -696,70 +768,94 @@ mod tests {
                 cursor_state: None,
                 preserve_for_editing: false,
                 paginated_layout: None,
+                shared_renderer: Arc::new(Mutex::new(None)),
+                shared_font_cache: Arc::new(Mutex::new(FontDataCache::new())),
+                layout_stamp: 0,
+                layout_generation: 0,
+                layout_canvas_width: 0.0,
+                layout_preserve_for_editing: false,
+                shared_font_resources: Arc::new(Mutex::new(FontResources::new())),
             })),
             0,
         )
     }
 
-    /// Constructs a `CachedLayout` by running the real layout pipeline on an
-    /// empty document — avoids constructing `DocumentLayout` directly (non_exhaustive).
-    fn make_cached_layout(generation: u64) -> CachedLayout {
+    /// Simulates a layout recompute by populating `DocumentState` as `render()` would.
+    fn populate_layout(state: &Arc<Mutex<DocumentState>>, generation: u64, canvas_width: f32, preserve: bool, stamp: u64) {
+        use loki_layout::{layout_document, LayoutMode};
         let doc = Document::new();
         let mut resources = FontResources::new();
         let layout = layout_document(&mut resources, &doc, LayoutMode::Paginated, 1.0, &LayoutOptions::default());
-        CachedLayout {
-            generation,
-            canvas_width: 0.0,
-            layout,
-            font_cache: FontDataCache::new(),
-            preserve_for_editing: false,
-        }
+        let paginated = match layout {
+            DocumentLayout::Paginated(pl) => Some(Arc::new(pl)),
+            _ => None,
+        };
+        let mut s = state.lock().unwrap();
+        s.paginated_layout = paginated;
+        s.layout_generation = generation;
+        s.layout_canvas_width = canvas_width;
+        s.layout_preserve_for_editing = preserve;
+        s.layout_stamp = stamp;
     }
 
     #[test]
-    fn layout_cache_initially_empty() {
-        assert!(make_source().layout_cache.is_none());
+    fn layout_stamp_initially_zero() {
+        let s = make_source();
+        assert_eq!(s.document.lock().unwrap().layout_stamp, 0);
     }
 
     #[test]
-    fn needs_relayout_when_cache_empty() {
-        let source = make_source();
-        assert!(source.needs_relayout(0, 0.0, false));
-        assert!(source.needs_relayout(42, 0.0, false));
+    fn layout_stale_when_generation_unset() {
+        let doc = make_source().document;
+        let s = doc.lock().unwrap();
+        // No layout computed yet: paginated_layout is None → stale.
+        assert!(s.paginated_layout.is_none());
     }
 
     #[test]
-    fn no_relayout_when_generation_matches() {
-        let mut source = make_source();
-        source.layout_cache = Some(make_cached_layout(7));
-        assert!(!source.needs_relayout(7, 0.0, false), "same generation → no relayout");
+    fn layout_fresh_after_populate() {
+        let doc = make_source().document;
+        populate_layout(&doc, 7, 0.0, false, 1);
+        let s = doc.lock().unwrap();
+        assert!(s.paginated_layout.is_some());
+        assert_eq!(s.layout_generation, 7);
+        assert_eq!(s.layout_stamp, 1);
     }
 
     #[test]
-    fn relayout_when_generation_advances() {
-        let mut source = make_source();
-        source.layout_cache = Some(make_cached_layout(7));
-        assert!(source.needs_relayout(8, 0.0, false), "advanced generation → relayout");
+    fn layout_stale_when_generation_advances() {
+        let doc = make_source().document;
+        populate_layout(&doc, 7, 0.0, false, 1);
+        let s = doc.lock().unwrap();
+        // generation 8 != layout_generation 7 → stale
+        assert!(s.layout_generation != 8);
     }
 
     #[test]
-    fn relayout_when_canvas_width_changes() {
-        let mut source = make_source();
-        source.layout_cache = Some(make_cached_layout(7));
-        assert!(source.needs_relayout(7, 800.0, false), "width change → relayout");
-        // Diff of 0.0005 is below the 0.001 threshold → no relayout.
-        assert!(!source.needs_relayout(7, 0.0005, false), "sub-threshold diff → no relayout");
+    fn layout_stale_when_canvas_width_changes() {
+        let doc = make_source().document;
+        populate_layout(&doc, 7, 0.0, false, 1);
+        let s = doc.lock().unwrap();
+        // new canvas_width 800.0, stored 0.0, diff > 0.001 → stale
+        assert!((s.layout_canvas_width - 800.0_f32).abs() > 0.001);
     }
 
     #[test]
-    fn relayout_when_preserve_for_editing_changes() {
-        let mut source = make_source();
-        source.layout_cache = Some(make_cached_layout(7));
-        assert!(!source.needs_relayout(7, 0.0, false), "matching preserve → no relayout");
-        assert!(
-            source.needs_relayout(7, 0.0, true),
-            "preserve change false→true must trigger relayout"
-        );
+    fn layout_canvas_width_subthreshold_no_stale() {
+        let doc = make_source().document;
+        populate_layout(&doc, 7, 0.0, false, 1);
+        let s = doc.lock().unwrap();
+        // diff 0.0005 is below 0.001 threshold → not stale
+        assert!((s.layout_canvas_width - 0.0005_f32).abs() <= 0.001);
+    }
+
+    #[test]
+    fn layout_stale_when_preserve_changes() {
+        let doc = make_source().document;
+        populate_layout(&doc, 7, 0.0, false, 1);
+        let s = doc.lock().unwrap();
+        // preserve_effective=true, stored false → stale
+        assert!(s.layout_preserve_for_editing != true);
     }
 
     #[test]
@@ -775,6 +871,13 @@ mod tests {
             cursor_state: None,
             preserve_for_editing: false,
             paginated_layout: None,
+            shared_renderer: Arc::new(Mutex::new(None)),
+            shared_font_cache: Arc::new(Mutex::new(FontDataCache::new())),
+            layout_stamp: 0,
+            layout_generation: 0,
+            layout_canvas_width: 0.0,
+            layout_preserve_for_editing: false,
+            shared_font_resources: Arc::new(Mutex::new(FontResources::new())),
         }));
         // Simulate the component bumping the generation counter.
         {
@@ -813,21 +916,20 @@ mod tests {
 
     #[test]
     fn reuse_guard_blocked_without_handle() {
-        // Even if generation and size match, no handle → guard must not fire.
+        // Even if stamp and size match, no handle → guard must not fire.
         let s = make_source();
         let would_reuse = s.texture_handle.is_some()
-            && !s.needs_relayout(0, 0.0, false)
+            && s.texture_stamp == 0
             && s.texture_size == (0, 0);
         assert!(!would_reuse, "no handle means no reuse");
     }
 
     #[test]
     fn reuse_guard_blocked_on_size_mismatch() {
-        // Even with a matching generation, a different physical size must force
+        // Even with a matching stamp, a different physical size must force
         // a new texture (e.g. DPI scale change without CSS width change).
         let mut s = make_source();
-        s.layout_cache = Some(make_cached_layout(3));
-        s.texture_generation = 3;
+        s.texture_stamp = 3;
         s.texture_size = (800, 1131);
         // No real TextureHandle can be constructed without a GPU; skip the
         // is_some() arm and verify the size-mismatch condition directly.
@@ -840,11 +942,11 @@ mod tests {
         let mut s = make_source();
         // Simulate having rendered a frame by setting metadata fields directly.
         // (texture_handle stays None because constructing one requires a GPU.)
-        s.texture_generation = 5;
+        s.texture_stamp = 5;
         s.texture_size = (794, 1123);
         s.suspend();
         assert!(s.texture_handle.is_none(), "suspend must clear handle");
-        assert_eq!(s.texture_generation, 0, "suspend must reset generation");
+        assert_eq!(s.texture_stamp, 0, "suspend must reset stamp");
         assert_eq!(s.texture_size, (0, 0), "suspend must reset size");
     }
 
@@ -856,7 +958,7 @@ mod tests {
         s.suspend();
         assert!(s.device.is_none());
         assert!(s.queue.is_none());
-        assert!(s.renderer.is_none());
+        assert!(s.shared_renderer.lock().unwrap().is_none());
     }
 
     // ── Cursor paint resolution tests ─────────────────────────────────────────

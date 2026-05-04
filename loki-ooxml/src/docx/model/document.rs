@@ -26,6 +26,8 @@ pub struct DocxBody {
 }
 
 /// A block-level child of `w:body`.
+// Enum is short-lived during parsing; boxing would add allocation overhead
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum DocxBodyChild {
     /// A paragraph (`w:p`). ECMA-376 §17.3.1.22.

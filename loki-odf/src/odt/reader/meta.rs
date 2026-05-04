@@ -52,29 +52,29 @@ pub(crate) fn read_meta(xml: &[u8]) -> OdfResult<OdfMeta> {
             }
             Ok(Event::End(ref e)) => {
                 let local = e.local_name().into_inner();
-                if let Some(ref tag) = collecting {
-                    if tag.as_slice() == local {
-                        let text = std::mem::take(&mut collect_text);
-                        match tag.as_slice() {
-                            b"title" => meta.title = Some(text),
-                            b"creator" => meta.creator = Some(text),
-                            b"description" => meta.description = Some(text),
-                            b"creation-date" => meta.created = Some(text),
-                            b"date" => meta.modified = Some(text),
-                            b"editing-cycles" => {
-                                meta.editing_cycles = text.parse().ok();
-                            }
-                            _ => {}
+                if let Some(ref tag) = collecting
+                    && tag.as_slice() == local
+                {
+                    let text = std::mem::take(&mut collect_text);
+                    match tag.as_slice() {
+                        b"title" => meta.title = Some(text),
+                        b"creator" => meta.creator = Some(text),
+                        b"description" => meta.description = Some(text),
+                        b"creation-date" => meta.created = Some(text),
+                        b"date" => meta.modified = Some(text),
+                        b"editing-cycles" => {
+                            meta.editing_cycles = text.parse().ok();
                         }
-                        collecting = None;
+                        _ => {}
                     }
+                    collecting = None;
                 }
             }
             Ok(Event::Text(ref t)) => {
                 if collecting.is_some() {
                     let s = t.unescape().map_err(|e| OdfError::Xml {
                         part: "meta.xml".to_string(),
-                        source: quick_xml::Error::from(e),
+                        source: e,
                     })?;
                     collect_text.push_str(&s);
                 }

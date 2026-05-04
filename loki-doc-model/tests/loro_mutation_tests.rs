@@ -3,13 +3,14 @@
 
 //! Integration tests for `loki_doc_model::loro_mutation`.
 //!
-//! These tests verify that `insert_text`, `delete_text`, and `get_block_text`
-//! operate correctly against a `LoroDoc` populated by `document_to_loro`.
+//! These tests verify that `insert_text`, `delete_text`, `get_block_text`,
+//! `split_block`, and `merge_block` operate correctly against a `LoroDoc`
+//! populated by `document_to_loro`.
 
 use loki_doc_model::{
     content::block::{Block, StyledParagraph},
     content::inline::Inline,
-    delete_text, get_block_text, insert_text,
+    delete_text, get_block_text, insert_text, merge_block, split_block,
     layout::section::Section,
     loro_bridge::document_to_loro,
     style::StyleId,
@@ -162,4 +163,179 @@ fn round_trip_insert_text_visible_in_loro_to_document() {
         inline_text.starts_with('X'),
         "derived paragraph text should start with 'X', got: {inline_text:?}"
     );
+}
+
+// ── split_block tests ─────────────────────────────────────────────────────────
+
+#[test]
+fn split_block_in_middle_divides_text() {
+    let doc = make_doc_with_paragraphs(&["hello world"]);
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    // Split after "hello" (byte offset 5).
+    split_block(&ldoc, 0, 5).expect("split succeeded");
+
+    assert_eq!(get_block_text(&ldoc, 0), "hello", "block 0 should be 'hello'");
+    assert_eq!(get_block_text(&ldoc, 1), " world", "block 1 should be ' world'");
+}
+
+#[test]
+fn split_block_at_start_yields_empty_first_block() {
+    let doc = make_doc_with_paragraphs(&["hello"]);
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    split_block(&ldoc, 0, 0).expect("split at start succeeded");
+
+    assert_eq!(get_block_text(&ldoc, 0), "", "block 0 should be empty");
+    assert_eq!(get_block_text(&ldoc, 1), "hello", "block 1 should carry full text");
+}
+
+#[test]
+fn split_block_at_end_yields_empty_second_block() {
+    let doc = make_doc_with_paragraphs(&["hello"]);
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    split_block(&ldoc, 0, 5).expect("split at end succeeded");
+
+    assert_eq!(get_block_text(&ldoc, 0), "hello", "block 0 should be full text");
+    assert_eq!(get_block_text(&ldoc, 1), "", "block 1 should be empty");
+}
+
+#[test]
+fn split_block_unicode_boundary_is_respected() {
+    // "café" in UTF-8: 'c'=1, 'a'=1, 'f'=1, 'é'=2 → total 5 bytes.
+    // Valid split at offset 3 ("caf" | "é").
+    let doc = make_doc_with_paragraphs(&["café"]);
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    split_block(&ldoc, 0, 3).expect("split at valid unicode boundary succeeded");
+
+    assert_eq!(get_block_text(&ldoc, 0), "caf");
+    assert_eq!(get_block_text(&ldoc, 1), "é");
+}
+
+#[test]
+fn split_block_invalid_byte_offset_returns_error() {
+    // "café" — offset 4 is inside the 'é' multibyte sequence (not a char boundary).
+    let doc = make_doc_with_paragraphs(&["café"]);
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    let result = split_block(&ldoc, 0, 4);
+    assert!(
+        matches!(result, Err(MutationError::InvalidByteOffset { offset: 4 })),
+        "expected InvalidByteOffset(4), got: {result:?}"
+    );
+}
+
+#[test]
+fn split_block_out_of_range_returns_error() {
+    let doc = make_doc_with_paragraphs(&["only one block"]);
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    let result = split_block(&ldoc, 99, 0);
+    assert!(
+        matches!(result, Err(MutationError::BlockIndexOutOfRange(99))),
+        "expected BlockIndexOutOfRange(99), got: {result:?}"
+    );
+}
+
+#[test]
+fn split_block_second_block_inherits_block_type() {
+    let doc = make_doc_with_paragraphs(&["paragraph text"]);
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    split_block(&ldoc, 0, 9).expect("split succeeded");
+
+    // Both blocks should re-derive as StyledPara (type was copied).
+    let derived = loki_doc_model::loro_bridge::loro_to_document(&ldoc)
+        .expect("loro_to_document succeeded");
+    let section = derived.sections.first().expect("section exists");
+    assert_eq!(section.blocks.len(), 2, "should have two blocks after split");
+    assert!(
+        matches!(section.blocks[0], Block::StyledPara(_)),
+        "block 0 should be StyledPara"
+    );
+    assert!(
+        matches!(section.blocks[1], Block::StyledPara(_)),
+        "block 1 should be StyledPara (inherited type)"
+    );
+}
+
+// ── merge_block tests ─────────────────────────────────────────────────────────
+
+#[test]
+fn merge_block_concatenates_text() {
+    let doc = make_doc_with_paragraphs(&["hello", " world"]);
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    merge_block(&ldoc, 1).expect("merge succeeded");
+
+    assert_eq!(get_block_text(&ldoc, 0), "hello world", "merged text mismatch");
+}
+
+#[test]
+fn merge_block_returns_correct_merged_offset() {
+    let doc = make_doc_with_paragraphs(&["hello", " world"]);
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    let offset = merge_block(&ldoc, 1).expect("merge succeeded");
+
+    // merged_offset should equal the byte length of "hello" = 5.
+    assert_eq!(offset, 5, "merged_offset should point to the join position");
+}
+
+#[test]
+fn merge_block_at_index_zero_returns_no_previous_block() {
+    let doc = make_doc_with_paragraphs(&["only block"]);
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    let result = merge_block(&ldoc, 0);
+    assert!(
+        matches!(result, Err(MutationError::NoPreviousBlock)),
+        "expected NoPreviousBlock, got: {result:?}"
+    );
+}
+
+#[test]
+fn merge_block_out_of_range_returns_error() {
+    let doc = make_doc_with_paragraphs(&["only block"]);
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    let result = merge_block(&ldoc, 99);
+    assert!(
+        matches!(result, Err(MutationError::BlockIndexOutOfRange(99))),
+        "expected BlockIndexOutOfRange(99), got: {result:?}"
+    );
+}
+
+#[test]
+fn merge_removes_the_second_block() {
+    let doc = make_doc_with_paragraphs(&["first", "second"]);
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    merge_block(&ldoc, 1).expect("merge succeeded");
+
+    let derived = loki_doc_model::loro_bridge::loro_to_document(&ldoc)
+        .expect("loro_to_document succeeded");
+    let section = derived.sections.first().expect("section exists");
+    assert_eq!(section.blocks.len(), 1, "only one block should remain after merge");
+}
+
+// ── split/merge round-trip ────────────────────────────────────────────────────
+
+#[test]
+fn split_then_merge_round_trips_text() {
+    let original = "hello world";
+    let doc = make_doc_with_paragraphs(&[original]);
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    // Split at "hello " | "world".
+    split_block(&ldoc, 0, 6).expect("split succeeded");
+    assert_eq!(get_block_text(&ldoc, 0), "hello ");
+    assert_eq!(get_block_text(&ldoc, 1), "world");
+
+    // Merge back.
+    let offset = merge_block(&ldoc, 1).expect("merge succeeded");
+    assert_eq!(offset, 6, "merged_offset should equal split point");
+    assert_eq!(get_block_text(&ldoc, 0), original, "round-trip text mismatch");
 }

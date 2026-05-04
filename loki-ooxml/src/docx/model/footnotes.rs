@@ -14,6 +14,7 @@ pub struct DocxNotes {
     pub notes: Vec<DocxNote>,
 }
 
+#[allow(dead_code)]
 impl DocxNotes {
     /// Returns the content paragraphs for a given note id, if found.
     ///

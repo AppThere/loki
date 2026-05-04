@@ -31,6 +31,7 @@ system = [
     "dep:objc2-foundation",
     "dep:yeslogic-fontconfig-sys",
     "dep:roxmltree",
+    "fontconfig-dlopen",
 ]
 
 # Use dlopen to load the fontconfig library. This allows Fontique to compile even if the

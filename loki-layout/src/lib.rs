@@ -116,7 +116,7 @@ pub fn layout_document(
                 // the correct absolute page number for first/even selection.
                 let section_page_count = pages.len();
                 for page in &mut pages {
-                    page.page_number = global_page_count + page.page_number;
+                    page.page_number += global_page_count;
                 }
 
                 flow::assign_headers_footers(

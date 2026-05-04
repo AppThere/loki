@@ -18,6 +18,8 @@ use super::document::parse_rpr_element;
 /// Parses `word/styles.xml` bytes into a [`DocxStyles`] model.
 ///
 /// ECMA-376 §17.7.4.18.
+// Function body is a single large match over XML events; splitting would reduce readability.
+#[allow(clippy::too_many_lines)]
 pub fn parse_styles(xml: &[u8]) -> OoxmlResult<DocxStyles> {
     let mut reader = Reader::from_reader(xml);
     reader.config_mut().trim_text(false);
@@ -30,11 +32,10 @@ pub fn parse_styles(xml: &[u8]) -> OoxmlResult<DocxStyles> {
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+            Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
                 match local_name(e.local_name().as_ref()) {
                     b"docDefaults" => in_doc_defaults = true,
-                    b"rPrDefault" if in_doc_defaults => {}
-                    b"pPrDefault" if in_doc_defaults => {}
+                    b"rPrDefault" | b"pPrDefault" if in_doc_defaults => {}
                     b"rPr" if in_doc_defaults => {
                         if let Ok(rpr) = parse_rpr_element(&mut reader) {
                             result.default_rpr = Some(rpr);
@@ -49,7 +50,6 @@ pub fn parse_styles(xml: &[u8]) -> OoxmlResult<DocxStyles> {
                         in_style = true;
                         let type_str = attr_val(e, b"type").unwrap_or_default();
                         let style_type = match type_str.as_str() {
-                            "paragraph" => DocxStyleType::Paragraph,
                             "character" => DocxStyleType::Character,
                             "table" => DocxStyleType::Table,
                             "numbering" => DocxStyleType::Numbering,
@@ -58,9 +58,9 @@ pub fn parse_styles(xml: &[u8]) -> OoxmlResult<DocxStyles> {
                         let style_id =
                             attr_val(e, b"styleId").unwrap_or_default();
                         let is_default = attr_val(e, b"default")
-                            .map_or(false, |v| v == "1" || v == "true");
+                            .is_some_and(|v| v == "1" || v == "true");
                         let is_custom = attr_val(e, b"customStyle")
-                            .map_or(false, |v| v == "1" || v == "true");
+                            .is_some_and(|v| v == "1" || v == "true");
                         current_style = Some(DocxStyle {
                             style_type,
                             style_id,
@@ -95,17 +95,17 @@ pub fn parse_styles(xml: &[u8]) -> OoxmlResult<DocxStyles> {
                         }
                     }
                     b"pPr" if in_style => {
-                        if let Ok(ppr) = parse_ppr_element(&mut reader) {
-                            if let Some(ref mut s) = current_style {
-                                s.ppr = Some(ppr);
-                            }
+                        if let Ok(ppr) = parse_ppr_element(&mut reader)
+                            && let Some(ref mut s) = current_style
+                        {
+                            s.ppr = Some(ppr);
                         }
                     }
                     b"rPr" if in_style => {
-                        if let Ok(rpr) = parse_rpr_element(&mut reader) {
-                            if let Some(ref mut s) = current_style {
-                                s.rpr = Some(rpr);
-                            }
+                        if let Ok(rpr) = parse_rpr_element(&mut reader)
+                            && let Some(ref mut s) = current_style
+                        {
+                            s.rpr = Some(rpr);
                         }
                     }
                     _ => {}

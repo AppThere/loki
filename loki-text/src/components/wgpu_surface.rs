@@ -106,6 +106,18 @@ pub struct WgpuSurfaceProps {
 
     /// Callback fired when a page is clicked.
     pub on_mousedown: EventHandler<DocumentPosition>,
+
+    /// Keyboard event forwarder.
+    ///
+    /// The outer wrapper div carries `tabindex="0"` so it receives keyboard
+    /// focus when clicked.  All `onkeydown` events are forwarded here so the
+    /// parent `Editor` component can handle them with full access to its signals
+    /// without needing to duplicate state into `WgpuSurface`.
+    ///
+    /// `Rc<KeyboardData>` is used because `KeyboardData` does not implement
+    /// `Clone`, but `Rc<T>: Clone` cheaply shares ownership of the underlying
+    /// data to the parent handler.
+    pub on_keydown: EventHandler<Rc<KeyboardData>>,
 }
 
 // Document does not implement PartialEq; conservatively always re-render.
@@ -174,15 +186,14 @@ fn PageCanvas(props: PageCanvasProps) -> Element {
                 let y_pt = elem.y as f32 * (72.0 / 96.0);
 
                 let Ok(state) = props.doc_state.lock() else { return };
-                if let Some(ref layout) = state.paginated_layout {
-                    if let Some(pos) = crate::editing::hit_test::hit_test_page(
+                if let Some(ref layout) = state.paginated_layout
+                    && let Some(pos) = crate::editing::hit_test::hit_test_page(
                         props.page_index,
                         x_pt,
                         y_pt,
                         layout,
                     ) {
-                        props.on_mousedown.call(pos);
-                    }
+                    props.on_mousedown.call(pos);
                 }
             },
             style: format!(
@@ -239,7 +250,7 @@ pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
     if key_changed {
         let (new_count, new_dims, new_layout) = if let Some(doc) = document.as_ref() {
             let layout = layout_document(
-                &mut *font_resources.borrow_mut(),
+                &mut font_resources.borrow_mut(),
                 doc,
                 LayoutMode::Paginated,
                 1.0,
@@ -285,9 +296,11 @@ pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
     if current_page_count == 0 {
         return rsx! {
             div {
+                tabindex: "0",
+                onkeydown: move |evt| props.on_keydown.call((*evt).clone()),
                 style: format!(
                     "display: flex; justify-content: center; align-items: center; \
-                     padding: {p}px; color: {fg};",
+                     outline: none; padding: {p}px; color: {fg};",
                     p  = tokens::SPACE_8,
                     fg = tokens::COLOR_TEXT_SECONDARY,
                 ),
@@ -297,20 +310,28 @@ pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
     }
 
     rsx! {
-        for page_idx in 0..current_page_count {
-            div {
-                key: "{page_idx}",
-                style: format!(
-                    "display: flex; justify-content: center; padding-bottom: {gap}px;",
-                    gap = tokens::PAGE_GAP_PX,
-                ),
-                PageCanvas {
-                    doc_state: Arc::clone(&doc_state),
-                    page_index: page_idx,
-                    page_width_px: current_page_width_px,
-                    page_height_px: current_page_height_px,
-                    cursor_state: cursor_state.clone(),
-                    on_mousedown: move |pos| props.on_mousedown.call(pos),
+        // Focusable wrapper: receives keyboard focus when clicked so that
+        // onkeydown events reach the editor's key handler.  outline:none
+        // suppresses the browser/native focus ring on the document canvas area.
+        div {
+            tabindex: "0",
+            onkeydown: move |evt| props.on_keydown.call((*evt).clone()),
+            style: "outline: none; width: 100%;",
+            for page_idx in 0..current_page_count {
+                div {
+                    key: "{page_idx}",
+                    style: format!(
+                        "display: flex; justify-content: center; padding-bottom: {gap}px;",
+                        gap = tokens::PAGE_GAP_PX,
+                    ),
+                    PageCanvas {
+                        doc_state: Arc::clone(&doc_state),
+                        page_index: page_idx,
+                        page_width_px: current_page_width_px,
+                        page_height_px: current_page_height_px,
+                        cursor_state: cursor_state.clone(),
+                        on_mousedown: move |pos| props.on_mousedown.call(pos),
+                    }
                 }
             }
         }

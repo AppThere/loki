@@ -42,7 +42,7 @@ pub(crate) fn map_list_styles(
             let char_props = odf_level
                 .text_props
                 .as_ref()
-                .map(|tp| crate::odt::mapper::props::map_text_props(tp))
+                .map(crate::odt::mapper::props::map_text_props)
                 .unwrap_or_default();
 
             levels.push(ListLevel {
@@ -95,7 +95,7 @@ fn map_level_kind(kind: &OdfListLevelKind, level_num: u8) -> ListLevelKind {
             let start = start_value.unwrap_or(1);
             let dl = *display_levels;
             let format =
-                build_format_string(level_num, dl, num_prefix, num_suffix);
+                build_format_string(level_num, dl, num_prefix.as_ref(), num_suffix.as_ref());
             ListLevelKind::Numbered {
                 scheme,
                 start_value: start,
@@ -118,12 +118,11 @@ fn map_bullet_char(s: &str) -> BulletChar {
 /// Map an ODF `style:num-format` value to [`NumberingScheme`].
 fn map_numbering_scheme(s: &str) -> NumberingScheme {
     match s {
-        "1" => NumberingScheme::Decimal,
         "a" => NumberingScheme::LowerAlpha,
         "A" => NumberingScheme::UpperAlpha,
         "i" => NumberingScheme::LowerRoman,
         "I" => NumberingScheme::UpperRoman,
-        _ => NumberingScheme::Decimal, // fallback
+        _ => NumberingScheme::Decimal, // "1" or fallback
     }
 }
 
@@ -135,17 +134,18 @@ fn map_numbering_scheme(s: &str) -> NumberingScheme {
 fn build_format_string(
     level_num: u8,
     display_levels: u8,
-    prefix: &Option<String>,
-    suffix: &Option<String>,
+    prefix: Option<&String>,
+    suffix: Option<&String>,
 ) -> String {
-    let suffix_str = suffix.as_deref().unwrap_or("");
+    let suffix_str = suffix.map_or("", String::as_str);
     if display_levels <= 1 {
-        let prefix_str = prefix.as_deref().unwrap_or("");
+        let prefix_str = prefix.map_or("", String::as_str);
         format!("{prefix_str}%{level_num}{suffix_str}")
     } else {
-        let start =
-            (level_num as u16).saturating_sub(display_levels as u16 - 1)
-                as u8;
+        // Both level_num and display_levels are u8, so the result fits in u8.
+        #[allow(clippy::cast_possible_truncation)]
+        let start = u16::from(level_num)
+            .saturating_sub(u16::from(display_levels) - 1) as u8;
         let mut s = String::new();
         for l in start..=level_num {
             s.push('%');
@@ -181,14 +181,13 @@ fn map_indentation(
             .text_indent
             .as_deref()
             .and_then(parse_length)
-            .map(|p| {
+            .map_or(zero, |p| {
                 if p.value() < 0.0 {
                     Points::new(-p.value())
                 } else {
                     p
                 }
-            })
-            .unwrap_or(zero);
+            });
         (indent_start, hanging)
     } else {
         // ODF 1.1 legacy model: space_before + min_label_width = total indent

@@ -32,7 +32,7 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
     let mut body_rows: Vec<Row> = Vec::new();
 
     for tr in &t.rows {
-        let is_header = tr.tr_pr.as_ref().map(|p| p.is_header).unwrap_or(false);
+        let is_header = tr.tr_pr.as_ref().is_some_and(|p| p.is_header);
         let cells: Vec<Cell> = tr.cells.iter().map(|tc| map_cell(tc, ctx)).collect();
         let row = Row::new(cells);
         if is_header {
@@ -76,7 +76,7 @@ fn build_col_specs(t: &DocxTableModel) -> Vec<ColSpec> {
             .map(|&w| ColSpec {
                 alignment: ColAlignment::Default,
                 width: if w > 0 {
-                    ColWidth::Fixed(Points::new(w as f64 / 20.0))
+                    ColWidth::Fixed(Points::new(f64::from(w) / 20.0))
                 } else {
                     ColWidth::Default
                 },
@@ -98,12 +98,11 @@ fn map_cell(
     let mut props = CellProps::default();
     if let Some(tc_pr) = tc.tc_pr.as_ref() {
         // Cell background from `w:shd @w:fill`.
-        if let Some(ref hex) = tc_pr.shd_fill {
-            if let Some(rgb) = crate::xml_util::hex_color(hex) {
+        if let Some(ref hex) = tc_pr.shd_fill
+            && let Some(rgb) = crate::xml_util::hex_color(hex) {
                 use loki_primitives::color::DocumentColor;
                 props.background_color = Some(DocumentColor::Rgb(rgb));
             }
-        }
         // Cell borders from `w:tcBorders`.
         if let Some(ref borders) = tc_pr.tc_borders {
             props.border_top = borders.top.as_ref().map(map_border_edge);

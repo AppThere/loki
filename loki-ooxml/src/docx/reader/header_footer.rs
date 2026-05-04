@@ -36,8 +36,8 @@ pub fn parse_header_footer(xml: &[u8], part: &str) -> OoxmlResult<Vec<DocxParagr
             Ok(Event::Start(ref e)) => match local_name(e.local_name().as_ref()) {
                 b"hdr" | b"ftr" => in_root = true,
                 b"p" if in_root => {
-                    let para = parse_paragraph(&mut reader)?;
-                    paragraphs.push(para);
+                    let paragraph = parse_paragraph(&mut reader)?;
+                    paragraphs.push(paragraph);
                 }
                 _ => {}
             },

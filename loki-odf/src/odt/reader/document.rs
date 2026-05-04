@@ -90,7 +90,7 @@ pub(crate) fn read_text_content(reader: &mut Reader<&[u8]>) -> OdfResult<String>
             Ok(Event::Text(ref t)) if depth == 1 => {
                 let s = t.unescape().map_err(|e| OdfError::Xml {
                     part: "content.xml".to_string(),
-                    source: quick_xml::Error::from(e),
+                    source: e,
                 })?;
                 text.push_str(&s);
             }
@@ -146,6 +146,8 @@ pub(crate) fn read_paragraph(
 ///
 /// Unrecognised inline elements are skipped and represented as
 /// [`OdfParagraphChild::Other`].
+#[allow(clippy::too_many_lines)]
+// Function body is a single large match over XML events; splitting would reduce readability.
 fn read_inline_children(
     reader: &mut Reader<&[u8]>,
 ) -> OdfResult<Vec<OdfParagraphChild>> {
@@ -330,7 +332,7 @@ fn read_inline_children(
                     b"tab" => children.push(OdfParagraphChild::Tab),
                     b"line-break" => children.push(OdfParagraphChild::LineBreak),
                     b"soft-page-break" => {
-                        children.push(OdfParagraphChild::SoftReturn)
+                        children.push(OdfParagraphChild::SoftReturn);
                     }
                     b"s" => {
                         let count: u32 = local_attr_val(e, b"c")
@@ -408,15 +410,14 @@ fn read_inline_children(
             Ok(Event::Text(ref t)) => {
                 let s = t.unescape().map_err(|e| OdfError::Xml {
                     part: "content.xml".to_string(),
-                    source: quick_xml::Error::from(e),
+                    source: e,
                 })?;
                 if !s.is_empty() {
                     children.push(OdfParagraphChild::Text(s.into_owned()));
                 }
             }
             // ── End: the containing element has closed ──────────────────────
-            Ok(Event::End(_)) => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::End(_) | Event::Eof) => break,
             Err(e) => {
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
@@ -570,8 +571,7 @@ fn read_frame_kind(reader: &mut Reader<&[u8]>) -> OdfResult<OdfFrameKind> {
                     };
                 }
             }
-            Ok(Event::End(_)) => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::End(_) | Event::Eof) => break,
             Err(e) => {
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
@@ -606,8 +606,7 @@ fn read_image_children(
                     _ => skip_element(reader)?,
                 }
             }
-            Ok(Event::End(_)) => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::End(_) | Event::Eof) => break,
             Err(e) => {
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
@@ -642,8 +641,7 @@ fn read_text_box_paragraphs(
                     skip_element(reader)?;
                 }
             }
-            Ok(Event::End(_)) => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::End(_) | Event::Eof) => break,
             Err(e) => {
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
@@ -717,8 +715,7 @@ pub(crate) fn read_table(
                     });
                 }
             }
-            Ok(Event::End(_)) => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::End(_) | Event::Eof) => break,
             Err(e) => {
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
@@ -749,8 +746,7 @@ fn read_table_header_rows(
                     skip_element(reader)?;
                 }
             }
-            Ok(Event::End(_)) => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::End(_) | Event::Eof) => break,
             Err(e) => {
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
@@ -836,8 +832,7 @@ fn read_table_row(
                     _ => {}
                 }
             }
-            Ok(Event::End(_)) => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::End(_) | Event::Eof) => break,
             Err(e) => {
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
@@ -886,8 +881,7 @@ fn read_table_cell(
                     }
                 }
             }
-            Ok(Event::End(_)) => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::End(_) | Event::Eof) => break,
             Err(e) => {
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
@@ -933,8 +927,7 @@ pub(crate) fn read_list(
     let xml_id = local_attr_val(tag, b"id");
     let continue_list = local_attr_val(tag, b"continue-list");
     let continue_numbering = local_attr_val(tag, b"continue-numbering")
-        .map(|s| s == "true")
-        .unwrap_or(false);
+        .is_some_and(|s| s == "true");
 
     let effective: Option<String> = style_name
         .clone()
@@ -963,8 +956,7 @@ pub(crate) fn read_list(
                     }
                 }
             }
-            Ok(Event::End(_)) => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::End(_) | Event::Eof) => break,
             Err(e) => {
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
@@ -1027,8 +1019,7 @@ fn read_list_item(
                     }
                 }
             }
-            Ok(Event::End(_)) => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::End(_) | Event::Eof) => break,
             Err(e) => {
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
@@ -1084,8 +1075,7 @@ pub(crate) fn read_toc(
                             .unwrap_or(3);
                 }
             }
-            Ok(Event::End(_)) => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::End(_) | Event::Eof) => break,
             Err(e) => {
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
@@ -1116,8 +1106,7 @@ fn read_index_body(
                     skip_element(reader)?;
                 }
             }
-            Ok(Event::End(_)) => break,
-            Ok(Event::Eof) => break,
+            Ok(Event::End(_) | Event::Eof) => break,
             Err(e) => {
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
@@ -1187,15 +1176,6 @@ fn read_body_children(
                     b"section" => {
                         let section = read_section(reader, e)?;
                         children.push(OdfBodyChild::Section(section));
-                    }
-                    // Known skippable block-level elements
-                    b"sequence-decls"
-                    | b"user-field-decls"
-                    | b"dde-connection-decls"
-                    | b"alphabetical-index-auto-mark-file"
-                    | b"tracked-changes" => {
-                        drop(e);
-                        skip_element(reader)?;
                     }
                     _ => {
                         drop(e);
@@ -1277,7 +1257,6 @@ pub(crate) fn read_document(xml: &[u8]) -> OdfResult<OdfDocument> {
                     }
                 }
             }
-            Ok(Event::End(_)) | Ok(Event::Empty(_)) => {}
             Ok(Event::Eof) => break,
             Err(e) => {
                 return Err(OdfError::Xml {

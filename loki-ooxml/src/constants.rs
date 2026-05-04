@@ -6,7 +6,7 @@
 //! All constants are sourced from ECMA-376 5th edition and
 //! ISO/IEC 29500-1:2016. Namespace URIs follow ECMA-376 Part 1 §L.5.
 
-/// WordprocessingML main namespace (ECMA-376 §17.2).
+/// `WordprocessingML` main namespace (ECMA-376 §17.2).
 pub const NS_WORDPROCESSINGML: &str =
     "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
@@ -14,15 +14,15 @@ pub const NS_WORDPROCESSINGML: &str =
 pub const NS_RELATIONSHIPS: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
-/// DrawingML main namespace.
+/// `DrawingML` main namespace.
 pub const NS_DRAWING: &str =
     "http://schemas.openxmlformats.org/drawingml/2006/main";
 
-/// DrawingML WordprocessingDrawing namespace (ECMA-376 §20.4).
+/// `DrawingML` `WordprocessingDrawing` namespace (ECMA-376 §20.4).
 pub const NS_DRAWING_WP: &str =
     "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 
-/// DrawingML Picture namespace (ECMA-376 §20.2).
+/// `DrawingML` Picture namespace (ECMA-376 §20.2).
 pub const NS_DRAWING_PIC: &str =
     "http://schemas.openxmlformats.org/drawingml/2006/picture";
 

@@ -1,11 +1,22 @@
 [workspace]
 resolver = "3"
-members = ["loki-doc-model","loki-opc","loki-primitives","loki-ooxml","loki-odf","loki-layout","loki-vello","loki-theme","loki-text"]
+members = ["loki-doc-model","loki-opc","loki-primitives","loki-ooxml","loki-odf","loki-layout","loki-vello","loki-theme","loki-text","loki-render-cache","loki-renderer"]
 
-# Patch fontique 0.8.0 to restore the missing `fontconfig_sys` package alias
-# that was lost during crate publication.  The patched Cargo.toml declares
-# `fontconfig_sys = { package = "yeslogic-fontconfig-sys", ... }` so that the
-# source in `src/backend/fontconfig.rs` can resolve `use fontconfig_sys::…`.
 [patch.crates-io]
+# PATCH: fixes missing fontconfig_sys alias and dlopen/static feature-unification
+# conflict with blitz-dom's fontique 0.6 — remove when fontique >0.8.0 on
+# crates.io restores the alias and resolves the linkage conflict. See docs/patches.md.
 fontique = { path = "patches/fontique" }
+
+# PATCH: vendors dioxus-native-dom to avoid runtime unimplemented!() panics in
+# HtmlEventConverter (composition, touch, scroll, etc.) — remove when upstream
+# implements the converters Loki requires. See docs/patches.md.
 dioxus-native-dom = { path = "patches/dioxus-native-dom" }
+
+# PATCH: handle_click walks up the DOM but calls clear_focus() for any element
+# that isn't input/label/a — so clicking a wgpu canvas clears keyboard focus
+# from the nearest tabindex="0" ancestor div, preventing onkeydown from firing.
+# Fix: check is_focussable() after the match arm and call set_focus_to() instead
+# of continuing up.  Remove when upstream blitz-dom makes tabindex focus
+# on click work for non-input elements.
+blitz-dom = { path = "patches/blitz-dom" }

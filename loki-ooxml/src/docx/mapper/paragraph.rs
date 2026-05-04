@@ -20,7 +20,7 @@ use super::props::map_ppr;
 /// has an outline level, a [`Block::Heading`] is emitted first so that
 /// consumers that prefer structural heading blocks can use them directly.
 pub(crate) fn map_paragraph(p: &DocxParagraph, ctx: &mut MappingContext<'_>) -> Vec<Block> {
-    let mut para_props = p.ppr.as_ref().map(|ppr| map_ppr(ppr));
+    let mut para_props = p.ppr.as_ref().map(map_ppr);
 
     // Detect `<w:br w:type="page"/>` inside any run child and promote it to
     // a paragraph-level page_break_after flag so the layout engine can honour it.
@@ -49,8 +49,8 @@ pub(crate) fn map_paragraph(p: &DocxParagraph, ctx: &mut MappingContext<'_>) -> 
             .and_then(|pp| pp.outline_level)
     });
 
-    if ctx.options.emit_heading_blocks {
-        if let Some(level) = outline_level {
+    if ctx.options.emit_heading_blocks
+        && let Some(level) = outline_level {
             // Promote to a structural heading block.
             // Preserve any direct paragraph alignment in NodeAttr.kv so the
             // layout engine can restore it when synthesising the StyledParagraph.
@@ -62,7 +62,6 @@ pub(crate) fn map_paragraph(p: &DocxParagraph, ctx: &mut MappingContext<'_>) -> 
                         ParagraphAlignment::Center => "center",
                         ParagraphAlignment::Right | ParagraphAlignment::Distribute => "right",
                         ParagraphAlignment::Justify => "justify",
-                        ParagraphAlignment::Left => "left",
                         _ => "left",
                     };
                     attr.kv.push(("jc".into(), val.into()));
@@ -70,7 +69,6 @@ pub(crate) fn map_paragraph(p: &DocxParagraph, ctx: &mut MappingContext<'_>) -> 
             }
             return vec![Block::Heading(level, attr, inlines)];
         }
-    }
 
     vec![Block::StyledPara(StyledParagraph {
         style_id,

@@ -721,8 +721,6 @@ checksum = "6099cdc01846bc367c4e7dd630dc5966dccf36b652fae7a74e17b640411a91b2"
 [[package]]
 name = "blitz-dom"
 version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c81d0f520bad6798a54cc4360bcabd245dc0aba2ce5917217d1d82ac5ee6bfed"
 dependencies = [
  "accesskit",
  "app_units",
@@ -3700,6 +3698,7 @@ dependencies = [
  "indexmap",
  "loki-primitives",
  "loro",
+ "rustc-hash 2.1.2",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -3795,6 +3794,34 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "loki-render-cache"
+version = "0.1.0"
+dependencies = [
+ "pollster 0.4.0",
+ "thiserror 2.0.18",
+ "tracing",
+ "wgpu 26.0.1",
+]
+
+[[package]]
+name = "loki-renderer"
+version = "0.1.0"
+dependencies = [
+ "anyrender_vello",
+ "dioxus",
+ "loki-doc-model",
+ "loki-layout",
+ "loki-render-cache",
+ "loki-theme",
+ "loki-vello",
+ "pollster 0.4.0",
+ "tokio",
+ "tracing",
+ "vello",
+ "wgpu 26.0.1",
 ]
 
 [[package]]

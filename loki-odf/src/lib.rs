@@ -1,10 +1,10 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
 
-//! ODF (OpenDocument) import/export for the Loki document suite.
+//! ODF (`OpenDocument`) import/export for the Loki document suite.
 //!
 //! `loki-odf` provides format-specific import and export adapters for the
-//! OpenDocument Text (ODT) format. It produces and consumes
+//! `OpenDocument` Text (ODT) format. It produces and consumes
 //! [`loki_doc_model`] types and enforces the **version-preserving
 //! round-trip rule**: a document loaded from an ODF 1.1 file is exported
 //! as ODF 1.1, and so on.
