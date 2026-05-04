@@ -894,6 +894,7 @@ impl BaseDocument {
     /// Clear the focussed node
     pub fn clear_focus(&mut self) {
         if let Some(id) = self.focus_node_id {
+            println!("CLEAR_FOCUS: clearing focus from node {:?}", id);
             self.snapshot_node_and(id, |node| node.blur());
             self.focus_node_id = None;
         }
