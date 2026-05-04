@@ -74,8 +74,8 @@ impl RendererState {
     /// those assignments on their next frame render.
     #[tracing::instrument(skip(self), fields(page_count = tracing::field::Empty))]
     pub fn on_settle(&self) {
-        let gen = self.source.current_generation();
-        let layout_guard = self.source.layout_for_generation(gen);
+        let doc_gen = self.source.current_generation();
+        let layout_guard = self.source.layout_for_generation(doc_gen);
         let Some((_, layout)) = layout_guard.as_ref() else {
             tracing::warn!("RendererState::on_settle: layout unavailable");
             return;

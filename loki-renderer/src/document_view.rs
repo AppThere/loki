@@ -114,8 +114,8 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         on_scroll_event(scroll, evt.scroll_top());
     };
 
-    let gen = renderer.source.current_generation();
-    let layout_guard = renderer.source.layout_for_generation(gen);
+    let doc_gen = renderer.source.current_generation();
+    let layout_guard = renderer.source.layout_for_generation(doc_gen);
     let mut total_height = 0.0f64;
     let pages: Vec<(usize, f64, f64, f64)> =
         if let Some((_, layout)) = layout_guard.as_ref() {

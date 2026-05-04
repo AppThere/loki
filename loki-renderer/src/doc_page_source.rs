@@ -89,7 +89,7 @@ impl DocPageSource {
     /// The guard keeps the [`PaginatedLayout`] alive without cloning.
     /// Callers extract `&PaginatedLayout` via:
     /// ```ignore
-    /// let guard = source.layout_for_generation(gen);
+    /// let guard = source.layout_for_generation(doc_gen);
     /// let Some((_, layout)) = guard.as_ref() else { return; };
     /// ```
     pub fn layout_for_generation(
