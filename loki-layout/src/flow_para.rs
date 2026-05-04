@@ -100,7 +100,7 @@ pub(super) fn flow_paragraph(
                 let marker_text =
                     format_list_marker(&list_style.levels, lm.level, &counters);
                 let mut cloned = para.clone();
-                cloned.inlines.insert(0, Inline::Str(format!("{}\t", marker_text).into()));
+                cloned.inlines.insert(0, Inline::Str(format!("{}\t", marker_text)));
                 Some(cloned)
             } else {
                 state.prev_list_id = None;
@@ -166,7 +166,7 @@ pub(super) fn flow_paragraph(
         }
         para_layout.height += total_image_height;
         // Prepend image items (they render before paragraph text).
-        image_items.extend(para_layout.items.drain(..));
+        image_items.append(&mut para_layout.items);
         para_layout.items = image_items;
     }
 

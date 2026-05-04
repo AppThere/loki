@@ -30,14 +30,14 @@ pub fn normalize_percent_encoding(
                 let mut decoded = String::new();
                 let mut bytes = name.as_bytes().iter();
                 while let Some(&b) = bytes.next() {
-                    if b == b'%' {
-                        if let (Some(&h1), Some(&h2)) = (bytes.next(), bytes.next()) {
-                            let hex_bytes = [h1, h2];
-                            let hex = std::str::from_utf8(&hex_bytes).unwrap_or("00");
-                            if let Ok(val) = u8::from_str_radix(hex, 16) {
-                                decoded.push(val as char);
-                                continue;
-                            }
+                    if b == b'%'
+                        && let (Some(&h1), Some(&h2)) = (bytes.next(), bytes.next())
+                    {
+                        let hex_bytes = [h1, h2];
+                        let hex = std::str::from_utf8(&hex_bytes).unwrap_or("00");
+                        if let Ok(val) = u8::from_str_radix(hex, 16) {
+                            decoded.push(val as char);
+                            continue;
                         }
                     }
                     decoded.push(b as char);

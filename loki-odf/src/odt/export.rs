@@ -4,7 +4,7 @@
 //! ODT export — stub implementation.
 //!
 //! [`OdtExport`] will write a [`loki_doc_model::Document`] to an ODT
-//! (OpenDocument Text) ZIP package. The full implementation is deferred to a
+//! (`OpenDocument` Text) ZIP package. The full implementation is deferred to a
 //! later session; calling [`OdtExport::export`] currently returns
 //! [`crate::error::OdfError::NotImplemented`].
 

@@ -49,7 +49,7 @@ pub struct OdfPackage {
     /// Raw bytes of `settings.xml`, or `None` if absent. ODF 1.3 §3.1.
     pub settings: Option<Vec<u8>>,
 
-    /// Images extracted from `Pictures/`: path → (media_type, bytes).
+    /// Images extracted from `Pictures/`: path → (`media_type`, bytes).
     ///
     /// The key is the full ZIP entry name (e.g. `"Pictures/image1.png"`).
     /// The media type is inferred from the file extension.

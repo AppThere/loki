@@ -685,7 +685,7 @@ pub fn layout_paragraph(
                 font_index: run.font().index,
                 font_size: run.font_size(),
                 glyphs,
-                color: style.brush.clone(),
+                color: style.brush,
                 synthesis: GlyphSynthesis { bold: synthesis.embolden(), italic: synthesis.skew().is_some() },
                 link_url,
             }));
@@ -699,7 +699,7 @@ pub fn layout_paragraph(
                     width: glyph_run.advance(),
                     thickness: deco.size.unwrap_or(m.underline_size),
                     kind: DecorationKind::Underline,
-                    color: deco.brush.clone(),
+                    color: deco.brush,
                 }));
             }
 
@@ -712,7 +712,7 @@ pub fn layout_paragraph(
                     width: glyph_run.advance(),
                     thickness: deco.size.unwrap_or(m.strikethrough_size),
                     kind: DecorationKind::Strikethrough,
-                    color: deco.brush.clone(),
+                    color: deco.brush,
                 }));
             }
         }
@@ -792,23 +792,22 @@ fn format_numbered_label(list_levels: &[ListLevel], format: &str, counters: &[u3
     let mut result = String::with_capacity(format.len() + 4);
     let mut chars = format.chars().peekable();
     while let Some(c) = chars.next() {
-        if c == '%' {
-            if let Some(&d) = chars.peek() {
-                if d.is_ascii_digit() && d != '0' {
-                    chars.next();
-                    let level_idx = (d as u8 - b'1') as usize; // 1-based → 0-based
-                    let counter = counters.get(level_idx).copied().unwrap_or(1);
-                    let scheme = list_levels
-                        .get(level_idx)
-                        .map(|l| match &l.kind {
-                            ListLevelKind::Numbered { scheme, .. } => *scheme,
-                            _ => NumberingScheme::Decimal,
-                        })
-                        .unwrap_or(NumberingScheme::Decimal);
-                    result.push_str(&format_counter(counter, scheme));
-                    continue;
-                }
-            }
+        if c == '%'
+            && let Some(&d) = chars.peek()
+            && d.is_ascii_digit() && d != '0'
+        {
+            chars.next();
+            let level_idx = (d as u8 - b'1') as usize; // 1-based → 0-based
+            let counter = counters.get(level_idx).copied().unwrap_or(1);
+            let scheme = list_levels
+                .get(level_idx)
+                .map(|l| match &l.kind {
+                    ListLevelKind::Numbered { scheme, .. } => *scheme,
+                    _ => NumberingScheme::Decimal,
+                })
+                .unwrap_or(NumberingScheme::Decimal);
+            result.push_str(&format_counter(counter, scheme));
+            continue;
         }
         result.push(c);
     }
@@ -899,7 +898,7 @@ fn span_has_shadow(spans: &[StyleSpan], text_range: Range<usize>) -> bool {
     spans
         .iter()
         .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
-        .map_or(false, |s| s.shadow)
+        .is_some_and(|s| s.shadow)
 }
 
 #[cfg(test)]

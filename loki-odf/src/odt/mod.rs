@@ -1,7 +1,7 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
 
-//! ODT (OpenDocument Text) import and export.
+//! ODT (`OpenDocument` Text) import and export.
 //!
 //! # Import
 //!

@@ -31,7 +31,7 @@ pub const NS_DRAW: &str = "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0";
 pub const NS_SVG: &str =
     "urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0";
 
-/// XLink namespace used for hyperlinks and image references (ODF 1.3 §19.2).
+/// `XLink` namespace used for hyperlinks and image references (ODF 1.3 §19.2).
 pub const NS_XLINK: &str = "http://www.w3.org/1999/xlink";
 
 /// Dublin Core namespace for document metadata (ODF 1.3 §19.2).
@@ -50,7 +50,7 @@ pub const NS_MANIFEST: &str =
 
 // ── MIME type ─────────────────────────────────────────────────────────────────
 
-/// MIME type for an ODT (OpenDocument Text) package.
+/// MIME type for an ODT (`OpenDocument` Text) package.
 ///
 /// This string must appear verbatim as the first entry in the ZIP archive,
 /// uncompressed, with no trailing newline. ODF 1.3 §3.3.
