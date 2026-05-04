@@ -50,6 +50,16 @@ impl<'doc, Handler: EventHandler> EventDriver<'doc, Handler> {
         let mut hover_node_id = self.doc().hover_node_id;
         let focussed_node_id = self.doc().focus_node_id;
 
+        if matches!(event, UiEvent::KeyDown(_)) {
+            let node_exists = focussed_node_id
+                .map(|id| self.doc().get_node(id).is_some())
+                .unwrap_or(false);
+            println!(
+                "DRIVER_KEYDOWN: focussed_node_id={:?}, node_exists={}",
+                focussed_node_id, node_exists
+            );
+        }
+
         // Update document input state (hover, focus, active, etc)
         match &event {
             UiEvent::MouseMove(event) => {

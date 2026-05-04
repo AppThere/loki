@@ -286,15 +286,26 @@ impl EventHandler for DioxusEventHandler<'_> {
             return;
         };
 
+        let is_keydown = matches!(event.data, DomEventData::KeyDown(_));
+        if is_keydown {
+            println!("DIOXUS_HANDLER: event=keydown, chain_len={}, chain={:?}", chain.len(), chain);
+        }
+
         for &node_id in chain {
             // Get dioxus vdom id for node
             let dioxus_id = mutr.doc.get_node(node_id).and_then(get_dioxus_id);
+            if is_keydown {
+                println!("  CHAIN_NODE: blitz_id={}, dioxus_id={:?}", node_id, dioxus_id);
+            }
             let Some(id) = dioxus_id else {
                 continue;
             };
 
             // Handle event in vdom
             let dx_event = Event::new(event_data.clone(), event.bubbles);
+            if is_keydown {
+                println!("  DISPATCHING keydown to dioxus_id={:?}", id);
+            }
             self.vdom
                 .runtime()
                 .handle_event(event.name(), dx_event.clone(), id);
