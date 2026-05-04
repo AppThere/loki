@@ -188,9 +188,7 @@ impl CustomPaintSource for LokiPageSource {
         //   DPR × tier_scale_factor × (96 CSS-px / 72 pt)
         // This ensures the scene exactly fills w_phys × h_phys.
         let layout_guard = self.source.layout_for_generation(current_generation);
-        let Some((_, layout)) = layout_guard.as_ref() else {
-            return None;
-        };
+        let (_, layout) = layout_guard.as_ref()?;
         let mut scene = Scene::new();
         let render_scale = scale as f32 * scale_factor * (96.0 / 72.0);
         loki_vello::paint_single_page(
