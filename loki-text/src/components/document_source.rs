@@ -408,13 +408,29 @@ pub fn apply_mutation_and_relayout(
     loro_doc: &loro::LoroDoc,
 ) -> bool {
     // Step 1: Derive updated Document from Loro CRDT state.
-    let doc = match loki_doc_model::loro_bridge::loro_to_document(loro_doc) {
+    let mut doc = match loki_doc_model::loro_bridge::loro_to_document(loro_doc) {
         Ok(d) => d,
         Err(e) => {
             tracing::warn!("apply_mutation_and_relayout: loro_to_document failed: {e}");
             return false;
         }
     };
+
+    // Step 1b: Restore the style catalog from the original document.
+    // loro_to_document() produces Document::new() with an empty StyleCatalog
+    // because the catalog is not stored in the CRDT.  Without this the layout
+    // engine falls back to minimal default styles and the document appearance
+    // changes completely on the first edit.
+    {
+        let Ok(state) = doc_state.lock() else {
+            tracing::warn!("apply_mutation_and_relayout: doc_state lock poisoned (catalog)");
+            return false;
+        };
+        if let Some(orig) = &state.document {
+            doc.styles = orig.styles.clone();
+            doc.source = orig.source.clone();
+        }
+    }
 
     // Step 2: Full layout pass with editing data preserved.
     let layout = {

@@ -428,14 +428,11 @@ pub fn Editor(path: String) -> Element {
                                 on_keydown: {
                                     let doc_state = Arc::clone(&doc_state);
                                     move |evt: Rc<KeyboardData>| {
-                                        let mode_str = if editor_mode() == EditorMode::Editing { "Editing" } else { "Reading" };
-                                        println!("DBG2 KEYDOWN handler: key={:?} mode={}", evt.key(), mode_str);
                                         if editor_mode() != EditorMode::Editing {
                                             return;
                                         }
 
                                         let focus = cursor_state.read().focus.clone();
-                                        println!("DBG3 focus={:?}", focus.as_ref().map(|p| (p.paragraph_index, p.byte_offset)));
                                         let Some(focus) = focus else { return; };
 
                                         match evt.key() {
@@ -448,23 +445,16 @@ pub fn Editor(path: String) -> Element {
 
                                                 {
                                                     let ldoc_guard = loro_doc.read();
-                                                    let Some(ldoc) = ldoc_guard.as_ref() else {
-                                                        println!("DBG4 loro_doc is None, skipping insert");
-                                                        return;
-                                                    };
-                                                    println!("DBG4 insert_text para={} offset={} ch={:?}", focus.paragraph_index, focus.byte_offset, ch);
+                                                    let Some(ldoc) = ldoc_guard.as_ref() else { return; };
                                                     if insert_text(ldoc, focus.paragraph_index, focus.byte_offset, &ch).is_err() {
-                                                        println!("DBG4 insert_text FAILED");
                                                         return;
                                                     }
-                                                    println!("DBG4 insert_text OK");
                                                 }
 
                                                 {
                                                     let ldoc_guard = loro_doc.read();
                                                     let Some(ldoc) = ldoc_guard.as_ref() else { return; };
-                                                    let ok = apply_mutation_and_relayout(&doc_state, ldoc);
-                                                    println!("DBG4 apply_mutation_and_relayout={}", ok);
+                                                    apply_mutation_and_relayout(&doc_state, ldoc);
                                                 }
 
                                                 let new_offset = focus.byte_offset + ch.len();

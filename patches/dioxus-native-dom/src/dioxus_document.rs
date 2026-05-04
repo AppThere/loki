@@ -195,8 +195,7 @@ impl Document for DioxusDocument {
 
         // Preserve focus across re-renders: capture the focused node's Dioxus ElementId
         // (stable across re-renders) before render_immediate may rebuild the DOM tree.
-        let focus_before = self.inner.focus_node_id;
-        let focus_dioxus_id = focus_before
+        let focus_dioxus_id = self.inner.focus_node_id
             .and_then(|id| self.inner.get_node(id))
             .and_then(get_dioxus_id);
 
@@ -210,13 +209,10 @@ impl Document for DioxusDocument {
         if let Some(dxid) = focus_dioxus_id {
             if let Some(new_node_id) = self.vdom_state.try_element_to_node_id(dxid) {
                 if self.inner.focus_node_id != Some(new_node_id) {
-                    println!("DBG0 FOCUS RESTORE: {:?}->{} (before_render={:?}, dxid={:?})",
-                        focus_before, new_node_id, focus_before, dxid);
                     self.inner.set_focus_to(new_node_id);
                 }
             }
         }
-        println!("DBG0 POLL END: focus_node_id={:?}", self.inner.focus_node_id);
 
         true
     }
