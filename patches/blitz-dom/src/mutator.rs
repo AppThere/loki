@@ -223,6 +223,11 @@ impl DocumentMutator<'_> {
 
         element.attrs.set(name.clone(), value);
 
+        // Re-derive focussability whenever the relevant attributes change.
+        if name.local == local_name!("tabindex") || name.local == local_name!("disabled") {
+            element.flush_is_focussable();
+        }
+
         let tag = &element.name.local;
         let attr = &name.local;
 
@@ -288,6 +293,10 @@ impl DocumentMutator<'_> {
 
         if name.local == local_name!("id") {
             element.id = None;
+        }
+
+        if name.local == local_name!("tabindex") || name.local == local_name!("disabled") {
+            element.flush_is_focussable();
         }
 
         // Update text input value
