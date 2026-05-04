@@ -47,6 +47,7 @@ use loki_doc_model::document::Document;
 use loki_doc_model::io::DocumentImport;
 use loki_doc_model::loro_bridge::{derive_loro_cursor, document_to_loro};
 use loki_doc_model::loro_mutation::{delete_text, get_block_text, insert_text};
+use loki_doc_model::{merge_block, split_block};
 use loki_file_access::FileAccessToken;
 use loki_layout::LayoutOptions;
 use loki_odf::odt::import::{OdtImport, OdtImportOptions};
@@ -60,6 +61,9 @@ use crate::editing::cursor::{
     next_grapheme_boundary, prev_grapheme_boundary, CursorState, DocumentPosition,
 };
 use crate::editing::hit_test::hit_test_document;
+use crate::editing::navigation::{
+    navigate_down, navigate_end, navigate_home, navigate_left, navigate_right, navigate_up,
+};
 use crate::error::LoadError;
 use crate::utils::display_title_from_path;
 
@@ -397,7 +401,27 @@ pub fn Editor(path: String) -> Element {
                             // ── Backspace ──────────────────────────────────────
                             Key::Backspace => {
                                 if focus.byte_offset == 0 {
-                                    // TODO(3b): merge with previous paragraph
+                                    // Merge current paragraph into the previous one.
+                                    if focus.paragraph_index == 0 {
+                                        return; // No previous block — nothing to merge.
+                                    }
+                                    let ldoc_guard = loro_doc.read();
+                                    let Some(ldoc) = ldoc_guard.as_ref() else { return; };
+                                    let Ok(merged_offset) =
+                                        merge_block(ldoc, focus.paragraph_index)
+                                    else {
+                                        return;
+                                    };
+                                    apply_mutation_and_relayout(&doc_state, ldoc);
+                                    // TODO(3b-3): recompute page_index from layout after merge
+                                    let new_pos = DocumentPosition {
+                                        page_index: focus.page_index,
+                                        paragraph_index: focus.paragraph_index - 1,
+                                        byte_offset: merged_offset,
+                                    };
+                                    let mut cs = cursor_state.write();
+                                    cs.focus = Some(new_pos.clone());
+                                    cs.anchor = Some(new_pos);
                                     return;
                                 }
 
@@ -472,18 +496,106 @@ pub fn Editor(path: String) -> Element {
                                 // Cursor stays at the same offset after forward delete.
                             }
 
-                            // ── Navigation — deferred to Session 3b ───────────
-                            Key::ArrowLeft
-                            | Key::ArrowRight
-                            | Key::ArrowUp
-                            | Key::ArrowDown
-                            | Key::Home
-                            | Key::End => {
-                                // TODO(3b): arrow key navigation
+                            // ── Arrow-key navigation ───────────────────────────
+                            Key::ArrowLeft | Key::ArrowRight => {
+                                let shift_held = evt.modifiers().shift();
+                                let layout_opt = {
+                                    let state = doc_state
+                                        .lock()
+                                        .unwrap_or_else(|e| e.into_inner());
+                                    state.paginated_layout.clone()
+                                };
+                                let Some(layout) = layout_opt else { return; };
+                                let ldoc_guard = loro_doc.read();
+                                let new_pos = if evt.key() == Key::ArrowLeft {
+                                    navigate_left(&focus, &layout, |idx| {
+                                        ldoc_guard
+                                            .as_ref()
+                                            .map(|l| get_block_text(l, idx))
+                                            .unwrap_or_default()
+                                    })
+                                } else {
+                                    navigate_right(&focus, &layout, |idx| {
+                                        ldoc_guard
+                                            .as_ref()
+                                            .map(|l| get_block_text(l, idx))
+                                            .unwrap_or_default()
+                                    })
+                                };
+                                if let Some(np) = new_pos {
+                                    let mut cs = cursor_state.write();
+                                    cs.focus = Some(np.clone());
+                                    if !shift_held {
+                                        cs.anchor = Some(np);
+                                    }
+                                }
                             }
 
+                            Key::ArrowUp | Key::ArrowDown => {
+                                let shift_held = evt.modifiers().shift();
+                                let layout_opt = {
+                                    let state = doc_state
+                                        .lock()
+                                        .unwrap_or_else(|e| e.into_inner());
+                                    state.paginated_layout.clone()
+                                };
+                                let Some(layout) = layout_opt else { return; };
+                                let new_pos = if evt.key() == Key::ArrowUp {
+                                    navigate_up(&focus, &layout)
+                                } else {
+                                    navigate_down(&focus, &layout)
+                                };
+                                if let Some(np) = new_pos {
+                                    let mut cs = cursor_state.write();
+                                    cs.focus = Some(np.clone());
+                                    if !shift_held {
+                                        cs.anchor = Some(np);
+                                    }
+                                }
+                            }
+
+                            Key::Home | Key::End => {
+                                let shift_held = evt.modifiers().shift();
+                                let layout_opt = {
+                                    let state = doc_state
+                                        .lock()
+                                        .unwrap_or_else(|e| e.into_inner());
+                                    state.paginated_layout.clone()
+                                };
+                                let Some(layout) = layout_opt else { return; };
+                                let new_pos = if evt.key() == Key::Home {
+                                    navigate_home(&focus, &layout)
+                                } else {
+                                    navigate_end(&focus, &layout)
+                                };
+                                if let Some(np) = new_pos {
+                                    let mut cs = cursor_state.write();
+                                    cs.focus = Some(np.clone());
+                                    if !shift_held {
+                                        cs.anchor = Some(np);
+                                    }
+                                }
+                            }
+
+                            // ── Enter — split paragraph ─────────────────────────
                             Key::Enter => {
-                                // TODO(3b): paragraph split
+                                let ldoc_guard = loro_doc.read();
+                                let Some(ldoc) = ldoc_guard.as_ref() else { return; };
+                                if split_block(ldoc, focus.paragraph_index, focus.byte_offset)
+                                    .is_err()
+                                {
+                                    return;
+                                }
+                                apply_mutation_and_relayout(&doc_state, ldoc);
+                                // TODO(3b-3): recompute page_index from layout after split
+                                let new_pos = DocumentPosition {
+                                    page_index: focus.page_index,
+                                    paragraph_index: focus.paragraph_index + 1,
+                                    byte_offset: 0,
+                                };
+                                let mut cs = cursor_state.write();
+                                cs.focus = Some(new_pos.clone());
+                                cs.anchor = Some(new_pos);
                             }
 
                             _ => {}
