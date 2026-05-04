@@ -27,6 +27,7 @@
 //! This file tests the public [`DocumentState`] API — the contract between the
 //! Dioxus component and the paint source.
 
+use loki_layout::FontResources;
 use loki_text::components::document_source::DocumentState;
 use loki_vello::FontDataCache;
 use std::sync::{Arc, Mutex};
@@ -49,6 +50,7 @@ fn make_state() -> DocumentState {
         layout_generation: 0,
         layout_canvas_width: 0.0,
         layout_preserve_for_editing: false,
+        shared_font_resources: Arc::new(Mutex::new(FontResources::new())),
     }
 }
 

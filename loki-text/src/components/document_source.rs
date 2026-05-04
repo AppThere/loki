@@ -144,6 +144,13 @@ pub struct DocumentState {
     pub layout_canvas_width: f32,
     /// Whether `paginated_layout` was computed with `preserve_for_editing: true`.
     pub layout_preserve_for_editing: bool,
+    /// Shared Parley font + shaping context.  `parley::FontContext` discovers and
+    /// caches system fonts; `parley::LayoutContext` is shaping scratch space.
+    /// Both are designed as one-per-application globals — sharing eliminates one
+    /// `FontResources` per page canvas (≈20 MB each from the Fontique font scan).
+    /// Locked for the duration of `layout_document`; sequential rendering means
+    /// no contention.
+    pub shared_font_resources: Arc<Mutex<FontResources>>,
 }
 
 // ── LokiDocumentSource ────────────────────────────────────────────────────────
@@ -152,7 +159,6 @@ pub struct DocumentState {
 ///
 /// Lifecycle:
 /// - `resume()` — GPU device is available; create `vello::Renderer` and
-///   `FontResources`.
 /// - `render()` — called each frame by Blitz; runs layout + paint → texture →
 ///   `ctx.register_texture`.  Reuses the existing texture when the document
 ///   and canvas size are unchanged.  Calls `ctx.unregister_texture` on the
@@ -175,9 +181,10 @@ pub(crate) struct LokiDocumentSource {
     /// at construction.  Locked during `paint_single_page`; sequential execution
     /// means no contention.
     shared_font_cache: Arc<Mutex<FontDataCache>>,
-    /// Font resources — initialized in `resume()`, used when this source wins the
-    /// layout-computation race on a given frame.
-    font_resources: Option<FontResources>,
+    /// Shared font + shaping context, cloned from [`DocumentState::shared_font_resources`]
+    /// at construction.  Locked during `layout_document`; sequential rendering
+    /// guarantees no contention.
+    shared_font_resources: Arc<Mutex<FontResources>>,
     /// Handle to the texture currently registered with the Vello renderer.
     /// Unregistered at the start of the next `render()` call before a new
     /// texture is allocated.  Set to `None` in `suspend()` — the Vello
@@ -202,11 +209,11 @@ pub(crate) struct LokiDocumentSource {
 impl LokiDocumentSource {
     /// Create a new source for `page_index`, sharing state with the Dioxus component.
     pub(crate) fn new(document: Arc<Mutex<DocumentState>>, page_index: usize) -> Self {
-        let (shared_renderer, shared_font_cache) = {
+        let (shared_renderer, shared_font_cache, shared_font_resources) = {
             let s = document
                 .lock()
                 .expect("DocumentState lock poisoned in LokiDocumentSource::new");
-            (s.shared_renderer.clone(), s.shared_font_cache.clone())
+            (s.shared_renderer.clone(), s.shared_font_cache.clone(), s.shared_font_resources.clone())
         };
         Self {
             document,
@@ -215,7 +222,7 @@ impl LokiDocumentSource {
             queue: None,
             shared_renderer,
             shared_font_cache,
-            font_resources: None,
+            shared_font_resources,
             texture_handle: None,
             texture_stamp: 0,
             texture_size: (0, 0),
@@ -410,14 +417,22 @@ pub fn apply_mutation_and_relayout(
     };
 
     // Step 2: Full layout pass with editing data preserved.
-    let mut font_resources = FontResources::new();
-    let layout = layout_document(
-        &mut font_resources,
-        &doc,
-        LayoutMode::Paginated,
-        1.0,
-        &LayoutOptions { preserve_for_editing: true },
-    );
+    let layout = {
+        let Ok(state) = doc_state.lock() else {
+            tracing::warn!("apply_mutation_and_relayout: doc_state lock poisoned (font resources)");
+            return false;
+        };
+        let fr_arc = state.shared_font_resources.clone();
+        drop(state); // release doc_state lock before acquiring font resources lock
+        let mut fr = fr_arc.lock().unwrap_or_else(|e| e.into_inner());
+        layout_document(
+            &mut fr,
+            &doc,
+            LayoutMode::Paginated,
+            1.0,
+            &LayoutOptions { preserve_for_editing: true },
+        )
+    };
 
     let (page_count, paginated_layout, page_width_px, page_height_px) = match &layout {
         DocumentLayout::Paginated(pl) => {
@@ -472,7 +487,6 @@ impl CustomPaintSource for LokiDocumentSource {
             }
         }
 
-        self.font_resources = Some(FontResources::new());
     }
 
     fn suspend(&mut self) {
@@ -495,7 +509,6 @@ impl CustomPaintSource for LokiDocumentSource {
         self.texture_size = (0, 0);
         self.texture_cursor = None;
         self.texture_preserve_effective = false;
-        // font_resources is retained — it has no GPU dependency.
     }
 
     fn render(
@@ -582,14 +595,18 @@ impl CustomPaintSource for LokiDocumentSource {
 
         if needs_recompute {
             let doc = doc_opt?;
-            let font_resources = self.font_resources.get_or_insert_with(FontResources::new);
             // Layout at scale=1.0 keeps all coordinates in CSS pixels.
             // paint_layout multiplies by `scale` to convert to physical pixels;
             // passing the device scale here would apply it twice (Parley 0.6.0
             // already multiplies font sizes by display_scale internally).
             let layout_opts = LayoutOptions { preserve_for_editing: preserve_effective };
-            let layout =
-                layout_document(font_resources, &doc, LayoutMode::Paginated, 1.0, &layout_opts);
+            let layout = {
+                let mut fr = self
+                    .shared_font_resources
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                layout_document(&mut fr, &doc, LayoutMode::Paginated, 1.0, &layout_opts)
+            };
             let (page_count, paginated_layout) = match layout {
                 DocumentLayout::Paginated(pl) => (pl.pages.len(), Some(Arc::new(pl))),
                 _ => (0, None),
@@ -741,6 +758,7 @@ mod tests {
                 layout_generation: 0,
                 layout_canvas_width: 0.0,
                 layout_preserve_for_editing: false,
+                shared_font_resources: Arc::new(Mutex::new(FontResources::new())),
             })),
             0,
         )
@@ -843,6 +861,7 @@ mod tests {
             layout_generation: 0,
             layout_canvas_width: 0.0,
             layout_preserve_for_editing: false,
+            shared_font_resources: Arc::new(Mutex::new(FontResources::new())),
         }));
         // Simulate the component bumping the generation counter.
         {

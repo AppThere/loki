@@ -111,6 +111,7 @@ pub fn Editor(path: String) -> Element {
             layout_generation: 0,
             layout_canvas_width: 0.0,
             layout_preserve_for_editing: false,
+            shared_font_resources: Arc::new(Mutex::new(loki_layout::FontResources::new())),
         }))
     });
 
