@@ -105,6 +105,7 @@ pub fn Editor(path: String) -> Element {
             cursor_state: None,
             paginated_layout: None,
             preserve_for_editing: false,
+            shared_renderer: Arc::new(Mutex::new(None)),
         }))
     });
 

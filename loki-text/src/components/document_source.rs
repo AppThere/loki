@@ -123,6 +123,13 @@ pub struct DocumentState {
     /// Populated by [`LokiDocumentSource::render()`] on the first GPU frame
     /// after a document load or mutation. `None` until the first render.
     pub paginated_layout: Option<Arc<PaginatedLayout>>,
+    /// One `vello::Renderer` shared across all `LokiDocumentSource` instances
+    /// for this document.  Keyed to the wgpu `Device`; cleared on suspend and
+    /// re-created by the first source to call `resume()`.
+    ///
+    /// Sharing avoids allocating one renderer per page canvas (≈141 MB each).
+    /// Blitz calls sources sequentially so there is no lock contention.
+    pub shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
 }
 
 // ── Cached layout ─────────────────────────────────────────────────────────────
@@ -158,8 +165,9 @@ pub(crate) struct LokiDocumentSource {
     device: Option<anyrender_vello::wgpu::Device>,
     /// wgpu queue, cloned from [`DeviceHandle`] in `resume()`.
     queue: Option<anyrender_vello::wgpu::Queue>,
-    /// Own Vello renderer — created in `resume()` from the device.
-    renderer: Option<vello::Renderer>,
+    /// Shared Vello renderer, cloned from [`DocumentState::shared_renderer`] at
+    /// construction.  All page sources for the same document hold the same Arc.
+    shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
     /// Cached layout — invalidated when the generation counter advances.
     layout_cache: Option<CachedLayout>,
     /// Font resources — initialized in `resume()`, persisted across frames to
@@ -185,12 +193,17 @@ pub(crate) struct LokiDocumentSource {
 impl LokiDocumentSource {
     /// Create a new source for `page_index`, sharing state with the Dioxus component.
     pub(crate) fn new(document: Arc<Mutex<DocumentState>>, page_index: usize) -> Self {
+        let shared_renderer = document
+            .lock()
+            .expect("DocumentState lock poisoned in LokiDocumentSource::new")
+            .shared_renderer
+            .clone();
         Self {
             document,
             page_index,
             device: None,
             queue: None,
-            renderer: None,
+            shared_renderer,
             layout_cache: None,
             font_resources: None,
             texture_handle: None,
@@ -436,19 +449,25 @@ impl CustomPaintSource for LokiDocumentSource {
         self.device = Some(device_handle.device.clone());
         self.queue = Some(device_handle.queue.clone());
 
-        match vello::Renderer::new(
-            &device_handle.device,
-            RendererOptions {
-                use_cpu: false,
-                antialiasing_support: AaSupport::all(),
-                num_init_threads: NonZeroUsize::new(1),
-                pipeline_cache: None,
-            },
-        ) {
-            Ok(r) => self.renderer = Some(r),
-            Err(e) => {
-                tracing::warn!("LokiDocumentSource: vello renderer init failed: {e}");
-                self.renderer = None;
+        // Only the first page source to resume creates the renderer; the rest
+        // find it already initialised and skip.  The renderer is tied to the
+        // Device, which is the same Arc clone across all page sources.
+        let mut renderer_guard = self
+            .shared_renderer
+            .lock()
+            .expect("renderer lock poisoned in resume()");
+        if renderer_guard.is_none() {
+            match vello::Renderer::new(
+                &device_handle.device,
+                RendererOptions {
+                    use_cpu: false,
+                    antialiasing_support: AaSupport::all(),
+                    num_init_threads: NonZeroUsize::new(1),
+                    pipeline_cache: None,
+                },
+            ) {
+                Ok(r) => *renderer_guard = Some(r),
+                Err(e) => tracing::warn!("LokiDocumentSource: vello renderer init failed: {e}"),
             }
         }
 
@@ -458,7 +477,14 @@ impl CustomPaintSource for LokiDocumentSource {
     fn suspend(&mut self) {
         self.device = None;
         self.queue = None;
-        self.renderer = None;
+        // Drop the shared renderer.  The first source to call suspend() does
+        // the actual drop; subsequent sources find None and return immediately.
+        // Blitz calls suspend() on all sources before entering Suspended state,
+        // so resume() is guaranteed before the next render().
+        *self
+            .shared_renderer
+            .lock()
+            .expect("renderer lock poisoned in suspend()") = None;
         self.layout_cache = None;
         // The Vello renderer dropped above owns the registered texture via
         // engine.image_overrides; it is freed when the renderer is dropped.
@@ -479,7 +505,7 @@ impl CustomPaintSource for LokiDocumentSource {
         scale: f64,
     ) -> Option<TextureHandle> {
         // Guard: GPU resources must be present.
-        if self.device.is_none() || self.queue.is_none() || self.renderer.is_none() {
+        if self.device.is_none() || self.queue.is_none() {
             return None;
         }
 
@@ -620,7 +646,13 @@ impl CustomPaintSource for LokiDocumentSource {
         // non-overlapping borrows on self).
         let device = self.device.as_ref()?;
         let queue = self.queue.as_ref()?;
-        let renderer = self.renderer.as_mut()?;
+        // Lock the shared renderer.  Sources render sequentially (Blitz uses a
+        // single-threaded values_mut() loop), so this never contends in practice.
+        let mut renderer_guard = self
+            .shared_renderer
+            .lock()
+            .expect("renderer lock poisoned in render()");
+        let renderer = renderer_guard.as_mut()?;
 
         // COMPAT(blitz): Rgba8Unorm with STORAGE_BINDING|TEXTURE_BINDING is the
         // format expected by vello render_to_texture and register_texture in
@@ -694,6 +726,7 @@ mod tests {
                 cursor_state: None,
                 preserve_for_editing: false,
                 paginated_layout: None,
+                shared_renderer: Arc::new(Mutex::new(None)),
             })),
             0,
         )
@@ -773,6 +806,7 @@ mod tests {
             cursor_state: None,
             preserve_for_editing: false,
             paginated_layout: None,
+            shared_renderer: Arc::new(Mutex::new(None)),
         }));
         // Simulate the component bumping the generation counter.
         {
@@ -854,7 +888,7 @@ mod tests {
         s.suspend();
         assert!(s.device.is_none());
         assert!(s.queue.is_none());
-        assert!(s.renderer.is_none());
+        assert!(s.shared_renderer.lock().unwrap().is_none());
     }
 
     // ── Cursor paint resolution tests ─────────────────────────────────────────

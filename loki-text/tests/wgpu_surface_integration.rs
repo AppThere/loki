@@ -43,6 +43,7 @@ fn document_state_default_has_no_document() {
         cursor_state: None,
         preserve_for_editing: false,
         paginated_layout: None,
+        shared_renderer: Arc::new(Mutex::new(None)),
     };
     assert!(state.document.is_none());
     assert_eq!(state.generation, 0);
@@ -71,6 +72,7 @@ fn document_state_can_be_shared_across_threads() {
         cursor_state: None,
         preserve_for_editing: false,
         paginated_layout: None,
+        shared_renderer: Arc::new(Mutex::new(None)),
     }));
     let state2 = Arc::clone(&state);
     let handle = std::thread::spawn(move || {
@@ -99,6 +101,7 @@ fn generation_is_monotone_across_document_changes() {
         cursor_state: None,
         preserve_for_editing: false,
         paginated_layout: None,
+        shared_renderer: Arc::new(Mutex::new(None)),
     }));
 
     let mut prev = 0u64;
