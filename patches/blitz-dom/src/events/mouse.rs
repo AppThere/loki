@@ -261,6 +261,7 @@ pub(crate) fn handle_click<F: FnMut(DomEvent)>(
         // descendant of a tabindex="0" element moves keyboard focus to that
         // ancestor so that subsequent keydown events reach it.
         if is_focussable {
+            println!("BLITZ FOCUS: setting focus to node {:?}", node_id);
             doc.set_focus_to(node_id);
             return;
         }
