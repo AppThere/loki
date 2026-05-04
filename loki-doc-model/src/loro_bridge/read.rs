@@ -14,7 +14,8 @@ use crate::style::props::para_props::{ParaProps, ParagraphAlignment, Spacing, Li
 use crate::style::list_style::ListId;
 use crate::loro_schema::*;
 use super::BridgeError;
-use super::inlines::{reconstruct_inlines, decode_underline, decode_strikethrough, decode_vertical_align};
+use loki_primitives::color::DocumentColor;
+use super::inlines::{reconstruct_inlines, decode_highlight_color, decode_underline, decode_strikethrough, decode_vertical_align};
 
 // ── Block deserialization ─────────────────────────────────────────────────────
 
@@ -278,6 +279,12 @@ pub(super) fn reconstruct_char_props_from_map(block_map: &LoroMap) -> Option<Cha
     if let Some(s) = get_str_from_map(&props_map, "vertical_align")
         && let Some(va) = decode_vertical_align(&s) { props.vertical_align = Some(va); any = true; }
     if let Some(s) = get_str_from_map(&props_map, "hyperlink") { props.hyperlink = Some(s); any = true; }
+    if let Some(s) = get_str_from_map(&props_map, "color")
+        && let Ok(c) = DocumentColor::from_hex(&s) { props.color = Some(c); any = true; }
+    if let Some(s) = get_str_from_map(&props_map, "background_color")
+        && let Ok(c) = DocumentColor::from_hex(&s) { props.background_color = Some(c); any = true; }
+    if let Some(s) = get_str_from_map(&props_map, "highlight_color")
+        && let Some(h) = decode_highlight_color(&s) { props.highlight_color = Some(h); any = true; }
 
     if any { Some(props) } else { None }
 }

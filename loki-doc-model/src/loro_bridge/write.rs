@@ -190,6 +190,13 @@ pub(super) fn map_char_props_to_map(props: &CharProps, map: &LoroMap) -> Result<
     if let Some(v) = &props.strikethrough { map.insert("strikethrough", format!("{:?}", v))?; }
     if let Some(v) = &props.vertical_align { map.insert("vertical_align", format!("{:?}", v))?; }
     if let Some(v) = &props.hyperlink { map.insert("hyperlink", v.as_str())?; }
+    if let Some(hex) = props.color.as_ref().and_then(|c| c.to_hex()) {
+        map.insert("color", hex)?;
+    }
+    if let Some(hex) = props.background_color.as_ref().and_then(|c| c.to_hex()) {
+        map.insert("background_color", hex)?;
+    }
+    if let Some(v) = &props.highlight_color { map.insert("highlight_color", format!("{v:?}"))?; }
     Ok(())
 }
 

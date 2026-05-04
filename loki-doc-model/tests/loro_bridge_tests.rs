@@ -2,7 +2,7 @@ use loki_doc_model::document::Document;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::{Inline, StyledRun};
 use loki_doc_model::content::attr::NodeAttr;
-use loki_doc_model::style::props::char_props::{CharProps, UnderlineStyle};
+use loki_doc_model::style::props::char_props::{CharProps, HighlightColor, UnderlineStyle};
 use loki_doc_model::layout::page::{PageMargins, PageSize};
 use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
 use loki_doc_model::layout::section::Section;
@@ -437,4 +437,107 @@ fn roundtrip_two_sections_different_page_sizes() {
             assert_eq!(s, "Sec2");
         } else { panic!(); }
     } else { panic!(); }
+}
+
+// ── Color round-trip ──────────────────────────────────────────────────────────
+
+#[test]
+fn roundtrip_rgb_color_mark() {
+    let mut doc = Document::new();
+    let props = CharProps {
+        color: Some(DocumentColor::from_hex("#3355FF").unwrap()),
+        ..Default::default()
+    };
+    let run = StyledRun {
+        style_id: None,
+        direct_props: Some(Box::new(props)),
+        content: vec![Inline::Str("blue text".into())],
+        attr: NodeAttr::default(),
+    };
+    if let Some(sec) = doc.first_section_mut() {
+        sec.blocks.push(Block::Para(vec![Inline::StyledRun(run)]));
+    }
+
+    let loro = document_to_loro(&doc).expect("serialize");
+    let doc2 = loro_to_document(&loro).expect("deserialize");
+
+    if let Block::Para(inlines) = &doc2.sections[0].blocks[0] {
+        if let Inline::StyledRun(run) = &inlines[0] {
+            let color = run.direct_props.as_ref().unwrap().color.as_ref().expect("color present");
+            assert_eq!(color.to_hex().unwrap(), "#3355FF");
+        } else {
+            panic!("expected StyledRun");
+        }
+    } else {
+        panic!("expected Para");
+    }
+}
+
+#[test]
+fn roundtrip_transparent_color_graceful_drop() {
+    let mut doc = Document::new();
+    let props = CharProps {
+        color: Some(DocumentColor::Transparent),
+        ..Default::default()
+    };
+    let run = StyledRun {
+        style_id: None,
+        direct_props: Some(Box::new(props)),
+        content: vec![Inline::Str("transparent".into())],
+        attr: NodeAttr::default(),
+    };
+    if let Some(sec) = doc.first_section_mut() {
+        sec.blocks.push(Block::Para(vec![Inline::StyledRun(run)]));
+    }
+
+    let loro = document_to_loro(&doc).expect("serialize");
+    let doc2 = loro_to_document(&loro).expect("deserialize — must not crash");
+
+    // Transparent has no hex representation so the mark is dropped gracefully
+    if let Block::Para(inlines) = &doc2.sections[0].blocks[0] {
+        match &inlines[0] {
+            Inline::StyledRun(run) => {
+                let color = run.direct_props.as_ref().and_then(|p| p.color.as_ref());
+                assert!(color.is_none(), "Transparent should not round-trip as a color value");
+            }
+            Inline::Str(_) => {} // also acceptable — no mark means plain Str
+            other => panic!("unexpected inline variant: {other:?}"),
+        }
+    } else {
+        panic!("expected Para");
+    }
+}
+
+#[test]
+fn roundtrip_highlight_color_mark() {
+    let mut doc = Document::new();
+    let props = CharProps {
+        highlight_color: Some(HighlightColor::Yellow),
+        ..Default::default()
+    };
+    let run = StyledRun {
+        style_id: None,
+        direct_props: Some(Box::new(props)),
+        content: vec![Inline::Str("highlighted".into())],
+        attr: NodeAttr::default(),
+    };
+    if let Some(sec) = doc.first_section_mut() {
+        sec.blocks.push(Block::Para(vec![Inline::StyledRun(run)]));
+    }
+
+    let loro = document_to_loro(&doc).expect("serialize");
+    let doc2 = loro_to_document(&loro).expect("deserialize");
+
+    if let Block::Para(inlines) = &doc2.sections[0].blocks[0] {
+        if let Inline::StyledRun(run) = &inlines[0] {
+            assert_eq!(
+                run.direct_props.as_ref().unwrap().highlight_color,
+                Some(HighlightColor::Yellow),
+            );
+        } else {
+            panic!("expected StyledRun");
+        }
+    } else {
+        panic!("expected Para");
+    }
 }

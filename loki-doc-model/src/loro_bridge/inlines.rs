@@ -5,9 +5,10 @@
 
 use loro::{LoroText, LoroValue};
 use loki_primitives::units::Points;
+use loki_primitives::color::DocumentColor;
 use crate::content::inline::{Inline, StyledRun};
 use crate::content::attr::NodeAttr;
-use crate::style::props::char_props::{CharProps, UnderlineStyle, StrikethroughStyle, VerticalAlign};
+use crate::style::props::char_props::{CharProps, HighlightColor, UnderlineStyle, StrikethroughStyle, VerticalAlign};
 use crate::loro_schema::*;
 use super::BridgeError;
 
@@ -107,8 +108,13 @@ pub(super) fn apply_char_props_marks(
     if let Some(v) = &props.underline { text.mark(start..end, MARK_UNDERLINE, format!("{:?}", v))?; }
     if let Some(v) = &props.strikethrough { text.mark(start..end, MARK_STRIKETHROUGH, format!("{:?}", v))?; }
     if let Some(v) = &props.vertical_align { text.mark(start..end, MARK_VERTICAL_ALIGN, format!("{:?}", v))?; }
-    if let Some(v) = &props.color { text.mark(start..end, MARK_COLOR, format!("{:?}", v))?; }
-    if let Some(v) = &props.highlight_color { text.mark(start..end, MARK_HIGHLIGHT_COLOR, format!("{:?}", v))?; }
+    // Non-Rgb variants (Theme, Cmyk, Transparent) have no hex repr and are deferred — TODO(loro-bridge)
+    if let Some(v) = &props.color && let Some(hex) = v.to_hex() {
+        text.mark(start..end, MARK_COLOR, hex)?;
+    }
+    if let Some(v) = &props.highlight_color {
+        text.mark(start..end, MARK_HIGHLIGHT_COLOR, format!("{v:?}"))?;
+    }
     if let Some(v) = &props.language { text.mark(start..end, MARK_LANGUAGE, format!("{:?}", v))?; }
     if let Some(v) = &props.hyperlink { text.mark(start..end, MARK_LINK_URL, v.clone())?; }
     Ok(())
@@ -207,8 +213,9 @@ fn read_char_props_from_marks(
     read_str!(underline, MARK_UNDERLINE, decode_underline);
     read_str!(strikethrough, MARK_STRIKETHROUGH, decode_strikethrough);
     read_str!(vertical_align, MARK_VERTICAL_ALIGN, decode_vertical_align);
-    // color, highlight_color, language — complex Debug-format strings; deferred
-    // TODO(loro-bridge): decode color/highlight_color/language marks
+    read_str!(color, MARK_COLOR, |s: &str| DocumentColor::from_hex(s).ok());
+    read_str!(highlight_color, MARK_HIGHLIGHT_COLOR, decode_highlight_color);
+    // language — complex type, deferred; TODO(loro-bridge)
 
     if any { Some(props) } else { None }
 }
@@ -240,6 +247,29 @@ pub(super) fn decode_vertical_align(s: &str) -> Option<VerticalAlign> {
         "Superscript" => Some(VerticalAlign::Superscript),
         "Subscript" => Some(VerticalAlign::Subscript),
         "Baseline" => Some(VerticalAlign::Baseline),
+        _ => None,
+    }
+}
+
+pub(super) fn decode_highlight_color(s: &str) -> Option<HighlightColor> {
+    match s {
+        "Yellow" => Some(HighlightColor::Yellow),
+        "Green" => Some(HighlightColor::Green),
+        "Cyan" => Some(HighlightColor::Cyan),
+        "Magenta" => Some(HighlightColor::Magenta),
+        "Blue" => Some(HighlightColor::Blue),
+        "Red" => Some(HighlightColor::Red),
+        "DarkBlue" => Some(HighlightColor::DarkBlue),
+        "DarkCyan" => Some(HighlightColor::DarkCyan),
+        "DarkGreen" => Some(HighlightColor::DarkGreen),
+        "DarkMagenta" => Some(HighlightColor::DarkMagenta),
+        "DarkRed" => Some(HighlightColor::DarkRed),
+        "DarkYellow" => Some(HighlightColor::DarkYellow),
+        "DarkGray" => Some(HighlightColor::DarkGray),
+        "LightGray" => Some(HighlightColor::LightGray),
+        "Black" => Some(HighlightColor::Black),
+        "White" => Some(HighlightColor::White),
+        "None" => Some(HighlightColor::None),
         _ => None,
     }
 }
