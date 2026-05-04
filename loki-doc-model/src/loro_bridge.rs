@@ -7,8 +7,10 @@ use loro::{LoroDoc, LoroMap, LoroText, LoroMovableList};
 use crate::document::Document;
 use crate::content::block::Block;
 use crate::content::inline::Inline;
-use crate::style::props::char_props::CharProps;
-use crate::style::props::para_props::ParaProps;
+use crate::style::props::char_props::{CharProps, UnderlineStyle, StrikethroughStyle, VerticalAlign};
+use crate::style::props::para_props::{ParaProps, ParagraphAlignment, Spacing, LineHeight};
+use crate::style::list_style::ListId;
+use loki_primitives::units::Points;
 use crate::loro_schema::*;
 
 /// Errors that can occur during document translation to/from Loro.
@@ -96,10 +98,9 @@ fn map_block(block: &Block, index: usize, map: &LoroMap) -> Result<(), BridgeErr
                 let props_map = map.insert_container(KEY_PARA_PROPS, LoroMap::new())?;
                 map_para_props(para_props, &props_map)?;
             }
-            // Add direct_char_props if present
-            if let Some(_char_props) = &para.direct_char_props {
-                let _props_map = map.insert_container(KEY_DIRECT_CHAR_PROPS, LoroMap::new())?;
-                // In full implementation we might map CharProps flat into here.
+            if let Some(char_props) = &para.direct_char_props {
+                let props_map = map.insert_container(KEY_DIRECT_CHAR_PROPS, LoroMap::new())?;
+                map_char_props_to_map(char_props, &props_map)?;
             }
             
             let content = map.insert_container(KEY_CONTENT, LoroText::new())?;
@@ -251,28 +252,278 @@ fn apply_char_props_marks(props: &CharProps, start: usize, end: usize, text: &Lo
 }
 
 fn map_para_props(props: &ParaProps, map: &LoroMap) -> Result<(), BridgeError> {
-    if let Some(v) = &props.alignment { map.insert(PROP_ALIGNMENT, format!("{:?}", v))?; }
+    if let Some(v) = &props.alignment { map.insert(PROP_ALIGNMENT, encode_alignment(v))?; }
     if let Some(v) = &props.indent_start { map.insert(PROP_INDENT_LEFT, v.value())?; }
     if let Some(v) = &props.indent_end { map.insert(PROP_INDENT_RIGHT, v.value())?; }
     if let Some(v) = &props.indent_first_line { map.insert(PROP_INDENT_FIRST_LINE, v.value())?; }
     if let Some(v) = &props.indent_hanging { map.insert(PROP_INDENT_HANGING, v.value())?; }
-    
+
     if let Some(v) = props.keep_together { map.insert(PROP_KEEP_TOGETHER, v)?; }
     if let Some(v) = props.keep_with_next { map.insert(PROP_KEEP_WITH_NEXT, v)?; }
     if let Some(v) = props.page_break_after { map.insert(PROP_PAGE_BREAK_AFTER, v)?; }
     if let Some(v) = props.bidi { map.insert(PROP_BIDI, v)?; }
-    
+
     if let Some(v) = props.widow_control { map.insert(PROP_WIDOW_CONTROL, i32::from(v))?; }
     if let Some(v) = props.list_level { map.insert(PROP_LIST_LEVEL, i32::from(v))?; }
-    
-    if let Some(v) = &props.space_before { map.insert(PROP_SPACE_BEFORE_PT, format!("{:?}", v))?; }
-    if let Some(v) = &props.space_after { map.insert(PROP_SPACE_AFTER_PT, format!("{:?}", v))?; }
-    if let Some(v) = &props.line_height { map.insert(PROP_LINE_HEIGHT, format!("{:?}", v))?; }
-    if let Some(v) = &props.list_id { map.insert(PROP_LIST_ID, format!("{:?}", v))?; }
+
+    if let Some(v) = &props.space_before { map.insert(PROP_SPACE_BEFORE_PT, encode_spacing(v))?; }
+    if let Some(v) = &props.space_after { map.insert(PROP_SPACE_AFTER_PT, encode_spacing(v))?; }
+    if let Some(v) = &props.line_height { map.insert(PROP_LINE_HEIGHT, encode_line_height(v))?; }
+    if let Some(v) = &props.list_id { map.insert(PROP_LIST_ID, v.as_str())?; }
     if let Some(v) = &props.tab_stops { map.insert(PROP_TAB_STOPS, format!("{:?}", v))?; }
     if let Some(v) = &props.background_color { map.insert("background_color", format!("{:?}", v))?; }
 
     Ok(())
+}
+
+fn encode_alignment(a: &ParagraphAlignment) -> &'static str {
+    match a {
+        ParagraphAlignment::Left => "Left",
+        ParagraphAlignment::Right => "Right",
+        ParagraphAlignment::Center => "Center",
+        ParagraphAlignment::Justify => "Justify",
+        ParagraphAlignment::Distribute => "Distribute",
+    }
+}
+
+fn decode_alignment(s: &str) -> Option<ParagraphAlignment> {
+    match s {
+        "Left" => Some(ParagraphAlignment::Left),
+        "Right" => Some(ParagraphAlignment::Right),
+        "Center" => Some(ParagraphAlignment::Center),
+        "Justify" => Some(ParagraphAlignment::Justify),
+        "Distribute" => Some(ParagraphAlignment::Distribute),
+        _ => None,
+    }
+}
+
+// Encode Spacing as "Exact:<f64>" or "Percent:<f32>"
+fn encode_spacing(s: &Spacing) -> String {
+    match s {
+        Spacing::Exact(pts) => format!("Exact:{}", pts.value()),
+        Spacing::Percent(pct) => format!("Percent:{}", pct),
+    }
+}
+
+fn decode_spacing(s: &str) -> Option<Spacing> {
+    if let Some(rest) = s.strip_prefix("Exact:") {
+        rest.parse::<f64>().ok().map(|v| Spacing::Exact(Points::new(v)))
+    } else if let Some(rest) = s.strip_prefix("Percent:") {
+        rest.parse::<f32>().ok().map(Spacing::Percent)
+    } else {
+        None
+    }
+}
+
+// Encode LineHeight as "Exact:<f64>", "AtLeast:<f64>", or "Multiple:<f32>"
+fn encode_line_height(lh: &LineHeight) -> String {
+    match lh {
+        LineHeight::Exact(pts) => format!("Exact:{}", pts.value()),
+        LineHeight::AtLeast(pts) => format!("AtLeast:{}", pts.value()),
+        LineHeight::Multiple(m) => format!("Multiple:{}", m),
+    }
+}
+
+fn decode_line_height(s: &str) -> Option<LineHeight> {
+    if let Some(rest) = s.strip_prefix("Exact:") {
+        rest.parse::<f64>().ok().map(|v| LineHeight::Exact(Points::new(v)))
+    } else if let Some(rest) = s.strip_prefix("AtLeast:") {
+        rest.parse::<f64>().ok().map(|v| LineHeight::AtLeast(Points::new(v)))
+    } else if let Some(rest) = s.strip_prefix("Multiple:") {
+        rest.parse::<f32>().ok().map(LineHeight::Multiple)
+    } else {
+        None
+    }
+}
+
+fn decode_underline(s: &str) -> Option<UnderlineStyle> {
+    match s {
+        "Single" => Some(UnderlineStyle::Single),
+        "Double" => Some(UnderlineStyle::Double),
+        "Dotted" => Some(UnderlineStyle::Dotted),
+        "Dash" => Some(UnderlineStyle::Dash),
+        "Wave" => Some(UnderlineStyle::Wave),
+        "Thick" => Some(UnderlineStyle::Thick),
+        _ => None,
+    }
+}
+
+fn decode_strikethrough(s: &str) -> Option<StrikethroughStyle> {
+    match s {
+        "Single" => Some(StrikethroughStyle::Single),
+        "Double" => Some(StrikethroughStyle::Double),
+        _ => None,
+    }
+}
+
+fn decode_vertical_align(s: &str) -> Option<VerticalAlign> {
+    match s {
+        "Superscript" => Some(VerticalAlign::Superscript),
+        "Subscript" => Some(VerticalAlign::Subscript),
+        "Baseline" => Some(VerticalAlign::Baseline),
+        _ => None,
+    }
+}
+
+// ── Loro map value accessors ──────────────────────────────────────────────────
+
+fn get_str_from_map(map: &LoroMap, key: &str) -> Option<String> {
+    map.get(key)
+        .and_then(|v| v.into_value().ok())
+        .and_then(|v| v.into_string().ok())
+        .map(|s| s.to_string())
+}
+
+fn get_f64_from_map(map: &LoroMap, key: &str) -> Option<f64> {
+    map.get(key)
+        .and_then(|v| v.into_value().ok())
+        .and_then(|v| v.into_double().ok())
+}
+
+fn get_bool_from_map(map: &LoroMap, key: &str) -> Option<bool> {
+    map.get(key)
+        .and_then(|v| v.into_value().ok())
+        .and_then(|v| v.into_bool().ok())
+}
+
+fn get_i64_from_map(map: &LoroMap, key: &str) -> Option<i64> {
+    map.get(key)
+        .and_then(|v| v.into_value().ok())
+        .and_then(|v| v.into_i64().ok())
+}
+
+// ── ParaProps reconstruction ──────────────────────────────────────────────────
+
+fn reconstruct_para_props(block_map: &LoroMap) -> Option<ParaProps> {
+    let props_map = block_map
+        .get(KEY_PARA_PROPS)
+        .and_then(|v| v.into_container().ok())
+        .and_then(|c| c.into_map().ok())?;
+
+    let mut props = ParaProps::default();
+    let mut any = false;
+
+    if let Some(s) = get_str_from_map(&props_map, PROP_ALIGNMENT) {
+        if let Some(a) = decode_alignment(&s) { props.alignment = Some(a); any = true; }
+    }
+    if let Some(v) = get_f64_from_map(&props_map, PROP_INDENT_LEFT) {
+        props.indent_start = Some(Points::new(v)); any = true;
+    }
+    if let Some(v) = get_f64_from_map(&props_map, PROP_INDENT_RIGHT) {
+        props.indent_end = Some(Points::new(v)); any = true;
+    }
+    if let Some(v) = get_f64_from_map(&props_map, PROP_INDENT_FIRST_LINE) {
+        props.indent_first_line = Some(Points::new(v)); any = true;
+    }
+    if let Some(v) = get_f64_from_map(&props_map, PROP_INDENT_HANGING) {
+        props.indent_hanging = Some(Points::new(v)); any = true;
+    }
+    if let Some(v) = get_bool_from_map(&props_map, PROP_KEEP_TOGETHER) {
+        props.keep_together = Some(v); any = true;
+    }
+    if let Some(v) = get_bool_from_map(&props_map, PROP_KEEP_WITH_NEXT) {
+        props.keep_with_next = Some(v); any = true;
+    }
+    if let Some(v) = get_bool_from_map(&props_map, PROP_PAGE_BREAK_AFTER) {
+        props.page_break_after = Some(v); any = true;
+    }
+    if let Some(v) = get_bool_from_map(&props_map, PROP_BIDI) {
+        props.bidi = Some(v); any = true;
+    }
+    if let Some(v) = get_i64_from_map(&props_map, PROP_WIDOW_CONTROL) {
+        props.widow_control = Some(v as u8); any = true;
+    }
+    if let Some(v) = get_i64_from_map(&props_map, PROP_LIST_LEVEL) {
+        props.list_level = Some(v as u8); any = true;
+    }
+    if let Some(s) = get_str_from_map(&props_map, PROP_SPACE_BEFORE_PT) {
+        if let Some(sp) = decode_spacing(&s) { props.space_before = Some(sp); any = true; }
+    }
+    if let Some(s) = get_str_from_map(&props_map, PROP_SPACE_AFTER_PT) {
+        if let Some(sp) = decode_spacing(&s) { props.space_after = Some(sp); any = true; }
+    }
+    if let Some(s) = get_str_from_map(&props_map, PROP_LINE_HEIGHT) {
+        if let Some(lh) = decode_line_height(&s) { props.line_height = Some(lh); any = true; }
+    }
+    if let Some(s) = get_str_from_map(&props_map, PROP_LIST_ID) {
+        props.list_id = Some(ListId::new(s)); any = true;
+    }
+    // tab_stops and background_color are complex; skip deserialization for now
+
+    if any { Some(props) } else { None }
+}
+
+// ── CharProps map serialization / reconstruction ───────────────────────────────
+
+fn map_char_props_to_map(props: &CharProps, map: &LoroMap) -> Result<(), BridgeError> {
+    if let Some(v) = props.bold { map.insert("bold", v)?; }
+    if let Some(v) = props.italic { map.insert("italic", v)?; }
+    if let Some(v) = props.outline { map.insert("outline", v)?; }
+    if let Some(v) = props.shadow { map.insert("shadow", v)?; }
+    if let Some(v) = props.small_caps { map.insert("small_caps", v)?; }
+    if let Some(v) = props.all_caps { map.insert("all_caps", v)?; }
+    if let Some(v) = props.kerning { map.insert("kerning", v)?; }
+    if let Some(v) = &props.font_name { map.insert("font_name", v.as_str())?; }
+    if let Some(v) = &props.font_name_complex { map.insert("font_name_complex", v.as_str())?; }
+    if let Some(v) = &props.font_name_east_asian { map.insert("font_name_east_asian", v.as_str())?; }
+    if let Some(v) = &props.font_size { map.insert("font_size", v.value())?; }
+    if let Some(v) = &props.font_size_complex { map.insert("font_size_complex", v.value())?; }
+    if let Some(v) = props.scale { map.insert("scale", f64::from(v))?; }
+    if let Some(v) = &props.letter_spacing { map.insert("letter_spacing", v.value())?; }
+    if let Some(v) = &props.word_spacing { map.insert("word_spacing", v.value())?; }
+    if let Some(v) = &props.underline { map.insert("underline", format!("{:?}", v))?; }
+    if let Some(v) = &props.strikethrough { map.insert("strikethrough", format!("{:?}", v))?; }
+    if let Some(v) = &props.vertical_align { map.insert("vertical_align", format!("{:?}", v))?; }
+    if let Some(v) = &props.hyperlink { map.insert("hyperlink", v.as_str())?; }
+    // color, background_color, highlight_color, language* — complex types, skip for now
+    Ok(())
+}
+
+fn reconstruct_char_props_from_map(block_map: &LoroMap) -> Option<CharProps> {
+    let props_map = block_map
+        .get(KEY_DIRECT_CHAR_PROPS)
+        .and_then(|v| v.into_container().ok())
+        .and_then(|c| c.into_map().ok())?;
+
+    let mut props = CharProps::default();
+    let mut any = false;
+
+    macro_rules! set_bool {
+        ($field:ident, $key:literal) => {
+            if let Some(v) = get_bool_from_map(&props_map, $key) {
+                props.$field = Some(v);
+                any = true;
+            }
+        };
+    }
+    set_bool!(bold, "bold");
+    set_bool!(italic, "italic");
+    set_bool!(outline, "outline");
+    set_bool!(shadow, "shadow");
+    set_bool!(small_caps, "small_caps");
+    set_bool!(all_caps, "all_caps");
+    set_bool!(kerning, "kerning");
+
+    if let Some(s) = get_str_from_map(&props_map, "font_name") { props.font_name = Some(s); any = true; }
+    if let Some(s) = get_str_from_map(&props_map, "font_name_complex") { props.font_name_complex = Some(s); any = true; }
+    if let Some(s) = get_str_from_map(&props_map, "font_name_east_asian") { props.font_name_east_asian = Some(s); any = true; }
+    if let Some(v) = get_f64_from_map(&props_map, "font_size") { props.font_size = Some(Points::new(v)); any = true; }
+    if let Some(v) = get_f64_from_map(&props_map, "font_size_complex") { props.font_size_complex = Some(Points::new(v)); any = true; }
+    if let Some(v) = get_f64_from_map(&props_map, "scale") { props.scale = Some(v as f32); any = true; }
+    if let Some(v) = get_f64_from_map(&props_map, "letter_spacing") { props.letter_spacing = Some(Points::new(v)); any = true; }
+    if let Some(v) = get_f64_from_map(&props_map, "word_spacing") { props.word_spacing = Some(Points::new(v)); any = true; }
+    if let Some(s) = get_str_from_map(&props_map, "underline") {
+        if let Some(u) = decode_underline(&s) { props.underline = Some(u); any = true; }
+    }
+    if let Some(s) = get_str_from_map(&props_map, "strikethrough") {
+        if let Some(st) = decode_strikethrough(&s) { props.strikethrough = Some(st); any = true; }
+    }
+    if let Some(s) = get_str_from_map(&props_map, "vertical_align") {
+        if let Some(va) = decode_vertical_align(&s) { props.vertical_align = Some(va); any = true; }
+    }
+    if let Some(s) = get_str_from_map(&props_map, "hyperlink") { props.hyperlink = Some(s); any = true; }
+
+    if any { Some(props) } else { None }
 }
 
 /// Derives a stable Loro [`Cursor`] from a document position.
@@ -408,11 +659,11 @@ fn map_loro_block(map: &LoroMap) -> Result<Block, BridgeError> {
         BLOCK_TYPE_STYLED_PARA => {
             let inlines = reconstruct_inlines(map)?;
             let style_id = map.get("style_id").and_then(|v| v.into_value().ok()).and_then(|v| v.into_string().ok()).map(|s| crate::style::catalog::StyleId(s.to_string()));
-            let para_props = None; // Stub ParaProps reconstruction
-            let direct_char_props = None;
+            let direct_para_props = reconstruct_para_props(map).map(Box::new);
+            let direct_char_props = reconstruct_char_props_from_map(map).map(Box::new);
             let styled_para = crate::content::block::StyledParagraph {
                 style_id,
-                direct_para_props: para_props,
+                direct_para_props,
                 direct_char_props,
                 inlines,
                 attr: crate::content::attr::NodeAttr::default(),
