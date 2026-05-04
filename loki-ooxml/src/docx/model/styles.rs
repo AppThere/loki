@@ -32,6 +32,7 @@ pub enum DocxStyleType {
 }
 
 /// A single style definition from `w:style` (ECMA-376 §17.7.4.17).
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct DocxStyle {
     /// `@w:type` — paragraph, character, table, or numbering.
@@ -57,8 +58,9 @@ pub struct DocxStyle {
 }
 
 /// Intermediate model for a table (`w:tbl`).
-/// Placeholder for table parsing — used in DocxBodyChild.
+/// Placeholder for table parsing — used in `DocxBodyChild`.
 /// ECMA-376 §17.4.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct DocxTableModel {
     /// Table properties from `w:tblPr`.
@@ -70,6 +72,7 @@ pub struct DocxTableModel {
 }
 
 /// Table properties from `w:tblPr` (ECMA-376 §17.4.60).
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct DocxTblPr {
     /// Style id from `w:tblStyle @w:val`.
@@ -79,6 +82,7 @@ pub struct DocxTblPr {
 }
 
 /// Table width specification from `w:tblW` (ECMA-376 §17.4.63).
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct DocxTblWidth {
     /// `@w:w` — width value.

@@ -11,6 +11,7 @@
 /// `w:fldChar begin → instrText → separate → result → end`).
 ///
 /// ECMA-376 §17.16.17 (complex fields).
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct DocxField {
     /// The assembled field instruction string.
@@ -19,6 +20,7 @@ pub struct DocxField {
     pub current_value: Option<String>,
 }
 
+#[allow(dead_code)]
 impl DocxField {
     /// Creates a field with the given instruction and no current value.
     #[must_use]
@@ -43,6 +45,7 @@ impl DocxField {
 ///
 /// The state machine tracks nesting because fields can be nested.
 /// ECMA-376 §17.16.18.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct FieldState {
     /// Accumulated instruction text.
@@ -53,6 +56,7 @@ pub struct FieldState {
     pub in_result: bool,
 }
 
+#[allow(dead_code)]
 impl FieldState {
     /// Creates a new empty field state.
     #[must_use]

@@ -15,6 +15,8 @@ pub struct DocxParagraph {
 }
 
 /// A child element of `w:p` beyond `w:pPr`.
+// Run is substantially larger than Hyperlink; boxing would add indirection on every access.
+#[allow(clippy::large_enum_variant, dead_code)]
 #[derive(Debug, Clone)]
 pub enum DocxParaChild {
     /// A `w:r` text run (ECMA-376 §17.3.2.25).
@@ -58,7 +60,7 @@ pub struct DocxPPr {
     pub p_bdr: Option<DocxPBdr>,
     /// Section properties from `w:sectPr` (section break mid-document).
     pub sect_pr: Option<DocxSectPr>,
-    /// BiDi paragraph direction (`w:bidi`).
+    /// `BiDi` paragraph direction (`w:bidi`).
     pub bidi: Option<bool>,
     /// Widow/orphan control (`w:widowControl`; default on).
     pub widow_control: Option<bool>,
@@ -148,6 +150,7 @@ pub struct DocxRun {
 }
 
 /// A child element of `w:r`.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum DocxRunChild {
     /// `w:t` — text content. `preserve` is true when `xml:space="preserve"`.
@@ -242,7 +245,7 @@ pub struct DocxSectPr {
     pub pg_sz: Option<DocxPgSz>,
     /// Page margins from `w:pgMar`.
     pub pg_mar: Option<DocxPgMar>,
-    /// Header references (type → rel_id).
+    /// Header references (type → `rel_id`).
     pub header_refs: Vec<DocxHdrFtrRef>,
     /// Footer references.
     pub footer_refs: Vec<DocxHdrFtrRef>,

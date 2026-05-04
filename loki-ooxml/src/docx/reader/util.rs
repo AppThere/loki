@@ -25,7 +25,7 @@ pub fn local_name(bytes: &[u8]) -> &[u8] {
 pub fn attr_val<'a>(start: &'a BytesStart<'a>, local: &[u8]) -> Option<String> {
     start.attributes().flatten().find_map(|attr| {
         if local_name(attr.key.as_ref()) == local {
-            attr.unescape_value().ok().map(|v| v.into_owned())
+            attr.unescape_value().ok().map(std::borrow::Cow::into_owned)
         } else {
             None
         }
@@ -38,12 +38,10 @@ pub fn attr_val<'a>(start: &'a BytesStart<'a>, local: &[u8]) -> Option<String> {
 /// with no `@w:val` or `@w:val="1"/"true"/"on"` means `true`; `@w:val="0"/
 /// "false"/"off"` means `false`. Absent element means `None` (inherit).
 #[must_use]
-pub fn toggle_prop(val_opt: Option<&str>) -> Option<bool> {
+pub fn toggle_prop(val_opt: Option<&str>) -> bool {
     match val_opt {
-        None => Some(true), // present, no val → true
-        Some("1") | Some("true") | Some("on") => Some(true),
-        Some("0") | Some("false") | Some("off") => Some(false),
-        _ => Some(true), // unrecognised → true
+        Some("0" | "false" | "off") => false,
+        _ => true, // absent, no val, "1"/"true"/"on", or unrecognised → true
     }
 }
 
@@ -51,6 +49,7 @@ pub fn toggle_prop(val_opt: Option<&str>) -> Option<bool> {
 ///
 /// Returns `None` if the attribute is absent or not a valid integer.
 #[must_use]
+#[allow(dead_code)]
 pub fn parse_twips(s: &str) -> Option<i32> {
     s.parse::<i32>().ok()
 }
@@ -67,22 +66,22 @@ mod tests {
 
     #[test]
     fn toggle_absent_is_true() {
-        assert_eq!(toggle_prop(None), Some(true));
+        assert!(toggle_prop(None));
     }
 
     #[test]
     fn toggle_zero_is_false() {
-        assert_eq!(toggle_prop(Some("0")), Some(false));
+        assert!(!toggle_prop(Some("0")));
     }
 
     #[test]
     fn toggle_false_is_false() {
-        assert_eq!(toggle_prop(Some("false")), Some(false));
+        assert!(!toggle_prop(Some("false")));
     }
 
     #[test]
     fn toggle_one_is_true() {
-        assert_eq!(toggle_prop(Some("1")), Some(true));
+        assert!(toggle_prop(Some("1")));
     }
 
     #[test]

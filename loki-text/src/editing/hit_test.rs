@@ -54,6 +54,8 @@ const PX_TO_PT: f32 = 72.0 / 96.0;
 ///   `LayoutOptions { preserve_for_editing: true }`.
 /// * `page_width_px` / `page_height_px` — page canvas dimensions in CSS px.
 /// * `page_gap_px` — vertical gap between page canvases in CSS px.
+// All arguments are semantically distinct; grouping into a struct would reduce clarity at call sites.
+#[allow(clippy::too_many_arguments)]
 pub fn hit_test_document(
     client_x: f32,
     client_y: f32,
@@ -112,10 +114,7 @@ pub fn hit_test_page(
     layout: &PaginatedLayout,
 ) -> Option<DocumentPosition> {
     let page = layout.pages.get(page_index)?;
-    let editing_data = match page.editing_data.as_ref() {
-        Some(ed) => ed,
-        None => return None,
-    };
+    let editing_data = page.editing_data.as_ref()?;
 
     // ── 4. Page-content-area-local coordinates ────────────────────────────────
     // page.margins is in layout points; margins.left/top are already in pt.

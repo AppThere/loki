@@ -14,7 +14,7 @@
 //! |---------|---------|-------------|
 //! | `docx`  | yes     | DOCX (Word) import via [`docx::import::DocxImport`] |
 //! | `xlsx`  | no      | XLSX (Excel) — **not yet implemented** |
-//! | `pptx`  | no      | PPTX (PowerPoint) — **not yet implemented** |
+//! | `pptx`  | no      | PPTX (`PowerPoint`) — **not yet implemented** |
 //!
 //! # Quick start
 //!

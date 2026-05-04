@@ -31,6 +31,7 @@ use crate::constants::{EMUS_PER_PT, HALF_POINTS_PER_PT, TWIPS_PER_PT};
 /// // b"numFmt" → b"numFmt"
 /// ```
 #[must_use]
+#[allow(dead_code)]
 pub fn local_name<'a>(e: &'a BytesStart<'a>) -> &'a [u8] {
     let bytes = e.local_name().into_inner();
     if let Some(pos) = bytes.iter().position(|&b| b == b':') {
@@ -50,6 +51,7 @@ pub fn local_name<'a>(e: &'a BytesStart<'a>) -> &'a [u8] {
 /// // <w:numFmt w:val="decimal"/> → local_attr_val(e, b"val") = Some("decimal")
 /// ```
 #[must_use]
+#[allow(dead_code)]
 pub fn local_attr_val(e: &BytesStart<'_>, local: &[u8]) -> Option<String> {
     e.attributes().flatten().find_map(|attr| {
         let key_bytes = attr.key.as_ref();
@@ -59,7 +61,7 @@ pub fn local_attr_val(e: &BytesStart<'_>, local: &[u8]) -> Option<String> {
             key_bytes
         };
         if key_local == local {
-            attr.unescape_value().ok().map(|v| v.into_owned())
+            attr.unescape_value().ok().map(std::borrow::Cow::into_owned)
         } else {
             None
         }
@@ -76,6 +78,7 @@ pub fn local_attr_val(e: &BytesStart<'_>, local: &[u8]) -> Option<String> {
 /// value. Use [`crate::docx::reader::util::toggle_prop`] when the attribute
 /// may be absent (returns `Option<bool>` instead).
 #[must_use]
+#[allow(dead_code)]
 pub fn bool_attr(val: &str) -> bool {
     !matches!(val, "0" | "false" | "off")
 }
@@ -84,6 +87,7 @@ pub fn bool_attr(val: &str) -> bool {
 ///
 /// 20 twips = 1 point (ECMA-376 §17.18.100).
 #[must_use]
+#[allow(dead_code)]
 pub fn twips_to_points(twips: i32) -> Points {
     Points::new(f64::from(twips) / TWIPS_PER_PT)
 }
@@ -92,6 +96,7 @@ pub fn twips_to_points(twips: i32) -> Points {
 ///
 /// 2 half-points = 1 point (ECMA-376 §17.18.98). Used by `w:sz`/`w:szCs`.
 #[must_use]
+#[allow(dead_code)]
 pub fn half_points_to_points(hp: i32) -> Points {
     Points::new(f64::from(hp) / HALF_POINTS_PER_PT)
 }
@@ -100,7 +105,10 @@ pub fn half_points_to_points(hp: i32) -> Points {
 ///
 /// 12 700 EMUs = 1 point; 914 400 EMUs = 1 inch (ECMA-376 §22.9.2.1).
 #[must_use]
+#[allow(dead_code)]
 pub fn emu_to_points(emu: i64) -> Points {
+    #[allow(clippy::cast_precision_loss)]
+    // Precision loss acceptable: values represent document measurements
     Points::new(emu as f64 / EMUS_PER_PT)
 }
 

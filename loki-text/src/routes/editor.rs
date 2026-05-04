@@ -152,12 +152,11 @@ pub fn Editor(path: String) -> Element {
     let navigator = use_navigator();
 
     use_effect(move || {
-        if let Some(Ok(doc)) = &*document_load.value().read_unchecked() {
-            if loro_doc().is_none() {
-                match document_to_loro(doc) {
-                    Ok(l_doc) => loro_doc.set(Some(l_doc)),
-                    Err(e) => tracing::warn!("Failed to initialize Loro sync bridge: {}", e),
-                }
+        if let Some(Ok(doc)) = &*document_load.value().read_unchecked()
+            && loro_doc().is_none() {
+            match document_to_loro(doc) {
+                Ok(l_doc) => loro_doc.set(Some(l_doc)),
+                Err(e) => tracing::warn!("Failed to initialize Loro sync bridge: {}", e),
             }
         }
     });
@@ -341,7 +340,7 @@ pub fn Editor(path: String) -> Element {
                 // read-only mode are ignored.
                 onkeydown: {
                     let doc_state = Arc::clone(&doc_state_keys);
-                    let loro_doc = loro_doc.clone();
+                    let loro_doc = loro_doc;
                     move |evt| {
                         tracing::info!("Editor: onkeydown fired: {:?}", evt.key());
                         if editor_mode() != EditorMode::Editing {

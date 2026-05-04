@@ -510,9 +510,7 @@ impl CustomPaintSource for LokiDocumentSource {
         };
 
         // No document loaded — WgpuSurface shows a placeholder div instead.
-        if doc_opt.is_none() {
-            return None;
-        }
+        doc_opt.as_ref()?;
 
         // Texture reuse: if the document generation, physical dimensions, and
         // cursor state have not changed, the existing texture is still valid —

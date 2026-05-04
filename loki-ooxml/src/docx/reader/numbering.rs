@@ -74,8 +74,8 @@ fn parse_abstract_num(
                 let ilvl = attr_val(e, b"ilvl")
                     .and_then(|v| v.parse::<u8>().ok())
                     .unwrap_or(0);
-                let lvl = parse_level(reader, ilvl)?;
-                abs.levels.push(lvl);
+                let level_def = parse_level(reader, ilvl)?;
+                abs.levels.push(level_def);
             }
             Ok(Event::End(ref e))
                 if local_name(e.local_name().as_ref()) == b"abstractNum" =>
@@ -103,7 +103,7 @@ fn parse_num(reader: &mut Reader<&[u8]>, num_id: u32) -> OoxmlResult<DocxNum> {
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e)) => {
+            Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
                 match local_name(e.local_name().as_ref()) {
                     b"abstractNumId" => {
                         abstract_num_id = attr_val(e, b"val")
@@ -151,7 +151,7 @@ fn parse_lvl_override(
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e)) => {
+            Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
                 match local_name(e.local_name().as_ref()) {
                     b"startOverride" => {
                         start_override = attr_val(e, b"val")
@@ -187,7 +187,7 @@ fn parse_lvl_override(
 }
 
 fn parse_level(reader: &mut Reader<&[u8]>, ilvl: u8) -> OoxmlResult<DocxLevel> {
-    let mut lvl = DocxLevel {
+    let mut level_out = DocxLevel {
         ilvl,
         start: None,
         num_fmt: None,
@@ -200,21 +200,21 @@ fn parse_level(reader: &mut Reader<&[u8]>, ilvl: u8) -> OoxmlResult<DocxLevel> {
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e)) => {
+            Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
                 match local_name(e.local_name().as_ref()) {
                     b"start" => {
-                        lvl.start = attr_val(e, b"val")
+                        level_out.start = attr_val(e, b"val")
                             .and_then(|v| v.parse::<u32>().ok());
                     }
-                    b"numFmt" => lvl.num_fmt = attr_val(e, b"val"),
-                    b"lvlText" => lvl.lvl_text = attr_val(e, b"val"),
-                    b"lvlJc" => lvl.lvl_jc = attr_val(e, b"val"),
+                    b"numFmt" => level_out.num_fmt = attr_val(e, b"val"),
+                    b"lvlText" => level_out.lvl_text = attr_val(e, b"val"),
+                    b"lvlJc" => level_out.lvl_jc = attr_val(e, b"val"),
                     b"pPr" => {
-                        lvl.ppr = Some(parse_ppr_element(reader)?);
+                        level_out.ppr = Some(parse_ppr_element(reader)?);
                         continue;
                     }
                     b"rPr" => {
-                        lvl.rpr = Some(parse_rpr_element(reader)?);
+                        level_out.rpr = Some(parse_rpr_element(reader)?);
                         continue;
                     }
                     _ => {}
@@ -234,7 +234,7 @@ fn parse_level(reader: &mut Reader<&[u8]>, ilvl: u8) -> OoxmlResult<DocxLevel> {
         }
         buf.clear();
     }
-    Ok(lvl)
+    Ok(level_out)
 }
 
 #[cfg(test)]

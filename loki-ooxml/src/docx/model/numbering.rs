@@ -18,6 +18,7 @@ pub struct DocxNumbering {
     pub nums: Vec<DocxNum>,
 }
 
+#[allow(dead_code)]
 impl DocxNumbering {
     /// Resolves a `numId` to the corresponding `abstractNumId`.
     ///
@@ -46,6 +47,7 @@ impl DocxNumbering {
 }
 
 /// The result of resolving a numId to its abstract definition + instance overrides.
+#[allow(dead_code)]
 pub struct ResolvedNumDef<'a> {
     /// The base abstract numbering definition.
     pub abs: &'a DocxAbstractNum,
@@ -53,17 +55,17 @@ pub struct ResolvedNumDef<'a> {
     pub num: &'a DocxNum,
 }
 
-impl<'a> ResolvedNumDef<'a> {
+#[allow(dead_code)]
+impl ResolvedNumDef<'_> {
     /// Returns the effective level definition at the given 0-indexed level,
     /// applying any override from `w:num/w:lvlOverride` if present.
     #[must_use]
     pub fn level(&self, ilvl: u8) -> Option<&DocxLevel> {
         // Check for override first
-        if let Some(ov) = self.num.level_overrides.iter().find(|o| o.ilvl == ilvl) {
-            if let Some(ref lvl) = ov.level {
+        if let Some(ov) = self.num.level_overrides.iter().find(|o| o.ilvl == ilvl)
+            && let Some(ref lvl) = ov.level {
                 return Some(lvl);
             }
-        }
         self.abs.levels.iter().find(|l| l.ilvl == ilvl)
     }
 }

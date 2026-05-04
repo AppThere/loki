@@ -69,8 +69,8 @@ fn map_page_layout(sect_pr: Option<&DocxSectPr>) -> PageLayout {
 
     if let Some(ref pg_sz) = sp.pg_sz {
         layout.page_size = PageSize {
-            width: Points::new(pg_sz.w as f64 / 20.0),
-            height: Points::new(pg_sz.h as f64 / 20.0),
+            width: Points::new(f64::from(pg_sz.w) / 20.0),
+            height: Points::new(f64::from(pg_sz.h) / 20.0),
         };
         layout.orientation = if pg_sz.orient.as_deref() == Some("landscape") {
             PageOrientation::Landscape
@@ -81,13 +81,13 @@ fn map_page_layout(sect_pr: Option<&DocxSectPr>) -> PageLayout {
 
     if let Some(ref pg_mar) = sp.pg_mar {
         layout.margins = PageMargins {
-            top: Points::new(pg_mar.top as f64 / 20.0),
-            bottom: Points::new(pg_mar.bottom as f64 / 20.0),
-            left: Points::new(pg_mar.left as f64 / 20.0),
-            right: Points::new(pg_mar.right as f64 / 20.0),
-            header: Points::new(pg_mar.header as f64 / 20.0),
-            footer: Points::new(pg_mar.footer as f64 / 20.0),
-            gutter: Points::new(pg_mar.gutter as f64 / 20.0),
+            top: Points::new(f64::from(pg_mar.top) / 20.0),
+            bottom: Points::new(f64::from(pg_mar.bottom) / 20.0),
+            left: Points::new(f64::from(pg_mar.left) / 20.0),
+            right: Points::new(f64::from(pg_mar.right) / 20.0),
+            header: Points::new(f64::from(pg_mar.header) / 20.0),
+            footer: Points::new(f64::from(pg_mar.footer) / 20.0),
+            gutter: Points::new(f64::from(pg_mar.gutter) / 20.0),
         };
     }
 
@@ -226,14 +226,15 @@ fn map_meta(core_props: Option<&loki_opc::CoreProperties>) -> DocumentMeta {
 /// 4. Walk body children, splitting on embedded `w:sectPr` elements.
 /// 5. Close the final section using the body-level `w:sectPr`.
 /// 6. Map core properties into document metadata.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn map_document(
     doc: &DocxDocument,
     raw_styles: &DocxStyles,
     raw_numbering: Option<&DocxNumbering>,
     raw_footnotes: Option<&DocxNotes>,
     raw_endnotes: Option<&DocxNotes>,
-    images: HashMap<String, PartData>,
-    hyperlinks: HashMap<String, String>,
+    images: &HashMap<String, PartData>,
+    hyperlinks: &HashMap<String, String>,
     header_parts: &HashMap<String, Vec<DocxParagraph>>,
     footer_parts: &HashMap<String, Vec<DocxParagraph>>,
     raw_settings: Option<&DocxSettings>,
@@ -259,8 +260,8 @@ pub(crate) fn map_document(
             styles: &catalog,
             footnotes: &empty_notes,
             endnotes: &empty_notes,
-            hyperlinks: &hyperlinks,
-            images: &images,
+            hyperlinks,
+            images,
             options,
             warnings: Vec::new(),
         };
@@ -273,8 +274,8 @@ pub(crate) fn map_document(
             styles: &catalog,
             footnotes: &empty_notes,
             endnotes: &empty_notes,
-            hyperlinks: &hyperlinks,
-            images: &images,
+            hyperlinks,
+            images,
             options,
             warnings: Vec::new(),
         };
@@ -283,15 +284,15 @@ pub(crate) fn map_document(
         result
     };
 
-    let even_and_odd = raw_settings.map_or(false, |s| s.even_and_odd_headers);
+    let even_and_odd = raw_settings.is_some_and(|s| s.even_and_odd_headers);
 
     // ── 4+5. Section-split body walk ───────────────────────────────────────
     let mut ctx = MappingContext {
         styles: &catalog,
         footnotes: &footnote_map,
         endnotes: &endnote_map,
-        hyperlinks: &hyperlinks,
-        images: &images,
+        hyperlinks,
+        images,
         options,
         warnings: Vec::new(),
     };
@@ -400,8 +401,8 @@ mod tests {
             None,
             None,
             None,
-            HashMap::new(),
-            HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),
             None,
@@ -438,8 +439,8 @@ mod tests {
             None,
             None,
             None,
-            HashMap::new(),
-            HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),
             None,
@@ -471,8 +472,8 @@ mod tests {
             None,
             None,
             None,
-            HashMap::new(),
-            HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),
             None,

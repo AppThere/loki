@@ -103,7 +103,7 @@ fn process_run(
     state: &mut FieldState,
     ctx: &mut MappingContext<'_>,
 ) -> Vec<Inline> {
-    let char_props = run.rpr.as_ref().map(|rpr| map_rpr(rpr));
+    let char_props = run.rpr.as_ref().map(map_rpr);
     let style_id = run.rpr.as_ref()
         .and_then(|rpr| rpr.style_id.as_ref())
         .map(|s| StyleId::new(s.clone()));
@@ -116,7 +116,7 @@ fn process_run(
 
     // Wrap in StyledRun only when there is explicit formatting to preserve.
     let needs_wrap = style_id.is_some()
-        || char_props.as_ref().map(|p| p != &CharProps::default()).unwrap_or(false);
+        || char_props.as_ref().is_some_and(|p| p != &CharProps::default());
 
     if needs_wrap && !raw.is_empty() {
         let styled = StyledRun {
@@ -150,12 +150,11 @@ fn process_run_child(
             process_fld_char(fld_char_type, state, raw, ctx);
         }
         DocxRunChild::InstrText { text } => {
-            if let FieldState::InCode { instruction, depth } = state {
-                if *depth == 1 {
+            if let FieldState::InCode { instruction, depth } = state
+                && *depth == 1 {
                     instruction.push_str(text);
                 }
-                // depth > 1: instruction text for an inner nested field; ignored.
-            }
+            // depth > 1: instruction text for an inner nested field; ignored.
         }
         DocxRunChild::Text { text, .. } => match state {
             FieldState::Normal => raw.push(Inline::Str(text.clone())),
@@ -172,11 +171,9 @@ fn process_run_child(
         DocxRunChild::Break { break_type } => {
             if matches!(state, FieldState::Normal) {
                 match break_type.as_deref() {
-                    None | Some("textWrapping") => raw.push(Inline::LineBreak),
                     // Page break is surfaced at the paragraph level via page_break_after.
-                    Some("page") => {}
                     // TODO(column-break): column breaks are not yet modelled; treat as no-op.
-                    Some("column") => {}
+                    Some("page" | "column") => {}
                     _ => raw.push(Inline::LineBreak),
                 }
             }
@@ -194,11 +191,10 @@ fn process_run_child(
             }
         }
         DocxRunChild::Drawing(drawing) => {
-            if matches!(state, FieldState::Normal) {
-                if let Some(img) = map_drawing(drawing, ctx) {
+            if matches!(state, FieldState::Normal)
+                && let Some(img) = map_drawing(drawing, ctx) {
                     raw.push(img);
                 }
-            }
         }
     }
 }
@@ -229,8 +225,8 @@ fn process_fld_char(
         }
         "separate" => {
             // Only transition at depth == 1; deeper separates belong to nested fields.
-            if let FieldState::InCode { instruction, depth } = &*state {
-                if *depth == 1 {
+            if let FieldState::InCode { instruction, depth } = &*state
+                && *depth == 1 {
                     let new_state = FieldState::InResult {
                         instruction: instruction.clone(),
                         snapshot: String::new(),
@@ -238,14 +234,10 @@ fn process_fld_char(
                     };
                     *state = new_state;
                 }
-            }
         }
         "end" => {
             match state {
-                FieldState::InCode { depth, .. } if *depth > 1 => {
-                    *depth -= 1;
-                }
-                FieldState::InResult { depth, .. } if *depth > 1 => {
+                FieldState::InCode { depth, .. } | FieldState::InResult { depth, .. } if *depth > 1 => {
                     *depth -= 1;
                 }
                 FieldState::InCode { instruction, .. } => {
@@ -331,9 +323,9 @@ fn extract_switch(instruction: &str, sw: &str) -> Option<String> {
     let needle = format!("\\{sw}");
     let pos = instruction.find(&needle)?;
     let rest = instruction[pos + needle.len()..].trim_start();
-    if rest.starts_with('"') {
-        let end = rest[1..].find('"')?;
-        Some(rest[1..=end].to_string())
+    if let Some(inner) = rest.strip_prefix('"') {
+        let end = inner.find('"')?;
+        Some(inner[..end].to_string())
     } else {
         None
     }

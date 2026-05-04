@@ -174,15 +174,14 @@ fn PageCanvas(props: PageCanvasProps) -> Element {
                 let y_pt = elem.y as f32 * (72.0 / 96.0);
 
                 let Ok(state) = props.doc_state.lock() else { return };
-                if let Some(ref layout) = state.paginated_layout {
-                    if let Some(pos) = crate::editing::hit_test::hit_test_page(
+                if let Some(ref layout) = state.paginated_layout
+                    && let Some(pos) = crate::editing::hit_test::hit_test_page(
                         props.page_index,
                         x_pt,
                         y_pt,
                         layout,
                     ) {
-                        props.on_mousedown.call(pos);
-                    }
+                    props.on_mousedown.call(pos);
                 }
             },
             style: format!(
@@ -239,7 +238,7 @@ pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
     if key_changed {
         let (new_count, new_dims, new_layout) = if let Some(doc) = document.as_ref() {
             let layout = layout_document(
-                &mut *font_resources.borrow_mut(),
+                &mut font_resources.borrow_mut(),
                 doc,
                 LayoutMode::Paginated,
                 1.0,
