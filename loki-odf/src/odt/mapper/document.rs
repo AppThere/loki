@@ -31,7 +31,7 @@ use loki_doc_model::content::table::col::{ColAlignment, ColSpec};
 use loki_doc_model::content::table::core::{
     Table, TableBody, TableCaption, TableFoot, TableHead,
 };
-use loki_doc_model::content::table::row::{Cell, Row};
+use loki_doc_model::content::table::row::{Cell, CellProps, Row};
 use loki_doc_model::document::Document;
 use loki_doc_model::layout::page::{
     PageLayout, PageMargins, PageOrientation, PageSize,
@@ -237,13 +237,12 @@ fn map_inline(
         }
         OdfParagraphChild::Field(field) => Some(Inline::Field(map_field(field))),
         OdfParagraphChild::Frame(frame) => map_frame(frame, ctx),
-        OdfParagraphChild::SoftReturn => None,
+        OdfParagraphChild::SoftReturn | OdfParagraphChild::Other => None,
         OdfParagraphChild::Tab => Some(Inline::Str("\t".into())),
         OdfParagraphChild::Space { count } => {
             Some(Inline::Str(" ".repeat(*count as usize)))
         }
         OdfParagraphChild::LineBreak => Some(Inline::LineBreak),
-        OdfParagraphChild::Other => None,
     }
 }
 
@@ -325,6 +324,7 @@ fn map_field(odf: &OdfField) -> Field {
 /// For floating frames, a [`Block::Figure`] or [`Block::Div`] is pushed to
 /// [`OdfMappingContext::pending_figures`] and `None` is returned.
 fn map_frame(frame: &OdfFrame, ctx: &mut OdfMappingContext<'_>) -> Option<Inline> {
+    use base64::Engine as _;
     let is_as_char = frame.anchor_type.as_deref() == Some("as-char");
 
     match &frame.kind {
@@ -332,15 +332,11 @@ fn map_frame(frame: &OdfFrame, ctx: &mut OdfMappingContext<'_>) -> Option<Inline
             if !ctx.options.embed_images {
                 return None;
             }
-            let (stored_mt, bytes) = match ctx.images.get(href.as_str()) {
-                Some(pair) => pair,
-                None => {
-                    ctx.warnings
-                        .push(OdfWarning::MissingImage { href: href.clone() });
-                    return None;
-                }
+            let Some((stored_mt, bytes)) = ctx.images.get(href.as_str()) else {
+                ctx.warnings
+                    .push(OdfWarning::MissingImage { href: href.clone() });
+                return None;
             };
-            use base64::Engine as _;
             let b64 =
                 base64::engine::general_purpose::STANDARD.encode(bytes);
             let mt = media_type.as_deref().unwrap_or(stored_mt.as_str());
@@ -421,18 +417,11 @@ fn map_list_item(
 
 /// Returns `true` when the first level of the named list style is numbered.
 fn is_ordered_list(style_name: Option<&str>, catalog: &StyleCatalog) -> bool {
-    let name = match style_name {
-        Some(n) => n,
-        None => return false,
-    };
-    let ls = match catalog.list_styles.get(&ListId::new(name)) {
-        Some(s) => s,
-        None => return false,
-    };
+    let Some(name) = style_name else { return false };
+    let Some(ls) = catalog.list_styles.get(&ListId::new(name)) else { return false };
     ls.levels
         .first()
-        .map(|l| matches!(l.kind, ListLevelKind::Numbered { .. }))
-        .unwrap_or(false)
+        .is_some_and(|l| matches!(l.kind, ListLevelKind::Numbered { .. }))
 }
 
 /// Build [`ListAttributes`] from the first level of the named list style.
@@ -441,22 +430,12 @@ fn build_list_attributes(
     catalog: &StyleCatalog,
 ) -> ListAttributes {
     let default = ListAttributes::default();
-    let name = match list.style_name.as_deref() {
-        Some(n) => n,
-        None => return default,
-    };
-    let ls = match catalog.list_styles.get(&ListId::new(name)) {
-        Some(s) => s,
-        None => return default,
-    };
-    let first = match ls.levels.first() {
-        Some(l) => l,
-        None => return default,
-    };
+    let Some(name) = list.style_name.as_deref() else { return default };
+    let Some(ls) = catalog.list_styles.get(&ListId::new(name)) else { return default };
+    let Some(first) = ls.levels.first() else { return default };
     match &first.kind {
         ListLevelKind::Numbered { scheme, start_value, format, .. } => {
             let style = match scheme {
-                NumberingScheme::Decimal => ListNumberStyle::Decimal,
                 NumberingScheme::LowerAlpha => ListNumberStyle::LowerAlpha,
                 NumberingScheme::UpperAlpha => ListNumberStyle::UpperAlpha,
                 NumberingScheme::LowerRoman => ListNumberStyle::LowerRoman,
@@ -471,7 +450,7 @@ fn build_list_attributes(
                 ListDelimiter::DefaultDelim
             };
             ListAttributes {
-                start_number: *start_value as i32,
+                start_number: (*start_value).cast_signed(),
                 style,
                 delimiter,
             }
@@ -517,7 +496,7 @@ fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Block {
                         row_span: odf_cell.row_span,
                         col_span: odf_cell.col_span,
                         blocks,
-                        props: Default::default(),
+                        props: CellProps::default(),
                     }
                 })
                 .collect();

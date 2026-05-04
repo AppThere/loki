@@ -45,16 +45,16 @@ pub(crate) fn map_para_props(props: &OdfParaProps) -> ParaProps {
     if let Some(pts) = props.margin_right.as_deref().and_then(parse_length) {
         out.indent_end = Some(pts);
     }
-    if let Some(raw) = props.text_indent.as_deref() {
-        if let Some(pts) = parse_length(raw) {
-            let v = pts.value();
-            if v < 0.0 {
-                // Negative text-indent = hanging indent (stored as positive)
-                out.indent_hanging =
-                    Some(loki_primitives::units::Points::new(-v));
-            } else {
-                out.indent_first_line = Some(pts);
-            }
+    if let Some(raw) = props.text_indent.as_deref()
+        && let Some(pts) = parse_length(raw)
+    {
+        let v = pts.value();
+        if v < 0.0 {
+            // Negative text-indent = hanging indent (stored as positive)
+            out.indent_hanging =
+                Some(loki_primitives::units::Points::new(-v));
+        } else {
+            out.indent_first_line = Some(pts);
         }
     }
 
@@ -108,7 +108,6 @@ pub(crate) fn map_para_props(props: &OdfParaProps) -> ParaProps {
 /// Map an ODF `fo:text-align` string to [`ParagraphAlignment`].
 fn map_text_align(s: &str) -> ParagraphAlignment {
     match s {
-        "left" | "start" => ParagraphAlignment::Left,
         "right" | "end" => ParagraphAlignment::Right,
         "center" => ParagraphAlignment::Center,
         "justify" | "both" => ParagraphAlignment::Justify,
@@ -122,13 +121,14 @@ fn map_text_align(s: &str) -> ParagraphAlignment {
 ///
 /// ODF 1.3 §20.2 (`style:text-properties`).
 pub(crate) fn map_text_props(props: &OdfTextProps) -> CharProps {
-    let mut out = CharProps::default();
-
     // ── Font ───────────────────────────────────────────────────────────────
     // Prefer style:font-name (the font face alias, typically matching the actual
     // family name); fall back to fo:font-family when only that is present.
-    out.font_name = props.font_name.clone().or_else(|| props.font_family.clone());
-    out.font_name_complex = props.font_name_complex.clone();
+    let mut out = CharProps {
+        font_name: props.font_name.clone().or_else(|| props.font_family.clone()),
+        font_name_complex: props.font_name_complex.clone(),
+        ..Default::default()
+    };
 
     if let Some(pts) = props.font_size.as_deref().and_then(parse_length) {
         out.font_size = Some(pts);
@@ -146,7 +146,7 @@ pub(crate) fn map_text_props(props: &OdfTextProps) -> CharProps {
         _ => None,
     };
     out.italic = match props.font_style.as_deref() {
-        Some("italic") | Some("oblique") => Some(true),
+        Some("italic" | "oblique") => Some(true),
         Some("normal") => Some(false),
         _ => None,
     };
@@ -173,17 +173,16 @@ pub(crate) fn map_text_props(props: &OdfTextProps) -> CharProps {
     }
 
     // ── Color ──────────────────────────────────────────────────────────────
-    if let Some(hex) = props.color.as_deref() {
-        if let Ok(dc) = DocumentColor::from_hex(hex) {
-            out.color = Some(dc);
-        }
+    if let Some(hex) = props.color.as_deref()
+        && let Ok(dc) = DocumentColor::from_hex(hex)
+    {
+        out.color = Some(dc);
     }
-    if let Some(hex) = props.background_color.as_deref() {
-        if hex != "transparent" {
-            if let Ok(dc) = DocumentColor::from_hex(hex) {
-                out.background_color = Some(dc);
-            }
-        }
+    if let Some(hex) = props.background_color.as_deref()
+        && hex != "transparent"
+        && let Ok(dc) = DocumentColor::from_hex(hex)
+    {
+        out.background_color = Some(dc);
     }
 
     // ── Spacing ────────────────────────────────────────────────────────────
@@ -247,16 +246,16 @@ fn map_text_position(s: &str) -> Option<VerticalAlign> {
         "0%" | "0" => Some(VerticalAlign::Baseline),
         other => {
             // Percentage string: positive → super, negative → sub
-            if let Some(pct_str) = other.strip_suffix('%') {
-                if let Ok(pct) = pct_str.parse::<f32>() {
-                    return if pct > 0.0 {
-                        Some(VerticalAlign::Superscript)
-                    } else if pct < 0.0 {
-                        Some(VerticalAlign::Subscript)
-                    } else {
-                        Some(VerticalAlign::Baseline)
-                    };
-                }
+            if let Some(pct_str) = other.strip_suffix('%')
+                && let Ok(pct) = pct_str.parse::<f32>()
+            {
+                return if pct > 0.0 {
+                    Some(VerticalAlign::Superscript)
+                } else if pct < 0.0 {
+                    Some(VerticalAlign::Subscript)
+                } else {
+                    Some(VerticalAlign::Baseline)
+                };
             }
             None
         }
