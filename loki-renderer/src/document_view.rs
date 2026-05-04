@@ -114,20 +114,26 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         on_scroll_event(scroll, evt.scroll_top());
     };
 
-    let layout = renderer.source.layout();
+    let gen = renderer.source.current_generation();
+    let layout_guard = renderer.source.layout_for_generation(gen);
     let mut total_height = 0.0f64;
-
-    let pages: Vec<(usize, f64, f64, f64)> = layout
-        .pages
-        .iter()
-        .enumerate()
-        .map(|(i, p)| {
-            let h = p.page_size.height as f64;
-            let top = total_height;
-            total_height += h + tokens::PAGE_GAP_PX as f64;
-            (i, top, p.page_size.width as f64, h)
-        })
-        .collect();
+    let pages: Vec<(usize, f64, f64, f64)> =
+        if let Some((_, layout)) = layout_guard.as_ref() {
+            layout
+                .pages
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    let h = p.page_size.height as f64;
+                    let top = total_height;
+                    total_height += h + tokens::PAGE_GAP_PX as f64;
+                    (i, top, p.page_size.width as f64, h)
+                })
+                .collect()
+        } else {
+            vec![]
+        };
+    drop(layout_guard);
 
     let (hot, warm, cold) = renderer
         .cache

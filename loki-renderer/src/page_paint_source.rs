@@ -148,8 +148,8 @@ impl CustomPaintSource for LokiPageSource {
         let w_phys = ((width as f32 * scale_factor).ceil() as u32).max(1);
         let h_phys = ((height as f32 * scale_factor).ceil() as u32).max(1);
 
-        // Step 3: generation is 0 (document is immutable in this component).
-        let current_generation = 0u64;
+        // Step 3: read current document generation for reuse guard and layout.
+        let current_generation = self.source.current_generation();
 
         // Step 4: reuse guard — return existing handle when nothing changed.
         if self.texture_handle.is_some()
@@ -187,7 +187,10 @@ impl CustomPaintSource for LokiPageSource {
         // render_scale maps points → physical pixels at the tier's resolution:
         //   DPR × tier_scale_factor × (96 CSS-px / 72 pt)
         // This ensures the scene exactly fills w_phys × h_phys.
-        let layout = self.source.layout();
+        let layout_guard = self.source.layout_for_generation(current_generation);
+        let Some((_, layout)) = layout_guard.as_ref() else {
+            return None;
+        };
         let mut scene = Scene::new();
         let render_scale = scale as f32 * scale_factor * (96.0 / 72.0);
         loki_vello::paint_single_page(
@@ -199,6 +202,7 @@ impl CustomPaintSource for LokiPageSource {
             self.page_index,
             None,
         );
+        drop(layout_guard);
 
         // Step 8: render scene to texture.
         let params = RenderParams {

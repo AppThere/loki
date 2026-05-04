@@ -74,7 +74,12 @@ impl RendererState {
     /// those assignments on their next frame render.
     #[tracing::instrument(skip(self), fields(page_count = tracing::field::Empty))]
     pub fn on_settle(&self) {
-        let layout = self.source.layout();
+        let gen = self.source.current_generation();
+        let layout_guard = self.source.layout_for_generation(gen);
+        let Some((_, layout)) = layout_guard.as_ref() else {
+            tracing::warn!("RendererState::on_settle: layout unavailable");
+            return;
+        };
         let mut current_top = 0.0;
         let mut pages = Vec::with_capacity(layout.pages.len());
         for (i, p) in layout.pages.iter().enumerate() {
@@ -86,6 +91,7 @@ impl RendererState {
             });
             current_top += h + loki_theme::tokens::PAGE_GAP_PX as f64;
         }
+        drop(layout_guard);
         tracing::Span::current().record("page_count", pages.len());
 
         let scroll_guard = self.scroll.read();
