@@ -193,8 +193,26 @@ impl Document for DioxusDocument {
             }
         }
 
-        let mut writer = MutationWriter::new(&mut self.inner, &mut self.vdom_state);
-        self.vdom.render_immediate(&mut writer);
+        // Preserve focus across re-renders: capture the focused node's Dioxus ElementId
+        // (stable across re-renders) before render_immediate may rebuild the DOM tree.
+        let focus_dioxus_id = self.inner.focus_node_id
+            .and_then(|id| self.inner.get_node(id))
+            .and_then(get_dioxus_id);
+
+        {
+            let mut writer = MutationWriter::new(&mut self.inner, &mut self.vdom_state);
+            self.vdom.render_immediate(&mut writer);
+        }
+
+        // Re-apply focus if render_immediate replaced the focused blitz node with a new one
+        // (same Dioxus ElementId, different blitz node ID) or cleared focus entirely.
+        if let Some(dxid) = focus_dioxus_id {
+            if let Some(new_node_id) = self.vdom_state.try_element_to_node_id(dxid) {
+                if self.inner.focus_node_id != Some(new_node_id) {
+                    self.inner.set_focus_to(new_node_id);
+                }
+            }
+        }
 
         true
     }
@@ -286,26 +304,15 @@ impl EventHandler for DioxusEventHandler<'_> {
             return;
         };
 
-        let is_keydown = matches!(event.data, DomEventData::KeyDown(_));
-        if is_keydown {
-            println!("DIOXUS_HANDLER: event=keydown, chain_len={}, chain={:?}", chain.len(), chain);
-        }
-
         for &node_id in chain {
             // Get dioxus vdom id for node
             let dioxus_id = mutr.doc.get_node(node_id).and_then(get_dioxus_id);
-            if is_keydown {
-                println!("  CHAIN_NODE: blitz_id={}, dioxus_id={:?}", node_id, dioxus_id);
-            }
             let Some(id) = dioxus_id else {
                 continue;
             };
 
             // Handle event in vdom
             let dx_event = Event::new(event_data.clone(), event.bubbles);
-            if is_keydown {
-                println!("  DISPATCHING keydown to dioxus_id={:?}", id);
-            }
             self.vdom
                 .runtime()
                 .handle_event(event.name(), dx_event.clone(), id);

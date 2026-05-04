@@ -315,12 +315,7 @@ pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
         // suppresses the browser/native focus ring on the document canvas area.
         div {
             tabindex: "0",
-            onclick: move |_| println!("OUTER DIV ONCLICK"),
-            onfocus: move |_| println!("OUTER DIV ONFOCUS"),
-            onkeydown: move |evt| {
-                println!("OUTER DIV ONKEYDOWN: {:?}", evt.key());
-                props.on_keydown.call((*evt).clone())
-            },
+            onkeydown: move |evt| props.on_keydown.call((*evt).clone()),
             style: "outline: none; width: 100%;",
             for page_idx in 0..current_page_count {
                 div {

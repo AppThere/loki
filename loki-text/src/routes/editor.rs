@@ -428,8 +428,7 @@ pub fn Editor(path: String) -> Element {
                                 on_keydown: {
                                     let doc_state = Arc::clone(&doc_state);
                                     move |evt: Rc<KeyboardData>| {
-                                        println!("KEY: {:?}", evt.key());
-                                        tracing::info!("Editor: onkeydown fired: {:?}", evt.key());
+                                        tracing::debug!("Editor: onkeydown fired: {:?}", evt.key());
                                         if editor_mode() != EditorMode::Editing {
                                             return;
                                         }
