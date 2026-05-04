@@ -109,7 +109,7 @@ pub fn Home() -> Element {
     // route.  On cancellation, does nothing.  On error, writes the message
     // into `pick_error` for inline display.
     let on_open_file = move |_| {
-        let nav = navigator.clone();
+        let nav = navigator;
         let mut err_sig = pick_error;
         spawn(async move {
             let picker = FilePicker::new();

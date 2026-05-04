@@ -243,7 +243,7 @@ fn raw_version_attr(content: &[u8]) -> Option<String> {
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+            Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
                 let local = {
                     let b = e.local_name().into_inner();
                     if let Some(p) = b.iter().rposition(|&x| x == b':') {
@@ -266,7 +266,7 @@ fn raw_version_attr(content: &[u8]) -> Option<String> {
                         if key_local == b"version" {
                             attr.unescape_value()
                                 .ok()
-                                .map(|v| v.into_owned())
+                                .map(std::borrow::Cow::into_owned)
                         } else {
                             None
                         }

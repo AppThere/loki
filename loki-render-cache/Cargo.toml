@@ -5,20 +5,15 @@ edition = "2024"
 license = "Apache-2.0"
 description = "Tiered page render cache policy for Loki's Vello renderer"
 
-# thiserror is used by RenderError regardless of GPU feature.
 [dependencies]
 thiserror = "2"
 tracing   = "0.1"
-wgpu    = { version = "26", optional = true }
-pollster = { version = "0.4", optional = true }
-
+wgpu      = { version = "26", optional = true }
 
 [features]
-default = ["mock-texture"]
-mock-texture = []
-# `gpu` and `mock-texture` are mutually exclusive.
-# Enforced by a compile_error! guard in src/lib.rs.
-gpu = ["dep:wgpu", "dep:pollster"]
+# `gpu` enables wgpu-backed texture utilities (GpuTexture, allocate_texture,
+# downsample_texture) and the PageSource trait used by loki-renderer.
+gpu = ["dep:wgpu"]
 
 [dev-dependencies]
 pollster = "0.4"

@@ -25,7 +25,7 @@ use crate::xml_util::hex_color;
 
 /// Converts a twips integer to [`Points`] (1 pt = 20 twips).
 fn twips_to_pt(twips: i32) -> Points {
-    Points::new(twips as f64 / 20.0)
+    Points::new(f64::from(twips) / 20.0)
 }
 
 /// Maps a `w:jc` value string to [`ParagraphAlignment`].
@@ -47,6 +47,8 @@ fn map_line_height(line: i32, line_rule: Option<&str>) -> LineHeight {
     match line_rule {
         Some("exact") => LineHeight::Exact(twips_to_pt(line)),
         Some("atLeast") => LineHeight::AtLeast(twips_to_pt(line)),
+        #[allow(clippy::cast_precision_loss)]
+        // Precision loss acceptable: values represent document measurements
         _ => LineHeight::Multiple(line as f32 / 240.0),
     }
 }
@@ -107,9 +109,9 @@ pub(crate) fn map_border_edge(edge: &DocxBorderEdge) -> Border {
     };
     Border {
         style,
-        width: Points::new(edge.sz.unwrap_or(8) as f64 / 8.0),
+        width: Points::new(f64::from(edge.sz.unwrap_or(8)) / 8.0),
         color: edge.color.as_deref().and_then(hex_color).map(DocumentColor::Rgb),
-        spacing: edge.space.map(|s| Points::new(s as f64)),
+        spacing: edge.space.map(|s| Points::new(f64::from(s))),
     }
 }
 
@@ -121,9 +123,10 @@ pub(crate) fn map_border_edge(edge: &DocxBorderEdge) -> Border {
 /// `outline_lvl` is shifted from 0-indexed (OOXML) to 1-indexed (model).
 /// `num_id=0` is treated as "remove numbering" per ECMA-376 §17.9.25.
 pub(crate) fn map_ppr(ppr: &DocxPPr) -> ParaProps {
-    let mut props = ParaProps::default();
-
-    props.alignment = ppr.jc.as_deref().map(map_jc);
+    let mut props = ParaProps {
+        alignment: ppr.jc.as_deref().map(map_jc),
+        ..Default::default()
+    };
 
     if let Some(ref ind) = ppr.ind {
         props.indent_start = ind.left.map(twips_to_pt);
@@ -152,12 +155,11 @@ pub(crate) fn map_ppr(ppr: &DocxPPr) -> ParaProps {
     props.widow_control = ppr.widow_control.map(|v| if v { 2u8 } else { 0u8 });
 
     // Numbering: num_id=0 means "explicitly remove numbering".
-    if let Some(ref np) = ppr.num_pr {
-        if np.num_id != 0 {
+    if let Some(ref np) = ppr.num_pr
+        && np.num_id != 0 {
             props.list_id = Some(ListId::new(np.num_id.to_string()));
             props.list_level = Some(np.ilvl);
         }
-    }
 
     // Paragraph borders (gap #6): w:pBdr → ParaProps border_* + padding_*.
     if let Some(ref pbdr) = ppr.p_bdr {
@@ -167,10 +169,10 @@ pub(crate) fn map_ppr(ppr: &DocxPPr) -> ParaProps {
         props.border_right = pbdr.right.as_ref().map(map_border_edge);
         props.border_between = pbdr.between.as_ref().map(map_border_edge);
         // w:space is in points (not twips) — use directly.
-        props.padding_top = pbdr.top.as_ref().and_then(|e| e.space).map(|s| Points::new(s as f64));
-        props.padding_bottom = pbdr.bottom.as_ref().and_then(|e| e.space).map(|s| Points::new(s as f64));
-        props.padding_left = pbdr.left.as_ref().and_then(|e| e.space).map(|s| Points::new(s as f64));
-        props.padding_right = pbdr.right.as_ref().and_then(|e| e.space).map(|s| Points::new(s as f64));
+        props.padding_top = pbdr.top.as_ref().and_then(|e| e.space).map(|s| Points::new(f64::from(s)));
+        props.padding_bottom = pbdr.bottom.as_ref().and_then(|e| e.space).map(|s| Points::new(f64::from(s)));
+        props.padding_left = pbdr.left.as_ref().and_then(|e| e.space).map(|s| Points::new(f64::from(s)));
+        props.padding_right = pbdr.right.as_ref().and_then(|e| e.space).map(|s| Points::new(f64::from(s)));
     }
 
     // Tab stops (gap #7): w:tabs → ParaProps.tab_stops.
@@ -190,7 +192,7 @@ pub(crate) fn map_ppr(ppr: &DocxPPr) -> ParaProps {
                 },
                 leader: match t.leader.as_deref() {
                     Some("dot") => TabLeader::Dot,
-                    Some("hyphen") | Some("dash") => TabLeader::Dash,
+                    Some("hyphen" | "dash") => TabLeader::Dash,
                     Some("underscore") => TabLeader::Underscore,
                     Some("heavy") => TabLeader::Heavy,
                     Some("middleDot") => TabLeader::MiddleDot,
@@ -211,63 +213,67 @@ pub(crate) fn map_ppr(ppr: &DocxPPr) -> ParaProps {
 /// Font sizes are in half-points (`w:sz`); letter spacing in twips (`w:spacing`).
 /// Both are converted to points. Toggle properties map directly as `Option<bool>`.
 pub(crate) fn map_rpr(rpr: &DocxRPr) -> CharProps {
-    let mut props = CharProps::default();
-
-    props.bold = rpr.bold;
-    props.italic = rpr.italic;
-    props.small_caps = rpr.small_caps;
-    props.all_caps = rpr.all_caps;
-    props.shadow = rpr.shadow;
-
     // Double strikethrough takes precedence over single.
-    props.strikethrough = match (rpr.dstrike, rpr.strike) {
+    let strikethrough = match (rpr.dstrike, rpr.strike) {
         (Some(true), _) => Some(StrikethroughStyle::Double),
         (_, Some(true)) => Some(StrikethroughStyle::Single),
         _ => None,
     };
 
-    props.underline = rpr.underline.as_deref().and_then(map_underline);
-
-    props.color = rpr
-        .color
-        .as_deref()
-        .and_then(hex_color)
-        .map(DocumentColor::Rgb);
-
-    props.highlight_color = rpr
-        .highlight
-        .as_deref()
-        .map(map_highlight)
-        .filter(|h| *h != HighlightColor::None);
-
     // w:sz and w:szCs are in half-points.
-    props.font_size = rpr.sz.map(|hp| Points::new(hp as f64 / 2.0));
-    props.font_size_complex = rpr.sz_cs.map(|hp| Points::new(hp as f64 / 2.0));
+    let font_size = rpr.sz.map(|hp| Points::new(f64::from(hp) / 2.0));
+    let font_size_complex = rpr.sz_cs.map(|hp| Points::new(f64::from(hp) / 2.0));
 
-    if let Some(ref fonts) = rpr.fonts {
-        props.font_name = fonts.ascii.clone().or_else(|| fonts.h_ansi.clone());
-        props.font_name_complex = fonts.cs.clone();
-        props.font_name_east_asian = fonts.east_asia.clone();
-    }
-
-    // w:kern threshold in half-points: 0 = off, >0 = enabled.
-    props.kerning = rpr.kern.map(|k| k > 0);
+    let (font_name, font_name_complex, font_name_east_asian) =
+        if let Some(ref fonts) = rpr.fonts {
+            (
+                fonts.ascii.clone().or_else(|| fonts.h_ansi.clone()),
+                fonts.cs.clone(),
+                fonts.east_asia.clone(),
+            )
+        } else {
+            (None, None, None)
+        };
 
     // w:spacing is in twips.
-    props.letter_spacing = rpr.spacing.map(|sp| Points::new(sp as f64 / 20.0));
+    let letter_spacing = rpr.spacing.map(|sp| Points::new(f64::from(sp) / 20.0));
 
     // w:w is a percentage integer (100 = normal).
-    props.scale = rpr.scale.map(|s| s as f32 / 100.0);
+    #[allow(clippy::cast_precision_loss)]
+    // Precision loss acceptable: values represent document measurements
+    let scale = rpr.scale.map(|s| s as f32 / 100.0);
 
-    props.language = rpr.lang.as_deref().map(LanguageTag::new);
-
-    props.vertical_align = rpr.vert_align.as_deref().and_then(|v| match v {
-        "superscript" => Some(VerticalAlign::Superscript),
-        "subscript" => Some(VerticalAlign::Subscript),
-        _ => None,
-    });
-
-    props
+    CharProps {
+        bold: rpr.bold,
+        italic: rpr.italic,
+        small_caps: rpr.small_caps,
+        all_caps: rpr.all_caps,
+        shadow: rpr.shadow,
+        strikethrough,
+        underline: rpr.underline.as_deref().and_then(map_underline),
+        color: rpr.color.as_deref().and_then(hex_color).map(DocumentColor::Rgb),
+        highlight_color: rpr
+            .highlight
+            .as_deref()
+            .map(map_highlight)
+            .filter(|h| *h != HighlightColor::None),
+        font_size,
+        font_size_complex,
+        font_name,
+        font_name_complex,
+        font_name_east_asian,
+        // w:kern threshold in half-points: 0 = off, >0 = enabled.
+        kerning: rpr.kern.map(|k| k > 0),
+        letter_spacing,
+        scale,
+        language: rpr.lang.as_deref().map(LanguageTag::new),
+        vertical_align: rpr.vert_align.as_deref().and_then(|v| match v {
+            "superscript" => Some(VerticalAlign::Superscript),
+            "subscript" => Some(VerticalAlign::Subscript),
+            _ => None,
+        }),
+        ..Default::default()
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

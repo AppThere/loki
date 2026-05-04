@@ -98,7 +98,7 @@ pub fn local_attr_val(e: &BytesStart<'_>, local: &[u8]) -> Option<String> {
             key_bytes
         };
         if key_local == local {
-            attr.unescape_value().ok().map(|v| v.into_owned())
+            attr.unescape_value().ok().map(std::borrow::Cow::into_owned)
         } else {
             None
         }

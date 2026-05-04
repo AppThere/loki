@@ -1,9 +1,9 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
 
-//! DOCX (WordprocessingML) import for the Loki document suite.
+//! DOCX (`WordprocessingML`) import for the Loki document suite.
 //!
-//! ECMA-376 Part 1, §17 — WordprocessingML.
+//! ECMA-376 Part 1, §17 — `WordprocessingML`.
 //!
 //! # Architecture
 //!

@@ -35,14 +35,13 @@ pub fn parse_notes(xml: &[u8], part: &str) -> OoxmlResult<DocxNotes> {
                             .and_then(|v| v.parse::<i32>().ok())
                             .unwrap_or(0);
                         let note_type = attr_val(e, b"type")
-                            .map(|t| match t.as_str() {
+                            .map_or(DocxNoteType::Normal, |t| match t.as_str() {
                                 "separator" => DocxNoteType::Separator,
                                 "continuationSeparator" => {
                                     DocxNoteType::ContinuationSeparator
                                 }
                                 _ => DocxNoteType::Normal,
-                            })
-                            .unwrap_or(DocxNoteType::Normal);
+                            });
                         let note = parse_note(&mut reader, id, note_type, part)?;
                         result.notes.push(note);
                     }
@@ -75,8 +74,8 @@ fn parse_note(
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) if local_name(e.local_name().as_ref()) == b"p" => {
-                let para = parse_paragraph(reader)?;
-                paragraphs.push(para);
+                let paragraph = parse_paragraph(reader)?;
+                paragraphs.push(paragraph);
             }
             Ok(Event::End(ref e))
                 if matches!(

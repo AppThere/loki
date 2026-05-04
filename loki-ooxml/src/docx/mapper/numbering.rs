@@ -24,7 +24,7 @@ use super::props::map_rpr;
 /// Maps a `w:lvlJc` value to [`LabelAlignment`].
 fn map_lvl_jc(jc: Option<&str>) -> LabelAlignment {
     match jc {
-        Some("right") | Some("end") => LabelAlignment::Right,
+        Some("right" | "end") => LabelAlignment::Right,
         Some("center") => LabelAlignment::Center,
         _ => LabelAlignment::Left,
     }
@@ -54,21 +54,19 @@ fn map_level(lvl: &DocxLevel, start_override: Option<u32>) -> ListLevel {
         .as_ref()
         .and_then(|p| p.ind.as_ref())
         .and_then(|i| i.left)
-        .map(|v| Points::new(v as f64 / 20.0))
-        .unwrap_or(Points::new(0.0));
+        .map_or(Points::new(0.0), |v| Points::new(f64::from(v) / 20.0));
 
     let hanging_indent = lvl
         .ppr
         .as_ref()
         .and_then(|p| p.ind.as_ref())
         .and_then(|i| i.hanging)
-        .map(|v| Points::new(v as f64 / 20.0))
-        .unwrap_or(Points::new(0.0));
+        .map_or(Points::new(0.0), |v| Points::new(f64::from(v) / 20.0));
 
     let char_props = lvl
         .rpr
         .as_ref()
-        .map(|rpr| map_rpr(rpr))
+        .map(map_rpr)
         .unwrap_or_default();
 
     let label_alignment = map_lvl_jc(lvl.lvl_jc.as_deref());
@@ -101,7 +99,7 @@ fn map_level_kind(
     match num_fmt {
         "bullet" => {
             let bullet_char = match lvl_text {
-                Some("•") => BulletChar::Char('•'),
+                Some("•") | None => BulletChar::Char('•'),
                 Some("–") => BulletChar::Char('–'),
                 Some("○") => BulletChar::Char('○'),
                 Some("▪") => BulletChar::Char('▪'),
@@ -109,14 +107,12 @@ fn map_level_kind(
                     // Take first Unicode scalar; fall back to bullet.
                     BulletChar::Char(s.chars().next().unwrap_or('•'))
                 }
-                None => BulletChar::Char('•'),
             };
             ListLevelKind::Bullet { char: bullet_char, font }
         }
         "none" => ListLevelKind::None,
         _ => {
             let scheme = match num_fmt {
-                "decimal" => NumberingScheme::Decimal,
                 "lowerLetter" => NumberingScheme::LowerAlpha,
                 "upperLetter" => NumberingScheme::UpperAlpha,
                 "lowerRoman" => NumberingScheme::LowerRoman,
@@ -153,18 +149,14 @@ pub(crate) fn map_numbering(
     let mut warnings = Vec::new();
 
     for num in &numbering.nums {
-        let abs = match numbering
+        let Some(abs) = numbering
             .abstract_nums
             .iter()
-            .find(|a| a.abstract_num_id == num.abstract_num_id)
-        {
-            Some(a) => a,
-            None => {
+            .find(|a| a.abstract_num_id == num.abstract_num_id) else {
                 warnings.push(OoxmlWarning::UnresolvedNumberingId {
                     num_id: num.num_id,
                 });
                 continue;
-            }
         };
 
         // Build 9 levels (0..=8), applying overrides where present.

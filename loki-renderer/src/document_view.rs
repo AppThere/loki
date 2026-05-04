@@ -3,46 +3,104 @@
 
 //! DocumentView component for rendering pages from loki-renderer cache.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use dioxus::native::use_wgpu;
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
-use loki_render_cache::{CacheTier, PageIndex};
+use loki_render_cache::PageCache;
 use loki_theme::tokens;
 
+use crate::doc_page_source::DocPageSource;
+use crate::page_paint_source::LokiPageSource;
 use crate::renderer_state::RendererState;
 use crate::scroll_driver::{on_scroll_event, use_settle_detector};
+
+// ── DocumentViewProps ─────────────────────────────────────────────────────────
 
 /// Props for the DocumentView component.
 #[derive(Props, Clone)]
 pub struct DocumentViewProps {
     pub doc: Arc<Document>,
     pub viewport_height_px: f64,
-    pub device: Arc<wgpu::Device>,
-    pub wgpu_queue: Arc<wgpu::Queue>,
 }
 
 impl PartialEq for DocumentViewProps {
     fn eq(&self, _other: &Self) -> bool {
-        false // Conservatively always re-render, Document doesn't implement PartialEq
+        false // Conservatively always re-render
     }
 }
+
+// ── PageTile ──────────────────────────────────────────────────────────────────
+
+#[derive(Clone, Props)]
+struct PageTileProps {
+    /// Shared tier-and-dirty metadata store from `RendererState`.
+    cache: Arc<Mutex<PageCache>>,
+    /// Document layout + page-size source.
+    source: Arc<DocPageSource>,
+    page_index: usize,
+    top: f64,
+    w: f64,
+    h: f64,
+}
+
+impl PartialEq for PageTileProps {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.cache, &other.cache)
+            && Arc::ptr_eq(&self.source, &other.source)
+            && self.page_index == other.page_index
+            && self.w == other.w
+            && self.h == other.h
+    }
+}
+
+/// A single page rendered into a Blitz GPU canvas.
+///
+/// Calls `use_wgpu` exactly once per instance — the hook-count invariant is
+/// satisfied by Dioxus's key-based reconciliation in `DocumentView`.
+#[allow(non_snake_case)]
+fn PageTile(props: PageTileProps) -> Element {
+    let cache = props.cache.clone();
+    let source = props.source.clone();
+    let page_index = props.page_index;
+
+    let canvas_id = use_wgpu(move || LokiPageSource::new(cache, source, page_index));
+
+    rsx! {
+        div {
+            style: format!(
+                "position: absolute; top: {top}px; left: 50%; \
+                 transform: translateX(-50%); width: {w}px; height: {h}px;",
+                top = props.top,
+                w   = props.w,
+                h   = props.h,
+            ),
+            canvas {
+                "src": "{canvas_id}",
+                style: format!(
+                    "width: {w}px; height: {h}px; display: block;",
+                    w = props.w,
+                    h = props.h,
+                ),
+            }
+        }
+    }
+}
+
+// ── DocumentView ──────────────────────────────────────────────────────────────
 
 /// Root document rendering component.
 ///
 /// - Initialises `RendererState` via `use_hook` and provides it as context.
 /// - Launches the settle detector via `use_settle_detector`.
-/// - Renders visible page tiles from the cache.
+/// - Renders one `PageTile` per page; each tile registers a `LokiPageSource`
+///   via `use_wgpu` and Blitz drives rendering each frame.
 /// - Passes scroll events to `on_scroll_event`.
 #[component]
 pub fn DocumentView(props: DocumentViewProps) -> Element {
     let renderer = use_hook(|| {
-        RendererState::new(
-            props.doc.clone(),
-            props.viewport_height_px,
-            props.device.clone(),
-            props.wgpu_queue.clone(),
-        )
+        RendererState::new(props.doc.clone(), props.viewport_height_px)
     });
     provide_context(renderer.clone());
 
@@ -56,44 +114,33 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         on_scroll_event(scroll, evt.scroll_top());
     };
 
-    let layout = renderer.source.layout();
-    let mut total_height = 0.0;
-    
-    let mut hot_count = 0;
-    let mut warm_count = 0;
-    let mut cold_count = 0;
-
-    let cache_guard = renderer.cache.lock().unwrap();
-
-    let pages = layout.pages.iter().enumerate().map(|(i, p)| {
-        let h = p.page_size.height as f64;
-        let top = total_height;
-        total_height += h + tokens::PAGE_GAP_PX as f64;
-        
-        let index = PageIndex(i as u32);
-        let cached = cache_guard.get(index);
-        
-        let tier = match cached {
-            Some(cp) => {
-                match cp.tier {
-                    CacheTier::Hot => hot_count += 1,
-                    CacheTier::Warm => warm_count += 1,
-                    CacheTier::Cold => cold_count += 1,
-                }
-                Some(cp.tier)
-            },
-            None => None
+    let doc_gen = renderer.source.current_generation();
+    let layout_guard = renderer.source.layout_for_generation(doc_gen);
+    let mut total_height = 0.0f64;
+    let pages: Vec<(usize, f64, f64, f64)> =
+        if let Some((_, layout)) = layout_guard.as_ref() {
+            layout
+                .pages
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    let h = p.page_size.height as f64;
+                    let top = total_height;
+                    total_height += h + tokens::PAGE_GAP_PX as f64;
+                    (i, top, p.page_size.width as f64, h)
+                })
+                .collect()
+        } else {
+            vec![]
         };
-        
-        (index, top, p.page_size.width as f64, h, tier)
-    }).collect::<Vec<_>>();
+    drop(layout_guard);
 
-    tracing::debug!(
-        hot = hot_count,
-        warm = warm_count,
-        cold = cold_count,
-        "Document view rendered"
-    );
+    let (hot, warm, cold) = renderer
+        .cache
+        .lock()
+        .map(|g| g.page_count_by_tier())
+        .unwrap_or((0, 0, 0));
+    tracing::debug!(hot, warm, cold, "DocumentView rendered");
 
     rsx! {
         div {
@@ -101,28 +148,15 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
             onscroll: onscroll,
             div {
                 style: "position: relative; width: 100%; height: {total_height}px;",
-                for (idx, top, w, h, tier) in pages {
-                    if matches!(tier, Some(CacheTier::Hot) | Some(CacheTier::Warm)) {
-                        div {
-                            key: "{idx.0}",
-                            style: format!(
-                                "position: absolute; top: {top}px; left: 50%; \
-                                 transform: translateX(-50%); width: {w}px; height: {h}px; \
-                                 background: {bg}; display: flex; align-items: center; justify-content: center;",
-                                bg = tokens::COLOR_SURFACE_PAGE,
-                            ),
-                            span { "Page {idx.0} ({tier:?})" }
-                        }
-                    } else {
-                        div {
-                            key: "{idx.0}",
-                            style: format!(
-                                "position: absolute; top: {top}px; left: 50%; \
-                                 transform: translateX(-50%); width: {w}px; height: {h}px; \
-                                 background: #f0f0f0; display: flex; align-items: center; justify-content: center;"
-                            ),
-                            span { "Page {idx.0} (Cold/None)" }
-                        }
+                for (idx, top, w, h) in pages {
+                    PageTile {
+                        key: "{idx}",
+                        cache: renderer.cache.clone(),
+                        source: renderer.source.clone(),
+                        page_index: idx,
+                        top,
+                        w,
+                        h,
                     }
                 }
             }

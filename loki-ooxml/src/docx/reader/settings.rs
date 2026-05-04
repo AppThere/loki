@@ -24,7 +24,7 @@ pub fn parse_settings(xml: &[u8]) -> OoxmlResult<DocxSettings> {
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e)) => {
+            Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
                 match local_name(e.local_name().as_ref()) {
                     b"defaultTabStop" => {
                         result.default_tab_stop = attr_val(e, b"val")
@@ -32,11 +32,11 @@ pub fn parse_settings(xml: &[u8]) -> OoxmlResult<DocxSettings> {
                     }
                     b"evenAndOddHeaders" => {
                         result.even_and_odd_headers = attr_val(e, b"val")
-                            .map_or(true, |v| !matches!(v.as_str(), "0" | "false" | "off"));
+                            .is_none_or(|v| !matches!(v.as_str(), "0" | "false" | "off"));
                     }
                     b"titlePg" => {
                         result.title_pg = attr_val(e, b"val")
-                            .map_or(true, |v| !matches!(v.as_str(), "0" | "false" | "off"));
+                            .is_none_or(|v| !matches!(v.as_str(), "0" | "false" | "off"));
                     }
                     _ => {}
                 }

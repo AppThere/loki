@@ -12,3 +12,11 @@ fontique = { path = "patches/fontique" }
 # HtmlEventConverter (composition, touch, scroll, etc.) — remove when upstream
 # implements the converters Loki requires. See docs/patches.md.
 dioxus-native-dom = { path = "patches/dioxus-native-dom" }
+
+# PATCH: handle_click walks up the DOM but calls clear_focus() for any element
+# that isn't input/label/a — so clicking a wgpu canvas clears keyboard focus
+# from the nearest tabindex="0" ancestor div, preventing onkeydown from firing.
+# Fix: check is_focussable() after the match arm and call set_focus_to() instead
+# of continuing up.  Remove when upstream blitz-dom makes tabindex focus
+# on click work for non-input elements.
+blitz-dom = { path = "patches/blitz-dom" }

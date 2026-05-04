@@ -166,8 +166,8 @@ impl<'a> FlowState<'a> {
         } else {
             counters[lvl] += 1;
         }
-        for deeper in (lvl + 1)..9 {
-            counters[deeper] = 0;
+        for counter in counters.iter_mut().take(9).skip(lvl + 1) {
+            *counter = 0;
         }
         counters[lvl]
     }
@@ -236,13 +236,13 @@ pub fn flow_section(
         let mut i = 0;
         while i < section.blocks.len() {
             let block = &section.blocks[i];
-            if let Block::StyledPara(para) = block {
-                if resolve_para_props(para, catalog).keep_with_next {
-                    let consumed =
-                        flow_keep_with_next_chain(&mut state, &section.blocks, i);
-                    i += consumed;
-                    continue;
-                }
+            if let Block::StyledPara(para) = block
+                && resolve_para_props(para, catalog).keep_with_next
+            {
+                let consumed =
+                    flow_keep_with_next_chain(&mut state, &section.blocks, i);
+                i += consumed;
+                continue;
             }
             flow_block(&mut state, block, i);
             i += 1;
@@ -285,13 +285,13 @@ fn flow_block(state: &mut FlowState, block: &Block, idx: usize) {
             state.current_indent += 18.0;
             for item in items {
                 for (b_idx, b) in item.iter().enumerate() {
-                    if b_idx == 0 {
-                        if let Block::StyledPara(p) = b {
-                            let mut p = p.clone();
-                            p.inlines.insert(0, Inline::Str("• ".into()));
-                            flow_paragraph(state, &p, idx);
-                            continue;
-                        }
+                    if b_idx == 0
+                        && let Block::StyledPara(p) = b
+                    {
+                        let mut p = p.clone();
+                        p.inlines.insert(0, Inline::Str("• ".into()));
+                        flow_paragraph(state, &p, idx);
+                        continue;
                     }
                     flow_block(state, b, idx);
                 }
@@ -304,13 +304,13 @@ fn flow_block(state: &mut FlowState, block: &Block, idx: usize) {
             for (i, item) in items.iter().enumerate() {
                 let marker = format!("{}. ", attrs.start_number + i as i32);
                 for (b_idx, b) in item.iter().enumerate() {
-                    if b_idx == 0 {
-                        if let Block::StyledPara(p) = b {
-                            let mut p = p.clone();
-                            p.inlines.insert(0, Inline::Str(marker.clone().into()));
-                            flow_paragraph(state, &p, idx);
-                            continue;
-                        }
+                    if b_idx == 0
+                        && let Block::StyledPara(p) = b
+                    {
+                        let mut p = p.clone();
+                        p.inlines.insert(0, Inline::Str(marker.clone()));
+                        flow_paragraph(state, &p, idx);
+                        continue;
                     }
                     flow_block(state, b, idx);
                 }
@@ -396,35 +396,6 @@ fn layout_blocks_reflow(
     }
 }
 
-/// Select the appropriate header for a page given page number and layout.
-fn select_header(layout: &PageLayout, page_number: usize) -> Option<&HeaderFooter> {
-    if page_number == 1 {
-        if let Some(ref hf) = layout.header_first {
-            return Some(hf);
-        }
-    }
-    if page_number % 2 == 0 {
-        if let Some(ref hf) = layout.header_even {
-            return Some(hf);
-        }
-    }
-    layout.header.as_ref()
-}
-
-/// Select the appropriate footer for a page given page number and layout.
-fn select_footer(layout: &PageLayout, page_number: usize) -> Option<&HeaderFooter> {
-    if page_number == 1 {
-        if let Some(ref hf) = layout.footer_first {
-            return Some(hf);
-        }
-    }
-    if page_number % 2 == 0 {
-        if let Some(ref hf) = layout.footer_even {
-            return Some(hf);
-        }
-    }
-    layout.footer.as_ref()
-}
 
 /// Populate header/footer items for each page in `pages`.
 ///
@@ -434,7 +405,7 @@ fn select_footer(layout: &PageLayout, page_number: usize) -> Option<&HeaderFoote
 /// - Header top: `margins.header`
 /// - Footer top: `page_height - margins.footer - footer_height`
 pub(crate) fn assign_headers_footers(
-    pages: &mut Vec<LayoutPage>,
+    pages: &mut [LayoutPage],
     layout: &PageLayout,
     resources: &mut FontResources,
     catalog: &StyleCatalog,
@@ -451,17 +422,17 @@ pub(crate) fn assign_headers_footers(
     };
 
     let hdr_default: Option<(Vec<PositionedItem>, f32)> =
-        layout.header.as_ref().map(|hf| lay(hf));
+        layout.header.as_ref().map(&mut lay);
     let hdr_first: Option<(Vec<PositionedItem>, f32)> =
-        layout.header_first.as_ref().map(|hf| lay(hf));
+        layout.header_first.as_ref().map(&mut lay);
     let hdr_even: Option<(Vec<PositionedItem>, f32)> =
-        layout.header_even.as_ref().map(|hf| lay(hf));
+        layout.header_even.as_ref().map(&mut lay);
     let ftr_default: Option<(Vec<PositionedItem>, f32)> =
-        layout.footer.as_ref().map(|hf| lay(hf));
+        layout.footer.as_ref().map(&mut lay);
     let ftr_first: Option<(Vec<PositionedItem>, f32)> =
-        layout.footer_first.as_ref().map(|hf| lay(hf));
+        layout.footer_first.as_ref().map(&mut lay);
     let ftr_even: Option<(Vec<PositionedItem>, f32)> =
-        layout.footer_even.as_ref().map(|hf| lay(hf));
+        layout.footer_even.as_ref().map(&mut lay);
 
     use crate::resolve::pts_to_f32;
     let hdr_margin_y = pts_to_f32(layout.margins.header);
@@ -553,7 +524,7 @@ fn flow_footnotes(state: &mut FlowState) {
                 first = false;
                 if let Block::StyledPara(p) = block {
                     let mut p = p.clone();
-                    p.inlines.insert(0, Inline::Str(mark.clone().into()));
+                    p.inlines.insert(0, Inline::Str(mark.clone()));
                     flow_paragraph(state, &p, 0);
                     continue;
                 }

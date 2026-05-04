@@ -25,6 +25,7 @@ appthere-color = "0.1.1"
 thiserror = "2"
 indexmap = "2"
 loro = "1.11.1"
+rustc-hash = "2"
 tracing = "0.1"
 
 [dependencies.chrono]

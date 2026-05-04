@@ -38,6 +38,8 @@ use crate::xml_util::local_attr_val;
 /// (→ `auto_styles`), and also collects page layouts and master pages.
 /// When `is_automatic` is `true` every `style:style` found anywhere in the
 /// document goes into `auto_styles`.
+#[allow(clippy::too_many_lines)]
+// Function body is a single large match over XML events; splitting would reduce readability.
 pub(crate) fn read_stylesheet(
     xml: &[u8],
     is_automatic: bool,
@@ -470,6 +472,8 @@ fn parse_text_props_attrs(e: &quick_xml::events::BytesStart<'_>) -> OdfTextProps
 // ── List style parsing ─────────────────────────────────────────────────────────
 
 /// Parse a `text:list-style` element (already consumed Start event).
+#[allow(clippy::too_many_lines)]
+// Function body is a single large match over XML events; splitting would reduce readability.
 fn parse_list_style(
     reader: &mut Reader<&[u8]>,
     name: String,
@@ -882,24 +886,21 @@ fn parse_page_layout(
             }
             Ok(Event::Empty(ref e)) => {
                 let local = e.local_name().into_inner();
-                match local {
-                    b"page-layout-properties" => {
-                        layout.page_width =
-                            local_attr_val(e, b"page-width");
-                        layout.page_height =
-                            local_attr_val(e, b"page-height");
-                        layout.margin_top =
-                            local_attr_val(e, b"margin-top");
-                        layout.margin_bottom =
-                            local_attr_val(e, b"margin-bottom");
-                        layout.margin_left =
-                            local_attr_val(e, b"margin-left");
-                        layout.margin_right =
-                            local_attr_val(e, b"margin-right");
-                        layout.print_orientation =
-                            local_attr_val(e, b"print-orientation");
-                    }
-                    _ => {}
+                if local == b"page-layout-properties" {
+                    layout.page_width =
+                        local_attr_val(e, b"page-width");
+                    layout.page_height =
+                        local_attr_val(e, b"page-height");
+                    layout.margin_top =
+                        local_attr_val(e, b"margin-top");
+                    layout.margin_bottom =
+                        local_attr_val(e, b"margin-bottom");
+                    layout.margin_left =
+                        local_attr_val(e, b"margin-left");
+                    layout.margin_right =
+                        local_attr_val(e, b"margin-right");
+                    layout.print_orientation =
+                        local_attr_val(e, b"print-orientation");
                 }
             }
             Ok(Event::End(ref e)) => {
@@ -1112,7 +1113,7 @@ fn collect_para_text(
             Ok(Event::Text(ref t)) => {
                 let s = t.unescape().map_err(|e| OdfError::Xml {
                     part: "styles.xml".to_string(),
-                    source: quick_xml::Error::from(e),
+                    source: e,
                 })?;
                 if !s.is_empty() {
                     children.push(OdfParagraphChild::Text(s.into_owned()));

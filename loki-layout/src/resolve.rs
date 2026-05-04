@@ -21,12 +21,12 @@
 //!   bytes, and stores the data URI in `LinkTarget.url`.
 //! - An **unresolved relationship ID** (e.g. `"rId1"`) when
 //!   `embed_images == false`.
-//! Width and height in EMUs are stored in `NodeAttr.kv` as `("cx_emu", val)`
-//! and `("cy_emu", val)`. Alt text is the `Vec<Inline>` second field.
-//! `loki-vello` (`loki-vello/src/image.rs:34`) only renders data URIs; external
-//! URLs produce a grey placeholder rectangle. **With `embed_images` on (the
-//! default), image data is available at layout time — Session 4 is a one-session
-//! wire-up.**
+//!   Width and height in EMUs are stored in `NodeAttr.kv` as `("cx_emu", val)`
+//!   and `("cy_emu", val)`. Alt text is the `Vec<Inline>` second field.
+//!   `loki-vello` (`loki-vello/src/image.rs:34`) only renders data URIs; external
+//!   URLs produce a grey placeholder rectangle. **With `embed_images` on (the
+//!   default), image data is available at layout time — Session 4 is a one-session
+//!   wire-up.**
 //!
 //! `walk_inlines` currently treats `Inline::Image` like `Inline::Link` — it
 //! recurses into the alt-text child inlines and silently discards the `src` and

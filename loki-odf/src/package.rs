@@ -49,7 +49,7 @@ pub struct OdfPackage {
     /// Raw bytes of `settings.xml`, or `None` if absent. ODF 1.3 §3.1.
     pub settings: Option<Vec<u8>>,
 
-    /// Images extracted from `Pictures/`: path → (media_type, bytes).
+    /// Images extracted from `Pictures/`: path → (`media_type`, bytes).
     ///
     /// The key is the full ZIP entry name (e.g. `"Pictures/image1.png"`).
     /// The media type is inferred from the file extension.
@@ -74,6 +74,12 @@ impl OdfPackage {
     /// Does **not** validate the XML structure of any part.
     ///
     /// ODF 1.3 §3.3 (package structure), §3.4 (mimetype).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OdfError`] if the ZIP archive is invalid, the `mimetype` entry
+    /// is missing or malformed, `META-INF/manifest.xml` is absent, or
+    /// `content.xml` is absent.
     pub fn open(reader: impl Read + Seek) -> OdfResult<Self> {
         let mut archive = ZipArchive::new(reader)?;
 
@@ -134,6 +140,10 @@ impl OdfPackage {
     /// [`crate::error::OdfWarning::UnrecognisedVersion`] if appropriate.
     ///
     /// ODF 1.3 §3 (`office:version` attribute).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OdfError`] if the XML in `content` is malformed.
     pub fn detect_version(content: &[u8]) -> OdfResult<(OdfVersion, bool)> {
         let mut reader = Reader::from_reader(content);
         reader.config_mut().trim_text(false);
@@ -141,7 +151,7 @@ impl OdfPackage {
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf) {
-                Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+                Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
                     let local = local_name_bytes(e.local_name().into_inner());
                     if local == b"document-content" || local == b"document" {
                         // Found the root element; look for office:version
@@ -154,7 +164,7 @@ impl OdfPackage {
                                 if key == b"version" {
                                     attr.unescape_value()
                                         .ok()
-                                        .map(|v| v.into_owned())
+                                        .map(std::borrow::Cow::into_owned)
                                 } else {
                                     None
                                 }
@@ -200,7 +210,7 @@ impl OdfPackage {
 fn validate_mimetype<R: Read + Seek>(
     archive: &mut ZipArchive<R>,
 ) -> OdfResult<()> {
-    if archive.len() == 0 {
+    if archive.is_empty() {
         return Err(OdfError::MissingPart { part: ENTRY_MIMETYPE.into() });
     }
 
@@ -291,16 +301,19 @@ fn collect_images<R: Read + Seek>(
 ///
 /// ODF 1.3 §3.16 (embedded objects / images).
 fn infer_media_type(path: &str) -> &'static str {
-    let lower = path.to_ascii_lowercase();
-    if lower.ends_with(".png") {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    if ext.eq_ignore_ascii_case("png") {
         "image/png"
-    } else if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+    } else if ext.eq_ignore_ascii_case("jpg") || ext.eq_ignore_ascii_case("jpeg") {
         "image/jpeg"
-    } else if lower.ends_with(".gif") {
+    } else if ext.eq_ignore_ascii_case("gif") {
         "image/gif"
-    } else if lower.ends_with(".svg") {
+    } else if ext.eq_ignore_ascii_case("svg") {
         "image/svg+xml"
-    } else if lower.ends_with(".webp") {
+    } else if ext.eq_ignore_ascii_case("webp") {
         "image/webp"
     } else {
         "application/octet-stream"

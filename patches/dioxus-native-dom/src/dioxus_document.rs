@@ -193,8 +193,26 @@ impl Document for DioxusDocument {
             }
         }
 
-        let mut writer = MutationWriter::new(&mut self.inner, &mut self.vdom_state);
-        self.vdom.render_immediate(&mut writer);
+        // Preserve focus across re-renders: capture the focused node's Dioxus ElementId
+        // (stable across re-renders) before render_immediate may rebuild the DOM tree.
+        let focus_dioxus_id = self.inner.focus_node_id
+            .and_then(|id| self.inner.get_node(id))
+            .and_then(get_dioxus_id);
+
+        {
+            let mut writer = MutationWriter::new(&mut self.inner, &mut self.vdom_state);
+            self.vdom.render_immediate(&mut writer);
+        }
+
+        // Re-apply focus if render_immediate replaced the focused blitz node with a new one
+        // (same Dioxus ElementId, different blitz node ID) or cleared focus entirely.
+        if let Some(dxid) = focus_dioxus_id {
+            if let Some(new_node_id) = self.vdom_state.try_element_to_node_id(dxid) {
+                if self.inner.focus_node_id != Some(new_node_id) {
+                    self.inner.set_focus_to(new_node_id);
+                }
+            }
+        }
 
         true
     }
