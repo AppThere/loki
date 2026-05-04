@@ -168,10 +168,10 @@ pub(crate) fn copy_map_primitive_values(
         if err.is_some() {
             return;
         }
-        if let Ok(loro_val) = v.into_value() {
-            if let Err(e) = dst.insert(k, loro_val) {
-                err = Some(MutationError::Loro(e.to_string()));
-            }
+        if let Ok(loro_val) = v.into_value()
+            && let Err(e) = dst.insert(k, loro_val)
+        {
+            err = Some(MutationError::Loro(e.to_string()));
         }
     });
     if let Some(e) = err {
