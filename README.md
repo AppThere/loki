@@ -111,17 +111,23 @@ label = "Loki"
 
 ### Build and deploy
 
+cargo-apk must be run from inside the `loki-text/` directory (or with
+`--manifest-path loki-text/Cargo.toml`). The workspace root `Cargo.toml` is a
+virtual manifest with no `[package]` section, which cargo-apk cannot use.
+
 ```bash
 # Connect a device via USB (enable USB debugging) or start an emulator
 adb devices                            # confirm device is visible
 
 # Build, install, and launch on the connected device
+cd loki-text
 cargo apk run --bin loki-text --release
 ```
 
 For debug builds (faster compile):
 
 ```bash
+cd loki-text
 cargo apk run --bin loki-text
 ```
 
