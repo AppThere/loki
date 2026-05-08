@@ -116,13 +116,13 @@ label = "Loki"
 adb devices                            # confirm device is visible
 
 # Build, install, and launch on the connected device
-cargo apk run -p loki-text --release
+cargo apk run --bin loki-text --release
 ```
 
-For debug builds (faster compile, enables `dx` hot-patch channel if wired):
+For debug builds (faster compile):
 
 ```bash
-cargo apk run -p loki-text
+cargo apk run --bin loki-text
 ```
 
 ## Running on iOS
