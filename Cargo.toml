@@ -20,3 +20,7 @@ dioxus-native-dom = { path = "patches/dioxus-native-dom" }
 # of continuing up.  Remove when upstream blitz-dom makes tabindex focus
 # on click work for non-input elements.
 blitz-dom = { path = "patches/blitz-dom" }
+
+# PATCH: forwards WindowEvent::Touch to Dioxus touch handlers.
+# Remove when blitz-shell implements touch natively. See docs/patches.md.
+blitz-shell = { path = "patches/blitz-shell" }

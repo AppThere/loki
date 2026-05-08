@@ -20,6 +20,35 @@ use crate::font_cache::FontDataCache;
 
 // ── Cursor and selection rendering types ─────────────────────────────────────
 
+// Selection-handle dimensions (in layout points).
+const HANDLE_STEM_HEIGHT: f32 = 24.0;
+const HANDLE_CIRCLE_RADIUS: f32 = 8.0;
+
+/// Whether a selection handle is at the anchor (start) or focus (end) of the
+/// selection.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SelectionHandleKind {
+    /// Anchor handle — shown at the start of the selection.
+    Anchor,
+    /// Focus handle — shown at the end of the selection.
+    Focus,
+}
+
+/// A teardrop-shaped selection handle rendered at the edge of a mobile selection.
+///
+/// Handles are only shown on iOS and Android (controlled by `#[cfg(target_os)]`
+/// in `editor.rs`). On desktop the cursor and selection highlights are
+/// sufficient — drag handles would look out of place.
+#[derive(Debug, Clone)]
+pub struct SelectionHandle {
+    /// X position of the handle tip in page-content-area coordinates (points).
+    pub tip_x: f32,
+    /// Y position of the handle tip in page-content-area coordinates (points).
+    pub tip_y: f32,
+    /// Whether this is the anchor (start) or focus (end) handle.
+    pub kind: SelectionHandleKind,
+}
+
 /// A highlight rectangle for a selection range, in paragraph-local coordinates
 /// (points).
 #[derive(Debug, Clone, Copy)]
@@ -47,6 +76,12 @@ pub struct CursorPaint {
     /// Zero or more selection highlight rects.  Empty when no range selection
     /// is active.
     pub selection_rects: Vec<SelectionRect>,
+    /// Selection handles for mobile (iOS/Android) long-press word selection.
+    ///
+    /// Populated only when a range selection is active on a touch device.
+    /// Empty on desktop — handles are guarded by `#[cfg(target_os)]` in the
+    /// caller.
+    pub selection_handles: Vec<SelectionHandle>,
     /// Global index of the paragraph block that this data belongs to.
     /// Used by the painter to look up the paragraph's page-local origin.
     pub paragraph_index: usize,
@@ -210,13 +245,14 @@ pub fn paint_single_page(
         );
 
         if let Some(cr) = cp.cursor_rect.as_ref() {
-            paint_cursor(scene, cr, &cp.selection_rects, para_offset, scale);
-        } else if !cp.selection_rects.is_empty() {
+            paint_cursor(scene, cr, &cp.selection_rects, &cp.selection_handles, para_offset, scale);
+        } else if !cp.selection_rects.is_empty() || !cp.selection_handles.is_empty() {
             paint_cursor(
                 scene,
-                // Dummy zero-size rect when only selection highlights are needed.
+                // Dummy zero-size rect when only selection highlights / handles are needed.
                 &CursorRect { x: 0.0, y: 0.0, height: 0.0 },
                 &cp.selection_rects,
+                &cp.selection_handles,
                 para_offset,
                 scale,
             );
@@ -224,7 +260,8 @@ pub fn paint_single_page(
     }
 }
 
-/// Paint a cursor line and optional selection highlight rects into the scene.
+/// Paint a cursor line, optional selection highlight rects, and optional mobile
+/// selection handles into the scene.
 ///
 /// All coordinates are in paragraph-local layout points. `offset` is the
 /// paragraph's origin in scene coordinates (content-area origin + paragraph
@@ -233,13 +270,24 @@ pub fn paint_single_page(
 ///
 /// The cursor is a 2-point-wide vertical line in the document accent colour.
 /// Each selection rect is a semi-transparent blue fill.
+/// Selection handles (teardrop: stem + circle) are drawn on mobile only —
+/// the caller controls this via `#[cfg(target_os)]` before populating
+/// `selection_handles`.
 pub fn paint_cursor(
     scene: &mut vello::Scene,
     cursor_rect: &CursorRect,
     selection_rects: &[SelectionRect],
+    selection_handles: &[SelectionHandle],
     offset: (f32, f32),
     scale: f32,
 ) {
+    let accent_brush = Brush::Solid(Color::new([
+        30.0 / 255.0,
+        100.0 / 255.0,
+        200.0 / 255.0,
+        1.0,
+    ]));
+
     // ── Selection highlight rects ─────────────────────────────────────────────
     // Painted before the cursor so the cursor line appears on top.
     let sel_brush = Brush::Solid(Color::new([
@@ -272,18 +320,49 @@ pub fn paint_cursor(
         let y = (offset.1 + cursor_rect.y) * scale;
         let h = cursor_rect.height * scale;
         let w = 2.0 * scale;
-        let cursor_brush = Brush::Solid(Color::new([
-            30.0 / 255.0,
-            100.0 / 255.0,
-            200.0 / 255.0,
-            1.0,
-        ]));
         scene.fill(
             Fill::NonZero,
             Affine::IDENTITY,
-            &cursor_brush,
+            &accent_brush,
             None,
             &vello::kurbo::Rect::new(x as f64, y as f64, (x + w) as f64, (y + h) as f64),
+        );
+    }
+
+    // ── Mobile selection handles ──────────────────────────────────────────────
+    // Each handle is a teardrop: a 2-pt-wide vertical stem descending from the
+    // selection edge, with a filled circle at the bottom.  Rendered only when
+    // the caller populates `selection_handles` (iOS/Android only).
+    for handle in selection_handles {
+        let tip_x = (offset.0 + handle.tip_x) * scale;
+        let tip_y = (offset.1 + handle.tip_y) * scale;
+        let stem_h = HANDLE_STEM_HEIGHT * scale;
+        let stem_w = 2.0 * scale;
+        let r = (HANDLE_CIRCLE_RADIUS * scale) as f64;
+
+        // Stem: 2-pt wide rectangle descending from (tip_x, tip_y).
+        scene.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            &accent_brush,
+            None,
+            &vello::kurbo::Rect::new(
+                tip_x as f64,
+                tip_y as f64,
+                (tip_x + stem_w) as f64,
+                (tip_y + stem_h) as f64,
+            ),
+        );
+
+        // Circle: centred horizontally on the stem, at the bottom.
+        let cx = (tip_x + stem_w / 2.0) as f64;
+        let cy = (tip_y + stem_h) as f64 + r;
+        scene.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            &accent_brush,
+            None,
+            &vello::kurbo::Circle::new((cx, cy), r),
         );
     }
 }

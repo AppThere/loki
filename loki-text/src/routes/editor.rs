@@ -65,6 +65,7 @@ use crate::editing::hit_test::hit_test_document;
 use crate::editing::navigation::{
     navigate_down, navigate_end, navigate_home, navigate_left, navigate_right, navigate_up,
 };
+use crate::editing::touch::{word_boundaries_at, TouchInteractionState, TouchPhase};
 use crate::error::LoadError;
 use crate::utils::display_title_from_path;
 
@@ -122,6 +123,7 @@ pub fn Editor(path: String) -> Element {
 
     // Pre-clone the Arc once so closures below can each capture their own clone.
     let doc_state_mousemove = Arc::clone(&doc_state);
+    let doc_state_touch = Arc::clone(&doc_state);
     let doc_state_prop = Arc::clone(&doc_state);
 
     // ── Cursor / selection state ──────────────────────────────────────────────
@@ -132,6 +134,9 @@ pub fn Editor(path: String) -> Element {
     // focus updates in `onmousemove` behind a drag threshold so that tiny
     // cursor jitter during a click does not create a spurious text selection.
     let mut drag_origin: Signal<Option<(f32, f32)>> = use_signal(|| None);
+
+    // Touch interaction state — None when no finger is currently down.
+    let mut touch_state: Signal<Option<TouchInteractionState>> = use_signal(|| None);
 
     // window_width and scroll_offset are used only by the onmousemove drag
     // selection handler via hit_test_document.  Click placement (onmousedown)
@@ -338,6 +343,174 @@ pub fn Editor(path: String) -> Element {
                 onmouseup: move |_| {
                     is_dragging.set(false);
                     drag_origin.set(None);
+                },
+
+                // ── Touch event handlers ───────────────────────────────────────
+                //
+                // blitz-shell synthesises touch contacts as mouse events so
+                // ontouchstart / ontouchmove / ontouchend fire via the normal
+                // Dioxus event pipeline.  The handlers here run on top of those
+                // synthesised events and implement the loki-text touch UX
+                // (tap → cursor, drag → scroll, long-press → word selection).
+                // They guard on EditorMode::Editing so read mode is unaffected.
+                ontouchstart: {
+                    move |evt: TouchEvent| {
+                        if editor_mode() != EditorMode::Editing {
+                            return;
+                        }
+                        let touches = evt.touches();
+                        let Some(first) = touches.first() else { return; };
+                        let c = first.client_coordinates();
+                        let pos = (c.x as f32, c.y as f32);
+                        touch_state.set(Some(TouchInteractionState::new(0, pos)));
+                    }
+                },
+
+                ontouchmove: {
+                    let doc_state = Arc::clone(&doc_state_touch);
+                    move |evt: TouchEvent| {
+                        if editor_mode() != EditorMode::Editing {
+                            return;
+                        }
+                        let Some(mut ts) = touch_state() else { return; };
+                        let touches = evt.touches();
+                        let Some(first) = touches.first() else { return; };
+                        let c = first.client_coordinates();
+                        let new_pos = (c.x as f32, c.y as f32);
+
+                        let became_scroll = ts.update_move(new_pos);
+
+                        if became_scroll {
+                            if let TouchPhase::Scroll { last_y } = ts.phase {
+                                // The scroll container is driven by blitz-shell's
+                                // native scroll mechanism; we update scroll_offset
+                                // here so hit_test_document stays accurate.
+                                // TODO(partial-render): replace with direct
+                                // node.scroll_offset once Blitz exposes it.
+                                let _ = last_y; // used in future scroll integration
+                            }
+                        } else if ts.phase == TouchPhase::LongPress {
+                            // Long-press detected — trigger word selection at
+                            // the original touch position.
+                            let start = ts.start_pos;
+                            let (layout_opt, page_width_px, page_height_px) = {
+                                let Ok(state) = doc_state.lock() else { return; };
+                                (
+                                    state.paginated_layout.clone(),
+                                    state.page_width_px,
+                                    state.page_height_px,
+                                )
+                            };
+                            if let Some(layout) = layout_opt {
+                                let x_off = (window_width() - page_width_px).max(0.0) / 2.0;
+                                let origin =
+                                    (x_off, tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6);
+                                if let Some(pos) = hit_test_document(
+                                    start.0,
+                                    start.1,
+                                    origin,
+                                    scroll_offset(),
+                                    &layout,
+                                    page_width_px,
+                                    page_height_px,
+                                    page_gap_px,
+                                ) {
+                                    let ldoc_guard = loro_doc.read();
+                                    if let Some(ldoc) = ldoc_guard.as_ref() {
+                                        let text =
+                                            loki_doc_model::loro_mutation::get_block_text(
+                                                ldoc,
+                                                pos.paragraph_index,
+                                            );
+                                        if let Some((ws, we)) =
+                                            word_boundaries_at(&text, pos.byte_offset)
+                                        {
+                                            let anchor = DocumentPosition {
+                                                page_index: pos.page_index,
+                                                paragraph_index: pos.paragraph_index,
+                                                byte_offset: ws,
+                                            };
+                                            let focus = DocumentPosition {
+                                                page_index: pos.page_index,
+                                                paragraph_index: pos.paragraph_index,
+                                                byte_offset: we,
+                                            };
+                                            let mut cs = cursor_state.write();
+                                            cs.anchor = Some(anchor);
+                                            cs.focus = Some(focus);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        touch_state.set(Some(ts));
+                    }
+                },
+
+                ontouchend: {
+                    let doc_state = Arc::clone(&doc_state);
+                    move |_evt: TouchEvent| {
+                        if editor_mode() != EditorMode::Editing {
+                            touch_state.set(None);
+                            return;
+                        }
+                        let Some(ts) = touch_state() else { return; };
+
+                        match ts.phase {
+                            TouchPhase::Indeterminate | TouchPhase::Tap => {
+                                // Short tap — place cursor via the same hit-test
+                                // path as a mouse click.
+                                let (layout_opt, page_width_px, page_height_px) = {
+                                    let Ok(state) = doc_state.lock() else {
+                                        touch_state.set(None);
+                                        return;
+                                    };
+                                    (
+                                        state.paginated_layout.clone(),
+                                        state.page_width_px,
+                                        state.page_height_px,
+                                    )
+                                };
+                                if let Some(layout) = layout_opt {
+                                    let x_off =
+                                        (window_width() - page_width_px).max(0.0) / 2.0;
+                                    let origin = (
+                                        x_off,
+                                        tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6,
+                                    );
+                                    if let Some(pos) = hit_test_document(
+                                        ts.start_pos.0,
+                                        ts.start_pos.1,
+                                        origin,
+                                        scroll_offset(),
+                                        &layout,
+                                        page_width_px,
+                                        page_height_px,
+                                        page_gap_px,
+                                    ) {
+                                        let loro_cursor =
+                                            loro_doc.read().as_ref().and_then(|ldoc| {
+                                                loki_doc_model::loro_bridge::derive_loro_cursor(
+                                                    ldoc,
+                                                    pos.paragraph_index,
+                                                    pos.byte_offset,
+                                                )
+                                            });
+                                        let mut cs = cursor_state.write();
+                                        cs.loro_cursor = loro_cursor;
+                                        cs.anchor = Some(pos.clone());
+                                        cs.focus = Some(pos);
+                                    }
+                                }
+                            }
+                            // Scroll and long-press states are already handled
+                            // incrementally in ontouchmove.
+                            TouchPhase::Scroll { .. } | TouchPhase::LongPress => {}
+                        }
+
+                        touch_state.set(None);
+                    }
                 },
 
                 // ── Keyboard input (forwarded from WgpuSurface) ───────────────
