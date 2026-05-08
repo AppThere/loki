@@ -54,3 +54,12 @@ fontique        = { version = "0.8", features = ["fontconfig-dlopen"] }
 loro = "1.11.1"
 # Unicode grapheme cluster segmentation for correct backspace/delete behaviour.
 unicode-segmentation = "1"
+
+[package.metadata.android]
+package = "com.appthere.loki"
+build_targets = ["aarch64-linux-android"]
+min_sdk_version = 26          # wgpu requires Vulkan, available from API 26
+target_sdk_version = 34
+
+[package.metadata.android.application]
+label = "Loki"
