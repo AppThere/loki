@@ -308,3 +308,47 @@ fn layout_assigns_header_footer_per_page() {
         );
     }
 }
+
+/// Vertical merge: the 2×3 table in the reference fixture has col 0 merged
+/// across rows 0-1.  After import, row 0 cell 0 must carry `row_span = 2`,
+/// the continuation cell must be removed from row 1, and row 2 is unmerged.
+#[test]
+fn vmerge_row_span_assigned_and_continuation_removed() {
+    let bytes = helpers::build_reference_docx();
+    let result = DocxImporter::new(DocxImportOptions::default())
+        .run(Cursor::new(bytes))
+        .expect("reference DOCX should import without error");
+
+    let all_blocks: Vec<&Block> = result.document.sections
+        .iter()
+        .flat_map(|s| s.blocks.iter())
+        .collect();
+
+    // Locate the 3-row merged table.
+    let merged_table = all_blocks.iter()
+        .filter_map(|b| if let Block::Table(t) = b { Some(t.as_ref()) } else { None })
+        .find(|t| t.bodies.iter().any(|b| b.body_rows.len() == 3))
+        .expect("3-row merged-table must be present in the document");
+
+    let body = &merged_table.bodies[0];
+
+    // Row 0: 2 cells — [Merged Cell (row_span=2), Row 1 Col 2]
+    assert_eq!(body.body_rows[0].cells.len(), 2, "row 0 should have 2 cells");
+    assert_eq!(
+        body.body_rows[0].cells[0].row_span, 2,
+        "merged cell in row 0 col 0 should have row_span = 2"
+    );
+
+    // Row 1: 1 cell — continuation removed, only col 2 remains
+    assert_eq!(
+        body.body_rows[1].cells.len(), 1,
+        "row 1 should have 1 cell after continuation removal"
+    );
+
+    // Row 2: 2 cells — unmerged
+    assert_eq!(body.body_rows[2].cells.len(), 2, "row 2 should have 2 cells");
+    assert_eq!(
+        body.body_rows[2].cells[0].row_span, 1,
+        "row 2 col 0 should have row_span = 1"
+    );
+}

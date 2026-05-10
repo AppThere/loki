@@ -474,6 +474,33 @@ fn document_xml() -> Vec<u8> {
       </w:tr>
     </w:tbl>
 
+    <!-- ── 2×3 table: col 0 rows 0-1 merged (OOXML-vmerge) ─────────── -->
+    <w:tbl>
+      <w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>
+      <w:tblGrid>
+        <w:gridCol w:w="2500"/>
+        <w:gridCol w:w="2500"/>
+      </w:tblGrid>
+      <w:tr>
+        <w:tc>
+          <w:tcPr><w:vMerge w:val="restart"/></w:tcPr>
+          <w:p><w:r><w:t>Merged Cell</w:t></w:r></w:p>
+        </w:tc>
+        <w:tc><w:p><w:r><w:t>Row 1 Col 2</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc>
+          <w:tcPr><w:vMerge/></w:tcPr>
+          <w:p><w:r><w:t></w:t></w:r></w:p>
+        </w:tc>
+        <w:tc><w:p><w:r><w:t>Row 2 Col 2</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Row 3 Col 1</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Row 3 Col 2</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+
     <!-- ── Page break → page 2 ──────────────────────────────────────── -->
     <w:p><w:r><w:br w:type="page"/></w:r></w:p>
 

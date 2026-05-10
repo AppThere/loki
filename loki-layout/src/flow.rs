@@ -628,6 +628,9 @@ fn flow_table(
         let mut row_page = state.page_number;
         let mut row_max_h = 0.0f32;
 
+        // TODO(table-layout): row_span not yet applied in layout — cells
+        // render as row_span=1. col_span is also not yet used; each cell
+        // receives an equal share of the table width.
         for (c_idx, cell) in row.cells.iter().enumerate() {
             let old_indent = state.current_indent;
             let old_width = state.content_width;
