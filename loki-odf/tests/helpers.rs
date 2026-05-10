@@ -221,6 +221,59 @@ pub fn rich_content_xml_with_styles() -> Vec<u8> {
         .to_vec()
 }
 
+/// `styles.xml` with paragraph styles for border, tab stops, and background
+/// color tests (ODF-1, ODF-2, ODF-3).
+pub fn para_props_styles_xml() -> Vec<u8> {
+    b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-styles \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" \
+        xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\">\
+      <office:automatic-styles/>\
+      <office:styles>\
+        <style:style style:name=\"BorderPara\" style:family=\"paragraph\">\
+          <style:paragraph-properties \
+            fo:border=\"1pt solid #000000\" \
+            fo:padding=\"2pt\"/>\
+        </style:style>\
+        <style:style style:name=\"TabPara\" style:family=\"paragraph\">\
+          <style:paragraph-properties>\
+            <style:tab-stops>\
+              <style:tab-stop style:position=\"2cm\" style:type=\"left\"/>\
+              <style:tab-stop style:position=\"8cm\" style:type=\"right\"/>\
+            </style:tab-stops>\
+          </style:paragraph-properties>\
+        </style:style>\
+        <style:style style:name=\"BgPara\" style:family=\"paragraph\">\
+          <style:paragraph-properties fo:background-color=\"#FFFFCC\"/>\
+        </style:style>\
+      </office:styles>\
+      <office:master-styles/>\
+      </office:document-styles>"
+        .to_vec()
+}
+
+/// `content.xml` using the styles from [`para_props_styles_xml`]:
+/// one paragraph each for border, tab stops, and background colour.
+pub fn para_props_content_xml() -> Vec<u8> {
+    b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-content \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" \
+        xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" \
+        xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\">\
+      <office:automatic-styles/>\
+      <office:body><office:text>\
+        <text:p text:style-name=\"BorderPara\">Bordered paragraph.</text:p>\
+        <text:p text:style-name=\"TabPara\">Tab stop paragraph.</text:p>\
+        <text:p text:style-name=\"BgPara\">Background colour paragraph.</text:p>\
+      </office:text></office:body>\
+      </office:document-content>"
+        .to_vec()
+}
+
 /// `content.xml` with a single paragraph and **no** `office:version`
 /// attribute — valid for ODF 1.1 documents.
 pub fn v1_1_content_xml() -> Vec<u8> {

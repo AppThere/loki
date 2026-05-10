@@ -5,7 +5,7 @@
 
 use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::Block;
-use loki_doc_model::content::table::col::{ColAlignment, ColSpec, ColWidth};
+use loki_doc_model::content::table::col::{ColAlignment, ColSpec, ColWidth, TableWidth};
 use loki_doc_model::content::table::core::{Table, TableBody, TableCaption, TableFoot, TableHead};
 use loki_doc_model::content::table::row::{Cell, CellProps, Row};
 use loki_primitives::units::Points;
@@ -50,9 +50,12 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
 
     let body = TableBody::from_rows(body_rows);
 
+    let width = map_tbl_width(t);
+
     let table = Table {
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
+        width,
         col_specs,
         head,
         bodies: vec![body],
@@ -60,6 +63,19 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
     };
 
     Block::Table(Box::new(table))
+}
+
+/// Converts `w:tblW` to [`TableWidth`].
+///
+/// COMPAT(microsoft): w:tblW @w:type="pct" uses fiftieths of a percent,
+/// not hundredths — divide by 50 to get 0.0–100.0 range.
+fn map_tbl_width(t: &DocxTableModel) -> Option<TableWidth> {
+    let w = t.tbl_pr.as_ref()?.width.as_ref()?;
+    Some(match w.w_type.as_str() {
+        "dxa" => TableWidth::Fixed(w.w as f32 / 20.0),
+        "pct" => TableWidth::Percent(w.w as f32 / 50.0),
+        _ => TableWidth::Auto, // "auto" | "nil" | unknown
+    })
 }
 
 /// Builds column specifications from `w:tblGrid` column widths.

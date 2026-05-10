@@ -94,7 +94,7 @@ pub(crate) fn read_stylesheet(
                             local_attr_val(e, b"list-style-name");
                         let auto = is_automatic || in_auto;
                         drop(e);
-                        let (para_props, text_props) =
+                        let (para_props, text_props, col_width) =
                             parse_style_props(&mut reader, b"style")?;
                         let style = OdfStyle {
                             name,
@@ -104,6 +104,7 @@ pub(crate) fn read_stylesheet(
                             list_style_name,
                             para_props,
                             text_props,
+                            col_width,
                             is_automatic: auto,
                         };
                         if auto {
@@ -119,7 +120,7 @@ pub(crate) fn read_stylesheet(
                                 .unwrap_or(""),
                         );
                         drop(e);
-                        let (para_props, text_props) =
+                        let (para_props, text_props, _col_width) =
                             parse_style_props(&mut reader, b"default-style")?;
                         sheet.default_styles.push(OdfDefaultStyle {
                             family,
@@ -196,6 +197,7 @@ pub(crate) fn read_stylesheet(
                             list_style_name,
                             para_props: None,
                             text_props: None,
+                            col_width: None,
                             is_automatic: auto,
                         };
                         if auto {
@@ -256,15 +258,18 @@ pub(crate) fn read_stylesheet(
 // ── Style property parsing ─────────────────────────────────────────────────────
 
 /// Read the children of a `style:style` or `style:default-style` element
-/// until the matching end tag, collecting `style:paragraph-properties` and
-/// `style:text-properties`.
+/// until the matching end tag, collecting `style:paragraph-properties`,
+/// `style:text-properties`, and `style:table-column-properties`.
+///
+/// Returns `(para_props, text_props, col_width)`.
 fn parse_style_props(
     reader: &mut Reader<&[u8]>,
     end_local: &[u8],
-) -> OdfResult<(Option<OdfParaProps>, Option<OdfTextProps>)> {
+) -> OdfResult<(Option<OdfParaProps>, Option<OdfTextProps>, Option<String>)> {
     let mut buf = Vec::new();
     let mut para_props: Option<OdfParaProps> = None;
     let mut text_props: Option<OdfTextProps> = None;
+    let mut col_width: Option<String> = None;
 
     loop {
         buf.clear();
@@ -285,6 +290,11 @@ fn parse_style_props(
                         skip_element(reader, b"text-properties")?;
                         text_props = Some(tp);
                     }
+                    b"table-column-properties" => {
+                        col_width = crate::xml_util::local_attr_val(e, b"column-width");
+                        drop(e);
+                        skip_element(reader, b"table-column-properties")?;
+                    }
                     _ => {
                         let local = local.clone();
                         drop(e);
@@ -300,6 +310,9 @@ fn parse_style_props(
                     }
                     b"text-properties" => {
                         text_props = Some(parse_text_props_attrs(e));
+                    }
+                    b"table-column-properties" => {
+                        col_width = crate::xml_util::local_attr_val(e, b"column-width");
                     }
                     _ => {}
                 }
@@ -320,7 +333,7 @@ fn parse_style_props(
         }
     }
 
-    Ok((para_props, text_props))
+    Ok((para_props, text_props, col_width))
 }
 
 /// Build an [`OdfParaProps`] from the attributes of a
@@ -1187,7 +1200,7 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                         let list_style_name =
                             local_attr_val(e, b"list-style-name");
                         drop(e);
-                        let (para_props, text_props) =
+                        let (para_props, text_props, col_width) =
                             parse_style_props(&mut reader, b"style")?;
                         styles.push(OdfStyle {
                             name,
@@ -1197,6 +1210,7 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                             list_style_name,
                             para_props,
                             text_props,
+                            col_width,
                             is_automatic: true,
                         });
                     }
@@ -1225,6 +1239,7 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                         list_style_name,
                         para_props: None,
                         text_props: None,
+                        col_width: None,
                         is_automatic: true,
                     });
                 }

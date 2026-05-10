@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::document::Document;
+use loki_doc_model::settings::DocumentSettings;
 use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
 use loki_doc_model::layout::page::{PageLayout, PageMargins, PageOrientation, PageSize};
 use loki_doc_model::layout::section::Section;
@@ -348,10 +349,17 @@ pub(crate) fn map_document(
     // ── 6. Metadata ────────────────────────────────────────────────────────
     let meta = map_meta(core_props);
 
+    let doc_settings = raw_settings.and_then(|s| {
+        s.default_tab_stop.map(|twips| DocumentSettings {
+            default_tab_stop_pt: twips as f32 / 20.0,
+        })
+    });
+
     let document = Document {
         meta,
         styles: catalog,
         sections,
+        settings: doc_settings,
         source: None,
     };
 

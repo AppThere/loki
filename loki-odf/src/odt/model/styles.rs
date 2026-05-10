@@ -68,6 +68,11 @@ pub(crate) struct OdfStyle {
     pub para_props: Option<OdfParaProps>,
     /// Text (character) formatting properties, if present.
     pub text_props: Option<OdfTextProps>,
+    /// `style:column-width` from `style:table-column-properties`, if present.
+    /// Raw ODF length string (e.g. `"4cm"`). Only set for
+    /// `style:family="table-column"` styles.
+    // COMPAT(odf): column width from style:table-column-properties
+    pub col_width: Option<String>,
     /// `true` for styles from `office:automatic-styles`.
     pub is_automatic: bool,
 }

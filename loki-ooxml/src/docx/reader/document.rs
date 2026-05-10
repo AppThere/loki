@@ -15,7 +15,7 @@ use crate::docx::model::paragraph::{
     DocxPPr, DocxParagraph, DocxParaChild, DocxPgMar, DocxPgSz, DocxRFonts, DocxRPr, DocxRun,
     DocxRunChild, DocxSectPr, DocxSpacing, DocxTab,
 };
-use crate::docx::model::styles::{DocxTableCell, DocxTableModel, DocxTableRow, DocxTcBorders, DocxTcPr, DocxTrPr};
+use crate::docx::model::styles::{DocxTableCell, DocxTableModel, DocxTableRow, DocxTblPr, DocxTblWidth, DocxTcBorders, DocxTcPr, DocxTrPr};
 use crate::docx::reader::util::{attr_val, local_name, parse_emu, toggle_prop};
 use crate::error::{OoxmlError, OoxmlResult};
 
@@ -771,9 +771,15 @@ fn parse_table(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTableModel> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => {
-                if local_name(e.local_name().as_ref()) == b"tr" {
-                    let row = parse_table_row(reader)?;
-                    tbl.rows.push(row);
+                match local_name(e.local_name().as_ref()) {
+                    b"tr" => {
+                        let row = parse_table_row(reader)?;
+                        tbl.rows.push(row);
+                    }
+                    b"tblPr" => {
+                        tbl.tbl_pr = Some(parse_tbl_pr(reader)?);
+                    }
+                    _ => {}
                 }
                 // tblGrid and gridCol: handled via Empty event below
             }
@@ -800,6 +806,47 @@ fn parse_table(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTableModel> {
         buf.clear();
     }
     Ok(tbl)
+}
+
+/// Parses a `w:tblPr` element. Called after Start("tblPr") is consumed.
+fn parse_tbl_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTblPr> {
+    let mut pr = DocxTblPr::default();
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Empty(ref e)) => {
+                match local_name(e.local_name().as_ref()) {
+                    b"tblW" => {
+                        if let (Some(w), Some(w_type)) = (
+                            attr_val(e, b"w").and_then(|v| v.parse::<i32>().ok()),
+                            attr_val(e, b"type"),
+                        ) {
+                            pr.width = Some(DocxTblWidth { w, w_type });
+                        }
+                    }
+                    b"tblStyle" => {
+                        pr.style_id = attr_val(e, b"val");
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::End(ref e))
+                if local_name(e.local_name().as_ref()) == b"tblPr" =>
+            {
+                break;
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(OoxmlError::Xml {
+                    part: "word/document.xml".into(),
+                    source: e,
+                });
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok(pr)
 }
 
 /// Parses a `w:tr` element. Called after Start("tr") is consumed.

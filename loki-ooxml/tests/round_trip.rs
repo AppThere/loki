@@ -172,6 +172,57 @@ fn inlines_have_field(inlines: &[Inline]) -> bool {
     })
 }
 
+/// Verify that a table with `w:tblW w:w="5000" w:type="dxa"` maps to
+/// `TableWidth::Fixed(250.0)` (5000 twips ÷ 20 = 250 pt). (OOXML-1)
+#[test]
+fn ooxml1_table_width_mapped() {
+    use loki_doc_model::content::table::TableWidth;
+
+    let bytes = helpers::build_reference_docx();
+    let result = DocxImporter::new(DocxImportOptions::default())
+        .run(Cursor::new(bytes))
+        .expect("reference DOCX should import without error");
+
+    let doc = &result.document;
+    let all_blocks: Vec<&Block> =
+        doc.sections.iter().flat_map(|s| s.blocks.iter()).collect();
+
+    let table_width = all_blocks.iter().find_map(|b| {
+        if let Block::Table(t) = b { t.width.as_ref() } else { None }
+    });
+
+    let width = table_width.expect("document must contain a table with a width (OOXML-1)");
+    match width {
+        TableWidth::Fixed(pt) => assert!(
+            (pt - 250.0).abs() < 0.5,
+            "table width should be ~250 pt (5000 twips ÷ 20), got {pt}"
+        ),
+        other => panic!("expected TableWidth::Fixed, got {other:?}"),
+    }
+}
+
+/// Verify that `w:defaultTabStop w:val="720"` (720 twips = 36 pt) is forwarded
+/// to `Document.settings.default_tab_stop_pt`. (OOXML-2)
+#[test]
+fn ooxml2_default_tab_stop_mapped() {
+    let bytes = helpers::build_reference_docx();
+    let result = DocxImporter::new(DocxImportOptions::default())
+        .run(Cursor::new(bytes))
+        .expect("reference DOCX should import without error");
+
+    let settings = result
+        .document
+        .settings
+        .as_ref()
+        .expect("document.settings must be Some when settings.xml is present (OOXML-2)");
+
+    assert!(
+        (settings.default_tab_stop_pt - 36.0).abs() < 0.5,
+        "default_tab_stop_pt should be ~36 pt (720 twips ÷ 20), got {}",
+        settings.default_tab_stop_pt
+    );
+}
+
 /// Verify that a document with two manual page breaks produces at least three
 /// layout pages (the reference DOCX has exactly two `<w:br w:type="page"/>`).
 #[test]

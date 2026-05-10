@@ -8,6 +8,22 @@
 
 use loki_primitives::units::Points;
 
+/// The overall width of a table.
+///
+/// ODF: `style:width` on `style:table-properties`.
+/// OOXML: `w:tblW` element inside `w:tblPr` (ECMA-376 §17.4.63).
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum TableWidth {
+    /// Fixed width in points.
+    Fixed(f32),
+    /// Percentage of available width (0.0–100.0).
+    Percent(f32),
+    /// Auto — expand to content or container width.
+    Auto,
+}
+
 /// The width of a table column.
 ///
 /// Modelled on pandoc's `ColWidth`. TR 29166 §7.2.4.

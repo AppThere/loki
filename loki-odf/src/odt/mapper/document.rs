@@ -27,7 +27,7 @@ use loki_doc_model::content::field::types::{CrossRefFormat, Field, FieldKind};
 use loki_doc_model::content::inline::{
     BookmarkKind, Inline, LinkTarget, NoteKind, StyledRun,
 };
-use loki_doc_model::content::table::col::{ColAlignment, ColSpec};
+use loki_doc_model::content::table::col::{ColAlignment, ColSpec, ColWidth};
 use loki_doc_model::content::table::core::{
     Table, TableBody, TableCaption, TableFoot, TableHead,
 };
@@ -77,6 +77,9 @@ pub(crate) struct OdfMappingContext<'a> {
     pub images: &'a HashMap<String, (String, Vec<u8>)>,
     /// Import options controlling heading emission, image embedding, etc.
     pub options: &'a OdtImportOptions,
+    /// Column widths from `style:table-column-properties`: style name → points.
+    /// Pre-built from the ODF stylesheet before the mapping pass.
+    pub col_style_widths: &'a HashMap<String, Points>,
     /// Non-fatal issues accumulated during mapping.
     pub warnings: Vec<OdfWarning>,
     /// Floating frames (images and text boxes that are not `as-char` anchored)
@@ -109,12 +112,25 @@ pub(crate) fn map_document(
     // ── 2. Resolve active page layout ─────────────────────────────────────────
     let page_layout = resolve_page_layout(stylesheet);
 
-    // ── 3. Map body (scoped so the &catalog borrow ends before we move it) ────
+    // ── 3. Pre-build column-width lookup from table-column styles ────────────────
+    let col_style_widths: HashMap<String, Points> = stylesheet
+        .named_styles
+        .iter()
+        .chain(stylesheet.auto_styles.iter())
+        .filter_map(|s| {
+            let width_str = s.col_width.as_deref()?;
+            let pts = parse_length(width_str)?;
+            Some((s.name.clone(), pts))
+        })
+        .collect();
+
+    // ── 4. Map body (scoped so the &catalog borrow ends before we move it) ────
     let (blocks, warnings) = {
         let mut ctx = OdfMappingContext {
             styles: &catalog,
             images,
             options,
+            col_style_widths: &col_style_widths,
             warnings: Vec::new(),
             pending_figures: Vec::new(),
         };
@@ -122,17 +138,18 @@ pub(crate) fn map_document(
         (blocks, ctx.warnings)
     };
 
-    // ── 4. Assemble section ───────────────────────────────────────────────────
+    // ── 5. Assemble section ───────────────────────────────────────────────────
     let section = Section::with_layout_and_blocks(page_layout, blocks);
 
-    // ── 5. Map metadata ───────────────────────────────────────────────────────
+    // ── 6. Map metadata ───────────────────────────────────────────────────────
     let doc_meta = meta.map(map_meta).unwrap_or_default();
 
-    // ── 6. Build document (caller sets source) ────────────────────────────────
+    // ── 7. Build document (caller sets source) ────────────────────────────────
     let document = Document {
         meta: doc_meta,
         styles: catalog,
         sections: vec![section],
+        settings: None,
         source: None,
     };
 
@@ -462,13 +479,21 @@ fn build_list_attributes(
 // ── Tables ─────────────────────────────────────────────────────────────────────
 
 fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Block {
-    // Expand repeated column definitions
+    // COMPAT(odf): column width from style:table-column-properties
+    // Expand repeated column definitions, resolving fixed widths from style lookup.
     let col_specs: Vec<ColSpec> = table
         .col_defs
         .iter()
         .flat_map(|def| {
             let count = def.columns_repeated.max(1) as usize;
-            std::iter::repeat_with(|| ColSpec::proportional(1.0)).take(count)
+            let width = def
+                .style_name
+                .as_deref()
+                .and_then(|name| ctx.col_style_widths.get(name))
+                .map(|&pts| ColWidth::Fixed(pts))
+                .unwrap_or(ColWidth::Proportional(1.0));
+            let spec = ColSpec { alignment: ColAlignment::Default, width };
+            std::iter::repeat(spec).take(count)
         })
         .collect();
 
@@ -479,7 +504,12 @@ fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Block {
             let cells: Vec<Cell> = odf_row
                 .cells
                 .iter()
-                .map(|odf_cell| {
+                .filter_map(|odf_cell| {
+                    // TODO(odf-rowspan): covered cells suppressed but row_span
+                    // not yet propagated to the spanning cell
+                    if odf_cell.is_covered {
+                        return None;
+                    }
                     let blocks: Vec<Block> = odf_cell
                         .paragraphs
                         .iter()
@@ -490,14 +520,14 @@ fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Block {
                             std::iter::once(block).chain(figs)
                         })
                         .collect();
-                    Cell {
+                    Some(Cell {
                         attr: NodeAttr::default(),
                         alignment: ColAlignment::Default,
                         row_span: odf_cell.row_span,
                         col_span: odf_cell.col_span,
                         blocks,
                         props: CellProps::default(),
-                    }
+                    })
                 })
                 .collect();
             Row::new(cells)
@@ -507,6 +537,7 @@ fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Block {
     Block::Table(Box::new(Table {
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
+        width: None,
         col_specs,
         head: TableHead::empty(),
         bodies: vec![TableBody::from_rows(body_rows)],

@@ -176,6 +176,87 @@ fn gap2_fo_font_family_mapped_to_char_props() {
     );
 }
 
+/// ODF-1 — paragraph border: `fo:border="1pt solid #000000"` on a paragraph
+/// style reaches `ParaProps.border_top` (and all four sides).
+#[test]
+fn odf1_paragraph_border_mapped() {
+    let content = helpers::para_props_content_xml();
+    let styles = helpers::para_props_styles_xml();
+    let zip = helpers::build_odt_zip(&content, &styles, None);
+
+    let result = OdtImporter::new(OdtImportOptions::default())
+        .run(Cursor::new(zip))
+        .expect("import should succeed");
+
+    use loki_doc_model::style::catalog::StyleId;
+    let catalog = &result.document.styles;
+    let border_style = catalog
+        .paragraph_styles
+        .get(&StyleId::new("BorderPara"))
+        .expect("catalog must contain 'BorderPara' paragraph style");
+
+    assert!(
+        border_style.para_props.border_top.is_some(),
+        "BorderPara must have border_top set (ODF-1)"
+    );
+}
+
+/// ODF-2 — tab stops: two tab stops on a paragraph style reach
+/// `ParaProps.tab_stops` with `len >= 2`.
+#[test]
+fn odf2_paragraph_tab_stops_mapped() {
+    let content = helpers::para_props_content_xml();
+    let styles = helpers::para_props_styles_xml();
+    let zip = helpers::build_odt_zip(&content, &styles, None);
+
+    let result = OdtImporter::new(OdtImportOptions::default())
+        .run(Cursor::new(zip))
+        .expect("import should succeed");
+
+    use loki_doc_model::style::catalog::StyleId;
+    let catalog = &result.document.styles;
+    let tab_style = catalog
+        .paragraph_styles
+        .get(&StyleId::new("TabPara"))
+        .expect("catalog must contain 'TabPara' paragraph style");
+
+    let stops = tab_style
+        .para_props
+        .tab_stops
+        .as_ref()
+        .expect("TabPara must have tab_stops set (ODF-2)");
+    assert!(
+        stops.len() >= 2,
+        "TabPara must have at least 2 tab stops, got {}",
+        stops.len()
+    );
+}
+
+/// ODF-3 — background colour: `fo:background-color="#FFFFCC"` on a paragraph
+/// style reaches `ParaProps.background_color`.
+#[test]
+fn odf3_paragraph_background_color_mapped() {
+    let content = helpers::para_props_content_xml();
+    let styles = helpers::para_props_styles_xml();
+    let zip = helpers::build_odt_zip(&content, &styles, None);
+
+    let result = OdtImporter::new(OdtImportOptions::default())
+        .run(Cursor::new(zip))
+        .expect("import should succeed");
+
+    use loki_doc_model::style::catalog::StyleId;
+    let catalog = &result.document.styles;
+    let bg_style = catalog
+        .paragraph_styles
+        .get(&StyleId::new("BgPara"))
+        .expect("catalog must contain 'BgPara' paragraph style");
+
+    assert!(
+        bg_style.para_props.background_color.is_some(),
+        "BgPara must have background_color set (ODF-3)"
+    );
+}
+
 /// Gap #5 — indentation: `fo:margin-left` on automatic style reaches `ParaProps`.
 ///
 /// The automatic style `"P1"` has `fo:margin-left="1cm"` ≈ 28.35 pt.

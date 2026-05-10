@@ -34,6 +34,8 @@ fn content_types_xml() -> Vec<u8> {
     ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>
   <Override PartName="/word/footnotes.xml"
     ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/>
+  <Override PartName="/word/settings.xml"
+    ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>
   <Override PartName="/word/header1.xml"
     ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>
   <Override PartName="/word/header2.xml"
@@ -85,6 +87,9 @@ fn doc_rels_xml() -> Vec<u8> {
   <Relationship Id="rId8"
     Type="{NS_R}/footer"
     Target="footer2.xml"/>
+  <Relationship Id="rId9"
+    Type="{NS_R}/settings"
+    Target="settings.xml"/>
 </Relationships>"#
     ).into_bytes()
 }
@@ -184,6 +189,15 @@ fn footer_first_xml() -> Vec<u8> {
 <w:ftr xmlns:w="{NS_W}">
   <w:p><w:r><w:t>First Page Footer</w:t></w:r></w:p>
 </w:ftr>"#
+    ).into_bytes()
+}
+
+fn settings_xml() -> Vec<u8> {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:settings xmlns:w="{NS_W}">
+  <w:defaultTabStop w:val="720"/>
+</w:settings>"#
     ).into_bytes()
 }
 
@@ -445,6 +459,21 @@ fn document_xml() -> Vec<u8> {
       <w:r><w:t>Column C</w:t></w:r>
     </w:p>
 
+    <!-- ── Table with explicit width 5000 dxa = 250 pt (OOXML-1) ──── -->
+    <w:tbl>
+      <w:tblPr>
+        <w:tblW w:w="5000" w:type="dxa"/>
+      </w:tblPr>
+      <w:tblGrid>
+        <w:gridCol w:w="2500"/>
+        <w:gridCol w:w="2500"/>
+      </w:tblGrid>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Cell A1</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Cell A2</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+
     <!-- ── Page break → page 2 ──────────────────────────────────────── -->
     <w:p><w:r><w:br w:type="page"/></w:r></w:p>
 
@@ -514,6 +543,9 @@ pub fn build_reference_docx() -> Vec<u8> {
 
     zip.start_file("word/footnotes.xml", d).unwrap();
     zip.write_all(&footnotes_xml()).unwrap();
+
+    zip.start_file("word/settings.xml", d).unwrap();
+    zip.write_all(&settings_xml()).unwrap();
 
     zip.start_file("word/document.xml", d).unwrap();
     zip.write_all(&document_xml()).unwrap();

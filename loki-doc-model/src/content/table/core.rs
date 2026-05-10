@@ -9,7 +9,7 @@
 
 use crate::content::attr::NodeAttr;
 use crate::content::inline::Inline;
-use crate::content::table::col::ColSpec;
+use crate::content::table::col::{ColSpec, TableWidth};
 use crate::content::table::row::Row;
 
 /// The caption of a table.
@@ -129,6 +129,9 @@ pub struct Table {
     pub attr: NodeAttr,
     /// The table caption.
     pub caption: TableCaption,
+    /// Overall table width. `None` means the renderer decides.
+    /// ODF: `style:width` on table style; OOXML: `w:tblW`.
+    pub width: Option<TableWidth>,
     /// Column specifications, one per column in the table grid.
     pub col_specs: Vec<ColSpec>,
     /// The header row group.
@@ -166,6 +169,7 @@ mod tests {
         let table = Table {
             attr: NodeAttr::default(),
             caption: TableCaption::default(),
+            width: None,
             col_specs: cols,
             head: TableHead::empty(),
             bodies: vec![body],

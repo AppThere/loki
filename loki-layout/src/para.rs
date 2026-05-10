@@ -443,6 +443,8 @@ impl ParagraphLayout {
 
 // ── Tab stop helpers (gap #7) ─────────────────────────────────────────────────
 
+// TODO(tab-default): use Document.settings.default_tab_stop_pt once
+// DocumentSettings is threaded through layout_document.
 /// Default tab stop interval: 0.5 inch = 36 pt = 720 twips (Word default).
 const DEFAULT_TAB_INTERVAL: f32 = 36.0;
 
