@@ -549,14 +549,44 @@ pub fn layout_paragraph(
     preserve_for_editing: bool,
 ) -> ParagraphLayout {
     if text_content.is_empty() {
+        if !preserve_for_editing {
+            return ParagraphLayout {
+                height: 0.0,
+                width: 0.0,
+                items: vec![],
+                first_baseline: 0.0,
+                last_baseline: 0.0,
+                line_boundaries: vec![],
+                parley_layout: None,
+            };
+        }
+        // Build a phantom single-space layout so cursor_rect can return a
+        // properly-sized caret for empty paragraphs.  The space forces Parley
+        // to produce one line with the paragraph's resolved font metrics.
+        // height/line_boundaries are left at zero so empty paragraphs do not
+        // affect vertical flow — they remain un-clickable but navigable.
+        let mut builder = resources.layout_cx.ranged_builder(
+            &mut resources.font_cx,
+            " ",
+            display_scale,
+            true,
+        );
+        push_para_styles(&mut builder, para_props, &[]);
+        let mut phantom = builder.build(" ");
+        phantom.break_all_lines(Some(available_width));
+        let first_baseline = phantom
+            .lines()
+            .next()
+            .map(|l| l.metrics().baseline as f32)
+            .unwrap_or(0.0);
         return ParagraphLayout {
             height: 0.0,
             width: 0.0,
             items: vec![],
-            first_baseline: 0.0,
-            last_baseline: 0.0,
+            first_baseline,
+            last_baseline: first_baseline,
             line_boundaries: vec![],
-            parley_layout: None,
+            parley_layout: Some(Arc::new(phantom)),
         };
     }
 
