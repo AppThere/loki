@@ -23,8 +23,8 @@ use crate::odt::model::list_styles::{
 use crate::odt::model::paragraph::OdfParagraph;
 use crate::odt::reader::document::read_paragraph;
 use crate::odt::model::styles::{
-    OdfDefaultStyle, OdfParaProps, OdfStyle, OdfStyleFamily, OdfStylesheet,
-    OdfTabStop, OdfTextProps,
+    OdfCellProps, OdfDefaultStyle, OdfParaProps, OdfStyle, OdfStyleFamily,
+    OdfStylesheet, OdfTabStop, OdfTextProps,
 };
 use crate::xml_util::local_attr_val;
 
@@ -100,7 +100,7 @@ pub(crate) fn read_stylesheet(
                             local_attr_val(e, b"master-page-name");
                         let auto = is_automatic || in_auto;
                         drop(e);
-                        let (para_props, text_props, col_width) =
+                        let (para_props, text_props, col_width, cell_props) =
                             parse_style_props(&mut reader, b"style")?;
                         let style = OdfStyle {
                             name,
@@ -111,6 +111,7 @@ pub(crate) fn read_stylesheet(
                             para_props,
                             text_props,
                             col_width,
+                            cell_props,
                             is_automatic: auto,
                             master_page_name,
                         };
@@ -127,7 +128,7 @@ pub(crate) fn read_stylesheet(
                                 .unwrap_or(""),
                         );
                         drop(e);
-                        let (para_props, text_props, _col_width) =
+                        let (para_props, text_props, _col_width, _cell_props) =
                             parse_style_props(&mut reader, b"default-style")?;
                         sheet.default_styles.push(OdfDefaultStyle {
                             family,
@@ -207,6 +208,7 @@ pub(crate) fn read_stylesheet(
                             para_props: None,
                             text_props: None,
                             col_width: None,
+                            cell_props: None,
                             is_automatic: auto,
                             master_page_name,
                         };
@@ -273,17 +275,19 @@ pub(crate) fn read_stylesheet(
 
 /// Read the children of a `style:style` or `style:default-style` element
 /// until the matching end tag, collecting `style:paragraph-properties`,
-/// `style:text-properties`, and `style:table-column-properties`.
+/// `style:text-properties`, `style:table-column-properties`, and
+/// `style:table-cell-properties`.
 ///
-/// Returns `(para_props, text_props, col_width)`.
+/// Returns `(para_props, text_props, col_width, cell_props)`.
 fn parse_style_props(
     reader: &mut Reader<&[u8]>,
     end_local: &[u8],
-) -> OdfResult<(Option<OdfParaProps>, Option<OdfTextProps>, Option<String>)> {
+) -> OdfResult<(Option<OdfParaProps>, Option<OdfTextProps>, Option<String>, Option<OdfCellProps>)> {
     let mut buf = Vec::new();
     let mut para_props: Option<OdfParaProps> = None;
     let mut text_props: Option<OdfTextProps> = None;
     let mut col_width: Option<String> = None;
+    let mut cell_props: Option<OdfCellProps> = None;
 
     loop {
         buf.clear();
@@ -309,6 +313,15 @@ fn parse_style_props(
                         drop(e);
                         skip_element(reader, b"table-column-properties")?;
                     }
+                    // COMPAT(odf): style:table-cell-properties may appear as
+                    // either a self-closing element (Empty event) or with child
+                    // elements (Start/End). Most producers use the self-closing
+                    // form, but handle the Start form for robustness.
+                    b"table-cell-properties" => {
+                        cell_props = Some(parse_cell_props_element(e));
+                        drop(e);
+                        skip_element(reader, b"table-cell-properties")?;
+                    }
                     _ => {
                         let local = local.clone();
                         drop(e);
@@ -327,6 +340,9 @@ fn parse_style_props(
                     }
                     b"table-column-properties" => {
                         col_width = crate::xml_util::local_attr_val(e, b"column-width");
+                    }
+                    b"table-cell-properties" => {
+                        cell_props = Some(parse_cell_props_element(e));
                     }
                     _ => {}
                 }
@@ -347,7 +363,47 @@ fn parse_style_props(
         }
     }
 
-    Ok((para_props, text_props, col_width))
+    Ok((para_props, text_props, col_width, cell_props))
+}
+
+/// Build an [`OdfCellProps`] from the attributes of a
+/// `style:table-cell-properties` element.
+///
+/// ODF shorthand `fo:padding` sets all four edges; individual edge attributes
+/// (`fo:padding-top` etc.) take precedence over the shorthand.
+/// Same logic applies to `fo:border` vs per-edge border attributes.
+fn parse_cell_props_element(e: &quick_xml::events::BytesStart<'_>) -> OdfCellProps {
+    // Apply fo:padding shorthand to all edges first.
+    let padding_all = local_attr_val(e, b"padding");
+    let mut props = OdfCellProps {
+        padding_top:    padding_all.clone(),
+        padding_bottom: padding_all.clone(),
+        padding_left:   padding_all.clone(),
+        padding_right:  padding_all,
+        vertical_align:   local_attr_val(e, b"vertical-align"),
+        writing_mode:     local_attr_val(e, b"writing-mode"),
+        background_color: local_attr_val(e, b"background-color"),
+        ..Default::default()
+    };
+    // Per-edge padding overrides shorthand.
+    if let Some(v) = local_attr_val(e, b"padding-top")    { props.padding_top    = Some(v); }
+    if let Some(v) = local_attr_val(e, b"padding-bottom") { props.padding_bottom = Some(v); }
+    if let Some(v) = local_attr_val(e, b"padding-left")   { props.padding_left   = Some(v); }
+    if let Some(v) = local_attr_val(e, b"padding-right")  { props.padding_right  = Some(v); }
+
+    // Apply fo:border shorthand to all edges first.
+    let border_all = local_attr_val(e, b"border");
+    props.border_top    = border_all.clone();
+    props.border_bottom = border_all.clone();
+    props.border_left   = border_all.clone();
+    props.border_right  = border_all;
+    // Per-edge border overrides shorthand.
+    if let Some(v) = local_attr_val(e, b"border-top")    { props.border_top    = Some(v); }
+    if let Some(v) = local_attr_val(e, b"border-bottom") { props.border_bottom = Some(v); }
+    if let Some(v) = local_attr_val(e, b"border-left")   { props.border_left   = Some(v); }
+    if let Some(v) = local_attr_val(e, b"border-right")  { props.border_right  = Some(v); }
+
+    props
 }
 
 /// Build an [`OdfParaProps`] from the attributes of a
@@ -1176,7 +1232,7 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                         let master_page_name =
                             local_attr_val(e, b"master-page-name");
                         drop(e);
-                        let (para_props, text_props, col_width) =
+                        let (para_props, text_props, col_width, cell_props) =
                             parse_style_props(&mut reader, b"style")?;
                         styles.push(OdfStyle {
                             name,
@@ -1187,6 +1243,7 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                             para_props,
                             text_props,
                             col_width,
+                            cell_props,
                             is_automatic: true,
                             master_page_name,
                         });
@@ -1219,6 +1276,7 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                         para_props: None,
                         text_props: None,
                         col_width: None,
+                        cell_props: None,
                         is_automatic: true,
                         master_page_name,
                     });

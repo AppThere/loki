@@ -424,3 +424,82 @@ pub fn hf_content_xml() -> Vec<u8> {
       </office:document-content>"
         .to_vec()
 }
+
+/// `styles.xml` for the cell-properties fixture.
+///
+/// Defines a single A4 page layout, a master page, and a `StyledCell`
+/// table-cell style carrying padding, vertical-align, background-color,
+/// and border shorthand.
+pub fn cell_props_styles_xml() -> Vec<u8> {
+    b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-styles \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" \
+        xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\">\
+      <office:automatic-styles>\
+        <style:page-layout style:name=\"pm1\">\
+          <style:page-layout-properties \
+            fo:page-width=\"21cm\" fo:page-height=\"29.7cm\" \
+            fo:margin-top=\"2.54cm\" fo:margin-bottom=\"2.54cm\" \
+            fo:margin-left=\"3.17cm\" fo:margin-right=\"3.17cm\"/>\
+        </style:page-layout>\
+      </office:automatic-styles>\
+      <office:styles>\
+        <style:style style:name=\"StyledCell\" style:family=\"table-cell\">\
+          <style:table-cell-properties \
+            fo:padding=\"0.2cm\" \
+            style:vertical-align=\"middle\" \
+            fo:background-color=\"#FFFF00\" \
+            fo:border=\"0.06pt solid #000000\"/>\
+        </style:style>\
+        <style:style style:name=\"BottomCell\" style:family=\"table-cell\">\
+          <style:table-cell-properties \
+            fo:padding-top=\"0.1cm\" fo:padding-bottom=\"0.3cm\" \
+            fo:padding-left=\"0.2cm\" fo:padding-right=\"0.2cm\" \
+            style:vertical-align=\"bottom\"/>\
+        </style:style>\
+      </office:styles>\
+      <office:master-styles>\
+        <style:master-page style:name=\"Standard\" \
+          style:page-layout-name=\"pm1\"/>\
+      </office:master-styles>\
+      </office:document-styles>"
+        .to_vec()
+}
+
+/// `content.xml` for the cell-properties fixture.
+///
+/// A single table with two cells: the first references `StyledCell`
+/// (shorthand padding, middle alignment, yellow background, black border)
+/// and the second references `BottomCell` (per-edge padding, bottom alignment).
+pub fn cell_props_content_xml() -> Vec<u8> {
+    b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-content \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" \
+        xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\" \
+        xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\">\
+      <office:automatic-styles/>\
+      <office:body><office:text>\
+        <table:table table:name=\"CellPropsTable\">\
+          <table:table-column/>\
+          <table:table-column/>\
+          <table:table-row>\
+            <table:table-cell table:style-name=\"StyledCell\" \
+              office:value-type=\"string\" \
+              xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\">\
+              <text:p>Styled Cell</text:p>\
+            </table:table-cell>\
+            <table:table-cell table:style-name=\"BottomCell\" \
+              office:value-type=\"string\" \
+              xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\">\
+              <text:p>Bottom Cell</text:p>\
+            </table:table-cell>\
+          </table:table-row>\
+        </table:table>\
+      </office:text></office:body>\
+      </office:document-content>"
+        .to_vec()
+}

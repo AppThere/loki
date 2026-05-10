@@ -73,6 +73,8 @@ pub(crate) struct OdfStyle {
     /// `style:family="table-column"` styles.
     // COMPAT(odf): column width from style:table-column-properties
     pub col_width: Option<String>,
+    /// Properties for `style:family="table-cell"` styles.
+    pub cell_props: Option<OdfCellProps>,
     /// `true` for styles from `office:automatic-styles`.
     pub is_automatic: bool,
     /// `style:master-page-name` — for paragraph styles, the master page this
@@ -229,4 +231,37 @@ pub(crate) struct OdfTextProps {
     pub font_size_complex: Option<String>,
     /// `style:font-name-complex` — font name for complex scripts.
     pub font_name_complex: Option<String>,
+}
+
+/// Formatting properties from `style:table-cell-properties`.
+///
+/// All length and colour values are stored as raw ODF attribute strings so
+/// they can be parsed lazily during mapping. ODF 1.3 §17.18.
+// COMPAT(odf): style:table-cell-properties may appear as a self-closing
+// element (Empty event) or with child elements (Start/End). Most producers
+// use the self-closing form with all properties as attributes.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct OdfCellProps {
+    /// `fo:padding-top` or shorthand `fo:padding`.
+    pub padding_top: Option<String>,
+    /// `fo:padding-bottom` or shorthand `fo:padding`.
+    pub padding_bottom: Option<String>,
+    /// `fo:padding-left` or shorthand `fo:padding`.
+    pub padding_left: Option<String>,
+    /// `fo:padding-right` or shorthand `fo:padding`.
+    pub padding_right: Option<String>,
+    /// `style:vertical-align` — `"top"`, `"middle"`, `"bottom"`, `"automatic"`.
+    pub vertical_align: Option<String>,
+    /// `style:writing-mode` — `"lr-tb"`, `"tb-rl"`, `"tb-lr"`, `"bt-lr"`, etc.
+    pub writing_mode: Option<String>,
+    /// `fo:background-color` — hex colour e.g. `"#FFFF00"` or `"transparent"`.
+    pub background_color: Option<String>,
+    /// `fo:border-top` or shorthand `fo:border`.
+    pub border_top: Option<String>,
+    /// `fo:border-bottom` or shorthand `fo:border`.
+    pub border_bottom: Option<String>,
+    /// `fo:border-left` or shorthand `fo:border`.
+    pub border_left: Option<String>,
+    /// `fo:border-right` or shorthand `fo:border`.
+    pub border_right: Option<String>,
 }

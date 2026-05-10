@@ -142,6 +142,7 @@ mod tests {
             para_props: None,
             text_props: None,
             col_width: None,
+            cell_props: None,
             is_automatic: is_auto,
             master_page_name: None,
         }
@@ -160,6 +161,7 @@ mod tests {
                 ..Default::default()
             }),
             col_width: None,
+            cell_props: None,
             is_automatic: false,
             master_page_name: None,
         }
@@ -246,6 +248,7 @@ mod tests {
                 para_props: None,
                 text_props: None,
                 col_width: None,
+                cell_props: None,
                 is_automatic: false,
                 master_page_name: None,
             }],

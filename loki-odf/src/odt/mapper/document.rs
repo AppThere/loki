@@ -57,7 +57,8 @@ use crate::odt::model::notes::{OdfNote, OdfNoteClass};
 use crate::odt::model::paragraph::{
     OdfHyperlink, OdfParagraph, OdfParagraphChild, OdfSpan,
 };
-use crate::odt::model::styles::{OdfStyle, OdfStylesheet};
+use crate::odt::mapper::props::map_cell_props;
+use crate::odt::model::styles::{OdfCellProps, OdfStyle, OdfStylesheet};
 use crate::odt::model::tables::OdfTable;
 use crate::xml_util::parse_length;
 
@@ -81,6 +82,9 @@ pub(crate) struct OdfMappingContext<'a> {
     /// Column widths from `style:table-column-properties`: style name → points.
     /// Pre-built from the ODF stylesheet before the mapping pass.
     pub col_style_widths: &'a HashMap<String, Points>,
+    /// Cell properties from `style:table-cell-properties`: style name → props.
+    /// Pre-built from the ODF stylesheet before the mapping pass.
+    pub cell_style_props: &'a HashMap<String, OdfCellProps>,
     /// Non-fatal issues accumulated during mapping.
     pub warnings: Vec<OdfWarning>,
     /// Floating frames (images and text boxes that are not `as-char` anchored)
@@ -122,6 +126,14 @@ pub(crate) fn map_document(
         })
         .collect();
 
+    // ── 2b. Pre-build cell-style lookup from table-cell styles ───────────────
+    let cell_style_props: HashMap<String, OdfCellProps> = stylesheet
+        .named_styles
+        .iter()
+        .chain(stylesheet.auto_styles.iter())
+        .filter_map(|s| Some((s.name.clone(), s.cell_props.clone()?)))
+        .collect();
+
     // ── 3. Build style lookup for master page resolution ─────────────────────
     let all_styles: HashMap<&str, &OdfStyle> = stylesheet
         .named_styles
@@ -145,6 +157,7 @@ pub(crate) fn map_document(
             images,
             options,
             col_style_widths: &col_style_widths,
+            cell_style_props: &cell_style_props,
             warnings: Vec::new(),
             pending_figures: Vec::new(),
         };
@@ -577,13 +590,19 @@ fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Block {
                             std::iter::once(block).chain(figs)
                         })
                         .collect();
+                    // NOTE: ODF cell properties are mapped to the same CellProps
+                    // type as OOXML. The layout engine applies them identically.
+                    let props = odf_cell.style_name.as_deref()
+                        .and_then(|n| ctx.cell_style_props.get(n))
+                        .map(map_cell_props)
+                        .unwrap_or_default();
                     Some(Cell {
                         attr: NodeAttr::default(),
                         alignment: ColAlignment::Default,
                         row_span: odf_cell.row_span,
                         col_span: odf_cell.col_span,
                         blocks,
-                        props: CellProps::default(),
+                        props,
                     })
                 })
                 .collect();
@@ -1011,6 +1030,7 @@ mod tests {
             para_props: None,
             text_props: None,
             col_width: None,
+            cell_props: None,
             is_automatic: false,
             master_page_name: mpn.map(String::from),
         }

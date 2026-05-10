@@ -498,3 +498,104 @@ fn single_master_page_no_spurious_sections() {
         "single-master document must produce exactly one section"
     );
 }
+
+/// ODF cell properties (padding, vertical-align, background-color, border)
+/// are parsed from `style:table-cell-properties` and mapped to `CellProps`.
+#[test]
+fn odf_cell_props_mapped() {
+    use loki_doc_model::content::table::row::CellVerticalAlign;
+
+    let content = helpers::cell_props_content_xml();
+    let styles = helpers::cell_props_styles_xml();
+    let zip = helpers::build_odt_zip(&content, &styles, None);
+
+    let result = OdtImporter::new(OdtImportOptions::default())
+        .run(Cursor::new(zip))
+        .expect("cell-props fixture should import without error");
+
+    let all_blocks: Vec<&Block> = result.document.sections
+        .iter()
+        .flat_map(|s| s.blocks.iter())
+        .collect();
+
+    let table = all_blocks
+        .iter()
+        .find_map(|b| if let Block::Table(t) = b { Some(t.as_ref()) } else { None })
+        .expect("table should be present");
+
+    let row = &table.bodies[0].body_rows[0];
+    assert_eq!(row.cells.len(), 2, "table should have 2 cells");
+
+    // ── Cell 0: StyledCell ──────────────────────────────────────────────────
+    // fo:padding="0.2cm" → all four edges ≈ 5.67pt
+    let c0 = &row.cells[0];
+    let pad_top = c0.props.padding_top
+        .expect("cell 0 should have padding_top")
+        .value() as f32;
+    assert!(
+        (pad_top - 5.67).abs() < PT_TOLERANCE,
+        "padding_top should be ~5.67pt (0.2cm), got {pad_top:.3}"
+    );
+    let pad_bottom = c0.props.padding_bottom
+        .expect("cell 0 should have padding_bottom")
+        .value() as f32;
+    assert!(
+        (pad_bottom - 5.67).abs() < PT_TOLERANCE,
+        "padding_bottom should be ~5.67pt (0.2cm), got {pad_bottom:.3}"
+    );
+    let pad_left = c0.props.padding_left
+        .expect("cell 0 should have padding_left")
+        .value() as f32;
+    assert!(
+        (pad_left - 5.67).abs() < PT_TOLERANCE,
+        "padding_left should be ~5.67pt (0.2cm), got {pad_left:.3}"
+    );
+    assert_eq!(
+        c0.props.vertical_align,
+        Some(CellVerticalAlign::Middle),
+        "style:vertical-align=\"middle\" should map to Middle"
+    );
+    assert!(
+        c0.props.background_color.is_some(),
+        "fo:background-color=\"#FFFF00\" should be mapped"
+    );
+    assert!(
+        c0.props.border_top.is_some(),
+        "fo:border shorthand should produce border_top"
+    );
+    assert!(
+        c0.props.border_bottom.is_some(),
+        "fo:border shorthand should produce border_bottom"
+    );
+
+    // ── Cell 1: BottomCell ──────────────────────────────────────────────────
+    // fo:padding-top="0.1cm" ≈ 2.83pt, fo:padding-bottom="0.3cm" ≈ 8.50pt
+    let c1 = &row.cells[1];
+    let c1_pad_top = c1.props.padding_top
+        .expect("cell 1 should have padding_top")
+        .value() as f32;
+    assert!(
+        (c1_pad_top - 2.83).abs() < PT_TOLERANCE,
+        "cell 1 padding_top should be ~2.83pt (0.1cm), got {c1_pad_top:.3}"
+    );
+    let c1_pad_bottom = c1.props.padding_bottom
+        .expect("cell 1 should have padding_bottom")
+        .value() as f32;
+    assert!(
+        (c1_pad_bottom - 8.50).abs() < PT_TOLERANCE,
+        "cell 1 padding_bottom should be ~8.50pt (0.3cm), got {c1_pad_bottom:.3}"
+    );
+    assert_eq!(
+        c1.props.vertical_align,
+        Some(CellVerticalAlign::Bottom),
+        "style:vertical-align=\"bottom\" should map to Bottom"
+    );
+    assert!(
+        c1.props.background_color.is_none(),
+        "cell 1 should have no background color"
+    );
+    assert!(
+        c1.props.border_top.is_none(),
+        "cell 1 should have no border"
+    );
+}
