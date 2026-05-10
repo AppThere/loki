@@ -1,0 +1,29 @@
+# Dioxus CLI configuration for loki-text.
+#
+# This file configures `dx` for the loki-text binary package. Run all `dx`
+# commands from the workspace root with `--package loki-text`, or from
+# inside the loki-text/ directory.
+#
+# IMPORTANT — platform notes:
+#
+#   loki-text uses `features = ["native"]` (the Blitz/wgpu GPU renderer).
+#   `dx serve --platform android` activates the `mobile` feature instead,
+#   which is the WebView renderer and requires dioxus-desktop ≥ 0.7.4
+#   (not yet published as a stable crate as of 2026-05-08).
+#
+#   For Android/iOS with the Blitz renderer, use cargo-apk or xbuild
+#   instead of dx — see docs/mobile-build.md (to be added).
+#   For desktop native testing, use: dx serve --platform native
+
+[application]
+name = "loki-text"
+
+[bundle]
+# Reverse-domain bundle identifier used for APK/IPA packaging.
+identifier = "com.appthere.loki"
+publisher = "AppThere"
+
+[android]
+# wgpu requires Vulkan, available from Android API 26 (Android 8.0 Oreo).
+# Devices below API 26 cannot run the Blitz/wgpu render pipeline.
+min_sdk_version = 26

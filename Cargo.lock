@@ -803,8 +803,6 @@ dependencies = [
 [[package]]
 name = "blitz-shell"
 version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61ecda230035f39b13383f08e0cfc7159c92d194650ac8d57871a207ea0e52b7"
 dependencies = [
  "accesskit",
  "accesskit_winit",

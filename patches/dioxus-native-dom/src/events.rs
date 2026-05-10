@@ -7,9 +7,9 @@ use dioxus_html::{
     },
     AnimationData, CancelData, ClipboardData, CompositionData, DragData, FocusData, FormData,
     FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData,
-    HtmlEventConverter, ImageData, KeyboardData, MediaData, MountedData, MouseData,
-    PlatformEventData, PointerData, ResizeData, ScrollData, SelectionData, ToggleData, TouchData,
-    TransitionData, VisibleData, WheelData,
+    HasTouchData, HasTouchPointData, HtmlEventConverter, ImageData, KeyboardData, MediaData,
+    MountedData, MouseData, PlatformEventData, PointerData, ResizeData, ScrollData, SelectionData,
+    ToggleData, TouchData, TouchPoint, TransitionData, VisibleData, WheelData,
 };
 use keyboard_types::{Code, Key, Location, Modifiers};
 use std::any::Any;
@@ -85,8 +85,38 @@ impl HtmlEventConverter for NativeConverter {
         unimplemented!("todo: convert_toggle_data in dioxus-native. requires support in blitz")
     }
 
-    fn convert_touch_data(&self, _event: &PlatformEventData) -> TouchData {
-        unimplemented!("todo: convert_touch_data in dioxus-native. requires support in blitz")
+    fn convert_touch_data(&self, event: &PlatformEventData) -> TouchData {
+        // Touch events in blitz-shell 0.2.3 are synthesised as mouse events
+        // (see patches/blitz-shell). The PlatformEventData wraps a
+        // NativeClickData whose coordinates carry the touch position. We
+        // extract those coordinates and build a single-point TouchData.
+        //
+        // TODO(multi-touch): only single touch points are forwarded.
+        // Pinch-to-zoom and two-finger gestures require multi-touch support.
+        if let Some(click) = event.downcast::<NativeClickData>() {
+            let point = NativeTouchPoint {
+                client_x: click.inner.x as f64,
+                client_y: click.inner.y as f64,
+            };
+            let touch_data = NativeTouchData {
+                touches: vec![point.clone()],
+                changed_touches: vec![point.clone()],
+                target_touches: vec![point],
+                modifiers: click.inner.mods,
+            };
+            TouchData::new(touch_data)
+        } else {
+            // No recognisable payload — return a zero-coordinate single-point
+            // event rather than panicking, so the handler receives a valid
+            // object even if coordinates are unusable.
+            let point = NativeTouchPoint { client_x: 0.0, client_y: 0.0 };
+            TouchData::new(NativeTouchData {
+                touches: vec![point.clone()],
+                changed_touches: vec![point.clone()],
+                target_touches: vec![point],
+                modifiers: Modifiers::default(),
+            })
+        }
     }
 
     fn convert_transition_data(&self, _event: &PlatformEventData) -> TransitionData {
@@ -234,5 +264,85 @@ pub struct NativeFocusData {}
 impl HasFocusData for NativeFocusData {
     fn as_any(&self) -> &dyn std::any::Any {
         self as &dyn std::any::Any
+    }
+}
+
+// ── Touch data types ──────────────────────────────────────────────────────────
+
+/// A single touch contact point, carrying client-coordinate position.
+#[derive(Clone, Debug)]
+struct NativeTouchPoint {
+    client_x: f64,
+    client_y: f64,
+}
+
+impl InteractionLocation for NativeTouchPoint {
+    fn client_coordinates(&self) -> ClientPoint {
+        ClientPoint::new(self.client_x, self.client_y)
+    }
+
+    fn screen_coordinates(&self) -> ScreenPoint {
+        // Screen coordinates are not available through the synthesised mouse
+        // event path; return the client coordinates as a reasonable fallback.
+        ScreenPoint::new(self.client_x, self.client_y)
+    }
+
+    fn page_coordinates(&self) -> PagePoint {
+        PagePoint::new(self.client_x, self.client_y)
+    }
+}
+
+impl HasTouchPointData for NativeTouchPoint {
+    fn identifier(&self) -> i32 {
+        0
+    }
+
+    fn force(&self) -> f64 {
+        1.0
+    }
+
+    fn radius(&self) -> ScreenPoint {
+        ScreenPoint::new(1.0, 1.0)
+    }
+
+    fn rotation(&self) -> f64 {
+        0.0
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
+    }
+}
+
+/// Touch event data for a single synthesised touch contact.
+#[derive(Clone, Debug)]
+struct NativeTouchData {
+    touches: Vec<NativeTouchPoint>,
+    changed_touches: Vec<NativeTouchPoint>,
+    target_touches: Vec<NativeTouchPoint>,
+    modifiers: Modifiers,
+}
+
+impl ModifiersInteraction for NativeTouchData {
+    fn modifiers(&self) -> Modifiers {
+        self.modifiers
+    }
+}
+
+impl HasTouchData for NativeTouchData {
+    fn touches(&self) -> Vec<TouchPoint> {
+        self.touches.iter().cloned().map(TouchPoint::new).collect()
+    }
+
+    fn touches_changed(&self) -> Vec<TouchPoint> {
+        self.changed_touches.iter().cloned().map(TouchPoint::new).collect()
+    }
+
+    fn target_touches(&self) -> Vec<TouchPoint> {
+        self.target_touches.iter().cloned().map(TouchPoint::new).collect()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
     }
 }

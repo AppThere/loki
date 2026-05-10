@@ -23,3 +23,6 @@ target/
 loki-opc/.DS_Store
 # Added by code-review-graph
 .code-review-graph/
+
+# cargo vendor output — dependencies are patched via patches/ not vendored
+vendor/

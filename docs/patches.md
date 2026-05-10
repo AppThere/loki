@@ -100,6 +100,42 @@ events are available without panicking.
 
 ---
 
+### blitz-shell — 0.2.3
+
+**Source:** `patches/blitz-shell/` (local, vendored from crates.io version 0.2.3,
+checksum `61ecda230035f39b13383f08e0cfc7159c92d194650ac8d57871a207ea0e52b7`).
+
+**Fixes:** `WindowEvent::Touch` events are discarded in the upstream
+`handle_winit_event` match arm (the arm body is `{}` with a
+`// Todo implement touch scrolling` comment). This patch synthesises touch
+contacts as mouse events so `ontouchstart`, `ontouchmove`, and `ontouchend`
+handlers fire in loki-text components.
+
+**Implementation approach:** Synthesis as mouse events, not native touch
+forwarding. `blitz-traits::events::UiEvent` (0.2.x) has no touch variants —
+only `MouseMove`, `MouseUp`, `MouseDown`, `KeyUp`, `KeyDown`, and `Ime`.
+Synthesis is therefore the only path available; it reuses all existing
+hit-test and cursor infrastructure without requiring changes to blitz-dom.
+
+A `TouchState` struct and `touch_start: Option<TouchState>` field are added
+to `View` to track in-progress touch contacts for long-press detection.
+Constants `TOUCH_SLOP_PX` (8.0 logical px) and `LONG_PRESS_DURATION` (500 ms)
+gate scroll vs. tap vs. long-press classification.
+
+**Root cause:** Upstream has a `// Todo implement touch scrolling` comment at
+the touch arm — the feature is planned but not implemented.
+
+**Upstream status:** No known issue filed as of 2026-05-08. Monitor blitz-shell
+releases for native touch implementation.
+
+**Removal condition:** Remove when blitz-shell implements `WindowEvent::Touch`
+forwarding natively in a published release and blitz-traits adds `UiEvent`
+touch variants.
+
+**Added:** 2026-05-08
+
+---
+
 ## Removing a patch
 
 Before removing a patch:

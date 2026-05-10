@@ -1,76 +1,178 @@
 # Loki
 
-Loki is a high-performance, open-source office suite designed for both desktop and mobile users. It provides robust support for OOXML (DOCX, XLSX, etc.) and ODF (ODT, ODS, etc.) document formats, ensuring seamless cross-platform compatibility and rendering accuracy.
+Loki is a high-performance, open-source office suite designed for both desktop and mobile. It reads and writes OOXML (DOCX) and ODF (ODT) documents and renders them through a GPU-accelerated Vello/wgpu pipeline backed by the [Blitz](https://github.com/DioxusLabs/blitz) native renderer.
 
-Written entirely in **Rust**, Loki prioritizes memory safety, blazing-fast performance, and a unified core architecture that scales beautifully from powerful desktop workstations to battery-constrained mobile devices.
+Written entirely in **Rust**, Loki targets desktop (Windows, macOS, Linux) and mobile (iOS, Android) from a single codebase.
 
-## Features
-- **Cross-Platform**: First-class support for Windows, macOS, Linux, iOS, and Android.
-- **Format Compatibility**: Comprehensive read/write capabilities for standard office document formats (OOXML and ODF).
-- **High Performance**: Powered by a unified Rust core for memory-safe, concurrent, and highly optimized document processing.
-- **Open Source**: Built transparently for the community.
+## Architecture
 
-## Building Loki
+| Layer | Crate | Role |
+|-------|-------|------|
+| Document model | `loki-doc-model` | Format-neutral AST + Loro CRDT sync |
+| Import | `loki-ooxml`, `loki-odf` | DOCX / ODT → document model |
+| Layout | `loki-layout` | Parley text layout, page pagination |
+| Rendering | `loki-vello` | Vello scene builder (cursor, selection handles) |
+| UI shell | `loki-text` | Dioxus Native app (editing, touch input, routing) |
 
-Loki is built with Rust and Cargo. Make sure you have the [Rust toolchain](https://rustup.rs/) installed before proceeding.
+The renderer stack is **Blitz → wgpu 0.19 → Vulkan / Metal / DX12 / OpenGL ES**. There is no WebView — all rendering is GPU-native.
 
-### Desktop (Windows, macOS, Linux)
-To build Loki for your current desktop operating system:
+## Prerequisites
+
+Install the [Rust toolchain](https://rustup.rs/) (stable, 1.86+):
 
 ```bash
-# Clone the repository
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+**Linux** — install system graphics libraries:
+
+```bash
+# Debian / Ubuntu
+sudo apt install libvulkan-dev libxkbcommon-dev libwayland-dev \
+                 pkg-config libfontconfig-dev
+
+# Fedora
+sudo dnf install vulkan-loader-devel libxkbcommon-devel wayland-devel \
+                 fontconfig-devel
+```
+
+**macOS / Windows** — no additional system packages needed; wgpu uses Metal and DX12 respectively.
+
+## Running on Desktop
+
+```bash
 git clone https://github.com/AppThere/loki.git
 cd loki
 
-# Build the project
-cargo build --release
+# Development (hot-reload via Dioxus CLI)
+dx serve --package loki-text --platform native
 
-# Run the project
-cargo run --release
+# Or build and run directly with Cargo
+cargo run -p loki-text
 ```
-*Note: Depending on your OS, you may need additional build dependencies (like `build-essential`, `pkg-config`, or GTK/WebKit-related libraries on Linux).*
 
-### Mobile (iOS and Android)
-
-#### iOS
-Requires a macOS host with Xcode installed.
+`dx` must be installed and must match the `dioxus` library version in use:
 
 ```bash
-# Add iOS targets
-rustup target add aarch64-apple-ios x86_64-apple-ios aarch64-apple-ios-sim
-
-# Build the core iOS library
-cargo build --target aarch64-apple-ios --release
+cargo install dioxus-cli --version "0.7.5"
+dx --version  # should print 0.7.5
 ```
-*(To build the Dioxus mobile frontend, you can use `dx build --platform ios`)*
 
-#### Android
-Requires the Android SDK and NDK (usually installed via Android Studio).
+> **Version note:** `dx serve --platform android` will fail with a
+> `dioxus-desktop ^0.7.4` dependency error if the dx CLI version does not match
+> the dioxus library version. Always install the same patch version.
+
+## Running on Android
+
+Loki uses the **Blitz/wgpu GPU renderer** (`features = ["native"]`), not the
+WebView-based mobile renderer. `dx serve --platform android` is therefore the
+**wrong command** — it activates the WebView renderer instead. Use
+[cargo-apk](https://github.com/rust-mobile/cargo-apk) instead.
+
+### Prerequisites
+
+1. **Android Studio** — install the SDK and NDK (r25c or newer recommended).
+
+2. Set environment variables:
+
+   ```bash
+   export ANDROID_HOME=$HOME/Library/Android/sdk   # macOS
+   export NDK_HOME=$ANDROID_HOME/ndk/<version>
+   ```
+
+3. Add the Android Rust targets:
+
+   ```bash
+   rustup target add aarch64-linux-android          # most modern devices
+   rustup target add armv7-linux-androideabi         # 32-bit devices (optional)
+   ```
+
+4. Install cargo-apk:
+
+   ```bash
+   cargo install cargo-apk
+   ```
+
+### Add Android metadata to loki-text/Cargo.toml
+
+```toml
+[package.metadata.android]
+package = "com.appthere.loki"
+build_targets = ["aarch64-linux-android"]
+
+[package.metadata.android.sdk]
+min_sdk_version = 26          # wgpu requires Vulkan, available from API 26
+target_sdk_version = 34
+compile_sdk_version = 34
+
+[package.metadata.android.application]
+label = "Loki"
+```
+
+> **API 26 minimum:** wgpu's Vulkan backend requires Android 8.0 (API 26) or
+> later. Devices below this cannot run the Blitz render pipeline.
+
+### Build and deploy
+
+cargo-apk must be run from inside the `loki-text/` directory (or with
+`--manifest-path loki-text/Cargo.toml`). The workspace root `Cargo.toml` is a
+virtual manifest with no `[package]` section, which cargo-apk cannot use.
 
 ```bash
-# Add Android targets
-rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+# Connect a device via USB (enable USB debugging) or start an emulator
+adb devices                            # confirm device is visible
 
-# Build the core Android library
-cargo build --target aarch64-linux-android --release
+# Build, install, and launch on the connected device
+cd loki-text
+cargo apk run --bin loki-text --release
 ```
-*(To build the Dioxus mobile frontend, you can use `dx build --platform android`)*
 
-## AI Coding Assistants & Code-Review-Graph
+For debug builds (faster compile):
 
-Loki utilizes a sophisticated knowledge graph to assist with code exploration and review. **AI coding assistants must use the `code-review-graph` MCP tools** before falling back to traditional file scanning methods (like grep, glob, or reading entire files). 
+```bash
+cd loki-text
+cargo apk run --bin loki-text
+```
 
-The graph is faster, cheaper, and provides essential structural context such as callers, dependents, and test coverage.
+## Running on iOS
 
-**Key Guidelines for AI Assistants:**
-1. **Always Use Graph Tools First**: Use `semantic_search_nodes` or `query_graph` to explore the codebase.
-2. **Understand Impact**: Use `get_impact_radius` and `get_affected_flows` instead of manually tracing imports.
-3. **Review Code**: Use `detect_changes` and `get_review_context` for risk-scored analysis during code reviews.
-4. **Architecture Queries**: Use `get_architecture_overview` and `list_communities` to understand high-level structure.
-5. **Fallback Only**: Only fall back to Grep/Glob/Read when the graph does not cover the necessary information.
+Requires macOS with Xcode 15+.
 
-For more detailed information on tool selection and workflow, refer to the `AGENTS.md` and `GEMINI.md` files in the repository root.
+1. Add iOS targets:
+
+   ```bash
+   rustup target add aarch64-apple-ios          # physical device
+   rustup target add aarch64-apple-ios-sim       # Apple Silicon simulator
+   ```
+
+2. Build the library:
+
+   ```bash
+   cargo build -p loki-text --target aarch64-apple-ios --release
+   ```
+
+   Packaging into an `.ipa` / Xcode project requires an iOS app harness. This
+   is not yet automated — track progress in the issue tracker.
+
+## Workspace patches
+
+Loki vendors and patches three upstream crates to work around pre-1.0 gaps.
+See [`docs/patches.md`](docs/patches.md) for the full list and removal conditions.
+
+| Patch | Reason |
+|-------|--------|
+| `patches/blitz-shell` | Forwards `WindowEvent::Touch` as mouse events (upstream has empty `{}` arm) |
+| `patches/dioxus-native-dom` | Implements `convert_touch_data` and other `unimplemented!()` event converters |
+| `patches/blitz-dom` | Fixes tabindex focus-on-click for non-input elements |
+| `patches/fontique` | Fixes missing `fontconfig_sys` alias in the crates.io 0.8.0 publish |
+
+## AI Coding Assistants
+
+Loki uses the `code-review-graph` MCP server for token-efficient code exploration.
+**Always use graph tools before grep/glob/Read.** See [`CLAUDE.md`](CLAUDE.md),
+[`AGENTS.md`](AGENTS.md), and [`GEMINI.md`](GEMINI.md) for assistant-specific
+instructions.
 
 ## License
 
-Loki is open source software.
+Loki is open source software. See [LICENSE](LICENSE).

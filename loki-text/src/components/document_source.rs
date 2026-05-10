@@ -76,6 +76,8 @@ use loki_layout::{
     layout_document, DocumentLayout, FontResources, LayoutMode, LayoutOptions, PaginatedLayout,
 };
 use loki_vello::{paint_single_page, CursorPaint, FontDataCache, SelectionRect};
+#[cfg(any(target_os = "ios", target_os = "android"))]
+use loki_vello::SelectionHandle;
 use peniko::Color;
 use vello::{AaConfig, AaSupport, RenderParams, RendererOptions, Scene};
 
@@ -277,9 +279,21 @@ fn resolve_cursor_paint(
         Vec::new()
     };
 
+    // Selection handles are shown on iOS/Android only; desktop leaves the
+    // list empty so no handles are rendered.
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    let selection_handles: Vec<SelectionHandle> = if cursor_state.has_selection() {
+        build_selection_handles(cursor_state, pd)
+    } else {
+        Vec::new()
+    };
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    let selection_handles: Vec<loki_vello::SelectionHandle> = Vec::new();
+
     Some(CursorPaint {
         cursor_rect,
         selection_rects,
+        selection_handles,
         paragraph_index: focus.paragraph_index,
     })
 }
@@ -381,6 +395,47 @@ fn build_selection_rects(
     // Suppress unused import warning when editing_data isn't used in the MVP path.
     let _ = editing_data;
     rects
+}
+
+/// Build [`SelectionHandle`]s for the anchor and focus ends of the selection.
+///
+/// Called only on iOS and Android (guarded by `#[cfg(target_os)]` in the
+/// caller). Returns at most two handles — one for the anchor and one for the
+/// focus — positioned at the cursor rect edges of the respective offsets.
+#[cfg(any(target_os = "ios", target_os = "android"))]
+fn build_selection_handles(
+    cursor_state: &CursorState,
+    para_data: &loki_layout::PageParagraphData,
+) -> Vec<SelectionHandle> {
+    use loki_vello::SelectionHandleKind;
+
+    let anchor = match cursor_state.anchor.as_ref() {
+        Some(a) => a,
+        None => return Vec::new(),
+    };
+    let focus = match cursor_state.focus.as_ref() {
+        Some(f) => f,
+        None => return Vec::new(),
+    };
+
+    let mut handles = Vec::with_capacity(2);
+
+    if let Some(cr) = para_data.layout.cursor_rect(anchor.byte_offset) {
+        handles.push(SelectionHandle {
+            tip_x: para_data.origin.0 + cr.x,
+            tip_y: para_data.origin.1 + cr.y,
+            kind: SelectionHandleKind::Anchor,
+        });
+    }
+    if let Some(cr) = para_data.layout.cursor_rect(focus.byte_offset) {
+        handles.push(SelectionHandle {
+            tip_x: para_data.origin.0 + cr.x,
+            tip_y: para_data.origin.1 + cr.y + cr.height,
+            kind: SelectionHandleKind::Focus,
+        });
+    }
+
+    handles
 }
 
 // ── Mutation + re-layout helper ───────────────────────────────────────────────
