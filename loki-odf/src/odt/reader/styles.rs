@@ -20,7 +20,8 @@ use crate::odt::model::document::{
 use crate::odt::model::list_styles::{
     OdfListLevel, OdfListLevelKind, OdfListStyle,
 };
-use crate::odt::model::paragraph::{OdfParagraph, OdfParagraphChild};
+use crate::odt::model::paragraph::OdfParagraph;
+use crate::odt::reader::document::read_paragraph;
 use crate::odt::model::styles::{
     OdfDefaultStyle, OdfParaProps, OdfStyle, OdfStyleFamily, OdfStylesheet,
     OdfTabStop, OdfTextProps,
@@ -227,6 +228,10 @@ pub(crate) fn read_stylesheet(
                             page_layout_name,
                             header: None,
                             footer: None,
+                            header_first: None,
+                            footer_first: None,
+                            header_even: None,
+                            footer_even: None,
                         });
                     }
                     _ => {}
@@ -985,6 +990,13 @@ fn parse_header_footer_style(
 // ── Master page parsing ────────────────────────────────────────────────────────
 
 /// Parse a `style:master-page` element (Start event already consumed).
+///
+/// Handles all six header/footer variants:
+/// - `style:header` / `style:footer` — default (odd/right-page)
+/// - `style:header-first` / `style:footer-first` — first page only
+/// - `style:header-left` / `style:footer-left` — even/left pages
+///
+/// ODF 1.3 §16.9.
 fn parse_master_page(
     reader: &mut Reader<&[u8]>,
     name: String,
@@ -993,6 +1005,10 @@ fn parse_master_page(
     let mut buf = Vec::new();
     let mut header: Option<Vec<OdfParagraph>> = None;
     let mut footer: Option<Vec<OdfParagraph>> = None;
+    let mut header_first: Option<Vec<OdfParagraph>> = None;
+    let mut footer_first: Option<Vec<OdfParagraph>> = None;
+    let mut header_even: Option<Vec<OdfParagraph>> = None;
+    let mut footer_even: Option<Vec<OdfParagraph>> = None;
 
     loop {
         buf.clear();
@@ -1002,15 +1018,31 @@ fn parse_master_page(
                 match local.as_slice() {
                     b"header" => {
                         drop(e);
-                        header = Some(parse_header_footer_paras(
-                            reader, b"header",
-                        )?);
+                        header = Some(parse_header_footer_paras(reader, b"header")?);
                     }
                     b"footer" => {
                         drop(e);
-                        footer = Some(parse_header_footer_paras(
-                            reader, b"footer",
-                        )?);
+                        footer = Some(parse_header_footer_paras(reader, b"footer")?);
+                    }
+                    b"header-first" => {
+                        drop(e);
+                        header_first =
+                            Some(parse_header_footer_paras(reader, b"header-first")?);
+                    }
+                    b"footer-first" => {
+                        drop(e);
+                        footer_first =
+                            Some(parse_header_footer_paras(reader, b"footer-first")?);
+                    }
+                    b"header-left" => {
+                        drop(e);
+                        header_even =
+                            Some(parse_header_footer_paras(reader, b"header-left")?);
+                    }
+                    b"footer-left" => {
+                        drop(e);
+                        footer_even =
+                            Some(parse_header_footer_paras(reader, b"footer-left")?);
                     }
                     _ => {
                         drop(e);
@@ -1039,14 +1071,19 @@ fn parse_master_page(
         page_layout_name,
         header,
         footer,
+        header_first,
+        footer_first,
+        header_even,
+        footer_even,
     })
 }
 
-/// Collect paragraphs inside a `style:header` or `style:footer` element.
+/// Collect paragraphs inside a `style:header`, `style:footer`, or their
+/// `-first` / `-left` variants.
 ///
-/// Uses a simplified reader that only captures `text:style-name` and flat
-/// text content — sufficient for header/footer paragraphs without needing the
-/// full inline-content parser from `document.rs`.
+/// Delegates to [`read_paragraph`] (the same full inline parser used for body
+/// content), so spans, fields (`text:page-number`, `text:date`, etc.), links,
+/// and notes are all captured correctly.
 fn parse_header_footer_paras(
     reader: &mut Reader<&[u8]>,
     end_local: &[u8],
@@ -1061,24 +1098,7 @@ fn parse_header_footer_paras(
                 let local = e.local_name().into_inner().to_vec();
                 match local.as_slice() {
                     b"p" | b"h" => {
-                        let style = local_attr_val(e, b"style-name");
-                        let is_heading = local == b"h";
-                        let outline_level: Option<u8> = if is_heading {
-                            local_attr_val(e, b"outline-level")
-                                .and_then(|s| s.parse().ok())
-                        } else {
-                            None
-                        };
-                        let end_tag: &'static [u8] =
-                            if is_heading { b"h" } else { b"p" };
-                        drop(e);
-                        let para = collect_para_text(
-                            reader,
-                            end_tag,
-                            style,
-                            is_heading,
-                            outline_level,
-                        )?;
+                        let para = read_paragraph(reader, e)?;
                         paras.push(para);
                     }
                     _ => {
@@ -1104,61 +1124,6 @@ fn parse_header_footer_paras(
     }
 
     Ok(paras)
-}
-
-/// Simplified paragraph reader: collects only text nodes (flat) until the
-/// matching end tag. Used for header/footer paragraphs where deep inline
-/// parsing is not required.
-fn collect_para_text(
-    reader: &mut Reader<&[u8]>,
-    end_local: &[u8],
-    style_name: Option<String>,
-    is_heading: bool,
-    outline_level: Option<u8>,
-) -> OdfResult<OdfParagraph> {
-    let mut buf = Vec::new();
-    let mut children: Vec<OdfParagraphChild> = Vec::new();
-    let mut depth: u32 = 0;
-
-    loop {
-        buf.clear();
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Text(ref t)) => {
-                let s = t.unescape().map_err(|e| OdfError::Xml {
-                    part: "styles.xml".to_string(),
-                    source: e,
-                })?;
-                if !s.is_empty() {
-                    children.push(OdfParagraphChild::Text(s.into_owned()));
-                }
-            }
-            Ok(Event::Start(_)) => depth += 1,
-            Ok(Event::End(ref e)) => {
-                if depth == 0
-                    && e.local_name().into_inner() == end_local
-                {
-                    break;
-                }
-                depth = depth.saturating_sub(1);
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OdfError::Xml {
-                    part: "styles.xml".to_string(),
-                    source: e,
-                })
-            }
-            _ => {}
-        }
-    }
-
-    Ok(OdfParagraph {
-        style_name,
-        outline_level,
-        is_heading,
-        children,
-        list_context: None,
-    })
 }
 
 // ── Auto-styles fast reader (content.xml) ─────────────────────────────────────

@@ -33,6 +33,7 @@ use loki_doc_model::content::table::core::{
 };
 use loki_doc_model::content::table::row::{Cell, CellProps, Row};
 use loki_doc_model::document::Document;
+use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
 use loki_doc_model::layout::page::{
     PageLayout, PageMargins, PageOrientation, PageSize,
 };
@@ -48,7 +49,7 @@ use crate::odt::mapper::lists::map_list_styles;
 use crate::odt::mapper::styles::map_stylesheet;
 use crate::odt::model::document::{
     OdfBodyChild, OdfDocument, OdfList, OdfListItem, OdfListItemChild,
-    OdfMeta, OdfPageLayout, OdfSection, OdfTableOfContent,
+    OdfMasterPage, OdfMeta, OdfPageLayout, OdfSection, OdfTableOfContent,
 };
 use crate::odt::model::fields::OdfField;
 use crate::odt::model::frames::{OdfFrame, OdfFrameKind};
@@ -109,10 +110,7 @@ pub(crate) fn map_document(
     let mut catalog = map_stylesheet(stylesheet);
     map_list_styles(&stylesheet.list_styles, &mut catalog, doc.version);
 
-    // ── 2. Resolve active page layout ─────────────────────────────────────────
-    let page_layout = resolve_page_layout(stylesheet);
-
-    // ── 3. Pre-build column-width lookup from table-column styles ────────────────
+    // ── 2. Pre-build column-width lookup from table-column styles ────────────────
     let col_style_widths: HashMap<String, Points> = stylesheet
         .named_styles
         .iter()
@@ -124,8 +122,8 @@ pub(crate) fn map_document(
         })
         .collect();
 
-    // ── 4. Map body (scoped so the &catalog borrow ends before we move it) ────
-    let (blocks, warnings) = {
+    // ── 3. Map body + resolve page layout (scoped so &catalog borrow ends) ────
+    let (blocks, page_layout, warnings) = {
         let mut ctx = OdfMappingContext {
             styles: &catalog,
             images,
@@ -135,16 +133,17 @@ pub(crate) fn map_document(
             pending_figures: Vec::new(),
         };
         let blocks = map_body_children(&doc.body_children, &mut ctx);
-        (blocks, ctx.warnings)
+        let page_layout = resolve_page_layout(stylesheet, &mut ctx);
+        (blocks, page_layout, ctx.warnings)
     };
 
-    // ── 5. Assemble section ───────────────────────────────────────────────────
+    // ── 4. Assemble section ───────────────────────────────────────────────────
     let section = Section::with_layout_and_blocks(page_layout, blocks);
 
-    // ── 6. Map metadata ───────────────────────────────────────────────────────
+    // ── 5. Map metadata ───────────────────────────────────────────────────────
     let doc_meta = meta.map(map_meta).unwrap_or_default();
 
-    // ── 7. Build document (caller sets source) ────────────────────────────────
+    // ── 6. Build document (caller sets source) ────────────────────────────────
     let document = Document {
         meta: doc_meta,
         styles: catalog,
@@ -579,12 +578,20 @@ fn map_section(
 
 // ── Page layout ────────────────────────────────────────────────────────────────
 
-/// Find the active master page ("Standard" or the first one) and convert its
-/// associated `style:page-layout` to a format-neutral [`PageLayout`].
+/// Find the active master page ("Standard" or the first one), convert its
+/// associated `style:page-layout` to a format-neutral [`PageLayout`], and
+/// populate all header/footer variants from the master page content.
 ///
 /// Falls back to [`PageLayout::default`] when no master page or page layout
 /// is present in the stylesheet.
-fn resolve_page_layout(stylesheet: &OdfStylesheet) -> PageLayout {
+///
+/// // TODO(odf-master-page): multi-master-page documents use only the first
+/// // master page. Full support requires tracking @style:master-page-name
+/// // transitions on paragraphs. See ADR-0007 / format support status.
+fn resolve_page_layout(
+    stylesheet: &OdfStylesheet,
+    ctx: &mut OdfMappingContext<'_>,
+) -> PageLayout {
     let master = stylesheet
         .master_pages
         .iter()
@@ -598,10 +605,53 @@ fn resolve_page_layout(stylesheet: &OdfStylesheet) -> PageLayout {
             .find(|pl| pl.name == m.page_layout_name)
     });
 
-    match odf_layout {
+    let mut layout = match odf_layout {
         Some(pl) => convert_page_layout(pl),
         None => PageLayout::default(),
+    };
+
+    if let Some(master) = master {
+        apply_master_page_hf(master, &mut layout, ctx);
     }
+
+    layout
+}
+
+/// Map all header/footer variants from `master` onto `layout`.
+fn apply_master_page_hf(
+    master: &OdfMasterPage,
+    layout: &mut PageLayout,
+    ctx: &mut OdfMappingContext<'_>,
+) {
+    layout.header = map_hf_paras(&master.header, HeaderFooterKind::Default, ctx);
+    layout.footer = map_hf_paras(&master.footer, HeaderFooterKind::Default, ctx);
+    layout.header_first =
+        map_hf_paras(&master.header_first, HeaderFooterKind::First, ctx);
+    layout.footer_first =
+        map_hf_paras(&master.footer_first, HeaderFooterKind::First, ctx);
+    layout.header_even =
+        map_hf_paras(&master.header_even, HeaderFooterKind::Even, ctx);
+    layout.footer_even =
+        map_hf_paras(&master.footer_even, HeaderFooterKind::Even, ctx);
+}
+
+/// Convert a list of [`OdfParagraph`]s into a [`HeaderFooter`].
+///
+/// Returns `None` when `paras` is `None` or empty (preserving the "absent
+/// variant" semantics that [`assign_headers_footers`] relies on).
+///
+/// [`assign_headers_footers`]: loki_layout::flow::assign_headers_footers
+fn map_hf_paras(
+    paras: &Option<Vec<OdfParagraph>>,
+    kind: HeaderFooterKind,
+    ctx: &mut OdfMappingContext<'_>,
+) -> Option<HeaderFooter> {
+    let paras = paras.as_ref()?;
+    if paras.is_empty() {
+        return None;
+    }
+    let blocks = paras.iter().map(|p| map_paragraph(p, ctx)).collect();
+    Some(HeaderFooter { kind, blocks })
 }
 
 fn convert_page_layout(pl: &OdfPageLayout) -> PageLayout {

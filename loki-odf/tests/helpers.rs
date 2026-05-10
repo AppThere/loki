@@ -288,3 +288,70 @@ pub fn v1_1_content_xml() -> Vec<u8> {
       </office:document-content>"
         .to_vec()
 }
+
+/// `styles.xml` with a master page containing all three header/footer variants:
+/// default, first-page, and even-page. The default header includes a
+/// `text:page-number` field to exercise field code parsing in headers.
+///
+/// Used by the header/footer round-trip and layout integration tests.
+pub fn hf_styles_xml() -> Vec<u8> {
+    b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-styles \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" \
+        xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" \
+        xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\">\
+      <office:automatic-styles>\
+        <style:page-layout style:name=\"pm1\">\
+          <style:page-layout-properties \
+            fo:page-width=\"21cm\" fo:page-height=\"29.7cm\" \
+            fo:margin-top=\"2.54cm\" fo:margin-bottom=\"2.54cm\" \
+            fo:margin-left=\"3.17cm\" fo:margin-right=\"3.17cm\"/>\
+        </style:page-layout>\
+      </office:automatic-styles>\
+      <office:styles/>\
+      <office:master-styles>\
+        <style:master-page style:name=\"Standard\" \
+            style:page-layout-name=\"pm1\">\
+          <style:header>\
+            <text:p>Test Header Page \
+              <text:page-number text:select-page=\"current\">1</text:page-number>\
+            </text:p>\
+          </style:header>\
+          <style:footer>\
+            <text:p>Test Footer</text:p>\
+          </style:footer>\
+          <style:header-first>\
+            <text:p>First Page Header</text:p>\
+          </style:header-first>\
+          <style:footer-first>\
+            <text:p>First Page Footer</text:p>\
+          </style:footer-first>\
+          <style:header-left>\
+            <text:p>Even Page Header</text:p>\
+          </style:header-left>\
+          <style:footer-left>\
+            <text:p>Even Page Footer</text:p>\
+          </style:footer-left>\
+        </style:master-page>\
+      </office:master-styles>\
+      </office:document-styles>"
+        .to_vec()
+}
+
+/// Minimal `content.xml` for use with [`hf_styles_xml`].
+pub fn hf_content_xml() -> Vec<u8> {
+    b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-content \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\">\
+      <office:automatic-styles/>\
+      <office:body><office:text>\
+        <text:p>Body paragraph one.</text:p>\
+        <text:p>Body paragraph two.</text:p>\
+      </office:text></office:body>\
+      </office:document-content>"
+        .to_vec()
+}
