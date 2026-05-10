@@ -552,7 +552,7 @@ fn footnote_mark(n: u32) -> String {
 
 // ── Paragraph synthesisers ────────────────────────────────────────────────────
 
-fn synthesize_plain_para(inlines: &[Inline]) -> StyledParagraph {
+pub(super) fn synthesize_plain_para(inlines: &[Inline]) -> StyledParagraph {
     StyledParagraph {
         style_id: None,
         direct_para_props: None,
@@ -562,7 +562,7 @@ fn synthesize_plain_para(inlines: &[Inline]) -> StyledParagraph {
     }
 }
 
-fn synthesize_heading_para(level: u8, attr: &NodeAttr, inlines: &[Inline]) -> StyledParagraph {
+pub(super) fn synthesize_heading_para(level: u8, attr: &NodeAttr, inlines: &[Inline]) -> StyledParagraph {
     use loki_doc_model::style::catalog::StyleId;
     use loki_doc_model::style::props::para_props::{ParagraphAlignment, ParaProps};
     // Prefer the style name carried in NodeAttr (set by the ODF mapper from
