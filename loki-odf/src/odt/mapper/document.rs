@@ -57,7 +57,7 @@ use crate::odt::model::notes::{OdfNote, OdfNoteClass};
 use crate::odt::model::paragraph::{
     OdfHyperlink, OdfParagraph, OdfParagraphChild, OdfSpan,
 };
-use crate::odt::model::styles::OdfStylesheet;
+use crate::odt::model::styles::{OdfStyle, OdfStylesheet};
 use crate::odt::model::tables::OdfTable;
 use crate::xml_util::parse_length;
 
@@ -122,8 +122,24 @@ pub(crate) fn map_document(
         })
         .collect();
 
-    // ── 3. Map body + resolve page layout (scoped so &catalog borrow ends) ────
-    let (blocks, page_layout, warnings) = {
+    // ── 3. Build style lookup for master page resolution ─────────────────────
+    let all_styles: HashMap<&str, &OdfStyle> = stylesheet
+        .named_styles
+        .iter()
+        .chain(stylesheet.auto_styles.iter())
+        .map(|s| (s.name.as_str(), s))
+        .collect();
+
+    // Identify the initial master page name ("Standard" > "Default" > first).
+    let initial_master: Option<&str> = stylesheet
+        .master_pages
+        .iter()
+        .find(|m| m.name == "Standard" || m.name == "Default")
+        .or_else(|| stylesheet.master_pages.first())
+        .map(|m| m.name.as_str());
+
+    // ── 4. Map body, detecting master page transitions → multiple sections ────
+    let (sections, warnings) = {
         let mut ctx = OdfMappingContext {
             styles: &catalog,
             images,
@@ -132,13 +148,55 @@ pub(crate) fn map_document(
             warnings: Vec::new(),
             pending_figures: Vec::new(),
         };
-        let blocks = map_body_children(&doc.body_children, &mut ctx);
-        let page_layout = resolve_page_layout(stylesheet, &mut ctx);
-        (blocks, page_layout, ctx.warnings)
-    };
 
-    // ── 4. Assemble section ───────────────────────────────────────────────────
-    let section = Section::with_layout_and_blocks(page_layout, blocks);
+        let mut current_master: Option<String> =
+            initial_master.map(str::to_string);
+        let mut current_blocks: Vec<Block> = Vec::new();
+        let mut sections: Vec<Section> = Vec::new();
+
+        for child in &doc.body_children {
+            // Only paragraphs/headings carry style:master-page-name.
+            let new_master = match child {
+                OdfBodyChild::Paragraph(para) | OdfBodyChild::Heading(para) => {
+                    para.style_name.as_deref()
+                        .and_then(|sn| resolve_master_page_name(sn, &all_styles))
+                }
+                _ => None,
+            };
+
+            // Emit a section break only when the master page actually changes.
+            if let Some(ref nm) = new_master {
+                if Some(nm.as_str()) != current_master.as_deref() {
+                    let layout = resolve_page_layout_by_name(
+                        stylesheet,
+                        current_master.as_deref(),
+                        &mut ctx,
+                    );
+                    sections.push(Section::with_layout_and_blocks(
+                        layout,
+                        std::mem::take(&mut current_blocks),
+                    ));
+                    current_master = Some(nm.clone());
+                }
+            }
+
+            if let Some(block) = map_body_child(child, &mut ctx) {
+                current_blocks.push(block);
+                let figs = std::mem::take(&mut ctx.pending_figures);
+                current_blocks.extend(figs);
+            }
+        }
+
+        // Flush the final (or only) section.
+        let layout = resolve_page_layout_by_name(
+            stylesheet,
+            current_master.as_deref(),
+            &mut ctx,
+        );
+        sections.push(Section::with_layout_and_blocks(layout, current_blocks));
+
+        (sections, ctx.warnings)
+    };
 
     // ── 5. Map metadata ───────────────────────────────────────────────────────
     let doc_meta = meta.map(map_meta).unwrap_or_default();
@@ -147,7 +205,7 @@ pub(crate) fn map_document(
     let document = Document {
         meta: doc_meta,
         styles: catalog,
-        sections: vec![section],
+        sections,
         settings: None,
         source: None,
     };
@@ -578,24 +636,54 @@ fn map_section(
 
 // ── Page layout ────────────────────────────────────────────────────────────────
 
-/// Find the active master page ("Standard" or the first one), convert its
-/// associated `style:page-layout` to a format-neutral [`PageLayout`], and
-/// populate all header/footer variants from the master page content.
+/// Resolves the effective master page name for a paragraph style, following
+/// the `style:parent-style-name` inheritance chain.
 ///
-/// Falls back to [`PageLayout::default`] when no master page or page layout
-/// is present in the stylesheet.
+/// Returns `None` when no master page transition is defined anywhere in the
+/// chain. A cycle in the parent chain terminates the walk without a result.
+fn resolve_master_page_name<'a>(
+    style_name: &str,
+    all_styles: &'a HashMap<&str, &'a OdfStyle>,
+) -> Option<String> {
+    let mut current = style_name;
+    let mut depth = 0usize;
+    loop {
+        // Guard against malformed cycles in the style inheritance chain.
+        if depth > 32 {
+            break;
+        }
+        depth += 1;
+        let style = all_styles.get(current)?;
+        if let Some(ref mpn) = style.master_page_name {
+            if !mpn.is_empty() {
+                return Some(mpn.clone());
+            }
+        }
+        current = style.parent_name.as_deref()?;
+    }
+    None
+}
+
+/// Build a [`PageLayout`] for the named master page.
 ///
-/// // TODO(odf-master-page): multi-master-page documents use only the first
-/// // master page. Full support requires tracking @style:master-page-name
-/// // transitions on paragraphs. See ADR-0007 / format support status.
-fn resolve_page_layout(
+/// Looks up the named master page in `stylesheet.master_pages`. If
+/// `master_name` is `None`, falls back to the "Standard" / "Default" master,
+/// then the first one. Converts the associated `style:page-layout` to a
+/// format-neutral [`PageLayout`] and populates all header/footer variants.
+/// Returns [`PageLayout::default`] when no master page is found.
+fn resolve_page_layout_by_name(
     stylesheet: &OdfStylesheet,
+    master_name: Option<&str>,
     ctx: &mut OdfMappingContext<'_>,
 ) -> PageLayout {
-    let master = stylesheet
-        .master_pages
-        .iter()
-        .find(|m| m.name == "Standard" || m.name == "Default")
+    let master = master_name
+        .and_then(|name| stylesheet.master_pages.iter().find(|m| m.name == name))
+        .or_else(|| {
+            stylesheet
+                .master_pages
+                .iter()
+                .find(|m| m.name == "Standard" || m.name == "Default")
+        })
         .or_else(|| stylesheet.master_pages.first());
 
     let odf_layout = master.and_then(|m| {
@@ -908,5 +996,80 @@ mod tests {
     fn parse_datetime_invalid_returns_none() {
         let dt = parse_datetime("not-a-date");
         assert!(dt.is_none());
+    }
+
+    // ── resolve_master_page_name unit tests ───────────────────────────────────
+
+    fn style_with_mpn(name: &str, mpn: Option<&str>, parent: Option<&str>) -> OdfStyle {
+        use crate::odt::model::styles::OdfStyleFamily;
+        OdfStyle {
+            name: name.into(),
+            display_name: None,
+            family: OdfStyleFamily::Paragraph,
+            parent_name: parent.map(String::from),
+            list_style_name: None,
+            para_props: None,
+            text_props: None,
+            col_width: None,
+            is_automatic: false,
+            master_page_name: mpn.map(String::from),
+        }
+    }
+
+    fn make_lookup<'a>(styles: &'a [OdfStyle]) -> HashMap<&'a str, &'a OdfStyle> {
+        styles.iter().map(|s| (s.name.as_str(), s)).collect()
+    }
+
+    /// Direct `master_page_name` on the style is returned.
+    #[test]
+    fn resolve_mpn_direct() {
+        let styles = [style_with_mpn("LandscapeStyle", Some("Landscape"), None)];
+        let lookup = make_lookup(&styles);
+        assert_eq!(
+            resolve_master_page_name("LandscapeStyle", &lookup),
+            Some("Landscape".into())
+        );
+    }
+
+    /// When the style has no `master_page_name` but its parent does, the
+    /// parent's value is returned.
+    #[test]
+    fn resolve_mpn_inherited_from_parent() {
+        let styles = [
+            style_with_mpn("Base", Some("Landscape"), None),
+            style_with_mpn("Child", None, Some("Base")),
+        ];
+        let lookup = make_lookup(&styles);
+        assert_eq!(
+            resolve_master_page_name("Child", &lookup),
+            Some("Landscape".into())
+        );
+    }
+
+    /// An empty `master_page_name` string is treated as absent — `None` returned.
+    #[test]
+    fn resolve_mpn_empty_string_returns_none() {
+        let styles = [style_with_mpn("PlainStyle", Some(""), None)];
+        let lookup = make_lookup(&styles);
+        assert_eq!(resolve_master_page_name("PlainStyle", &lookup), None);
+    }
+
+    /// A style with no master page anywhere in the chain returns `None`.
+    #[test]
+    fn resolve_mpn_no_master_page_in_chain() {
+        let styles = [
+            style_with_mpn("Root", None, None),
+            style_with_mpn("Child", None, Some("Root")),
+        ];
+        let lookup = make_lookup(&styles);
+        assert_eq!(resolve_master_page_name("Child", &lookup), None);
+    }
+
+    /// A style that doesn't exist in the lookup returns `None` without panicking.
+    #[test]
+    fn resolve_mpn_unknown_style_returns_none() {
+        let styles: [OdfStyle; 0] = [];
+        let lookup = make_lookup(&styles);
+        assert_eq!(resolve_master_page_name("NonExistent", &lookup), None);
     }
 }

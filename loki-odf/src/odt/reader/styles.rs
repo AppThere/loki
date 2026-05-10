@@ -93,6 +93,11 @@ pub(crate) fn read_stylesheet(
                             local_attr_val(e, b"parent-style-name");
                         let list_style_name =
                             local_attr_val(e, b"list-style-name");
+                        // COMPAT(odf): style:master-page-name on a paragraph
+                        // style signals a master page transition. The new master
+                        // page's layout applies from that paragraph onward.
+                        let master_page_name =
+                            local_attr_val(e, b"master-page-name");
                         let auto = is_automatic || in_auto;
                         drop(e);
                         let (para_props, text_props, col_width) =
@@ -107,6 +112,7 @@ pub(crate) fn read_stylesheet(
                             text_props,
                             col_width,
                             is_automatic: auto,
+                            master_page_name,
                         };
                         if auto {
                             sheet.auto_styles.push(style);
@@ -189,6 +195,8 @@ pub(crate) fn read_stylesheet(
                             local_attr_val(e, b"parent-style-name");
                         let list_style_name =
                             local_attr_val(e, b"list-style-name");
+                        let master_page_name =
+                            local_attr_val(e, b"master-page-name");
                         let auto = is_automatic || in_auto;
                         let style = OdfStyle {
                             name,
@@ -200,6 +208,7 @@ pub(crate) fn read_stylesheet(
                             text_props: None,
                             col_width: None,
                             is_automatic: auto,
+                            master_page_name,
                         };
                         if auto {
                             sheet.auto_styles.push(style);
@@ -1164,6 +1173,8 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                             local_attr_val(e, b"parent-style-name");
                         let list_style_name =
                             local_attr_val(e, b"list-style-name");
+                        let master_page_name =
+                            local_attr_val(e, b"master-page-name");
                         drop(e);
                         let (para_props, text_props, col_width) =
                             parse_style_props(&mut reader, b"style")?;
@@ -1177,6 +1188,7 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                             text_props,
                             col_width,
                             is_automatic: true,
+                            master_page_name,
                         });
                     }
                     _ => {}
@@ -1196,6 +1208,8 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                         local_attr_val(e, b"parent-style-name");
                     let list_style_name =
                         local_attr_val(e, b"list-style-name");
+                    let master_page_name =
+                        local_attr_val(e, b"master-page-name");
                     styles.push(OdfStyle {
                         name,
                         display_name,
@@ -1206,6 +1220,7 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                         text_props: None,
                         col_width: None,
                         is_automatic: true,
+                        master_page_name,
                     });
                 }
             }

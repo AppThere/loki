@@ -143,6 +143,7 @@ mod tests {
             text_props: None,
             col_width: None,
             is_automatic: is_auto,
+            master_page_name: None,
         }
     }
 
@@ -160,6 +161,7 @@ mod tests {
             }),
             col_width: None,
             is_automatic: false,
+            master_page_name: None,
         }
     }
 
@@ -245,6 +247,7 @@ mod tests {
                 text_props: None,
                 col_width: None,
                 is_automatic: false,
+                master_page_name: None,
             }],
             ..Default::default()
         };

@@ -426,3 +426,75 @@ fn hf_layout_pages_have_header_and_footer_items() {
         "page 1 must have footer items (first-page variant)"
     );
 }
+
+/// Importing a document with two master pages produces two sections,
+/// each with the correct page orientation and its own header.
+#[test]
+fn multi_master_page_creates_sections() {
+    let content = helpers::multi_master_content_xml();
+    let styles = helpers::multi_master_styles_xml();
+    let zip = helpers::build_odt_zip(&content, &styles, None);
+
+    let result = OdtImporter::new(OdtImportOptions::default())
+        .run(Cursor::new(zip))
+        .expect("multi-master import should succeed");
+
+    let doc = &result.document;
+
+    // Two master pages → two sections.
+    assert_eq!(
+        doc.section_count(), 2,
+        "two master pages should produce two sections (got {})",
+        doc.section_count()
+    );
+
+    // Section 0: portrait (width < height, ~A4 portrait).
+    let s0 = doc.section_at(0).expect("section 0 must exist");
+    let ps0 = &s0.layout.page_size;
+    assert!(
+        ps0.width.value() < ps0.height.value(),
+        "section 0 should be portrait (width={:.1} height={:.1})",
+        ps0.width.value(), ps0.height.value()
+    );
+
+    // Section 1: landscape (width > height, ~A4 landscape).
+    let s1 = doc.section_at(1).expect("section 1 must exist");
+    let ps1 = &s1.layout.page_size;
+    assert!(
+        ps1.width.value() > ps1.height.value(),
+        "section 1 should be landscape (width={:.1} height={:.1})",
+        ps1.width.value(), ps1.height.value()
+    );
+
+    // Each section has its own header from its master page.
+    assert!(
+        s0.layout.header.is_some(),
+        "section 0 (portrait) should have a header"
+    );
+    assert!(
+        s1.layout.header.is_some(),
+        "section 1 (landscape) should have a header"
+    );
+
+    // Section 0 contains the portrait paragraph, section 1 the landscape one.
+    assert_eq!(s0.blocks.len(), 1, "section 0 should have 1 block");
+    assert_eq!(s1.blocks.len(), 1, "section 1 should have 1 block");
+}
+
+/// A document with a single master page still produces exactly one section
+/// (no spurious section breaks when all paragraphs share the same master page).
+#[test]
+fn single_master_page_no_spurious_sections() {
+    let content = helpers::heading_and_paragraphs_content_xml("1.2");
+    let styles = helpers::rich_styles_xml();
+    let zip = helpers::build_odt_zip(&content, &styles, None);
+
+    let result = OdtImporter::new(OdtImportOptions::default())
+        .run(Cursor::new(zip))
+        .expect("import should succeed");
+
+    assert_eq!(
+        result.document.section_count(), 1,
+        "single-master document must produce exactly one section"
+    );
+}

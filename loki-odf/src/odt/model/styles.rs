@@ -75,6 +75,14 @@ pub(crate) struct OdfStyle {
     pub col_width: Option<String>,
     /// `true` for styles from `office:automatic-styles`.
     pub is_automatic: bool,
+    /// `style:master-page-name` — for paragraph styles, the master page this
+    /// style transitions to when applied. `None` or empty means no transition.
+    ///
+    // COMPAT(odf): style:master-page-name on a paragraph style signals a
+    // master page transition. The new master page's layout (page size,
+    // margins, headers/footers) applies from that paragraph onward until
+    // the next transition or end of document. ODF 1.3 §16.9.
+    pub master_page_name: Option<String>,
 }
 
 /// The family of ODF elements a style applies to.
