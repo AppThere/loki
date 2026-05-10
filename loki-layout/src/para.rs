@@ -383,6 +383,47 @@ impl ParagraphLayout {
         Some(HitTestResult { byte_offset, affinity, line_index })
     }
 
+    /// Returns the byte offset at the end of the visual line that contains
+    /// `byte_offset`, optionally trimming a trailing hard-break character.
+    ///
+    /// `text` is the same UTF-8 string used to build this layout; it is needed
+    /// only to check for a trailing `\n` byte that Parley may include in the
+    /// line's [`text_range`].  For soft-wrapped lines the range end IS the
+    /// correct cursor position (the character sits at the wrap boundary on the
+    /// current line with upstream affinity).  For hard-break lines the `\n` is
+    /// excluded so the cursor stays after the last visible glyph.
+    ///
+    /// Returns `None` when hit-test data is not available (read-only mode) or
+    /// when the paragraph has no lines.
+    pub fn line_end_offset(&self, byte_offset: usize, text: &str) -> Option<usize> {
+        let layout = self.parley_layout.as_ref()?;
+        // Find the line whose text range contains byte_offset, or fall back to
+        // the last line (handles cursor positioned at text.len()).
+        let line = layout
+            .lines()
+            .find(|l| {
+                let r = l.text_range();
+                r.start <= byte_offset && byte_offset < r.end
+            })
+            .or_else(|| layout.lines().last())?;
+
+        let range = line.text_range();
+        let end = range.end;
+
+        // Trim a trailing '\n' so End lands before the newline byte, not after.
+        // In loki-text, paragraph breaks are modelled as separate blocks, so
+        // '\n' inside a block's text is unusual — this guard handles edge cases.
+        let trimmed = if end > 0
+            && text.as_bytes().get(end - 1).copied() == Some(b'\n')
+        {
+            end - 1
+        } else {
+            end
+        };
+
+        Some(trimmed)
+    }
+
     /// Returns the visual rectangle for a cursor at the given byte offset in
     /// paragraph-local coordinates.
     ///

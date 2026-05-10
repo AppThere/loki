@@ -44,6 +44,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
+use keyboard_types::Modifiers;
 use loki_doc_model::document::Document;
 use loki_doc_model::io::DocumentImport;
 use loki_doc_model::loro_bridge::{derive_loro_cursor, document_to_loro};
@@ -605,15 +606,77 @@ pub fn Editor(path: String) -> Element {
                                             return;
                                         }
 
+                                        let key = evt.key();
+                                        let modifiers = evt.modifiers();
+
+                                        // NOTE: on macOS, Meta is the Cmd key. On Windows/Linux,
+                                        // Ctrl is used for shortcuts — both are checked here for
+                                        // cross-platform consistency. The blitz-shell maps macOS
+                                        // Cmd → Modifiers::SUPER (not META), so we check SUPER too.
+                                        if modifiers.ctrl()
+                                            || modifiers.meta()
+                                            || modifiers.contains(Modifiers::SUPER)
+                                        {
+                                            match &key {
+                                                Key::Character(ch) => match ch.as_str() {
+                                                    "a" => {
+                                                        // Select all: anchor at document start, focus at end.
+                                                        let layout_opt = {
+                                                            let state = doc_state
+                                                                .lock()
+                                                                .unwrap_or_else(|e| e.into_inner());
+                                                            state.paginated_layout.clone()
+                                                        };
+                                                        if let Some(layout) = layout_opt {
+                                                            let first = DocumentPosition {
+                                                                page_index: 0,
+                                                                paragraph_index: 0,
+                                                                byte_offset: 0,
+                                                            };
+                                                            // Find the last block on the last page.
+                                                            let last_opt = layout
+                                                                .pages
+                                                                .iter()
+                                                                .enumerate()
+                                                                .rev()
+                                                                .find_map(|(pi, page)| {
+                                                                    page.editing_data
+                                                                        .as_ref()?
+                                                                        .paragraphs
+                                                                        .iter()
+                                                                        .max_by_key(|p| p.block_index)
+                                                                        .map(|p| (pi, p.block_index))
+                                                                });
+                                                            if let Some((last_page, last_block)) = last_opt {
+                                                                let end_offset = loro_doc
+                                                                    .read()
+                                                                    .as_ref()
+                                                                    .map(|l| get_block_text(l, last_block).len())
+                                                                    .unwrap_or(0);
+                                                                let last = DocumentPosition {
+                                                                    page_index: last_page,
+                                                                    paragraph_index: last_block,
+                                                                    byte_offset: end_offset,
+                                                                };
+                                                                let mut cs = cursor_state.write();
+                                                                cs.anchor = Some(first);
+                                                                cs.focus = Some(last);
+                                                            }
+                                                        }
+                                                    }
+                                                    _ => {} // unknown Cmd+key — do nothing
+                                                },
+                                                _ => {} // Cmd+non-character — do nothing
+                                            }
+                                            return;
+                                        }
+
                                         let focus = cursor_state.read().focus.clone();
                                         let Some(focus) = focus else { return; };
 
-                                        match evt.key() {
+                                        match &key {
                                             // ── Printable characters ───────────────────────────
-                                            Key::Character(ref ch) => {
-                                                if evt.modifiers().ctrl() || evt.modifiers().meta() {
-                                                    return;
-                                                }
+                                            Key::Character(ch) => {
                                                 let ch = ch.clone();
 
                                                 {
@@ -739,7 +802,7 @@ pub fn Editor(path: String) -> Element {
 
                                             // ── Arrow-key navigation ───────────────────────────
                                             Key::ArrowLeft | Key::ArrowRight => {
-                                                let shift_held = evt.modifiers().shift();
+                                                let shift_held = modifiers.shift();
                                                 let layout_opt = {
                                                     let state = doc_state
                                                         .lock()
@@ -748,7 +811,7 @@ pub fn Editor(path: String) -> Element {
                                                 };
                                                 let Some(layout) = layout_opt else { return; };
                                                 let ldoc_guard = loro_doc.read();
-                                                let new_pos = if evt.key() == Key::ArrowLeft {
+                                                let new_pos = if key == Key::ArrowLeft {
                                                     navigate_left(&focus, &layout, |idx| {
                                                         ldoc_guard
                                                             .as_ref()
@@ -773,7 +836,7 @@ pub fn Editor(path: String) -> Element {
                                             }
 
                                             Key::ArrowUp | Key::ArrowDown => {
-                                                let shift_held = evt.modifiers().shift();
+                                                let shift_held = modifiers.shift();
                                                 let layout_opt = {
                                                     let state = doc_state
                                                         .lock()
@@ -781,7 +844,7 @@ pub fn Editor(path: String) -> Element {
                                                     state.paginated_layout.clone()
                                                 };
                                                 let Some(layout) = layout_opt else { return; };
-                                                let new_pos = if evt.key() == Key::ArrowUp {
+                                                let new_pos = if key == Key::ArrowUp {
                                                     navigate_up(&focus, &layout)
                                                 } else {
                                                     navigate_down(&focus, &layout)
@@ -796,7 +859,7 @@ pub fn Editor(path: String) -> Element {
                                             }
 
                                             Key::Home | Key::End => {
-                                                let shift_held = evt.modifiers().shift();
+                                                let shift_held = modifiers.shift();
                                                 let layout_opt = {
                                                     let state = doc_state
                                                         .lock()
@@ -804,10 +867,16 @@ pub fn Editor(path: String) -> Element {
                                                     state.paginated_layout.clone()
                                                 };
                                                 let Some(layout) = layout_opt else { return; };
-                                                let new_pos = if evt.key() == Key::Home {
+                                                let ldoc_guard = loro_doc.read();
+                                                let new_pos = if key == Key::Home {
                                                     navigate_home(&focus, &layout)
                                                 } else {
-                                                    navigate_end(&focus, &layout)
+                                                    navigate_end(&focus, &layout, |idx| {
+                                                        ldoc_guard
+                                                            .as_ref()
+                                                            .map(|l| get_block_text(l, idx))
+                                                            .unwrap_or_default()
+                                                    })
                                                 };
                                                 if let Some(np) = new_pos {
                                                     let mut cs = cursor_state.write();

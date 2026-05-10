@@ -27,6 +27,7 @@ use loki_layout::{PageParagraphData, PaginatedLayout};
 use super::cursor::{next_grapheme_boundary, prev_grapheme_boundary, DocumentPosition};
 use super::hit_test::hit_test_page;
 
+
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 /// Look up the [`PageParagraphData`] for a block on a specific page.
@@ -46,6 +47,54 @@ fn find_para_data(
         .paragraphs
         .iter()
         .find(|p| p.block_index == block_index)
+}
+
+/// Find the paragraph entry immediately preceding `block_index` in document order.
+///
+/// Searches the current page first (for `block_index - 1`), then walks backward
+/// through previous pages. Returns `(page_index, para_data)`.
+///
+/// Returns `None` when `block_index` is 0 (no predecessor exists).
+fn find_prev_para_data(
+    layout: &PaginatedLayout,
+    page_index: usize,
+    block_index: usize,
+) -> Option<(usize, &PageParagraphData)> {
+    if block_index == 0 {
+        return None;
+    }
+    let prev_block = block_index - 1;
+    // Search this page and previous pages for the entry with prev_block.
+    for pi in (0..=page_index).rev() {
+        if let Some(ed) = layout.pages[pi].editing_data.as_ref() {
+            if let Some(para) = ed.paragraphs.iter().find(|p| p.block_index == prev_block) {
+                return Some((pi, para));
+            }
+        }
+    }
+    None
+}
+
+/// Find the paragraph entry immediately following `block_index` in document order.
+///
+/// Searches the current page first (for `block_index + 1`), then walks forward
+/// through subsequent pages. Returns `(page_index, para_data)`.
+///
+/// Returns `None` when no following block exists in the layout.
+fn find_next_para_data(
+    layout: &PaginatedLayout,
+    page_index: usize,
+    block_index: usize,
+) -> Option<(usize, &PageParagraphData)> {
+    let next_block = block_index + 1;
+    for pi in page_index..layout.pages.len() {
+        if let Some(ed) = layout.pages[pi].editing_data.as_ref() {
+            if let Some(para) = ed.paragraphs.iter().find(|p| p.block_index == next_block) {
+                return Some((pi, para));
+            }
+        }
+    }
+    None
 }
 
 // ── Public navigation functions ───────────────────────────────────────────────
@@ -126,13 +175,11 @@ pub fn navigate_right(
 /// Move the cursor one line up, preserving the horizontal screen position.
 ///
 /// Uses `cursor_rect` to find the current line's geometry, then subtracts one
-/// line height and re-hits the layout.
+/// line height and re-hits the layout.  When the target falls above the content
+/// area (first line of a paragraph or page break), navigates to the last line
+/// of the previous paragraph, crossing page boundaries as needed.
 ///
-/// Returns `None` when the cursor is on the first line of the first paragraph
-/// on the page (no upward target exists on this page).
-///
-/// `TODO(3b-3)`: navigate to the last line of the previous page when at the
-/// top of the current page.
+/// Returns `None` when already at the very first position of the document.
 pub fn navigate_up(
     focus: &DocumentPosition,
     layout: &PaginatedLayout,
@@ -148,17 +195,39 @@ pub fn navigate_up(
     // Aim for the vertical centre of the line above.
     let target_y = canvas_y - rect.height;
 
-    // TODO(3b-3): if target_y < margins.top, navigate to previous page
-    hit_test_page(focus.page_index, canvas_x, target_y, layout)
+    // Only use hit_test_page when target_y is within the page content area.
+    // If target_y < margins.top, the target is above the content area; calling
+    // hit_test_page could match a split-paragraph fragment with negative origin
+    // and land in its invisible region (Bug 3).
+    if target_y >= margins.top {
+        if let Some(pos) = hit_test_page(focus.page_index, canvas_x, target_y, layout) {
+            // Avoid returning the same position (can happen when rect.height is
+            // small relative to the gap between paragraphs).
+            if pos.paragraph_index != focus.paragraph_index
+                || pos.byte_offset != focus.byte_offset
+            {
+                return Some(pos);
+            }
+        }
+    }
+
+    // Cross-paragraph: navigate to the bottom of the previous paragraph.
+    let (prev_pi, prev_para) =
+        find_prev_para_data(layout, focus.page_index, focus.paragraph_index)?;
+    let prev_margins = &layout.pages[prev_pi].margins;
+    // Hit the last line of the previous paragraph at the same horizontal position.
+    let prev_bottom_content_y = prev_para.origin.1 + prev_para.layout.height - 0.5;
+    let prev_canvas_y = prev_bottom_content_y + prev_margins.top;
+    hit_test_page(prev_pi, canvas_x, prev_canvas_y, layout)
 }
 
 /// Move the cursor one line down, preserving the horizontal screen position.
 ///
-/// Returns `None` when the cursor is on the last line of the last paragraph
-/// on the page.
+/// When the target falls below the page content area (last line of a paragraph
+/// or page break), navigates to the first line of the next paragraph, crossing
+/// page boundaries as needed.
 ///
-/// `TODO(3b-3)`: navigate to the first line of the next page when at the
-/// bottom of the current page.
+/// Returns `None` when already at the very last position of the document.
 pub fn navigate_down(
     focus: &DocumentPosition,
     layout: &PaginatedLayout,
@@ -166,6 +235,7 @@ pub fn navigate_down(
     let para_data = find_para_data(layout, focus.page_index, focus.paragraph_index)?;
     let rect = para_data.layout.cursor_rect(focus.byte_offset)?;
     let margins = &layout.pages.get(focus.page_index)?.margins;
+    let page = layout.pages.get(focus.page_index)?;
 
     let canvas_x = rect.x + para_data.origin.0 + margins.left;
     let canvas_y = rect.y + para_data.origin.1 + margins.top;
@@ -173,8 +243,27 @@ pub fn navigate_down(
     // Aim for the vertical centre of the line below (1.5 × line height down).
     let target_y = canvas_y + rect.height * 1.5;
 
-    // TODO(3b-3): if hit_test_page returns None here, navigate to next page
-    hit_test_page(focus.page_index, canvas_x, target_y, layout)
+    // Page bottom in canvas coords (content area bottom).
+    let page_bottom = page.page_size.height - margins.bottom;
+
+    if target_y < page_bottom {
+        if let Some(pos) = hit_test_page(focus.page_index, canvas_x, target_y, layout) {
+            if pos.paragraph_index != focus.paragraph_index
+                || pos.byte_offset != focus.byte_offset
+            {
+                return Some(pos);
+            }
+        }
+    }
+
+    // Cross-paragraph: navigate to the top of the next paragraph.
+    let (next_pi, next_para) =
+        find_next_para_data(layout, focus.page_index, focus.paragraph_index)?;
+    let next_margins = &layout.pages[next_pi].margins;
+    // Hit slightly inside the first line of the next paragraph.
+    let next_top_content_y = next_para.origin.1 + 0.5;
+    let next_canvas_y = next_top_content_y + next_margins.top;
+    hit_test_page(next_pi, canvas_x, next_canvas_y, layout)
 }
 
 /// Move the cursor to the start of the current visual line.
@@ -199,23 +288,21 @@ pub fn navigate_home(
 
 /// Move the cursor to the end of the current visual line.
 ///
-/// Uses `cursor_rect` to determine the line's y position, then hit-tests at
-/// a very large x (100,000 pt) on the same line — Parley clamps to the last
-/// cluster on the line.
+/// Uses [`ParagraphLayout::line_end_offset`] to find the last byte on the
+/// line, trimming any trailing hard-break character so the cursor stays after
+/// the last visible glyph.
 ///
-/// `TODO(3b-3)`: use Parley `line_boundaries` for true End behaviour with
-/// bidirectional text.
+/// `get_text(block_index)` is called to retrieve the paragraph text needed by
+/// `line_end_offset` to check for a trailing `\n`.
 pub fn navigate_end(
     focus: &DocumentPosition,
     layout: &PaginatedLayout,
+    get_text: impl Fn(usize) -> String,
 ) -> Option<DocumentPosition> {
     let para_data = find_para_data(layout, focus.page_index, focus.paragraph_index)?;
-    let rect = para_data.layout.cursor_rect(focus.byte_offset)?;
-
-    let line_center_y = rect.y + rect.height / 2.0;
-    // 100_000 pt ≈ 1.4 m — well past any realistic page width.
-    let hit = para_data.layout.hit_test_point(100_000.0, line_center_y)?;
-    Some(DocumentPosition { byte_offset: hit.byte_offset, ..focus.clone() })
+    let text = get_text(focus.paragraph_index);
+    let end_offset = para_data.layout.line_end_offset(focus.byte_offset, &text)?;
+    Some(DocumentPosition { byte_offset: end_offset, ..focus.clone() })
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -334,7 +421,7 @@ mod tests {
     fn navigate_end_returns_position_on_same_paragraph() {
         let layout = make_layout_with_text("hello world");
         let focus = focus_at(0);
-        let result = navigate_end(&focus, &layout);
+        let result = navigate_end(&focus, &layout, |_| "hello world".to_string());
         let pos = result.expect("navigate_end should return Some");
         assert_eq!(pos.page_index, 0);
         assert_eq!(pos.paragraph_index, 0);
@@ -358,5 +445,86 @@ mod tests {
         // Single-line paragraph — no line below.
         let result = navigate_down(&focus, &layout);
         assert!(result.is_none(), "no line below last line should return None");
+    }
+
+    // ── Cross-boundary helper tests ───────────────────────────────────────────
+
+    fn make_two_para_layout(text0: &str, text1: &str) -> PaginatedLayout {
+        let mut resources = FontResources::new();
+        let make_span = |text: &str| StyleSpan {
+            range: 0..text.len(),
+            font_name: None,
+            font_size: 12.0,
+            bold: false,
+            italic: false,
+            color: LayoutColor::BLACK,
+            underline: None,
+            strikethrough: None,
+            line_height: None,
+            vertical_align: None,
+            highlight_color: None,
+            letter_spacing: None,
+            font_variant: None,
+            word_spacing: None,
+            shadow: false,
+            link_url: None,
+        };
+        let para0 = layout_paragraph(
+            &mut resources, text0, &[make_span(text0)], &ResolvedParaProps::default(),
+            400.0, 1.0, true,
+        );
+        let h0 = para0.height;
+        let para1 = layout_paragraph(
+            &mut resources, text1, &[make_span(text1)], &ResolvedParaProps::default(),
+            400.0, 1.0, true,
+        );
+        let editing_data = PageEditingData {
+            paragraphs: vec![
+                PageParagraphData { block_index: 0, layout: Arc::new(para0), origin: (0.0, 0.0) },
+                PageParagraphData { block_index: 1, layout: Arc::new(para1), origin: (0.0, h0) },
+            ],
+        };
+        let page_size = LayoutSize::new(595.0, 842.0);
+        let margins = LayoutInsets { top: 72.0, right: 72.0, bottom: 72.0, left: 72.0 };
+        let page = LayoutPage {
+            page_number: 1, page_size, margins,
+            content_items: vec![], header_items: vec![], footer_items: vec![],
+            header_height: 0.0, footer_height: 0.0,
+            editing_data: Some(editing_data),
+        };
+        PaginatedLayout { page_size, pages: vec![page] }
+    }
+
+    #[test]
+    fn find_prev_para_data_at_block_0_returns_none() {
+        let layout = make_two_para_layout("first", "second");
+        let result = find_prev_para_data(&layout, 0, 0);
+        assert!(result.is_none(), "block 0 has no predecessor");
+    }
+
+    #[test]
+    fn find_prev_para_data_at_block_1_returns_block_0() {
+        let layout = make_two_para_layout("first", "second");
+        let result = find_prev_para_data(&layout, 0, 1);
+        let (page_idx, para) = result.expect("block 1 should have a predecessor");
+        assert_eq!(page_idx, 0);
+        assert_eq!(para.block_index, 0);
+    }
+
+    #[test]
+    fn find_next_para_data_at_last_block_returns_none() {
+        let layout = make_two_para_layout("first", "second");
+        // block_index 1 is the last block; no successor.
+        let result = find_next_para_data(&layout, 0, 1);
+        assert!(result.is_none(), "last block has no successor");
+    }
+
+    #[test]
+    fn find_next_para_data_at_block_0_returns_block_1() {
+        let layout = make_two_para_layout("first", "second");
+        let result = find_next_para_data(&layout, 0, 0);
+        let (page_idx, para) = result.expect("block 0 should have a successor");
+        assert_eq!(page_idx, 0);
+        assert_eq!(para.block_index, 1);
     }
 }

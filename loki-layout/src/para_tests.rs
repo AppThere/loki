@@ -456,3 +456,35 @@ fn cursor_rect_oob_clamps_gracefully() {
     let rect = result.cursor_rect(usize::MAX).expect("OOB cursor_rect must return Some (clamped)");
     assert!(rect.height > 0.0, "clamped cursor rect must have positive height");
 }
+
+// ── line_end_offset tests ─────────────────────────────────────────────────────
+
+#[test]
+fn line_end_offset_single_line_returns_text_len() {
+    let text = "hello";
+    let para = editing_paragraph(text);
+    // Single line with no hard break: end offset should be text.len() (= 5).
+    let end = para.line_end_offset(0, text).expect("line_end_offset must return Some");
+    assert_eq!(end, text.len(), "end offset for single-line paragraph should equal text length");
+}
+
+#[test]
+fn line_end_offset_excludes_trailing_newline() {
+    // A paragraph whose text ends with '\n' — line_end_offset should trim it.
+    let text = "hello\n";
+    let para = editing_paragraph(text);
+    let end = para.line_end_offset(0, text).expect("line_end_offset must return Some");
+    assert_eq!(end, 5, "trailing newline must be excluded from line end offset");
+}
+
+#[test]
+fn line_end_offset_read_only_returns_none() {
+    let mut r = test_resources();
+    let text = "hello";
+    let spans = [single_span(text, 12.0)];
+    let para = layout_paragraph(&mut r, text, &spans, &ResolvedParaProps::default(), 400.0, 1.0, false);
+    assert!(
+        para.line_end_offset(0, text).is_none(),
+        "line_end_offset must return None in read-only mode"
+    );
+}
