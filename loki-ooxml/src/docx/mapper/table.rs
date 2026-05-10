@@ -9,10 +9,10 @@ use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::table::col::{ColAlignment, ColSpec, ColWidth, TableWidth};
 use loki_doc_model::content::table::core::{Table, TableBody, TableCaption, TableFoot, TableHead};
-use loki_doc_model::content::table::row::{Cell, CellProps, Row};
+use loki_doc_model::content::table::row::{Cell, CellProps, CellTextDirection, CellVerticalAlign, Row};
 use loki_primitives::units::Points;
 
-use crate::docx::model::styles::{DocxTableModel, DocxTableRow, DocxVMerge};
+use crate::docx::model::styles::{DocxTableModel, DocxTableRow, DocxTextDirection, DocxVAlign, DocxVMerge};
 
 use super::document::MappingContext;
 use super::paragraph::map_paragraph;
@@ -150,6 +150,26 @@ fn map_cell(
             props.border_left = borders.left.as_ref().map(map_border_edge);
             props.border_right = borders.right.as_ref().map(map_border_edge);
         }
+        // Cell padding from `w:tcMar`. COMPAT(ooxml-dxa): twips ÷ 20 = points.
+        if let Some(ref m) = tc_pr.tc_margins {
+            props.padding_top = m.top.map(|v| Points::new(v as f64 / 20.0));
+            props.padding_bottom = m.bottom.map(|v| Points::new(v as f64 / 20.0));
+            props.padding_left = m.left.map(|v| Points::new(v as f64 / 20.0));
+            props.padding_right = m.right.map(|v| Points::new(v as f64 / 20.0));
+        }
+        // Vertical alignment from `w:vAlign`.
+        props.vertical_align = tc_pr.v_align.map(|v| match v {
+            DocxVAlign::Top => CellVerticalAlign::Top,
+            DocxVAlign::Center => CellVerticalAlign::Middle,
+            DocxVAlign::Bottom => CellVerticalAlign::Bottom,
+        });
+        // Text direction from `w:textDirection`.
+        props.text_direction = tc_pr.text_direction.map(|d| match d {
+            DocxTextDirection::LrTb => CellTextDirection::LrTb,
+            DocxTextDirection::TbRl => CellTextDirection::TbRl,
+            DocxTextDirection::TbLr => CellTextDirection::TbLr,
+            DocxTextDirection::BtLr => CellTextDirection::BtLr,
+        });
     }
 
     Cell {
@@ -446,6 +466,85 @@ mod tests {
         assert!(skip_set.contains(&(2, 1)), "col-1 continuation (row 2) skipped");
         assert!(!skip_set.contains(&(0, 1)), "col-1 row 0 is a plain cell");
         assert!(!skip_set.contains(&(2, 0)), "col-0 row 2 is a plain cell");
+    }
+
+    fn cell_with_props(tc_pr: DocxTcPr) -> DocxTableCell {
+        DocxTableCell { tc_pr: Some(tc_pr), paragraphs: vec![] }
+    }
+
+    #[test]
+    fn cell_padding_maps_to_points() {
+        use crate::docx::model::styles::DocxCellMargins;
+        use loki_primitives::units::Points;
+
+        let styles = StyleCatalog::default();
+        let (fn_m, en_m, hl_m, img_m) = (HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new());
+        let opts = DocxImportOptions::default();
+        let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
+
+        let tc = cell_with_props(DocxTcPr {
+            tc_margins: Some(DocxCellMargins {
+                top: Some(100),    // 5pt
+                bottom: Some(200), // 10pt
+                left: Some(300),   // 15pt
+                right: Some(400),  // 20pt
+            }),
+            ..Default::default()
+        });
+        let cell = map_cell(&tc, &mut ctx);
+        assert_eq!(cell.props.padding_top, Some(Points::new(5.0)));
+        assert_eq!(cell.props.padding_bottom, Some(Points::new(10.0)));
+        assert_eq!(cell.props.padding_left, Some(Points::new(15.0)));
+        assert_eq!(cell.props.padding_right, Some(Points::new(20.0)));
+    }
+
+    #[test]
+    fn cell_valign_maps_correctly() {
+        use crate::docx::model::styles::DocxVAlign;
+        use loki_doc_model::content::table::row::CellVerticalAlign;
+
+        let styles = StyleCatalog::default();
+        let (fn_m, en_m, hl_m, img_m) = (HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new());
+        let opts = DocxImportOptions::default();
+        let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
+
+        for (docx_val, expected) in [
+            (DocxVAlign::Top, CellVerticalAlign::Top),
+            (DocxVAlign::Center, CellVerticalAlign::Middle),
+            (DocxVAlign::Bottom, CellVerticalAlign::Bottom),
+        ] {
+            let tc = cell_with_props(DocxTcPr {
+                v_align: Some(docx_val),
+                ..Default::default()
+            });
+            let cell = map_cell(&tc, &mut ctx);
+            assert_eq!(cell.props.vertical_align, Some(expected));
+        }
+    }
+
+    #[test]
+    fn cell_text_direction_maps_correctly() {
+        use crate::docx::model::styles::DocxTextDirection;
+        use loki_doc_model::content::table::row::CellTextDirection;
+
+        let styles = StyleCatalog::default();
+        let (fn_m, en_m, hl_m, img_m) = (HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new());
+        let opts = DocxImportOptions::default();
+        let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
+
+        for (docx_val, expected) in [
+            (DocxTextDirection::LrTb, CellTextDirection::LrTb),
+            (DocxTextDirection::TbRl, CellTextDirection::TbRl),
+            (DocxTextDirection::TbLr, CellTextDirection::TbLr),
+            (DocxTextDirection::BtLr, CellTextDirection::BtLr),
+        ] {
+            let tc = cell_with_props(DocxTcPr {
+                text_direction: Some(docx_val),
+                ..Default::default()
+            });
+            let cell = map_cell(&tc, &mut ctx);
+            assert_eq!(cell.props.text_direction, Some(expected));
+        }
     }
 
     /// col_span + vMerge: a restart cell with col_span=2 spans two grid columns.

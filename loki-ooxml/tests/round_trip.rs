@@ -352,3 +352,61 @@ fn vmerge_row_span_assigned_and_continuation_removed() {
         "row 2 col 0 should have row_span = 1"
     );
 }
+
+#[test]
+fn cell_props_padding_valign_textdirection_mapped() {
+    use loki_doc_model::content::table::row::{CellTextDirection, CellVerticalAlign};
+    use loki_primitives::units::Points;
+
+    let bytes = helpers::build_reference_docx();
+    let result = DocxImporter::new(DocxImportOptions::default())
+        .run(Cursor::new(bytes))
+        .expect("reference DOCX should import without error");
+
+    let all_blocks: Vec<&Block> = result.document.sections
+        .iter()
+        .flat_map(|s| s.blocks.iter())
+        .collect();
+
+    // Locate the styled-cell table (1 body row with 2 cells, first has tcMar).
+    let styled_table = all_blocks.iter()
+        .filter_map(|b| if let Block::Table(t) = b { Some(t.as_ref()) } else { None })
+        .find(|t| {
+            t.bodies.iter().any(|b| {
+                b.body_rows.len() == 1
+                    && b.body_rows[0].cells.first()
+                        .map(|c| c.props.padding_left.is_some())
+                        .unwrap_or(false)
+            })
+        })
+        .expect("styled-cell table must be present in the document");
+
+    let row = &styled_table.bodies[0].body_rows[0];
+
+    // Cell 0: padding 5pt top/bottom, 10pt left/right (100 twips ÷20, 200 twips ÷20)
+    let c0 = &row.cells[0];
+    assert_eq!(c0.props.padding_top, Some(Points::new(5.0)), "padding_top should be 5pt");
+    assert_eq!(c0.props.padding_bottom, Some(Points::new(5.0)), "padding_bottom should be 5pt");
+    assert_eq!(c0.props.padding_left, Some(Points::new(10.0)), "padding_left should be 10pt");
+    assert_eq!(c0.props.padding_right, Some(Points::new(10.0)), "padding_right should be 10pt");
+    assert_eq!(
+        c0.props.vertical_align,
+        Some(CellVerticalAlign::Middle),
+        "vAlign center → Middle"
+    );
+    assert_eq!(
+        c0.props.text_direction,
+        Some(CellTextDirection::TbRl),
+        "textDirection tbRl"
+    );
+
+    // Cell 1: only vAlign bottom, no padding
+    let c1 = &row.cells[1];
+    assert_eq!(c1.props.padding_top, None, "cell 1 should have no top padding");
+    assert_eq!(
+        c1.props.vertical_align,
+        Some(CellVerticalAlign::Bottom),
+        "vAlign bottom → Bottom"
+    );
+    assert_eq!(c1.props.text_direction, None, "cell 1 should have no text direction");
+}

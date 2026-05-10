@@ -501,6 +501,36 @@ fn document_xml() -> Vec<u8> {
       </w:tr>
     </w:tbl>
 
+    <!-- ── 2×1 table: cell props (padding, vAlign, textDirection) ──── -->
+    <w:tbl>
+      <w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>
+      <w:tblGrid>
+        <w:gridCol w:w="2500"/>
+        <w:gridCol w:w="2500"/>
+      </w:tblGrid>
+      <w:tr>
+        <w:tc>
+          <w:tcPr>
+            <w:tcMar>
+              <w:top w:w="100" w:type="dxa"/>
+              <w:bottom w:w="100" w:type="dxa"/>
+              <w:left w:w="200" w:type="dxa"/>
+              <w:right w:w="200" w:type="dxa"/>
+            </w:tcMar>
+            <w:vAlign w:val="center"/>
+            <w:textDirection w:val="tbRl"/>
+          </w:tcPr>
+          <w:p><w:r><w:t>Styled Cell</w:t></w:r></w:p>
+        </w:tc>
+        <w:tc>
+          <w:tcPr>
+            <w:vAlign w:val="bottom"/>
+          </w:tcPr>
+          <w:p><w:r><w:t>Bottom Aligned</w:t></w:r></w:p>
+        </w:tc>
+      </w:tr>
+    </w:tbl>
+
     <!-- ── Page break → page 2 ──────────────────────────────────────── -->
     <w:p><w:r><w:br w:type="page"/></w:r></w:p>
 
