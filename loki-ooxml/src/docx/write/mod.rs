@@ -11,7 +11,10 @@
 //! are dropped with silent omission.
 
 pub(super) mod assembly;
+pub(super) mod collector;
 mod document;
+pub(super) mod footnotes;
+pub(super) mod media;
 mod numbering;
 mod styles;
 mod xml;

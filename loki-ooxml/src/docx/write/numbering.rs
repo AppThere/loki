@@ -40,7 +40,7 @@ struct Num {
 /// Each unique list encountered registers itself here and receives a `numId`
 /// to embed in paragraph `w:numPr` elements. After document serialization,
 /// call [`write_numbering_xml`] to produce `word/numbering.xml`.
-pub(super) struct NumberingState {
+pub(crate) struct NumberingState {
     /// abstractNum for bullet lists (shared among all bullet lists).
     bullet_abstract_id: Option<u32>,
     /// All abstract nums in definition order.

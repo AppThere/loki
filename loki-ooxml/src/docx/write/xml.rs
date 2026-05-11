@@ -13,15 +13,40 @@ pub(super) const NS_W: &str =
     "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 pub(super) const NS_R: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+pub(super) const NS_WP: &str =
+    "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+pub(super) const NS_A: &str =
+    "http://schemas.openxmlformats.org/drawingml/2006/main";
+pub(super) const NS_PIC: &str =
+    "http://schemas.openxmlformats.org/drawingml/2006/picture";
+
+pub(super) const REL_HYPERLINK: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
+pub(super) const REL_IMAGE: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+pub(super) const REL_STYLES: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
+pub(super) const REL_NUMBERING: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering";
+pub(super) const REL_FOOTNOTES: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes";
+pub(super) const REL_ENDNOTES: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes";
+pub(super) const REL_HEADER: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header";
+pub(super) const REL_FOOTER: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer";
 
 // ── Unit conversions ─────────────────────────────────────────────────────────
 
 /// Points → twips (1 pt = 20 twips). Used for page size, margins, table widths.
+#[allow(clippy::cast_possible_truncation)]
 pub(super) fn pts_to_twips(pt: f64) -> i32 {
     (pt * 20.0).round() as i32
 }
 
 /// Points → half-points (1 pt = 2 half-pts). Used for `w:sz`.
+#[allow(clippy::cast_possible_truncation)]
 pub(super) fn pts_to_half_pts(pt: f64) -> i32 {
     (pt * 2.0).round() as i32
 }
@@ -32,6 +57,13 @@ pub(super) fn pts_to_half_pts(pt: f64) -> i32 {
 /// uppercase form required by OOXML `w:color/@w:val`.
 pub(super) fn hex_color_val(hex: &str) -> String {
     hex.trim_start_matches('#').to_uppercase()
+}
+
+pub(super) fn color_to_hex(color: &loki_primitives::color::DocumentColor) -> String {
+    color.to_hex().map_or_else(
+        || "000000".to_string(),
+        |s| s.trim_start_matches('#').to_string(),
+    )
 }
 
 // ── Writer helpers ───────────────────────────────────────────────────────────
