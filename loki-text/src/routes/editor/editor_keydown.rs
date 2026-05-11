@@ -1,0 +1,330 @@
+// SPDX-License-Identifier: Apache-2.0
+
+//! Keyboard event handler factory for the document canvas.
+
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+
+use dioxus::prelude::*;
+use keyboard_types::Modifiers;
+use loki_doc_model::loro_mutation::{delete_text, get_block_text, insert_text};
+use loki_doc_model::{merge_block, split_block};
+
+use crate::components::document_source::{DocumentState, apply_mutation_and_relayout};
+use crate::editing::cursor::{
+    CursorState, DocumentPosition, next_grapheme_boundary, prev_grapheme_boundary,
+};
+use crate::editing::navigation::{
+    navigate_down, navigate_end, navigate_home, navigate_left, navigate_right, navigate_up,
+};
+
+use super::EditorMode;
+
+/// Builds the `on_keydown` closure for [`super::editor_inner::EditorInner`].
+///
+/// Guards on [`EditorMode::Editing`] and dispatches printable characters,
+/// `Backspace`, `Delete`, arrow navigation, `Home`/`End`, and `Enter`
+/// (paragraph split).  The returned closure is passed to `WgpuSurface`'s
+/// `on_keydown` prop.
+pub(super) fn make_keydown_handler(
+    doc_state: Arc<Mutex<DocumentState>>,
+    editor_mode: Signal<EditorMode>,
+    mut cursor_state: Signal<CursorState>,
+    loro_doc: Signal<Option<loro::LoroDoc>>,
+) -> impl FnMut(Rc<KeyboardData>) {
+    move |evt: Rc<KeyboardData>| {
+        if editor_mode() != EditorMode::Editing {
+            return;
+        }
+
+        let key = evt.key();
+        let modifiers = evt.modifiers();
+
+        // NOTE: on macOS, Meta is the Cmd key. On Windows/Linux,
+        // Ctrl is used for shortcuts — both are checked here for
+        // cross-platform consistency. blitz-shell maps macOS
+        // Cmd → Modifiers::SUPER (not META), so we check SUPER too.
+        if modifiers.ctrl() || modifiers.meta() || modifiers.contains(Modifiers::SUPER) {
+            match &key {
+                Key::Character(ch) => match ch.as_str() {
+                    "a" => {
+                        // Select all: anchor at document start, focus at end.
+                        let layout_opt = {
+                            let state = doc_state.lock().unwrap_or_else(|e| e.into_inner());
+                            state.paginated_layout.clone()
+                        };
+                        if let Some(layout) = layout_opt {
+                            let first = DocumentPosition {
+                                page_index: 0,
+                                paragraph_index: 0,
+                                byte_offset: 0,
+                            };
+                            let last_opt =
+                                layout
+                                    .pages
+                                    .iter()
+                                    .enumerate()
+                                    .rev()
+                                    .find_map(|(pi, page)| {
+                                        page.editing_data
+                                            .as_ref()?
+                                            .paragraphs
+                                            .iter()
+                                            .max_by_key(|p| p.block_index)
+                                            .map(|p| (pi, p.block_index))
+                                    });
+                            if let Some((last_page, last_block)) = last_opt {
+                                let end_offset = loro_doc
+                                    .read()
+                                    .as_ref()
+                                    .map(|l| get_block_text(l, last_block).len())
+                                    .unwrap_or(0);
+                                let last = DocumentPosition {
+                                    page_index: last_page,
+                                    paragraph_index: last_block,
+                                    byte_offset: end_offset,
+                                };
+                                let mut cs = cursor_state.write();
+                                cs.anchor = Some(first);
+                                cs.focus = Some(last);
+                            }
+                        }
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+            return;
+        }
+
+        let focus = cursor_state.read().focus.clone();
+        let Some(focus) = focus else { return };
+
+        match &key {
+            // ── Printable characters ──────────────────────────────────────────
+            Key::Character(ch) => {
+                let ch = ch.clone();
+                {
+                    let ldoc_guard = loro_doc.read();
+                    let Some(ldoc) = ldoc_guard.as_ref() else {
+                        return;
+                    };
+                    if insert_text(ldoc, focus.paragraph_index, focus.byte_offset, &ch).is_err() {
+                        return;
+                    }
+                }
+                {
+                    let ldoc_guard = loro_doc.read();
+                    let Some(ldoc) = ldoc_guard.as_ref() else {
+                        return;
+                    };
+                    apply_mutation_and_relayout(&doc_state, ldoc);
+                }
+                let new_offset = focus.byte_offset + ch.len();
+                let new_pos = DocumentPosition {
+                    byte_offset: new_offset,
+                    ..focus
+                };
+                let mut cs = cursor_state.write();
+                cs.focus = Some(new_pos.clone());
+                cs.anchor = Some(new_pos);
+            }
+
+            // ── Backspace ─────────────────────────────────────────────────────
+            Key::Backspace => {
+                if focus.byte_offset == 0 {
+                    if focus.paragraph_index == 0 {
+                        return;
+                    }
+                    let ldoc_guard = loro_doc.read();
+                    let Some(ldoc) = ldoc_guard.as_ref() else {
+                        return;
+                    };
+                    let Ok(merged_offset) = merge_block(ldoc, focus.paragraph_index) else {
+                        return;
+                    };
+                    apply_mutation_and_relayout(&doc_state, ldoc);
+                    // TODO(3b-3): recompute page_index from layout after merge
+                    let new_pos = DocumentPosition {
+                        page_index: focus.page_index,
+                        paragraph_index: focus.paragraph_index - 1,
+                        byte_offset: merged_offset,
+                    };
+                    let mut cs = cursor_state.write();
+                    cs.focus = Some(new_pos.clone());
+                    cs.anchor = Some(new_pos);
+                    return;
+                }
+                let text = {
+                    let ldoc_guard = loro_doc.read();
+                    ldoc_guard
+                        .as_ref()
+                        .map(|l| get_block_text(l, focus.paragraph_index))
+                        .unwrap_or_default()
+                };
+                let prev = prev_grapheme_boundary(&text, focus.byte_offset);
+                let len = focus.byte_offset - prev;
+                {
+                    let ldoc_guard = loro_doc.read();
+                    let Some(ldoc) = ldoc_guard.as_ref() else {
+                        return;
+                    };
+                    if delete_text(ldoc, focus.paragraph_index, prev, len).is_err() {
+                        return;
+                    }
+                }
+                {
+                    let ldoc_guard = loro_doc.read();
+                    let Some(ldoc) = ldoc_guard.as_ref() else {
+                        return;
+                    };
+                    apply_mutation_and_relayout(&doc_state, ldoc);
+                }
+                let new_pos = DocumentPosition {
+                    byte_offset: prev,
+                    ..focus
+                };
+                let mut cs = cursor_state.write();
+                cs.focus = Some(new_pos.clone());
+                cs.anchor = Some(new_pos);
+            }
+
+            // ── Forward delete ────────────────────────────────────────────────
+            Key::Delete => {
+                let text = {
+                    let ldoc_guard = loro_doc.read();
+                    ldoc_guard
+                        .as_ref()
+                        .map(|l| get_block_text(l, focus.paragraph_index))
+                        .unwrap_or_default()
+                };
+                if focus.byte_offset >= text.len() {
+                    return;
+                }
+                let next = next_grapheme_boundary(&text, focus.byte_offset);
+                let len = next - focus.byte_offset;
+                {
+                    let ldoc_guard = loro_doc.read();
+                    let Some(ldoc) = ldoc_guard.as_ref() else {
+                        return;
+                    };
+                    if delete_text(ldoc, focus.paragraph_index, focus.byte_offset, len).is_err() {
+                        return;
+                    }
+                }
+                {
+                    let ldoc_guard = loro_doc.read();
+                    let Some(ldoc) = ldoc_guard.as_ref() else {
+                        return;
+                    };
+                    apply_mutation_and_relayout(&doc_state, ldoc);
+                }
+                // Cursor stays at the same offset after forward delete.
+            }
+
+            // ── Arrow-key navigation ──────────────────────────────────────────
+            Key::ArrowLeft | Key::ArrowRight => {
+                let shift_held = modifiers.shift();
+                let layout_opt = {
+                    let state = doc_state.lock().unwrap_or_else(|e| e.into_inner());
+                    state.paginated_layout.clone()
+                };
+                let Some(layout) = layout_opt else { return };
+                let ldoc_guard = loro_doc.read();
+                let new_pos = if key == Key::ArrowLeft {
+                    navigate_left(&focus, &layout, |idx| {
+                        ldoc_guard
+                            .as_ref()
+                            .map(|l| get_block_text(l, idx))
+                            .unwrap_or_default()
+                    })
+                } else {
+                    navigate_right(&focus, &layout, |idx| {
+                        ldoc_guard
+                            .as_ref()
+                            .map(|l| get_block_text(l, idx))
+                            .unwrap_or_default()
+                    })
+                };
+                if let Some(np) = new_pos {
+                    let mut cs = cursor_state.write();
+                    cs.focus = Some(np.clone());
+                    if !shift_held {
+                        cs.anchor = Some(np);
+                    }
+                }
+            }
+
+            Key::ArrowUp | Key::ArrowDown => {
+                let shift_held = modifiers.shift();
+                let layout_opt = {
+                    let state = doc_state.lock().unwrap_or_else(|e| e.into_inner());
+                    state.paginated_layout.clone()
+                };
+                let Some(layout) = layout_opt else { return };
+                let new_pos = if key == Key::ArrowUp {
+                    navigate_up(&focus, &layout)
+                } else {
+                    navigate_down(&focus, &layout)
+                };
+                if let Some(np) = new_pos {
+                    let mut cs = cursor_state.write();
+                    cs.focus = Some(np.clone());
+                    if !shift_held {
+                        cs.anchor = Some(np);
+                    }
+                }
+            }
+
+            Key::Home | Key::End => {
+                let shift_held = modifiers.shift();
+                let layout_opt = {
+                    let state = doc_state.lock().unwrap_or_else(|e| e.into_inner());
+                    state.paginated_layout.clone()
+                };
+                let Some(layout) = layout_opt else { return };
+                let ldoc_guard = loro_doc.read();
+                let new_pos = if key == Key::Home {
+                    navigate_home(&focus, &layout)
+                } else {
+                    navigate_end(&focus, &layout, |idx| {
+                        ldoc_guard
+                            .as_ref()
+                            .map(|l| get_block_text(l, idx))
+                            .unwrap_or_default()
+                    })
+                };
+                if let Some(np) = new_pos {
+                    let mut cs = cursor_state.write();
+                    cs.focus = Some(np.clone());
+                    if !shift_held {
+                        cs.anchor = Some(np);
+                    }
+                }
+            }
+
+            // ── Enter — split paragraph ───────────────────────────────────────
+            Key::Enter => {
+                let ldoc_guard = loro_doc.read();
+                let Some(ldoc) = ldoc_guard.as_ref() else {
+                    return;
+                };
+                if split_block(ldoc, focus.paragraph_index, focus.byte_offset).is_err() {
+                    return;
+                }
+                apply_mutation_and_relayout(&doc_state, ldoc);
+                // TODO(3b-3): recompute page_index from layout after split
+                let new_pos = DocumentPosition {
+                    page_index: focus.page_index,
+                    paragraph_index: focus.paragraph_index + 1,
+                    byte_offset: 0,
+                };
+                let mut cs = cursor_state.write();
+                cs.focus = Some(new_pos.clone());
+                cs.anchor = Some(new_pos);
+            }
+
+            _ => {}
+        }
+    }
+}

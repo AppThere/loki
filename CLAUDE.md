@@ -76,7 +76,6 @@ yet been split. Do not add new code to them without splitting first.
 
 | File | Current lines | Priority |
 |---|---|---|
-| `loki-text/src/routes/editor.rs` | ~1010 | High — most active file |
 | `loki-text/src/components/document_source.rs` | 1117 | High |
 
 ---
