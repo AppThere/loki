@@ -137,6 +137,7 @@ mod tests {
             display_name: Some("Normal".into()),
             parent: None,
             linked_char_style: None,
+            next_style_id: None,
             para_props: ParaProps::default(),
             char_props: CharProps {
                 font_size: Some(Points::new(12.0)),
@@ -153,6 +154,7 @@ mod tests {
             display_name: Some("Heading 1".into()),
             parent: Some(StyleId::new("Normal")),
             linked_char_style: None,
+            next_style_id: None,
             para_props: ParaProps::default(),
             char_props: CharProps {
                 font_size: Some(Points::new(24.0)),

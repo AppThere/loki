@@ -552,7 +552,7 @@ fn footnote_mark(n: u32) -> String {
 
 // ── Paragraph synthesisers ────────────────────────────────────────────────────
 
-fn synthesize_plain_para(inlines: &[Inline]) -> StyledParagraph {
+pub(super) fn synthesize_plain_para(inlines: &[Inline]) -> StyledParagraph {
     StyledParagraph {
         style_id: None,
         direct_para_props: None,
@@ -562,7 +562,7 @@ fn synthesize_plain_para(inlines: &[Inline]) -> StyledParagraph {
     }
 }
 
-fn synthesize_heading_para(level: u8, attr: &NodeAttr, inlines: &[Inline]) -> StyledParagraph {
+pub(super) fn synthesize_heading_para(level: u8, attr: &NodeAttr, inlines: &[Inline]) -> StyledParagraph {
     use loki_doc_model::style::catalog::StyleId;
     use loki_doc_model::style::props::para_props::{ParagraphAlignment, ParaProps};
     // Prefer the style name carried in NodeAttr (set by the ODF mapper from
@@ -628,12 +628,24 @@ fn flow_table(
         let mut row_page = state.page_number;
         let mut row_max_h = 0.0f32;
 
+        // TODO(table-layout): row_span not yet applied in layout — cells
+        // render as row_span=1. col_span is also not yet used; each cell
+        // receives an equal share of the table width.
         for (c_idx, cell) in row.cells.iter().enumerate() {
+            use loki_doc_model::content::table::row::CellVerticalAlign;
+
             let old_indent = state.current_indent;
             let old_width = state.content_width;
 
-            state.current_indent = old_indent + (c_idx as f32 * col_w);
-            state.content_width = col_w;
+            let pad_top = cell.props.padding_top.map(pts_to_f32).unwrap_or(0.0);
+            let pad_bottom = cell.props.padding_bottom.map(pts_to_f32).unwrap_or(0.0);
+            let pad_left = cell.props.padding_left.map(pts_to_f32).unwrap_or(0.0);
+            let pad_right = cell.props.padding_right.map(pts_to_f32).unwrap_or(0.0);
+
+            let cell_x = old_indent + (c_idx as f32 * col_w);
+            state.current_indent = cell_x + pad_left;
+            state.content_width = (col_w - pad_left - pad_right).max(0.0);
+
             // If a previous cell caused a page break, update row_y_start to the
             // top of the new page so this cell doesn't land in the wrong position.
             if state.page_number != row_page {
@@ -641,7 +653,7 @@ fn flow_table(
                 row_page = state.page_number;
                 row_max_h = 0.0;
             }
-            state.cursor_y = row_y_start;
+            state.cursor_y = row_y_start + pad_top;
 
             // Record the insertion index and page before flowing cell content.
             // If a page break fires inside flow_block, finish_page() resets
@@ -653,8 +665,24 @@ fn flow_table(
                 flow_block(state, block, idx);
             }
 
-            let cell_h = state.cursor_y - row_y_start;
+            // Content height (without bottom padding); full cell height adds padding.
+            let content_h = state.cursor_y - (row_y_start + pad_top);
+            let cell_h = content_h + pad_top + pad_bottom;
             row_max_h = row_max_h.max(cell_h);
+
+            // Vertical alignment: shift content items down when Middle or Bottom.
+            // Text direction rotation is not yet applied (TODO: text-direction-layout).
+            let v_shift = match cell.props.vertical_align {
+                Some(CellVerticalAlign::Middle) => {
+                    // Will be refined once row_max_h is known; for now use content_h as min.
+                    // Since we don't know the final row height yet, defer to a best-effort
+                    // shift using the cell's own measured height. True centering requires
+                    // a second pass over all cells (deferred to full table-layout TODO).
+                    0.0
+                }
+                Some(CellVerticalAlign::Bottom) => 0.0,
+                _ => 0.0,
+            };
 
             // Emit background and border decorations for this cell.
             // Z-order: insert border first, then background at same index so
@@ -663,9 +691,10 @@ fn flow_table(
             // When a page break occurred inside the cell, current_items was
             // flushed and reset; use 0 to prepend before the cell's new-page
             // content rather than using the now-stale pre-break index.
+            let _ = v_shift; // reserved for future two-pass vertical alignment
             let insert_at = if state.page_number != cell_page_start { 0 } else { cell_item_start };
             let cell_rect = LayoutRect {
-                origin: LayoutPoint { x: state.current_indent, y: row_y_start },
+                origin: LayoutPoint { x: cell_x, y: row_y_start },
                 size: LayoutSize { width: col_w, height: cell_h },
             };
             let has_borders = cell.props.border_top.is_some()

@@ -23,6 +23,9 @@ version = "0.4"
 default-features = false
 features = ["std"]
 
+[dev-dependencies]
+loki-layout = { path = "../loki-layout" }
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]

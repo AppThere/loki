@@ -46,6 +46,14 @@ pub struct ParagraphStyle {
     /// (runs without an explicit character style inherit these).
     pub char_props: CharProps,
 
+    /// The style to apply to the paragraph created when the user presses Enter
+    /// at the end of a paragraph with this style. `None` means the same style
+    /// continues. ODF: `style:next-style-name`; OOXML: `w:next @w:val`.
+    ///
+    // TODO(editing): next_style_id used by split_block to determine
+    // the style of the newly created paragraph after Enter.
+    pub next_style_id: Option<String>,
+
     /// Whether this is the document's default paragraph style.
     /// At most one style in the catalog may have `is_default = true`.
     pub is_default: bool,
@@ -70,6 +78,7 @@ mod tests {
             display_name: Some("Heading 1".into()),
             parent: Some(parent_id.clone()),
             linked_char_style: None,
+            next_style_id: None,
             para_props: ParaProps::default(),
             char_props: CharProps {
                 bold: Some(true),

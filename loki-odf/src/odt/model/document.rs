@@ -174,16 +174,28 @@ pub(crate) struct OdfHeaderFooterProps {
 /// A master page definition (`style:master-page`). ODF 1.3 §16.9.
 ///
 /// Master pages link a page layout to optional header and footer content.
+/// ODF supports three header/footer variants per master page:
+/// - default (odd/right pages): `style:header` / `style:footer`
+/// - first page only: `style:header-first` / `style:footer-first`
+/// - even/left pages: `style:header-left` / `style:footer-left`
 #[derive(Debug, Clone)]
 pub(crate) struct OdfMasterPage {
     /// `style:name` — identifier (e.g. `"Standard"`, `"First_20_Page"`).
     pub name: String,
     /// `style:page-layout-name` — references an [`OdfPageLayout`].
     pub page_layout_name: String,
-    /// Paragraphs inside `style:header`, if present.
+    /// Paragraphs inside `style:header` (default/odd-page header).
     pub header: Option<Vec<OdfParagraph>>,
-    /// Paragraphs inside `style:footer`, if present.
+    /// Paragraphs inside `style:footer` (default/odd-page footer).
     pub footer: Option<Vec<OdfParagraph>>,
+    /// Paragraphs inside `style:header-first` (first-page header). ODF 1.3 §16.9.
+    pub header_first: Option<Vec<OdfParagraph>>,
+    /// Paragraphs inside `style:footer-first` (first-page footer). ODF 1.3 §16.9.
+    pub footer_first: Option<Vec<OdfParagraph>>,
+    /// Paragraphs inside `style:header-left` (even-page/left header). ODF 1.3 §16.9.
+    pub header_even: Option<Vec<OdfParagraph>>,
+    /// Paragraphs inside `style:footer-left` (even-page/left footer). ODF 1.3 §16.9.
+    pub footer_even: Option<Vec<OdfParagraph>>,
 }
 
 // ── Document metadata ──────────────────────────────────────────────────────────

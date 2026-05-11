@@ -29,6 +29,24 @@ pub enum CellVerticalAlign {
     Bottom,
 }
 
+/// Text direction within a table cell.
+///
+/// OOXML §17.4.87 `w:textDirection @w:val`.
+/// ODF `style:writing-mode`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum CellTextDirection {
+    /// Horizontal left-to-right (default).
+    LrTb,
+    /// Vertical top-to-bottom, right-to-left (rotated 90° clockwise).
+    TbRl,
+    /// Vertical top-to-bottom, left-to-right (rotated 90° counter-clockwise).
+    TbLr,
+    /// Vertical bottom-to-top, left-to-right.
+    BtLr,
+}
+
 /// Formatting properties for a table cell.
 ///
 /// TR 29166 §6.2.4 "Table cell formatting".
@@ -56,6 +74,8 @@ pub struct CellProps {
     pub padding_right: Option<Points>,
     /// Vertical alignment of the cell content.
     pub vertical_align: Option<CellVerticalAlign>,
+    /// Text flow direction within the cell. `None` = horizontal LrTb (default).
+    pub text_direction: Option<CellTextDirection>,
 }
 
 /// A single table cell.

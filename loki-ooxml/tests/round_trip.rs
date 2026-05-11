@@ -172,6 +172,57 @@ fn inlines_have_field(inlines: &[Inline]) -> bool {
     })
 }
 
+/// Verify that a table with `w:tblW w:w="5000" w:type="dxa"` maps to
+/// `TableWidth::Fixed(250.0)` (5000 twips ÷ 20 = 250 pt). (OOXML-1)
+#[test]
+fn ooxml1_table_width_mapped() {
+    use loki_doc_model::content::table::TableWidth;
+
+    let bytes = helpers::build_reference_docx();
+    let result = DocxImporter::new(DocxImportOptions::default())
+        .run(Cursor::new(bytes))
+        .expect("reference DOCX should import without error");
+
+    let doc = &result.document;
+    let all_blocks: Vec<&Block> =
+        doc.sections.iter().flat_map(|s| s.blocks.iter()).collect();
+
+    let table_width = all_blocks.iter().find_map(|b| {
+        if let Block::Table(t) = b { t.width.as_ref() } else { None }
+    });
+
+    let width = table_width.expect("document must contain a table with a width (OOXML-1)");
+    match width {
+        TableWidth::Fixed(pt) => assert!(
+            (pt - 250.0).abs() < 0.5,
+            "table width should be ~250 pt (5000 twips ÷ 20), got {pt}"
+        ),
+        other => panic!("expected TableWidth::Fixed, got {other:?}"),
+    }
+}
+
+/// Verify that `w:defaultTabStop w:val="720"` (720 twips = 36 pt) is forwarded
+/// to `Document.settings.default_tab_stop_pt`. (OOXML-2)
+#[test]
+fn ooxml2_default_tab_stop_mapped() {
+    let bytes = helpers::build_reference_docx();
+    let result = DocxImporter::new(DocxImportOptions::default())
+        .run(Cursor::new(bytes))
+        .expect("reference DOCX should import without error");
+
+    let settings = result
+        .document
+        .settings
+        .as_ref()
+        .expect("document.settings must be Some when settings.xml is present (OOXML-2)");
+
+    assert!(
+        (settings.default_tab_stop_pt - 36.0).abs() < 0.5,
+        "default_tab_stop_pt should be ~36 pt (720 twips ÷ 20), got {}",
+        settings.default_tab_stop_pt
+    );
+}
+
 /// Verify that a document with two manual page breaks produces at least three
 /// layout pages (the reference DOCX has exactly two `<w:br w:type="page"/>`).
 #[test]
@@ -256,4 +307,106 @@ fn layout_assigns_header_footer_per_page() {
             i + 1
         );
     }
+}
+
+/// Vertical merge: the 2×3 table in the reference fixture has col 0 merged
+/// across rows 0-1.  After import, row 0 cell 0 must carry `row_span = 2`,
+/// the continuation cell must be removed from row 1, and row 2 is unmerged.
+#[test]
+fn vmerge_row_span_assigned_and_continuation_removed() {
+    let bytes = helpers::build_reference_docx();
+    let result = DocxImporter::new(DocxImportOptions::default())
+        .run(Cursor::new(bytes))
+        .expect("reference DOCX should import without error");
+
+    let all_blocks: Vec<&Block> = result.document.sections
+        .iter()
+        .flat_map(|s| s.blocks.iter())
+        .collect();
+
+    // Locate the 3-row merged table.
+    let merged_table = all_blocks.iter()
+        .filter_map(|b| if let Block::Table(t) = b { Some(t.as_ref()) } else { None })
+        .find(|t| t.bodies.iter().any(|b| b.body_rows.len() == 3))
+        .expect("3-row merged-table must be present in the document");
+
+    let body = &merged_table.bodies[0];
+
+    // Row 0: 2 cells — [Merged Cell (row_span=2), Row 1 Col 2]
+    assert_eq!(body.body_rows[0].cells.len(), 2, "row 0 should have 2 cells");
+    assert_eq!(
+        body.body_rows[0].cells[0].row_span, 2,
+        "merged cell in row 0 col 0 should have row_span = 2"
+    );
+
+    // Row 1: 1 cell — continuation removed, only col 2 remains
+    assert_eq!(
+        body.body_rows[1].cells.len(), 1,
+        "row 1 should have 1 cell after continuation removal"
+    );
+
+    // Row 2: 2 cells — unmerged
+    assert_eq!(body.body_rows[2].cells.len(), 2, "row 2 should have 2 cells");
+    assert_eq!(
+        body.body_rows[2].cells[0].row_span, 1,
+        "row 2 col 0 should have row_span = 1"
+    );
+}
+
+#[test]
+fn cell_props_padding_valign_textdirection_mapped() {
+    use loki_doc_model::content::table::row::{CellTextDirection, CellVerticalAlign};
+    use loki_primitives::units::Points;
+
+    let bytes = helpers::build_reference_docx();
+    let result = DocxImporter::new(DocxImportOptions::default())
+        .run(Cursor::new(bytes))
+        .expect("reference DOCX should import without error");
+
+    let all_blocks: Vec<&Block> = result.document.sections
+        .iter()
+        .flat_map(|s| s.blocks.iter())
+        .collect();
+
+    // Locate the styled-cell table (1 body row with 2 cells, first has tcMar).
+    let styled_table = all_blocks.iter()
+        .filter_map(|b| if let Block::Table(t) = b { Some(t.as_ref()) } else { None })
+        .find(|t| {
+            t.bodies.iter().any(|b| {
+                b.body_rows.len() == 1
+                    && b.body_rows[0].cells.first()
+                        .map(|c| c.props.padding_left.is_some())
+                        .unwrap_or(false)
+            })
+        })
+        .expect("styled-cell table must be present in the document");
+
+    let row = &styled_table.bodies[0].body_rows[0];
+
+    // Cell 0: padding 5pt top/bottom, 10pt left/right (100 twips ÷20, 200 twips ÷20)
+    let c0 = &row.cells[0];
+    assert_eq!(c0.props.padding_top, Some(Points::new(5.0)), "padding_top should be 5pt");
+    assert_eq!(c0.props.padding_bottom, Some(Points::new(5.0)), "padding_bottom should be 5pt");
+    assert_eq!(c0.props.padding_left, Some(Points::new(10.0)), "padding_left should be 10pt");
+    assert_eq!(c0.props.padding_right, Some(Points::new(10.0)), "padding_right should be 10pt");
+    assert_eq!(
+        c0.props.vertical_align,
+        Some(CellVerticalAlign::Middle),
+        "vAlign center → Middle"
+    );
+    assert_eq!(
+        c0.props.text_direction,
+        Some(CellTextDirection::TbRl),
+        "textDirection tbRl"
+    );
+
+    // Cell 1: only vAlign bottom, no padding
+    let c1 = &row.cells[1];
+    assert_eq!(c1.props.padding_top, None, "cell 1 should have no top padding");
+    assert_eq!(
+        c1.props.vertical_align,
+        Some(CellVerticalAlign::Bottom),
+        "vAlign bottom → Bottom"
+    );
+    assert_eq!(c1.props.text_direction, None, "cell 1 should have no text direction");
 }

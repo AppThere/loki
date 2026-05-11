@@ -5,7 +5,9 @@
 
 use loro::{LoroDoc, LoroMap, LoroText};
 
-use crate::loro_schema::{KEY_CONTENT, KEY_DIRECT_CHAR_PROPS, KEY_PARA_PROPS, KEY_TYPE};
+use crate::loro_schema::{
+    KEY_CONTENT, KEY_DIRECT_CHAR_PROPS, KEY_HEADING_LEVEL, KEY_PARA_PROPS, KEY_TYPE,
+};
 
 use super::{
     copy_map_primitive_values, get_block_map_and_list, get_loro_text_for_block, MutationError,
@@ -88,6 +90,14 @@ pub fn split_block(
     {
         let dst = new_map.insert_container(KEY_DIRECT_CHAR_PROPS, LoroMap::new())?;
         copy_map_primitive_values(&src, &dst)?;
+    }
+
+    // Copy heading level if present (stored as a plain integer, not in a sub-map).
+    if let Some(level_val) = block_map
+        .get(KEY_HEADING_LEVEL)
+        .and_then(|v| v.into_value().ok())
+    {
+        new_map.insert(KEY_HEADING_LEVEL, level_val)?;
     }
 
     // Create the content LoroText with the tail.

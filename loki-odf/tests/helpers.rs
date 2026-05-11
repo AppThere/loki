@@ -221,6 +221,59 @@ pub fn rich_content_xml_with_styles() -> Vec<u8> {
         .to_vec()
 }
 
+/// `styles.xml` with paragraph styles for border, tab stops, and background
+/// color tests (ODF-1, ODF-2, ODF-3).
+pub fn para_props_styles_xml() -> Vec<u8> {
+    b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-styles \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" \
+        xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\">\
+      <office:automatic-styles/>\
+      <office:styles>\
+        <style:style style:name=\"BorderPara\" style:family=\"paragraph\">\
+          <style:paragraph-properties \
+            fo:border=\"1pt solid #000000\" \
+            fo:padding=\"2pt\"/>\
+        </style:style>\
+        <style:style style:name=\"TabPara\" style:family=\"paragraph\">\
+          <style:paragraph-properties>\
+            <style:tab-stops>\
+              <style:tab-stop style:position=\"2cm\" style:type=\"left\"/>\
+              <style:tab-stop style:position=\"8cm\" style:type=\"right\"/>\
+            </style:tab-stops>\
+          </style:paragraph-properties>\
+        </style:style>\
+        <style:style style:name=\"BgPara\" style:family=\"paragraph\">\
+          <style:paragraph-properties fo:background-color=\"#FFFFCC\"/>\
+        </style:style>\
+      </office:styles>\
+      <office:master-styles/>\
+      </office:document-styles>"
+        .to_vec()
+}
+
+/// `content.xml` using the styles from [`para_props_styles_xml`]:
+/// one paragraph each for border, tab stops, and background colour.
+pub fn para_props_content_xml() -> Vec<u8> {
+    b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-content \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" \
+        xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" \
+        xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\">\
+      <office:automatic-styles/>\
+      <office:body><office:text>\
+        <text:p text:style-name=\"BorderPara\">Bordered paragraph.</text:p>\
+        <text:p text:style-name=\"TabPara\">Tab stop paragraph.</text:p>\
+        <text:p text:style-name=\"BgPara\">Background colour paragraph.</text:p>\
+      </office:text></office:body>\
+      </office:document-content>"
+        .to_vec()
+}
+
 /// `content.xml` with a single paragraph and **no** `office:version`
 /// attribute — valid for ODF 1.1 documents.
 pub fn v1_1_content_xml() -> Vec<u8> {
@@ -231,6 +284,221 @@ pub fn v1_1_content_xml() -> Vec<u8> {
       <office:automatic-styles/>\
       <office:body><office:text>\
       <text:p>Hello world.</text:p>\
+      </office:text></office:body>\
+      </office:document-content>"
+        .to_vec()
+}
+
+/// `styles.xml` with a master page containing all three header/footer variants:
+/// default, first-page, and even-page. The default header includes a
+/// `text:page-number` field to exercise field code parsing in headers.
+///
+/// Used by the header/footer round-trip and layout integration tests.
+pub fn hf_styles_xml() -> Vec<u8> {
+    b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-styles \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" \
+        xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" \
+        xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\">\
+      <office:automatic-styles>\
+        <style:page-layout style:name=\"pm1\">\
+          <style:page-layout-properties \
+            fo:page-width=\"21cm\" fo:page-height=\"29.7cm\" \
+            fo:margin-top=\"2.54cm\" fo:margin-bottom=\"2.54cm\" \
+            fo:margin-left=\"3.17cm\" fo:margin-right=\"3.17cm\"/>\
+        </style:page-layout>\
+      </office:automatic-styles>\
+      <office:styles/>\
+      <office:master-styles>\
+        <style:master-page style:name=\"Standard\" \
+            style:page-layout-name=\"pm1\">\
+          <style:header>\
+            <text:p>Test Header Page \
+              <text:page-number text:select-page=\"current\">1</text:page-number>\
+            </text:p>\
+          </style:header>\
+          <style:footer>\
+            <text:p>Test Footer</text:p>\
+          </style:footer>\
+          <style:header-first>\
+            <text:p>First Page Header</text:p>\
+          </style:header-first>\
+          <style:footer-first>\
+            <text:p>First Page Footer</text:p>\
+          </style:footer-first>\
+          <style:header-left>\
+            <text:p>Even Page Header</text:p>\
+          </style:header-left>\
+          <style:footer-left>\
+            <text:p>Even Page Footer</text:p>\
+          </style:footer-left>\
+        </style:master-page>\
+      </office:master-styles>\
+      </office:document-styles>"
+        .to_vec()
+}
+
+/// `styles.xml` for the multi-master-page fixture.
+///
+/// Declares two page layouts (portrait A4 and landscape A4) and two master
+/// pages ("Standard" and "Landscape") each referencing a different layout.
+/// Each master page has a distinct header paragraph so the import can be
+/// verified by header content.
+pub fn multi_master_styles_xml() -> Vec<u8> {
+    b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-styles \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" \
+        xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" \
+        xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\">\
+      <office:automatic-styles>\
+        <style:page-layout style:name=\"pm-portrait\">\
+          <style:page-layout-properties \
+            fo:page-width=\"21cm\" fo:page-height=\"29.7cm\" \
+            fo:margin-top=\"2cm\" fo:margin-bottom=\"2cm\" \
+            fo:margin-left=\"2.5cm\" fo:margin-right=\"2.5cm\"/>\
+        </style:page-layout>\
+        <style:page-layout style:name=\"pm-landscape\">\
+          <style:page-layout-properties \
+            fo:page-width=\"29.7cm\" fo:page-height=\"21cm\" \
+            fo:margin-top=\"2cm\" fo:margin-bottom=\"2cm\" \
+            fo:margin-left=\"2.5cm\" fo:margin-right=\"2.5cm\"/>\
+        </style:page-layout>\
+      </office:automatic-styles>\
+      <office:styles/>\
+      <office:master-styles>\
+        <style:master-page style:name=\"Standard\" \
+            style:page-layout-name=\"pm-portrait\">\
+          <style:header><text:p>Portrait Header</text:p></style:header>\
+        </style:master-page>\
+        <style:master-page style:name=\"Landscape\" \
+            style:page-layout-name=\"pm-landscape\">\
+          <style:header><text:p>Landscape Header</text:p></style:header>\
+        </style:master-page>\
+      </office:master-styles>\
+      </office:document-styles>"
+        .to_vec()
+}
+
+/// `content.xml` for the multi-master-page fixture.
+///
+/// The first paragraph has `text:style-name="Standard"` (portrait, initial
+/// master page). The second paragraph uses `text:style-name="LandscapeStyle"`,
+/// which carries `style:master-page-name="Landscape"` — this triggers a master
+/// page transition and should produce a second document section.
+pub fn multi_master_content_xml() -> Vec<u8> {
+    b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-content \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" \
+        xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" \
+        xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\">\
+      <office:automatic-styles>\
+        <style:style style:name=\"LandscapeStyle\" style:family=\"paragraph\" \
+          style:master-page-name=\"Landscape\"/>\
+      </office:automatic-styles>\
+      <office:body><office:text>\
+        <text:p text:style-name=\"Standard\">Portrait paragraph.</text:p>\
+        <text:p text:style-name=\"LandscapeStyle\">Landscape paragraph.</text:p>\
+      </office:text></office:body>\
+      </office:document-content>"
+        .to_vec()
+}
+
+/// Minimal `content.xml` for use with [`hf_styles_xml`].
+pub fn hf_content_xml() -> Vec<u8> {
+    b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-content \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\">\
+      <office:automatic-styles/>\
+      <office:body><office:text>\
+        <text:p>Body paragraph one.</text:p>\
+        <text:p>Body paragraph two.</text:p>\
+      </office:text></office:body>\
+      </office:document-content>"
+        .to_vec()
+}
+
+/// `styles.xml` for the cell-properties fixture.
+///
+/// Defines a single A4 page layout, a master page, and a `StyledCell`
+/// table-cell style carrying padding, vertical-align, background-color,
+/// and border shorthand.
+pub fn cell_props_styles_xml() -> Vec<u8> {
+    b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-styles \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" \
+        xmlns:fo=\"urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0\">\
+      <office:automatic-styles>\
+        <style:page-layout style:name=\"pm1\">\
+          <style:page-layout-properties \
+            fo:page-width=\"21cm\" fo:page-height=\"29.7cm\" \
+            fo:margin-top=\"2.54cm\" fo:margin-bottom=\"2.54cm\" \
+            fo:margin-left=\"3.17cm\" fo:margin-right=\"3.17cm\"/>\
+        </style:page-layout>\
+      </office:automatic-styles>\
+      <office:styles>\
+        <style:style style:name=\"StyledCell\" style:family=\"table-cell\">\
+          <style:table-cell-properties \
+            fo:padding=\"0.2cm\" \
+            style:vertical-align=\"middle\" \
+            fo:background-color=\"#FFFF00\" \
+            fo:border=\"0.06pt solid #000000\"/>\
+        </style:style>\
+        <style:style style:name=\"BottomCell\" style:family=\"table-cell\">\
+          <style:table-cell-properties \
+            fo:padding-top=\"0.1cm\" fo:padding-bottom=\"0.3cm\" \
+            fo:padding-left=\"0.2cm\" fo:padding-right=\"0.2cm\" \
+            style:vertical-align=\"bottom\"/>\
+        </style:style>\
+      </office:styles>\
+      <office:master-styles>\
+        <style:master-page style:name=\"Standard\" \
+          style:page-layout-name=\"pm1\"/>\
+      </office:master-styles>\
+      </office:document-styles>"
+        .to_vec()
+}
+
+/// `content.xml` for the cell-properties fixture.
+///
+/// A single table with two cells: the first references `StyledCell`
+/// (shorthand padding, middle alignment, yellow background, black border)
+/// and the second references `BottomCell` (per-edge padding, bottom alignment).
+pub fn cell_props_content_xml() -> Vec<u8> {
+    b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-content \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\" \
+        xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\" \
+        xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\">\
+      <office:automatic-styles/>\
+      <office:body><office:text>\
+        <table:table table:name=\"CellPropsTable\">\
+          <table:table-column/>\
+          <table:table-column/>\
+          <table:table-row>\
+            <table:table-cell table:style-name=\"StyledCell\" \
+              office:value-type=\"string\" \
+              xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\">\
+              <text:p>Styled Cell</text:p>\
+            </table:table-cell>\
+            <table:table-cell table:style-name=\"BottomCell\" \
+              office:value-type=\"string\" \
+              xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\">\
+              <text:p>Bottom Cell</text:p>\
+            </table:table-cell>\
+          </table:table-row>\
+        </table:table>\
       </office:text></office:body>\
       </office:document-content>"
         .to_vec()

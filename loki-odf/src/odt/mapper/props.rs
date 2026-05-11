@@ -8,16 +8,20 @@
 //! All ODF measurement values are length strings (e.g. `"2.5cm"`, `"12pt"`);
 //! conversion uses [`crate::xml_util::parse_length`].
 
+use loki_doc_model::content::table::row::{CellProps, CellTextDirection, CellVerticalAlign};
 use loki_doc_model::meta::LanguageTag;
+use loki_doc_model::style::props::border::{Border, BorderStyle};
 use loki_doc_model::style::props::char_props::{
     CharProps, StrikethroughStyle, UnderlineStyle, VerticalAlign,
 };
 use loki_doc_model::style::props::para_props::{
     LineHeight, ParagraphAlignment, ParaProps, Spacing,
 };
+use loki_doc_model::style::props::tab_stop::{TabAlignment, TabLeader, TabStop};
 use loki_primitives::color::DocumentColor;
+use loki_primitives::units::Points;
 
-use crate::odt::model::styles::{OdfParaProps, OdfTextProps};
+use crate::odt::model::styles::{OdfCellProps, OdfParaProps, OdfTabStop, OdfTextProps};
 use crate::xml_util::parse_length;
 
 // ── Paragraph properties ───────────────────────────────────────────────────────
@@ -102,7 +106,178 @@ pub(crate) fn map_para_props(props: &OdfParaProps) -> ParaProps {
         out.page_break_after = Some(true);
     }
 
+    // ── Borders ────────────────────────────────────────────────────────────
+    // ODF fo:border is a CSS shorthand "width style color"; per-side values
+    // override the shorthand on a per-side basis.
+    let border_fallback = props.border.as_deref().and_then(parse_odf_border);
+    out.border_top = props
+        .border_top
+        .as_deref()
+        .and_then(parse_odf_border)
+        .or_else(|| border_fallback.clone());
+    out.border_bottom = props
+        .border_bottom
+        .as_deref()
+        .and_then(parse_odf_border)
+        .or_else(|| border_fallback.clone());
+    out.border_left = props
+        .border_left
+        .as_deref()
+        .and_then(parse_odf_border)
+        .or_else(|| border_fallback.clone());
+    out.border_right = props
+        .border_right
+        .as_deref()
+        .and_then(parse_odf_border)
+        .or(border_fallback);
+
+    // ── Padding ────────────────────────────────────────────────────────────
+    // ODF only has fo:padding shorthand; apply it to all four sides.
+    if let Some(pts) = props.padding.as_deref().and_then(parse_length) {
+        out.padding_top = Some(pts);
+        out.padding_bottom = Some(pts);
+        out.padding_left = Some(pts);
+        out.padding_right = Some(pts);
+    }
+
+    // ── Background color ───────────────────────────────────────────────────
+    if let Some(hex) = props.background_color.as_deref()
+        && hex != "transparent"
+        && let Ok(dc) = DocumentColor::from_hex(hex)
+    {
+        out.background_color = Some(dc);
+    }
+
+    // ── Tab stops ──────────────────────────────────────────────────────────
+    if !props.tab_stops.is_empty() {
+        let stops: Vec<TabStop> = props
+            .tab_stops
+            .iter()
+            .filter_map(|ts| map_tab_stop(ts))
+            .collect();
+        if !stops.is_empty() {
+            out.tab_stops = Some(stops);
+        }
+    }
+
     out
+}
+
+/// Parse an ODF CSS-like border shorthand `"width style color"` into a
+/// [`Border`].
+///
+/// ODF `fo:border` uses the XSL-FO shorthand syntax, e.g. `"1pt solid #000000"`.
+/// Width tokens are parsed via [`parse_length`]; style is mapped to
+/// [`BorderStyle`]; colour is parsed as a `#RRGGBB` hex string.
+/// Returns `None` when the string is `"none"` or cannot be parsed.
+fn parse_odf_border(s: &str) -> Option<Border> {
+    let s = s.trim();
+    if s == "none" || s.is_empty() {
+        return None;
+    }
+    let tokens: Vec<&str> = s.split_whitespace().collect();
+    let mut width: Option<Points> = None;
+    let mut style = BorderStyle::Solid;
+    let mut color: Option<DocumentColor> = None;
+
+    for tok in &tokens {
+        if width.is_none() {
+            if let Some(pts) = parse_length(tok) {
+                width = Some(pts);
+                continue;
+            }
+        }
+        match *tok {
+            "none" => return None,
+            "solid" => style = BorderStyle::Solid,
+            "dashed" => style = BorderStyle::Dashed,
+            "dotted" => style = BorderStyle::Dotted,
+            "double" => style = BorderStyle::Double,
+            "groove" => style = BorderStyle::Groove,
+            "ridge" => style = BorderStyle::Ridge,
+            "inset" => style = BorderStyle::Inset,
+            "outset" => style = BorderStyle::Outset,
+            "wave" => style = BorderStyle::Wave,
+            hex if hex.starts_with('#') => {
+                if let Ok(dc) = DocumentColor::from_hex(hex) {
+                    color = Some(dc);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let width = width.unwrap_or_else(|| Points::new(1.0));
+    Some(Border { style, width, color, spacing: None })
+}
+
+// ── Cell property mapping ──────────────────────────────────────────────────────
+
+/// Convert [`OdfCellProps`] to the format-neutral [`CellProps`].
+///
+/// All length strings are parsed via [`parse_length`]. Unparseable or absent
+/// values silently map to `None`. ODF 1.3 §17.18.
+///
+/// NOTE: ODF cell properties are mapped to the same [`CellProps`] type as
+/// OOXML. The layout engine applies them identically.
+pub(crate) fn map_cell_props(cell_props: &OdfCellProps) -> CellProps {
+    CellProps {
+        padding_top:    cell_props.padding_top.as_deref().and_then(parse_length),
+        padding_bottom: cell_props.padding_bottom.as_deref().and_then(parse_length),
+        padding_left:   cell_props.padding_left.as_deref().and_then(parse_length),
+        padding_right:  cell_props.padding_right.as_deref().and_then(parse_length),
+        vertical_align: cell_props.vertical_align.as_deref()
+            .and_then(map_odf_vertical_align),
+        text_direction: cell_props.writing_mode.as_deref()
+            .and_then(map_odf_writing_mode),
+        background_color: cell_props.background_color.as_deref()
+            .and_then(|c| if c == "transparent" { None } else { DocumentColor::from_hex(c).ok() }),
+        border_top:    cell_props.border_top.as_deref().and_then(parse_odf_border),
+        border_bottom: cell_props.border_bottom.as_deref().and_then(parse_odf_border),
+        border_left:   cell_props.border_left.as_deref().and_then(parse_odf_border),
+        border_right:  cell_props.border_right.as_deref().and_then(parse_odf_border),
+    }
+}
+
+/// Map an ODF `style:vertical-align` string to [`CellVerticalAlign`].
+///
+/// `"automatic"` falls through to the default `Top`.
+pub(crate) fn map_odf_vertical_align(val: &str) -> Option<CellVerticalAlign> {
+    match val {
+        "top" | "automatic" => Some(CellVerticalAlign::Top),
+        "middle"            => Some(CellVerticalAlign::Middle),
+        "bottom"            => Some(CellVerticalAlign::Bottom),
+        _                   => None,
+    }
+}
+
+/// Map an ODF `style:writing-mode` string to [`CellTextDirection`].
+pub(crate) fn map_odf_writing_mode(val: &str) -> Option<CellTextDirection> {
+    match val {
+        "lr-tb" | "lr" => Some(CellTextDirection::LrTb),
+        "tb-rl" | "tb" => Some(CellTextDirection::TbRl),
+        "tb-lr"        => Some(CellTextDirection::TbLr),
+        "bt-lr"        => Some(CellTextDirection::BtLr),
+        _              => None,
+    }
+}
+
+/// Map an [`OdfTabStop`] to a doc-model [`TabStop`].
+///
+/// ODF tab alignment values: `"left"` → [`TabAlignment::Left`],
+/// `"right"` → [`TabAlignment::Right`], `"center"` → [`TabAlignment::Center`],
+/// `"char"` → [`TabAlignment::Decimal`].
+/// ODF tab stops have no leader in the intermediate model (parsed separately
+/// by `style:leader-*` attributes not yet captured) → always [`TabLeader::None`].
+fn map_tab_stop(ts: &OdfTabStop) -> Option<TabStop> {
+    let position = parse_length(&ts.position)?;
+    let alignment = match ts.tab_type.as_deref() {
+        Some("right") => TabAlignment::Right,
+        Some("center") => TabAlignment::Center,
+        Some("char") => TabAlignment::Decimal,
+        _ => TabAlignment::Left,
+    };
+    Some(TabStop { position, alignment, leader: TabLeader::None })
 }
 
 /// Map an ODF `fo:text-align` string to [`ParagraphAlignment`].
@@ -183,6 +358,13 @@ pub(crate) fn map_text_props(props: &OdfTextProps) -> CharProps {
         && let Ok(dc) = DocumentColor::from_hex(hex)
     {
         out.background_color = Some(dc);
+    }
+
+    // ── Shadow ─────────────────────────────────────────────────────────────
+    // ODF fo:text-shadow is a CSS shadow string; any non-empty, non-"none"
+    // value means shadow is enabled.
+    if let Some(shadow) = props.text_shadow.as_deref() {
+        out.shadow = Some(!shadow.is_empty() && shadow != "none");
     }
 
     // ── Spacing ────────────────────────────────────────────────────────────
@@ -566,5 +748,115 @@ mod tests {
         assert!(
             matches!(out.letter_spacing, Some(p) if (p.value() - 0.5).abs() < 1e-6)
         );
+    }
+
+    // ── cell property helpers ──────────────────────────────────────────────
+
+    #[test]
+    fn vertical_align_middle_maps_to_middle() {
+        assert_eq!(
+            map_odf_vertical_align("middle"),
+            Some(CellVerticalAlign::Middle)
+        );
+    }
+
+    #[test]
+    fn vertical_align_top_maps_to_top() {
+        assert_eq!(
+            map_odf_vertical_align("top"),
+            Some(CellVerticalAlign::Top)
+        );
+    }
+
+    #[test]
+    fn vertical_align_automatic_maps_to_top() {
+        assert_eq!(
+            map_odf_vertical_align("automatic"),
+            Some(CellVerticalAlign::Top)
+        );
+    }
+
+    #[test]
+    fn vertical_align_bottom_maps_to_bottom() {
+        assert_eq!(
+            map_odf_vertical_align("bottom"),
+            Some(CellVerticalAlign::Bottom)
+        );
+    }
+
+    #[test]
+    fn vertical_align_unknown_returns_none() {
+        assert_eq!(map_odf_vertical_align("baseline"), None);
+    }
+
+    #[test]
+    fn writing_mode_tb_rl_maps_to_tbrl() {
+        assert_eq!(
+            map_odf_writing_mode("tb-rl"),
+            Some(CellTextDirection::TbRl)
+        );
+    }
+
+    #[test]
+    fn writing_mode_lr_tb_maps_to_lrtb() {
+        assert_eq!(
+            map_odf_writing_mode("lr-tb"),
+            Some(CellTextDirection::LrTb)
+        );
+    }
+
+    #[test]
+    fn writing_mode_lr_shorthand_maps_to_lrtb() {
+        assert_eq!(
+            map_odf_writing_mode("lr"),
+            Some(CellTextDirection::LrTb)
+        );
+    }
+
+    #[test]
+    fn parse_odf_border_solid_black() {
+        let b = parse_odf_border("0.06pt solid #000000")
+            .expect("should parse");
+        // Width rounds to 0.06pt
+        assert!(
+            (b.width.value() - 0.06).abs() < 0.01,
+            "width should be ~0.06pt, got {}",
+            b.width.value()
+        );
+        use loki_doc_model::style::props::border::BorderStyle;
+        assert_eq!(b.style, BorderStyle::Solid);
+        assert!(b.color.is_some(), "color should be parsed");
+    }
+
+    #[test]
+    fn parse_odf_border_none_returns_none() {
+        assert!(parse_odf_border("none").is_none());
+    }
+
+    #[test]
+    fn fo_padding_shorthand_applies_to_all_edges() {
+        use crate::odt::model::styles::OdfCellProps;
+
+        let cell_props = OdfCellProps {
+            padding_top:    Some("0.2cm".into()),
+            padding_bottom: Some("0.2cm".into()),
+            padding_left:   Some("0.2cm".into()),
+            padding_right:  Some("0.2cm".into()),
+            ..Default::default()
+        };
+        let props = map_cell_props(&cell_props);
+        // 0.2cm ≈ 5.669pt
+        for (label, val) in [
+            ("top",    props.padding_top),
+            ("bottom", props.padding_bottom),
+            ("left",   props.padding_left),
+            ("right",  props.padding_right),
+        ] {
+            let pts = val.expect(&format!("padding_{label} should be Some")).value();
+            assert!(
+                (pts - 5.669).abs() < 0.1,
+                "padding_{label} should be ~5.67pt, got {pts:.3}"
+            );
+        }
     }
 }

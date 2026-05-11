@@ -27,12 +27,13 @@ use loki_doc_model::content::field::types::{CrossRefFormat, Field, FieldKind};
 use loki_doc_model::content::inline::{
     BookmarkKind, Inline, LinkTarget, NoteKind, StyledRun,
 };
-use loki_doc_model::content::table::col::{ColAlignment, ColSpec};
+use loki_doc_model::content::table::col::{ColAlignment, ColSpec, ColWidth};
 use loki_doc_model::content::table::core::{
     Table, TableBody, TableCaption, TableFoot, TableHead,
 };
 use loki_doc_model::content::table::row::{Cell, CellProps, Row};
 use loki_doc_model::document::Document;
+use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
 use loki_doc_model::layout::page::{
     PageLayout, PageMargins, PageOrientation, PageSize,
 };
@@ -48,7 +49,7 @@ use crate::odt::mapper::lists::map_list_styles;
 use crate::odt::mapper::styles::map_stylesheet;
 use crate::odt::model::document::{
     OdfBodyChild, OdfDocument, OdfList, OdfListItem, OdfListItemChild,
-    OdfMeta, OdfPageLayout, OdfSection, OdfTableOfContent,
+    OdfMasterPage, OdfMeta, OdfPageLayout, OdfSection, OdfTableOfContent,
 };
 use crate::odt::model::fields::OdfField;
 use crate::odt::model::frames::{OdfFrame, OdfFrameKind};
@@ -56,7 +57,8 @@ use crate::odt::model::notes::{OdfNote, OdfNoteClass};
 use crate::odt::model::paragraph::{
     OdfHyperlink, OdfParagraph, OdfParagraphChild, OdfSpan,
 };
-use crate::odt::model::styles::OdfStylesheet;
+use crate::odt::mapper::props::map_cell_props;
+use crate::odt::model::styles::{OdfCellProps, OdfStyle, OdfStylesheet};
 use crate::odt::model::tables::OdfTable;
 use crate::xml_util::parse_length;
 
@@ -77,6 +79,12 @@ pub(crate) struct OdfMappingContext<'a> {
     pub images: &'a HashMap<String, (String, Vec<u8>)>,
     /// Import options controlling heading emission, image embedding, etc.
     pub options: &'a OdtImportOptions,
+    /// Column widths from `style:table-column-properties`: style name → points.
+    /// Pre-built from the ODF stylesheet before the mapping pass.
+    pub col_style_widths: &'a HashMap<String, Points>,
+    /// Cell properties from `style:table-cell-properties`: style name → props.
+    /// Pre-built from the ODF stylesheet before the mapping pass.
+    pub cell_style_props: &'a HashMap<String, OdfCellProps>,
     /// Non-fatal issues accumulated during mapping.
     pub warnings: Vec<OdfWarning>,
     /// Floating frames (images and text boxes that are not `as-char` anchored)
@@ -106,24 +114,102 @@ pub(crate) fn map_document(
     let mut catalog = map_stylesheet(stylesheet);
     map_list_styles(&stylesheet.list_styles, &mut catalog, doc.version);
 
-    // ── 2. Resolve active page layout ─────────────────────────────────────────
-    let page_layout = resolve_page_layout(stylesheet);
+    // ── 2. Pre-build column-width lookup from table-column styles ────────────────
+    let col_style_widths: HashMap<String, Points> = stylesheet
+        .named_styles
+        .iter()
+        .chain(stylesheet.auto_styles.iter())
+        .filter_map(|s| {
+            let width_str = s.col_width.as_deref()?;
+            let pts = parse_length(width_str)?;
+            Some((s.name.clone(), pts))
+        })
+        .collect();
 
-    // ── 3. Map body (scoped so the &catalog borrow ends before we move it) ────
-    let (blocks, warnings) = {
+    // ── 2b. Pre-build cell-style lookup from table-cell styles ───────────────
+    let cell_style_props: HashMap<String, OdfCellProps> = stylesheet
+        .named_styles
+        .iter()
+        .chain(stylesheet.auto_styles.iter())
+        .filter_map(|s| Some((s.name.clone(), s.cell_props.clone()?)))
+        .collect();
+
+    // ── 3. Build style lookup for master page resolution ─────────────────────
+    let all_styles: HashMap<&str, &OdfStyle> = stylesheet
+        .named_styles
+        .iter()
+        .chain(stylesheet.auto_styles.iter())
+        .map(|s| (s.name.as_str(), s))
+        .collect();
+
+    // Identify the initial master page name ("Standard" > "Default" > first).
+    let initial_master: Option<&str> = stylesheet
+        .master_pages
+        .iter()
+        .find(|m| m.name == "Standard" || m.name == "Default")
+        .or_else(|| stylesheet.master_pages.first())
+        .map(|m| m.name.as_str());
+
+    // ── 4. Map body, detecting master page transitions → multiple sections ────
+    let (sections, warnings) = {
         let mut ctx = OdfMappingContext {
             styles: &catalog,
             images,
             options,
+            col_style_widths: &col_style_widths,
+            cell_style_props: &cell_style_props,
             warnings: Vec::new(),
             pending_figures: Vec::new(),
         };
-        let blocks = map_body_children(&doc.body_children, &mut ctx);
-        (blocks, ctx.warnings)
-    };
 
-    // ── 4. Assemble section ───────────────────────────────────────────────────
-    let section = Section::with_layout_and_blocks(page_layout, blocks);
+        let mut current_master: Option<String> =
+            initial_master.map(str::to_string);
+        let mut current_blocks: Vec<Block> = Vec::new();
+        let mut sections: Vec<Section> = Vec::new();
+
+        for child in &doc.body_children {
+            // Only paragraphs/headings carry style:master-page-name.
+            let new_master = match child {
+                OdfBodyChild::Paragraph(para) | OdfBodyChild::Heading(para) => {
+                    para.style_name.as_deref()
+                        .and_then(|sn| resolve_master_page_name(sn, &all_styles))
+                }
+                _ => None,
+            };
+
+            // Emit a section break only when the master page actually changes.
+            if let Some(ref nm) = new_master {
+                if Some(nm.as_str()) != current_master.as_deref() {
+                    let layout = resolve_page_layout_by_name(
+                        stylesheet,
+                        current_master.as_deref(),
+                        &mut ctx,
+                    );
+                    sections.push(Section::with_layout_and_blocks(
+                        layout,
+                        std::mem::take(&mut current_blocks),
+                    ));
+                    current_master = Some(nm.clone());
+                }
+            }
+
+            if let Some(block) = map_body_child(child, &mut ctx) {
+                current_blocks.push(block);
+                let figs = std::mem::take(&mut ctx.pending_figures);
+                current_blocks.extend(figs);
+            }
+        }
+
+        // Flush the final (or only) section.
+        let layout = resolve_page_layout_by_name(
+            stylesheet,
+            current_master.as_deref(),
+            &mut ctx,
+        );
+        sections.push(Section::with_layout_and_blocks(layout, current_blocks));
+
+        (sections, ctx.warnings)
+    };
 
     // ── 5. Map metadata ───────────────────────────────────────────────────────
     let doc_meta = meta.map(map_meta).unwrap_or_default();
@@ -132,7 +218,8 @@ pub(crate) fn map_document(
     let document = Document {
         meta: doc_meta,
         styles: catalog,
-        sections: vec![section],
+        sections,
+        settings: None,
         source: None,
     };
 
@@ -462,13 +549,21 @@ fn build_list_attributes(
 // ── Tables ─────────────────────────────────────────────────────────────────────
 
 fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Block {
-    // Expand repeated column definitions
+    // COMPAT(odf): column width from style:table-column-properties
+    // Expand repeated column definitions, resolving fixed widths from style lookup.
     let col_specs: Vec<ColSpec> = table
         .col_defs
         .iter()
         .flat_map(|def| {
             let count = def.columns_repeated.max(1) as usize;
-            std::iter::repeat_with(|| ColSpec::proportional(1.0)).take(count)
+            let width = def
+                .style_name
+                .as_deref()
+                .and_then(|name| ctx.col_style_widths.get(name))
+                .map(|&pts| ColWidth::Fixed(pts))
+                .unwrap_or(ColWidth::Proportional(1.0));
+            let spec = ColSpec { alignment: ColAlignment::Default, width };
+            std::iter::repeat(spec).take(count)
         })
         .collect();
 
@@ -479,7 +574,12 @@ fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Block {
             let cells: Vec<Cell> = odf_row
                 .cells
                 .iter()
-                .map(|odf_cell| {
+                .filter_map(|odf_cell| {
+                    // TODO(odf-rowspan): covered cells suppressed but row_span
+                    // not yet propagated to the spanning cell
+                    if odf_cell.is_covered {
+                        return None;
+                    }
                     let blocks: Vec<Block> = odf_cell
                         .paragraphs
                         .iter()
@@ -490,14 +590,20 @@ fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Block {
                             std::iter::once(block).chain(figs)
                         })
                         .collect();
-                    Cell {
+                    // NOTE: ODF cell properties are mapped to the same CellProps
+                    // type as OOXML. The layout engine applies them identically.
+                    let props = odf_cell.style_name.as_deref()
+                        .and_then(|n| ctx.cell_style_props.get(n))
+                        .map(map_cell_props)
+                        .unwrap_or_default();
+                    Some(Cell {
                         attr: NodeAttr::default(),
                         alignment: ColAlignment::Default,
                         row_span: odf_cell.row_span,
                         col_span: odf_cell.col_span,
                         blocks,
-                        props: CellProps::default(),
-                    }
+                        props,
+                    })
                 })
                 .collect();
             Row::new(cells)
@@ -507,6 +613,7 @@ fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Block {
     Block::Table(Box::new(Table {
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
+        width: None,
         col_specs,
         head: TableHead::empty(),
         bodies: vec![TableBody::from_rows(body_rows)],
@@ -548,16 +655,54 @@ fn map_section(
 
 // ── Page layout ────────────────────────────────────────────────────────────────
 
-/// Find the active master page ("Standard" or the first one) and convert its
-/// associated `style:page-layout` to a format-neutral [`PageLayout`].
+/// Resolves the effective master page name for a paragraph style, following
+/// the `style:parent-style-name` inheritance chain.
 ///
-/// Falls back to [`PageLayout::default`] when no master page or page layout
-/// is present in the stylesheet.
-fn resolve_page_layout(stylesheet: &OdfStylesheet) -> PageLayout {
-    let master = stylesheet
-        .master_pages
-        .iter()
-        .find(|m| m.name == "Standard" || m.name == "Default")
+/// Returns `None` when no master page transition is defined anywhere in the
+/// chain. A cycle in the parent chain terminates the walk without a result.
+fn resolve_master_page_name<'a>(
+    style_name: &str,
+    all_styles: &'a HashMap<&str, &'a OdfStyle>,
+) -> Option<String> {
+    let mut current = style_name;
+    let mut depth = 0usize;
+    loop {
+        // Guard against malformed cycles in the style inheritance chain.
+        if depth > 32 {
+            break;
+        }
+        depth += 1;
+        let style = all_styles.get(current)?;
+        if let Some(ref mpn) = style.master_page_name {
+            if !mpn.is_empty() {
+                return Some(mpn.clone());
+            }
+        }
+        current = style.parent_name.as_deref()?;
+    }
+    None
+}
+
+/// Build a [`PageLayout`] for the named master page.
+///
+/// Looks up the named master page in `stylesheet.master_pages`. If
+/// `master_name` is `None`, falls back to the "Standard" / "Default" master,
+/// then the first one. Converts the associated `style:page-layout` to a
+/// format-neutral [`PageLayout`] and populates all header/footer variants.
+/// Returns [`PageLayout::default`] when no master page is found.
+fn resolve_page_layout_by_name(
+    stylesheet: &OdfStylesheet,
+    master_name: Option<&str>,
+    ctx: &mut OdfMappingContext<'_>,
+) -> PageLayout {
+    let master = master_name
+        .and_then(|name| stylesheet.master_pages.iter().find(|m| m.name == name))
+        .or_else(|| {
+            stylesheet
+                .master_pages
+                .iter()
+                .find(|m| m.name == "Standard" || m.name == "Default")
+        })
         .or_else(|| stylesheet.master_pages.first());
 
     let odf_layout = master.and_then(|m| {
@@ -567,10 +712,53 @@ fn resolve_page_layout(stylesheet: &OdfStylesheet) -> PageLayout {
             .find(|pl| pl.name == m.page_layout_name)
     });
 
-    match odf_layout {
+    let mut layout = match odf_layout {
         Some(pl) => convert_page_layout(pl),
         None => PageLayout::default(),
+    };
+
+    if let Some(master) = master {
+        apply_master_page_hf(master, &mut layout, ctx);
     }
+
+    layout
+}
+
+/// Map all header/footer variants from `master` onto `layout`.
+fn apply_master_page_hf(
+    master: &OdfMasterPage,
+    layout: &mut PageLayout,
+    ctx: &mut OdfMappingContext<'_>,
+) {
+    layout.header = map_hf_paras(&master.header, HeaderFooterKind::Default, ctx);
+    layout.footer = map_hf_paras(&master.footer, HeaderFooterKind::Default, ctx);
+    layout.header_first =
+        map_hf_paras(&master.header_first, HeaderFooterKind::First, ctx);
+    layout.footer_first =
+        map_hf_paras(&master.footer_first, HeaderFooterKind::First, ctx);
+    layout.header_even =
+        map_hf_paras(&master.header_even, HeaderFooterKind::Even, ctx);
+    layout.footer_even =
+        map_hf_paras(&master.footer_even, HeaderFooterKind::Even, ctx);
+}
+
+/// Convert a list of [`OdfParagraph`]s into a [`HeaderFooter`].
+///
+/// Returns `None` when `paras` is `None` or empty (preserving the "absent
+/// variant" semantics that [`assign_headers_footers`] relies on).
+///
+/// [`assign_headers_footers`]: loki_layout::flow::assign_headers_footers
+fn map_hf_paras(
+    paras: &Option<Vec<OdfParagraph>>,
+    kind: HeaderFooterKind,
+    ctx: &mut OdfMappingContext<'_>,
+) -> Option<HeaderFooter> {
+    let paras = paras.as_ref()?;
+    if paras.is_empty() {
+        return None;
+    }
+    let blocks = paras.iter().map(|p| map_paragraph(p, ctx)).collect();
+    Some(HeaderFooter { kind, blocks })
 }
 
 fn convert_page_layout(pl: &OdfPageLayout) -> PageLayout {
@@ -827,5 +1015,81 @@ mod tests {
     fn parse_datetime_invalid_returns_none() {
         let dt = parse_datetime("not-a-date");
         assert!(dt.is_none());
+    }
+
+    // ── resolve_master_page_name unit tests ───────────────────────────────────
+
+    fn style_with_mpn(name: &str, mpn: Option<&str>, parent: Option<&str>) -> OdfStyle {
+        use crate::odt::model::styles::OdfStyleFamily;
+        OdfStyle {
+            name: name.into(),
+            display_name: None,
+            family: OdfStyleFamily::Paragraph,
+            parent_name: parent.map(String::from),
+            list_style_name: None,
+            para_props: None,
+            text_props: None,
+            col_width: None,
+            cell_props: None,
+            is_automatic: false,
+            master_page_name: mpn.map(String::from),
+        }
+    }
+
+    fn make_lookup<'a>(styles: &'a [OdfStyle]) -> HashMap<&'a str, &'a OdfStyle> {
+        styles.iter().map(|s| (s.name.as_str(), s)).collect()
+    }
+
+    /// Direct `master_page_name` on the style is returned.
+    #[test]
+    fn resolve_mpn_direct() {
+        let styles = [style_with_mpn("LandscapeStyle", Some("Landscape"), None)];
+        let lookup = make_lookup(&styles);
+        assert_eq!(
+            resolve_master_page_name("LandscapeStyle", &lookup),
+            Some("Landscape".into())
+        );
+    }
+
+    /// When the style has no `master_page_name` but its parent does, the
+    /// parent's value is returned.
+    #[test]
+    fn resolve_mpn_inherited_from_parent() {
+        let styles = [
+            style_with_mpn("Base", Some("Landscape"), None),
+            style_with_mpn("Child", None, Some("Base")),
+        ];
+        let lookup = make_lookup(&styles);
+        assert_eq!(
+            resolve_master_page_name("Child", &lookup),
+            Some("Landscape".into())
+        );
+    }
+
+    /// An empty `master_page_name` string is treated as absent — `None` returned.
+    #[test]
+    fn resolve_mpn_empty_string_returns_none() {
+        let styles = [style_with_mpn("PlainStyle", Some(""), None)];
+        let lookup = make_lookup(&styles);
+        assert_eq!(resolve_master_page_name("PlainStyle", &lookup), None);
+    }
+
+    /// A style with no master page anywhere in the chain returns `None`.
+    #[test]
+    fn resolve_mpn_no_master_page_in_chain() {
+        let styles = [
+            style_with_mpn("Root", None, None),
+            style_with_mpn("Child", None, Some("Root")),
+        ];
+        let lookup = make_lookup(&styles);
+        assert_eq!(resolve_master_page_name("Child", &lookup), None);
+    }
+
+    /// A style that doesn't exist in the lookup returns `None` without panicking.
+    #[test]
+    fn resolve_mpn_unknown_style_returns_none() {
+        let styles: [OdfStyle; 0] = [];
+        let lookup = make_lookup(&styles);
+        assert_eq!(resolve_master_page_name("NonExistent", &lookup), None);
     }
 }

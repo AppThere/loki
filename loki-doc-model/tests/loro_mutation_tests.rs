@@ -13,8 +13,12 @@ use loki_doc_model::{
     delete_text, get_block_text, insert_text, merge_block, split_block,
     layout::section::Section,
     loro_bridge::document_to_loro,
-    style::StyleId,
+    style::{
+        props::{CharProps, ParaProps},
+        StyleId,
+    },
     Document, MutationError,
+    NodeAttr,
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -33,9 +37,58 @@ fn make_doc_with_paragraphs(paragraphs: &[&str]) -> Document {
             direct_para_props: None,
             direct_char_props: None,
             inlines: vec![Inline::Str((*text).into())],
-            attr: loki_doc_model::NodeAttr::default(),
+            attr: NodeAttr::default(),
         }));
     }
+    doc.sections.clear();
+    doc.sections.push(section);
+    doc
+}
+
+/// Build a `Document` whose first section contains a single heading block
+/// of the given `level` (1–6) with `text` as its content.
+fn make_doc_with_heading(level: u8, text: &str) -> Document {
+    let mut doc = Document::new();
+    let mut section = Section::new();
+    section.blocks.push(Block::Heading(
+        level,
+        NodeAttr::default(),
+        vec![Inline::Str(text.into())],
+    ));
+    doc.sections.clear();
+    doc.sections.push(section);
+    doc
+}
+
+/// Build a `Document` with a single `StyledPara` that has the supplied
+/// `direct_para_props` set.
+fn make_doc_with_para_props(text: &str, para_props: ParaProps) -> Document {
+    let mut doc = Document::new();
+    let mut section = Section::new();
+    section.blocks.push(Block::StyledPara(StyledParagraph {
+        style_id: Some(StyleId::new("Normal")),
+        direct_para_props: Some(Box::new(para_props)),
+        direct_char_props: None,
+        inlines: vec![Inline::Str(text.into())],
+        attr: NodeAttr::default(),
+    }));
+    doc.sections.clear();
+    doc.sections.push(section);
+    doc
+}
+
+/// Build a `Document` with a single `StyledPara` that has the supplied
+/// `direct_char_props` set.
+fn make_doc_with_char_props(text: &str, char_props: CharProps) -> Document {
+    let mut doc = Document::new();
+    let mut section = Section::new();
+    section.blocks.push(Block::StyledPara(StyledParagraph {
+        style_id: Some(StyleId::new("Normal")),
+        direct_para_props: None,
+        direct_char_props: Some(Box::new(char_props)),
+        inlines: vec![Inline::Str(text.into())],
+        attr: NodeAttr::default(),
+    }));
     doc.sections.clear();
     doc.sections.push(section);
     doc
@@ -338,4 +391,135 @@ fn split_then_merge_round_trips_text() {
     let offset = merge_block(&ldoc, 1).expect("merge succeeded");
     assert_eq!(offset, 6, "merged_offset should equal split point");
     assert_eq!(get_block_text(&ldoc, 0), original, "round-trip text mismatch");
+}
+
+// ── split_block style-preservation tests ─────────────────────────────────────
+
+#[test]
+fn split_heading_block_preserves_heading_level() {
+    // Level-2 heading "Hello World" — split after "Hello" (5 bytes).
+    let doc = make_doc_with_heading(2, "Hello World");
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    split_block(&ldoc, 0, 5).expect("split succeeded");
+
+    let derived = loki_doc_model::loro_bridge::loro_to_document(&ldoc)
+        .expect("loro_to_document succeeded");
+    let section = derived.sections.first().expect("section exists");
+    assert_eq!(section.blocks.len(), 2, "two blocks after split");
+
+    match &section.blocks[0] {
+        Block::Heading(lvl, _, _) => assert_eq!(*lvl, 2, "block 0 must be heading level 2"),
+        other => panic!("block 0 should be Heading, got: {other:?}"),
+    }
+    match &section.blocks[1] {
+        Block::Heading(lvl, _, _) => assert_eq!(*lvl, 2, "block 1 must inherit heading level 2"),
+        other => panic!("block 1 should be Heading (level inherited), got: {other:?}"),
+    }
+}
+
+#[test]
+fn split_heading_level_1_is_preserved() {
+    let doc = make_doc_with_heading(1, "Title");
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    split_block(&ldoc, 0, 0).expect("split at start succeeded");
+
+    let derived = loki_doc_model::loro_bridge::loro_to_document(&ldoc)
+        .expect("loro_to_document succeeded");
+    let section = derived.sections.first().expect("section exists");
+    for (i, block) in section.blocks.iter().enumerate() {
+        match block {
+            Block::Heading(lvl, _, _) => {
+                assert_eq!(*lvl, 1, "block {i} must be heading level 1 after split")
+            }
+            other => panic!("block {i} should be Heading, got: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn split_block_with_para_props_inherits_props() {
+    use loki_doc_model::style::props::para_props::ParagraphAlignment;
+
+    let mut para_props = ParaProps::default();
+    para_props.alignment = Some(ParagraphAlignment::Center);
+
+    let doc = make_doc_with_para_props("centered text", para_props);
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    split_block(&ldoc, 0, 8).expect("split succeeded");
+
+    let derived = loki_doc_model::loro_bridge::loro_to_document(&ldoc)
+        .expect("loro_to_document succeeded");
+    let section = derived.sections.first().expect("section exists");
+    assert_eq!(section.blocks.len(), 2, "two blocks after split");
+
+    for (i, block) in section.blocks.iter().enumerate() {
+        match block {
+            Block::StyledPara(sp) => {
+                let alignment = sp
+                    .direct_para_props
+                    .as_ref()
+                    .and_then(|p| p.alignment.as_ref());
+                assert_eq!(
+                    alignment,
+                    Some(&ParagraphAlignment::Center),
+                    "block {i} must inherit Center alignment"
+                );
+            }
+            other => panic!("block {i} should be StyledPara, got: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn split_block_new_block_props_are_independent() {
+    // Verify that the two `para_props` LoroMaps after a split are separate
+    // containers — mutating block 1's text must not change block 0's text.
+    use loki_doc_model::style::props::para_props::ParagraphAlignment;
+
+    let mut para_props = ParaProps::default();
+    para_props.alignment = Some(ParagraphAlignment::Right);
+
+    let doc = make_doc_with_para_props("right aligned paragraph", para_props);
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    split_block(&ldoc, 0, 5).expect("split succeeded");
+    assert_eq!(get_block_text(&ldoc, 0), "right", "block 0 text after split");
+    assert_eq!(get_block_text(&ldoc, 1), " aligned paragraph", "block 1 text after split");
+
+    // Insert text into block 1 only; block 0 must be unaffected.
+    loki_doc_model::insert_text(&ldoc, 1, 0, "XXX").expect("insert into block 1 succeeded");
+    assert_eq!(get_block_text(&ldoc, 0), "right", "block 0 must be unchanged after block 1 mutation");
+    assert_eq!(get_block_text(&ldoc, 1), "XXX aligned paragraph", "block 1 has inserted text");
+}
+
+#[test]
+fn split_block_with_char_props_inherits_direct_char_props() {
+    let mut char_props = CharProps::default();
+    char_props.bold = Some(true);
+
+    let doc = make_doc_with_char_props("bold text here", char_props);
+    let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
+
+    split_block(&ldoc, 0, 4).expect("split succeeded");
+
+    let derived = loki_doc_model::loro_bridge::loro_to_document(&ldoc)
+        .expect("loro_to_document succeeded");
+    let section = derived.sections.first().expect("section exists");
+    assert_eq!(section.blocks.len(), 2, "two blocks after split");
+
+    for (i, block) in section.blocks.iter().enumerate() {
+        match block {
+            Block::StyledPara(sp) => {
+                let bold = sp
+                    .direct_char_props
+                    .as_ref()
+                    .and_then(|c| c.bold);
+                assert_eq!(bold, Some(true), "block {i} must inherit bold=true from direct_char_props");
+            }
+            other => panic!("block {i} should be StyledPara, got: {other:?}"),
+        }
+    }
 }

@@ -187,6 +187,7 @@ mod tests {
             display_name: Some("Heading 1".into()),
             parent: None,
             linked_char_style: None,
+            next_style_id: None,
             para_props: ParaProps { outline_level: Some(1), ..Default::default() },
             char_props: CharProps::default(),
             is_default: false,

@@ -335,10 +335,25 @@ fn build_chain_layouts<'s>(
 ) -> Vec<(ResolvedParaProps, ParagraphLayout)> {
     (start..=end)
         .map(|idx| {
-            if let Block::StyledPara(para) = &blocks[idx] {
-                let resolved = resolve_para_props(para, state.catalog);
+            // Convert every block type to an effective StyledParagraph so that
+            // all chain members receive a proper parley_layout. Without this,
+            // Heading (and other non-StyledPara) blocks in a chain end up with
+            // parley_layout=None, causing cursor_rect to return None.
+            let effective_para: Option<StyledParagraph> = match &blocks[idx] {
+                Block::StyledPara(p) => Some(p.clone()),
+                Block::Heading(lvl, attr, inlines) => {
+                    Some(super::synthesize_heading_para(*lvl, attr, inlines))
+                }
+                Block::Para(inlines) | Block::Plain(inlines) => {
+                    Some(super::synthesize_plain_para(inlines))
+                }
+                _ => None,
+            };
+
+            if let Some(para) = effective_para {
+                let resolved = resolve_para_props(&para, state.catalog);
                 let mut temp_counter = state.note_counter;
-                let (text, spans, _images, _notes) = flatten_paragraph(para, state.catalog, &mut temp_counter);
+                let (text, spans, _images, _notes) = flatten_paragraph(&para, state.catalog, &mut temp_counter);
                 let layout = layout_paragraph(
                     state.resources,
                     &text,
@@ -350,7 +365,7 @@ fn build_chain_layouts<'s>(
                 );
                 (resolved, layout)
             } else {
-                // Non-para block: contribute zero height in chain context.
+                // Non-text block (HR, table, etc.): contribute zero height.
                 (ResolvedParaProps::default(), ParagraphLayout {
                     height: 0.0,
                     width: 0.0,

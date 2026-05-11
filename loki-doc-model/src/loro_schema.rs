@@ -27,6 +27,9 @@ pub const KEY_CONTENT: &str = "content";
 /// Key for direct CharProps applied on a paragraph Block.
 pub const KEY_DIRECT_CHAR_PROPS: &str = "direct_char_props";
 
+/// Key for the heading level integer stored on a heading Block.
+pub const KEY_HEADING_LEVEL: &str = "level";
+
 /// Key for ParaProps applied to a paragraph Block.
 pub const KEY_PARA_PROPS: &str = "para_props";
 

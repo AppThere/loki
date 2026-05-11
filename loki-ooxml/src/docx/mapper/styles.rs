@@ -31,6 +31,7 @@ pub(crate) fn map_styles(styles: &DocxStyles) -> StyleCatalog {
             display_name: None,
             parent: None,
             linked_char_style: None,
+            next_style_id: None,
             para_props: styles
                 .default_ppr
                 .as_ref()
@@ -59,6 +60,7 @@ pub(crate) fn map_styles(styles: &DocxStyles) -> StyleCatalog {
                     display_name: style.name.clone(),
                     parent: style.based_on.as_deref().map(StyleId::new),
                     linked_char_style: style.link.as_deref().map(StyleId::new),
+                    next_style_id: style.next.clone(),
                     para_props: style.ppr.as_ref().map(map_ppr).unwrap_or_default(),
                     char_props: style.rpr.as_ref().map(map_rpr).unwrap_or_default(),
                     is_default: style.is_default,

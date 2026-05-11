@@ -101,4 +101,20 @@ impl RelationshipSet {
         }).max().unwrap_or(0);
         format!("rId{}", max_id + 1)
     }
+
+    /// Adds an external relationship (e.g. a hyperlink URL) and returns the assigned rId.
+    pub fn add_external(
+        &mut self,
+        rel_type: impl Into<String>,
+        target: impl Into<String>,
+    ) -> String {
+        let id = self.next_id();
+        self.relationships.push(Relationship {
+            id: id.clone(),
+            rel_type: rel_type.into(),
+            target: target.into(),
+            target_mode: TargetMode::External,
+        });
+        id
+    }
 }

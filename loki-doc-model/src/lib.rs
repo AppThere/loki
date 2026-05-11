@@ -63,6 +63,7 @@
 //!     display_name: Some("Heading 1".into()),
 //!     parent: None,
 //!     linked_char_style: None,
+//!     next_style_id: None,
 //!     para_props: ParaProps::default(),
 //!     char_props: CharProps {
 //!         bold: Some(true),
@@ -101,6 +102,7 @@
 //! let table = Block::Table(Box::new(Table {
 //!     attr: NodeAttr::default(),
 //!     caption: TableCaption::default(),
+//!     width: None,
 //!     col_specs: vec![
 //!         ColSpec::proportional(1.0),
 //!         ColSpec::proportional(1.0),
@@ -127,6 +129,7 @@
 //!     meta,
 //!     styles,
 //!     sections: vec![section],
+//!     settings: None,
 //!     source: None,
 //! };
 //!
@@ -136,6 +139,7 @@
 
 pub mod content;
 pub mod document;
+pub mod settings;
 pub mod loro_schema;
 pub use loro_schema::*;
 pub mod loro_bridge;
@@ -150,6 +154,7 @@ pub mod style;
 
 pub use document::Document;
 pub use error::LokiDocError;
+pub use settings::DocumentSettings;
 
 /// Re-export of `loki_primitives` for consumers who need measurement types.
 pub use loki_primitives;

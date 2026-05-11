@@ -20,10 +20,11 @@ use crate::odt::model::document::{
 use crate::odt::model::list_styles::{
     OdfListLevel, OdfListLevelKind, OdfListStyle,
 };
-use crate::odt::model::paragraph::{OdfParagraph, OdfParagraphChild};
+use crate::odt::model::paragraph::OdfParagraph;
+use crate::odt::reader::document::read_paragraph;
 use crate::odt::model::styles::{
-    OdfDefaultStyle, OdfParaProps, OdfStyle, OdfStyleFamily, OdfStylesheet,
-    OdfTabStop, OdfTextProps,
+    OdfCellProps, OdfDefaultStyle, OdfParaProps, OdfStyle, OdfStyleFamily,
+    OdfStylesheet, OdfTabStop, OdfTextProps,
 };
 use crate::xml_util::local_attr_val;
 
@@ -92,9 +93,14 @@ pub(crate) fn read_stylesheet(
                             local_attr_val(e, b"parent-style-name");
                         let list_style_name =
                             local_attr_val(e, b"list-style-name");
+                        // COMPAT(odf): style:master-page-name on a paragraph
+                        // style signals a master page transition. The new master
+                        // page's layout applies from that paragraph onward.
+                        let master_page_name =
+                            local_attr_val(e, b"master-page-name");
                         let auto = is_automatic || in_auto;
                         drop(e);
-                        let (para_props, text_props) =
+                        let (para_props, text_props, col_width, cell_props) =
                             parse_style_props(&mut reader, b"style")?;
                         let style = OdfStyle {
                             name,
@@ -104,7 +110,10 @@ pub(crate) fn read_stylesheet(
                             list_style_name,
                             para_props,
                             text_props,
+                            col_width,
+                            cell_props,
                             is_automatic: auto,
+                            master_page_name,
                         };
                         if auto {
                             sheet.auto_styles.push(style);
@@ -119,7 +128,7 @@ pub(crate) fn read_stylesheet(
                                 .unwrap_or(""),
                         );
                         drop(e);
-                        let (para_props, text_props) =
+                        let (para_props, text_props, _col_width, _cell_props) =
                             parse_style_props(&mut reader, b"default-style")?;
                         sheet.default_styles.push(OdfDefaultStyle {
                             family,
@@ -187,6 +196,8 @@ pub(crate) fn read_stylesheet(
                             local_attr_val(e, b"parent-style-name");
                         let list_style_name =
                             local_attr_val(e, b"list-style-name");
+                        let master_page_name =
+                            local_attr_val(e, b"master-page-name");
                         let auto = is_automatic || in_auto;
                         let style = OdfStyle {
                             name,
@@ -196,7 +207,10 @@ pub(crate) fn read_stylesheet(
                             list_style_name,
                             para_props: None,
                             text_props: None,
+                            col_width: None,
+                            cell_props: None,
                             is_automatic: auto,
+                            master_page_name,
                         };
                         if auto {
                             sheet.auto_styles.push(style);
@@ -225,6 +239,10 @@ pub(crate) fn read_stylesheet(
                             page_layout_name,
                             header: None,
                             footer: None,
+                            header_first: None,
+                            footer_first: None,
+                            header_even: None,
+                            footer_even: None,
                         });
                     }
                     _ => {}
@@ -256,15 +274,20 @@ pub(crate) fn read_stylesheet(
 // ── Style property parsing ─────────────────────────────────────────────────────
 
 /// Read the children of a `style:style` or `style:default-style` element
-/// until the matching end tag, collecting `style:paragraph-properties` and
-/// `style:text-properties`.
+/// until the matching end tag, collecting `style:paragraph-properties`,
+/// `style:text-properties`, `style:table-column-properties`, and
+/// `style:table-cell-properties`.
+///
+/// Returns `(para_props, text_props, col_width, cell_props)`.
 fn parse_style_props(
     reader: &mut Reader<&[u8]>,
     end_local: &[u8],
-) -> OdfResult<(Option<OdfParaProps>, Option<OdfTextProps>)> {
+) -> OdfResult<(Option<OdfParaProps>, Option<OdfTextProps>, Option<String>, Option<OdfCellProps>)> {
     let mut buf = Vec::new();
     let mut para_props: Option<OdfParaProps> = None;
     let mut text_props: Option<OdfTextProps> = None;
+    let mut col_width: Option<String> = None;
+    let mut cell_props: Option<OdfCellProps> = None;
 
     loop {
         buf.clear();
@@ -285,6 +308,20 @@ fn parse_style_props(
                         skip_element(reader, b"text-properties")?;
                         text_props = Some(tp);
                     }
+                    b"table-column-properties" => {
+                        col_width = crate::xml_util::local_attr_val(e, b"column-width");
+                        drop(e);
+                        skip_element(reader, b"table-column-properties")?;
+                    }
+                    // COMPAT(odf): style:table-cell-properties may appear as
+                    // either a self-closing element (Empty event) or with child
+                    // elements (Start/End). Most producers use the self-closing
+                    // form, but handle the Start form for robustness.
+                    b"table-cell-properties" => {
+                        cell_props = Some(parse_cell_props_element(e));
+                        drop(e);
+                        skip_element(reader, b"table-cell-properties")?;
+                    }
                     _ => {
                         let local = local.clone();
                         drop(e);
@@ -300,6 +337,12 @@ fn parse_style_props(
                     }
                     b"text-properties" => {
                         text_props = Some(parse_text_props_attrs(e));
+                    }
+                    b"table-column-properties" => {
+                        col_width = crate::xml_util::local_attr_val(e, b"column-width");
+                    }
+                    b"table-cell-properties" => {
+                        cell_props = Some(parse_cell_props_element(e));
                     }
                     _ => {}
                 }
@@ -320,7 +363,47 @@ fn parse_style_props(
         }
     }
 
-    Ok((para_props, text_props))
+    Ok((para_props, text_props, col_width, cell_props))
+}
+
+/// Build an [`OdfCellProps`] from the attributes of a
+/// `style:table-cell-properties` element.
+///
+/// ODF shorthand `fo:padding` sets all four edges; individual edge attributes
+/// (`fo:padding-top` etc.) take precedence over the shorthand.
+/// Same logic applies to `fo:border` vs per-edge border attributes.
+fn parse_cell_props_element(e: &quick_xml::events::BytesStart<'_>) -> OdfCellProps {
+    // Apply fo:padding shorthand to all edges first.
+    let padding_all = local_attr_val(e, b"padding");
+    let mut props = OdfCellProps {
+        padding_top:    padding_all.clone(),
+        padding_bottom: padding_all.clone(),
+        padding_left:   padding_all.clone(),
+        padding_right:  padding_all,
+        vertical_align:   local_attr_val(e, b"vertical-align"),
+        writing_mode:     local_attr_val(e, b"writing-mode"),
+        background_color: local_attr_val(e, b"background-color"),
+        ..Default::default()
+    };
+    // Per-edge padding overrides shorthand.
+    if let Some(v) = local_attr_val(e, b"padding-top")    { props.padding_top    = Some(v); }
+    if let Some(v) = local_attr_val(e, b"padding-bottom") { props.padding_bottom = Some(v); }
+    if let Some(v) = local_attr_val(e, b"padding-left")   { props.padding_left   = Some(v); }
+    if let Some(v) = local_attr_val(e, b"padding-right")  { props.padding_right  = Some(v); }
+
+    // Apply fo:border shorthand to all edges first.
+    let border_all = local_attr_val(e, b"border");
+    props.border_top    = border_all.clone();
+    props.border_bottom = border_all.clone();
+    props.border_left   = border_all.clone();
+    props.border_right  = border_all;
+    // Per-edge border overrides shorthand.
+    if let Some(v) = local_attr_val(e, b"border-top")    { props.border_top    = Some(v); }
+    if let Some(v) = local_attr_val(e, b"border-bottom") { props.border_bottom = Some(v); }
+    if let Some(v) = local_attr_val(e, b"border-left")   { props.border_left   = Some(v); }
+    if let Some(v) = local_attr_val(e, b"border-right")  { props.border_right  = Some(v); }
+
+    props
 }
 
 /// Build an [`OdfParaProps`] from the attributes of a
@@ -972,6 +1055,13 @@ fn parse_header_footer_style(
 // ── Master page parsing ────────────────────────────────────────────────────────
 
 /// Parse a `style:master-page` element (Start event already consumed).
+///
+/// Handles all six header/footer variants:
+/// - `style:header` / `style:footer` — default (odd/right-page)
+/// - `style:header-first` / `style:footer-first` — first page only
+/// - `style:header-left` / `style:footer-left` — even/left pages
+///
+/// ODF 1.3 §16.9.
 fn parse_master_page(
     reader: &mut Reader<&[u8]>,
     name: String,
@@ -980,6 +1070,10 @@ fn parse_master_page(
     let mut buf = Vec::new();
     let mut header: Option<Vec<OdfParagraph>> = None;
     let mut footer: Option<Vec<OdfParagraph>> = None;
+    let mut header_first: Option<Vec<OdfParagraph>> = None;
+    let mut footer_first: Option<Vec<OdfParagraph>> = None;
+    let mut header_even: Option<Vec<OdfParagraph>> = None;
+    let mut footer_even: Option<Vec<OdfParagraph>> = None;
 
     loop {
         buf.clear();
@@ -989,15 +1083,31 @@ fn parse_master_page(
                 match local.as_slice() {
                     b"header" => {
                         drop(e);
-                        header = Some(parse_header_footer_paras(
-                            reader, b"header",
-                        )?);
+                        header = Some(parse_header_footer_paras(reader, b"header")?);
                     }
                     b"footer" => {
                         drop(e);
-                        footer = Some(parse_header_footer_paras(
-                            reader, b"footer",
-                        )?);
+                        footer = Some(parse_header_footer_paras(reader, b"footer")?);
+                    }
+                    b"header-first" => {
+                        drop(e);
+                        header_first =
+                            Some(parse_header_footer_paras(reader, b"header-first")?);
+                    }
+                    b"footer-first" => {
+                        drop(e);
+                        footer_first =
+                            Some(parse_header_footer_paras(reader, b"footer-first")?);
+                    }
+                    b"header-left" => {
+                        drop(e);
+                        header_even =
+                            Some(parse_header_footer_paras(reader, b"header-left")?);
+                    }
+                    b"footer-left" => {
+                        drop(e);
+                        footer_even =
+                            Some(parse_header_footer_paras(reader, b"footer-left")?);
                     }
                     _ => {
                         drop(e);
@@ -1026,14 +1136,19 @@ fn parse_master_page(
         page_layout_name,
         header,
         footer,
+        header_first,
+        footer_first,
+        header_even,
+        footer_even,
     })
 }
 
-/// Collect paragraphs inside a `style:header` or `style:footer` element.
+/// Collect paragraphs inside a `style:header`, `style:footer`, or their
+/// `-first` / `-left` variants.
 ///
-/// Uses a simplified reader that only captures `text:style-name` and flat
-/// text content — sufficient for header/footer paragraphs without needing the
-/// full inline-content parser from `document.rs`.
+/// Delegates to [`read_paragraph`] (the same full inline parser used for body
+/// content), so spans, fields (`text:page-number`, `text:date`, etc.), links,
+/// and notes are all captured correctly.
 fn parse_header_footer_paras(
     reader: &mut Reader<&[u8]>,
     end_local: &[u8],
@@ -1048,24 +1163,7 @@ fn parse_header_footer_paras(
                 let local = e.local_name().into_inner().to_vec();
                 match local.as_slice() {
                     b"p" | b"h" => {
-                        let style = local_attr_val(e, b"style-name");
-                        let is_heading = local == b"h";
-                        let outline_level: Option<u8> = if is_heading {
-                            local_attr_val(e, b"outline-level")
-                                .and_then(|s| s.parse().ok())
-                        } else {
-                            None
-                        };
-                        let end_tag: &'static [u8] =
-                            if is_heading { b"h" } else { b"p" };
-                        drop(e);
-                        let para = collect_para_text(
-                            reader,
-                            end_tag,
-                            style,
-                            is_heading,
-                            outline_level,
-                        )?;
+                        let para = read_paragraph(reader, e)?;
                         paras.push(para);
                     }
                     _ => {
@@ -1091,61 +1189,6 @@ fn parse_header_footer_paras(
     }
 
     Ok(paras)
-}
-
-/// Simplified paragraph reader: collects only text nodes (flat) until the
-/// matching end tag. Used for header/footer paragraphs where deep inline
-/// parsing is not required.
-fn collect_para_text(
-    reader: &mut Reader<&[u8]>,
-    end_local: &[u8],
-    style_name: Option<String>,
-    is_heading: bool,
-    outline_level: Option<u8>,
-) -> OdfResult<OdfParagraph> {
-    let mut buf = Vec::new();
-    let mut children: Vec<OdfParagraphChild> = Vec::new();
-    let mut depth: u32 = 0;
-
-    loop {
-        buf.clear();
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Text(ref t)) => {
-                let s = t.unescape().map_err(|e| OdfError::Xml {
-                    part: "styles.xml".to_string(),
-                    source: e,
-                })?;
-                if !s.is_empty() {
-                    children.push(OdfParagraphChild::Text(s.into_owned()));
-                }
-            }
-            Ok(Event::Start(_)) => depth += 1,
-            Ok(Event::End(ref e)) => {
-                if depth == 0
-                    && e.local_name().into_inner() == end_local
-                {
-                    break;
-                }
-                depth = depth.saturating_sub(1);
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OdfError::Xml {
-                    part: "styles.xml".to_string(),
-                    source: e,
-                })
-            }
-            _ => {}
-        }
-    }
-
-    Ok(OdfParagraph {
-        style_name,
-        outline_level,
-        is_heading,
-        children,
-        list_context: None,
-    })
 }
 
 // ── Auto-styles fast reader (content.xml) ─────────────────────────────────────
@@ -1186,8 +1229,10 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                             local_attr_val(e, b"parent-style-name");
                         let list_style_name =
                             local_attr_val(e, b"list-style-name");
+                        let master_page_name =
+                            local_attr_val(e, b"master-page-name");
                         drop(e);
-                        let (para_props, text_props) =
+                        let (para_props, text_props, col_width, cell_props) =
                             parse_style_props(&mut reader, b"style")?;
                         styles.push(OdfStyle {
                             name,
@@ -1197,7 +1242,10 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                             list_style_name,
                             para_props,
                             text_props,
+                            col_width,
+                            cell_props,
                             is_automatic: true,
+                            master_page_name,
                         });
                     }
                     _ => {}
@@ -1217,6 +1265,8 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                         local_attr_val(e, b"parent-style-name");
                     let list_style_name =
                         local_attr_val(e, b"list-style-name");
+                    let master_page_name =
+                        local_attr_val(e, b"master-page-name");
                     styles.push(OdfStyle {
                         name,
                         display_name,
@@ -1225,7 +1275,10 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                         list_style_name,
                         para_props: None,
                         text_props: None,
+                        col_width: None,
+                        cell_props: None,
                         is_automatic: true,
+                        master_page_name,
                     });
                 }
             }

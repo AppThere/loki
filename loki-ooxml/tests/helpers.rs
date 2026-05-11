@@ -26,6 +26,7 @@ fn content_types_xml() -> Vec<u8> {
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="png" ContentType="image/png"/>
   <Override PartName="/word/document.xml"
     ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
   <Override PartName="/word/styles.xml"
@@ -34,6 +35,8 @@ fn content_types_xml() -> Vec<u8> {
     ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>
   <Override PartName="/word/footnotes.xml"
     ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/>
+  <Override PartName="/word/settings.xml"
+    ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>
   <Override PartName="/word/header1.xml"
     ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>
   <Override PartName="/word/header2.xml"
@@ -85,6 +88,12 @@ fn doc_rels_xml() -> Vec<u8> {
   <Relationship Id="rId8"
     Type="{NS_R}/footer"
     Target="footer2.xml"/>
+  <Relationship Id="rId9"
+    Type="{NS_R}/settings"
+    Target="settings.xml"/>
+  <Relationship Id="rId10"
+    Type="{NS_R}/image"
+    Target="media/image1.png"/>
 </Relationships>"#
     ).into_bytes()
 }
@@ -184,6 +193,15 @@ fn footer_first_xml() -> Vec<u8> {
 <w:ftr xmlns:w="{NS_W}">
   <w:p><w:r><w:t>First Page Footer</w:t></w:r></w:p>
 </w:ftr>"#
+    ).into_bytes()
+}
+
+fn settings_xml() -> Vec<u8> {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:settings xmlns:w="{NS_W}">
+  <w:defaultTabStop w:val="720"/>
+</w:settings>"#
     ).into_bytes()
 }
 
@@ -336,10 +354,10 @@ fn document_xml() -> Vec<u8> {
       <w:r><w:t>Right-aligned paragraph text.</w:t></w:r>
     </w:p>
 
-    <!-- justified alignment -->
+    <!-- justified alignment · first-line indent 0.5 inch = 720 twips -->
     <w:p>
-      <w:pPr><w:jc w:val="both"/></w:pPr>
-      <w:r><w:t>Justified paragraph: the text is spread across the full available width, aligning both the left and right edges on every line except the final one, which remains left-aligned.</w:t></w:r>
+      <w:pPr><w:jc w:val="both"/><w:ind w:firstLine="720"/></w:pPr>
+      <w:r><w:t>Justified paragraph with a first-line indent: the text is spread across the full available width, and the first line is indented by half an inch.</w:t></w:r>
     </w:p>
 
     <!-- ── Lists (gap #1) ───────────────────────────────────────────── -->
@@ -406,6 +424,36 @@ fn document_xml() -> Vec<u8> {
       <w:r><w:fldChar w:fldCharType="end"/></w:r>
       <w:r><w:t xml:space="preserve"> of document.</w:t></w:r>
     </w:p>
+    
+    <!-- image (P0 gap closure) -->
+    <w:p>
+      <w:r>
+        <w:drawing>
+          <wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
+            <wp:extent cx="914400" cy="914400"/>
+            <wp:docPr id="1" name="Image 1"/>
+            <a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+              <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                <pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                  <pic:nvPicPr>
+                    <pic:cNvPr id="1" name="image1.png"/>
+                    <pic:cNvPicPr/>
+                  </pic:nvPicPr>
+                  <pic:blipFill>
+                    <a:blip r:embed="rId10" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>
+                    <a:stretch><a:fillRect/></a:stretch>
+                  </pic:blipFill>
+                  <pic:spPr>
+                    <a:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="914400"/></a:xfrm>
+                    <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+                  </pic:spPr>
+                </pic:pic>
+              </a:graphicData>
+            </a:graphic>
+          </wp:inline>
+        </w:drawing>
+      </w:r>
+    </w:p>
 
     <!-- footnote reference (gap #2) -->
     <w:p>
@@ -444,6 +492,80 @@ fn document_xml() -> Vec<u8> {
       <w:r><w:tab/></w:r>
       <w:r><w:t>Column C</w:t></w:r>
     </w:p>
+
+    <!-- ── Table with explicit width 5000 dxa = 250 pt (OOXML-1) ──── -->
+    <w:tbl>
+      <w:tblPr>
+        <w:tblW w:w="5000" w:type="dxa"/>
+      </w:tblPr>
+      <w:tblGrid>
+        <w:gridCol w:w="2500"/>
+        <w:gridCol w:w="2500"/>
+      </w:tblGrid>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Cell A1</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Cell A2</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+
+    <!-- ── 2×3 table: col 0 rows 0-1 merged (OOXML-vmerge) ─────────── -->
+    <w:tbl>
+      <w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>
+      <w:tblGrid>
+        <w:gridCol w:w="2500"/>
+        <w:gridCol w:w="2500"/>
+      </w:tblGrid>
+      <w:tr>
+        <w:tc>
+          <w:tcPr><w:vMerge w:val="restart"/></w:tcPr>
+          <w:p><w:r><w:t>Merged Cell</w:t></w:r></w:p>
+        </w:tc>
+        <w:tc><w:p><w:r><w:t>Row 1 Col 2</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc>
+          <w:tcPr><w:vMerge/></w:tcPr>
+          <w:p><w:r><w:t></w:t></w:r></w:p>
+        </w:tc>
+        <w:tc><w:p><w:r><w:t>Row 2 Col 2</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Row 3 Col 1</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Row 3 Col 2</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+
+    <!-- ── 2×1 table: cell props (padding, vAlign, textDirection, shading) ──── -->
+    <w:tbl>
+      <w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>
+      <w:tblGrid>
+        <w:gridCol w:w="2500"/>
+        <w:gridCol w:w="2500"/>
+      </w:tblGrid>
+      <w:tr>
+        <w:tc>
+          <w:tcPr>
+            <w:tcMar>
+              <w:top w:w="100" w:type="dxa"/>
+              <w:bottom w:w="100" w:type="dxa"/>
+              <w:left w:w="200" w:type="dxa"/>
+              <w:right w:w="200" w:type="dxa"/>
+            </w:tcMar>
+            <w:vAlign w:val="center"/>
+            <w:textDirection w:val="tbRl"/>
+            <w:shd w:val="clear" w:color="auto" w:fill="FF0000"/>
+          </w:tcPr>
+          <w:p><w:r><w:t>Styled Cell (Red BG)</w:t></w:r></w:p>
+        </w:tc>
+        <w:tc>
+          <w:tcPr>
+            <w:vAlign w:val="bottom"/>
+            <w:shd w:val="clear" w:color="auto" w:fill="00FF00"/>
+          </w:tcPr>
+          <w:p><w:r><w:t>Bottom Aligned (Green BG)</w:t></w:r></w:p>
+        </w:tc>
+      </w:tr>
+    </w:tbl>
 
     <!-- ── Page break → page 2 ──────────────────────────────────────── -->
     <w:p><w:r><w:br w:type="page"/></w:r></w:p>
@@ -515,6 +637,9 @@ pub fn build_reference_docx() -> Vec<u8> {
     zip.start_file("word/footnotes.xml", d).unwrap();
     zip.write_all(&footnotes_xml()).unwrap();
 
+    zip.start_file("word/settings.xml", d).unwrap();
+    zip.write_all(&settings_xml()).unwrap();
+
     zip.start_file("word/document.xml", d).unwrap();
     zip.write_all(&document_xml()).unwrap();
 
@@ -529,6 +654,16 @@ pub fn build_reference_docx() -> Vec<u8> {
 
     zip.start_file("word/footer2.xml", d).unwrap();
     zip.write_all(&footer_first_xml()).unwrap();
+
+    zip.start_file("word/media/image1.png", d).unwrap();
+    // 1x1 transparent PNG
+    zip.write_all(&[
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+        0x89, 0x00, 0x00, 0x00, 0x0B, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0x60, 0x00, 0x02, 0x00,
+        0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44,
+        0xAE, 0x42, 0x60, 0x82
+    ]).unwrap();
 
     zip.finish().unwrap();
     buf

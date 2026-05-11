@@ -116,6 +116,33 @@ pub struct DocxTableCell {
     pub paragraphs: Vec<super::paragraph::DocxParagraph>,
 }
 
+/// Cell margins from `w:tcMar` (ECMA-376 §17.4.68).
+/// All values are in twentieths of a point (twips).
+#[derive(Debug, Clone, Default)]
+pub struct DocxCellMargins {
+    pub top: Option<i32>,
+    pub bottom: Option<i32>,
+    pub left: Option<i32>,
+    pub right: Option<i32>,
+}
+
+/// Vertical alignment from `w:vAlign @w:val` (ECMA-376 §17.4.84).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocxVAlign {
+    Top,
+    Center,
+    Bottom,
+}
+
+/// Text direction from `w:textDirection @w:val` (ECMA-376 §17.4.87).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocxTextDirection {
+    LrTb,
+    TbRl,
+    TbLr,
+    BtLr,
+}
+
 /// Table cell properties from `w:tcPr` (ECMA-376 §17.4.70).
 #[derive(Debug, Clone, Default)]
 pub struct DocxTcPr {
@@ -127,6 +154,12 @@ pub struct DocxTcPr {
     pub shd_fill: Option<String>,
     /// Cell borders from `w:tcBorders`.
     pub tc_borders: Option<DocxTcBorders>,
+    /// Cell margins from `w:tcMar`. Values in twips; divide by 20 for points.
+    pub tc_margins: Option<DocxCellMargins>,
+    /// Vertical alignment from `w:vAlign`.
+    pub v_align: Option<DocxVAlign>,
+    /// Text direction from `w:textDirection`.
+    pub text_direction: Option<DocxTextDirection>,
 }
 
 /// Table cell borders from `w:tcBorders` (ECMA-376 §17.4.67).

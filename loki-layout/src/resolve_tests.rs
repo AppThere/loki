@@ -145,6 +145,7 @@ fn resolve_para_props_center_from_style() {
             display_name: None,
             parent: None,
             linked_char_style: None,
+            next_style_id: None,
             para_props: ParaProps {
                 alignment: Some(ParagraphAlignment::Center),
                 ..Default::default()

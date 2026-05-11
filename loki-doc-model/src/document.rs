@@ -11,6 +11,7 @@
 use crate::io::source::DocumentSource;
 use crate::layout::section::Section;
 use crate::meta::core::DocumentMeta;
+use crate::settings::DocumentSettings;
 use crate::style::catalog::StyleCatalog;
 
 /// The root of a Loki document.
@@ -46,6 +47,7 @@ use crate::style::catalog::StyleCatalog;
 ///     meta,
 ///     styles: StyleCatalog::default(),
 ///     sections: vec![section],
+///     settings: None,
 ///     source: None,
 /// };
 ///
@@ -67,6 +69,12 @@ pub struct Document {
     /// section containing all content.
     pub sections: Vec<Section>,
 
+    /// Document-wide settings (default tab stop, etc.).
+    ///
+    /// `None` means all settings use their format-defined defaults.
+    /// OOXML: `word/settings.xml`; ODF: `settings.xml`.
+    pub settings: Option<DocumentSettings>,
+
     /// Format and version provenance from the source file, if loaded from one.
     ///
     /// `None` for programmatically constructed documents.
@@ -81,6 +89,7 @@ impl Document {
             meta: DocumentMeta::default(),
             styles: StyleCatalog::default(),
             sections: vec![Section::new()],
+            settings: None,
             source: None,
         }
     }

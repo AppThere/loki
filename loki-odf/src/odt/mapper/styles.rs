@@ -43,6 +43,7 @@ pub(crate) fn map_stylesheet(sheet: &OdfStylesheet) -> StyleCatalog {
                 display_name: None,
                 parent: None,
                 linked_char_style: None,
+                next_style_id: None,
                 para_props,
                 char_props,
                 is_default: true,
@@ -89,6 +90,7 @@ pub(crate) fn map_stylesheet(sheet: &OdfStylesheet) -> StyleCatalog {
                     display_name,
                     parent,
                     linked_char_style: None,
+                    next_style_id: None,
                     para_props,
                     char_props,
                     is_default: false,
@@ -139,7 +141,10 @@ mod tests {
             list_style_name: None,
             para_props: None,
             text_props: None,
+            col_width: None,
+            cell_props: None,
             is_automatic: is_auto,
+            master_page_name: None,
         }
     }
 
@@ -155,7 +160,10 @@ mod tests {
                 font_weight: Some("bold".into()),
                 ..Default::default()
             }),
+            col_width: None,
+            cell_props: None,
             is_automatic: false,
+            master_page_name: None,
         }
     }
 
@@ -239,7 +247,10 @@ mod tests {
                 list_style_name: None,
                 para_props: None,
                 text_props: None,
+                col_width: None,
+                cell_props: None,
                 is_automatic: false,
+                master_page_name: None,
             }],
             ..Default::default()
         };

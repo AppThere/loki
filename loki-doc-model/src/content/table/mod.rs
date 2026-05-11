@@ -11,6 +11,6 @@ pub mod col;
 pub mod core;
 pub mod row;
 
-pub use col::{ColAlignment, ColSpec, ColWidth};
+pub use col::{ColAlignment, ColSpec, ColWidth, TableWidth};
 pub use core::{Table, TableBody, TableCaption, TableFoot, TableHead};
-pub use row::{Cell, CellProps, CellVerticalAlign, Row};
+pub use row::{Cell, CellProps, CellTextDirection, CellVerticalAlign, Row};

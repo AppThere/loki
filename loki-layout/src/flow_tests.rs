@@ -658,6 +658,7 @@ fn make_table_2x2(cell_props: Option<CellProps>) -> Block {
     Block::Table(Box::new(Table {
         attr: NodeAttr::default(),
         caption: Default::default(),
+        width: None,
         col_specs: vec![
             ColSpec { alignment: ColAlignment::Default, width: ColWidth::Default },
             ColSpec { alignment: ColAlignment::Default, width: ColWidth::Default },
