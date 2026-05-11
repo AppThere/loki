@@ -1,37 +1,32 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
 
-//! DOCX export stub.
+//! DOCX export — public entry point.
 //!
-//! DOCX export is not implemented in `loki-ooxml` v0.1.0. Calling
-//! [`DocxExport::export`] will always return
-//! [`OoxmlError::ExportNotImplemented`].
+//! Calls into `write::assembly` to assemble a conformant `.docx` ZIP.
+//! See ADR-0007 for design decisions (Tier 3 fidelity, `Package::write`).
 
 use std::io::{Seek, Write};
 
 use loki_doc_model::document::Document;
 use loki_doc_model::io::DocumentExport;
 
+use crate::docx::write::assembly::assemble_docx;
 use crate::error::OoxmlError;
 
 /// Unit struct that implements [`DocumentExport`] for DOCX.
-///
-/// DOCX export is **not yet implemented**. Every call to
-/// [`DocumentExport::export`] returns
-/// [`OoxmlError::ExportNotImplemented`].
 pub struct DocxExport;
 
 impl DocumentExport for DocxExport {
     type Error = OoxmlError;
     type Options = ();
 
-    /// Always returns [`OoxmlError::ExportNotImplemented`].
     fn export(
-        _doc: &Document,
-        _writer: impl Write + Seek,
+        doc: &Document,
+        writer: impl Write + Seek,
         _options: Self::Options,
     ) -> Result<(), Self::Error> {
-        Err(OoxmlError::ExportNotImplemented)
+        assemble_docx(doc, writer)
     }
 }
 
@@ -41,10 +36,75 @@ mod tests {
     use std::io::Cursor;
 
     #[test]
-    fn export_returns_not_implemented() {
+    fn export_empty_document_produces_zip() {
         let doc = Document::new();
         let mut buf = Cursor::new(Vec::<u8>::new());
-        let result = DocxExport::export(&doc, &mut buf, ());
-        assert!(matches!(result, Err(OoxmlError::ExportNotImplemented)));
+        DocxExport::export(&doc, &mut buf, ()).expect("export failed");
+        // A ZIP starts with the local file header signature PK\x03\x04.
+        let bytes = buf.into_inner();
+        assert!(bytes.len() > 4, "output is too short to be a ZIP");
+        assert_eq!(&bytes[..2], b"PK", "output does not begin with ZIP magic");
+    }
+
+    #[test]
+    fn export_document_with_heading_and_para() {
+        use loki_doc_model::content::block::Block;
+        use loki_doc_model::content::attr::NodeAttr;
+        use loki_doc_model::content::inline::Inline;
+
+        let mut doc = Document::new();
+        let section = doc.sections.first_mut().unwrap();
+        section.blocks.push(Block::Heading(
+            1,
+            NodeAttr::default(),
+            vec![Inline::Str("Hello world".into())],
+        ));
+        section.blocks.push(Block::Para(vec![
+            Inline::Str("Some text.".into()),
+        ]));
+
+        let mut buf = Cursor::new(Vec::<u8>::new());
+        DocxExport::export(&doc, &mut buf, ()).expect("export failed");
+        let bytes = buf.into_inner();
+        assert_eq!(&bytes[..2], b"PK");
+    }
+
+    #[test]
+    fn export_bullet_list_produces_zip() {
+        use loki_doc_model::content::block::Block;
+        use loki_doc_model::content::inline::Inline;
+
+        let mut doc = Document::new();
+        let section = doc.sections.first_mut().unwrap();
+        section.blocks.push(Block::BulletList(vec![
+            vec![Block::Para(vec![Inline::Str("Item one".into())])],
+            vec![Block::Para(vec![Inline::Str("Item two".into())])],
+        ]));
+
+        let mut buf = Cursor::new(Vec::<u8>::new());
+        DocxExport::export(&doc, &mut buf, ()).expect("export failed");
+        let bytes = buf.into_inner();
+        assert_eq!(&bytes[..2], b"PK");
+    }
+
+    #[test]
+    fn export_ordered_list_produces_zip() {
+        use loki_doc_model::content::block::{Block, ListAttributes};
+        use loki_doc_model::content::inline::Inline;
+
+        let mut doc = Document::new();
+        let section = doc.sections.first_mut().unwrap();
+        section.blocks.push(Block::OrderedList(
+            ListAttributes::default(),
+            vec![
+                vec![Block::Para(vec![Inline::Str("First".into())])],
+                vec![Block::Para(vec![Inline::Str("Second".into())])],
+            ],
+        ));
+
+        let mut buf = Cursor::new(Vec::<u8>::new());
+        DocxExport::export(&doc, &mut buf, ()).expect("export failed");
+        let bytes = buf.into_inner();
+        assert_eq!(&bytes[..2], b"PK");
     }
 }
