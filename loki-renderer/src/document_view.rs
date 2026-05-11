@@ -5,11 +5,11 @@
 
 use std::sync::{Arc, Mutex};
 
+use appthere_ui::tokens;
 use dioxus::native::use_wgpu;
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 use loki_render_cache::PageCache;
-use loki_theme::tokens;
 
 use crate::doc_page_source::DocPageSource;
 use crate::page_paint_source::LokiPageSource;
@@ -99,9 +99,7 @@ fn PageTile(props: PageTileProps) -> Element {
 /// - Passes scroll events to `on_scroll_event`.
 #[component]
 pub fn DocumentView(props: DocumentViewProps) -> Element {
-    let renderer = use_hook(|| {
-        RendererState::new(props.doc.clone(), props.viewport_height_px)
-    });
+    let renderer = use_hook(|| RendererState::new(props.doc.clone(), props.viewport_height_px));
     provide_context(renderer.clone());
 
     let renderer_settle = renderer.clone();
@@ -117,22 +115,21 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
     let doc_gen = renderer.source.current_generation();
     let layout_guard = renderer.source.layout_for_generation(doc_gen);
     let mut total_height = 0.0f64;
-    let pages: Vec<(usize, f64, f64, f64)> =
-        if let Some((_, layout)) = layout_guard.as_ref() {
-            layout
-                .pages
-                .iter()
-                .enumerate()
-                .map(|(i, p)| {
-                    let h = p.page_size.height as f64;
-                    let top = total_height;
-                    total_height += h + tokens::PAGE_GAP_PX as f64;
-                    (i, top, p.page_size.width as f64, h)
-                })
-                .collect()
-        } else {
-            vec![]
-        };
+    let pages: Vec<(usize, f64, f64, f64)> = if let Some((_, layout)) = layout_guard.as_ref() {
+        layout
+            .pages
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let h = p.page_size.height as f64;
+                let top = total_height;
+                total_height += h + tokens::PAGE_GAP_PX as f64;
+                (i, top, p.page_size.width as f64, h)
+            })
+            .collect()
+    } else {
+        vec![]
+    };
     drop(layout_guard);
 
     let (hot, warm, cold) = renderer

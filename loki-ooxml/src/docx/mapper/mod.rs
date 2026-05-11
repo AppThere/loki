@@ -216,7 +216,7 @@ pub(crate) mod table;
 use loki_doc_model::document::Document;
 use loki_opc::Package;
 
-use crate::docx::import::{parse_and_map_package, DocxImportOptions};
+use crate::docx::import::{DocxImportOptions, parse_and_map_package};
 
 /// Maps an OOXML OPC [`Package`] to a format-neutral [`Document`].
 ///
@@ -269,8 +269,8 @@ pub fn map_document(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use loki_opc::{PartData, PartName};
     use loki_opc::relationships::{Relationship, TargetMode};
+    use loki_opc::{PartData, PartName};
 
     const REL_OFFICE_DOCUMENT: &str =
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
@@ -376,8 +376,16 @@ mod tests {
         assert_eq!(doc.sections.len(), 1);
         let sz = &doc.sections[0].layout.page_size;
         // A4: 595.28 × 841.89 pt — allow ±0.1 pt tolerance.
-        assert!((sz.width.value() - 595.28).abs() < 0.1, "A4 width expected, got {}", sz.width.value());
-        assert!((sz.height.value() - 841.89).abs() < 0.1, "A4 height expected, got {}", sz.height.value());
+        assert!(
+            (sz.width.value() - 595.28).abs() < 0.1,
+            "A4 width expected, got {}",
+            sz.width.value()
+        );
+        assert!(
+            (sz.height.value() - 841.89).abs() < 0.1,
+            "A4 height expected, got {}",
+            sz.height.value()
+        );
     }
 
     // ── Pipeline error for missing officeDocument relationship ────────────────

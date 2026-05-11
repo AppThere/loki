@@ -13,7 +13,9 @@ use loki_doc_model::style::props::border::{Border, BorderStyle};
 use loki_doc_model::style::props::char_props::{
     CharProps, HighlightColor, StrikethroughStyle, UnderlineStyle, VerticalAlign,
 };
-use loki_doc_model::style::props::para_props::{LineHeight, ParagraphAlignment, ParaProps, Spacing};
+use loki_doc_model::style::props::para_props::{
+    LineHeight, ParaProps, ParagraphAlignment, Spacing,
+};
 use loki_doc_model::style::props::tab_stop::{TabAlignment, TabLeader, TabStop};
 use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
@@ -101,8 +103,8 @@ pub(crate) fn map_border_edge(edge: &DocxBorderEdge) -> Border {
     let style = match edge.val.as_str() {
         "nil" | "none" => BorderStyle::None,
         "double" => BorderStyle::Double,
-        "dashed" | "dashSmallGap" | "dashDot" | "dashDotDot" | "dotDash"
-        | "dotDotDash" | "dashDotStroked" => BorderStyle::Dashed,
+        "dashed" | "dashSmallGap" | "dashDot" | "dashDotDot" | "dotDash" | "dotDotDash"
+        | "dashDotStroked" => BorderStyle::Dashed,
         "dotted" | "dottedHeavy" => BorderStyle::Dotted,
         "wave" | "wavyHeavy" | "wavyDouble" => BorderStyle::Wave,
         _ => BorderStyle::Solid,
@@ -110,7 +112,11 @@ pub(crate) fn map_border_edge(edge: &DocxBorderEdge) -> Border {
     Border {
         style,
         width: Points::new(f64::from(edge.sz.unwrap_or(8)) / 8.0),
-        color: edge.color.as_deref().and_then(hex_color).map(DocumentColor::Rgb),
+        color: edge
+            .color
+            .as_deref()
+            .and_then(hex_color)
+            .map(DocumentColor::Rgb),
         spacing: edge.space.map(|s| Points::new(f64::from(s))),
     }
 }
@@ -156,10 +162,11 @@ pub(crate) fn map_ppr(ppr: &DocxPPr) -> ParaProps {
 
     // Numbering: num_id=0 means "explicitly remove numbering".
     if let Some(ref np) = ppr.num_pr
-        && np.num_id != 0 {
-            props.list_id = Some(ListId::new(np.num_id.to_string()));
-            props.list_level = Some(np.ilvl);
-        }
+        && np.num_id != 0
+    {
+        props.list_id = Some(ListId::new(np.num_id.to_string()));
+        props.list_level = Some(np.ilvl);
+    }
 
     // Paragraph borders (gap #6): w:pBdr → ParaProps border_* + padding_*.
     if let Some(ref pbdr) = ppr.p_bdr {
@@ -169,10 +176,26 @@ pub(crate) fn map_ppr(ppr: &DocxPPr) -> ParaProps {
         props.border_right = pbdr.right.as_ref().map(map_border_edge);
         props.border_between = pbdr.between.as_ref().map(map_border_edge);
         // w:space is in points (not twips) — use directly.
-        props.padding_top = pbdr.top.as_ref().and_then(|e| e.space).map(|s| Points::new(f64::from(s)));
-        props.padding_bottom = pbdr.bottom.as_ref().and_then(|e| e.space).map(|s| Points::new(f64::from(s)));
-        props.padding_left = pbdr.left.as_ref().and_then(|e| e.space).map(|s| Points::new(f64::from(s)));
-        props.padding_right = pbdr.right.as_ref().and_then(|e| e.space).map(|s| Points::new(f64::from(s)));
+        props.padding_top = pbdr
+            .top
+            .as_ref()
+            .and_then(|e| e.space)
+            .map(|s| Points::new(f64::from(s)));
+        props.padding_bottom = pbdr
+            .bottom
+            .as_ref()
+            .and_then(|e| e.space)
+            .map(|s| Points::new(f64::from(s)));
+        props.padding_left = pbdr
+            .left
+            .as_ref()
+            .and_then(|e| e.space)
+            .map(|s| Points::new(f64::from(s)));
+        props.padding_right = pbdr
+            .right
+            .as_ref()
+            .and_then(|e| e.space)
+            .map(|s| Points::new(f64::from(s)));
     }
 
     // Tab stops (gap #7): w:tabs → ParaProps.tab_stops.
@@ -224,16 +247,15 @@ pub(crate) fn map_rpr(rpr: &DocxRPr) -> CharProps {
     let font_size = rpr.sz.map(|hp| Points::new(f64::from(hp) / 2.0));
     let font_size_complex = rpr.sz_cs.map(|hp| Points::new(f64::from(hp) / 2.0));
 
-    let (font_name, font_name_complex, font_name_east_asian) =
-        if let Some(ref fonts) = rpr.fonts {
-            (
-                fonts.ascii.clone().or_else(|| fonts.h_ansi.clone()),
-                fonts.cs.clone(),
-                fonts.east_asia.clone(),
-            )
-        } else {
-            (None, None, None)
-        };
+    let (font_name, font_name_complex, font_name_east_asian) = if let Some(ref fonts) = rpr.fonts {
+        (
+            fonts.ascii.clone().or_else(|| fonts.h_ansi.clone()),
+            fonts.cs.clone(),
+            fonts.east_asia.clone(),
+        )
+    } else {
+        (None, None, None)
+    };
 
     // w:spacing is in twips.
     let letter_spacing = rpr.spacing.map(|sp| Points::new(f64::from(sp) / 20.0));
@@ -251,7 +273,11 @@ pub(crate) fn map_rpr(rpr: &DocxRPr) -> CharProps {
         shadow: rpr.shadow,
         strikethrough,
         underline: rpr.underline.as_deref().and_then(map_underline),
-        color: rpr.color.as_deref().and_then(hex_color).map(DocumentColor::Rgb),
+        color: rpr
+            .color
+            .as_deref()
+            .and_then(hex_color)
+            .map(DocumentColor::Rgb),
         highlight_color: rpr
             .highlight
             .as_deref()
@@ -284,7 +310,10 @@ mod tests {
     use crate::docx::model::paragraph::{DocxInd, DocxNumPr, DocxSpacing};
 
     fn ppr_with_jc(jc: &str) -> DocxPPr {
-        DocxPPr { jc: Some(jc.into()), ..Default::default() }
+        DocxPPr {
+            jc: Some(jc.into()),
+            ..Default::default()
+        }
     }
 
     // ── map_ppr ──────────────────────────────────────────────────────────────
@@ -292,7 +321,10 @@ mod tests {
     #[test]
     fn twip_conversion_720() {
         let ppr = DocxPPr {
-            ind: Some(DocxInd { left: Some(720), ..Default::default() }),
+            ind: Some(DocxInd {
+                left: Some(720),
+                ..Default::default()
+            }),
             ..Default::default()
         };
         let props = map_ppr(&ppr);
@@ -361,7 +393,10 @@ mod tests {
 
     #[test]
     fn outline_lvl_0_becomes_1() {
-        let ppr = DocxPPr { outline_lvl: Some(0), ..Default::default() };
+        let ppr = DocxPPr {
+            outline_lvl: Some(0),
+            ..Default::default()
+        };
         assert_eq!(map_ppr(&ppr).outline_level, Some(1));
     }
 
@@ -390,26 +425,38 @@ mod tests {
 
     #[test]
     fn half_point_24_is_12pt() {
-        let rpr = DocxRPr { sz: Some(24), ..Default::default() };
+        let rpr = DocxRPr {
+            sz: Some(24),
+            ..Default::default()
+        };
         let props = map_rpr(&rpr);
         assert_eq!(props.font_size.unwrap().value(), 12.0);
     }
 
     #[test]
     fn bold_none_is_none() {
-        let rpr = DocxRPr { bold: None, ..Default::default() };
+        let rpr = DocxRPr {
+            bold: None,
+            ..Default::default()
+        };
         assert!(map_rpr(&rpr).bold.is_none());
     }
 
     #[test]
     fn bold_some_true() {
-        let rpr = DocxRPr { bold: Some(true), ..Default::default() };
+        let rpr = DocxRPr {
+            bold: Some(true),
+            ..Default::default()
+        };
         assert_eq!(map_rpr(&rpr).bold, Some(true));
     }
 
     #[test]
     fn bold_some_false() {
-        let rpr = DocxRPr { bold: Some(false), ..Default::default() };
+        let rpr = DocxRPr {
+            bold: Some(false),
+            ..Default::default()
+        };
         assert_eq!(map_rpr(&rpr).bold, Some(false));
     }
 
@@ -420,6 +467,9 @@ mod tests {
             strike: Some(true),
             ..Default::default()
         };
-        assert_eq!(map_rpr(&rpr).strikethrough, Some(StrikethroughStyle::Double));
+        assert_eq!(
+            map_rpr(&rpr).strikethrough,
+            Some(StrikethroughStyle::Double)
+        );
     }
 }

@@ -15,12 +15,11 @@ use super::document::MappingContext;
 ///
 /// Returns `None` and pushes a warning if the relationship id is missing
 /// or cannot be resolved to an image part.
-pub(crate) fn map_drawing(
-    drawing: &DocxDrawing,
-    ctx: &mut MappingContext<'_>,
-) -> Option<Inline> {
+pub(crate) fn map_drawing(drawing: &DocxDrawing, ctx: &mut MappingContext<'_>) -> Option<Inline> {
     let Some(rel_id) = drawing.rel_id.clone() else {
-        ctx.warnings.push(OoxmlWarning::UnresolvedImage { rel_id: String::new() });
+        ctx.warnings.push(OoxmlWarning::UnresolvedImage {
+            rel_id: String::new(),
+        });
         return None;
     };
 
@@ -56,7 +55,10 @@ pub(crate) fn map_drawing(
         _ => vec![],
     };
 
-    let target = LinkTarget { url: uri, title: drawing.name.clone() };
+    let target = LinkTarget {
+        url: uri,
+        title: drawing.name.clone(),
+    };
 
     Some(Inline::Image(attr, alt, target))
 }
@@ -64,10 +66,10 @@ pub(crate) fn map_drawing(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
+    use crate::docx::import::DocxImportOptions;
     use loki_doc_model::style::catalog::StyleCatalog;
     use loki_opc::PartData;
-    use crate::docx::import::DocxImportOptions;
+    use std::collections::HashMap;
 
     fn make_ctx<'a>(
         images: &'a HashMap<String, PartData>,
@@ -150,7 +152,10 @@ mod tests {
         let fn_map = HashMap::new();
         let en_map = HashMap::new();
         let hl_map = HashMap::new();
-        let opts = DocxImportOptions { embed_images: false, ..Default::default() };
+        let opts = DocxImportOptions {
+            embed_images: false,
+            ..Default::default()
+        };
         let mut ctx = make_ctx(&images, &catalog, &fn_map, &en_map, &hl_map, &opts);
 
         let drawing = DocxDrawing {
@@ -183,12 +188,18 @@ mod tests {
         let fn_map = HashMap::new();
         let en_map = HashMap::new();
         let hl_map = HashMap::new();
-        let opts = DocxImportOptions { embed_images: false, ..Default::default() };
+        let opts = DocxImportOptions {
+            embed_images: false,
+            ..Default::default()
+        };
         let mut ctx = make_ctx(&images, &catalog, &fn_map, &en_map, &hl_map, &opts);
 
         let drawing = DocxDrawing {
             rel_id: Some("rId2".into()),
-            cx: None, cy: None, descr: None, name: None,
+            cx: None,
+            cy: None,
+            descr: None,
+            name: None,
             is_anchor: true,
         };
         let result = map_drawing(&drawing, &mut ctx).unwrap();

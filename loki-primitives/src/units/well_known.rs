@@ -1,7 +1,7 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{unit_types::*, length::Length};
+use super::{length::Length, unit_types::*};
 
 /// Generic points layout
 pub type Points = Length<Pt>;

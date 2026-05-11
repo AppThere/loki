@@ -93,43 +93,43 @@ pub enum DeviationWarning {
     /// A ZIP entry used `\` as a path separator. Normalised to `/` per §7.3.3.
     BackslashInPartName {
         /// Captured violation literal.
-        original: String, 
+        original: String,
     },
 
     /// A part name used non-canonical percent-encoding. Re-encoded to canonical form per §7.3.4.
-    NonCanonicalPercentEncoding { 
+    NonCanonicalPercentEncoding {
         /// Escaped strings failing structural checks.
-        original: String, 
+        original: String,
         /// Fallback successfully rewritten format matching the original intent.
         normalised: String,
     },
 
     /// A part had a missing or empty media type in [Content_Types].xml. A fallback was applied per §6.2.3.
-    MissingMediaType { 
+    MissingMediaType {
         /// Part identifier mapped correctly but skipped locally mapping types natively.
-        part: String, 
+        part: String,
         /// Applied implicit substitution identifier correctly identifying the part intent.
         fallback: String,
     },
 
     /// Two part names were equivalent under §6.3.5 case-folding. The first was retained.
-    DuplicatePartName { 
+    DuplicatePartName {
         /// Primary mapping retained matching its origin sequence.
-        retained: String, 
+        retained: String,
         /// Secondary reference stripped from extraction output.
         discarded: String,
     },
 
     /// Two relationships in one `.rels` file had the same `Id`. The first was retained per §6.5.3.
-    DuplicateRelationshipId { 
+    DuplicateRelationshipId {
         /// The duplicated id literal parsed matching both parts uniformly.
-        id: String, 
+        id: String,
         /// Local package tracking mapping.
         part: String,
     },
 
     /// `[Content_Types].xml` was not found at the root. A case-insensitive fallback match was used.
-    ContentTypesNotAtRoot { 
+    ContentTypesNotAtRoot {
         /// String sequence where the structural marker was found correctly.
         found_at: String,
     },

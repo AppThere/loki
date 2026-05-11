@@ -10,7 +10,7 @@ use crate::loro_schema::{
 };
 
 use super::{
-    copy_map_primitive_values, get_block_map_and_list, get_loro_text_for_block, MutationError,
+    MutationError, copy_map_primitive_values, get_block_map_and_list, get_loro_text_for_block,
 };
 
 /// Splits the block at `block_index` at `byte_offset`, inserting a new block
@@ -50,7 +50,9 @@ pub fn split_block(
 
     // Validate that byte_offset is on a UTF-8 character boundary.
     if byte_offset > full_text.len() || !full_text.is_char_boundary(byte_offset) {
-        return Err(MutationError::InvalidByteOffset { offset: byte_offset });
+        return Err(MutationError::InvalidByteOffset {
+            offset: byte_offset,
+        });
     }
 
     let tail = full_text[byte_offset..].to_string();

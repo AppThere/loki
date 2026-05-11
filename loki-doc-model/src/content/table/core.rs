@@ -154,7 +154,7 @@ impl Table {
 mod tests {
     use super::*;
     use crate::content::table::col::ColSpec;
-    use crate::content::table::row::{Row, Cell};
+    use crate::content::table::row::{Cell, Row};
     use loki_primitives::units::Points;
 
     #[test]

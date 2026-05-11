@@ -113,7 +113,7 @@ impl Package {
     pub fn part_names(&self) -> impl Iterator<Item = &PartName> {
         self.parts.keys()
     }
-    
+
     /// Package-level parts map strictly for read operations natively.
     pub(crate) fn parts_map(&self) -> &HashMap<PartName, PartData> {
         &self.parts

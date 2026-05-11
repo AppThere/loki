@@ -7,17 +7,14 @@
 //! every formatting feature that has a known fidelity gap in the audit.
 
 use std::io::{Cursor, Write};
-use zip::write::{FileOptions, ZipWriter};
 use zip::CompressionMethod;
+use zip::write::{FileOptions, ZipWriter};
 
 // ── OPC namespace constants ───────────────────────────────────────────────────
 
-const NS_PKG_RELS: &str =
-    "http://schemas.openxmlformats.org/package/2006/relationships";
-const NS_W: &str =
-    "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-const NS_R: &str =
-    "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const NS_PKG_RELS: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
+const NS_W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+const NS_R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
 // ── Part byte slices ──────────────────────────────────────────────────────────
 
@@ -45,7 +42,8 @@ fn content_types_xml() -> Vec<u8> {
     ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>
   <Override PartName="/word/footer2.xml"
     ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>
-</Types>"#.to_vec()
+</Types>"#
+        .to_vec()
 }
 
 fn pkg_rels_xml() -> Vec<u8> {
@@ -56,7 +54,8 @@ fn pkg_rels_xml() -> Vec<u8> {
     Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"
     Target="word/document.xml"/>
 </Relationships>"#
-    ).into_bytes()
+    )
+    .into_bytes()
 }
 
 fn doc_rels_xml() -> Vec<u8> {
@@ -95,7 +94,8 @@ fn doc_rels_xml() -> Vec<u8> {
     Type="{NS_R}/image"
     Target="media/image1.png"/>
 </Relationships>"#
-    ).into_bytes()
+    )
+    .into_bytes()
 }
 
 fn styles_xml() -> Vec<u8> {
@@ -122,7 +122,8 @@ fn styles_xml() -> Vec<u8> {
     <w:rPr><w:vertAlign w:val="superscript"/></w:rPr>
   </w:style>
 </w:styles>"#
-    ).into_bytes()
+    )
+    .into_bytes()
 }
 
 fn numbering_xml() -> Vec<u8> {
@@ -157,7 +158,8 @@ fn numbering_xml() -> Vec<u8> {
   <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>
   <w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num>
 </w:numbering>"#
-    ).into_bytes()
+    )
+    .into_bytes()
 }
 
 fn header_default_xml() -> Vec<u8> {
@@ -166,7 +168,8 @@ fn header_default_xml() -> Vec<u8> {
 <w:hdr xmlns:w="{NS_W}">
   <w:p><w:r><w:t>Test Document Header</w:t></w:r></w:p>
 </w:hdr>"#
-    ).into_bytes()
+    )
+    .into_bytes()
 }
 
 fn footer_default_xml() -> Vec<u8> {
@@ -175,7 +178,8 @@ fn footer_default_xml() -> Vec<u8> {
 <w:ftr xmlns:w="{NS_W}">
   <w:p><w:r><w:t>Test Document Footer</w:t></w:r></w:p>
 </w:ftr>"#
-    ).into_bytes()
+    )
+    .into_bytes()
 }
 
 fn header_first_xml() -> Vec<u8> {
@@ -184,7 +188,8 @@ fn header_first_xml() -> Vec<u8> {
 <w:hdr xmlns:w="{NS_W}">
   <w:p><w:r><w:t>First Page Header</w:t></w:r></w:p>
 </w:hdr>"#
-    ).into_bytes()
+    )
+    .into_bytes()
 }
 
 fn footer_first_xml() -> Vec<u8> {
@@ -193,7 +198,8 @@ fn footer_first_xml() -> Vec<u8> {
 <w:ftr xmlns:w="{NS_W}">
   <w:p><w:r><w:t>First Page Footer</w:t></w:r></w:p>
 </w:ftr>"#
-    ).into_bytes()
+    )
+    .into_bytes()
 }
 
 fn settings_xml() -> Vec<u8> {
@@ -202,7 +208,8 @@ fn settings_xml() -> Vec<u8> {
 <w:settings xmlns:w="{NS_W}">
   <w:defaultTabStop w:val="720"/>
 </w:settings>"#
-    ).into_bytes()
+    )
+    .into_bytes()
 }
 
 fn footnotes_xml() -> Vec<u8> {
@@ -225,7 +232,8 @@ fn footnotes_xml() -> Vec<u8> {
     </w:p>
   </w:footnote>
 </w:footnotes>"#
-    ).into_bytes()
+    )
+    .into_bytes()
 }
 
 /// Build the main `word/document.xml` exercising every audit-tracked
@@ -658,12 +666,13 @@ pub fn build_reference_docx() -> Vec<u8> {
     zip.start_file("word/media/image1.png", d).unwrap();
     // 1x1 transparent PNG
     zip.write_all(&[
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
-        0x89, 0x00, 0x00, 0x00, 0x0B, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0x60, 0x00, 0x02, 0x00,
-        0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44,
-        0xAE, 0x42, 0x60, 0x82
-    ]).unwrap();
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
+        0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0B, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0x60,
+        0x00, 0x02, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00,
+        0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ])
+    .unwrap();
 
     zip.finish().unwrap();
     buf

@@ -5,7 +5,9 @@
 
 use super::*;
 use crate::items::{BorderStyle, PositionedItem};
-use loki_doc_model::style::list_style::{BulletChar, LabelAlignment, ListLevel, ListLevelKind, NumberingScheme};
+use loki_doc_model::style::list_style::{
+    BulletChar, LabelAlignment, ListLevel, ListLevelKind, NumberingScheme,
+};
 use loki_primitives::units::Points as DocPoints;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -53,7 +55,15 @@ fn plain_paragraph_non_empty() {
     let mut r = test_resources();
     let text = "Hello, world!";
     let spans = [single_span(text, 12.0)];
-    let result = layout_paragraph(&mut r, text, &spans, &ResolvedParaProps::default(), 400.0, 1.0, false);
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
     assert!(result.height > 0.0, "height should be positive");
     assert!(!result.items.is_empty(), "items should not be empty");
 }
@@ -63,13 +73,37 @@ fn bold_span_produces_items() {
     let mut r = test_resources();
     let text = "Hello bold world";
     let spans = [
-        StyleSpan { range: 0..6,              bold: false, ..single_span(text, 12.0) },
-        StyleSpan { range: 6..10,             bold: true,  ..single_span(text, 12.0) },
-        StyleSpan { range: 10..text.len(),    bold: false, ..single_span(text, 12.0) },
+        StyleSpan {
+            range: 0..6,
+            bold: false,
+            ..single_span(text, 12.0)
+        },
+        StyleSpan {
+            range: 6..10,
+            bold: true,
+            ..single_span(text, 12.0)
+        },
+        StyleSpan {
+            range: 10..text.len(),
+            bold: false,
+            ..single_span(text, 12.0)
+        },
     ];
-    let result = layout_paragraph(&mut r, text, &spans, &ResolvedParaProps::default(), 400.0, 1.0, false);
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
     assert!(!result.items.is_empty());
-    let runs = result.items.iter().filter(|i| matches!(i, PositionedItem::GlyphRun(_))).count();
+    let runs = result
+        .items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::GlyphRun(_)))
+        .count();
     assert!(runs >= 1, "expected at least one glyph run, got {runs}");
 }
 
@@ -78,17 +112,47 @@ fn narrow_width_causes_wrapping() {
     let mut r = test_resources();
     let text = "The quick brown fox jumps over the lazy dog";
     let spans = [single_span(text, 14.0)];
-    let wide   = layout_paragraph(&mut r, text, &spans, &ResolvedParaProps::default(), 600.0, 1.0, false);
-    let narrow = layout_paragraph(&mut r, text, &spans, &ResolvedParaProps::default(),  80.0, 1.0, false);
-    assert!(narrow.height > wide.height, "narrow layout should be taller due to wrapping");
+    let wide = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        600.0,
+        1.0,
+        false,
+    );
+    let narrow = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        80.0,
+        1.0,
+        false,
+    );
+    assert!(
+        narrow.height > wide.height,
+        "narrow layout should be taller due to wrapping"
+    );
 }
 
 #[test]
 fn background_color_is_first_item() {
     let mut r = test_resources();
     let text = "Background test";
-    let props = ResolvedParaProps { background_color: Some(LayoutColor::WHITE), ..Default::default() };
-    let result = layout_paragraph(&mut r, text, &[single_span(text, 12.0)], &props, 400.0, 1.0, false);
+    let props = ResolvedParaProps {
+        background_color: Some(LayoutColor::WHITE),
+        ..Default::default()
+    };
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &[single_span(text, 12.0)],
+        &props,
+        400.0,
+        1.0,
+        false,
+    );
     assert!(
         matches!(result.items.first(), Some(PositionedItem::FilledRect(_))),
         "first item should be FilledRect for paragraph background",
@@ -99,11 +163,22 @@ fn background_color_is_first_item() {
 fn underline_span_emits_decoration() {
     let mut r = test_resources();
     let text = "Underlined text";
-    let spans = [StyleSpan { underline: Some(UnderlineStyle::Single), ..single_span(text, 12.0) }];
-    let result = layout_paragraph(&mut r, text, &spans, &ResolvedParaProps::default(), 400.0, 1.0, false);
-    let has_underline = result.items.iter().any(|item| {
-        matches!(item, PositionedItem::Decoration(d) if d.kind == DecorationKind::Underline)
-    });
+    let spans = [StyleSpan {
+        underline: Some(UnderlineStyle::Single),
+        ..single_span(text, 12.0)
+    }];
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+    let has_underline = result.items.iter().any(
+        |item| matches!(item, PositionedItem::Decoration(d) if d.kind == DecorationKind::Underline),
+    );
     assert!(has_underline, "expected a Underline decoration item");
 }
 
@@ -112,10 +187,28 @@ fn space_before_after_not_in_height() {
     let mut r = test_resources();
     let text = "Spacing test";
     let spans = [single_span(text, 12.0)];
-    let no_space   = layout_paragraph(&mut r, text, &spans, &ResolvedParaProps::default(), 400.0, 1.0, false);
-    let with_space = layout_paragraph(&mut r, text, &spans,
-        &ResolvedParaProps { space_before: 24.0, space_after: 24.0, ..Default::default() },
-        400.0, 1.0, false);
+    let no_space = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+    let with_space = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps {
+            space_before: 24.0,
+            space_after: 24.0,
+            ..Default::default()
+        },
+        400.0,
+        1.0,
+        false,
+    );
     assert_eq!(
         no_space.height, with_space.height,
         "space_before/space_after must not affect ParagraphLayout::height",
@@ -128,7 +221,15 @@ fn line_boundaries_populated_for_multiline_paragraph() {
     let text = "The quick brown fox jumps over the lazy dog and continues for many more words to force wrapping";
     let spans = [single_span(text, 12.0)];
     // Narrow width forces several lines.
-    let result = layout_paragraph(&mut r, text, &spans, &ResolvedParaProps::default(), 100.0, 1.0, false);
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        100.0,
+        1.0,
+        false,
+    );
     assert!(
         result.line_boundaries.len() >= 2,
         "expected multiple lines, got {}",
@@ -136,7 +237,10 @@ fn line_boundaries_populated_for_multiline_paragraph() {
     );
     // Each line's max_coord must be greater than its min_coord.
     for (i, &(min, max)) in result.line_boundaries.iter().enumerate() {
-        assert!(max > min, "line {i}: max_coord ({max}) must exceed min_coord ({min})");
+        assert!(
+            max > min,
+            "line {i}: max_coord ({max}) must exceed min_coord ({min})"
+        );
     }
     // max_coords must be strictly increasing (each line's bottom is further down).
     for i in 1..result.line_boundaries.len() {
@@ -159,7 +263,15 @@ fn line_boundaries_populated_for_multiline_paragraph() {
 #[test]
 fn empty_paragraph_has_no_line_boundaries() {
     let mut r = test_resources();
-    let result = layout_paragraph(&mut r, "", &[], &ResolvedParaProps::default(), 400.0, 1.0, false);
+    let result = layout_paragraph(
+        &mut r,
+        "",
+        &[],
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
     assert!(
         result.line_boundaries.is_empty(),
         "empty paragraph must have no line boundaries"
@@ -170,15 +282,33 @@ fn empty_paragraph_has_no_line_boundaries() {
 fn border_follows_background() {
     let mut r = test_resources();
     let text = "Border test";
-    let edge = BorderEdge { color: LayoutColor::BLACK, width: 1.0, style: BorderStyle::Solid };
+    let edge = BorderEdge {
+        color: LayoutColor::BLACK,
+        width: 1.0,
+        style: BorderStyle::Solid,
+    };
     let props = ResolvedParaProps {
         background_color: Some(LayoutColor::WHITE),
         border_top: Some(edge),
         ..Default::default()
     };
-    let result = layout_paragraph(&mut r, text, &[single_span(text, 12.0)], &props, 400.0, 1.0, false);
-    assert!(matches!(result.items.first(),    Some(PositionedItem::FilledRect(_))));
-    assert!(matches!(result.items.get(1), Some(PositionedItem::BorderRect(_))));
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &[single_span(text, 12.0)],
+        &props,
+        400.0,
+        1.0,
+        false,
+    );
+    assert!(matches!(
+        result.items.first(),
+        Some(PositionedItem::FilledRect(_))
+    ));
+    assert!(matches!(
+        result.items.get(1),
+        Some(PositionedItem::BorderRect(_))
+    ));
 }
 
 #[test]
@@ -195,9 +325,24 @@ fn superscript_span_uses_smaller_font() {
         vertical_align: Some(VerticalAlign::Superscript),
         ..single_span(text, 12.0)
     }];
-    let result = layout_paragraph(&mut r, text, &spans, &ResolvedParaProps::default(), 400.0, 1.0, false);
-    let runs = result.items.iter().filter(|i| matches!(i, PositionedItem::GlyphRun(_))).count();
-    assert!(runs >= 1, "superscript span must produce at least one glyph run");
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+    let runs = result
+        .items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::GlyphRun(_)))
+        .count();
+    assert!(
+        runs >= 1,
+        "superscript span must produce at least one glyph run"
+    );
 }
 
 #[test]
@@ -208,26 +353,79 @@ fn highlight_color_produces_filled_rect_before_glyph_run() {
         highlight_color: Some(LayoutColor::new(1.0, 1.0, 0.0, 1.0)),
         ..single_span(text, 12.0)
     }];
-    let result = layout_paragraph(&mut r, text, &spans, &ResolvedParaProps::default(), 400.0, 1.0, false);
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
     // First non-background item should be a FilledRect (highlight), then a GlyphRun.
-    let rects = result.items.iter().filter(|i| matches!(i, PositionedItem::FilledRect(_))).count();
-    assert!(rects >= 1, "highlight span must produce at least one FilledRect");
+    let rects = result
+        .items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::FilledRect(_)))
+        .count();
+    assert!(
+        rects >= 1,
+        "highlight span must produce at least one FilledRect"
+    );
     // The FilledRect must come before the GlyphRun.
-    let rect_pos = result.items.iter().position(|i| matches!(i, PositionedItem::FilledRect(_))).unwrap();
-    let run_pos  = result.items.iter().position(|i| matches!(i, PositionedItem::GlyphRun(_))).unwrap();
-    assert!(rect_pos < run_pos, "FilledRect (highlight) must precede its GlyphRun");
+    let rect_pos = result
+        .items
+        .iter()
+        .position(|i| matches!(i, PositionedItem::FilledRect(_)))
+        .unwrap();
+    let run_pos = result
+        .items
+        .iter()
+        .position(|i| matches!(i, PositionedItem::GlyphRun(_)))
+        .unwrap();
+    assert!(
+        rect_pos < run_pos,
+        "FilledRect (highlight) must precede its GlyphRun"
+    );
 }
 
 #[test]
 fn shadow_span_produces_extra_glyph_run() {
     let mut r = test_resources();
     let text = "shadow";
-    let plain_spans  = [single_span(text, 12.0)];
-    let shadow_spans = [StyleSpan { shadow: true, ..single_span(text, 12.0) }];
-    let plain  = layout_paragraph(&mut r, text, &plain_spans,  &ResolvedParaProps::default(), 400.0, 1.0, false);
-    let shadow = layout_paragraph(&mut r, text, &shadow_spans, &ResolvedParaProps::default(), 400.0, 1.0, false);
-    let plain_runs  = plain.items.iter().filter(|i| matches!(i, PositionedItem::GlyphRun(_))).count();
-    let shadow_runs = shadow.items.iter().filter(|i| matches!(i, PositionedItem::GlyphRun(_))).count();
+    let plain_spans = [single_span(text, 12.0)];
+    let shadow_spans = [StyleSpan {
+        shadow: true,
+        ..single_span(text, 12.0)
+    }];
+    let plain = layout_paragraph(
+        &mut r,
+        text,
+        &plain_spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+    let shadow = layout_paragraph(
+        &mut r,
+        text,
+        &shadow_spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+    let plain_runs = plain
+        .items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::GlyphRun(_)))
+        .count();
+    let shadow_runs = shadow
+        .items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::GlyphRun(_)))
+        .count();
     assert!(
         shadow_runs > plain_runs,
         "shadow span must produce more GlyphRun items than plain ({shadow_runs} vs {plain_runs})"
@@ -239,7 +437,10 @@ fn shadow_span_produces_extra_glyph_run() {
 fn bullet_level(c: char) -> ListLevel {
     ListLevel {
         level: 0,
-        kind: ListLevelKind::Bullet { char: BulletChar::Char(c), font: None },
+        kind: ListLevelKind::Bullet {
+            char: BulletChar::Char(c),
+            font: None,
+        },
         indent_start: DocPoints::new(36.0),
         hanging_indent: DocPoints::new(18.0),
         label_alignment: LabelAlignment::Left,
@@ -248,7 +449,13 @@ fn bullet_level(c: char) -> ListLevel {
     }
 }
 
-fn numbered_level(level: u8, scheme: NumberingScheme, format: &str, display_levels: u8, start: u32) -> ListLevel {
+fn numbered_level(
+    level: u8,
+    scheme: NumberingScheme,
+    format: &str,
+    display_levels: u8,
+    start: u32,
+) -> ListLevel {
     ListLevel {
         level,
         kind: ListLevelKind::Numbered {
@@ -267,7 +474,9 @@ fn numbered_level(level: u8, scheme: NumberingScheme, format: &str, display_leve
 
 fn counters(vals: &[(usize, u32)]) -> [u32; 9] {
     let mut arr = [0u32; 9];
-    for &(i, v) in vals { arr[i] = v; }
+    for &(i, v) in vals {
+        arr[i] = v;
+    }
     arr
 }
 
@@ -286,7 +495,7 @@ fn format_marker_decimal_with_suffix() {
 #[test]
 fn format_marker_lower_letter_overflow() {
     let levels = vec![numbered_level(0, NumberingScheme::LowerAlpha, "%1.", 1, 1)];
-    assert_eq!(format_list_marker(&levels, 0, &counters(&[(0, 1)])),  "a.");
+    assert_eq!(format_list_marker(&levels, 0, &counters(&[(0, 1)])), "a.");
     assert_eq!(format_list_marker(&levels, 0, &counters(&[(0, 26)])), "z.");
     assert_eq!(format_list_marker(&levels, 0, &counters(&[(0, 27)])), "aa.");
 }
@@ -304,14 +513,20 @@ fn format_marker_display_levels_two_level() {
         numbered_level(1, NumberingScheme::Decimal, "%1.%2.", 2, 1),
     ];
     // level 0 counter = 2, level 1 counter = 3 → "2.3."
-    assert_eq!(format_list_marker(&levels, 1, &counters(&[(0, 2), (1, 3)])), "2.3.");
+    assert_eq!(
+        format_list_marker(&levels, 1, &counters(&[(0, 2), (1, 3)])),
+        "2.3."
+    );
 }
 
 #[test]
 fn format_marker_picture_bullet_fallback() {
     let levels = vec![ListLevel {
         level: 0,
-        kind: ListLevelKind::Bullet { char: BulletChar::Image, font: None },
+        kind: ListLevelKind::Bullet {
+            char: BulletChar::Image,
+            font: None,
+        },
         indent_start: DocPoints::new(36.0),
         hanging_indent: DocPoints::new(18.0),
         label_alignment: LabelAlignment::Left,
@@ -330,7 +545,10 @@ fn counter_advance_single_list() {
     // Three advances: 1, 2, 3.
     let levels = vec![numbered_level(0, NumberingScheme::Decimal, "%1.", 1, 1)];
     for (i, expected) in [(1, "1."), (2, "2."), (3, "3.")] {
-        assert_eq!(format_list_marker(&levels, 0, &counters(&[(0, i)])), expected);
+        assert_eq!(
+            format_list_marker(&levels, 0, &counters(&[(0, i)])),
+            expected
+        );
     }
 }
 
@@ -357,7 +575,15 @@ fn counter_nested_deeper_reset() {
 fn editing_paragraph(text: &str) -> ParagraphLayout {
     let mut r = test_resources();
     let spans = [single_span(text, 12.0)];
-    layout_paragraph(&mut r, text, &spans, &ResolvedParaProps::default(), 400.0, 1.0, true)
+    layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        true,
+    )
 }
 
 #[test]
@@ -366,7 +592,15 @@ fn hit_test_read_only_mode_returns_none() {
     let text = "Hello, world!";
     let spans = [single_span(text, 12.0)];
     // Default call: preserve_for_editing = false → no Parley layout retained.
-    let result = layout_paragraph(&mut r, text, &spans, &ResolvedParaProps::default(), 400.0, 1.0, false);
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
     assert!(
         result.hit_test_point(0.0, 0.0).is_none(),
         "hit_test_point must return None in read-only mode"
@@ -387,7 +621,9 @@ fn hit_test_editing_mode_returns_some() {
 fn hit_test_at_origin_returns_offset_zero() {
     let text = "Hello, world!";
     let result = editing_paragraph(text);
-    let hit = result.hit_test_point(0.0, 0.0).expect("editing layout must return Some");
+    let hit = result
+        .hit_test_point(0.0, 0.0)
+        .expect("editing layout must return Some");
     assert_eq!(
         hit.byte_offset, 0,
         "hit at (0, 0) should map to byte offset 0, got {}",
@@ -400,7 +636,9 @@ fn hit_test_far_right_returns_end() {
     let text = "Hello";
     let result = editing_paragraph(text);
     // Hit far to the right of the paragraph — should clamp to the last position.
-    let hit = result.hit_test_point(10_000.0, 0.0).expect("must return Some");
+    let hit = result
+        .hit_test_point(10_000.0, 0.0)
+        .expect("must return Some");
     assert_eq!(
         hit.byte_offset,
         text.len(),
@@ -416,7 +654,9 @@ fn hit_test_midpoint_is_between_start_and_end() {
     let result = editing_paragraph(text);
     let mid_x = result.width / 2.0;
     let mid_y = result.height / 2.0;
-    let hit = result.hit_test_point(mid_x, mid_y).expect("must return Some");
+    let hit = result
+        .hit_test_point(mid_x, mid_y)
+        .expect("must return Some");
     assert!(
         hit.byte_offset < text.len(),
         "midpoint hit ({mid_x}, {mid_y}) byte_offset should be < text.len() ({}), got {}",
@@ -430,7 +670,15 @@ fn cursor_rect_read_only_mode_returns_none() {
     let mut r = test_resources();
     let text = "Hello";
     let spans = [single_span(text, 12.0)];
-    let result = layout_paragraph(&mut r, text, &spans, &ResolvedParaProps::default(), 400.0, 1.0, false);
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
     assert!(
         result.cursor_rect(0).is_none(),
         "cursor_rect must return None in read-only mode"
@@ -442,9 +690,17 @@ fn cursor_rect_start_has_positive_height() {
     let text = "Hello";
     let result = editing_paragraph(text);
     let rect = result.cursor_rect(0).expect("must return Some");
-    assert!(rect.height > 0.0, "cursor rect at offset 0 must have positive height, got {}", rect.height);
+    assert!(
+        rect.height > 0.0,
+        "cursor rect at offset 0 must have positive height, got {}",
+        rect.height
+    );
     // x should be near zero (start of line).
-    assert!(rect.x.abs() < 5.0, "cursor x at start should be near 0, got {}", rect.x);
+    assert!(
+        rect.x.abs() < 5.0,
+        "cursor x at start should be near 0, got {}",
+        rect.x
+    );
 }
 
 #[test]
@@ -453,8 +709,13 @@ fn cursor_rect_oob_clamps_gracefully() {
     let result = editing_paragraph(text);
     // Out-of-bounds offset — Parley clamps it to the last valid position.
     // Should return Some without panicking, and height must be positive.
-    let rect = result.cursor_rect(usize::MAX).expect("OOB cursor_rect must return Some (clamped)");
-    assert!(rect.height > 0.0, "clamped cursor rect must have positive height");
+    let rect = result
+        .cursor_rect(usize::MAX)
+        .expect("OOB cursor_rect must return Some (clamped)");
+    assert!(
+        rect.height > 0.0,
+        "clamped cursor rect must have positive height"
+    );
 }
 
 // ── line_end_offset tests ─────────────────────────────────────────────────────
@@ -464,8 +725,14 @@ fn line_end_offset_single_line_returns_text_len() {
     let text = "hello";
     let para = editing_paragraph(text);
     // Single line with no hard break: end offset should be text.len() (= 5).
-    let end = para.line_end_offset(0, text).expect("line_end_offset must return Some");
-    assert_eq!(end, text.len(), "end offset for single-line paragraph should equal text length");
+    let end = para
+        .line_end_offset(0, text)
+        .expect("line_end_offset must return Some");
+    assert_eq!(
+        end,
+        text.len(),
+        "end offset for single-line paragraph should equal text length"
+    );
 }
 
 #[test]
@@ -473,8 +740,13 @@ fn line_end_offset_excludes_trailing_newline() {
     // A paragraph whose text ends with '\n' — line_end_offset should trim it.
     let text = "hello\n";
     let para = editing_paragraph(text);
-    let end = para.line_end_offset(0, text).expect("line_end_offset must return Some");
-    assert_eq!(end, 5, "trailing newline must be excluded from line end offset");
+    let end = para
+        .line_end_offset(0, text)
+        .expect("line_end_offset must return Some");
+    assert_eq!(
+        end, 5,
+        "trailing newline must be excluded from line end offset"
+    );
 }
 
 #[test]
@@ -482,7 +754,15 @@ fn line_end_offset_read_only_returns_none() {
     let mut r = test_resources();
     let text = "hello";
     let spans = [single_span(text, 12.0)];
-    let para = layout_paragraph(&mut r, text, &spans, &ResolvedParaProps::default(), 400.0, 1.0, false);
+    let para = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
     assert!(
         para.line_end_offset(0, text).is_none(),
         "line_end_offset must return None in read-only mode"

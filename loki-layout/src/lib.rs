@@ -36,24 +36,26 @@ pub mod result;
 
 pub use color::LayoutColor;
 pub use error::{LayoutError, LayoutResult};
+pub use flow::{FlowOutput, LayoutWarning, flow_section};
+pub use font::FontResources;
 pub use geometry::{LayoutInsets, LayoutPoint, LayoutRect, LayoutSize};
 pub use items::{
-    BorderEdge, BorderStyle, DecorationKind, GlyphEntry, GlyphSynthesis,
-    PositionedBorderRect, PositionedDecoration, PositionedGlyphRun, PositionedImage,
-    PositionedItem, PositionedRect,
+    BorderEdge, BorderStyle, DecorationKind, GlyphEntry, GlyphSynthesis, PositionedBorderRect,
+    PositionedDecoration, PositionedGlyphRun, PositionedImage, PositionedItem, PositionedRect,
 };
-pub use flow::{flow_section, FlowOutput, LayoutWarning};
-pub use font::FontResources;
 pub use mode::LayoutMode;
 pub use para::{
-    layout_paragraph, Affinity, CursorRect, HitTestResult, ParagraphLayout,
-    ResolvedLineHeight, ResolvedParaProps, StyleSpan,
+    Affinity, CursorRect, HitTestResult, ParagraphLayout, ResolvedLineHeight, ResolvedParaProps,
+    StyleSpan, layout_paragraph,
 };
 pub use resolve::{
-    CollectedImage, CollectedNote, emu_to_pt, flatten_paragraph, pts_to_f32,
-    resolve_char_props, resolve_color, resolve_para_props,
+    CollectedImage, CollectedNote, emu_to_pt, flatten_paragraph, pts_to_f32, resolve_char_props,
+    resolve_color, resolve_para_props,
 };
-pub use result::{ContinuousLayout, DocumentLayout, LayoutPage, PageEditingData, PageParagraphData, PaginatedLayout};
+pub use result::{
+    ContinuousLayout, DocumentLayout, LayoutPage, PageEditingData, PageParagraphData,
+    PaginatedLayout,
+};
 
 /// Options that control the layout pipeline's memory / feature trade-offs.
 ///
@@ -106,9 +108,14 @@ pub fn layout_document(
                 // flow_section builds LayoutPage objects directly; use them
                 // as-is (no re-binning). This fixes the margins.top offset
                 // bug described in ADR 004 §Context B.3.
-                let FlowOutput::Pages { mut pages, .. } =
-                    flow_section(resources, section, &doc.styles, &mode, display_scale, options)
-                else {
+                let FlowOutput::Pages { mut pages, .. } = flow_section(
+                    resources,
+                    section,
+                    &doc.styles,
+                    &mode,
+                    display_scale,
+                    options,
+                ) else {
                     unreachable!("flow_section in Paginated mode always returns Pages");
                 };
 
@@ -142,8 +149,16 @@ pub fn layout_document(
             let mut max_width: f32 = 0.0;
 
             for section in &doc.sections {
-                let FlowOutput::Canvas { mut items, height, .. } =
-                    flow_section(resources, section, &doc.styles, &mode, display_scale, options)
+                let FlowOutput::Canvas {
+                    mut items, height, ..
+                } = flow_section(
+                    resources,
+                    section,
+                    &doc.styles,
+                    &mode,
+                    display_scale,
+                    options,
+                )
                 else {
                     unreachable!("flow_section in non-paginated mode always returns Canvas");
                 };

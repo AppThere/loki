@@ -24,9 +24,8 @@
 
 use loki_layout::{PageParagraphData, PaginatedLayout};
 
-use super::cursor::{next_grapheme_boundary, prev_grapheme_boundary, DocumentPosition};
+use super::cursor::{DocumentPosition, next_grapheme_boundary, prev_grapheme_boundary};
 use super::hit_test::hit_test_page;
-
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -121,7 +120,10 @@ pub fn navigate_left(
     if focus.byte_offset > 0 {
         let text = get_text(focus.paragraph_index);
         let new_offset = prev_grapheme_boundary(&text, focus.byte_offset);
-        return Some(DocumentPosition { byte_offset: new_offset, ..focus.clone() });
+        return Some(DocumentPosition {
+            byte_offset: new_offset,
+            ..focus.clone()
+        });
     }
 
     // At start of paragraph — move to end of previous block on the same page.
@@ -157,7 +159,10 @@ pub fn navigate_right(
     let text = get_text(focus.paragraph_index);
     if focus.byte_offset < text.len() {
         let new_offset = next_grapheme_boundary(&text, focus.byte_offset);
-        return Some(DocumentPosition { byte_offset: new_offset, ..focus.clone() });
+        return Some(DocumentPosition {
+            byte_offset: new_offset,
+            ..focus.clone()
+        });
     }
 
     // At end of paragraph — move to start of next block on the same page.
@@ -180,10 +185,7 @@ pub fn navigate_right(
 /// of the previous paragraph, crossing page boundaries as needed.
 ///
 /// Returns `None` when already at the very first position of the document.
-pub fn navigate_up(
-    focus: &DocumentPosition,
-    layout: &PaginatedLayout,
-) -> Option<DocumentPosition> {
+pub fn navigate_up(focus: &DocumentPosition, layout: &PaginatedLayout) -> Option<DocumentPosition> {
     let para_data = find_para_data(layout, focus.page_index, focus.paragraph_index)?;
     let rect = para_data.layout.cursor_rect(focus.byte_offset)?;
     let margins = &layout.pages.get(focus.page_index)?.margins;
@@ -203,8 +205,7 @@ pub fn navigate_up(
         if let Some(pos) = hit_test_page(focus.page_index, canvas_x, target_y, layout) {
             // Avoid returning the same position (can happen when rect.height is
             // small relative to the gap between paragraphs).
-            if pos.paragraph_index != focus.paragraph_index
-                || pos.byte_offset != focus.byte_offset
+            if pos.paragraph_index != focus.paragraph_index || pos.byte_offset != focus.byte_offset
             {
                 return Some(pos);
             }
@@ -248,8 +249,7 @@ pub fn navigate_down(
 
     if target_y < page_bottom {
         if let Some(pos) = hit_test_page(focus.page_index, canvas_x, target_y, layout) {
-            if pos.paragraph_index != focus.paragraph_index
-                || pos.byte_offset != focus.byte_offset
+            if pos.paragraph_index != focus.paragraph_index || pos.byte_offset != focus.byte_offset
             {
                 return Some(pos);
             }
@@ -283,7 +283,10 @@ pub fn navigate_home(
     // Centre-y of the current line in paragraph-local coordinates.
     let line_center_y = rect.y + rect.height / 2.0;
     let hit = para_data.layout.hit_test_point(0.0, line_center_y)?;
-    Some(DocumentPosition { byte_offset: hit.byte_offset, ..focus.clone() })
+    Some(DocumentPosition {
+        byte_offset: hit.byte_offset,
+        ..focus.clone()
+    })
 }
 
 /// Move the cursor to the end of the current visual line.
@@ -302,7 +305,10 @@ pub fn navigate_end(
     let para_data = find_para_data(layout, focus.page_index, focus.paragraph_index)?;
     let text = get_text(focus.paragraph_index);
     let end_offset = para_data.layout.line_end_offset(focus.byte_offset, &text)?;
-    Some(DocumentPosition { byte_offset: end_offset, ..focus.clone() })
+    Some(DocumentPosition {
+        byte_offset: end_offset,
+        ..focus.clone()
+    })
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -312,8 +318,8 @@ mod tests {
     use std::sync::Arc;
 
     use loki_layout::{
-        layout_paragraph, FontResources, LayoutColor, LayoutInsets, LayoutPage, LayoutSize,
-        PaginatedLayout, PageEditingData, PageParagraphData, ResolvedParaProps, StyleSpan,
+        FontResources, LayoutColor, LayoutInsets, LayoutPage, LayoutSize, PageEditingData,
+        PageParagraphData, PaginatedLayout, ResolvedParaProps, StyleSpan, layout_paragraph,
     };
 
     use super::*;
@@ -354,7 +360,12 @@ mod tests {
             }],
         };
         let page_size = LayoutSize::new(595.0, 842.0);
-        let margins = LayoutInsets { top: 72.0, right: 72.0, bottom: 72.0, left: 72.0 };
+        let margins = LayoutInsets {
+            top: 72.0,
+            right: 72.0,
+            bottom: 72.0,
+            left: 72.0,
+        };
         let page = LayoutPage {
             page_number: 1,
             page_size,
@@ -366,11 +377,18 @@ mod tests {
             footer_height: 0.0,
             editing_data: Some(editing_data),
         };
-        PaginatedLayout { page_size, pages: vec![page] }
+        PaginatedLayout {
+            page_size,
+            pages: vec![page],
+        }
     }
 
     fn focus_at(byte_offset: usize) -> DocumentPosition {
-        DocumentPosition { page_index: 0, paragraph_index: 0, byte_offset }
+        DocumentPosition {
+            page_index: 0,
+            paragraph_index: 0,
+            byte_offset,
+        }
     }
 
     #[test]
@@ -414,7 +432,10 @@ mod tests {
         let pos = result.expect("navigate_home should return Some");
         assert_eq!(pos.page_index, 0);
         assert_eq!(pos.paragraph_index, 0);
-        assert!(pos.byte_offset <= 6, "Home should move to start of line (byte ≤ 6)");
+        assert!(
+            pos.byte_offset <= 6,
+            "Home should move to start of line (byte ≤ 6)"
+        );
     }
 
     #[test]
@@ -435,7 +456,10 @@ mod tests {
         let focus = focus_at(0);
         // Single-line paragraph at top of page — no line above.
         let result = navigate_up(&focus, &layout);
-        assert!(result.is_none(), "no line above first line should return None");
+        assert!(
+            result.is_none(),
+            "no line above first line should return None"
+        );
     }
 
     #[test]
@@ -444,7 +468,10 @@ mod tests {
         let focus = focus_at(0);
         // Single-line paragraph — no line below.
         let result = navigate_down(&focus, &layout);
-        assert!(result.is_none(), "no line below last line should return None");
+        assert!(
+            result.is_none(),
+            "no line below last line should return None"
+        );
     }
 
     // ── Cross-boundary helper tests ───────────────────────────────────────────
@@ -470,29 +497,60 @@ mod tests {
             link_url: None,
         };
         let para0 = layout_paragraph(
-            &mut resources, text0, &[make_span(text0)], &ResolvedParaProps::default(),
-            400.0, 1.0, true,
+            &mut resources,
+            text0,
+            &[make_span(text0)],
+            &ResolvedParaProps::default(),
+            400.0,
+            1.0,
+            true,
         );
         let h0 = para0.height;
         let para1 = layout_paragraph(
-            &mut resources, text1, &[make_span(text1)], &ResolvedParaProps::default(),
-            400.0, 1.0, true,
+            &mut resources,
+            text1,
+            &[make_span(text1)],
+            &ResolvedParaProps::default(),
+            400.0,
+            1.0,
+            true,
         );
         let editing_data = PageEditingData {
             paragraphs: vec![
-                PageParagraphData { block_index: 0, layout: Arc::new(para0), origin: (0.0, 0.0) },
-                PageParagraphData { block_index: 1, layout: Arc::new(para1), origin: (0.0, h0) },
+                PageParagraphData {
+                    block_index: 0,
+                    layout: Arc::new(para0),
+                    origin: (0.0, 0.0),
+                },
+                PageParagraphData {
+                    block_index: 1,
+                    layout: Arc::new(para1),
+                    origin: (0.0, h0),
+                },
             ],
         };
         let page_size = LayoutSize::new(595.0, 842.0);
-        let margins = LayoutInsets { top: 72.0, right: 72.0, bottom: 72.0, left: 72.0 };
+        let margins = LayoutInsets {
+            top: 72.0,
+            right: 72.0,
+            bottom: 72.0,
+            left: 72.0,
+        };
         let page = LayoutPage {
-            page_number: 1, page_size, margins,
-            content_items: vec![], header_items: vec![], footer_items: vec![],
-            header_height: 0.0, footer_height: 0.0,
+            page_number: 1,
+            page_size,
+            margins,
+            content_items: vec![],
+            header_items: vec![],
+            footer_items: vec![],
+            header_height: 0.0,
+            footer_height: 0.0,
             editing_data: Some(editing_data),
         };
-        PaginatedLayout { page_size, pages: vec![page] }
+        PaginatedLayout {
+            page_size,
+            pages: vec![page],
+        }
     }
 
     #[test]

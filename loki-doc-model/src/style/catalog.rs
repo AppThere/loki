@@ -11,13 +11,13 @@
 //! preserve insertion order — important for reproducible serialization.
 //! See ADR-0007.
 
-use indexmap::IndexMap;
 use crate::style::char_style::CharacterStyle;
 use crate::style::list_style::ListStyle;
 use crate::style::para_style::ParagraphStyle;
 use crate::style::props::char_props::CharProps;
 use crate::style::props::para_props::ParaProps;
 use crate::style::table_style::TableStyle;
+use indexmap::IndexMap;
 
 /// Unique identifier for a named style.
 ///
@@ -166,8 +166,12 @@ mod tests {
             extensions: ExtensionBag::default(),
         };
 
-        catalog.paragraph_styles.insert(StyleId::new("Normal"), parent);
-        catalog.paragraph_styles.insert(StyleId::new("Heading1"), child);
+        catalog
+            .paragraph_styles
+            .insert(StyleId::new("Normal"), parent);
+        catalog
+            .paragraph_styles
+            .insert(StyleId::new("Heading1"), child);
         catalog
     }
 

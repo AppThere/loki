@@ -59,7 +59,11 @@ impl PartialEq for CursorState {
 impl CursorState {
     /// Returns an empty cursor state (no cursor placed yet).
     pub fn new() -> Self {
-        Self { loro_cursor: None, anchor: None, focus: None }
+        Self {
+            loro_cursor: None,
+            anchor: None,
+            focus: None,
+        }
     }
 
     /// Returns `true` when a range selection exists (anchor differs from focus).

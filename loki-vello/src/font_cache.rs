@@ -38,11 +38,7 @@ impl FontDataCache {
     /// Two `Arc<Vec<u8>>` values that point to the *same allocation* (i.e.
     /// clones of the same `Arc`) share a cache entry. Different allocations with
     /// identical byte content are treated as different fonts.
-    pub fn get_or_insert(
-        &mut self,
-        data: &Arc<Vec<u8>>,
-        font_index: u32,
-    ) -> &peniko::FontData {
+    pub fn get_or_insert(&mut self, data: &Arc<Vec<u8>>, font_index: u32) -> &peniko::FontData {
         let key = (Arc::as_ptr(data) as usize, font_index);
         self.entries.entry(key).or_insert_with(|| {
             // Clone only the Arc pointer (cheap), then convert to an owned Vec so

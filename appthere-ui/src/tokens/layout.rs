@@ -1,17 +1,32 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Layout design tokens — toolbar heights, page dimensions, and breakpoints.
+//! Layout design tokens — shell chrome heights, page dimensions, and breakpoints.
 
-// Token constants may not all be referenced in every build state.
+// Token constants may not all be referenced in every build stage.
 #![allow(dead_code)]
 
-// ── Toolbar heights (px) ──────────────────────────────────────────────────────
+// ── Shell chrome heights (px) ─────────────────────────────────────────────────
+
+/// Height of the title bar on Windows and Linux.
+pub const TITLE_BAR_HEIGHT_DEFAULT: f32 = 36.0;
+
+/// Height of the title bar on macOS (slightly shorter — traffic lights fit here).
+pub const TITLE_BAR_HEIGHT_MACOS: f32 = 40.0;
+
+/// Height of the document tab bar.
+pub const TAB_BAR_HEIGHT: f32 = 40.0;
 
 /// Height of the top toolbar in the editor shell.
+///
+/// Retained for backward compatibility with existing editor layout calculations.
 pub const TOOLBAR_HEIGHT_TOP: f32 = 48.0;
 
-/// Height of the bottom status bar in the editor shell.
+/// Height of the bottom status bar.
+pub const STATUS_BAR_HEIGHT: f32 = 24.0;
+
+/// Height of the bottom toolbar / status bar in the editor shell.
+///
+/// Retained for backward compatibility; prefer [`STATUS_BAR_HEIGHT`] in new code.
 pub const TOOLBAR_HEIGHT_BOTTOM: f32 = 36.0;
 
 // ── Document page dimensions (A4 at 96 dpi) ──────────────────────────────────
@@ -27,8 +42,8 @@ pub const PAGE_GAP_PX: f32 = 24.0;
 
 /// Standard document page margin in CSS pixels (≈ 1 inch at 96 dpi).
 ///
-/// Used to derive the text content width: `PAGE_WIDTH_PX - 2 × PAGE_MARGIN_PX = 650 px`.
-/// The layout engine reads margins from the document's own [`PageLayout`]; this
+/// Used to derive text content width: `PAGE_WIDTH_PX - 2 × PAGE_MARGIN_PX = 650 px`.
+/// The layout engine reads margins from the document's own `PageLayout`; this
 /// constant is provided for UI components that need to reflect the margin visually
 /// (e.g., ruler, margin handles, scroll-gutter calculations).
 pub const PAGE_MARGIN_PX: f32 = 72.0;

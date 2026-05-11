@@ -15,7 +15,7 @@ use loki_doc_model::style::props::char_props::{
     CharProps, StrikethroughStyle, UnderlineStyle, VerticalAlign,
 };
 use loki_doc_model::style::props::para_props::{
-    LineHeight, ParagraphAlignment, ParaProps, Spacing,
+    LineHeight, ParaProps, ParagraphAlignment, Spacing,
 };
 use loki_doc_model::style::props::tab_stop::{TabAlignment, TabLeader, TabStop};
 use loki_primitives::color::DocumentColor;
@@ -55,8 +55,7 @@ pub(crate) fn map_para_props(props: &OdfParaProps) -> ParaProps {
         let v = pts.value();
         if v < 0.0 {
             // Negative text-indent = hanging indent (stored as positive)
-            out.indent_hanging =
-                Some(loki_primitives::units::Points::new(-v));
+            out.indent_hanging = Some(loki_primitives::units::Points::new(-v));
         } else {
             out.indent_first_line = Some(pts);
         }
@@ -72,9 +71,7 @@ pub(crate) fn map_para_props(props: &OdfParaProps) -> ParaProps {
             out.line_height = Some(LineHeight::Exact(pts));
         }
     }
-    if let Some(pts) =
-        props.line_height_at_least.as_deref().and_then(parse_length)
-    {
+    if let Some(pts) = props.line_height_at_least.as_deref().and_then(parse_length) {
         // Only set if line_height wasn't already set from fo:line-height
         if out.line_height.is_none() {
             out.line_height = Some(LineHeight::AtLeast(pts));
@@ -208,7 +205,12 @@ fn parse_odf_border(s: &str) -> Option<Border> {
     }
 
     let width = width.unwrap_or_else(|| Points::new(1.0));
-    Some(Border { style, width, color, spacing: None })
+    Some(Border {
+        style,
+        width,
+        color,
+        spacing: None,
+    })
 }
 
 // ── Cell property mapping ──────────────────────────────────────────────────────
@@ -222,20 +224,35 @@ fn parse_odf_border(s: &str) -> Option<Border> {
 /// OOXML. The layout engine applies them identically.
 pub(crate) fn map_cell_props(cell_props: &OdfCellProps) -> CellProps {
     CellProps {
-        padding_top:    cell_props.padding_top.as_deref().and_then(parse_length),
+        padding_top: cell_props.padding_top.as_deref().and_then(parse_length),
         padding_bottom: cell_props.padding_bottom.as_deref().and_then(parse_length),
-        padding_left:   cell_props.padding_left.as_deref().and_then(parse_length),
-        padding_right:  cell_props.padding_right.as_deref().and_then(parse_length),
-        vertical_align: cell_props.vertical_align.as_deref()
+        padding_left: cell_props.padding_left.as_deref().and_then(parse_length),
+        padding_right: cell_props.padding_right.as_deref().and_then(parse_length),
+        vertical_align: cell_props
+            .vertical_align
+            .as_deref()
             .and_then(map_odf_vertical_align),
-        text_direction: cell_props.writing_mode.as_deref()
+        text_direction: cell_props
+            .writing_mode
+            .as_deref()
             .and_then(map_odf_writing_mode),
-        background_color: cell_props.background_color.as_deref()
-            .and_then(|c| if c == "transparent" { None } else { DocumentColor::from_hex(c).ok() }),
-        border_top:    cell_props.border_top.as_deref().and_then(parse_odf_border),
-        border_bottom: cell_props.border_bottom.as_deref().and_then(parse_odf_border),
-        border_left:   cell_props.border_left.as_deref().and_then(parse_odf_border),
-        border_right:  cell_props.border_right.as_deref().and_then(parse_odf_border),
+        background_color: cell_props.background_color.as_deref().and_then(|c| {
+            if c == "transparent" {
+                None
+            } else {
+                DocumentColor::from_hex(c).ok()
+            }
+        }),
+        border_top: cell_props.border_top.as_deref().and_then(parse_odf_border),
+        border_bottom: cell_props
+            .border_bottom
+            .as_deref()
+            .and_then(parse_odf_border),
+        border_left: cell_props.border_left.as_deref().and_then(parse_odf_border),
+        border_right: cell_props
+            .border_right
+            .as_deref()
+            .and_then(parse_odf_border),
     }
 }
 
@@ -245,9 +262,9 @@ pub(crate) fn map_cell_props(cell_props: &OdfCellProps) -> CellProps {
 pub(crate) fn map_odf_vertical_align(val: &str) -> Option<CellVerticalAlign> {
     match val {
         "top" | "automatic" => Some(CellVerticalAlign::Top),
-        "middle"            => Some(CellVerticalAlign::Middle),
-        "bottom"            => Some(CellVerticalAlign::Bottom),
-        _                   => None,
+        "middle" => Some(CellVerticalAlign::Middle),
+        "bottom" => Some(CellVerticalAlign::Bottom),
+        _ => None,
     }
 }
 
@@ -256,9 +273,9 @@ pub(crate) fn map_odf_writing_mode(val: &str) -> Option<CellTextDirection> {
     match val {
         "lr-tb" | "lr" => Some(CellTextDirection::LrTb),
         "tb-rl" | "tb" => Some(CellTextDirection::TbRl),
-        "tb-lr"        => Some(CellTextDirection::TbLr),
-        "bt-lr"        => Some(CellTextDirection::BtLr),
-        _              => None,
+        "tb-lr" => Some(CellTextDirection::TbLr),
+        "bt-lr" => Some(CellTextDirection::BtLr),
+        _ => None,
     }
 }
 
@@ -277,7 +294,11 @@ fn map_tab_stop(ts: &OdfTabStop) -> Option<TabStop> {
         Some("char") => TabAlignment::Decimal,
         _ => TabAlignment::Left,
     };
-    Some(TabStop { position, alignment, leader: TabLeader::None })
+    Some(TabStop {
+        position,
+        alignment,
+        leader: TabLeader::None,
+    })
 }
 
 /// Map an ODF `fo:text-align` string to [`ParagraphAlignment`].
@@ -300,7 +321,10 @@ pub(crate) fn map_text_props(props: &OdfTextProps) -> CharProps {
     // Prefer style:font-name (the font face alias, typically matching the actual
     // family name); fall back to fo:font-family when only that is present.
     let mut out = CharProps {
-        font_name: props.font_name.clone().or_else(|| props.font_family.clone()),
+        font_name: props
+            .font_name
+            .clone()
+            .or_else(|| props.font_family.clone()),
         font_name_complex: props.font_name_complex.clone(),
         ..Default::default()
     };
@@ -308,9 +332,7 @@ pub(crate) fn map_text_props(props: &OdfTextProps) -> CharProps {
     if let Some(pts) = props.font_size.as_deref().and_then(parse_length) {
         out.font_size = Some(pts);
     }
-    if let Some(pts) =
-        props.font_size_complex.as_deref().and_then(parse_length)
-    {
+    if let Some(pts) = props.font_size_complex.as_deref().and_then(parse_length) {
         out.font_size_complex = Some(pts);
     }
 
@@ -368,8 +390,7 @@ pub(crate) fn map_text_props(props: &OdfTextProps) -> CharProps {
     }
 
     // ── Spacing ────────────────────────────────────────────────────────────
-    if let Some(pts) = props.letter_spacing.as_deref().and_then(parse_length)
-    {
+    if let Some(pts) = props.letter_spacing.as_deref().and_then(parse_length) {
         out.letter_spacing = Some(pts);
     }
 
@@ -395,9 +416,7 @@ fn map_underline_style(s: &str) -> Option<UnderlineStyle> {
         "none" => None,
         "double" => Some(UnderlineStyle::Double),
         "dotted" => Some(UnderlineStyle::Dotted),
-        "dash" | "long-dash" | "dot-dash" | "dot-dot-dash" => {
-            Some(UnderlineStyle::Dash)
-        }
+        "dash" | "long-dash" | "dot-dash" | "dot-dot-dash" => Some(UnderlineStyle::Dash),
         "wave" => Some(UnderlineStyle::Wave),
         "bold" => Some(UnderlineStyle::Thick),
         _ => Some(UnderlineStyle::Single),
@@ -562,12 +581,7 @@ mod tests {
                 ..Default::default()
             };
             let out = map_para_props(&props);
-            assert_eq!(
-                out.alignment,
-                Some(expected),
-                "for input {:?}",
-                input
-            );
+            assert_eq!(out.alignment, Some(expected), "for input {:?}", input);
         }
     }
 
@@ -601,10 +615,16 @@ mod tests {
 
     #[test]
     fn bold_true_false_none() {
-        let bold = OdfTextProps { font_weight: Some("bold".into()), ..Default::default() };
+        let bold = OdfTextProps {
+            font_weight: Some("bold".into()),
+            ..Default::default()
+        };
         assert_eq!(map_text_props(&bold).bold, Some(true));
 
-        let normal = OdfTextProps { font_weight: Some("normal".into()), ..Default::default() };
+        let normal = OdfTextProps {
+            font_weight: Some("normal".into()),
+            ..Default::default()
+        };
         assert_eq!(map_text_props(&normal).bold, Some(false));
 
         let absent = OdfTextProps::default();
@@ -613,20 +633,27 @@ mod tests {
 
     #[test]
     fn italic_mapping() {
-        let italic = OdfTextProps { font_style: Some("italic".into()), ..Default::default() };
+        let italic = OdfTextProps {
+            font_style: Some("italic".into()),
+            ..Default::default()
+        };
         assert_eq!(map_text_props(&italic).italic, Some(true));
 
-        let normal = OdfTextProps { font_style: Some("normal".into()), ..Default::default() };
+        let normal = OdfTextProps {
+            font_style: Some("normal".into()),
+            ..Default::default()
+        };
         assert_eq!(map_text_props(&normal).italic, Some(false));
     }
 
     #[test]
     fn font_size_parsed() {
-        let props = OdfTextProps { font_size: Some("12pt".into()), ..Default::default() };
+        let props = OdfTextProps {
+            font_size: Some("12pt".into()),
+            ..Default::default()
+        };
         let out = map_text_props(&props);
-        assert!(
-            matches!(out.font_size, Some(p) if (p.value() - 12.0).abs() < 1e-6)
-        );
+        assert!(matches!(out.font_size, Some(p) if (p.value() - 12.0).abs() < 1e-6));
     }
 
     #[test]
@@ -745,9 +772,7 @@ mod tests {
             ..Default::default()
         };
         let out = map_text_props(&props);
-        assert!(
-            matches!(out.letter_spacing, Some(p) if (p.value() - 0.5).abs() < 1e-6)
-        );
+        assert!(matches!(out.letter_spacing, Some(p) if (p.value() - 0.5).abs() < 1e-6));
     }
 
     // ── cell property helpers ──────────────────────────────────────────────
@@ -762,10 +787,7 @@ mod tests {
 
     #[test]
     fn vertical_align_top_maps_to_top() {
-        assert_eq!(
-            map_odf_vertical_align("top"),
-            Some(CellVerticalAlign::Top)
-        );
+        assert_eq!(map_odf_vertical_align("top"), Some(CellVerticalAlign::Top));
     }
 
     #[test]
@@ -791,32 +813,22 @@ mod tests {
 
     #[test]
     fn writing_mode_tb_rl_maps_to_tbrl() {
-        assert_eq!(
-            map_odf_writing_mode("tb-rl"),
-            Some(CellTextDirection::TbRl)
-        );
+        assert_eq!(map_odf_writing_mode("tb-rl"), Some(CellTextDirection::TbRl));
     }
 
     #[test]
     fn writing_mode_lr_tb_maps_to_lrtb() {
-        assert_eq!(
-            map_odf_writing_mode("lr-tb"),
-            Some(CellTextDirection::LrTb)
-        );
+        assert_eq!(map_odf_writing_mode("lr-tb"), Some(CellTextDirection::LrTb));
     }
 
     #[test]
     fn writing_mode_lr_shorthand_maps_to_lrtb() {
-        assert_eq!(
-            map_odf_writing_mode("lr"),
-            Some(CellTextDirection::LrTb)
-        );
+        assert_eq!(map_odf_writing_mode("lr"), Some(CellTextDirection::LrTb));
     }
 
     #[test]
     fn parse_odf_border_solid_black() {
-        let b = parse_odf_border("0.06pt solid #000000")
-            .expect("should parse");
+        let b = parse_odf_border("0.06pt solid #000000").expect("should parse");
         // Width rounds to 0.06pt
         assert!(
             (b.width.value() - 0.06).abs() < 0.01,
@@ -838,21 +850,23 @@ mod tests {
         use crate::odt::model::styles::OdfCellProps;
 
         let cell_props = OdfCellProps {
-            padding_top:    Some("0.2cm".into()),
+            padding_top: Some("0.2cm".into()),
             padding_bottom: Some("0.2cm".into()),
-            padding_left:   Some("0.2cm".into()),
-            padding_right:  Some("0.2cm".into()),
+            padding_left: Some("0.2cm".into()),
+            padding_right: Some("0.2cm".into()),
             ..Default::default()
         };
         let props = map_cell_props(&cell_props);
         // 0.2cm ≈ 5.669pt
         for (label, val) in [
-            ("top",    props.padding_top),
+            ("top", props.padding_top),
             ("bottom", props.padding_bottom),
-            ("left",   props.padding_left),
-            ("right",  props.padding_right),
+            ("left", props.padding_left),
+            ("right", props.padding_right),
         ] {
-            let pts = val.expect(&format!("padding_{label} should be Some")).value();
+            let pts = val
+                .expect(&format!("padding_{label} should be Some"))
+                .value();
             assert!(
                 (pts - 5.669).abs() < 0.1,
                 "padding_{label} should be ~5.67pt, got {pts:.3}"

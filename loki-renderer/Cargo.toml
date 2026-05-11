@@ -10,7 +10,7 @@ loki-render-cache = { path = "../loki-render-cache", features = ["gpu"] }
 loki-doc-model    = { path = "../loki-doc-model" }
 loki-layout       = { path = "../loki-layout" }
 loki-vello        = { path = "../loki-vello" }
-loki-theme        = { path = "../loki-theme" }
+appthere-ui       = { path = "../appthere-ui" }
 dioxus            = { version = "0.7", features = ["native"] }
 # CustomPaintSource / CustomPaintCtx / TextureHandle / DeviceHandle for LokiPageSource.
 anyrender_vello   = "0.6.2"

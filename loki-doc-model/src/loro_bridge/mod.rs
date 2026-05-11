@@ -13,9 +13,9 @@ mod inlines;
 mod read;
 mod write;
 
-use loro::{ExpandType, LoroDoc, LoroMap, LoroMovableList, StyleConfig, StyleConfigMap};
 use crate::document::Document;
 use crate::loro_schema::*;
+use loro::{ExpandType, LoroDoc, LoroMap, LoroMovableList, StyleConfig, StyleConfigMap};
 use read::{reconstruct_blocks_from_list, reconstruct_page_layout};
 use write::{map_blocks_to_list, map_page_layout};
 
@@ -48,15 +48,31 @@ pub fn document_to_loro(doc: &Document) -> Result<LoroDoc, BridgeError> {
     // Register all mark keys so Loro tracks their expand behaviour.
     let mut style_config = StyleConfigMap::new();
     for key in &[
-        MARK_BOLD, MARK_ITALIC, MARK_UNDERLINE, MARK_STRIKETHROUGH,
-        MARK_COLOR, MARK_HIGHLIGHT_COLOR, MARK_FONT_FAMILY, MARK_FONT_SIZE_PT,
-        MARK_VERTICAL_ALIGN, MARK_LINK_URL, MARK_LANGUAGE,
-        MARK_LETTER_SPACING, MARK_WORD_SPACING, MARK_SCALE,
-        MARK_SMALL_CAPS, MARK_ALL_CAPS, MARK_SHADOW, MARK_KERNING, MARK_OUTLINE,
+        MARK_BOLD,
+        MARK_ITALIC,
+        MARK_UNDERLINE,
+        MARK_STRIKETHROUGH,
+        MARK_COLOR,
+        MARK_HIGHLIGHT_COLOR,
+        MARK_FONT_FAMILY,
+        MARK_FONT_SIZE_PT,
+        MARK_VERTICAL_ALIGN,
+        MARK_LINK_URL,
+        MARK_LANGUAGE,
+        MARK_LETTER_SPACING,
+        MARK_WORD_SPACING,
+        MARK_SCALE,
+        MARK_SMALL_CAPS,
+        MARK_ALL_CAPS,
+        MARK_SHADOW,
+        MARK_KERNING,
+        MARK_OUTLINE,
     ] {
         style_config.insert(
             loro::InternalString::from(*key),
-            StyleConfig { expand: ExpandType::After },
+            StyleConfig {
+                expand: ExpandType::After,
+            },
         );
     }
     loro_doc.config_text_style(style_config);
@@ -105,8 +121,14 @@ pub fn loro_to_document(loro: &LoroDoc) -> Result<Document, BridgeError> {
     doc.sections.clear();
 
     for i in 0..sections_list.len() {
-        let Some(sec_val) = sections_list.get(i) else { continue };
-        let Some(sec_map) = sec_val.into_container().ok().and_then(|c| c.into_map().ok()) else {
+        let Some(sec_val) = sections_list.get(i) else {
+            continue;
+        };
+        let Some(sec_map) = sec_val
+            .into_container()
+            .ok()
+            .and_then(|c| c.into_map().ok())
+        else {
             continue;
         };
 

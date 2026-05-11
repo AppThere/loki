@@ -7,10 +7,10 @@
 //! feature table. Every property in that table is represented here.
 //! ODF maps these to `style:text-properties`; OOXML maps them to `w:rPr`.
 
-use loki_primitives::units::Points;
-use loki_primitives::color::DocumentColor;
-use crate::meta::LanguageTag;
 use crate::content::attr::ExtensionBag;
+use crate::meta::LanguageTag;
+use loki_primitives::color::DocumentColor;
+use loki_primitives::units::Points;
 
 /// The style of underline decoration on a text run.
 ///
@@ -99,7 +99,6 @@ pub enum HighlightColor {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CharProps {
     // ── Font ──────────────────────────────────────────────────────────────
-
     /// The primary font family name. ODF `style:font-name`;
     /// OOXML `w:rFonts w:ascii` / `w:hAnsi`.
     pub font_name: Option<String>,
@@ -120,7 +119,6 @@ pub struct CharProps {
     pub font_size_complex: Option<Points>,
 
     // ── Style flags ───────────────────────────────────────────────────────
-
     /// Bold. ODF `fo:font-weight bold`; OOXML `w:b`.
     pub bold: Option<bool>,
 
@@ -151,7 +149,6 @@ pub struct CharProps {
     pub vertical_align: Option<VerticalAlign>,
 
     // ── Color ─────────────────────────────────────────────────────────────
-
     /// Foreground (text) color. ODF `fo:color`; OOXML `w:color`.
     pub color: Option<DocumentColor>,
 
@@ -164,7 +161,6 @@ pub struct CharProps {
     pub highlight_color: Option<HighlightColor>,
 
     // ── Spacing ───────────────────────────────────────────────────────────
-
     /// Letter spacing (tracking) in points. ODF `fo:letter-spacing`;
     /// OOXML `w:spacing`.
     pub letter_spacing: Option<Points>,
@@ -180,7 +176,6 @@ pub struct CharProps {
     pub scale: Option<f32>,
 
     // ── Language ──────────────────────────────────────────────────────────
-
     /// Language for spell-check and hyphenation. ODF `fo:language` +
     /// `fo:country`; OOXML `w:lang w:val`. TR 29166 §6.2.6.
     pub language: Option<LanguageTag>,
@@ -194,13 +189,11 @@ pub struct CharProps {
     pub language_east_asian: Option<LanguageTag>,
 
     // ── Links ─────────────────────────────────────────────────────────────
-
     /// Hyperlink URL if this run is rendered as a hyperlink.
     /// ODF: `text:a href`. OOXML: `w:hyperlink r:id`.
     pub hyperlink: Option<String>,
 
     // ── Extensions ────────────────────────────────────────────────────────
-
     /// Format-specific properties not representable in the above fields.
     pub extensions: ExtensionBag,
 }

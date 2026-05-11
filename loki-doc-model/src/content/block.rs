@@ -12,8 +12,8 @@ use crate::content::attr::NodeAttr;
 use crate::content::inline::Inline;
 use crate::content::table::core::Table;
 use crate::style::catalog::StyleId;
-use crate::style::props::para_props::ParaProps;
 use crate::style::props::char_props::CharProps;
+use crate::style::props::para_props::ParaProps;
 
 /// The number style for an ordered list.
 ///
@@ -192,7 +192,6 @@ pub enum NotesBlockKind {
 #[non_exhaustive]
 pub enum Block {
     // ── Pandoc-derived variants ─────────────────────────────────────────
-
     /// A paragraph of plain inlines (no style reference).
     /// Corresponds to pandoc `Plain`.
     Plain(Vec<Inline>),
@@ -258,7 +257,6 @@ pub enum Block {
     Div(NodeAttr, Vec<Block>),
 
     // ── Office-document extensions ──────────────────────────────────────
-
     /// A styled paragraph: paragraph content with a style reference and
     /// optional direct formatting overrides.
     ///
@@ -290,11 +288,7 @@ mod tests {
 
     #[test]
     fn heading_level_one() {
-        let block = Block::Heading(
-            1,
-            NodeAttr::default(),
-            vec![Inline::Str("Title".into())],
-        );
+        let block = Block::Heading(1, NodeAttr::default(), vec![Inline::Str("Title".into())]);
         assert!(matches!(block, Block::Heading(1, _, _)));
     }
 

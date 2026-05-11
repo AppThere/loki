@@ -15,20 +15,17 @@ pub const NS_RELATIONSHIPS: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
 /// `DrawingML` main namespace.
-pub const NS_DRAWING: &str =
-    "http://schemas.openxmlformats.org/drawingml/2006/main";
+pub const NS_DRAWING: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
 
 /// `DrawingML` `WordprocessingDrawing` namespace (ECMA-376 §20.4).
 pub const NS_DRAWING_WP: &str =
     "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 
 /// `DrawingML` Picture namespace (ECMA-376 §20.2).
-pub const NS_DRAWING_PIC: &str =
-    "http://schemas.openxmlformats.org/drawingml/2006/picture";
+pub const NS_DRAWING_PIC: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 
 /// Markup Compatibility namespace (ECMA-376 §15).
-pub const NS_MARKUP_COMPAT: &str =
-    "http://schemas.openxmlformats.org/markup-compatibility/2006";
+pub const NS_MARKUP_COMPAT: &str = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 
 /// OPC relationship type for the main Office Document part.
 pub const REL_OFFICE_DOCUMENT: &str =

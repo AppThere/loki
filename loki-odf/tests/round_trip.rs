@@ -8,7 +8,7 @@ mod helpers;
 use std::io::Cursor;
 
 use loki_doc_model::content::block::Block;
-use loki_odf::odt::import::{OdtImporter, OdtImportOptions};
+use loki_odf::odt::import::{OdtImportOptions, OdtImporter};
 
 // Tolerance for length conversions (cm → pt can have floating-point error).
 const PT_TOLERANCE: f32 = 0.5;
@@ -32,17 +32,24 @@ fn import_rich_odt_smoke() {
     let doc = &result.document;
 
     // ── 1. Non-empty content ────────────────────────────────────────────────
-    let all_blocks: Vec<&Block> =
-        doc.sections.iter().flat_map(|s| s.blocks.iter()).collect();
-    assert!(!all_blocks.is_empty(), "document must contain at least one block");
+    let all_blocks: Vec<&Block> = doc.sections.iter().flat_map(|s| s.blocks.iter()).collect();
+    assert!(
+        !all_blocks.is_empty(),
+        "document must contain at least one block"
+    );
 
     // ── 2. At least one Heading ─────────────────────────────────────────────
     let has_heading = all_blocks.iter().any(|b| matches!(b, Block::Heading(..)));
     assert!(has_heading, "at least one Block::Heading must be present");
 
     // ── 3. At least one BulletList ──────────────────────────────────────────
-    let has_bullet_list = all_blocks.iter().any(|b| matches!(b, Block::BulletList(..)));
-    assert!(has_bullet_list, "at least one Block::BulletList must be present");
+    let has_bullet_list = all_blocks
+        .iter()
+        .any(|b| matches!(b, Block::BulletList(..)));
+    assert!(
+        has_bullet_list,
+        "at least one Block::BulletList must be present"
+    );
 }
 
 // ── Gap coverage tests ─────────────────────────────────────────────────────────
@@ -99,7 +106,11 @@ fn gap1_heading_style_name_preserved_in_node_attr() {
 
     if let Some(Block::Heading(level, attr, _)) = heading {
         assert_eq!(*level, 1, "heading level must be 1");
-        let style_val = attr.kv.iter().find(|(k, _)| k == "style").map(|(_, v)| v.as_str());
+        let style_val = attr
+            .kv
+            .iter()
+            .find(|(k, _)| k == "style")
+            .map(|(_, v)| v.as_str());
         assert_eq!(
             style_val,
             Some("Heading_20_1"),
@@ -278,7 +289,11 @@ fn gap5_fo_margin_left_mapped_to_para_props() {
         .get(&StyleId::new("P1"))
         .expect("catalog must contain auto style 'P1'");
 
-    let indent_pt = p1.para_props.indent_start.map(|p| p.value() as f32).unwrap_or(0.0);
+    let indent_pt = p1
+        .para_props
+        .indent_start
+        .map(|p| p.value() as f32)
+        .unwrap_or(0.0);
     // 1 cm = 28.346 pt
     assert!(
         (indent_pt - 28.346).abs() < PT_TOLERANCE,
@@ -302,13 +317,23 @@ fn hf_default_header_and_footer_populated() {
 
     let layout = &result.document.sections[0].layout;
 
-    let hdr = layout.header.as_ref()
+    let hdr = layout
+        .header
+        .as_ref()
         .expect("default header must be populated from style:header");
-    assert!(!hdr.blocks.is_empty(), "default header must have at least one block");
+    assert!(
+        !hdr.blocks.is_empty(),
+        "default header must have at least one block"
+    );
 
-    let ftr = layout.footer.as_ref()
+    let ftr = layout
+        .footer
+        .as_ref()
         .expect("default footer must be populated from style:footer");
-    assert!(!ftr.blocks.is_empty(), "default footer must have at least one block");
+    assert!(
+        !ftr.blocks.is_empty(),
+        "default footer must have at least one block"
+    );
 }
 
 /// First-page header and footer are populated from `style:header-first` /
@@ -325,13 +350,23 @@ fn hf_first_page_variants_populated() {
 
     let layout = &result.document.sections[0].layout;
 
-    let hdr_first = layout.header_first.as_ref()
+    let hdr_first = layout
+        .header_first
+        .as_ref()
         .expect("first-page header must be populated from style:header-first");
-    assert!(!hdr_first.blocks.is_empty(), "first-page header must have at least one block");
+    assert!(
+        !hdr_first.blocks.is_empty(),
+        "first-page header must have at least one block"
+    );
 
-    let ftr_first = layout.footer_first.as_ref()
+    let ftr_first = layout
+        .footer_first
+        .as_ref()
         .expect("first-page footer must be populated from style:footer-first");
-    assert!(!ftr_first.blocks.is_empty(), "first-page footer must have at least one block");
+    assert!(
+        !ftr_first.blocks.is_empty(),
+        "first-page footer must have at least one block"
+    );
 }
 
 /// Even-page header and footer are populated from `style:header-left` /
@@ -348,13 +383,23 @@ fn hf_even_page_variants_populated() {
 
     let layout = &result.document.sections[0].layout;
 
-    let hdr_even = layout.header_even.as_ref()
+    let hdr_even = layout
+        .header_even
+        .as_ref()
         .expect("even-page header must be populated from style:header-left");
-    assert!(!hdr_even.blocks.is_empty(), "even-page header must have at least one block");
+    assert!(
+        !hdr_even.blocks.is_empty(),
+        "even-page header must have at least one block"
+    );
 
-    let ftr_even = layout.footer_even.as_ref()
+    let ftr_even = layout
+        .footer_even
+        .as_ref()
         .expect("even-page footer must be populated from style:footer-left");
-    assert!(!ftr_even.blocks.is_empty(), "even-page footer must have at least one block");
+    assert!(
+        !ftr_even.blocks.is_empty(),
+        "even-page footer must have at least one block"
+    );
 }
 
 /// The default header content contains a `text:page-number` field rendered
@@ -373,7 +418,10 @@ fn hf_header_contains_field_code() {
         .expect("import should succeed");
 
     let layout = &result.document.sections[0].layout;
-    let hdr = layout.header.as_ref().expect("default header must be present");
+    let hdr = layout
+        .header
+        .as_ref()
+        .expect("default header must be present");
 
     let has_field = hdr.blocks.iter().any(|b| {
         let inlines: &[Inline] = match b {
@@ -383,14 +431,17 @@ fn hf_header_contains_field_code() {
         };
         inlines.iter().any(|i| matches!(i, Inline::Field(_)))
     });
-    assert!(has_field, "default header must contain Inline::Field from text:page-number");
+    assert!(
+        has_field,
+        "default header must contain Inline::Field from text:page-number"
+    );
 }
 
 /// Layout integration: pages produced from an ODF document with headers/footers
 /// have non-empty `header_items` and `footer_items`.
 #[test]
 fn hf_layout_pages_have_header_and_footer_items() {
-    use loki_layout::{layout_document, FontResources, LayoutMode, LayoutOptions};
+    use loki_layout::{FontResources, LayoutMode, LayoutOptions, layout_document};
 
     let content = helpers::hf_content_xml();
     let styles = helpers::hf_styles_xml();
@@ -413,7 +464,10 @@ fn hf_layout_pages_have_header_and_footer_items() {
         panic!("expected paginated layout");
     };
 
-    assert!(!paginated.pages.is_empty(), "layout must produce at least one page");
+    assert!(
+        !paginated.pages.is_empty(),
+        "layout must produce at least one page"
+    );
 
     // Page 1 gets first-page header (header_first is set).
     let p1 = &paginated.pages[0];
@@ -443,7 +497,8 @@ fn multi_master_page_creates_sections() {
 
     // Two master pages → two sections.
     assert_eq!(
-        doc.section_count(), 2,
+        doc.section_count(),
+        2,
         "two master pages should produce two sections (got {})",
         doc.section_count()
     );
@@ -454,7 +509,8 @@ fn multi_master_page_creates_sections() {
     assert!(
         ps0.width.value() < ps0.height.value(),
         "section 0 should be portrait (width={:.1} height={:.1})",
-        ps0.width.value(), ps0.height.value()
+        ps0.width.value(),
+        ps0.height.value()
     );
 
     // Section 1: landscape (width > height, ~A4 landscape).
@@ -463,7 +519,8 @@ fn multi_master_page_creates_sections() {
     assert!(
         ps1.width.value() > ps1.height.value(),
         "section 1 should be landscape (width={:.1} height={:.1})",
-        ps1.width.value(), ps1.height.value()
+        ps1.width.value(),
+        ps1.height.value()
     );
 
     // Each section has its own header from its master page.
@@ -494,7 +551,8 @@ fn single_master_page_no_spurious_sections() {
         .expect("import should succeed");
 
     assert_eq!(
-        result.document.section_count(), 1,
+        result.document.section_count(),
+        1,
         "single-master document must produce exactly one section"
     );
 }
@@ -513,14 +571,22 @@ fn odf_cell_props_mapped() {
         .run(Cursor::new(zip))
         .expect("cell-props fixture should import without error");
 
-    let all_blocks: Vec<&Block> = result.document.sections
+    let all_blocks: Vec<&Block> = result
+        .document
+        .sections
         .iter()
         .flat_map(|s| s.blocks.iter())
         .collect();
 
     let table = all_blocks
         .iter()
-        .find_map(|b| if let Block::Table(t) = b { Some(t.as_ref()) } else { None })
+        .find_map(|b| {
+            if let Block::Table(t) = b {
+                Some(t.as_ref())
+            } else {
+                None
+            }
+        })
         .expect("table should be present");
 
     let row = &table.bodies[0].body_rows[0];
@@ -529,21 +595,27 @@ fn odf_cell_props_mapped() {
     // ── Cell 0: StyledCell ──────────────────────────────────────────────────
     // fo:padding="0.2cm" → all four edges ≈ 5.67pt
     let c0 = &row.cells[0];
-    let pad_top = c0.props.padding_top
+    let pad_top = c0
+        .props
+        .padding_top
         .expect("cell 0 should have padding_top")
         .value() as f32;
     assert!(
         (pad_top - 5.67).abs() < PT_TOLERANCE,
         "padding_top should be ~5.67pt (0.2cm), got {pad_top:.3}"
     );
-    let pad_bottom = c0.props.padding_bottom
+    let pad_bottom = c0
+        .props
+        .padding_bottom
         .expect("cell 0 should have padding_bottom")
         .value() as f32;
     assert!(
         (pad_bottom - 5.67).abs() < PT_TOLERANCE,
         "padding_bottom should be ~5.67pt (0.2cm), got {pad_bottom:.3}"
     );
-    let pad_left = c0.props.padding_left
+    let pad_left = c0
+        .props
+        .padding_left
         .expect("cell 0 should have padding_left")
         .value() as f32;
     assert!(
@@ -571,14 +643,18 @@ fn odf_cell_props_mapped() {
     // ── Cell 1: BottomCell ──────────────────────────────────────────────────
     // fo:padding-top="0.1cm" ≈ 2.83pt, fo:padding-bottom="0.3cm" ≈ 8.50pt
     let c1 = &row.cells[1];
-    let c1_pad_top = c1.props.padding_top
+    let c1_pad_top = c1
+        .props
+        .padding_top
         .expect("cell 1 should have padding_top")
         .value() as f32;
     assert!(
         (c1_pad_top - 2.83).abs() < PT_TOLERANCE,
         "cell 1 padding_top should be ~2.83pt (0.1cm), got {c1_pad_top:.3}"
     );
-    let c1_pad_bottom = c1.props.padding_bottom
+    let c1_pad_bottom = c1
+        .props
+        .padding_bottom
         .expect("cell 1 should have padding_bottom")
         .value() as f32;
     assert!(

@@ -22,15 +22,15 @@ use std::num::NonZeroUsize;
 
 use loki_doc_model::io::DocumentImport;
 use loki_layout::{
-    ContinuousLayout, DocumentLayout, LayoutColor, LayoutRect, PositionedItem, PositionedRect,
-    layout_document, LayoutMode, FontResources,
+    ContinuousLayout, DocumentLayout, FontResources, LayoutColor, LayoutMode, LayoutRect,
+    PositionedItem, PositionedRect, layout_document,
 };
 use loki_ooxml::docx::import::{DocxImport, DocxImportOptions};
 use loki_vello::{FontDataCache, paint_layout};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    
+
     // Handle arguments: render_to_png [input.docx] [output.png]
     let (input_path, output_path) = match args.len() {
         1 => (None, "output.png"),
@@ -45,10 +45,16 @@ fn main() {
     let layout = if let Some(input) = input_path {
         println!("Reading {}...", input);
         let file = std::fs::File::open(input).expect("could not open input file");
-        let document = DocxImport::import(file, DocxImportOptions::default())
-            .expect("DOCX import failed");
-        
-        layout_document(&mut font_resources, &document, LayoutMode::Pageless, 1.0, &loki_layout::LayoutOptions::default())
+        let document =
+            DocxImport::import(file, DocxImportOptions::default()).expect("DOCX import failed");
+
+        layout_document(
+            &mut font_resources,
+            &document,
+            LayoutMode::Pageless,
+            1.0,
+            &loki_layout::LayoutOptions::default(),
+        )
     } else {
         // Fallback to a minimal layout if no input file is provided
         DocumentLayout::Continuous(ContinuousLayout {
@@ -63,17 +69,32 @@ fn main() {
                 // Red block
                 PositionedItem::FilledRect(PositionedRect {
                     rect: LayoutRect::new(40.0, 40.0, 120.0, 80.0),
-                    color: LayoutColor { r: 0.9, g: 0.2, b: 0.2, a: 1.0 },
+                    color: LayoutColor {
+                        r: 0.9,
+                        g: 0.2,
+                        b: 0.2,
+                        a: 1.0,
+                    },
                 }),
                 // Green block
                 PositionedItem::FilledRect(PositionedRect {
                     rect: LayoutRect::new(200.0, 40.0, 120.0, 80.0),
-                    color: LayoutColor { r: 0.2, g: 0.8, b: 0.3, a: 1.0 },
+                    color: LayoutColor {
+                        r: 0.2,
+                        g: 0.8,
+                        b: 0.3,
+                        a: 1.0,
+                    },
                 }),
                 // Blue block
                 PositionedItem::FilledRect(PositionedRect {
                     rect: LayoutRect::new(40.0, 160.0, 280.0, 80.0),
-                    color: LayoutColor { r: 0.2, g: 0.4, b: 0.9, a: 1.0 },
+                    color: LayoutColor {
+                        r: 0.2,
+                        g: 0.4,
+                        b: 0.9,
+                        a: 1.0,
+                    },
                 }),
             ],
         })
@@ -88,7 +109,14 @@ fn main() {
     let t1 = std::time::Instant::now();
     let mut scene = vello::Scene::new();
     let mut font_cache = FontDataCache::new();
-    paint_layout(&mut scene, &layout, &mut font_cache, (16.0, 16.0), 1.0, None);
+    paint_layout(
+        &mut scene,
+        &layout,
+        &mut font_cache,
+        (16.0, 16.0),
+        1.0,
+        None,
+    );
     let t_scene = t1.elapsed();
 
     // ── 3. Set up wgpu ────────────────────────────────────────────────────────
@@ -100,13 +128,11 @@ fn main() {
     }))
     .expect("no wgpu adapter found — a software rasterizer (e.g. llvmpipe) is required");
 
-    let (device, queue) = pollster::block_on(adapter.request_device(
-        &wgpu::DeviceDescriptor {
-            required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::default(),
-            ..Default::default()
-        },
-    ))
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        required_features: wgpu::Features::empty(),
+        required_limits: wgpu::Limits::default(),
+        ..Default::default()
+    }))
     .expect("failed to create wgpu device");
 
     // ── 4. Create render-target texture ──────────────────────────────────────
@@ -197,9 +223,9 @@ fn main() {
         let slice = readback_buffer.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| {});
         device.poll(wgpu::PollType::Wait).expect("GPU poll failed");
-        
+
         let mapped_range = slice.get_mapped_range();
-        
+
         // Strip padding
         let mut data = Vec::with_capacity((unpadded_bytes_per_row * canvas_height) as usize);
         for row in 0..canvas_height {
@@ -222,6 +248,8 @@ fn main() {
     .expect("PNG save failed");
 
     println!("Rendered {canvas_width}×{canvas_height} → {output_path}");
-    println!("  layout: {:?}  scene: {:?}  gpu render+readback: {:?}",
-        t_layout, t_scene, t_render);
+    println!(
+        "  layout: {:?}  scene: {:?}  gpu render+readback: {:?}",
+        t_layout, t_scene, t_render
+    );
 }

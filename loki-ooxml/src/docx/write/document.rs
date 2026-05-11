@@ -23,8 +23,8 @@ use loki_doc_model::style::props::char_props::CharProps;
 use crate::docx::write::collector::ExportCollector;
 use crate::docx::write::styles::emit_char_props;
 use crate::docx::write::xml::{
-    color_to_hex, pts_to_twips, write_decl, write_empty, write_end, write_start, wval, NS_A,
-    NS_PIC, NS_R, NS_W, NS_WP,
+    NS_A, NS_PIC, NS_R, NS_W, NS_WP, color_to_hex, pts_to_twips, write_decl, write_empty,
+    write_end, write_start, wval,
 };
 
 /// Serializes all sections to `word/document.xml` bytes.
@@ -93,28 +93,52 @@ fn write_sect_pr<W: std::io::Write>(
 
     if let Some(hf) = &layout.header {
         let r_id = collector.add_header_footer(hf.blocks.clone(), true);
-        let _ = write_empty(w, "w:headerReference", &[("w:type", "default"), ("r:id", &r_id)]);
+        let _ = write_empty(
+            w,
+            "w:headerReference",
+            &[("w:type", "default"), ("r:id", &r_id)],
+        );
     }
     if let Some(hf) = &layout.header_first {
         let r_id = collector.add_header_footer(hf.blocks.clone(), true);
-        let _ = write_empty(w, "w:headerReference", &[("w:type", "first"), ("r:id", &r_id)]);
+        let _ = write_empty(
+            w,
+            "w:headerReference",
+            &[("w:type", "first"), ("r:id", &r_id)],
+        );
     }
     if let Some(hf) = &layout.header_even {
         let r_id = collector.add_header_footer(hf.blocks.clone(), true);
-        let _ = write_empty(w, "w:headerReference", &[("w:type", "even"), ("r:id", &r_id)]);
+        let _ = write_empty(
+            w,
+            "w:headerReference",
+            &[("w:type", "even"), ("r:id", &r_id)],
+        );
     }
 
     if let Some(hf) = &layout.footer {
         let r_id = collector.add_header_footer(hf.blocks.clone(), false);
-        let _ = write_empty(w, "w:footerReference", &[("w:type", "default"), ("r:id", &r_id)]);
+        let _ = write_empty(
+            w,
+            "w:footerReference",
+            &[("w:type", "default"), ("r:id", &r_id)],
+        );
     }
     if let Some(hf) = &layout.footer_first {
         let r_id = collector.add_header_footer(hf.blocks.clone(), false);
-        let _ = write_empty(w, "w:footerReference", &[("w:type", "first"), ("r:id", &r_id)]);
+        let _ = write_empty(
+            w,
+            "w:footerReference",
+            &[("w:type", "first"), ("r:id", &r_id)],
+        );
     }
     if let Some(hf) = &layout.footer_even {
         let r_id = collector.add_header_footer(hf.blocks.clone(), false);
-        let _ = write_empty(w, "w:footerReference", &[("w:type", "even"), ("r:id", &r_id)]);
+        let _ = write_empty(
+            w,
+            "w:footerReference",
+            &[("w:type", "even"), ("r:id", &r_id)],
+        );
     }
 
     if layout.header_first.is_some()
@@ -370,11 +394,22 @@ fn write_para_props_inline<W: std::io::Write>(
         || pp.indent_hanging.is_some()
         || pp.indent_first_line.is_some();
     if has_ind {
-        let left = pp.indent_start.map_or(0, |v| pts_to_twips(v.value())).to_string();
-        let right = pp.indent_end.map_or(0, |v| pts_to_twips(v.value())).to_string();
-        let hanging = pp.indent_hanging.map_or(0, |v| pts_to_twips(v.value())).to_string();
-        let first_line =
-            pp.indent_first_line.map_or(0, |v| pts_to_twips(v.value())).to_string();
+        let left = pp
+            .indent_start
+            .map_or(0, |v| pts_to_twips(v.value()))
+            .to_string();
+        let right = pp
+            .indent_end
+            .map_or(0, |v| pts_to_twips(v.value()))
+            .to_string();
+        let hanging = pp
+            .indent_hanging
+            .map_or(0, |v| pts_to_twips(v.value()))
+            .to_string();
+        let first_line = pp
+            .indent_first_line
+            .map_or(0, |v| pts_to_twips(v.value()))
+            .to_string();
         let mut attrs: Vec<(&str, &str)> = Vec::new();
         if pp.indent_start.is_some() {
             attrs.push(("w:left", &left));
@@ -415,7 +450,11 @@ fn write_para_props_inline<W: std::io::Write>(
                 TabLeader::MiddleDot => "middleDot",
                 _ => "none",
             };
-            let _ = write_empty(w, "w:tab", &[("w:val", val), ("w:pos", &pos), ("w:leader", leader)]);
+            let _ = write_empty(
+                w,
+                "w:tab",
+                &[("w:val", val), ("w:pos", &pos), ("w:leader", leader)],
+            );
         }
         let _ = write_end(w, "w:tabs");
     }
@@ -464,7 +503,9 @@ fn write_para_props_inline<W: std::io::Write>(
                     attrs.push(("w:line", &line_s));
                     attrs.push(("w:lineRule", "auto"));
                 }
-                _ => { line_s = String::new(); }
+                _ => {
+                    line_s = String::new();
+                }
             }
         }
 
@@ -483,10 +524,14 @@ fn write_code_block<W: std::io::Write>(
     let _ = write_start(w, "w:pPr", &[]);
     let _ = write_empty(w, "w:pStyle", &wval("Code"));
     let _ = write_end(w, "w:pPr");
-    write_text_run(w, code, &RunProps {
-        code: true,
-        ..Default::default()
-    });
+    write_text_run(
+        w,
+        code,
+        &RunProps {
+            code: true,
+            ..Default::default()
+        },
+    );
     let _ = write_end(w, "w:p");
 }
 
@@ -578,11 +623,7 @@ fn write_list_item<W: std::io::Write>(
 
 // ── Table ────────────────────────────────────────────────────────────────────
 
-fn write_table<W: std::io::Write>(
-    w: &mut Writer<W>,
-    tbl: &Table,
-    collector: &mut ExportCollector,
-) {
+fn write_table<W: std::io::Write>(w: &mut Writer<W>, tbl: &Table, collector: &mut ExportCollector) {
     let _ = write_start(w, "w:tbl", &[]);
 
     // Table properties: auto width.
@@ -730,7 +771,11 @@ fn write_table_cell<W: std::io::Write>(
     // Background color (shading).
     if let Some(color) = &props.background_color {
         let hex = color_to_hex(color);
-        let _ = write_empty(w, "w:shd", &[("w:val", "clear"), ("w:color", "auto"), ("w:fill", &hex)]);
+        let _ = write_empty(
+            w,
+            "w:shd",
+            &[("w:val", "clear"), ("w:color", "auto"), ("w:fill", &hex)],
+        );
     }
     let _ = write_end(w, "w:tcPr");
 
@@ -965,10 +1010,7 @@ fn write_text_run<W: std::io::Write>(w: &mut Writer<W>, text: &str, props: &RunP
             let _ = write_empty(
                 w,
                 "w:rFonts",
-                &[
-                    ("w:ascii", "Courier New"),
-                    ("w:hAnsi", "Courier New"),
-                ],
+                &[("w:ascii", "Courier New"), ("w:hAnsi", "Courier New")],
             );
         }
         if props.bold {
@@ -1041,24 +1083,44 @@ fn write_inline_drawing<W: std::io::Write>(
 ) -> quick_xml::Result<()> {
     let _ = write_start(w, "w:r", &[]);
     let _ = write_start(w, "w:drawing", &[]);
-    let _ = write_start(w, "wp:inline", &[("distT", "0"), ("distB", "0"), ("distL", "0"), ("distR", "0")]);
-    
+    let _ = write_start(
+        w,
+        "wp:inline",
+        &[
+            ("distT", "0"),
+            ("distB", "0"),
+            ("distL", "0"),
+            ("distR", "0"),
+        ],
+    );
+
     let cx_s = cx.to_string();
     let cy_s = cy.to_string();
     let _ = write_empty(w, "wp:extent", &[("cx", &cx_s), ("cy", &cy_s)]);
-    let _ = write_empty(w, "wp:docPr", &[("id", "1"), ("name", "Image"), ("descr", alt)]);
-    
+    let _ = write_empty(
+        w,
+        "wp:docPr",
+        &[("id", "1"), ("name", "Image"), ("descr", alt)],
+    );
+
     let _ = write_start(w, "a:graphic", &[("xmlns:a", NS_A)]);
-    let _ = write_start(w, "a:graphicData", &[("uri", "http://schemas.openxmlformats.org/drawingml/2006/picture")]);
-    
+    let _ = write_start(
+        w,
+        "a:graphicData",
+        &[(
+            "uri",
+            "http://schemas.openxmlformats.org/drawingml/2006/picture",
+        )],
+    );
+
     let _ = write_start(w, "pic:pic", &[("xmlns:pic", NS_PIC)]);
-    
+
     // pic:nvPicPr
     let _ = write_start(w, "pic:nvPicPr", &[]);
     let _ = write_empty(w, "pic:cNvPr", &[("id", "0"), ("name", "")]);
     let _ = write_empty(w, "pic:cNvPicPr", &[]);
     let _ = write_end(w, "pic:nvPicPr");
-    
+
     // pic:blipFill
     let _ = write_start(w, "pic:blipFill", &[]);
     let _ = write_empty(w, "a:blip", &[("r:embed", r_id), ("xmlns:r", NS_R)]);
@@ -1066,7 +1128,7 @@ fn write_inline_drawing<W: std::io::Write>(
     let _ = write_empty(w, "a:fillRect", &[]);
     let _ = write_end(w, "a:stretch");
     let _ = write_end(w, "pic:blipFill");
-    
+
     // pic:spPr
     let _ = write_start(w, "pic:spPr", &[]);
     let _ = write_start(w, "a:xfrm", &[]);
@@ -1077,14 +1139,14 @@ fn write_inline_drawing<W: std::io::Write>(
     let _ = write_empty(w, "a:avLst", &[]);
     let _ = write_end(w, "a:prstGeom");
     let _ = write_end(w, "pic:spPr");
-    
+
     let _ = write_end(w, "pic:pic");
     let _ = write_end(w, "a:graphicData");
     let _ = write_end(w, "a:graphic");
     let _ = write_end(w, "wp:inline");
     let _ = write_end(w, "w:drawing");
     let _ = write_end(w, "w:r");
-    
+
     Ok(())
 }
 

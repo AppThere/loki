@@ -51,9 +51,8 @@ impl DocumentLayout {
     /// Useful for testing without caring about page structure.
     pub fn all_items(&self) -> impl Iterator<Item = &PositionedItem> + '_ {
         match self {
-            Self::Paginated(p) => Box::new(
-                p.pages.iter().flat_map(LayoutPage::all_items),
-            ) as Box<dyn Iterator<Item = &PositionedItem> + '_>,
+            Self::Paginated(p) => Box::new(p.pages.iter().flat_map(LayoutPage::all_items))
+                as Box<dyn Iterator<Item = &PositionedItem> + '_>,
             Self::Continuous(c) => Box::new(c.items.iter()),
         }
     }
@@ -221,7 +220,12 @@ mod tests {
         let page = LayoutPage {
             page_number: 1,
             page_size: LayoutSize::new(595.0, 842.0),
-            margins: LayoutInsets { top: 72.0, right: 72.0, bottom: 72.0, left: 72.0 },
+            margins: LayoutInsets {
+                top: 72.0,
+                right: 72.0,
+                bottom: 72.0,
+                left: 72.0,
+            },
             content_items: vec![],
             header_items: vec![],
             footer_items: vec![],

@@ -94,12 +94,7 @@ pub fn hit_test_document(
         return None;
     }
 
-    hit_test_page(
-        page_index,
-        canvas_x,
-        y_in_page,
-        layout,
-    )
+    hit_test_page(page_index, canvas_x, y_in_page, layout)
 }
 
 /// Hit-test a single page using coordinates already relative to the page's
@@ -123,9 +118,11 @@ pub fn hit_test_page(
 
     // ── 5. Identify the paragraph under the click ─────────────────────────────
     // paragraphs are content-area-local (x, y) in layout points.
-    let para_data = editing_data.paragraphs.iter().rev().find(|p| {
-        p.origin.1 <= content_y && content_y <= p.origin.1 + p.layout.height
-    })?;
+    let para_data = editing_data
+        .paragraphs
+        .iter()
+        .rev()
+        .find(|p| p.origin.1 <= content_y && content_y <= p.origin.1 + p.layout.height)?;
 
     // ── 6. Map to byte offset within the paragraph ────────────────────────────
     let x_in_para = content_x - para_data.origin.0;
@@ -147,9 +144,8 @@ mod tests {
     use std::sync::Arc;
 
     use loki_layout::{
-        layout_paragraph, FontResources, LayoutInsets, LayoutPage, LayoutSize,
-        PaginatedLayout, PageEditingData, PageParagraphData, ResolvedParaProps, StyleSpan,
-        LayoutColor,
+        FontResources, LayoutColor, LayoutInsets, LayoutPage, LayoutSize, PageEditingData,
+        PageParagraphData, PaginatedLayout, ResolvedParaProps, StyleSpan, layout_paragraph,
     };
 
     use super::*;
@@ -192,7 +188,12 @@ mod tests {
             }],
         };
         let page_size = LayoutSize::new(595.0, 842.0);
-        let margins = LayoutInsets { top: 72.0, right: 72.0, bottom: 72.0, left: 72.0 };
+        let margins = LayoutInsets {
+            top: 72.0,
+            right: 72.0,
+            bottom: 72.0,
+            left: 72.0,
+        };
         let page = LayoutPage {
             page_number: 1,
             page_size,
@@ -204,7 +205,10 @@ mod tests {
             footer_height: 0.0,
             editing_data: Some(editing_data),
         };
-        PaginatedLayout { page_size, pages: vec![page] }
+        PaginatedLayout {
+            page_size,
+            pages: vec![page],
+        }
     }
 
     /// Convert layout points to CSS pixels (inverse of PX_TO_PT).
@@ -229,14 +233,14 @@ mod tests {
         let margin_top_px = pt_to_px(page.margins.top);
 
         let result = hit_test_document(
-            margin_left_px,          // client_x = canvas_x = margin_left in px
-            margin_top_px,           // client_y = canvas_y = margin_top in px
+            margin_left_px, // client_x = canvas_x = margin_left in px
+            margin_top_px,  // client_y = canvas_y = margin_top in px
             canvas_origin_for_test(),
-            0.0,                     // scroll_offset
+            0.0, // scroll_offset
             &layout,
             page_w_px,
             page_h_px,
-            pt_to_px(24.0),          // page_gap_px
+            pt_to_px(24.0), // page_gap_px
         );
         let pos = result.expect("click at content origin should hit para 0");
         assert_eq!(pos.page_index, 0);
@@ -254,7 +258,7 @@ mod tests {
         // Click far below the page canvas.
         let result = hit_test_document(
             page_w_px / 2.0,
-            page_h_px + 100.0,       // in the inter-page gap
+            page_h_px + 100.0, // in the inter-page gap
             canvas_origin_for_test(),
             0.0,
             &layout,
@@ -262,7 +266,10 @@ mod tests {
             page_h_px,
             pt_to_px(24.0),
         );
-        assert!(result.is_none(), "click below page content area must return None");
+        assert!(
+            result.is_none(),
+            "click below page content area must return None"
+        );
     }
 
     #[test]
@@ -326,7 +333,10 @@ mod tests {
             let page0 = single.pages[0].clone();
             let mut page1 = page0.clone();
             page1.page_number = 2;
-            PaginatedLayout { page_size: single.page_size, pages: vec![page0, page1] }
+            PaginatedLayout {
+                page_size: single.page_size,
+                pages: vec![page0, page1],
+            }
         };
         let page = &layout.pages[0];
         let page_h_px = pt_to_px(page.page_size.height);
@@ -354,7 +364,10 @@ mod tests {
             page_gap_px,
         );
         let pos = result.expect("correct scroll_offset must resolve page 2 click");
-        assert_eq!(pos.page_index, 1, "scroll-adjusted click must land on page 1 (0-based)");
+        assert_eq!(
+            pos.page_index, 1,
+            "scroll-adjusted click must land on page 1 (0-based)"
+        );
     }
 
     /// Verifies that omitting scroll_offset (passing 0) for a click that should
@@ -367,7 +380,10 @@ mod tests {
             let page0 = single.pages[0].clone();
             let mut page1 = page0.clone();
             page1.page_number = 2;
-            PaginatedLayout { page_size: single.page_size, pages: vec![page0, page1] }
+            PaginatedLayout {
+                page_size: single.page_size,
+                pages: vec![page0, page1],
+            }
         };
         let page = &layout.pages[0];
         let page_h_px = pt_to_px(page.page_size.height);
@@ -393,7 +409,10 @@ mod tests {
         // Without scroll_offset, click_y maps to page 0 content (near top),
         // so result is either page 0 or None — never page 1.
         if let Some(pos) = result {
-            assert_ne!(pos.page_index, 1, "without scroll_offset, click must not reach page 1");
+            assert_ne!(
+                pos.page_index, 1,
+                "without scroll_offset, click must not reach page 1"
+            );
         }
     }
 }

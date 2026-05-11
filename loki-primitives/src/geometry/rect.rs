@@ -1,8 +1,8 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
 
+use super::{insets::Insets, point::Point, size::Size};
 use crate::units::Length;
-use super::{point::Point, size::Size, insets::Insets};
 
 /// An axis-aligned rectangle defined by an origin and size.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -10,7 +10,7 @@ use super::{point::Point, size::Size, insets::Insets};
 pub struct Rect<U> {
     /// Origin of rect
     pub origin: Point<U>,
-    /// Size geometry 
+    /// Size geometry
     pub size: Size<U>,
 }
 
@@ -23,16 +23,8 @@ impl<U: Copy> Rect<U> {
 
     /// Factory method spanning left right top bottoms limits.
     #[must_use]
-    pub fn from_ltrb(
-        left: Length<U>,
-        top: Length<U>,
-        right: Length<U>,
-        bottom: Length<U>,
-    ) -> Self {
-        Self::new(
-            Point::new(left, top),
-            Size::new(right - left, bottom - top),
-        )
+    pub fn from_ltrb(left: Length<U>, top: Length<U>, right: Length<U>, bottom: Length<U>) -> Self {
+        Self::new(Point::new(left, top), Size::new(right - left, bottom - top))
     }
 
     /// Returns point min
@@ -40,19 +32,19 @@ impl<U: Copy> Rect<U> {
     pub fn min_x(self) -> Length<U> {
         self.origin.x
     }
-    
+
     /// Returns point min
     #[must_use]
     pub fn min_y(self) -> Length<U> {
         self.origin.y
     }
-    
+
     /// Returns point max
     #[must_use]
     pub fn max_x(self) -> Length<U> {
         self.origin.x + self.size.width
     }
-    
+
     /// Returns point max
     #[must_use]
     pub fn max_y(self) -> Length<U> {
@@ -86,7 +78,7 @@ impl<U: Copy> Rect<U> {
             && self.max_y().value() > other.min_y().value()
     }
 
-    /// Merging overlapping segments or returning nothing 
+    /// Merging overlapping segments or returning nothing
     #[must_use]
     pub fn intersection(self, other: Self) -> Option<Self> {
         if !self.intersects(other) {
@@ -140,8 +132,18 @@ mod tests {
 
     #[test]
     fn test_rect_intersection() {
-        let r1 = Rect::<Pt>::from_ltrb(Length::new(0.0), Length::new(0.0), Length::new(10.0), Length::new(10.0));
-        let r2 = Rect::<Pt>::from_ltrb(Length::new(5.0), Length::new(5.0), Length::new(15.0), Length::new(15.0));
+        let r1 = Rect::<Pt>::from_ltrb(
+            Length::new(0.0),
+            Length::new(0.0),
+            Length::new(10.0),
+            Length::new(10.0),
+        );
+        let r2 = Rect::<Pt>::from_ltrb(
+            Length::new(5.0),
+            Length::new(5.0),
+            Length::new(15.0),
+            Length::new(15.0),
+        );
 
         let int = r1.intersection(r2).unwrap();
         assert_relative_eq!(int.min_x().value(), 5.0);
@@ -149,14 +151,29 @@ mod tests {
         assert_relative_eq!(int.max_x().value(), 10.0);
         assert_relative_eq!(int.max_y().value(), 10.0);
 
-        let disjoint = Rect::<Pt>::from_ltrb(Length::new(20.0), Length::new(20.0), Length::new(30.0), Length::new(30.0));
+        let disjoint = Rect::<Pt>::from_ltrb(
+            Length::new(20.0),
+            Length::new(20.0),
+            Length::new(30.0),
+            Length::new(30.0),
+        );
         assert!(r1.intersection(disjoint).is_none());
     }
 
     #[test]
     fn test_rect_union() {
-        let r1 = Rect::<Pt>::from_ltrb(Length::new(0.0), Length::new(0.0), Length::new(10.0), Length::new(10.0));
-        let r2 = Rect::<Pt>::from_ltrb(Length::new(5.0), Length::new(5.0), Length::new(15.0), Length::new(15.0));
+        let r1 = Rect::<Pt>::from_ltrb(
+            Length::new(0.0),
+            Length::new(0.0),
+            Length::new(10.0),
+            Length::new(10.0),
+        );
+        let r2 = Rect::<Pt>::from_ltrb(
+            Length::new(5.0),
+            Length::new(5.0),
+            Length::new(15.0),
+            Length::new(15.0),
+        );
 
         let u = r1.union(r2);
         assert_relative_eq!(u.min_x().value(), 0.0);
@@ -164,11 +181,21 @@ mod tests {
         assert_relative_eq!(u.max_x().value(), 15.0);
         assert_relative_eq!(u.max_y().value(), 15.0);
     }
-    
+
     #[test]
     fn test_rect_inset() {
-        let r1 = Rect::<Pt>::from_ltrb(Length::new(0.0), Length::new(0.0), Length::new(10.0), Length::new(10.0));
-        let insets = Insets::<Pt>::new(Length::new(1.0), Length::new(2.0), Length::new(3.0), Length::new(4.0));
+        let r1 = Rect::<Pt>::from_ltrb(
+            Length::new(0.0),
+            Length::new(0.0),
+            Length::new(10.0),
+            Length::new(10.0),
+        );
+        let insets = Insets::<Pt>::new(
+            Length::new(1.0),
+            Length::new(2.0),
+            Length::new(3.0),
+            Length::new(4.0),
+        );
         let shrunk = r1.inset(insets);
         assert_relative_eq!(shrunk.min_x().value(), 4.0);
         assert_relative_eq!(shrunk.min_y().value(), 1.0);
@@ -178,7 +205,12 @@ mod tests {
 
     #[test]
     fn test_contains_point() {
-        let r = Rect::<Pt>::from_ltrb(Length::new(0.0), Length::new(0.0), Length::new(10.0), Length::new(10.0));
+        let r = Rect::<Pt>::from_ltrb(
+            Length::new(0.0),
+            Length::new(0.0),
+            Length::new(10.0),
+            Length::new(10.0),
+        );
         assert!(r.contains_point(Point::new(Length::new(5.0), Length::new(5.0))));
         assert!(r.contains_point(Point::new(Length::new(0.0), Length::new(0.0)))); // corner inclusive minimum
         assert!(!r.contains_point(Point::new(Length::new(10.0), Length::new(10.0)))); // corner exclusive bound

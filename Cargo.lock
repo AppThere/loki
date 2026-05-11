@@ -286,6 +286,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "appthere-ui"
+version = "0.1.0"
+dependencies = [
+ "dioxus",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3810,11 +3818,11 @@ name = "loki-renderer"
 version = "0.1.0"
 dependencies = [
  "anyrender_vello",
+ "appthere-ui",
  "dioxus",
  "loki-doc-model",
  "loki-layout",
  "loki-render-cache",
- "loki-theme",
  "loki-vello",
  "pollster 0.4.0",
  "tokio",
@@ -3828,6 +3836,7 @@ name = "loki-text"
 version = "0.1.0"
 dependencies = [
  "anyrender_vello",
+ "appthere-ui",
  "dioxus",
  "fontique 0.8.0",
  "kurbo 0.12.0",
@@ -3836,7 +3845,6 @@ dependencies = [
  "loki-layout",
  "loki-odf",
  "loki-ooxml",
- "loki-theme",
  "loki-vello",
  "loro",
  "peniko",
@@ -3845,13 +3853,6 @@ dependencies = [
  "unicode-segmentation",
  "vello",
  "wgpu_context",
-]
-
-[[package]]
-name = "loki-theme"
-version = "0.1.0"
-dependencies = [
- "dioxus",
 ]
 
 [[package]]

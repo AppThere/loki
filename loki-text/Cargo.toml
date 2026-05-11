@@ -27,8 +27,8 @@ loki-odf        = { path = "../loki-odf" }
 loki-layout     = { path = "../loki-layout" }
 # In-workspace Vello GPU rendering backend.
 loki-vello      = { path = "../loki-vello" }
-# Shared design tokens and UI primitives.
-loki-theme      = { path = "../loki-theme" }
+# Shared AppThere design tokens and UI components.
+appthere-ui     = { path = "../appthere-ui" }
 # Cross-platform file picker (crates.io).
 loki-file-access = "0.1.1"
 # Typed error derivation.

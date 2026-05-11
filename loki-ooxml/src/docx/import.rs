@@ -25,8 +25,10 @@ use loki_doc_model::document::Document;
 use loki_doc_model::io::DocumentImport;
 use loki_opc::{Package, PartData, PartName};
 
-use crate::constants::{REL_ENDNOTES, REL_FOOTER, REL_FOOTNOTES, REL_HEADER, REL_HYPERLINK,
-    REL_IMAGE, REL_NUMBERING, REL_OFFICE_DOCUMENT, REL_SETTINGS, REL_STYLES};
+use crate::constants::{
+    REL_ENDNOTES, REL_FOOTER, REL_FOOTNOTES, REL_HEADER, REL_HYPERLINK, REL_IMAGE, REL_NUMBERING,
+    REL_OFFICE_DOCUMENT, REL_SETTINGS, REL_STYLES,
+};
 use crate::docx::mapper::document::map_document;
 use crate::docx::model::paragraph::DocxParagraph;
 use crate::docx::reader::document::parse_document;
@@ -58,7 +60,10 @@ pub struct DocxImportOptions {
 
 impl Default for DocxImportOptions {
     fn default() -> Self {
-        Self { emit_heading_blocks: true, embed_images: true }
+        Self {
+            emit_heading_blocks: true,
+            embed_images: true,
+        }
     }
 }
 
@@ -87,10 +92,7 @@ impl DocumentImport for DocxImport {
     /// Imports a DOCX file and returns the abstract document.
     ///
     /// Warnings are discarded. Use [`DocxImporter`] to retrieve them.
-    fn import(
-        reader: impl Read + Seek,
-        options: Self::Options,
-    ) -> Result<Document, Self::Error> {
+    fn import(reader: impl Read + Seek, options: Self::Options) -> Result<Document, Self::Error> {
         DocxImporter::new(options).run(reader).map(|r| r.document)
     }
 }
@@ -165,8 +167,7 @@ pub(crate) fn parse_and_map_package(
         .clone();
 
     // ── Parse main document ────────────────────────────────────────────
-    let raw_doc = parse_document(&doc_bytes)
-        .map_err(|e| map_xml_err(e, doc_part_name.as_str()))?;
+    let raw_doc = parse_document(&doc_bytes).map_err(|e| map_xml_err(e, doc_part_name.as_str()))?;
 
     // ── Parse optional related parts ──────────────────────────────────
     let doc_rels = package.part_relationships(&doc_part_name);
@@ -175,10 +176,7 @@ pub(crate) fn parse_and_map_package(
         if let Some(rel) = rels.by_type(REL_STYLES).next() {
             let name = resolve_part_name(doc_part_name.as_str(), &rel.target)?;
             if let Some(part) = package.part(&name) {
-                Some(
-                    parse_styles(&part.bytes)
-                        .map_err(|e| map_xml_err(e, name.as_str()))?,
-                )
+                Some(parse_styles(&part.bytes).map_err(|e| map_xml_err(e, name.as_str()))?)
             } else {
                 None
             }
@@ -318,10 +316,16 @@ fn resolve_optional_part<T, F>(
 where
     F: Fn(&[u8], &str) -> OpcResult<T>,
 {
-    let Some(rels) = doc_rels else { return Ok(None) };
-    let Some(rel) = rels.by_type(rel_type).next() else { return Ok(None) };
+    let Some(rels) = doc_rels else {
+        return Ok(None);
+    };
+    let Some(rel) = rels.by_type(rel_type).next() else {
+        return Ok(None);
+    };
     let part_name = resolve_part_name(base_part, &rel.target)?;
-    let Some(part) = package.part(&part_name) else { return Ok(None) };
+    let Some(part) = package.part(&part_name) else {
+        return Ok(None);
+    };
     let result = parse(&part.bytes, part_name.as_str())?;
     Ok(Some(result))
 }

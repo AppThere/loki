@@ -11,8 +11,8 @@ use loki_doc_model::content::inline::Inline;
 use loki_doc_model::content::table::col::{ColAlignment, ColSpec, ColWidth};
 use loki_doc_model::content::table::core::{Table, TableBody, TableFoot, TableHead};
 use loki_doc_model::content::table::row::{Cell, CellProps, Row};
-use loki_doc_model::layout::page::{PageLayout, PageMargins, PageSize};
 use loki_doc_model::layout::Section;
+use loki_doc_model::layout::page::{PageLayout, PageMargins, PageSize};
 use loki_doc_model::style::catalog::StyleCatalog;
 use loki_doc_model::style::list_style::{
     BulletChar, LabelAlignment, ListId, ListLevel, ListLevelKind, ListStyle, NumberingScheme,
@@ -22,10 +22,10 @@ use loki_doc_model::style::props::para_props::{ParaProps, Spacing};
 use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 
+use crate::LayoutOptions;
 use crate::font::FontResources;
 use crate::items::PositionedItem;
 use crate::mode::LayoutMode;
-use crate::LayoutOptions;
 
 /// Helper: run flow_section in Pageless mode and return (items, height, warnings).
 fn flow_pageless(
@@ -33,8 +33,19 @@ fn flow_pageless(
     section: &Section,
 ) -> (Vec<PositionedItem>, f32, Vec<LayoutWarning>) {
     let catalog = StyleCatalog::new();
-    match flow_section(r, section, &catalog, &LayoutMode::Pageless, 1.0, &LayoutOptions::default()) {
-        FlowOutput::Canvas { items, height, warnings } => (items, height, warnings),
+    match flow_section(
+        r,
+        section,
+        &catalog,
+        &LayoutMode::Pageless,
+        1.0,
+        &LayoutOptions::default(),
+    ) {
+        FlowOutput::Canvas {
+            items,
+            height,
+            warnings,
+        } => (items, height, warnings),
         _ => panic!("expected Canvas output"),
     }
 }
@@ -45,7 +56,14 @@ fn flow_paginated(
     section: &Section,
 ) -> (Vec<crate::result::LayoutPage>, Vec<LayoutWarning>) {
     let catalog = StyleCatalog::new();
-    match flow_section(r, section, &catalog, &LayoutMode::Paginated, 1.0, &LayoutOptions::default()) {
+    match flow_section(
+        r,
+        section,
+        &catalog,
+        &LayoutMode::Paginated,
+        1.0,
+        &LayoutOptions::default(),
+    ) {
         FlowOutput::Pages { pages, warnings } => (pages, warnings),
         _ => panic!("expected Pages output"),
     }
@@ -74,16 +92,16 @@ fn make_para(text: &str) -> StyledParagraph {
 }
 
 fn section_of(paras: Vec<StyledParagraph>, layout: PageLayout) -> Section {
-    Section::with_layout_and_blocks(
-        layout,
-        paras.into_iter().map(Block::StyledPara).collect(),
-    )
+    Section::with_layout_and_blocks(layout, paras.into_iter().map(Block::StyledPara).collect())
 }
 
 /// A very small page: 200 × 100 pt with 5 pt margins → 90 pt content height.
 fn tiny_layout() -> PageLayout {
     PageLayout {
-        page_size: PageSize { width: Points::new(200.0), height: Points::new(100.0) },
+        page_size: PageSize {
+            width: Points::new(200.0),
+            height: Points::new(100.0),
+        },
         margins: PageMargins {
             top: Points::new(5.0),
             bottom: Points::new(5.0),
@@ -109,7 +127,10 @@ fn continuous_cursor_advances() {
     };
     let section = section_of(vec![para], PageLayout::default());
     let (items, total_height, warnings) = flow_pageless(&mut r, &section);
-    assert!(total_height > 0.0, "cursor must advance: got {total_height}");
+    assert!(
+        total_height > 0.0,
+        "cursor must advance: got {total_height}"
+    );
     assert!(!items.is_empty(), "must produce at least one glyph run");
     assert!(warnings.is_empty(), "no warnings expected");
 }
@@ -128,7 +149,11 @@ fn space_before_offsets_content() {
     let section = section_of(vec![para], PageLayout::default());
     let (items, _, _) = flow_pageless(&mut r, &section);
     let first_run_y = items.iter().find_map(|i| {
-        if let PositionedItem::GlyphRun(run) = i { Some(run.origin.y) } else { None }
+        if let PositionedItem::GlyphRun(run) = i {
+            Some(run.origin.y)
+        } else {
+            None
+        }
     });
     let y = first_run_y.expect("expected a glyph run");
     assert!(
@@ -152,7 +177,10 @@ fn page_break_before_splits_onto_second_page() {
     let section = section_of(vec![para1, para2], layout);
     let (pages, _) = flow_paginated(&mut r, &section);
     assert_eq!(pages.len(), 2, "expected two pages, got {}", pages.len());
-    assert!(!pages[1].content_items.is_empty(), "page 2 must have content");
+    assert!(
+        !pages[1].content_items.is_empty(),
+        "page 2 must have content"
+    );
 }
 
 #[test]
@@ -160,13 +188,23 @@ fn page_break_after_splits_onto_second_page() {
     let mut r = test_resources();
     let para1 = make_para_with_props(
         "Page one",
-        ParaProps { page_break_after: Some(true), ..Default::default() },
+        ParaProps {
+            page_break_after: Some(true),
+            ..Default::default()
+        },
     );
     let para2 = make_para("Page two");
     let section = section_of(vec![para1, para2], PageLayout::default());
     let (pages, _) = flow_paginated(&mut r, &section);
-    assert_eq!(pages.len(), 2, "page_break_after must produce a second page");
-    assert!(!pages[1].content_items.is_empty(), "page 2 must have content from para2");
+    assert_eq!(
+        pages.len(),
+        2,
+        "page_break_after must produce a second page"
+    );
+    assert!(
+        !pages[1].content_items.is_empty(),
+        "page 2 must have content from para2"
+    );
 }
 
 #[test]
@@ -180,7 +218,10 @@ fn block_taller_than_page_emits_warning() {
     let triggered = warnings
         .iter()
         .any(|w| matches!(w, LayoutWarning::BlockExceedsPageHeight { .. }));
-    assert!(triggered, "expected BlockExceedsPageHeight warning; got {warnings:?}");
+    assert!(
+        triggered,
+        "expected BlockExceedsPageHeight warning; got {warnings:?}"
+    );
 }
 
 #[test]
@@ -209,10 +250,17 @@ fn pageless_respects_margins() {
     let section = section_of(vec![make_para("Hello")], layout);
     let (items, _, _) = flow_pageless(&mut r, &section);
     let first_run_x = items.iter().find_map(|i| {
-        if let PositionedItem::GlyphRun(run) = i { Some(run.origin.x) } else { None }
+        if let PositionedItem::GlyphRun(run) = i {
+            Some(run.origin.x)
+        } else {
+            None
+        }
     });
     let x = first_run_x.expect("expected a glyph run");
-    assert_eq!(x, left_margin, "pageless item x should be offset by left margin");
+    assert_eq!(
+        x, left_margin,
+        "pageless item x should be offset by left margin"
+    );
 }
 
 // ── Helpers for new tests ─────────────────────────────────────────────────────
@@ -225,17 +273,17 @@ fn make_para_with_props(text: &str, props: ParaProps) -> StyledParagraph {
 }
 
 fn first_glyph_y(items: &[PositionedItem]) -> Option<f32> {
-    items.iter().find_map(|i| {
-        match i {
-            PositionedItem::GlyphRun(r) => Some(r.origin.y),
-            PositionedItem::ClippedGroup { items, .. } => first_glyph_y(items),
-            _ => None,
-        }
+    items.iter().find_map(|i| match i {
+        PositionedItem::GlyphRun(r) => Some(r.origin.y),
+        PositionedItem::ClippedGroup { items, .. } => first_glyph_y(items),
+        _ => None,
     })
 }
 
 fn has_clipped_group(items: &[PositionedItem]) -> bool {
-    items.iter().any(|i| matches!(i, PositionedItem::ClippedGroup { .. }))
+    items
+        .iter()
+        .any(|i| matches!(i, PositionedItem::ClippedGroup { .. }))
 }
 
 // ── Paragraph splitting tests ─────────────────────────────────────────────────
@@ -247,12 +295,22 @@ fn paragraph_split_produces_clipped_groups_on_multiple_pages() {
     let text = "Lorem ipsum dolor sit amet consectetur adipiscing. ".repeat(8);
     let section = section_of(vec![make_para(&text)], tiny_layout());
     let (pages, warnings) = flow_paginated(&mut r, &section);
-    assert!(pages.len() >= 2, "expected 2+ pages for tall paragraph, got {}", pages.len());
+    assert!(
+        pages.len() >= 2,
+        "expected 2+ pages for tall paragraph, got {}",
+        pages.len()
+    );
     // Page 1 must have a ClippedGroup (Fragment A of the split paragraph).
-    assert!(has_clipped_group(&pages[0].content_items), "page 1 should have a ClippedGroup");
+    assert!(
+        has_clipped_group(&pages[0].content_items),
+        "page 1 should have a ClippedGroup"
+    );
     // All pages must have content.
     for (i, page) in pages.iter().enumerate() {
-        assert!(!page.content_items.is_empty(), "page {i} should have content");
+        assert!(
+            !page.content_items.is_empty(),
+            "page {i} should have content"
+        );
     }
     // BlockExceedsPageHeight warning may or may not fire depending on text length.
     let _ = warnings;
@@ -307,7 +365,10 @@ fn split_fragment_b_clip_starts_at_top_of_next_page() {
         clip_b.y() >= 0.0,
         "Fragment B clip_rect.y must be ≥ 0 (page-local)"
     );
-    assert!(clip_b.height() > 0.0, "Fragment B clip height must be positive");
+    assert!(
+        clip_b.height() > 0.0,
+        "Fragment B clip height must be positive"
+    );
 }
 
 // ── keep-together tests ───────────────────────────────────────────────────────
@@ -319,11 +380,18 @@ fn keep_together_block_fits_on_current_page_no_flush() {
     let para1 = make_para("First paragraph short.");
     let para2 = make_para_with_props(
         "Second paragraph with keep_together.",
-        ParaProps { keep_together: Some(true), ..Default::default() },
+        ParaProps {
+            keep_together: Some(true),
+            ..Default::default()
+        },
     );
     let section = section_of(vec![para1, para2], PageLayout::default());
     let (pages, _) = flow_paginated(&mut r, &section);
-    assert_eq!(pages.len(), 1, "both paragraphs fit on one page, expected 1 page");
+    assert_eq!(
+        pages.len(),
+        1,
+        "both paragraphs fit on one page, expected 1 page"
+    );
 }
 
 #[test]
@@ -339,12 +407,22 @@ fn keep_together_block_pushed_to_next_page() {
     );
     let para2 = make_para_with_props(
         "Para 2 keep together.",
-        ParaProps { keep_together: Some(true), ..Default::default() },
+        ParaProps {
+            keep_together: Some(true),
+            ..Default::default()
+        },
     );
     let section = section_of(vec![para1, para2], tiny_layout());
     let (pages, _) = flow_paginated(&mut r, &section);
-    assert_eq!(pages.len(), 2, "para2 should be pushed to page 2, expected 2 pages");
-    assert!(!pages[1].content_items.is_empty(), "page 2 should have para2 content");
+    assert_eq!(
+        pages.len(),
+        2,
+        "para2 should be pushed to page 2, expected 2 pages"
+    );
+    assert!(
+        !pages[1].content_items.is_empty(),
+        "page 2 should have para2 content"
+    );
 }
 
 #[test]
@@ -353,18 +431,21 @@ fn keep_together_taller_than_page_emits_override_warning() {
     let long_text = "Lorem ipsum dolor sit amet consectetur adipiscing. ".repeat(8);
     let para = make_para_with_props(
         &long_text,
-        ParaProps { keep_together: Some(true), ..Default::default() },
+        ParaProps {
+            keep_together: Some(true),
+            ..Default::default()
+        },
     );
     let section = section_of(vec![para], tiny_layout());
     let (_, warnings) = flow_paginated(&mut r, &section);
     // Either KeepTogetherOverride or BlockExceedsPageHeight must be emitted
     // (KeepTogetherOverride fires when height > page_content_height).
-    let has_override = warnings.iter().any(|w| {
-        matches!(w, LayoutWarning::KeepTogetherOverride { .. })
-    });
-    let has_exceeds = warnings.iter().any(|w| {
-        matches!(w, LayoutWarning::BlockExceedsPageHeight { .. })
-    });
+    let has_override = warnings
+        .iter()
+        .any(|w| matches!(w, LayoutWarning::KeepTogetherOverride { .. }));
+    let has_exceeds = warnings
+        .iter()
+        .any(|w| matches!(w, LayoutWarning::BlockExceedsPageHeight { .. }));
     assert!(
         has_override || has_exceeds,
         "expected KeepTogetherOverride or BlockExceedsPageHeight; got {warnings:?}"
@@ -379,7 +460,10 @@ fn keep_with_next_chain_fits_on_current_page_no_flush() {
     // Short chain (2 blocks) with keep_with_next; both fit on a fresh page.
     let para1 = make_para_with_props(
         "Heading",
-        ParaProps { keep_with_next: Some(true), ..Default::default() },
+        ParaProps {
+            keep_with_next: Some(true),
+            ..Default::default()
+        },
     );
     let para2 = make_para("Body paragraph follows heading.");
     let section = section_of(vec![para1, para2], PageLayout::default());
@@ -400,14 +484,24 @@ fn keep_with_next_chain_pushed_to_next_page() {
     );
     let para1 = make_para_with_props(
         "Heading keep_with_next",
-        ParaProps { keep_with_next: Some(true), ..Default::default() },
+        ParaProps {
+            keep_with_next: Some(true),
+            ..Default::default()
+        },
     );
     let para2 = make_para("Body after heading.");
     let section = section_of(vec![para0, para1, para2], tiny_layout());
     let (pages, _) = flow_paginated(&mut r, &section);
-    assert!(pages.len() >= 2, "chain should be pushed to page 2, got {} pages", pages.len());
+    assert!(
+        pages.len() >= 2,
+        "chain should be pushed to page 2, got {} pages",
+        pages.len()
+    );
     // para1 and para2 must be on the same page (page 2).
-    assert!(!pages[1].content_items.is_empty(), "page 2 must have content");
+    assert!(
+        !pages[1].content_items.is_empty(),
+        "page 2 must have content"
+    );
 }
 
 #[test]
@@ -415,17 +509,23 @@ fn keep_with_next_chain_truncated_at_limit_5() {
     let mut r = test_resources();
     // 6 paragraphs with keep_with_next=true + 1 terminal = 7 blocks total.
     // Chain limit is 5, so chain is truncated and warning is emitted.
-    let kwn = ParaProps { keep_with_next: Some(true), ..Default::default() };
+    let kwn = ParaProps {
+        keep_with_next: Some(true),
+        ..Default::default()
+    };
     let mut paras: Vec<StyledParagraph> = (0..6)
         .map(|i| make_para_with_props(&format!("kwn para {i}"), kwn.clone()))
         .collect();
     paras.push(make_para("terminal"));
     let section = section_of(paras, PageLayout::default());
     let (_, warnings) = flow_paginated(&mut r, &section);
-    let truncated = warnings.iter().any(|w| {
-        matches!(w, LayoutWarning::KeepWithNextChainTruncated { .. })
-    });
-    assert!(truncated, "expected KeepWithNextChainTruncated warning; got {warnings:?}");
+    let truncated = warnings
+        .iter()
+        .any(|w| matches!(w, LayoutWarning::KeepWithNextChainTruncated { .. }));
+    assert!(
+        truncated,
+        "expected KeepWithNextChainTruncated warning; got {warnings:?}"
+    );
 }
 
 #[test]
@@ -450,10 +550,13 @@ fn keep_with_next_chain_too_tall_emits_warning() {
     ];
     let section = section_of(paras, tiny_layout());
     let (_, warnings) = flow_paginated(&mut r, &section);
-    let too_tall = warnings.iter().any(|w| {
-        matches!(w, LayoutWarning::KeepWithNextChainTooTall { .. })
-    });
-    assert!(too_tall, "expected KeepWithNextChainTooTall warning; got {warnings:?}");
+    let too_tall = warnings
+        .iter()
+        .any(|w| matches!(w, LayoutWarning::KeepWithNextChainTooTall { .. }));
+    assert!(
+        too_tall,
+        "expected KeepWithNextChainTooTall warning; got {warnings:?}"
+    );
 }
 
 // ── margins.top bug regression test ──────────────────────────────────────────
@@ -467,7 +570,10 @@ fn margins_top_bug_fixed_page2_item_at_correct_y() {
     let para1 = make_para("Page one content.");
     let para2 = make_para_with_props(
         "Page two content.",
-        ParaProps { page_break_before: Some(true), ..Default::default() },
+        ParaProps {
+            page_break_before: Some(true),
+            ..Default::default()
+        },
     );
     let section = section_of(vec![para1, para2], PageLayout::default());
     let (pages, _) = flow_paginated(&mut r, &section);
@@ -521,7 +627,10 @@ fn list_catalog() -> StyleCatalog {
             display_name: None,
             levels: vec![ListLevel {
                 level: 0,
-                kind: ListLevelKind::Bullet { char: BulletChar::Char('•'), font: None },
+                kind: ListLevelKind::Bullet {
+                    char: BulletChar::Char('•'),
+                    font: None,
+                },
                 indent_start: Points::new(36.0),
                 hanging_indent: Points::new(18.0),
                 label_alignment: LabelAlignment::Left,
@@ -556,8 +665,19 @@ fn flow_with_catalog(
     section: &Section,
     catalog: &StyleCatalog,
 ) -> (Vec<PositionedItem>, f32, Vec<LayoutWarning>) {
-    match flow_section(r, section, catalog, &LayoutMode::Pageless, 1.0, &LayoutOptions::default()) {
-        FlowOutput::Canvas { items, height, warnings } => (items, height, warnings),
+    match flow_section(
+        r,
+        section,
+        catalog,
+        &LayoutMode::Pageless,
+        1.0,
+        &LayoutOptions::default(),
+    ) {
+        FlowOutput::Canvas {
+            items,
+            height,
+            warnings,
+        } => (items, height, warnings),
         _ => panic!("expected Canvas"),
     }
 }
@@ -572,9 +692,18 @@ fn list_items_produce_glyph_runs() {
     );
     let (items, height, warnings) = flow_with_catalog(&mut r, &section, &catalog);
     assert!(height > 0.0, "list section must have non-zero height");
-    assert!(!warnings.is_empty() || warnings.is_empty(), "warnings either way is fine");
-    let runs = items.iter().filter(|i| matches!(i, PositionedItem::GlyphRun(_))).count();
-    assert!(runs >= 2, "two list items must produce at least two glyph runs, got {runs}");
+    assert!(
+        !warnings.is_empty() || warnings.is_empty(),
+        "warnings either way is fine"
+    );
+    let runs = items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::GlyphRun(_)))
+        .count();
+    assert!(
+        runs >= 2,
+        "two list items must produce at least two glyph runs, got {runs}"
+    );
 }
 
 #[test]
@@ -593,8 +722,14 @@ fn numbered_list_counters_advance() {
         PageLayout::default(),
     );
     let (items, _, _) = flow_with_catalog(&mut r, &section, &catalog);
-    let runs = items.iter().filter(|i| matches!(i, PositionedItem::GlyphRun(_))).count();
-    assert!(runs >= 3, "three list items must produce ≥3 glyph runs, got {runs}");
+    let runs = items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::GlyphRun(_)))
+        .count();
+    assert!(
+        runs >= 3,
+        "three list items must produce ≥3 glyph runs, got {runs}"
+    );
 }
 
 #[test]
@@ -606,8 +741,14 @@ fn bullet_list_items_produce_output() {
         PageLayout::default(),
     );
     let (items, _, _) = flow_with_catalog(&mut r, &section, &catalog);
-    let runs = items.iter().filter(|i| matches!(i, PositionedItem::GlyphRun(_))).count();
-    assert!(runs >= 2, "bullet list must produce ≥2 glyph runs, got {runs}");
+    let runs = items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::GlyphRun(_)))
+        .count();
+    assert!(
+        runs >= 2,
+        "bullet list must produce ≥2 glyph runs, got {runs}"
+    );
 }
 
 #[test]
@@ -628,8 +769,14 @@ fn new_list_resets_counter() {
         PageLayout::default(),
     );
     let (items, _, _) = flow_with_catalog(&mut r, &section, &catalog);
-    let runs = items.iter().filter(|i| matches!(i, PositionedItem::GlyphRun(_))).count();
-    assert!(runs >= 4, "four paragraphs must produce ≥4 glyph runs, got {runs}");
+    let runs = items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::GlyphRun(_)))
+        .count();
+    assert!(
+        runs >= 4,
+        "four paragraphs must produce ≥4 glyph runs, got {runs}"
+    );
 }
 
 // ── Table tests ───────────────────────────────────────────────────────────────
@@ -660,8 +807,14 @@ fn make_table_2x2(cell_props: Option<CellProps>) -> Block {
         caption: Default::default(),
         width: None,
         col_specs: vec![
-            ColSpec { alignment: ColAlignment::Default, width: ColWidth::Default },
-            ColSpec { alignment: ColAlignment::Default, width: ColWidth::Default },
+            ColSpec {
+                alignment: ColAlignment::Default,
+                width: ColWidth::Default,
+            },
+            ColSpec {
+                alignment: ColAlignment::Default,
+                width: ColWidth::Default,
+            },
         ],
         head: TableHead::empty(),
         bodies: vec![TableBody::from_rows(vec![row1, row2])],
@@ -679,8 +832,16 @@ fn table_2x2_renders_on_one_page() {
         extensions: ExtensionBag::default(),
     };
     let (pages, _) = flow_paginated(&mut r, &section);
-    assert_eq!(pages.len(), 1, "2×2 table should fit on one page, got {}", pages.len());
-    let has_runs = pages[0].content_items.iter().any(|i| matches!(i, PositionedItem::GlyphRun(_)));
+    assert_eq!(
+        pages.len(),
+        1,
+        "2×2 table should fit on one page, got {}",
+        pages.len()
+    );
+    let has_runs = pages[0]
+        .content_items
+        .iter()
+        .any(|i| matches!(i, PositionedItem::GlyphRun(_)));
     assert!(has_runs, "table cells must produce glyph runs");
 }
 
@@ -697,8 +858,14 @@ fn table_cell_background_produces_filled_rect() {
         extensions: ExtensionBag::default(),
     };
     let (items, _, _) = flow_pageless(&mut r, &section);
-    let filled_rects = items.iter().filter(|i| matches!(i, PositionedItem::FilledRect(_))).count();
-    assert!(filled_rects >= 2, "2×2 table with bg should produce ≥2 FilledRect items (one per cell in first row), got {filled_rects}");
+    let filled_rects = items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::FilledRect(_)))
+        .count();
+    assert!(
+        filled_rects >= 2,
+        "2×2 table with bg should produce ≥2 FilledRect items (one per cell in first row), got {filled_rects}"
+    );
 }
 
 /// A cell with borders should produce a `BorderRect` item.
@@ -722,6 +889,12 @@ fn table_cell_borders_produce_border_rect() {
         extensions: ExtensionBag::default(),
     };
     let (items, _, _) = flow_pageless(&mut r, &section);
-    let border_rects = items.iter().filter(|i| matches!(i, PositionedItem::BorderRect(_))).count();
-    assert!(border_rects >= 2, "2×2 table with borders should produce ≥2 BorderRect items, got {border_rects}");
+    let border_rects = items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::BorderRect(_)))
+        .count();
+    assert!(
+        border_rects >= 2,
+        "2×2 table with borders should produce ≥2 BorderRect items, got {border_rects}"
+    );
 }

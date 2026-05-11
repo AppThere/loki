@@ -27,6 +27,8 @@ pub struct DocumentSettings {
 
 impl Default for DocumentSettings {
     fn default() -> Self {
-        Self { default_tab_stop_pt: 36.0 }
+        Self {
+            default_tab_stop_pt: 36.0,
+        }
     }
 }

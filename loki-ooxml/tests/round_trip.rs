@@ -9,7 +9,7 @@ use std::io::Cursor;
 
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::{Inline, NoteKind};
-use loki_ooxml::docx::import::{DocxImporter, DocxImportOptions};
+use loki_ooxml::docx::import::{DocxImportOptions, DocxImporter};
 
 /// Import the reference DOCX and validate the high-level document shape.
 ///
@@ -35,13 +35,18 @@ fn import_reference_docx_smoke() {
     let doc = &result.document;
 
     // ── 1. Non-empty content ────────────────────────────────────────────────
-    let all_blocks: Vec<&Block> =
-        doc.sections.iter().flat_map(|s| s.blocks.iter()).collect();
-    assert!(!all_blocks.is_empty(), "document must contain at least one block");
+    let all_blocks: Vec<&Block> = doc.sections.iter().flat_map(|s| s.blocks.iter()).collect();
+    assert!(
+        !all_blocks.is_empty(),
+        "document must contain at least one block"
+    );
 
     // ── 2. Bold run present ─────────────────────────────────────────────────
     let has_bold = all_blocks.iter().any(|b| block_has_bold_run(b));
-    assert!(has_bold, "at least one StyledRun with bold=true must be present");
+    assert!(
+        has_bold,
+        "at least one StyledRun with bold=true must be present"
+    );
 
     // ── 3. List paragraph present ───────────────────────────────────────────
     let has_list = all_blocks.iter().any(|b| {
@@ -53,7 +58,10 @@ fn import_reference_docx_smoke() {
             false
         }
     });
-    assert!(has_list, "at least one paragraph with list_id set must be present");
+    assert!(
+        has_list,
+        "at least one paragraph with list_id set must be present"
+    );
 
     // ── 4. A4 page size ─────────────────────────────────────────────────────
     let page_size = &doc.sections[0].layout.page_size;
@@ -78,45 +86,70 @@ fn import_reference_docx_smoke() {
             false
         }
     });
-    assert!(has_border, "at least one paragraph with border_top must be present (gap #6)");
+    assert!(
+        has_border,
+        "at least one paragraph with border_top must be present (gap #6)"
+    );
 
     // ── 6. Tab stops present (gap #7) ───────────────────────────────────────
     let has_tab_stops = all_blocks.iter().any(|b| {
         if let Block::StyledPara(p) = b {
-            p.direct_para_props
-                .as_ref()
-                .map_or(false, |pp| {
-                    pp.tab_stops.as_ref().map_or(false, |ts| ts.len() >= 2)
-                })
+            p.direct_para_props.as_ref().map_or(false, |pp| {
+                pp.tab_stops.as_ref().map_or(false, |ts| ts.len() >= 2)
+            })
         } else {
             false
         }
     });
-    assert!(has_tab_stops, "at least one paragraph with ≥2 tab stops must be present (gap #7)");
+    assert!(
+        has_tab_stops,
+        "at least one paragraph with ≥2 tab stops must be present (gap #7)"
+    );
 
     // ── 7. Footnote present (gap #2) ────────────────────────────────────────
     let has_footnote = all_blocks.iter().any(|b| block_has_footnote(b));
-    assert!(has_footnote, "at least one paragraph with Inline::Note(Footnote) must be present (gap #2)");
+    assert!(
+        has_footnote,
+        "at least one paragraph with Inline::Note(Footnote) must be present (gap #2)"
+    );
 
     // ── 8. Field code present (gap #4) ──────────────────────────────────────
     let has_field = all_blocks.iter().any(|b| block_has_field(b));
-    assert!(has_field, "at least one paragraph with Inline::Field must be present (gap #4)");
+    assert!(
+        has_field,
+        "at least one paragraph with Inline::Field must be present (gap #4)"
+    );
 
     // ── 9. Default header populated (gap #5) ────────────────────────────────
     let final_layout = &doc.sections.last().unwrap().layout;
-    let hdr = final_layout.header.as_ref()
+    let hdr = final_layout
+        .header
+        .as_ref()
         .expect("final section must have a default header (gap #5)");
-    assert!(!hdr.blocks.is_empty(), "default header must contain at least one block");
+    assert!(
+        !hdr.blocks.is_empty(),
+        "default header must contain at least one block"
+    );
 
     // ── 10. Default footer populated (gap #5) ───────────────────────────────
-    let ftr = final_layout.footer.as_ref()
+    let ftr = final_layout
+        .footer
+        .as_ref()
         .expect("final section must have a default footer (gap #5)");
-    assert!(!ftr.blocks.is_empty(), "default footer must contain at least one block");
+    assert!(
+        !ftr.blocks.is_empty(),
+        "default footer must contain at least one block"
+    );
 
     // ── 11. First-page header present because titlePg is set (gap #5) ───────
-    let hdr_first = final_layout.header_first.as_ref()
+    let hdr_first = final_layout
+        .header_first
+        .as_ref()
         .expect("final section must have a first-page header (titlePg, gap #5)");
-    assert!(!hdr_first.blocks.is_empty(), "first-page header must contain at least one block");
+    assert!(
+        !hdr_first.blocks.is_empty(),
+        "first-page header must contain at least one block"
+    );
 }
 
 fn block_has_bold_run(block: &Block) -> bool {
@@ -184,11 +217,14 @@ fn ooxml1_table_width_mapped() {
         .expect("reference DOCX should import without error");
 
     let doc = &result.document;
-    let all_blocks: Vec<&Block> =
-        doc.sections.iter().flat_map(|s| s.blocks.iter()).collect();
+    let all_blocks: Vec<&Block> = doc.sections.iter().flat_map(|s| s.blocks.iter()).collect();
 
     let table_width = all_blocks.iter().find_map(|b| {
-        if let Block::Table(t) = b { t.width.as_ref() } else { None }
+        if let Block::Table(t) = b {
+            t.width.as_ref()
+        } else {
+            None
+        }
     });
 
     let width = table_width.expect("document must contain a table with a width (OOXML-1)");
@@ -227,7 +263,7 @@ fn ooxml2_default_tab_stop_mapped() {
 /// layout pages (the reference DOCX has exactly two `<w:br w:type="page"/>`).
 #[test]
 fn page_breaks_produce_multiple_layout_pages() {
-    use loki_layout::{layout_document, FontResources, LayoutMode};
+    use loki_layout::{FontResources, LayoutMode, layout_document};
 
     let bytes = helpers::build_reference_docx();
     let result = DocxImporter::new(DocxImportOptions::default())
@@ -259,7 +295,7 @@ fn page_breaks_produce_multiple_layout_pages() {
 /// subsequent pages get the default header (gap #5).
 #[test]
 fn layout_assigns_header_footer_per_page() {
-    use loki_layout::{layout_document, FontResources, LayoutMode};
+    use loki_layout::{FontResources, LayoutMode, layout_document};
 
     let bytes = helpers::build_reference_docx();
     let result = DocxImporter::new(DocxImportOptions::default())
@@ -279,7 +315,10 @@ fn layout_assigns_header_footer_per_page() {
         panic!("expected paginated layout");
     };
 
-    assert!(!paginated.pages.is_empty(), "layout should produce at least one page");
+    assert!(
+        !paginated.pages.is_empty(),
+        "layout should produce at least one page"
+    );
 
     // Page 1 gets the first-page header variant (titlePg=true, header_first is set).
     let p1 = &paginated.pages[0];
@@ -319,21 +358,34 @@ fn vmerge_row_span_assigned_and_continuation_removed() {
         .run(Cursor::new(bytes))
         .expect("reference DOCX should import without error");
 
-    let all_blocks: Vec<&Block> = result.document.sections
+    let all_blocks: Vec<&Block> = result
+        .document
+        .sections
         .iter()
         .flat_map(|s| s.blocks.iter())
         .collect();
 
     // Locate the 3-row merged table.
-    let merged_table = all_blocks.iter()
-        .filter_map(|b| if let Block::Table(t) = b { Some(t.as_ref()) } else { None })
+    let merged_table = all_blocks
+        .iter()
+        .filter_map(|b| {
+            if let Block::Table(t) = b {
+                Some(t.as_ref())
+            } else {
+                None
+            }
+        })
         .find(|t| t.bodies.iter().any(|b| b.body_rows.len() == 3))
         .expect("3-row merged-table must be present in the document");
 
     let body = &merged_table.bodies[0];
 
     // Row 0: 2 cells — [Merged Cell (row_span=2), Row 1 Col 2]
-    assert_eq!(body.body_rows[0].cells.len(), 2, "row 0 should have 2 cells");
+    assert_eq!(
+        body.body_rows[0].cells.len(),
+        2,
+        "row 0 should have 2 cells"
+    );
     assert_eq!(
         body.body_rows[0].cells[0].row_span, 2,
         "merged cell in row 0 col 0 should have row_span = 2"
@@ -341,12 +393,17 @@ fn vmerge_row_span_assigned_and_continuation_removed() {
 
     // Row 1: 1 cell — continuation removed, only col 2 remains
     assert_eq!(
-        body.body_rows[1].cells.len(), 1,
+        body.body_rows[1].cells.len(),
+        1,
         "row 1 should have 1 cell after continuation removal"
     );
 
     // Row 2: 2 cells — unmerged
-    assert_eq!(body.body_rows[2].cells.len(), 2, "row 2 should have 2 cells");
+    assert_eq!(
+        body.body_rows[2].cells.len(),
+        2,
+        "row 2 should have 2 cells"
+    );
     assert_eq!(
         body.body_rows[2].cells[0].row_span, 1,
         "row 2 col 0 should have row_span = 1"
@@ -363,18 +420,29 @@ fn cell_props_padding_valign_textdirection_mapped() {
         .run(Cursor::new(bytes))
         .expect("reference DOCX should import without error");
 
-    let all_blocks: Vec<&Block> = result.document.sections
+    let all_blocks: Vec<&Block> = result
+        .document
+        .sections
         .iter()
         .flat_map(|s| s.blocks.iter())
         .collect();
 
     // Locate the styled-cell table (1 body row with 2 cells, first has tcMar).
-    let styled_table = all_blocks.iter()
-        .filter_map(|b| if let Block::Table(t) = b { Some(t.as_ref()) } else { None })
+    let styled_table = all_blocks
+        .iter()
+        .filter_map(|b| {
+            if let Block::Table(t) = b {
+                Some(t.as_ref())
+            } else {
+                None
+            }
+        })
         .find(|t| {
             t.bodies.iter().any(|b| {
                 b.body_rows.len() == 1
-                    && b.body_rows[0].cells.first()
+                    && b.body_rows[0]
+                        .cells
+                        .first()
                         .map(|c| c.props.padding_left.is_some())
                         .unwrap_or(false)
             })
@@ -385,10 +453,26 @@ fn cell_props_padding_valign_textdirection_mapped() {
 
     // Cell 0: padding 5pt top/bottom, 10pt left/right (100 twips ÷20, 200 twips ÷20)
     let c0 = &row.cells[0];
-    assert_eq!(c0.props.padding_top, Some(Points::new(5.0)), "padding_top should be 5pt");
-    assert_eq!(c0.props.padding_bottom, Some(Points::new(5.0)), "padding_bottom should be 5pt");
-    assert_eq!(c0.props.padding_left, Some(Points::new(10.0)), "padding_left should be 10pt");
-    assert_eq!(c0.props.padding_right, Some(Points::new(10.0)), "padding_right should be 10pt");
+    assert_eq!(
+        c0.props.padding_top,
+        Some(Points::new(5.0)),
+        "padding_top should be 5pt"
+    );
+    assert_eq!(
+        c0.props.padding_bottom,
+        Some(Points::new(5.0)),
+        "padding_bottom should be 5pt"
+    );
+    assert_eq!(
+        c0.props.padding_left,
+        Some(Points::new(10.0)),
+        "padding_left should be 10pt"
+    );
+    assert_eq!(
+        c0.props.padding_right,
+        Some(Points::new(10.0)),
+        "padding_right should be 10pt"
+    );
     assert_eq!(
         c0.props.vertical_align,
         Some(CellVerticalAlign::Middle),
@@ -402,11 +486,17 @@ fn cell_props_padding_valign_textdirection_mapped() {
 
     // Cell 1: only vAlign bottom, no padding
     let c1 = &row.cells[1];
-    assert_eq!(c1.props.padding_top, None, "cell 1 should have no top padding");
+    assert_eq!(
+        c1.props.padding_top, None,
+        "cell 1 should have no top padding"
+    );
     assert_eq!(
         c1.props.vertical_align,
         Some(CellVerticalAlign::Bottom),
         "vAlign bottom → Bottom"
     );
-    assert_eq!(c1.props.text_direction, None, "cell 1 should have no text direction");
+    assert_eq!(
+        c1.props.text_direction, None,
+        "cell 1 should have no text direction"
+    );
 }

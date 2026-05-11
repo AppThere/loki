@@ -58,7 +58,9 @@ impl RelationshipSet {
 
     /// Extrapolates relationships filtered rigidly by specific format type values.
     pub fn by_type<'a>(&'a self, rel_type: &'a str) -> impl Iterator<Item = &'a Relationship> {
-        self.relationships.iter().filter(move |r| r.rel_type == rel_type)
+        self.relationships
+            .iter()
+            .filter(move |r| r.rel_type == rel_type)
     }
 
     /// Mounts additional relationships inside the struct mapping.
@@ -92,13 +94,18 @@ impl RelationshipSet {
     /// Format: `rId1`, `rId2`, ... incrementing from the current maximum.
     #[must_use]
     pub fn next_id(&self) -> String {
-        let max_id = self.relationships.iter().filter_map(|r| {
-            if r.id.starts_with("rId") {
-                r.id[3..].parse::<u32>().ok()
-            } else {
-                None
-            }
-        }).max().unwrap_or(0);
+        let max_id = self
+            .relationships
+            .iter()
+            .filter_map(|r| {
+                if r.id.starts_with("rId") {
+                    r.id[3..].parse::<u32>().ok()
+                } else {
+                    None
+                }
+            })
+            .max()
+            .unwrap_or(0);
         format!("rId{}", max_id + 1)
     }
 

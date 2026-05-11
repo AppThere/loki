@@ -157,15 +157,42 @@ mod tests {
 
     #[test]
     fn test_invalid_part_names() {
-        assert!(matches!(PartName::new(""), Err(OpcError::InvalidPartName{..})));
-        assert!(matches!(PartName::new("word/document.xml"), Err(OpcError::InvalidPartName{..})));
-        assert!(matches!(PartName::new("/word//document.xml"), Err(OpcError::InvalidPartName{..})));
-        assert!(matches!(PartName::new("/word/document.xml/"), Err(OpcError::InvalidPartName{..})));
-        assert!(matches!(PartName::new("/word/./document.xml"), Err(OpcError::InvalidPartName{..})));
-        assert!(matches!(PartName::new("/word/../document.xml"), Err(OpcError::InvalidPartName{..})));
-        assert!(matches!(PartName::new("/word./document.xml"), Err(OpcError::InvalidPartName{..})));
-        assert!(matches!(PartName::new("/word%2f/document.xml"), Err(OpcError::InvalidPartName{..})));
-        assert!(matches!(PartName::new("/word/%5Cdocument.xml"), Err(OpcError::InvalidPartName{..})));
+        assert!(matches!(
+            PartName::new(""),
+            Err(OpcError::InvalidPartName { .. })
+        ));
+        assert!(matches!(
+            PartName::new("word/document.xml"),
+            Err(OpcError::InvalidPartName { .. })
+        ));
+        assert!(matches!(
+            PartName::new("/word//document.xml"),
+            Err(OpcError::InvalidPartName { .. })
+        ));
+        assert!(matches!(
+            PartName::new("/word/document.xml/"),
+            Err(OpcError::InvalidPartName { .. })
+        ));
+        assert!(matches!(
+            PartName::new("/word/./document.xml"),
+            Err(OpcError::InvalidPartName { .. })
+        ));
+        assert!(matches!(
+            PartName::new("/word/../document.xml"),
+            Err(OpcError::InvalidPartName { .. })
+        ));
+        assert!(matches!(
+            PartName::new("/word./document.xml"),
+            Err(OpcError::InvalidPartName { .. })
+        ));
+        assert!(matches!(
+            PartName::new("/word%2f/document.xml"),
+            Err(OpcError::InvalidPartName { .. })
+        ));
+        assert!(matches!(
+            PartName::new("/word/%5Cdocument.xml"),
+            Err(OpcError::InvalidPartName { .. })
+        ));
     }
 
     #[test]
@@ -174,19 +201,25 @@ mod tests {
         let b = PartName::new("/foo/bar.xml").unwrap();
         assert_eq!(a, b);
     }
-    
+
     #[test]
     fn test_extension() {
         let a = PartName::new("/word/document.xml").unwrap();
         assert_eq!(a.extension(), Some("xml"));
     }
-    
+
     #[test]
     fn test_relationships_part_name() {
         let doc = PartName::new("/word/document.xml").unwrap();
-        assert_eq!(doc.relationships_part_name().as_str(), "/word/_rels/document.xml.rels");
-        
+        assert_eq!(
+            doc.relationships_part_name().as_str(),
+            "/word/_rels/document.xml.rels"
+        );
+
         let root = PartName::new("/image.png").unwrap();
-        assert_eq!(root.relationships_part_name().as_str(), "/_rels/image.png.rels");
+        assert_eq!(
+            root.relationships_part_name().as_str(),
+            "/_rels/image.png.rels"
+        );
     }
 }

@@ -159,10 +159,7 @@ pub(crate) fn get_block_map_and_list(
 ///
 /// Container-typed values (nested LoroMaps, etc.) are silently skipped since
 /// `KEY_PARA_PROPS` and `KEY_DIRECT_CHAR_PROPS` only contain primitive entries.
-pub(crate) fn copy_map_primitive_values(
-    src: &LoroMap,
-    dst: &LoroMap,
-) -> Result<(), MutationError> {
+pub(crate) fn copy_map_primitive_values(src: &LoroMap, dst: &LoroMap) -> Result<(), MutationError> {
     let mut err: Option<MutationError> = None;
     src.for_each(|k, v| {
         if err.is_some() {

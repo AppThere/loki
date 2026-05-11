@@ -12,9 +12,9 @@
 use std::io::{Seek, Write};
 
 use loki_doc_model::document::Document;
+use loki_opc::Package;
 use loki_opc::part::{PartData, PartName};
 use loki_opc::relationships::{Relationship, TargetMode};
-use loki_opc::Package;
 
 use crate::docx::write::collector::ExportCollector;
 use crate::docx::write::document::{write_document_xml, write_header_footer_xml};
@@ -35,24 +35,18 @@ const REL_OFFICE_DOCUMENT: &str =
 
 const MT_DOCUMENT: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml";
-const MT_STYLES: &str =
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml";
+const MT_STYLES: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml";
 const MT_NUMBERING: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml";
 const MT_FOOTNOTES: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml";
 const MT_ENDNOTES: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml";
-const MT_HEADER: &str =
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml";
-const MT_FOOTER: &str =
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml";
+const MT_HEADER: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml";
+const MT_FOOTER: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml";
 
 /// Assembles a complete `.docx` package from `doc` and writes it to `writer`.
-pub(crate) fn assemble_docx(
-    doc: &Document,
-    writer: impl Write + Seek,
-) -> Result<(), OoxmlError> {
+pub(crate) fn assemble_docx(doc: &Document, writer: impl Write + Seek) -> Result<(), OoxmlError> {
     // ── Step 1: Build styles.xml ─────────────────────────────────────────
     let styles_bytes = write_styles_xml(&doc.styles);
 
@@ -94,31 +88,16 @@ pub(crate) fn assemble_docx(
     let endnotes_part = PartName::new("/word/endnotes.xml").map_err(OoxmlError::Opc)?;
 
     // Insert parts.
-    pkg.set_part(
-        doc_part.clone(),
-        PartData::new(document_bytes, MT_DOCUMENT),
-    );
-    pkg.set_part(
-        styles_part.clone(),
-        PartData::new(styles_bytes, MT_STYLES),
-    );
+    pkg.set_part(doc_part.clone(), PartData::new(document_bytes, MT_DOCUMENT));
+    pkg.set_part(styles_part.clone(), PartData::new(styles_bytes, MT_STYLES));
     if let Some(nb) = numbering_bytes {
-        pkg.set_part(
-            numbering_part.clone(),
-            PartData::new(nb, MT_NUMBERING),
-        );
+        pkg.set_part(numbering_part.clone(), PartData::new(nb, MT_NUMBERING));
     }
     if let Some(fb) = footnotes_bytes {
-        pkg.set_part(
-            footnotes_part.clone(),
-            PartData::new(fb, MT_FOOTNOTES),
-        );
+        pkg.set_part(footnotes_part.clone(), PartData::new(fb, MT_FOOTNOTES));
     }
     if let Some(eb) = endnotes_bytes {
-        pkg.set_part(
-            endnotes_part.clone(),
-            PartData::new(eb, MT_ENDNOTES),
-        );
+        pkg.set_part(endnotes_part.clone(), PartData::new(eb, MT_ENDNOTES));
     }
 
     // Insert headers and footers.
@@ -230,7 +209,11 @@ pub(crate) fn assemble_docx(
             .add(Relationship {
                 id: hf.r_id.clone(),
                 rel_type: rel_type.to_string(),
-                target: hf.path.strip_prefix("word/").unwrap_or(&hf.path).to_string(),
+                target: hf
+                    .path
+                    .strip_prefix("word/")
+                    .unwrap_or(&hf.path)
+                    .to_string(),
                 target_mode: TargetMode::Internal,
             })
             .map_err(OoxmlError::Opc)?;

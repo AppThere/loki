@@ -13,14 +13,14 @@
 use std::collections::HashMap;
 use std::io::{Read, Seek};
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 use zip::CompressionMethod;
 use zip::ZipArchive;
 
 use crate::constants::{
-    ENTRY_CONTENT, ENTRY_MANIFEST, ENTRY_META, ENTRY_MIMETYPE, ENTRY_SETTINGS,
-    ENTRY_STYLES, MIME_ODT,
+    ENTRY_CONTENT, ENTRY_MANIFEST, ENTRY_META, ENTRY_MIMETYPE, ENTRY_SETTINGS, ENTRY_STYLES,
+    MIME_ODT,
 };
 use crate::error::{OdfError, OdfResult};
 use crate::version::OdfVersion;
@@ -88,20 +88,22 @@ impl OdfPackage {
 
         // ── 2. Require META-INF/manifest.xml ──────────────────────────────
         {
-            let _ = archive.by_name(ENTRY_MANIFEST).map_err(|_| {
-                OdfError::MissingPart { part: ENTRY_MANIFEST.into() }
-            })?;
+            let _ = archive
+                .by_name(ENTRY_MANIFEST)
+                .map_err(|_| OdfError::MissingPart {
+                    part: ENTRY_MANIFEST.into(),
+                })?;
         }
 
         // ── 3. Read content.xml (required) ────────────────────────────────
-        let content = read_entry(&mut archive, ENTRY_CONTENT)?.ok_or_else(
-            || OdfError::MissingPart { part: ENTRY_CONTENT.into() },
-        )?;
+        let content =
+            read_entry(&mut archive, ENTRY_CONTENT)?.ok_or_else(|| OdfError::MissingPart {
+                part: ENTRY_CONTENT.into(),
+            })?;
 
         // ── 4. Read styles.xml (optional; fall back to empty element) ─────
-        let styles = read_entry(&mut archive, ENTRY_STYLES)?.unwrap_or_else(
-            || b"<office:document-styles/>".to_vec(),
-        );
+        let styles = read_entry(&mut archive, ENTRY_STYLES)?
+            .unwrap_or_else(|| b"<office:document-styles/>".to_vec());
 
         // ── 5. Read optional parts ────────────────────────────────────────
         let meta = read_entry(&mut archive, ENTRY_META)?;
@@ -155,28 +157,19 @@ impl OdfPackage {
                     let local = local_name_bytes(e.local_name().into_inner());
                     if local == b"document-content" || local == b"document" {
                         // Found the root element; look for office:version
-                        let version_val = e
-                            .attributes()
-                            .flatten()
-                            .find_map(|attr| {
-                                let key =
-                                    local_name_bytes(attr.key.as_ref());
-                                if key == b"version" {
-                                    attr.unescape_value()
-                                        .ok()
-                                        .map(std::borrow::Cow::into_owned)
-                                } else {
-                                    None
-                                }
-                            });
+                        let version_val = e.attributes().flatten().find_map(|attr| {
+                            let key = local_name_bytes(attr.key.as_ref());
+                            if key == b"version" {
+                                attr.unescape_value().ok().map(std::borrow::Cow::into_owned)
+                            } else {
+                                None
+                            }
+                        });
 
                         return match version_val {
                             None => Ok((OdfVersion::V1_1, true)),
                             Some(s) => {
-                                let v =
-                                    OdfVersion::from_attr(&s).unwrap_or(
-                                        OdfVersion::V1_3,
-                                    );
+                                let v = OdfVersion::from_attr(&s).unwrap_or(OdfVersion::V1_3);
                                 Ok((v, false))
                             }
                         };
@@ -207,11 +200,11 @@ impl OdfPackage {
 /// exactly [`MIME_ODT`] with no trailing newline.
 ///
 /// ODF 1.3 §3.4.
-fn validate_mimetype<R: Read + Seek>(
-    archive: &mut ZipArchive<R>,
-) -> OdfResult<()> {
+fn validate_mimetype<R: Read + Seek>(archive: &mut ZipArchive<R>) -> OdfResult<()> {
     if archive.is_empty() {
-        return Err(OdfError::MissingPart { part: ENTRY_MIMETYPE.into() });
+        return Err(OdfError::MissingPart {
+            part: ENTRY_MIMETYPE.into(),
+        });
     }
 
     let mut entry = archive.by_index(0)?;
@@ -221,9 +214,7 @@ fn validate_mimetype<R: Read + Seek>(
         return Err(OdfError::MalformedElement {
             element: ENTRY_MIMETYPE.into(),
             part: ENTRY_MIMETYPE.into(),
-            reason: format!(
-                "first ZIP entry must be \"mimetype\", found \"{name}\""
-            ),
+            reason: format!("first ZIP entry must be \"mimetype\", found \"{name}\""),
         });
     }
 
@@ -279,9 +270,7 @@ fn collect_images<R: Read + Seek>(
 
     // Collect names first to avoid borrow issues
     let names: Vec<String> = (0..archive.len())
-        .filter_map(|i| {
-            archive.by_index(i).ok().map(|e| e.name().to_owned())
-        })
+        .filter_map(|i| archive.by_index(i).ok().map(|e| e.name().to_owned()))
         .filter(|n| n.starts_with("Pictures/") && n.len() > "Pictures/".len())
         .collect();
 
@@ -335,8 +324,8 @@ fn local_name_bytes(qname: &[u8]) -> &[u8] {
 mod tests {
     use std::io::{Cursor, Write};
 
-    use zip::write::{FileOptions, ZipWriter};
     use zip::CompressionMethod;
+    use zip::write::{FileOptions, ZipWriter};
 
     use super::*;
     use crate::version::OdfVersion;
@@ -353,22 +342,19 @@ mod tests {
         let mut zip = ZipWriter::new(Cursor::new(&mut buf));
 
         if mimetype_first {
-            let opts = FileOptions::<()>::default()
-                .compression_method(CompressionMethod::Stored);
+            let opts = FileOptions::<()>::default().compression_method(CompressionMethod::Stored);
             zip.start_file(ENTRY_MIMETYPE, opts).unwrap();
             zip.write_all(mimetype_content).unwrap();
         }
 
         for (name, data) in extra_entries {
-            let opts = FileOptions::<()>::default()
-                .compression_method(CompressionMethod::Deflated);
+            let opts = FileOptions::<()>::default().compression_method(CompressionMethod::Deflated);
             zip.start_file(*name, opts).unwrap();
             zip.write_all(data).unwrap();
         }
 
         if !mimetype_first {
-            let opts = FileOptions::<()>::default()
-                .compression_method(CompressionMethod::Stored);
+            let opts = FileOptions::<()>::default().compression_method(CompressionMethod::Stored);
             zip.start_file(ENTRY_MIMETYPE, opts).unwrap();
             zip.write_all(mimetype_content).unwrap();
         }
@@ -383,10 +369,7 @@ mod tests {
             Some(v) => format!(" office:version=\"{v}\""),
             None => String::new(),
         };
-        format!(
-            r#"<?xml version="1.0"?><office:document-content{ver_attr}/>"#
-        )
-        .into_bytes()
+        format!(r#"<?xml version="1.0"?><office:document-content{ver_attr}/>"#).into_bytes()
     }
 
     fn minimal_zip(version: Option<&str>) -> Vec<u8> {

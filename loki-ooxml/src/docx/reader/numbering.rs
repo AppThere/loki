@@ -5,8 +5,8 @@
 //!
 //! ECMA-376 §17.9 (numbering definitions).
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
 use crate::docx::model::numbering::{
     DocxAbstractNum, DocxLevel, DocxLvlOverride, DocxNum, DocxNumbering,
@@ -77,9 +77,7 @@ fn parse_abstract_num(
                 let level_def = parse_level(reader, ilvl)?;
                 abs.levels.push(level_def);
             }
-            Ok(Event::End(ref e))
-                if local_name(e.local_name().as_ref()) == b"abstractNum" =>
-            {
+            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"abstractNum" => {
                 break;
             }
             Ok(Event::Eof) => break,
@@ -141,10 +139,7 @@ fn parse_num(reader: &mut Reader<&[u8]>, num_id: u32) -> OoxmlResult<DocxNum> {
     })
 }
 
-fn parse_lvl_override(
-    reader: &mut Reader<&[u8]>,
-    ilvl: u8,
-) -> OoxmlResult<DocxLvlOverride> {
+fn parse_lvl_override(reader: &mut Reader<&[u8]>, ilvl: u8) -> OoxmlResult<DocxLvlOverride> {
     let mut start_override = None;
     let mut level = None;
     let mut buf = Vec::new();
@@ -154,8 +149,7 @@ fn parse_lvl_override(
             Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
                 match local_name(e.local_name().as_ref()) {
                     b"startOverride" => {
-                        start_override = attr_val(e, b"val")
-                            .and_then(|v| v.parse::<u32>().ok());
+                        start_override = attr_val(e, b"val").and_then(|v| v.parse::<u32>().ok());
                     }
                     b"lvl" => {
                         level = Some(parse_level(reader, ilvl)?);
@@ -163,9 +157,7 @@ fn parse_lvl_override(
                     _ => {}
                 }
             }
-            Ok(Event::End(ref e))
-                if local_name(e.local_name().as_ref()) == b"lvlOverride" =>
-            {
+            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"lvlOverride" => {
                 break;
             }
             Ok(Event::Eof) => break,
@@ -203,8 +195,7 @@ fn parse_level(reader: &mut Reader<&[u8]>, ilvl: u8) -> OoxmlResult<DocxLevel> {
             Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
                 match local_name(e.local_name().as_ref()) {
                     b"start" => {
-                        level_out.start = attr_val(e, b"val")
-                            .and_then(|v| v.parse::<u32>().ok());
+                        level_out.start = attr_val(e, b"val").and_then(|v| v.parse::<u32>().ok());
                     }
                     b"numFmt" => level_out.num_fmt = attr_val(e, b"val"),
                     b"lvlText" => level_out.lvl_text = attr_val(e, b"val"),

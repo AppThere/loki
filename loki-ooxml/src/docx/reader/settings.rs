@@ -5,8 +5,8 @@
 //!
 //! ECMA-376 §17.15 (document settings).
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
 use crate::docx::model::settings::DocxSettings;
 use crate::docx::reader::util::{attr_val, local_name};
@@ -27,8 +27,8 @@ pub fn parse_settings(xml: &[u8]) -> OoxmlResult<DocxSettings> {
             Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
                 match local_name(e.local_name().as_ref()) {
                     b"defaultTabStop" => {
-                        result.default_tab_stop = attr_val(e, b"val")
-                            .and_then(|v| v.parse::<i32>().ok());
+                        result.default_tab_stop =
+                            attr_val(e, b"val").and_then(|v| v.parse::<i32>().ok());
                     }
                     b"evenAndOddHeaders" => {
                         result.even_and_odd_headers = attr_val(e, b"val")

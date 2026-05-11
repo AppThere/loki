@@ -20,23 +20,17 @@ use std::collections::HashMap;
 
 use loki_doc_model::content::attr::{ExtensionBag, NodeAttr};
 use loki_doc_model::content::block::{
-    Block, Caption, ListAttributes, ListDelimiter, ListNumberStyle,
-    StyledParagraph, TableOfContentsBlock,
+    Block, Caption, ListAttributes, ListDelimiter, ListNumberStyle, StyledParagraph,
+    TableOfContentsBlock,
 };
 use loki_doc_model::content::field::types::{CrossRefFormat, Field, FieldKind};
-use loki_doc_model::content::inline::{
-    BookmarkKind, Inline, LinkTarget, NoteKind, StyledRun,
-};
+use loki_doc_model::content::inline::{BookmarkKind, Inline, LinkTarget, NoteKind, StyledRun};
 use loki_doc_model::content::table::col::{ColAlignment, ColSpec, ColWidth};
-use loki_doc_model::content::table::core::{
-    Table, TableBody, TableCaption, TableFoot, TableHead,
-};
+use loki_doc_model::content::table::core::{Table, TableBody, TableCaption, TableFoot, TableHead};
 use loki_doc_model::content::table::row::{Cell, CellProps, Row};
 use loki_doc_model::document::Document;
 use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
-use loki_doc_model::layout::page::{
-    PageLayout, PageMargins, PageOrientation, PageSize,
-};
+use loki_doc_model::layout::page::{PageLayout, PageMargins, PageOrientation, PageSize};
 use loki_doc_model::layout::section::Section;
 use loki_doc_model::meta::core::DocumentMeta;
 use loki_doc_model::style::catalog::{StyleCatalog, StyleId};
@@ -46,18 +40,16 @@ use loki_primitives::units::Points;
 use crate::error::OdfWarning;
 use crate::odt::import::OdtImportOptions;
 use crate::odt::mapper::lists::map_list_styles;
+use crate::odt::mapper::props::map_cell_props;
 use crate::odt::mapper::styles::map_stylesheet;
 use crate::odt::model::document::{
-    OdfBodyChild, OdfDocument, OdfList, OdfListItem, OdfListItemChild,
-    OdfMasterPage, OdfMeta, OdfPageLayout, OdfSection, OdfTableOfContent,
+    OdfBodyChild, OdfDocument, OdfList, OdfListItem, OdfListItemChild, OdfMasterPage, OdfMeta,
+    OdfPageLayout, OdfSection, OdfTableOfContent,
 };
 use crate::odt::model::fields::OdfField;
 use crate::odt::model::frames::{OdfFrame, OdfFrameKind};
 use crate::odt::model::notes::{OdfNote, OdfNoteClass};
-use crate::odt::model::paragraph::{
-    OdfHyperlink, OdfParagraph, OdfParagraphChild, OdfSpan,
-};
-use crate::odt::mapper::props::map_cell_props;
+use crate::odt::model::paragraph::{OdfHyperlink, OdfParagraph, OdfParagraphChild, OdfSpan};
 use crate::odt::model::styles::{OdfCellProps, OdfStyle, OdfStylesheet};
 use crate::odt::model::tables::OdfTable;
 use crate::xml_util::parse_length;
@@ -162,18 +154,17 @@ pub(crate) fn map_document(
             pending_figures: Vec::new(),
         };
 
-        let mut current_master: Option<String> =
-            initial_master.map(str::to_string);
+        let mut current_master: Option<String> = initial_master.map(str::to_string);
         let mut current_blocks: Vec<Block> = Vec::new();
         let mut sections: Vec<Section> = Vec::new();
 
         for child in &doc.body_children {
             // Only paragraphs/headings carry style:master-page-name.
             let new_master = match child {
-                OdfBodyChild::Paragraph(para) | OdfBodyChild::Heading(para) => {
-                    para.style_name.as_deref()
-                        .and_then(|sn| resolve_master_page_name(sn, &all_styles))
-                }
+                OdfBodyChild::Paragraph(para) | OdfBodyChild::Heading(para) => para
+                    .style_name
+                    .as_deref()
+                    .and_then(|sn| resolve_master_page_name(sn, &all_styles)),
                 _ => None,
             };
 
@@ -201,11 +192,7 @@ pub(crate) fn map_document(
         }
 
         // Flush the final (or only) section.
-        let layout = resolve_page_layout_by_name(
-            stylesheet,
-            current_master.as_deref(),
-            &mut ctx,
-        );
+        let layout = resolve_page_layout_by_name(stylesheet, current_master.as_deref(), &mut ctx);
         sections.push(Section::with_layout_and_blocks(layout, current_blocks));
 
         (sections, ctx.warnings)
@@ -230,10 +217,7 @@ pub(crate) fn map_document(
 
 /// Convert a slice of [`OdfBodyChild`]s into [`Block`]s, flushing any
 /// pending floating figures after each block.
-fn map_body_children(
-    children: &[OdfBodyChild],
-    ctx: &mut OdfMappingContext<'_>,
-) -> Vec<Block> {
+fn map_body_children(children: &[OdfBodyChild], ctx: &mut OdfMappingContext<'_>) -> Vec<Block> {
     let mut blocks = Vec::new();
     for child in children {
         if let Some(block) = map_body_child(child, ctx) {
@@ -245,10 +229,7 @@ fn map_body_children(
     blocks
 }
 
-fn map_body_child(
-    child: &OdfBodyChild,
-    ctx: &mut OdfMappingContext<'_>,
-) -> Option<Block> {
+fn map_body_child(child: &OdfBodyChild, ctx: &mut OdfMappingContext<'_>) -> Option<Block> {
     match child {
         OdfBodyChild::Paragraph(para) | OdfBodyChild::Heading(para) => {
             Some(map_paragraph(para, ctx))
@@ -301,10 +282,7 @@ fn map_inline_children(
     children.iter().filter_map(|c| map_inline(c, ctx)).collect()
 }
 
-fn map_inline(
-    child: &OdfParagraphChild,
-    ctx: &mut OdfMappingContext<'_>,
-) -> Option<Inline> {
+fn map_inline(child: &OdfParagraphChild, ctx: &mut OdfMappingContext<'_>) -> Option<Inline> {
     match child {
         OdfParagraphChild::Text(s) => {
             if s.is_empty() {
@@ -326,9 +304,7 @@ fn map_inline(
         OdfParagraphChild::Frame(frame) => map_frame(frame, ctx),
         OdfParagraphChild::SoftReturn | OdfParagraphChild::Other => None,
         OdfParagraphChild::Tab => Some(Inline::Str("\t".into())),
-        OdfParagraphChild::Space { count } => {
-            Some(Inline::Str(" ".repeat(*count as usize)))
-        }
+        OdfParagraphChild::Space { count } => Some(Inline::Str(" ".repeat(*count as usize))),
         OdfParagraphChild::LineBreak => Some(Inline::LineBreak),
     }
 }
@@ -373,12 +349,12 @@ fn map_field(odf: &OdfField) -> Field {
     let kind = match odf {
         OdfField::PageNumber { .. } => FieldKind::PageNumber,
         OdfField::PageCount => FieldKind::PageCount,
-        OdfField::Date { data_style, .. } => {
-            FieldKind::Date { format: data_style.clone() }
-        }
-        OdfField::Time { data_style, .. } => {
-            FieldKind::Time { format: data_style.clone() }
-        }
+        OdfField::Date { data_style, .. } => FieldKind::Date {
+            format: data_style.clone(),
+        },
+        OdfField::Time { data_style, .. } => FieldKind::Time {
+            format: data_style.clone(),
+        },
         OdfField::Title => FieldKind::Title,
         OdfField::Subject => FieldKind::Subject,
         OdfField::AuthorName => FieldKind::Author,
@@ -391,7 +367,10 @@ fn map_field(odf: &OdfField) -> Field {
                 Some("caption") => CrossRefFormat::Caption,
                 _ => CrossRefFormat::HeadingText,
             };
-            FieldKind::CrossReference { target: ref_name.clone(), format }
+            FieldKind::CrossReference {
+                target: ref_name.clone(),
+                format,
+            }
         }
         OdfField::ChapterName { display_levels } => FieldKind::Raw {
             instruction: format!("chapter display-levels={display_levels}"),
@@ -400,7 +379,11 @@ fn map_field(odf: &OdfField) -> Field {
             instruction: local_name.clone(),
         },
     };
-    Field { kind, current_value: None, extensions: ExtensionBag::default() }
+    Field {
+        kind,
+        current_value: None,
+        extensions: ExtensionBag::default(),
+    }
 }
 
 // ── Frames ─────────────────────────────────────────────────────────────────────
@@ -415,7 +398,12 @@ fn map_frame(frame: &OdfFrame, ctx: &mut OdfMappingContext<'_>) -> Option<Inline
     let is_as_char = frame.anchor_type.as_deref() == Some("as-char");
 
     match &frame.kind {
-        OdfFrameKind::Image { href, media_type, title, desc } => {
+        OdfFrameKind::Image {
+            href,
+            media_type,
+            title,
+            desc,
+        } => {
             if !ctx.options.embed_images {
                 return None;
             }
@@ -424,8 +412,7 @@ fn map_frame(frame: &OdfFrame, ctx: &mut OdfMappingContext<'_>) -> Option<Inline
                     .push(OdfWarning::MissingImage { href: href.clone() });
                 return None;
             };
-            let b64 =
-                base64::engine::general_purpose::STANDARD.encode(bytes);
+            let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
             let mt = media_type.as_deref().unwrap_or(stored_mt.as_str());
             let data_uri = format!("data:{mt};base64,{b64}");
             let alt: Vec<Inline> = desc
@@ -433,8 +420,7 @@ fn map_frame(frame: &OdfFrame, ctx: &mut OdfMappingContext<'_>) -> Option<Inline
                 .or(title.as_deref())
                 .map(|s| vec![Inline::Str(s.into())])
                 .unwrap_or_default();
-            let img =
-                Inline::Image(NodeAttr::default(), alt, LinkTarget::new(data_uri));
+            let img = Inline::Image(NodeAttr::default(), alt, LinkTarget::new(data_uri));
             if is_as_char {
                 Some(img)
             } else {
@@ -468,8 +454,11 @@ fn map_frame(frame: &OdfFrame, ctx: &mut OdfMappingContext<'_>) -> Option<Inline
 
 fn map_list(list: &OdfList, ctx: &mut OdfMappingContext<'_>) -> Block {
     let ordered = is_ordered_list(list.style_name.as_deref(), ctx.styles);
-    let items: Vec<Vec<Block>> =
-        list.items.iter().map(|item| map_list_item(item, ctx)).collect();
+    let items: Vec<Vec<Block>> = list
+        .items
+        .iter()
+        .map(|item| map_list_item(item, ctx))
+        .collect();
 
     if ordered {
         let attrs = build_list_attributes(list, ctx.styles);
@@ -479,10 +468,7 @@ fn map_list(list: &OdfList, ctx: &mut OdfMappingContext<'_>) -> Block {
     }
 }
 
-fn map_list_item(
-    item: &OdfListItem,
-    ctx: &mut OdfMappingContext<'_>,
-) -> Vec<Block> {
+fn map_list_item(item: &OdfListItem, ctx: &mut OdfMappingContext<'_>) -> Vec<Block> {
     let mut blocks = Vec::new();
     for child in &item.children {
         match child {
@@ -505,23 +491,33 @@ fn map_list_item(
 /// Returns `true` when the first level of the named list style is numbered.
 fn is_ordered_list(style_name: Option<&str>, catalog: &StyleCatalog) -> bool {
     let Some(name) = style_name else { return false };
-    let Some(ls) = catalog.list_styles.get(&ListId::new(name)) else { return false };
+    let Some(ls) = catalog.list_styles.get(&ListId::new(name)) else {
+        return false;
+    };
     ls.levels
         .first()
         .is_some_and(|l| matches!(l.kind, ListLevelKind::Numbered { .. }))
 }
 
 /// Build [`ListAttributes`] from the first level of the named list style.
-fn build_list_attributes(
-    list: &OdfList,
-    catalog: &StyleCatalog,
-) -> ListAttributes {
+fn build_list_attributes(list: &OdfList, catalog: &StyleCatalog) -> ListAttributes {
     let default = ListAttributes::default();
-    let Some(name) = list.style_name.as_deref() else { return default };
-    let Some(ls) = catalog.list_styles.get(&ListId::new(name)) else { return default };
-    let Some(first) = ls.levels.first() else { return default };
+    let Some(name) = list.style_name.as_deref() else {
+        return default;
+    };
+    let Some(ls) = catalog.list_styles.get(&ListId::new(name)) else {
+        return default;
+    };
+    let Some(first) = ls.levels.first() else {
+        return default;
+    };
     match &first.kind {
-        ListLevelKind::Numbered { scheme, start_value, format, .. } => {
+        ListLevelKind::Numbered {
+            scheme,
+            start_value,
+            format,
+            ..
+        } => {
             let style = match scheme {
                 NumberingScheme::LowerAlpha => ListNumberStyle::LowerAlpha,
                 NumberingScheme::UpperAlpha => ListNumberStyle::UpperAlpha,
@@ -562,7 +558,10 @@ fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Block {
                 .and_then(|name| ctx.col_style_widths.get(name))
                 .map(|&pts| ColWidth::Fixed(pts))
                 .unwrap_or(ColWidth::Proportional(1.0));
-            let spec = ColSpec { alignment: ColAlignment::Default, width };
+            let spec = ColSpec {
+                alignment: ColAlignment::Default,
+                width,
+            };
             std::iter::repeat(spec).take(count)
         })
         .collect();
@@ -585,14 +584,15 @@ fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Block {
                         .iter()
                         .flat_map(|p| {
                             let block = map_paragraph(p, ctx);
-                            let figs =
-                                std::mem::take(&mut ctx.pending_figures);
+                            let figs = std::mem::take(&mut ctx.pending_figures);
                             std::iter::once(block).chain(figs)
                         })
                         .collect();
                     // NOTE: ODF cell properties are mapped to the same CellProps
                     // type as OOXML. The layout engine applies them identically.
-                    let props = odf_cell.style_name.as_deref()
+                    let props = odf_cell
+                        .style_name
+                        .as_deref()
                         .and_then(|n| ctx.cell_style_props.get(n))
                         .map(map_cell_props)
                         .unwrap_or_default();
@@ -623,10 +623,7 @@ fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Block {
 
 // ── Table of contents ──────────────────────────────────────────────────────────
 
-fn map_toc(
-    toc: &OdfTableOfContent,
-    ctx: &mut OdfMappingContext<'_>,
-) -> Block {
+fn map_toc(toc: &OdfTableOfContent, ctx: &mut OdfMappingContext<'_>) -> Block {
     let body: Vec<Block> = toc
         .body_paragraphs
         .iter()
@@ -645,10 +642,7 @@ fn map_toc(
 
 // ── Sections ───────────────────────────────────────────────────────────────────
 
-fn map_section(
-    section: &OdfSection,
-    ctx: &mut OdfMappingContext<'_>,
-) -> Block {
+fn map_section(section: &OdfSection, ctx: &mut OdfMappingContext<'_>) -> Block {
     let blocks = map_body_children(&section.children, ctx);
     Block::Div(NodeAttr::default(), blocks)
 }
@@ -732,14 +726,10 @@ fn apply_master_page_hf(
 ) {
     layout.header = map_hf_paras(&master.header, HeaderFooterKind::Default, ctx);
     layout.footer = map_hf_paras(&master.footer, HeaderFooterKind::Default, ctx);
-    layout.header_first =
-        map_hf_paras(&master.header_first, HeaderFooterKind::First, ctx);
-    layout.footer_first =
-        map_hf_paras(&master.footer_first, HeaderFooterKind::First, ctx);
-    layout.header_even =
-        map_hf_paras(&master.header_even, HeaderFooterKind::Even, ctx);
-    layout.footer_even =
-        map_hf_paras(&master.footer_even, HeaderFooterKind::Even, ctx);
+    layout.header_first = map_hf_paras(&master.header_first, HeaderFooterKind::First, ctx);
+    layout.footer_first = map_hf_paras(&master.footer_first, HeaderFooterKind::First, ctx);
+    layout.header_even = map_hf_paras(&master.header_even, HeaderFooterKind::Even, ctx);
+    layout.footer_even = map_hf_paras(&master.footer_even, HeaderFooterKind::Even, ctx);
 }
 
 /// Convert a list of [`OdfParagraph`]s into a [`HeaderFooter`].
@@ -885,13 +875,8 @@ mod tests {
     #[test]
     fn empty_document_produces_empty_section() {
         let doc = empty_doc(vec![]);
-        let (result, warnings) = map_document(
-            &doc,
-            &empty_stylesheet(),
-            None,
-            &HashMap::new(),
-            &options(),
-        );
+        let (result, warnings) =
+            map_document(&doc, &empty_stylesheet(), None, &HashMap::new(), &options());
         assert!(warnings.is_empty());
         assert_eq!(result.sections.len(), 1);
         assert!(result.sections[0].blocks.is_empty());
@@ -901,13 +886,8 @@ mod tests {
     fn heading_is_emitted_as_heading_block() {
         let para = text_paragraph("Title", true, Some(1));
         let doc = empty_doc(vec![OdfBodyChild::Heading(para)]);
-        let (result, _) = map_document(
-            &doc,
-            &empty_stylesheet(),
-            None,
-            &HashMap::new(),
-            &options(),
-        );
+        let (result, _) =
+            map_document(&doc, &empty_stylesheet(), None, &HashMap::new(), &options());
         let blocks = &result.sections[0].blocks;
         assert_eq!(blocks.len(), 1);
         assert!(
@@ -921,15 +901,11 @@ mod tests {
     fn heading_suppressed_when_emit_heading_blocks_false() {
         let para = text_paragraph("Title", true, Some(1));
         let doc = empty_doc(vec![OdfBodyChild::Heading(para)]);
-        let opts =
-            OdtImportOptions { emit_heading_blocks: false, ..options() };
-        let (result, _) = map_document(
-            &doc,
-            &empty_stylesheet(),
-            None,
-            &HashMap::new(),
-            &opts,
-        );
+        let opts = OdtImportOptions {
+            emit_heading_blocks: false,
+            ..options()
+        };
+        let (result, _) = map_document(&doc, &empty_stylesheet(), None, &HashMap::new(), &opts);
         let blocks = &result.sections[0].blocks;
         assert_eq!(blocks.len(), 1);
         assert!(
@@ -943,13 +919,8 @@ mod tests {
     fn paragraph_is_emitted_as_styled_para() {
         let para = text_paragraph("Hello", false, None);
         let doc = empty_doc(vec![OdfBodyChild::Paragraph(para)]);
-        let (result, _) = map_document(
-            &doc,
-            &empty_stylesheet(),
-            None,
-            &HashMap::new(),
-            &options(),
-        );
+        let (result, _) =
+            map_document(&doc, &empty_stylesheet(), None, &HashMap::new(), &options());
         let blocks = &result.sections[0].blocks;
         assert!(
             matches!(blocks[0], Block::StyledPara(_)),
@@ -962,13 +933,8 @@ mod tests {
     fn text_content_preserved_in_heading() {
         let para = text_paragraph("Introduction", true, Some(1));
         let doc = empty_doc(vec![OdfBodyChild::Heading(para)]);
-        let (result, _) = map_document(
-            &doc,
-            &empty_stylesheet(),
-            None,
-            &HashMap::new(),
-            &options(),
-        );
+        let (result, _) =
+            map_document(&doc, &empty_stylesheet(), None, &HashMap::new(), &options());
         if let Block::Heading(_, _, inlines) = &result.sections[0].blocks[0] {
             assert_eq!(inlines.len(), 1);
             assert!(matches!(&inlines[0], loki_doc_model::Inline::Str(s) if s == "Introduction"));
@@ -993,10 +959,7 @@ mod tests {
             &options(),
         );
         assert_eq!(result.meta.title.as_deref(), Some("My Document"));
-        assert_eq!(
-            result.meta.last_modified_by.as_deref(),
-            Some("Alice")
-        );
+        assert_eq!(result.meta.last_modified_by.as_deref(), Some("Alice"));
     }
 
     #[test]

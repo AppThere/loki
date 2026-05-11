@@ -101,7 +101,11 @@ mod tests {
 
     /// Build a page spanning `[top, bottom)`.
     fn page(top: f64, bottom: f64) -> PageGeometry {
-        PageGeometry { index: 0, top_px: top, bottom_px: bottom }
+        PageGeometry {
+            index: 0,
+            top_px: top,
+            bottom_px: bottom,
+        }
     }
 
     // viewport_top = 1000, viewport_height = 800
@@ -134,7 +138,10 @@ mod tests {
     fn page_beyond_warm_margin_is_cold() {
         let scroll = scroll_at(1000.0, 800.0);
         // warm_start = 600 - 2400 = -1800; page [-2500, -1850] is outside
-        assert_eq!(assign_tier(&page(-2500.0, -1850.0), &scroll), CacheTier::Cold);
+        assert_eq!(
+            assign_tier(&page(-2500.0, -1850.0), &scroll),
+            CacheTier::Cold
+        );
     }
 
     #[test]

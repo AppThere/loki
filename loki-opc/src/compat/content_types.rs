@@ -3,9 +3,9 @@
 
 //! Extends media type references parsing components mapping fallbacks evaluating bounds enforcing restrictions providing metadata attributes tracking parameters efficiently supporting missing properties cleanly mapping identifiers natively supporting [MS-OI29500] / [MS-OE376].
 
-use zip::ZipArchive;
 #[allow(unused_imports)]
 use crate::error::DeviationWarning;
+use zip::ZipArchive;
 
 /// Maps extensions implicitly injecting identifiers mapping elements avoiding failures locating parameters accurately generating types defining constraints perfectly providing components comprehensively resolving constraints uniquely substituting variables properly preventing crashes directly tracking variants.
 pub fn fallback_media_type(extension: &str) -> &'static str {
@@ -17,7 +17,9 @@ pub fn fallback_media_type(extension: &str) -> &'static str {
         "gif" => "image/gif",
         "doc" | "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "xls" | "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "ppt" | "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "ppt" | "pptx" => {
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        }
         _ => "",
     }
 }

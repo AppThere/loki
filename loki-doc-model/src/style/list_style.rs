@@ -9,9 +9,9 @@
 //!
 //! See ADR-0004 for the two-level list model design decision.
 
-use loki_primitives::units::Points;
 use crate::content::attr::ExtensionBag;
 use crate::style::props::char_props::CharProps;
+use loki_primitives::units::Points;
 
 /// Unique identifier for a list style definition.
 ///

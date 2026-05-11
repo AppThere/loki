@@ -1,0 +1,274 @@
+// SPDX-License-Identifier: Apache-2.0
+
+//! `AtHomeTab` — home tab content surface (template gallery + recent documents).
+//!
+//! Composed from two private sub-components:
+//! * [`template_gallery::AtTemplateGallery`] — horizontal card scroll row.
+//! * [`recent_files::AtRecentFileList`] — vertical recent document list.
+//!
+//! All user-visible strings are accepted as `&'static str` props to allow
+//! future `loki_i18n` / Fluent integration without API changes.
+
+mod recent_files;
+mod template_gallery;
+
+use dioxus::prelude::*;
+use recent_files::AtRecentFileList;
+use template_gallery::AtTemplateGallery;
+
+use crate::tokens::colors::{
+    COLOR_ACCENT_PRIMARY, COLOR_ACCENT_PRIMARY_HOVER, COLOR_STATUS_ERROR_BG,
+    COLOR_STATUS_ERROR_BORDER, COLOR_STATUS_ERROR_TEXT, COLOR_SURFACE_BASE, COLOR_SURFACE_PAGE,
+    COLOR_TEXT_ON_CHROME, COLOR_TEXT_ON_CHROME_SECONDARY, COLOR_TEXT_PRIMARY,
+};
+use crate::tokens::layout::BREAKPOINT_DESKTOP_PX;
+use crate::tokens::spacing::{RADIUS_SM, SPACE_2, SPACE_3, SPACE_4, SPACE_6, TOUCH_MIN};
+use crate::tokens::typography::{
+    FONT_FAMILY_UI, FONT_SIZE_BODY, FONT_SIZE_HEADING, FONT_SIZE_LABEL, FONT_WEIGHT_BOLD,
+    FONT_WEIGHT_SEMIBOLD,
+};
+
+// ── Public types ──────────────────────────────────────────────────────────────
+
+/// Describes a single built-in document template shown in the gallery.
+#[derive(Clone, PartialEq, Debug)]
+pub struct BuiltinTemplate {
+    /// Displayed template name, e.g. `"Blank"`, `"Letter"`.
+    pub name: &'static str,
+    /// One-line description shown in a tooltip (deferred — see COMPAT note).
+    /// Retained in the data model for future tooltip/detail-panel use.
+    pub description: &'static str,
+    /// Short format label on the card thumbnail, e.g. `"DOTX"`, `"OTT"`.
+    pub format_label: &'static str,
+}
+
+/// Describes a recently opened document entry.
+#[derive(Clone, PartialEq, Debug)]
+pub struct RecentDocument {
+    /// Document title (filename stem).
+    pub title: String,
+    /// Truncated display path shown beneath the title.
+    pub path: String,
+    /// Pre-formatted last-modified timestamp string.
+    /// i18n formatting is the caller's responsibility; this component
+    /// displays the string as-is.
+    pub modified_at: String,
+}
+
+// ── AtHomeTab ─────────────────────────────────────────────────────────────────
+
+/// Home tab content surface.
+///
+/// Renders a header, a template gallery, and a recent documents list.
+/// On viewports wider than [`BREAKPOINT_DESKTOP_PX`] the gallery and list
+/// are placed side-by-side; on narrower viewports they stack vertically.
+///
+/// **Minimum interactive size: 44×44 logical pixels (WCAG 2.5.8).**
+/// All interactive elements (template cards, document rows, buttons) meet this.
+#[component]
+pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
+    let viewport_width = use_signal(|| 375.0_f32);
+    let is_desktop = viewport_width() >= BREAKPOINT_DESKTOP_PX;
+
+    // Holds the last file-picker error message, if any.
+    let mut pick_error: Signal<Option<String>> = use_signal(|| None);
+
+    let mut open_hovered = use_signal(|| false);
+    let open_bg = if open_hovered() {
+        COLOR_ACCENT_PRIMARY_HOVER
+    } else {
+        COLOR_ACCENT_PRIMARY
+    };
+
+    let body_style = if is_desktop {
+        format!(
+            "display: flex; flex-direction: row; gap: {gap}px; \
+             padding: {pad}px; flex: 1; overflow: hidden; min-height: 0;",
+            gap = SPACE_4,
+            pad = SPACE_4,
+        )
+    } else {
+        format!(
+            "display: flex; flex-direction: column; \
+             padding: {pad}px; flex: 1; overflow-y: auto;",
+            pad = SPACE_4,
+        )
+    };
+
+    rsx! {
+        div {
+            style: format!(
+                "display: flex; flex-direction: column; flex: 1; \
+                 background: {bg}; font-family: {font}; color: {fg};",
+                bg   = COLOR_SURFACE_BASE,
+                font = FONT_FAMILY_UI,
+                fg   = COLOR_TEXT_PRIMARY,
+            ),
+
+            // ── Header bar ────────────────────────────────────────────────────
+            div {
+                style: format!(
+                    "height: 48px; background: {bg}; \
+                     border-bottom: 1px solid #E0E0E0; \
+                     display: flex; align-items: center; \
+                     padding: 0 {pad}px; flex-shrink: 0;",
+                    bg  = COLOR_SURFACE_PAGE,
+                    pad = SPACE_4,
+                ),
+                span {
+                    style: format!(
+                        "font-size: {size}px; font-weight: {weight}; \
+                         color: {fg}; flex: 1;",
+                        size   = FONT_SIZE_HEADING,
+                        weight = FONT_WEIGHT_BOLD,
+                        fg     = COLOR_TEXT_PRIMARY,
+                    ),
+                    "{props.app_name}"
+                }
+            }
+
+            // ── Body: gallery + recent list ───────────────────────────────────
+            div {
+                style: body_style,
+
+                // Template gallery section
+                div {
+                    style: if is_desktop {
+                        "flex: 1; min-width: 0;".to_string()
+                    } else {
+                        format!("margin-bottom: {mb}px;", mb = SPACE_6)
+                    },
+                    h2 {
+                        style: format!(
+                            "font-size: {size}px; color: {fg}; \
+                             margin: 0 0 {mb}px 0; font-weight: {weight};",
+                            size   = FONT_SIZE_BODY,
+                            fg     = COLOR_TEXT_ON_CHROME_SECONDARY,
+                            mb     = SPACE_2,
+                            weight = FONT_WEIGHT_SEMIBOLD,
+                        ),
+                        "{props.templates_label}"
+                    }
+                    AtTemplateGallery {
+                        templates: props.templates.clone(),
+                        browse_label: props.browse_label,
+                        on_select: move |idx| { props.on_template_select.call(idx); },
+                        on_browse:  move |_|   { props.on_browse_templates.call(()); },
+                    }
+                }
+
+                // Recent documents section
+                div {
+                    style: if is_desktop {
+                        "flex: 1; min-width: 0; overflow-y: auto;".to_string()
+                    } else {
+                        String::new()
+                    },
+                    h2 {
+                        style: format!(
+                            "font-size: {size}px; color: {fg}; \
+                             margin: 0 0 {mb}px 0; font-weight: {weight};",
+                            size   = FONT_SIZE_BODY,
+                            fg     = COLOR_TEXT_ON_CHROME_SECONDARY,
+                            mb     = SPACE_2,
+                            weight = FONT_WEIGHT_SEMIBOLD,
+                        ),
+                        "{props.recent_label}"
+                    }
+                    AtRecentFileList {
+                        documents: props.recent_documents.clone(),
+                        recent_label: props.recent_label,
+                        empty_label: props.empty_recent_label,
+                        open_file_label: props.open_file_label,
+                        on_select: move |idx| { props.on_recent_open.call(idx); },
+                        on_open_file: move |_| { props.on_open_file.call(()); },
+                    }
+                }
+            }
+
+            // ── Inline error banner ────────────────────────────────────────────
+            if let Some(err) = pick_error() {
+                div {
+                    style: format!(
+                        "background: {bg}; border: 1px solid {border}; \
+                         margin: {m}px; padding: {p}px; border-radius: {r}px; \
+                         color: {fg}; font-size: {size}px;",
+                        bg     = COLOR_STATUS_ERROR_BG,
+                        border = COLOR_STATUS_ERROR_BORDER,
+                        m      = SPACE_4,
+                        p      = SPACE_3,
+                        r      = RADIUS_SM,
+                        fg     = COLOR_STATUS_ERROR_TEXT,
+                        size   = FONT_SIZE_LABEL,
+                    ),
+                    "Could not open file picker: {err}"
+                }
+            }
+
+            // ── Primary Open File button (bottom) ─────────────────────────────
+            // Minimum interactive size: 44×44 logical pixels (WCAG 2.5.8).
+            div {
+                style: format!("padding: {p}px; flex-shrink: 0;", p = SPACE_4),
+                button {
+                    style: format!(
+                        "width: 100%; display: block; margin: 0 auto; \
+                         background: {bg}; color: {fg}; \
+                         border: none; border-radius: {r}px; \
+                         min-height: {touch}px; font-size: {size}px; \
+                         font-weight: {weight}; cursor: pointer;",
+                        bg     = open_bg,
+                        fg     = COLOR_TEXT_ON_CHROME,
+                        r      = RADIUS_SM,
+                        touch  = TOUCH_MIN,
+                        size   = FONT_SIZE_BODY,
+                        weight = FONT_WEIGHT_SEMIBOLD,
+                    ),
+                    onmouseenter: move |_| { open_hovered.set(true); },
+                    onmouseleave: move |_| { open_hovered.set(false); },
+                    onclick: move |_| {
+                        pick_error.set(None);
+                        props.on_open_file.call(());
+                    },
+                    "{props.open_file_label}"
+                }
+            }
+        }
+    }
+}
+
+// ── Props ─────────────────────────────────────────────────────────────────────
+
+/// Props for [`AtHomeTab`].
+#[derive(Props, Clone, PartialEq)]
+pub struct AtHomeTabProps {
+    /// Application name shown in the header bar.
+    pub app_name: &'static str,
+
+    /// Template entries for the gallery.
+    pub templates: Vec<BuiltinTemplate>,
+
+    /// Recently opened documents.
+    pub recent_documents: Vec<RecentDocument>,
+
+    // ── Section heading labels ────────────────────────────────────────────────
+    /// Heading above the template gallery.
+    pub templates_label: &'static str,
+    /// Heading above the recent documents list.
+    pub recent_label: &'static str,
+    /// Label for the "Browse…" card at the end of the template gallery.
+    pub browse_label: &'static str,
+    /// Label for the primary "Open File" button.
+    pub open_file_label: &'static str,
+    /// Message shown when `recent_documents` is empty.
+    pub empty_recent_label: &'static str,
+
+    // ── Callbacks ─────────────────────────────────────────────────────────────
+    /// Called when a template card is selected. Argument is the index into `templates`.
+    pub on_template_select: EventHandler<usize>,
+    /// Called when the "Browse…" card is clicked.
+    pub on_browse_templates: EventHandler<()>,
+    /// Called when a recent document row is selected. Argument is the index into `recent_documents`.
+    pub on_recent_open: EventHandler<usize>,
+    /// Called when the "Open File" button is pressed.
+    pub on_open_file: EventHandler<()>,
+}

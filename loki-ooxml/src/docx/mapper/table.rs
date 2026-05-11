@@ -9,10 +9,14 @@ use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::table::col::{ColAlignment, ColSpec, ColWidth, TableWidth};
 use loki_doc_model::content::table::core::{Table, TableBody, TableCaption, TableFoot, TableHead};
-use loki_doc_model::content::table::row::{Cell, CellProps, CellTextDirection, CellVerticalAlign, Row};
+use loki_doc_model::content::table::row::{
+    Cell, CellProps, CellTextDirection, CellVerticalAlign, Row,
+};
 use loki_primitives::units::Points;
 
-use crate::docx::model::styles::{DocxTableModel, DocxTableRow, DocxTextDirection, DocxVAlign, DocxVMerge};
+use crate::docx::model::styles::{
+    DocxTableModel, DocxTableRow, DocxTextDirection, DocxVAlign, DocxVMerge,
+};
 
 use super::document::MappingContext;
 use super::paragraph::map_paragraph;
@@ -43,7 +47,9 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
         let mut grid_col: usize = 0;
         let mut cells: Vec<Cell> = Vec::new();
         for (cell_idx, tc) in tr.cells.iter().enumerate() {
-            let col_span = tc.tc_pr.as_ref()
+            let col_span = tc
+                .tc_pr
+                .as_ref()
                 .and_then(|p| p.grid_span)
                 .unwrap_or(1)
                 .max(1) as usize;
@@ -69,7 +75,10 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
     let head = if head_rows.is_empty() {
         TableHead::empty()
     } else {
-        TableHead { attr: NodeAttr::default(), rows: head_rows }
+        TableHead {
+            attr: NodeAttr::default(),
+            rows: head_rows,
+        }
     };
 
     let body = TableBody::from_rows(body_rows);
@@ -108,7 +117,10 @@ fn build_col_specs(t: &DocxTableModel) -> Vec<ColSpec> {
         // Fall back: infer column count from the widest row.
         let num_cols = t.rows.iter().map(|r| r.cells.len()).max().unwrap_or(0);
         (0..num_cols)
-            .map(|_| ColSpec { alignment: ColAlignment::Default, width: ColWidth::Default })
+            .map(|_| ColSpec {
+                alignment: ColAlignment::Default,
+                width: ColWidth::Default,
+            })
             .collect()
     } else {
         t.col_widths
@@ -126,12 +138,11 @@ fn build_col_specs(t: &DocxTableModel) -> Vec<ColSpec> {
 }
 
 /// Maps a `w:tc` table cell.
-fn map_cell(
-    tc: &crate::docx::model::styles::DocxTableCell,
-    ctx: &mut MappingContext<'_>,
-) -> Cell {
+fn map_cell(tc: &crate::docx::model::styles::DocxTableCell, ctx: &mut MappingContext<'_>) -> Cell {
     let col_span = tc.tc_pr.as_ref().and_then(|p| p.grid_span).unwrap_or(1);
-    let blocks: Vec<Block> = tc.paragraphs.iter()
+    let blocks: Vec<Block> = tc
+        .paragraphs
+        .iter()
         .flat_map(|p| map_paragraph(p, ctx))
         .collect();
 
@@ -139,10 +150,11 @@ fn map_cell(
     if let Some(tc_pr) = tc.tc_pr.as_ref() {
         // Cell background from `w:shd @w:fill`.
         if let Some(ref hex) = tc_pr.shd_fill
-            && let Some(rgb) = crate::xml_util::hex_color(hex) {
-                use loki_primitives::color::DocumentColor;
-                props.background_color = Some(DocumentColor::Rgb(rgb));
-            }
+            && let Some(rgb) = crate::xml_util::hex_color(hex)
+        {
+            use loki_primitives::color::DocumentColor;
+            props.background_color = Some(DocumentColor::Rgb(rgb));
+        }
         // Cell borders from `w:tcBorders`.
         if let Some(ref borders) = tc_pr.tc_borders {
             props.border_top = borders.top.as_ref().map(map_border_edge);
@@ -216,7 +228,9 @@ fn compute_v_merge_spans(
         let mut cell_idx_row: Vec<usize> = Vec::new();
         for (cell_idx, cell) in row.cells.iter().enumerate() {
             let v_merge = cell.tc_pr.as_ref().and_then(|p| p.v_merge);
-            let col_span = cell.tc_pr.as_ref()
+            let col_span = cell
+                .tc_pr
+                .as_ref()
                 .and_then(|p| p.grid_span)
                 .unwrap_or(1)
                 .max(1) as usize;
@@ -267,13 +281,13 @@ fn compute_v_merge_spans(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
-    use loki_doc_model::content::block::Block;
-    use loki_doc_model::style::catalog::StyleCatalog;
-    use loki_opc::PartData;
     use crate::docx::import::DocxImportOptions;
     use crate::docx::model::paragraph::DocxParagraph;
     use crate::docx::model::styles::{DocxTableCell, DocxTableRow, DocxTcPr, DocxTrPr};
+    use loki_doc_model::content::block::Block;
+    use loki_doc_model::style::catalog::StyleCatalog;
+    use loki_opc::PartData;
+    use std::collections::HashMap;
 
     fn make_ctx<'a>(
         styles: &'a StyleCatalog,
@@ -283,11 +297,22 @@ mod tests {
         images: &'a HashMap<String, PartData>,
         options: &'a DocxImportOptions,
     ) -> MappingContext<'a> {
-        MappingContext { styles, footnotes, endnotes, hyperlinks, images, options, warnings: Vec::new() }
+        MappingContext {
+            styles,
+            footnotes,
+            endnotes,
+            hyperlinks,
+            images,
+            options,
+            warnings: Vec::new(),
+        }
     }
 
     fn simple_cell(paragraphs: Vec<DocxParagraph>) -> DocxTableCell {
-        DocxTableCell { tc_pr: None, paragraphs }
+        DocxTableCell {
+            tc_pr: None,
+            paragraphs,
+        }
     }
 
     fn simple_row(cells: Vec<DocxTableCell>) -> DocxTableRow {
@@ -297,11 +322,20 @@ mod tests {
     #[test]
     fn empty_table_produces_table_block() {
         let styles = StyleCatalog::default();
-        let (fn_m, en_m, hl_m, img_m) = (HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new());
+        let (fn_m, en_m, hl_m, img_m) = (
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        );
         let opts = DocxImportOptions::default();
         let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
 
-        let t = DocxTableModel { tbl_pr: None, col_widths: vec![], rows: vec![] };
+        let t = DocxTableModel {
+            tbl_pr: None,
+            col_widths: vec![],
+            rows: vec![],
+        };
         let block = map_table(&t, &mut ctx);
         assert!(matches!(block, Block::Table(_)));
         if let Block::Table(tbl) = block {
@@ -313,7 +347,12 @@ mod tests {
     #[test]
     fn two_by_two_table() {
         let styles = StyleCatalog::default();
-        let (fn_m, en_m, hl_m, img_m) = (HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new());
+        let (fn_m, en_m, hl_m, img_m) = (
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        );
         let opts = DocxImportOptions::default();
         let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
 
@@ -321,10 +360,14 @@ mod tests {
             tbl_pr: None,
             col_widths: vec![1440, 1440], // 72pt each
             rows: vec![
-                simple_row(vec![simple_cell(vec![DocxParagraph::default()]),
-                                 simple_cell(vec![DocxParagraph::default()])]),
-                simple_row(vec![simple_cell(vec![DocxParagraph::default()]),
-                                 simple_cell(vec![DocxParagraph::default()])]),
+                simple_row(vec![
+                    simple_cell(vec![DocxParagraph::default()]),
+                    simple_cell(vec![DocxParagraph::default()]),
+                ]),
+                simple_row(vec![
+                    simple_cell(vec![DocxParagraph::default()]),
+                    simple_cell(vec![DocxParagraph::default()]),
+                ]),
             ],
         };
         let block = map_table(&t, &mut ctx);
@@ -333,7 +376,9 @@ mod tests {
             assert_eq!(tbl.bodies[0].body_rows.len(), 2);
             assert_eq!(tbl.bodies[0].body_rows[0].cells.len(), 2);
             // 1440 twips = 72 pt
-            assert!(matches!(tbl.col_specs[0].width, ColWidth::Fixed(p) if (p.value() - 72.0).abs() < 0.01));
+            assert!(
+                matches!(tbl.col_specs[0].width, ColWidth::Fixed(p) if (p.value() - 72.0).abs() < 0.01)
+            );
         } else {
             panic!("expected Table");
         }
@@ -342,7 +387,12 @@ mod tests {
     #[test]
     fn header_row_goes_to_head() {
         let styles = StyleCatalog::default();
-        let (fn_m, en_m, hl_m, img_m) = (HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new());
+        let (fn_m, en_m, hl_m, img_m) = (
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        );
         let opts = DocxImportOptions::default();
         let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
 
@@ -368,12 +418,21 @@ mod tests {
     #[test]
     fn cell_col_span_preserved() {
         let styles = StyleCatalog::default();
-        let (fn_m, en_m, hl_m, img_m) = (HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new());
+        let (fn_m, en_m, hl_m, img_m) = (
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        );
         let opts = DocxImportOptions::default();
         let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
 
         let cell_with_span = DocxTableCell {
-            tc_pr: Some(DocxTcPr { grid_span: Some(3), v_merge: None, ..Default::default() }),
+            tc_pr: Some(DocxTcPr {
+                grid_span: Some(3),
+                v_merge: None,
+                ..Default::default()
+            }),
             paragraphs: vec![],
         };
         let t = DocxTableModel {
@@ -393,14 +452,21 @@ mod tests {
 
     fn merge_cell(v_merge: DocxVMerge) -> DocxTableCell {
         DocxTableCell {
-            tc_pr: Some(DocxTcPr { v_merge: Some(v_merge), ..Default::default() }),
+            tc_pr: Some(DocxTcPr {
+                v_merge: Some(v_merge),
+                ..Default::default()
+            }),
             paragraphs: vec![],
         }
     }
 
     fn merge_cell_with_col_span(v_merge: DocxVMerge, col_span: u32) -> DocxTableCell {
         DocxTableCell {
-            tc_pr: Some(DocxTcPr { v_merge: Some(v_merge), grid_span: Some(col_span), ..Default::default() }),
+            tc_pr: Some(DocxTcPr {
+                v_merge: Some(v_merge),
+                grid_span: Some(col_span),
+                ..Default::default()
+            }),
             paragraphs: vec![],
         }
     }
@@ -415,10 +481,22 @@ mod tests {
         let (span_map, skip_set) = compute_v_merge_spans(&rows);
 
         assert_eq!(span_map[&(0, 0)], 2, "restart cell should have row_span=2");
-        assert!(skip_set.contains(&(1, 0)), "continuation cell (1,0) should be skipped");
-        assert!(!skip_set.contains(&(0, 0)), "restart cell must not be skipped");
-        assert!(!skip_set.contains(&(0, 1)), "col-1 cells must not be skipped");
-        assert!(!skip_set.contains(&(1, 1)), "col-1 cells must not be skipped");
+        assert!(
+            skip_set.contains(&(1, 0)),
+            "continuation cell (1,0) should be skipped"
+        );
+        assert!(
+            !skip_set.contains(&(0, 0)),
+            "restart cell must not be skipped"
+        );
+        assert!(
+            !skip_set.contains(&(0, 1)),
+            "col-1 cells must not be skipped"
+        );
+        assert!(
+            !skip_set.contains(&(1, 1)),
+            "col-1 cells must not be skipped"
+        );
     }
 
     /// 3-row merge: col 0 merged across 3 rows.
@@ -432,8 +510,14 @@ mod tests {
         let (span_map, skip_set) = compute_v_merge_spans(&rows);
 
         assert_eq!(span_map[&(0, 0)], 3, "restart cell should have row_span=3");
-        assert!(skip_set.contains(&(1, 0)), "row 1 continuation must be skipped");
-        assert!(skip_set.contains(&(2, 0)), "row 2 continuation must be skipped");
+        assert!(
+            skip_set.contains(&(1, 0)),
+            "row 1 continuation must be skipped"
+        );
+        assert!(
+            skip_set.contains(&(2, 0)),
+            "row 2 continuation must be skipped"
+        );
     }
 
     /// No merge: table with no vMerge → all cells row_span=1, none removed.
@@ -455,21 +539,33 @@ mod tests {
         // 3×2 table: col 0 merged rows 0-1, col 1 merged rows 1-2.
         let rows = vec![
             simple_row(vec![merge_cell(DocxVMerge::Restart), simple_cell(vec![])]),
-            simple_row(vec![merge_cell(DocxVMerge::Continue), merge_cell(DocxVMerge::Restart)]),
+            simple_row(vec![
+                merge_cell(DocxVMerge::Continue),
+                merge_cell(DocxVMerge::Restart),
+            ]),
             simple_row(vec![simple_cell(vec![]), merge_cell(DocxVMerge::Continue)]),
         ];
         let (span_map, skip_set) = compute_v_merge_spans(&rows);
 
         assert_eq!(span_map[&(0, 0)], 2, "col-0 restart at row 0 → span 2");
         assert_eq!(span_map[&(1, 1)], 2, "col-1 restart at row 1 → span 2");
-        assert!(skip_set.contains(&(1, 0)), "col-0 continuation (row 1) skipped");
-        assert!(skip_set.contains(&(2, 1)), "col-1 continuation (row 2) skipped");
+        assert!(
+            skip_set.contains(&(1, 0)),
+            "col-0 continuation (row 1) skipped"
+        );
+        assert!(
+            skip_set.contains(&(2, 1)),
+            "col-1 continuation (row 2) skipped"
+        );
         assert!(!skip_set.contains(&(0, 1)), "col-1 row 0 is a plain cell");
         assert!(!skip_set.contains(&(2, 0)), "col-0 row 2 is a plain cell");
     }
 
     fn cell_with_props(tc_pr: DocxTcPr) -> DocxTableCell {
-        DocxTableCell { tc_pr: Some(tc_pr), paragraphs: vec![] }
+        DocxTableCell {
+            tc_pr: Some(tc_pr),
+            paragraphs: vec![],
+        }
     }
 
     #[test]
@@ -478,7 +574,12 @@ mod tests {
         use loki_primitives::units::Points;
 
         let styles = StyleCatalog::default();
-        let (fn_m, en_m, hl_m, img_m) = (HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new());
+        let (fn_m, en_m, hl_m, img_m) = (
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        );
         let opts = DocxImportOptions::default();
         let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
 
@@ -504,7 +605,12 @@ mod tests {
         use loki_doc_model::content::table::row::CellVerticalAlign;
 
         let styles = StyleCatalog::default();
-        let (fn_m, en_m, hl_m, img_m) = (HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new());
+        let (fn_m, en_m, hl_m, img_m) = (
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        );
         let opts = DocxImportOptions::default();
         let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
 
@@ -528,7 +634,12 @@ mod tests {
         use loki_doc_model::content::table::row::CellTextDirection;
 
         let styles = StyleCatalog::default();
-        let (fn_m, en_m, hl_m, img_m) = (HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new());
+        let (fn_m, en_m, hl_m, img_m) = (
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        );
         let opts = DocxImportOptions::default();
         let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
 
@@ -558,7 +669,14 @@ mod tests {
         let (span_map, skip_set) = compute_v_merge_spans(&rows);
 
         // Grid col 0 (first of the two expanded columns) holds the span.
-        assert_eq!(span_map[&(0, 0)], 2, "wide restart cell should have row_span=2");
-        assert!(skip_set.contains(&(1, 0)), "wide continuation cell must be skipped");
+        assert_eq!(
+            span_map[&(0, 0)],
+            2,
+            "wide restart cell should have row_span=2"
+        );
+        assert!(
+            skip_set.contains(&(1, 0)),
+            "wide continuation cell must be skipped"
+        );
     }
 }

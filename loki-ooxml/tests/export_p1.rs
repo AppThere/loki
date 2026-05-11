@@ -3,12 +3,12 @@
 
 mod helpers;
 
-use std::io::Cursor;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::Inline;
 use loki_doc_model::io::DocumentExport;
 use loki_ooxml::DocxExport;
 use loki_ooxml::docx::import::{DocxImportOptions, DocxImporter};
+use std::io::Cursor;
 
 #[test]
 fn export_round_trip_p1_features() {
@@ -20,23 +20,39 @@ fn export_round_trip_p1_features() {
     let doc = doc_res.document;
 
     // Verify initial import state for P1 features
-    assert!(doc.sections[0].layout.header.is_some(), "Initial import should have header");
-    let all_blocks = doc.sections.iter().flat_map(|s| &s.blocks).collect::<Vec<_>>();
-    
+    assert!(
+        doc.sections[0].layout.header.is_some(),
+        "Initial import should have header"
+    );
+    let all_blocks = doc
+        .sections
+        .iter()
+        .flat_map(|s| &s.blocks)
+        .collect::<Vec<_>>();
+
     // Verify first-line indent
     let has_first_line_indent = all_blocks.iter().any(|b| {
         if let Block::StyledPara(sp) = b {
-            sp.direct_para_props.as_ref().and_then(|p| p.indent_first_line).is_some()
+            sp.direct_para_props
+                .as_ref()
+                .and_then(|p| p.indent_first_line)
+                .is_some()
         } else {
             false
         }
     });
-    assert!(has_first_line_indent, "Reference DOCX should have first-line indent");
+    assert!(
+        has_first_line_indent,
+        "Reference DOCX should have first-line indent"
+    );
 
     // Verify tab stops
     let has_tab_stops = all_blocks.iter().any(|b| {
         if let Block::StyledPara(sp) = b {
-            sp.direct_para_props.as_ref().and_then(|p| p.tab_stops.as_ref()).is_some()
+            sp.direct_para_props
+                .as_ref()
+                .and_then(|p| p.tab_stops.as_ref())
+                .is_some()
         } else {
             false
         }
@@ -63,25 +79,35 @@ fn export_round_trip_p1_features() {
         }
     }
     assert!(has_row_span, "Reference DOCX should have row spans");
-    assert!(has_cell_bg, "Reference DOCX should have cell background colors");
+    assert!(
+        has_cell_bg,
+        "Reference DOCX should have cell background colors"
+    );
 
     // ── 2. Export back to DOCX ───────────────────────────────────────────
     let mut exported_bytes = Cursor::new(Vec::new());
-    DocxExport::export(&doc, &mut exported_bytes, ())
-        .expect("export should succeed");
+    DocxExport::export(&doc, &mut exported_bytes, ()).expect("export should succeed");
     let exported_bytes = exported_bytes.into_inner();
 
     // ── 3. Re-import and verify ──────────────────────────────────────────
     let re_import = DocxImporter::new(DocxImportOptions::default())
         .run(&mut Cursor::new(&exported_bytes))
         .expect("re-import should succeed");
-    
-    let re_blocks = re_import.document.sections.iter().flat_map(|s| &s.blocks).collect::<Vec<_>>();
+
+    let re_blocks = re_import
+        .document
+        .sections
+        .iter()
+        .flat_map(|s| &s.blocks)
+        .collect::<Vec<_>>();
 
     // ── 4. Verify Paragraph Layout ───────────────────────────────────────
     let re_first_line = re_blocks.iter().any(|b| {
         if let Block::StyledPara(sp) = b {
-            sp.direct_para_props.as_ref().and_then(|p| p.indent_first_line).is_some()
+            sp.direct_para_props
+                .as_ref()
+                .and_then(|p| p.indent_first_line)
+                .is_some()
         } else {
             false
         }
@@ -90,7 +116,10 @@ fn export_round_trip_p1_features() {
 
     let re_tab_stops = re_blocks.iter().any(|b| {
         if let Block::StyledPara(sp) = b {
-            sp.direct_para_props.as_ref().and_then(|p| p.tab_stops.as_ref()).is_some()
+            sp.direct_para_props
+                .as_ref()
+                .and_then(|p| p.tab_stops.as_ref())
+                .is_some()
         } else {
             false
         }
@@ -117,11 +146,14 @@ fn export_round_trip_p1_features() {
         }
     }
     assert!(re_row_span, "Row spans should survive round-trip");
-    assert!(re_cell_bg, "Cell background colors should survive round-trip");
+    assert!(
+        re_cell_bg,
+        "Cell background colors should survive round-trip"
+    );
 
     // ── 6. Verify Headers/Footers ────────────────────────────────────────
     let re_layout = &re_import.document.sections[0].layout;
-    
+
     let has_header = re_layout.header.as_ref().is_some_and(|h| {
         h.blocks.iter().any(|b| {
             let inlines = match b {
@@ -160,5 +192,8 @@ fn export_round_trip_p1_features() {
             })
         })
     });
-    assert!(has_first_header, "First page header should survive round-trip");
+    assert!(
+        has_first_header,
+        "First page header should survive round-trip"
+    );
 }

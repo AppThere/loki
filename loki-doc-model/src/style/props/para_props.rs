@@ -7,12 +7,12 @@
 //! formatting" feature table. ODF maps these to
 //! `style:paragraph-properties`; OOXML maps them to `w:pPr`.
 
-use loki_primitives::units::Points;
-use loki_primitives::color::DocumentColor;
 use crate::content::attr::ExtensionBag;
+use crate::style::list_style::ListId;
 use crate::style::props::border::Border;
 use crate::style::props::tab_stop::TabStop;
-use crate::style::list_style::ListId;
+use loki_primitives::color::DocumentColor;
+use loki_primitives::units::Points;
 
 /// Horizontal text alignment within a paragraph.
 ///
@@ -74,12 +74,10 @@ pub enum LineHeight {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ParaProps {
     // ── Alignment ─────────────────────────────────────────────────────────
-
     /// Horizontal text alignment. ODF `fo:text-align`; OOXML `w:jc`.
     pub alignment: Option<ParagraphAlignment>,
 
     // ── Indentation ───────────────────────────────────────────────────────
-
     /// Indentation from the start edge (left in LTR). ODF `fo:margin-left`;
     /// OOXML `w:ind w:left`.
     pub indent_start: Option<Points>,
@@ -99,7 +97,6 @@ pub struct ParaProps {
     pub indent_hanging: Option<Points>,
 
     // ── Spacing ───────────────────────────────────────────────────────────
-
     /// Space before the paragraph. ODF `fo:space-before`; OOXML `w:spacing w:before`.
     pub space_before: Option<Spacing>,
 
@@ -110,7 +107,6 @@ pub struct ParaProps {
     pub line_height: Option<LineHeight>,
 
     // ── Borders ───────────────────────────────────────────────────────────
-
     /// Top border. ODF `fo:border-top`; OOXML `w:pBdr/w:top`.
     pub border_top: Option<Border>,
 
@@ -128,7 +124,6 @@ pub struct ParaProps {
     pub border_between: Option<Border>,
 
     // ── Padding ───────────────────────────────────────────────────────────
-
     /// Padding inside the top border. ODF `fo:padding-top`; OOXML `w:pBdr/w:top w:space`.
     pub padding_top: Option<Points>,
 
@@ -142,18 +137,15 @@ pub struct ParaProps {
     pub padding_right: Option<Points>,
 
     // ── Background ────────────────────────────────────────────────────────
-
     /// Paragraph background fill color. ODF `fo:background-color`; OOXML `w:shd`.
     pub background_color: Option<DocumentColor>,
 
     // ── Tab stops ─────────────────────────────────────────────────────────
-
     /// Custom tab stops for this paragraph. ODF `style:tab-stop` list;
     /// OOXML `w:tabs`. TR 29166 §6.2.2.
     pub tab_stops: Option<Vec<TabStop>>,
 
     // ── Flow control ──────────────────────────────────────────────────────
-
     /// Prevent a page or column break within the paragraph.
     /// ODF `fo:keep-together`; OOXML `w:keepLines`.
     pub keep_together: Option<bool>,
@@ -171,7 +163,6 @@ pub struct ParaProps {
     pub widow_control: Option<u8>,
 
     // ── Page breaks ───────────────────────────────────────────────────────
-
     /// Force a page break before this paragraph.
     /// ODF `fo:break-before page`; OOXML `w:pageBreakBefore`.
     pub page_break_before: Option<bool>,
@@ -181,7 +172,6 @@ pub struct ParaProps {
     pub page_break_after: Option<bool>,
 
     // ── List reference ────────────────────────────────────────────────────
-
     /// The list style this paragraph participates in.
     /// See ADR-0004 for the two-level list model rationale.
     /// ODF: `text:list-style-name`; OOXML: `w:numId`.
@@ -191,19 +181,16 @@ pub struct ParaProps {
     pub list_level: Option<u8>,
 
     // ── Outline ───────────────────────────────────────────────────────────
-
     /// Heading outline level (1–9). `None` for body text.
     /// ODF `text:outline-level`; OOXML `w:outlineLvl`.
     pub outline_level: Option<u8>,
 
     // ── BiDi ──────────────────────────────────────────────────────────────
-
     /// Right-to-left paragraph direction.
     /// ODF `style:writing-mode`; OOXML `w:bidi`.
     pub bidi: Option<bool>,
 
     // ── Extensions ────────────────────────────────────────────────────────
-
     /// Format-specific properties not representable in the above fields.
     pub extensions: ExtensionBag,
 }

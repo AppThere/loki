@@ -192,10 +192,7 @@ impl Document {
     /// - `flat_index_to_section_block(2)` → `Some((1, 0))`
     /// - `flat_index_to_section_block(4)` → `None`
     #[must_use]
-    pub fn flat_index_to_section_block(
-        &self,
-        flat_index: usize,
-    ) -> Option<(usize, usize)> {
+    pub fn flat_index_to_section_block(&self, flat_index: usize) -> Option<(usize, usize)> {
         let mut remaining = flat_index;
         for (s_idx, section) in self.sections.iter().enumerate() {
             if remaining < section.blocks.len() {
@@ -228,7 +225,10 @@ mod tests {
         doc.sections.clear();
         for &count in blocks_per_section {
             let blocks = (0..count).map(|_| hr()).collect();
-            doc.sections.push(Section::with_layout_and_blocks(PageLayout::default(), blocks));
+            doc.sections.push(Section::with_layout_and_blocks(
+                PageLayout::default(),
+                blocks,
+            ));
         }
         doc
     }

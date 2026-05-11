@@ -35,7 +35,12 @@ pub fn paint_image(
         // External URL: render a placeholder grey rectangle.
         let placeholder = PositionedRect {
             rect: item.rect,
-            color: LayoutColor { r: 0.8, g: 0.8, b: 0.8, a: 1.0 },
+            color: LayoutColor {
+                r: 0.8,
+                g: 0.8,
+                b: 0.8,
+                a: 1.0,
+            },
         };
         crate::rect::paint_filled_rect(scene, &placeholder, scale);
         return Ok(());
@@ -87,13 +92,15 @@ fn decode_data_uri(src: &str) -> VelloResult<(Vec<u8>, u32, u32)> {
     })?;
     let b64 = &src[comma_pos + 1..];
 
-    let bytes =
-        base64::engine::general_purpose::STANDARD
-            .decode(b64)
-            .map_err(|e| VelloError::ImageDecode { reason: e.to_string() })?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .map_err(|e| VelloError::ImageDecode {
+            reason: e.to_string(),
+        })?;
 
-    let dyn_image = image::load_from_memory(&bytes)
-        .map_err(|e| VelloError::ImageDecode { reason: e.to_string() })?;
+    let dyn_image = image::load_from_memory(&bytes).map_err(|e| VelloError::ImageDecode {
+        reason: e.to_string(),
+    })?;
 
     let rgba = dyn_image.to_rgba8();
     let (width, height) = rgba.dimensions();

@@ -32,7 +32,9 @@ impl PageCache {
     /// Creates an empty cache.
     #[must_use]
     pub fn new() -> Self {
-        Self { pages: HashMap::new() }
+        Self {
+            pages: HashMap::new(),
+        }
     }
 
     /// Inserts or replaces the tier entry for `index`, marking the page clean.
@@ -119,7 +121,10 @@ mod tests {
         cache.insert(PageIndex(2), CacheTier::Cold);
         cache.mark_all_dirty();
         for idx in 0..3u32 {
-            assert!(cache.get(PageIndex(idx)).unwrap().dirty, "page {idx} not dirty");
+            assert!(
+                cache.get(PageIndex(idx)).unwrap().dirty,
+                "page {idx} not dirty"
+            );
         }
     }
 

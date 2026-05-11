@@ -94,9 +94,19 @@ const PAGE_GAP_PT: f32 = 16.0;
 // rgba8(0,0,0,40) — darker than before and placed only on right/bottom edges to
 // avoid the gray vertical bar caused by the old shadow rect extending 4 px past
 // the page background's right edge.
-const PAGE_SHADOW_COLOR: LayoutColor = LayoutColor { r: 0.0, g: 0.0, b: 0.0, a: 40.0 / 255.0 };
+const PAGE_SHADOW_COLOR: LayoutColor = LayoutColor {
+    r: 0.0,
+    g: 0.0,
+    b: 0.0,
+    a: 40.0 / 255.0,
+};
 const PAGE_SHADOW_OFFSET: f32 = 3.0;
-const PAGE_BG_COLOR: LayoutColor = LayoutColor { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
+const PAGE_BG_COLOR: LayoutColor = LayoutColor {
+    r: 1.0,
+    g: 1.0,
+    b: 1.0,
+    a: 1.0,
+};
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -218,7 +228,13 @@ pub fn paint_single_page(
     // coordinates, so they receive the raw page origin.
     let page_origin = (offset.0, offset.1);
     let content_origin = (offset.0 + page.margins.left, offset.1 + page.margins.top);
-    paint_items(scene, &page.content_items, font_cache, content_origin, scale);
+    paint_items(
+        scene,
+        &page.content_items,
+        font_cache,
+        content_origin,
+        scale,
+    );
     paint_items(scene, &page.header_items, font_cache, page_origin, scale);
     paint_items(scene, &page.footer_items, font_cache, page_origin, scale);
 
@@ -228,14 +244,11 @@ pub fn paint_single_page(
         // The cursor rect and selection rects are in paragraph-local coordinates.
         // Find the paragraph fragment on this page that matches the global
         // paragraph_index, and use its origin.
-        let para_data = page
-            .editing_data
-            .as_ref()
-            .and_then(|ed| {
-                ed.paragraphs
-                    .iter()
-                    .find(|p| p.block_index == cp.paragraph_index)
-            });
+        let para_data = page.editing_data.as_ref().and_then(|ed| {
+            ed.paragraphs
+                .iter()
+                .find(|p| p.block_index == cp.paragraph_index)
+        });
 
         let para_origin = para_data.map(|p| p.origin).unwrap_or((0.0, 0.0));
 
@@ -245,12 +258,23 @@ pub fn paint_single_page(
         );
 
         if let Some(cr) = cp.cursor_rect.as_ref() {
-            paint_cursor(scene, cr, &cp.selection_rects, &cp.selection_handles, para_offset, scale);
+            paint_cursor(
+                scene,
+                cr,
+                &cp.selection_rects,
+                &cp.selection_handles,
+                para_offset,
+                scale,
+            );
         } else if !cp.selection_rects.is_empty() || !cp.selection_handles.is_empty() {
             paint_cursor(
                 scene,
                 // Dummy zero-size rect when only selection highlights / handles are needed.
-                &CursorRect { x: 0.0, y: 0.0, height: 0.0 },
+                &CursorRect {
+                    x: 0.0,
+                    y: 0.0,
+                    height: 0.0,
+                },
                 &cp.selection_rects,
                 &cp.selection_handles,
                 para_offset,
@@ -424,7 +448,13 @@ pub fn paint_paginated(
         // header/footer items use page-local coordinates.
         let page_origin = (offset.0, y_cursor);
         let content_origin = (offset.0 + page.margins.left, y_cursor + page.margins.top);
-        paint_items(scene, &page.content_items, font_cache, content_origin, scale);
+        paint_items(
+            scene,
+            &page.content_items,
+            font_cache,
+            content_origin,
+            scale,
+        );
         paint_items(scene, &page.header_items, font_cache, page_origin, scale);
         paint_items(scene, &page.footer_items, font_cache, page_origin, scale);
 
@@ -487,7 +517,12 @@ fn paint_items(
                 // Render as a thin grey filled rectangle.
                 let rule = PositionedRect {
                     rect: r.rect,
-                    color: LayoutColor { r: 0.7, g: 0.7, b: 0.7, a: 1.0 },
+                    color: LayoutColor {
+                        r: 0.7,
+                        g: 0.7,
+                        b: 0.7,
+                        a: 1.0,
+                    },
                 };
                 crate::rect::paint_filled_rect(scene, &rule, scale);
             }
@@ -536,7 +571,12 @@ fn paint_link_hint(scene: &mut vello::Scene, r: &PositionedGlyphRun, scale: f32)
     }
     let hint = PositionedRect {
         rect: LayoutRect::new(r.origin.x, r.origin.y - ascent, width, ascent + descent),
-        color: LayoutColor { r: 0.0, g: 0.4, b: 1.0, a: 0.15 },
+        color: LayoutColor {
+            r: 0.0,
+            g: 0.4,
+            b: 1.0,
+            a: 0.15,
+        },
     };
     crate::rect::paint_filled_rect(scene, &hint, scale);
 }
@@ -619,7 +659,12 @@ mod tests {
     fn test_paint_filled_rect() {
         let layout = make_continuous_layout(vec![PositionedItem::FilledRect(PositionedRect {
             rect: LayoutRect::new(10.0, 10.0, 100.0, 50.0),
-            color: LayoutColor { r: 1.0, g: 0.0, b: 0.0, a: 1.0 },
+            color: LayoutColor {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            },
         })]);
         let mut scene = vello::Scene::new();
         let mut font_cache = FontDataCache::new();
@@ -682,14 +727,17 @@ mod tests {
         // does not panic. Full visual correctness is verified manually.
         let inner_rect = PositionedItem::FilledRect(PositionedRect {
             rect: LayoutRect::new(0.0, 0.0, 100.0, 20.0),
-            color: LayoutColor { r: 0.0, g: 0.5, b: 1.0, a: 1.0 },
-        });
-        let layout = make_continuous_layout(vec![
-            PositionedItem::ClippedGroup {
-                clip_rect: LayoutRect::new(0.0, 0.0, 100.0, 15.0),
-                items: vec![inner_rect],
+            color: LayoutColor {
+                r: 0.0,
+                g: 0.5,
+                b: 1.0,
+                a: 1.0,
             },
-        ]);
+        });
+        let layout = make_continuous_layout(vec![PositionedItem::ClippedGroup {
+            clip_rect: LayoutRect::new(0.0, 0.0, 100.0, 15.0),
+            items: vec![inner_rect],
+        }]);
         let mut scene = vello::Scene::new();
         let mut font_cache = FontDataCache::new();
         paint_layout(&mut scene, &layout, &mut font_cache, (5.0, 10.0), 1.0, None);

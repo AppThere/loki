@@ -45,6 +45,8 @@ impl DocumentExport for OdtExport {
         _writer: impl Write + Seek,
         _options: Self::Options,
     ) -> OdfResult<()> {
-        Err(OdfError::NotImplemented { feature: "ODT export".into() })
+        Err(OdfError::NotImplemented {
+            feature: "ODT export".into(),
+        })
     }
 }

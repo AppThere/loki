@@ -33,7 +33,6 @@ pub(crate) struct OdfListLevel {
     pub kind: OdfListLevelKind,
 
     // ── Legacy ODF 1.1 positioning (text:list-level-properties) ──────────
-
     /// `text:space-before` — indent from the left margin (ODF 1.1 model).
     pub legacy_space_before: Option<String>,
     /// `text:min-label-width` — minimum width of the label area (ODF 1.1).
@@ -42,7 +41,6 @@ pub(crate) struct OdfListLevel {
     pub legacy_min_label_distance: Option<String>,
 
     // ── ODF 1.2+ label-alignment positioning ─────────────────────────────
-
     /// `text:label-followed-by` — separator after the label: `"listtab"`,
     /// `"space"`, or `"nothing"`. ODF 1.2+.
     pub label_followed_by: Option<String>,

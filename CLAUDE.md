@@ -36,3 +36,130 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 2. Use `detect_changes` for code review.
 3. Use `get_affected_flows` to understand impact.
 4. Use `query_graph` pattern="tests_for" to check coverage.
+
+---
+
+## Coding conventions
+
+These conventions apply to all crates in the workspace.
+
+- **File ceiling:** No `.rs` file may exceed 300 lines. Split files proactively
+  before hitting the ceiling — do not write a large file and split reactively.
+- **Error handling:** Use typed error enums with `thiserror`. Do not use `anyhow`
+  in library crates. Do not use `.unwrap()` or `.expect()` in library code
+  outside of `#[cfg(test)]` blocks.
+- **Unsafe:** `#![forbid(unsafe_code)]` must be present in `lib.rs` for all
+  `appthere-ui` and future library crates.
+- **License header:** Every `.rs` file must begin with:
+  `// SPDX-License-Identifier: Apache-2.0`
+- **Annotations:**
+  - `// COMPAT(dioxus-native): <explanation>` — marks any workaround for a
+    Dioxus Native / Blitz CSS or API limitation, including unconfirmed CSS
+    properties that need runtime verification.
+  - `// TODO(<topic>): <description>` — marks deliberately deferred work.
+- **No hardcoded user-visible strings:** All display strings are props or named
+  constants. The `loki_i18n` crate (Fluent-based) will provide formatted
+  strings to `appthere_ui` components; the components are i18n-agnostic.
+- **Touch targets:** Every interactive component must document its minimum
+  44×44 logical pixel touch target (WCAG 2.5.8) in a doc comment.
+- **Checkpoints:** Run `cargo check --workspace` after each logical unit of
+  work. Do not accumulate failures across steps.
+- **Final pass:** `cargo fmt --all` and `cargo clippy --workspace -- -D warnings`
+  must both pass before any PR or commit is considered complete.
+
+---
+
+## Known tech debt (300-line ceiling violations — requires future split pass)
+
+These files existed before the ceiling convention was established and have not
+yet been split. Do not add new code to them without splitting first.
+
+| File | Current lines | Priority |
+|---|---|---|
+| `loki-text/src/routes/editor.rs` | ~1010 | High — most active file |
+| `loki-text/src/components/document_source.rs` | 1117 | High |
+
+---
+
+## appthere-ui — Design System Conventions
+
+### Crate purpose
+
+`appthere-ui` (crate name: `appthere_ui`) is the shared UI component library
+for all AppThere suite applications: Loki Text, Loki Calc, Loki Slides (future),
+Iris Photo, and Iris Draw. It provides design tokens, a theme context, and shell
+components (title bar, tab bar, home tab, status bar; ribbon components are
+added in subsequent passes).
+
+### Suite structure
+
+Each AppThere application is an independent binary. They share `appthere_ui`
+for shell chrome and design tokens, but have entirely separate ribbon content,
+canvas surfaces, and document models. Cross-application file type detection
+is documented in the Loki Text UI specification (v0.4).
+
+### Adding new components
+
+1. Create a new file (or subdirectory) in `appthere-ui/src/components/`.
+   File must stay under 300 lines. Split into a subdirectory proactively.
+2. Define props as a `#[derive(Props, Clone, PartialEq)]` struct.
+3. Re-export from `appthere-ui/src/components/mod.rs` and from `lib.rs`.
+4. Use only token constants from `appthere_ui::tokens::*` — no magic numbers.
+5. All interactive elements: 44×44 px minimum, documented in a doc comment.
+6. Mark Dioxus Native CSS limitations with `// COMPAT(dioxus-native): ...`
+
+### Confirmed CSS properties (Dioxus Native 0.7.x / Blitz)
+
+These work in production code:
+
+- `display: flex`, `flex-direction`, `flex-shrink`, `flex: 1`, `align-items`, `gap`
+- `overflow-x: auto`, `overflow-y: auto`
+- `border-radius: Npx`
+- `position: relative`, `z-index: N`
+- `height: calc(100vh - Npx)`, `width: 100vw`, `height: 100vh`
+- `border-bottom/top: Npx solid COLOR`
+- `box-sizing: border-box`
+
+### Unconfirmed CSS properties — verify at runtime, mark with COMPAT comment
+
+- `opacity: 0.N` (needed for disabled-state rendering)
+- `white-space: nowrap` (needed for tab label truncation)
+- `text-overflow: ellipsis` (needed for tab label truncation)
+- `overflow-x: scroll` (explicit scroll vs. auto)
+- `scrollbar-width: none` (needed for invisible scroll containers)
+- `position: absolute` — **confirmed unsupported** in current Blitz.
+  Tooltip components are deferred until this is resolved.
+- `position: fixed` — **confirmed unsupported** (documented in toolbar.rs).
+
+### Token usage
+
+- Colors: `appthere_ui::tokens::colors::*` — `&'static str` CSS values
+- Typography: `appthere_ui::tokens::typography::*` — `&'static str` CSS values
+  for font family and weight; `f32` for font sizes
+- Spacing: `appthere_ui::tokens::spacing::*` — `f32` logical pixel values;
+  convert to strings inline: `format!("{}px", SPACE_4)`
+- Layout: `appthere_ui::tokens::layout::*` — `f32` heights and widths
+
+### Theme context
+
+Inject at the app root component:
+
+```rust
+provide_context(AtThemeContext::default()); // defaults to ThemeVariant::Dark
+```
+
+Read in any descendant component:
+
+```rust
+let theme = use_theme();
+```
+
+Only `ThemeVariant::Dark` is implemented. Light theme tokens are deferred.
+
+### What does NOT belong in `appthere_ui`
+
+- Document rendering (Vello, Parley, Loro)
+- Format-specific code (OOXML, ODF, EPUB)
+- Application-specific business logic or routing
+- Ribbon tab content (each application provides its own — `AtRibbon` with
+  a children/slot API is implemented in a future pass)

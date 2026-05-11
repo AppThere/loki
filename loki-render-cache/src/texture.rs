@@ -5,8 +5,6 @@
 //!
 //! Only compiled when the `gpu` feature is active.
 
-
-
 /// Fullscreen-triangle blit shader (WGSL).
 ///
 /// Samples the source texture with a linear sampler and writes to the
@@ -82,7 +80,11 @@ pub fn allocate_texture(
 ) -> GpuTexture {
     let inner = device.create_texture(&wgpu::TextureDescriptor {
         label,
-        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -92,7 +94,11 @@ pub fn allocate_texture(
             | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
-    GpuTexture { inner, width, height }
+    GpuTexture {
+        inner,
+        width,
+        height,
+    }
 }
 
 /// Downsamples `src` into a new texture at `scale` × `src` dimensions.
@@ -173,8 +179,12 @@ pub fn downsample_texture(
         min_filter: wgpu::FilterMode::Linear,
         ..Default::default()
     });
-    let src_view = src.inner.create_view(&wgpu::TextureViewDescriptor::default());
-    let dst_view = dst.inner.create_view(&wgpu::TextureViewDescriptor::default());
+    let src_view = src
+        .inner
+        .create_view(&wgpu::TextureViewDescriptor::default());
+    let dst_view = dst
+        .inner
+        .create_view(&wgpu::TextureViewDescriptor::default());
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("blit-bg"),
         layout: &bgl,

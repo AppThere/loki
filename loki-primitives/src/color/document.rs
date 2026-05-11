@@ -75,7 +75,9 @@ impl DocumentColor {
     /// `DocumentColor::Rgb`. The alpha channel from `#RRGGBBAA` is silently
     /// discarded — `DocumentColor::Rgb` does not carry alpha.
     pub fn from_hex(s: &str) -> Result<Self, ColorParseError> {
-        let err = || ColorParseError::InvalidFormat { input: s.to_string() };
+        let err = || ColorParseError::InvalidFormat {
+            input: s.to_string(),
+        };
 
         if !s.starts_with('#') {
             return Err(err());
@@ -149,14 +151,13 @@ mod tests {
         assert!(DocumentColor::Transparent.resolve_rgb(&theme).is_none());
 
         let rgb = RgbColor::new(0.0, 1.0, 0.0);
-        assert_eq!(
-            DocumentColor::Rgb(rgb).resolve_rgb(&theme).unwrap(),
-            rgb
-        );
+        assert_eq!(DocumentColor::Rgb(rgb).resolve_rgb(&theme).unwrap(), rgb);
 
-        assert!(DocumentColor::Cmyk(CmykColor::new(1.0, 1.0, 1.0, 1.0))
-            .resolve_rgb(&theme)
-            .is_none());
+        assert!(
+            DocumentColor::Cmyk(CmykColor::new(1.0, 1.0, 1.0, 1.0))
+                .resolve_rgb(&theme)
+                .is_none()
+        );
 
         let t = theme.get(ThemeColorSlot::Accent1).unwrap();
         assert_eq!(

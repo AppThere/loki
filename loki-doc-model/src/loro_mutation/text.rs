@@ -5,7 +5,7 @@
 
 use loro::LoroDoc;
 
-use super::{get_loro_text_for_block, MutationError};
+use super::{MutationError, get_loro_text_for_block};
 
 /// Inserts `text` at UTF-8 `byte_offset` into the `LoroText` for the block
 /// at `block_index` (in section 0).

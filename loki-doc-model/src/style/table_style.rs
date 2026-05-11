@@ -7,11 +7,11 @@
 //! ODF uses `style:style style:family="table"`; OOXML uses
 //! `w:style w:type="table"`.
 
-use loki_primitives::units::Points;
-use loki_primitives::color::DocumentColor;
 use crate::content::attr::ExtensionBag;
 use crate::style::catalog::StyleId;
 use crate::style::props::border::Border;
+use loki_primitives::color::DocumentColor;
+use loki_primitives::units::Points;
 
 /// Table width specification.
 ///

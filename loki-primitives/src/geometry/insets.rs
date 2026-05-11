@@ -20,12 +20,7 @@ pub struct Insets<U> {
 impl<U: Copy> Insets<U> {
     /// Constructs insets.
     #[must_use]
-    pub fn new(
-        top: Length<U>,
-        right: Length<U>,
-        bottom: Length<U>,
-        left: Length<U>,
-    ) -> Self {
+    pub fn new(top: Length<U>, right: Length<U>, bottom: Length<U>, left: Length<U>) -> Self {
         Self {
             top,
             right,

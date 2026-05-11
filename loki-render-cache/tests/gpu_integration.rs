@@ -37,7 +37,11 @@ fn try_wgpu() -> Option<(wgpu::Device, wgpu::Queue)> {
 
 fn page_geom(index: u32) -> PageGeometry {
     let top = f64::from(index) * 210.0;
-    PageGeometry { index, top_px: top, bottom_px: top + 200.0 }
+    PageGeometry {
+        index,
+        top_px: top,
+        bottom_px: top + 200.0,
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -61,7 +65,9 @@ fn retier_marks_pages_for_rerender_and_cache_is_updated() {
     }
 
     for i in 0..2u32 {
-        let page = cache.get(PageIndex(i)).expect("page should be in cache after insert");
+        let page = cache
+            .get(PageIndex(i))
+            .expect("page should be in cache after insert");
         assert!(!page.dirty, "page {i} should be clean after insert");
         assert_eq!(page.tier, CacheTier::Hot, "page {i} should be Hot");
     }

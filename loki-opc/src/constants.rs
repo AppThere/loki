@@ -8,8 +8,7 @@ pub const CORE_PROPERTIES_NS: &str =
     "http://schemas.openxmlformats.org/package/2006/metadata/core-properties";
 
 /// Identifies relationships XML configuration
-pub const RELATIONSHIPS_NS: &str =
-    "http://schemas.openxmlformats.org/package/2006/relationships";
+pub const RELATIONSHIPS_NS: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
 
 /// Core metadata target relationships configuration
 pub const REL_CORE_PROPERTIES: &str =

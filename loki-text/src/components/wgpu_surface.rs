@@ -6,7 +6,7 @@
 //! [`WgpuSurface`] is the top-level document canvas: it computes the page count
 //! for the current document and creates one [`PageCanvas`] per page, each of
 //! which owns a separate [`LokiDocumentSource`] and `<canvas>` element.  Pages
-//! are stacked vertically with [`loki_theme::tokens::PAGE_GAP_PX`] spacing inside
+//! are stacked vertically with [`appthere_ui::tokens::PAGE_GAP_PX`] spacing inside
 //! a parent scroll container provided by the editor shell.
 //!
 //! When no document is loaded (`document: None`) or the layout yields zero pages,
@@ -55,12 +55,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use appthere_ui::tokens;
 use dioxus::native::use_wgpu;
 use dioxus::prelude::*;
 use kurbo::Rect;
 use loki_doc_model::document::Document;
-use loki_layout::{layout_document, DocumentLayout, FontResources, LayoutMode, LayoutOptions};
-use loki_theme::tokens;
+use loki_layout::{DocumentLayout, FontResources, LayoutMode, LayoutOptions, layout_document};
 
 use crate::components::document_source::{DocumentState, LokiDocumentSource};
 use crate::editing::cursor::{CursorState, DocumentPosition};
@@ -215,7 +215,14 @@ fn PageCanvas(props: PageCanvasProps) -> Element {
 /// pages, an "Opening document…" placeholder is shown instead.
 #[allow(non_snake_case)]
 pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
-    let WgpuSurfaceProps { doc_state, document, layout_opts, visible_rect, cursor_state, .. } = props;
+    let WgpuSurfaceProps {
+        doc_state,
+        document,
+        layout_opts,
+        visible_rect,
+        cursor_state,
+        ..
+    } = props;
 
     // Cheap comparable key for the current document.
     // Using (title, section_count) avoids deriving PartialEq on Document.
@@ -244,8 +251,12 @@ pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
     // render frame.
     let page_count_rc: Rc<RefCell<usize>> = use_hook(|| Rc::new(RefCell::new(0usize)));
     // Falls back to A4 (794 × 1123 CSS px) until a document is loaded.
-    let page_dims_rc: Rc<RefCell<(f32, f32)>> =
-        use_hook(|| Rc::new(RefCell::new((tokens::PAGE_WIDTH_PX, tokens::PAGE_HEIGHT_PX))));
+    let page_dims_rc: Rc<RefCell<(f32, f32)>> = use_hook(|| {
+        Rc::new(RefCell::new((
+            tokens::PAGE_WIDTH_PX,
+            tokens::PAGE_HEIGHT_PX,
+        )))
+    });
 
     if key_changed {
         let (new_count, new_dims, new_layout) = if let Some(doc) = document.as_ref() {

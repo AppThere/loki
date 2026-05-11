@@ -3,22 +3,18 @@
 
 //! Low-level XML writing helpers for DOCX serialization.
 
-use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::Writer;
+use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
 use std::io::Write;
 
 // ── OOXML namespace URIs ─────────────────────────────────────────────────────
 
-pub(super) const NS_W: &str =
-    "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-pub(super) const NS_R: &str =
-    "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+pub(super) const NS_W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+pub(super) const NS_R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 pub(super) const NS_WP: &str =
     "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
-pub(super) const NS_A: &str =
-    "http://schemas.openxmlformats.org/drawingml/2006/main";
-pub(super) const NS_PIC: &str =
-    "http://schemas.openxmlformats.org/drawingml/2006/picture";
+pub(super) const NS_A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
+pub(super) const NS_PIC: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 
 pub(super) const REL_HYPERLINK: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
@@ -70,7 +66,11 @@ pub(super) fn color_to_hex(color: &loki_primitives::color::DocumentColor) -> Str
 
 /// Writes the `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` declaration.
 pub(super) fn write_decl<W: Write>(w: &mut Writer<W>) -> quick_xml::Result<()> {
-    w.write_event(Event::Decl(BytesDecl::new("1.0", Some("UTF-8"), Some("yes"))))
+    w.write_event(Event::Decl(BytesDecl::new(
+        "1.0",
+        Some("UTF-8"),
+        Some("yes"),
+    )))
 }
 
 /// Writes a self-closing element: `<tag attr1="v1" attr2="v2"/>`.

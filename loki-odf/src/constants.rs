@@ -18,8 +18,7 @@ pub const NS_TEXT: &str = "urn:oasis:names:tc:opendocument:xmlns:text:1.0";
 pub const NS_STYLE: &str = "urn:oasis:names:tc:opendocument:xmlns:style:1.0";
 
 /// ODF XSL-FO-compatible namespace for formatting properties (ODF 1.3 §19.2).
-pub const NS_FO: &str =
-    "urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0";
+pub const NS_FO: &str = "urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0";
 
 /// ODF table namespace (ODF 1.3 §19.2).
 pub const NS_TABLE: &str = "urn:oasis:names:tc:opendocument:xmlns:table:1.0";
@@ -28,8 +27,7 @@ pub const NS_TABLE: &str = "urn:oasis:names:tc:opendocument:xmlns:table:1.0";
 pub const NS_DRAW: &str = "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0";
 
 /// ODF SVG-compatible namespace (ODF 1.3 §19.2).
-pub const NS_SVG: &str =
-    "urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0";
+pub const NS_SVG: &str = "urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0";
 
 /// `XLink` namespace used for hyperlinks and image references (ODF 1.3 §19.2).
 pub const NS_XLINK: &str = "http://www.w3.org/1999/xlink";
@@ -41,12 +39,10 @@ pub const NS_DC: &str = "http://purl.org/dc/elements/1.1/";
 pub const NS_META: &str = "urn:oasis:names:tc:opendocument:xmlns:meta:1.0";
 
 /// ODF data-style (number) namespace (ODF 1.3 §19.2).
-pub const NS_NUMBER: &str =
-    "urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0";
+pub const NS_NUMBER: &str = "urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0";
 
 /// ODF manifest namespace used in `META-INF/manifest.xml` (ODF 1.3 §3.3).
-pub const NS_MANIFEST: &str =
-    "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0";
+pub const NS_MANIFEST: &str = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0";
 
 // ── MIME type ─────────────────────────────────────────────────────────────────
 

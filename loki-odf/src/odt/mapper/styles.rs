@@ -57,15 +57,11 @@ pub(crate) fn map_stylesheet(sheet: &OdfStylesheet) -> StyleCatalog {
     }
 
     // ── Named and automatic styles ─────────────────────────────────────────
-    let all_styles =
-        sheet.named_styles.iter().chain(sheet.auto_styles.iter());
+    let all_styles = sheet.named_styles.iter().chain(sheet.auto_styles.iter());
 
     for s in all_styles {
         let id = StyleId::new(&s.name);
-        let parent = s
-            .parent_name
-            .as_deref()
-            .map(StyleId::new);
+        let parent = s.parent_name.as_deref().map(StyleId::new);
         let display_name = s.display_name.clone();
         let is_custom = s.is_automatic;
 
@@ -128,8 +124,7 @@ pub(crate) fn map_stylesheet(sheet: &OdfStylesheet) -> StyleCatalog {
 mod tests {
     use super::*;
     use crate::odt::model::styles::{
-        OdfDefaultStyle, OdfStyle, OdfStyleFamily, OdfStylesheet, OdfTextProps,
-        OdfParaProps,
+        OdfDefaultStyle, OdfParaProps, OdfStyle, OdfStyleFamily, OdfStylesheet, OdfTextProps,
     };
 
     fn make_para_style(name: &str, parent: Option<&str>, is_auto: bool) -> OdfStyle {
@@ -174,7 +169,11 @@ mod tests {
             ..Default::default()
         };
         let catalog = map_stylesheet(&sheet);
-        assert!(catalog.paragraph_styles.contains_key(&StyleId::new("Normal")));
+        assert!(
+            catalog
+                .paragraph_styles
+                .contains_key(&StyleId::new("Normal"))
+        );
     }
 
     #[test]
@@ -184,7 +183,10 @@ mod tests {
             ..Default::default()
         };
         let catalog = map_stylesheet(&sheet);
-        let cs = catalog.character_styles.get(&StyleId::new("Strong")).unwrap();
+        let cs = catalog
+            .character_styles
+            .get(&StyleId::new("Strong"))
+            .unwrap();
         assert_eq!(cs.char_props.bold, Some(true));
     }
 
@@ -198,7 +200,10 @@ mod tests {
             ..Default::default()
         };
         let catalog = map_stylesheet(&sheet);
-        let h1 = catalog.paragraph_styles.get(&StyleId::new("Heading1")).unwrap();
+        let h1 = catalog
+            .paragraph_styles
+            .get(&StyleId::new("Heading1"))
+            .unwrap();
         assert_eq!(h1.parent, Some(StyleId::new("Normal")));
     }
 

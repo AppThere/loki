@@ -97,7 +97,10 @@ impl DocPageSource {
         generation: u64,
     ) -> MutexGuard<'_, Option<(u64, PaginatedLayout)>> {
         let mut guard = self.layout_cache.lock().unwrap_or_else(|e| e.into_inner());
-        let needs_recompute = guard.as_ref().map(|(g, _)| *g != generation).unwrap_or(true);
+        let needs_recompute = guard
+            .as_ref()
+            .map(|(g, _)| *g != generation)
+            .unwrap_or(true);
         if needs_recompute {
             let mut resources = FontResources::new();
             let options = LayoutOptions::default();
@@ -125,7 +128,12 @@ impl PageSource for DocPageSource {
         guard
             .as_ref()
             .and_then(|(_, layout)| layout.pages.get(index.0 as usize))
-            .map(|p| (p.page_size.width.ceil() as u32, p.page_size.height.ceil() as u32))
+            .map(|p| {
+                (
+                    p.page_size.width.ceil() as u32,
+                    p.page_size.height.ceil() as u32,
+                )
+            })
             .unwrap_or((A4_WIDTH_PX, A4_HEIGHT_PX))
     }
 
@@ -152,14 +160,23 @@ impl PageSource for DocPageSource {
         let (base_w, base_h) = layout
             .pages
             .get(index.0 as usize)
-            .map(|p| (p.page_size.width.ceil() as u32, p.page_size.height.ceil() as u32))
+            .map(|p| {
+                (
+                    p.page_size.width.ceil() as u32,
+                    p.page_size.height.ceil() as u32,
+                )
+            })
             .unwrap_or((A4_WIDTH_PX, A4_HEIGHT_PX));
         let w = ((base_w as f32 * scale).ceil() as u32).max(1);
         let h = ((base_h as f32 * scale).ceil() as u32).max(1);
 
         let inner = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("doc-page-stub"),
-            size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -223,6 +240,10 @@ impl PageSource for DocPageSource {
             "page rendered",
         );
 
-        Ok(GpuTexture { inner, width: w, height: h })
+        Ok(GpuTexture {
+            inner,
+            width: w,
+            height: h,
+        })
     }
 }

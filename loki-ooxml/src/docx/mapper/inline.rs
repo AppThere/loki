@@ -30,9 +30,16 @@ use super::props::map_rpr;
 enum FieldState {
     Normal,
     /// Accumulating field instruction text. `depth ≥ 1`.
-    InCode { instruction: String, depth: usize },
+    InCode {
+        instruction: String,
+        depth: usize,
+    },
     /// After `w:fldChar @w:fldCharType="separate"`: accumulating snapshot text.
-    InResult { instruction: String, snapshot: String, depth: usize },
+    InResult {
+        instruction: String,
+        snapshot: String,
+        depth: usize,
+    },
 }
 
 // ── Public entry point ─────────────────────────────────────────────────────────
@@ -41,10 +48,7 @@ enum FieldState {
 ///
 /// Implements the OOXML complex-field state machine across all children so
 /// that fields that span multiple runs are assembled correctly.
-pub(crate) fn map_inlines(
-    children: &[DocxParaChild],
-    ctx: &mut MappingContext<'_>,
-) -> Vec<Inline> {
+pub(crate) fn map_inlines(children: &[DocxParaChild], ctx: &mut MappingContext<'_>) -> Vec<Inline> {
     let mut result: Vec<Inline> = Vec::new();
     let mut state = FieldState::Normal;
 
@@ -55,14 +59,18 @@ pub(crate) fn map_inlines(
             }
             DocxParaChild::Hyperlink(h) => {
                 let url = if let Some(rel_id) = &h.rel_id {
-                    ctx.hyperlinks.get(rel_id).cloned()
+                    ctx.hyperlinks
+                        .get(rel_id)
+                        .cloned()
                         .unwrap_or_else(|| format!("#{rel_id}"))
                 } else if let Some(anchor) = &h.anchor {
                     format!("#{anchor}")
                 } else {
                     String::new()
                 };
-                let inner: Vec<Inline> = h.runs.iter()
+                let inner: Vec<Inline> = h
+                    .runs
+                    .iter()
                     .flat_map(|r| process_run_simple(r, ctx))
                     .collect();
                 result.push(Inline::Link(
@@ -98,13 +106,11 @@ pub(crate) fn map_inlines(
 ///
 /// Returns the resulting inlines, wrapped in a [`StyledRun`] when the run
 /// has an explicit character style or direct formatting properties.
-fn process_run(
-    run: &DocxRun,
-    state: &mut FieldState,
-    ctx: &mut MappingContext<'_>,
-) -> Vec<Inline> {
+fn process_run(run: &DocxRun, state: &mut FieldState, ctx: &mut MappingContext<'_>) -> Vec<Inline> {
     let char_props = run.rpr.as_ref().map(map_rpr);
-    let style_id = run.rpr.as_ref()
+    let style_id = run
+        .rpr
+        .as_ref()
         .and_then(|rpr| rpr.style_id.as_ref())
         .map(|s| StyleId::new(s.clone()));
 
@@ -116,7 +122,9 @@ fn process_run(
 
     // Wrap in StyledRun only when there is explicit formatting to preserve.
     let needs_wrap = style_id.is_some()
-        || char_props.as_ref().is_some_and(|p| p != &CharProps::default());
+        || char_props
+            .as_ref()
+            .is_some_and(|p| p != &CharProps::default());
 
     if needs_wrap && !raw.is_empty() {
         let styled = StyledRun {
@@ -151,14 +159,17 @@ fn process_run_child(
         }
         DocxRunChild::InstrText { text } => {
             if let FieldState::InCode { instruction, depth } = state
-                && *depth == 1 {
-                    instruction.push_str(text);
-                }
+                && *depth == 1
+            {
+                instruction.push_str(text);
+            }
             // depth > 1: instruction text for an inner nested field; ignored.
         }
         DocxRunChild::Text { text, .. } => match state {
             FieldState::Normal => raw.push(Inline::Str(text.clone())),
-            FieldState::InResult { snapshot, depth, .. } if *depth == 1 => {
+            FieldState::InResult {
+                snapshot, depth, ..
+            } if *depth == 1 => {
                 snapshot.push_str(text);
             }
             _ => {} // inside field code or nested field
@@ -180,21 +191,28 @@ fn process_run_child(
         }
         DocxRunChild::FootnoteRef { id } => {
             if matches!(state, FieldState::Normal) {
-                let blocks = lookup_note(ctx.footnotes, *id, &mut ctx.warnings, WarnNoteKind::Footnote);
+                let blocks = lookup_note(
+                    ctx.footnotes,
+                    *id,
+                    &mut ctx.warnings,
+                    WarnNoteKind::Footnote,
+                );
                 raw.push(Inline::Note(NoteKind::Footnote, blocks));
             }
         }
         DocxRunChild::EndnoteRef { id } => {
             if matches!(state, FieldState::Normal) {
-                let blocks = lookup_note(ctx.endnotes, *id, &mut ctx.warnings, WarnNoteKind::Endnote);
+                let blocks =
+                    lookup_note(ctx.endnotes, *id, &mut ctx.warnings, WarnNoteKind::Endnote);
                 raw.push(Inline::Note(NoteKind::Endnote, blocks));
             }
         }
         DocxRunChild::Drawing(drawing) => {
             if matches!(state, FieldState::Normal)
-                && let Some(img) = map_drawing(drawing, ctx) {
-                    raw.push(img);
-                }
+                && let Some(img) = map_drawing(drawing, ctx)
+            {
+                raw.push(img);
+            }
         }
     }
 }
@@ -210,12 +228,19 @@ fn process_fld_char(
     match fld_char_type {
         "begin" => {
             let new_state = match &*state {
-                FieldState::Normal => FieldState::InCode { instruction: String::new(), depth: 1 },
+                FieldState::Normal => FieldState::InCode {
+                    instruction: String::new(),
+                    depth: 1,
+                },
                 FieldState::InCode { instruction, depth } => FieldState::InCode {
                     instruction: instruction.clone(),
                     depth: depth + 1,
                 },
-                FieldState::InResult { instruction, snapshot, depth } => FieldState::InResult {
+                FieldState::InResult {
+                    instruction,
+                    snapshot,
+                    depth,
+                } => FieldState::InResult {
                     instruction: instruction.clone(),
                     snapshot: snapshot.clone(),
                     depth: depth + 1,
@@ -226,18 +251,21 @@ fn process_fld_char(
         "separate" => {
             // Only transition at depth == 1; deeper separates belong to nested fields.
             if let FieldState::InCode { instruction, depth } = &*state
-                && *depth == 1 {
-                    let new_state = FieldState::InResult {
-                        instruction: instruction.clone(),
-                        snapshot: String::new(),
-                        depth: 1,
-                    };
-                    *state = new_state;
-                }
+                && *depth == 1
+            {
+                let new_state = FieldState::InResult {
+                    instruction: instruction.clone(),
+                    snapshot: String::new(),
+                    depth: 1,
+                };
+                *state = new_state;
+            }
         }
         "end" => {
             match state {
-                FieldState::InCode { depth, .. } | FieldState::InResult { depth, .. } if *depth > 1 => {
+                FieldState::InCode { depth, .. } | FieldState::InResult { depth, .. }
+                    if *depth > 1 =>
+                {
                     *depth -= 1;
                 }
                 FieldState::InCode { instruction, .. } => {
@@ -245,7 +273,11 @@ fn process_fld_char(
                     raw.push(Inline::Field(Field::new(kind)));
                     *state = FieldState::Normal;
                 }
-                FieldState::InResult { instruction, snapshot, .. } => {
+                FieldState::InResult {
+                    instruction,
+                    snapshot,
+                    ..
+                } => {
                     let kind = parse_field_instruction(instruction);
                     let cv = snapshot.trim().to_string();
                     let mut field = Field::new(kind);
@@ -295,8 +327,12 @@ fn parse_field_instruction(instruction: &str) -> FieldKind {
     match first_word.to_ascii_uppercase().as_str() {
         "PAGE" => FieldKind::PageNumber,
         "NUMPAGES" => FieldKind::PageCount,
-        "DATE" => FieldKind::Date { format: extract_switch(trimmed, "@") },
-        "TIME" => FieldKind::Time { format: extract_switch(trimmed, "@") },
+        "DATE" => FieldKind::Date {
+            format: extract_switch(trimmed, "@"),
+        },
+        "TIME" => FieldKind::Time {
+            format: extract_switch(trimmed, "@"),
+        },
         "TITLE" => FieldKind::Title,
         "AUTHOR" => FieldKind::Author,
         "SUBJECT" => FieldKind::Subject,
@@ -304,13 +340,21 @@ fn parse_field_instruction(instruction: &str) -> FieldKind {
         "NUMWORDS" => FieldKind::WordCount,
         "REF" => {
             let target = trimmed.split_whitespace().nth(1).unwrap_or("").to_string();
-            FieldKind::CrossReference { target, format: CrossRefFormat::Number }
+            FieldKind::CrossReference {
+                target,
+                format: CrossRefFormat::Number,
+            }
         }
         "PAGEREF" => {
             let target = trimmed.split_whitespace().nth(1).unwrap_or("").to_string();
-            FieldKind::CrossReference { target, format: CrossRefFormat::Page }
+            FieldKind::CrossReference {
+                target,
+                format: CrossRefFormat::Page,
+            }
         }
-        _ => FieldKind::Raw { instruction: trimmed.to_string() },
+        _ => FieldKind::Raw {
+            instruction: trimmed.to_string(),
+        },
     }
 }
 
@@ -336,11 +380,11 @@ fn extract_switch(instruction: &str, sw: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
+    use crate::docx::import::DocxImportOptions;
+    use crate::docx::model::paragraph::{DocxHyperlink, DocxRPr};
     use loki_doc_model::content::block::Block;
     use loki_doc_model::style::catalog::StyleCatalog;
-    use crate::docx::import::DocxImportOptions;
-    use crate::docx::model::paragraph::{DocxRPr, DocxHyperlink};
+    use std::collections::HashMap;
 
     fn make_ctx<'a>(
         footnotes: &'a HashMap<i32, Vec<Block>>,
@@ -350,28 +394,56 @@ mod tests {
         styles: &'a StyleCatalog,
         options: &'a DocxImportOptions,
     ) -> MappingContext<'a> {
-        MappingContext { styles, footnotes, endnotes, hyperlinks, images, options, warnings: Vec::new() }
+        MappingContext {
+            styles,
+            footnotes,
+            endnotes,
+            hyperlinks,
+            images,
+            options,
+            warnings: Vec::new(),
+        }
     }
 
     fn plain_run(text: &str) -> DocxParaChild {
         DocxParaChild::Run(DocxRun {
             rpr: None,
-            children: vec![DocxRunChild::Text { text: text.to_string(), preserve: false }],
+            children: vec![DocxRunChild::Text {
+                text: text.to_string(),
+                preserve: false,
+            }],
         })
     }
 
     fn bold_run(text: &str) -> DocxParaChild {
         DocxParaChild::Run(DocxRun {
-            rpr: Some(DocxRPr { bold: Some(true), ..Default::default() }),
-            children: vec![DocxRunChild::Text { text: text.to_string(), preserve: false }],
+            rpr: Some(DocxRPr {
+                bold: Some(true),
+                ..Default::default()
+            }),
+            children: vec![DocxRunChild::Text {
+                text: text.to_string(),
+                preserve: false,
+            }],
         })
     }
 
-    fn default_ctx() -> (StyleCatalog, HashMap<i32, Vec<Block>>, HashMap<i32, Vec<Block>>,
-                          HashMap<String, String>, HashMap<String, loki_opc::PartData>,
-                          DocxImportOptions) {
-        (StyleCatalog::default(), HashMap::new(), HashMap::new(),
-         HashMap::new(), HashMap::new(), DocxImportOptions::default())
+    fn default_ctx() -> (
+        StyleCatalog,
+        HashMap<i32, Vec<Block>>,
+        HashMap<i32, Vec<Block>>,
+        HashMap<String, String>,
+        HashMap<String, loki_opc::PartData>,
+        DocxImportOptions,
+    ) {
+        (
+            StyleCatalog::default(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            DocxImportOptions::default(),
+        )
     }
 
     #[test]
@@ -403,16 +475,17 @@ mod tests {
         let (styles, fn_m, en_m, mut hl_m, img_m, opts) = default_ctx();
         hl_m.insert("rId1".into(), "https://example.com".into());
         let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
-        let children = vec![
-            DocxParaChild::Hyperlink(DocxHyperlink {
-                rel_id: Some("rId1".into()),
-                anchor: None,
-                runs: vec![DocxRun {
-                    rpr: None,
-                    children: vec![DocxRunChild::Text { text: "click".into(), preserve: false }],
+        let children = vec![DocxParaChild::Hyperlink(DocxHyperlink {
+            rel_id: Some("rId1".into()),
+            anchor: None,
+            runs: vec![DocxRun {
+                rpr: None,
+                children: vec![DocxRunChild::Text {
+                    text: "click".into(),
+                    preserve: false,
                 }],
-            }),
-        ];
+            }],
+        })];
         let inlines = map_inlines(&children, &mut ctx);
         assert_eq!(inlines.len(), 1);
         if let Inline::Link(_, content, target) = &inlines[0] {
@@ -430,23 +503,34 @@ mod tests {
         let children = vec![
             DocxParaChild::Run(DocxRun {
                 rpr: None,
-                children: vec![DocxRunChild::FldChar { fld_char_type: "begin".into() }],
+                children: vec![DocxRunChild::FldChar {
+                    fld_char_type: "begin".into(),
+                }],
             }),
             DocxParaChild::Run(DocxRun {
                 rpr: None,
-                children: vec![DocxRunChild::InstrText { text: " PAGE ".into() }],
+                children: vec![DocxRunChild::InstrText {
+                    text: " PAGE ".into(),
+                }],
             }),
             DocxParaChild::Run(DocxRun {
                 rpr: None,
-                children: vec![DocxRunChild::FldChar { fld_char_type: "separate".into() }],
+                children: vec![DocxRunChild::FldChar {
+                    fld_char_type: "separate".into(),
+                }],
             }),
             DocxParaChild::Run(DocxRun {
                 rpr: None,
-                children: vec![DocxRunChild::Text { text: "42".into(), preserve: false }],
+                children: vec![DocxRunChild::Text {
+                    text: "42".into(),
+                    preserve: false,
+                }],
             }),
             DocxParaChild::Run(DocxRun {
                 rpr: None,
-                children: vec![DocxRunChild::FldChar { fld_char_type: "end".into() }],
+                children: vec![DocxRunChild::FldChar {
+                    fld_char_type: "end".into(),
+                }],
             }),
         ];
         let inlines = map_inlines(&children, &mut ctx);
@@ -466,15 +550,21 @@ mod tests {
         let children = vec![
             DocxParaChild::Run(DocxRun {
                 rpr: None,
-                children: vec![DocxRunChild::FldChar { fld_char_type: "begin".into() }],
+                children: vec![DocxRunChild::FldChar {
+                    fld_char_type: "begin".into(),
+                }],
             }),
             DocxParaChild::Run(DocxRun {
                 rpr: None,
-                children: vec![DocxRunChild::InstrText { text: "TITLE".into() }],
+                children: vec![DocxRunChild::InstrText {
+                    text: "TITLE".into(),
+                }],
             }),
             DocxParaChild::Run(DocxRun {
                 rpr: None,
-                children: vec![DocxRunChild::FldChar { fld_char_type: "end".into() }],
+                children: vec![DocxRunChild::FldChar {
+                    fld_char_type: "end".into(),
+                }],
             }),
         ];
         let inlines = map_inlines(&children, &mut ctx);
@@ -491,32 +581,35 @@ mod tests {
         let (styles, mut fn_m, en_m, hl_m, img_m, opts) = default_ctx();
         fn_m.insert(1, vec![Block::Para(vec![Inline::Str("note text".into())])]);
         let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
-        let children = vec![
-            DocxParaChild::Run(DocxRun {
-                rpr: None,
-                children: vec![DocxRunChild::FootnoteRef { id: 1 }],
-            }),
-        ];
+        let children = vec![DocxParaChild::Run(DocxRun {
+            rpr: None,
+            children: vec![DocxRunChild::FootnoteRef { id: 1 }],
+        })];
         let inlines = map_inlines(&children, &mut ctx);
-        assert!(matches!(&inlines[0], Inline::Note(NoteKind::Footnote, blocks) if !blocks.is_empty()));
+        assert!(
+            matches!(&inlines[0], Inline::Note(NoteKind::Footnote, blocks) if !blocks.is_empty())
+        );
     }
 
     #[test]
     fn footnote_ref_missing_emits_warning() {
         let (styles, fn_m, en_m, hl_m, img_m, opts) = default_ctx();
         let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
-        let children = vec![
-            DocxParaChild::Run(DocxRun {
-                rpr: None,
-                children: vec![DocxRunChild::FootnoteRef { id: 99 }],
-            }),
-        ];
+        let children = vec![DocxParaChild::Run(DocxRun {
+            rpr: None,
+            children: vec![DocxRunChild::FootnoteRef { id: 99 }],
+        })];
         let inlines = map_inlines(&children, &mut ctx);
-        assert!(matches!(&inlines[0], Inline::Note(NoteKind::Footnote, blocks) if blocks.is_empty()));
+        assert!(
+            matches!(&inlines[0], Inline::Note(NoteKind::Footnote, blocks) if blocks.is_empty())
+        );
         assert_eq!(ctx.warnings.len(), 1);
         assert!(matches!(
             &ctx.warnings[0],
-            OoxmlWarning::MissingNoteContent { id: 99, kind: WarnNoteKind::Footnote }
+            OoxmlWarning::MissingNoteContent {
+                id: 99,
+                kind: WarnNoteKind::Footnote
+            }
         ));
     }
 
@@ -528,29 +621,41 @@ mod tests {
         let children = vec![
             DocxParaChild::Run(DocxRun {
                 rpr: None,
-                children: vec![DocxRunChild::FldChar { fld_char_type: "begin".into() }],
+                children: vec![DocxRunChild::FldChar {
+                    fld_char_type: "begin".into(),
+                }],
             }),
             DocxParaChild::Run(DocxRun {
                 rpr: None,
-                children: vec![DocxRunChild::InstrText { text: " IF ".into() }],
+                children: vec![DocxRunChild::InstrText {
+                    text: " IF ".into(),
+                }],
             }),
             // Inner field begin (depth 2)
             DocxParaChild::Run(DocxRun {
                 rpr: None,
-                children: vec![DocxRunChild::FldChar { fld_char_type: "begin".into() }],
+                children: vec![DocxRunChild::FldChar {
+                    fld_char_type: "begin".into(),
+                }],
             }),
             DocxParaChild::Run(DocxRun {
                 rpr: None,
-                children: vec![DocxRunChild::InstrText { text: " DATE ".into() }],
+                children: vec![DocxRunChild::InstrText {
+                    text: " DATE ".into(),
+                }],
             }),
             DocxParaChild::Run(DocxRun {
                 rpr: None,
-                children: vec![DocxRunChild::FldChar { fld_char_type: "end".into() }],
+                children: vec![DocxRunChild::FldChar {
+                    fld_char_type: "end".into(),
+                }],
             }),
             // Outer field end
             DocxParaChild::Run(DocxRun {
                 rpr: None,
-                children: vec![DocxRunChild::FldChar { fld_char_type: "end".into() }],
+                children: vec![DocxRunChild::FldChar {
+                    fld_char_type: "end".into(),
+                }],
             }),
         ];
         let inlines = map_inlines(&children, &mut ctx);
@@ -564,13 +669,18 @@ mod tests {
         let (styles, fn_m, en_m, hl_m, img_m, opts) = default_ctx();
         let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
         let children = vec![
-            DocxParaChild::BookmarkStart { id: "1".into(), name: "myBookmark".into() },
+            DocxParaChild::BookmarkStart {
+                id: "1".into(),
+                name: "myBookmark".into(),
+            },
             plain_run("text"),
             DocxParaChild::BookmarkEnd { id: "1".into() },
         ];
         let inlines = map_inlines(&children, &mut ctx);
         assert_eq!(inlines.len(), 3);
-        assert!(matches!(&inlines[0], Inline::Bookmark(BookmarkKind::Start, name) if name == "myBookmark"));
+        assert!(
+            matches!(&inlines[0], Inline::Bookmark(BookmarkKind::Start, name) if name == "myBookmark")
+        );
         assert!(matches!(&inlines[2], Inline::Bookmark(BookmarkKind::End, id) if id == "1"));
     }
 
@@ -583,12 +693,16 @@ mod tests {
     #[test]
     fn parse_ref_field() {
         let kind = parse_field_instruction(" REF _MyBookmark ");
-        assert!(matches!(kind, FieldKind::CrossReference { target, format: CrossRefFormat::Number } if target == "_MyBookmark"));
+        assert!(
+            matches!(kind, FieldKind::CrossReference { target, format: CrossRefFormat::Number } if target == "_MyBookmark")
+        );
     }
 
     #[test]
     fn parse_unknown_field_is_raw() {
         let kind = parse_field_instruction(" HYPERLINK \"https://example.com\" ");
-        assert!(matches!(kind, FieldKind::Raw { instruction } if instruction.contains("HYPERLINK")));
+        assert!(
+            matches!(kind, FieldKind::Raw { instruction } if instruction.contains("HYPERLINK"))
+        );
     }
 }

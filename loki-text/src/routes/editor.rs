@@ -43,6 +43,8 @@
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use appthere_ui::tokens;
+use appthere_ui::{AtDocumentTabData, AtStatusBar, AtTabBar, AtTitleBar, Platform};
 use dioxus::prelude::*;
 use keyboard_types::Modifiers;
 use loki_doc_model::document::Document;
@@ -54,19 +56,18 @@ use loki_file_access::FileAccessToken;
 use loki_layout::LayoutOptions;
 use loki_odf::odt::import::{OdtImport, OdtImportOptions};
 use loki_ooxml::docx::import::{DocxImport, DocxImportOptions};
-use loki_theme::tokens;
 
-use crate::components::document_source::{apply_mutation_and_relayout, DocumentState};
-use crate::components::toolbar::{BottomToolbar, TopToolbar};
+use crate::components::document_source::{DocumentState, apply_mutation_and_relayout};
+use crate::components::toolbar::TopToolbar;
 use crate::components::wgpu_surface::WgpuSurface;
 use crate::editing::cursor::{
-    next_grapheme_boundary, prev_grapheme_boundary, CursorState, DocumentPosition,
+    CursorState, DocumentPosition, next_grapheme_boundary, prev_grapheme_boundary,
 };
 use crate::editing::hit_test::hit_test_document;
 use crate::editing::navigation::{
     navigate_down, navigate_end, navigate_home, navigate_left, navigate_right, navigate_up,
 };
-use crate::editing::touch::{word_boundaries_at, TouchInteractionState, TouchPhase};
+use crate::editing::touch::{TouchInteractionState, TouchPhase, word_boundaries_at};
 use crate::error::LoadError;
 use crate::utils::display_title_from_path;
 
@@ -170,7 +171,8 @@ pub fn Editor(path: String) -> Element {
 
     use_effect(move || {
         if let Some(Ok(doc)) = &*document_load.value().read_unchecked()
-            && loro_doc().is_none() {
+            && loro_doc().is_none()
+        {
             match document_to_loro(doc) {
                 Ok(l_doc) => loro_doc.set(Some(l_doc)),
                 Err(e) => tracing::warn!("Failed to initialize Loro sync bridge: {}", e),
@@ -180,7 +182,9 @@ pub fn Editor(path: String) -> Element {
 
     let layout_opts = match editor_mode() {
         EditorMode::Reading => LayoutOptions::default(),
-        EditorMode::Editing => LayoutOptions { preserve_for_editing: true },
+        EditorMode::Editing => LayoutOptions {
+            preserve_for_editing: true,
+        },
     };
 
     let page_gap_px = tokens::PAGE_GAP_PX;
@@ -243,8 +247,12 @@ pub fn Editor(path: String) -> Element {
     //   last entry in paint_children and therefore the FIRST tested — it
     //   captures clicks in its own (correct) bounds before the scroll container
     //   is tried.
-    let chrome_px =
-        tokens::TOOLBAR_HEIGHT_TOP as u32 + tokens::TOOLBAR_HEIGHT_BOTTOM as u32;
+    // Chrome height accounts for: title bar + tab bar + top toolbar + status bar.
+    // TODO(platform): use TITLE_BAR_HEIGHT_MACOS on macOS.
+    let chrome_px = tokens::TITLE_BAR_HEIGHT_DEFAULT as u32
+        + tokens::TAB_BAR_HEIGHT as u32
+        + tokens::TOOLBAR_HEIGHT_TOP as u32
+        + tokens::STATUS_BAR_HEIGHT as u32;
 
     rsx! {
         div {
@@ -253,6 +261,35 @@ pub fn Editor(path: String) -> Element {
                  background: {bg}; font-family: system-ui, sans-serif;",
                 bg = tokens::COLOR_SURFACE_BASE,
             ),
+
+            // ── App title bar ─────────────────────────────────────────────────
+            AtTitleBar {
+                document_title:     Some(title.clone()),
+                is_dirty:           false, // TODO(dirty-flag): wire to document dirty state.
+                app_name:           "Loki Text",
+                collaborator_count: 0,
+                collaborator_label: "".to_string(),
+                // TODO(platform): detect actual platform and pass correct Platform variant.
+                platform:           Platform::Windows,
+                on_icon_press:      |_| {},
+            }
+
+            // ── Document tab bar ──────────────────────────────────────────────
+            AtTabBar {
+                // TODO(tabs): Wire AtTabBar to actual document state management.
+                tabs:               vec![AtDocumentTabData {
+                    title:       title.clone(),
+                    is_dirty:    false,
+                    is_discarded: false,
+                }],
+                active_index:       1,
+                home_tab_label:     "Home",
+                aria_label:         "Open documents",
+                on_tab_select:      |_| {},
+                on_tab_close:       |_| {},
+                on_new_tab:         |_| {},
+                new_tab_aria_label: "New document",
+            }
 
             // ── Top toolbar (flex-shrink: 0) ───────────────────────────────────
             TopToolbar {
@@ -919,9 +956,17 @@ pub fn Editor(path: String) -> Element {
             }
 
             // ── Bottom status bar (flex-shrink: 0) ────────────────────────────
-            BottomToolbar {
-                page_info: "Page 1 of 1".to_string(),
-                zoom_info:  "100%".to_string(),
+            AtStatusBar {
+                page_label:          "Page 1 of 1".to_string(),
+                // TODO(word-count): wire to actual document word count.
+                word_count_label:    "".to_string(),
+                // TODO(language): wire to document language setting.
+                language_label:      "English (US)".to_string(),
+                zoom_percent:        100,
+                collaborator_count:  0,
+                collaborator_label:  "".to_string(),
+                on_zoom_click:       |_| {},
+                zoom_aria_label:     "Zoom level",
             }
         }
     }
@@ -968,13 +1013,11 @@ fn load_document(path: String) -> Result<Document, LoadError> {
     let reader = token.open_read()?;
     let doc = match format {
         DocumentFormat::Docx => {
-            DocxImport::import(reader, DocxImportOptions::default())
-                .map_err(LoadError::Ooxml)?
+            DocxImport::import(reader, DocxImportOptions::default()).map_err(LoadError::Ooxml)?
             // TODO(odt-fidelity): DOCX rendering gaps (styles, page size) tracked separately.
         }
         DocumentFormat::Odt => {
-            OdtImport::import(reader, OdtImportOptions::default())
-                .map_err(LoadError::Odt)?
+            OdtImport::import(reader, OdtImportOptions::default()).map_err(LoadError::Odt)?
             // TODO(odt-fidelity): ODT rendering gaps — some paragraph styles, list
             // indents, and image placement may not render correctly yet.
         }

@@ -4,10 +4,9 @@
 //! Maps chronological definitions formatting attributes exactly translating strings sequentially defining output layouts explicitly targeting compatibility tracking bounds efficiently utilizing serializers strictly validating payloads correctly identifying configuration logic reliably.
 
 use serde::Serialize;
- 
 
-use crate::error::{OpcError, OpcResult};
 use crate::core_properties::CoreProperties;
+use crate::error::{OpcError, OpcResult};
 
 #[derive(Debug, Serialize)]
 #[serde(rename = "cp:coreProperties")]
@@ -103,7 +102,9 @@ pub fn write_core_properties(props: &CoreProperties) -> OpcResult<Vec<u8>> {
         keywords: props.keywords.as_ref(),
         language: props.language.as_ref(),
         last_modified_by: props.last_modified_by.as_ref(),
-        last_printed: props.last_printed.map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
+        last_printed: props
+            .last_printed
+            .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
         modified: format_date(props.modified),
         revision: props.revision.as_ref(),
         subject: props.subject.as_ref(),
@@ -111,12 +112,15 @@ pub fn write_core_properties(props: &CoreProperties) -> OpcResult<Vec<u8>> {
         version: props.version.as_ref(),
     };
 
-    let xml_str = quick_xml::se::to_string_with_root("cp:coreProperties", &out)
-        .map_err(|e| OpcError::Xml(quick_xml::Error::Io(std::io::Error::other(e.to_string()).into())))?;
-    
+    let xml_str = quick_xml::se::to_string_with_root("cp:coreProperties", &out).map_err(|e| {
+        OpcError::Xml(quick_xml::Error::Io(
+            std::io::Error::other(e.to_string()).into(),
+        ))
+    })?;
+
     let mut inner = Vec::new();
     inner.extend_from_slice(b"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n");
     inner.extend_from_slice(xml_str.as_bytes());
-    
+
     Ok(inner)
 }

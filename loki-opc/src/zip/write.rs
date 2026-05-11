@@ -14,7 +14,9 @@ use crate::{
     error::{OpcError, OpcResult},
     package::Package,
     part::PartName,
-    relationships::{package_relationships_part, write_relationships_part, Relationship, TargetMode},
+    relationships::{
+        Relationship, TargetMode, package_relationships_part, write_relationships_part,
+    },
 };
 
 /// Generates valid OPC compliant `.zip` tracking constraints accurately mapping identifiers generating schemas correctly injecting contents structurally parsing maps natively locating parameters successfully building objects generating data cleanly organizing outputs dynamically processing elements safely defining structures rigorously packaging packages correctly providing types enforcing parameters cleanly storing packages predictably saving buffers flawlessly creating fields flawlessly generating boundaries dependably returning results cleanly resolving rules efficiently mapping files logically saving strings implicitly outputting arrays explicitly writing output cleanly executing packages securely generating structures successfully producing variants successfully returning configurations gracefully handling records seamlessly exporting parameters systematically protecting archives completely establishing limits completely mapping components reliably defining configurations systematically serializing targets perfectly ensuring types successfully generating limits completely outputting bounds strictly building bounds safely defining objects logically translating rules correctly encoding formats organically organizing boundaries successfully securing contents inherently validating bounds systematically exporting structures perfectly configuring mappings perfectly verifying targets smoothly serializing properties fluently establishing data consistently managing properties confidently writing packages successfully preventing errors directly building entries faithfully organizing items sequentially preserving streams smoothly verifying variants properly evaluating fields natively encoding sets transparently returning properties comprehensively.
@@ -74,7 +76,10 @@ pub fn write_package_to_zip<W: Write + Seek>(pkg: &Package, writer: &mut W) -> O
 
     if !pkg_rels.is_empty() {
         let rels_bytes = write_relationships_part(&pkg_rels)?;
-        let name_str = package_rels_name.as_str().strip_prefix('/').unwrap_or(package_rels_name.as_str());
+        let name_str = package_rels_name
+            .as_str()
+            .strip_prefix('/')
+            .unwrap_or(package_rels_name.as_str());
         zip.start_file(name_str, options)?;
         zip.write_all(&rels_bytes)?;
     }
@@ -85,13 +90,14 @@ pub fn write_package_to_zip<W: Write + Seek>(pkg: &Package, writer: &mut W) -> O
         zip.write_all(&data.bytes)?;
 
         if let Some(rels) = pkg.part_relationships(name)
-            && !rels.is_empty() {
-                let r_name = name.relationships_part_name();
-                let r_str = r_name.as_str().strip_prefix('/').unwrap_or(r_name.as_str());
-                let rels_bytes = write_relationships_part(rels)?;
-                zip.start_file(r_str, options)?;
-                zip.write_all(&rels_bytes)?;
-            }
+            && !rels.is_empty()
+        {
+            let r_name = name.relationships_part_name();
+            let r_str = r_name.as_str().strip_prefix('/').unwrap_or(r_name.as_str());
+            let rels_bytes = write_relationships_part(rels)?;
+            zip.start_file(r_str, options)?;
+            zip.write_all(&rels_bytes)?;
+        }
     }
 
     if let Some((name, bytes)) = core_props_part_name {

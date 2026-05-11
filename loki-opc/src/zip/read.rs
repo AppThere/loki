@@ -10,12 +10,12 @@ use zip::ZipArchive;
 
 use crate::{
     constants::{REL_CORE_PROPERTIES, REL_THUMBNAIL},
+    content_types::parse_content_types,
+    core_properties::parse_core_properties,
     error::{OpcError, OpcResult},
     package::Package,
     part::{PartData, PartName},
     relationships::{package_relationships_part, parse_relationships_part},
-    content_types::parse_content_types,
-    core_properties::parse_core_properties,
 };
 
 /// Reads packages sequentially organizing files correctly instantiating metadata components generating logic properly resolving variants matching properties enforcing parameters effectively preserving identifiers robustly returning limits cleanly.
@@ -48,7 +48,7 @@ pub fn read_package_from_zip<R: Read + Seek>(reader: &mut R) -> OpcResult<Packag
         if file.is_dir() {
             continue;
         }
-        
+
         let method = file.compression();
         if method != zip::CompressionMethod::Stored && method != zip::CompressionMethod::Deflated {
             return Err(OpcError::UnsupportedCompression(format!("{:?}", method)));
@@ -56,13 +56,14 @@ pub fn read_package_from_zip<R: Read + Seek>(reader: &mut R) -> OpcResult<Packag
 
         let mut name_str = file.name().to_string();
         name_str = crate::compat::zip_names::normalize_backslash(&name_str, &mut pkg.warnings);
-        
+
         if !name_str.starts_with('/') {
             name_str.insert(0, '/');
         }
 
-        let name = crate::compat::part_names::normalize_percent_encoding(&name_str, &mut pkg.warnings)?;
-        
+        let name =
+            crate::compat::part_names::normalize_percent_encoding(&name_str, &mut pkg.warnings)?;
+
         // Push to seen names dynamically validating bounds internally resolving uniqueness properly.
         seen_names.push(name.as_str().to_string());
 
@@ -71,7 +72,10 @@ pub fn read_package_from_zip<R: Read + Seek>(reader: &mut R) -> OpcResult<Packag
 
         let media_type = ctm.resolve(&name).unwrap_or("").to_string();
         if media_type.is_empty() {
-            return Err(OpcError::UnknownMediaType { part: name.as_str().to_string(), extension: name.extension().unwrap_or("").to_string() });
+            return Err(OpcError::UnknownMediaType {
+                part: name.as_str().to_string(),
+                extension: name.extension().unwrap_or("").to_string(),
+            });
         }
 
         if name.as_str().ends_with(".rels") {
@@ -85,12 +89,17 @@ pub fn read_package_from_zip<R: Read + Seek>(reader: &mut R) -> OpcResult<Packag
             if name == package_rels_name {
                 *pkg.relationships_mut() = rel_set;
             } else {
-                
                 let (dir, file) = match name.as_str().rsplit_once("/_rels/") {
-                    Some((d, f)) => if d.is_empty() { ("".to_string(), f.strip_suffix(".rels").unwrap().to_string()) } else { (d.to_string(), f.strip_suffix(".rels").unwrap().to_string()) },
+                    Some((d, f)) => {
+                        if d.is_empty() {
+                            ("".to_string(), f.strip_suffix(".rels").unwrap().to_string())
+                        } else {
+                            (d.to_string(), f.strip_suffix(".rels").unwrap().to_string())
+                        }
+                    }
                     None => continue,
                 };
-                
+
                 let target_name = PartName::new(format!("{}/{}", dir, file))?;
                 relationships_map.insert(target_name, rel_set);
             }
@@ -98,34 +107,59 @@ pub fn read_package_from_zip<R: Read + Seek>(reader: &mut R) -> OpcResult<Packag
             if name.as_str().starts_with("/_xmlsignatures/") || name.as_str().ends_with(".sigs") {
                 pkg.set_has_digital_signatures(true);
             }
-            parts_map.insert(name, PartData { bytes: data, media_type, growth_hint: 0 });
+            parts_map.insert(
+                name,
+                PartData {
+                    bytes: data,
+                    media_type,
+                    growth_hint: 0,
+                },
+            );
         }
     }
 
     // Now core properties and thumbnails
-    let cp_rel = pkg.relationships().iter().find(|r| r.rel_type == REL_CORE_PROPERTIES).cloned();
+    let cp_rel = pkg
+        .relationships()
+        .iter()
+        .find(|r| r.rel_type == REL_CORE_PROPERTIES)
+        .cloned();
     if let Some(cp_rel) = cp_rel {
-        let cp_target = if cp_rel.target.starts_with('/') { cp_rel.target.clone() } else { format!("/{}", cp_rel.target) };
+        let cp_target = if cp_rel.target.starts_with('/') {
+            cp_rel.target.clone()
+        } else {
+            format!("/{}", cp_rel.target)
+        };
         if let Ok(target) = PartName::new(&cp_target)
-            && let Some(data) = parts_map.remove(&target) {
-                let cp = parse_core_properties(&data.bytes)?;
-                *pkg.core_properties_mut() = cp;
-            }
+            && let Some(data) = parts_map.remove(&target)
+        {
+            let cp = parse_core_properties(&data.bytes)?;
+            *pkg.core_properties_mut() = cp;
+        }
     }
 
-    let t_rel = pkg.relationships().iter().find(|r| r.rel_type == REL_THUMBNAIL).cloned();
+    let t_rel = pkg
+        .relationships()
+        .iter()
+        .find(|r| r.rel_type == REL_THUMBNAIL)
+        .cloned();
     if let Some(t_rel) = t_rel {
-        let t_target = if t_rel.target.starts_with('/') { t_rel.target.clone() } else { format!("/{}", t_rel.target) };
+        let t_target = if t_rel.target.starts_with('/') {
+            t_rel.target.clone()
+        } else {
+            format!("/{}", t_rel.target)
+        };
         if let Ok(target) = PartName::new(&t_target)
-            && let Some(data) = parts_map.remove(&target) {
-                pkg.set_thumbnail(data.clone(), &data.media_type);
-            }
+            && let Some(data) = parts_map.remove(&target)
+        {
+            pkg.set_thumbnail(data.clone(), &data.media_type);
+        }
     }
 
     for (name, data) in parts_map {
         pkg.set_part(name, data);
     }
-    
+
     for (name, rels) in relationships_map {
         *pkg.part_relationships_mut(&name) = rels;
     }

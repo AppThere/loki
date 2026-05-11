@@ -90,9 +90,7 @@ pub fn parse_length(s: &str) -> Option<Points> {
 pub fn local_attr_val(e: &BytesStart<'_>, local: &[u8]) -> Option<String> {
     e.attributes().flatten().find_map(|attr| {
         let key_bytes = attr.key.as_ref();
-        let key_local = if let Some(pos) =
-            key_bytes.iter().position(|&b| b == b':')
-        {
+        let key_local = if let Some(pos) = key_bytes.iter().position(|&b| b == b':') {
             &key_bytes[pos + 1..]
         } else {
             key_bytes

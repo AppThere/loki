@@ -6,8 +6,8 @@
 use quick_xml::de::from_reader;
 use serde::Deserialize;
 
-use crate::error::{OpcError, OpcResult};
 use crate::core_properties::CoreProperties;
+use crate::error::{OpcError, OpcResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename = "coreProperties")]
@@ -58,12 +58,28 @@ fn parse_date(s: &str) -> OpcResult<chrono::DateTime<chrono::Utc>> {
 
 /// Invokes standard XML parsing sequentially checking ISO date fields thoroughly bypassing complex native limits universally tracking structure strictly identifying structures securely extracting bounds successfully.
 pub fn parse_core_properties(xml: &[u8]) -> OpcResult<CoreProperties> {
-    let parsed: CorePropsXml = from_reader(xml).map_err(|e| OpcError::Xml(quick_xml::Error::Io(std::io::Error::other(e.to_string()).into())))?;
-    
-    let created = if let Some(dv) = parsed.created { Some(parse_date(&dv.value)?) } else { None };
-    let modified = if let Some(dv) = parsed.modified { Some(parse_date(&dv.value)?) } else { None };
-    let last_printed = if let Some(ls) = parsed.last_printed { Some(parse_date(&ls)?) } else { None };
-    
+    let parsed: CorePropsXml = from_reader(xml).map_err(|e| {
+        OpcError::Xml(quick_xml::Error::Io(
+            std::io::Error::other(e.to_string()).into(),
+        ))
+    })?;
+
+    let created = if let Some(dv) = parsed.created {
+        Some(parse_date(&dv.value)?)
+    } else {
+        None
+    };
+    let modified = if let Some(dv) = parsed.modified {
+        Some(parse_date(&dv.value)?)
+    } else {
+        None
+    };
+    let last_printed = if let Some(ls) = parsed.last_printed {
+        Some(parse_date(&ls)?)
+    } else {
+        None
+    };
+
     Ok(CoreProperties {
         category: parsed.category,
         content_status: parsed.content_status,

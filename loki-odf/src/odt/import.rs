@@ -22,8 +22,8 @@
 use std::io::{Read, Seek};
 
 use loki_doc_model::document::Document;
-use loki_doc_model::io::source::DocumentSource;
 use loki_doc_model::io::DocumentImport;
+use loki_doc_model::io::source::DocumentSource;
 
 use crate::error::{OdfError, OdfResult, OdfWarning};
 use crate::package::OdfPackage;
@@ -107,10 +107,7 @@ impl DocumentImport for OdtImport {
     /// Warnings are discarded. Use [`OdtImporter`] to retrieve them.
     ///
     /// ODF 1.3 §3 (package conventions).
-    fn import(
-        reader: impl Read + Seek,
-        options: Self::Options,
-    ) -> OdfResult<Document> {
+    fn import(reader: impl Read + Seek, options: Self::Options) -> OdfResult<Document> {
         OdtImporter::new(options).run(reader).map(|r| r.document)
     }
 }
@@ -148,10 +145,7 @@ impl OdtImporter {
     /// - [`OdfError::Xml`] — any part contains malformed XML.
     ///
     /// ODF 1.3 §3 (package conventions).
-    pub fn run(
-        self,
-        reader: impl Read + Seek,
-    ) -> OdfResult<OdtImportResult> {
+    pub fn run(self, reader: impl Read + Seek) -> OdfResult<OdtImportResult> {
         let mut warnings = Vec::new();
 
         let package = OdfPackage::open(reader)?;
@@ -160,9 +154,7 @@ impl OdtImporter {
         // If the version was absent and strict mode is off, that is valid
         // (ODF 1.1). If it was present but unrecognised and strict mode is
         // on, raise an error.
-        let source_version = if !package.version_was_absent
-            && package.version == OdfVersion::V1_3
-        {
+        let source_version = if !package.version_was_absent && package.version == OdfVersion::V1_3 {
             // detect_version returns V1_3 as a fallback for unknown strings;
             // re-examine the raw attribute to surface an
             // UnrecognisedVersion warning when appropriate.
@@ -170,13 +162,9 @@ impl OdtImporter {
             match raw {
                 Some(ref s) if OdfVersion::from_attr(s).is_none() => {
                     if self.options.strict_version {
-                        return Err(OdfError::UnsupportedVersion {
-                            version: s.clone(),
-                        });
+                        return Err(OdfError::UnsupportedVersion { version: s.clone() });
                     }
-                    warnings.push(OdfWarning::UnrecognisedVersion {
-                        version: s.clone(),
-                    });
+                    warnings.push(OdfWarning::UnrecognisedVersion { version: s.clone() });
                     OdfVersion::V1_3
                 }
                 _ => package.version,
@@ -186,16 +174,13 @@ impl OdtImporter {
         };
 
         // ── Parse XML parts ───────────────────────────────────────────────
-        let odf_doc =
-            crate::odt::reader::document::read_document(&package.content)?;
+        let odf_doc = crate::odt::reader::document::read_document(&package.content)?;
 
-        let mut stylesheet =
-            crate::odt::reader::styles::read_stylesheet(&package.styles, false)?;
+        let mut stylesheet = crate::odt::reader::styles::read_stylesheet(&package.styles, false)?;
 
         // Merge automatic styles from content.xml (paragraph/span-level styles
         // that are specific to this document instance).
-        let auto_styles =
-            crate::odt::reader::styles::read_auto_styles(&package.content)?;
+        let auto_styles = crate::odt::reader::styles::read_auto_styles(&package.content)?;
         stylesheet.merge_auto(auto_styles);
 
         let odf_meta = package
@@ -205,21 +190,18 @@ impl OdtImporter {
             .transpose()?;
 
         // ── Map to document model ─────────────────────────────────────────
-        let (mut document, mut mapper_warnings) =
-            crate::odt::mapper::document::map_document(
-                &odf_doc,
-                &stylesheet,
-                odf_meta.as_ref(),
-                &package.images,
-                &self.options,
-            );
+        let (mut document, mut mapper_warnings) = crate::odt::mapper::document::map_document(
+            &odf_doc,
+            &stylesheet,
+            odf_meta.as_ref(),
+            &package.images,
+            &self.options,
+        );
         warnings.append(&mut mapper_warnings);
 
         // Set provenance (version detected above overrides any version the
         // mapper may have computed from the body XML).
-        document.source = Some(
-            DocumentSource::new("odf").with_version(source_version.as_str()),
-        );
+        document.source = Some(DocumentSource::new("odf").with_version(source_version.as_str()));
 
         Ok(OdtImportResult {
             document,
@@ -234,8 +216,8 @@ impl OdtImporter {
 /// Extract the raw value of the `office:version` attribute from `content.xml`
 /// bytes without fully re-parsing; returns `None` if absent.
 fn raw_version_attr(content: &[u8]) -> Option<String> {
-    use quick_xml::events::Event;
     use quick_xml::Reader;
+    use quick_xml::events::Event;
 
     let mut reader = Reader::from_reader(content);
     reader.config_mut().trim_text(false);
@@ -255,18 +237,13 @@ fn raw_version_attr(content: &[u8]) -> Option<String> {
                 if local == b"document-content" || local == b"document" {
                     return e.attributes().flatten().find_map(|attr| {
                         let key = attr.key.as_ref();
-                        let key_local =
-                            if let Some(p) =
-                                key.iter().rposition(|&x| x == b':')
-                            {
-                                &key[p + 1..]
-                            } else {
-                                key
-                            };
+                        let key_local = if let Some(p) = key.iter().rposition(|&x| x == b':') {
+                            &key[p + 1..]
+                        } else {
+                            key
+                        };
                         if key_local == b"version" {
-                            attr.unescape_value()
-                                .ok()
-                                .map(std::borrow::Cow::into_owned)
+                            attr.unescape_value().ok().map(std::borrow::Cow::into_owned)
                         } else {
                             None
                         }
@@ -286,33 +263,27 @@ fn raw_version_attr(content: &[u8]) -> Option<String> {
 mod tests {
     use std::io::{Cursor, Write};
 
-    use zip::write::{FileOptions, ZipWriter};
     use zip::CompressionMethod;
+    use zip::write::{FileOptions, ZipWriter};
 
     use super::*;
-    use crate::constants::{
-        ENTRY_CONTENT, ENTRY_MANIFEST, ENTRY_STYLES, MIME_ODT,
-    };
+    use crate::constants::{ENTRY_CONTENT, ENTRY_MANIFEST, ENTRY_STYLES, MIME_ODT};
 
     fn build_odt_zip(version: Option<&str>) -> Vec<u8> {
         let ver_attr = match version {
             Some(v) => format!(" office:version=\"{v}\""),
             None => String::new(),
         };
-        let content = format!(
-            r#"<?xml version="1.0"?><office:document-content{ver_attr}/>"#
-        );
+        let content = format!(r#"<?xml version="1.0"?><office:document-content{ver_attr}/>"#);
 
         let mut buf = Vec::new();
         let mut zip = ZipWriter::new(Cursor::new(&mut buf));
 
-        let stored =
-            FileOptions::<()>::default().compression_method(CompressionMethod::Stored);
+        let stored = FileOptions::<()>::default().compression_method(CompressionMethod::Stored);
         zip.start_file("mimetype", stored).unwrap();
         zip.write_all(MIME_ODT.as_bytes()).unwrap();
 
-        let deflated = FileOptions::<()>::default()
-            .compression_method(CompressionMethod::Deflated);
+        let deflated = FileOptions::<()>::default().compression_method(CompressionMethod::Deflated);
         zip.start_file(ENTRY_MANIFEST, deflated).unwrap();
         zip.write_all(b"<manifest:manifest/>").unwrap();
         zip.start_file(ENTRY_CONTENT, deflated).unwrap();
@@ -366,8 +337,10 @@ mod tests {
     #[test]
     fn run_unknown_version_strict_returns_error() {
         let zip = build_odt_zip(Some("99.0"));
-        let opts =
-            OdtImportOptions { strict_version: true, ..Default::default() };
+        let opts = OdtImportOptions {
+            strict_version: true,
+            ..Default::default()
+        };
         let result = OdtImporter::new(opts).run(Cursor::new(zip));
         assert!(
             matches!(

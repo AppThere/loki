@@ -8,17 +8,17 @@
 //! populated by `document_to_loro`.
 
 use loki_doc_model::{
+    Document, MutationError, NodeAttr,
     content::block::{Block, StyledParagraph},
     content::inline::Inline,
-    delete_text, get_block_text, insert_text, merge_block, split_block,
+    delete_text, get_block_text, insert_text,
     layout::section::Section,
     loro_bridge::document_to_loro,
+    merge_block, split_block,
     style::{
-        props::{CharProps, ParaProps},
         StyleId,
+        props::{CharProps, ParaProps},
     },
-    Document, MutationError,
-    NodeAttr,
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -104,7 +104,10 @@ fn insert_text_at_offset_0_prepends() {
     insert_text(&ldoc, 0, 0, "X").expect("insert succeeded");
 
     let text = get_block_text(&ldoc, 0);
-    assert!(text.starts_with('X'), "expected text to start with 'X', got: {text:?}");
+    assert!(
+        text.starts_with('X'),
+        "expected text to start with 'X', got: {text:?}"
+    );
 }
 
 #[test]
@@ -117,7 +120,10 @@ fn insert_text_at_end_appends() {
     insert_text(&ldoc, 0, initial_len, "!").expect("insert at end succeeded");
 
     let text = get_block_text(&ldoc, 0);
-    assert!(text.ends_with('!'), "expected text to end with '!', got: {text:?}");
+    assert!(
+        text.ends_with('!'),
+        "expected text to end with '!', got: {text:?}"
+    );
 }
 
 #[test]
@@ -129,7 +135,11 @@ fn insert_text_in_middle_inserts_at_correct_position() {
     insert_text(&ldoc, 0, 2, "XYZ").expect("insert in middle succeeded");
 
     let text = get_block_text(&ldoc, 0);
-    assert_eq!(text.get(2..5), Some("XYZ"), "mid-string insert mismatch: {text:?}");
+    assert_eq!(
+        text.get(2..5),
+        Some("XYZ"),
+        "mid-string insert mismatch: {text:?}"
+    );
 }
 
 #[test]
@@ -206,7 +216,13 @@ fn round_trip_insert_text_visible_in_loro_to_document() {
         Block::StyledPara(sp) => sp
             .inlines
             .iter()
-            .filter_map(|i| if let Inline::Str(s) = i { Some(s.as_str()) } else { None })
+            .filter_map(|i| {
+                if let Inline::Str(s) = i {
+                    Some(s.as_str())
+                } else {
+                    None
+                }
+            })
             .collect::<Vec<_>>()
             .join(""),
         other => panic!("expected StyledPara, got: {other:?}"),
@@ -228,8 +244,16 @@ fn split_block_in_middle_divides_text() {
     // Split after "hello" (byte offset 5).
     split_block(&ldoc, 0, 5).expect("split succeeded");
 
-    assert_eq!(get_block_text(&ldoc, 0), "hello", "block 0 should be 'hello'");
-    assert_eq!(get_block_text(&ldoc, 1), " world", "block 1 should be ' world'");
+    assert_eq!(
+        get_block_text(&ldoc, 0),
+        "hello",
+        "block 0 should be 'hello'"
+    );
+    assert_eq!(
+        get_block_text(&ldoc, 1),
+        " world",
+        "block 1 should be ' world'"
+    );
 }
 
 #[test]
@@ -240,7 +264,11 @@ fn split_block_at_start_yields_empty_first_block() {
     split_block(&ldoc, 0, 0).expect("split at start succeeded");
 
     assert_eq!(get_block_text(&ldoc, 0), "", "block 0 should be empty");
-    assert_eq!(get_block_text(&ldoc, 1), "hello", "block 1 should carry full text");
+    assert_eq!(
+        get_block_text(&ldoc, 1),
+        "hello",
+        "block 1 should carry full text"
+    );
 }
 
 #[test]
@@ -250,7 +278,11 @@ fn split_block_at_end_yields_empty_second_block() {
 
     split_block(&ldoc, 0, 5).expect("split at end succeeded");
 
-    assert_eq!(get_block_text(&ldoc, 0), "hello", "block 0 should be full text");
+    assert_eq!(
+        get_block_text(&ldoc, 0),
+        "hello",
+        "block 0 should be full text"
+    );
     assert_eq!(get_block_text(&ldoc, 1), "", "block 1 should be empty");
 }
 
@@ -300,10 +332,14 @@ fn split_block_second_block_inherits_block_type() {
     split_block(&ldoc, 0, 9).expect("split succeeded");
 
     // Both blocks should re-derive as StyledPara (type was copied).
-    let derived = loki_doc_model::loro_bridge::loro_to_document(&ldoc)
-        .expect("loro_to_document succeeded");
+    let derived =
+        loki_doc_model::loro_bridge::loro_to_document(&ldoc).expect("loro_to_document succeeded");
     let section = derived.sections.first().expect("section exists");
-    assert_eq!(section.blocks.len(), 2, "should have two blocks after split");
+    assert_eq!(
+        section.blocks.len(),
+        2,
+        "should have two blocks after split"
+    );
     assert!(
         matches!(section.blocks[0], Block::StyledPara(_)),
         "block 0 should be StyledPara"
@@ -323,7 +359,11 @@ fn merge_block_concatenates_text() {
 
     merge_block(&ldoc, 1).expect("merge succeeded");
 
-    assert_eq!(get_block_text(&ldoc, 0), "hello world", "merged text mismatch");
+    assert_eq!(
+        get_block_text(&ldoc, 0),
+        "hello world",
+        "merged text mismatch"
+    );
 }
 
 #[test]
@@ -368,10 +408,14 @@ fn merge_removes_the_second_block() {
 
     merge_block(&ldoc, 1).expect("merge succeeded");
 
-    let derived = loki_doc_model::loro_bridge::loro_to_document(&ldoc)
-        .expect("loro_to_document succeeded");
+    let derived =
+        loki_doc_model::loro_bridge::loro_to_document(&ldoc).expect("loro_to_document succeeded");
     let section = derived.sections.first().expect("section exists");
-    assert_eq!(section.blocks.len(), 1, "only one block should remain after merge");
+    assert_eq!(
+        section.blocks.len(),
+        1,
+        "only one block should remain after merge"
+    );
 }
 
 // ── split/merge round-trip ────────────────────────────────────────────────────
@@ -390,7 +434,11 @@ fn split_then_merge_round_trips_text() {
     // Merge back.
     let offset = merge_block(&ldoc, 1).expect("merge succeeded");
     assert_eq!(offset, 6, "merged_offset should equal split point");
-    assert_eq!(get_block_text(&ldoc, 0), original, "round-trip text mismatch");
+    assert_eq!(
+        get_block_text(&ldoc, 0),
+        original,
+        "round-trip text mismatch"
+    );
 }
 
 // ── split_block style-preservation tests ─────────────────────────────────────
@@ -403,8 +451,8 @@ fn split_heading_block_preserves_heading_level() {
 
     split_block(&ldoc, 0, 5).expect("split succeeded");
 
-    let derived = loki_doc_model::loro_bridge::loro_to_document(&ldoc)
-        .expect("loro_to_document succeeded");
+    let derived =
+        loki_doc_model::loro_bridge::loro_to_document(&ldoc).expect("loro_to_document succeeded");
     let section = derived.sections.first().expect("section exists");
     assert_eq!(section.blocks.len(), 2, "two blocks after split");
 
@@ -425,8 +473,8 @@ fn split_heading_level_1_is_preserved() {
 
     split_block(&ldoc, 0, 0).expect("split at start succeeded");
 
-    let derived = loki_doc_model::loro_bridge::loro_to_document(&ldoc)
-        .expect("loro_to_document succeeded");
+    let derived =
+        loki_doc_model::loro_bridge::loro_to_document(&ldoc).expect("loro_to_document succeeded");
     let section = derived.sections.first().expect("section exists");
     for (i, block) in section.blocks.iter().enumerate() {
         match block {
@@ -450,8 +498,8 @@ fn split_block_with_para_props_inherits_props() {
 
     split_block(&ldoc, 0, 8).expect("split succeeded");
 
-    let derived = loki_doc_model::loro_bridge::loro_to_document(&ldoc)
-        .expect("loro_to_document succeeded");
+    let derived =
+        loki_doc_model::loro_bridge::loro_to_document(&ldoc).expect("loro_to_document succeeded");
     let section = derived.sections.first().expect("section exists");
     assert_eq!(section.blocks.len(), 2, "two blocks after split");
 
@@ -486,13 +534,29 @@ fn split_block_new_block_props_are_independent() {
     let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
 
     split_block(&ldoc, 0, 5).expect("split succeeded");
-    assert_eq!(get_block_text(&ldoc, 0), "right", "block 0 text after split");
-    assert_eq!(get_block_text(&ldoc, 1), " aligned paragraph", "block 1 text after split");
+    assert_eq!(
+        get_block_text(&ldoc, 0),
+        "right",
+        "block 0 text after split"
+    );
+    assert_eq!(
+        get_block_text(&ldoc, 1),
+        " aligned paragraph",
+        "block 1 text after split"
+    );
 
     // Insert text into block 1 only; block 0 must be unaffected.
     loki_doc_model::insert_text(&ldoc, 1, 0, "XXX").expect("insert into block 1 succeeded");
-    assert_eq!(get_block_text(&ldoc, 0), "right", "block 0 must be unchanged after block 1 mutation");
-    assert_eq!(get_block_text(&ldoc, 1), "XXX aligned paragraph", "block 1 has inserted text");
+    assert_eq!(
+        get_block_text(&ldoc, 0),
+        "right",
+        "block 0 must be unchanged after block 1 mutation"
+    );
+    assert_eq!(
+        get_block_text(&ldoc, 1),
+        "XXX aligned paragraph",
+        "block 1 has inserted text"
+    );
 }
 
 #[test]
@@ -505,19 +569,20 @@ fn split_block_with_char_props_inherits_direct_char_props() {
 
     split_block(&ldoc, 0, 4).expect("split succeeded");
 
-    let derived = loki_doc_model::loro_bridge::loro_to_document(&ldoc)
-        .expect("loro_to_document succeeded");
+    let derived =
+        loki_doc_model::loro_bridge::loro_to_document(&ldoc).expect("loro_to_document succeeded");
     let section = derived.sections.first().expect("section exists");
     assert_eq!(section.blocks.len(), 2, "two blocks after split");
 
     for (i, block) in section.blocks.iter().enumerate() {
         match block {
             Block::StyledPara(sp) => {
-                let bold = sp
-                    .direct_char_props
-                    .as_ref()
-                    .and_then(|c| c.bold);
-                assert_eq!(bold, Some(true), "block {i} must inherit bold=true from direct_char_props");
+                let bold = sp.direct_char_props.as_ref().and_then(|c| c.bold);
+                assert_eq!(
+                    bold,
+                    Some(true),
+                    "block {i} must inherit bold=true from direct_char_props"
+                );
             }
             other => panic!("block {i} should be StyledPara, got: {other:?}"),
         }

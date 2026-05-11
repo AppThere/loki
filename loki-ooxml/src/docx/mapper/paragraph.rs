@@ -7,7 +7,7 @@ use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::{Block, StyledParagraph};
 use loki_doc_model::style::catalog::StyleId;
 
-use crate::docx::model::paragraph::{DocxParagraph, DocxParaChild, DocxRunChild};
+use crate::docx::model::paragraph::{DocxParaChild, DocxParagraph, DocxRunChild};
 
 use super::document::MappingContext;
 use super::inline::map_inlines;
@@ -25,9 +25,10 @@ pub(crate) fn map_paragraph(p: &DocxParagraph, ctx: &mut MappingContext<'_>) -> 
     // Detect `<w:br w:type="page"/>` inside any run child and promote it to
     // a paragraph-level page_break_after flag so the layout engine can honour it.
     let has_page_break = p.children.iter().any(|child| match child {
-        DocxParaChild::Run(run) => run.children.iter().any(|rc| {
-            matches!(rc, DocxRunChild::Break { break_type: Some(t) } if t == "page")
-        }),
+        DocxParaChild::Run(run) => run
+            .children
+            .iter()
+            .any(|rc| matches!(rc, DocxRunChild::Break { break_type: Some(t) } if t == "page")),
         _ => false,
     });
     if has_page_break {
@@ -36,39 +37,46 @@ pub(crate) fn map_paragraph(p: &DocxParagraph, ctx: &mut MappingContext<'_>) -> 
             .page_break_after = Some(true);
     }
 
-    let style_id = p.ppr.as_ref()
+    let style_id = p
+        .ppr
+        .as_ref()
         .and_then(|ppr| ppr.style_id.as_ref())
         .map(|s| StyleId::new(s.clone()));
 
     let inlines = map_inlines(&p.children, ctx);
 
     // Determine outline level: direct props win; fall back to resolved style.
-    let outline_level = para_props.as_ref().and_then(|pp| pp.outline_level).or_else(|| {
-        style_id.as_ref()
-            .and_then(|id| ctx.styles.resolve_para(id))
-            .and_then(|pp| pp.outline_level)
-    });
+    let outline_level = para_props
+        .as_ref()
+        .and_then(|pp| pp.outline_level)
+        .or_else(|| {
+            style_id
+                .as_ref()
+                .and_then(|id| ctx.styles.resolve_para(id))
+                .and_then(|pp| pp.outline_level)
+        });
 
     if ctx.options.emit_heading_blocks
-        && let Some(level) = outline_level {
-            // Promote to a structural heading block.
-            // Preserve any direct paragraph alignment in NodeAttr.kv so the
-            // layout engine can restore it when synthesising the StyledParagraph.
-            let mut attr = NodeAttr::default();
-            if let Some(ref pp) = para_props {
-                use loki_doc_model::style::props::para_props::ParagraphAlignment;
-                if let Some(align) = pp.alignment {
-                    let val = match align {
-                        ParagraphAlignment::Center => "center",
-                        ParagraphAlignment::Right | ParagraphAlignment::Distribute => "right",
-                        ParagraphAlignment::Justify => "justify",
-                        _ => "left",
-                    };
-                    attr.kv.push(("jc".into(), val.into()));
-                }
+        && let Some(level) = outline_level
+    {
+        // Promote to a structural heading block.
+        // Preserve any direct paragraph alignment in NodeAttr.kv so the
+        // layout engine can restore it when synthesising the StyledParagraph.
+        let mut attr = NodeAttr::default();
+        if let Some(ref pp) = para_props {
+            use loki_doc_model::style::props::para_props::ParagraphAlignment;
+            if let Some(align) = pp.alignment {
+                let val = match align {
+                    ParagraphAlignment::Center => "center",
+                    ParagraphAlignment::Right | ParagraphAlignment::Distribute => "right",
+                    ParagraphAlignment::Justify => "justify",
+                    _ => "left",
+                };
+                attr.kv.push(("jc".into(), val.into()));
             }
-            return vec![Block::Heading(level, attr, inlines)];
         }
+        return vec![Block::Heading(level, attr, inlines)];
+    }
 
     vec![Block::StyledPara(StyledParagraph {
         style_id,
@@ -84,16 +92,16 @@ pub(crate) fn map_paragraph(p: &DocxParagraph, ctx: &mut MappingContext<'_>) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
+    use crate::docx::import::DocxImportOptions;
+    use crate::docx::model::paragraph::{DocxPPr, DocxParaChild, DocxRun, DocxRunChild};
+    use loki_doc_model::content::attr::ExtensionBag;
     use loki_doc_model::content::inline::Inline;
     use loki_doc_model::style::catalog::{StyleCatalog, StyleId};
     use loki_doc_model::style::para_style::ParagraphStyle;
-    use loki_doc_model::style::props::para_props::ParaProps;
     use loki_doc_model::style::props::char_props::CharProps;
-    use loki_doc_model::content::attr::ExtensionBag;
+    use loki_doc_model::style::props::para_props::ParaProps;
     use loki_opc::PartData;
-    use crate::docx::import::DocxImportOptions;
-    use crate::docx::model::paragraph::{DocxParaChild, DocxPPr, DocxRun, DocxRunChild};
+    use std::collections::HashMap;
 
     fn make_ctx<'a>(
         styles: &'a StyleCatalog,
@@ -103,13 +111,24 @@ mod tests {
         images: &'a HashMap<String, PartData>,
         options: &'a DocxImportOptions,
     ) -> MappingContext<'a> {
-        MappingContext { styles, footnotes, endnotes, hyperlinks, images, options, warnings: Vec::new() }
+        MappingContext {
+            styles,
+            footnotes,
+            endnotes,
+            hyperlinks,
+            images,
+            options,
+            warnings: Vec::new(),
+        }
     }
 
     fn text_child(s: &str) -> DocxParaChild {
         DocxParaChild::Run(DocxRun {
             rpr: None,
-            children: vec![DocxRunChild::Text { text: s.to_string(), preserve: false }],
+            children: vec![DocxRunChild::Text {
+                text: s.to_string(),
+                preserve: false,
+            }],
         })
     }
 
@@ -117,9 +136,18 @@ mod tests {
         DocxImportOptions::default()
     }
 
-    fn empty_maps() -> (HashMap<i32, Vec<Block>>, HashMap<i32, Vec<Block>>,
-                         HashMap<String, String>, HashMap<String, PartData>) {
-        (HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new())
+    fn empty_maps() -> (
+        HashMap<i32, Vec<Block>>,
+        HashMap<i32, Vec<Block>>,
+        HashMap<String, String>,
+        HashMap<String, PartData>,
+    ) {
+        (
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+        )
     }
 
     #[test]
@@ -151,7 +179,10 @@ mod tests {
         let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
 
         let p = DocxParagraph {
-            ppr: Some(DocxPPr { style_id: Some("BodyText".into()), ..Default::default() }),
+            ppr: Some(DocxPPr {
+                style_id: Some("BodyText".into()),
+                ..Default::default()
+            }),
             children: vec![text_child("text")],
         };
         let blocks = map_paragraph(&p, &mut ctx);
@@ -166,11 +197,17 @@ mod tests {
     fn heading_via_direct_outline_level_emits_heading_block() {
         let styles = StyleCatalog::default();
         let (fn_m, en_m, hl_m, img_m) = empty_maps();
-        let opts = DocxImportOptions { emit_heading_blocks: true, ..Default::default() };
+        let opts = DocxImportOptions {
+            emit_heading_blocks: true,
+            ..Default::default()
+        };
         let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
 
         let p = DocxParagraph {
-            ppr: Some(DocxPPr { outline_lvl: Some(0), ..Default::default() }), // 0 = Heading1 in OOXML (0-indexed)
+            ppr: Some(DocxPPr {
+                outline_lvl: Some(0),
+                ..Default::default()
+            }), // 0 = Heading1 in OOXML (0-indexed)
             children: vec![text_child("Title")],
         };
         let blocks = map_paragraph(&p, &mut ctx);
@@ -188,20 +225,31 @@ mod tests {
             parent: None,
             linked_char_style: None,
             next_style_id: None,
-            para_props: ParaProps { outline_level: Some(1), ..Default::default() },
+            para_props: ParaProps {
+                outline_level: Some(1),
+                ..Default::default()
+            },
             char_props: CharProps::default(),
             is_default: false,
             is_custom: false,
             extensions: ExtensionBag::default(),
         };
-        styles.paragraph_styles.insert(StyleId::new("Heading1"), heading_style);
+        styles
+            .paragraph_styles
+            .insert(StyleId::new("Heading1"), heading_style);
 
         let (fn_m, en_m, hl_m, img_m) = empty_maps();
-        let opts = DocxImportOptions { emit_heading_blocks: true, ..Default::default() };
+        let opts = DocxImportOptions {
+            emit_heading_blocks: true,
+            ..Default::default()
+        };
         let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
 
         let p = DocxParagraph {
-            ppr: Some(DocxPPr { style_id: Some("Heading1".into()), ..Default::default() }),
+            ppr: Some(DocxPPr {
+                style_id: Some("Heading1".into()),
+                ..Default::default()
+            }),
             children: vec![text_child("Chapter 1")],
         };
         let blocks = map_paragraph(&p, &mut ctx);
@@ -213,11 +261,17 @@ mod tests {
     fn heading_suppressed_when_option_disabled() {
         let styles = StyleCatalog::default();
         let (fn_m, en_m, hl_m, img_m) = empty_maps();
-        let opts = DocxImportOptions { emit_heading_blocks: false, ..Default::default() };
+        let opts = DocxImportOptions {
+            emit_heading_blocks: false,
+            ..Default::default()
+        };
         let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
 
         let p = DocxParagraph {
-            ppr: Some(DocxPPr { outline_lvl: Some(0), ..Default::default() }),
+            ppr: Some(DocxPPr {
+                outline_lvl: Some(0),
+                ..Default::default()
+            }),
             children: vec![text_child("No heading block")],
         };
         let blocks = map_paragraph(&p, &mut ctx);
@@ -232,7 +286,10 @@ mod tests {
         let opts = default_opts();
         let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
 
-        let p = DocxParagraph { ppr: None, children: vec![] };
+        let p = DocxParagraph {
+            ppr: None,
+            children: vec![],
+        };
         let blocks = map_paragraph(&p, &mut ctx);
         assert_eq!(blocks.len(), 1);
         if let Block::StyledPara(sp) = &blocks[0] {
