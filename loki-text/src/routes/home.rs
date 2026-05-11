@@ -14,6 +14,8 @@ use dioxus::prelude::*;
 use loki_file_access::{FilePicker, PickOptions};
 
 use crate::routes::Route;
+use crate::tabs::OpenTab;
+use crate::utils::display_title_from_path;
 
 // ── String constants (i18n-ready) ─────────────────────────────────────────────
 
@@ -86,6 +88,31 @@ const MIME_TYPES: &[&str] = &[
     "application/vnd.oasis.opendocument.text",
 ];
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Push `path` as a new open tab, or switch to its existing tab if already open.
+///
+/// Returns the new active tab-bar index (1-based; 0 is the Home tab).
+fn push_or_switch_tab(mut tabs: Signal<Vec<OpenTab>>, mut active_tab: Signal<usize>, path: String) {
+    let title = display_title_from_path(&path);
+    let existing = tabs.read().iter().position(|t| t.path == path);
+    if let Some(idx) = existing {
+        // Tab already open — switch to it (tab-bar index = Vec index + 1).
+        *active_tab.write() = idx + 1;
+    } else {
+        tabs.write().push(OpenTab {
+            title,
+            path,
+            is_dirty: false,
+            is_discarded: false,
+        });
+        // TODO(tabs): Replace router-driven navigation with tab-driven navigation
+        // — the active tab index should determine which Editor route is displayed,
+        // not vice versa.
+        *active_tab.write() = tabs.read().len(); // new tab is last; +1 for Home
+    }
+}
+
 // ── Home ──────────────────────────────────────────────────────────────────────
 
 /// Home screen component — wraps [`AtHomeTab`] with Loki Text data and routing.
@@ -96,6 +123,9 @@ const MIME_TYPES: &[&str] = &[
 pub fn Home() -> Element {
     let navigator = use_navigator();
 
+    let tabs = use_context::<Signal<Vec<OpenTab>>>();
+    let active_tab = use_context::<Signal<usize>>();
+
     // Holds the last file-picker error message, if any.
     // AtHomeTab surfaces the on_open_file callback; error display is handled
     // by the caller in a future pass when AtHomeTab gains an error prop.
@@ -103,7 +133,9 @@ pub fn Home() -> Element {
 
     let on_open_file = move |_| {
         let nav = navigator;
-        let mut err_sig = pick_error.clone();
+        let mut err_sig = pick_error;
+        let tabs = tabs;
+        let active_tab = active_tab;
         spawn(async move {
             let picker = FilePicker::new();
             let opts = PickOptions {
@@ -113,9 +145,9 @@ pub fn Home() -> Element {
             };
             match picker.pick_file_to_open(opts).await {
                 Ok(Some(token)) => {
-                    nav.push(Route::Editor {
-                        path: token.serialize(),
-                    });
+                    let path = token.serialize();
+                    push_or_switch_tab(tabs, active_tab, path.clone());
+                    nav.push(Route::Editor { path });
                 }
                 Ok(None) => { /* user cancelled — no-op */ }
                 Err(e) => {

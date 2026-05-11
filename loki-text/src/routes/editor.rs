@@ -44,7 +44,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::tokens;
-use appthere_ui::{AtDocumentTabData, AtStatusBar, AtTabBar, AtTitleBar, Platform};
+use appthere_ui::{AtDocumentTabData, AtStatusBar, AtTabBar};
 use dioxus::prelude::*;
 use keyboard_types::Modifiers;
 use loki_doc_model::document::Document;
@@ -69,6 +69,7 @@ use crate::editing::navigation::{
 };
 use crate::editing::touch::{TouchInteractionState, TouchPhase, word_boundaries_at};
 use crate::error::LoadError;
+use crate::tabs::OpenTab;
 use crate::utils::display_title_from_path;
 
 /// Editor view mode toggle.
@@ -247,48 +248,62 @@ pub fn Editor(path: String) -> Element {
     //   last entry in paint_children and therefore the FIRST tested — it
     //   captures clicks in its own (correct) bounds before the scroll container
     //   is tried.
-    // Chrome height accounts for: title bar + tab bar + top toolbar + status bar.
-    // TODO(platform): use TITLE_BAR_HEIGHT_MACOS on macOS.
-    let chrome_px = tokens::TITLE_BAR_HEIGHT_DEFAULT as u32
-        + tokens::TAB_BAR_HEIGHT as u32
-        + tokens::TOOLBAR_HEIGHT_TOP as u32
-        + tokens::STATUS_BAR_HEIGHT as u32;
+    // Tab state — shared via Dioxus context from App root.
+    let mut tabs = use_context::<Signal<Vec<OpenTab>>>();
+    let mut active_tab = use_context::<Signal<usize>>();
 
     rsx! {
         div {
+            // COMPAT(dioxus-native): height: 100vh gives Taffy a concrete
+            // Dimension::Length so flex: 1 on the scroll child resolves to a
+            // definite height, enabling overflow-y: auto scroll. Without an
+            // explicit height here Blitz cannot propagate the 100vh definite
+            // size from the App root through the Router flex chain.
             style: format!(
-                "display: flex; flex-direction: column; flex: 1; \
-                 background: {bg}; font-family: system-ui, sans-serif;",
+                "display: flex; flex-direction: column; height: 100vh; \
+                 overflow: hidden; background: {bg}; font-family: system-ui, sans-serif;",
                 bg = tokens::COLOR_SURFACE_BASE,
             ),
 
-            // ── App title bar ─────────────────────────────────────────────────
-            AtTitleBar {
-                document_title:     Some(title.clone()),
-                is_dirty:           false, // TODO(dirty-flag): wire to document dirty state.
-                app_name:           "Loki Text",
-                collaborator_count: 0,
-                collaborator_label: "".to_string(),
-                // TODO(platform): detect actual platform and pass correct Platform variant.
-                platform:           Platform::Windows,
-                on_icon_press:      |_| {},
-            }
+            // TODO(platform): AtTitleBar is omitted on desktop — the OS provides native
+            // window chrome. Render AtTitleBar only on Android/iOS once platform
+            // detection is wired (see Platform enum in appthere_ui).
 
             // ── Document tab bar ──────────────────────────────────────────────
             AtTabBar {
-                // TODO(tabs): Wire AtTabBar to actual document state management.
-                tabs:               vec![AtDocumentTabData {
-                    title:       title.clone(),
-                    is_dirty:    false,
-                    is_discarded: false,
-                }],
-                active_index:       1,
+                tabs: tabs.read().iter().map(|t| AtDocumentTabData {
+                    title:        t.title.clone(),
+                    is_dirty:     t.is_dirty,
+                    is_discarded: t.is_discarded,
+                }).collect(),
+                active_index:       *active_tab.read(),
                 home_tab_label:     "Home",
                 aria_label:         "Open documents",
-                on_tab_select:      |_| {},
-                on_tab_close:       |_| {},
-                on_new_tab:         |_| {},
                 new_tab_aria_label: "New document",
+                on_tab_select: move |idx| {
+                    *active_tab.write() = idx;
+                    if idx == 0 {
+                        navigator.push(crate::routes::Route::Home {});
+                    }
+                    // TODO(tabs): Navigate to the correct editor route for idx > 0.
+                },
+                on_tab_close: move |idx| {
+                    if idx > 0 {
+                        tabs.write().remove(idx - 1);
+                        let new_len = tabs.read().len();
+                        let current = *active_tab.read();
+                        if current >= idx && current > 0 {
+                            *active_tab.write() = current.saturating_sub(1);
+                        }
+                        if new_len == 0 {
+                            navigator.push(crate::routes::Route::Home {});
+                        }
+                    }
+                },
+                on_new_tab: move |_| {
+                    // TODO(tabs): Open a blank document as a new tab.
+                    navigator.push(crate::routes::Route::Home {});
+                },
             }
 
             // ── Top toolbar (flex-shrink: 0) ───────────────────────────────────
@@ -298,10 +313,15 @@ pub fn Editor(path: String) -> Element {
             }
 
             // ── Scroll container ──────────────────────────────────────────────
+            //
+            // COMPAT(dioxus-native): flex: 1 is confirmed working. Removing
+            // calc() height in favour of flex growth to accommodate dynamic
+            // chrome heights. Requires height: 100vh on the parent editor div
+            // so Taffy can resolve the flex fraction to a concrete length.
             div {
                 style: format!(
-                    "height: calc(100vh - {chrome_px}px); min-height: 0; \
-                     overflow-y: auto; background: {bg}; padding: {p}px 0;",
+                    "flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; \
+                     background: {bg}; padding: {p}px 0;",
                     bg = tokens::COLOR_SURFACE_BASE,
                     p  = tokens::SPACE_6,
                 ),
