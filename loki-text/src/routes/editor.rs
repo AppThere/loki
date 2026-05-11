@@ -252,6 +252,25 @@ pub fn Editor(path: String) -> Element {
     let mut tabs = use_context::<Signal<Vec<OpenTab>>>();
     let mut active_tab = use_context::<Signal<usize>>();
 
+    // Sync active_tab to match the current route path on mount or path change.
+    // Needed because the user may navigate directly to an Editor route (e.g. via
+    // recent-files) without going through on_tab_select.
+    // TODO(tabs): Remove this effect once navigation is fully tab-driven —
+    // i.e. the active tab index determines which Editor route is displayed,
+    // not vice versa.
+    {
+        let path_for_effect = path.clone();
+        use_effect(move || {
+            let idx = tabs
+                .read()
+                .iter()
+                .position(|t| t.path == path_for_effect)
+                .map(|i| i + 1) // +1: index 0 is the Home tab
+                .unwrap_or(1); // fallback: treat as first document tab
+            *active_tab.write() = idx;
+        });
+    }
+
     rsx! {
         div {
             // COMPAT(dioxus-native): height: 100vh gives Taffy a concrete
@@ -280,12 +299,18 @@ pub fn Editor(path: String) -> Element {
                 home_tab_label:     "Home",
                 aria_label:         "Open documents",
                 new_tab_aria_label: "New document",
-                on_tab_select: move |idx| {
+                on_tab_select: move |idx: usize| {
                     *active_tab.write() = idx;
                     if idx == 0 {
                         navigator.push(crate::routes::Route::Home {});
+                    } else {
+                        // Tab indices are 1-based (0 = Home); Vec index is idx - 1.
+                        if let Some(tab) = tabs.read().get(idx - 1) {
+                            navigator.push(crate::routes::Route::Editor {
+                                path: tab.path.clone(),
+                            });
+                        }
                     }
-                    // TODO(tabs): Navigate to the correct editor route for idx > 0.
                 },
                 on_tab_close: move |idx| {
                     if idx > 0 {

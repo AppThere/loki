@@ -124,7 +124,14 @@ pub fn Home() -> Element {
     let navigator = use_navigator();
 
     let tabs = use_context::<Signal<Vec<OpenTab>>>();
-    let active_tab = use_context::<Signal<usize>>();
+    let mut active_tab = use_context::<Signal<usize>>();
+
+    // Mark the Home tab (index 0) as active whenever the Home route mounts.
+    // This ensures the tab bar highlights "Home" correctly after navigating back
+    // from an Editor route.
+    use_effect(move || {
+        *active_tab.write() = 0;
+    });
 
     // Holds the last file-picker error message, if any.
     // AtHomeTab surfaces the on_open_file callback; error display is handled

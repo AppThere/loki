@@ -12,6 +12,31 @@ use crate::tokens::layout::TAB_BAR_HEIGHT;
 use crate::tokens::spacing::{RADIUS_SM, SPACE_1, SPACE_3, TOUCH_MIN};
 use crate::tokens::typography::{FONT_FAMILY_UI, FONT_SIZE_LABEL, FONT_WEIGHT_MEDIUM};
 
+// ── Truncation ────────────────────────────────────────────────────────────────
+
+/// Maximum display length for a tab title. Titles longer than this are
+/// truncated with an ellipsis character to prevent layout overflow.
+///
+/// Truncates at char boundary to avoid layout overflow while CSS truncation
+/// support in Blitz is unconfirmed.
+const TAB_TITLE_MAX_CHARS: usize = 24;
+
+/// Truncate `title` to at most [`TAB_TITLE_MAX_CHARS`] characters.
+///
+/// If the title is longer, the last character is replaced with `'…'`.
+// COMPAT(dioxus-native): white-space: nowrap, text-overflow: ellipsis, and
+// min-width: 0 on a flex child are unconfirmed in Blitz. This Rust-side
+// truncation is the belt-and-suspenders fallback.
+fn truncate_tab_title(title: &str) -> String {
+    let mut chars = title.chars();
+    let truncated: String = chars.by_ref().take(TAB_TITLE_MAX_CHARS).collect();
+    if chars.next().is_some() {
+        format!("{}…", truncated)
+    } else {
+        truncated
+    }
+}
+
 // ── AtDocumentTab ─────────────────────────────────────────────────────────────
 
 /// A single closeable document tab inside [`crate::components::AtTabBar`].
@@ -43,10 +68,11 @@ pub fn AtDocumentTab(props: AtDocumentTabProps) -> Element {
         "transparent"
     };
 
+    let base_title = truncate_tab_title(&props.title);
     let mut label = if props.is_dirty {
-        format!("• {}", props.title)
+        format!("• {}", base_title)
     } else {
-        props.title.clone()
+        base_title
     };
     if props.is_discarded {
         // TODO(icons): replace 💤 Unicode fallback with a proper Tabler Icons
@@ -84,12 +110,16 @@ pub fn AtDocumentTab(props: AtDocumentTabProps) -> Element {
             span {
                 style: format!(
                     "font-size: {size}px; font-weight: {weight}; \
-                     color: {fg}; max-width: 140px; overflow: hidden; \
-                     font-family: {font};",
+                     color: {fg}; flex: 1; min-width: 0; max-width: 140px; \
+                     overflow: hidden; white-space: nowrap; \
+                     text-overflow: ellipsis; font-family: {font};",
                     // COMPAT(dioxus-native): white-space: nowrap is unconfirmed —
                     // verify at runtime.
                     // COMPAT(dioxus-native): text-overflow: ellipsis is unconfirmed —
                     // verify at runtime.
+                    // COMPAT(dioxus-native): min-width: 0 on a flex child is
+                    // unconfirmed — needed by CSS spec for truncation to work inside
+                    // a flex container.
                     size   = FONT_SIZE_LABEL,
                     weight = FONT_WEIGHT_MEDIUM,
                     fg     = if props.is_active {

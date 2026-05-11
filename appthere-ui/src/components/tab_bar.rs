@@ -72,12 +72,14 @@ pub fn AtTabBar(props: AtTabBarProps) -> Element {
             role: "tablist",
             "aria-label": props.aria_label,
             style: format!(
-                "height: {h}px; min-height: {h}px; background: {bg}; \
-                 border-bottom: 1px solid {border}; \
-                 display: flex; flex-direction: row; align-items: stretch; \
+                "height: {h}px; min-height: {h}px; max-height: {h}px; \
+                 background: {bg}; border-bottom: 1px solid {border}; \
+                 display: flex; flex-direction: row; align-items: center; \
                  flex-shrink: 0; font-family: {font}; \
-                 overflow-x: auto;",
+                 overflow-x: auto; overflow-y: hidden;",
                 // COMPAT(dioxus-native): overflow-x: auto is confirmed working.
+                // overflow-y: hidden clips any child that exceeds TAB_BAR_HEIGHT
+                // (e.g. min-height: TOUCH_MIN on tab items).
                 // scrollbar-width: none is unconfirmed — verify at runtime.
                 h      = TAB_BAR_HEIGHT,
                 bg     = COLOR_SURFACE_CHROME,
@@ -107,7 +109,10 @@ pub fn AtTabBar(props: AtTabBarProps) -> Element {
 
                 span {
                     style: format!(
-                        "font-size: {size}px; font-weight: {weight}; color: {fg};",
+                        "font-size: {size}px; font-weight: {weight}; color: {fg}; \
+                         white-space: nowrap; overflow: hidden;",
+                        // COMPAT(dioxus-native): white-space: nowrap is unconfirmed
+                        // — verify at runtime.
                         size   = FONT_SIZE_LABEL,
                         weight = FONT_WEIGHT_SEMIBOLD,
                         fg     = if home_is_active {
