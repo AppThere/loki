@@ -7,13 +7,18 @@
 //! passed as the type parameter to Dioxus's [`Router`] component and drives
 //! client-side URL matching for both desktop window history and mobile
 //! in-process routing.
+//!
+//! All routes are wrapped by the [`Shell`] layout component, which renders
+//! [`AtTabBar`] and [`AtStatusBar`] persistently around the route [`Outlet`].
 
 pub mod editor;
 pub mod home;
+pub mod shell;
 
 use dioxus::prelude::*;
 use editor::Editor;
 use home::Home;
+use shell::Shell;
 
 /// Top-level application route enum.
 ///
@@ -22,6 +27,9 @@ use home::Home;
 /// * [`Route::Home`] — the home screen with template gallery and recent files.
 /// * [`Route::Editor`] — the document editor shell.
 ///
+/// Both routes are wrapped by [`Shell`] (via `#[layout(Shell)]`) so the tab
+/// bar and status bar persist across route transitions.
+///
 /// The `path` field on [`Route::Editor`] carries a URL-safe base64-encoded
 /// [`loki_file_access::FileAccessToken`] produced by `loki-file-access`.
 /// Using the serialised token rather than a raw filesystem path ensures the
@@ -29,6 +37,7 @@ use home::Home;
 /// tokens rather than paths.
 #[derive(Routable, Clone, PartialEq)]
 pub enum Route {
+    #[layout(Shell)]
     /// Home screen: template gallery and recent files list.
     #[route("/")]
     Home {},

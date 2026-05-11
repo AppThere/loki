@@ -57,9 +57,11 @@ pub fn App() -> Element {
         }
 
         div {
+            // Shell owns height: 100vh and the flex column layout.
+            // This div simply fills the viewport so the Router has a sized
+            // container to work inside.
             style: "margin: 0; padding: 0; width: 100vw; height: 100vh; \
-                    overflow: hidden; display: flex; flex-direction: column; \
-                    box-sizing: border-box;",
+                    overflow: hidden; box-sizing: border-box;",
             Router::<Route> {}
         }
     }
