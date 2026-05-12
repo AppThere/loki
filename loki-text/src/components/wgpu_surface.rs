@@ -87,7 +87,6 @@ pub struct WgpuSurfaceProps {
     /// Document to render.  `None` shows a placeholder until loading completes.
     pub document: Option<Document>,
 
-
     /// Options used for document layout generation.
     pub layout_opts: LayoutOptions,
 
