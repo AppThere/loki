@@ -12,12 +12,16 @@
 //! ├─────────────────────────────────────────┤
 //! │  Outlet (Home or Editor)  (flex: 1)      │
 //! ├─────────────────────────────────────────┤
+//! │  AtRibbon        (flex-shrink: 0)        │
+//! │    AtRibbonTabStrip  (36 px)             │
+//! │    AtRibbonContent   (60 px)             │
+//! ├─────────────────────────────────────────┤
 //! │  AtStatusBar     (flex-shrink: 0)        │
 //! └─────────────────────────────────────────┘
 //! ```
 
 use appthere_ui::tokens;
-use appthere_ui::{AtDocumentTabData, AtStatusBar, AtTabBar};
+use appthere_ui::{AtDocumentTabData, AtRibbon, AtStatusBar, AtTabBar, RibbonTabDesc};
 use dioxus::prelude::*;
 
 use crate::routes::Route;
@@ -113,6 +117,37 @@ pub fn Shell() -> Element {
                 style: "flex: 1; overflow: hidden; \
                         display: flex; flex-direction: column;",
                 Outlet::<Route> {}
+            }
+
+            // ── Ribbon (above status bar, always visible) ─────────────────────
+            AtRibbon {
+                tabs: vec![
+                    RibbonTabDesc { label: "Home",   is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: "Insert", is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: "Format", is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: "Review", is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: "View",   is_contextual: false, aria_label: None },
+                ],
+                active_tab: 0,
+                on_tab_select: move |_idx| {
+                    // TODO(ribbon): Wire ribbon tab selection to per-document state.
+                    // For now, tab clicks are silently accepted but have no effect.
+                },
+                tab_content: rsx! {
+                    // TODO(ribbon): Replace with actual ribbon tab content components
+                    // once Home, Insert, Format, Review, and View tab content is
+                    // implemented (future passes).
+                    div {
+                        style: format!(
+                            "display: flex; align-items: center; padding: 0 {p}px; \
+                             color: {fg}; font-size: {size}px;",
+                            p    = tokens::SPACE_4,
+                            fg   = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
+                            size = tokens::FONT_SIZE_LABEL,
+                        ),
+                        "Ribbon content coming soon"
+                    }
+                },
             }
 
             // ── Status bar (always visible across all routes) ─────────────────

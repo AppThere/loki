@@ -48,6 +48,18 @@ pub const PAGE_GAP_PX: f32 = 24.0;
 /// (e.g., ruler, margin handles, scroll-gutter calculations).
 pub const PAGE_MARGIN_PX: f32 = 72.0;
 
+// ── Ribbon heights (px) ───────────────────────────────────────────────────────
+
+/// Height of the ribbon tab strip (the row of tab labels: Home, Insert, etc.).
+pub const RIBBON_TAB_STRIP_HEIGHT: f32 = 36.0;
+
+/// Height of the ribbon content row (the row of buttons below the tab strip).
+pub const RIBBON_CONTENT_HEIGHT: f32 = 60.0;
+
+/// Total ribbon height: tab strip + content row.
+/// Used by Shell to reserve space and by canvas height calculations.
+pub const RIBBON_TOTAL_HEIGHT: f32 = RIBBON_TAB_STRIP_HEIGHT + RIBBON_CONTENT_HEIGHT;
+
 // ── Responsive breakpoints ────────────────────────────────────────────────────
 
 /// Viewport width above which the UI switches to the desktop two-column layout.

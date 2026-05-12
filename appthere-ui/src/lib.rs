@@ -29,6 +29,7 @@ pub mod components;
 pub mod theme;
 pub mod tokens;
 
+pub use components::ribbon::{AtRibbon, AtRibbonGroup, RibbonTabDesc, RibbonTabIndex};
 pub use components::{
     AtDocumentTab, AtDocumentTabData, AtDocumentTabProps, AtHomeTab, AtHomeTabProps, AtStatusBar,
     AtStatusBarProps, AtTabBar, AtTabBarProps, AtTitleBar, AtTitleBarProps, BuiltinTemplate,

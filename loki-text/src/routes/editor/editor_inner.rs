@@ -4,7 +4,7 @@
 //! Document editor — inner component.
 //!
 //! [`EditorInner`] holds all per-document hook state and renders the
-//! three-panel editor layout: top toolbar and scrollable page canvas.
+//! editor layout: scrollable page canvas.
 //! The persistent tab bar and status bar live in [`crate::routes::shell::Shell`].
 //!
 //! ## Reactive document switching (Pass 7)
@@ -32,13 +32,6 @@ use loki_doc_model::document::Document;
 use loki_doc_model::loro_bridge::{derive_loro_cursor, document_to_loro};
 use loki_layout::LayoutOptions;
 
-use crate::components::toolbar::TopToolbar;
-use crate::components::wgpu_surface::WgpuSurface;
-use crate::editing::cursor::{CursorState, DocumentPosition};
-use crate::editing::touch::TouchInteractionState;
-use crate::error::LoadError;
-use crate::utils::display_title_from_path;
-
 use super::EditorMode;
 use super::editor_error_view::EditorErrorView;
 use super::editor_keydown::make_keydown_handler;
@@ -47,6 +40,10 @@ use super::editor_pointer::{
     make_mousemove_handler, make_touchend_handler, make_touchmove_handler,
 };
 use super::editor_state::{EditorState, use_editor_state};
+use crate::components::wgpu_surface::WgpuSurface;
+use crate::editing::cursor::{CursorState, DocumentPosition};
+use crate::editing::touch::TouchInteractionState;
+use crate::error::LoadError;
 
 /// Document editor inner component — all editing logic lives here.
 ///
@@ -86,7 +83,11 @@ pub(super) fn EditorInner(path: String) -> Element {
     {
         let current = path_signal.peek().clone();
         if current != path {
-            tracing::debug!("EditorInner: path changed from {} to {} → resetting per-document state", current, path);
+            tracing::debug!(
+                "EditorInner: path changed from {} to {} → resetting per-document state",
+                current,
+                path
+            );
             path_signal.set(path.clone());
 
             // Clear the Mutex-protected doc_state fields. WgpuSurface will detect
@@ -115,8 +116,6 @@ pub(super) fn EditorInner(path: String) -> Element {
             editor_mode.set(EditorMode::Reading);
         }
     }
-
-    let title = use_memo(move || display_title_from_path(&path_signal()));
 
     // Pre-clone the Arc so each closure can capture its own owned clone.
     let doc_state_mousemove = Arc::clone(&doc_state);
@@ -210,11 +209,9 @@ pub(super) fn EditorInner(path: String) -> Element {
     //   container claims every click including those in the toolbar row.
     //   pointer-events:none is NOT implemented in this Blitz version.
     //
-    // FIX: TopToolbar carries `position: relative; z-index: 10` (see toolbar.rs).
-    //   Blitz hit-tests paint_children in reverse z_index order
-    //   [blitz-dom-0.2.4/src/layout/damage.rs:353-383], so TopToolbar wins.
-
-    let title_str = title();
+    // NOTE: TopToolbar (now removed) used z-index: 10 to win Blitz hit tests.
+    //   The scroll container now owns the full editor area; the ribbon is in
+    //   the Shell and does not overlap the scroll container.
 
     rsx! {
         div {
@@ -227,11 +224,9 @@ pub(super) fn EditorInner(path: String) -> Element {
                 bg = tokens::COLOR_SURFACE_BASE,
             ),
 
-            // ── Top toolbar (flex-shrink: 0) ───────────────────────────────────
-            TopToolbar {
-                title: title_str,
-                editor_mode: editor_mode
-            }
+            // TopToolbar removed — replaced by AtRibbon in the Shell layout.
+            // Formatting controls will be implemented as AtRibbonGroup content
+            // in a future pass.
 
             // ── Scroll container ──────────────────────────────────────────────
             //
