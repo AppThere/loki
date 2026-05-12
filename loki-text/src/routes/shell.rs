@@ -12,7 +12,7 @@
 //! ├─────────────────────────────────────────┤
 //! │  Outlet (Home or Editor)  (flex: 1)      │
 //! ├─────────────────────────────────────────┤
-//! │  AtRibbon        (flex-shrink: 0)        │
+//! │  AtRibbon        (hidden on Home tab)     │
 //! │    AtRibbonTabStrip  (36 px)             │
 //! │    AtRibbonContent   (60 px)             │
 //! ├─────────────────────────────────────────┤
@@ -119,8 +119,9 @@ pub fn Shell() -> Element {
                 Outlet::<Route> {}
             }
 
-            // ── Ribbon (above status bar, always visible) ─────────────────────
+            // ── Ribbon (visible on document tabs; hidden on Home) ─────────────
             AtRibbon {
+                visible: *active_tab.read() != 0,
                 tabs: vec![
                     RibbonTabDesc { label: "Home",   is_contextual: false, aria_label: None },
                     RibbonTabDesc { label: "Insert", is_contextual: false, aria_label: None },

@@ -68,6 +68,9 @@ pub struct RibbonTabDesc {
 /// Fires `on_tab_select` when a tab label is clicked.  The active tab's button
 /// content is provided by the caller via `tab_content`.
 ///
+/// When `visible` is `false` the component renders nothing and takes no space
+/// in the flex layout — the Outlet content expands to fill the freed height.
+///
 /// # Touch target
 ///
 /// This component is a structural container.  The tab strip height is 36 px
@@ -75,6 +78,10 @@ pub struct RibbonTabDesc {
 /// 60 px tall, comfortably accommodating 44 × 44 px buttons.
 #[component]
 pub fn AtRibbon(
+    /// When `false`, the ribbon is not rendered and takes no layout space.
+    /// Use this to hide the ribbon on screens where no document is being edited
+    /// (e.g. the Home tab).
+    visible: bool,
     /// All ribbon tabs to display (core tabs first, then contextual).
     tabs: Vec<RibbonTabDesc>,
     /// Index of the currently active ribbon tab.
@@ -85,6 +92,10 @@ pub fn AtRibbon(
     /// an empty content row (e.g. when no document is open).
     tab_content: Element,
 ) -> Element {
+    if !visible {
+        return rsx! {};
+    }
+
     rsx! {
         div {
             style: format!(

@@ -11,6 +11,7 @@ use dioxus::prelude::*;
 use crate::components::ribbon::RibbonTabDesc;
 use crate::components::ribbon::RibbonTabIndex;
 use crate::tokens;
+use crate::tokens::FONT_FAMILY_UI;
 
 // ── AtRibbonTabStrip ──────────────────────────────────────────────────────────
 
@@ -113,12 +114,15 @@ fn AtRibbonTab(
             aria_selected: if is_active { "true" } else { "false" },
             aria_label: aria_label,
             style: format!(
+                // TODO(font): verify Atkinson Hyperlegible Next is registered
+                // and loading correctly — ribbon tab labels should not be in system-ui.
                 "min-width: 64px; padding: 0 {p}px; display: flex; \
                  align-items: center; justify-content: center; \
                  background: {bg}; border: none; cursor: pointer; \
-                 font-size: {size}px; font-weight: {weight}; \
+                 font-family: {font}; font-size: {size}px; font-weight: {weight}; \
                  color: {fg}; box-sizing: border-box; {bottom_border}",
                 p      = tokens::SPACE_3,
+                font   = FONT_FAMILY_UI,
                 size   = tokens::FONT_SIZE_BODY,
                 weight = tokens::FONT_WEIGHT_MEDIUM,
                 fg     = label_color,

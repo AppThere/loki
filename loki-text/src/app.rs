@@ -56,6 +56,39 @@ pub fn App() -> Element {
             "
         }
 
+        // Register Atkinson Hyperlegible Next via CSS @font-face.
+        //
+        // Blitz processes @font-face rules and fetches the font URL through its
+        // net provider.  The `dioxus://` URL is resolved by
+        // `dioxus_asset_resolver::native::serve_asset`, which looks for the
+        // file relative to the running executable's directory:
+        //   debug builds: target/debug/assets/fonts/AtkinsonHyperlegibleNext-VF.ttf
+        //   (loki-text/build.rs creates a symlink from target/debug/assets →
+        //    loki-text/assets/ so the file is reachable without copying.)
+        //
+        // The variable font covers all weights (100–900) in a single file,
+        // so one @font-face rule covers all weight variants.
+        //
+        // // TODO(font): verify Atkinson Hyperlegible Next is rendering correctly
+        // in the running app — check that chrome text is NOT in system-ui.
+        // If the dioxus:// URL fails to resolve (e.g. symlink missing), the
+        // FONT_FAMILY_UI fallback chain ("Atkinson Hyperlegible, system-ui")
+        // applies automatically.
+        document::Style {
+            // COMPAT(dioxus-native): CSS @font-face with dioxus:// URLs is
+            // confirmed supported — Blitz's net.rs fetch_font_face triggers
+            // parley FontContext.collection.register_fonts() on success.
+            // The dioxus:// scheme is handled by DioxusNativeNetProvider which
+            // delegates to dioxus_asset_resolver::native::serve_asset.
+            "@font-face {{
+                font-family: 'Atkinson Hyperlegible Next';
+                src: url('dioxus:///assets/fonts/AtkinsonHyperlegibleNext-VF.ttf')
+                     format('truetype');
+                font-weight: 100 900;
+                font-style: normal;
+            }}"
+        }
+
         div {
             // Shell owns height: 100vh and the flex column layout.
             // This div simply fills the viewport so the Router has a sized
