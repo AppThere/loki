@@ -155,7 +155,43 @@ pub struct DocumentState {
     pub shared_font_resources: Arc<Mutex<FontResources>>,
 }
 
-// ── LokiDocumentSource ────────────────────────────────────────────────────────
+impl DocumentState {
+    /// Creates a fresh initial state with no document loaded.
+    ///
+    /// Used by the tab-switch reset effect in `editor_inner.rs` to clear the
+    /// previous document's state (layout, generation, cursor, etc.) before the
+    /// new document begins loading.  The shared Arc fields (`shared_renderer`,
+    /// `shared_font_cache`, `shared_font_resources`) are **preserved** across
+    /// the reset — creating new Arcs here would break the handles stored in
+    /// the live `LokiDocumentSource` instances.
+    pub fn new() -> Self {
+        Self {
+            document: None,
+            generation: 0,
+            page_count: 0,
+            canvas_width: 0.0,
+            visible_rect: None,
+            page_width_px: appthere_ui::tokens::PAGE_WIDTH_PX,
+            page_height_px: appthere_ui::tokens::PAGE_HEIGHT_PX,
+            cursor_state: None,
+            paginated_layout: None,
+            preserve_for_editing: false,
+            shared_renderer: Arc::new(Mutex::new(None)),
+            shared_font_cache: Arc::new(Mutex::new(loki_vello::FontDataCache::new())),
+            layout_stamp: 0,
+            layout_generation: 0,
+            layout_canvas_width: 0.0,
+            layout_preserve_for_editing: false,
+            shared_font_resources: Arc::new(Mutex::new(FontResources::new())),
+        }
+    }
+}
+
+impl Default for DocumentState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// `CustomPaintSource` that renders one page of a [`Document`] to a wgpu texture each frame.
 ///

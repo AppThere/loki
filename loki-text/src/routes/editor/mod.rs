@@ -3,10 +3,9 @@
 
 //! Editor route — thin routing shell.
 //!
-//! Renders [`EditorInner`] with a `key` prop equal to the document path.
-//! When the path changes (tab switch), Dioxus unmounts the old `EditorInner`
-//! and mounts a fresh one, ensuring all hook state (document load, GPU
-//! surface, Loro bridge, cursor) is cleanly initialised for the new document.
+//! Renders [`EditorInner`] with the document `path` prop.  Document switching
+//! is handled reactively inside `EditorInner` via `use_memo` — see
+//! `editor_inner.rs` for the full design.
 //!
 //! All editing logic lives in [`editor_inner::EditorInner`].
 
@@ -30,14 +29,14 @@ pub enum EditorMode {
 /// Editor route component.
 ///
 /// Intentionally thin — all editing logic lives in [`EditorInner`].
-/// The `key` attribute on `EditorInner` is the mechanism that fixes stale
-/// Vello scenes on tab switch: a changed key forces a full remount, giving
-/// the new document clean [`use_hook`] and [`use_resource`] state.
 #[component]
 pub fn Editor(path: String) -> Element {
     rsx! {
+        // Note: key: "{path}" is intentionally omitted. In Dioxus 0.7, `key` on a
+        // single non-list component is not processed by the diffing engine and does
+        // not force remount. Document switching is handled reactively via use_memo
+        // inside EditorInner — see editor_inner.rs.
         EditorInner {
-            key: "{path}",
             path: path,
         }
     }

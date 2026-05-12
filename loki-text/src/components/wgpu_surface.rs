@@ -81,8 +81,12 @@ pub struct WgpuSurfaceProps {
     /// counter after mutations).
     pub doc_state: Arc<Mutex<DocumentState>>,
 
+    /// The path of the active document, used to detect tab switches.
+    pub path: String,
+
     /// Document to render.  `None` shows a placeholder until loading completes.
     pub document: Option<Document>,
+
 
     /// Options used for document layout generation.
     pub layout_opts: LayoutOptions,
@@ -225,14 +229,16 @@ pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
     } = props;
 
     // Cheap comparable key for the current document.
-    // Using (title, section_count) avoids deriving PartialEq on Document.
-    let new_key: (Option<String>, usize) = (
+    // Including `path` ensures we detect document switches even if both
+    // documents have the same title and section count.
+    let new_key: (String, Option<String>, usize) = (
+        props.path.clone(),
         document.as_ref().and_then(|d| d.meta.title.clone()),
         document.as_ref().map(|d| d.sections.len()).unwrap_or(0),
     );
 
-    let prev_key: Rc<RefCell<(Option<String>, usize)>> =
-        use_hook(|| Rc::new(RefCell::new((None, 0))));
+    let prev_key: Rc<RefCell<(String, Option<String>, usize)>> =
+        use_hook(|| Rc::new(RefCell::new((String::new(), None, 0))));
 
     let key_changed = *prev_key.borrow() != new_key;
     if key_changed {

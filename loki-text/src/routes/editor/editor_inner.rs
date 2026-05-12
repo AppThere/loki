@@ -7,9 +7,22 @@
 //! three-panel editor layout: top toolbar and scrollable page canvas.
 //! The persistent tab bar and status bar live in [`crate::routes::shell::Shell`].
 //!
-//! This component is keyed on the document `path` by [`super::Editor`],
-//! so every tab switch triggers a clean remount, ensuring fresh hook state
-//! (document load, GPU surface, Loro bridge, cursor) per document.
+//! ## Reactive document switching (Pass 7)
+//!
+//! `EditorInner` is **not** remounted on tab switch — `key` on a single
+//! non-list component is a no-op in Dioxus 0.7.  Instead, document switching
+//! is handled reactively:
+//!
+//! 1. `path_signal` is a `Signal<String>` kept in sync with the `path` prop
+//!    via `use_effect`.  Because it is a signal, downstream hooks can truly
+//!    subscribe to it.
+//! 2. `use_resource` reads `path_signal()` so the load task is cancelled and
+//!    restarted whenever the active document changes.
+//! 3. A second `use_effect` subscribes to `path_signal` and resets all
+//!    per-document state (`doc_state`, `cursor_state`, `loro_doc`,
+//!    `editor_mode`) whenever the path changes — **but only when it actually
+//!    changes**, using a previous-value guard so the effect is a no-op on the
+//!    initial render (where there is nothing to reset).
 
 use std::sync::Arc;
 
@@ -21,7 +34,7 @@ use loki_layout::LayoutOptions;
 
 use crate::components::toolbar::TopToolbar;
 use crate::components::wgpu_surface::WgpuSurface;
-use crate::editing::cursor::DocumentPosition;
+use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::touch::TouchInteractionState;
 use crate::error::LoadError;
 use crate::utils::display_title_from_path;
@@ -37,15 +50,23 @@ use super::editor_state::{EditorState, use_editor_state};
 
 /// Document editor inner component — all editing logic lives here.
 ///
-/// [`super::Editor`] renders this with `key: "{path}"` so a tab switch causes
-/// a full remount, giving each document clean hook state.
+/// Document switching is handled reactively via `path_signal` — see the
+/// module-level doc for the full design.
 #[component]
 pub(super) fn EditorInner(path: String) -> Element {
-    let title = display_title_from_path(&path);
+    // ── Path signal: bridge from prop-space to signal-space ──────────────────
+    //
+    // `path` is a plain `String` prop — not a signal — so `use_memo` cannot
+    // make it reactive (it captures the value at mount time and never changes).
+    // Instead, we hold the current path in a `Signal<String>` and sync it from
+    // the prop on every render via `use_effect`.  Because `use_effect` fires
+    // after every render, `path_signal` stays in sync with the prop, and any
+    // hook that reads `path_signal()` subscribes reactively to path changes.
+    let mut path_signal: Signal<String> = use_signal(|| path.clone());
 
     let EditorState {
         doc_state,
-        editor_mode,
+        mut editor_mode,
         mut loro_doc,
         mut cursor_state,
         mut is_dragging,
@@ -55,6 +76,48 @@ pub(super) fn EditorInner(path: String) -> Element {
         scroll_offset,
     } = use_editor_state();
 
+    // ── Synchronous Path Sync & State Reset ──────────────────────────────────
+    //
+    // Sync the signal with the prop synchronously during the render.
+    // By resetting the state here, we guarantee it happens BEFORE `use_resource`
+    // evaluates its closure or restarts, and definitely BEFORE `WgpuSurface`
+    // receives the new document. This strictly prevents the race condition where
+    // a deferred `use_effect` runs late and wipes out the newly loaded document.
+    {
+        let current = path_signal.peek().clone();
+        if current != path {
+            tracing::debug!("EditorInner: path changed from {} to {} → resetting per-document state", current, path);
+            path_signal.set(path.clone());
+
+            // Clear the Mutex-protected doc_state fields. WgpuSurface will detect
+            // document == None and show the placeholder.
+            if let Ok(mut state) = doc_state.lock() {
+                state.document = None;
+                state.generation = 0;
+                state.page_count = 0;
+                state.canvas_width = 0.0;
+                state.visible_rect = None;
+                state.paginated_layout = None;
+                // Bump layout_stamp so any in-flight LokiDocumentSource render()
+                // call sees a mismatch against its cached texture_stamp and
+                // recomputes rather than returning a stale texture.
+                state.layout_stamp = state.layout_stamp.wrapping_add(1);
+                state.layout_generation = 0;
+                state.layout_canvas_width = 0.0;
+                state.layout_preserve_for_editing = false;
+            } else {
+                tracing::error!("doc_state lock poisoned during tab switch — state may be stale");
+            }
+
+            // Reset per-document signals.
+            cursor_state.set(CursorState::default());
+            loro_doc.set(None);
+            editor_mode.set(EditorMode::Reading);
+        }
+    }
+
+    let title = use_memo(move || display_title_from_path(&path_signal()));
+
     // Pre-clone the Arc so each closure can capture its own owned clone.
     let doc_state_mousemove = Arc::clone(&doc_state);
     let doc_state_touch = Arc::clone(&doc_state);
@@ -62,23 +125,32 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_prop = Arc::clone(&doc_state);
     let doc_state_keydown = Arc::clone(&doc_state);
 
-    let document_load: Resource<Result<Document, LoadError>> = {
-        let path = path.clone();
-        use_resource(move || {
-            let path = path.clone();
-            async move { load_document(path) }
-        })
-    };
+    // ── Document load — reactive on path_signal ───────────────────────────────
+    //
+    // `path_signal()` is a reactive read: when the signal changes (path prop
+    // changes on tab switch), Dioxus invalidates the resource and restarts the
+    // async task with the new path value.
+    let document_load: Resource<(String, Result<Document, LoadError>)> = use_resource(move || {
+        let p = path_signal(); // reactive read — resource restarts when path changes
+        async move {
+            let res = load_document(p.clone());
+            (p, res)
+        }
+    });
 
-    let navigator = use_navigator();
+    let _navigator = use_navigator();
 
+    // ── Reset per-document state when path changes ────────────────────────────
+    //
+
+    // ── Loro bridge: initialise CRDT once the document is loaded ─────────────
     use_effect(move || {
-        if let Some(Ok(doc)) = &*document_load.value().read_unchecked()
-            && loro_doc().is_none()
-        {
-            match document_to_loro(doc) {
-                Ok(l_doc) => loro_doc.set(Some(l_doc)),
-                Err(e) => tracing::warn!("Failed to initialize Loro sync bridge: {}", e),
+        if let Some((loaded_path, Ok(doc))) = &*document_load.value().read_unchecked() {
+            if loaded_path == &path_signal() && loro_doc().is_none() {
+                match document_to_loro(doc) {
+                    Ok(l_doc) => loro_doc.set(Some(l_doc)),
+                    Err(e) => tracing::warn!("Failed to initialize Loro sync bridge: {}", e),
+                }
             }
         }
     });
@@ -142,6 +214,8 @@ pub(super) fn EditorInner(path: String) -> Element {
     //   Blitz hit-tests paint_children in reverse z_index order
     //   [blitz-dom-0.2.4/src/layout/damage.rs:353-383], so TopToolbar wins.
 
+    let title_str = title();
+
     rsx! {
         div {
             // AtTabBar and AtStatusBar live in Shell (routes/shell.rs) and
@@ -155,7 +229,7 @@ pub(super) fn EditorInner(path: String) -> Element {
 
             // ── Top toolbar (flex-shrink: 0) ───────────────────────────────────
             TopToolbar {
-                title: title,
+                title: title_str,
                 editor_mode: editor_mode
             }
 
@@ -223,24 +297,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                 ),
 
                 match &*document_load.value().read_unchecked() {
-                    None => rsx! {
-                        WgpuSurface {
-                            doc_state: Arc::clone(&doc_state_prop),
-                            document: None,
-                            layout_opts: layout_opts.clone(),
-                            visible_rect: None,
-                            cursor_state: None,
-                            on_mousedown: |_| {},
-                            on_keydown: |_| {},
-                        }
-                    },
-
-                    Some(Err(e)) => {
-                        let msg = e.to_string();
-                        rsx! { EditorErrorView { message: msg } }
-                    },
-
-                    Some(Ok(doc)) => {
+                    Some((loaded_path, Ok(doc))) if loaded_path == &path_signal() => {
                         let cs = if editor_mode() == EditorMode::Editing {
                             Some(cursor_state.read().clone())
                         } else {
@@ -249,6 +306,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                         rsx! {
                             WgpuSurface {
                                 doc_state: Arc::clone(&doc_state_prop),
+                                path: path_signal(),
                                 document: Some(doc.clone()),
                                 layout_opts: layout_opts.clone(),
                                 visible_rect: None,
@@ -271,6 +329,26 @@ pub(super) fn EditorInner(path: String) -> Element {
                                     loro_doc,
                                 ),
                             }
+                        }
+                    },
+
+                    Some((loaded_path, Err(e))) if loaded_path == &path_signal() => {
+                        let msg = e.to_string();
+                        rsx! { EditorErrorView { message: msg } }
+                    },
+
+                    // Covers `None` and any stale resource states where
+                    // loaded_path != path_signal()
+                    _ => rsx! {
+                        WgpuSurface {
+                            doc_state: Arc::clone(&doc_state_prop),
+                            path: path_signal(),
+                            document: None,
+                            layout_opts: layout_opts.clone(),
+                            visible_rect: None,
+                            cursor_state: None,
+                            on_mousedown: |_| {},
+                            on_keydown: |_| {},
                         }
                     },
                 }
