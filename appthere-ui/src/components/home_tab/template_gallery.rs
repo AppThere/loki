@@ -99,41 +99,43 @@ pub(crate) fn AtTemplateGallery(props: AtTemplateGalleryProps) -> Element {
                 }
             }
 
-            // Browse… card
-            {
-                let mut browse_hovered = use_signal(|| false);
-                let browse_border = if browse_hovered() {
-                    format!("border: 2px solid {COLOR_ACCENT_PRIMARY};")
-                } else {
-                    String::new()
-                };
-                rsx! {
-                    button {
-                        "aria-label": props.browse_label,
-                        style: format!(
-                            "flex-shrink: 0; width: 100px; min-height: {touch}px; \
-                             background: transparent; border-radius: {r}px; \
-                             padding: {pad}px; cursor: pointer; \
-                             display: flex; flex-direction: column; \
-                             align-items: center; justify-content: center; \
-                             gap: {gap}px; box-sizing: border-box; {border}",
-                            touch  = TOUCH_MIN,
-                            r      = RADIUS_LG,
-                            pad    = SPACE_3,
-                            gap    = SPACE_2,
-                            border = browse_border,
-                        ),
-                        onmouseenter: move |_| { browse_hovered.set(true); },
-                        onmouseleave: move |_| { browse_hovered.set(false); },
-                        onclick: move |_| { props.on_browse.call(()); },
-                        span {
+            // Browse… card — hidden when browse_label is empty.
+            if !props.browse_label.is_empty() {
+                {
+                    let mut browse_hovered = use_signal(|| false);
+                    let browse_border = if browse_hovered() {
+                        format!("border: 2px solid {COLOR_ACCENT_PRIMARY};")
+                    } else {
+                        String::new()
+                    };
+                    rsx! {
+                        button {
+                            "aria-label": props.browse_label,
                             style: format!(
-                                "font-size: {size}px; font-weight: {weight}; color: {fg};",
-                                size   = FONT_SIZE_BODY,
-                                weight = FONT_WEIGHT_SEMIBOLD,
-                                fg     = COLOR_ON_CHROME_BROWSE,
+                                "flex-shrink: 0; width: 100px; min-height: {touch}px; \
+                                 background: transparent; border-radius: {r}px; \
+                                 padding: {pad}px; cursor: pointer; \
+                                 display: flex; flex-direction: column; \
+                                 align-items: center; justify-content: center; \
+                                 gap: {gap}px; box-sizing: border-box; {border}",
+                                touch  = TOUCH_MIN,
+                                r      = RADIUS_LG,
+                                pad    = SPACE_3,
+                                gap    = SPACE_2,
+                                border = browse_border,
                             ),
-                            "{props.browse_label}"
+                            onmouseenter: move |_| { browse_hovered.set(true); },
+                            onmouseleave: move |_| { browse_hovered.set(false); },
+                            onclick: move |_| { props.on_browse.call(()); },
+                            span {
+                                style: format!(
+                                    "font-size: {size}px; font-weight: {weight}; color: {fg};",
+                                    size   = FONT_SIZE_BODY,
+                                    weight = FONT_WEIGHT_SEMIBOLD,
+                                    fg     = COLOR_ON_CHROME_BROWSE,
+                                ),
+                                "{props.browse_label}"
+                            }
                         }
                     }
                 }

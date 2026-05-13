@@ -16,6 +16,7 @@ use loki_odf::odt::import::{OdtImport, OdtImportOptions};
 use loki_ooxml::docx::import::{DocxImport, DocxImportOptions};
 
 use crate::error::LoadError;
+use crate::new_document;
 
 /// Detected document format, derived from the file extension in the token's
 /// display name.
@@ -49,6 +50,9 @@ pub(super) fn detect_format(token: &FileAccessToken) -> DocumentFormat {
 /// All I/O is synchronous; called inside an `async move` block in
 /// [`use_resource`] so loading does not block the initial render of the shell.
 pub(super) fn load_document(path: String) -> Result<Document, LoadError> {
+    if new_document::is_untitled(&path) {
+        return Ok(Document::new_blank());
+    }
     let token = FileAccessToken::deserialize(&path)?;
     let format = detect_format(&token);
     let reader = token.open_read()?;

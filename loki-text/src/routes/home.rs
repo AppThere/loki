@@ -13,6 +13,8 @@ use appthere_ui::{AtHomeTab, BuiltinTemplate, RecentDocument};
 use dioxus::prelude::*;
 use loki_file_access::{FilePicker, PickOptions};
 
+use crate::new_document::new_blank_tab;
+use crate::recent_documents::RecentDocuments;
 use crate::routes::Route;
 use crate::tabs::OpenTab;
 use crate::utils::display_title_from_path;
@@ -22,7 +24,9 @@ use crate::utils::display_title_from_path;
 const APP_NAME: &str = "Loki Text";
 const TEMPLATES_LABEL: &str = "Templates";
 const RECENT_LABEL: &str = "Recent";
-const BROWSE_LABEL: &str = "Browse\u{2026}";
+// browse_label intentionally empty — hides the Browse card until template
+// browsing is implemented.
+const BROWSE_LABEL: &str = "";
 const OPEN_FILE_LABEL: &str = "Open File\u{2026}";
 const EMPTY_RECENT_LABEL: &str = "No recent documents. Open a file to get started.";
 
@@ -56,31 +60,6 @@ const TEMPLATES: &[BuiltinTemplate] = &[
     },
 ];
 
-// ── Static recent-file placeholder data ───────────────────────────────────────
-//
-// TODO(recent-files): Replace with persisted MRU list from loki_file_access or
-// a future loki_prefs crate.
-
-fn placeholder_recent_documents() -> Vec<RecentDocument> {
-    vec![
-        RecentDocument {
-            title: "Q1 Report".to_string(),
-            path: "~/Documents/Work/2026/\u{2026}".to_string(),
-            modified_at: "2026-04-12  14:30".to_string(),
-        },
-        RecentDocument {
-            title: "Meeting Notes".to_string(),
-            path: "~/Documents/Meetings/\u{2026}".to_string(),
-            modified_at: "2026-04-11  09:15".to_string(),
-        },
-        RecentDocument {
-            title: "Budget Draft".to_string(),
-            path: "~/Documents/Finance/\u{2026}".to_string(),
-            modified_at: "2026-04-09  16:45".to_string(),
-        },
-    ]
-}
-
 // ── MIME types accepted by the file picker ────────────────────────────────────
 
 const MIME_TYPES: &[&str] = &[
@@ -91,13 +70,10 @@ const MIME_TYPES: &[&str] = &[
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Push `path` as a new open tab, or switch to its existing tab if already open.
-///
-/// Returns the new active tab-bar index (1-based; 0 is the Home tab).
 fn push_or_switch_tab(mut tabs: Signal<Vec<OpenTab>>, mut active_tab: Signal<usize>, path: String) {
     let title = display_title_from_path(&path);
     let existing = tabs.read().iter().position(|t| t.path == path);
     if let Some(idx) = existing {
-        // Tab already open — switch to it (tab-bar index = Vec index + 1).
         *active_tab.write() = idx + 1;
     } else {
         tabs.write().push(OpenTab {
@@ -106,9 +82,7 @@ fn push_or_switch_tab(mut tabs: Signal<Vec<OpenTab>>, mut active_tab: Signal<usi
             is_dirty: false,
             is_discarded: false,
         });
-        // TODO(tabs): Replace router-driven navigation with tab-driven navigation
-        // — the active tab index should determine which Editor route is displayed,
-        // not vice versa.
+        // TODO(tabs): Replace router-driven navigation with tab-driven navigation.
         *active_tab.write() = tabs.read().len(); // new tab is last; +1 for Home
     }
 }
@@ -125,17 +99,36 @@ pub fn Home() -> Element {
 
     let tabs = use_context::<Signal<Vec<OpenTab>>>();
     let active_tab = use_context::<Signal<usize>>();
+    let mut recent_docs = use_context::<Signal<RecentDocuments>>();
 
     // Holds the last file-picker error message, if any.
-    // AtHomeTab surfaces the on_open_file callback; error display is handled
-    // by the caller in a future pass when AtHomeTab gains an error prop.
     let pick_error: Signal<Option<String>> = use_signal(|| None);
 
+    // ── on_template_select ────────────────────────────────────────────────────
+    //
+    // Index 0 = "Blank" — opens a new blank document.
+    // All other indices are deferred (templates not yet implemented).
+    let on_template_select = move |idx: usize| {
+        if idx == 0 {
+            let tab = new_blank_tab();
+            let path = tab.path.clone();
+            let nav = navigator;
+            let mut t = tabs;
+            let mut a = active_tab;
+            t.write().push(tab);
+            *a.write() = t.read().len(); // new tab is last; +1 for Home
+            nav.push(Route::Editor { path });
+        }
+        // TODO(templates): Apply the selected built-in template (idx > 0).
+    };
+
+    // ── on_open_file ──────────────────────────────────────────────────────────
     let on_open_file = move |_| {
         let nav = navigator;
         let mut err_sig = pick_error;
         let tabs = tabs;
         let active_tab = active_tab;
+        let mut recent = recent_docs;
         spawn(async move {
             let picker = FilePicker::new();
             let opts = PickOptions {
@@ -146,7 +139,10 @@ pub fn Home() -> Element {
             match picker.pick_file_to_open(opts).await {
                 Ok(Some(token)) => {
                     let path = token.serialize();
+                    let title = display_title_from_path(&path);
                     push_or_switch_tab(tabs, active_tab, path.clone());
+                    recent.write().record(path.clone(), title);
+                    recent.read().save();
                     nav.push(Route::Editor { path });
                 }
                 Ok(None) => { /* user cancelled — no-op */ }
@@ -157,22 +153,46 @@ pub fn Home() -> Element {
         });
     };
 
+    // ── on_recent_open ────────────────────────────────────────────────────────
+    let on_recent_open = move |idx: usize| {
+        let nav = navigator;
+        let entry = recent_docs.read().entries.get(idx).cloned();
+        if let Some(entry) = entry {
+            push_or_switch_tab(tabs, active_tab, entry.path.clone());
+            recent_docs
+                .write()
+                .record(entry.path.clone(), entry.title.clone());
+            recent_docs.read().save();
+            nav.push(Route::Editor { path: entry.path });
+        }
+    };
+
+    // ── Map RecentEntry → RecentDocument (appthere-ui type) ──────────────────
+    let recent_list: Vec<RecentDocument> = recent_docs
+        .read()
+        .entries
+        .iter()
+        .map(|e| RecentDocument {
+            title: e.title.clone(),
+            path: e.path.clone(),
+            modified_at: e.modified_at.clone(),
+        })
+        .collect();
+
     rsx! {
         AtHomeTab {
             app_name:            APP_NAME,
             templates:           TEMPLATES.to_vec(),
-            recent_documents:    placeholder_recent_documents(),
+            recent_documents:    recent_list,
             templates_label:     TEMPLATES_LABEL,
             recent_label:        RECENT_LABEL,
             browse_label:        BROWSE_LABEL,
             open_file_label:     OPEN_FILE_LABEL,
             empty_recent_label:  EMPTY_RECENT_LABEL,
-            // TODO(templates): navigate to the editor with the chosen template applied.
-            on_template_select:  |_idx| {},
+            on_template_select:  on_template_select,
             // TODO(browse-templates): open a template browser dialog.
             on_browse_templates: |_| {},
-            // TODO(recent-files): open the selected recent document via its stored token.
-            on_recent_open:      |_idx| {},
+            on_recent_open:      on_recent_open,
             on_open_file:        on_open_file,
         }
     }

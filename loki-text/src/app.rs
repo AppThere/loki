@@ -20,6 +20,7 @@
 use appthere_ui::AtThemeContext;
 use dioxus::prelude::*;
 
+use crate::recent_documents::RecentDocuments;
 use crate::routes::Route;
 use crate::tabs::OpenTab;
 
@@ -39,8 +40,12 @@ pub fn App() -> Element {
     let tabs: Signal<Vec<OpenTab>> = use_signal(Vec::new);
     let active_tab: Signal<usize> = use_signal(|| 0usize); // 0 = Home tab
 
+    // Recent-documents list — loaded once from disk at startup.
+    let recent_docs: Signal<RecentDocuments> = use_signal(RecentDocuments::load);
+
     provide_context(tabs);
     provide_context(active_tab);
+    provide_context(recent_docs);
 
     rsx! {
         // Reset the body margin injected by Blitz's user-agent stylesheet so
