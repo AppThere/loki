@@ -18,25 +18,21 @@ use crate::editing::navigation::{
     navigate_down, navigate_end, navigate_home, navigate_left, navigate_right, navigate_up,
 };
 
-use super::EditorMode;
+// EditorMode removed — the editor is always in edit mode when a document is
+// open. Distraction-free reading is handled by the View ribbon tab (future
+// pass), not by a separate mode.
 
 /// Builds the `on_keydown` closure for [`super::editor_inner::EditorInner`].
 ///
-/// Guards on [`EditorMode::Editing`] and dispatches printable characters,
-/// `Backspace`, `Delete`, arrow navigation, `Home`/`End`, and `Enter`
-/// (paragraph split).  The returned closure is passed to `WgpuSurface`'s
-/// `on_keydown` prop.
+/// Dispatches printable characters, `Backspace`, `Delete`, arrow navigation,
+/// `Home`/`End`, and `Enter` (paragraph split).  The returned closure is
+/// passed to `WgpuSurface`'s `on_keydown` prop.
 pub(super) fn make_keydown_handler(
     doc_state: Arc<Mutex<DocumentState>>,
-    editor_mode: Signal<EditorMode>,
     mut cursor_state: Signal<CursorState>,
     loro_doc: Signal<Option<loro::LoroDoc>>,
 ) -> impl FnMut(Rc<KeyboardData>) {
     move |evt: Rc<KeyboardData>| {
-        if editor_mode() != EditorMode::Editing {
-            return;
-        }
-
         let key = evt.key();
         let modifiers = evt.modifiers();
 
@@ -45,54 +41,49 @@ pub(super) fn make_keydown_handler(
         // cross-platform consistency. blitz-shell maps macOS
         // Cmd → Modifiers::SUPER (not META), so we check SUPER too.
         if modifiers.ctrl() || modifiers.meta() || modifiers.contains(Modifiers::SUPER) {
-            match &key {
-                Key::Character(ch) => match ch.as_str() {
-                    "a" => {
-                        // Select all: anchor at document start, focus at end.
-                        let layout_opt = {
-                            let state = doc_state.lock().unwrap_or_else(|e| e.into_inner());
-                            state.paginated_layout.clone()
+            if let Key::Character(ch) = &key
+                && ch.as_str() == "a"
+            {
+                // Select all: anchor at document start, focus at end.
+                let layout_opt = {
+                    let state = doc_state.lock().unwrap_or_else(|e| e.into_inner());
+                    state.paginated_layout.clone()
+                };
+                if let Some(layout) = layout_opt {
+                    let first = DocumentPosition {
+                        page_index: 0,
+                        paragraph_index: 0,
+                        byte_offset: 0,
+                    };
+                    let last_opt = layout
+                        .pages
+                        .iter()
+                        .enumerate()
+                        .rev()
+                        .find_map(|(pi, page)| {
+                            page.editing_data
+                                .as_ref()?
+                                .paragraphs
+                                .iter()
+                                .max_by_key(|p| p.block_index)
+                                .map(|p| (pi, p.block_index))
+                        });
+                    if let Some((last_page, last_block)) = last_opt {
+                        let end_offset = loro_doc
+                            .read()
+                            .as_ref()
+                            .map(|l| get_block_text(l, last_block).len())
+                            .unwrap_or(0);
+                        let last = DocumentPosition {
+                            page_index: last_page,
+                            paragraph_index: last_block,
+                            byte_offset: end_offset,
                         };
-                        if let Some(layout) = layout_opt {
-                            let first = DocumentPosition {
-                                page_index: 0,
-                                paragraph_index: 0,
-                                byte_offset: 0,
-                            };
-                            let last_opt =
-                                layout
-                                    .pages
-                                    .iter()
-                                    .enumerate()
-                                    .rev()
-                                    .find_map(|(pi, page)| {
-                                        page.editing_data
-                                            .as_ref()?
-                                            .paragraphs
-                                            .iter()
-                                            .max_by_key(|p| p.block_index)
-                                            .map(|p| (pi, p.block_index))
-                                    });
-                            if let Some((last_page, last_block)) = last_opt {
-                                let end_offset = loro_doc
-                                    .read()
-                                    .as_ref()
-                                    .map(|l| get_block_text(l, last_block).len())
-                                    .unwrap_or(0);
-                                let last = DocumentPosition {
-                                    page_index: last_page,
-                                    paragraph_index: last_block,
-                                    byte_offset: end_offset,
-                                };
-                                let mut cs = cursor_state.write();
-                                cs.anchor = Some(first);
-                                cs.focus = Some(last);
-                            }
-                        }
+                        let mut cs = cursor_state.write();
+                        cs.anchor = Some(first);
+                        cs.focus = Some(last);
                     }
-                    _ => {}
-                },
-                _ => {}
+                }
             }
             return;
         }

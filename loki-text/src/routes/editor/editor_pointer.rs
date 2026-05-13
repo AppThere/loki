@@ -14,7 +14,9 @@ use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::hit_test::hit_test_document;
 use crate::editing::touch::{TouchInteractionState, TouchPhase, word_boundaries_at};
 
-use super::EditorMode;
+// EditorMode removed — the editor is always in edit mode when a document is
+// open. Distraction-free reading is handled by the View ribbon tab (future
+// pass), not by a separate mode.
 
 /// Builds the `onmousemove` handler for drag-selection.
 ///
@@ -23,7 +25,6 @@ use super::EditorMode;
 pub(super) fn make_mousemove_handler(
     doc_state: Arc<Mutex<DocumentState>>,
     is_dragging: Signal<bool>,
-    editor_mode: Signal<EditorMode>,
     drag_origin: Signal<Option<(f32, f32)>>,
     window_width: Signal<f32>,
     scroll_offset: Signal<f32>,
@@ -31,7 +32,7 @@ pub(super) fn make_mousemove_handler(
     page_gap_px: f32,
 ) -> impl FnMut(MouseEvent) {
     move |evt: MouseEvent| {
-        if !is_dragging() || editor_mode() != EditorMode::Editing {
+        if !is_dragging() {
             return;
         }
         const DRAG_THRESHOLD_SQ: f32 = 4.0 * 4.0; // 4 CSS px
@@ -75,7 +76,6 @@ pub(super) fn make_mousemove_handler(
 /// Builds the `ontouchmove` handler for touch drag and long-press word selection.
 pub(super) fn make_touchmove_handler(
     doc_state: Arc<Mutex<DocumentState>>,
-    editor_mode: Signal<EditorMode>,
     mut touch_state: Signal<Option<TouchInteractionState>>,
     window_width: Signal<f32>,
     scroll_offset: Signal<f32>,
@@ -84,9 +84,6 @@ pub(super) fn make_touchmove_handler(
     page_gap_px: f32,
 ) -> impl FnMut(TouchEvent) {
     move |evt: TouchEvent| {
-        if editor_mode() != EditorMode::Editing {
-            return;
-        }
         let Some(mut ts) = touch_state() else { return };
         let touches = evt.touches();
         let Some(first) = touches.first() else { return };
@@ -154,7 +151,6 @@ pub(super) fn make_touchmove_handler(
 /// Builds the `ontouchend` handler for tap cursor placement.
 pub(super) fn make_touchend_handler(
     doc_state: Arc<Mutex<DocumentState>>,
-    editor_mode: Signal<EditorMode>,
     mut touch_state: Signal<Option<TouchInteractionState>>,
     window_width: Signal<f32>,
     scroll_offset: Signal<f32>,
@@ -163,10 +159,6 @@ pub(super) fn make_touchend_handler(
     page_gap_px: f32,
 ) -> impl FnMut(TouchEvent) {
     move |_evt: TouchEvent| {
-        if editor_mode() != EditorMode::Editing {
-            touch_state.set(None);
-            return;
-        }
         let Some(ts) = touch_state() else { return };
         match ts.phase {
             TouchPhase::Indeterminate | TouchPhase::Tap => {

@@ -9,6 +9,7 @@
 //!
 //! All editing logic lives in [`editor_inner::EditorInner`].
 
+mod editor_canvas;
 mod editor_error_view;
 mod editor_inner;
 mod editor_keydown;
@@ -19,12 +20,9 @@ mod editor_state;
 use dioxus::prelude::*;
 use editor_inner::EditorInner;
 
-/// Editor view mode toggle.
-#[derive(Clone, PartialEq, Copy)]
-pub enum EditorMode {
-    Reading,
-    Editing,
-}
+// EditorMode removed — the editor is always in edit mode when a document is
+// open. Distraction-free reading is handled by the View ribbon tab (future
+// pass), not by a separate mode.
 
 /// Editor route component.
 ///

@@ -16,12 +16,13 @@ use crate::components::document_source::DocumentState;
 use crate::editing::cursor::CursorState;
 use crate::editing::touch::TouchInteractionState;
 
-use super::EditorMode;
+// EditorMode removed — the editor is always in edit mode when a document is
+// open. Distraction-free reading is handled by the View ribbon tab (future
+// pass), not by a separate mode.
 
 /// All per-document signals for the editor, grouped for ergonomic initialisation.
 pub(super) struct EditorState {
     pub doc_state: Arc<Mutex<DocumentState>>,
-    pub editor_mode: Signal<EditorMode>,
     pub loro_doc: Signal<Option<loro::LoroDoc>>,
     pub cursor_state: Signal<CursorState>,
     pub is_dragging: Signal<bool>,
@@ -29,6 +30,8 @@ pub(super) struct EditorState {
     pub touch_state: Signal<Option<TouchInteractionState>>,
     pub window_width: Signal<f32>,
     pub scroll_offset: Signal<f32>,
+    pub current_page: Signal<u32>,
+    pub total_pages: Signal<u32>,
 }
 
 /// Initialises and returns all per-document editing signals.
@@ -61,7 +64,6 @@ pub(super) fn use_editor_state() -> EditorState {
 
     EditorState {
         doc_state,
-        editor_mode: use_signal(|| EditorMode::Reading),
         loro_doc: use_signal(|| None),
         cursor_state: use_signal(CursorState::new),
         is_dragging: use_signal(|| false),
@@ -69,5 +71,7 @@ pub(super) fn use_editor_state() -> EditorState {
         touch_state: use_signal(|| None),
         window_width: use_signal(|| 1280.0_f32),
         scroll_offset: use_signal(|| 0.0_f32),
+        current_page: use_signal(|| 1_u32),
+        total_pages: use_signal(|| 0_u32),
     }
 }

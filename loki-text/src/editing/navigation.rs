@@ -65,10 +65,10 @@ fn find_prev_para_data(
     let prev_block = block_index - 1;
     // Search this page and previous pages for the entry with prev_block.
     for pi in (0..=page_index).rev() {
-        if let Some(ed) = layout.pages[pi].editing_data.as_ref() {
-            if let Some(para) = ed.paragraphs.iter().find(|p| p.block_index == prev_block) {
-                return Some((pi, para));
-            }
+        if let Some(ed) = layout.pages[pi].editing_data.as_ref()
+            && let Some(para) = ed.paragraphs.iter().find(|p| p.block_index == prev_block)
+        {
+            return Some((pi, para));
         }
     }
     None
@@ -87,10 +87,10 @@ fn find_next_para_data(
 ) -> Option<(usize, &PageParagraphData)> {
     let next_block = block_index + 1;
     for pi in page_index..layout.pages.len() {
-        if let Some(ed) = layout.pages[pi].editing_data.as_ref() {
-            if let Some(para) = ed.paragraphs.iter().find(|p| p.block_index == next_block) {
-                return Some((pi, para));
-            }
+        if let Some(ed) = layout.pages[pi].editing_data.as_ref()
+            && let Some(para) = ed.paragraphs.iter().find(|p| p.block_index == next_block)
+        {
+            return Some((pi, para));
         }
     }
     None
@@ -201,15 +201,13 @@ pub fn navigate_up(focus: &DocumentPosition, layout: &PaginatedLayout) -> Option
     // If target_y < margins.top, the target is above the content area; calling
     // hit_test_page could match a split-paragraph fragment with negative origin
     // and land in its invisible region (Bug 3).
-    if target_y >= margins.top {
-        if let Some(pos) = hit_test_page(focus.page_index, canvas_x, target_y, layout) {
-            // Avoid returning the same position (can happen when rect.height is
-            // small relative to the gap between paragraphs).
-            if pos.paragraph_index != focus.paragraph_index || pos.byte_offset != focus.byte_offset
-            {
-                return Some(pos);
-            }
-        }
+    // Avoid returning the same position (can happen when rect.height is
+    // small relative to the gap between paragraphs).
+    if target_y >= margins.top
+        && let Some(pos) = hit_test_page(focus.page_index, canvas_x, target_y, layout)
+        && (pos.paragraph_index != focus.paragraph_index || pos.byte_offset != focus.byte_offset)
+    {
+        return Some(pos);
     }
 
     // Cross-paragraph: navigate to the bottom of the previous paragraph.
@@ -247,13 +245,11 @@ pub fn navigate_down(
     // Page bottom in canvas coords (content area bottom).
     let page_bottom = page.page_size.height - margins.bottom;
 
-    if target_y < page_bottom {
-        if let Some(pos) = hit_test_page(focus.page_index, canvas_x, target_y, layout) {
-            if pos.paragraph_index != focus.paragraph_index || pos.byte_offset != focus.byte_offset
-            {
-                return Some(pos);
-            }
-        }
+    if target_y < page_bottom
+        && let Some(pos) = hit_test_page(focus.page_index, canvas_x, target_y, layout)
+        && (pos.paragraph_index != focus.paragraph_index || pos.byte_offset != focus.byte_offset)
+    {
+        return Some(pos);
     }
 
     // Cross-paragraph: navigate to the top of the next paragraph.

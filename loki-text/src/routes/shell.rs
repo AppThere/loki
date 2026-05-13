@@ -2,8 +2,10 @@
 
 //! Persistent application shell wrapping all routes.
 //!
-//! [`Shell`] renders the tab bar and status bar around the router [`Outlet`]
-//! so they survive route transitions without being re-mounted.
+//! [`Shell`] renders the tab bar around the router [`Outlet`] so it survives
+//! route transitions without being re-mounted.  The ribbon and status bar are
+//! owned by [`crate::routes::editor::editor_inner::EditorInner`] so they only
+//! appear when a document is open.
 //!
 //! Layout:
 //! ```text
@@ -11,17 +13,11 @@
 //! │  AtTabBar        (flex-shrink: 0)        │
 //! ├─────────────────────────────────────────┤
 //! │  Outlet (Home or Editor)  (flex: 1)      │
-//! ├─────────────────────────────────────────┤
-//! │  AtRibbon        (hidden on Home tab)     │
-//! │    AtRibbonTabStrip  (36 px)             │
-//! │    AtRibbonContent   (60 px)             │
-//! ├─────────────────────────────────────────┤
-//! │  AtStatusBar     (flex-shrink: 0)        │
 //! └─────────────────────────────────────────┘
 //! ```
 
 use appthere_ui::tokens;
-use appthere_ui::{AtDocumentTabData, AtRibbon, AtStatusBar, AtTabBar, RibbonTabDesc};
+use appthere_ui::{AtDocumentTabData, AtTabBar};
 use dioxus::prelude::*;
 
 use crate::routes::Route;
@@ -34,7 +30,7 @@ use crate::tabs::OpenTab;
 ///
 /// **Height: 100vh** — this component owns the full viewport height constraint.
 /// Child routes must use `flex: 1` on their outermost div so they fill the
-/// space between the tab bar and status bar.
+/// space below the tab bar.
 #[component]
 pub fn Shell() -> Element {
     let mut tabs = use_context::<Signal<Vec<OpenTab>>>();
@@ -117,52 +113,6 @@ pub fn Shell() -> Element {
                 style: "flex: 1; overflow: hidden; \
                         display: flex; flex-direction: column;",
                 Outlet::<Route> {}
-            }
-
-            // ── Ribbon (visible on document tabs; hidden on Home) ─────────────
-            AtRibbon {
-                visible: *active_tab.read() != 0,
-                tabs: vec![
-                    RibbonTabDesc { label: "Home",   is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: "Insert", is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: "Format", is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: "Review", is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: "View",   is_contextual: false, aria_label: None },
-                ],
-                active_tab: 0,
-                on_tab_select: move |_idx| {
-                    // TODO(ribbon): Wire ribbon tab selection to per-document state.
-                    // For now, tab clicks are silently accepted but have no effect.
-                },
-                tab_content: rsx! {
-                    // TODO(ribbon): Replace with actual ribbon tab content components
-                    // once Home, Insert, Format, Review, and View tab content is
-                    // implemented (future passes).
-                    div {
-                        style: format!(
-                            "display: flex; align-items: center; padding: 0 {p}px; \
-                             color: {fg}; font-size: {size}px;",
-                            p    = tokens::SPACE_4,
-                            fg   = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
-                            size = tokens::FONT_SIZE_LABEL,
-                        ),
-                        "Ribbon content coming soon"
-                    }
-                },
-            }
-
-            // ── Status bar (always visible across all routes) ─────────────────
-            // TODO(status-bar): Drive page_label and word_count_label from the
-            // active document's layout state rather than hardcoded stubs.
-            AtStatusBar {
-                page_label:         "Page 1 of 1".to_string(),
-                word_count_label:   "".to_string(),
-                language_label:     "English (US)".to_string(),
-                zoom_percent:       100,
-                collaborator_count: 0,
-                collaborator_label: "".to_string(),
-                zoom_aria_label:    "Zoom level",
-                on_zoom_click:      |_| {},
             }
         }
     }
