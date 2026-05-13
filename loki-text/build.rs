@@ -25,10 +25,10 @@
 //! expected to copy `loki-text/assets/` into the bundle's asset directory.
 //! The symlink is not needed in that case.
 
-use std::path::PathBuf;
 use std::env;
 #[cfg(not(unix))]
 use std::fs;
+use std::path::PathBuf;
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
