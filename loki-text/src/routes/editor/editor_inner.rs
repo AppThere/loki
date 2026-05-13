@@ -130,12 +130,17 @@ pub(super) fn EditorInner(path: String) -> Element {
         }
     });
 
-    // ── Page count sync — reads doc_state after each render ──────────────────
+    // ── Page count sync — re-runs when document_load resolves ────────────────
     //
-    // WgpuSurface updates doc_state.page_count synchronously during its render,
-    // which completes before this effect fires.  If the count changed, update
-    // the total_pages signal so the status bar reflects the current page count.
+    // Subscribe to `document_load.value()` so this effect re-runs when the
+    // resource resolves.  WgpuSurface renders synchronously as part of the
+    // same render cycle that changed the resource signal, so by the time this
+    // post-render effect fires, doc_state.page_count is already updated.
     use_effect(move || {
+        // Reactive read — subscribes so this effect re-runs when the document
+        // finishes loading (resource signal changes).
+        let resource_signal = document_load.value();
+        let _sub = resource_signal.read();
         if let Ok(state) = doc_state_pages.lock() {
             let count = state.page_count as u32;
             if *total_pages.peek() != count {
@@ -146,10 +151,12 @@ pub(super) fn EditorInner(path: String) -> Element {
 
     // ── Current page from scroll offset ──────────────────────────────────────
     //
-    // TODO(scroll): Derive current_page reactively from scroll_offset once
-    // Blitz exposes node.scroll_offset to Dioxus components. For now it stays
-    // at 1 (set to 1 on path reset above).
-    let _ = (scroll_offset, current_page);
+    // TODO(scroll): current_page update on scroll is blocked — Blitz native's
+    // convert_scroll_data is unimplemented! (panics at runtime), so onscroll
+    // handlers cannot be used safely.  current_page stays at 1 until Blitz
+    // exposes a scroll-position hook.  See:
+    //   patches/dioxus-native-dom/src/events.rs convert_scroll_data
+    let _ = scroll_offset;
 
     let layout_opts = LayoutOptions {
         // EditorMode removed — always preserve editing layout when a document
@@ -160,9 +167,10 @@ pub(super) fn EditorInner(path: String) -> Element {
     let page_gap_px = tokens::PAGE_GAP_PX;
 
     let page_label = if total_pages() == 0 {
-        "Loading\u{2026}".to_string()
+        String::new() // empty until layout completes — avoids "Loading…" flash
     } else {
-        format!("Page 1 of {}", total_pages())
+        // TODO(i18n): Replace with localised format string from loki_i18n.
+        format!("Page {} of {}", current_page(), total_pages())
     };
 
     rsx! {

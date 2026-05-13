@@ -62,6 +62,19 @@ pub(super) fn use_editor_state() -> EditorState {
         }))
     });
 
+    // Synchronously read page_count in case doc_state is already populated
+    // (covers tab-switch-back where the document was previously loaded).
+    // In practice doc_state is always fresh (use_hook creates it), but this
+    // guard is harmless and future-proofs against in-place reuse.
+    //
+    // COMPAT(dioxus): signal.set() called during the render phase to
+    // synchronously initialise from pre-existing state.
+    let current_page = use_signal(|| 1_u32);
+    let total_pages = {
+        let initial = doc_state.lock().map(|s| s.page_count as u32).unwrap_or(0);
+        use_signal(|| initial)
+    };
+
     EditorState {
         doc_state,
         loro_doc: use_signal(|| None),
@@ -71,7 +84,7 @@ pub(super) fn use_editor_state() -> EditorState {
         touch_state: use_signal(|| None),
         window_width: use_signal(|| 1280.0_f32),
         scroll_offset: use_signal(|| 0.0_f32),
-        current_page: use_signal(|| 1_u32),
-        total_pages: use_signal(|| 0_u32),
+        current_page,
+        total_pages,
     }
 }
