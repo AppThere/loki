@@ -3,7 +3,7 @@
 //! Recent-documents list — persisted as JSON in the platform data directory.
 //!
 //! The list is stored at `{data_dir}/AppThere/Loki/recent.json` and capped at
-//! [`MAX_RECENT`] entries.  `untitled://` paths are never recorded.
+//! [`MAX_RECENT`] entries.  `untitled-N` paths are never recorded.
 
 use std::path::PathBuf;
 
@@ -62,7 +62,7 @@ impl RecentDocuments {
     ///
     /// Moves the entry to the front if already present; otherwise inserts at
     /// the front.  Caps the list at [`MAX_RECENT`] entries.
-    /// `untitled://` paths are silently ignored.
+    /// `untitled-N` paths are silently ignored.
     pub fn record(&mut self, path: String, title: String) {
         if new_document::is_untitled(&path) {
             return;
