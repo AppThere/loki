@@ -36,8 +36,8 @@ pub(crate) fn AtTemplateGallery(props: AtTemplateGalleryProps) -> Element {
 
             for (idx, tmpl) in props.templates.iter().enumerate() {
                 {
-                    let name = tmpl.name;
-                    let fmt_label = tmpl.format_label;
+                    let name = tmpl.name.clone();
+                    let fmt_label = tmpl.format_label.clone();
                     let mut hovered = use_signal(|| false);
                     let border = if hovered() {
                         format!("border: 2px solid {COLOR_ACCENT_PRIMARY};")
@@ -152,7 +152,7 @@ const COLOR_ON_CHROME_BROWSE: &str = COLOR_TEXT_ON_CHROME;
 #[derive(Props, Clone, PartialEq)]
 pub(crate) struct AtTemplateGalleryProps {
     pub templates: Vec<BuiltinTemplate>,
-    pub browse_label: &'static str,
+    pub browse_label: String,
     pub on_select: EventHandler<usize>,
     pub on_browse: EventHandler<()>,
 }

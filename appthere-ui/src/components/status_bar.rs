@@ -156,5 +156,5 @@ pub struct AtStatusBarProps {
     pub on_zoom_click: EventHandler<()>,
 
     /// Aria label for the zoom button.
-    pub zoom_aria_label: &'static str,
+    pub zoom_aria_label: String,
 }

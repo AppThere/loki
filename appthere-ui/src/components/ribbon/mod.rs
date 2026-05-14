@@ -52,12 +52,12 @@ pub type RibbonTabIndex = usize;
 #[derive(Clone, PartialEq)]
 pub struct RibbonTabDesc {
     /// Short display label shown in the tab strip (e.g. "Home", "Insert").
-    pub label: &'static str,
+    pub label: String,
     /// Whether this is a contextual tab (appears only when relevant content
     /// is selected).  Contextual tabs render in amber (`COLOR_CONTEXTUAL_TAB`).
     pub is_contextual: bool,
     /// ARIA label for the tab.  If `None`, `label` is used.
-    pub aria_label: Option<&'static str>,
+    pub aria_label: Option<String>,
 }
 
 // ── AtRibbon ─────────────────────────────────────────────────────────────────

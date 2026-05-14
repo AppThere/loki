@@ -15,6 +15,8 @@
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use loki_i18n::fl;
+
 use crate::tabs::OpenTab;
 
 /// Path prefix for unsaved blank documents.
@@ -42,9 +44,9 @@ pub fn new_blank_tab() -> OpenTab {
     let n = UNTITLED_COUNTER.fetch_add(1, Ordering::Relaxed);
     let path = format!("{}{}", UNTITLED_SCHEME, n);
     let title = if n == 1 {
-        "Untitled".to_string()
+        fl!("editor-untitled")
     } else {
-        format!("Untitled {}", n)
+        fl!("editor-untitled-n", n = n as i64)
     };
     OpenTab {
         title,

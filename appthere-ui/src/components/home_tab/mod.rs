@@ -6,8 +6,8 @@
 //! * [`template_gallery::AtTemplateGallery`] — horizontal card scroll row.
 //! * [`recent_files::AtRecentFileList`] — vertical recent document list.
 //!
-//! All user-visible strings are accepted as `&'static str` props to allow
-//! future `loki_i18n` / Fluent integration without API changes.
+//! All user-visible strings are accepted as [`String`] props so translated
+//! strings from `loki_i18n::fl!()` can be passed directly.
 
 mod recent_files;
 mod template_gallery;
@@ -34,12 +34,12 @@ use crate::tokens::typography::{
 #[derive(Clone, PartialEq, Debug)]
 pub struct BuiltinTemplate {
     /// Displayed template name, e.g. `"Blank"`, `"Letter"`.
-    pub name: &'static str,
+    pub name: String,
     /// One-line description shown in a tooltip (deferred — see COMPAT note).
     /// Retained in the data model for future tooltip/detail-panel use.
-    pub description: &'static str,
+    pub description: String,
     /// Short format label on the card thumbnail, e.g. `"DOTX"`, `"OTT"`.
-    pub format_label: &'static str,
+    pub format_label: String,
 }
 
 /// Describes a recently opened document entry.
@@ -151,7 +151,7 @@ pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
                     }
                     AtTemplateGallery {
                         templates: props.templates.clone(),
-                        browse_label: props.browse_label,
+                        browse_label: props.browse_label.clone(),
                         on_select: move |idx| { props.on_template_select.call(idx); },
                         on_browse:  move |_|   { props.on_browse_templates.call(()); },
                     }
@@ -177,9 +177,9 @@ pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
                     }
                     AtRecentFileList {
                         documents: props.recent_documents.clone(),
-                        recent_label: props.recent_label,
-                        empty_label: props.empty_recent_label,
-                        open_file_label: props.open_file_label,
+                        recent_label: props.recent_label.clone(),
+                        empty_label: props.empty_recent_label.clone(),
+                        open_file_label: props.open_file_label.clone(),
                         on_select: move |idx| { props.on_recent_open.call(idx); },
                         on_open_file: move |_| { props.on_open_file.call(()); },
                     }
@@ -242,7 +242,7 @@ pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
 #[derive(Props, Clone, PartialEq)]
 pub struct AtHomeTabProps {
     /// Application name shown in the header bar.
-    pub app_name: &'static str,
+    pub app_name: String,
 
     /// Template entries for the gallery.
     pub templates: Vec<BuiltinTemplate>,
@@ -252,15 +252,15 @@ pub struct AtHomeTabProps {
 
     // ── Section heading labels ────────────────────────────────────────────────
     /// Heading above the template gallery.
-    pub templates_label: &'static str,
+    pub templates_label: String,
     /// Heading above the recent documents list.
-    pub recent_label: &'static str,
+    pub recent_label: String,
     /// Label for the "Browse…" card at the end of the template gallery.
-    pub browse_label: &'static str,
+    pub browse_label: String,
     /// Label for the primary "Open File" button.
-    pub open_file_label: &'static str,
+    pub open_file_label: String,
     /// Message shown when `recent_documents` is empty.
-    pub empty_recent_label: &'static str,
+    pub empty_recent_label: String,
 
     // ── Callbacks ─────────────────────────────────────────────────────────────
     /// Called when a template card is selected. Argument is the index into `templates`.

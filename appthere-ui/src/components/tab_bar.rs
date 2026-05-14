@@ -184,9 +184,9 @@ pub struct AtTabBarProps {
     /// Active tab index. `0` = Home tab; `1..=N` = document tabs.
     pub active_index: usize,
     /// Label for the always-present Home tab.
-    pub home_tab_label: &'static str,
+    pub home_tab_label: String,
     /// Aria label for the tab list container.
-    pub aria_label: &'static str,
+    pub aria_label: String,
     /// Callback when a tab is selected. Argument is the tab index (0 = Home).
     pub on_tab_select: EventHandler<usize>,
     /// Callback when a document tab's close button is clicked.
@@ -195,5 +195,5 @@ pub struct AtTabBarProps {
     /// Callback when the new-tab (`+`) button is clicked.
     pub on_new_tab: EventHandler<()>,
     /// Aria label for the new-tab button.
-    pub new_tab_aria_label: &'static str,
+    pub new_tab_aria_label: String,
 }

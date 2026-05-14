@@ -3,15 +3,16 @@
 //! Home screen route component.
 //!
 //! A thin wrapper over [`appthere_ui::AtHomeTab`] that wires Loki Text's
-//! static template data, the platform file picker, and the Dioxus router
-//! to the generic component's props and callbacks.
+//! template data, the platform file picker, and the Dioxus router to the
+//! generic component's props and callbacks.
 //!
-//! All user-visible strings are defined as named constants so they are
-//! ready for future `loki_i18n` / Fluent integration.
+//! All user-visible strings come from `loki_i18n::fl!()` — no hardcoded
+//! English literals.
 
 use appthere_ui::{AtHomeTab, BuiltinTemplate, RecentDocument};
 use dioxus::prelude::*;
 use loki_file_access::{FilePicker, PickOptions};
+use loki_i18n::fl;
 
 use crate::new_document::new_blank_tab;
 use crate::recent_documents::RecentDocuments;
@@ -19,53 +20,44 @@ use crate::routes::Route;
 use crate::tabs::OpenTab;
 use crate::utils::display_title_from_path;
 
-// ── String constants (i18n-ready) ─────────────────────────────────────────────
-
-const APP_NAME: &str = "Loki Text";
-const TEMPLATES_LABEL: &str = "Templates";
-const RECENT_LABEL: &str = "Recent";
-// browse_label intentionally empty — hides the Browse card until template
-// browsing is implemented.
-const BROWSE_LABEL: &str = "";
-const OPEN_FILE_LABEL: &str = "Open File\u{2026}";
-const EMPTY_RECENT_LABEL: &str = "No recent documents. Open a file to get started.";
-
-// ── Static template data ──────────────────────────────────────────────────────
-
-const TEMPLATES: &[BuiltinTemplate] = &[
-    BuiltinTemplate {
-        name: "Blank",
-        description: "Empty document",
-        format_label: "DOCX",
-    },
-    BuiltinTemplate {
-        name: "Letter",
-        description: "Formal letter template",
-        format_label: "DOCX",
-    },
-    BuiltinTemplate {
-        name: "Report",
-        description: "Multi-section report",
-        format_label: "DOCX",
-    },
-    BuiltinTemplate {
-        name: "Resume",
-        description: "Single-page r\u{00E9}sum\u{00E9}",
-        format_label: "DOCX",
-    },
-    BuiltinTemplate {
-        name: "Invoice",
-        description: "Simple invoice template",
-        format_label: "DOCX",
-    },
-];
-
 // ── MIME types accepted by the file picker ────────────────────────────────────
 
 const MIME_TYPES: &[&str] = &[
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.oasis.opendocument.text",
 ];
+
+// ── Template data ─────────────────────────────────────────────────────────────
+
+fn make_templates() -> Vec<BuiltinTemplate> {
+    vec![
+        BuiltinTemplate {
+            name: fl!("home-template-blank"),
+            description: fl!("home-template-blank-description"),
+            format_label: fl!("home-template-blank-format"),
+        },
+        BuiltinTemplate {
+            name: fl!("home-template-letter"),
+            description: fl!("home-template-letter-description"),
+            format_label: fl!("home-template-letter-format"),
+        },
+        BuiltinTemplate {
+            name: fl!("home-template-report"),
+            description: fl!("home-template-report-description"),
+            format_label: fl!("home-template-report-format"),
+        },
+        BuiltinTemplate {
+            name: fl!("home-template-resume"),
+            description: fl!("home-template-resume-description"),
+            format_label: fl!("home-template-resume-format"),
+        },
+        BuiltinTemplate {
+            name: fl!("home-template-invoice"),
+            description: fl!("home-template-invoice-description"),
+            format_label: fl!("home-template-invoice-format"),
+        },
+    ]
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -133,7 +125,7 @@ pub fn Home() -> Element {
             let picker = FilePicker::new();
             let opts = PickOptions {
                 mime_types: MIME_TYPES.iter().map(|s| (*s).to_string()).collect(),
-                filter_label: Some("Documents".to_string()),
+                filter_label: Some(fl!("home-filter-label")),
                 multi: false,
             };
             match picker.pick_file_to_open(opts).await {
@@ -181,14 +173,15 @@ pub fn Home() -> Element {
 
     rsx! {
         AtHomeTab {
-            app_name:            APP_NAME,
-            templates:           TEMPLATES.to_vec(),
+            app_name:            fl!("shell-app-name"),
+            templates:           make_templates(),
             recent_documents:    recent_list,
-            templates_label:     TEMPLATES_LABEL,
-            recent_label:        RECENT_LABEL,
-            browse_label:        BROWSE_LABEL,
-            open_file_label:     OPEN_FILE_LABEL,
-            empty_recent_label:  EMPTY_RECENT_LABEL,
+            templates_label:     fl!("home-templates-heading"),
+            recent_label:        fl!("home-recent-heading"),
+            // Empty string hides the Browse card until template browsing is implemented.
+            browse_label:        String::new(),
+            open_file_label:     fl!("home-open-file"),
+            empty_recent_label:  fl!("home-no-recent"),
             on_template_select:  on_template_select,
             // TODO(browse-templates): open a template browser dialog.
             on_browse_templates: |_| {},

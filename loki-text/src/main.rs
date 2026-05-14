@@ -7,5 +7,6 @@
 //! `loki_text` library crate (`src/lib.rs`).
 
 fn main() {
+    loki_i18n::init();
     dioxus::launch(loki_text::app::App);
 }

@@ -106,7 +106,7 @@ fn AtRibbonTab(
         "transparent"
     };
 
-    let aria_label = desc.aria_label.unwrap_or(desc.label);
+    let aria_label = desc.aria_label.as_deref().unwrap_or(&desc.label);
 
     rsx! {
         button {

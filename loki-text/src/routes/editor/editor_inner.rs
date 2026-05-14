@@ -26,6 +26,7 @@ use appthere_ui::{AtRibbon, AtStatusBar, RibbonTabDesc};
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 use loki_doc_model::loro_bridge::document_to_loro;
+use loki_i18n::fl;
 use loki_layout::LayoutOptions;
 
 use super::editor_canvas::render_canvas_area;
@@ -167,10 +168,13 @@ pub(super) fn EditorInner(path: String) -> Element {
     let page_gap_px = tokens::PAGE_GAP_PX;
 
     let page_label = if total_pages() == 0 {
-        String::new() // empty until layout completes — avoids "Loading…" flash
+        fl!("editor-page-loading") // empty in en-US — avoids flash while loading
     } else {
-        // TODO(i18n): Replace with localised format string from loki_i18n.
-        format!("Page {} of {}", current_page(), total_pages())
+        fl!(
+            "editor-page-label",
+            current = current_page() as i64,
+            total = total_pages() as i64
+        )
     };
 
     rsx! {
@@ -204,11 +208,11 @@ pub(super) fn EditorInner(path: String) -> Element {
             // ── Ribbon (formatting controls) ──────────────────────────────────
             AtRibbon {
                 tabs: vec![
-                    RibbonTabDesc { label: "Home",   is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: "Insert", is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: "Format", is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: "Review", is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: "View",   is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-home"),   is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-insert"), is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-format"), is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-review"), is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-view"),   is_contextual: false, aria_label: None },
                 ],
                 active_tab: 0,
                 on_tab_select: move |_idx| {
@@ -224,7 +228,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                             fg   = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
                             size = tokens::FONT_SIZE_LABEL,
                         ),
-                        "Ribbon content coming soon"
+                        {fl!("ribbon-coming-soon")}
                     }
                 },
             }
@@ -233,11 +237,11 @@ pub(super) fn EditorInner(path: String) -> Element {
             AtStatusBar {
                 page_label:         page_label,
                 word_count_label:   "".to_string(),
-                language_label:     "English (US)".to_string(),
+                language_label:     fl!("editor-language"),
                 zoom_percent:       100,
                 collaborator_count: 0,
-                collaborator_label: "".to_string(),
-                zoom_aria_label:    "Zoom level",
+                collaborator_label: String::new(),
+                zoom_aria_label:    fl!("editor-zoom-aria"),
                 on_zoom_click:      |_| {},
             }
         }

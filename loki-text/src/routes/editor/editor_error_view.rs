@@ -4,6 +4,7 @@
 
 use appthere_ui::tokens;
 use dioxus::prelude::*;
+use loki_i18n::fl;
 
 use crate::routes::Route;
 
@@ -42,7 +43,7 @@ pub(super) fn EditorErrorView(message: String) -> Element {
                     size   = tokens::FONT_SIZE_BODY,
                 ),
                 onclick: move |_| { navigator.push(Route::Home {}); },
-                "Go back"
+                {fl!("error-go-back")}
             }
         }
     }

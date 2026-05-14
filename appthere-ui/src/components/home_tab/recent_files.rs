@@ -185,9 +185,9 @@ pub(crate) fn AtRecentFileList(props: AtRecentFileListProps) -> Element {
 #[derive(Props, Clone, PartialEq)]
 pub(crate) struct AtRecentFileListProps {
     pub documents: Vec<RecentDocument>,
-    pub recent_label: &'static str,
-    pub empty_label: &'static str,
-    pub open_file_label: &'static str,
+    pub recent_label: String,
+    pub empty_label: String,
+    pub open_file_label: String,
     pub on_select: EventHandler<usize>,
     pub on_open_file: EventHandler<()>,
 }

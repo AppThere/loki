@@ -19,6 +19,7 @@
 use appthere_ui::tokens;
 use appthere_ui::{AtDocumentTabData, AtTabBar};
 use dioxus::prelude::*;
+use loki_i18n::fl;
 
 use crate::routes::Route;
 use crate::tabs::OpenTab;
@@ -57,9 +58,9 @@ pub fn Shell() -> Element {
                     is_discarded: t.is_discarded,
                 }).collect(),
                 active_index:       *active_tab.read(),
-                home_tab_label:     "Home",
-                aria_label:         "Open documents",
-                new_tab_aria_label: "New document",
+                home_tab_label:     fl!("shell-home-tab"),
+                aria_label:         fl!("shell-tab-bar-aria"),
+                new_tab_aria_label: fl!("shell-new-document-aria"),
                 on_tab_select: move |idx: usize| {
                     *active_tab.write() = idx;
                     if idx == 0 {

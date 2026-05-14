@@ -1,0 +1,16 @@
+[package]
+name = "loki-i18n"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Internationalisation for the Loki suite (Fluent-based)"
+repository = "https://github.com/appthere/loki"
+
+[dependencies]
+fluent = "0.17"
+# fluent-bundle is pulled transitively by fluent; declare explicitly to
+# access fluent_bundle::concurrent::FluentBundle which is Send + Sync.
+fluent-bundle = "0.16"
+unic-langid = "0.9"
+sys-locale = "0.3"
+rust-embed = "8"
