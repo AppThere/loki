@@ -811,9 +811,12 @@ pub fn layout_paragraph(
             // Underline decoration.
             if let Some(deco) = &style.underline {
                 let m = run.metrics();
+                // COMPAT(parley-0.6): RunMetrics offsets follow OpenType / skrifa
+                // Y-up convention (negative = below baseline). Negate to convert
+                // to screen Y-down (positive = below baseline).
                 items.push(PositionedItem::Decoration(PositionedDecoration {
                     x: run_offset + indent_x,
-                    y: run_baseline + deco.offset.unwrap_or(m.underline_offset),
+                    y: run_baseline - deco.offset.unwrap_or(m.underline_offset),
                     width: glyph_run.advance(),
                     thickness: deco.size.unwrap_or(m.underline_size),
                     kind: DecorationKind::Underline,
@@ -824,9 +827,10 @@ pub fn layout_paragraph(
             // Strikethrough decoration.
             if let Some(deco) = &style.strikethrough {
                 let m = run.metrics();
+                // COMPAT(parley-0.6): same Y-up → Y-down negation as underline.
                 items.push(PositionedItem::Decoration(PositionedDecoration {
                     x: run_offset + indent_x,
-                    y: run_baseline + deco.offset.unwrap_or(m.strikethrough_offset),
+                    y: run_baseline - deco.offset.unwrap_or(m.strikethrough_offset),
                     width: glyph_run.advance(),
                     thickness: deco.size.unwrap_or(m.strikethrough_size),
                     kind: DecorationKind::Strikethrough,

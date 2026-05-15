@@ -6,7 +6,7 @@
 //! Translates a [`loki_layout::PositionedDecoration`] into a single Vello
 //! stroke call.
 
-use loki_layout::{DecorationKind, PositionedDecoration};
+use loki_layout::PositionedDecoration;
 
 /// Paint a text decoration line (underline, strikethrough, or overline).
 ///
@@ -17,17 +17,13 @@ pub fn paint_decoration(scene: &mut vello::Scene, item: &PositionedDecoration, s
         return;
     }
 
-    // Compute the y position of the decoration line relative to the baseline.
-    let y = match item.kind {
-        // Underline: draw below the baseline.
-        DecorationKind::Underline => item.y + item.thickness,
-        // Strikethrough: approximate the midline of the text.
-        DecorationKind::Strikethrough => item.y - (item.thickness * 2.0),
-        // Overline: draw above the text.
-        DecorationKind::Overline => item.y - item.thickness,
-        // Any future variant: fall back to baseline.
-        _ => item.y,
-    };
+    // Centre the stroke on the middle of the decoration stripe.
+    //
+    // item.y is the TOP edge of the decoration area in screen Y-down space
+    // (computed in loki-layout/src/para.rs by negating the skrifa Y-up offset).
+    // A Vello/Kurbo stroke is centred on the path, so drawing at
+    // item.y + thickness/2 fills exactly [item.y, item.y + thickness].
+    let y = item.y + item.thickness / 2.0;
 
     let x0 = (item.x * scale) as f64;
     let x1 = ((item.x + item.width) * scale) as f64;

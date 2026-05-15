@@ -74,7 +74,7 @@ pub(super) fn home_tab_content(
                     if let Some(ldoc) = ldoc_guard.as_ref() {
                         apply_mutation_and_relayout(&ds_undo, ldoc);
                     }
-                    post_mutation_sync(&ds_undo, cursor_state, undo_manager, can_undo, can_redo);
+                    post_mutation_sync(&ds_undo, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
                 },
             }
 
@@ -94,7 +94,7 @@ pub(super) fn home_tab_content(
                     if let Some(ldoc) = ldoc_guard.as_ref() {
                         apply_mutation_and_relayout(&ds_redo, ldoc);
                     }
-                    post_mutation_sync(&ds_redo, cursor_state, undo_manager, can_undo, can_redo);
+                    post_mutation_sync(&ds_redo, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
                 },
             }
         }
@@ -114,7 +114,7 @@ pub(super) fn home_tab_content(
                         let _ = editor_formatting::toggle_bold(ldoc, &cursor_state.read());
                         apply_mutation_and_relayout(&ds_bold, ldoc);
                     }
-                    post_mutation_sync(&ds_bold, cursor_state, undo_manager, can_undo, can_redo);
+                    post_mutation_sync(&ds_bold, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
                 },
             }
 
@@ -129,7 +129,7 @@ pub(super) fn home_tab_content(
                         let _ = editor_formatting::toggle_italic(ldoc, &cursor_state.read());
                         apply_mutation_and_relayout(&ds_italic, ldoc);
                     }
-                    post_mutation_sync(&ds_italic, cursor_state, undo_manager, can_undo, can_redo);
+                    post_mutation_sync(&ds_italic, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
                 },
             }
 
@@ -144,7 +144,7 @@ pub(super) fn home_tab_content(
                         let _ = editor_formatting::toggle_underline(ldoc, &cursor_state.read());
                         apply_mutation_and_relayout(&ds_underline, ldoc);
                     }
-                    post_mutation_sync(&ds_underline, cursor_state, undo_manager, can_undo, can_redo);
+                    post_mutation_sync(&ds_underline, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
                 },
             }
 
@@ -159,7 +159,7 @@ pub(super) fn home_tab_content(
                         let _ = editor_formatting::toggle_strikethrough(ldoc, &cursor_state.read());
                         apply_mutation_and_relayout(&ds_strike, ldoc);
                     }
-                    post_mutation_sync(&ds_strike, cursor_state, undo_manager, can_undo, can_redo);
+                    post_mutation_sync(&ds_strike, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
                 },
             }
 
@@ -174,7 +174,7 @@ pub(super) fn home_tab_content(
                         let _ = editor_formatting::toggle_superscript(ldoc, &cursor_state.read());
                         apply_mutation_and_relayout(&ds_super, ldoc);
                     }
-                    post_mutation_sync(&ds_super, cursor_state, undo_manager, can_undo, can_redo);
+                    post_mutation_sync(&ds_super, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
                 },
             }
 
@@ -189,7 +189,7 @@ pub(super) fn home_tab_content(
                         let _ = editor_formatting::toggle_subscript(ldoc, &cursor_state.read());
                         apply_mutation_and_relayout(&ds_sub, ldoc);
                     }
-                    post_mutation_sync(&ds_sub, cursor_state, undo_manager, can_undo, can_redo);
+                    post_mutation_sync(&ds_sub, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
                 },
             }
         }

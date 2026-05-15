@@ -8,14 +8,14 @@ use std::sync::{Arc, Mutex};
 use dioxus::prelude::*;
 use keyboard_types::Modifiers;
 use loki_doc_model::loro_mutation::{delete_text, get_block_text, insert_text};
-use loki_doc_model::{merge_block, split_block};
+use loki_doc_model::merge_block;
 
-use super::editor_keydown_ctrl::{handle_ctrl_keys, post_mutation_sync};
+use super::editor_keydown_ctrl::{
+    handle_ctrl_keys, handle_delete_key, handle_enter_key, post_mutation_sync,
+};
 
 use crate::components::document_source::{DocumentState, apply_mutation_and_relayout};
-use crate::editing::cursor::{
-    CursorState, DocumentPosition, next_grapheme_boundary, prev_grapheme_boundary,
-};
+use crate::editing::cursor::{CursorState, DocumentPosition, prev_grapheme_boundary};
 use crate::editing::navigation::{
     navigate_down, navigate_end, navigate_home, navigate_left, navigate_right, navigate_up,
 };
@@ -82,7 +82,14 @@ pub(super) fn make_keydown_handler(
                     };
                     apply_mutation_and_relayout(&doc_state, ldoc);
                 }
-                post_mutation_sync(&doc_state, cursor_state, undo_manager, can_undo, can_redo);
+                post_mutation_sync(
+                    &doc_state,
+                    loro_doc,
+                    cursor_state,
+                    undo_manager,
+                    can_undo,
+                    can_redo,
+                );
                 let new_offset = focus.byte_offset + ch.len();
                 let new_pos = DocumentPosition {
                     byte_offset: new_offset,
@@ -107,7 +114,14 @@ pub(super) fn make_keydown_handler(
                         return;
                     };
                     apply_mutation_and_relayout(&doc_state, ldoc);
-                    post_mutation_sync(&doc_state, cursor_state, undo_manager, can_undo, can_redo);
+                    post_mutation_sync(
+                        &doc_state,
+                        loro_doc,
+                        cursor_state,
+                        undo_manager,
+                        can_undo,
+                        can_redo,
+                    );
                     // TODO(3b-3): recompute page_index from layout after merge
                     let new_pos = DocumentPosition {
                         page_index: focus.page_index,
@@ -144,7 +158,14 @@ pub(super) fn make_keydown_handler(
                     };
                     apply_mutation_and_relayout(&doc_state, ldoc);
                 }
-                post_mutation_sync(&doc_state, cursor_state, undo_manager, can_undo, can_redo);
+                post_mutation_sync(
+                    &doc_state,
+                    loro_doc,
+                    cursor_state,
+                    undo_manager,
+                    can_undo,
+                    can_redo,
+                );
                 let new_pos = DocumentPosition {
                     byte_offset: prev,
                     ..focus
@@ -156,36 +177,15 @@ pub(super) fn make_keydown_handler(
 
             // ── Forward delete ────────────────────────────────────────────────
             Key::Delete => {
-                let text = {
-                    let ldoc_guard = loro_doc.read();
-                    ldoc_guard
-                        .as_ref()
-                        .map(|l| get_block_text(l, focus.paragraph_index))
-                        .unwrap_or_default()
-                };
-                if focus.byte_offset >= text.len() {
-                    return;
-                }
-                let next = next_grapheme_boundary(&text, focus.byte_offset);
-                let len = next - focus.byte_offset;
-                {
-                    let ldoc_guard = loro_doc.read();
-                    let Some(ldoc) = ldoc_guard.as_ref() else {
-                        return;
-                    };
-                    if delete_text(ldoc, focus.paragraph_index, focus.byte_offset, len).is_err() {
-                        return;
-                    }
-                }
-                {
-                    let ldoc_guard = loro_doc.read();
-                    let Some(ldoc) = ldoc_guard.as_ref() else {
-                        return;
-                    };
-                    apply_mutation_and_relayout(&doc_state, ldoc);
-                }
-                post_mutation_sync(&doc_state, cursor_state, undo_manager, can_undo, can_redo);
-                // Cursor stays at the same offset after forward delete.
+                handle_delete_key(
+                    focus,
+                    loro_doc,
+                    &doc_state,
+                    cursor_state,
+                    undo_manager,
+                    can_undo,
+                    can_redo,
+                );
             }
 
             // ── Arrow-key navigation ──────────────────────────────────────────
@@ -271,24 +271,15 @@ pub(super) fn make_keydown_handler(
 
             // ── Enter — split paragraph ───────────────────────────────────────
             Key::Enter => {
-                let ldoc_guard = loro_doc.read();
-                let Some(ldoc) = ldoc_guard.as_ref() else {
-                    return;
-                };
-                if split_block(ldoc, focus.paragraph_index, focus.byte_offset).is_err() {
-                    return;
-                }
-                apply_mutation_and_relayout(&doc_state, ldoc);
-                post_mutation_sync(&doc_state, cursor_state, undo_manager, can_undo, can_redo);
-                // TODO(3b-3): recompute page_index from layout after split
-                let new_pos = DocumentPosition {
-                    page_index: focus.page_index,
-                    paragraph_index: focus.paragraph_index + 1,
-                    byte_offset: 0,
-                };
-                let mut cs = cursor_state.write();
-                cs.focus = Some(new_pos.clone());
-                cs.anchor = Some(new_pos);
+                handle_enter_key(
+                    focus,
+                    loro_doc,
+                    &doc_state,
+                    cursor_state,
+                    undo_manager,
+                    can_undo,
+                    can_redo,
+                );
             }
 
             _ => {}
