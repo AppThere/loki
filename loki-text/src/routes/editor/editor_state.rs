@@ -40,6 +40,17 @@ pub(super) struct EditorState {
     pub strikethrough_active: Signal<bool>,
     pub superscript_active: Signal<bool>,
     pub subscript_active: Signal<bool>,
+    /// Loro undo manager — `None` until the document loads.
+    ///
+    /// // TODO(undo-dirty): `can_undo` does not track whether the document is
+    /// saved relative to the undo stack.  When a Save action is implemented,
+    /// call `UndoManager::record_new_checkpoint()` to mark the clean state so
+    /// the ribbon Save button can be disabled when there is nothing to save.
+    pub undo_manager: Signal<Option<loro::UndoManager>>,
+    /// Whether Ctrl+Z is currently applicable (derived from `undo_manager`).
+    pub can_undo: Signal<bool>,
+    /// Whether Ctrl+Y / Ctrl+Shift+Z is currently applicable.
+    pub can_redo: Signal<bool>,
 }
 
 /// Initialises and returns all per-document editing signals.
@@ -100,5 +111,8 @@ pub(super) fn use_editor_state() -> EditorState {
         strikethrough_active: use_signal(|| false),
         superscript_active: use_signal(|| false),
         subscript_active: use_signal(|| false),
+        undo_manager: use_signal(|| None),
+        can_undo: use_signal(|| false),
+        can_redo: use_signal(|| false),
     }
 }

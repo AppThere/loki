@@ -10,7 +10,7 @@ use keyboard_types::Modifiers;
 use loki_doc_model::loro_mutation::{delete_text, get_block_text, insert_text};
 use loki_doc_model::{merge_block, split_block};
 
-use super::editor_formatting;
+use super::editor_keydown_ctrl::{handle_ctrl_keys, sync_undo_state};
 
 use crate::components::document_source::{DocumentState, apply_mutation_and_relayout};
 use crate::editing::cursor::{
@@ -33,6 +33,9 @@ pub(super) fn make_keydown_handler(
     doc_state: Arc<Mutex<DocumentState>>,
     mut cursor_state: Signal<CursorState>,
     loro_doc: Signal<Option<loro::LoroDoc>>,
+    undo_manager: Signal<Option<loro::UndoManager>>,
+    can_undo: Signal<bool>,
+    can_redo: Signal<bool>,
 ) -> impl FnMut(Rc<KeyboardData>) {
     move |evt: Rc<KeyboardData>| {
         let key = evt.key();
@@ -43,75 +46,16 @@ pub(super) fn make_keydown_handler(
         // cross-platform consistency. blitz-shell maps macOS
         // Cmd → Modifiers::SUPER (not META), so we check SUPER too.
         if modifiers.ctrl() || modifiers.meta() || modifiers.contains(Modifiers::SUPER) {
-            if let Key::Character(ch) = &key {
-                match ch.as_str() {
-                    "a" => {
-                        // Select all: anchor at document start, focus at end.
-                        let layout_opt = {
-                            let state = doc_state.lock().unwrap_or_else(|e| e.into_inner());
-                            state.paginated_layout.clone()
-                        };
-                        if let Some(layout) = layout_opt {
-                            let first = DocumentPosition {
-                                page_index: 0,
-                                paragraph_index: 0,
-                                byte_offset: 0,
-                            };
-                            let last_opt =
-                                layout
-                                    .pages
-                                    .iter()
-                                    .enumerate()
-                                    .rev()
-                                    .find_map(|(pi, page)| {
-                                        page.editing_data
-                                            .as_ref()?
-                                            .paragraphs
-                                            .iter()
-                                            .max_by_key(|p| p.block_index)
-                                            .map(|p| (pi, p.block_index))
-                                    });
-                            if let Some((last_page, last_block)) = last_opt {
-                                let end_offset = loro_doc
-                                    .read()
-                                    .as_ref()
-                                    .map(|l| get_block_text(l, last_block).len())
-                                    .unwrap_or(0);
-                                let last = DocumentPosition {
-                                    page_index: last_page,
-                                    paragraph_index: last_block,
-                                    byte_offset: end_offset,
-                                };
-                                let mut cs = cursor_state.write();
-                                cs.anchor = Some(first);
-                                cs.focus = Some(last);
-                            }
-                        }
-                    }
-                    "b" => {
-                        let ldoc_guard = loro_doc.read();
-                        if let Some(ldoc) = ldoc_guard.as_ref() {
-                            let _ = editor_formatting::toggle_bold(ldoc, &cursor_state.read());
-                            apply_mutation_and_relayout(&doc_state, ldoc);
-                        }
-                    }
-                    "i" => {
-                        let ldoc_guard = loro_doc.read();
-                        if let Some(ldoc) = ldoc_guard.as_ref() {
-                            let _ = editor_formatting::toggle_italic(ldoc, &cursor_state.read());
-                            apply_mutation_and_relayout(&doc_state, ldoc);
-                        }
-                    }
-                    "u" => {
-                        let ldoc_guard = loro_doc.read();
-                        if let Some(ldoc) = ldoc_guard.as_ref() {
-                            let _ = editor_formatting::toggle_underline(ldoc, &cursor_state.read());
-                            apply_mutation_and_relayout(&doc_state, ldoc);
-                        }
-                    }
-                    _ => {}
-                }
-            }
+            handle_ctrl_keys(
+                &doc_state,
+                cursor_state,
+                loro_doc,
+                undo_manager,
+                can_undo,
+                can_redo,
+                modifiers,
+                &key,
+            );
             return;
         }
 
@@ -138,6 +82,7 @@ pub(super) fn make_keydown_handler(
                     };
                     apply_mutation_and_relayout(&doc_state, ldoc);
                 }
+                sync_undo_state(undo_manager, can_undo, can_redo);
                 let new_offset = focus.byte_offset + ch.len();
                 let new_pos = DocumentPosition {
                     byte_offset: new_offset,
@@ -162,6 +107,7 @@ pub(super) fn make_keydown_handler(
                         return;
                     };
                     apply_mutation_and_relayout(&doc_state, ldoc);
+                    sync_undo_state(undo_manager, can_undo, can_redo);
                     // TODO(3b-3): recompute page_index from layout after merge
                     let new_pos = DocumentPosition {
                         page_index: focus.page_index,
@@ -198,6 +144,7 @@ pub(super) fn make_keydown_handler(
                     };
                     apply_mutation_and_relayout(&doc_state, ldoc);
                 }
+                sync_undo_state(undo_manager, can_undo, can_redo);
                 let new_pos = DocumentPosition {
                     byte_offset: prev,
                     ..focus
@@ -237,6 +184,7 @@ pub(super) fn make_keydown_handler(
                     };
                     apply_mutation_and_relayout(&doc_state, ldoc);
                 }
+                sync_undo_state(undo_manager, can_undo, can_redo);
                 // Cursor stays at the same offset after forward delete.
             }
 
@@ -331,6 +279,7 @@ pub(super) fn make_keydown_handler(
                     return;
                 }
                 apply_mutation_and_relayout(&doc_state, ldoc);
+                sync_undo_state(undo_manager, can_undo, can_redo);
                 // TODO(3b-3): recompute page_index from layout after split
                 let new_pos = DocumentPosition {
                     page_index: focus.page_index,

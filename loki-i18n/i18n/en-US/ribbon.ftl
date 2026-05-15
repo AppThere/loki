@@ -18,3 +18,8 @@ ribbon-underline-aria = Underline (Ctrl+U)
 ribbon-strikethrough-aria = Strikethrough
 ribbon-superscript-aria = Superscript
 ribbon-subscript-aria = Subscript
+
+# History group (Home tab)
+ribbon-group-history = History
+ribbon-undo-aria = Undo (Ctrl+Z)
+ribbon-redo-aria = Redo (Ctrl+Y)

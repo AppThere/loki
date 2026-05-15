@@ -36,6 +36,7 @@ use loro::LoroValue;
 
 use super::editor_canvas::render_canvas_area;
 use super::editor_load::load_document;
+use super::editor_path_sync::sync_path_and_reset;
 use super::editor_ribbon::home_tab_content;
 use super::editor_state::{EditorState, use_editor_state};
 use crate::error::LoadError;
@@ -70,46 +71,28 @@ pub(super) fn EditorInner(path: String) -> Element {
         mut strikethrough_active,
         mut superscript_active,
         mut subscript_active,
+        mut undo_manager,
+        mut can_undo,
+        mut can_redo,
     } = use_editor_state();
 
     // ── Synchronous Path Sync & State Reset ──────────────────────────────────
     //
-    // Sync the signal with the prop synchronously during the render.
-    // By resetting the state here, we guarantee it happens BEFORE `use_resource`
-    // evaluates its closure or restarts, and definitely BEFORE `WgpuSurface`
-    // receives the new document. This strictly prevents the race condition where
-    // a deferred `use_effect` runs late and wipes out the newly loaded document.
-    {
-        let current = path_signal.peek().clone();
-        if current != path {
-            tracing::debug!(
-                "EditorInner: path changed from {} to {} → resetting per-document state",
-                current,
-                path
-            );
-            path_signal.set(path.clone());
-
-            if let Ok(mut state) = doc_state.lock() {
-                state.document = None;
-                state.generation = 0;
-                state.page_count = 0;
-                state.canvas_width = 0.0;
-                state.visible_rect = None;
-                state.paginated_layout = None;
-                state.layout_stamp = state.layout_stamp.wrapping_add(1);
-                state.layout_generation = 0;
-                state.layout_canvas_width = 0.0;
-                state.layout_preserve_for_editing = false;
-            } else {
-                tracing::error!("doc_state lock poisoned during tab switch — state may be stale");
-            }
-
-            cursor_state.set(crate::editing::cursor::CursorState::default());
-            loro_doc.set(None);
-            total_pages.set(0);
-            current_page.set(1);
-        }
-    }
+    // Resets all per-document state synchronously during the render phase so
+    // the reset happens BEFORE `use_resource` evaluates.  See `editor_path_sync`
+    // for the full reset logic.
+    sync_path_and_reset(
+        &path,
+        &mut path_signal,
+        &doc_state,
+        &mut cursor_state,
+        &mut loro_doc,
+        &mut undo_manager,
+        &mut total_pages,
+        &mut current_page,
+        &mut can_undo,
+        &mut can_redo,
+    );
 
     // Pre-clone the Arc so each closure can capture its own owned clone.
     let doc_state_mousemove = Arc::clone(&doc_state);
@@ -138,7 +121,11 @@ pub(super) fn EditorInner(path: String) -> Element {
             && loro_doc().is_none()
         {
             match document_to_loro(doc) {
-                Ok(l_doc) => loro_doc.set(Some(l_doc)),
+                Ok(l_doc) => {
+                    let um = loro::UndoManager::new(&l_doc);
+                    loro_doc.set(Some(l_doc));
+                    undo_manager.set(Some(um));
+                }
                 Err(e) => tracing::warn!("Failed to initialize Loro sync bridge: {}", e),
             }
         }
@@ -251,6 +238,9 @@ pub(super) fn EditorInner(path: String) -> Element {
                 scroll_offset,
                 cursor_state,
                 loro_doc,
+                undo_manager,
+                can_undo,
+                can_redo,
                 path_signal,
                 layout_opts,
                 document_load,
@@ -274,6 +264,9 @@ pub(super) fn EditorInner(path: String) -> Element {
                     &doc_state_ribbon,
                     loro_doc,
                     cursor_state,
+                    undo_manager,
+                    can_undo,
+                    can_redo,
                     bold_active,
                     italic_active,
                     underline_active,

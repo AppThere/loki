@@ -61,6 +61,9 @@ pub(super) fn render_canvas_area(
     scroll_offset: Signal<f32>,
     mut cursor_state: Signal<CursorState>,
     loro_doc: Signal<Option<loro::LoroDoc>>,
+    undo_manager: Signal<Option<loro::UndoManager>>,
+    can_undo: Signal<bool>,
+    can_redo: Signal<bool>,
     path_signal: Signal<String>,
     layout_opts: LayoutOptions,
     document_load: Resource<(String, Result<Document, LoadError>)>,
@@ -156,6 +159,9 @@ pub(super) fn render_canvas_area(
                                 doc_state_keydown,
                                 cursor_state,
                                 loro_doc,
+                                undo_manager,
+                                can_undo,
+                                can_redo,
                             ),
                         }
                     }

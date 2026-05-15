@@ -27,11 +27,14 @@ use super::editor_formatting;
 ///
 /// Because [`Signal<T>`] is `Copy`, all signal parameters are copied freely
 /// into closures.  One `Arc::clone` is made per button for `doc_state`.
-#[allow(clippy::too_many_arguments)] // 6 formatting signals + doc_state + loro_doc + cursor_state
+#[allow(clippy::too_many_arguments)] // 6 formatting signals + undo signals + doc_state + loro_doc + cursor_state
 pub(super) fn home_tab_content(
     doc_state: &Arc<Mutex<DocumentState>>,
     loro_doc: Signal<Option<LoroDoc>>,
     cursor_state: Signal<CursorState>,
+    mut undo_manager: Signal<Option<loro::UndoManager>>,
+    mut can_undo: Signal<bool>,
+    mut can_redo: Signal<bool>,
     bold_active: Signal<bool>,
     italic_active: Signal<bool>,
     underline_active: Signal<bool>,
@@ -40,6 +43,8 @@ pub(super) fn home_tab_content(
     subscript_active: Signal<bool>,
 ) -> Element {
     // One Arc clone per button — cheap reference-count increment.
+    let ds_undo = Arc::clone(doc_state);
+    let ds_redo = Arc::clone(doc_state);
     let ds_bold = Arc::clone(doc_state);
     let ds_italic = Arc::clone(doc_state);
     let ds_underline = Arc::clone(doc_state);
@@ -48,6 +53,53 @@ pub(super) fn home_tab_content(
     let ds_sub = Arc::clone(doc_state);
 
     rsx! {
+        AtRibbonGroup {
+            label:      None,
+            aria_label: fl!("ribbon-group-history"),
+
+            AtRibbonIconButton {
+                icon_label:  "\u{21A9}".to_string(),
+                aria_label:  fl!("ribbon-undo-aria"),
+                is_active:   false,
+                is_disabled: !*can_undo.read(),
+                on_click: move |_| {
+                    {
+                        let mut um_guard = undo_manager.write();
+                        if let Some(um) = um_guard.as_mut() {
+                            let _ = um.undo();
+                            can_undo.set(um.can_undo());
+                            can_redo.set(um.can_redo());
+                        }
+                    }
+                    let ldoc_guard = loro_doc.read();
+                    if let Some(ldoc) = ldoc_guard.as_ref() {
+                        apply_mutation_and_relayout(&ds_undo, ldoc);
+                    }
+                },
+            }
+
+            AtRibbonIconButton {
+                icon_label:  "\u{21AA}".to_string(),
+                aria_label:  fl!("ribbon-redo-aria"),
+                is_active:   false,
+                is_disabled: !*can_redo.read(),
+                on_click: move |_| {
+                    {
+                        let mut um_guard = undo_manager.write();
+                        if let Some(um) = um_guard.as_mut() {
+                            let _ = um.redo();
+                            can_undo.set(um.can_undo());
+                            can_redo.set(um.can_redo());
+                        }
+                    }
+                    let ldoc_guard = loro_doc.read();
+                    if let Some(ldoc) = ldoc_guard.as_ref() {
+                        apply_mutation_and_relayout(&ds_redo, ldoc);
+                    }
+                },
+            }
+        }
+
         AtRibbonGroup {
             label:      None,
             aria_label: fl!("ribbon-group-inline"),
