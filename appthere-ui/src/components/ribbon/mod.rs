@@ -28,10 +28,12 @@
 //! └─────────────────────────────────────────┘
 //! ```
 
+pub mod button;
 pub mod content_row;
 pub mod group;
 pub mod tab_strip;
 
+pub use button::AtRibbonIconButton;
 pub use content_row::AtRibbonContent;
 pub use group::{AtRibbonGroup, AtRibbonGroupProps};
 pub use tab_strip::AtRibbonTabStrip;

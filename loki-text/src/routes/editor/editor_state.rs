@@ -32,6 +32,14 @@ pub(super) struct EditorState {
     pub scroll_offset: Signal<f32>,
     pub current_page: Signal<u32>,
     pub total_pages: Signal<u32>,
+    /// Active state of inline character formatting at the cursor position.
+    /// Updated whenever the cursor moves or a formatting toggle is applied.
+    pub bold_active: Signal<bool>,
+    pub italic_active: Signal<bool>,
+    pub underline_active: Signal<bool>,
+    pub strikethrough_active: Signal<bool>,
+    pub superscript_active: Signal<bool>,
+    pub subscript_active: Signal<bool>,
 }
 
 /// Initialises and returns all per-document editing signals.
@@ -86,5 +94,11 @@ pub(super) fn use_editor_state() -> EditorState {
         scroll_offset: use_signal(|| 0.0_f32),
         current_page,
         total_pages,
+        bold_active: use_signal(|| false),
+        italic_active: use_signal(|| false),
+        underline_active: use_signal(|| false),
+        strikethrough_active: use_signal(|| false),
+        superscript_active: use_signal(|| false),
+        subscript_active: use_signal(|| false),
     }
 }

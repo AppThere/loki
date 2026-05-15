@@ -11,10 +11,12 @@
 
 mod editor_canvas;
 mod editor_error_view;
+mod editor_formatting;
 mod editor_inner;
 mod editor_keydown;
 mod editor_load;
 mod editor_pointer;
+mod editor_ribbon;
 mod editor_state;
 
 use dioxus::prelude::*;

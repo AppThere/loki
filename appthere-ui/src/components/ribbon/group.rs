@@ -28,9 +28,9 @@ use crate::tokens::FONT_FAMILY_UI;
 pub fn AtRibbonGroup(
     /// Short label shown below the button row (e.g. "Clipboard").
     /// Pass `None` to omit the label.
-    label: Option<&'static str>,
+    label: Option<String>,
     /// ARIA group label for accessibility (`role="group"` `aria-label`).
-    aria_label: &'static str,
+    aria_label: String,
     /// Buttons and controls inside this group.
     children: Element,
 ) -> Element {
@@ -59,7 +59,7 @@ pub fn AtRibbonGroup(
             }
 
             // Optional label row below buttons
-            if let Some(lbl) = label {
+            if let Some(ref lbl) = label {
                 div {
                     style: format!(
                         // TODO(font): verify Atkinson Hyperlegible Next is

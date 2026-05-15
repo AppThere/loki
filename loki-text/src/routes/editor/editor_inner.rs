@@ -25,12 +25,18 @@ use appthere_ui::tokens;
 use appthere_ui::{AtRibbon, AtStatusBar, RibbonTabDesc};
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
+use loki_doc_model::get_mark_at;
 use loki_doc_model::loro_bridge::document_to_loro;
+use loki_doc_model::loro_schema::{
+    MARK_BOLD, MARK_ITALIC, MARK_STRIKETHROUGH, MARK_UNDERLINE, MARK_VERTICAL_ALIGN,
+};
 use loki_i18n::fl;
 use loki_layout::LayoutOptions;
+use loro::LoroValue;
 
 use super::editor_canvas::render_canvas_area;
 use super::editor_load::load_document;
+use super::editor_ribbon::home_tab_content;
 use super::editor_state::{EditorState, use_editor_state};
 use crate::error::LoadError;
 
@@ -58,6 +64,12 @@ pub(super) fn EditorInner(path: String) -> Element {
         scroll_offset,
         mut current_page,
         mut total_pages,
+        mut bold_active,
+        mut italic_active,
+        mut underline_active,
+        mut strikethrough_active,
+        mut superscript_active,
+        mut subscript_active,
     } = use_editor_state();
 
     // ── Synchronous Path Sync & State Reset ──────────────────────────────────
@@ -106,6 +118,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_prop = Arc::clone(&doc_state);
     let doc_state_keydown = Arc::clone(&doc_state);
     let doc_state_pages = Arc::clone(&doc_state);
+    let doc_state_ribbon = Arc::clone(&doc_state);
 
     // ── Document load — reactive on path_signal ───────────────────────────────
     let document_load: Resource<(String, Result<Document, LoadError>)> = use_resource(move || {
@@ -147,6 +160,45 @@ pub(super) fn EditorInner(path: String) -> Element {
             if *total_pages.peek() != count {
                 total_pages.set(count);
             }
+        }
+    });
+
+    // ── Inline formatting signal sync ────────────────────────────────────────
+    //
+    // Subscribes to cursor_state and loro_doc so this effect re-runs whenever
+    // the cursor moves or the document changes. Updates the ribbon button
+    // active states to reflect the marks at the focus position.
+    use_effect(move || {
+        let cs = cursor_state.read();
+        let ldoc_guard = loro_doc.read();
+        if let (Some(ldoc), Some(focus)) = (ldoc_guard.as_ref(), cs.focus.as_ref()) {
+            let bi = focus.paragraph_index;
+            let bo = focus.byte_offset;
+            let is_bool = |key: &str| {
+                matches!(
+                    get_mark_at(ldoc, bi, bo, key),
+                    Ok(Some(LoroValue::Bool(true)))
+                )
+            };
+            bold_active.set(is_bool(MARK_BOLD));
+            italic_active.set(is_bool(MARK_ITALIC));
+            underline_active.set(is_bool(MARK_UNDERLINE));
+            strikethrough_active.set(is_bool(MARK_STRIKETHROUGH));
+            superscript_active.set(matches!(
+                get_mark_at(ldoc, bi, bo, MARK_VERTICAL_ALIGN),
+                Ok(Some(LoroValue::String(ref s))) if s.as_str() == "Superscript"
+            ));
+            subscript_active.set(matches!(
+                get_mark_at(ldoc, bi, bo, MARK_VERTICAL_ALIGN),
+                Ok(Some(LoroValue::String(ref s))) if s.as_str() == "Subscript"
+            ));
+        } else {
+            bold_active.set(false);
+            italic_active.set(false);
+            underline_active.set(false);
+            strikethrough_active.set(false);
+            superscript_active.set(false);
+            subscript_active.set(false);
         }
     });
 
@@ -218,19 +270,17 @@ pub(super) fn EditorInner(path: String) -> Element {
                 on_tab_select: move |_idx| {
                     // TODO(ribbon): Wire ribbon tab selection to per-document state.
                 },
-                tab_content: rsx! {
-                    // TODO(ribbon): Replace with actual ribbon tab content components.
-                    div {
-                        style: format!(
-                            "display: flex; align-items: center; padding: 0 {p}px; \
-                             color: {fg}; font-size: {size}px;",
-                            p    = tokens::SPACE_4,
-                            fg   = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
-                            size = tokens::FONT_SIZE_LABEL,
-                        ),
-                        {fl!("ribbon-coming-soon")}
-                    }
-                },
+                tab_content: home_tab_content(
+                    &doc_state_ribbon,
+                    loro_doc,
+                    cursor_state,
+                    bold_active,
+                    italic_active,
+                    underline_active,
+                    strikethrough_active,
+                    superscript_active,
+                    subscript_active,
+                ),
             }
 
             // ── Status bar ────────────────────────────────────────────────────

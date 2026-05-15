@@ -10,6 +10,8 @@ use keyboard_types::Modifiers;
 use loki_doc_model::loro_mutation::{delete_text, get_block_text, insert_text};
 use loki_doc_model::{merge_block, split_block};
 
+use super::editor_formatting;
+
 use crate::components::document_source::{DocumentState, apply_mutation_and_relayout};
 use crate::editing::cursor::{
     CursorState, DocumentPosition, next_grapheme_boundary, prev_grapheme_boundary,
@@ -41,48 +43,73 @@ pub(super) fn make_keydown_handler(
         // cross-platform consistency. blitz-shell maps macOS
         // Cmd → Modifiers::SUPER (not META), so we check SUPER too.
         if modifiers.ctrl() || modifiers.meta() || modifiers.contains(Modifiers::SUPER) {
-            if let Key::Character(ch) = &key
-                && ch.as_str() == "a"
-            {
-                // Select all: anchor at document start, focus at end.
-                let layout_opt = {
-                    let state = doc_state.lock().unwrap_or_else(|e| e.into_inner());
-                    state.paginated_layout.clone()
-                };
-                if let Some(layout) = layout_opt {
-                    let first = DocumentPosition {
-                        page_index: 0,
-                        paragraph_index: 0,
-                        byte_offset: 0,
-                    };
-                    let last_opt = layout
-                        .pages
-                        .iter()
-                        .enumerate()
-                        .rev()
-                        .find_map(|(pi, page)| {
-                            page.editing_data
-                                .as_ref()?
-                                .paragraphs
-                                .iter()
-                                .max_by_key(|p| p.block_index)
-                                .map(|p| (pi, p.block_index))
-                        });
-                    if let Some((last_page, last_block)) = last_opt {
-                        let end_offset = loro_doc
-                            .read()
-                            .as_ref()
-                            .map(|l| get_block_text(l, last_block).len())
-                            .unwrap_or(0);
-                        let last = DocumentPosition {
-                            page_index: last_page,
-                            paragraph_index: last_block,
-                            byte_offset: end_offset,
+            if let Key::Character(ch) = &key {
+                match ch.as_str() {
+                    "a" => {
+                        // Select all: anchor at document start, focus at end.
+                        let layout_opt = {
+                            let state = doc_state.lock().unwrap_or_else(|e| e.into_inner());
+                            state.paginated_layout.clone()
                         };
-                        let mut cs = cursor_state.write();
-                        cs.anchor = Some(first);
-                        cs.focus = Some(last);
+                        if let Some(layout) = layout_opt {
+                            let first = DocumentPosition {
+                                page_index: 0,
+                                paragraph_index: 0,
+                                byte_offset: 0,
+                            };
+                            let last_opt =
+                                layout
+                                    .pages
+                                    .iter()
+                                    .enumerate()
+                                    .rev()
+                                    .find_map(|(pi, page)| {
+                                        page.editing_data
+                                            .as_ref()?
+                                            .paragraphs
+                                            .iter()
+                                            .max_by_key(|p| p.block_index)
+                                            .map(|p| (pi, p.block_index))
+                                    });
+                            if let Some((last_page, last_block)) = last_opt {
+                                let end_offset = loro_doc
+                                    .read()
+                                    .as_ref()
+                                    .map(|l| get_block_text(l, last_block).len())
+                                    .unwrap_or(0);
+                                let last = DocumentPosition {
+                                    page_index: last_page,
+                                    paragraph_index: last_block,
+                                    byte_offset: end_offset,
+                                };
+                                let mut cs = cursor_state.write();
+                                cs.anchor = Some(first);
+                                cs.focus = Some(last);
+                            }
+                        }
                     }
+                    "b" => {
+                        let ldoc_guard = loro_doc.read();
+                        if let Some(ldoc) = ldoc_guard.as_ref() {
+                            let _ = editor_formatting::toggle_bold(ldoc, &cursor_state.read());
+                            apply_mutation_and_relayout(&doc_state, ldoc);
+                        }
+                    }
+                    "i" => {
+                        let ldoc_guard = loro_doc.read();
+                        if let Some(ldoc) = ldoc_guard.as_ref() {
+                            let _ = editor_formatting::toggle_italic(ldoc, &cursor_state.read());
+                            apply_mutation_and_relayout(&doc_state, ldoc);
+                        }
+                    }
+                    "u" => {
+                        let ldoc_guard = loro_doc.read();
+                        if let Some(ldoc) = ldoc_guard.as_ref() {
+                            let _ = editor_formatting::toggle_underline(ldoc, &cursor_state.read());
+                            apply_mutation_and_relayout(&doc_state, ldoc);
+                        }
+                    }
+                    _ => {}
                 }
             }
             return;

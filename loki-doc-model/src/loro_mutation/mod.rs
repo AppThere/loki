@@ -28,7 +28,7 @@ mod block;
 mod text;
 
 pub use self::block::{merge_block, split_block};
-pub use self::text::{delete_text, get_block_text, insert_text};
+pub use self::text::{delete_text, get_block_text, get_mark_at, insert_text, mark_text};
 
 use loro::{LoroDoc, LoroMap, LoroMovableList, LoroText};
 
