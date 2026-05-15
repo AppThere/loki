@@ -10,7 +10,7 @@ use keyboard_types::Modifiers;
 use loki_doc_model::loro_mutation::{delete_text, get_block_text, insert_text};
 use loki_doc_model::{merge_block, split_block};
 
-use super::editor_keydown_ctrl::{handle_ctrl_keys, sync_undo_state};
+use super::editor_keydown_ctrl::{handle_ctrl_keys, post_mutation_sync};
 
 use crate::components::document_source::{DocumentState, apply_mutation_and_relayout};
 use crate::editing::cursor::{
@@ -82,7 +82,7 @@ pub(super) fn make_keydown_handler(
                     };
                     apply_mutation_and_relayout(&doc_state, ldoc);
                 }
-                sync_undo_state(undo_manager, can_undo, can_redo);
+                post_mutation_sync(&doc_state, cursor_state, undo_manager, can_undo, can_redo);
                 let new_offset = focus.byte_offset + ch.len();
                 let new_pos = DocumentPosition {
                     byte_offset: new_offset,
@@ -107,7 +107,7 @@ pub(super) fn make_keydown_handler(
                         return;
                     };
                     apply_mutation_and_relayout(&doc_state, ldoc);
-                    sync_undo_state(undo_manager, can_undo, can_redo);
+                    post_mutation_sync(&doc_state, cursor_state, undo_manager, can_undo, can_redo);
                     // TODO(3b-3): recompute page_index from layout after merge
                     let new_pos = DocumentPosition {
                         page_index: focus.page_index,
@@ -144,7 +144,7 @@ pub(super) fn make_keydown_handler(
                     };
                     apply_mutation_and_relayout(&doc_state, ldoc);
                 }
-                sync_undo_state(undo_manager, can_undo, can_redo);
+                post_mutation_sync(&doc_state, cursor_state, undo_manager, can_undo, can_redo);
                 let new_pos = DocumentPosition {
                     byte_offset: prev,
                     ..focus
@@ -184,7 +184,7 @@ pub(super) fn make_keydown_handler(
                     };
                     apply_mutation_and_relayout(&doc_state, ldoc);
                 }
-                sync_undo_state(undo_manager, can_undo, can_redo);
+                post_mutation_sync(&doc_state, cursor_state, undo_manager, can_undo, can_redo);
                 // Cursor stays at the same offset after forward delete.
             }
 
@@ -279,7 +279,7 @@ pub(super) fn make_keydown_handler(
                     return;
                 }
                 apply_mutation_and_relayout(&doc_state, ldoc);
-                sync_undo_state(undo_manager, can_undo, can_redo);
+                post_mutation_sync(&doc_state, cursor_state, undo_manager, can_undo, can_redo);
                 // TODO(3b-3): recompute page_index from layout after split
                 let new_pos = DocumentPosition {
                     page_index: focus.page_index,

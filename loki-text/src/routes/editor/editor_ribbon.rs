@@ -17,6 +17,7 @@ use crate::components::document_source::{DocumentState, apply_mutation_and_relay
 use crate::editing::cursor::CursorState;
 
 use super::editor_formatting;
+use super::editor_keydown_ctrl::post_mutation_sync;
 
 /// Builds the Home tab ribbon content element.
 ///
@@ -33,8 +34,8 @@ pub(super) fn home_tab_content(
     loro_doc: Signal<Option<LoroDoc>>,
     cursor_state: Signal<CursorState>,
     mut undo_manager: Signal<Option<loro::UndoManager>>,
-    mut can_undo: Signal<bool>,
-    mut can_redo: Signal<bool>,
+    can_undo: Signal<bool>,
+    can_redo: Signal<bool>,
     bold_active: Signal<bool>,
     italic_active: Signal<bool>,
     underline_active: Signal<bool>,
@@ -67,14 +68,13 @@ pub(super) fn home_tab_content(
                         let mut um_guard = undo_manager.write();
                         if let Some(um) = um_guard.as_mut() {
                             let _ = um.undo();
-                            can_undo.set(um.can_undo());
-                            can_redo.set(um.can_redo());
                         }
                     }
                     let ldoc_guard = loro_doc.read();
                     if let Some(ldoc) = ldoc_guard.as_ref() {
                         apply_mutation_and_relayout(&ds_undo, ldoc);
                     }
+                    post_mutation_sync(&ds_undo, cursor_state, undo_manager, can_undo, can_redo);
                 },
             }
 
@@ -88,14 +88,13 @@ pub(super) fn home_tab_content(
                         let mut um_guard = undo_manager.write();
                         if let Some(um) = um_guard.as_mut() {
                             let _ = um.redo();
-                            can_undo.set(um.can_undo());
-                            can_redo.set(um.can_redo());
                         }
                     }
                     let ldoc_guard = loro_doc.read();
                     if let Some(ldoc) = ldoc_guard.as_ref() {
                         apply_mutation_and_relayout(&ds_redo, ldoc);
                     }
+                    post_mutation_sync(&ds_redo, cursor_state, undo_manager, can_undo, can_redo);
                 },
             }
         }
@@ -115,6 +114,7 @@ pub(super) fn home_tab_content(
                         let _ = editor_formatting::toggle_bold(ldoc, &cursor_state.read());
                         apply_mutation_and_relayout(&ds_bold, ldoc);
                     }
+                    post_mutation_sync(&ds_bold, cursor_state, undo_manager, can_undo, can_redo);
                 },
             }
 
@@ -129,6 +129,7 @@ pub(super) fn home_tab_content(
                         let _ = editor_formatting::toggle_italic(ldoc, &cursor_state.read());
                         apply_mutation_and_relayout(&ds_italic, ldoc);
                     }
+                    post_mutation_sync(&ds_italic, cursor_state, undo_manager, can_undo, can_redo);
                 },
             }
 
@@ -143,6 +144,7 @@ pub(super) fn home_tab_content(
                         let _ = editor_formatting::toggle_underline(ldoc, &cursor_state.read());
                         apply_mutation_and_relayout(&ds_underline, ldoc);
                     }
+                    post_mutation_sync(&ds_underline, cursor_state, undo_manager, can_undo, can_redo);
                 },
             }
 
@@ -157,6 +159,7 @@ pub(super) fn home_tab_content(
                         let _ = editor_formatting::toggle_strikethrough(ldoc, &cursor_state.read());
                         apply_mutation_and_relayout(&ds_strike, ldoc);
                     }
+                    post_mutation_sync(&ds_strike, cursor_state, undo_manager, can_undo, can_redo);
                 },
             }
 
@@ -171,6 +174,7 @@ pub(super) fn home_tab_content(
                         let _ = editor_formatting::toggle_superscript(ldoc, &cursor_state.read());
                         apply_mutation_and_relayout(&ds_super, ldoc);
                     }
+                    post_mutation_sync(&ds_super, cursor_state, undo_manager, can_undo, can_redo);
                 },
             }
 
@@ -185,6 +189,7 @@ pub(super) fn home_tab_content(
                         let _ = editor_formatting::toggle_subscript(ldoc, &cursor_state.read());
                         apply_mutation_and_relayout(&ds_sub, ldoc);
                     }
+                    post_mutation_sync(&ds_sub, cursor_state, undo_manager, can_undo, can_redo);
                 },
             }
         }

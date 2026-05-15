@@ -50,19 +50,25 @@ pub fn toggle_italic(loro: &LoroDoc, cursor: &CursorState) -> Result<ToggleResul
 }
 
 /// Toggles underline on the selection or word at the cursor.
+///
+/// Writes `"Single"` (matching `UnderlineStyle::Single` Debug repr) rather than
+/// a bool, because `read_char_props_from_marks` uses `read_str!` for underline.
 pub fn toggle_underline(
     loro: &LoroDoc,
     cursor: &CursorState,
 ) -> Result<ToggleResult, MutationError> {
-    toggle_bool_mark(loro, cursor, MARK_UNDERLINE)
+    toggle_string_mark(loro, cursor, MARK_UNDERLINE, "Single")
 }
 
 /// Toggles strikethrough on the selection or word at the cursor.
+///
+/// Writes `"Single"` (matching `StrikethroughStyle::Single` Debug repr) rather
+/// than a bool, because `read_char_props_from_marks` uses `read_str!` for strikethrough.
 pub fn toggle_strikethrough(
     loro: &LoroDoc,
     cursor: &CursorState,
 ) -> Result<ToggleResult, MutationError> {
-    toggle_bool_mark(loro, cursor, MARK_STRIKETHROUGH)
+    toggle_string_mark(loro, cursor, MARK_STRIKETHROUGH, "Single")
 }
 
 /// Toggles superscript on the selection or word at the cursor.
@@ -133,6 +139,29 @@ pub fn resolve_format_range(loro: &LoroDoc, cursor: &CursorState) -> Option<(usi
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
+
+fn toggle_string_mark(
+    loro: &LoroDoc,
+    cursor: &CursorState,
+    mark_key: &str,
+    enable_value: &str,
+) -> Result<ToggleResult, MutationError> {
+    let (block_index, byte_start, byte_end) = match resolve_format_range(loro, cursor) {
+        Some(r) => r,
+        None => return Ok(false),
+    };
+    let active = matches!(
+        get_mark_at(loro, block_index, byte_start, mark_key)?,
+        Some(LoroValue::String(_))
+    );
+    let new_value = if active {
+        LoroValue::Null
+    } else {
+        LoroValue::from(enable_value.to_string())
+    };
+    mark_text(loro, block_index, byte_start, byte_end, mark_key, new_value)?;
+    Ok(!active)
+}
 
 fn toggle_bool_mark(
     loro: &LoroDoc,

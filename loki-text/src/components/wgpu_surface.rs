@@ -174,7 +174,7 @@ fn PageCanvas(props: PageCanvasProps) -> Element {
             // Dummy attribute that changes with the cursor to ensure Blitz
             // marks the node as dirty and re-calls render().
             "data-cursor": if let Some(cs) = &props.cursor_state {
-                format!("{:?}-{:?}", cs.anchor, cs.focus)
+                format!("{:?}-{:?}-{}", cs.anchor, cs.focus, cs.document_generation)
             } else {
                 "none".to_string()
             },

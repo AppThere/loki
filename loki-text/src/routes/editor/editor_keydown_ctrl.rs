@@ -29,8 +29,8 @@ pub(super) fn handle_ctrl_keys(
     mut cursor_state: Signal<CursorState>,
     loro_doc: Signal<Option<loro::LoroDoc>>,
     mut undo_manager: Signal<Option<loro::UndoManager>>,
-    mut can_undo: Signal<bool>,
-    mut can_redo: Signal<bool>,
+    can_undo: Signal<bool>,
+    can_redo: Signal<bool>,
     modifiers: Modifiers,
     key: &Key,
 ) {
@@ -128,22 +128,25 @@ pub(super) fn handle_ctrl_keys(
         }
         _ => {}
     }
-    // Sync can_undo / can_redo after any operation that may have changed history.
-    let um_guard = undo_manager.read();
-    if let Some(um) = um_guard.as_ref() {
-        can_undo.set(um.can_undo());
-        can_redo.set(um.can_redo());
-    }
+    post_mutation_sync(doc_state, cursor_state, undo_manager, can_undo, can_redo);
 }
 
-/// Syncs `can_undo` / `can_redo` signals from the `UndoManager` after a mutation.
+/// Syncs cursor generation, `can_undo`, and `can_redo` after any document mutation.
 ///
-/// Called after every document-mutating key event in the non-ctrl path.
-pub(super) fn sync_undo_state(
+/// Writing `cursor_state.document_generation` changes the `data-cursor` canvas
+/// attribute, which causes Blitz to mark the node dirty and re-call `render()`.
+/// Without this, formatting changes that do not move the cursor would have no
+/// visible effect.
+pub(super) fn post_mutation_sync(
+    doc_state: &Arc<Mutex<DocumentState>>,
+    mut cursor_state: Signal<CursorState>,
     undo_manager: Signal<Option<loro::UndoManager>>,
     mut can_undo: Signal<bool>,
     mut can_redo: Signal<bool>,
 ) {
+    if let Ok(s) = doc_state.lock() {
+        cursor_state.write().document_generation = s.generation;
+    }
     let um_guard = undo_manager.read();
     if let Some(um) = um_guard.as_ref() {
         can_undo.set(um.can_undo());
