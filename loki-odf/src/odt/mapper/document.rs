@@ -27,7 +27,7 @@ use loki_doc_model::content::field::types::{CrossRefFormat, Field, FieldKind};
 use loki_doc_model::content::inline::{BookmarkKind, Inline, LinkTarget, NoteKind, StyledRun};
 use loki_doc_model::content::table::col::{ColAlignment, ColSpec, ColWidth};
 use loki_doc_model::content::table::core::{Table, TableBody, TableCaption, TableFoot, TableHead};
-use loki_doc_model::content::table::row::{Cell, CellProps, Row};
+use loki_doc_model::content::table::row::{Cell, Row};
 use loki_doc_model::document::Document;
 use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
 use loki_doc_model::layout::page::{PageLayout, PageMargins, PageOrientation, PageSize};
@@ -169,19 +169,16 @@ pub(crate) fn map_document(
             };
 
             // Emit a section break only when the master page actually changes.
-            if let Some(ref nm) = new_master {
-                if Some(nm.as_str()) != current_master.as_deref() {
-                    let layout = resolve_page_layout_by_name(
-                        stylesheet,
-                        current_master.as_deref(),
-                        &mut ctx,
-                    );
-                    sections.push(Section::with_layout_and_blocks(
-                        layout,
-                        std::mem::take(&mut current_blocks),
-                    ));
-                    current_master = Some(nm.clone());
-                }
+            if let Some(ref nm) = new_master
+                && Some(nm.as_str()) != current_master.as_deref()
+            {
+                let layout =
+                    resolve_page_layout_by_name(stylesheet, current_master.as_deref(), &mut ctx);
+                sections.push(Section::with_layout_and_blocks(
+                    layout,
+                    std::mem::take(&mut current_blocks),
+                ));
+                current_master = Some(nm.clone());
             }
 
             if let Some(block) = map_body_child(child, &mut ctx) {
@@ -556,13 +553,12 @@ fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Block {
                 .style_name
                 .as_deref()
                 .and_then(|name| ctx.col_style_widths.get(name))
-                .map(|&pts| ColWidth::Fixed(pts))
-                .unwrap_or(ColWidth::Proportional(1.0));
+                .map_or(ColWidth::Proportional(1.0), |&pts| ColWidth::Fixed(pts));
             let spec = ColSpec {
                 alignment: ColAlignment::Default,
                 width,
             };
-            std::iter::repeat(spec).take(count)
+            std::iter::repeat_n(spec, count)
         })
         .collect();
 
@@ -667,10 +663,10 @@ fn resolve_master_page_name<'a>(
         }
         depth += 1;
         let style = all_styles.get(current)?;
-        if let Some(ref mpn) = style.master_page_name {
-            if !mpn.is_empty() {
-                return Some(mpn.clone());
-            }
+        if let Some(ref mpn) = style.master_page_name
+            && !mpn.is_empty()
+        {
+            return Some(mpn.clone());
         }
         current = style.parent_name.as_deref()?;
     }
@@ -724,12 +720,12 @@ fn apply_master_page_hf(
     layout: &mut PageLayout,
     ctx: &mut OdfMappingContext<'_>,
 ) {
-    layout.header = map_hf_paras(&master.header, HeaderFooterKind::Default, ctx);
-    layout.footer = map_hf_paras(&master.footer, HeaderFooterKind::Default, ctx);
-    layout.header_first = map_hf_paras(&master.header_first, HeaderFooterKind::First, ctx);
-    layout.footer_first = map_hf_paras(&master.footer_first, HeaderFooterKind::First, ctx);
-    layout.header_even = map_hf_paras(&master.header_even, HeaderFooterKind::Even, ctx);
-    layout.footer_even = map_hf_paras(&master.footer_even, HeaderFooterKind::Even, ctx);
+    layout.header = map_hf_paras(master.header.as_ref(), HeaderFooterKind::Default, ctx);
+    layout.footer = map_hf_paras(master.footer.as_ref(), HeaderFooterKind::Default, ctx);
+    layout.header_first = map_hf_paras(master.header_first.as_ref(), HeaderFooterKind::First, ctx);
+    layout.footer_first = map_hf_paras(master.footer_first.as_ref(), HeaderFooterKind::First, ctx);
+    layout.header_even = map_hf_paras(master.header_even.as_ref(), HeaderFooterKind::Even, ctx);
+    layout.footer_even = map_hf_paras(master.footer_even.as_ref(), HeaderFooterKind::Even, ctx);
 }
 
 /// Convert a list of [`OdfParagraph`]s into a [`HeaderFooter`].
@@ -739,11 +735,11 @@ fn apply_master_page_hf(
 ///
 /// [`assign_headers_footers`]: loki_layout::flow::assign_headers_footers
 fn map_hf_paras(
-    paras: &Option<Vec<OdfParagraph>>,
+    paras: Option<&Vec<OdfParagraph>>,
     kind: HeaderFooterKind,
     ctx: &mut OdfMappingContext<'_>,
 ) -> Option<HeaderFooter> {
-    let paras = paras.as_ref()?;
+    let paras = paras?;
     if paras.is_empty() {
         return None;
     }

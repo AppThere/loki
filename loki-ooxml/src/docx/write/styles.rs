@@ -185,7 +185,6 @@ pub(super) fn write_para_props_elem<W: std::io::Write>(w: &mut Writer<W>, pp: &P
     if let Some(align) = pp.alignment {
         use loki_doc_model::style::props::para_props::ParagraphAlignment;
         let jc = match align {
-            ParagraphAlignment::Left => "left",
             ParagraphAlignment::Right => "right",
             ParagraphAlignment::Center => "center",
             ParagraphAlignment::Justify => "both",
@@ -222,13 +221,11 @@ pub(super) fn write_para_props_elem<W: std::io::Write>(w: &mut Writer<W>, pp: &P
         use loki_doc_model::style::props::para_props::Spacing;
         let before = pp.space_before.map_or(0, |v| match v {
             Spacing::Exact(pt) => pts_to_twips(pt.value()),
-            Spacing::Percent(_) => 0,
-            _ => 0,
+            Spacing::Percent(_) | _ => 0,
         });
         let after = pp.space_after.map_or(0, |v| match v {
             Spacing::Exact(pt) => pts_to_twips(pt.value()),
-            Spacing::Percent(_) => 0,
-            _ => 0,
+            Spacing::Percent(_) | _ => 0,
         });
         let before_s = before.to_string();
         let after_s = after.to_string();
@@ -313,11 +310,11 @@ pub(super) fn emit_char_props<W: std::io::Write>(w: &mut Writer<W>, cp: &CharPro
         };
         let _ = write_empty(w, "w:vertAlign", &wval(v));
     }
-    if let Some(ref color) = cp.color {
-        if let Some(hex) = color.to_hex() {
-            let hex_val = hex_color_val(&hex);
-            let _ = write_empty(w, "w:color", &wval(&hex_val));
-        }
+    if let Some(ref color) = cp.color
+        && let Some(hex) = color.to_hex()
+    {
+        let hex_val = hex_color_val(&hex);
+        let _ = write_empty(w, "w:color", &wval(&hex_val));
     }
     if let Some(pt) = cp.font_size {
         let half = pts_to_half_pts(pt.value()).to_string();

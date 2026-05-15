@@ -27,6 +27,7 @@ use super::editor_formatting;
 ///
 /// Because [`Signal<T>`] is `Copy`, all signal parameters are copied freely
 /// into closures.  One `Arc::clone` is made per button for `doc_state`.
+#[allow(clippy::too_many_arguments)] // 6 formatting signals + doc_state + loro_doc + cursor_state
 pub(super) fn home_tab_content(
     doc_state: &Arc<Mutex<DocumentState>>,
     loro_doc: Signal<Option<LoroDoc>>,

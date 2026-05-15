@@ -67,6 +67,23 @@ These conventions apply to all crates in the workspace.
 - **Final pass:** `cargo fmt --all` and `cargo clippy --workspace -- -D warnings`
   must both pass before any PR or commit is considered complete.
 
+### Clippy compliance
+
+The entire workspace must pass `cargo clippy --workspace -- -D warnings`.
+
+For pre-existing code in `loki-layout`, `loki-odf`, and `loki-ooxml` that
+required structural changes beyond the scope of the cleanup pass, targeted
+`#[allow(clippy::rule_name)]` attributes were added at the narrowest applicable
+scope (function or struct level, never crate level) with a comment explaining why.
+
+When adding `#[allow]` to any file:
+- Scope it as narrowly as possible (prefer function-level over file-level)
+- Add a comment: `// Pre-existing pattern — structural refactor deferred`
+  or explain the specific reason the lint does not apply
+- Never suppress `clippy::correctness` lints (these indicate bugs)
+- Prefer simple fixes over `#[allow]` wherever the change is mechanical
+  and low-risk
+
 ---
 
 ## Known tech debt (300-line ceiling violations — requires future split pass)

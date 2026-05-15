@@ -102,6 +102,7 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
 ///
 /// COMPAT(microsoft): w:tblW @w:type="pct" uses fiftieths of a percent,
 /// not hundredths — divide by 50 to get 0.0–100.0 range.
+#[allow(clippy::cast_precision_loss)] // twip values are small; f32 precision is sufficient
 fn map_tbl_width(t: &DocxTableModel) -> Option<TableWidth> {
     let w = t.tbl_pr.as_ref()?.width.as_ref()?;
     Some(match w.w_type.as_str() {
@@ -164,10 +165,10 @@ fn map_cell(tc: &crate::docx::model::styles::DocxTableCell, ctx: &mut MappingCon
         }
         // Cell padding from `w:tcMar`. COMPAT(ooxml-dxa): twips ÷ 20 = points.
         if let Some(ref m) = tc_pr.tc_margins {
-            props.padding_top = m.top.map(|v| Points::new(v as f64 / 20.0));
-            props.padding_bottom = m.bottom.map(|v| Points::new(v as f64 / 20.0));
-            props.padding_left = m.left.map(|v| Points::new(v as f64 / 20.0));
-            props.padding_right = m.right.map(|v| Points::new(v as f64 / 20.0));
+            props.padding_top = m.top.map(|v| Points::new(f64::from(v) / 20.0));
+            props.padding_bottom = m.bottom.map(|v| Points::new(f64::from(v) / 20.0));
+            props.padding_left = m.left.map(|v| Points::new(f64::from(v) / 20.0));
+            props.padding_right = m.right.map(|v| Points::new(f64::from(v) / 20.0));
         }
         // Vertical alignment from `w:vAlign`.
         props.vertical_align = tc_pr.v_align.map(|v| match v {
@@ -199,7 +200,7 @@ fn map_cell(tc: &crate::docx::model::styles::DocxTableCell, ctx: &mut MappingCon
 /// Computes `row_span` values for all vertically-merged cells in a table.
 ///
 /// Returns:
-/// - `span_map`: `(row_idx, grid_col)` → row_span for every `Restart` cell.
+/// - `span_map`: `(row_idx, grid_col)` → `row_span` for every `Restart` cell.
 ///   The key uses the cell's *starting* grid column (accounting for
 ///   `w:gridSpan` of preceding cells in the same row).
 /// - `skip_set`: `(row_idx, cell_idx)` pairs that are `Continue` cells and
@@ -216,6 +217,7 @@ fn map_cell(tc: &crate::docx::model::styles::DocxTableCell, ctx: &mut MappingCon
 /// **Pass 2** — for each grid column, scan down; on every `Restart` cell,
 /// count consecutive `Continue` cells below and record the span length.
 /// Each counted `Continue` cell is added to `skip_set`.
+#[allow(clippy::type_complexity)] // Pre-existing pattern — structural refactor deferred
 fn compute_v_merge_spans(
     rows: &[DocxTableRow],
 ) -> (HashMap<(usize, usize), u32>, HashSet<(usize, usize)>) {
@@ -244,7 +246,7 @@ fn compute_v_merge_spans(
     }
 
     let num_rows = v_merge_grid.len();
-    let num_cols = v_merge_grid.iter().map(|r| r.len()).max().unwrap_or(0);
+    let num_cols = v_merge_grid.iter().map(Vec::len).max().unwrap_or(0);
 
     let mut span_map: HashMap<(usize, usize), u32> = HashMap::new();
     // COMPAT(microsoft): w:vMerge with no w:val attribute is a continuation

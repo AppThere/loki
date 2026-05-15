@@ -46,6 +46,7 @@ const MT_HEADER: &str = "application/vnd.openxmlformats-officedocument.wordproce
 const MT_FOOTER: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml";
 
 /// Assembles a complete `.docx` package from `doc` and writes it to `writer`.
+#[allow(clippy::too_many_lines)] // Pre-existing pattern — structural refactor deferred
 pub(crate) fn assemble_docx(doc: &Document, writer: impl Write + Seek) -> Result<(), OoxmlError> {
     // ── Step 1: Build styles.xml ─────────────────────────────────────────
     let styles_bytes = write_styles_xml(&doc.styles);
@@ -59,22 +60,22 @@ pub(crate) fn assemble_docx(doc: &Document, writer: impl Write + Seek) -> Result
     let has_footnotes = !collector.footnotes.is_empty();
     let has_endnotes = !collector.endnotes.is_empty();
 
-    let numbering_bytes = if !has_numbering {
-        None
-    } else {
+    let numbering_bytes = if has_numbering {
         Some(write_numbering_xml(&collector.num_state))
+    } else {
+        None
     };
 
-    let footnotes_bytes = if !has_footnotes {
-        None
-    } else {
+    let footnotes_bytes = if has_footnotes {
         Some(write_footnotes_xml(&mut collector))
+    } else {
+        None
     };
 
-    let endnotes_bytes = if !has_endnotes {
-        None
-    } else {
+    let endnotes_bytes = if has_endnotes {
         Some(write_endnotes_xml(&mut collector))
+    } else {
+        None
     };
 
     // ── Step 4: Assemble OPC package ─────────────────────────────────────
@@ -103,7 +104,7 @@ pub(crate) fn assemble_docx(doc: &Document, writer: impl Write + Seek) -> Result
     // Insert headers and footers.
     let headers_footers = collector.take_headers_footers();
     for hf in &headers_footers {
-        let hf_part = PartName::new(&format!("/{}", hf.path)).map_err(OoxmlError::Opc)?;
+        let hf_part = PartName::new(format!("/{}", hf.path)).map_err(OoxmlError::Opc)?;
         let mime = if hf.is_header { MT_HEADER } else { MT_FOOTER };
         let bytes = write_header_footer_xml(&hf.blocks, &mut collector, hf.is_header);
         pkg.set_part(hf_part, PartData::new(bytes, mime));
@@ -111,7 +112,7 @@ pub(crate) fn assemble_docx(doc: &Document, writer: impl Write + Seek) -> Result
 
     // Insert media parts.
     for m in &collector.media {
-        let m_part = PartName::new(&format!("/{}", m.path)).map_err(OoxmlError::Opc)?;
+        let m_part = PartName::new(format!("/{}", m.path)).map_err(OoxmlError::Opc)?;
         let mime = match m.ext.as_str() {
             "png" => "image/png",
             "jpg" | "jpeg" => "image/jpeg",
@@ -240,7 +241,7 @@ pub(crate) fn assemble_docx(doc: &Document, writer: impl Write + Seek) -> Result
 
     // Header/footer content types.
     for hf in &headers_footers {
-        let hf_part = PartName::new(&format!("/{}", hf.path)).map_err(OoxmlError::Opc)?;
+        let hf_part = PartName::new(format!("/{}", hf.path)).map_err(OoxmlError::Opc)?;
         let mime = if hf.is_header { MT_HEADER } else { MT_FOOTER };
         ct.add_override(&hf_part, mime);
     }

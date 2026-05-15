@@ -65,18 +65,17 @@ impl NumberingState {
     /// Register a bullet list.  Returns the `numId` to use for all
     /// paragraphs in this list.  All bullet lists share one `abstractNum`.
     pub(super) fn register_bullet(&mut self) -> u32 {
-        let abstract_id = match self.bullet_abstract_id {
-            Some(id) => id,
-            None => {
-                let id = self.next_abstract_id;
-                self.next_abstract_id += 1;
-                self.abstracts.push(AbstractNum {
-                    id,
-                    kind: AbstractKind::Bullet,
-                });
-                self.bullet_abstract_id = Some(id);
-                id
-            }
+        let abstract_id = if let Some(id) = self.bullet_abstract_id {
+            id
+        } else {
+            let id = self.next_abstract_id;
+            self.next_abstract_id += 1;
+            self.abstracts.push(AbstractNum {
+                id,
+                kind: AbstractKind::Bullet,
+            });
+            self.bullet_abstract_id = Some(id);
+            id
         };
         let num_id = self.next_num_id;
         self.next_num_id += 1;
@@ -97,6 +96,7 @@ impl NumberingState {
             ListNumberStyle::UpperRoman => "upperRoman",
             _ => "decimal",
         };
+        #[allow(clippy::cast_sign_loss)] // .max(1) guarantees non-negative
         let start = attrs.start_number.max(1) as u32;
         let abstract_id = self.next_abstract_id;
         self.next_abstract_id += 1;

@@ -223,7 +223,7 @@ fn map_meta(core_props: Option<&loki_opc::CoreProperties>) -> DocumentMeta {
 /// 4. Walk body children, splitting on embedded `w:sectPr` elements.
 /// 5. Close the final section using the body-level `w:sectPr`.
 /// 6. Map core properties into document metadata.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(crate) fn map_document(
     doc: &DocxDocument,
     raw_styles: &DocxStyles,
@@ -346,6 +346,7 @@ pub(crate) fn map_document(
     let meta = map_meta(core_props);
 
     let doc_settings = raw_settings.and_then(|s| {
+        #[allow(clippy::cast_precision_loss)] // twips are small values; f32 precision is sufficient
         s.default_tab_stop.map(|twips| DocumentSettings {
             default_tab_stop_pt: twips as f32 / 20.0,
         })

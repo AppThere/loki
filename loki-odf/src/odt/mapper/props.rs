@@ -147,11 +147,7 @@ pub(crate) fn map_para_props(props: &OdfParaProps) -> ParaProps {
 
     // ── Tab stops ──────────────────────────────────────────────────────────
     if !props.tab_stops.is_empty() {
-        let stops: Vec<TabStop> = props
-            .tab_stops
-            .iter()
-            .filter_map(|ts| map_tab_stop(ts))
-            .collect();
+        let stops: Vec<TabStop> = props.tab_stops.iter().filter_map(map_tab_stop).collect();
         if !stops.is_empty() {
             out.tab_stops = Some(stops);
         }
@@ -178,11 +174,11 @@ fn parse_odf_border(s: &str) -> Option<Border> {
     let mut color: Option<DocumentColor> = None;
 
     for tok in &tokens {
-        if width.is_none() {
-            if let Some(pts) = parse_length(tok) {
-                width = Some(pts);
-                continue;
-            }
+        if width.is_none()
+            && let Some(pts) = parse_length(tok)
+        {
+            width = Some(pts);
+            continue;
         }
         match *tok {
             "none" => return None,

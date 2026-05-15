@@ -594,7 +594,7 @@ pub fn layout_paragraph(
         let first_baseline = phantom
             .lines()
             .next()
-            .map(|l| l.metrics().baseline as f32)
+            .map(|l| l.metrics().baseline)
             .unwrap_or(0.0);
         return ParagraphLayout {
             height: 0.0,

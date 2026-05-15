@@ -243,6 +243,7 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
 /// `style:table-cell-properties`.
 ///
 /// Returns `(para_props, text_props, col_width, cell_props)`.
+#[allow(clippy::type_complexity)] // Pre-existing pattern — structural refactor deferred
 fn parse_style_props(
     reader: &mut Reader<&[u8]>,
     end_local: &[u8],
@@ -369,9 +370,9 @@ fn parse_cell_props_element(e: &quick_xml::events::BytesStart<'_>) -> OdfCellPro
 
     // Apply fo:border shorthand to all edges first.
     let border_all = local_attr_val(e, b"border");
-    props.border_top = border_all.clone();
-    props.border_bottom = border_all.clone();
-    props.border_left = border_all.clone();
+    props.border_top.clone_from(&border_all);
+    props.border_bottom.clone_from(&border_all);
+    props.border_left.clone_from(&border_all);
     props.border_right = border_all;
     // Per-edge border overrides shorthand.
     if let Some(v) = local_attr_val(e, b"border-top") {
