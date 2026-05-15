@@ -52,7 +52,7 @@ pub(super) fn map_loro_block(map: &LoroMap) -> Result<Block, BridgeError> {
         BLOCK_TYPE_HEADING => {
             let inlines = reconstruct_inlines(map)?;
             let level = map
-                .get("level")
+                .get(KEY_HEADING_LEVEL)
                 .and_then(|v| v.into_value().ok())
                 .and_then(|v| {
                     if v.is_i64() {
@@ -64,7 +64,14 @@ pub(super) fn map_loro_block(map: &LoroMap) -> Result<Block, BridgeError> {
                     }
                 })
                 .unwrap_or(1);
-            Ok(Block::Heading(level, NodeAttr::default(), inlines))
+            let mut attr = NodeAttr::default();
+            if let Some(jc) = get_str_from_map(map, KEY_HEADING_JC) {
+                attr.kv.push(("jc".into(), jc));
+            }
+            if let Some(style) = get_str_from_map(map, KEY_HEADING_STYLE) {
+                attr.kv.push(("style".into(), style));
+            }
+            Ok(Block::Heading(level, attr, inlines))
         }
         BLOCK_TYPE_CODE_BLOCK => {
             let text = map

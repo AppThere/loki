@@ -6,8 +6,6 @@
 use super::BridgeError;
 use super::inlines::map_inlines;
 use crate::content::block::Block;
-use crate::layout::header_footer::HeaderFooter;
-use crate::layout::page::{PageLayout, PageOrientation};
 use crate::loro_schema::*;
 use crate::style::props::char_props::CharProps;
 use crate::style::props::para_props::{LineHeight, ParaProps, ParagraphAlignment, Spacing};
@@ -38,9 +36,17 @@ pub(super) fn map_block(block: &Block, index: usize, map: &LoroMap) -> Result<()
             let content = map.insert_container(KEY_CONTENT, LoroText::new())?;
             map_inlines(&para.inlines, &content)?;
         }
-        Block::Heading(level, _, inlines) => {
+        Block::Heading(level, attr, inlines) => {
             map.insert(KEY_TYPE, BLOCK_TYPE_HEADING)?;
-            map.insert("level", *level as i32)?;
+            map.insert(KEY_HEADING_LEVEL, *level as i32)?;
+            // Persist NodeAttr keys so alignment and style name survive
+            // loro_to_document round-trips after mutations.
+            if let Some((_, jc)) = attr.kv.iter().find(|(k, _)| k == "jc") {
+                map.insert(KEY_HEADING_JC, jc.as_str())?;
+            }
+            if let Some((_, style)) = attr.kv.iter().find(|(k, _)| k == "style") {
+                map.insert(KEY_HEADING_STYLE, style.as_str())?;
+            }
             let content = map.insert_container(KEY_CONTENT, LoroText::new())?;
             map_inlines(inlines, &content)?;
         }
@@ -86,67 +92,6 @@ pub(super) fn map_blocks_to_list(
     for (i, block) in blocks.iter().enumerate() {
         let block_map = list.insert_container(i, LoroMap::new())?;
         map_block(block, i, &block_map)?;
-    }
-    Ok(())
-}
-
-// ── PageLayout serialization ──────────────────────────────────────────────────
-
-pub(super) fn map_page_layout(
-    layout: &PageLayout,
-    section_map: &LoroMap,
-) -> Result<(), BridgeError> {
-    let layout_map = section_map.insert_container(KEY_LAYOUT, LoroMap::new())?;
-
-    // Page size
-    let size_map = layout_map.insert_container(KEY_PAGE_SIZE, LoroMap::new())?;
-    size_map.insert("width", layout.page_size.width.value())?;
-    size_map.insert("height", layout.page_size.height.value())?;
-
-    // Margins
-    let margins_map = layout_map.insert_container(KEY_MARGINS, LoroMap::new())?;
-    margins_map.insert(KEY_MARGIN_TOP, layout.margins.top.value())?;
-    margins_map.insert(KEY_MARGIN_BOTTOM, layout.margins.bottom.value())?;
-    margins_map.insert(KEY_MARGIN_LEFT, layout.margins.left.value())?;
-    margins_map.insert(KEY_MARGIN_RIGHT, layout.margins.right.value())?;
-    margins_map.insert(KEY_MARGIN_HEADER, layout.margins.header.value())?;
-    margins_map.insert(KEY_MARGIN_FOOTER, layout.margins.footer.value())?;
-    margins_map.insert(KEY_MARGIN_GUTTER, layout.margins.gutter.value())?;
-
-    // Orientation
-    let orientation = match layout.orientation {
-        PageOrientation::Portrait => "Portrait",
-        PageOrientation::Landscape => "Landscape",
-    };
-    layout_map.insert(KEY_ORIENTATION, orientation)?;
-
-    // Columns (optional)
-    if let Some(cols) = &layout.columns {
-        let cols_map = layout_map.insert_container(KEY_COLUMNS, LoroMap::new())?;
-        cols_map.insert(KEY_COL_COUNT, i64::from(cols.count))?;
-        cols_map.insert(KEY_COL_GAP, cols.gap.value())?;
-        cols_map.insert(KEY_COL_SEPARATOR, cols.separator)?;
-    }
-
-    // Header/footer slots
-    map_header_footer_slot(&layout.header, KEY_HEADER, &layout_map)?;
-    map_header_footer_slot(&layout.footer, KEY_FOOTER, &layout_map)?;
-    map_header_footer_slot(&layout.header_first, KEY_HEADER_FIRST, &layout_map)?;
-    map_header_footer_slot(&layout.footer_first, KEY_FOOTER_FIRST, &layout_map)?;
-    map_header_footer_slot(&layout.header_even, KEY_HEADER_EVEN, &layout_map)?;
-    map_header_footer_slot(&layout.footer_even, KEY_FOOTER_EVEN, &layout_map)?;
-
-    Ok(())
-}
-
-fn map_header_footer_slot(
-    hf: &Option<HeaderFooter>,
-    key: &str,
-    layout_map: &LoroMap,
-) -> Result<(), BridgeError> {
-    if let Some(hf) = hf {
-        let list = layout_map.insert_container(key, LoroMovableList::new())?;
-        map_blocks_to_list(&hf.blocks, &list)?;
     }
     Ok(())
 }

@@ -94,6 +94,26 @@ yet been split. Do not add new code to them without splitting first.
 | File | Current lines | Priority |
 |---|---|---|
 | `loki-text/src/components/document_source.rs` | 1117 | High |
+| `loki-doc-model/src/loro_bridge/read.rs` | 497 | Medium |
+| `loki-doc-model/src/loro_bridge/inlines.rs` | 323 | Low |
+
+## Known tech debt — Loro bridge ParaProps gaps
+
+Several `ParaProps` fields are read from OOXML/ODF during import but are **not
+round-tripped through the Loro CRDT**. After the first mutation they revert to
+their default (usually `None` / left-aligned).
+
+Heading alignment (`attr.kv["jc"]`) and heading style name (`attr.kv["style"]`)
+are fixed in Pass 20. The remaining gaps are low-visibility in typical editing
+but must be resolved before the Format tab's paragraph controls land.
+
+| Field(s) | Status | Priority |
+|---|---|---|
+| `tab_stops` | Written as unreadable Debug string; not read back. See `read.rs:316` comment. | Medium |
+| `border_top/bottom/left/right/between` | Not written or read. `PROP_BORDER` constant is defined but unused. | Low |
+| `padding_top/bottom/left/right` | Not written or read. | Low |
+| `orphan_control`, `page_break_before`, `outline_level` | Not written or read. | Low |
+| `background_color` (paragraph) | Written as Debug string; not decoded on read. | Low |
 
 ---
 
