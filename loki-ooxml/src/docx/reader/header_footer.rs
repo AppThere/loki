@@ -6,8 +6,8 @@
 //! ECMA-376 §17.10.4 (`w:hdr`) / §17.10.2 (`w:ftr`).
 //! Uses `quick-xml` event reader with `trim_text(false)` per ADR-0002.
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
 use crate::docx::model::paragraph::DocxParagraph;
 use crate::docx::reader::document::parse_paragraph;

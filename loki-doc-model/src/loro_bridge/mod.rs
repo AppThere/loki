@@ -13,11 +13,13 @@ mod inlines;
 mod read;
 mod write;
 
-use loro::{ExpandType, LoroDoc, LoroMap, LoroMovableList, StyleConfig, StyleConfigMap};
 use crate::document::Document;
+use crate::layout::header_footer::HeaderFooter;
+use crate::layout::page::{PageLayout, PageOrientation};
 use crate::loro_schema::*;
+use loro::{ExpandType, LoroDoc, LoroMap, LoroMovableList, StyleConfig, StyleConfigMap};
 use read::{reconstruct_blocks_from_list, reconstruct_page_layout};
-use write::{map_blocks_to_list, map_page_layout};
+use write::map_blocks_to_list;
 
 /// Errors that can occur during document translation to/from Loro.
 #[derive(Debug, thiserror::Error)]
@@ -41,6 +43,62 @@ impl From<loro::LoroError> for BridgeError {
     }
 }
 
+// ── PageLayout serialization ──────────────────────────────────────────────────
+// Kept here (rather than in `write`) because they are called only from
+// `document_to_loro`, so keeping the call and the helper in the same file
+// avoids cross-module visibility plumbing.
+
+fn map_page_layout(layout: &PageLayout, section_map: &LoroMap) -> Result<(), BridgeError> {
+    let layout_map = section_map.insert_container(KEY_LAYOUT, LoroMap::new())?;
+
+    let size_map = layout_map.insert_container(KEY_PAGE_SIZE, LoroMap::new())?;
+    size_map.insert("width", layout.page_size.width.value())?;
+    size_map.insert("height", layout.page_size.height.value())?;
+
+    let margins_map = layout_map.insert_container(KEY_MARGINS, LoroMap::new())?;
+    margins_map.insert(KEY_MARGIN_TOP, layout.margins.top.value())?;
+    margins_map.insert(KEY_MARGIN_BOTTOM, layout.margins.bottom.value())?;
+    margins_map.insert(KEY_MARGIN_LEFT, layout.margins.left.value())?;
+    margins_map.insert(KEY_MARGIN_RIGHT, layout.margins.right.value())?;
+    margins_map.insert(KEY_MARGIN_HEADER, layout.margins.header.value())?;
+    margins_map.insert(KEY_MARGIN_FOOTER, layout.margins.footer.value())?;
+    margins_map.insert(KEY_MARGIN_GUTTER, layout.margins.gutter.value())?;
+
+    let orientation = match layout.orientation {
+        PageOrientation::Portrait => "Portrait",
+        PageOrientation::Landscape => "Landscape",
+    };
+    layout_map.insert(KEY_ORIENTATION, orientation)?;
+
+    if let Some(cols) = &layout.columns {
+        let cols_map = layout_map.insert_container(KEY_COLUMNS, LoroMap::new())?;
+        cols_map.insert(KEY_COL_COUNT, i64::from(cols.count))?;
+        cols_map.insert(KEY_COL_GAP, cols.gap.value())?;
+        cols_map.insert(KEY_COL_SEPARATOR, cols.separator)?;
+    }
+
+    map_header_footer_slot(&layout.header, KEY_HEADER, &layout_map)?;
+    map_header_footer_slot(&layout.footer, KEY_FOOTER, &layout_map)?;
+    map_header_footer_slot(&layout.header_first, KEY_HEADER_FIRST, &layout_map)?;
+    map_header_footer_slot(&layout.footer_first, KEY_FOOTER_FIRST, &layout_map)?;
+    map_header_footer_slot(&layout.header_even, KEY_HEADER_EVEN, &layout_map)?;
+    map_header_footer_slot(&layout.footer_even, KEY_FOOTER_EVEN, &layout_map)?;
+
+    Ok(())
+}
+
+fn map_header_footer_slot(
+    hf: &Option<HeaderFooter>,
+    key: &str,
+    layout_map: &LoroMap,
+) -> Result<(), BridgeError> {
+    if let Some(hf) = hf {
+        let list = layout_map.insert_container(key, LoroMovableList::new())?;
+        map_blocks_to_list(&hf.blocks, &list)?;
+    }
+    Ok(())
+}
+
 /// Converts a Loki [`Document`] snapshot into a fresh [`LoroDoc`] CRDT.
 pub fn document_to_loro(doc: &Document) -> Result<LoroDoc, BridgeError> {
     let loro_doc = LoroDoc::new();
@@ -48,15 +106,31 @@ pub fn document_to_loro(doc: &Document) -> Result<LoroDoc, BridgeError> {
     // Register all mark keys so Loro tracks their expand behaviour.
     let mut style_config = StyleConfigMap::new();
     for key in &[
-        MARK_BOLD, MARK_ITALIC, MARK_UNDERLINE, MARK_STRIKETHROUGH,
-        MARK_COLOR, MARK_HIGHLIGHT_COLOR, MARK_FONT_FAMILY, MARK_FONT_SIZE_PT,
-        MARK_VERTICAL_ALIGN, MARK_LINK_URL, MARK_LANGUAGE,
-        MARK_LETTER_SPACING, MARK_WORD_SPACING, MARK_SCALE,
-        MARK_SMALL_CAPS, MARK_ALL_CAPS, MARK_SHADOW, MARK_KERNING, MARK_OUTLINE,
+        MARK_BOLD,
+        MARK_ITALIC,
+        MARK_UNDERLINE,
+        MARK_STRIKETHROUGH,
+        MARK_COLOR,
+        MARK_HIGHLIGHT_COLOR,
+        MARK_FONT_FAMILY,
+        MARK_FONT_SIZE_PT,
+        MARK_VERTICAL_ALIGN,
+        MARK_LINK_URL,
+        MARK_LANGUAGE,
+        MARK_LETTER_SPACING,
+        MARK_WORD_SPACING,
+        MARK_SCALE,
+        MARK_SMALL_CAPS,
+        MARK_ALL_CAPS,
+        MARK_SHADOW,
+        MARK_KERNING,
+        MARK_OUTLINE,
     ] {
         style_config.insert(
             loro::InternalString::from(*key),
-            StyleConfig { expand: ExpandType::After },
+            StyleConfig {
+                expand: ExpandType::After,
+            },
         );
     }
     loro_doc.config_text_style(style_config);
@@ -105,8 +179,14 @@ pub fn loro_to_document(loro: &LoroDoc) -> Result<Document, BridgeError> {
     doc.sections.clear();
 
     for i in 0..sections_list.len() {
-        let Some(sec_val) = sections_list.get(i) else { continue };
-        let Some(sec_map) = sec_val.into_container().ok().and_then(|c| c.into_map().ok()) else {
+        let Some(sec_val) = sections_list.get(i) else {
+            continue;
+        };
+        let Some(sec_map) = sec_val
+            .into_container()
+            .ok()
+            .and_then(|c| c.into_map().ok())
+        else {
             continue;
         };
 

@@ -6,12 +6,12 @@
 //! Modelled on pandoc's `Row`, `Cell`, and related types.
 //! TR 29166 §6.2.4 and §7.2.4.
 
-use loki_primitives::units::Points;
-use loki_primitives::color::DocumentColor;
 use crate::content::attr::NodeAttr;
 use crate::content::block::Block;
 use crate::content::table::col::ColAlignment;
 use crate::style::props::border::Border;
+use loki_primitives::color::DocumentColor;
+use loki_primitives::units::Points;
 
 /// Vertical alignment of content within a table cell.
 ///

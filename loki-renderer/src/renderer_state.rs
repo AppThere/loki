@@ -57,14 +57,15 @@ impl RendererState {
     ///
     /// Must be called from within a Dioxus component or hook context because
     /// it calls [`use_signal`] internally.
-    pub fn new(
-        doc: Arc<Document>,
-        viewport_height_px: f64,
-    ) -> Self {
+    pub fn new(doc: Arc<Document>, viewport_height_px: f64) -> Self {
         let source = Arc::new(DocPageSource::new(doc));
         let cache = Arc::new(Mutex::new(PageCache::new()));
         let scroll = use_signal(|| ScrollState::new(viewport_height_px));
-        Self { cache, scroll, source }
+        Self {
+            cache,
+            scroll,
+            source,
+        }
     }
 
     /// Called by the settle detector after each scroll gesture ends.
@@ -89,7 +90,7 @@ impl RendererState {
                 top_px: current_top,
                 bottom_px: current_top + h,
             });
-            current_top += h + loki_theme::tokens::PAGE_GAP_PX as f64;
+            current_top += h + appthere_ui::tokens::PAGE_GAP_PX as f64;
         }
         drop(layout_guard);
         tracing::Span::current().record("page_count", pages.len());
@@ -114,7 +115,7 @@ impl RendererState {
             .unwrap_or((0, 0, 0));
 
         tracing::info!(
-            rerender   = result.rerender.len(),
+            rerender = result.rerender.len(),
             downsample = result.downsample.len(),
             hot,
             warm,

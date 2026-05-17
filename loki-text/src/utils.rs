@@ -46,7 +46,8 @@ pub fn display_title_from_path(path: &str) -> String {
     // Handles unusual cases where someone constructs the route param directly.
     let decoded = percent_decode(path);
     let filename = decoded
-        .split(['/', '\\']).rfind(|s| !s.is_empty())
+        .split(['/', '\\'])
+        .rfind(|s| !s.is_empty())
         .unwrap_or(decoded.as_str());
     let title = format_stem(strip_extension(filename));
 
@@ -94,7 +95,8 @@ fn percent_decode(s: &str) -> String {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
             let hex = &s[i + 1..i + 3];
             if let Ok(byte) = u8::from_str_radix(hex, 16)
-                && byte.is_ascii() {
+                && byte.is_ascii()
+            {
                 result.push(byte as char);
                 i += 3;
                 continue;
@@ -158,8 +160,7 @@ mod tests {
     ///
     /// Computed via:
     ///   base64url(json({"Desktop":{"path":"/tmp/test.txt","display_name":"my_report.docx"}}))
-    const DESKTOP_TOKEN: &str =
-        "eyJEZXNrdG9wIjp7InBhdGgiOiIvdG1wL3Rlc3QudHh0IiwiZGlzcGxheV9uYW1lIjoibXlfcmVwb3J0LmRvY3gifX0";
+    const DESKTOP_TOKEN: &str = "eyJEZXNrdG9wIjp7InBhdGgiOiIvdG1wL3Rlc3QudHh0IiwiZGlzcGxheV9uYW1lIjoibXlfcmVwb3J0LmRvY3gifX0";
 
     #[test]
     fn token_display_name_used() {

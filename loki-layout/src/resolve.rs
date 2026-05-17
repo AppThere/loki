@@ -77,16 +77,14 @@ use loki_doc_model::content::block::{Block, StyledParagraph};
 use loki_doc_model::content::field::types::{Field, FieldKind};
 use loki_doc_model::content::inline::{Inline, NoteKind, StyledRun};
 use loki_doc_model::style::catalog::{StyleCatalog, StyleId};
+use loki_doc_model::style::list_style::ListId;
 use loki_doc_model::style::props::border::{Border as DocBorder, BorderStyle as DocBorderStyle};
 use loki_doc_model::style::props::char_props::{
-    CharProps,
-    StrikethroughStyle as DocStrikethroughStyle,
-    UnderlineStyle as DocUnderlineStyle,
+    CharProps, StrikethroughStyle as DocStrikethroughStyle, UnderlineStyle as DocUnderlineStyle,
     VerticalAlign as DocVerticalAlign,
 };
-use loki_doc_model::style::list_style::ListId;
 use loki_doc_model::style::props::para_props::{
-    LineHeight as DocLineHeight, ParagraphAlignment, ParaProps, Spacing,
+    LineHeight as DocLineHeight, ParaProps, ParagraphAlignment, Spacing,
 };
 use loki_doc_model::style::props::tab_stop::TabAlignment;
 use loki_primitives::color::DocumentColor;
@@ -195,7 +193,10 @@ pub fn resolve_char_props(
     catalog: &StyleCatalog,
     para_char_defaults: &CharProps,
 ) -> StyleSpan {
-    char_props_to_style_span(&effective_run_char_props(run, catalog, para_char_defaults), 0..0)
+    char_props_to_style_span(
+        &effective_run_char_props(run, catalog, para_char_defaults),
+        0..0,
+    )
 }
 
 /// Flatten all inline content of a [`StyledParagraph`] into a UTF-8 string,
@@ -212,7 +213,12 @@ pub fn flatten_paragraph(
     block: &StyledParagraph,
     catalog: &StyleCatalog,
     note_counter: &mut u32,
-) -> (String, Vec<StyleSpan>, Vec<CollectedImage>, Vec<CollectedNote>) {
+) -> (
+    String,
+    Vec<StyleSpan>,
+    Vec<CollectedImage>,
+    Vec<CollectedNote>,
+) {
     let base: CharProps = block
         .style_id
         .as_ref()
@@ -362,8 +368,8 @@ fn char_props_to_style_span(props: &CharProps, range: Range<usize>) -> StyleSpan
         highlight_color,
         letter_spacing: props.letter_spacing.map(pts_to_f32), // gap #13
         font_variant,
-        word_spacing: props.word_spacing.map(pts_to_f32),     // gap #22
-        shadow: props.shadow.unwrap_or(false),                 // gap #24
+        word_spacing: props.word_spacing.map(pts_to_f32), // gap #22
+        shadow: props.shadow.unwrap_or(false),            // gap #24
         link_url: None, // set by walk_inlines when inside Inline::Link (gap #11)
     }
 }
@@ -371,27 +377,29 @@ fn char_props_to_style_span(props: &CharProps, range: Range<usize>) -> StyleSpan
 /// Convert a [`HighlightColor`] palette entry to a [`LayoutColor`].
 ///
 /// Returns `None` for [`HighlightColor::None`] (explicit highlight removal).
-fn map_highlight_color(hc: Option<loki_doc_model::style::props::char_props::HighlightColor>) -> Option<LayoutColor> {
+fn map_highlight_color(
+    hc: Option<loki_doc_model::style::props::char_props::HighlightColor>,
+) -> Option<LayoutColor> {
     use loki_doc_model::style::props::char_props::HighlightColor::*;
     match hc? {
-        Yellow      => Some(LayoutColor::new(1.000, 1.000, 0.000, 1.0)),
-        Green       => Some(LayoutColor::new(0.000, 1.000, 0.000, 1.0)),
-        Cyan        => Some(LayoutColor::new(0.000, 1.000, 1.000, 1.0)),
-        Magenta     => Some(LayoutColor::new(1.000, 0.000, 1.000, 1.0)),
-        Blue        => Some(LayoutColor::new(0.000, 0.000, 1.000, 1.0)),
-        Red         => Some(LayoutColor::new(1.000, 0.000, 0.000, 1.0)),
-        DarkBlue    => Some(LayoutColor::new(0.000, 0.000, 0.502, 1.0)),
-        DarkCyan    => Some(LayoutColor::new(0.000, 0.502, 0.502, 1.0)),
-        DarkGreen   => Some(LayoutColor::new(0.000, 0.502, 0.000, 1.0)),
+        Yellow => Some(LayoutColor::new(1.000, 1.000, 0.000, 1.0)),
+        Green => Some(LayoutColor::new(0.000, 1.000, 0.000, 1.0)),
+        Cyan => Some(LayoutColor::new(0.000, 1.000, 1.000, 1.0)),
+        Magenta => Some(LayoutColor::new(1.000, 0.000, 1.000, 1.0)),
+        Blue => Some(LayoutColor::new(0.000, 0.000, 1.000, 1.0)),
+        Red => Some(LayoutColor::new(1.000, 0.000, 0.000, 1.0)),
+        DarkBlue => Some(LayoutColor::new(0.000, 0.000, 0.502, 1.0)),
+        DarkCyan => Some(LayoutColor::new(0.000, 0.502, 0.502, 1.0)),
+        DarkGreen => Some(LayoutColor::new(0.000, 0.502, 0.000, 1.0)),
         DarkMagenta => Some(LayoutColor::new(0.502, 0.000, 0.502, 1.0)),
-        DarkRed     => Some(LayoutColor::new(0.502, 0.000, 0.000, 1.0)),
-        DarkYellow  => Some(LayoutColor::new(0.502, 0.502, 0.000, 1.0)),
-        DarkGray    => Some(LayoutColor::new(0.502, 0.502, 0.502, 1.0)),
-        LightGray   => Some(LayoutColor::new(0.753, 0.753, 0.753, 1.0)),
-        Black       => Some(LayoutColor::BLACK),
-        White       => Some(LayoutColor::WHITE),
-        None        => Option::None,
-        _           => Option::None,
+        DarkRed => Some(LayoutColor::new(0.502, 0.000, 0.000, 1.0)),
+        DarkYellow => Some(LayoutColor::new(0.502, 0.502, 0.000, 1.0)),
+        DarkGray => Some(LayoutColor::new(0.502, 0.502, 0.502, 1.0)),
+        LightGray => Some(LayoutColor::new(0.753, 0.753, 0.753, 1.0)),
+        Black => Some(LayoutColor::BLACK),
+        White => Some(LayoutColor::WHITE),
+        None => Option::None,
+        _ => Option::None,
     }
 }
 
@@ -457,65 +465,169 @@ fn walk_inlines(
             Inline::Code(_, s) => push_text(buf, spans, s, effective, active_link_url),
             Inline::StyledRun(run) => {
                 let p = effective_run_char_props(run, catalog, effective);
-                walk_inlines(&run.content, &p, catalog, buf, spans, active_link_url, images, note_counter, notes);
+                walk_inlines(
+                    &run.content,
+                    &p,
+                    catalog,
+                    buf,
+                    spans,
+                    active_link_url,
+                    images,
+                    note_counter,
+                    notes,
+                );
             }
             Inline::Strong(ch) => {
                 let mut p = effective.clone();
                 p.bold = Some(true);
-                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images, note_counter, notes);
+                walk_inlines(
+                    ch,
+                    &p,
+                    catalog,
+                    buf,
+                    spans,
+                    active_link_url,
+                    images,
+                    note_counter,
+                    notes,
+                );
             }
             Inline::Emph(ch) => {
                 let mut p = effective.clone();
                 p.italic = Some(true);
-                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images, note_counter, notes);
+                walk_inlines(
+                    ch,
+                    &p,
+                    catalog,
+                    buf,
+                    spans,
+                    active_link_url,
+                    images,
+                    note_counter,
+                    notes,
+                );
             }
             Inline::Underline(ch) => {
                 let mut p = effective.clone();
                 p.underline = Some(DocUnderlineStyle::Single);
-                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images, note_counter, notes);
+                walk_inlines(
+                    ch,
+                    &p,
+                    catalog,
+                    buf,
+                    spans,
+                    active_link_url,
+                    images,
+                    note_counter,
+                    notes,
+                );
             }
             Inline::Strikeout(ch) => {
                 let mut p = effective.clone();
                 p.strikethrough = Some(DocStrikethroughStyle::Single);
-                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images, note_counter, notes);
+                walk_inlines(
+                    ch,
+                    &p,
+                    catalog,
+                    buf,
+                    spans,
+                    active_link_url,
+                    images,
+                    note_counter,
+                    notes,
+                );
             }
             // Superscript (gap #3): set vertical_align on the effective props.
             Inline::Superscript(ch) => {
                 let mut p = effective.clone();
                 p.vertical_align = Some(DocVerticalAlign::Superscript);
-                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images, note_counter, notes);
+                walk_inlines(
+                    ch,
+                    &p,
+                    catalog,
+                    buf,
+                    spans,
+                    active_link_url,
+                    images,
+                    note_counter,
+                    notes,
+                );
             }
             // Subscript (gap #3): set vertical_align on the effective props.
             Inline::Subscript(ch) => {
                 let mut p = effective.clone();
                 p.vertical_align = Some(DocVerticalAlign::Subscript);
-                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images, note_counter, notes);
+                walk_inlines(
+                    ch,
+                    &p,
+                    catalog,
+                    buf,
+                    spans,
+                    active_link_url,
+                    images,
+                    note_counter,
+                    notes,
+                );
             }
             // SmallCaps (gap #15): set small_caps so StyleSpan gets FontVariant::SmallCaps.
             Inline::SmallCaps(ch) => {
                 let mut p = effective.clone();
                 p.small_caps = Some(true);
-                walk_inlines(ch, &p, catalog, buf, spans, active_link_url, images, note_counter, notes);
+                walk_inlines(
+                    ch,
+                    &p,
+                    catalog,
+                    buf,
+                    spans,
+                    active_link_url,
+                    images,
+                    note_counter,
+                    notes,
+                );
             }
             Inline::Quoted(_, ch) | Inline::Span(_, ch) => {
-                walk_inlines(ch, effective, catalog, buf, spans, active_link_url, images, note_counter, notes);
+                walk_inlines(
+                    ch,
+                    effective,
+                    catalog,
+                    buf,
+                    spans,
+                    active_link_url,
+                    images,
+                    note_counter,
+                    notes,
+                );
             }
             // Link (gap #11): thread the resolved URL into child spans.
             // TODO(link-click): interactive hit-testing deferred; only visual hint rendered.
             Inline::Link(_, ch, target) => {
                 let url = target.url.as_str();
-                walk_inlines(ch, effective, catalog, buf, spans, Some(url), images, note_counter, notes);
+                walk_inlines(
+                    ch,
+                    effective,
+                    catalog,
+                    buf,
+                    spans,
+                    Some(url),
+                    images,
+                    note_counter,
+                    notes,
+                );
             }
             // Image (gap #9): collect for post-Parley placement; do not emit text.
             // TODO(floating-image): check NodeAttr.classes for "floating"; deferred (gap #12).
             // TODO(inline-image-flow): Parley has no inline box support; images placed
             //   as block-level prefix after layout_paragraph returns.
             Inline::Image(attr, alt_inlines, target) => {
-                let cx_emu = attr.kv.iter()
+                let cx_emu = attr
+                    .kv
+                    .iter()
                     .find(|(k, _)| k == "cx_emu")
                     .and_then(|(_, v)| v.parse::<u64>().ok())
                     .unwrap_or(0);
-                let cy_emu = attr.kv.iter()
+                let cy_emu = attr
+                    .kv
+                    .iter()
                     .find(|(k, _)| k == "cy_emu")
                     .and_then(|(_, v)| v.parse::<u64>().ok())
                     .unwrap_or(0);
@@ -525,8 +637,22 @@ fn walk_inlines(
                 let mut alt_images: Vec<CollectedImage> = Vec::new();
                 let mut _dummy_counter = 0u32;
                 let mut _dummy_notes: Vec<CollectedNote> = Vec::new();
-                walk_inlines(alt_inlines, effective, catalog, &mut alt_buf, &mut alt_spans, None, &mut alt_images, &mut _dummy_counter, &mut _dummy_notes);
-                let alt = if alt_buf.is_empty() { None } else { Some(alt_buf) };
+                walk_inlines(
+                    alt_inlines,
+                    effective,
+                    catalog,
+                    &mut alt_buf,
+                    &mut alt_spans,
+                    None,
+                    &mut alt_images,
+                    &mut _dummy_counter,
+                    &mut _dummy_notes,
+                );
+                let alt = if alt_buf.is_empty() {
+                    None
+                } else {
+                    Some(alt_buf)
+                };
                 if !target.url.is_empty() {
                     images.push(CollectedImage {
                         src: target.url.clone(),
@@ -536,7 +662,17 @@ fn walk_inlines(
                     });
                 }
             }
-            Inline::Cite(_, ch) => walk_inlines(ch, effective, catalog, buf, spans, active_link_url, images, note_counter, notes),
+            Inline::Cite(_, ch) => walk_inlines(
+                ch,
+                effective,
+                catalog,
+                buf,
+                spans,
+                active_link_url,
+                images,
+                note_counter,
+                notes,
+            ),
             // Field (gap #4): emit current_value snapshot, or a kind-based fallback.
             Inline::Field(f) => {
                 let text = field_display_text(f);
@@ -708,9 +844,15 @@ fn map_para_props(p: &ParaProps) -> ResolvedParaProps {
                 .unwrap_or(&[])
                 .iter()
                 .filter(|s| s.alignment != TabAlignment::Clear)
-                .map(|s| ResolvedTabStop { position: pts_to_f32(s.position) })
+                .map(|s| ResolvedTabStop {
+                    position: pts_to_f32(s.position),
+                })
                 .collect();
-            stops.sort_by(|a, b| a.position.partial_cmp(&b.position).unwrap_or(std::cmp::Ordering::Equal));
+            stops.sort_by(|a, b| {
+                a.position
+                    .partial_cmp(&b.position)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
             stops
         },
     }

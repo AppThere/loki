@@ -48,8 +48,8 @@ mod tests {
 
     #[test]
     fn export_document_with_heading_and_para() {
-        use loki_doc_model::content::block::Block;
         use loki_doc_model::content::attr::NodeAttr;
+        use loki_doc_model::content::block::Block;
         use loki_doc_model::content::inline::Inline;
 
         let mut doc = Document::new();
@@ -59,9 +59,9 @@ mod tests {
             NodeAttr::default(),
             vec![Inline::Str("Hello world".into())],
         ));
-        section.blocks.push(Block::Para(vec![
-            Inline::Str("Some text.".into()),
-        ]));
+        section
+            .blocks
+            .push(Block::Para(vec![Inline::Str("Some text.".into())]));
 
         let mut buf = Cursor::new(Vec::<u8>::new());
         DocxExport::export(&doc, &mut buf, ()).expect("export failed");

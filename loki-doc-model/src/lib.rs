@@ -139,13 +139,16 @@
 
 pub mod content;
 pub mod document;
-pub mod settings;
 pub mod loro_schema;
+pub mod settings;
 pub use loro_schema::*;
 pub mod loro_bridge;
-pub use loro_bridge::{document_to_loro, loro_to_document, BridgeError};
+pub use loro_bridge::{BridgeError, document_to_loro, loro_to_document};
 pub mod loro_mutation;
-pub use loro_mutation::{delete_text, get_block_text, insert_text, merge_block, split_block, MutationError};
+pub use loro_mutation::{
+    MutationError, delete_text, get_block_text, get_mark_at, insert_text, mark_text, merge_block,
+    split_block,
+};
 pub mod error;
 pub mod io;
 pub mod layout;

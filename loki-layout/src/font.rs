@@ -34,7 +34,6 @@ pub struct FontResources {
     pub(crate) font_data_cache: HashMap<u64, Arc<Vec<u8>>>,
 }
 
-
 impl FontResources {
     /// Creates a new `FontResources`, loading system fonts via Fontique.
     pub fn new() -> Self {

@@ -94,6 +94,24 @@ impl Document {
         }
     }
 
+    /// Creates a blank document ready for editing.
+    ///
+    /// Contains one section with one empty paragraph so the cursor can be
+    /// placed and text can be typed immediately.
+    #[must_use]
+    pub fn new_blank() -> Self {
+        use crate::content::block::Block;
+        let mut section = Section::new();
+        section.blocks.push(Block::Para(vec![]));
+        Self {
+            meta: DocumentMeta::default(),
+            styles: StyleCatalog::default(),
+            sections: vec![section],
+            settings: None,
+            source: None,
+        }
+    }
+
     /// Returns a reference to the first section, if any.
     #[must_use]
     pub fn first_section(&self) -> Option<&Section> {
@@ -192,10 +210,7 @@ impl Document {
     /// - `flat_index_to_section_block(2)` → `Some((1, 0))`
     /// - `flat_index_to_section_block(4)` → `None`
     #[must_use]
-    pub fn flat_index_to_section_block(
-        &self,
-        flat_index: usize,
-    ) -> Option<(usize, usize)> {
+    pub fn flat_index_to_section_block(&self, flat_index: usize) -> Option<(usize, usize)> {
         let mut remaining = flat_index;
         for (s_idx, section) in self.sections.iter().enumerate() {
             if remaining < section.blocks.len() {
@@ -228,7 +243,10 @@ mod tests {
         doc.sections.clear();
         for &count in blocks_per_section {
             let blocks = (0..count).map(|_| hr()).collect();
-            doc.sections.push(Section::with_layout_and_blocks(PageLayout::default(), blocks));
+            doc.sections.push(Section::with_layout_and_blocks(
+                PageLayout::default(),
+                blocks,
+            ));
         }
         doc
     }

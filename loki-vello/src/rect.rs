@@ -28,10 +28,42 @@ pub fn paint_filled_rect(scene: &mut vello::Scene, item: &PositionedRect, scale:
 /// skipped.
 pub fn paint_border_rect(scene: &mut vello::Scene, item: &PositionedBorderRect, scale: f32) {
     let rect = scale_rect(&item.rect, scale);
-    paint_border_edge(scene, item.top.as_ref(), rect.x0, rect.y0, rect.x1, rect.y0, scale);
-    paint_border_edge(scene, item.right.as_ref(), rect.x1, rect.y0, rect.x1, rect.y1, scale);
-    paint_border_edge(scene, item.bottom.as_ref(), rect.x0, rect.y1, rect.x1, rect.y1, scale);
-    paint_border_edge(scene, item.left.as_ref(), rect.x0, rect.y0, rect.x0, rect.y1, scale);
+    paint_border_edge(
+        scene,
+        item.top.as_ref(),
+        rect.x0,
+        rect.y0,
+        rect.x1,
+        rect.y0,
+        scale,
+    );
+    paint_border_edge(
+        scene,
+        item.right.as_ref(),
+        rect.x1,
+        rect.y0,
+        rect.x1,
+        rect.y1,
+        scale,
+    );
+    paint_border_edge(
+        scene,
+        item.bottom.as_ref(),
+        rect.x0,
+        rect.y1,
+        rect.x1,
+        rect.y1,
+        scale,
+    );
+    paint_border_edge(
+        scene,
+        item.left.as_ref(),
+        rect.x0,
+        rect.y0,
+        rect.x0,
+        rect.y1,
+        scale,
+    );
 }
 
 fn paint_border_edge(

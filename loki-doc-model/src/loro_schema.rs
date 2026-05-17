@@ -30,6 +30,17 @@ pub const KEY_DIRECT_CHAR_PROPS: &str = "direct_char_props";
 /// Key for the heading level integer stored on a heading Block.
 pub const KEY_HEADING_LEVEL: &str = "level";
 
+/// Key for the alignment string ("center", "right", "justify") stored on a
+/// heading Block. Derived from `NodeAttr::kv["jc"]` set by the OOXML/ODF
+/// mappers. Absent when the heading uses the style's default alignment.
+pub const KEY_HEADING_JC: &str = "jc";
+
+/// Key for the source style name stored on a heading Block.
+/// The ODF mapper writes the `text:style-name` attribute here so that the
+/// layout engine can look up ODF-specific heading properties. Absent for
+/// headings that use the hardcoded "Heading1" … "Heading6" fallback.
+pub const KEY_HEADING_STYLE: &str = "heading_style";
+
 /// Key for ParaProps applied to a paragraph Block.
 pub const KEY_PARA_PROPS: &str = "para_props";
 

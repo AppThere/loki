@@ -13,7 +13,7 @@
 use quick_xml::Writer;
 
 use crate::docx::write::xml::{
-    write_decl, write_empty, write_end, write_start, write_text_elem, wval, NS_W,
+    NS_W, write_decl, write_empty, write_end, write_start, write_text_elem, wval,
 };
 
 use loki_doc_model::content::block::{ListAttributes, ListNumberStyle};
@@ -65,22 +65,24 @@ impl NumberingState {
     /// Register a bullet list.  Returns the `numId` to use for all
     /// paragraphs in this list.  All bullet lists share one `abstractNum`.
     pub(super) fn register_bullet(&mut self) -> u32 {
-        let abstract_id = match self.bullet_abstract_id {
-            Some(id) => id,
-            None => {
-                let id = self.next_abstract_id;
-                self.next_abstract_id += 1;
-                self.abstracts.push(AbstractNum {
-                    id,
-                    kind: AbstractKind::Bullet,
-                });
-                self.bullet_abstract_id = Some(id);
-                id
-            }
+        let abstract_id = if let Some(id) = self.bullet_abstract_id {
+            id
+        } else {
+            let id = self.next_abstract_id;
+            self.next_abstract_id += 1;
+            self.abstracts.push(AbstractNum {
+                id,
+                kind: AbstractKind::Bullet,
+            });
+            self.bullet_abstract_id = Some(id);
+            id
         };
         let num_id = self.next_num_id;
         self.next_num_id += 1;
-        self.nums.push(Num { num_id, abstract_num_id: abstract_id });
+        self.nums.push(Num {
+            num_id,
+            abstract_num_id: abstract_id,
+        });
         num_id
     }
 
@@ -94,6 +96,7 @@ impl NumberingState {
             ListNumberStyle::UpperRoman => "upperRoman",
             _ => "decimal",
         };
+        #[allow(clippy::cast_sign_loss)] // .max(1) guarantees non-negative
         let start = attrs.start_number.max(1) as u32;
         let abstract_id = self.next_abstract_id;
         self.next_abstract_id += 1;
@@ -103,7 +106,10 @@ impl NumberingState {
         });
         let num_id = self.next_num_id;
         self.next_num_id += 1;
-        self.nums.push(Num { num_id, abstract_num_id: abstract_id });
+        self.nums.push(Num {
+            num_id,
+            abstract_num_id: abstract_id,
+        });
         num_id
     }
 
@@ -119,11 +125,7 @@ pub(super) fn write_numbering_xml(state: &NumberingState) -> Vec<u8> {
     let mut w = Writer::new(&mut out);
     let _ = write_decl(&mut w);
 
-    let _ = write_start(
-        &mut w,
-        "w:numbering",
-        &[("xmlns:w", NS_W)],
-    );
+    let _ = write_start(&mut w, "w:numbering", &[("xmlns:w", NS_W)]);
 
     for abs in &state.abstracts {
         let abs_id_s = abs.id.to_string();
@@ -138,11 +140,7 @@ pub(super) fn write_numbering_xml(state: &NumberingState) -> Vec<u8> {
                 let _ = write_text_elem(&mut w, "w:lvlText", &wval("\u{2022}"), "");
                 let _ = write_empty(&mut w, "w:lvlJc", &wval("left"));
                 let _ = write_start(&mut w, "w:pPr", &[]);
-                let _ = write_empty(
-                    &mut w,
-                    "w:ind",
-                    &[("w:left", "720"), ("w:hanging", "360")],
-                );
+                let _ = write_empty(&mut w, "w:ind", &[("w:left", "720"), ("w:hanging", "360")]);
                 let _ = write_end(&mut w, "w:pPr");
                 let _ = write_end(&mut w, "w:lvl");
             }
@@ -155,11 +153,7 @@ pub(super) fn write_numbering_xml(state: &NumberingState) -> Vec<u8> {
                 let _ = write_text_elem(&mut w, "w:lvlText", &wval("%1."), "");
                 let _ = write_empty(&mut w, "w:lvlJc", &wval("left"));
                 let _ = write_start(&mut w, "w:pPr", &[]);
-                let _ = write_empty(
-                    &mut w,
-                    "w:ind",
-                    &[("w:left", "720"), ("w:hanging", "360")],
-                );
+                let _ = write_empty(&mut w, "w:ind", &[("w:left", "720"), ("w:hanging", "360")]);
                 let _ = write_end(&mut w, "w:pPr");
                 let _ = write_end(&mut w, "w:lvl");
             }
@@ -180,4 +174,3 @@ pub(super) fn write_numbering_xml(state: &NumberingState) -> Vec<u8> {
     drop(w);
     out
 }
-

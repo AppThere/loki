@@ -15,13 +15,13 @@
 // effect; silence the suggestion to use `let _ = …` instead.
 #![allow(dropping_references)]
 
-use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
+use quick_xml::events::{BytesStart, Event};
 
 use crate::error::{OdfError, OdfResult};
 use crate::odt::model::document::{
-    OdfBodyChild, OdfDocument, OdfList, OdfListItem, OdfListItemChild,
-    OdfSection, OdfTableOfContent,
+    OdfBodyChild, OdfDocument, OdfList, OdfListItem, OdfListItemChild, OdfSection,
+    OdfTableOfContent,
 };
 use crate::odt::model::fields::OdfField;
 use crate::odt::model::frames::{OdfFrame, OdfFrameKind};
@@ -29,9 +29,7 @@ use crate::odt::model::notes::{OdfNote, OdfNoteClass};
 use crate::odt::model::paragraph::{
     OdfHyperlink, OdfListContext, OdfParagraph, OdfParagraphChild, OdfSpan,
 };
-use crate::odt::model::tables::{
-    OdfTable, OdfTableCell, OdfTableColDef, OdfTableRow,
-};
+use crate::odt::model::tables::{OdfTable, OdfTableCell, OdfTableColDef, OdfTableRow};
 use crate::version::OdfVersion;
 use crate::xml_util::local_attr_val;
 
@@ -61,7 +59,7 @@ pub(crate) fn skip_element(reader: &mut Reader<&[u8]>) -> OdfResult<()> {
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -99,7 +97,7 @@ pub(crate) fn read_text_content(reader: &mut Reader<&[u8]>) -> OdfResult<String>
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -120,8 +118,8 @@ pub(crate) fn read_paragraph(
     let local = tag.local_name().into_inner();
     let is_heading = local == b"h";
     let style_name = local_attr_val(tag, b"style-name");
-    let outline_level: Option<u8> = local_attr_val(tag, b"outline-level")
-        .and_then(|s| s.parse().ok());
+    let outline_level: Option<u8> =
+        local_attr_val(tag, b"outline-level").and_then(|s| s.parse().ok());
 
     let children = read_inline_children(reader)?;
 
@@ -148,9 +146,7 @@ pub(crate) fn read_paragraph(
 /// [`OdfParagraphChild::Other`].
 #[allow(clippy::too_many_lines)]
 // Function body is a single large match over XML events; splitting would reduce readability.
-fn read_inline_children(
-    reader: &mut Reader<&[u8]>,
-) -> OdfResult<Vec<OdfParagraphChild>> {
+fn read_inline_children(reader: &mut Reader<&[u8]>) -> OdfResult<Vec<OdfParagraphChild>> {
     let mut children = Vec::new();
     let mut buf = Vec::new();
     loop {
@@ -185,11 +181,10 @@ fn read_inline_children(
                     // Footnote / endnote — ODF 1.3 §6.3
                     b"note" => {
                         let id = local_attr_val(e, b"id");
-                        let note_class =
-                            match local_attr_val(e, b"note-class").as_deref() {
-                                Some("endnote") => OdfNoteClass::Endnote,
-                                _ => OdfNoteClass::Footnote,
-                            };
+                        let note_class = match local_attr_val(e, b"note-class").as_deref() {
+                            Some("endnote") => OdfNoteClass::Endnote,
+                            _ => OdfNoteClass::Footnote,
+                        };
                         drop(e);
                         let note = read_note_body(reader, id, note_class)?;
                         children.push(OdfParagraphChild::Note(note));
@@ -219,16 +214,14 @@ fn read_inline_children(
                     // Bookmark (point or range-start) — ODF 1.3 §6.6
                     b"bookmark" | b"bookmark-start" => {
                         let id = local_attr_val(e, b"id");
-                        let name =
-                            local_attr_val(e, b"name").unwrap_or_default();
+                        let name = local_attr_val(e, b"name").unwrap_or_default();
                         drop(e);
                         skip_element(reader)?;
                         children.push(OdfParagraphChild::Bookmark { id, name });
                     }
                     // Bookmark range-end — ODF 1.3 §6.6
                     b"bookmark-end" => {
-                        let name =
-                            local_attr_val(e, b"name").unwrap_or_default();
+                        let name = local_attr_val(e, b"name").unwrap_or_default();
                         drop(e);
                         skip_element(reader)?;
                         children.push(OdfParagraphChild::BookmarkEnd { name });
@@ -238,9 +231,9 @@ fn read_inline_children(
                         let select_page = local_attr_val(e, b"select-page");
                         drop(e);
                         skip_element(reader)?;
-                        children.push(OdfParagraphChild::Field(
-                            OdfField::PageNumber { select_page },
-                        ));
+                        children.push(OdfParagraphChild::Field(OdfField::PageNumber {
+                            select_page,
+                        }));
                     }
                     b"page-count" => {
                         drop(e);
@@ -286,9 +279,7 @@ fn read_inline_children(
                         let display = local_attr_val(e, b"display");
                         drop(e);
                         skip_element(reader)?;
-                        children.push(OdfParagraphChild::Field(
-                            OdfField::FileName { display },
-                        ));
+                        children.push(OdfParagraphChild::Field(OdfField::FileName { display }));
                     }
                     b"word-count" => {
                         drop(e);
@@ -296,26 +287,25 @@ fn read_inline_children(
                         children.push(OdfParagraphChild::Field(OdfField::WordCount));
                     }
                     b"chapter" => {
-                        let display_levels: u8 =
-                            local_attr_val(e, b"display-levels")
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(1);
+                        let display_levels: u8 = local_attr_val(e, b"display-levels")
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(1);
                         drop(e);
                         skip_element(reader)?;
-                        children.push(OdfParagraphChild::Field(
-                            OdfField::ChapterName { display_levels },
-                        ));
+                        children.push(OdfParagraphChild::Field(OdfField::ChapterName {
+                            display_levels,
+                        }));
                     }
                     b"bookmark-ref" | b"sequence-ref" => {
-                        let ref_name =
-                            local_attr_val(e, b"ref-name").unwrap_or_default();
+                        let ref_name = local_attr_val(e, b"ref-name").unwrap_or_default();
                         let display = local_attr_val(e, b"reference-format")
                             .or_else(|| local_attr_val(e, b"display"));
                         drop(e);
                         skip_element(reader)?;
-                        children.push(OdfParagraphChild::Field(
-                            OdfField::CrossReference { ref_name, display },
-                        ));
+                        children.push(OdfParagraphChild::Field(OdfField::CrossReference {
+                            ref_name,
+                            display,
+                        }));
                     }
                     // Any other inline element: skip and record as Other
                     _ => {
@@ -342,20 +332,18 @@ fn read_inline_children(
                     }
                     b"bookmark" | b"bookmark-start" => {
                         let id = local_attr_val(e, b"id");
-                        let name =
-                            local_attr_val(e, b"name").unwrap_or_default();
+                        let name = local_attr_val(e, b"name").unwrap_or_default();
                         children.push(OdfParagraphChild::Bookmark { id, name });
                     }
                     b"bookmark-end" => {
-                        let name =
-                            local_attr_val(e, b"name").unwrap_or_default();
+                        let name = local_attr_val(e, b"name").unwrap_or_default();
                         children.push(OdfParagraphChild::BookmarkEnd { name });
                     }
                     b"page-number" => {
                         let select_page = local_attr_val(e, b"select-page");
-                        children.push(OdfParagraphChild::Field(
-                            OdfField::PageNumber { select_page },
-                        ));
+                        children.push(OdfParagraphChild::Field(OdfField::PageNumber {
+                            select_page,
+                        }));
                     }
                     b"page-count" => {
                         children.push(OdfParagraphChild::Field(OdfField::PageCount));
@@ -387,21 +375,18 @@ fn read_inline_children(
                     }
                     b"file-name" => {
                         let display = local_attr_val(e, b"display");
-                        children.push(OdfParagraphChild::Field(
-                            OdfField::FileName { display },
-                        ));
+                        children.push(OdfParagraphChild::Field(OdfField::FileName { display }));
                     }
                     b"word-count" => {
                         children.push(OdfParagraphChild::Field(OdfField::WordCount));
                     }
                     b"chapter" => {
-                        let display_levels: u8 =
-                            local_attr_val(e, b"display-levels")
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(1);
-                        children.push(OdfParagraphChild::Field(
-                            OdfField::ChapterName { display_levels },
-                        ));
+                        let display_levels: u8 = local_attr_val(e, b"display-levels")
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(1);
+                        children.push(OdfParagraphChild::Field(OdfField::ChapterName {
+                            display_levels,
+                        }));
                     }
                     _ => children.push(OdfParagraphChild::Other),
                 }
@@ -422,7 +407,7 @@ fn read_inline_children(
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -479,7 +464,7 @@ fn read_note_body(
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -500,10 +485,7 @@ fn read_note_body(
 /// Called after consuming the `Start` event. `tag` carries the frame
 /// geometry and style attributes. On return the matching `End` event
 /// has been consumed. ODF 1.3 §10.4.
-pub(crate) fn read_frame(
-    reader: &mut Reader<&[u8]>,
-    tag: &BytesStart<'_>,
-) -> OdfResult<OdfFrame> {
+pub(crate) fn read_frame(reader: &mut Reader<&[u8]>, tag: &BytesStart<'_>) -> OdfResult<OdfFrame> {
     let name = local_attr_val(tag, b"name");
     let style_name = local_attr_val(tag, b"style-name");
     let anchor_type = local_attr_val(tag, b"anchor-type");
@@ -539,13 +521,16 @@ fn read_frame_kind(reader: &mut Reader<&[u8]>) -> OdfResult<OdfFrameKind> {
                 let local = e.local_name().into_inner().to_vec();
                 match local.as_slice() {
                     b"image" => {
-                        let href =
-                            local_attr_val(e, b"href").unwrap_or_default();
+                        let href = local_attr_val(e, b"href").unwrap_or_default();
                         let media_type = local_attr_val(e, b"type");
                         drop(e);
                         let (title, desc) = read_image_children(reader)?;
-                        kind =
-                            OdfFrameKind::Image { href, media_type, title, desc };
+                        kind = OdfFrameKind::Image {
+                            href,
+                            media_type,
+                            title,
+                            desc,
+                        };
                     }
                     b"text-box" => {
                         drop(e);
@@ -560,8 +545,7 @@ fn read_frame_kind(reader: &mut Reader<&[u8]>) -> OdfResult<OdfFrameKind> {
             }
             Ok(Event::Empty(ref e)) => {
                 if e.local_name().into_inner() == b"image" {
-                    let href =
-                        local_attr_val(e, b"href").unwrap_or_default();
+                    let href = local_attr_val(e, b"href").unwrap_or_default();
                     let media_type = local_attr_val(e, b"type");
                     kind = OdfFrameKind::Image {
                         href,
@@ -576,7 +560,7 @@ fn read_frame_kind(reader: &mut Reader<&[u8]>) -> OdfResult<OdfFrameKind> {
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -588,9 +572,7 @@ fn read_frame_kind(reader: &mut Reader<&[u8]>) -> OdfResult<OdfFrameKind> {
 ///
 /// Called after consuming `Start(image)`. Returns `(title, desc)` and
 /// positions the reader after `</draw:image>`. ODF 1.3 §10.5.
-fn read_image_children(
-    reader: &mut Reader<&[u8]>,
-) -> OdfResult<(Option<String>, Option<String>)> {
+fn read_image_children(reader: &mut Reader<&[u8]>) -> OdfResult<(Option<String>, Option<String>)> {
     let mut title: Option<String> = None;
     let mut desc: Option<String> = None;
     let mut buf = Vec::new();
@@ -611,7 +593,7 @@ fn read_image_children(
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -623,9 +605,7 @@ fn read_image_children(
 ///
 /// Called after consuming `Start(text-box)`. Returns the paragraphs and
 /// positions the reader after `</draw:text-box>`. ODF 1.3 §10.7.
-fn read_text_box_paragraphs(
-    reader: &mut Reader<&[u8]>,
-) -> OdfResult<Vec<OdfParagraph>> {
+fn read_text_box_paragraphs(reader: &mut Reader<&[u8]>) -> OdfResult<Vec<OdfParagraph>> {
     let mut paragraphs = Vec::new();
     let mut buf = Vec::new();
     loop {
@@ -646,7 +626,7 @@ fn read_text_box_paragraphs(
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -659,10 +639,7 @@ fn read_text_box_paragraphs(
 /// Parse a `table:table` element. ODF 1.3 §9.1.
 ///
 /// Called after consuming the `Start` event for `table:table`.
-pub(crate) fn read_table(
-    reader: &mut Reader<&[u8]>,
-    tag: &BytesStart<'_>,
-) -> OdfResult<OdfTable> {
+pub(crate) fn read_table(reader: &mut Reader<&[u8]>, tag: &BytesStart<'_>) -> OdfResult<OdfTable> {
     let name = local_attr_val(tag, b"name");
     let style_name = local_attr_val(tag, b"style-name");
     let mut col_defs: Vec<OdfTableColDef> = Vec::new();
@@ -676,10 +653,9 @@ pub(crate) fn read_table(
                 match local.as_slice() {
                     b"table-column" => {
                         let col_style = local_attr_val(e, b"style-name");
-                        let columns_repeated: u32 =
-                            local_attr_val(e, b"number-columns-repeated")
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(1);
+                        let columns_repeated: u32 = local_attr_val(e, b"number-columns-repeated")
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(1);
                         drop(e);
                         skip_element(reader)?;
                         col_defs.push(OdfTableColDef {
@@ -705,10 +681,9 @@ pub(crate) fn read_table(
                 let local = e.local_name().into_inner();
                 if local == b"table-column" {
                     let col_style = local_attr_val(e, b"style-name");
-                    let columns_repeated: u32 =
-                        local_attr_val(e, b"number-columns-repeated")
-                            .and_then(|s| s.parse().ok())
-                            .unwrap_or(1);
+                    let columns_repeated: u32 = local_attr_val(e, b"number-columns-repeated")
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(1);
                     col_defs.push(OdfTableColDef {
                         style_name: col_style,
                         columns_repeated,
@@ -720,12 +695,17 @@ pub(crate) fn read_table(
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
     }
-    Ok(OdfTable { name, style_name, col_defs, rows })
+    Ok(OdfTable {
+        name,
+        style_name,
+        col_defs,
+        rows,
+    })
 }
 
 /// Read rows inside `table:table-header-rows`, marking each as `is_header`.
@@ -751,7 +731,7 @@ fn read_table_header_rows(
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -801,14 +781,12 @@ fn read_table_row(
                 match local {
                     b"table-cell" => {
                         let style_name = local_attr_val(e, b"style-name");
-                        let col_span: u32 =
-                            local_attr_val(e, b"number-columns-spanned")
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(1);
-                        let row_span: u32 =
-                            local_attr_val(e, b"number-rows-spanned")
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(1);
+                        let col_span: u32 = local_attr_val(e, b"number-columns-spanned")
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(1);
+                        let row_span: u32 = local_attr_val(e, b"number-rows-spanned")
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(1);
                         let value_type = local_attr_val(e, b"value-type");
                         cells.push(OdfTableCell {
                             style_name,
@@ -837,7 +815,7 @@ fn read_table_row(
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -886,12 +864,19 @@ fn read_table_cell(
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
     }
-    Ok(OdfTableCell { style_name, col_span, row_span, is_covered, value_type, paragraphs })
+    Ok(OdfTableCell {
+        style_name,
+        col_span,
+        row_span,
+        is_covered,
+        value_type,
+        paragraphs,
+    })
 }
 
 /// Recursively flatten all paragraphs out of a list into `out`.
@@ -926,8 +911,8 @@ pub(crate) fn read_list(
     let style_name = local_attr_val(tag, b"style-name");
     let xml_id = local_attr_val(tag, b"id");
     let continue_list = local_attr_val(tag, b"continue-list");
-    let continue_numbering = local_attr_val(tag, b"continue-numbering")
-        .is_some_and(|s| s == "true");
+    let continue_numbering =
+        local_attr_val(tag, b"continue-numbering").is_some_and(|s| s == "true");
 
     let effective: Option<String> = style_name
         .clone()
@@ -942,12 +927,7 @@ pub(crate) fn read_list(
                 let local = e.local_name().into_inner().to_vec();
                 match local.as_slice() {
                     b"list-item" | b"list-header" => {
-                        let item = read_list_item(
-                            reader,
-                            e,
-                            effective.as_deref(),
-                            depth,
-                        )?;
+                        let item = read_list_item(reader, e, effective.as_deref(), depth)?;
                         items.push(item);
                     }
                     _ => {
@@ -961,12 +941,18 @@ pub(crate) fn read_list(
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
     }
-    Ok(OdfList { xml_id, style_name, continue_list, continue_numbering, items })
+    Ok(OdfList {
+        xml_id,
+        style_name,
+        continue_list,
+        continue_numbering,
+        items,
+    })
 }
 
 /// Parse a `text:list-item` or `text:list-header` element. ODF 1.3 §5.3.
@@ -976,8 +962,7 @@ fn read_list_item(
     list_style: Option<&str>,
     depth: u8,
 ) -> OdfResult<OdfListItem> {
-    let start_value: Option<u32> = local_attr_val(tag, b"start-value")
-        .and_then(|s| s.parse().ok());
+    let start_value: Option<u32> = local_attr_val(tag, b"start-value").and_then(|s| s.parse().ok());
     let mut children: Vec<OdfListItemChild> = Vec::new();
     let mut buf = Vec::new();
     loop {
@@ -1005,12 +990,7 @@ fn read_list_item(
                         children.push(OdfListItemChild::Heading(para));
                     }
                     b"list" => {
-                        let nested = read_list(
-                            reader,
-                            e,
-                            list_style,
-                            depth.saturating_add(1),
-                        )?;
+                        let nested = read_list(reader, e, list_style, depth.saturating_add(1))?;
                         children.push(OdfListItemChild::List(nested));
                     }
                     _ => {
@@ -1024,12 +1004,15 @@ fn read_list_item(
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
     }
-    Ok(OdfListItem { start_value, children })
+    Ok(OdfListItem {
+        start_value,
+        children,
+    })
 }
 
 // ── Table of contents ─────────────────────────────────────────────────────────
@@ -1050,10 +1033,9 @@ pub(crate) fn read_toc(
                 let local = e.local_name().into_inner().to_vec();
                 match local.as_slice() {
                     b"table-of-content-source" => {
-                        source_outline_level =
-                            local_attr_val(e, b"outline-level")
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(3);
+                        source_outline_level = local_attr_val(e, b"outline-level")
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(3);
                         drop(e);
                         skip_element(reader)?;
                     }
@@ -1069,10 +1051,9 @@ pub(crate) fn read_toc(
             }
             Ok(Event::Empty(ref e)) => {
                 if e.local_name().into_inner() == b"table-of-content-source" {
-                    source_outline_level =
-                        local_attr_val(e, b"outline-level")
-                            .and_then(|s| s.parse().ok())
-                            .unwrap_or(3);
+                    source_outline_level = local_attr_val(e, b"outline-level")
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(3);
                 }
             }
             Ok(Event::End(_) | Event::Eof) => break,
@@ -1080,12 +1061,16 @@ pub(crate) fn read_toc(
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
     }
-    Ok(OdfTableOfContent { name, source_outline_level, body_paragraphs })
+    Ok(OdfTableOfContent {
+        name,
+        source_outline_level,
+        body_paragraphs,
+    })
 }
 
 /// Read `text:p` / `text:h` paragraphs inside `text:index-body`.
@@ -1111,7 +1096,7 @@ fn read_index_body(
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -1122,15 +1107,16 @@ fn read_index_body(
 // ── Section ───────────────────────────────────────────────────────────────────
 
 /// Parse a `text:section` element. ODF 1.3 §5.4.
-fn read_section(
-    reader: &mut Reader<&[u8]>,
-    tag: &BytesStart<'_>,
-) -> OdfResult<OdfSection> {
+fn read_section(reader: &mut Reader<&[u8]>, tag: &BytesStart<'_>) -> OdfResult<OdfSection> {
     let name = local_attr_val(tag, b"name");
     let style_name = local_attr_val(tag, b"style-name");
     drop(tag);
     let children = read_body_children(reader, b"section")?;
-    Ok(OdfSection { name, style_name, children })
+    Ok(OdfSection {
+        name,
+        style_name,
+        children,
+    })
 }
 
 // ── Body children shared dispatcher ──────────────────────────────────────────
@@ -1141,10 +1127,7 @@ fn read_section(
 /// Dispatches `text:p`, `text:h`, `text:list`, `table:table`,
 /// `text:table-of-content`, `text:section`, and silently skips everything
 /// else. ODF 1.3 §3.1.
-fn read_body_children(
-    reader: &mut Reader<&[u8]>,
-    end_tag: &[u8],
-) -> OdfResult<Vec<OdfBodyChild>> {
+fn read_body_children(reader: &mut Reader<&[u8]>, end_tag: &[u8]) -> OdfResult<Vec<OdfBodyChild>> {
     let mut children: Vec<OdfBodyChild> = Vec::new();
     let mut buf = Vec::new();
     loop {
@@ -1200,7 +1183,7 @@ fn read_body_children(
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -1236,16 +1219,14 @@ pub(crate) fn read_document(xml: &[u8]) -> OdfResult<OdfDocument> {
                     b"document-content" | b"document" => {
                         if let Some(v) = local_attr_val(e, b"version") {
                             version_was_absent = false;
-                            version = OdfVersion::from_attr(&v)
-                                .unwrap_or(OdfVersion::V1_3);
+                            version = OdfVersion::from_attr(&v).unwrap_or(OdfVersion::V1_3);
                         }
                         // do not skip — descend into children
                     }
                     b"text" => {
                         // office:text — the document body
                         drop(e);
-                        body_children =
-                            read_body_children(&mut reader, b"text")?;
+                        body_children = read_body_children(&mut reader, b"text")?;
                     }
                     // office:body is a thin wrapper around office:text;
                     // descend without skipping
@@ -1262,13 +1243,17 @@ pub(crate) fn read_document(xml: &[u8]) -> OdfResult<OdfDocument> {
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
     }
 
-    Ok(OdfDocument { version, version_was_absent, body_children })
+    Ok(OdfDocument {
+        version,
+        version_was_absent,
+        body_children,
+    })
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
@@ -1276,8 +1261,8 @@ pub(crate) fn read_document(xml: &[u8]) -> OdfResult<OdfDocument> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use quick_xml::events::Event;
     use quick_xml::Reader;
+    use quick_xml::events::Event;
 
     use crate::odt::model::document::{OdfBodyChild, OdfListItemChild};
     use crate::odt::model::frames::OdfFrameKind;
@@ -1298,8 +1283,7 @@ mod tests {
                 Event::Start(ref e) => {
                     let local = e.local_name().into_inner();
                     if local == b"p" || local == b"h" {
-                        return read_paragraph(&mut reader, e)
-                            .expect("read_paragraph failed");
+                        return read_paragraph(&mut reader, e).expect("read_paragraph failed");
                     }
                 }
                 Event::Eof => panic!("no text:p / text:h found in test XML"),
@@ -1419,10 +1403,7 @@ mod tests {
         match &para.children[0] {
             OdfParagraphChild::Hyperlink(link) => {
                 assert_eq!(link.href.as_deref(), Some("https://example.com"));
-                assert_eq!(
-                    link.style_name.as_deref(),
-                    Some("Internet_20_Link")
-                );
+                assert_eq!(link.style_name.as_deref(), Some("Internet_20_Link"));
                 assert_eq!(link.children.len(), 1);
                 match &link.children[0] {
                     OdfParagraphChild::Text(s) => {
@@ -1482,19 +1463,14 @@ mod tests {
 </root>"#;
         let para = parse_first_para(xml);
         assert_eq!(para.children.len(), 5);
-        assert!(
-            matches!(&para.children[0], OdfParagraphChild::Text(s) if s == "A")
-        );
-        assert!(
-            matches!(&para.children[1], OdfParagraphChild::Space { count: 3 })
-        );
-        assert!(
-            matches!(&para.children[2], OdfParagraphChild::Text(s) if s == "B")
-        );
+        assert!(matches!(&para.children[0], OdfParagraphChild::Text(s) if s == "A"));
+        assert!(matches!(
+            &para.children[1],
+            OdfParagraphChild::Space { count: 3 }
+        ));
+        assert!(matches!(&para.children[2], OdfParagraphChild::Text(s) if s == "B"));
         assert!(matches!(&para.children[3], OdfParagraphChild::Tab));
-        assert!(
-            matches!(&para.children[4], OdfParagraphChild::Text(s) if s == "C")
-        );
+        assert!(matches!(&para.children[4], OdfParagraphChild::Text(s) if s == "C"));
     }
 
     #[test]
@@ -1555,9 +1531,7 @@ mod tests {
         let table = loop {
             buf.clear();
             match reader.read_event_into(&mut buf).unwrap() {
-                Event::Start(ref e)
-                    if e.local_name().into_inner() == b"table" =>
-                {
+                Event::Start(ref e) if e.local_name().into_inner() == b"table" => {
                     break read_table(&mut reader, e).unwrap();
                 }
                 Event::Eof => panic!("no table found"),
@@ -1604,9 +1578,7 @@ mod tests {
         let list = loop {
             buf.clear();
             match reader.read_event_into(&mut buf).unwrap() {
-                Event::Start(ref e)
-                    if e.local_name().into_inner() == b"list" =>
-                {
+                Event::Start(ref e) if e.local_name().into_inner() == b"list" => {
                     break read_list(&mut reader, e, None, 0).unwrap();
                 }
                 Event::Eof => panic!("no list found"),
@@ -1620,10 +1592,7 @@ mod tests {
         assert_eq!(item.children.len(), 2);
         match &item.children[0] {
             OdfListItemChild::Paragraph(p) => {
-                assert_eq!(
-                    p.list_context.as_ref().unwrap().level,
-                    0
-                );
+                assert_eq!(p.list_context.as_ref().unwrap().level, 0);
                 match &p.children[0] {
                     OdfParagraphChild::Text(s) => assert_eq!(s, "Item 1"),
                     other => panic!("{:?}", other),
@@ -1636,10 +1605,7 @@ mod tests {
                 assert_eq!(nested.items.len(), 1);
                 match &nested.items[0].children[0] {
                     OdfListItemChild::Paragraph(p) => {
-                        assert_eq!(
-                            p.list_context.as_ref().unwrap().level,
-                            1
-                        );
+                        assert_eq!(p.list_context.as_ref().unwrap().level, 1);
                     }
                     other => panic!("{:?}", other),
                 }
@@ -1707,9 +1673,7 @@ mod tests {
         let toc = loop {
             buf.clear();
             match reader.read_event_into(&mut buf).unwrap() {
-                Event::Start(ref e)
-                    if e.local_name().into_inner() == b"table-of-content" =>
-                {
+                Event::Start(ref e) if e.local_name().into_inner() == b"table-of-content" => {
                     break read_toc(&mut reader, e).unwrap();
                 }
                 Event::Eof => panic!("no toc found"),

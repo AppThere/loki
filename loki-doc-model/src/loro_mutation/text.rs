@@ -3,9 +3,9 @@
 
 //! Character-level text mutations for individual blocks.
 
-use loro::LoroDoc;
+use loro::{LoroDoc, LoroValue, TextDelta};
 
-use super::{get_loro_text_for_block, MutationError};
+use super::{MutationError, get_loro_text_for_block};
 
 /// Inserts `text` at UTF-8 `byte_offset` into the `LoroText` for the block
 /// at `block_index` (in section 0).
@@ -60,4 +60,67 @@ pub fn get_block_text(loro: &LoroDoc, block_index: usize) -> String {
     get_loro_text_for_block(loro, block_index)
         .map(|t| t.to_string())
         .unwrap_or_default()
+}
+
+/// Applies a rich-text mark (character-level formatting) to a UTF-8 byte
+/// range within a block's text content.
+///
+/// Pass `LoroValue::Null` as `mark_value` to remove a mark (clear formatting).
+/// Pass `LoroValue::Bool(true)` for boolean marks such as bold or italic.
+///
+/// # Errors
+///
+/// Returns [`MutationError::BlockIndexOutOfRange`] when `block_index` is out
+/// of range, or [`MutationError::Loro`] for any Loro internal error.
+///
+/// A `byte_start >= byte_end` range is a no-op (returns `Ok` immediately).
+pub fn mark_text(
+    loro: &LoroDoc,
+    block_index: usize,
+    byte_start: usize,
+    byte_end: usize,
+    mark_key: &str,
+    mark_value: LoroValue,
+) -> Result<(), MutationError> {
+    if byte_start >= byte_end {
+        return Ok(());
+    }
+    let text = get_loro_text_for_block(loro, block_index)?;
+    // COMPAT(loro): mark_utf8 uses UTF-8 byte offsets, matching CursorState's
+    // coordinate space. The non-suffixed mark() uses unicode character positions.
+    text.mark_utf8(byte_start..byte_end, mark_key, mark_value)
+        .map_err(MutationError::from)
+}
+
+/// Returns the value of a named mark at a UTF-8 byte offset within a block,
+/// or `None` if the mark is not set at that position.
+///
+/// Used to determine current toggle state for ribbon buttons and keyboard
+/// shortcuts (e.g. whether Bold is active at the cursor).
+///
+/// # Errors
+///
+/// Returns [`MutationError::BlockIndexOutOfRange`] when `block_index` is out
+/// of range, or [`MutationError::TextNotFound`] when the block has no text.
+pub fn get_mark_at(
+    loro: &LoroDoc,
+    block_index: usize,
+    byte_offset: usize,
+    mark_key: &str,
+) -> Result<Option<LoroValue>, MutationError> {
+    let text = get_loro_text_for_block(loro, block_index)?;
+    // Walk richtext delta spans accumulating byte position until we find the
+    // span that contains byte_offset, then extract the requested mark.
+    // to_delta() returns only TextDelta::Insert spans (no Retain/Delete).
+    let mut byte_pos = 0usize;
+    for delta in text.to_delta() {
+        if let TextDelta::Insert { insert, attributes } = delta {
+            let span_bytes = insert.len();
+            if byte_offset < byte_pos + span_bytes {
+                return Ok(attributes.and_then(|attrs| attrs.get(mark_key).cloned()));
+            }
+            byte_pos += span_bytes;
+        }
+    }
+    Ok(None)
 }

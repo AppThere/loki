@@ -64,7 +64,9 @@ mod tests {
 
     #[test]
     fn reflow_flags() {
-        let m = LayoutMode::Reflow { available_width: 400.0 };
+        let m = LayoutMode::Reflow {
+            available_width: 400.0,
+        };
         assert!(!m.is_paginated());
         assert!(m.is_continuous());
     }

@@ -5,8 +5,8 @@
 //!
 //! ECMA-376 §17.7 (document styles).
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
 use crate::docx::model::styles::{DocxStyle, DocxStyleType, DocxStyles};
 use crate::docx::reader::util::{attr_val, local_name};
@@ -55,12 +55,11 @@ pub fn parse_styles(xml: &[u8]) -> OoxmlResult<DocxStyles> {
                             "numbering" => DocxStyleType::Numbering,
                             _ => DocxStyleType::Paragraph,
                         };
-                        let style_id =
-                            attr_val(e, b"styleId").unwrap_or_default();
-                        let is_default = attr_val(e, b"default")
-                            .is_some_and(|v| v == "1" || v == "true");
-                        let is_custom = attr_val(e, b"customStyle")
-                            .is_some_and(|v| v == "1" || v == "true");
+                        let style_id = attr_val(e, b"styleId").unwrap_or_default();
+                        let is_default =
+                            attr_val(e, b"default").is_some_and(|v| v == "1" || v == "true");
+                        let is_custom =
+                            attr_val(e, b"customStyle").is_some_and(|v| v == "1" || v == "true");
                         current_style = Some(DocxStyle {
                             style_type,
                             style_id,
@@ -111,18 +110,16 @@ pub fn parse_styles(xml: &[u8]) -> OoxmlResult<DocxStyles> {
                     _ => {}
                 }
             }
-            Ok(Event::End(ref e)) => {
-                match local_name(e.local_name().as_ref()) {
-                    b"docDefaults" => in_doc_defaults = false,
-                    b"style" => {
-                        if let Some(style) = current_style.take() {
-                            result.styles.push(style);
-                        }
-                        in_style = false;
+            Ok(Event::End(ref e)) => match local_name(e.local_name().as_ref()) {
+                b"docDefaults" => in_doc_defaults = false,
+                b"style" => {
+                    if let Some(style) = current_style.take() {
+                        result.styles.push(style);
                     }
-                    _ => {}
+                    in_style = false;
                 }
-            }
+                _ => {}
+            },
             Ok(Event::Eof) => break,
             Err(e) => {
                 return Err(OoxmlError::Xml {
@@ -160,22 +157,33 @@ mod tests {
     #[test]
     fn parses_normal_style() {
         let styles = parse_styles(MINIMAL_STYLES).unwrap();
-        assert!(styles.styles.iter().any(|s| s.style_id == "Normal" && s.is_default));
+        assert!(
+            styles
+                .styles
+                .iter()
+                .any(|s| s.style_id == "Normal" && s.is_default)
+        );
     }
 
     #[test]
     fn parses_heading1_based_on() {
         let styles = parse_styles(MINIMAL_STYLES).unwrap();
-        let h1 = styles.styles.iter().find(|s| s.style_id == "Heading1").unwrap();
+        let h1 = styles
+            .styles
+            .iter()
+            .find(|s| s.style_id == "Heading1")
+            .unwrap();
         assert_eq!(h1.based_on.as_deref(), Some("Normal"));
     }
 
     #[test]
     fn parses_character_style() {
         let styles = parse_styles(MINIMAL_STYLES).unwrap();
-        assert!(styles
-            .styles
-            .iter()
-            .any(|s| s.style_type == DocxStyleType::Character));
+        assert!(
+            styles
+                .styles
+                .iter()
+                .any(|s| s.style_type == DocxStyleType::Character)
+        );
     }
 }

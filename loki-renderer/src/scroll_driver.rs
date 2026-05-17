@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use dioxus::prelude::*;
 use dioxus_core::Task;
-use loki_render_cache::{ScrollPhase, ScrollState, SETTLE_DURATION};
+use loki_render_cache::{SETTLE_DURATION, ScrollPhase, ScrollState};
 
 // ── Settle poll interval ──────────────────────────────────────────────────────
 
@@ -88,7 +88,7 @@ pub fn use_settle_detector(
 mod tests {
     use std::time::{Duration, Instant};
 
-    use loki_render_cache::{ScrollPhase, ScrollState, SETTLE_DURATION};
+    use loki_render_cache::{SETTLE_DURATION, ScrollPhase, ScrollState};
 
     fn fresh_state() -> ScrollState {
         ScrollState::new(800.0)
@@ -122,7 +122,10 @@ mod tests {
         state.on_scroll(0.0);
         // Use a time well past the settle threshold to avoid flakiness.
         let settled = state.tick(t0 + SETTLE_DURATION + Duration::from_secs(1));
-        assert!(settled, "tick must return true on first Settling transition");
+        assert!(
+            settled,
+            "tick must return true on first Settling transition"
+        );
         assert_eq!(state.phase, ScrollPhase::Settling);
     }
 

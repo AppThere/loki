@@ -40,11 +40,7 @@ impl PageCache {
     /// Not cached → `rerender`; same tier clean → skip; same tier dirty →
     /// `rerender`; finer tier (e.g. Cold→Hot) → `rerender`; coarser tier
     /// (e.g. Hot→Warm) → `downsample`.
-    pub fn retier(
-        &mut self,
-        pages: &[PageGeometry],
-        scroll: &ScrollState,
-    ) -> RetierResult {
+    pub fn retier(&mut self, pages: &[PageGeometry], scroll: &ScrollState) -> RetierResult {
         let mut result = RetierResult::default();
 
         for page_geom in pages {
@@ -102,7 +98,11 @@ mod tests {
 
     fn page(index: u32) -> PageGeometry {
         let top = f64::from(index) * 300.0;
-        PageGeometry { index, top_px: top, bottom_px: top + 200.0 }
+        PageGeometry {
+            index,
+            top_px: top,
+            bottom_px: top + 200.0,
+        }
     }
 
     #[test]

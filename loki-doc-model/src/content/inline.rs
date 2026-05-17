@@ -7,10 +7,10 @@
 //! type exactly. Office-document-specific variants are added for styled runs,
 //! fields, comments, and bookmarks. See ADR-0001 for the design rationale.
 
+use crate::content::annotation::comment::CommentRef;
 use crate::content::attr::NodeAttr;
 use crate::content::block::Block;
 use crate::content::field::types::Field;
-use crate::content::annotation::comment::CommentRef;
 use crate::style::catalog::StyleId;
 use crate::style::props::char_props::CharProps;
 
@@ -141,7 +141,6 @@ pub struct StyledRun {
 #[non_exhaustive]
 pub enum Inline {
     // ── Pandoc-derived variants ─────────────────────────────────────────
-
     /// A plain text string. Corresponds to pandoc `Str`.
     Str(String),
 
@@ -211,7 +210,6 @@ pub enum Inline {
     Span(NodeAttr, Vec<Inline>),
 
     // ── Office-document extensions ──────────────────────────────────────
-
     /// A styled run: inline content with a character style reference and
     /// optional direct formatting overrides.
     ///

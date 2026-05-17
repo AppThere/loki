@@ -32,16 +32,8 @@ pub(crate) fn map_styles(styles: &DocxStyles) -> StyleCatalog {
             parent: None,
             linked_char_style: None,
             next_style_id: None,
-            para_props: styles
-                .default_ppr
-                .as_ref()
-                .map(map_ppr)
-                .unwrap_or_default(),
-            char_props: styles
-                .default_rpr
-                .as_ref()
-                .map(map_rpr)
-                .unwrap_or_default(),
+            para_props: styles.default_ppr.as_ref().map(map_ppr).unwrap_or_default(),
+            char_props: styles.default_rpr.as_ref().map(map_rpr).unwrap_or_default(),
             is_default: true,
             is_custom: false,
             extensions: ExtensionBag::default(),
@@ -131,7 +123,10 @@ mod tests {
     fn paragraph_style_in_catalog() {
         let styles = make_styles(DocxStyleType::Paragraph, "Normal", "Normal");
         let catalog = map_styles(&styles);
-        let s = catalog.paragraph_styles.get(&StyleId::new("Normal")).unwrap();
+        let s = catalog
+            .paragraph_styles
+            .get(&StyleId::new("Normal"))
+            .unwrap();
         assert_eq!(s.id, StyleId::new("Normal"));
         assert_eq!(s.display_name.as_deref(), Some("Normal"));
         assert!(!s.is_default);
@@ -166,31 +161,42 @@ mod tests {
     fn character_style_in_catalog() {
         let styles = make_styles(DocxStyleType::Character, "DefaultParagraphFont", "Default");
         let catalog = map_styles(&styles);
-        assert!(catalog
-            .character_styles
-            .contains_key(&StyleId::new("DefaultParagraphFont")));
-        assert!(!catalog
-            .paragraph_styles
-            .contains_key(&StyleId::new("DefaultParagraphFont")));
+        assert!(
+            catalog
+                .character_styles
+                .contains_key(&StyleId::new("DefaultParagraphFont"))
+        );
+        assert!(
+            !catalog
+                .paragraph_styles
+                .contains_key(&StyleId::new("DefaultParagraphFont"))
+        );
     }
 
     #[test]
     fn table_style_in_table_catalog() {
         let styles = make_styles(DocxStyleType::Table, "TableGrid", "Table Grid");
         let catalog = map_styles(&styles);
-        assert!(catalog
-            .table_styles
-            .contains_key(&StyleId::new("TableGrid")));
-        assert!(!catalog
-            .paragraph_styles
-            .contains_key(&StyleId::new("TableGrid")));
+        assert!(
+            catalog
+                .table_styles
+                .contains_key(&StyleId::new("TableGrid"))
+        );
+        assert!(
+            !catalog
+                .paragraph_styles
+                .contains_key(&StyleId::new("TableGrid"))
+        );
     }
 
     #[test]
     fn doc_defaults_create_synthetic_root() {
         use crate::docx::model::paragraph::DocxRPr;
         let styles = DocxStyles {
-            default_rpr: Some(DocxRPr { bold: Some(true), ..Default::default() }),
+            default_rpr: Some(DocxRPr {
+                bold: Some(true),
+                ..Default::default()
+            }),
             default_ppr: None,
             styles: vec![],
         };

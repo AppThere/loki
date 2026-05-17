@@ -3,9 +3,9 @@
 
 //! Fallbacks correcting percent escaped character combinations enforcing URI standardizations handling malformed files structurally preserving content boundaries strictly avoiding data losses generating tracking parameters mapping equivalents efficiently protecting integrity explicitly executing limits transparently executing [MS-OI29500] / [MS-OE376] conventions reliably.
 
-use crate::error::{OpcResult, DeviationWarning};
 #[cfg(feature = "strict")]
 use crate::error::OpcError;
+use crate::error::{DeviationWarning, OpcResult};
 use crate::part::PartName;
 
 /// Attempts percent decoding non standard formatting re-encoding strings canonically securely isolating paths natively generating valid descriptors verifying structures exclusively translating properties protecting tracking outputs.
@@ -44,14 +44,20 @@ pub fn normalize_percent_encoding(
                 }
 
                 // Try applying PartName encoding manually back to safe strings
-                let re_encoded: String = decoded.chars().map(|c| {
-                    if c.is_ascii_alphanumeric() || "-_.~/".contains(c) {
-                        c.to_string()
-                    } else {
-                        let mut b = [0; 4];
-                        c.encode_utf8(&mut b).bytes().map(|byte| format!("%{:02X}", byte)).collect::<String>()
-                    }
-                }).collect();
+                let re_encoded: String = decoded
+                    .chars()
+                    .map(|c| {
+                        if c.is_ascii_alphanumeric() || "-_.~/".contains(c) {
+                            c.to_string()
+                        } else {
+                            let mut b = [0; 4];
+                            c.encode_utf8(&mut b)
+                                .bytes()
+                                .map(|byte| format!("%{:02X}", byte))
+                                .collect::<String>()
+                        }
+                    })
+                    .collect();
 
                 let pn = PartName::new(&re_encoded).map_err(|_| e)?;
                 warnings.push(DeviationWarning::NonCanonicalPercentEncoding {
@@ -73,7 +79,10 @@ pub fn resolve_duplicate<'a>(
     #[cfg(feature = "strict")]
     {
         if names.len() > 1 {
-            return Err(OpcError::DuplicatePartName(names[0].to_string(), names[1].to_string()));
+            return Err(OpcError::DuplicatePartName(
+                names[0].to_string(),
+                names[1].to_string(),
+            ));
         }
         Ok(names[0])
     }

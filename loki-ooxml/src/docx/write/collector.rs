@@ -121,10 +121,7 @@ impl ExportCollector {
     pub fn add_footnote(&mut self, blocks: Vec<Block>) -> u32 {
         let id = self.next_footnote_id;
         self.next_footnote_id += 1;
-        self.footnotes.push(FootnoteEntry {
-            id,
-            blocks,
-        });
+        self.footnotes.push(FootnoteEntry { id, blocks });
         id
     }
 
@@ -132,10 +129,7 @@ impl ExportCollector {
     pub fn add_endnote(&mut self, blocks: Vec<Block>) -> u32 {
         let id = self.next_endnote_id;
         self.next_endnote_id += 1;
-        self.endnotes.push(FootnoteEntry {
-            id,
-            blocks,
-        });
+        self.endnotes.push(FootnoteEntry { id, blocks });
         id
     }
 

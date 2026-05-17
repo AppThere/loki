@@ -24,14 +24,16 @@ use loki_doc_model::layout::page::PageLayout;
 use loki_doc_model::style::list_style::ListId;
 use loki_doc_model::{NodeAttr, Section, StyleCatalog};
 
+use crate::LayoutOptions;
 use crate::color::LayoutColor;
 use crate::font::FontResources;
 use crate::geometry::{LayoutInsets, LayoutPoint, LayoutRect, LayoutSize};
 use crate::items::{PositionedBorderRect, PositionedItem, PositionedRect};
 use crate::mode::LayoutMode;
-use crate::resolve::{convert_border, pts_to_f32, resolve_color, resolve_para_props, CollectedNote};
+use crate::resolve::{
+    CollectedNote, convert_border, pts_to_f32, resolve_color, resolve_para_props,
+};
 use crate::result::{LayoutPage, PageEditingData, PageParagraphData};
-use crate::LayoutOptions;
 
 use para_impl::{flow_keep_with_next_chain, flow_paragraph};
 
@@ -153,13 +155,11 @@ impl<'a> FlowState<'a> {
     /// - Initialises the counter from `start_value` on first use.
     /// - Resets all deeper-level counters to 0 so they re-initialise from
     ///   their own `start_value` when next encountered.
-    pub(super) fn advance_counter(
-        &mut self,
-        list_id: &ListId,
-        level: u8,
-        start_value: u32,
-    ) -> u32 {
-        let counters = self.list_counters.entry(list_id.clone()).or_insert([0u32; 9]);
+    pub(super) fn advance_counter(&mut self, list_id: &ListId, level: u8, start_value: u32) -> u32 {
+        let counters = self
+            .list_counters
+            .entry(list_id.clone())
+            .or_insert([0u32; 9]);
         let lvl = level as usize;
         if counters[lvl] == 0 {
             counters[lvl] = start_value;
@@ -239,8 +239,7 @@ pub fn flow_section(
             if let Block::StyledPara(para) = block
                 && resolve_para_props(para, catalog).keep_with_next
             {
-                let consumed =
-                    flow_keep_with_next_chain(&mut state, &section.blocks, i);
+                let consumed = flow_keep_with_next_chain(&mut state, &section.blocks, i);
                 i += consumed;
                 continue;
             }
@@ -257,7 +256,10 @@ pub fn flow_section(
 
     if mode.is_paginated() {
         finish_page(&mut state);
-        FlowOutput::Pages { pages: state.pages, warnings: state.warnings }
+        FlowOutput::Pages {
+            pages: state.pages,
+            warnings: state.warnings,
+        }
     } else {
         if matches!(mode, LayoutMode::Pageless) {
             let dx = margins.left;
@@ -265,7 +267,11 @@ pub fn flow_section(
                 item.translate(dx, 0.0);
             }
         }
-        FlowOutput::Canvas { items: state.current_items, height: state.cursor_y, warnings: state.warnings }
+        FlowOutput::Canvas {
+            items: state.current_items,
+            height: state.cursor_y,
+            warnings: state.warnings,
+        }
     }
 }
 
@@ -390,12 +396,18 @@ fn layout_blocks_reflow(
     let mode = LayoutMode::Reflow { available_width };
     // Headers/footers are read-only; always use default (no editing overhead).
     let options = LayoutOptions::default();
-    match flow_section(resources, &synthetic, catalog, &mode, display_scale, &options) {
+    match flow_section(
+        resources,
+        &synthetic,
+        catalog,
+        &mode,
+        display_scale,
+        &options,
+    ) {
         FlowOutput::Canvas { items, height, .. } => (items, height),
         FlowOutput::Pages { .. } => unreachable!("Reflow mode always returns Canvas"),
     }
 }
-
 
 /// Populate header/footer items for each page in `pages`.
 ///
@@ -421,23 +433,17 @@ pub(crate) fn assign_headers_footers(
         layout_blocks_reflow(resources, &hf.blocks, catalog, content_width, display_scale)
     };
 
-    let hdr_default: Option<(Vec<PositionedItem>, f32)> =
-        layout.header.as_ref().map(&mut lay);
-    let hdr_first: Option<(Vec<PositionedItem>, f32)> =
-        layout.header_first.as_ref().map(&mut lay);
-    let hdr_even: Option<(Vec<PositionedItem>, f32)> =
-        layout.header_even.as_ref().map(&mut lay);
-    let ftr_default: Option<(Vec<PositionedItem>, f32)> =
-        layout.footer.as_ref().map(&mut lay);
-    let ftr_first: Option<(Vec<PositionedItem>, f32)> =
-        layout.footer_first.as_ref().map(&mut lay);
-    let ftr_even: Option<(Vec<PositionedItem>, f32)> =
-        layout.footer_even.as_ref().map(&mut lay);
+    let hdr_default: Option<(Vec<PositionedItem>, f32)> = layout.header.as_ref().map(&mut lay);
+    let hdr_first: Option<(Vec<PositionedItem>, f32)> = layout.header_first.as_ref().map(&mut lay);
+    let hdr_even: Option<(Vec<PositionedItem>, f32)> = layout.header_even.as_ref().map(&mut lay);
+    let ftr_default: Option<(Vec<PositionedItem>, f32)> = layout.footer.as_ref().map(&mut lay);
+    let ftr_first: Option<(Vec<PositionedItem>, f32)> = layout.footer_first.as_ref().map(&mut lay);
+    let ftr_even: Option<(Vec<PositionedItem>, f32)> = layout.footer_even.as_ref().map(&mut lay);
 
     use crate::resolve::pts_to_f32;
     let hdr_margin_y = pts_to_f32(layout.margins.header);
-    let ftr_margin   = pts_to_f32(layout.margins.footer);
-    let left_margin  = pts_to_f32(layout.margins.left);
+    let ftr_margin = pts_to_f32(layout.margins.footer);
+    let left_margin = pts_to_f32(layout.margins.left);
 
     for page in pages.iter_mut() {
         let page_h = page.page_size.height;
@@ -485,10 +491,12 @@ pub(crate) fn assign_headers_footers(
 fn flow_hrule(state: &mut FlowState) {
     const RULE_HEIGHT: f32 = 1.0;
     const RULE_SPACING: f32 = 6.0;
-    state.current_items.push(PositionedItem::HorizontalRule(PositionedRect {
-        rect: LayoutRect::new(0.0, state.cursor_y, state.content_width, RULE_HEIGHT),
-        color: LayoutColor::BLACK,
-    }));
+    state
+        .current_items
+        .push(PositionedItem::HorizontalRule(PositionedRect {
+            rect: LayoutRect::new(0.0, state.cursor_y, state.content_width, RULE_HEIGHT),
+            color: LayoutColor::BLACK,
+        }));
     state.cursor_y += RULE_HEIGHT + RULE_SPACING;
 }
 
@@ -510,10 +518,12 @@ fn flow_footnotes(state: &mut FlowState) {
     const SEP_GAP: f32 = 4.0;
     let sep_w = state.content_width / 3.0;
     state.cursor_y += SEP_GAP;
-    state.current_items.push(PositionedItem::HorizontalRule(PositionedRect {
-        rect: LayoutRect::new(0.0, state.cursor_y, sep_w, SEP_HEIGHT),
-        color: LayoutColor::BLACK,
-    }));
+    state
+        .current_items
+        .push(PositionedItem::HorizontalRule(PositionedRect {
+            rect: LayoutRect::new(0.0, state.cursor_y, sep_w, SEP_HEIGHT),
+            color: LayoutColor::BLACK,
+        }));
     state.cursor_y += SEP_HEIGHT + SEP_GAP;
 
     for note in notes {
@@ -562,13 +572,19 @@ pub(super) fn synthesize_plain_para(inlines: &[Inline]) -> StyledParagraph {
     }
 }
 
-pub(super) fn synthesize_heading_para(level: u8, attr: &NodeAttr, inlines: &[Inline]) -> StyledParagraph {
+pub(super) fn synthesize_heading_para(
+    level: u8,
+    attr: &NodeAttr,
+    inlines: &[Inline],
+) -> StyledParagraph {
     use loki_doc_model::style::catalog::StyleId;
-    use loki_doc_model::style::props::para_props::{ParagraphAlignment, ParaProps};
+    use loki_doc_model::style::props::para_props::{ParaProps, ParagraphAlignment};
     // Prefer the style name carried in NodeAttr (set by the ODF mapper from
     // text:style-name so the catalog can resolve ODF heading properties like
     // font-size and bold). Fall back to the canonical OOXML/internal names.
-    let style_id: StyleId = attr.kv.iter()
+    let style_id: StyleId = attr
+        .kv
+        .iter()
         .find(|(k, _)| k == "style")
         .map(|(_, v)| StyleId::new(v.as_str()))
         .unwrap_or_else(|| {
@@ -582,16 +598,21 @@ pub(super) fn synthesize_heading_para(level: u8, attr: &NodeAttr, inlines: &[Inl
             };
             StyleId::new(hardcoded)
         });
-    let direct_alignment = attr.kv.iter().find(|(k, _)| k == "jc").and_then(|(_, v)| {
-        match v.as_str() {
-            "center" => Some(ParagraphAlignment::Center),
-            "right" => Some(ParagraphAlignment::Right),
-            "justify" => Some(ParagraphAlignment::Justify),
-            _ => None,
-        }
-    });
+    let direct_alignment =
+        attr.kv
+            .iter()
+            .find(|(k, _)| k == "jc")
+            .and_then(|(_, v)| match v.as_str() {
+                "center" => Some(ParagraphAlignment::Center),
+                "right" => Some(ParagraphAlignment::Right),
+                "justify" => Some(ParagraphAlignment::Justify),
+                _ => None,
+            });
     let direct_para_props = direct_alignment.map(|align| {
-        Box::new(ParaProps { alignment: Some(align), ..Default::default() })
+        Box::new(ParaProps {
+            alignment: Some(align),
+            ..Default::default()
+        })
     });
     StyledParagraph {
         style_id: Some(style_id),
@@ -692,10 +713,20 @@ fn flow_table(
             // flushed and reset; use 0 to prepend before the cell's new-page
             // content rather than using the now-stale pre-break index.
             let _ = v_shift; // reserved for future two-pass vertical alignment
-            let insert_at = if state.page_number != cell_page_start { 0 } else { cell_item_start };
+            let insert_at = if state.page_number != cell_page_start {
+                0
+            } else {
+                cell_item_start
+            };
             let cell_rect = LayoutRect {
-                origin: LayoutPoint { x: cell_x, y: row_y_start },
-                size: LayoutSize { width: col_w, height: cell_h },
+                origin: LayoutPoint {
+                    x: cell_x,
+                    y: row_y_start,
+                },
+                size: LayoutSize {
+                    width: col_w,
+                    height: cell_h,
+                },
             };
             let has_borders = cell.props.border_top.is_some()
                 || cell.props.border_bottom.is_some()

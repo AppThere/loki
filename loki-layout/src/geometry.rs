@@ -89,10 +89,7 @@ impl LayoutRect {
 
     /// Returns `true` if `p` lies within (or on the boundary of) this rect.
     pub fn contains_point(&self, p: LayoutPoint) -> bool {
-        p.x >= self.origin.x
-            && p.x <= self.max_x()
-            && p.y >= self.origin.y
-            && p.y <= self.max_y()
+        p.x >= self.origin.x && p.x <= self.max_x() && p.y >= self.origin.y && p.y <= self.max_y()
     }
 
     /// Returns `true` if this rectangle overlaps with `other`.
@@ -122,7 +119,12 @@ pub struct LayoutInsets {
 impl LayoutInsets {
     /// Creates insets where all four sides share the same value.
     pub fn uniform(v: f32) -> Self {
-        Self { top: v, right: v, bottom: v, left: v }
+        Self {
+            top: v,
+            right: v,
+            bottom: v,
+            left: v,
+        }
     }
 
     /// Sum of left and right insets.
@@ -170,7 +172,12 @@ mod tests {
 
     #[test]
     fn insets_horizontal_vertical() {
-        let ins = LayoutInsets { top: 1.0, right: 2.0, bottom: 3.0, left: 4.0 };
+        let ins = LayoutInsets {
+            top: 1.0,
+            right: 2.0,
+            bottom: 3.0,
+            left: 4.0,
+        };
         assert_eq!(ins.horizontal(), 6.0);
         assert_eq!(ins.vertical(), 4.0);
     }

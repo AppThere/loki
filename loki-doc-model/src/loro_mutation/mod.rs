@@ -28,7 +28,7 @@ mod block;
 mod text;
 
 pub use self::block::{merge_block, split_block};
-pub use self::text::{delete_text, get_block_text, insert_text};
+pub use self::text::{delete_text, get_block_text, get_mark_at, insert_text, mark_text};
 
 use loro::{LoroDoc, LoroMap, LoroMovableList, LoroText};
 
@@ -159,10 +159,7 @@ pub(crate) fn get_block_map_and_list(
 ///
 /// Container-typed values (nested LoroMaps, etc.) are silently skipped since
 /// `KEY_PARA_PROPS` and `KEY_DIRECT_CHAR_PROPS` only contain primitive entries.
-pub(crate) fn copy_map_primitive_values(
-    src: &LoroMap,
-    dst: &LoroMap,
-) -> Result<(), MutationError> {
+pub(crate) fn copy_map_primitive_values(src: &LoroMap, dst: &LoroMap) -> Result<(), MutationError> {
     let mut err: Option<MutationError> = None;
     src.for_each(|k, v| {
         if err.is_some() {

@@ -6,8 +6,8 @@
 //! All visual constants live in the sub-modules below and are re-exported
 //! from this module for ergonomic wildcard imports:
 //!
-//! ```rust
-//! use loki_theme::tokens::*;
+//! ```rust,no_run
+//! use appthere_ui::tokens::*;
 //! ```
 //!
 //! Component files **must not** embed magic numbers; reference these constants

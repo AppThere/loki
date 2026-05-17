@@ -3,14 +3,16 @@
 
 //! Inline content serialization and deserialization for the Loro bridge.
 
-use loro::{LoroText, LoroValue};
-use loki_primitives::units::Points;
-use loki_primitives::color::DocumentColor;
-use crate::content::inline::{Inline, StyledRun};
-use crate::content::attr::NodeAttr;
-use crate::style::props::char_props::{CharProps, HighlightColor, UnderlineStyle, StrikethroughStyle, VerticalAlign};
-use crate::loro_schema::*;
 use super::BridgeError;
+use crate::content::attr::NodeAttr;
+use crate::content::inline::{Inline, StyledRun};
+use crate::loro_schema::*;
+use crate::style::props::char_props::{
+    CharProps, HighlightColor, StrikethroughStyle, UnderlineStyle, VerticalAlign,
+};
+use loki_primitives::color::DocumentColor;
+use loki_primitives::units::Points;
+use loro::{LoroText, LoroValue};
 
 // ── Serialization ─────────────────────────────────────────────────────────────
 
@@ -31,7 +33,9 @@ pub(super) fn map_inlines(inlines: &[Inline], text: &LoroText) -> Result<(), Bri
                 let text_str = extract_plain_text(&run.content);
                 text.insert(start, &text_str)?;
                 let end = text.len_unicode();
-                if start < end && let Some(props) = &run.direct_props {
+                if start < end
+                    && let Some(props) = &run.direct_props
+                {
                     apply_char_props_marks(props, start, end, text)?;
                 }
             }
@@ -93,41 +97,81 @@ pub(super) fn apply_char_props_marks(
     end: usize,
     text: &LoroText,
 ) -> Result<(), BridgeError> {
-    if let Some(v) = props.bold { text.mark(start..end, MARK_BOLD, v)?; }
-    if let Some(v) = props.italic { text.mark(start..end, MARK_ITALIC, v)?; }
-    if let Some(v) = props.outline { text.mark(start..end, MARK_OUTLINE, v)?; }
-    if let Some(v) = props.shadow { text.mark(start..end, MARK_SHADOW, v)?; }
-    if let Some(v) = props.small_caps { text.mark(start..end, MARK_SMALL_CAPS, v)?; }
-    if let Some(v) = props.all_caps { text.mark(start..end, MARK_ALL_CAPS, v)?; }
-    if let Some(v) = props.kerning { text.mark(start..end, MARK_KERNING, v)?; }
-    if let Some(v) = &props.font_name { text.mark(start..end, MARK_FONT_FAMILY, v.clone())?; }
-    if let Some(v) = &props.font_size { text.mark(start..end, MARK_FONT_SIZE_PT, v.value())?; }
-    if let Some(v) = props.scale { text.mark(start..end, MARK_SCALE, f64::from(v))?; }
-    if let Some(v) = &props.letter_spacing { text.mark(start..end, MARK_LETTER_SPACING, v.value())?; }
-    if let Some(v) = &props.word_spacing { text.mark(start..end, MARK_WORD_SPACING, v.value())?; }
-    if let Some(v) = &props.underline { text.mark(start..end, MARK_UNDERLINE, format!("{:?}", v))?; }
-    if let Some(v) = &props.strikethrough { text.mark(start..end, MARK_STRIKETHROUGH, format!("{:?}", v))?; }
-    if let Some(v) = &props.vertical_align { text.mark(start..end, MARK_VERTICAL_ALIGN, format!("{:?}", v))?; }
+    if let Some(v) = props.bold {
+        text.mark(start..end, MARK_BOLD, v)?;
+    }
+    if let Some(v) = props.italic {
+        text.mark(start..end, MARK_ITALIC, v)?;
+    }
+    if let Some(v) = props.outline {
+        text.mark(start..end, MARK_OUTLINE, v)?;
+    }
+    if let Some(v) = props.shadow {
+        text.mark(start..end, MARK_SHADOW, v)?;
+    }
+    if let Some(v) = props.small_caps {
+        text.mark(start..end, MARK_SMALL_CAPS, v)?;
+    }
+    if let Some(v) = props.all_caps {
+        text.mark(start..end, MARK_ALL_CAPS, v)?;
+    }
+    if let Some(v) = props.kerning {
+        text.mark(start..end, MARK_KERNING, v)?;
+    }
+    if let Some(v) = &props.font_name {
+        text.mark(start..end, MARK_FONT_FAMILY, v.clone())?;
+    }
+    if let Some(v) = &props.font_size {
+        text.mark(start..end, MARK_FONT_SIZE_PT, v.value())?;
+    }
+    if let Some(v) = props.scale {
+        text.mark(start..end, MARK_SCALE, f64::from(v))?;
+    }
+    if let Some(v) = &props.letter_spacing {
+        text.mark(start..end, MARK_LETTER_SPACING, v.value())?;
+    }
+    if let Some(v) = &props.word_spacing {
+        text.mark(start..end, MARK_WORD_SPACING, v.value())?;
+    }
+    if let Some(v) = &props.underline {
+        text.mark(start..end, MARK_UNDERLINE, format!("{:?}", v))?;
+    }
+    if let Some(v) = &props.strikethrough {
+        text.mark(start..end, MARK_STRIKETHROUGH, format!("{:?}", v))?;
+    }
+    if let Some(v) = &props.vertical_align {
+        text.mark(start..end, MARK_VERTICAL_ALIGN, format!("{:?}", v))?;
+    }
     // Non-Rgb variants (Theme, Cmyk, Transparent) have no hex repr and are deferred — TODO(loro-bridge)
-    if let Some(v) = &props.color && let Some(hex) = v.to_hex() {
+    if let Some(v) = &props.color
+        && let Some(hex) = v.to_hex()
+    {
         text.mark(start..end, MARK_COLOR, hex)?;
     }
     if let Some(v) = &props.highlight_color {
         text.mark(start..end, MARK_HIGHLIGHT_COLOR, format!("{v:?}"))?;
     }
-    if let Some(v) = &props.language { text.mark(start..end, MARK_LANGUAGE, format!("{:?}", v))?; }
-    if let Some(v) = &props.hyperlink { text.mark(start..end, MARK_LINK_URL, v.clone())?; }
+    if let Some(v) = &props.language {
+        text.mark(start..end, MARK_LANGUAGE, format!("{:?}", v))?;
+    }
+    if let Some(v) = &props.hyperlink {
+        text.mark(start..end, MARK_LINK_URL, v.clone())?;
+    }
     Ok(())
 }
 
 // ── Deserialization ───────────────────────────────────────────────────────────
 
-pub(super) fn reconstruct_inlines(
-    map: &loro::LoroMap,
-) -> Result<Vec<Inline>, BridgeError> {
+pub(super) fn reconstruct_inlines(map: &loro::LoroMap) -> Result<Vec<Inline>, BridgeError> {
     let mut inlines = Vec::new();
-    let Some(content_val) = map.get(KEY_CONTENT) else { return Ok(inlines); };
-    let Some(text_container) = content_val.into_container().ok().and_then(|c| c.into_text().ok()) else {
+    let Some(content_val) = map.get(KEY_CONTENT) else {
+        return Ok(inlines);
+    };
+    let Some(text_container) = content_val
+        .into_container()
+        .ok()
+        .and_then(|c| c.into_text().ok())
+    else {
         return Ok(inlines);
     };
 
@@ -214,7 +258,11 @@ fn read_char_props_from_marks(
     read_str!(strikethrough, MARK_STRIKETHROUGH, decode_strikethrough);
     read_str!(vertical_align, MARK_VERTICAL_ALIGN, decode_vertical_align);
     read_str!(color, MARK_COLOR, |s: &str| DocumentColor::from_hex(s).ok());
-    read_str!(highlight_color, MARK_HIGHLIGHT_COLOR, decode_highlight_color);
+    read_str!(
+        highlight_color,
+        MARK_HIGHLIGHT_COLOR,
+        decode_highlight_color
+    );
     // language — complex type, deferred; TODO(loro-bridge)
 
     if any { Some(props) } else { None }

@@ -5,8 +5,8 @@
 //!
 //! ECMA-376 §17.11 (footnotes and endnotes).
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
 use crate::docx::model::footnotes::{DocxNote, DocxNoteType, DocxNotes};
 use crate::docx::reader::document::parse_paragraph;
@@ -28,26 +28,22 @@ pub fn parse_notes(xml: &[u8], part: &str) -> OoxmlResult<DocxNotes> {
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => {
-                match local_name(e.local_name().as_ref()) {
-                    b"footnote" | b"endnote" => {
-                        let id = attr_val(e, b"id")
-                            .and_then(|v| v.parse::<i32>().ok())
-                            .unwrap_or(0);
-                        let note_type = attr_val(e, b"type")
-                            .map_or(DocxNoteType::Normal, |t| match t.as_str() {
-                                "separator" => DocxNoteType::Separator,
-                                "continuationSeparator" => {
-                                    DocxNoteType::ContinuationSeparator
-                                }
-                                _ => DocxNoteType::Normal,
-                            });
-                        let note = parse_note(&mut reader, id, note_type, part)?;
-                        result.notes.push(note);
-                    }
-                    _ => {}
+            Ok(Event::Start(ref e)) => match local_name(e.local_name().as_ref()) {
+                b"footnote" | b"endnote" => {
+                    let id = attr_val(e, b"id")
+                        .and_then(|v| v.parse::<i32>().ok())
+                        .unwrap_or(0);
+                    let note_type =
+                        attr_val(e, b"type").map_or(DocxNoteType::Normal, |t| match t.as_str() {
+                            "separator" => DocxNoteType::Separator,
+                            "continuationSeparator" => DocxNoteType::ContinuationSeparator,
+                            _ => DocxNoteType::Normal,
+                        });
+                    let note = parse_note(&mut reader, id, note_type, part)?;
+                    result.notes.push(note);
                 }
-            }
+                _ => {}
+            },
             Ok(Event::Eof) => break,
             Err(e) => {
                 return Err(OoxmlError::Xml {

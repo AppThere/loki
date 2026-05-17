@@ -1,14 +1,14 @@
-use loki_doc_model::document::Document;
+use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::{Inline, StyledRun};
-use loki_doc_model::content::attr::NodeAttr;
-use loki_doc_model::style::props::char_props::{CharProps, HighlightColor, UnderlineStyle};
-use loki_doc_model::layout::page::{PageMargins, PageSize};
+use loki_doc_model::document::Document;
 use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
+use loki_doc_model::layout::page::{PageMargins, PageSize};
 use loki_doc_model::layout::section::Section;
 use loki_doc_model::loro_bridge::{document_to_loro, loro_to_document};
-use loki_primitives::units::Points;
+use loki_doc_model::style::props::char_props::{CharProps, HighlightColor, UnderlineStyle};
 use loki_primitives::color::DocumentColor;
+use loki_primitives::units::Points;
 
 fn doc_to_json_string(doc: &Document) -> String {
     let loro = document_to_loro(doc).expect("should convert");
@@ -23,7 +23,7 @@ fn test_hello_world_para() {
     if let Some(sec) = doc.first_section_mut() {
         sec.blocks.push(para);
     }
-    
+
     let json = doc_to_json_string(&doc);
     assert!(json.contains("Hello world"));
     assert!(json.contains("\"type\":\"para\""));
@@ -32,15 +32,15 @@ fn test_hello_world_para() {
 #[test]
 fn test_bold_run() {
     let mut doc = Document::new();
-    
+
     let run1 = Inline::Str("Normal ".into());
     let run2 = Inline::Strong(vec![Inline::Str("bold".into())]);
     let para = Block::Para(vec![run1, run2]);
-    
+
     if let Some(sec) = doc.first_section_mut() {
         sec.blocks.push(para);
     }
-    
+
     let json = doc_to_json_string(&doc);
     assert!(json.contains("Normal bold"));
     // Since bold mark is an annotation it might appear in op logs or delta, we just ensure it didn't panic.
@@ -50,11 +50,11 @@ fn test_bold_run() {
 fn test_heading_level_2() {
     let mut doc = Document::new();
     let heading = Block::Heading(2, NodeAttr::default(), vec![Inline::Str("My Title".into())]);
-    
+
     if let Some(sec) = doc.first_section_mut() {
         sec.blocks.push(heading);
     }
-    
+
     let json = doc_to_json_string(&doc);
     assert!(json.contains("\"type\":\"heading\""));
     assert!(json.contains("\"level\":2"));
@@ -66,11 +66,11 @@ fn test_three_paragraphs() {
     let p1 = Block::Para(vec![Inline::Str("P1".into())]);
     let p2 = Block::Para(vec![Inline::Str("P2".into())]);
     let p3 = Block::Para(vec![Inline::Str("P3".into())]);
-    
+
     if let Some(sec) = doc.first_section_mut() {
         sec.blocks.extend(vec![p1, p2, p3]);
     }
-    
+
     let json = doc_to_json_string(&doc);
     assert!(json.contains("P1"));
     assert!(json.contains("P2"));
@@ -80,25 +80,25 @@ fn test_three_paragraphs() {
 #[test]
 fn test_coloured_run() {
     let mut doc = Document::new();
-    
+
     let props = CharProps {
         color: Some(DocumentColor::from_hex("#FF0000").unwrap()),
         ..Default::default()
     };
-    
+
     let run = StyledRun {
         style_id: None,
         direct_props: Some(Box::new(props)),
         content: vec![Inline::Str("color text".into())],
         attr: NodeAttr::default(),
     };
-    
+
     let para = Block::Para(vec![Inline::StyledRun(run)]);
-    
+
     if let Some(sec) = doc.first_section_mut() {
         sec.blocks.push(para);
     }
-    
+
     let json = doc_to_json_string(&doc);
     assert!(json.contains("color text"));
 }
@@ -110,13 +110,13 @@ fn test_roundtrip_hello_world_para() {
     if let Some(sec) = doc.first_section_mut() {
         sec.blocks.push(para);
     }
-    
+
     let loro = document_to_loro(&doc).expect("convert to loro");
     let doc2 = loro_to_document(&loro).expect("convert from loro");
-    
+
     let restored_blocks = &doc2.sections.first().unwrap().blocks;
     assert_eq!(restored_blocks.len(), 1);
-    
+
     if let Block::Para(inlines) = &restored_blocks[0] {
         if let Inline::Str(text) = &inlines[0] {
             assert_eq!(text, "Roundtrip text");
@@ -131,7 +131,7 @@ fn test_roundtrip_hello_world_para() {
 #[test]
 fn test_roundtrip_bold_mark() {
     let mut doc = Document::new();
-    
+
     let mut props = CharProps::default();
     props.bold = Some(true);
     let run = StyledRun {
@@ -140,15 +140,15 @@ fn test_roundtrip_bold_mark() {
         content: vec![Inline::Str("bold run".into())],
         attr: NodeAttr::default(),
     };
-    
+
     let para = Block::Para(vec![Inline::StyledRun(run)]);
     if let Some(sec) = doc.first_section_mut() {
         sec.blocks.push(para);
     }
-    
+
     let loro = document_to_loro(&doc).expect("convert to loro");
     let doc2 = loro_to_document(&loro).expect("convert from loro");
-    
+
     let restored_blocks = &doc2.sections.first().unwrap().blocks;
     if let Block::Para(inlines) = &restored_blocks[0] {
         if let Inline::StyledRun(run) = &inlines[0] {
@@ -169,10 +169,10 @@ fn test_roundtrip_heading_level() {
     if let Some(sec) = doc.first_section_mut() {
         sec.blocks.push(heading);
     }
-    
+
     let loro = document_to_loro(&doc).expect("convert to loro");
     let doc2 = loro_to_document(&loro).expect("convert from loro");
-    
+
     let restored_blocks = &doc2.sections.first().unwrap().blocks;
     if let Block::Heading(level, _, inlines) = &restored_blocks[0] {
         assert_eq!(*level, 3);
@@ -190,7 +190,7 @@ fn test_roundtrip_empty_doc() {
 
     let loro = document_to_loro(&doc).expect("convert to loro");
     let doc2 = loro_to_document(&loro).expect("convert from loro");
-    
+
     assert_eq!(doc2.sections.len(), 1);
     assert!(doc2.sections.first().unwrap().blocks.is_empty());
 }
@@ -201,7 +201,10 @@ fn test_roundtrip_empty_doc() {
 fn roundtrip_page_layout_non_default_margins() {
     let mut doc = Document::new();
     if let Some(sec) = doc.first_section_mut() {
-        sec.layout.page_size = PageSize { width: Points::new(595.28), height: Points::new(841.89) };
+        sec.layout.page_size = PageSize {
+            width: Points::new(595.28),
+            height: Points::new(841.89),
+        };
         sec.layout.margins = PageMargins {
             top: Points::new(56.7),
             bottom: Points::new(56.7),
@@ -251,13 +254,18 @@ fn roundtrip_section_with_header_content() {
             kind: HeaderFooterKind::Default,
             blocks: vec![header_para],
         });
-        sec.blocks.push(Block::Para(vec![Inline::Str("Body".into())]));
+        sec.blocks
+            .push(Block::Para(vec![Inline::Str("Body".into())]));
     }
 
     let loro = document_to_loro(&doc).expect("serialize");
     let doc2 = loro_to_document(&loro).expect("deserialize");
 
-    let hf = doc2.sections[0].layout.header.as_ref().expect("header present");
+    let hf = doc2.sections[0]
+        .layout
+        .header
+        .as_ref()
+        .expect("header present");
     assert_eq!(hf.blocks.len(), 1);
     if let Block::Para(inlines) = &hf.blocks[0] {
         if let Inline::Str(s) = &inlines[0] {
@@ -418,11 +426,14 @@ fn roundtrip_two_sections_different_page_sizes() {
     let mut doc = Document::new();
     // First section: Letter
     doc.sections[0].layout.page_size = PageSize::letter();
-    doc.sections[0].blocks.push(Block::Para(vec![Inline::Str("Sec1".into())]));
+    doc.sections[0]
+        .blocks
+        .push(Block::Para(vec![Inline::Str("Sec1".into())]));
     // Second section: A4
     let mut sec2 = Section::new();
     sec2.layout.page_size = PageSize::a4();
-    sec2.blocks.push(Block::Para(vec![Inline::Str("Sec2".into())]));
+    sec2.blocks
+        .push(Block::Para(vec![Inline::Str("Sec2".into())]));
     doc.sections.push(sec2);
 
     let loro = document_to_loro(&doc).expect("serialize");
@@ -435,8 +446,12 @@ fn roundtrip_two_sections_different_page_sizes() {
     if let Block::Para(inlines) = &doc2.sections[1].blocks[0] {
         if let Inline::Str(s) = &inlines[0] {
             assert_eq!(s, "Sec2");
-        } else { panic!(); }
-    } else { panic!(); }
+        } else {
+            panic!();
+        }
+    } else {
+        panic!();
+    }
 }
 
 // ── Color round-trip ──────────────────────────────────────────────────────────
@@ -463,7 +478,13 @@ fn roundtrip_rgb_color_mark() {
 
     if let Block::Para(inlines) = &doc2.sections[0].blocks[0] {
         if let Inline::StyledRun(run) = &inlines[0] {
-            let color = run.direct_props.as_ref().unwrap().color.as_ref().expect("color present");
+            let color = run
+                .direct_props
+                .as_ref()
+                .unwrap()
+                .color
+                .as_ref()
+                .expect("color present");
             assert_eq!(color.to_hex().unwrap(), "#3355FF");
         } else {
             panic!("expected StyledRun");
@@ -498,7 +519,10 @@ fn roundtrip_transparent_color_graceful_drop() {
         match &inlines[0] {
             Inline::StyledRun(run) => {
                 let color = run.direct_props.as_ref().and_then(|p| p.color.as_ref());
-                assert!(color.is_none(), "Transparent should not round-trip as a color value");
+                assert!(
+                    color.is_none(),
+                    "Transparent should not round-trip as a color value"
+                );
             }
             Inline::Str(_) => {} // also acceptable — no mark means plain Str
             other => panic!("unexpected inline variant: {other:?}"),

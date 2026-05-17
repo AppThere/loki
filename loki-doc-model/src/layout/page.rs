@@ -9,9 +9,9 @@
 //! ODF: `style:page-layout` / `style:master-page`.
 //! OOXML: `w:sectPr` (section properties) at the end of a section.
 
-use loki_primitives::units::Points;
 use crate::content::attr::ExtensionBag;
 use crate::layout::header_footer::HeaderFooter;
+use loki_primitives::units::Points;
 
 /// Page orientation.
 ///
@@ -164,7 +164,6 @@ pub struct PageLayout {
     /// Format-specific extension data.
     pub extensions: ExtensionBag,
 }
-
 
 #[cfg(test)]
 mod tests {

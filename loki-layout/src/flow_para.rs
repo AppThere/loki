@@ -55,11 +55,11 @@ use loki_doc_model::style::list_style::ListLevelKind;
 
 use crate::geometry::LayoutRect;
 use crate::items::{PositionedImage, PositionedItem};
-use crate::para::{format_list_marker, layout_paragraph, ParagraphLayout, ResolvedParaProps};
+use crate::para::{ParagraphLayout, ResolvedParaProps, format_list_marker, layout_paragraph};
 use crate::resolve::{emu_to_pt, flatten_paragraph, resolve_para_props};
 use crate::result::PageParagraphData;
 
-use super::{finish_page, FlowState, LayoutWarning};
+use super::{FlowState, LayoutWarning, finish_page};
 
 /// Maximum keep-with-next chain length before truncation (ADR 004 §4).
 const CHAIN_LIMIT: usize = 5;
@@ -67,11 +67,7 @@ const CHAIN_LIMIT: usize = 5;
 // ── Public(super) API ─────────────────────────────────────────────────────────
 
 /// Resolve, lay out, and place a single paragraph block.
-pub(super) fn flow_paragraph(
-    state: &mut FlowState,
-    para: &StyledParagraph,
-    block_index: usize,
-) {
+pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, block_index: usize) {
     let resolved = resolve_para_props(para, state.catalog);
 
     // ── List marker synthesis ────────────────────────────────────────────────
@@ -93,14 +89,16 @@ pub(super) fn flow_paragraph(
                 }
                 state.prev_list_id = Some(lm.list_id.clone());
                 state.advance_counter(&lm.list_id, lm.level, start_value);
-                let counters = state.list_counters
+                let counters = state
+                    .list_counters
                     .get(&lm.list_id)
                     .copied()
                     .unwrap_or([1u32; 9]);
-                let marker_text =
-                    format_list_marker(&list_style.levels, lm.level, &counters);
+                let marker_text = format_list_marker(&list_style.levels, lm.level, &counters);
                 let mut cloned = para.clone();
-                cloned.inlines.insert(0, Inline::Str(format!("{}\t", marker_text)));
+                cloned
+                    .inlines
+                    .insert(0, Inline::Str(format!("{}\t", marker_text)));
                 Some(cloned)
             } else {
                 state.prev_list_id = None;
@@ -117,7 +115,8 @@ pub(super) fn flow_paragraph(
     let effective_para: &StyledParagraph = owned_para.as_ref().unwrap_or(para);
     // ────────────────────────────────────────────────────────────────────────
 
-    let (text, spans, images, notes) = flatten_paragraph(effective_para, state.catalog, &mut state.note_counter);
+    let (text, spans, images, notes) =
+        flatten_paragraph(effective_para, state.catalog, &mut state.note_counter);
     state.pending_footnotes.extend(notes);
 
     state.cursor_y += resolved.space_before;
@@ -297,16 +296,22 @@ pub(super) fn flow_keep_with_next_chain(
 
     if natural_len > CHAIN_LIMIT {
         chain_end = start + CHAIN_LIMIT - 1;
-        state.warnings.push(LayoutWarning::KeepWithNextChainTruncated {
-            start_block: start,
-            chain_length: natural_len,
-        });
-        tracing::warn!(start_block = start, "keep-with-next chain exceeds 5; truncating");
+        state
+            .warnings
+            .push(LayoutWarning::KeepWithNextChainTruncated {
+                start_block: start,
+                chain_length: natural_len,
+            });
+        tracing::warn!(
+            start_block = start,
+            "keep-with-next chain exceeds 5; truncating"
+        );
     }
 
     // Speculatively layout all chain blocks to measure total height.
     let chain = build_chain_layouts(state, blocks, start, chain_end);
-    let total_h: f32 = chain.iter()
+    let total_h: f32 = chain
+        .iter()
         .map(|(r, l)| r.space_before + l.height + r.space_after)
         .sum();
     let chain_len = chain_end - start + 1;
@@ -353,7 +358,8 @@ fn build_chain_layouts<'s>(
             if let Some(para) = effective_para {
                 let resolved = resolve_para_props(&para, state.catalog);
                 let mut temp_counter = state.note_counter;
-                let (text, spans, _images, _notes) = flatten_paragraph(&para, state.catalog, &mut temp_counter);
+                let (text, spans, _images, _notes) =
+                    flatten_paragraph(&para, state.catalog, &mut temp_counter);
                 let layout = layout_paragraph(
                     state.resources,
                     &text,
@@ -366,15 +372,18 @@ fn build_chain_layouts<'s>(
                 (resolved, layout)
             } else {
                 // Non-text block (HR, table, etc.): contribute zero height.
-                (ResolvedParaProps::default(), ParagraphLayout {
-                    height: 0.0,
-                    width: 0.0,
-                    items: vec![],
-                    first_baseline: 0.0,
-                    last_baseline: 0.0,
-                    line_boundaries: vec![],
-                    parley_layout: None,
-                })
+                (
+                    ResolvedParaProps::default(),
+                    ParagraphLayout {
+                        height: 0.0,
+                        width: 0.0,
+                        items: vec![],
+                        first_baseline: 0.0,
+                        last_baseline: 0.0,
+                        line_boundaries: vec![],
+                        parley_layout: None,
+                    },
+                )
             }
         })
         .collect()
@@ -420,7 +429,12 @@ fn place_chain_too_tall(
     }
     let break_at = last_fits + 1;
 
-    state.warnings.push(LayoutWarning::KeepWithNextChainTooTall { start_block: start, break_at });
+    state
+        .warnings
+        .push(LayoutWarning::KeepWithNextChainTooTall {
+            start_block: start,
+            break_at,
+        });
     tracing::warn!(
         start_block = start,
         end_block = chain_end,
@@ -490,17 +504,15 @@ fn split_and_place_loop(
                         origin: (0.0, ty),
                     });
                 }
-                let clip_rect = LayoutRect::new(
-                    0.0,
-                    state.cursor_y,
-                    state.content_width,
-                    frag_height,
-                );
+                let clip_rect =
+                    LayoutRect::new(0.0, state.cursor_y, state.content_width, frag_height);
                 let mut items = para_layout.items.clone();
                 for item in &mut items {
                     item.translate(dx, ty);
                 }
-                state.current_items.push(PositionedItem::ClippedGroup { clip_rect, items });
+                state
+                    .current_items
+                    .push(PositionedItem::ClippedGroup { clip_rect, items });
             }
             state.cursor_y += frag_height;
             return;
@@ -546,14 +558,30 @@ fn split_and_place_loop(
                     state.cursor_y += frag_height;
                     return;
                 }
-                emit_fragment(state, para_layout, arc_layout.clone(), block_index, frag_start, split_y, dx);
+                emit_fragment(
+                    state,
+                    para_layout,
+                    arc_layout.clone(),
+                    block_index,
+                    frag_start,
+                    split_y,
+                    dx,
+                );
                 finish_page(state);
                 frag_start = split_y;
             }
             Some(k) => {
                 // Emit Fragment A covering para-local [frag_start, split_y).
                 let split_y = para_layout.line_boundaries[k].1;
-                emit_fragment(state, para_layout, arc_layout.clone(), block_index, frag_start, split_y, dx);
+                emit_fragment(
+                    state,
+                    para_layout,
+                    arc_layout.clone(),
+                    block_index,
+                    frag_start,
+                    split_y,
+                    dx,
+                );
                 finish_page(state);
                 frag_start = split_y;
                 // space_before is NOT re-applied between split fragments; only
@@ -597,6 +625,8 @@ fn emit_fragment(
     for item in &mut items {
         item.translate(dx, ty);
     }
-    state.current_items.push(PositionedItem::ClippedGroup { clip_rect, items });
+    state
+        .current_items
+        .push(PositionedItem::ClippedGroup { clip_rect, items });
     state.cursor_y += clip_height;
 }

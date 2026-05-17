@@ -12,7 +12,7 @@ mod helpers;
 use std::io::Cursor;
 
 use loki_doc_model::content::block::Block;
-use loki_odf::odt::import::{OdtImporter, OdtImportOptions};
+use loki_odf::odt::import::{OdtImportOptions, OdtImporter};
 use loki_odf::version::OdfVersion;
 
 // ── Test: heading and paragraphs ───────────────────────────────────────────────
@@ -45,7 +45,11 @@ fn roundtrip_odt_heading_and_paragraphs() {
     );
 
     let doc = &result.document;
-    assert_eq!(doc.sections.len(), 1, "document should have exactly one section");
+    assert_eq!(
+        doc.sections.len(),
+        1,
+        "document should have exactly one section"
+    );
 
     let blocks = &doc.sections[0].blocks;
     assert!(
@@ -108,5 +112,8 @@ fn roundtrip_version_preserved_1_1() {
         Some("1.1"),
         "document.source.version must be \"1.1\""
     );
-    assert_eq!(source.format, "odf", "document.source.format must be \"odf\"");
+    assert_eq!(
+        source.format, "odf",
+        "document.source.format must be \"odf\""
+    );
 }

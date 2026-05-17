@@ -53,4 +53,4 @@ pub use docx::export::DocxExport;
 #[cfg(feature = "docx")]
 pub use docx::import::{DocxImport, DocxImportOptions, DocxImportResult};
 #[cfg(feature = "docx")]
-pub use docx::mapper::{map_document, MapperError};
+pub use docx::mapper::{MapperError, map_document};

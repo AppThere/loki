@@ -23,8 +23,8 @@ use loki_doc_model::style::props::char_props::CharProps;
 use crate::docx::write::collector::ExportCollector;
 use crate::docx::write::styles::emit_char_props;
 use crate::docx::write::xml::{
-    color_to_hex, pts_to_twips, write_decl, write_empty, write_end, write_start, wval, NS_A,
-    NS_PIC, NS_R, NS_W, NS_WP,
+    NS_A, NS_PIC, NS_R, NS_W, NS_WP, color_to_hex, pts_to_twips, write_decl, write_empty,
+    write_end, write_start, wval,
 };
 
 /// Serializes all sections to `word/document.xml` bytes.
@@ -93,28 +93,52 @@ fn write_sect_pr<W: std::io::Write>(
 
     if let Some(hf) = &layout.header {
         let r_id = collector.add_header_footer(hf.blocks.clone(), true);
-        let _ = write_empty(w, "w:headerReference", &[("w:type", "default"), ("r:id", &r_id)]);
+        let _ = write_empty(
+            w,
+            "w:headerReference",
+            &[("w:type", "default"), ("r:id", &r_id)],
+        );
     }
     if let Some(hf) = &layout.header_first {
         let r_id = collector.add_header_footer(hf.blocks.clone(), true);
-        let _ = write_empty(w, "w:headerReference", &[("w:type", "first"), ("r:id", &r_id)]);
+        let _ = write_empty(
+            w,
+            "w:headerReference",
+            &[("w:type", "first"), ("r:id", &r_id)],
+        );
     }
     if let Some(hf) = &layout.header_even {
         let r_id = collector.add_header_footer(hf.blocks.clone(), true);
-        let _ = write_empty(w, "w:headerReference", &[("w:type", "even"), ("r:id", &r_id)]);
+        let _ = write_empty(
+            w,
+            "w:headerReference",
+            &[("w:type", "even"), ("r:id", &r_id)],
+        );
     }
 
     if let Some(hf) = &layout.footer {
         let r_id = collector.add_header_footer(hf.blocks.clone(), false);
-        let _ = write_empty(w, "w:footerReference", &[("w:type", "default"), ("r:id", &r_id)]);
+        let _ = write_empty(
+            w,
+            "w:footerReference",
+            &[("w:type", "default"), ("r:id", &r_id)],
+        );
     }
     if let Some(hf) = &layout.footer_first {
         let r_id = collector.add_header_footer(hf.blocks.clone(), false);
-        let _ = write_empty(w, "w:footerReference", &[("w:type", "first"), ("r:id", &r_id)]);
+        let _ = write_empty(
+            w,
+            "w:footerReference",
+            &[("w:type", "first"), ("r:id", &r_id)],
+        );
     }
     if let Some(hf) = &layout.footer_even {
         let r_id = collector.add_header_footer(hf.blocks.clone(), false);
-        let _ = write_empty(w, "w:footerReference", &[("w:type", "even"), ("r:id", &r_id)]);
+        let _ = write_empty(
+            w,
+            "w:footerReference",
+            &[("w:type", "even"), ("r:id", &r_id)],
+        );
     }
 
     if layout.header_first.is_some()
@@ -129,7 +153,7 @@ fn write_sect_pr<W: std::io::Write>(
     let ph = pts_to_twips(layout.page_size.height.value()).to_string();
     let orient = match layout.orientation {
         loki_doc_model::layout::page::PageOrientation::Landscape => "landscape",
-        _ => "portrait",
+        loki_doc_model::layout::page::PageOrientation::Portrait => "portrait",
     };
     let _ = write_empty(
         w,
@@ -244,14 +268,11 @@ fn write_block<W: std::io::Write>(
         Block::CodeBlock(_, code) => {
             write_code_block(w, code, collector);
         }
-        Block::BlockQuote(blocks) => {
+        Block::BlockQuote(blocks) | Block::Div(_, blocks) => {
             write_blocks(w, blocks, collector, 0);
         }
         Block::LineBlock(lines) => {
             write_line_block(w, lines, collector);
-        }
-        Block::Div(_, blocks) => {
-            write_blocks(w, blocks, collector, 0);
         }
         Block::DefinitionList(items) => {
             for (term, defs) in items {
@@ -275,9 +296,6 @@ fn write_block<W: std::io::Write>(
                 write_blocks(w, &caption.full, collector, 0);
             }
         }
-        // Out of scope: NotesBlock, RawBlock.
-        Block::NotesBlock(_) | Block::RawBlock(_, _) => {}
-        // Catch-all for future variants.
         _ => {}
     }
 }
@@ -315,6 +333,7 @@ fn write_para<W: std::io::Write>(
     let _ = write_end(w, "w:p");
 }
 
+#[allow(clippy::similar_names)] // has_pp / has_cp / has_style — pre-existing naming
 fn write_styled_para<W: std::io::Write>(
     w: &mut Writer<W>,
     sp: &StyledParagraph,
@@ -348,6 +367,7 @@ fn write_styled_para<W: std::io::Write>(
 }
 
 /// Emits the children of `w:pPr` from a [`ParaProps`] (no wrapper element).
+#[allow(clippy::too_many_lines, unused_assignments)] // Pre-existing pattern — structural refactor deferred
 fn write_para_props_inline<W: std::io::Write>(
     w: &mut Writer<W>,
     pp: &loki_doc_model::style::props::para_props::ParaProps,
@@ -356,7 +376,6 @@ fn write_para_props_inline<W: std::io::Write>(
 
     if let Some(align) = pp.alignment {
         let jc = match align {
-            ParagraphAlignment::Left => "left",
             ParagraphAlignment::Right => "right",
             ParagraphAlignment::Center => "center",
             ParagraphAlignment::Justify => "both",
@@ -370,11 +389,22 @@ fn write_para_props_inline<W: std::io::Write>(
         || pp.indent_hanging.is_some()
         || pp.indent_first_line.is_some();
     if has_ind {
-        let left = pp.indent_start.map_or(0, |v| pts_to_twips(v.value())).to_string();
-        let right = pp.indent_end.map_or(0, |v| pts_to_twips(v.value())).to_string();
-        let hanging = pp.indent_hanging.map_or(0, |v| pts_to_twips(v.value())).to_string();
-        let first_line =
-            pp.indent_first_line.map_or(0, |v| pts_to_twips(v.value())).to_string();
+        let left = pp
+            .indent_start
+            .map_or(0, |v| pts_to_twips(v.value()))
+            .to_string();
+        let right = pp
+            .indent_end
+            .map_or(0, |v| pts_to_twips(v.value()))
+            .to_string();
+        let hanging = pp
+            .indent_hanging
+            .map_or(0, |v| pts_to_twips(v.value()))
+            .to_string();
+        let first_line = pp
+            .indent_first_line
+            .map_or(0, |v| pts_to_twips(v.value()))
+            .to_string();
         let mut attrs: Vec<(&str, &str)> = Vec::new();
         if pp.indent_start.is_some() {
             attrs.push(("w:left", &left));
@@ -398,7 +428,6 @@ fn write_para_props_inline<W: std::io::Write>(
         for ts in tabs {
             use loki_doc_model::style::props::tab_stop::{TabAlignment, TabLeader};
             let val = match ts.alignment {
-                TabAlignment::Left => "left",
                 TabAlignment::Center => "center",
                 TabAlignment::Right => "right",
                 TabAlignment::Decimal => "decimal",
@@ -407,7 +436,6 @@ fn write_para_props_inline<W: std::io::Write>(
             };
             let pos = pts_to_twips(ts.position.value()).to_string();
             let leader = match ts.leader {
-                TabLeader::None => "none",
                 TabLeader::Dot => "dot",
                 TabLeader::Dash => "dash",
                 TabLeader::Underscore => "underscore",
@@ -415,7 +443,11 @@ fn write_para_props_inline<W: std::io::Write>(
                 TabLeader::MiddleDot => "middleDot",
                 _ => "none",
             };
-            let _ = write_empty(w, "w:tab", &[("w:val", val), ("w:pos", &pos), ("w:leader", leader)]);
+            let _ = write_empty(
+                w,
+                "w:tab",
+                &[("w:val", val), ("w:pos", &pos), ("w:leader", leader)],
+            );
         }
         let _ = write_end(w, "w:tabs");
     }
@@ -424,10 +456,10 @@ fn write_para_props_inline<W: std::io::Write>(
         use loki_doc_model::style::props::para_props::{LineHeight, Spacing};
         let mut attrs: Vec<(&str, &str)> = Vec::new();
 
+        #[allow(clippy::match_same_arms)] // Spacing is #[non_exhaustive]; wildcard required
         let before = pp.space_before.map(|v| match v {
             Spacing::Exact(pt) => pts_to_twips(pt.value()),
-            Spacing::Percent(_) => 0,
-            _ => 0,
+            Spacing::Percent(_) | _ => 0,
         });
         let before_s;
         if let Some(b) = before {
@@ -437,8 +469,7 @@ fn write_para_props_inline<W: std::io::Write>(
 
         let after = pp.space_after.map(|v| match v {
             Spacing::Exact(pt) => pts_to_twips(pt.value()),
-            Spacing::Percent(_) => 0,
-            _ => 0,
+            Spacing::Percent(_) | _ => 0,
         });
         let after_s;
         if let Some(a) = after {
@@ -446,7 +477,7 @@ fn write_para_props_inline<W: std::io::Write>(
             attrs.push(("w:after", &after_s));
         }
 
-        let line_s;
+        let mut line_s = String::new();
         if let Some(lh) = pp.line_height {
             match lh {
                 LineHeight::Exact(pt) => {
@@ -464,7 +495,7 @@ fn write_para_props_inline<W: std::io::Write>(
                     attrs.push(("w:line", &line_s));
                     attrs.push(("w:lineRule", "auto"));
                 }
-                _ => { line_s = String::new(); }
+                _ => {}
             }
         }
 
@@ -483,10 +514,14 @@ fn write_code_block<W: std::io::Write>(
     let _ = write_start(w, "w:pPr", &[]);
     let _ = write_empty(w, "w:pStyle", &wval("Code"));
     let _ = write_end(w, "w:pPr");
-    write_text_run(w, code, &RunProps {
-        code: true,
-        ..Default::default()
-    });
+    write_text_run(
+        w,
+        code,
+        &RunProps {
+            code: true,
+            ..Default::default()
+        },
+    );
     let _ = write_end(w, "w:p");
 }
 
@@ -578,11 +613,7 @@ fn write_list_item<W: std::io::Write>(
 
 // ── Table ────────────────────────────────────────────────────────────────────
 
-fn write_table<W: std::io::Write>(
-    w: &mut Writer<W>,
-    tbl: &Table,
-    collector: &mut ExportCollector,
-) {
+fn write_table<W: std::io::Write>(w: &mut Writer<W>, tbl: &Table, collector: &mut ExportCollector) {
     let _ = write_start(w, "w:tbl", &[]);
 
     // Table properties: auto width.
@@ -730,7 +761,11 @@ fn write_table_cell<W: std::io::Write>(
     // Background color (shading).
     if let Some(color) = &props.background_color {
         let hex = color_to_hex(color);
-        let _ = write_empty(w, "w:shd", &[("w:val", "clear"), ("w:color", "auto"), ("w:fill", &hex)]);
+        let _ = write_empty(
+            w,
+            "w:shd",
+            &[("w:val", "clear"), ("w:color", "auto"), ("w:fill", &hex)],
+        );
     }
     let _ = write_end(w, "w:tcPr");
 
@@ -748,6 +783,7 @@ fn write_table_cell<W: std::io::Write>(
 // ── Inline dispatch ──────────────────────────────────────────────────────────
 
 /// Accumulated run formatting inherited from inline wrappers.
+#[allow(clippy::struct_excessive_bools)] // Pre-existing pattern — structural refactor deferred
 #[derive(Default, Clone)]
 struct RunProps {
     bold: bool,
@@ -773,6 +809,7 @@ fn write_inlines<W: std::io::Write>(
     }
 }
 
+#[allow(clippy::too_many_lines)] // Pre-existing pattern — structural refactor deferred
 fn write_inline<W: std::io::Write>(
     w: &mut Writer<W>,
     inline: &Inline,
@@ -846,7 +883,7 @@ fn write_inline<W: std::io::Write>(
             write_inlines(w, inner, props, collector);
             write_text_run(w, close, props);
         }
-        Inline::Cite(_, inner) => {
+        Inline::Cite(_, inner) | Inline::Span(_, inner) => {
             write_inlines(w, inner, props, collector);
         }
         Inline::Code(_, s) => {
@@ -855,9 +892,6 @@ fn write_inline<W: std::io::Write>(
                 ..props.clone()
             };
             write_text_run(w, s, &np);
-        }
-        Inline::Span(_, inner) => {
-            write_inlines(w, inner, props, collector);
         }
         Inline::Link(_, inner, target) => {
             let r_id = collector.add_hyperlink(&target.url);
@@ -869,7 +903,7 @@ fn write_inline<W: std::io::Write>(
             write_styled_run(w, run, props, collector);
         }
         Inline::Bookmark(kind, name) => {
-            write_bookmark(w, kind, name);
+            write_bookmark(w, *kind, name);
         }
         Inline::Math(_, s) => {
             write_text_run(w, s, props);
@@ -878,7 +912,7 @@ fn write_inline<W: std::io::Write>(
             if let Some(r_id) = collector.add_image(&target.url) {
                 // Default: 1 inch = 914400 EMU.
                 let alt = inlines_to_string(inlines);
-                let _ = write_inline_drawing(w, &r_id, 914400, 914400, &alt);
+                let _ = write_inline_drawing(w, &r_id, 914_400, 914_400, &alt);
             } else {
                 write_text_run(w, "[Image]", props);
             }
@@ -902,16 +936,12 @@ fn write_inline<W: std::io::Write>(
             let _ = write_end(w, "w:rPr");
 
             let elem = match kind {
-                NoteKind::Footnote => "w:footnoteReference",
                 NoteKind::Endnote => "w:endnoteReference",
                 _ => "w:footnoteReference",
             };
             let _ = write_empty(w, elem, &[("w:id", &note_id.to_string())]);
             let _ = write_end(w, "w:r");
         }
-        // Out of scope: Field, Comment, RawInline.
-        Inline::Field(_) | Inline::Comment(_) | Inline::RawInline(_, _) => {}
-        // Catch-all for future variants.
         _ => {}
     }
 }
@@ -965,10 +995,7 @@ fn write_text_run<W: std::io::Write>(w: &mut Writer<W>, text: &str, props: &RunP
             let _ = write_empty(
                 w,
                 "w:rFonts",
-                &[
-                    ("w:ascii", "Courier New"),
-                    ("w:hAnsi", "Courier New"),
-                ],
+                &[("w:ascii", "Courier New"), ("w:hAnsi", "Courier New")],
             );
         }
         if props.bold {
@@ -1016,7 +1043,7 @@ static BOOKMARK_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::Atomi
 
 fn write_bookmark<W: std::io::Write>(
     w: &mut Writer<W>,
-    kind: &loki_doc_model::content::inline::BookmarkKind,
+    kind: loki_doc_model::content::inline::BookmarkKind,
     name: &str,
 ) {
     use loki_doc_model::content::inline::BookmarkKind;
@@ -1032,6 +1059,8 @@ fn write_bookmark<W: std::io::Write>(
     }
 }
 
+#[allow(clippy::unnecessary_wraps)] // Pre-existing API — changing return type would ripple to callers
+#[allow(clippy::similar_names)] // cx_s / cy_s — pre-existing naming
 fn write_inline_drawing<W: std::io::Write>(
     w: &mut Writer<W>,
     r_id: &str,
@@ -1041,24 +1070,44 @@ fn write_inline_drawing<W: std::io::Write>(
 ) -> quick_xml::Result<()> {
     let _ = write_start(w, "w:r", &[]);
     let _ = write_start(w, "w:drawing", &[]);
-    let _ = write_start(w, "wp:inline", &[("distT", "0"), ("distB", "0"), ("distL", "0"), ("distR", "0")]);
-    
+    let _ = write_start(
+        w,
+        "wp:inline",
+        &[
+            ("distT", "0"),
+            ("distB", "0"),
+            ("distL", "0"),
+            ("distR", "0"),
+        ],
+    );
+
     let cx_s = cx.to_string();
     let cy_s = cy.to_string();
     let _ = write_empty(w, "wp:extent", &[("cx", &cx_s), ("cy", &cy_s)]);
-    let _ = write_empty(w, "wp:docPr", &[("id", "1"), ("name", "Image"), ("descr", alt)]);
-    
+    let _ = write_empty(
+        w,
+        "wp:docPr",
+        &[("id", "1"), ("name", "Image"), ("descr", alt)],
+    );
+
     let _ = write_start(w, "a:graphic", &[("xmlns:a", NS_A)]);
-    let _ = write_start(w, "a:graphicData", &[("uri", "http://schemas.openxmlformats.org/drawingml/2006/picture")]);
-    
+    let _ = write_start(
+        w,
+        "a:graphicData",
+        &[(
+            "uri",
+            "http://schemas.openxmlformats.org/drawingml/2006/picture",
+        )],
+    );
+
     let _ = write_start(w, "pic:pic", &[("xmlns:pic", NS_PIC)]);
-    
+
     // pic:nvPicPr
     let _ = write_start(w, "pic:nvPicPr", &[]);
     let _ = write_empty(w, "pic:cNvPr", &[("id", "0"), ("name", "")]);
     let _ = write_empty(w, "pic:cNvPicPr", &[]);
     let _ = write_end(w, "pic:nvPicPr");
-    
+
     // pic:blipFill
     let _ = write_start(w, "pic:blipFill", &[]);
     let _ = write_empty(w, "a:blip", &[("r:embed", r_id), ("xmlns:r", NS_R)]);
@@ -1066,7 +1115,7 @@ fn write_inline_drawing<W: std::io::Write>(
     let _ = write_empty(w, "a:fillRect", &[]);
     let _ = write_end(w, "a:stretch");
     let _ = write_end(w, "pic:blipFill");
-    
+
     // pic:spPr
     let _ = write_start(w, "pic:spPr", &[]);
     let _ = write_start(w, "a:xfrm", &[]);
@@ -1077,14 +1126,14 @@ fn write_inline_drawing<W: std::io::Write>(
     let _ = write_empty(w, "a:avLst", &[]);
     let _ = write_end(w, "a:prstGeom");
     let _ = write_end(w, "pic:spPr");
-    
+
     let _ = write_end(w, "pic:pic");
     let _ = write_end(w, "a:graphicData");
     let _ = write_end(w, "a:graphic");
     let _ = write_end(w, "wp:inline");
     let _ = write_end(w, "w:drawing");
     let _ = write_end(w, "w:r");
-    
+
     Ok(())
 }
 
@@ -1092,7 +1141,7 @@ fn inlines_to_string(inlines: &[Inline]) -> String {
     let mut s = String::new();
     for inline in inlines {
         match inline {
-            Inline::Str(t) => s.push_str(t),
+            Inline::Str(t) | Inline::Code(_, t) | Inline::Math(_, t) => s.push_str(t),
             Inline::Space | Inline::SoftBreak => s.push(' '),
             Inline::LineBreak => s.push('\n'),
             Inline::Strong(i)
@@ -1107,7 +1156,6 @@ fn inlines_to_string(inlines: &[Inline]) -> String {
             | Inline::Span(_, i)
             | Inline::Link(_, i, _)
             | Inline::Image(_, i, _) => s.push_str(&inlines_to_string(i)),
-            Inline::Code(_, t) | Inline::Math(_, t) => s.push_str(t),
             Inline::StyledRun(run) => s.push_str(&inlines_to_string(&run.content)),
             _ => {}
         }

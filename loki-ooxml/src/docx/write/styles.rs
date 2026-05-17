@@ -16,8 +16,8 @@ use loki_doc_model::style::props::char_props::CharProps;
 use loki_doc_model::style::props::para_props::ParaProps;
 
 use crate::docx::write::xml::{
-    hex_color_val, pts_to_half_pts, pts_to_twips, write_decl, write_empty, write_end,
-    write_start, wval, NS_W,
+    NS_W, hex_color_val, pts_to_half_pts, pts_to_twips, write_decl, write_empty, write_end,
+    write_start, wval,
 };
 
 /// Built-in heading level definitions: (styleId, display name, font size half-pts, bold, outline level).
@@ -146,10 +146,7 @@ fn write_catalog_styles<W: std::io::Write>(w: &mut Writer<W>, catalog: &StyleCat
                 ("w:styleId", sid),
             ],
         );
-        let name = style
-            .display_name
-            .as_deref()
-            .unwrap_or(sid);
+        let name = style.display_name.as_deref().unwrap_or(sid);
         let _ = write_empty(w, "w:name", &wval(name));
         if let Some(ref parent) = style.parent {
             let _ = write_empty(w, "w:basedOn", &wval(parent.as_str()));
@@ -161,11 +158,7 @@ fn write_catalog_styles<W: std::io::Write>(w: &mut Writer<W>, catalog: &StyleCat
 
     for (id, style) in &catalog.character_styles {
         let sid = id.as_str();
-        let _ = write_start(
-            w,
-            "w:style",
-            &[("w:type", "character"), ("w:styleId", sid)],
-        );
+        let _ = write_start(w, "w:style", &[("w:type", "character"), ("w:styleId", sid)]);
         let name = style.display_name.as_deref().unwrap_or(sid);
         let _ = write_empty(w, "w:name", &wval(name));
         if let Some(ref parent) = style.parent {
@@ -192,7 +185,6 @@ pub(super) fn write_para_props_elem<W: std::io::Write>(w: &mut Writer<W>, pp: &P
     if let Some(align) = pp.alignment {
         use loki_doc_model::style::props::para_props::ParagraphAlignment;
         let jc = match align {
-            ParagraphAlignment::Left => "left",
             ParagraphAlignment::Right => "right",
             ParagraphAlignment::Center => "center",
             ParagraphAlignment::Justify => "both",
@@ -201,9 +193,8 @@ pub(super) fn write_para_props_elem<W: std::io::Write>(w: &mut Writer<W>, pp: &P
         let _ = write_empty(w, "w:jc", &wval(jc));
     }
 
-    let has_ind = pp.indent_start.is_some()
-        || pp.indent_end.is_some()
-        || pp.indent_hanging.is_some();
+    let has_ind =
+        pp.indent_start.is_some() || pp.indent_end.is_some() || pp.indent_hanging.is_some();
     if has_ind {
         let left = pp.indent_start.map_or(0, |v| pts_to_twips(v.value()));
         let right = pp.indent_end.map_or(0, |v| pts_to_twips(v.value()));
@@ -230,13 +221,11 @@ pub(super) fn write_para_props_elem<W: std::io::Write>(w: &mut Writer<W>, pp: &P
         use loki_doc_model::style::props::para_props::Spacing;
         let before = pp.space_before.map_or(0, |v| match v {
             Spacing::Exact(pt) => pts_to_twips(pt.value()),
-            Spacing::Percent(_) => 0,
-            _ => 0,
+            Spacing::Percent(_) | _ => 0,
         });
         let after = pp.space_after.map_or(0, |v| match v {
             Spacing::Exact(pt) => pts_to_twips(pt.value()),
-            Spacing::Percent(_) => 0,
-            _ => 0,
+            Spacing::Percent(_) | _ => 0,
         });
         let before_s = before.to_string();
         let after_s = after.to_string();
@@ -277,10 +266,7 @@ pub(super) fn emit_char_props<W: std::io::Write>(w: &mut Writer<W>, cp: &CharPro
         let _ = write_empty(
             w,
             "w:rFonts",
-            &[
-                ("w:ascii", font.as_str()),
-                ("w:hAnsi", font.as_str()),
-            ],
+            &[("w:ascii", font.as_str()), ("w:hAnsi", font.as_str())],
         );
     }
     if cp.bold == Some(true) {
@@ -324,11 +310,11 @@ pub(super) fn emit_char_props<W: std::io::Write>(w: &mut Writer<W>, cp: &CharPro
         };
         let _ = write_empty(w, "w:vertAlign", &wval(v));
     }
-    if let Some(ref color) = cp.color {
-        if let Some(hex) = color.to_hex() {
-            let hex_val = hex_color_val(&hex);
-            let _ = write_empty(w, "w:color", &wval(&hex_val));
-        }
+    if let Some(ref color) = cp.color
+        && let Some(hex) = color.to_hex()
+    {
+        let hex_val = hex_color_val(&hex);
+        let _ = write_empty(w, "w:color", &wval(&hex_val));
     }
     if let Some(pt) = cp.font_size {
         let half = pts_to_half_pts(pt.value()).to_string();

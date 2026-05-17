@@ -30,10 +30,8 @@ pub fn paint_glyph_run(
     let font = font_cache.get_or_insert(&run.font_data, run.font_index);
 
     // Translate to the run's baseline origin in scaled (pixel) space.
-    let transform = kurbo::Affine::translate((
-        (run.origin.x * scale) as f64,
-        (run.origin.y * scale) as f64,
-    ));
+    let transform =
+        kurbo::Affine::translate(((run.origin.x * scale) as f64, (run.origin.y * scale) as f64));
 
     let brush = crate::color::to_brush(&run.color);
 

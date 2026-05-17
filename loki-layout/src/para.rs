@@ -12,7 +12,9 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use loki_doc_model::style::list_style::{BulletChar, ListId, ListLevel, ListLevelKind, NumberingScheme};
+use loki_doc_model::style::list_style::{
+    BulletChar, ListId, ListLevel, ListLevelKind, NumberingScheme,
+};
 use parley::{
     Alignment, AlignmentOptions, Cursor, FontFamily, FontStyle, FontWeight, InlineBox, LineHeight,
     PositionedLayoutItem, RangedBuilder, StyleProperty,
@@ -354,7 +356,10 @@ impl std::fmt::Debug for ParagraphLayout {
             .field("first_baseline", &self.first_baseline)
             .field("last_baseline", &self.last_baseline)
             .field("line_boundaries", &self.line_boundaries)
-            .field("parley_layout", &self.parley_layout.as_ref().map(|_| "<Layout>"))
+            .field(
+                "parley_layout",
+                &self.parley_layout.as_ref().map(|_| "<Layout>"),
+            )
             .finish()
     }
 }
@@ -380,7 +385,11 @@ impl ParagraphLayout {
             .iter()
             .position(|&(_, max_y)| y < max_y)
             .unwrap_or_else(|| self.line_boundaries.len().saturating_sub(1));
-        Some(HitTestResult { byte_offset, affinity, line_index })
+        Some(HitTestResult {
+            byte_offset,
+            affinity,
+            line_index,
+        })
     }
 
     /// Returns the byte offset at the end of the visual line that contains
@@ -413,9 +422,7 @@ impl ParagraphLayout {
         // Trim a trailing '\n' so End lands before the newline byte, not after.
         // In loki-text, paragraph breaks are modelled as separate blocks, so
         // '\n' inside a block's text is unusual — this guard handles edge cases.
-        let trimmed = if end > 0
-            && text.as_bytes().get(end - 1).copied() == Some(b'\n')
-        {
+        let trimmed = if end > 0 && text.as_bytes().get(end - 1).copied() == Some(b'\n') {
             end - 1
         } else {
             end
@@ -437,7 +444,11 @@ impl ParagraphLayout {
         let bb = cursor.geometry(layout, 1.0);
         let y = bb.y0 as f32;
         let height = (bb.y1 - bb.y0) as f32;
-        Some(CursorRect { x: bb.x0 as f32, y, height })
+        Some(CursorRect {
+            x: bb.x0 as f32,
+            y,
+            height,
+        })
     }
 }
 
@@ -503,10 +514,16 @@ fn push_para_styles(
             builder.push(StyleProperty::FontStyle(FontStyle::Italic), r.clone());
         }
         if let Some(ref name) = span.font_name {
-            builder.push(StyleProperty::FontFamily(FontFamily::named(name.as_str())), r.clone());
+            builder.push(
+                StyleProperty::FontFamily(FontFamily::named(name.as_str())),
+                r.clone(),
+            );
         }
         if let Some(lh) = span.line_height {
-            builder.push(StyleProperty::LineHeight(LineHeight::FontSizeRelative(lh)), r.clone());
+            builder.push(
+                StyleProperty::LineHeight(LineHeight::FontSizeRelative(lh)),
+                r.clone(),
+            );
         }
         // Underline (gap #17): all variants map to Parley's single underline.
         if span.underline.is_some() {
@@ -567,19 +584,17 @@ pub fn layout_paragraph(
         // to produce one line with the paragraph's resolved font metrics.
         // height/line_boundaries are left at zero so empty paragraphs do not
         // affect vertical flow — they remain un-clickable but navigable.
-        let mut builder = resources.layout_cx.ranged_builder(
-            &mut resources.font_cx,
-            " ",
-            display_scale,
-            true,
-        );
+        let mut builder =
+            resources
+                .layout_cx
+                .ranged_builder(&mut resources.font_cx, " ", display_scale, true);
         push_para_styles(&mut builder, para_props, &[]);
         let mut phantom = builder.build(" ");
         phantom.break_all_lines(Some(available_width));
         let first_baseline = phantom
             .lines()
             .next()
-            .map(|l| l.metrics().baseline as f32)
+            .map(|l| l.metrics().baseline)
             .unwrap_or(0.0);
         return ParagraphLayout {
             height: 0.0,
@@ -618,7 +633,12 @@ pub fn layout_paragraph(
         );
         push_para_styles(&mut probe, para_props, style_spans);
         for (idx, &pos) in tab_char_positions.iter().enumerate() {
-            probe.push_inline_box(InlineBox { id: idx as u64, index: pos, width: 0.0, height: 0.0 });
+            probe.push_inline_box(InlineBox {
+                id: idx as u64,
+                index: pos,
+                width: 0.0,
+                height: 0.0,
+            });
         }
         let mut probe_layout = probe.build(text_content);
         probe_layout.break_all_lines(Some(line_w));
@@ -652,17 +672,34 @@ pub fn layout_paragraph(
     push_para_styles(&mut builder, para_props, style_spans);
     for (idx, &pos) in tab_char_positions.iter().enumerate() {
         let width = tab_inline_widths.get(idx).copied().unwrap_or(0.0);
-        builder.push_inline_box(InlineBox { id: idx as u64, index: pos, width, height: 0.0 });
+        builder.push_inline_box(InlineBox {
+            id: idx as u64,
+            index: pos,
+            width,
+            height: 0.0,
+        });
     }
 
     let mut layout = builder.build(text_content);
     layout.break_all_lines(Some(line_w));
-    layout.align(Some(line_w), para_props.alignment, AlignmentOptions::default());
+    layout.align(
+        Some(line_w),
+        para_props.alignment,
+        AlignmentOptions::default(),
+    );
 
     let total_height = layout.height();
     let total_width = layout.width();
-    let first_baseline = layout.lines().next().map(|l| l.metrics().baseline).unwrap_or(0.0);
-    let last_baseline = layout.lines().last().map(|l| l.metrics().baseline).unwrap_or(0.0);
+    let first_baseline = layout
+        .lines()
+        .next()
+        .map(|l| l.metrics().baseline)
+        .unwrap_or(0.0);
+    let last_baseline = layout
+        .lines()
+        .last()
+        .map(|l| l.metrics().baseline)
+        .unwrap_or(0.0);
     let line_boundaries: Vec<(f32, f32)> = layout
         .lines()
         .map(|l| (l.metrics().min_coord, l.metrics().max_coord))
@@ -680,7 +717,9 @@ pub fn layout_paragraph(
             para_props.indent_start
         };
         for item in line.items() {
-            let PositionedLayoutItem::GlyphRun(glyph_run) = item else { continue };
+            let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                continue;
+            };
             let run = glyph_run.run();
             let style = glyph_run.style();
             let run_offset = glyph_run.offset();
@@ -753,22 +792,31 @@ pub fn layout_paragraph(
 
             // ── Main glyph run ──────────────────────────────────────────────────
             items.push(PositionedItem::GlyphRun(PositionedGlyphRun {
-                origin: LayoutPoint { x: run_offset + indent_x, y: run_baseline },
+                origin: LayoutPoint {
+                    x: run_offset + indent_x,
+                    y: run_baseline,
+                },
                 font_data,
                 font_index: run.font().index,
                 font_size: run.font_size(),
                 glyphs,
                 color: style.brush,
-                synthesis: GlyphSynthesis { bold: synthesis.embolden(), italic: synthesis.skew().is_some() },
+                synthesis: GlyphSynthesis {
+                    bold: synthesis.embolden(),
+                    italic: synthesis.skew().is_some(),
+                },
                 link_url,
             }));
 
             // Underline decoration.
             if let Some(deco) = &style.underline {
                 let m = run.metrics();
+                // COMPAT(parley-0.6): RunMetrics offsets follow OpenType / skrifa
+                // Y-up convention (negative = below baseline). Negate to convert
+                // to screen Y-down (positive = below baseline).
                 items.push(PositionedItem::Decoration(PositionedDecoration {
                     x: run_offset + indent_x,
-                    y: run_baseline + deco.offset.unwrap_or(m.underline_offset),
+                    y: run_baseline - deco.offset.unwrap_or(m.underline_offset),
                     width: glyph_run.advance(),
                     thickness: deco.size.unwrap_or(m.underline_size),
                     kind: DecorationKind::Underline,
@@ -779,9 +827,10 @@ pub fn layout_paragraph(
             // Strikethrough decoration.
             if let Some(deco) = &style.strikethrough {
                 let m = run.metrics();
+                // COMPAT(parley-0.6): same Y-up → Y-down negation as underline.
                 items.push(PositionedItem::Decoration(PositionedDecoration {
                     x: run_offset + indent_x,
-                    y: run_baseline + deco.offset.unwrap_or(m.strikethrough_offset),
+                    y: run_baseline - deco.offset.unwrap_or(m.strikethrough_offset),
                     width: glyph_run.advance(),
                     thickness: deco.size.unwrap_or(m.strikethrough_size),
                     kind: DecorationKind::Strikethrough,
@@ -799,22 +848,28 @@ pub fn layout_paragraph(
         || para_props.border_left.is_some();
     if has_border {
         let bw = total_width + para_props.indent_start + para_props.indent_end;
-        items.insert(0, PositionedItem::BorderRect(PositionedBorderRect {
-            rect: LayoutRect::new(0.0, 0.0, bw, total_height),
-            top: para_props.border_top,
-            right: para_props.border_right,
-            bottom: para_props.border_bottom,
-            left: para_props.border_left,
-        }));
+        items.insert(
+            0,
+            PositionedItem::BorderRect(PositionedBorderRect {
+                rect: LayoutRect::new(0.0, 0.0, bw, total_height),
+                top: para_props.border_top,
+                right: para_props.border_right,
+                bottom: para_props.border_bottom,
+                left: para_props.border_left,
+            }),
+        );
     }
 
     // Prepend background fill.
     if let Some(bg) = para_props.background_color {
         let bw = total_width + para_props.indent_start + para_props.indent_end;
-        items.insert(0, PositionedItem::FilledRect(PositionedRect {
-            rect: LayoutRect::new(0.0, 0.0, bw, total_height),
-            color: bg,
-        }));
+        items.insert(
+            0,
+            PositionedItem::FilledRect(PositionedRect {
+                rect: LayoutRect::new(0.0, 0.0, bw, total_height),
+                color: bg,
+            }),
+        );
     }
 
     let parley_layout = if preserve_for_editing {
@@ -823,7 +878,15 @@ pub fn layout_paragraph(
         None
     };
 
-    ParagraphLayout { height: total_height, width: total_width, items, first_baseline, last_baseline, line_boundaries, parley_layout }
+    ParagraphLayout {
+        height: total_height,
+        width: total_width,
+        items,
+        first_baseline,
+        last_baseline,
+        line_boundaries,
+        parley_layout,
+    }
 }
 
 // ── List marker synthesis ─────────────────────────────────────────────────────
@@ -845,8 +908,14 @@ pub fn format_list_marker(list_levels: &[ListLevel], level: u8, counters: &[u32;
         return String::new();
     };
     match &level_def.kind {
-        ListLevelKind::Bullet { char: BulletChar::Char(c), .. } => c.to_string(),
-        ListLevelKind::Bullet { char: BulletChar::Image, .. } => {
+        ListLevelKind::Bullet {
+            char: BulletChar::Char(c),
+            ..
+        } => c.to_string(),
+        ListLevelKind::Bullet {
+            char: BulletChar::Image,
+            ..
+        } => {
             // TODO(list-picture-bullet): picture bullets not yet supported; render as •
             "•".to_string()
         }
@@ -867,7 +936,8 @@ fn format_numbered_label(list_levels: &[ListLevel], format: &str, counters: &[u3
     while let Some(c) = chars.next() {
         if c == '%'
             && let Some(&d) = chars.peek()
-            && d.is_ascii_digit() && d != '0'
+            && d.is_ascii_digit()
+            && d != '0'
         {
             chars.next();
             let level_idx = (d as u8 - b'1') as usize; // 1-based → 0-based
@@ -907,7 +977,11 @@ fn alpha_label(mut n: u32, upper: bool) -> String {
     while n > 0 {
         n -= 1;
         let byte = b'a' + (n % 26) as u8;
-        buf.push(if upper { byte.to_ascii_uppercase() } else { byte });
+        buf.push(if upper {
+            byte.to_ascii_uppercase()
+        } else {
+            byte
+        });
         n /= 26;
     }
     buf.reverse();
@@ -917,9 +991,19 @@ fn alpha_label(mut n: u32, upper: bool) -> String {
 /// Convert `n` to a Roman numeral string.
 fn roman_numeral(n: u32, upper: bool) -> String {
     const TABLE: &[(u32, &str)] = &[
-        (1000, "m"), (900, "cm"), (500, "d"), (400, "cd"),
-        (100,  "c"), (90,  "xc"), (50,  "l"), (40,  "xl"),
-        (10,   "x"), (9,   "ix"), (5,   "v"), (4,   "iv"), (1, "i"),
+        (1000, "m"),
+        (900, "cm"),
+        (500, "d"),
+        (400, "cd"),
+        (100, "c"),
+        (90, "xc"),
+        (50, "l"),
+        (40, "xl"),
+        (10, "x"),
+        (9, "ix"),
+        (5, "v"),
+        (4, "iv"),
+        (1, "i"),
     ];
     let mut n = n;
     let mut s = String::new();

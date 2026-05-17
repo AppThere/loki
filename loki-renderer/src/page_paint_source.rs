@@ -128,9 +128,11 @@ impl CustomPaintSource for LokiPageSource {
         height: u32,
         scale: f64,
     ) -> Option<TextureHandle> {
-        let (Some(device), Some(queue), Some(renderer)) =
-            (self.device.as_ref(), self.wgpu_queue.as_ref(), self.renderer.as_mut())
-        else {
+        let (Some(device), Some(queue), Some(renderer)) = (
+            self.device.as_ref(),
+            self.wgpu_queue.as_ref(),
+            self.renderer.as_mut(),
+        ) else {
             return None;
         };
 
@@ -170,7 +172,11 @@ impl CustomPaintSource for LokiPageSource {
         // the format expected by anyrender_vello register_texture.
         let texture = device.create_texture(&anyrender_vello::wgpu::TextureDescriptor {
             label: Some("loki-page"),
-            size: Extent3d { width: w_phys, height: h_phys, depth_or_array_layers: 1 },
+            size: Extent3d {
+                width: w_phys,
+                height: h_phys,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,

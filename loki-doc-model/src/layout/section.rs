@@ -65,8 +65,8 @@ impl Default for Section {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::content::block::Block;
     use crate::content::attr::NodeAttr;
+    use crate::content::block::Block;
     use crate::content::inline::Inline;
     use crate::layout::page::{PageLayout, PageSize};
 
@@ -79,9 +79,11 @@ mod tests {
     #[test]
     fn section_with_content() {
         let layout = PageLayout::default();
-        let blocks = vec![
-            Block::Heading(1, NodeAttr::default(), vec![Inline::Str("Title".into())]),
-        ];
+        let blocks = vec![Block::Heading(
+            1,
+            NodeAttr::default(),
+            vec![Inline::Str("Title".into())],
+        )];
         let section = Section::with_layout_and_blocks(layout.clone(), blocks);
         assert_eq!(section.blocks.len(), 1);
     }

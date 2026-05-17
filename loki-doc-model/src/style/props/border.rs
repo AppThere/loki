@@ -7,8 +7,8 @@
 //! ODF maps these to `fo:border-*` properties; OOXML maps them to
 //! `w:pBdr` and `w:tcBdr` elements.
 
-use loki_primitives::units::Points;
 use loki_primitives::color::DocumentColor;
+use loki_primitives::units::Points;
 
 /// The line style of a border edge.
 ///

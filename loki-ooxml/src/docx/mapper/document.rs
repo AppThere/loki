@@ -9,11 +9,11 @@ use std::collections::HashMap;
 use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::document::Document;
-use loki_doc_model::settings::DocumentSettings;
 use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
 use loki_doc_model::layout::page::{PageLayout, PageMargins, PageOrientation, PageSize};
 use loki_doc_model::layout::section::Section;
 use loki_doc_model::meta::core::DocumentMeta;
+use loki_doc_model::settings::DocumentSettings;
 use loki_doc_model::style::catalog::StyleCatalog;
 use loki_opc::PartData;
 use loki_primitives::units::Points;
@@ -130,16 +130,13 @@ fn map_page_layout_with_hf(
         if let Some(paras) = header_parts.get(&hf_ref.rel_id) {
             match hf_ref.hf_type.as_str() {
                 "default" => {
-                    layout.header =
-                        Some(map_hf_blocks(paras, HeaderFooterKind::Default, ctx));
+                    layout.header = Some(map_hf_blocks(paras, HeaderFooterKind::Default, ctx));
                 }
                 "first" if sp.title_page => {
-                    layout.header_first =
-                        Some(map_hf_blocks(paras, HeaderFooterKind::First, ctx));
+                    layout.header_first = Some(map_hf_blocks(paras, HeaderFooterKind::First, ctx));
                 }
                 "even" if even_and_odd => {
-                    layout.header_even =
-                        Some(map_hf_blocks(paras, HeaderFooterKind::Even, ctx));
+                    layout.header_even = Some(map_hf_blocks(paras, HeaderFooterKind::Even, ctx));
                 }
                 _ => {}
             }
@@ -150,16 +147,13 @@ fn map_page_layout_with_hf(
         if let Some(paras) = footer_parts.get(&hf_ref.rel_id) {
             match hf_ref.hf_type.as_str() {
                 "default" => {
-                    layout.footer =
-                        Some(map_hf_blocks(paras, HeaderFooterKind::Default, ctx));
+                    layout.footer = Some(map_hf_blocks(paras, HeaderFooterKind::Default, ctx));
                 }
                 "first" if sp.title_page => {
-                    layout.footer_first =
-                        Some(map_hf_blocks(paras, HeaderFooterKind::First, ctx));
+                    layout.footer_first = Some(map_hf_blocks(paras, HeaderFooterKind::First, ctx));
                 }
                 "even" if even_and_odd => {
-                    layout.footer_even =
-                        Some(map_hf_blocks(paras, HeaderFooterKind::Even, ctx));
+                    layout.footer_even = Some(map_hf_blocks(paras, HeaderFooterKind::Even, ctx));
                 }
                 _ => {}
             }
@@ -188,7 +182,9 @@ fn map_notes_to_blocks(
         .iter()
         .filter(|n| n.note_type == DocxNoteType::Normal)
         .map(|n| {
-            let blocks: Vec<Block> = n.paragraphs.iter()
+            let blocks: Vec<Block> = n
+                .paragraphs
+                .iter()
                 .flat_map(|p| map_paragraph(p, ctx))
                 .collect();
             (n.id, blocks)
@@ -227,7 +223,7 @@ fn map_meta(core_props: Option<&loki_opc::CoreProperties>) -> DocumentMeta {
 /// 4. Walk body children, splitting on embedded `w:sectPr` elements.
 /// 5. Close the final section using the body-level `w:sectPr`.
 /// 6. Map core properties into document metadata.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(crate) fn map_document(
     doc: &DocxDocument,
     raw_styles: &DocxStyles,
@@ -350,6 +346,7 @@ pub(crate) fn map_document(
     let meta = map_meta(core_props);
 
     let doc_settings = raw_settings.and_then(|s| {
+        #[allow(clippy::cast_precision_loss)] // twips are small values; f32 precision is sufficient
         s.default_tab_stop.map(|twips| DocumentSettings {
             default_tab_stop_pt: twips as f32 / 20.0,
         })
@@ -378,13 +375,20 @@ mod tests {
 
     fn empty_doc() -> DocxDocument {
         DocxDocument {
-            body: DocxBody { children: vec![], final_sect_pr: None },
+            body: DocxBody {
+                children: vec![],
+                final_sect_pr: None,
+            },
         }
     }
 
     fn sect_pr_a4() -> DocxSectPr {
         DocxSectPr {
-            pg_sz: Some(DocxPgSz { w: 11906, h: 16838, orient: None }),
+            pg_sz: Some(DocxPgSz {
+                w: 11906,
+                h: 16838,
+                orient: None,
+            }),
             pg_mar: Some(DocxPgMar {
                 top: 1440,
                 bottom: 1440,
@@ -400,7 +404,10 @@ mod tests {
         }
     }
 
-    fn run_map(doc: &DocxDocument, final_sect: Option<DocxSectPr>) -> (Document, Vec<OoxmlWarning>) {
+    fn run_map(
+        doc: &DocxDocument,
+        final_sect: Option<DocxSectPr>,
+    ) -> (Document, Vec<OoxmlWarning>) {
         let mut d = doc.clone();
         d.body.final_sect_pr = final_sect;
         map_document(
@@ -472,7 +479,10 @@ mod tests {
         let mut cp = loki_opc::CoreProperties::default();
         cp.title = Some("My Document".into());
         let doc = DocxDocument {
-            body: DocxBody { children: vec![], final_sect_pr: None },
+            body: DocxBody {
+                children: vec![],
+                final_sect_pr: None,
+            },
         };
         let (mapped, _) = map_document(
             &doc,

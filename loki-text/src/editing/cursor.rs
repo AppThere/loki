@@ -45,21 +45,33 @@ pub struct CursorState {
     pub anchor: Option<DocumentPosition>,
     /// Focus end of the selection — the current (moving) cursor position.
     pub focus: Option<DocumentPosition>,
+    /// Mirrors `DocumentState::generation` — incremented after every document
+    /// mutation so the `data-cursor` canvas attribute changes even when the
+    /// cursor position is unchanged (e.g. after a formatting toggle).  Without
+    /// this, Blitz would not mark the canvas node dirty and `render()` would
+    /// not be called after formatting.
+    pub document_generation: u64,
 }
 
 impl PartialEq for CursorState {
     fn eq(&self, other: &Self) -> bool {
-        // We primarily care about the visual positions (anchor/focus) for
-        // re-rendering decisions. loro_cursor is a stable pointer that
-        // usually moves in sync with focus.
-        self.anchor == other.anchor && self.focus == other.focus
+        // Include document_generation so formatting changes (which do not move
+        // the cursor) still cause PageCanvas to re-render and update data-cursor.
+        self.anchor == other.anchor
+            && self.focus == other.focus
+            && self.document_generation == other.document_generation
     }
 }
 
 impl CursorState {
     /// Returns an empty cursor state (no cursor placed yet).
     pub fn new() -> Self {
-        Self { loro_cursor: None, anchor: None, focus: None }
+        Self {
+            loro_cursor: None,
+            anchor: None,
+            focus: None,
+            document_generation: 0,
+        }
     }
 
     /// Returns `true` when a range selection exists (anchor differs from focus).

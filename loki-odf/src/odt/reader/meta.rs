@@ -6,8 +6,8 @@
 // Called by the importer added in a later session; suppress premature lint.
 #![allow(dead_code)]
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
 use crate::error::{OdfError, OdfResult};
 use crate::odt::model::document::OdfMeta;
@@ -34,11 +34,7 @@ pub(crate) fn read_meta(xml: &[u8]) -> OdfResult<OdfMeta> {
             Ok(Event::Start(ref e)) => {
                 let local = e.local_name().into_inner().to_vec();
                 match local.as_slice() {
-                    b"title"
-                    | b"creator"
-                    | b"description"
-                    | b"creation-date"
-                    | b"date"
+                    b"title" | b"creator" | b"description" | b"creation-date" | b"date"
                     | b"editing-cycles" => {
                         collecting = Some(local);
                         collect_text.clear();
@@ -84,7 +80,7 @@ pub(crate) fn read_meta(xml: &[u8]) -> OdfResult<OdfMeta> {
                 return Err(OdfError::Xml {
                     part: "meta.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }

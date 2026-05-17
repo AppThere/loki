@@ -10,22 +10,18 @@
 // runtime; silence the compiler's suggestion to use `let _ = ...` instead.
 #![allow(dropping_references)]
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
 use crate::error::{OdfError, OdfResult};
-use crate::odt::model::document::{
-    OdfHeaderFooterProps, OdfMasterPage, OdfPageLayout,
-};
-use crate::odt::model::list_styles::{
-    OdfListLevel, OdfListLevelKind, OdfListStyle,
-};
+use crate::odt::model::document::{OdfHeaderFooterProps, OdfMasterPage, OdfPageLayout};
+use crate::odt::model::list_styles::{OdfListLevel, OdfListLevelKind, OdfListStyle};
 use crate::odt::model::paragraph::OdfParagraph;
-use crate::odt::reader::document::read_paragraph;
 use crate::odt::model::styles::{
-    OdfCellProps, OdfDefaultStyle, OdfParaProps, OdfStyle, OdfStyleFamily,
-    OdfStylesheet, OdfTabStop, OdfTextProps,
+    OdfCellProps, OdfDefaultStyle, OdfParaProps, OdfStyle, OdfStyleFamily, OdfStylesheet,
+    OdfTabStop, OdfTextProps,
 };
+use crate::odt::reader::document::read_paragraph;
 use crate::xml_util::local_attr_val;
 
 // ── Public entry point ─────────────────────────────────────────────────────────
@@ -41,10 +37,7 @@ use crate::xml_util::local_attr_val;
 /// document goes into `auto_styles`.
 #[allow(clippy::too_many_lines)]
 // Function body is a single large match over XML events; splitting would reduce readability.
-pub(crate) fn read_stylesheet(
-    xml: &[u8],
-    is_automatic: bool,
-) -> OdfResult<OdfStylesheet> {
+pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfStylesheet> {
     let mut reader = Reader::from_reader(xml);
     reader.config_mut().trim_text(false);
 
@@ -80,24 +73,17 @@ pub(crate) fn read_stylesheet(
                     }
                     b"style" => {
                         // style:style
-                        let name = local_attr_val(e, b"name")
-                            .unwrap_or_default();
-                        let display_name =
-                            local_attr_val(e, b"display-name");
+                        let name = local_attr_val(e, b"name").unwrap_or_default();
+                        let display_name = local_attr_val(e, b"display-name");
                         let family = parse_style_family(
-                            local_attr_val(e, b"family")
-                                .as_deref()
-                                .unwrap_or(""),
+                            local_attr_val(e, b"family").as_deref().unwrap_or(""),
                         );
-                        let parent_name =
-                            local_attr_val(e, b"parent-style-name");
-                        let list_style_name =
-                            local_attr_val(e, b"list-style-name");
+                        let parent_name = local_attr_val(e, b"parent-style-name");
+                        let list_style_name = local_attr_val(e, b"list-style-name");
                         // COMPAT(odf): style:master-page-name on a paragraph
                         // style signals a master page transition. The new master
                         // page's layout applies from that paragraph onward.
-                        let master_page_name =
-                            local_attr_val(e, b"master-page-name");
+                        let master_page_name = local_attr_val(e, b"master-page-name");
                         let auto = is_automatic || in_auto;
                         drop(e);
                         let (para_props, text_props, col_width, cell_props) =
@@ -123,9 +109,7 @@ pub(crate) fn read_stylesheet(
                     }
                     b"default-style" => {
                         let family = parse_style_family(
-                            local_attr_val(e, b"family")
-                                .as_deref()
-                                .unwrap_or(""),
+                            local_attr_val(e, b"family").as_deref().unwrap_or(""),
                         );
                         drop(e);
                         let (para_props, text_props, _col_width, _cell_props) =
@@ -137,33 +121,23 @@ pub(crate) fn read_stylesheet(
                         });
                     }
                     b"list-style" => {
-                        let name = local_attr_val(e, b"name")
-                            .unwrap_or_default();
+                        let name = local_attr_val(e, b"name").unwrap_or_default();
                         drop(e);
-                        let list_style =
-                            parse_list_style(&mut reader, name)?;
+                        let list_style = parse_list_style(&mut reader, name)?;
                         sheet.list_styles.push(list_style);
                     }
                     b"page-layout" => {
-                        let name = local_attr_val(e, b"name")
-                            .unwrap_or_default();
+                        let name = local_attr_val(e, b"name").unwrap_or_default();
                         drop(e);
-                        let layout =
-                            parse_page_layout(&mut reader, name)?;
+                        let layout = parse_page_layout(&mut reader, name)?;
                         sheet.page_layouts.push(layout);
                     }
                     b"master-page" => {
-                        let name = local_attr_val(e, b"name")
-                            .unwrap_or_default();
+                        let name = local_attr_val(e, b"name").unwrap_or_default();
                         let page_layout_name =
-                            local_attr_val(e, b"page-layout-name")
-                                .unwrap_or_default();
+                            local_attr_val(e, b"page-layout-name").unwrap_or_default();
                         drop(e);
-                        let master = parse_master_page(
-                            &mut reader,
-                            name,
-                            page_layout_name,
-                        )?;
+                        let master = parse_master_page(&mut reader, name, page_layout_name)?;
                         sheet.master_pages.push(master);
                     }
                     _ => {
@@ -183,21 +157,14 @@ pub(crate) fn read_stylesheet(
                 match local.as_slice() {
                     b"style" => {
                         // style:style with no children (no props)
-                        let name = local_attr_val(e, b"name")
-                            .unwrap_or_default();
-                        let display_name =
-                            local_attr_val(e, b"display-name");
+                        let name = local_attr_val(e, b"name").unwrap_or_default();
+                        let display_name = local_attr_val(e, b"display-name");
                         let family = parse_style_family(
-                            local_attr_val(e, b"family")
-                                .as_deref()
-                                .unwrap_or(""),
+                            local_attr_val(e, b"family").as_deref().unwrap_or(""),
                         );
-                        let parent_name =
-                            local_attr_val(e, b"parent-style-name");
-                        let list_style_name =
-                            local_attr_val(e, b"list-style-name");
-                        let master_page_name =
-                            local_attr_val(e, b"master-page-name");
+                        let parent_name = local_attr_val(e, b"parent-style-name");
+                        let list_style_name = local_attr_val(e, b"list-style-name");
+                        let master_page_name = local_attr_val(e, b"master-page-name");
                         let auto = is_automatic || in_auto;
                         let style = OdfStyle {
                             name,
@@ -219,8 +186,7 @@ pub(crate) fn read_stylesheet(
                         }
                     }
                     b"list-style" => {
-                        let name = local_attr_val(e, b"name")
-                            .unwrap_or_default();
+                        let name = local_attr_val(e, b"name").unwrap_or_default();
                         sheet.list_styles.push(OdfListStyle {
                             name,
                             levels: Vec::new(),
@@ -229,11 +195,9 @@ pub(crate) fn read_stylesheet(
                     b"master-page" => {
                         // Self-closing <style:master-page .../> — no header/footer content.
                         // TODO(odf-master-page): style:master-page-name transitions not implemented.
-                        let name = local_attr_val(e, b"name")
-                            .unwrap_or_default();
+                        let name = local_attr_val(e, b"name").unwrap_or_default();
                         let page_layout_name =
-                            local_attr_val(e, b"page-layout-name")
-                                .unwrap_or_default();
+                            local_attr_val(e, b"page-layout-name").unwrap_or_default();
                         sheet.master_pages.push(OdfMasterPage {
                             name,
                             page_layout_name,
@@ -262,7 +226,7 @@ pub(crate) fn read_stylesheet(
                 return Err(OdfError::Xml {
                     part: "styles.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -279,10 +243,16 @@ pub(crate) fn read_stylesheet(
 /// `style:table-cell-properties`.
 ///
 /// Returns `(para_props, text_props, col_width, cell_props)`.
+#[allow(clippy::type_complexity)] // Pre-existing pattern — structural refactor deferred
 fn parse_style_props(
     reader: &mut Reader<&[u8]>,
     end_local: &[u8],
-) -> OdfResult<(Option<OdfParaProps>, Option<OdfTextProps>, Option<String>, Option<OdfCellProps>)> {
+) -> OdfResult<(
+    Option<OdfParaProps>,
+    Option<OdfTextProps>,
+    Option<String>,
+    Option<OdfCellProps>,
+)> {
     let mut buf = Vec::new();
     let mut para_props: Option<OdfParaProps> = None;
     let mut text_props: Option<OdfTextProps> = None;
@@ -298,8 +268,7 @@ fn parse_style_props(
                     b"paragraph-properties" => {
                         let pp = parse_para_props_element(e);
                         drop(e);
-                        let pp =
-                            parse_para_props_with_children(reader, pp)?;
+                        let pp = parse_para_props_with_children(reader, pp)?;
                         para_props = Some(pp);
                     }
                     b"text-properties" => {
@@ -357,7 +326,7 @@ fn parse_style_props(
                 return Err(OdfError::Xml {
                     part: "styles.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -376,32 +345,48 @@ fn parse_cell_props_element(e: &quick_xml::events::BytesStart<'_>) -> OdfCellPro
     // Apply fo:padding shorthand to all edges first.
     let padding_all = local_attr_val(e, b"padding");
     let mut props = OdfCellProps {
-        padding_top:    padding_all.clone(),
+        padding_top: padding_all.clone(),
         padding_bottom: padding_all.clone(),
-        padding_left:   padding_all.clone(),
-        padding_right:  padding_all,
-        vertical_align:   local_attr_val(e, b"vertical-align"),
-        writing_mode:     local_attr_val(e, b"writing-mode"),
+        padding_left: padding_all.clone(),
+        padding_right: padding_all,
+        vertical_align: local_attr_val(e, b"vertical-align"),
+        writing_mode: local_attr_val(e, b"writing-mode"),
         background_color: local_attr_val(e, b"background-color"),
         ..Default::default()
     };
     // Per-edge padding overrides shorthand.
-    if let Some(v) = local_attr_val(e, b"padding-top")    { props.padding_top    = Some(v); }
-    if let Some(v) = local_attr_val(e, b"padding-bottom") { props.padding_bottom = Some(v); }
-    if let Some(v) = local_attr_val(e, b"padding-left")   { props.padding_left   = Some(v); }
-    if let Some(v) = local_attr_val(e, b"padding-right")  { props.padding_right  = Some(v); }
+    if let Some(v) = local_attr_val(e, b"padding-top") {
+        props.padding_top = Some(v);
+    }
+    if let Some(v) = local_attr_val(e, b"padding-bottom") {
+        props.padding_bottom = Some(v);
+    }
+    if let Some(v) = local_attr_val(e, b"padding-left") {
+        props.padding_left = Some(v);
+    }
+    if let Some(v) = local_attr_val(e, b"padding-right") {
+        props.padding_right = Some(v);
+    }
 
     // Apply fo:border shorthand to all edges first.
     let border_all = local_attr_val(e, b"border");
-    props.border_top    = border_all.clone();
-    props.border_bottom = border_all.clone();
-    props.border_left   = border_all.clone();
-    props.border_right  = border_all;
+    props.border_top.clone_from(&border_all);
+    props.border_bottom.clone_from(&border_all);
+    props.border_left.clone_from(&border_all);
+    props.border_right = border_all;
     // Per-edge border overrides shorthand.
-    if let Some(v) = local_attr_val(e, b"border-top")    { props.border_top    = Some(v); }
-    if let Some(v) = local_attr_val(e, b"border-bottom") { props.border_bottom = Some(v); }
-    if let Some(v) = local_attr_val(e, b"border-left")   { props.border_left   = Some(v); }
-    if let Some(v) = local_attr_val(e, b"border-right")  { props.border_right  = Some(v); }
+    if let Some(v) = local_attr_val(e, b"border-top") {
+        props.border_top = Some(v);
+    }
+    if let Some(v) = local_attr_val(e, b"border-bottom") {
+        props.border_bottom = Some(v);
+    }
+    if let Some(v) = local_attr_val(e, b"border-left") {
+        props.border_left = Some(v);
+    }
+    if let Some(v) = local_attr_val(e, b"border-right") {
+        props.border_right = Some(v);
+    }
 
     props
 }
@@ -420,10 +405,8 @@ fn parse_para_props_element(e: &quick_xml::events::BytesStart<'_>) -> OdfParaPro
         text_align: local_attr_val(e, b"text-align"),
         keep_together: local_attr_val(e, b"keep-together"),
         keep_with_next: local_attr_val(e, b"keep-with-next"),
-        widows: local_attr_val(e, b"widows")
-            .and_then(|s| s.parse().ok()),
-        orphans: local_attr_val(e, b"orphans")
-            .and_then(|s| s.parse().ok()),
+        widows: local_attr_val(e, b"widows").and_then(|s| s.parse().ok()),
+        orphans: local_attr_val(e, b"orphans").and_then(|s| s.parse().ok()),
         break_before: local_attr_val(e, b"break-before"),
         break_after: local_attr_val(e, b"break-after"),
         border: local_attr_val(e, b"border"),
@@ -452,8 +435,7 @@ fn parse_para_props_with_children(
                 let local = e.local_name().into_inner().to_vec();
                 if local == b"tab-stops" {
                     drop(e);
-                    pp.tab_stops =
-                        parse_tab_stops(reader)?;
+                    pp.tab_stops = parse_tab_stops(reader)?;
                 } else {
                     drop(e);
                     skip_element(reader, &local)?;
@@ -461,8 +443,7 @@ fn parse_para_props_with_children(
             }
             Ok(Event::Empty(ref e)) => {
                 if e.local_name().into_inner() == b"tab-stop" {
-                    let position =
-                        local_attr_val(e, b"position").unwrap_or_default();
+                    let position = local_attr_val(e, b"position").unwrap_or_default();
                     let tab_type = local_attr_val(e, b"type");
                     pp.tab_stops.push(OdfTabStop { position, tab_type });
                 }
@@ -477,7 +458,7 @@ fn parse_para_props_with_children(
                 return Err(OdfError::Xml {
                     part: "styles.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -487,9 +468,7 @@ fn parse_para_props_with_children(
 }
 
 /// Parse `style:tab-stops` children until `</style:tab-stops>`.
-fn parse_tab_stops(
-    reader: &mut Reader<&[u8]>,
-) -> OdfResult<Vec<OdfTabStop>> {
+fn parse_tab_stops(reader: &mut Reader<&[u8]>) -> OdfResult<Vec<OdfTabStop>> {
     let mut buf = Vec::new();
     let mut stops = Vec::new();
 
@@ -498,8 +477,7 @@ fn parse_tab_stops(
         match reader.read_event_into(&mut buf) {
             Ok(Event::Empty(ref e)) => {
                 if e.local_name().into_inner() == b"tab-stop" {
-                    let position =
-                        local_attr_val(e, b"position").unwrap_or_default();
+                    let position = local_attr_val(e, b"position").unwrap_or_default();
                     let tab_type = local_attr_val(e, b"type");
                     stops.push(OdfTabStop { position, tab_type });
                 }
@@ -514,7 +492,7 @@ fn parse_tab_stops(
                 return Err(OdfError::Xml {
                     part: "styles.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -534,10 +512,7 @@ fn parse_text_props_attrs(e: &quick_xml::events::BytesStart<'_>) -> OdfTextProps
         font_style: local_attr_val(e, b"font-style"),
         text_underline_style: local_attr_val(e, b"text-underline-style"),
         text_underline_type: local_attr_val(e, b"text-underline-type"),
-        text_line_through_style: local_attr_val(
-            e,
-            b"text-line-through-style",
-        ),
+        text_line_through_style: local_attr_val(e, b"text-line-through-style"),
         font_variant: local_attr_val(e, b"font-variant"),
         text_transform: local_attr_val(e, b"text-transform"),
         color: local_attr_val(e, b"color"),
@@ -557,10 +532,7 @@ fn parse_text_props_attrs(e: &quick_xml::events::BytesStart<'_>) -> OdfTextProps
 /// Parse a `text:list-style` element (already consumed Start event).
 #[allow(clippy::too_many_lines)]
 // Function body is a single large match over XML events; splitting would reduce readability.
-fn parse_list_style(
-    reader: &mut Reader<&[u8]>,
-    name: String,
-) -> OdfResult<OdfListStyle> {
+fn parse_list_style(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfListStyle> {
     let mut buf = Vec::new();
     let mut levels: Vec<OdfListLevel> = Vec::new();
 
@@ -574,11 +546,8 @@ fn parse_list_style(
                         let level_num: u8 = local_attr_val(e, b"level")
                             .and_then(|s| s.parse().ok())
                             .unwrap_or(1);
-                        let bullet_char =
-                            local_attr_val(e, b"bullet-char")
-                                .unwrap_or_default();
-                        let style_name =
-                            local_attr_val(e, b"style-name");
+                        let bullet_char = local_attr_val(e, b"bullet-char").unwrap_or_default();
+                        let style_name = local_attr_val(e, b"style-name");
                         drop(e);
                         let level = parse_list_level_props(
                             reader,
@@ -599,14 +568,11 @@ fn parse_list_style(
                         let num_prefix = local_attr_val(e, b"num-prefix");
                         let num_suffix = local_attr_val(e, b"num-suffix");
                         let start_value: Option<u32> =
-                            local_attr_val(e, b"start-value")
-                                .and_then(|s| s.parse().ok());
-                        let display_levels: u8 =
-                            local_attr_val(e, b"display-levels")
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(1);
-                        let style_name =
-                            local_attr_val(e, b"style-name");
+                            local_attr_val(e, b"start-value").and_then(|s| s.parse().ok());
+                        let display_levels: u8 = local_attr_val(e, b"display-levels")
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(1);
+                        let style_name = local_attr_val(e, b"style-name");
                         drop(e);
                         let level = parse_list_level_props(
                             reader,
@@ -649,11 +615,8 @@ fn parse_list_style(
                         let level_num: u8 = local_attr_val(e, b"level")
                             .and_then(|s| s.parse().ok())
                             .unwrap_or(1);
-                        let bullet_char =
-                            local_attr_val(e, b"bullet-char")
-                                .unwrap_or_default();
-                        let style_name =
-                            local_attr_val(e, b"style-name");
+                        let bullet_char = local_attr_val(e, b"bullet-char").unwrap_or_default();
+                        let style_name = local_attr_val(e, b"style-name");
                         levels.push(OdfListLevel {
                             level: level_num.saturating_sub(1),
                             kind: OdfListLevelKind::Bullet {
@@ -678,14 +641,11 @@ fn parse_list_style(
                         let num_prefix = local_attr_val(e, b"num-prefix");
                         let num_suffix = local_attr_val(e, b"num-suffix");
                         let start_value: Option<u32> =
-                            local_attr_val(e, b"start-value")
-                                .and_then(|s| s.parse().ok());
-                        let display_levels: u8 =
-                            local_attr_val(e, b"display-levels")
-                                .and_then(|s| s.parse().ok())
-                                .unwrap_or(1);
-                        let style_name =
-                            local_attr_val(e, b"style-name");
+                            local_attr_val(e, b"start-value").and_then(|s| s.parse().ok());
+                        let display_levels: u8 = local_attr_val(e, b"display-levels")
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(1);
+                        let style_name = local_attr_val(e, b"style-name");
                         levels.push(OdfListLevel {
                             level: level_num.saturating_sub(1),
                             kind: OdfListLevelKind::Number {
@@ -719,7 +679,7 @@ fn parse_list_style(
                 return Err(OdfError::Xml {
                     part: "styles.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -757,29 +717,19 @@ fn parse_list_level_props(
                 let local = e.local_name().into_inner().to_vec();
                 match local.as_slice() {
                     b"list-level-properties" => {
-                        let mode = local_attr_val(
-                            e,
-                            b"list-level-position-and-space-mode",
-                        );
-                        if mode.as_deref()
-                            == Some("label-alignment")
-                        {
+                        let mode = local_attr_val(e, b"list-level-position-and-space-mode");
+                        if mode.as_deref() == Some("label-alignment") {
                             // read child style:list-level-label-alignment
                             drop(e);
                             parse_label_alignment_child(reader, &mut out)?;
                         } else {
                             // legacy ODF 1.1 attrs directly on the element
-                            out.legacy_space_before =
-                                local_attr_val(e, b"space-before");
-                            out.legacy_min_label_width =
-                                local_attr_val(e, b"min-label-width");
+                            out.legacy_space_before = local_attr_val(e, b"space-before");
+                            out.legacy_min_label_width = local_attr_val(e, b"min-label-width");
                             out.legacy_min_label_distance =
                                 local_attr_val(e, b"min-label-distance");
                             drop(e);
-                            skip_element(
-                                reader,
-                                b"list-level-properties",
-                            )?;
+                            skip_element(reader, b"list-level-properties")?;
                         }
                     }
                     b"text-properties" => {
@@ -798,15 +748,10 @@ fn parse_list_level_props(
                 let local = e.local_name().into_inner().to_vec();
                 match local.as_slice() {
                     b"list-level-properties" => {
-                        let mode = local_attr_val(
-                            e,
-                            b"list-level-position-and-space-mode",
-                        );
+                        let mode = local_attr_val(e, b"list-level-position-and-space-mode");
                         if mode.as_deref() != Some("label-alignment") {
-                            out.legacy_space_before =
-                                local_attr_val(e, b"space-before");
-                            out.legacy_min_label_width =
-                                local_attr_val(e, b"min-label-width");
+                            out.legacy_space_before = local_attr_val(e, b"space-before");
+                            out.legacy_min_label_width = local_attr_val(e, b"min-label-width");
                             out.legacy_min_label_distance =
                                 local_attr_val(e, b"min-label-distance");
                         }
@@ -814,8 +759,7 @@ fn parse_list_level_props(
                         // to read; nothing extra to do.
                     }
                     b"text-properties" => {
-                        out.text_props =
-                            Some(parse_text_props_attrs(e));
+                        out.text_props = Some(parse_text_props_attrs(e));
                     }
                     _ => {}
                 }
@@ -830,7 +774,7 @@ fn parse_list_level_props(
                 return Err(OdfError::Xml {
                     part: "styles.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -851,31 +795,19 @@ fn parse_label_alignment_child(
         buf.clear();
         match reader.read_event_into(&mut buf) {
             Ok(Event::Empty(ref e)) => {
-                if e.local_name().into_inner()
-                    == b"list-level-label-alignment"
-                {
-                    level.label_followed_by =
-                        local_attr_val(e, b"label-followed-by");
-                    level.list_tab_stop_position =
-                        local_attr_val(e, b"list-tab-stop-position");
-                    level.text_indent =
-                        local_attr_val(e, b"text-indent");
-                    level.margin_left =
-                        local_attr_val(e, b"margin-left");
+                if e.local_name().into_inner() == b"list-level-label-alignment" {
+                    level.label_followed_by = local_attr_val(e, b"label-followed-by");
+                    level.list_tab_stop_position = local_attr_val(e, b"list-tab-stop-position");
+                    level.text_indent = local_attr_val(e, b"text-indent");
+                    level.margin_left = local_attr_val(e, b"margin-left");
                 }
             }
             Ok(Event::Start(ref e)) => {
-                if e.local_name().into_inner()
-                    == b"list-level-label-alignment"
-                {
-                    level.label_followed_by =
-                        local_attr_val(e, b"label-followed-by");
-                    level.list_tab_stop_position =
-                        local_attr_val(e, b"list-tab-stop-position");
-                    level.text_indent =
-                        local_attr_val(e, b"text-indent");
-                    level.margin_left =
-                        local_attr_val(e, b"margin-left");
+                if e.local_name().into_inner() == b"list-level-label-alignment" {
+                    level.label_followed_by = local_attr_val(e, b"label-followed-by");
+                    level.list_tab_stop_position = local_attr_val(e, b"list-tab-stop-position");
+                    level.text_indent = local_attr_val(e, b"text-indent");
+                    level.margin_left = local_attr_val(e, b"margin-left");
                     drop(e);
                     skip_element(reader, b"list-level-label-alignment")?;
                 } else {
@@ -885,8 +817,7 @@ fn parse_label_alignment_child(
                 }
             }
             Ok(Event::End(ref e)) => {
-                if e.local_name().into_inner() == b"list-level-properties"
-                {
+                if e.local_name().into_inner() == b"list-level-properties" {
                     break;
                 }
             }
@@ -895,7 +826,7 @@ fn parse_label_alignment_child(
                 return Err(OdfError::Xml {
                     part: "styles.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -907,10 +838,7 @@ fn parse_label_alignment_child(
 // ── Page layout parsing ────────────────────────────────────────────────────────
 
 /// Parse a `style:page-layout` element (Start event already consumed).
-fn parse_page_layout(
-    reader: &mut Reader<&[u8]>,
-    name: String,
-) -> OdfResult<OdfPageLayout> {
+fn parse_page_layout(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfPageLayout> {
     let mut buf = Vec::new();
     let mut layout = OdfPageLayout {
         name,
@@ -932,34 +860,25 @@ fn parse_page_layout(
                 let local = e.local_name().into_inner().to_vec();
                 match local.as_slice() {
                     b"page-layout-properties" => {
-                        layout.page_width =
-                            local_attr_val(e, b"page-width");
-                        layout.page_height =
-                            local_attr_val(e, b"page-height");
-                        layout.margin_top =
-                            local_attr_val(e, b"margin-top");
-                        layout.margin_bottom =
-                            local_attr_val(e, b"margin-bottom");
-                        layout.margin_left =
-                            local_attr_val(e, b"margin-left");
-                        layout.margin_right =
-                            local_attr_val(e, b"margin-right");
-                        layout.print_orientation =
-                            local_attr_val(e, b"print-orientation");
+                        layout.page_width = local_attr_val(e, b"page-width");
+                        layout.page_height = local_attr_val(e, b"page-height");
+                        layout.margin_top = local_attr_val(e, b"margin-top");
+                        layout.margin_bottom = local_attr_val(e, b"margin-bottom");
+                        layout.margin_left = local_attr_val(e, b"margin-left");
+                        layout.margin_right = local_attr_val(e, b"margin-right");
+                        layout.print_orientation = local_attr_val(e, b"print-orientation");
                         drop(e);
                         skip_element(reader, b"page-layout-properties")?;
                     }
                     b"header-style" => {
                         drop(e);
-                        layout.header_props = Some(
-                            parse_header_footer_style(reader, b"header-style")?,
-                        );
+                        layout.header_props =
+                            Some(parse_header_footer_style(reader, b"header-style")?);
                     }
                     b"footer-style" => {
                         drop(e);
-                        layout.footer_props = Some(
-                            parse_header_footer_style(reader, b"footer-style")?,
-                        );
+                        layout.footer_props =
+                            Some(parse_header_footer_style(reader, b"footer-style")?);
                     }
                     _ => {
                         drop(e);
@@ -970,20 +889,13 @@ fn parse_page_layout(
             Ok(Event::Empty(ref e)) => {
                 let local = e.local_name().into_inner();
                 if local == b"page-layout-properties" {
-                    layout.page_width =
-                        local_attr_val(e, b"page-width");
-                    layout.page_height =
-                        local_attr_val(e, b"page-height");
-                    layout.margin_top =
-                        local_attr_val(e, b"margin-top");
-                    layout.margin_bottom =
-                        local_attr_val(e, b"margin-bottom");
-                    layout.margin_left =
-                        local_attr_val(e, b"margin-left");
-                    layout.margin_right =
-                        local_attr_val(e, b"margin-right");
-                    layout.print_orientation =
-                        local_attr_val(e, b"print-orientation");
+                    layout.page_width = local_attr_val(e, b"page-width");
+                    layout.page_height = local_attr_val(e, b"page-height");
+                    layout.margin_top = local_attr_val(e, b"margin-top");
+                    layout.margin_bottom = local_attr_val(e, b"margin-bottom");
+                    layout.margin_left = local_attr_val(e, b"margin-left");
+                    layout.margin_right = local_attr_val(e, b"margin-right");
+                    layout.print_orientation = local_attr_val(e, b"print-orientation");
                 }
             }
             Ok(Event::End(ref e)) => {
@@ -996,7 +908,7 @@ fn parse_page_layout(
                 return Err(OdfError::Xml {
                     part: "styles.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -1021,16 +933,10 @@ fn parse_header_footer_style(
         buf.clear();
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
-                if e.local_name().into_inner()
-                    == b"header-footer-properties"
-                {
-                    props.min_height =
-                        local_attr_val(e, b"min-height");
+                if e.local_name().into_inner() == b"header-footer-properties" {
+                    props.min_height = local_attr_val(e, b"min-height");
                     props.margin = local_attr_val(e, b"margin");
-                    if matches!(
-                        reader.read_event_into(&mut buf),
-                        Ok(Event::End(_))
-                    ) {}
+                    if matches!(reader.read_event_into(&mut buf), Ok(Event::End(_))) {}
                 }
             }
             Ok(Event::End(ref e)) => {
@@ -1043,7 +949,7 @@ fn parse_header_footer_style(
                 return Err(OdfError::Xml {
                     part: "styles.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -1091,23 +997,19 @@ fn parse_master_page(
                     }
                     b"header-first" => {
                         drop(e);
-                        header_first =
-                            Some(parse_header_footer_paras(reader, b"header-first")?);
+                        header_first = Some(parse_header_footer_paras(reader, b"header-first")?);
                     }
                     b"footer-first" => {
                         drop(e);
-                        footer_first =
-                            Some(parse_header_footer_paras(reader, b"footer-first")?);
+                        footer_first = Some(parse_header_footer_paras(reader, b"footer-first")?);
                     }
                     b"header-left" => {
                         drop(e);
-                        header_even =
-                            Some(parse_header_footer_paras(reader, b"header-left")?);
+                        header_even = Some(parse_header_footer_paras(reader, b"header-left")?);
                     }
                     b"footer-left" => {
                         drop(e);
-                        footer_even =
-                            Some(parse_header_footer_paras(reader, b"footer-left")?);
+                        footer_even = Some(parse_header_footer_paras(reader, b"footer-left")?);
                     }
                     _ => {
                         drop(e);
@@ -1125,7 +1027,7 @@ fn parse_master_page(
                 return Err(OdfError::Xml {
                     part: "styles.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -1182,7 +1084,7 @@ fn parse_header_footer_paras(
                 return Err(OdfError::Xml {
                     part: "styles.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -1216,21 +1118,14 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                 match local.as_slice() {
                     b"automatic-styles" => inside = true,
                     b"style" if inside => {
-                        let name =
-                            local_attr_val(e, b"name").unwrap_or_default();
-                        let display_name =
-                            local_attr_val(e, b"display-name");
+                        let name = local_attr_val(e, b"name").unwrap_or_default();
+                        let display_name = local_attr_val(e, b"display-name");
                         let family = parse_style_family(
-                            local_attr_val(e, b"family")
-                                .as_deref()
-                                .unwrap_or(""),
+                            local_attr_val(e, b"family").as_deref().unwrap_or(""),
                         );
-                        let parent_name =
-                            local_attr_val(e, b"parent-style-name");
-                        let list_style_name =
-                            local_attr_val(e, b"list-style-name");
-                        let master_page_name =
-                            local_attr_val(e, b"master-page-name");
+                        let parent_name = local_attr_val(e, b"parent-style-name");
+                        let list_style_name = local_attr_val(e, b"list-style-name");
+                        let master_page_name = local_attr_val(e, b"master-page-name");
                         drop(e);
                         let (para_props, text_props, col_width, cell_props) =
                             parse_style_props(&mut reader, b"style")?;
@@ -1253,20 +1148,13 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
             }
             Ok(Event::Empty(ref e)) => {
                 if inside && e.local_name().into_inner() == b"style" {
-                    let name =
-                        local_attr_val(e, b"name").unwrap_or_default();
+                    let name = local_attr_val(e, b"name").unwrap_or_default();
                     let display_name = local_attr_val(e, b"display-name");
-                    let family = parse_style_family(
-                        local_attr_val(e, b"family")
-                            .as_deref()
-                            .unwrap_or(""),
-                    );
-                    let parent_name =
-                        local_attr_val(e, b"parent-style-name");
-                    let list_style_name =
-                        local_attr_val(e, b"list-style-name");
-                    let master_page_name =
-                        local_attr_val(e, b"master-page-name");
+                    let family =
+                        parse_style_family(local_attr_val(e, b"family").as_deref().unwrap_or(""));
+                    let parent_name = local_attr_val(e, b"parent-style-name");
+                    let list_style_name = local_attr_val(e, b"list-style-name");
+                    let master_page_name = local_attr_val(e, b"master-page-name");
                     styles.push(OdfStyle {
                         name,
                         display_name,
@@ -1292,7 +1180,7 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                 return Err(OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }
@@ -1317,10 +1205,7 @@ fn parse_style_family(s: &str) -> OdfStyleFamily {
 
 /// Skip the current open element and all its descendants, stopping after the
 /// matching end tag. Assumes the `Start` event has already been consumed.
-pub(crate) fn skip_element(
-    reader: &mut Reader<&[u8]>,
-    end_local: &[u8],
-) -> OdfResult<()> {
+pub(crate) fn skip_element(reader: &mut Reader<&[u8]>, end_local: &[u8]) -> OdfResult<()> {
     let mut buf = Vec::new();
     let mut depth: u32 = 1;
 
@@ -1330,9 +1215,7 @@ pub(crate) fn skip_element(
             Ok(Event::Start(_)) => depth += 1,
             Ok(Event::End(ref e)) => {
                 depth -= 1;
-                if depth == 0
-                    && e.local_name().into_inner() == end_local
-                {
+                if depth == 0 && e.local_name().into_inner() == end_local {
                     return Ok(());
                 }
                 if depth == 0 {
@@ -1344,7 +1227,7 @@ pub(crate) fn skip_element(
                 return Err(OdfError::Xml {
                     part: "styles.xml".to_string(),
                     source: e,
-                })
+                });
             }
             _ => {}
         }

@@ -3,8 +3,8 @@
 
 //! `quick-xml` event mode parsing implementing ISO metadata structure extraction targeting relationship types specifically.
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
 use crate::error::{OpcError, OpcResult};
 use crate::relationships::{Relationship, TargetMode};
@@ -40,17 +40,20 @@ pub fn parse_relationships_part(
                         match attr.key.as_ref() {
                             b"Id" => {
                                 id = Some(
-                                    attr.decode_and_unescape_value(reader.decoder())?.to_string(),
+                                    attr.decode_and_unescape_value(reader.decoder())?
+                                        .to_string(),
                                 );
                             }
                             b"Type" => {
                                 rel_type = Some(
-                                    attr.decode_and_unescape_value(reader.decoder())?.to_string(),
+                                    attr.decode_and_unescape_value(reader.decoder())?
+                                        .to_string(),
                                 );
                             }
                             b"Target" => {
                                 target = Some(
-                                    attr.decode_and_unescape_value(reader.decoder())?.to_string(),
+                                    attr.decode_and_unescape_value(reader.decoder())?
+                                        .to_string(),
                                 );
                             }
                             b"TargetMode" => {
@@ -100,6 +103,6 @@ pub fn parse_relationships_part(
         }
         buf.clear();
     }
-    
+
     Ok(relationships)
 }

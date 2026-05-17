@@ -9,9 +9,9 @@ use std::io::Cursor;
 
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::{Inline, NoteKind};
-use loki_ooxml::docx::import::{DocxImporter, DocxImportOptions};
 use loki_doc_model::io::DocumentExport;
 use loki_ooxml::DocxExport;
+use loki_ooxml::docx::import::{DocxImportOptions, DocxImporter};
 
 #[test]
 fn export_round_trip_p0_features() {
@@ -29,25 +29,31 @@ fn export_round_trip_p0_features() {
             }
         }
     }
-    assert!(ref_has_image, "Reference DOCX should have an image after import");
+    assert!(
+        ref_has_image,
+        "Reference DOCX should have an image after import"
+    );
 
     // ── 2. Export back to DOCX ───────────────────────────────────────────
     let mut exported_bytes = Cursor::new(Vec::new());
-    DocxExport::export(&doc, &mut exported_bytes, ())
-        .expect("export should succeed");
+    DocxExport::export(&doc, &mut exported_bytes, ()).expect("export should succeed");
     let exported_bytes = exported_bytes.into_inner();
 
     // ── 3. Re-import and verify ──────────────────────────────────────────
     let re_import = DocxImporter::new(DocxImportOptions::default())
         .run(Cursor::new(exported_bytes))
         .expect("exported DOCX should re-import");
-    
+
     if !re_import.warnings.is_empty() {
         println!("RE-IMPORT WARNINGS: {:?}", re_import.warnings);
     }
     let re_doc = re_import.document;
 
-    let all_blocks: Vec<&Block> = re_doc.sections.iter().flat_map(|s| s.blocks.iter()).collect();
+    let all_blocks: Vec<&Block> = re_doc
+        .sections
+        .iter()
+        .flat_map(|s| s.blocks.iter())
+        .collect();
 
     // ── 4. Verify Hyperlinks ─────────────────────────────────────────────
     let has_link = all_blocks.iter().any(|b| block_has_link(b));

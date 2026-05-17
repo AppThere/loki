@@ -3,12 +3,12 @@
 
 //! Extraction bounds structurally matching format types binding identifiers properly parsing internal parameters.
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
+use crate::content_types::ContentTypeMap;
 use crate::error::{OpcError, OpcResult};
 use crate::part::PartName;
-use crate::content_types::ContentTypeMap;
 
 #[cfg(not(feature = "strict"))]
 use crate::error::DeviationWarning;
@@ -34,9 +34,15 @@ pub fn parse_content_types(
                     let mut ct = None;
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"Extension" {
-                            ext = Some(attr.decode_and_unescape_value(reader.decoder())?.to_string());
+                            ext = Some(
+                                attr.decode_and_unescape_value(reader.decoder())?
+                                    .to_string(),
+                            );
                         } else if attr.key.as_ref() == b"ContentType" {
-                            ct = Some(attr.decode_and_unescape_value(reader.decoder())?.to_string());
+                            ct = Some(
+                                attr.decode_and_unescape_value(reader.decoder())?
+                                    .to_string(),
+                            );
                         }
                     }
 
@@ -46,28 +52,42 @@ pub fn parse_content_types(
                             let mut resolved_ct = c.clone();
                             #[cfg(not(feature = "strict"))]
                             if resolved_ct.is_empty() {
-                                resolved_ct = crate::compat::content_types::fallback_media_type(&x).to_string();
+                                resolved_ct = crate::compat::content_types::fallback_media_type(&x)
+                                    .to_string();
                                 warnings.push(DeviationWarning::MissingMediaType {
                                     part: format!("Default[{}]", x),
                                     fallback: resolved_ct.clone(),
                                 });
                             }
                             if resolved_ct.is_empty() {
-                                return Err(OpcError::InvalidContentTypes("Empty ContentType strictly forbidden".into()));
+                                return Err(OpcError::InvalidContentTypes(
+                                    "Empty ContentType strictly forbidden".into(),
+                                ));
                             }
                             map.add_default(&x, &resolved_ct);
                         }
-                        _ => return Err(OpcError::InvalidContentTypes("Missing attributes in Default".into())),
+                        _ => {
+                            return Err(OpcError::InvalidContentTypes(
+                                "Missing attributes in Default".into(),
+                            ));
+                        }
                     }
                 } else if name.as_ref() == b"Override" {
                     let mut part = None;
                     let mut ct = None;
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"PartName" {
-                            let s = attr.decode_and_unescape_value(reader.decoder())?.to_string();
-                            part = Some(PartName::new(s).map_err(|_| OpcError::InvalidContentTypes("Invalid Overrides PartName".into()))?);
+                            let s = attr
+                                .decode_and_unescape_value(reader.decoder())?
+                                .to_string();
+                            part = Some(PartName::new(s).map_err(|_| {
+                                OpcError::InvalidContentTypes("Invalid Overrides PartName".into())
+                            })?);
                         } else if attr.key.as_ref() == b"ContentType" {
-                            ct = Some(attr.decode_and_unescape_value(reader.decoder())?.to_string());
+                            ct = Some(
+                                attr.decode_and_unescape_value(reader.decoder())?
+                                    .to_string(),
+                            );
                         }
                     }
 
@@ -78,18 +98,26 @@ pub fn parse_content_types(
                             #[cfg(not(feature = "strict"))]
                             if resolved_ct.is_empty() {
                                 let ext = p.extension().unwrap_or("");
-                                resolved_ct = crate::compat::content_types::fallback_media_type(ext).to_string();
+                                resolved_ct =
+                                    crate::compat::content_types::fallback_media_type(ext)
+                                        .to_string();
                                 warnings.push(DeviationWarning::MissingMediaType {
                                     part: format!("Override[{}]", p.as_str()),
                                     fallback: resolved_ct.clone(),
                                 });
                             }
                             if resolved_ct.is_empty() {
-                                return Err(OpcError::InvalidContentTypes("Empty ContentType strictly forbidden".into()));
+                                return Err(OpcError::InvalidContentTypes(
+                                    "Empty ContentType strictly forbidden".into(),
+                                ));
                             }
                             map.add_override(&p, &resolved_ct);
                         }
-                        _ => return Err(OpcError::InvalidContentTypes("Missing attributes in Override".into())),
+                        _ => {
+                            return Err(OpcError::InvalidContentTypes(
+                                "Missing attributes in Override".into(),
+                            ));
+                        }
                     }
                 }
             }

@@ -27,9 +27,9 @@ pub mod relationships;
 pub mod zip;
 
 // Public Primary Re-exports
+pub use content_types::ContentTypeMap;
+pub use core_properties::CoreProperties;
 pub use error::{DeviationWarning, OpcError, OpcResult};
 pub use package::Package;
 pub use part::{PartData, PartName};
 pub use relationships::{Relationship, RelationshipSet, TargetMode};
-pub use content_types::ContentTypeMap;
-pub use core_properties::CoreProperties;

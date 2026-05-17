@@ -1,0 +1,15 @@
+[package]
+name = "appthere-ui"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "AppThere suite shared UI components and design tokens"
+repository = "https://github.com/appthere/loki"
+
+[lib]
+name = "appthere_ui"
+path = "src/lib.rs"
+
+[dependencies]
+dioxus    = { workspace = true }
+thiserror = { workspace = true }

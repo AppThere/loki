@@ -27,8 +27,8 @@ loki-odf        = { path = "../loki-odf" }
 loki-layout     = { path = "../loki-layout" }
 # In-workspace Vello GPU rendering backend.
 loki-vello      = { path = "../loki-vello" }
-# Shared design tokens and UI primitives.
-loki-theme      = { path = "../loki-theme" }
+# Shared AppThere design tokens and UI components.
+appthere-ui     = { path = "../appthere-ui" }
 # Cross-platform file picker (crates.io).
 loki-file-access = "0.1.1"
 # Typed error derivation.
@@ -54,6 +54,13 @@ fontique        = { version = "0.8", features = ["fontconfig-dlopen"] }
 loro = "1.11.1"
 # Unicode grapheme cluster segmentation for correct backspace/delete behaviour.
 unicode-segmentation = "1"
+# Platform-specific data/config directory paths for recent-documents persistence.
+dirs = "5"
+# JSON serialisation for recent-documents file.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Fluent-based internationalisation for all user-visible strings.
+loki-i18n = { path = "../loki-i18n" }
 
 [package.metadata.android]
 package = "com.appthere.loki"

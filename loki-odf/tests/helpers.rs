@@ -8,8 +8,8 @@
 //! etc.) produce well-formed `content.xml` / `styles.xml` fixtures.
 
 use std::io::{Cursor, Write};
-use zip::write::{FileOptions, ZipWriter};
 use zip::CompressionMethod;
+use zip::write::{FileOptions, ZipWriter};
 
 /// The ODF text MIME type, stored verbatim (no trailing newline).
 pub const MIME_ODT: &str = "application/vnd.oasis.opendocument.text";
@@ -26,22 +26,16 @@ pub const MANIFEST: &[u8] = b"<manifest:manifest \
 ///
 /// The `mimetype` entry is always first and uncompressed (stored), in
 /// compliance with ODF 1.3 §3.4.
-pub fn build_odt_zip(
-    content_xml: &[u8],
-    styles_xml: &[u8],
-    meta_xml: Option<&[u8]>,
-) -> Vec<u8> {
+pub fn build_odt_zip(content_xml: &[u8], styles_xml: &[u8], meta_xml: Option<&[u8]>) -> Vec<u8> {
     let mut buf = Vec::new();
     let mut zip = ZipWriter::new(Cursor::new(&mut buf));
 
     // mimetype must be first and stored (uncompressed)
-    let stored = FileOptions::<()>::default()
-        .compression_method(CompressionMethod::Stored);
+    let stored = FileOptions::<()>::default().compression_method(CompressionMethod::Stored);
     zip.start_file("mimetype", stored).unwrap();
     zip.write_all(MIME_ODT.as_bytes()).unwrap();
 
-    let deflated = FileOptions::<()>::default()
-        .compression_method(CompressionMethod::Deflated);
+    let deflated = FileOptions::<()>::default().compression_method(CompressionMethod::Deflated);
 
     zip.start_file("META-INF/manifest.xml", deflated).unwrap();
     zip.write_all(MANIFEST).unwrap();

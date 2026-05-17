@@ -63,11 +63,7 @@ fn map_level(lvl: &DocxLevel, start_override: Option<u32>) -> ListLevel {
         .and_then(|i| i.hanging)
         .map_or(Points::new(0.0), |v| Points::new(f64::from(v) / 20.0));
 
-    let char_props = lvl
-        .rpr
-        .as_ref()
-        .map(map_rpr)
-        .unwrap_or_default();
+    let char_props = lvl.rpr.as_ref().map(map_rpr).unwrap_or_default();
 
     let label_alignment = map_lvl_jc(lvl.lvl_jc.as_deref());
 
@@ -108,7 +104,10 @@ fn map_level_kind(
                     BulletChar::Char(s.chars().next().unwrap_or('•'))
                 }
             };
-            ListLevelKind::Bullet { char: bullet_char, font }
+            ListLevelKind::Bullet {
+                char: bullet_char,
+                font,
+            }
         }
         "none" => ListLevelKind::None,
         _ => {
@@ -152,11 +151,10 @@ pub(crate) fn map_numbering(
         let Some(abs) = numbering
             .abstract_nums
             .iter()
-            .find(|a| a.abstract_num_id == num.abstract_num_id) else {
-                warnings.push(OoxmlWarning::UnresolvedNumberingId {
-                    num_id: num.num_id,
-                });
-                continue;
+            .find(|a| a.abstract_num_id == num.abstract_num_id)
+        else {
+            warnings.push(OoxmlWarning::UnresolvedNumberingId { num_id: num.num_id });
+            continue;
         };
 
         // Build 9 levels (0..=8), applying overrides where present.
@@ -211,8 +209,15 @@ mod tests {
         overrides: Vec<DocxLvlOverride>,
     ) -> DocxNumbering {
         DocxNumbering {
-            abstract_nums: vec![DocxAbstractNum { abstract_num_id, levels }],
-            nums: vec![DocxNum { num_id, abstract_num_id, level_overrides: overrides }],
+            abstract_nums: vec![DocxAbstractNum {
+                abstract_num_id,
+                levels,
+            }],
+            nums: vec![DocxNum {
+                num_id,
+                abstract_num_id,
+                level_overrides: overrides,
+            }],
         }
     }
 
@@ -249,7 +254,10 @@ mod tests {
         let ls = catalog.list_styles.get(&ListId::new("1")).unwrap();
         assert!(matches!(
             ls.levels[0].kind,
-            ListLevelKind::Bullet { char: BulletChar::Char('•'), .. }
+            ListLevelKind::Bullet {
+                char: BulletChar::Char('•'),
+                ..
+            }
         ));
     }
 
@@ -273,7 +281,11 @@ mod tests {
             0,
             1,
             vec![decimal_level(0, "%1.")],
-            vec![DocxLvlOverride { ilvl: 0, start_override: Some(5), level: None }],
+            vec![DocxLvlOverride {
+                ilvl: 0,
+                start_override: Some(5),
+                level: None,
+            }],
         );
         let mut catalog = StyleCatalog::new();
         map_numbering(&numbering, &mut catalog);

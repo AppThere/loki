@@ -1,8 +1,8 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::units::Length;
 use super::size::Size;
+use crate::units::Length;
 use std::ops::{Add, Sub};
 
 /// A point in 2D space.

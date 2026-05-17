@@ -63,9 +63,10 @@ impl ResolvedNumDef<'_> {
     pub fn level(&self, ilvl: u8) -> Option<&DocxLevel> {
         // Check for override first
         if let Some(ov) = self.num.level_overrides.iter().find(|o| o.ilvl == ilvl)
-            && let Some(ref lvl) = ov.level {
-                return Some(lvl);
-            }
+            && let Some(ref lvl) = ov.level
+        {
+            return Some(lvl);
+        }
         self.abs.levels.iter().find(|l| l.ilvl == ilvl)
     }
 }

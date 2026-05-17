@@ -6,7 +6,7 @@
 //! [`WgpuSurface`] is the top-level document canvas: it computes the page count
 //! for the current document and creates one [`PageCanvas`] per page, each of
 //! which owns a separate [`LokiDocumentSource`] and `<canvas>` element.  Pages
-//! are stacked vertically with [`loki_theme::tokens::PAGE_GAP_PX`] spacing inside
+//! are stacked vertically with [`appthere_ui::tokens::PAGE_GAP_PX`] spacing inside
 //! a parent scroll container provided by the editor shell.
 //!
 //! When no document is loaded (`document: None`) or the layout yields zero pages,
@@ -55,12 +55,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use appthere_ui::tokens;
 use dioxus::native::use_wgpu;
 use dioxus::prelude::*;
 use kurbo::Rect;
 use loki_doc_model::document::Document;
-use loki_layout::{layout_document, DocumentLayout, FontResources, LayoutMode, LayoutOptions};
-use loki_theme::tokens;
+use loki_layout::{DocumentLayout, FontResources, LayoutMode, LayoutOptions, layout_document};
 
 use crate::components::document_source::{DocumentState, LokiDocumentSource};
 use crate::editing::cursor::{CursorState, DocumentPosition};
@@ -80,6 +80,9 @@ pub struct WgpuSurfaceProps {
     /// (to read `paginated_layout` for hit-testing and to bump the generation
     /// counter after mutations).
     pub doc_state: Arc<Mutex<DocumentState>>,
+
+    /// The path of the active document, used to detect tab switches.
+    pub path: String,
 
     /// Document to render.  `None` shows a placeholder until loading completes.
     pub document: Option<Document>,
@@ -171,7 +174,7 @@ fn PageCanvas(props: PageCanvasProps) -> Element {
             // Dummy attribute that changes with the cursor to ensure Blitz
             // marks the node as dirty and re-calls render().
             "data-cursor": if let Some(cs) = &props.cursor_state {
-                format!("{:?}-{:?}", cs.anchor, cs.focus)
+                format!("{:?}-{:?}-{}", cs.anchor, cs.focus, cs.document_generation)
             } else {
                 "none".to_string()
             },
@@ -215,17 +218,26 @@ fn PageCanvas(props: PageCanvasProps) -> Element {
 /// pages, an "Opening document…" placeholder is shown instead.
 #[allow(non_snake_case)]
 pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
-    let WgpuSurfaceProps { doc_state, document, layout_opts, visible_rect, cursor_state, .. } = props;
+    let WgpuSurfaceProps {
+        doc_state,
+        document,
+        layout_opts,
+        visible_rect,
+        cursor_state,
+        ..
+    } = props;
 
     // Cheap comparable key for the current document.
-    // Using (title, section_count) avoids deriving PartialEq on Document.
-    let new_key: (Option<String>, usize) = (
+    // Including `path` ensures we detect document switches even if both
+    // documents have the same title and section count.
+    let new_key: (String, Option<String>, usize) = (
+        props.path.clone(),
         document.as_ref().and_then(|d| d.meta.title.clone()),
         document.as_ref().map(|d| d.sections.len()).unwrap_or(0),
     );
 
-    let prev_key: Rc<RefCell<(Option<String>, usize)>> =
-        use_hook(|| Rc::new(RefCell::new((None, 0))));
+    let prev_key: Rc<RefCell<(String, Option<String>, usize)>> =
+        use_hook(|| Rc::new(RefCell::new((String::new(), None, 0))));
 
     let key_changed = *prev_key.borrow() != new_key;
     if key_changed {
@@ -244,8 +256,12 @@ pub fn WgpuSurface(props: WgpuSurfaceProps) -> Element {
     // render frame.
     let page_count_rc: Rc<RefCell<usize>> = use_hook(|| Rc::new(RefCell::new(0usize)));
     // Falls back to A4 (794 × 1123 CSS px) until a document is loaded.
-    let page_dims_rc: Rc<RefCell<(f32, f32)>> =
-        use_hook(|| Rc::new(RefCell::new((tokens::PAGE_WIDTH_PX, tokens::PAGE_HEIGHT_PX))));
+    let page_dims_rc: Rc<RefCell<(f32, f32)>> = use_hook(|| {
+        Rc::new(RefCell::new((
+            tokens::PAGE_WIDTH_PX,
+            tokens::PAGE_HEIGHT_PX,
+        )))
+    });
 
     if key_changed {
         let (new_count, new_dims, new_layout) = if let Some(doc) = document.as_ref() {

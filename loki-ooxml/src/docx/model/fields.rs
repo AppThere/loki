@@ -34,10 +34,7 @@ impl DocxField {
     /// Returns the uppercase field name (first whitespace-delimited word).
     #[must_use]
     pub fn field_name(&self) -> &str {
-        self.instruction
-            .split_whitespace()
-            .next()
-            .unwrap_or("")
+        self.instruction.split_whitespace().next().unwrap_or("")
     }
 }
 

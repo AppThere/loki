@@ -10,5 +10,8 @@ pub mod app;
 pub mod components;
 pub mod editing;
 pub mod error;
+pub mod new_document;
+pub mod recent_documents;
 pub mod routes;
+pub mod tabs;
 pub mod utils;

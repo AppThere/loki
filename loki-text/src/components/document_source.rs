@@ -73,11 +73,11 @@ use anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHa
 use kurbo::Rect;
 use loki_doc_model::document::Document;
 use loki_layout::{
-    layout_document, DocumentLayout, FontResources, LayoutMode, LayoutOptions, PaginatedLayout,
+    DocumentLayout, FontResources, LayoutMode, LayoutOptions, PaginatedLayout, layout_document,
 };
-use loki_vello::{paint_single_page, CursorPaint, FontDataCache, SelectionRect};
 #[cfg(any(target_os = "ios", target_os = "android"))]
 use loki_vello::SelectionHandle;
+use loki_vello::{CursorPaint, FontDataCache, SelectionRect, paint_single_page};
 use peniko::Color;
 use vello::{AaConfig, AaSupport, RenderParams, RendererOptions, Scene};
 
@@ -155,7 +155,43 @@ pub struct DocumentState {
     pub shared_font_resources: Arc<Mutex<FontResources>>,
 }
 
-// ── LokiDocumentSource ────────────────────────────────────────────────────────
+impl DocumentState {
+    /// Creates a fresh initial state with no document loaded.
+    ///
+    /// Used by the tab-switch reset effect in `editor_inner.rs` to clear the
+    /// previous document's state (layout, generation, cursor, etc.) before the
+    /// new document begins loading.  The shared Arc fields (`shared_renderer`,
+    /// `shared_font_cache`, `shared_font_resources`) are **preserved** across
+    /// the reset — creating new Arcs here would break the handles stored in
+    /// the live `LokiDocumentSource` instances.
+    pub fn new() -> Self {
+        Self {
+            document: None,
+            generation: 0,
+            page_count: 0,
+            canvas_width: 0.0,
+            visible_rect: None,
+            page_width_px: appthere_ui::tokens::PAGE_WIDTH_PX,
+            page_height_px: appthere_ui::tokens::PAGE_HEIGHT_PX,
+            cursor_state: None,
+            paginated_layout: None,
+            preserve_for_editing: false,
+            shared_renderer: Arc::new(Mutex::new(None)),
+            shared_font_cache: Arc::new(Mutex::new(loki_vello::FontDataCache::new())),
+            layout_stamp: 0,
+            layout_generation: 0,
+            layout_canvas_width: 0.0,
+            layout_preserve_for_editing: false,
+            shared_font_resources: Arc::new(Mutex::new(FontResources::new())),
+        }
+    }
+}
+
+impl Default for DocumentState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// `CustomPaintSource` that renders one page of a [`Document`] to a wgpu texture each frame.
 ///
@@ -215,7 +251,11 @@ impl LokiDocumentSource {
             let s = document
                 .lock()
                 .expect("DocumentState lock poisoned in LokiDocumentSource::new");
-            (s.shared_renderer.clone(), s.shared_font_cache.clone(), s.shared_font_resources.clone())
+            (
+                s.shared_renderer.clone(),
+                s.shared_font_cache.clone(),
+                s.shared_font_resources.clone(),
+            )
         };
         Self {
             document,
@@ -257,11 +297,16 @@ fn resolve_cursor_paint(
     let ed = match editing_data.as_ref() {
         Some(e) => e,
         None => {
-            tracing::warn!("LokiDocumentSource: resolve_cursor_paint failed: editing_data is None for page {page_index}");
+            tracing::warn!(
+                "LokiDocumentSource: resolve_cursor_paint failed: editing_data is None for page {page_index}"
+            );
             return None;
         }
     };
-    let para_data = ed.paragraphs.iter().find(|p| p.block_index == focus.paragraph_index);
+    let para_data = ed
+        .paragraphs
+        .iter()
+        .find(|p| p.block_index == focus.paragraph_index);
     let Some(pd) = para_data else {
         // This is expected if the focus is on a different page.
         return None;
@@ -269,7 +314,10 @@ fn resolve_cursor_paint(
 
     let cursor_rect = pd.layout.cursor_rect(focus.byte_offset);
     if cursor_rect.is_none() {
-        tracing::warn!("LokiDocumentSource: resolve_cursor_paint: pd.layout.cursor_rect returned None for offset {}", focus.byte_offset);
+        tracing::warn!(
+            "LokiDocumentSource: resolve_cursor_paint: pd.layout.cursor_rect returned None for offset {}",
+            focus.byte_offset
+        );
     }
 
     // Build selection highlight rects when anchor and focus differ.
@@ -501,7 +549,9 @@ pub fn apply_mutation_and_relayout(
             &doc,
             LayoutMode::Paginated,
             1.0,
-            &LayoutOptions { preserve_for_editing: true },
+            &LayoutOptions {
+                preserve_for_editing: true,
+            },
         )
     };
 
@@ -512,7 +562,12 @@ pub fn apply_mutation_and_relayout(
             let count = pl.pages.len();
             (count, Some(std::sync::Arc::new(pl.clone())), w_px, h_px)
         }
-        _ => (0, None, loki_theme::tokens::PAGE_WIDTH_PX, loki_theme::tokens::PAGE_HEIGHT_PX),
+        _ => (
+            0,
+            None,
+            appthere_ui::tokens::PAGE_WIDTH_PX,
+            appthere_ui::tokens::PAGE_HEIGHT_PX,
+        ),
     };
 
     // Step 3: Publish to shared state and bump generation.
@@ -557,7 +612,6 @@ impl CustomPaintSource for LokiDocumentSource {
                 Err(e) => tracing::warn!("LokiDocumentSource: vello renderer init failed: {e}"),
             }
         }
-
     }
 
     fn suspend(&mut self) {
@@ -670,7 +724,9 @@ impl CustomPaintSource for LokiDocumentSource {
             // paint_layout multiplies by `scale` to convert to physical pixels;
             // passing the device scale here would apply it twice (Parley 0.6.0
             // already multiplies font sizes by display_scale internally).
-            let layout_opts = LayoutOptions { preserve_for_editing: preserve_effective };
+            let layout_opts = LayoutOptions {
+                preserve_for_editing: preserve_effective,
+            };
             let layout = {
                 let mut fr = self
                     .shared_font_resources
@@ -836,11 +892,23 @@ mod tests {
     }
 
     /// Simulates a layout recompute by populating `DocumentState` as `render()` would.
-    fn populate_layout(state: &Arc<Mutex<DocumentState>>, generation: u64, canvas_width: f32, preserve: bool, stamp: u64) {
-        use loki_layout::{layout_document, LayoutMode};
+    fn populate_layout(
+        state: &Arc<Mutex<DocumentState>>,
+        generation: u64,
+        canvas_width: f32,
+        preserve: bool,
+        stamp: u64,
+    ) {
+        use loki_layout::{LayoutMode, layout_document};
         let doc = Document::new();
         let mut resources = FontResources::new();
-        let layout = layout_document(&mut resources, &doc, LayoutMode::Paginated, 1.0, &LayoutOptions::default());
+        let layout = layout_document(
+            &mut resources,
+            &doc,
+            LayoutMode::Paginated,
+            1.0,
+            &LayoutOptions::default(),
+        );
         let paginated = match layout {
             DocumentLayout::Paginated(pl) => Some(Arc::new(pl)),
             _ => None,
@@ -973,9 +1041,8 @@ mod tests {
     fn reuse_guard_blocked_without_handle() {
         // Even if stamp and size match, no handle → guard must not fire.
         let s = make_source();
-        let would_reuse = s.texture_handle.is_some()
-            && s.texture_stamp == 0
-            && s.texture_size == (0, 0);
+        let would_reuse =
+            s.texture_handle.is_some() && s.texture_stamp == 0 && s.texture_size == (0, 0);
         assert!(!would_reuse, "no handle means no reuse");
     }
 
@@ -1068,12 +1135,24 @@ mod tests {
         let ed = make_editing_data_single(para);
         let state = CursorState {
             loro_cursor: None,
-            anchor: Some(DocumentPosition { page_index: 0, paragraph_index: 0, byte_offset: 0 }),
-            focus: Some(DocumentPosition { page_index: 0, paragraph_index: 0, byte_offset: 0 }),
+            anchor: Some(DocumentPosition {
+                page_index: 0,
+                paragraph_index: 0,
+                byte_offset: 0,
+            }),
+            focus: Some(DocumentPosition {
+                page_index: 0,
+                paragraph_index: 0,
+                byte_offset: 0,
+            }),
+            document_generation: 0,
         };
         let result = resolve_cursor_paint(&state, &ed, 0);
         assert!(result.is_some(), "focus on page 0 should return Some");
-        let cr = result.unwrap().cursor_rect.expect("cursor rect present for non-empty text");
+        let cr = result
+            .unwrap()
+            .cursor_rect
+            .expect("cursor rect present for non-empty text");
         assert!(cr.height > 0.0, "cursor height should be positive");
     }
 
@@ -1085,7 +1164,12 @@ mod tests {
         let state = CursorState {
             loro_cursor: None,
             anchor: None,
-            focus: Some(DocumentPosition { page_index: 1, paragraph_index: 0, byte_offset: 0 }),
+            focus: Some(DocumentPosition {
+                page_index: 1,
+                paragraph_index: 0,
+                byte_offset: 0,
+            }),
+            document_generation: 0,
         };
         assert!(
             resolve_cursor_paint(&state, &ed, 0).is_none(),
@@ -1100,8 +1184,17 @@ mod tests {
         let ed = make_editing_data_single(para);
         let state = CursorState {
             loro_cursor: None,
-            anchor: Some(DocumentPosition { page_index: 0, paragraph_index: 0, byte_offset: 0 }),
-            focus: Some(DocumentPosition { page_index: 0, paragraph_index: 0, byte_offset: 5 }),
+            anchor: Some(DocumentPosition {
+                page_index: 0,
+                paragraph_index: 0,
+                byte_offset: 0,
+            }),
+            focus: Some(DocumentPosition {
+                page_index: 0,
+                paragraph_index: 0,
+                byte_offset: 5,
+            }),
+            document_generation: 0,
         };
         let paint =
             resolve_cursor_paint(&state, &ed, 0).expect("selection on page 0 should return Some");
