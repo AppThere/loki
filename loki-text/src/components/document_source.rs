@@ -1145,6 +1145,7 @@ mod tests {
                 paragraph_index: 0,
                 byte_offset: 0,
             }),
+            document_generation: 0,
         };
         let result = resolve_cursor_paint(&state, &ed, 0);
         assert!(result.is_some(), "focus on page 0 should return Some");
@@ -1168,6 +1169,7 @@ mod tests {
                 paragraph_index: 0,
                 byte_offset: 0,
             }),
+            document_generation: 0,
         };
         assert!(
             resolve_cursor_paint(&state, &ed, 0).is_none(),
@@ -1192,6 +1194,7 @@ mod tests {
                 paragraph_index: 0,
                 byte_offset: 5,
             }),
+            document_generation: 0,
         };
         let paint =
             resolve_cursor_paint(&state, &ed, 0).expect("selection on page 0 should return Some");
