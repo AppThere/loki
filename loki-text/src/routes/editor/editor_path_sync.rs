@@ -7,16 +7,11 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 
-use crate::components::document_source::DocumentState;
 use crate::editing::cursor::CursorState;
+use crate::editing::state::DocumentState;
 
 /// Synchronises `path_signal` with the `path` prop and resets all per-document
 /// signals when the active document changes.
-///
-/// Must be called synchronously during the render phase — before `use_resource`
-/// evaluates — so the reset happens before `WgpuSurface` receives the new
-/// document.  This prevents the race condition where a deferred `use_effect`
-/// wipes out the newly loaded document.
 #[allow(clippy::too_many_arguments)] // 10 args: all per-document reset targets
 pub(super) fn sync_path_and_reset(
     path: &str,
@@ -45,13 +40,7 @@ pub(super) fn sync_path_and_reset(
         state.document = None;
         state.generation = 0;
         state.page_count = 0;
-        state.canvas_width = 0.0;
-        state.visible_rect = None;
         state.paginated_layout = None;
-        state.layout_stamp = state.layout_stamp.wrapping_add(1);
-        state.layout_generation = 0;
-        state.layout_canvas_width = 0.0;
-        state.layout_preserve_for_editing = false;
     } else {
         tracing::error!("doc_state lock poisoned during tab switch — state may be stale");
     }

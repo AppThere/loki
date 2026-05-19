@@ -3,14 +3,12 @@
 
 //! Dioxus signal integration and orchestration layer for the Loki render cache.
 //!
-//! # Crate overview
-//!
 //! | Module | Responsibility |
 //! |--------|----------------|
-//! | [`scroll_driver`] | Dioxus signal helpers: [`on_scroll_event`], [`use_settle_detector`] |
+//! | [`scroll_driver`] | Re-exports from `appthere_canvas::dioxus::scroll_driver` |
 //! | [`doc_page_source`] | Layout + page-size source backed by `loki-doc-model` |
 //! | [`page_paint_source`] | Per-page `CustomPaintSource` (`LokiPageSource`) |
-//! | [`renderer_state`] | [`RendererState`] — Dioxus context holding cache + scroll signal |
+//! | [`renderer_state`] | [`RendererState`] — Dioxus context holding cache + scroll + renderer |
 //! | [`document_view`] | [`DocumentView`] root component |
 
 pub mod doc_page_source;

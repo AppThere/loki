@@ -1,7 +1,7 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
 
-//! LRU-tracked per-page tier-and-dirty metadata store.
+//! Generic per-page tier-and-dirty metadata store.
 //!
 //! `CachedPage` no longer holds a GPU texture — GPU resources are owned by
 //! `LokiPageSource` instances inside Blitz's `CustomPaintSource` frame loop.
@@ -10,7 +10,8 @@
 
 use std::collections::HashMap;
 
-use crate::{CacheTier, PageIndex};
+use crate::key::CacheKey;
+use crate::tier_policy::CacheTier;
 
 /// Metadata entry for a single cached page.
 #[derive(Debug)]
@@ -23,12 +24,15 @@ pub struct CachedPage {
 }
 
 /// Tier-and-dirty metadata store for all document pages.
+///
+/// `K` is the cache key type — use [`crate::PageIndex`] for document pages,
+/// or any other type that satisfies [`CacheKey`].
 #[derive(Debug)]
-pub struct PageCache {
-    pub(crate) pages: HashMap<PageIndex, CachedPage>,
+pub struct PageCache<K: CacheKey> {
+    pub(crate) pages: HashMap<K, CachedPage>,
 }
 
-impl PageCache {
+impl<K: CacheKey> PageCache<K> {
     /// Creates an empty cache.
     #[must_use]
     pub fn new() -> Self {
@@ -38,14 +42,14 @@ impl PageCache {
     }
 
     /// Inserts or replaces the tier entry for `index`, marking the page clean.
-    pub fn insert(&mut self, index: PageIndex, tier: CacheTier) {
+    pub fn insert(&mut self, index: K, tier: CacheTier) {
         self.pages.insert(index, CachedPage { tier, dirty: false });
     }
 
     /// Marks the page at `index` as dirty.
     ///
     /// Has no effect if the page is not in the cache.
-    pub fn mark_dirty(&mut self, index: PageIndex) {
+    pub fn mark_dirty(&mut self, index: K) {
         if let Some(page) = self.pages.get_mut(&index) {
             page.dirty = true;
         }
@@ -61,7 +65,7 @@ impl PageCache {
     /// Returns a shared reference to the cached page at `index`, or `None`
     /// if the page is not cached.
     #[must_use]
-    pub fn get(&self, index: PageIndex) -> Option<&CachedPage> {
+    pub fn get(&self, index: K) -> Option<&CachedPage> {
         self.pages.get(&index)
     }
 
@@ -84,7 +88,7 @@ impl PageCache {
     }
 }
 
-impl Default for PageCache {
+impl<K: CacheKey> Default for PageCache<K> {
     fn default() -> Self {
         Self::new()
     }
@@ -93,6 +97,7 @@ impl Default for PageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PageIndex;
 
     #[test]
     fn insert_then_get_returns_page_at_correct_tier() {
@@ -130,7 +135,7 @@ mod tests {
 
     #[test]
     fn get_on_missing_page_returns_none() {
-        let cache = PageCache::new();
+        let cache: PageCache<PageIndex> = PageCache::new();
         assert!(cache.get(PageIndex(99)).is_none());
     }
 

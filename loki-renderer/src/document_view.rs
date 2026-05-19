@@ -5,11 +5,11 @@
 
 use std::sync::{Arc, Mutex};
 
+use appthere_canvas::{PageCache, PageIndex, ScrollState};
 use appthere_ui::tokens;
 use dioxus::native::use_wgpu;
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
-use loki_render_cache::PageCache;
 
 use crate::doc_page_source::DocPageSource;
 use crate::page_paint_source::LokiPageSource;
@@ -35,14 +35,12 @@ impl PartialEq for DocumentViewProps {
 
 #[derive(Clone, Props)]
 struct PageTileProps {
-    /// Shared tier-and-dirty metadata store from `RendererState`.
-    cache: Arc<Mutex<PageCache>>,
-    /// Document layout + page-size source.
+    cache: Arc<Mutex<PageCache<PageIndex>>>,
     source: Arc<DocPageSource>,
     page_index: usize,
-    top: f64,
     w: f64,
     h: f64,
+    shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
 }
 
 impl PartialEq for PageTileProps {
@@ -56,25 +54,27 @@ impl PartialEq for PageTileProps {
 }
 
 /// A single page rendered into a Blitz GPU canvas.
-///
-/// Calls `use_wgpu` exactly once per instance — the hook-count invariant is
-/// satisfied by Dioxus's key-based reconciliation in `DocumentView`.
 #[allow(non_snake_case)]
 fn PageTile(props: PageTileProps) -> Element {
     let cache = props.cache.clone();
     let source = props.source.clone();
     let page_index = props.page_index;
+    let shared_renderer = props.shared_renderer.clone();
 
-    let canvas_id = use_wgpu(move || LokiPageSource::new(cache, source, page_index));
+    let canvas_id =
+        use_wgpu(move || LokiPageSource::new(cache, source, page_index, shared_renderer));
 
     rsx! {
         div {
+            // COMPAT(dioxus-native): position:absolute is unsupported in Blitz.
+            // Use block flow with auto margins for horizontal centring instead.
             style: format!(
-                "position: absolute; top: {top}px; left: 50%; \
-                 transform: translateX(-50%); width: {w}px; height: {h}px;",
-                top = props.top,
+                "display: block; width: {w}px; height: {h}px; \
+                 margin-left: auto; margin-right: auto; \
+                 margin-bottom: {gap}px;",
                 w   = props.w,
                 h   = props.h,
+                gap = tokens::PAGE_GAP_PX,
             ),
             canvas {
                 "src": "{canvas_id}",
@@ -91,40 +91,41 @@ fn PageTile(props: PageTileProps) -> Element {
 // ── DocumentView ──────────────────────────────────────────────────────────────
 
 /// Root document rendering component.
-///
-/// - Initialises `RendererState` via `use_hook` and provides it as context.
-/// - Launches the settle detector via `use_settle_detector`.
-/// - Renders one `PageTile` per page; each tile registers a `LokiPageSource`
-///   via `use_wgpu` and Blitz drives rendering each frame.
-/// - Passes scroll events to `on_scroll_event`.
 #[component]
 pub fn DocumentView(props: DocumentViewProps) -> Element {
-    let renderer = use_hook(|| RendererState::new(props.doc.clone(), props.viewport_height_px));
+    // use_signal must be called at the top level — not inside use_hook —
+    // to avoid "hook list already borrowed: BorrowMutError".
+    let scroll = use_signal(|| ScrollState::new(props.viewport_height_px));
+    let renderer = use_hook(|| RendererState::new(props.doc.clone(), scroll));
     provide_context(renderer.clone());
 
     let renderer_settle = renderer.clone();
-    use_settle_detector(renderer.scroll, move || {
+    let (_task, _tx) = use_settle_detector(renderer.scroll, move || {
         renderer_settle.on_settle();
     });
 
     let scroll = renderer.scroll;
+    let phase_tx = renderer.phase_tx.clone();
     let onscroll = move |evt: Event<ScrollData>| {
-        on_scroll_event(scroll, evt.scroll_top());
+        on_scroll_event(scroll, evt.scroll_top(), &phase_tx);
     };
+
+    // loki-layout page dimensions are in typographic points (1pt = 1/72 inch).
+    // CSS pixels assume 96dpi. Conversion: 1pt = 96/72 CSS px.
+    const PTS_TO_CSS_PX: f64 = 96.0 / 72.0;
 
     let doc_gen = renderer.source.current_generation();
     let layout_guard = renderer.source.layout_for_generation(doc_gen);
     let mut total_height = 0.0f64;
-    let pages: Vec<(usize, f64, f64, f64)> = if let Some((_, layout)) = layout_guard.as_ref() {
+    let pages: Vec<(usize, f64, f64)> = if let Some((_, layout)) = layout_guard.as_ref() {
         layout
             .pages
             .iter()
             .enumerate()
             .map(|(i, p)| {
-                let h = p.page_size.height as f64;
-                let top = total_height;
+                let h = p.page_size.height as f64 * PTS_TO_CSS_PX;
                 total_height += h + tokens::PAGE_GAP_PX as f64;
-                (i, top, p.page_size.width as f64, h)
+                (i, p.page_size.width as f64 * PTS_TO_CSS_PX, h)
             })
             .collect()
     } else {
@@ -141,19 +142,25 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
 
     rsx! {
         div {
-            style: "width: 100%; height: 100%; overflow-y: auto;",
+            // No overflow-y: auto here — scrolling is owned by the parent
+            // container in editor_canvas.rs.  DocumentView is a non-scrolling
+            // block that fills its parent's content area.
+            style: "width: 100%; height: 100%;",
             onscroll: onscroll,
             div {
-                style: "position: relative; width: 100%; height: {total_height}px;",
-                for (idx, top, w, h) in pages {
+                // Block flow: height determined by stacked page tiles.
+                // position:relative is retained so future absolutely-positioned
+                // overlays (cursor, selection) have a containing block.
+                style: "position: relative; width: 100%;",
+                for (idx, w, h) in pages {
                     PageTile {
                         key: "{idx}",
                         cache: renderer.cache.clone(),
                         source: renderer.source.clone(),
                         page_index: idx,
-                        top,
                         w,
                         h,
+                        shared_renderer: renderer.shared_renderer.clone(),
                     }
                 }
             }

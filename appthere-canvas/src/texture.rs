@@ -6,10 +6,6 @@
 //! Only compiled when the `gpu` feature is active.
 
 /// A GPU texture together with its pixel dimensions.
-///
-/// Wraps [`wgpu::Texture`] and records `width`/`height` so byte-budget
-/// calculations (see [`crate::page_cache::PageCache::cold_bytes`]) don't
-/// need a separate GPU query.
 #[derive(Debug)]
 pub struct GpuTexture {
     /// The underlying wgpu texture object.
@@ -21,19 +17,14 @@ pub struct GpuTexture {
 }
 
 impl GpuTexture {
-    /// Returns the approximate GPU memory footprint in bytes (RGBA8 = 4 bytes
-    /// per pixel, no mip-maps).
+    /// Approximate GPU memory footprint in bytes (RGBA8 = 4 bytes/pixel, no mips).
     #[must_use]
     pub fn byte_size(&self) -> u64 {
         self.width as u64 * self.height as u64 * 4
     }
 }
 
-/// Allocates a blank RGBA8 texture suitable for both rendering and sampling.
-///
-/// The texture has [`wgpu::TextureUsages::RENDER_ATTACHMENT`],
-/// [`wgpu::TextureUsages::TEXTURE_BINDING`], and
-/// [`wgpu::TextureUsages::COPY_SRC`].
+/// Allocates a blank RGBA8 texture suitable for rendering and sampling.
 #[must_use]
 pub fn allocate_texture(
     device: &wgpu::Device,
@@ -66,13 +57,7 @@ pub fn allocate_texture(
 
 /// Downsamples `src` into a new texture at `scale` × `src` dimensions.
 ///
-/// Convenience wrapper that creates a temporary [`crate::blit::BlitPipeline`]
-/// for a single call.  For repeated downsampling, prefer constructing a
-/// `BlitPipeline` once and calling [`crate::blit::BlitPipeline::downsample`]
-/// directly to avoid per-call pipeline compilation.
-///
-/// `scale` must be in `(0.0, 1.0]`; values > 1.0 are clamped to 1.0 so this
-/// function never upsamples.
+/// Convenience wrapper; prefer [`crate::blit::BlitPipeline`] for repeated calls.
 #[must_use]
 pub fn downsample_texture(
     device: &wgpu::Device,

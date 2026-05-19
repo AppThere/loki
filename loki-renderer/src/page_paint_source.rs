@@ -12,12 +12,6 @@
 //! 3. Otherwise unregisters the old texture, re-renders at the new tier's
 //!    scale via Vello, and registers the fresh texture with Blitz.
 //! 4. Updates the cache to record the new tier assignment.
-//!
-//! The texture lifetime follows the audit-documented pattern from
-//! `loki-text/src/components/document_source.rs`: the handle is `None` until
-//! the first render, unregistered before reallocation, and cleared (not
-//! unregistered) in `suspend()` because the Vello renderer drop frees the
-//! underlying allocation automatically.
 
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
@@ -26,7 +20,7 @@ use anyrender_vello::wgpu::{
     Extent3d, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor,
 };
 use anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle};
-use loki_render_cache::{CacheTier, PageCache, PageIndex};
+use appthere_canvas::{CacheTier, PageCache, PageIndex};
 use loki_vello::FontDataCache;
 use vello::{AaConfig, AaSupport, RenderParams, RendererOptions, Scene};
 
@@ -36,13 +30,16 @@ use crate::doc_page_source::DocPageSource;
 
 pub(crate) struct LokiPageSource {
     /// Shared tier-and-dirty metadata for all pages.
-    cache: Arc<Mutex<PageCache>>,
+    cache: Arc<Mutex<PageCache<PageIndex>>>,
     /// Document layout + page-size source.
     source: Arc<DocPageSource>,
     /// 0-based page index this source renders.
     page_index: usize,
-    /// Lazily created Vello renderer (created in `resume()`).
-    renderer: Option<vello::Renderer>,
+    /// Shared Vello renderer — created by the first page source to resume.
+    ///
+    // COMPAT(loki): first page source to resume creates the shared renderer.
+    // Subsequent page sources find it populated and skip creation.
+    renderer: Arc<Mutex<Option<vello::Renderer>>>,
     /// wgpu device from the last `resume()`.
     device: Option<anyrender_vello::wgpu::Device>,
     /// wgpu queue from the last `resume()`.
@@ -50,8 +47,6 @@ pub(crate) struct LokiPageSource {
     /// Font glyph cache — persisted across frames to avoid re-scanning fonts.
     font_cache: FontDataCache,
     /// Currently registered Blitz texture handle.
-    /// Follows the audit lifecycle: None → registered → unregistered on change
-    /// → cleared on suspend (renderer drop frees the allocation).
     texture_handle: Option<TextureHandle>,
     /// Tier at which `texture_handle` was rendered.
     texture_tier: Option<CacheTier>,
@@ -63,15 +58,16 @@ pub(crate) struct LokiPageSource {
 
 impl LokiPageSource {
     pub(crate) fn new(
-        cache: Arc<Mutex<PageCache>>,
+        cache: Arc<Mutex<PageCache<PageIndex>>>,
         source: Arc<DocPageSource>,
         page_index: usize,
+        renderer: Arc<Mutex<Option<vello::Renderer>>>,
     ) -> Self {
         Self {
             cache,
             source,
             page_index,
-            renderer: None,
+            renderer,
             device: None,
             wgpu_queue: None,
             font_cache: FontDataCache::new(),
@@ -90,29 +86,30 @@ impl CustomPaintSource for LokiPageSource {
         self.device = Some(device_handle.device.clone());
         self.wgpu_queue = Some(device_handle.queue.clone());
 
-        match vello::Renderer::new(
-            &device_handle.device,
-            RendererOptions {
-                use_cpu: false,
-                antialiasing_support: AaSupport::all(),
-                num_init_threads: NonZeroUsize::new(1),
-                pipeline_cache: None,
-            },
-        ) {
-            Ok(r) => self.renderer = Some(r),
-            Err(e) => tracing::warn!(
-                page = self.page_index,
-                error = %e,
-                "LokiPageSource: vello renderer init failed",
-            ),
+        let mut guard = self.renderer.lock().unwrap_or_else(|p| p.into_inner());
+        if guard.is_none() {
+            match vello::Renderer::new(
+                &device_handle.device,
+                RendererOptions {
+                    use_cpu: false,
+                    antialiasing_support: AaSupport::all(),
+                    num_init_threads: NonZeroUsize::new(1),
+                    pipeline_cache: None,
+                },
+            ) {
+                Ok(r) => *guard = Some(r),
+                Err(e) => tracing::warn!(
+                    page = self.page_index,
+                    error = %e,
+                    "LokiPageSource: vello renderer init failed",
+                ),
+            }
         }
     }
 
     fn suspend(&mut self) {
-        // Vello renderer drop frees image_overrides (registered textures).
-        // Clear stale handle so the next render() after resume() doesn't
-        // attempt to reuse a handle from the dead renderer.
-        self.renderer = None;
+        // Renderer intentionally not dropped on suspend — shared across all page
+        // sources; dropped when RendererState is dropped.
         self.device = None;
         self.wgpu_queue = None;
         self.texture_handle = None;
@@ -128,11 +125,7 @@ impl CustomPaintSource for LokiPageSource {
         height: u32,
         scale: f64,
     ) -> Option<TextureHandle> {
-        let (Some(device), Some(queue), Some(renderer)) = (
-            self.device.as_ref(),
-            self.wgpu_queue.as_ref(),
-            self.renderer.as_mut(),
-        ) else {
+        let (Some(device), Some(queue)) = (self.device.as_ref(), self.wgpu_queue.as_ref()) else {
             return None;
         };
 
@@ -145,12 +138,11 @@ impl CustomPaintSource for LokiPageSource {
             .unwrap_or(CacheTier::Hot);
 
         // Step 2: compute target physical texture dimensions.
-        // width/height from Blitz are already in physical (device) pixels.
         let scale_factor = current_tier.scale_factor();
         let w_phys = ((width as f32 * scale_factor).ceil() as u32).max(1);
         let h_phys = ((height as f32 * scale_factor).ceil() as u32).max(1);
 
-        // Step 3: read current document generation for reuse guard and layout.
+        // Step 3: read current document generation.
         let current_generation = self.source.current_generation();
 
         // Step 4: reuse guard — return existing handle when nothing changed.
@@ -189,10 +181,6 @@ impl CustomPaintSource for LokiPageSource {
         let view = texture.create_view(&TextureViewDescriptor::default());
 
         // Step 7: build Vello scene for this page.
-        // loki-layout uses points (1/72 in); Blitz's `scale` is DPR.
-        // render_scale maps points → physical pixels at the tier's resolution:
-        //   DPR × tier_scale_factor × (96 CSS-px / 72 pt)
-        // This ensures the scene exactly fills w_phys × h_phys.
         let layout_guard = self.source.layout_for_generation(current_generation);
         let (_, layout) = layout_guard.as_ref()?;
         let mut scene = Scene::new();
@@ -209,6 +197,10 @@ impl CustomPaintSource for LokiPageSource {
         drop(layout_guard);
 
         // Step 8: render scene to texture.
+        // AUDIT: Mutex poisoning on render — lock is held for the duration of
+        // render_to_texture; poisoning here would mean the renderer is unusable.
+        let mut guard = self.renderer.lock().unwrap_or_else(|p| p.into_inner());
+        let renderer = guard.as_mut()?;
         let params = RenderParams {
             base_color: vello::peniko::Color::WHITE,
             width: w_phys,
@@ -224,6 +216,7 @@ impl CustomPaintSource for LokiPageSource {
             );
             return None;
         }
+        drop(guard);
 
         // Step 9: register with Blitz and cache the handle.
         let handle = ctx.register_texture(texture);
@@ -232,9 +225,9 @@ impl CustomPaintSource for LokiPageSource {
         self.texture_generation = current_generation;
         self.texture_size = (w_phys, h_phys);
 
-        // Step 10: update cache metadata with the rendered tier.
-        if let Ok(mut guard) = self.cache.lock() {
-            guard.insert(PageIndex(self.page_index as u32), current_tier);
+        // Step 10: update cache metadata.
+        if let Ok(mut g) = self.cache.lock() {
+            g.insert(PageIndex(self.page_index as u32), current_tier);
         }
 
         tracing::debug!(

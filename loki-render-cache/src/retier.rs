@@ -8,19 +8,29 @@
 //! GPU memory is now managed by Blitz via `CustomPaintSource`, so byte-budget
 //! eviction is no longer performed here.
 
+use crate::key::CacheKey;
 use crate::page_cache::PageCache;
 use crate::tier_policy::{CacheTier, assign_tier};
-use crate::{PageGeometry, PageIndex, ScrollState};
+use crate::{PageGeometry, ScrollState};
 
 /// The outcome of a single [`PageCache::retier`] call.
-#[derive(Debug, Default)]
-pub struct RetierResult {
+#[derive(Debug)]
+pub struct RetierResult<K: CacheKey> {
     /// Pages whose tier has changed to a finer resolution (or that are not yet
     /// cached). `LokiPageSource` will re-render these at the new tier.
-    pub rerender: Vec<(PageIndex, CacheTier)>,
+    pub rerender: Vec<(K, CacheTier)>,
     /// Pages whose tier has been demoted (e.g. Hot→Warm). `LokiPageSource`
     /// will re-render at lower quality on the next frame.
-    pub downsample: Vec<PageIndex>,
+    pub downsample: Vec<K>,
+}
+
+impl<K: CacheKey> Default for RetierResult<K> {
+    fn default() -> Self {
+        Self {
+            rerender: Vec::new(),
+            downsample: Vec::new(),
+        }
+    }
 }
 
 /// Numeric quality rank: higher = finer resolution.
@@ -32,7 +42,7 @@ fn quality(tier: CacheTier) -> u8 {
     }
 }
 
-impl PageCache {
+impl<K: CacheKey> PageCache<K> {
     /// Reassigns tiers for all `pages` based on `scroll`.
     ///
     /// Call when [`ScrollState::tick`] returns `true` (→ Settling).
@@ -40,11 +50,11 @@ impl PageCache {
     /// Not cached → `rerender`; same tier clean → skip; same tier dirty →
     /// `rerender`; finer tier (e.g. Cold→Hot) → `rerender`; coarser tier
     /// (e.g. Hot→Warm) → `downsample`.
-    pub fn retier(&mut self, pages: &[PageGeometry], scroll: &ScrollState) -> RetierResult {
+    pub fn retier(&mut self, pages: &[PageGeometry<K>], scroll: &ScrollState) -> RetierResult<K> {
         let mut result = RetierResult::default();
 
         for page_geom in pages {
-            let idx = PageIndex(page_geom.index);
+            let idx = page_geom.index;
             let new_tier = assign_tier(page_geom, scroll);
 
             match self.pages.get_mut(&idx) {
@@ -96,10 +106,10 @@ mod tests {
         s
     }
 
-    fn page(index: u32) -> PageGeometry {
+    fn page(index: u32) -> PageGeometry<PageIndex> {
         let top = f64::from(index) * 300.0;
         PageGeometry {
-            index,
+            index: PageIndex(index),
             top_px: top,
             bottom_px: top + 200.0,
         }
@@ -193,7 +203,7 @@ mod tests {
         for i in 0..4u32 {
             cache.insert(PageIndex(i), CacheTier::Cold);
         }
-        let pages: Vec<PageGeometry> = (0..4).map(page).collect();
+        let pages: Vec<_> = (0..4).map(page).collect();
         let result = cache.retier(&pages, &cold_scroll());
         // No evictions — all pages stay cached.
         assert_eq!(cache.pages.len(), 4);

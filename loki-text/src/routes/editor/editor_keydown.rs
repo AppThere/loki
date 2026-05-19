@@ -2,7 +2,6 @@
 
 //! Keyboard event handler factory for the document canvas.
 
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
@@ -14,21 +13,20 @@ use super::editor_keydown_ctrl::{
     handle_ctrl_keys, handle_delete_key, handle_enter_key, post_mutation_sync,
 };
 
-use crate::components::document_source::{DocumentState, apply_mutation_and_relayout};
 use crate::editing::cursor::{CursorState, DocumentPosition, prev_grapheme_boundary};
 use crate::editing::navigation::{
     navigate_down, navigate_end, navigate_home, navigate_left, navigate_right, navigate_up,
 };
+use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
 // EditorMode removed — the editor is always in edit mode when a document is
 // open. Distraction-free reading is handled by the View ribbon tab (future
 // pass), not by a separate mode.
 
-/// Builds the `on_keydown` closure for [`super::editor_inner::EditorInner`].
+/// Builds the `onkeydown` closure for the document canvas scroll container.
 ///
 /// Dispatches printable characters, `Backspace`, `Delete`, arrow navigation,
-/// `Home`/`End`, and `Enter` (paragraph split).  The returned closure is
-/// passed to `WgpuSurface`'s `on_keydown` prop.
+/// `Home`/`End`, and `Enter` (paragraph split).
 pub(super) fn make_keydown_handler(
     doc_state: Arc<Mutex<DocumentState>>,
     mut cursor_state: Signal<CursorState>,
@@ -36,8 +34,8 @@ pub(super) fn make_keydown_handler(
     undo_manager: Signal<Option<loro::UndoManager>>,
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
-) -> impl FnMut(Rc<KeyboardData>) {
-    move |evt: Rc<KeyboardData>| {
+) -> impl FnMut(Event<KeyboardData>) {
+    move |evt: Event<KeyboardData>| {
         let key = evt.key();
         let modifiers = evt.modifiers();
 
