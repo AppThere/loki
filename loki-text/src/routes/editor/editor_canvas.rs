@@ -146,6 +146,9 @@ pub(super) fn render_canvas_area(
                     rsx! {
                         DocumentView {
                             doc: arc_doc,
+                            // TODO(loki): measure actual viewport height — affects
+                            // cache tier zones only, not visual correctness.
+                            // See diagnostic report, finding 1.
                             viewport_height_px: 800.0,
                         }
                     }

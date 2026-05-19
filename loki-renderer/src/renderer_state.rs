@@ -65,16 +65,20 @@ impl RendererState {
             tracing::warn!("RendererState::on_settle: layout unavailable");
             return;
         };
+        // loki-layout page dimensions are in typographic points (1pt = 1/72 inch).
+        // CSS pixels assume 96dpi. Conversion: 1pt = 96/72 CSS px.
+        // ScrollState.viewport_top_px is in CSS px; these must match.
+        const PTS_TO_CSS_PX: f64 = 96.0 / 72.0;
         let mut current_top = 0.0;
         let mut pages = Vec::with_capacity(layout.pages.len());
         for (i, p) in layout.pages.iter().enumerate() {
-            let h = p.page_size.height as f64;
+            let h_px = p.page_size.height as f64 * PTS_TO_CSS_PX;
             pages.push(PageGeometry {
                 index: PageIndex(i as u32),
                 top_px: current_top,
-                bottom_px: current_top + h,
+                bottom_px: current_top + h_px,
             });
-            current_top += h + appthere_ui::tokens::PAGE_GAP_PX as f64;
+            current_top += h_px + appthere_ui::tokens::PAGE_GAP_PX as f64;
         }
         drop(layout_guard);
         tracing::Span::current().record("page_count", pages.len());

@@ -38,7 +38,6 @@ struct PageTileProps {
     cache: Arc<Mutex<PageCache<PageIndex>>>,
     source: Arc<DocPageSource>,
     page_index: usize,
-    top: f64,
     w: f64,
     h: f64,
     shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
@@ -67,12 +66,15 @@ fn PageTile(props: PageTileProps) -> Element {
 
     rsx! {
         div {
+            // COMPAT(dioxus-native): position:absolute is unsupported in Blitz.
+            // Use block flow with auto margins for horizontal centring instead.
             style: format!(
-                "position: absolute; top: {top}px; left: 50%; \
-                 transform: translateX(-50%); width: {w}px; height: {h}px;",
-                top = props.top,
+                "display: block; width: {w}px; height: {h}px; \
+                 margin-left: auto; margin-right: auto; \
+                 margin-bottom: {gap}px;",
                 w   = props.w,
                 h   = props.h,
+                gap = tokens::PAGE_GAP_PX,
             ),
             canvas {
                 "src": "{canvas_id}",
@@ -108,19 +110,22 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         on_scroll_event(scroll, evt.scroll_top(), &phase_tx);
     };
 
+    // loki-layout page dimensions are in typographic points (1pt = 1/72 inch).
+    // CSS pixels assume 96dpi. Conversion: 1pt = 96/72 CSS px.
+    const PTS_TO_CSS_PX: f64 = 96.0 / 72.0;
+
     let doc_gen = renderer.source.current_generation();
     let layout_guard = renderer.source.layout_for_generation(doc_gen);
     let mut total_height = 0.0f64;
-    let pages: Vec<(usize, f64, f64, f64)> = if let Some((_, layout)) = layout_guard.as_ref() {
+    let pages: Vec<(usize, f64, f64)> = if let Some((_, layout)) = layout_guard.as_ref() {
         layout
             .pages
             .iter()
             .enumerate()
             .map(|(i, p)| {
-                let h = p.page_size.height as f64;
-                let top = total_height;
+                let h = p.page_size.height as f64 * PTS_TO_CSS_PX;
                 total_height += h + tokens::PAGE_GAP_PX as f64;
-                (i, top, p.page_size.width as f64, h)
+                (i, p.page_size.width as f64 * PTS_TO_CSS_PX, h)
             })
             .collect()
     } else {
@@ -137,17 +142,22 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
 
     rsx! {
         div {
-            style: "width: 100%; height: 100%; overflow-y: auto;",
+            // No overflow-y: auto here — scrolling is owned by the parent
+            // container in editor_canvas.rs.  DocumentView is a non-scrolling
+            // block that fills its parent's content area.
+            style: "width: 100%; height: 100%;",
             onscroll: onscroll,
             div {
-                style: "position: relative; width: 100%; height: {total_height}px;",
-                for (idx, top, w, h) in pages {
+                // Block flow: height determined by stacked page tiles.
+                // position:relative is retained so future absolutely-positioned
+                // overlays (cursor, selection) have a containing block.
+                style: "position: relative; width: 100%;",
+                for (idx, w, h) in pages {
                     PageTile {
                         key: "{idx}",
                         cache: renderer.cache.clone(),
                         source: renderer.source.clone(),
                         page_index: idx,
-                        top,
                         w,
                         h,
                         shared_renderer: renderer.shared_renderer.clone(),
