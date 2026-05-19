@@ -11,6 +11,7 @@
 //! | Warm | 0.5         | ~3 MB                     |
 //! | Cold | 0.25        | ~0.75 MB                  |
 
+use crate::key::CacheKey;
 use crate::scroll_state::ScrollState;
 
 /// The render quality tier for a cached page texture.
@@ -39,10 +40,12 @@ impl CacheTier {
 }
 
 /// The layout geometry of a single document page in scroll-space.
+///
+/// `K` is the cache key type — use [`crate::PageIndex`] for document pages.
 #[derive(Debug, Clone, Copy)]
-pub struct PageGeometry {
-    /// Zero-based page index within the document.
-    pub index: u32,
+pub struct PageGeometry<K: CacheKey> {
+    /// The cache key that identifies this page.
+    pub index: K,
     /// Y coordinate of the top edge of the page, in logical pixels.
     pub top_px: f64,
     /// Y coordinate of the bottom edge of the page, in logical pixels.
@@ -63,10 +66,10 @@ pub struct PageGeometry {
 /// A page that partially overlaps a zone boundary is assigned the higher-
 /// priority tier (Hot beats Warm beats Cold).
 #[must_use]
-pub fn assign_tier(page: &PageGeometry, scroll: &ScrollState) -> CacheTier {
+pub fn assign_tier<K: CacheKey>(page: &PageGeometry<K>, scroll: &ScrollState) -> CacheTier {
     let (hot_start, hot_end) = scroll.hot_range_px();
 
-    if overlaps(page, hot_start, hot_end) {
+    if overlaps(page.top_px, page.bottom_px, hot_start, hot_end) {
         return CacheTier::Hot;
     }
 
@@ -74,17 +77,16 @@ pub fn assign_tier(page: &PageGeometry, scroll: &ScrollState) -> CacheTier {
     let warm_start = hot_start - margin;
     let warm_end = hot_end + margin;
 
-    if overlaps(page, warm_start, warm_end) {
+    if overlaps(page.top_px, page.bottom_px, warm_start, warm_end) {
         CacheTier::Warm
     } else {
         CacheTier::Cold
     }
 }
 
-/// Returns `true` when `page` has any overlap with the interval
-/// `[zone_start, zone_end)`.
-fn overlaps(page: &PageGeometry, zone_start: f64, zone_end: f64) -> bool {
-    page.bottom_px > zone_start && page.top_px < zone_end
+/// Returns `true` when `[top_px, bottom_px)` overlaps `[zone_start, zone_end)`.
+fn overlaps(top_px: f64, bottom_px: f64, zone_start: f64, zone_end: f64) -> bool {
+    bottom_px > zone_start && top_px < zone_end
 }
 
 #[cfg(test)]
@@ -99,10 +101,11 @@ mod tests {
         s
     }
 
-    /// Build a page spanning `[top, bottom)`.
-    fn page(top: f64, bottom: f64) -> PageGeometry {
+    /// Build a page spanning `[top, bottom)`.  `u32` is used as a minimal
+    /// `CacheKey` since `assign_tier` does not examine the key value.
+    fn page(top: f64, bottom: f64) -> PageGeometry<u32> {
         PageGeometry {
-            index: 0,
+            index: 0u32,
             top_px: top,
             bottom_px: bottom,
         }

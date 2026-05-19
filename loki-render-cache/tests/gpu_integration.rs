@@ -35,10 +35,10 @@ fn try_wgpu() -> Option<(wgpu::Device, wgpu::Queue)> {
     .ok()
 }
 
-fn page_geom(index: u32) -> PageGeometry {
+fn page_geom(index: u32) -> PageGeometry<PageIndex> {
     let top = f64::from(index) * 210.0;
     PageGeometry {
-        index,
+        index: PageIndex(index),
         top_px: top,
         bottom_px: top + 200.0,
     }

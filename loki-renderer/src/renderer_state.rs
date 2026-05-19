@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
-use loki_render_cache::{PageCache, PageGeometry, ScrollState};
+use loki_render_cache::{PageCache, PageGeometry, PageIndex, ScrollState};
 
 use crate::doc_page_source::DocPageSource;
 
@@ -43,7 +43,7 @@ use crate::doc_page_source::DocPageSource;
 #[derive(Clone)]
 pub struct RendererState {
     /// Shared page tier-and-dirty metadata store.
-    pub cache: Arc<Mutex<PageCache>>,
+    pub cache: Arc<Mutex<PageCache<PageIndex>>>,
     /// Scroll position and phase signal, driven by the document scroll handler.
     pub scroll: Signal<ScrollState>,
     /// Document layout and page-size source.
@@ -86,7 +86,7 @@ impl RendererState {
         for (i, p) in layout.pages.iter().enumerate() {
             let h = p.page_size.height as f64;
             pages.push(PageGeometry {
-                index: i as u32,
+                index: PageIndex(i as u32),
                 top_px: current_top,
                 bottom_px: current_top + h,
             });

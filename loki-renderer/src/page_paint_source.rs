@@ -36,7 +36,7 @@ use crate::doc_page_source::DocPageSource;
 
 pub(crate) struct LokiPageSource {
     /// Shared tier-and-dirty metadata for all pages.
-    cache: Arc<Mutex<PageCache>>,
+    cache: Arc<Mutex<PageCache<PageIndex>>>,
     /// Document layout + page-size source.
     source: Arc<DocPageSource>,
     /// 0-based page index this source renders.
@@ -63,7 +63,7 @@ pub(crate) struct LokiPageSource {
 
 impl LokiPageSource {
     pub(crate) fn new(
-        cache: Arc<Mutex<PageCache>>,
+        cache: Arc<Mutex<PageCache<PageIndex>>>,
         source: Arc<DocPageSource>,
         page_index: usize,
     ) -> Self {

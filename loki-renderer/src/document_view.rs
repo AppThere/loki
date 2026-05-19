@@ -9,7 +9,7 @@ use appthere_ui::tokens;
 use dioxus::native::use_wgpu;
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
-use loki_render_cache::PageCache;
+use loki_render_cache::{PageCache, PageIndex};
 
 use crate::doc_page_source::DocPageSource;
 use crate::page_paint_source::LokiPageSource;
@@ -36,7 +36,7 @@ impl PartialEq for DocumentViewProps {
 #[derive(Clone, Props)]
 struct PageTileProps {
     /// Shared tier-and-dirty metadata store from `RendererState`.
-    cache: Arc<Mutex<PageCache>>,
+    cache: Arc<Mutex<PageCache<PageIndex>>>,
     /// Document layout + page-size source.
     source: Arc<DocPageSource>,
     page_index: usize,

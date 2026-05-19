@@ -123,6 +123,8 @@ impl DocPageSource {
 // ── PageSource impl ───────────────────────────────────────────────────────────
 
 impl PageSource for DocPageSource {
+    type Key = PageIndex;
+
     fn page_size_px(&self, index: PageIndex) -> (u32, u32) {
         let guard = self.layout_for_generation(self.current_generation());
         guard
