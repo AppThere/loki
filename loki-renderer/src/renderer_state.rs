@@ -7,7 +7,7 @@
 use std::sync::{Arc, Mutex};
 
 use appthere_canvas::{PageCache, PageGeometry, PageIndex, ScrollPhase, ScrollState};
-use dioxus::prelude::*;
+use dioxus::prelude::{ReadableExt, Signal};
 use loki_doc_model::document::Document;
 use tokio::sync::watch;
 
@@ -34,13 +34,16 @@ pub struct RendererState {
 }
 
 impl RendererState {
-    /// Creates a new [`RendererState`].
+    /// Creates a new [`RendererState`] from values already initialised at the
+    /// component top level.
     ///
-    /// Must be called from within a Dioxus component or hook context.
-    pub fn new(doc: Arc<Document>, viewport_height_px: f64) -> Self {
+    /// `scroll` must be a `Signal` created with `use_signal` in the calling
+    /// component before this function is called.  Hooks must not be called
+    /// inside `use_hook` closures; this function therefore accepts `scroll`
+    /// as a parameter instead of creating it internally.
+    pub fn new(doc: Arc<Document>, scroll: Signal<ScrollState>) -> Self {
         let source = Arc::new(DocPageSource::new(doc));
         let cache = Arc::new(Mutex::new(PageCache::new()));
-        let scroll = use_signal(|| ScrollState::new(viewport_height_px));
         let (tx, _rx) = watch::channel(ScrollPhase::Idle);
         let phase_tx = Arc::new(tx);
         let shared_renderer = Arc::new(Mutex::new(None));

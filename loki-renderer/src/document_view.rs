@@ -5,7 +5,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use appthere_canvas::{PageCache, PageIndex};
+use appthere_canvas::{PageCache, PageIndex, ScrollState};
 use appthere_ui::tokens;
 use dioxus::native::use_wgpu;
 use dioxus::prelude::*;
@@ -91,7 +91,10 @@ fn PageTile(props: PageTileProps) -> Element {
 /// Root document rendering component.
 #[component]
 pub fn DocumentView(props: DocumentViewProps) -> Element {
-    let renderer = use_hook(|| RendererState::new(props.doc.clone(), props.viewport_height_px));
+    // use_signal must be called at the top level — not inside use_hook —
+    // to avoid "hook list already borrowed: BorrowMutError".
+    let scroll = use_signal(|| ScrollState::new(props.viewport_height_px));
+    let renderer = use_hook(|| RendererState::new(props.doc.clone(), scroll));
     provide_context(renderer.clone());
 
     let renderer_settle = renderer.clone();
