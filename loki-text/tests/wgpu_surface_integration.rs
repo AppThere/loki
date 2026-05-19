@@ -1,57 +1,16 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Integration tests for the `WgpuSurface` GPU submission pipeline.
+//! Integration tests for the `DocumentState` API.
 //!
-//! # Texture-handle leak prevention
-//!
-//! The confirmed memory-leak site was `LokiDocumentSource::render()` calling
-//! `ctx.register_texture()` every frame without a corresponding
-//! `ctx.unregister_texture()`.  `vello::Renderer::register_texture` takes
-//! ownership of the `wgpu::Texture` by value and inserts it into an internal
-//! `image_overrides` HashMap; without `unregister_texture` the map grows by
-//! one entry per frame, leaking GPU memory continuously.
-//!
-//! The fix stores a `TextureHandle` across frames, calls `unregister_texture`
-//! on the previous handle before allocating a new texture, and reuses the
-//! existing handle when the document generation and physical canvas size have
-//! not changed.
-//!
-//! Per-frame structural tests (handle init, reuse guard, suspend cleanup) live
-//! in the `#[cfg(test)]` module inside `document_source.rs` because
-//! `LokiDocumentSource` is `pub(crate)`.  Full render-loop leak detection
-//! (calling `render()` 10× on a headless device and asserting one live
-//! allocation) requires a wgpu device; see the unit test module for the
-//! structural invariants that guarantee the same property without GPU.
-//!
-//! This file tests the public [`DocumentState`] API — the contract between the
-//! Dioxus component and the paint source.
+//! Tests the public contract between the editor and the document editing state
+//! (cursor hit-testing, generation tracking, page count).
 
-use loki_layout::FontResources;
-use loki_text::components::document_source::DocumentState;
-use loki_vello::FontDataCache;
+use loki_text::editing::state::DocumentState;
 use std::sync::{Arc, Mutex};
 
 fn make_state() -> DocumentState {
-    DocumentState {
-        document: None,
-        generation: 0,
-        page_count: 0,
-        canvas_width: 0.0,
-        visible_rect: None,
-        page_width_px: 0.0,
-        page_height_px: 0.0,
-        cursor_state: None,
-        preserve_for_editing: false,
-        paginated_layout: None,
-        shared_renderer: Arc::new(Mutex::new(None)),
-        shared_font_cache: Arc::new(Mutex::new(FontDataCache::new())),
-        layout_stamp: 0,
-        layout_generation: 0,
-        layout_canvas_width: 0.0,
-        layout_preserve_for_editing: false,
-        shared_font_resources: Arc::new(Mutex::new(FontResources::new())),
-    }
+    DocumentState::new()
 }
 
 #[test]
@@ -60,14 +19,11 @@ fn document_state_default_has_no_document() {
     assert!(state.document.is_none());
     assert_eq!(state.generation, 0);
     assert_eq!(state.page_count, 0);
-    assert_eq!(state.canvas_width, 0.0);
-    assert!(state.visible_rect.is_none());
-    assert_eq!(state.layout_stamp, 0);
+    assert!(state.paginated_layout.is_none());
 }
 
 #[test]
 fn generation_wraps_without_panic() {
-    // Verifies that wrapping_add used in WgpuSurface doesn't overflow.
     let max_gen = u64::MAX;
     assert_eq!(max_gen.wrapping_add(1), 0);
 }
@@ -84,8 +40,7 @@ fn document_state_can_be_shared_across_threads() {
     assert_eq!(state.lock().unwrap().generation, 1);
 }
 
-/// Simulates the WgpuSurface component bumping `generation` on N consecutive
-/// document changes and verifies the counter is monotonically non-decreasing.
+/// Verifies `generation` advances monotonically on document changes.
 #[test]
 fn generation_is_monotone_across_document_changes() {
     let state = Arc::new(Mutex::new(make_state()));

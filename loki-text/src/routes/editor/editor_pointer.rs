@@ -9,9 +9,9 @@ use dioxus::prelude::*;
 use loki_doc_model::loro_bridge::derive_loro_cursor;
 use loki_doc_model::loro_mutation::get_block_text;
 
-use crate::components::document_source::DocumentState;
 use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::hit_test::hit_test_document;
+use crate::editing::state::DocumentState;
 use crate::editing::touch::{TouchInteractionState, TouchPhase, word_boundaries_at};
 
 // EditorMode removed — the editor is always in edit mode when a document is

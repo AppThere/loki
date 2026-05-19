@@ -2,23 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Cached bilinear-blit pipeline for GPU texture downsampling.
-//!
-//! [`BlitPipeline`] builds the wgpu shader, bind-group layout, pipeline layout,
-//! render pipeline, and sampler once in [`BlitPipeline::new`], then reuses them
-//! across [`BlitPipeline::downsample`] calls.  This avoids the per-call pipeline
-//! construction overhead that the [`crate::downsample_texture`] free function
-//! previously incurred.
-//!
-//! **Device affinity**: `BlitPipeline` must be used with the same
-//! `wgpu::Device` that was passed to [`BlitPipeline::new`].  Passing a
-//! different device to `downsample` produces a wgpu validation error.
 
-use crate::texture::{GpuTexture, allocate_texture};
+use crate::texture::{allocate_texture, GpuTexture};
 
-/// Fullscreen-triangle blit shader (WGSL).
-///
-/// Samples the source texture with a linear sampler and writes to the
-/// destination.  UV coordinates cover [0, 1]² exactly over the output.
 const BLIT_WGSL: &str = "
 struct VO {
     @builtin(position) pos: vec4<f32>,
@@ -54,8 +40,8 @@ fn fs_main(in: VO) -> @location(0) vec4<f32> {
 
 /// Cached wgpu pipeline for bilinear texture downsampling.
 ///
-/// Create once per device via [`BlitPipeline::new`] and reuse across multiple
-/// [`BlitPipeline::downsample`] calls.
+/// Create once per device via [`BlitPipeline::new`] and reuse across
+/// [`BlitPipeline::downsample`] calls to avoid per-call pipeline compilation.
 pub struct BlitPipeline {
     bind_group_layout: wgpu::BindGroupLayout,
     render_pipeline: wgpu::RenderPipeline,
@@ -136,9 +122,7 @@ impl BlitPipeline {
 
     /// Downsamples `src` into a new texture at `scale × src` dimensions.
     ///
-    /// Uses the cached bilinear-filtered pipeline built in [`BlitPipeline::new`].
-    /// `scale` must be in `(0.0, 1.0]`; values > 1.0 are clamped to 1.0 so
-    /// this method never upsamples.
+    /// `scale` is clamped to `(0.0, 1.0]` — never upsamples.
     #[must_use]
     pub fn downsample(
         &self,

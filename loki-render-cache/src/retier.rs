@@ -50,11 +50,7 @@ impl<K: CacheKey> PageCache<K> {
     /// Not cached → `rerender`; same tier clean → skip; same tier dirty →
     /// `rerender`; finer tier (e.g. Cold→Hot) → `rerender`; coarser tier
     /// (e.g. Hot→Warm) → `downsample`.
-    pub fn retier(
-        &mut self,
-        pages: &[PageGeometry<K>],
-        scroll: &ScrollState,
-    ) -> RetierResult<K> {
+    pub fn retier(&mut self, pages: &[PageGeometry<K>], scroll: &ScrollState) -> RetierResult<K> {
         let mut result = RetierResult::default();
 
         for page_geom in pages {

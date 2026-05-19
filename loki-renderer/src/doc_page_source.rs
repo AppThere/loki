@@ -21,11 +21,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
+use appthere_canvas::texture::GpuTexture;
+use appthere_canvas::{PageIndex, PageSource, RenderError};
 use loki_doc_model::document::Document;
 use loki_layout::{DocumentLayout, FontResources, LayoutMode, LayoutOptions, PaginatedLayout};
-use loki_render_cache::page_source::RenderError;
-use loki_render_cache::texture::GpuTexture;
-use loki_render_cache::{PageIndex, PageSource};
 use loki_vello::FontDataCache;
 use vello::{AaConfig, AaSupport, RenderParams, RendererOptions, Scene};
 

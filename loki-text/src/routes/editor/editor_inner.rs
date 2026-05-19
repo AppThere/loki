@@ -31,7 +31,6 @@ use loki_doc_model::loro_schema::{
     MARK_BOLD, MARK_ITALIC, MARK_STRIKETHROUGH, MARK_UNDERLINE, MARK_VERTICAL_ALIGN,
 };
 use loki_i18n::fl;
-use loki_layout::LayoutOptions;
 use loro::LoroValue;
 
 use super::editor_canvas::render_canvas_area;
@@ -98,7 +97,6 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_mousemove = Arc::clone(&doc_state);
     let doc_state_touch = Arc::clone(&doc_state);
     let doc_state_touchend = Arc::clone(&doc_state);
-    let doc_state_prop = Arc::clone(&doc_state);
     let doc_state_keydown = Arc::clone(&doc_state);
     let doc_state_pages = Arc::clone(&doc_state);
     let doc_state_ribbon = Arc::clone(&doc_state);
@@ -134,9 +132,8 @@ pub(super) fn EditorInner(path: String) -> Element {
     // ── Page count sync — re-runs when document_load resolves ────────────────
     //
     // Subscribe to `document_load.value()` so this effect re-runs when the
-    // resource resolves.  WgpuSurface renders synchronously as part of the
-    // same render cycle that changed the resource signal, so by the time this
-    // post-render effect fires, doc_state.page_count is already updated.
+    // resource resolves.  By the time this post-render effect fires,
+    // doc_state.page_count is already updated.
     use_effect(move || {
         // Reactive read — subscribes so this effect re-runs when the document
         // finishes loading (resource signal changes).
@@ -198,12 +195,6 @@ pub(super) fn EditorInner(path: String) -> Element {
     //   patches/dioxus-native-dom/src/events.rs convert_scroll_data
     let _ = scroll_offset;
 
-    let layout_opts = LayoutOptions {
-        // EditorMode removed — always preserve editing layout when a document
-        // is open. Distraction-free reading via View ribbon tab (future pass).
-        preserve_for_editing: true,
-    };
-
     let page_gap_px = tokens::PAGE_GAP_PX;
 
     let page_label = if total_pages() == 0 {
@@ -229,7 +220,6 @@ pub(super) fn EditorInner(path: String) -> Element {
                 doc_state_mousemove,
                 doc_state_touch,
                 doc_state_touchend,
-                doc_state_prop,
                 doc_state_keydown,
                 is_dragging,
                 drag_origin,
@@ -242,7 +232,6 @@ pub(super) fn EditorInner(path: String) -> Element {
                 can_undo,
                 can_redo,
                 path_signal,
-                layout_opts,
                 document_load,
                 page_gap_px,
             )}

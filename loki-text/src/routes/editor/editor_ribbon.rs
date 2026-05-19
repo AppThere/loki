@@ -13,8 +13,8 @@ use dioxus::prelude::*;
 use loki_i18n::fl;
 use loro::LoroDoc;
 
-use crate::components::document_source::{DocumentState, apply_mutation_and_relayout};
 use crate::editing::cursor::CursorState;
+use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
 use super::editor_formatting;
 use super::editor_keydown_ctrl::post_mutation_sync;

@@ -9,6 +9,7 @@ keywords = ["document", "vello", "rendering", "loki"]
 categories = ["graphics", "rendering"]
 
 [dependencies]
+appthere-canvas = { workspace = true }
 loki-layout    = { path = "../loki-layout" }
 vello          = "0.6"
 peniko         = "0.5"

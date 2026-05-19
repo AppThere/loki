@@ -9,11 +9,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use appthere_ui::tokens;
 use dioxus::prelude::*;
 
-use crate::components::document_source::DocumentState;
 use crate::editing::cursor::CursorState;
+use crate::editing::state::DocumentState;
 use crate::editing::touch::TouchInteractionState;
 
 // EditorMode removed — the editor is always in edit mode when a document is
@@ -59,27 +58,8 @@ pub(super) struct EditorState {
 /// of `EditorInner`.  Hook call order is preserved because `EditorInner`
 /// always calls this as its first hook operation.
 pub(super) fn use_editor_state() -> EditorState {
-    let doc_state: Arc<Mutex<DocumentState>> = use_hook(|| {
-        Arc::new(Mutex::new(DocumentState {
-            document: None,
-            generation: 0,
-            page_count: 0,
-            canvas_width: 0.0,
-            visible_rect: None,
-            page_width_px: tokens::PAGE_WIDTH_PX,
-            page_height_px: tokens::PAGE_HEIGHT_PX,
-            cursor_state: None,
-            paginated_layout: None,
-            preserve_for_editing: false,
-            shared_renderer: Arc::new(Mutex::new(None)),
-            shared_font_cache: Arc::new(Mutex::new(loki_vello::FontDataCache::new())),
-            layout_stamp: 0,
-            layout_generation: 0,
-            layout_canvas_width: 0.0,
-            layout_preserve_for_editing: false,
-            shared_font_resources: Arc::new(Mutex::new(loki_layout::FontResources::new())),
-        }))
-    });
+    let doc_state: Arc<Mutex<DocumentState>> =
+        use_hook(|| Arc::new(Mutex::new(DocumentState::new())));
 
     // Synchronously read page_count in case doc_state is already populated
     // (covers tab-switch-back where the document was previously loaded).

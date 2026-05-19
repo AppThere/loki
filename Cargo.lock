@@ -275,6 +275,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "appthere-canvas"
+version = "0.1.0"
+dependencies = [
+ "dioxus",
+ "peniko",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "wgpu 26.0.1",
+]
+
+[[package]]
 name = "appthere-color"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3914,11 +3926,11 @@ name = "loki-renderer"
 version = "0.1.0"
 dependencies = [
  "anyrender_vello",
+ "appthere-canvas",
  "appthere-ui",
  "dioxus",
  "loki-doc-model",
  "loki-layout",
- "loki-render-cache",
  "loki-vello",
  "pollster 0.4.0",
  "tokio",
@@ -3943,6 +3955,7 @@ dependencies = [
  "loki-layout",
  "loki-odf",
  "loki-ooxml",
+ "loki-renderer",
  "loki-vello",
  "loro",
  "peniko",
@@ -3959,6 +3972,7 @@ dependencies = [
 name = "loki-vello"
 version = "0.1.0"
 dependencies = [
+ "appthere-canvas",
  "base64",
  "image",
  "kurbo 0.12.0",

@@ -13,8 +13,8 @@ use loki_doc_model::loro_mutation::{delete_text, get_block_text};
 use loki_doc_model::split_block;
 
 use super::editor_formatting;
-use crate::components::document_source::{DocumentState, apply_mutation_and_relayout};
 use crate::editing::cursor::{CursorState, DocumentPosition, next_grapheme_boundary};
+use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
 /// Dispatches Ctrl/Meta/Super+key shortcuts.
 ///

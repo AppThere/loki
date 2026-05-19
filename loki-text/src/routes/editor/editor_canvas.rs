@@ -2,8 +2,8 @@
 
 //! Scrollable canvas area for the document editor.
 //!
-//! [`render_canvas_area`] returns the scroll container div that holds
-//! [`crate::components::wgpu_surface::WgpuSurface`].  It is a plain function
+//! [`render_canvas_area`] returns the scroll container div that holds the
+//! [`loki_renderer::DocumentView`] component.  It is a plain function
 //! (not a Dioxus component) so it cannot call hooks; all reactive state is
 //! received as copied signals from [`super::editor_inner::EditorInner`].
 //!
@@ -21,25 +21,26 @@
 //! `node.scroll_offset` is internal to blitz-dom (no public Dioxus API), so
 //! `visible_rect` stays `None` and `onwheel` handlers never fire.
 //!
-//! TODO(partial-render): wire scroll_offset → visible_rect → LokiDocumentSource
-//! clip region once Blitz exposes a scroll-position hook to Dioxus components.
+//! TODO(partial-render): wire scroll_offset → DocumentView viewport once Blitz
+//! exposes a scroll-position hook to Dioxus components.
+//!
+//! TODO(cursor-click): restore click-to-cursor-position via hit_test_document
+//! once a suitable DocumentPosition → DocumentView mapping is established.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
-use loki_doc_model::loro_bridge::derive_loro_cursor;
-use loki_layout::LayoutOptions;
+use loki_renderer::DocumentView;
 
 use super::editor_error_view::EditorErrorView;
 use super::editor_keydown::make_keydown_handler;
 use super::editor_pointer::{
     make_mousemove_handler, make_touchend_handler, make_touchmove_handler,
 };
-use crate::components::document_source::DocumentState;
-use crate::components::wgpu_surface::WgpuSurface;
-use crate::editing::cursor::{CursorState, DocumentPosition};
+use crate::editing::cursor::CursorState;
+use crate::editing::state::DocumentState;
 use crate::editing::touch::TouchInteractionState;
 use crate::error::LoadError;
 
@@ -49,23 +50,21 @@ use crate::error::LoadError;
 /// copied signals.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn render_canvas_area(
-    doc_state_mousemove: Arc<Mutex<DocumentState>>,
-    doc_state_touch: Arc<Mutex<DocumentState>>,
-    doc_state_touchend: Arc<Mutex<DocumentState>>,
-    doc_state_prop: Arc<Mutex<DocumentState>>,
-    doc_state_keydown: Arc<Mutex<DocumentState>>,
+    doc_state_mousemove: std::sync::Arc<std::sync::Mutex<DocumentState>>,
+    doc_state_touch: std::sync::Arc<std::sync::Mutex<DocumentState>>,
+    doc_state_touchend: std::sync::Arc<std::sync::Mutex<DocumentState>>,
+    doc_state_keydown: std::sync::Arc<std::sync::Mutex<DocumentState>>,
     mut is_dragging: Signal<bool>,
     mut drag_origin: Signal<Option<(f32, f32)>>,
     touch_state: Signal<Option<TouchInteractionState>>,
     window_width: Signal<f32>,
     scroll_offset: Signal<f32>,
-    mut cursor_state: Signal<CursorState>,
+    cursor_state: Signal<CursorState>,
     loro_doc: Signal<Option<loro::LoroDoc>>,
     undo_manager: Signal<Option<loro::UndoManager>>,
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
     path_signal: Signal<String>,
-    layout_opts: LayoutOptions,
     document_load: Resource<(String, Result<Document, LoadError>)>,
     page_gap_px: f32,
 ) -> Element {
@@ -73,12 +72,14 @@ pub(super) fn render_canvas_area(
         div {
             // COMPAT(dioxus-native): flex: 1 is confirmed working. Requires
             // height: 100vh on the parent so Taffy can resolve the flex fraction.
+            // tabindex="0" enables keyboard focus for onkeydown to fire.
             style: format!(
                 "flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; \
                  background: {bg}; padding: {p}px 0;",
                 bg = tokens::COLOR_SURFACE_BASE,
                 p  = tokens::SPACE_6,
             ),
+            tabindex: "0",
 
             onmousedown: move |evt| {
                 let c = evt.client_coordinates();
@@ -130,39 +131,22 @@ pub(super) fn render_canvas_area(
                 page_gap_px,
             ),
 
+            onkeydown: make_keydown_handler(
+                doc_state_keydown,
+                cursor_state,
+                loro_doc,
+                undo_manager,
+                can_undo,
+                can_redo,
+            ),
+
             match &*document_load.value().read_unchecked() {
                 Some((loaded_path, Ok(doc))) if loaded_path == &path_signal() => {
-                    let cs = Some(cursor_state.read().clone());
+                    let arc_doc = Arc::new(doc.clone());
                     rsx! {
-                        WgpuSurface {
-                            doc_state: Arc::clone(&doc_state_prop),
-                            path: path_signal(),
-                            document: Some(doc.clone()),
-                            layout_opts: layout_opts.clone(),
-                            visible_rect: None,
-                            cursor_state: cs,
-                            on_mousedown: move |p: DocumentPosition| {
-                                is_dragging.set(true);
-                                let loro_cursor = loro_doc.read().as_ref().and_then(|ldoc| {
-                                    derive_loro_cursor(
-                                        ldoc,
-                                        p.paragraph_index,
-                                        p.byte_offset,
-                                    )
-                                });
-                                let mut cs = cursor_state.write();
-                                cs.loro_cursor = loro_cursor;
-                                cs.anchor = Some(p.clone());
-                                cs.focus = Some(p);
-                            },
-                            on_keydown: make_keydown_handler(
-                                doc_state_keydown,
-                                cursor_state,
-                                loro_doc,
-                                undo_manager,
-                                can_undo,
-                                can_redo,
-                            ),
+                        DocumentView {
+                            doc: arc_doc,
+                            viewport_height_px: 800.0,
                         }
                     }
                 },
@@ -172,18 +156,7 @@ pub(super) fn render_canvas_area(
                     rsx! { EditorErrorView { message: msg } }
                 },
 
-                _ => rsx! {
-                    WgpuSurface {
-                        doc_state: Arc::clone(&doc_state_prop),
-                        path: path_signal(),
-                        document: None,
-                        layout_opts: layout_opts.clone(),
-                        visible_rect: None,
-                        cursor_state: None,
-                        on_mousedown: |_| {},
-                        on_keydown: |_| {},
-                    }
-                },
+                _ => rsx! { div {} },
             }
         }
     }

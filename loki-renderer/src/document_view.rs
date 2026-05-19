@@ -5,11 +5,11 @@
 
 use std::sync::{Arc, Mutex};
 
+use appthere_canvas::{PageCache, PageIndex};
 use appthere_ui::tokens;
 use dioxus::native::use_wgpu;
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
-use loki_render_cache::{PageCache, PageIndex};
 
 use crate::doc_page_source::DocPageSource;
 use crate::page_paint_source::LokiPageSource;
@@ -35,14 +35,13 @@ impl PartialEq for DocumentViewProps {
 
 #[derive(Clone, Props)]
 struct PageTileProps {
-    /// Shared tier-and-dirty metadata store from `RendererState`.
     cache: Arc<Mutex<PageCache<PageIndex>>>,
-    /// Document layout + page-size source.
     source: Arc<DocPageSource>,
     page_index: usize,
     top: f64,
     w: f64,
     h: f64,
+    shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
 }
 
 impl PartialEq for PageTileProps {
@@ -56,16 +55,15 @@ impl PartialEq for PageTileProps {
 }
 
 /// A single page rendered into a Blitz GPU canvas.
-///
-/// Calls `use_wgpu` exactly once per instance — the hook-count invariant is
-/// satisfied by Dioxus's key-based reconciliation in `DocumentView`.
 #[allow(non_snake_case)]
 fn PageTile(props: PageTileProps) -> Element {
     let cache = props.cache.clone();
     let source = props.source.clone();
     let page_index = props.page_index;
+    let shared_renderer = props.shared_renderer.clone();
 
-    let canvas_id = use_wgpu(move || LokiPageSource::new(cache, source, page_index));
+    let canvas_id =
+        use_wgpu(move || LokiPageSource::new(cache, source, page_index, shared_renderer));
 
     rsx! {
         div {
@@ -91,25 +89,20 @@ fn PageTile(props: PageTileProps) -> Element {
 // ── DocumentView ──────────────────────────────────────────────────────────────
 
 /// Root document rendering component.
-///
-/// - Initialises `RendererState` via `use_hook` and provides it as context.
-/// - Launches the settle detector via `use_settle_detector`.
-/// - Renders one `PageTile` per page; each tile registers a `LokiPageSource`
-///   via `use_wgpu` and Blitz drives rendering each frame.
-/// - Passes scroll events to `on_scroll_event`.
 #[component]
 pub fn DocumentView(props: DocumentViewProps) -> Element {
     let renderer = use_hook(|| RendererState::new(props.doc.clone(), props.viewport_height_px));
     provide_context(renderer.clone());
 
     let renderer_settle = renderer.clone();
-    use_settle_detector(renderer.scroll, move || {
+    let (_task, _tx) = use_settle_detector(renderer.scroll, move || {
         renderer_settle.on_settle();
     });
 
     let scroll = renderer.scroll;
+    let phase_tx = renderer.phase_tx.clone();
     let onscroll = move |evt: Event<ScrollData>| {
-        on_scroll_event(scroll, evt.scroll_top());
+        on_scroll_event(scroll, evt.scroll_top(), &phase_tx);
     };
 
     let doc_gen = renderer.source.current_generation();
@@ -154,6 +147,7 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                         top,
                         w,
                         h,
+                        shared_renderer: renderer.shared_renderer.clone(),
                     }
                 }
             }

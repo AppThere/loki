@@ -1,78 +1,59 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
 
-//! [`RendererState`] — Dioxus context holding the render cache and scroll
-//! signal.
-//!
-//! Intended to be created inside a `use_hook` call and shared via
-//! `use_context` / `provide_context` so that child components and the settle
-//! detector can coordinate without prop-drilling.
-//!
-//! ```ignore
-//! // In a parent component:
-//! let renderer = use_hook(|| {
-//!     RendererState::new(doc.clone(), 800.0)
-//! });
-//! provide_context(renderer);
-//! ```
+//! [`RendererState`] — Dioxus context holding the render cache, scroll signal,
+//! phase sender, and shared Vello renderer.
 
 use std::sync::{Arc, Mutex};
 
+use appthere_canvas::{PageCache, PageGeometry, PageIndex, ScrollPhase, ScrollState};
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
-use loki_render_cache::{PageCache, PageGeometry, PageIndex, ScrollState};
+use tokio::sync::watch;
 
 use crate::doc_page_source::DocPageSource;
 
 // ── RendererState ─────────────────────────────────────────────────────────────
 
-/// Dioxus context that wires together the page cache and scroll signal.
-///
-/// GPU texture lifecycle is now managed by `LokiPageSource` instances inside
-/// Blitz's `CustomPaintSource` frame loop — `RendererState` only drives the
-/// tier-policy metadata via `on_settle`.
-///
-/// # Lifecycle
-///
-/// 1. Create with [`RendererState::new`] inside a `use_hook`.
-/// 2. Expose via `provide_context(renderer.clone())`.
-/// 3. Call [`on_scroll_event`](crate::scroll_driver::on_scroll_event) from
-///    scroll handlers to update `scroll`.
-/// 4. Pass [`RendererState::on_settle`] as the callback to
-///    [`use_settle_detector`](crate::scroll_driver::use_settle_detector).
+/// Dioxus context that wires together the page cache, scroll signal, and
+/// shared Vello renderer.
 #[derive(Clone)]
 pub struct RendererState {
     /// Shared page tier-and-dirty metadata store.
     pub cache: Arc<Mutex<PageCache<PageIndex>>>,
-    /// Scroll position and phase signal, driven by the document scroll handler.
+    /// Scroll position and phase signal.
     pub scroll: Signal<ScrollState>,
     /// Document layout and page-size source.
     pub source: Arc<DocPageSource>,
+    /// Watch sender for scroll phase — passed to `on_scroll_event` to drive
+    /// the event-based settle detector.
+    pub phase_tx: Arc<watch::Sender<ScrollPhase>>,
+    /// Shared Vello renderer — created lazily by the first `LokiPageSource`
+    /// to call `resume()`.  All page sources for the same document share this.
+    pub shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
 }
 
 impl RendererState {
     /// Creates a new [`RendererState`].
     ///
-    /// # Panics (never in library code)
-    ///
-    /// Must be called from within a Dioxus component or hook context because
-    /// it calls [`use_signal`] internally.
+    /// Must be called from within a Dioxus component or hook context.
     pub fn new(doc: Arc<Document>, viewport_height_px: f64) -> Self {
         let source = Arc::new(DocPageSource::new(doc));
         let cache = Arc::new(Mutex::new(PageCache::new()));
         let scroll = use_signal(|| ScrollState::new(viewport_height_px));
+        let (tx, _rx) = watch::channel(ScrollPhase::Idle);
+        let phase_tx = Arc::new(tx);
+        let shared_renderer = Arc::new(Mutex::new(None));
         Self {
             cache,
             scroll,
             source,
+            phase_tx,
+            shared_renderer,
         }
     }
 
     /// Called by the settle detector after each scroll gesture ends.
-    ///
-    /// Runs [`PageCache::retier`] against the current scroll state, updating
-    /// tier assignments and dirty flags.  `LokiPageSource` instances read
-    /// those assignments on their next frame render.
     #[tracing::instrument(skip(self), fields(page_count = tracing::field::Empty))]
     pub fn on_settle(&self) {
         let doc_gen = self.source.current_generation();

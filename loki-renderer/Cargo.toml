@@ -6,7 +6,7 @@ license = "Apache-2.0"
 description = "Dioxus signal integration and tracing orchestration layer for Loki's render cache"
 
 [dependencies]
-loki-render-cache = { path = "../loki-render-cache", features = ["gpu"] }
+appthere-canvas   = { workspace = true }
 loki-doc-model    = { path = "../loki-doc-model" }
 loki-layout       = { path = "../loki-layout" }
 loki-vello        = { path = "../loki-vello" }
@@ -17,7 +17,7 @@ anyrender_vello   = "0.6.2"
 tracing           = "0.1"
 wgpu              = "26"
 vello             = "0.6"
-tokio             = { version = "1", features = ["time"] }
+tokio             = { version = "1", features = ["time", "sync"] }
 
 [dev-dependencies]
 pollster = "0.4"
