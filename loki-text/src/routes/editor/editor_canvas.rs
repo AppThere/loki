@@ -24,8 +24,8 @@
 //! TODO(partial-render): wire scroll_offset → DocumentView viewport once Blitz
 //! exposes a scroll-position hook to Dioxus components.
 //!
-//! TODO(cursor-click): restore click-to-cursor-position via hit_test_document
-//! once a suitable DocumentPosition → DocumentView mapping is established.
+//! Click-to-cursor-position is handled by `make_mousedown_handler` in
+//! `editor_pointer.rs`, which calls `hit_test_document` and updates the cursor.
 
 use std::sync::Arc;
 
@@ -37,7 +37,7 @@ use loki_renderer::DocumentView;
 use super::editor_error_view::EditorErrorView;
 use super::editor_keydown::make_keydown_handler;
 use super::editor_pointer::{
-    make_mousemove_handler, make_touchend_handler, make_touchmove_handler,
+    make_mousedown_handler, make_mousemove_handler, make_touchend_handler, make_touchmove_handler,
 };
 use crate::editing::cursor::CursorState;
 use crate::editing::state::DocumentState;
@@ -50,6 +50,7 @@ use crate::error::LoadError;
 /// copied signals.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn render_canvas_area(
+    doc_state_mousedown: std::sync::Arc<std::sync::Mutex<DocumentState>>,
     doc_state_mousemove: std::sync::Arc<std::sync::Mutex<DocumentState>>,
     doc_state_touch: std::sync::Arc<std::sync::Mutex<DocumentState>>,
     doc_state_touchend: std::sync::Arc<std::sync::Mutex<DocumentState>>,
@@ -81,10 +82,15 @@ pub(super) fn render_canvas_area(
             ),
             tabindex: "0",
 
-            onmousedown: move |evt| {
-                let c = evt.client_coordinates();
-                drag_origin.set(Some((c.x as f32, c.y as f32)));
-            },
+            onmousedown: make_mousedown_handler(
+                doc_state_mousedown,
+                window_width,
+                scroll_offset,
+                loro_doc,
+                cursor_state,
+                drag_origin,
+                page_gap_px,
+            ),
 
             onmousemove: make_mousemove_handler(
                 doc_state_mousemove,

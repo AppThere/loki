@@ -94,6 +94,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     );
 
     // Pre-clone the Arc so each closure can capture its own owned clone.
+    let doc_state_mousedown = Arc::clone(&doc_state);
     let doc_state_mousemove = Arc::clone(&doc_state);
     let doc_state_touch = Arc::clone(&doc_state);
     let doc_state_touchend = Arc::clone(&doc_state);
@@ -217,6 +218,7 @@ pub(super) fn EditorInner(path: String) -> Element {
 
             // ── Scrollable page canvas ────────────────────────────────────────
             {render_canvas_area(
+                doc_state_mousedown,
                 doc_state_mousemove,
                 doc_state_touch,
                 doc_state_touchend,
