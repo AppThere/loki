@@ -21,10 +21,11 @@ use crate::editing::touch::{TouchInteractionState, TouchPhase, word_boundaries_a
 /// Builds the `onmousemove` handler for drag-selection.
 ///
 /// Guards behind a 4 CSS-px drag threshold to prevent cursor jitter during
-/// a plain click from creating a spurious selection.
+/// a plain click from creating a spurious selection.  Transitions
+/// `is_dragging` to `true` the first time the threshold is exceeded.
 pub(super) fn make_mousemove_handler(
     doc_state: Arc<Mutex<DocumentState>>,
-    is_dragging: Signal<bool>,
+    mut is_dragging: Signal<bool>,
     drag_origin: Signal<Option<(f32, f32)>>,
     window_width: Signal<f32>,
     scroll_offset: Signal<f32>,
@@ -32,19 +33,22 @@ pub(super) fn make_mousemove_handler(
     page_gap_px: f32,
 ) -> impl FnMut(MouseEvent) {
     move |evt: MouseEvent| {
-        if !is_dragging() {
+        if drag_origin().is_none() {
             return;
         }
         const DRAG_THRESHOLD_SQ: f32 = 4.0 * 4.0; // 4 CSS px
         let coords = evt.client_coordinates();
         let cx = coords.x as f32;
         let cy = coords.y as f32;
-        if let Some((ox, oy)) = drag_origin() {
-            let dx = cx - ox;
-            let dy = cy - oy;
-            if dx * dx + dy * dy < DRAG_THRESHOLD_SQ {
-                return;
+        if !is_dragging() {
+            if let Some((ox, oy)) = drag_origin() {
+                let dx = cx - ox;
+                let dy = cy - oy;
+                if dx * dx + dy * dy < DRAG_THRESHOLD_SQ {
+                    return;
+                }
             }
+            is_dragging.set(true);
         }
         let (layout_opt, page_width_px, page_height_px) = {
             let Ok(state) = doc_state.lock() else { return };
@@ -57,7 +61,7 @@ pub(super) fn make_mousemove_handler(
         let Some(layout) = layout_opt else { return };
         let x_off = (window_width() - page_width_px).max(0.0) / 2.0;
         let origin = (x_off, tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6);
-        let pos = hit_test_document(
+        if let Some(p) = hit_test_document(
             cx,
             cy,
             origin,
@@ -66,8 +70,7 @@ pub(super) fn make_mousemove_handler(
             page_width_px,
             page_height_px,
             page_gap_px,
-        );
-        if let Some(p) = pos {
+        ) {
             cursor_state.write().focus = Some(p);
         }
     }

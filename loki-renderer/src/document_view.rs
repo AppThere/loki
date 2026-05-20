@@ -16,6 +16,16 @@ use crate::page_paint_source::LokiPageSource;
 use crate::renderer_state::RendererState;
 use crate::scroll_driver::{on_scroll_event, use_settle_detector};
 
+// ── RendererCursorPos ─────────────────────────────────────────────────────────
+
+/// Minimal cursor position for GPU painting. No Loro dependency.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RendererCursorPos {
+    pub page_index: usize,
+    pub paragraph_index: usize,
+    pub byte_offset: usize,
+}
+
 // ── DocumentViewProps ─────────────────────────────────────────────────────────
 
 /// Props for the DocumentView component.
@@ -23,6 +33,10 @@ use crate::scroll_driver::{on_scroll_event, use_settle_detector};
 pub struct DocumentViewProps {
     pub doc: Arc<Document>,
     pub viewport_height_px: f64,
+    pub cursor_pos: Option<RendererCursorPos>,
+    /// Called with `(page_index, x_pt, y_pt)` in layout points when the user
+    /// clicks a page tile. The caller performs the hit test and updates cursor state.
+    pub on_tile_click: EventHandler<(usize, f32, f32)>,
 }
 
 impl PartialEq for DocumentViewProps {
@@ -41,6 +55,12 @@ struct PageTileProps {
     w: f64,
     h: f64,
     shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
+    cursor_holder: Arc<Mutex<Option<RendererCursorPos>>>,
+    cursor_pos: Option<RendererCursorPos>,
+    /// Called with `(page_index, x_pt, y_pt)` in layout points when the user
+    /// clicks anywhere on this page tile. The parent uses this to call
+    /// `hit_test_page` without needing window-relative origin math.
+    on_tile_click: EventHandler<(usize, f32, f32)>,
 }
 
 impl PartialEq for PageTileProps {
@@ -50,6 +70,10 @@ impl PartialEq for PageTileProps {
             && self.page_index == other.page_index
             && self.w == other.w
             && self.h == other.h
+            && Arc::ptr_eq(&self.cursor_holder, &other.cursor_holder)
+            && self.cursor_pos == other.cursor_pos
+        // on_tile_click intentionally excluded — EventHandler identity does not
+        // affect render output; omitting it avoids spurious re-renders.
     }
 }
 
@@ -60,9 +84,35 @@ fn PageTile(props: PageTileProps) -> Element {
     let source = props.source.clone();
     let page_index = props.page_index;
     let shared_renderer = props.shared_renderer.clone();
+    let cursor_holder = props.cursor_holder.clone();
+    let cursor_holder_wgpu = props.cursor_holder.clone();
+    let on_tile_click = props.on_tile_click;
 
-    let canvas_id =
-        use_wgpu(move || LokiPageSource::new(cache, source, page_index, shared_renderer));
+    // Write current cursor to shared holder on every render so LokiPageSource
+    // can read it during the GPU paint call.
+    if let Ok(mut guard) = cursor_holder.lock() {
+        *guard = props.cursor_pos;
+    }
+
+    let canvas_id = use_wgpu(move || {
+        LokiPageSource::new(
+            cache,
+            source,
+            page_index,
+            shared_renderer,
+            cursor_holder_wgpu,
+        )
+    });
+
+    // A dummy data attribute that changes whenever the cursor moves, forcing
+    // Blitz to mark the canvas dirty and call render() again.
+    // COMPAT(dioxus-native): data-* attributes confirmed working in Blitz.
+    let data_cursor = match props.cursor_pos {
+        Some(cp) if cp.page_index == props.page_index => {
+            format!("{}-{}", cp.paragraph_index, cp.byte_offset)
+        }
+        _ => String::new(),
+    };
 
     rsx! {
         div {
@@ -76,8 +126,17 @@ fn PageTile(props: PageTileProps) -> Element {
                 h   = props.h,
                 gap = tokens::PAGE_GAP_PX,
             ),
+            // element_coordinates() gives coords relative to this div's top-left,
+            // which exactly equals page-local CSS pixels — no origin math needed.
+            onmousedown: move |evt: MouseEvent| {
+                let e = evt.element_coordinates();
+                let x_pt = e.x as f32 * (72.0 / 96.0);
+                let y_pt = e.y as f32 * (72.0 / 96.0);
+                on_tile_click.call((page_index, x_pt, y_pt));
+            },
             canvas {
                 "src": "{canvas_id}",
+                "data-cursor": "{data_cursor}",
                 style: format!(
                     "width: {w}px; height: {h}px; display: block;",
                     w = props.w,
@@ -98,6 +157,11 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
     let scroll = use_signal(|| ScrollState::new(props.viewport_height_px));
     let renderer = use_hook(|| RendererState::new(props.doc.clone(), scroll));
     provide_context(renderer.clone());
+
+    // Shared cursor holder: written by PageTile on each render, read by
+    // LokiPageSource during the GPU paint call.
+    let cursor_holder: Arc<Mutex<Option<RendererCursorPos>>> =
+        use_hook(|| Arc::new(Mutex::new(None)));
 
     let renderer_settle = renderer.clone();
     let (_task, _tx) = use_settle_detector(renderer.scroll, move || {
@@ -140,6 +204,9 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         .unwrap_or((0, 0, 0));
     tracing::debug!(hot, warm, cold, "DocumentView rendered");
 
+    let cursor_pos = props.cursor_pos;
+    let on_tile_click = props.on_tile_click;
+
     rsx! {
         div {
             // No overflow-y: auto here — scrolling is owned by the parent
@@ -161,6 +228,9 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                         w,
                         h,
                         shared_renderer: renderer.shared_renderer.clone(),
+                        cursor_holder: cursor_holder.clone(),
+                        cursor_pos,
+                        on_tile_click,
                     }
                 }
             }

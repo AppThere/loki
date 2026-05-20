@@ -102,7 +102,9 @@ impl DocPageSource {
             .unwrap_or(true);
         if needs_recompute {
             let mut resources = FontResources::new();
-            let options = LayoutOptions::default();
+            let options = LayoutOptions {
+                preserve_for_editing: true,
+            };
             let layout = match loki_layout::layout_document(
                 &mut resources,
                 &self.doc,
