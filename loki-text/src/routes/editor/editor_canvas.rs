@@ -32,7 +32,7 @@ use std::sync::Arc;
 use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
-use loki_renderer::DocumentView;
+use loki_renderer::{DocumentView, RendererCursorPos};
 
 use super::editor_error_view::EditorErrorView;
 use super::editor_keydown::make_keydown_handler;
@@ -149,6 +149,14 @@ pub(super) fn render_canvas_area(
             match &*document_load.value().read_unchecked() {
                 Some((loaded_path, Ok(doc))) if loaded_path == &path_signal() => {
                     let arc_doc = Arc::new(doc.clone());
+                    let cursor_pos = {
+                        let cs = cursor_state.read();
+                        cs.focus.as_ref().map(|pos| RendererCursorPos {
+                            page_index: pos.page_index,
+                            paragraph_index: pos.paragraph_index,
+                            byte_offset: pos.byte_offset,
+                        })
+                    };
                     rsx! {
                         DocumentView {
                             doc: arc_doc,
@@ -156,6 +164,7 @@ pub(super) fn render_canvas_area(
                             // cache tier zones only, not visual correctness.
                             // See diagnostic report, finding 1.
                             viewport_height_px: 800.0,
+                            cursor_pos,
                         }
                     }
                 },

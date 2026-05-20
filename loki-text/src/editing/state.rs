@@ -92,7 +92,9 @@ pub fn seed_layout_from_document(doc_state: &Arc<Mutex<DocumentState>>, doc: &Do
             appthere_ui::tokens::PAGE_HEIGHT_PX,
         ),
     };
-    let Ok(mut state) = doc_state.lock() else { return };
+    let Ok(mut state) = doc_state.lock() else {
+        return;
+    };
     state.document = Some(doc.clone());
     state.paginated_layout = paginated_layout;
     state.page_count = page_count;

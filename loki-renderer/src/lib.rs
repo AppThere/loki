@@ -18,6 +18,6 @@ pub mod renderer_state;
 pub mod scroll_driver;
 
 pub use doc_page_source::DocPageSource;
-pub use document_view::{DocumentView, DocumentViewProps};
+pub use document_view::{DocumentView, DocumentViewProps, RendererCursorPos};
 pub use renderer_state::RendererState;
 pub use scroll_driver::{on_scroll_event, use_settle_detector};
