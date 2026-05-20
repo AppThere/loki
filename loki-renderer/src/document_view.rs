@@ -34,6 +34,9 @@ pub struct DocumentViewProps {
     pub doc: Arc<Document>,
     pub viewport_height_px: f64,
     pub cursor_pos: Option<RendererCursorPos>,
+    /// Called with `(page_index, x_pt, y_pt)` in layout points when the user
+    /// clicks a page tile. The caller performs the hit test and updates cursor state.
+    pub on_tile_click: EventHandler<(usize, f32, f32)>,
 }
 
 impl PartialEq for DocumentViewProps {
@@ -54,6 +57,10 @@ struct PageTileProps {
     shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
     cursor_holder: Arc<Mutex<Option<RendererCursorPos>>>,
     cursor_pos: Option<RendererCursorPos>,
+    /// Called with `(page_index, x_pt, y_pt)` in layout points when the user
+    /// clicks anywhere on this page tile. The parent uses this to call
+    /// `hit_test_page` without needing window-relative origin math.
+    on_tile_click: EventHandler<(usize, f32, f32)>,
 }
 
 impl PartialEq for PageTileProps {
@@ -65,6 +72,8 @@ impl PartialEq for PageTileProps {
             && self.h == other.h
             && Arc::ptr_eq(&self.cursor_holder, &other.cursor_holder)
             && self.cursor_pos == other.cursor_pos
+        // on_tile_click intentionally excluded — EventHandler identity does not
+        // affect render output; omitting it avoids spurious re-renders.
     }
 }
 
@@ -77,6 +86,7 @@ fn PageTile(props: PageTileProps) -> Element {
     let shared_renderer = props.shared_renderer.clone();
     let cursor_holder = props.cursor_holder.clone();
     let cursor_holder_wgpu = props.cursor_holder.clone();
+    let on_tile_click = props.on_tile_click;
 
     // Write current cursor to shared holder on every render so LokiPageSource
     // can read it during the GPU paint call.
@@ -116,6 +126,14 @@ fn PageTile(props: PageTileProps) -> Element {
                 h   = props.h,
                 gap = tokens::PAGE_GAP_PX,
             ),
+            // element_coordinates() gives coords relative to this div's top-left,
+            // which exactly equals page-local CSS pixels — no origin math needed.
+            onmousedown: move |evt: MouseEvent| {
+                let e = evt.element_coordinates();
+                let x_pt = e.x as f32 * (72.0 / 96.0);
+                let y_pt = e.y as f32 * (72.0 / 96.0);
+                on_tile_click.call((page_index, x_pt, y_pt));
+            },
             canvas {
                 "src": "{canvas_id}",
                 "data-cursor": "{data_cursor}",
@@ -187,6 +205,7 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
     tracing::debug!(hot, warm, cold, "DocumentView rendered");
 
     let cursor_pos = props.cursor_pos;
+    let on_tile_click = props.on_tile_click;
 
     rsx! {
         div {
@@ -211,6 +230,7 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                         shared_renderer: renderer.shared_renderer.clone(),
                         cursor_holder: cursor_holder.clone(),
                         cursor_pos,
+                        on_tile_click,
                     }
                 }
             }

@@ -37,12 +37,14 @@ use loki_renderer::{DocumentView, RendererCursorPos};
 use super::editor_error_view::EditorErrorView;
 use super::editor_keydown::make_keydown_handler;
 use super::editor_pointer::{
-    make_mousedown_handler, make_mousemove_handler, make_touchend_handler, make_touchmove_handler,
+    make_mousemove_handler, make_touchend_handler, make_touchmove_handler,
 };
 use crate::editing::cursor::CursorState;
+use crate::editing::hit_test::hit_test_page;
 use crate::editing::state::DocumentState;
 use crate::editing::touch::TouchInteractionState;
 use crate::error::LoadError;
+use loki_doc_model::loro_bridge::derive_loro_cursor;
 
 /// Renders the scrollable canvas area for the document editor.
 ///
@@ -60,7 +62,7 @@ pub(super) fn render_canvas_area(
     touch_state: Signal<Option<TouchInteractionState>>,
     window_width: Signal<f32>,
     scroll_offset: Signal<f32>,
-    cursor_state: Signal<CursorState>,
+    mut cursor_state: Signal<CursorState>,
     loro_doc: Signal<Option<loro::LoroDoc>>,
     undo_manager: Signal<Option<loro::UndoManager>>,
     can_undo: Signal<bool>,
@@ -82,15 +84,12 @@ pub(super) fn render_canvas_area(
             ),
             tabindex: "0",
 
-            onmousedown: make_mousedown_handler(
-                doc_state_mousedown,
-                window_width,
-                scroll_offset,
-                loro_doc,
-                cursor_state,
-                drag_origin,
-                page_gap_px,
-            ),
+            // Outer div records drag origin; cursor placement happens in
+            // on_tile_click on the per-page div (element_coordinates, no origin math).
+            onmousedown: move |evt: MouseEvent| {
+                let c = evt.client_coordinates();
+                drag_origin.set(Some((c.x as f32, c.y as f32)));
+            },
 
             onmousemove: make_mousemove_handler(
                 doc_state_mousemove,
@@ -165,6 +164,24 @@ pub(super) fn render_canvas_area(
                             // See diagnostic report, finding 1.
                             viewport_height_px: 800.0,
                             cursor_pos,
+                            on_tile_click: move |(page_index, x_pt, y_pt): (usize, f32, f32)| {
+                                let layout_opt = {
+                                    let Ok(state) = doc_state_mousedown.lock() else { return };
+                                    state.paginated_layout.clone()
+                                };
+                                let Some(layout) = layout_opt else { return };
+                                let Some(pos) = hit_test_page(page_index, x_pt, y_pt, &layout)
+                                else {
+                                    return;
+                                };
+                                let loro_cursor = loro_doc.read().as_ref().and_then(|ldoc| {
+                                    derive_loro_cursor(ldoc, pos.paragraph_index, pos.byte_offset)
+                                });
+                                let mut cs = cursor_state.write();
+                                cs.loro_cursor = loro_cursor;
+                                cs.anchor = Some(pos.clone());
+                                cs.focus = Some(pos);
+                            },
                         }
                     }
                 },
