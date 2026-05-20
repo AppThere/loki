@@ -38,6 +38,7 @@ use super::editor_load::load_document;
 use super::editor_path_sync::sync_path_and_reset;
 use super::editor_ribbon::home_tab_content;
 use super::editor_state::{EditorState, use_editor_state};
+use crate::editing::state::seed_layout_from_document;
 use crate::error::LoadError;
 
 // EditorMode removed — the editor is always in edit mode when a document is
@@ -101,6 +102,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_keydown = Arc::clone(&doc_state);
     let doc_state_pages = Arc::clone(&doc_state);
     let doc_state_ribbon = Arc::clone(&doc_state);
+    let doc_state_seed = Arc::clone(&doc_state);
 
     // ── Document load — reactive on path_signal ───────────────────────────────
     let document_load: Resource<(String, Result<Document, LoadError>)> = use_resource(move || {
@@ -119,6 +121,9 @@ pub(super) fn EditorInner(path: String) -> Element {
             && loaded_path == &path_signal()
             && loro_doc().is_none()
         {
+            // Seed the layout so hit-testing works on the very first click,
+            // before any Loro mutation triggers apply_mutation_and_relayout.
+            seed_layout_from_document(&doc_state_seed, doc);
             match document_to_loro(doc) {
                 Ok(l_doc) => {
                     let um = loro::UndoManager::new(&l_doc);
