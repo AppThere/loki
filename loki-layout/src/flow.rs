@@ -625,6 +625,43 @@ pub(super) fn synthesize_heading_para(
 
 // ── Table layout ─────────────────────────────────────────────────────────────
 
+fn get_items_max_x(items: &[PositionedItem]) -> f32 {
+    let mut max_x = 0.0f32;
+    for item in items {
+        let x = match item {
+            PositionedItem::GlyphRun(r) => {
+                let mut run_max = r.origin.x;
+                for g in &r.glyphs {
+                    let right = r.origin.x + g.x + g.advance;
+                    if right > run_max {
+                        run_max = right;
+                    }
+                }
+                run_max
+            }
+            PositionedItem::FilledRect(r) | PositionedItem::HorizontalRule(r) => {
+                r.rect.origin.x + r.rect.size.width
+            }
+            PositionedItem::BorderRect(r) => r.rect.origin.x + r.rect.size.width,
+            PositionedItem::Image(r) => r.rect.origin.x + r.rect.size.width,
+            PositionedItem::Decoration(d) => d.x + d.width,
+            PositionedItem::ClippedGroup { clip_rect, items } => {
+                let inner_max = get_items_max_x(items);
+                inner_max.min(clip_rect.origin.x + clip_rect.size.width)
+            }
+            PositionedItem::RotatedGroup {
+                origin,
+                content_width,
+                ..
+            } => origin.x + content_width,
+        };
+        if x > max_x {
+            max_x = x;
+        }
+    }
+    max_x
+}
+
 fn measure_cell_height(
     resources: &mut FontResources,
     catalog: &StyleCatalog,
@@ -634,10 +671,21 @@ fn measure_cell_height(
     cell_content_width: f32,
     idx: usize,
 ) -> f32 {
+    use loki_doc_model::content::table::row::CellTextDirection;
+
     let pad_top = cell.props.padding_top.map(pts_to_f32).unwrap_or(0.0);
     let pad_bottom = cell.props.padding_bottom.map(pts_to_f32).unwrap_or(0.0);
 
-    let flow_w = cell_content_width;
+    let is_rotated = matches!(
+        cell.props.text_direction.as_ref(),
+        Some(CellTextDirection::TbRl | CellTextDirection::TbLr | CellTextDirection::BtLr)
+    );
+
+    let flow_w = if is_rotated {
+        10000.0
+    } else {
+        cell_content_width
+    };
 
     let mut temp_state = FlowState {
         resources,
@@ -666,8 +714,13 @@ fn measure_cell_height(
         flow_block(&mut temp_state, block, idx);
     }
 
-    let content_h = temp_state.cursor_y;
-    content_h + pad_top + pad_bottom
+    if is_rotated {
+        let max_x = get_items_max_x(&temp_state.current_items);
+        max_x + pad_top + pad_bottom
+    } else {
+        let content_h = temp_state.cursor_y;
+        content_h + pad_top + pad_bottom
+    }
 }
 
 // Helper to layout cell blocks inside a nested flow state.
@@ -788,15 +841,24 @@ fn flow_table(
 
     // Pass 3: Place and flow cell blocks
     for (row_idx, row) in rows.iter().enumerate() {
-        // Track the row's starting position and page so that when a cell
-        // triggers a page break, subsequent cells start from the top of the
-        // new page rather than resetting to a stale position on the previous page.
-        let mut row_y_start = state.cursor_y;
-        let mut row_page = state.page_number;
         let row_max_h = row_heights[row_idx];
 
-        // NOTE: row heights are calculated via a two-pass approach to ensure
-        // uniform row height and to handle row_span correctly.
+        if state.mode.is_paginated() {
+            let remaining_h = state.page_content_height - state.cursor_y;
+            if row_max_h > remaining_h && row_max_h <= state.page_content_height {
+                finish_page(state);
+            }
+        }
+
+        let original_row_page = state.page_number;
+        let original_row_y_start = state.cursor_y;
+        let mut row_y_start = original_row_y_start;
+        let mut row_page = original_row_page;
+
+        let table_indent = state.current_indent;
+        let mut cell_starts = Vec::new();
+
+        // Pass 3a: Flow cell content blocks
         for (c_idx, cell) in row.cells.iter().enumerate() {
             let old_indent = state.current_indent;
             let old_width = state.content_width;
@@ -824,13 +886,14 @@ fn flow_table(
                 row_y_start = state.cursor_y;
                 row_page = state.page_number;
             }
-            state.cursor_y = row_y_start + pad_top;
 
-            // Record the insertion index and page before flowing cell content.
-            // If a page break fires inside flow_block, finish_page() resets
-            // current_items; the pre-cell index would then be out-of-bounds.
-            let cell_page_start = state.page_number;
-            let cell_item_start = state.current_items.len();
+            if state.page_number == original_row_page {
+                state.cursor_y = original_row_y_start + pad_top;
+            } else {
+                state.cursor_y = 0.0 + pad_top;
+            }
+
+            cell_starts.push((state.page_number, state.current_items.len()));
 
             let rotation_degrees = match cell.props.text_direction.as_ref() {
                 Some(CellTextDirection::TbRl) => Some(90.0_f32),
@@ -878,54 +941,6 @@ fn flow_table(
                 Vec::new()
             };
 
-            // Emit background and border decorations for this cell.
-            // Z-order: insert border first, then background at same index so
-            // background renders first (behind), border on top.
-            //
-            // When a page break occurred inside the cell, current_items was
-            // flushed and reset; use 0 to prepend before the cell's new-page
-            // content rather than using the now-stale pre-break index.
-            let insert_at = if state.page_number != cell_page_start {
-                0
-            } else {
-                cell_item_start
-            };
-            let cell_rect = LayoutRect {
-                origin: LayoutPoint {
-                    x: cell_x,
-                    y: row_y_start,
-                },
-                size: LayoutSize {
-                    width: col_w,
-                    height: cell_height,
-                },
-            };
-            let has_borders = cell.props.border_top.is_some()
-                || cell.props.border_bottom.is_some()
-                || cell.props.border_left.is_some()
-                || cell.props.border_right.is_some();
-            if has_borders {
-                state.current_items.insert(
-                    insert_at,
-                    PositionedItem::BorderRect(PositionedBorderRect {
-                        rect: cell_rect,
-                        top: cell.props.border_top.as_ref().and_then(convert_border),
-                        bottom: cell.props.border_bottom.as_ref().and_then(convert_border),
-                        left: cell.props.border_left.as_ref().and_then(convert_border),
-                        right: cell.props.border_right.as_ref().and_then(convert_border),
-                    }),
-                );
-            }
-            if let Some(bg) = cell.props.background_color.as_ref() {
-                state.current_items.insert(
-                    insert_at,
-                    PositionedItem::FilledRect(PositionedRect {
-                        rect: cell_rect,
-                        color: resolve_color(Some(bg)),
-                    }),
-                );
-            }
-
             for item in cell_items {
                 state.current_items.push(item);
             }
@@ -933,7 +948,163 @@ fn flow_table(
             state.current_indent = old_indent;
             state.content_width = old_width;
         }
-        state.cursor_y = row_y_start + row_max_h;
+
+        let row_page_end = state.page_number;
+        let row_y_end = if original_row_page == row_page_end {
+            original_row_y_start + row_max_h
+        } else {
+            let first_h = (state.page_content_height - original_row_y_start).max(0.0);
+            let intermediate_h =
+                (row_page_end - original_row_page - 1) as f32 * state.page_content_height;
+            (row_max_h - first_h - intermediate_h).max(0.0)
+        };
+
+        // Helper closures to calculate heights and Y coordinates of cell portions per page
+        let get_cell_height_on_page = |p: usize, cell_page_start: usize, cell_h: f32| -> f32 {
+            if p == cell_page_start {
+                if p == row_page_end {
+                    cell_h
+                } else {
+                    let y_start = if p == original_row_page {
+                        original_row_y_start
+                    } else {
+                        0.0
+                    };
+                    (state.page_content_height - y_start).max(0.0)
+                }
+            } else if p == row_page_end {
+                let start_y = if cell_page_start == original_row_page {
+                    original_row_y_start
+                } else {
+                    0.0
+                };
+                let first_h = (state.page_content_height - start_y).max(0.0);
+                let intermediate_h =
+                    (row_page_end - cell_page_start - 1) as f32 * state.page_content_height;
+                (cell_h - first_h - intermediate_h).max(0.0)
+            } else {
+                state.page_content_height
+            }
+        };
+
+        let get_cell_y_on_page = |p: usize| -> f32 {
+            if p == original_row_page {
+                original_row_y_start
+            } else {
+                0.0
+            }
+        };
+
+        // Pass 3b: Emit background and border decorations for this row's cells
+        for p in original_row_page..=row_page_end {
+            for (c_idx, cell) in row.cells.iter().enumerate().rev() {
+                let cell_page_start = cell_starts[c_idx].0;
+                let cell_item_start = cell_starts[c_idx].1;
+
+                if p < cell_page_start {
+                    continue;
+                }
+
+                let cell_h = if cell.row_span == 1 {
+                    row_max_h
+                } else {
+                    let span = cell.row_span as usize;
+                    row_heights[row_idx..(row_idx + span).min(row_heights.len())]
+                        .iter()
+                        .sum()
+                };
+
+                let h = get_cell_height_on_page(p, cell_page_start, cell_h);
+                if h < 0.0 || (h == 0.0 && cell_h > 0.0) {
+                    continue;
+                }
+
+                let y = get_cell_y_on_page(p);
+                let cell_x = table_indent + (c_idx as f32 * col_w);
+                let cell_rect = LayoutRect {
+                    origin: LayoutPoint { x: cell_x, y },
+                    size: LayoutSize {
+                        width: col_w,
+                        height: h,
+                    },
+                };
+
+                let has_borders = cell.props.border_top.is_some()
+                    || cell.props.border_bottom.is_some()
+                    || cell.props.border_left.is_some()
+                    || cell.props.border_right.is_some();
+
+                let is_first = p == cell_page_start;
+                let is_last = p == row_page_end;
+
+                let border_top = if is_first {
+                    cell.props.border_top.as_ref().and_then(convert_border)
+                } else {
+                    None
+                };
+                let border_bottom = if is_last {
+                    cell.props.border_bottom.as_ref().and_then(convert_border)
+                } else {
+                    None
+                };
+                let border_left = cell.props.border_left.as_ref().and_then(convert_border);
+                let border_right = cell.props.border_right.as_ref().and_then(convert_border);
+
+                let insert_idx = if p == cell_page_start {
+                    cell_item_start
+                } else {
+                    0
+                };
+
+                if p == state.page_number {
+                    if has_borders {
+                        state.current_items.insert(
+                            insert_idx,
+                            PositionedItem::BorderRect(PositionedBorderRect {
+                                rect: cell_rect,
+                                top: border_top,
+                                bottom: border_bottom,
+                                left: border_left,
+                                right: border_right,
+                            }),
+                        );
+                    }
+                    if let Some(bg) = cell.props.background_color.as_ref() {
+                        state.current_items.insert(
+                            insert_idx,
+                            PositionedItem::FilledRect(PositionedRect {
+                                rect: cell_rect,
+                                color: resolve_color(Some(bg)),
+                            }),
+                        );
+                    }
+                } else if let Some(page) = state.pages.get_mut(p - 1) {
+                    if has_borders {
+                        page.content_items.insert(
+                            insert_idx,
+                            PositionedItem::BorderRect(PositionedBorderRect {
+                                rect: cell_rect,
+                                top: border_top,
+                                bottom: border_bottom,
+                                left: border_left,
+                                right: border_right,
+                            }),
+                        );
+                    }
+                    if let Some(bg) = cell.props.background_color.as_ref() {
+                        page.content_items.insert(
+                            insert_idx,
+                            PositionedItem::FilledRect(PositionedRect {
+                                rect: cell_rect,
+                                color: resolve_color(Some(bg)),
+                            }),
+                        );
+                    }
+                }
+            }
+        }
+
+        state.cursor_y = row_y_end;
     }
 }
 

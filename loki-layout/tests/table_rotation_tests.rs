@@ -55,8 +55,10 @@ fn test_table_cell_rotation() {
     let mut r = test_resources();
 
     // Rotated cell
-    let mut props = CellProps::default();
-    props.text_direction = Some(CellTextDirection::TbRl);
+    let props = CellProps {
+        text_direction: Some(CellTextDirection::TbRl),
+        ..Default::default()
+    };
     let c = Cell {
         attr: loki_doc_model::content::attr::NodeAttr::default(),
         alignment: ColAlignment::Default,

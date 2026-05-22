@@ -850,8 +850,10 @@ fn table_2x2_renders_on_one_page() {
 fn table_cell_background_produces_filled_rect() {
     use appthere_color::RgbColor;
     let mut r = test_resources();
-    let mut props = CellProps::default();
-    props.background_color = Some(DocumentColor::Rgb(RgbColor::new(1.0, 0.0, 0.0)));
+    let props = CellProps {
+        background_color: Some(DocumentColor::Rgb(RgbColor::new(1.0, 0.0, 0.0))),
+        ..Default::default()
+    };
     let section = Section {
         layout: PageLayout::default(),
         blocks: vec![make_table_2x2(Some(props))],
@@ -872,17 +874,19 @@ fn table_cell_background_produces_filled_rect() {
 #[test]
 fn table_cell_borders_produce_border_rect() {
     let mut r = test_resources();
-    let mut props = CellProps::default();
     let border = Border {
         style: BorderStyle::Solid,
         width: Points::new(1.0),
         color: None,
         spacing: None,
     };
-    props.border_top = Some(border.clone());
-    props.border_bottom = Some(border.clone());
-    props.border_left = Some(border.clone());
-    props.border_right = Some(border);
+    let props = CellProps {
+        border_top: Some(border.clone()),
+        border_bottom: Some(border.clone()),
+        border_left: Some(border.clone()),
+        border_right: Some(border),
+        ..Default::default()
+    };
     let section = Section {
         layout: PageLayout::default(),
         blocks: vec![make_table_2x2(Some(props))],

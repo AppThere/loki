@@ -37,8 +37,10 @@ fn make_para(text: &str) -> loki_doc_model::content::block::StyledParagraph {
 }
 
 fn make_cell_tall(paras: Vec<&str>, bg_color: Option<DocumentColor>, row_span: u32) -> Cell {
-    let mut props = CellProps::default();
-    props.background_color = bg_color;
+    let props = CellProps {
+        background_color: bg_color,
+        ..Default::default()
+    };
     Cell {
         attr: loki_doc_model::content::attr::NodeAttr::default(),
         alignment: ColAlignment::Default,
