@@ -3,15 +3,17 @@
 
 //! XLSX importer.
 
-use std::collections::HashMap;
-use std::io::{Read, Seek};
-use loki_sheet_model::{Workbook, Worksheet, Cell, CellStyle, CellAlign, NumberFormat, DocumentMeta};
-use loki_opc::{Package, PartName};
 use crate::constants::REL_OFFICE_DOCUMENT;
 use crate::error::{OoxmlError, OoxmlWarning};
-use crate::xml_util::{local_name, local_attr_val};
+use crate::xml_util::{local_attr_val, local_name};
+use loki_opc::{Package, PartName};
+use loki_sheet_model::{
+    Cell, CellAlign, CellStyle, DocumentMeta, NumberFormat, Workbook, Worksheet,
+};
 use quick_xml::Reader;
 use quick_xml::events::Event;
+use std::collections::HashMap;
+use std::io::{Read, Seek};
 
 /// Options controlling XLSX import behaviour.
 #[derive(Debug, Clone, Default)]
@@ -46,11 +48,12 @@ impl XlsxImport {
             .clone();
 
         let workbook_part_name = resolve_part_name("/", &doc_rel.target)?;
-        let workbook_part = package
-            .part(&workbook_part_name)
-            .ok_or_else(|| OoxmlError::MissingPart {
-                relationship_type: workbook_part_name.as_str().to_owned(),
-            })?;
+        let workbook_part =
+            package
+                .part(&workbook_part_name)
+                .ok_or_else(|| OoxmlError::MissingPart {
+                    relationship_type: workbook_part_name.as_str().to_owned(),
+                })?;
 
         // 2. Parse workbook to get sheets list
         let raw_sheets = parse_workbook_sheets(&workbook_part.bytes)?;
@@ -61,7 +64,12 @@ impl XlsxImport {
         // 4. Resolve sharedStrings if present
         let mut shared_strings = Vec::new();
         if let Some(rels) = workbook_rels {
-            if let Some(rel) = rels_by_type(rels, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings").next() {
+            if let Some(rel) = rels_by_type(
+                rels,
+                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings",
+            )
+            .next()
+            {
                 let ss_part_name = resolve_part_name(workbook_part_name.as_str(), &rel.target)?;
                 if let Some(part) = package.part(&ss_part_name) {
                     shared_strings = parse_shared_strings(&part.bytes)?;
@@ -72,7 +80,12 @@ impl XlsxImport {
         // 5. Resolve styles if present
         let mut styles = Vec::new();
         if let Some(rels) = workbook_rels {
-            if let Some(rel) = rels_by_type(rels, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles").next() {
+            if let Some(rel) = rels_by_type(
+                rels,
+                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles",
+            )
+            .next()
+            {
                 let styles_part_name = resolve_part_name(workbook_part_name.as_str(), &rel.target)?;
                 if let Some(part) = package.part(&styles_part_name) {
                     styles = parse_styles(&part.bytes)?;
@@ -85,7 +98,8 @@ impl XlsxImport {
         if let Some(rels) = workbook_rels {
             for rs in raw_sheets {
                 if let Some(rel) = rels.iter().find(|r| r.id == rs.rel_id) {
-                    let sheet_part_name = resolve_part_name(workbook_part_name.as_str(), &rel.target)?;
+                    let sheet_part_name =
+                        resolve_part_name(workbook_part_name.as_str(), &rel.target)?;
                     if let Some(part) = package.part(&sheet_part_name) {
                         let mut worksheet = parse_worksheet(&part.bytes, &shared_strings, &styles)?;
                         worksheet.name = rs.name;
@@ -123,13 +137,20 @@ fn parse_workbook_sheets(data: &[u8]) -> Result<Vec<RawSheet>, OoxmlError> {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
                 if local_name(e) == b"sheet" {
-                    if let (Some(name), Some(rel_id)) = (local_attr_val(e, b"name"), local_attr_val(e, b"id")) {
+                    if let (Some(name), Some(rel_id)) =
+                        (local_attr_val(e, b"name"), local_attr_val(e, b"id"))
+                    {
                         sheets.push(RawSheet { name, rel_id });
                     }
                 }
             }
             Ok(Event::Eof) => break,
-            Err(source) => return Err(OoxmlError::Xml { part: "xl/workbook.xml".to_owned(), source }),
+            Err(source) => {
+                return Err(OoxmlError::Xml {
+                    part: "xl/workbook.xml".to_owned(),
+                    source,
+                });
+            }
             _ => {}
         }
         buf.clear();
@@ -171,7 +192,12 @@ fn parse_shared_strings(data: &[u8]) -> Result<Vec<String>, OoxmlError> {
                 }
             }
             Ok(Event::Eof) => break,
-            Err(source) => return Err(OoxmlError::Xml { part: "xl/sharedStrings.xml".to_owned(), source }),
+            Err(source) => {
+                return Err(OoxmlError::Xml {
+                    part: "xl/sharedStrings.xml".to_owned(),
+                    source,
+                });
+            }
             _ => {}
         }
         buf.clear();
@@ -183,11 +209,11 @@ fn parse_styles(data: &[u8]) -> Result<Vec<CellStyle>, OoxmlError> {
     let mut reader = Reader::from_reader(data);
     reader.config_mut().trim_text(false);
     let mut buf = Vec::new();
-    
+
     let mut custom_num_formats = HashMap::new();
     let mut fonts = Vec::new();
     let mut cell_xfs = Vec::new();
-    
+
     let mut in_cell_xfs = false;
     let mut in_font = false;
     let mut current_font = CellStyle::default();
@@ -241,19 +267,19 @@ fn parse_styles(data: &[u8]) -> Result<Vec<CellStyle>, OoxmlError> {
                         let num_fmt_id = local_attr_val(e, b"numFmtId")
                             .and_then(|s| s.parse::<u32>().ok())
                             .unwrap_or(0);
-                        
+
                         let mut style = CellStyle::default();
                         style.bold = fonts.get(font_id).map(|f: &CellStyle| f.bold).unwrap_or(false);
                         style.italic = fonts.get(font_id).map(|f: &CellStyle| f.italic).unwrap_or(false);
                         style.underline = fonts.get(font_id).map(|f: &CellStyle| f.underline).unwrap_or(false);
-                        
+
                         let num_fmt = match num_fmt_id {
                             9 | 10 => NumberFormat::Percent,
                             5 | 6 | 7 | 8 | 44 => NumberFormat::Currency,
                             id => custom_num_formats.get(&id).cloned().unwrap_or(NumberFormat::General),
                         };
                         style.num_format = num_fmt;
-                        
+
                         cell_xfs.push(style);
                     }
                 }
@@ -313,12 +339,17 @@ fn parse_styles(data: &[u8]) -> Result<Vec<CellStyle>, OoxmlError> {
                 handle_end!(name);
             }
             Ok(Event::Eof) => break,
-            Err(source) => return Err(OoxmlError::Xml { part: "xl/styles.xml".to_owned(), source }),
+            Err(source) => {
+                return Err(OoxmlError::Xml {
+                    part: "xl/styles.xml".to_owned(),
+                    source,
+                });
+            }
             _ => {}
         }
         buf.clear();
     }
-    
+
     Ok(cell_xfs)
 }
 
@@ -331,13 +362,13 @@ fn parse_worksheet(
     let mut reader = Reader::from_reader(data);
     reader.config_mut().trim_text(false);
     let mut buf = Vec::new();
-    
+
     let mut current_ref = None;
     let mut current_type = None;
     let mut current_style_idx = None;
     let mut current_formula = None;
     let mut current_value = String::new();
-    
+
     let mut in_f = false;
     let mut in_v = false;
     let mut in_is_t = false;
@@ -382,14 +413,17 @@ fn parse_worksheet(
                             } else {
                                 current_value.clone()
                             };
-                            
+
                             let style = current_style_idx.and_then(|idx| styles.get(idx).cloned());
-                            
-                            worksheet.cells.insert((row, col), Cell {
-                                value: final_value,
-                                formula: current_formula.clone(),
-                                style,
-                            });
+
+                            worksheet.cells.insert(
+                                (row, col),
+                                Cell {
+                                    value: final_value,
+                                    formula: current_formula.clone(),
+                                    style,
+                                },
+                            );
                         }
                     }
                     current_ref = None;
@@ -441,12 +475,17 @@ fn parse_worksheet(
                 }
             }
             Ok(Event::Eof) => break,
-            Err(source) => return Err(OoxmlError::Xml { part: "sheet.xml".to_owned(), source }),
+            Err(source) => {
+                return Err(OoxmlError::Xml {
+                    part: "sheet.xml".to_owned(),
+                    source,
+                });
+            }
             _ => {}
         }
         buf.clear();
     }
-    
+
     Ok(worksheet)
 }
 
@@ -492,10 +531,12 @@ fn cell_ref_to_coord(cell_ref: &str) -> Option<(u32, u32)> {
         return None;
     }
     let row = row_str.parse::<u32>().ok()?.checked_sub(1)?;
-    
+
     let mut col: u32 = 0;
     for c in col_str.chars() {
-        col = col.checked_mul(26)?.checked_add((c as u32) - ('A' as u32) + 1)?;
+        col = col
+            .checked_mul(26)?
+            .checked_add((c as u32) - ('A' as u32) + 1)?;
     }
     col = col.checked_sub(1)?;
     Some((row, col))

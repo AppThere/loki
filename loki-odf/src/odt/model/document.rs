@@ -209,14 +209,20 @@ pub(crate) struct OdfMasterPage {
 pub(crate) struct OdfMeta {
     /// `dc:title` — document title.
     pub title: Option<String>,
-    /// `dc:creator` — the author who last saved the document.
-    pub creator: Option<String>,
+    /// `dc:subject` — document subject.
+    pub subject: Option<String>,
     /// `dc:description` — document description or abstract.
     pub description: Option<String>,
+    /// `dc:creator` — the author who last saved the document.
+    pub creator: Option<String>,
+    /// `meta:initial-creator` — the document's initial author.
+    pub initial_creator: Option<String>,
     /// `meta:creation-date` — ISO-8601 creation timestamp.
     pub created: Option<String>,
     /// `dc:date` — ISO-8601 last-modification timestamp.
     pub modified: Option<String>,
     /// `meta:editing-cycles` — number of times the document was saved.
     pub editing_cycles: Option<u32>,
+    /// `meta:keyword` — keywords describing the document.
+    pub keywords: Vec<String>,
 }

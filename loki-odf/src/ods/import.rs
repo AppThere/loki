@@ -3,11 +3,13 @@
 
 //! ODS importer.
 
-use std::collections::HashMap;
-use std::io::{Read, Seek};
-use loki_sheet_model::{Workbook, Worksheet, Cell, CellStyle, CellAlign, NumberFormat, DocumentMeta};
+use loki_sheet_model::{
+    Cell, CellAlign, CellStyle, DocumentMeta, NumberFormat, Workbook, Worksheet,
+};
 use quick_xml::Reader;
 use quick_xml::events::Event;
+use std::collections::HashMap;
+use std::io::{Read, Seek};
 
 use crate::constants::ENTRY_CONTENT;
 use crate::error::OdfError;
@@ -127,11 +129,14 @@ impl OdsImport {
                                     if style.is_some() {
                                         for r in row_idx..(row_idx + current_row_repeated) {
                                             for c in col_idx..(col_idx + cols_repeated) {
-                                                ws.cells.insert((r, c), Cell {
-                                                    value: String::new(),
-                                                    formula: None,
-                                                    style: style.clone(),
-                                                });
+                                                ws.cells.insert(
+                                                    (r, c),
+                                                    Cell {
+                                                        value: String::new(),
+                                                        formula: None,
+                                                        style: style.clone(),
+                                                    },
+                                                );
                                             }
                                         }
                                     }
@@ -150,24 +155,34 @@ impl OdsImport {
                         }
                         b"table-cell" => {
                             if in_cell {
-                                let raw_val = office_string_value.take()
+                                let raw_val = office_string_value
+                                    .take()
                                     .or(office_value.take())
                                     .or(office_boolean_value.take())
                                     .or(office_date_value.take())
                                     .unwrap_or_else(|| p_text.clone());
 
-                                let cleaned_formula = cell_formula.take().map(|f| clean_ods_formula(&f));
-                                let style = cell_style_name.take().and_then(|name| styles.get(&name).cloned());
+                                let cleaned_formula =
+                                    cell_formula.take().map(|f| clean_ods_formula(&f));
+                                let style = cell_style_name
+                                    .take()
+                                    .and_then(|name| styles.get(&name).cloned());
 
                                 if let Some(ref mut ws) = current_sheet {
-                                    if !raw_val.is_empty() || cleaned_formula.is_some() || style.is_some() {
+                                    if !raw_val.is_empty()
+                                        || cleaned_formula.is_some()
+                                        || style.is_some()
+                                    {
                                         for r in row_idx..(row_idx + current_row_repeated) {
                                             for c in col_idx..(col_idx + cell_cols_repeated) {
-                                                ws.cells.insert((r, c), Cell {
-                                                    value: raw_val.clone(),
-                                                    formula: cleaned_formula.clone(),
-                                                    style: style.clone(),
-                                                });
+                                                ws.cells.insert(
+                                                    (r, c),
+                                                    Cell {
+                                                        value: raw_val.clone(),
+                                                        formula: cleaned_formula.clone(),
+                                                        style: style.clone(),
+                                                    },
+                                                );
                                             }
                                         }
                                     }
@@ -202,7 +217,12 @@ impl OdsImport {
                     }
                 }
                 Ok(Event::Eof) => break,
-                Err(source) => return Err(OdfError::Xml { part: ENTRY_CONTENT.to_owned(), source }),
+                Err(source) => {
+                    return Err(OdfError::Xml {
+                        part: ENTRY_CONTENT.to_owned(),
+                        source,
+                    });
+                }
                 _ => {}
             }
             buf.clear();
@@ -274,10 +294,7 @@ fn clean_ods_formula(formula: &str) -> String {
     format!("={result}")
 }
 
-fn parse_ods_styles(
-    content_xml: &[u8],
-    styles_xml: &[u8],
-) -> HashMap<String, CellStyle> {
+fn parse_ods_styles(content_xml: &[u8], styles_xml: &[u8]) -> HashMap<String, CellStyle> {
     let mut data_styles = HashMap::new();
 
     // First Pass: Collect data styles
@@ -290,7 +307,8 @@ fn parse_ods_styles(
                 Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
                     let local = local_name(e);
                     match local {
-                        b"number-style" | b"percentage-style" | b"currency-style" | b"date-style" | b"time-style" => {
+                        b"number-style" | b"percentage-style" | b"currency-style"
+                        | b"date-style" | b"time-style" => {
                             if let Some(name) = local_attr_val(e, b"name") {
                                 let fmt = match local {
                                     b"percentage-style" => NumberFormat::Percent,
@@ -351,7 +369,8 @@ fn parse_ods_styles(
                                         current_style.italic = true;
                                     }
                                 }
-                                if let Some(underline) = local_attr_val(e, b"text-underline-style") {
+                                if let Some(underline) = local_attr_val(e, b"text-underline-style")
+                                {
                                     if underline != "none" {
                                         current_style.underline = true;
                                     }

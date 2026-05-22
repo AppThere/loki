@@ -625,11 +625,102 @@ pub(super) fn synthesize_heading_para(
 
 // ── Table layout ─────────────────────────────────────────────────────────────
 
+fn measure_cell_height(
+    resources: &mut FontResources,
+    catalog: &StyleCatalog,
+    display_scale: f32,
+    options: &LayoutOptions,
+    cell: &loki_doc_model::content::table::row::Cell,
+    cell_content_width: f32,
+    idx: usize,
+) -> f32 {
+    let pad_top = cell.props.padding_top.map(pts_to_f32).unwrap_or(0.0);
+    let pad_bottom = cell.props.padding_bottom.map(pts_to_f32).unwrap_or(0.0);
+
+    let flow_w = cell_content_width;
+
+    let mut temp_state = FlowState {
+        resources,
+        catalog,
+        mode: &LayoutMode::Pageless,
+        display_scale,
+        options,
+        cursor_y: 0.0,
+        content_width: flow_w,
+        current_items: Vec::new(),
+        pages: Vec::new(),
+        page_size: LayoutSize::default(),
+        margins: LayoutInsets::default(),
+        page_content_height: 0.0,
+        page_number: 1,
+        warnings: Vec::new(),
+        current_indent: 0.0,
+        list_counters: HashMap::new(),
+        prev_list_id: None,
+        note_counter: 0,
+        pending_footnotes: Vec::new(),
+        current_paragraphs: Vec::new(),
+    };
+
+    for block in &cell.blocks {
+        flow_block(&mut temp_state, block, idx);
+    }
+
+    let content_h = temp_state.cursor_y;
+    content_h + pad_top + pad_bottom
+}
+
+// Helper to layout cell blocks inside a nested flow state.
+// Helper requires passing all context values to configure the FlowState.
+#[allow(clippy::too_many_arguments)]
+fn flow_cell_blocks(
+    resources: &mut FontResources,
+    catalog: &StyleCatalog,
+    display_scale: f32,
+    options: &LayoutOptions,
+    blocks: &[Block],
+    content_width: f32,
+    starting_indent: f32,
+    starting_y: f32,
+    idx: usize,
+) -> Vec<PositionedItem> {
+    let mut temp_state = FlowState {
+        resources,
+        catalog,
+        mode: &LayoutMode::Pageless,
+        display_scale,
+        options,
+        cursor_y: starting_y,
+        content_width,
+        current_items: Vec::new(),
+        pages: Vec::new(),
+        page_size: LayoutSize::default(),
+        margins: LayoutInsets::default(),
+        page_content_height: 0.0,
+        page_number: 1,
+        warnings: Vec::new(),
+        current_indent: starting_indent,
+        list_counters: HashMap::new(),
+        prev_list_id: None,
+        note_counter: 0,
+        pending_footnotes: Vec::new(),
+        current_paragraphs: Vec::new(),
+    };
+
+    for block in blocks {
+        flow_block(&mut temp_state, block, idx);
+    }
+
+    temp_state.current_items
+}
+
 fn flow_table(
     state: &mut FlowState,
     tbl: &loki_doc_model::content::table::core::Table,
     idx: usize,
 ) {
+    use loki_doc_model::content::table::row::CellTextDirection;
+
     let col_count = tbl.col_count().max(1);
     let col_w = state.content_width / col_count as f32;
 
@@ -641,20 +732,72 @@ fn flow_table(
     }
     rows.extend(&tbl.foot.rows);
 
-    for row in rows {
+    let mut row_heights = vec![0.0f32; rows.len()];
+
+    // Pass 1: Measure all cells with row_span == 1
+    for (row_idx, row) in rows.iter().enumerate() {
+        for cell in &row.cells {
+            if cell.row_span == 1 {
+                let pad_left = cell.props.padding_left.map(pts_to_f32).unwrap_or(0.0);
+                let pad_right = cell.props.padding_right.map(pts_to_f32).unwrap_or(0.0);
+                let cell_content_width = (col_w - pad_left - pad_right).max(0.0);
+                let h = measure_cell_height(
+                    state.resources,
+                    state.catalog,
+                    state.display_scale,
+                    state.options,
+                    cell,
+                    cell_content_width,
+                    idx,
+                );
+                row_heights[row_idx] = row_heights[row_idx].max(h);
+            }
+        }
+        row_heights[row_idx] = row_heights[row_idx].max(crate::MIN_ROW_HEIGHT);
+    }
+
+    // Pass 2: Distribute spanning cell heights across spanned rows
+    for (row_idx, row) in rows.iter().enumerate() {
+        for cell in &row.cells {
+            if cell.row_span > 1 {
+                let span = cell.row_span as usize;
+                let spanned_height: f32 = row_heights
+                    [row_idx..(row_idx + span).min(row_heights.len())]
+                    .iter()
+                    .sum();
+                let pad_left = cell.props.padding_left.map(pts_to_f32).unwrap_or(0.0);
+                let pad_right = cell.props.padding_right.map(pts_to_f32).unwrap_or(0.0);
+                let cell_content_width = (col_w - pad_left - pad_right).max(0.0);
+                let needed = measure_cell_height(
+                    state.resources,
+                    state.catalog,
+                    state.display_scale,
+                    state.options,
+                    cell,
+                    cell_content_width,
+                    idx,
+                );
+                if needed > spanned_height {
+                    let extra = needed - spanned_height;
+                    let last = (row_idx + span - 1).min(row_heights.len() - 1);
+                    row_heights[last] += extra;
+                }
+            }
+        }
+    }
+
+    // Pass 3: Place and flow cell blocks
+    for (row_idx, row) in rows.iter().enumerate() {
         // Track the row's starting position and page so that when a cell
         // triggers a page break, subsequent cells start from the top of the
         // new page rather than resetting to a stale position on the previous page.
         let mut row_y_start = state.cursor_y;
         let mut row_page = state.page_number;
-        let mut row_max_h = 0.0f32;
+        let row_max_h = row_heights[row_idx];
 
-        // TODO(table-layout): row_span not yet applied in layout — cells
-        // render as row_span=1. col_span is also not yet used; each cell
-        // receives an equal share of the table width.
+        // NOTE: row heights are calculated via a two-pass approach to ensure
+        // uniform row height and to handle row_span correctly.
         for (c_idx, cell) in row.cells.iter().enumerate() {
-            use loki_doc_model::content::table::row::CellVerticalAlign;
-
             let old_indent = state.current_indent;
             let old_width = state.content_width;
 
@@ -664,15 +807,22 @@ fn flow_table(
             let pad_right = cell.props.padding_right.map(pts_to_f32).unwrap_or(0.0);
 
             let cell_x = old_indent + (c_idx as f32 * col_w);
-            state.current_indent = cell_x + pad_left;
-            state.content_width = (col_w - pad_left - pad_right).max(0.0);
+            let cell_content_width = (col_w - pad_left - pad_right).max(0.0);
+
+            let cell_height = if cell.row_span == 1 {
+                row_max_h
+            } else {
+                let span = cell.row_span as usize;
+                row_heights[row_idx..(row_idx + span).min(row_heights.len())]
+                    .iter()
+                    .sum()
+            };
 
             // If a previous cell caused a page break, update row_y_start to the
             // top of the new page so this cell doesn't land in the wrong position.
             if state.page_number != row_page {
                 row_y_start = state.cursor_y;
                 row_page = state.page_number;
-                row_max_h = 0.0;
             }
             state.cursor_y = row_y_start + pad_top;
 
@@ -682,27 +832,50 @@ fn flow_table(
             let cell_page_start = state.page_number;
             let cell_item_start = state.current_items.len();
 
-            for block in &cell.blocks {
-                flow_block(state, block, idx);
-            }
+            let rotation_degrees = match cell.props.text_direction.as_ref() {
+                Some(CellTextDirection::TbRl) => Some(90.0_f32),
+                Some(CellTextDirection::TbLr) => Some(270.0_f32),
+                Some(CellTextDirection::BtLr) => Some(270.0_f32),
+                _ => None,
+            };
 
-            // Content height (without bottom padding); full cell height adds padding.
-            let content_h = state.cursor_y - (row_y_start + pad_top);
-            let cell_h = content_h + pad_top + pad_bottom;
-            row_max_h = row_max_h.max(cell_h);
+            let cell_items = if let Some(degrees) = rotation_degrees {
+                // NOTE(cell-rotation): for rotated cells, content is laid out
+                // with width/height swapped, then the RotatedGroup transform
+                // visually rotates the result into the correct orientation.
+                // This approximation works for text runs but may not be pixel-
+                // perfect for complex mixed content.
+                let rotated_content_width = (cell_height - pad_top - pad_bottom).max(0.0);
+                let inner_items = flow_cell_blocks(
+                    state.resources,
+                    state.catalog,
+                    state.display_scale,
+                    state.options,
+                    &cell.blocks,
+                    rotated_content_width,
+                    pad_top,
+                    pad_left,
+                    idx,
+                );
 
-            // Vertical alignment: shift content items down when Middle or Bottom.
-            // Text direction rotation is not yet applied (TODO: text-direction-layout).
-            let v_shift = match cell.props.vertical_align {
-                Some(CellVerticalAlign::Middle) => {
-                    // Will be refined once row_max_h is known; for now use content_h as min.
-                    // Since we don't know the final row height yet, defer to a best-effort
-                    // shift using the cell's own measured height. True centering requires
-                    // a second pass over all cells (deferred to full table-layout TODO).
-                    0.0
+                vec![PositionedItem::RotatedGroup {
+                    origin: LayoutPoint {
+                        x: cell_x,
+                        y: row_y_start,
+                    },
+                    degrees,
+                    content_width: cell_height,
+                    content_height: cell_content_width,
+                    items: inner_items,
+                }]
+            } else {
+                state.current_indent = cell_x + pad_left;
+                state.content_width = cell_content_width;
+
+                for block in &cell.blocks {
+                    flow_block(state, block, idx);
                 }
-                Some(CellVerticalAlign::Bottom) => 0.0,
-                _ => 0.0,
+                Vec::new()
             };
 
             // Emit background and border decorations for this cell.
@@ -712,7 +885,6 @@ fn flow_table(
             // When a page break occurred inside the cell, current_items was
             // flushed and reset; use 0 to prepend before the cell's new-page
             // content rather than using the now-stale pre-break index.
-            let _ = v_shift; // reserved for future two-pass vertical alignment
             let insert_at = if state.page_number != cell_page_start {
                 0
             } else {
@@ -725,7 +897,7 @@ fn flow_table(
                 },
                 size: LayoutSize {
                     width: col_w,
-                    height: cell_h,
+                    height: cell_height,
                 },
             };
             let has_borders = cell.props.border_top.is_some()
@@ -752,6 +924,10 @@ fn flow_table(
                         color: resolve_color(Some(bg)),
                     }),
                 );
+            }
+
+            for item in cell_items {
+                state.current_items.push(item);
             }
 
             state.current_indent = old_indent;

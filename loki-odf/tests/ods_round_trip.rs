@@ -3,16 +3,14 @@
 
 //! Integration tests for ODS spreadsheet import/export round-trip.
 
+use loki_odf::{OdsExport, OdsImport, OdsImportOptions};
+use loki_sheet_model::{CellAlign, CellStyle, DocumentMeta, NumberFormat, Workbook, Worksheet};
 use std::io::Cursor;
-use loki_sheet_model::{
-    Workbook, Worksheet, CellStyle, CellAlign, NumberFormat, DocumentMeta
-};
-use loki_odf::{OdsImport, OdsImportOptions, OdsExport};
 
 #[test]
 fn test_ods_round_trip() {
     let mut workbook = Workbook::new();
-    
+
     // Set some metadata
     workbook.meta = DocumentMeta {
         title: Some("Test Spreadsheet".to_string()),
@@ -86,16 +84,19 @@ fn test_ods_round_trip() {
 
     // Export to buffer
     let mut buffer = Vec::new();
-    OdsExport::export(&workbook, Cursor::new(&mut buffer))
-        .expect("ODS export failed");
+    OdsExport::export(&workbook, Cursor::new(&mut buffer)).expect("ODS export failed");
 
     // Import from buffer
     let imported_workbook = OdsImport::import(Cursor::new(buffer), OdsImportOptions::default())
         .expect("ODS import failed");
 
     // Assert structures
-    assert_eq!(imported_workbook.sheets.len(), workbook.sheets.len(), "Number of sheets matches");
-    
+    assert_eq!(
+        imported_workbook.sheets.len(),
+        workbook.sheets.len(),
+        "Number of sheets matches"
+    );
+
     // Check Sheet 1 (Data)
     let sheet1_exp = &workbook.sheets[0];
     let sheet1_imp = &imported_workbook.sheets[0];

@@ -57,6 +57,9 @@ pub use result::{
     PaginatedLayout,
 };
 
+/// Minimum table row height in points.
+pub const MIN_ROW_HEIGHT: f32 = 0.0;
+
 /// Options that control the layout pipeline's memory / feature trade-offs.
 ///
 /// Pass to [`layout_document`] or [`flow_section`]. The default (all fields

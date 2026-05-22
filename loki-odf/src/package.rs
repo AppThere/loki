@@ -20,7 +20,7 @@ use zip::ZipArchive;
 
 use crate::constants::{
     ENTRY_CONTENT, ENTRY_MANIFEST, ENTRY_META, ENTRY_MIMETYPE, ENTRY_SETTINGS, ENTRY_STYLES,
-    MIME_ODT, MIME_ODS,
+    MIME_ODS, MIME_ODT,
 };
 use crate::error::{OdfError, OdfResult};
 use crate::version::OdfVersion;
@@ -246,9 +246,7 @@ fn validate_mimetype<R: Read + Seek>(archive: &mut ZipArchive<R>) -> OdfResult<S
             reason: format!(
                 "mimetype must contain either {:?} or {:?} with no trailing newline, \
                  found {:?}",
-                MIME_ODT,
-                MIME_ODS,
-                mimetype_str
+                MIME_ODT, MIME_ODS, mimetype_str
             ),
         });
     }

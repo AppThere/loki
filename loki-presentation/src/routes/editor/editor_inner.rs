@@ -94,8 +94,6 @@ pub(super) fn EditorInner(path: String) -> Element {
         sls[idx].text_color = text.to_string();
     };
 
-
-
     let mut delete_slide = move |idx: usize| {
         let mut sls = slides.write();
         if sls.len() <= 1 {

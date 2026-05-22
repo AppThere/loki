@@ -35,7 +35,7 @@ pub(crate) fn read_meta(xml: &[u8]) -> OdfResult<OdfMeta> {
                 let local = e.local_name().into_inner().to_vec();
                 match local.as_slice() {
                     b"title" | b"creator" | b"description" | b"creation-date" | b"date"
-                    | b"editing-cycles" => {
+                    | b"editing-cycles" | b"initial-creator" | b"subject" | b"keyword" => {
                         collecting = Some(local);
                         collect_text.clear();
                     }
@@ -61,6 +61,9 @@ pub(crate) fn read_meta(xml: &[u8]) -> OdfResult<OdfMeta> {
                         b"editing-cycles" => {
                             meta.editing_cycles = text.parse().ok();
                         }
+                        b"initial-creator" => meta.initial_creator = Some(text),
+                        b"subject" => meta.subject = Some(text),
+                        b"keyword" => meta.keywords.push(text),
                         _ => {}
                     }
                     collecting = None;
@@ -122,21 +125,31 @@ mod tests {
                       xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0">
   <office:meta>
     <dc:title>Test Doc</dc:title>
+    <dc:subject>Test Subject</dc:subject>
     <dc:creator>Alice</dc:creator>
+    <meta:initial-creator>Bob</meta:initial-creator>
     <dc:description>A test document</dc:description>
     <meta:creation-date>2023-06-01T09:00:00</meta:creation-date>
     <dc:date>2024-03-20T14:30:00</dc:date>
     <meta:editing-cycles>5</meta:editing-cycles>
+    <meta:keyword>keyword1</meta:keyword>
+    <meta:keyword>keyword2</meta:keyword>
   </office:meta>
 </office:document-meta>"#;
 
         let meta = read_meta(xml).unwrap();
         assert_eq!(meta.title.as_deref(), Some("Test Doc"));
+        assert_eq!(meta.subject.as_deref(), Some("Test Subject"));
         assert_eq!(meta.creator.as_deref(), Some("Alice"));
+        assert_eq!(meta.initial_creator.as_deref(), Some("Bob"));
         assert_eq!(meta.description.as_deref(), Some("A test document"));
         assert_eq!(meta.created.as_deref(), Some("2023-06-01T09:00:00"));
         assert_eq!(meta.modified.as_deref(), Some("2024-03-20T14:30:00"));
         assert_eq!(meta.editing_cycles, Some(5));
+        assert_eq!(
+            meta.keywords,
+            vec!["keyword1".to_string(), "keyword2".to_string()]
+        );
     }
 
     #[test]

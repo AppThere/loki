@@ -6,15 +6,15 @@
 use appthere_ui::tokens;
 use appthere_ui::{AtRibbon, AtRibbonGroup, AtRibbonIconButton, AtStatusBar, RibbonTabDesc};
 use dioxus::prelude::*;
+use loki_file_access::{FileAccessToken, FilePicker, SaveOptions};
 use loki_i18n::fl;
 use std::collections::HashSet;
-use loki_file_access::{FilePicker, SaveOptions, FileAccessToken};
 
-use crate::utils::display_title_from_path;
+use super::editor_load::{DocumentFormat, detect_format, load_document};
+use super::editor_state::{EditorState, use_editor_state};
 use crate::routes::Route;
 use crate::routes::dioxus_router::Navigator;
-use super::editor_load::{load_document, detect_format, DocumentFormat};
-use super::editor_state::{EditorState, use_editor_state};
+use crate::utils::display_title_from_path;
 
 const COLS: &[&str] = &["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
 
@@ -177,24 +177,30 @@ fn mutate_cell(
     formula: Option<String>,
 ) -> Result<(), loro::LoroError> {
     let sheets_list = ldoc.get_list(loki_sheet_model::loro_bridge::KEY_SHEETS);
-    let sheet_val = sheets_list.get(sheet_idx).ok_or_else(|| {
-        loro::LoroError::internal("Sheet not found")
-    })?;
-    let sheet_map = sheet_val.into_container().ok().and_then(|c| c.into_map().ok()).ok_or_else(|| {
-        loro::LoroError::internal("Sheet is not a map")
-    })?;
+    let sheet_val = sheets_list
+        .get(sheet_idx)
+        .ok_or_else(|| loro::LoroError::internal("Sheet not found"))?;
+    let sheet_map = sheet_val
+        .into_container()
+        .ok()
+        .and_then(|c| c.into_map().ok())
+        .ok_or_else(|| loro::LoroError::internal("Sheet is not a map"))?;
     let cells_map = match sheet_map.get("cells") {
-        Some(val) => val.into_container().ok().and_then(|c| c.into_map().ok()).ok_or_else(|| {
-            loro::LoroError::internal("Cells container is not a map")
-        })?,
+        Some(val) => val
+            .into_container()
+            .ok()
+            .and_then(|c| c.into_map().ok())
+            .ok_or_else(|| loro::LoroError::internal("Cells container is not a map"))?,
         None => sheet_map.insert_container("cells", loro::LoroMap::new())?,
     };
 
     let key = format!("{},{}", row, col);
     let cell_map = match cells_map.get(&key) {
-        Some(val) => val.into_container().ok().and_then(|c| c.into_map().ok()).ok_or_else(|| {
-            loro::LoroError::internal("Cell container is not a map")
-        })?,
+        Some(val) => val
+            .into_container()
+            .ok()
+            .and_then(|c| c.into_map().ok())
+            .ok_or_else(|| loro::LoroError::internal("Cell container is not a map"))?,
         None => cells_map.insert_container(&key, loro::LoroMap::new())?,
     };
 
@@ -219,31 +225,39 @@ where
     F: FnOnce(&loro::LoroMap) -> Result<(), loro::LoroError>,
 {
     let sheets_list = ldoc.get_list(loki_sheet_model::loro_bridge::KEY_SHEETS);
-    let sheet_val = sheets_list.get(sheet_idx).ok_or_else(|| {
-        loro::LoroError::internal("Sheet not found")
-    })?;
-    let sheet_map = sheet_val.into_container().ok().and_then(|c| c.into_map().ok()).ok_or_else(|| {
-        loro::LoroError::internal("Sheet is not a map")
-    })?;
+    let sheet_val = sheets_list
+        .get(sheet_idx)
+        .ok_or_else(|| loro::LoroError::internal("Sheet not found"))?;
+    let sheet_map = sheet_val
+        .into_container()
+        .ok()
+        .and_then(|c| c.into_map().ok())
+        .ok_or_else(|| loro::LoroError::internal("Sheet is not a map"))?;
     let cells_map = match sheet_map.get("cells") {
-        Some(val) => val.into_container().ok().and_then(|c| c.into_map().ok()).ok_or_else(|| {
-            loro::LoroError::internal("Cells container is not a map")
-        })?,
+        Some(val) => val
+            .into_container()
+            .ok()
+            .and_then(|c| c.into_map().ok())
+            .ok_or_else(|| loro::LoroError::internal("Cells container is not a map"))?,
         None => sheet_map.insert_container("cells", loro::LoroMap::new())?,
     };
 
     let key = format!("{},{}", row, col);
     let cell_map = match cells_map.get(&key) {
-        Some(val) => val.into_container().ok().and_then(|c| c.into_map().ok()).ok_or_else(|| {
-            loro::LoroError::internal("Cell container is not a map")
-        })?,
+        Some(val) => val
+            .into_container()
+            .ok()
+            .and_then(|c| c.into_map().ok())
+            .ok_or_else(|| loro::LoroError::internal("Cell container is not a map"))?,
         None => cells_map.insert_container(&key, loro::LoroMap::new())?,
     };
 
     let style_map = match cell_map.get("style") {
-        Some(val) => val.into_container().ok().and_then(|c| c.into_map().ok()).ok_or_else(|| {
-            loro::LoroError::internal("Style container is not a map")
-        })?,
+        Some(val) => val
+            .into_container()
+            .ok()
+            .and_then(|c| c.into_map().ok())
+            .ok_or_else(|| loro::LoroError::internal("Style container is not a map"))?,
         None => {
             let m = cell_map.insert_container("style", loro::LoroMap::new())?;
             m.insert("bold", false)?;
@@ -332,7 +346,9 @@ fn save_document(
         let token = if crate::new_document::is_untitled(&current_path) {
             let picker = FilePicker::new();
             let opts = SaveOptions {
-                mime_type: Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string()),
+                mime_type: Some(
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string(),
+                ),
                 suggested_name: Some("Workbook.xlsx".to_string()),
             };
             match picker.pick_file_to_save(opts).await {
@@ -362,8 +378,7 @@ fn save_document(
                             .map_err(|e| e.to_string())
                     }
                     DocumentFormat::Ods => {
-                        loki_odf::OdsExport::export(&wb, &mut *writer)
-                            .map_err(|e| e.to_string())
+                        loki_odf::OdsExport::export(&wb, &mut *writer).map_err(|e| e.to_string())
                     }
                     DocumentFormat::Unsupported(ext) => {
                         Err(format!("Unsupported format: .{}", ext))
@@ -1125,4 +1140,3 @@ pub(super) fn EditorInner(path: String) -> Element {
         }
     }
 }
-

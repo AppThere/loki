@@ -28,4 +28,3 @@ pub(super) fn use_editor_state() -> EditorState {
         editing_cell: use_signal(|| None),
     }
 }
-

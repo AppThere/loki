@@ -44,6 +44,20 @@ pub enum PositionedItem {
         /// Items to render inside the clip.
         items: Vec<PositionedItem>,
     },
+    /// A group of items rendered with a rotation transform applied.
+    /// Used for rotated table cell content (CellTextDirection != LrTb).
+    RotatedGroup {
+        /// Origin (top-left) of the rotated cell in physical layout space.
+        origin: LayoutPoint,
+        /// Rotation in degrees clockwise (90, 180, 270).
+        degrees: f32,
+        /// Width of the original (pre-rotation) content area.
+        content_width: f32,
+        /// Height of the original (pre-rotation) content area.
+        content_height: f32,
+        /// Items to render inside the rotation transform.
+        items: Vec<PositionedItem>,
+    },
 }
 
 impl PositionedItem {
@@ -76,6 +90,10 @@ impl PositionedItem {
                 for item in items {
                     item.translate(dx, dy);
                 }
+            }
+            Self::RotatedGroup { origin, .. } => {
+                origin.x += dx;
+                origin.y += dy;
             }
         }
     }

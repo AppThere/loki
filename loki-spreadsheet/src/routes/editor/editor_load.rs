@@ -46,7 +46,8 @@ pub(super) fn load_document(path: String) -> Result<Workbook, LoadError> {
             XlsxImport::import(reader, XlsxImportOptions::default()).map_err(LoadError::Ooxml)?
         }
         DocumentFormat::Ods => {
-            loki_odf::OdsImport::import(reader, loki_odf::OdsImportOptions::default()).map_err(LoadError::Odf)?
+            loki_odf::OdsImport::import(reader, loki_odf::OdsImportOptions::default())
+                .map_err(LoadError::Odf)?
         }
         DocumentFormat::Unsupported(ext) => {
             return Err(LoadError::UnsupportedFormat(ext));

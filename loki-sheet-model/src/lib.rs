@@ -3,8 +3,8 @@
 
 //! Spreadsheet document model and Loro CRDT bridge.
 
-pub mod workbook;
 pub mod loro_bridge;
+pub mod workbook;
 
-pub use workbook::{Workbook, Worksheet, Cell, CellStyle, CellAlign, NumberFormat, DocumentMeta};
-pub use loro_bridge::{workbook_to_loro, loro_to_workbook, BridgeError};
+pub use loro_bridge::{BridgeError, loro_to_workbook, workbook_to_loro};
+pub use workbook::{Cell, CellAlign, CellStyle, DocumentMeta, NumberFormat, Workbook, Worksheet};

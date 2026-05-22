@@ -1,9 +1,11 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::workbook::{Workbook, Worksheet, Cell, CellStyle, CellAlign, NumberFormat, DocumentMeta};
-use std::collections::HashMap;
+use crate::workbook::{
+    Cell, CellAlign, CellStyle, DocumentMeta, NumberFormat, Workbook, Worksheet,
+};
 use loro::{LoroDoc, LoroMap};
+use std::collections::HashMap;
 
 pub const KEY_METADATA: &str = "metadata";
 pub const KEY_SHEETS: &str = "sheets";
@@ -101,61 +103,76 @@ pub fn loro_to_workbook(loro: &LoroDoc) -> Result<Workbook, BridgeError> {
             continue;
         };
 
-        let name = get_str_from_map(&sheet_map, "name").unwrap_or_else(|| format!("Sheet{}", i + 1));
+        let name =
+            get_str_from_map(&sheet_map, "name").unwrap_or_else(|| format!("Sheet{}", i + 1));
         let mut cells = HashMap::new();
 
-        if let Some(cells_val) = sheet_map.get("cells") {
-            if let Some(cells_map) = cells_val.into_container().ok().and_then(|c| c.into_map().ok()) {
-                for key_string in cells_map.keys() {
-                    let key_str: &str = key_string.as_ref();
-                    let parts: Vec<&str> = key_str.split(',').collect();
-                    if parts.len() == 2 {
-                        if let (Ok(row), Ok(col)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
-                            if let Some(cell_val) = cells_map.get(key_str) {
-                                if let Some(cell_map) = cell_val.into_container().ok().and_then(|c| c.into_map().ok()) {
-                                    let value = get_str_from_map(&cell_map, "value").unwrap_or_default();
-                                    let formula = get_str_from_map(&cell_map, "formula");
-                                    let mut style = None;
+        if let Some(cells_map) = sheet_map
+            .get("cells")
+            .and_then(|val| val.into_container().ok())
+            .and_then(|c| c.into_map().ok())
+        {
+            for key_string in cells_map.keys() {
+                let key_str: &str = key_string.as_ref();
+                let parts: Vec<&str> = key_str.split(',').collect();
+                if let Some((cell_map, row, col)) = (parts.len() == 2)
+                    .then(|| {
+                        let row = parts[0].parse::<u32>().ok()?;
+                        let col = parts[1].parse::<u32>().ok()?;
+                        let cell_map = cells_map
+                            .get(key_str)?
+                            .into_container()
+                            .ok()?
+                            .into_map()
+                            .ok()?;
+                        Some((cell_map, row, col))
+                    })
+                    .flatten()
+                {
+                    let value = get_str_from_map(&cell_map, "value").unwrap_or_default();
+                    let formula = get_str_from_map(&cell_map, "formula");
+                    let mut style = None;
 
-                                    if let Some(style_val) = cell_map.get("style") {
-                                        if let Some(style_map) = style_val.into_container().ok().and_then(|c| c.into_map().ok()) {
-                                            let bold = get_bool_from_map(&style_map, "bold").unwrap_or(false);
-                                            let italic = get_bool_from_map(&style_map, "italic").unwrap_or(false);
-                                            let underline = get_bool_from_map(&style_map, "underline").unwrap_or(false);
-                                            let align = get_str_from_map(&style_map, "align")
-                                                .map(|s| match s.as_str() {
-                                                    "center" => CellAlign::Center,
-                                                    "right" => CellAlign::Right,
-                                                    _ => CellAlign::Left,
-                                                })
-                                                .unwrap_or(CellAlign::Left);
-                                            let num_format = get_str_from_map(&style_map, "num_format")
-                                                .map(|s| match s.as_str() {
-                                                    "currency" => NumberFormat::Currency,
-                                                    "percent" => NumberFormat::Percent,
-                                                    _ => NumberFormat::General,
-                                                })
-                                                .unwrap_or(NumberFormat::General);
+                    if let Some(style_map) = cell_map
+                        .get("style")
+                        .and_then(|val| val.into_container().ok())
+                        .and_then(|c| c.into_map().ok())
+                    {
+                        let bold = get_bool_from_map(&style_map, "bold").unwrap_or(false);
+                        let italic = get_bool_from_map(&style_map, "italic").unwrap_or(false);
+                        let underline = get_bool_from_map(&style_map, "underline").unwrap_or(false);
+                        let align = get_str_from_map(&style_map, "align")
+                            .map(|s| match s.as_str() {
+                                "center" => CellAlign::Center,
+                                "right" => CellAlign::Right,
+                                _ => CellAlign::Left,
+                            })
+                            .unwrap_or(CellAlign::Left);
+                        let num_format = get_str_from_map(&style_map, "num_format")
+                            .map(|s| match s.as_str() {
+                                "currency" => NumberFormat::Currency,
+                                "percent" => NumberFormat::Percent,
+                                _ => NumberFormat::General,
+                            })
+                            .unwrap_or(NumberFormat::General);
 
-                                            style = Some(CellStyle {
-                                                bold,
-                                                italic,
-                                                underline,
-                                                align,
-                                                num_format,
-                                            });
-                                        }
-                                    }
-
-                                    cells.insert((row, col), Cell {
-                                        value,
-                                        formula,
-                                        style,
-                                    });
-                                }
-                            }
-                        }
+                        style = Some(CellStyle {
+                            bold,
+                            italic,
+                            underline,
+                            align,
+                            num_format,
+                        });
                     }
+
+                    cells.insert(
+                        (row, col),
+                        Cell {
+                            value,
+                            formula,
+                            style,
+                        },
+                    );
                 }
             }
         }
@@ -169,4 +186,3 @@ pub fn loro_to_workbook(loro: &LoroDoc) -> Result<Workbook, BridgeError> {
 
     Ok(wb)
 }
-

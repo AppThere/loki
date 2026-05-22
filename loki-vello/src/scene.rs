@@ -548,6 +548,42 @@ fn paint_items(
                 paint_items(scene, items, font_cache, (0.0, 0.0), scale);
                 scene.pop_layer();
             }
+            PositionedItem::RotatedGroup {
+                origin,
+                degrees,
+                content_width,
+                content_height,
+                items,
+            } => {
+                let cx_local = content_width / 2.0;
+                let cy_local = content_height / 2.0;
+
+                let (cx_physical, cy_physical) = match *degrees as i32 {
+                    90 | 270 => (origin.x + cy_local, origin.y + cx_local),
+                    _ => (origin.x + cx_local, origin.y + cy_local),
+                };
+
+                let angle = (*degrees as f64).to_radians();
+
+                let transform =
+                    Affine::translate(((cx_physical * scale) as f64, (cy_physical * scale) as f64))
+                        * Affine::rotate(angle)
+                        * Affine::translate((
+                            -(cx_local * scale) as f64,
+                            -(cy_local * scale) as f64,
+                        ));
+
+                let local_clip = vello::kurbo::Rect::new(
+                    0.0,
+                    0.0,
+                    (content_width * scale) as f64,
+                    (content_height * scale) as f64,
+                );
+
+                scene.push_layer(BlendMode::default(), 1.0, transform, &local_clip);
+                paint_items(scene, items, font_cache, (0.0, 0.0), scale);
+                scene.pop_layer();
+            }
             _ => {
                 // `PositionedItem` is `#[non_exhaustive]`; ignore unknown variants.
             }
@@ -617,6 +653,10 @@ fn translate_item(item: &mut PositionedItem, dx: f32, dy: f32) {
             for item in items {
                 translate_item(item, dx, dy);
             }
+        }
+        PositionedItem::RotatedGroup { origin, .. } => {
+            origin.x += dx;
+            origin.y += dy;
         }
         _ => {
             // `PositionedItem` is `#[non_exhaustive]`; ignore unknown variants.
@@ -764,6 +804,55 @@ mod tests {
             }
         } else {
             panic!("expected ClippedGroup");
+        }
+    }
+
+    #[test]
+    fn test_paint_rotated_group_does_not_panic() {
+        let inner_rect = PositionedItem::FilledRect(PositionedRect {
+            rect: LayoutRect::new(0.0, 0.0, 100.0, 20.0),
+            color: LayoutColor {
+                r: 0.0,
+                g: 0.5,
+                b: 1.0,
+                a: 1.0,
+            },
+        });
+        let layout = make_continuous_layout(vec![PositionedItem::RotatedGroup {
+            origin: LayoutPoint { x: 10.0, y: 10.0 },
+            degrees: 90.0,
+            content_width: 100.0,
+            content_height: 20.0,
+            items: vec![inner_rect],
+        }]);
+        let mut scene = vello::Scene::new();
+        let mut font_cache = FontDataCache::new();
+        paint_layout(&mut scene, &layout, &mut font_cache, (5.0, 10.0), 1.0, None);
+        // No panic = pass.
+    }
+
+    #[test]
+    fn test_translate_item_rotated_group() {
+        let mut item = PositionedItem::RotatedGroup {
+            origin: LayoutPoint { x: 10.0, y: 20.0 },
+            degrees: 90.0,
+            content_width: 100.0,
+            content_height: 50.0,
+            items: vec![PositionedItem::FilledRect(PositionedRect {
+                rect: LayoutRect::new(0.0, 0.0, 50.0, 25.0),
+                color: LayoutColor::WHITE,
+            })],
+        };
+        translate_item(&mut item, 5.0, 3.0);
+        if let PositionedItem::RotatedGroup { origin, items, .. } = &item {
+            assert_eq!(origin.x, 15.0, "origin x should be shifted");
+            assert_eq!(origin.y, 23.0, "origin y should be shifted");
+            if let PositionedItem::FilledRect(r) = &items[0] {
+                assert_eq!(r.rect.x(), 0.0, "child item x should not be shifted");
+                assert_eq!(r.rect.y(), 0.0, "child item y should not be shifted");
+            }
+        } else {
+            panic!("expected RotatedGroup");
         }
     }
 }

@@ -821,9 +821,17 @@ fn convert_page_layout(pl: &OdfPageLayout) -> PageLayout {
 // ── Metadata ───────────────────────────────────────────────────────────────────
 
 fn map_meta(meta: &OdfMeta) -> DocumentMeta {
+    let keywords = if meta.keywords.is_empty() {
+        None
+    } else {
+        Some(meta.keywords.join(", "))
+    };
     DocumentMeta {
         title: meta.title.clone(),
+        subject: meta.subject.clone(),
+        keywords,
         description: meta.description.clone(),
+        creator: meta.initial_creator.clone(),
         // ODF dc:creator is the person who last saved (= last_modified_by)
         last_modified_by: meta.creator.clone(),
         created: meta.created.as_deref().and_then(parse_datetime),
@@ -960,7 +968,10 @@ mod tests {
     fn meta_title_mapped() {
         let odf_meta = OdfMeta {
             title: Some("My Document".into()),
+            subject: Some("My Subject".into()),
             creator: Some("Alice".into()),
+            initial_creator: Some("Bob".into()),
+            keywords: vec!["k1".into(), "k2".into()],
             ..Default::default()
         };
         let doc = empty_doc(vec![]);
@@ -972,7 +983,10 @@ mod tests {
             &options(),
         );
         assert_eq!(result.meta.title.as_deref(), Some("My Document"));
+        assert_eq!(result.meta.subject.as_deref(), Some("My Subject"));
         assert_eq!(result.meta.last_modified_by.as_deref(), Some("Alice"));
+        assert_eq!(result.meta.creator.as_deref(), Some("Bob"));
+        assert_eq!(result.meta.keywords.as_deref(), Some("k1, k2"));
     }
 
     #[test]

@@ -279,3 +279,54 @@ fn odf9_table_row_span_propagated() {
         "second row must contain exactly 1 cell (covered cell filtered out)"
     );
 }
+
+// ── Metadata ──────────────────────────────────────────────────────────────────
+
+/// Assert that ODF metadata fields (title, creator, subject, last_modified_by)
+/// are correctly parsed from meta.xml and mapped to the document model.
+#[test]
+fn odf_metadata_parsed() {
+    let content = b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-content \
+        office:version=\"1.2\" \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\">\
+      <office:automatic-styles/>\
+      <office:body><office:text>\
+        <text:p>Hello world.</text:p>\
+      </office:text></office:body>\
+      </office:document-content>";
+
+    let styles = helpers::empty_styles_xml("1.2");
+
+    let meta = b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+      <office:document-meta \
+        xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
+        xmlns:dc=\"http://purl.org/dc/elements/1.1/\" \
+        xmlns:meta=\"urn:oasis:names:tc:opendocument:xmlns:meta:1.0\">\
+      <office:meta>\
+        <dc:title>Test Document</dc:title>\
+        <dc:subject>Test Subject</dc:subject>\
+        <meta:initial-creator>Test Author</meta:initial-creator>\
+        <dc:creator>Last Editor</dc:creator>\
+        <meta:creation-date>2026-01-01T00:00:00</meta:creation-date>\
+      </office:meta>\
+      </office:document-meta>";
+
+    let zip = helpers::build_odt_zip(content, &styles, Some(meta));
+
+    let result = OdtImporter::new(OdtImportOptions::default())
+        .run(Cursor::new(zip))
+        .expect("import should succeed");
+
+    assert_eq!(result.document.meta.title.as_deref(), Some("Test Document"));
+    assert_eq!(result.document.meta.creator.as_deref(), Some("Test Author"));
+    assert_eq!(
+        result.document.meta.subject.as_deref(),
+        Some("Test Subject")
+    );
+    assert_eq!(
+        result.document.meta.last_modified_by.as_deref(),
+        Some("Last Editor")
+    );
+}

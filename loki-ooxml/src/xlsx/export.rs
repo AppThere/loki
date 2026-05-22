@@ -3,14 +3,14 @@
 
 //! XLSX exporter.
 
-use std::collections::HashMap;
-use std::io::{Seek, Write};
-use loki_sheet_model::{Workbook, Worksheet, Cell, CellStyle, CellAlign, NumberFormat};
+use crate::constants::REL_OFFICE_DOCUMENT;
+use crate::error::OoxmlError;
 use loki_opc::Package;
 use loki_opc::part::{PartData, PartName};
 use loki_opc::relationships::{Relationship, TargetMode};
-use crate::constants::REL_OFFICE_DOCUMENT;
-use crate::error::OoxmlError;
+use loki_sheet_model::{Cell, CellAlign, CellStyle, NumberFormat, Workbook, Worksheet};
+use std::collections::HashMap;
+use std::io::{Seek, Write};
 
 /// Unit struct that implements XLSX spreadsheet export.
 pub struct XlsxExport;
@@ -18,10 +18,7 @@ pub struct XlsxExport;
 impl XlsxExport {
     /// Exports a workbook model and writes the XLSX ZIP bytes to the writer.
     #[allow(clippy::too_many_lines)]
-    pub fn export(
-        workbook: &Workbook,
-        writer: impl Write + Seek,
-    ) -> Result<(), OoxmlError> {
+    pub fn export(workbook: &Workbook, writer: impl Write + Seek) -> Result<(), OoxmlError> {
         let mut pkg = Package::new();
 
         // 1. Gather all unique non-default styles used in the workbook
@@ -119,7 +116,9 @@ impl XlsxExport {
         pkg.part_relationships_mut(&workbook_part)
             .add(Relationship {
                 id: "rId1".to_string(),
-                rel_type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles".to_string(),
+                rel_type:
+                    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"
+                        .to_string(),
                 target: "styles.xml".to_string(),
                 target_mode: TargetMode::Internal,
             })
@@ -158,15 +157,27 @@ impl XlsxExport {
             "application/vnd.openxmlformats-package.relationships+xml",
         );
         ct.add_default("xml", "application/xml");
-        ct.add_override(&workbook_part, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml");
-        ct.add_override(&styles_part, "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml");
+        ct.add_override(
+            &workbook_part,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
+        );
+        ct.add_override(
+            &styles_part,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml",
+        );
         if has_shared_strings {
-            ct.add_override(&ss_part, "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml");
+            ct.add_override(
+                &ss_part,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml",
+            );
         }
         for i in 0..workbook.sheets.len() {
             let sheet_name = format!("/xl/worksheets/sheet{}.xml", i + 1);
             let sheet_part = PartName::new(sheet_name).map_err(OoxmlError::Opc)?;
-            ct.add_override(&sheet_part, "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml");
+            ct.add_override(
+                &sheet_part,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml",
+            );
         }
 
         // 7. Write ZIP
@@ -198,7 +209,7 @@ fn generate_workbook_xml(workbook: &Workbook) -> String {
 fn generate_styles_xml(unique_styles: &[CellStyle]) -> String {
     let mut fonts = vec![(false, false, false)]; // (bold, italic, underline)
     let mut style_to_font_idx = Vec::new();
-    
+
     for s in unique_styles {
         let key = (s.bold, s.italic, s.underline);
         let idx = if let Some(pos) = fonts.iter().position(|&x| x == key) {
@@ -209,11 +220,13 @@ fn generate_styles_xml(unique_styles: &[CellStyle]) -> String {
         };
         style_to_font_idx.push(idx);
     }
-    
+
     let mut xml = String::new();
     xml.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n");
-    xml.push_str("<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\n");
-    
+    xml.push_str(
+        "<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\n",
+    );
+
     // Fonts
     xml.push_str(&format!("  <fonts count=\"{}\">\n", fonts.len()));
     for (bold, italic, underline) in fonts {
@@ -235,23 +248,23 @@ fn generate_styles_xml(unique_styles: &[CellStyle]) -> String {
         xml.push_str("    </font>\n");
     }
     xml.push_str("  </fonts>\n");
-    
+
     // Fills (minimum required)
     xml.push_str("  <fills count=\"2\">\n");
     xml.push_str("    <fill><patternFill patternType=\"none\"/></fill>\n");
     xml.push_str("    <fill><patternFill patternType=\"gray125\"/></fill>\n");
     xml.push_str("  </fills>\n");
-    
+
     // Borders (minimum required)
     xml.push_str("  <borders count=\"1\">\n");
     xml.push_str("    <border><left/><right/><top/><bottom/><diagonal/></border>\n");
     xml.push_str("  </borders>\n");
-    
+
     // cellStyleXfs (minimum required)
     xml.push_str("  <cellStyleXfs count=\"1\">\n");
     xml.push_str("    <xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/>\n");
     xml.push_str("  </cellStyleXfs>\n");
-    
+
     // cellXfs
     let xf_count = unique_styles.len() + 1;
     xml.push_str(&format!("  <cellXfs count=\"{}\">\n", xf_count));
@@ -269,7 +282,7 @@ fn generate_styles_xml(unique_styles: &[CellStyle]) -> String {
             CellAlign::Right => Some("right"),
             CellAlign::Left => Some("left"),
         };
-        
+
         if let Some(align) = align_str {
             xml.push_str(&format!(
                 "    <xf numFmtId=\"{}\" fontId=\"{}\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyAlignment=\"1\">\n",
@@ -285,12 +298,12 @@ fn generate_styles_xml(unique_styles: &[CellStyle]) -> String {
         }
     }
     xml.push_str("  </cellXfs>\n");
-    
+
     // cellStyles
     xml.push_str("  <cellStyles count=\"1\">\n");
     xml.push_str("    <cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/>\n");
     xml.push_str("  </cellStyles>\n");
-    
+
     xml.push_str("  <dxfs count=\"0\"/>\n");
     xml.push_str("  <tableStyles count=\"0\" defaultTableStyle=\"TableStyleMedium9\" defaultPivotStyle=\"PivotStyleLight16\"/>\n");
     xml.push_str("</styleSheet>\n");
@@ -321,35 +334,39 @@ fn generate_sheet_xml(
     xml.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n");
     xml.push_str("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">\n");
     xml.push_str("  <sheetData>\n");
-    
+
     // Group and sort cells
     let mut rows: HashMap<u32, Vec<(u32, &Cell)>> = HashMap::new();
     for (&(r, c), cell) in &sheet.cells {
         rows.entry(r).or_default().push((c, cell));
     }
-    
+
     let mut row_indices: Vec<u32> = rows.keys().cloned().collect();
     row_indices.sort_unstable();
-    
+
     for r in row_indices {
         let mut cols = rows.remove(&r).unwrap();
         cols.sort_unstable_by_key(|&(c, _)| c);
-        
+
         xml.push_str(&format!("    <row r=\"{}\">\n", r + 1));
         for (c, cell) in cols {
             let cell_ref = coord_to_cell_ref(r, c);
-            
+
             let style_idx = if let Some(style) = &cell.style {
-                unique_styles.iter().position(|x| x == style).map(|pos| pos + 1).unwrap_or(0)
+                unique_styles
+                    .iter()
+                    .position(|x| x == style)
+                    .map(|pos| pos + 1)
+                    .unwrap_or(0)
             } else {
                 0
             };
-            
+
             let mut style_attr = String::new();
             if style_idx > 0 {
                 style_attr = format!(" s=\"{}\"", style_idx);
             }
-            
+
             if cell.formula.is_none() && cell.value.is_empty() {
                 xml.push_str(&format!("      <c r=\"{}\"{}/>\n", cell_ref, style_attr));
             } else {
@@ -361,10 +378,13 @@ fn generate_sheet_xml(
                     if let Some(&idx) = shared_strings_map.get(&cell.value) {
                         (format!(" t=\"s\""), format!("<v>{}</v>", idx))
                     } else {
-                        (format!(" t=\"inlineStr\""), format!("<is><t>{}</t></is>", escape_xml(&cell.value)))
+                        (
+                            format!(" t=\"inlineStr\""),
+                            format!("<is><t>{}</t></is>", escape_xml(&cell.value)),
+                        )
                     }
                 };
-                
+
                 let formula_xml = if let Some(formula) = &cell.formula {
                     let mut fmt_f = formula.clone();
                     if fmt_f.starts_with('=') {
@@ -374,7 +394,7 @@ fn generate_sheet_xml(
                 } else {
                     String::new()
                 };
-                
+
                 xml.push_str(&format!(
                     "      <c r=\"{}\"{}{}>\n        {}{}\n      </c>\n",
                     cell_ref, style_attr, t_attr, formula_xml, v_val
@@ -383,7 +403,7 @@ fn generate_sheet_xml(
         }
         xml.push_str("    </row>\n");
     }
-    
+
     xml.push_str("  </sheetData>\n");
     xml.push_str("</worksheet>\n");
     xml

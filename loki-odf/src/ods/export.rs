@@ -3,12 +3,12 @@
 
 //! ODS exporter.
 
+use loki_sheet_model::{Cell, CellAlign, NumberFormat, Workbook};
 use std::collections::HashMap;
 use std::io::{Seek, Write};
-use zip::{CompressionMethod, write::FileOptions, ZipWriter};
-use loki_sheet_model::{Workbook, Cell, CellAlign, NumberFormat};
+use zip::{CompressionMethod, ZipWriter, write::FileOptions};
 
-use crate::constants::{MIME_ODS, ENTRY_MIMETYPE, ENTRY_MANIFEST, ENTRY_CONTENT, ENTRY_STYLES};
+use crate::constants::{ENTRY_CONTENT, ENTRY_MANIFEST, ENTRY_MIMETYPE, ENTRY_STYLES, MIME_ODS};
 use crate::error::OdfError;
 
 /// Options controlling ODS export behaviour.
@@ -20,10 +20,7 @@ pub struct OdsExport;
 
 impl OdsExport {
     /// Export a [`Workbook`] to an ODS writer.
-    pub fn export(
-        workbook: &Workbook,
-        writer: impl Write + Seek,
-    ) -> Result<(), OdfError> {
+    pub fn export(workbook: &Workbook, writer: impl Write + Seek) -> Result<(), OdfError> {
         let mut zip = ZipWriter::new(writer);
 
         // 1. mimetype (stored, uncompressed)
@@ -102,7 +99,10 @@ fn generate_content(workbook: &Workbook) -> String {
 "#);
 
     for (style, name) in &unique_styles {
-        content_xml.push_str(&format!("    <style:style style:name=\"{}\" style:family=\"table-cell\"", name));
+        content_xml.push_str(&format!(
+            "    <style:style style:name=\"{}\" style:family=\"table-cell\"",
+            name
+        ));
         let data_style = match style.num_format {
             NumberFormat::Percent => Some("NPercent"),
             NumberFormat::Currency => Some("NCurrency"),
@@ -140,21 +140,30 @@ fn generate_content(workbook: &Workbook) -> String {
         content_xml.push_str("    </style:style>\n");
     }
 
-    content_xml.push_str(r#"  </office:automatic-styles>
+    content_xml.push_str(
+        r#"  </office:automatic-styles>
   <office:body>
     <office:spreadsheet>
-"#);
+"#,
+    );
 
     for sheet in &workbook.sheets {
         let escaped_name = escape_xml(&sheet.name);
-        content_xml.push_str(&format!("      <table:table table:name=\"{}\">\n", escaped_name));
+        content_xml.push_str(&format!(
+            "      <table:table table:name=\"{}\">\n",
+            escaped_name
+        ));
 
         if !sheet.cells.is_empty() {
             let mut max_row = 0;
             let mut max_col = 0;
             for &(r, c) in sheet.cells.keys() {
-                if r > max_row { max_row = r; }
-                if c > max_col { max_col = c; }
+                if r > max_row {
+                    max_row = r;
+                }
+                if c > max_col {
+                    max_col = c;
+                }
             }
 
             let mut row_cells: HashMap<u32, HashMap<u32, &Cell>> = HashMap::new();
@@ -164,7 +173,7 @@ fn generate_content(workbook: &Workbook) -> String {
 
             for r in 0..=max_row {
                 content_xml.push_str("        <table:table-row>\n");
-                
+
                 let mut last_col = 0;
                 if let Some(cells) = row_cells.get(&r) {
                     let mut cols: Vec<&u32> = cells.keys().collect();
@@ -198,7 +207,8 @@ fn generate_content(workbook: &Workbook) -> String {
                         };
 
                         let val_str = &cell.value;
-                        let is_bool = val_str.eq_ignore_ascii_case("true") || val_str.eq_ignore_ascii_case("false");
+                        let is_bool = val_str.eq_ignore_ascii_case("true")
+                            || val_str.eq_ignore_ascii_case("false");
                         let is_num = val_str.parse::<f64>().is_ok();
 
                         if is_bool {
@@ -218,8 +228,7 @@ fn generate_content(workbook: &Workbook) -> String {
                         } else {
                             content_xml.push_str(&format!(
                                 "          <table:table-cell office:value-type=\"string\"{}{}>\n",
-                                style_attr,
-                                formula_attr
+                                style_attr, formula_attr
                             ));
                         }
 
@@ -243,10 +252,12 @@ fn generate_content(workbook: &Workbook) -> String {
         content_xml.push_str("      </table:table>\n");
     }
 
-    content_xml.push_str(r#"    </office:spreadsheet>
+    content_xml.push_str(
+        r#"    </office:spreadsheet>
   </office:body>
 </office:document-content>
-"#);
+"#,
+    );
 
     content_xml
 }
@@ -269,10 +280,10 @@ fn escape_xml(s: &str) -> String {
 fn to_ods_formula(formula: &str) -> String {
     let s = formula.trim();
     let s = s.strip_prefix('=').unwrap_or(s);
-    
+
     let mut result = String::new();
     result.push_str("of:=");
-    
+
     let chars: Vec<char> = s.chars().collect();
     let mut i = 0;
     while i < chars.len() {
@@ -282,36 +293,42 @@ fn to_ods_formula(formula: &str) -> String {
             has_dollar1 = true;
             i += 1;
         }
-        
+
         let mut letters_len = 0;
         while i < chars.len() && chars[i].is_ascii_alphabetic() {
             i += 1;
             letters_len += 1;
         }
-        
+
         let mut has_dollar2 = false;
         if letters_len > 0 && i < chars.len() && chars[i] == '$' {
             has_dollar2 = true;
             i += 1;
         }
-        
+
         let mut digits_len = 0;
         while i < chars.len() && chars[i].is_ascii_digit() {
             i += 1;
             digits_len += 1;
         }
-        
+
         if letters_len > 0 && digits_len > 0 && letters_len <= 3 {
             let next_ok = i == chars.len() || !chars[i].is_ascii_alphanumeric();
             let prev_ok = start == 0 || !chars[start - 1].is_ascii_alphanumeric();
-            
+
             if next_ok && prev_ok {
                 let mut ref_str = String::new();
-                if has_dollar1 { ref_str.push('$'); }
-                for idx in (start + if has_dollar1 { 1 } else { 0 })..(i - digits_len - if has_dollar2 { 1 } else { 0 }) {
+                if has_dollar1 {
+                    ref_str.push('$');
+                }
+                for idx in (start + if has_dollar1 { 1 } else { 0 })
+                    ..(i - digits_len - if has_dollar2 { 1 } else { 0 })
+                {
                     ref_str.push(chars[idx]);
                 }
-                if has_dollar2 { ref_str.push('$'); }
+                if has_dollar2 {
+                    ref_str.push('$');
+                }
                 for idx in (i - digits_len)..i {
                     ref_str.push(chars[idx]);
                 }
@@ -319,7 +336,7 @@ fn to_ods_formula(formula: &str) -> String {
                 continue;
             }
         }
-        
+
         i = start;
         result.push(chars[i]);
         i += 1;
@@ -336,6 +353,9 @@ mod tests {
         assert_eq!(to_ods_formula("A1+B2"), "of:=[.A1]+[.B2]");
         assert_eq!(to_ods_formula("SUM(A1:B10)"), "of:=SUM([.A1:.B10])");
         assert_eq!(to_ods_formula("=SUM(A1:B10)"), "of:=SUM([.A1:.B10])");
-        assert_eq!(to_ods_formula("A1:C5+SUM($D$2:D$8)"), "of:=[.A1:.C5]+SUM([.$D$2:.D$8])");
+        assert_eq!(
+            to_ods_formula("A1:C5+SUM($D$2:D$8)"),
+            "of:=[.A1:.C5]+SUM([.$D$2:.D$8])"
+        );
     }
 }
