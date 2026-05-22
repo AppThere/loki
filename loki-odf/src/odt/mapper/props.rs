@@ -145,6 +145,17 @@ pub(crate) fn map_para_props(props: &OdfParaProps) -> ParaProps {
         out.background_color = Some(dc);
     }
 
+    // ── Bidirectional direction ────────────────────────────────────────────
+    // ODF `style:writing-mode` values that indicate RTL text direction.
+    // "rl-tb" is right-to-left, top-to-bottom (Arabic/Hebrew).
+    // "rl" is shorthand for rl-tb.
+    if matches!(
+        props.writing_mode.as_deref(),
+        Some("rl-tb" | "rl" | "tb-rl")
+    ) {
+        out.bidi = Some(true);
+    }
+
     // ── Tab stops ──────────────────────────────────────────────────────────
     if !props.tab_stops.is_empty() {
         let stops: Vec<TabStop> = props.tab_stops.iter().filter_map(map_tab_stop).collect();
@@ -280,8 +291,7 @@ pub(crate) fn map_odf_writing_mode(val: &str) -> Option<CellTextDirection> {
 /// ODF tab alignment values: `"left"` → [`TabAlignment::Left`],
 /// `"right"` → [`TabAlignment::Right`], `"center"` → [`TabAlignment::Center`],
 /// `"char"` → [`TabAlignment::Decimal`].
-/// ODF tab stops have no leader in the intermediate model (parsed separately
-/// by `style:leader-*` attributes not yet captured) → always [`TabLeader::None`].
+/// `style:leader-style` is now mapped to [`TabLeader`].
 fn map_tab_stop(ts: &OdfTabStop) -> Option<TabStop> {
     let position = parse_length(&ts.position)?;
     let alignment = match ts.tab_type.as_deref() {
@@ -293,8 +303,21 @@ fn map_tab_stop(ts: &OdfTabStop) -> Option<TabStop> {
     Some(TabStop {
         position,
         alignment,
-        leader: TabLeader::None,
+        leader: map_leader_style(ts.leader_style.as_deref()),
     })
+}
+
+fn map_leader_style(s: Option<&str>) -> TabLeader {
+    match s {
+        Some("dotted") => TabLeader::Dot,
+        Some("dash" | "long-dash" | "dot-dash" | "dot-dot-dash") => TabLeader::Dash,
+        Some("solid" | "wave" | "small-wave" | "double-wave") => TabLeader::Underscore,
+        Some(
+            "bold" | "bold-dash" | "bold-long-dash" | "bold-dot-dash" | "bold-dot-dot-dash"
+            | "bold-wave",
+        ) => TabLeader::Heavy,
+        _ => TabLeader::None,
+    }
 }
 
 /// Map an ODF `fo:text-align` string to [`ParagraphAlignment`].
@@ -322,6 +345,8 @@ pub(crate) fn map_text_props(props: &OdfTextProps) -> CharProps {
             .clone()
             .or_else(|| props.font_family.clone()),
         font_name_complex: props.font_name_complex.clone(),
+        font_name_east_asian: props.font_name_asian.clone(),
+        outline: props.text_outline,
         ..Default::default()
     };
 
@@ -389,6 +414,18 @@ pub(crate) fn map_text_props(props: &OdfTextProps) -> CharProps {
     if let Some(pts) = props.letter_spacing.as_deref().and_then(parse_length) {
         out.letter_spacing = Some(pts);
     }
+    if let Some(pts) = props.word_spacing.as_deref().and_then(parse_length) {
+        out.word_spacing = Some(pts);
+    }
+    if let Some(v) = props.letter_kerning {
+        out.kerning = Some(v);
+    }
+    // style:text-scale is a percentage string like "150%" → 150.0 (same unit as OOXML w:w)
+    if let Some(pct) = props.text_scale.as_deref()
+        && let Some(v) = pct.strip_suffix('%').and_then(|s| s.parse::<f32>().ok())
+    {
+        out.scale = Some(v);
+    }
 
     // ── Language ───────────────────────────────────────────────────────────
     if let Some(lang) = props.language.as_deref() {
@@ -398,6 +435,22 @@ pub(crate) fn map_text_props(props: &OdfTextProps) -> CharProps {
             LanguageTag::new(lang)
         };
         out.language = Some(tag);
+    }
+    if let Some(lang) = props.language_complex.as_deref() {
+        let tag = if let Some(country) = props.country_complex.as_deref() {
+            LanguageTag::new(format!("{lang}-{country}"))
+        } else {
+            LanguageTag::new(lang)
+        };
+        out.language_complex = Some(tag);
+    }
+    if let Some(lang) = props.language_asian.as_deref() {
+        let tag = if let Some(country) = props.country_asian.as_deref() {
+            LanguageTag::new(format!("{lang}-{country}"))
+        } else {
+            LanguageTag::new(lang)
+        };
+        out.language_east_asian = Some(tag);
     }
 
     out

@@ -174,6 +174,8 @@ pub(crate) struct OdfParaProps {
     pub background_color: Option<String>,
     /// Tab stops defined within this style. ODF 1.3 §17.8.
     pub tab_stops: Vec<OdfTabStop>,
+    /// `style:writing-mode` — text direction, e.g. `"lr-tb"`, `"rl-tb"`.
+    pub writing_mode: Option<String>,
 }
 
 /// A single tab stop within a paragraph style.
@@ -185,6 +187,8 @@ pub(crate) struct OdfTabStop {
     pub position: String,
     /// `style:type` — alignment: `"left"`, `"right"`, `"center"`, `"char"`.
     pub tab_type: Option<String>,
+    /// `style:leader-style` — leader character style (ODF 1.3 §17.8).
+    pub leader_style: Option<String>,
 }
 
 /// Text (character) formatting properties (`style:text-properties`).
@@ -231,6 +235,24 @@ pub(crate) struct OdfTextProps {
     pub font_size_complex: Option<String>,
     /// `style:font-name-complex` — font name for complex scripts.
     pub font_name_complex: Option<String>,
+    /// `style:font-name-asian` — font name for East Asian text.
+    pub font_name_asian: Option<String>,
+    /// `style:text-outline` — hollow/outline text effect.
+    pub text_outline: Option<bool>,
+    /// `fo:word-spacing` — additional space between words (e.g. `"0.2cm"`).
+    pub word_spacing: Option<String>,
+    /// `style:letter-kerning` — enable font kerning (`"true"` / `"false"`).
+    pub letter_kerning: Option<bool>,
+    /// `style:text-scale` — horizontal scale percentage (e.g. `"150%"`).
+    pub text_scale: Option<String>,
+    /// `fo:language` complex-script language subtag.
+    pub language_complex: Option<String>,
+    /// `fo:country` complex-script region subtag.
+    pub country_complex: Option<String>,
+    /// `fo:language` East Asian language subtag.
+    pub language_asian: Option<String>,
+    /// `fo:country` East Asian region subtag.
+    pub country_asian: Option<String>,
 }
 
 /// Formatting properties from `style:table-cell-properties`.

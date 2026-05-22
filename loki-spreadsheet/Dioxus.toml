@@ -1,0 +1,13 @@
+# Dioxus CLI configuration for loki-spreadsheet.
+#
+# Run serve from inside loki-spreadsheet/ or with --package loki-spreadsheet.
+
+[application]
+name = "loki-spreadsheet"
+
+[bundle]
+identifier = "com.appthere.loki.spreadsheet"
+publisher = "AppThere"
+
+[android]
+min_sdk_version = 26

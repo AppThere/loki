@@ -1160,6 +1160,14 @@ fn read_body_children(reader: &mut Reader<&[u8]>, end_tag: &[u8]) -> OdfResult<V
                         let section = read_section(reader, e)?;
                         children.push(OdfBodyChild::Section(section));
                     }
+                    b"alphabetical-index"
+                    | b"illustration-index"
+                    | b"table-index"
+                    | b"user-index" => {
+                        let element = String::from_utf8_lossy(&local).into_owned();
+                        skip_element(reader)?;
+                        children.push(OdfBodyChild::Other { element });
+                    }
                     _ => {
                         drop(e);
                         skip_element(reader)?;

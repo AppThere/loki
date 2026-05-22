@@ -198,7 +198,16 @@ pub(crate) fn map_ppr(ppr: &DocxPPr) -> ParaProps {
             .map(|s| Points::new(f64::from(s)));
     }
 
-    // Tab stops (gap #7): w:tabs → ParaProps.tab_stops.
+    // Paragraph background from `w:shd @w:fill`.
+    // "auto" means no fill; all other non-empty hex strings are mapped to an Rgb color.
+    if let Some(ref hex) = ppr.shd_fill
+        && hex != "auto"
+        && let Some(rgb) = hex_color(hex)
+    {
+        props.background_color = Some(DocumentColor::Rgb(rgb));
+    }
+
+    // Tab stops: w:tabs → ParaProps.tab_stops.
     // "clear" entries remove inherited stops and are not forwarded as explicit stops.
     if !ppr.tabs.is_empty() {
         let stops: Vec<TabStop> = ppr
@@ -265,6 +274,14 @@ pub(crate) fn map_rpr(rpr: &DocxRPr) -> CharProps {
     // Precision loss acceptable: values represent document measurements
     let scale = rpr.scale.map(|s| s as f32 / 100.0);
 
+    // Run background from `w:shd @w:fill`. "auto" means no fill.
+    let background_color = rpr
+        .shd_fill
+        .as_deref()
+        .filter(|&h| h != "auto")
+        .and_then(hex_color)
+        .map(DocumentColor::Rgb);
+
     CharProps {
         bold: rpr.bold,
         italic: rpr.italic,
@@ -278,6 +295,7 @@ pub(crate) fn map_rpr(rpr: &DocxRPr) -> CharProps {
             .as_deref()
             .and_then(hex_color)
             .map(DocumentColor::Rgb),
+        background_color,
         highlight_color: rpr
             .highlight
             .as_deref()
@@ -293,11 +311,14 @@ pub(crate) fn map_rpr(rpr: &DocxRPr) -> CharProps {
         letter_spacing,
         scale,
         language: rpr.lang.as_deref().map(LanguageTag::new),
+        language_complex: rpr.lang_complex.as_deref().map(LanguageTag::new),
+        language_east_asian: rpr.lang_east_asian.as_deref().map(LanguageTag::new),
         vertical_align: rpr.vert_align.as_deref().and_then(|v| match v {
             "superscript" => Some(VerticalAlign::Superscript),
             "subscript" => Some(VerticalAlign::Subscript),
             _ => None,
         }),
+        outline: rpr.outline,
         ..Default::default()
     }
 }

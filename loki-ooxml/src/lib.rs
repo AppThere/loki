@@ -41,7 +41,7 @@ pub(crate) mod xml_util;
 pub mod docx;
 
 #[cfg(feature = "xlsx")]
-compile_error!("`xlsx` feature is not yet implemented in loki-ooxml v0.1.0");
+pub mod xlsx;
 
 #[cfg(feature = "pptx")]
 compile_error!("`pptx` feature is not yet implemented in loki-ooxml v0.1.0");
@@ -54,3 +54,9 @@ pub use docx::export::DocxExport;
 pub use docx::import::{DocxImport, DocxImportOptions, DocxImportResult};
 #[cfg(feature = "docx")]
 pub use docx::mapper::{MapperError, map_document};
+
+#[cfg(feature = "xlsx")]
+pub use xlsx::export::XlsxExport;
+#[cfg(feature = "xlsx")]
+pub use xlsx::import::{XlsxImport, XlsxImportOptions, XlsxImportResult};
+

@@ -1,0 +1,73 @@
+[package]
+name = "loki-presentation"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Dioxus Native slide deck presentation application for the Loki document suite"
+repository = "https://github.com/appthere/loki"
+
+[lib]
+name = "loki_presentation"
+path = "src/lib.rs"
+
+[[bin]]
+name = "loki-presentation"
+path = "src/main.rs"
+
+[dependencies]
+# Dioxus Native (Blitz renderer) with client-side router.
+dioxus          = { version = "0.7", features = ["native", "router"] }
+# Format-neutral document model.
+loki-doc-model  = { path = "../loki-doc-model" }
+# OOXML import/export.
+loki-ooxml      = { path = "../loki-ooxml" }
+# ODF import/export.
+loki-odf        = { path = "../loki-odf" }
+# Layout engine.
+loki-layout     = { path = "../loki-layout" }
+# In-workspace Vello GPU rendering backend.
+loki-vello      = { path = "../loki-vello" }
+# Shared AppThere design tokens and UI components.
+appthere-ui     = { path = "../appthere-ui" }
+# Cross-platform file picker.
+loki-file-access = "0.1.1"
+# Typed error derivation.
+thiserror       = "2"
+# Vello/wgpu integration point for custom GPU paint sources.
+anyrender_vello  = "0.6.2"
+# wgpu device + queue handle.
+wgpu_context     = "0.1.2"
+# Async event tracing.
+tracing          = "0.1"
+# Vello scene builder.
+vello           = "0.6"
+# Peniko brush / fill types.
+peniko          = "0.5"
+# Kurbo geometry primitives.
+kurbo           = "0.12"
+# Font config.
+fontique        = { version = "0.8", features = ["fontconfig-dlopen"] }
+loro = "1.11.1"
+# Unicode segmentation.
+unicode-segmentation = "1"
+# Platform-specific paths.
+dirs = "5"
+# Serialisation.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Fluent i18n.
+loki-i18n = { path = "../loki-i18n" }
+# Cache page renderer.
+loki-renderer = { path = "../loki-renderer" }
+
+[package.metadata.android]
+package = "com.appthere.loki.presentation"
+build_targets = ["aarch64-linux-android"]
+
+[package.metadata.android.sdk]
+min_sdk_version = 26
+target_sdk_version = 34
+compile_sdk_version = 34
+
+[package.metadata.android.application]
+label = "Loki Presentation"

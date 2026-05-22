@@ -9,7 +9,9 @@
 //! - `read`  — deserialization (Loro → Loki)
 //! - `inlines` — inline content helpers shared by both directions
 
+mod decode;
 mod inlines;
+mod props_read;
 mod read;
 mod write;
 
@@ -117,6 +119,8 @@ pub fn document_to_loro(doc: &Document) -> Result<LoroDoc, BridgeError> {
         MARK_VERTICAL_ALIGN,
         MARK_LINK_URL,
         MARK_LANGUAGE,
+        MARK_LANGUAGE_COMPLEX,
+        MARK_LANGUAGE_EAST_ASIAN,
         MARK_LETTER_SPACING,
         MARK_WORD_SPACING,
         MARK_SCALE,

@@ -1,6 +1,9 @@
 # Shell chrome — tab bar and window labels.
 
 shell-app-name = Loki Text
+shell-app-name-text = Loki Text
+shell-app-name-spreadsheet = Loki Spreadsheet
+shell-app-name-presentation = Loki Presentation
 
 # Tab bar
 shell-home-tab = Home

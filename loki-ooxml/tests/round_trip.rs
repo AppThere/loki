@@ -5,7 +5,7 @@
 
 mod helpers;
 
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::{Inline, NoteKind};
@@ -499,4 +499,286 @@ fn cell_props_padding_valign_textdirection_mapped() {
         c1.props.text_direction, None,
         "cell 1 should have no text direction"
     );
+}
+
+// ── Integration Draft tests ───────────────────────────────────────────────────
+
+/// Strict OOXML namespace test: verify we can import a document where the
+/// relationship and element namespaces use the Strict schemas:
+/// Main relationship: `http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument`
+/// Elements: `http://purl.oclc.org/ooxml/wordprocessingml/main`
+#[test]
+fn test_strict_namespace_handling() {
+    use zip::CompressionMethod;
+    use zip::ZipWriter;
+    use zip::write::FileOptions;
+
+    let mut buf = Vec::new();
+    let mut zip = ZipWriter::new(Cursor::new(&mut buf));
+    let d = FileOptions::<()>::default().compression_method(CompressionMethod::Deflated);
+
+    // [Content_Types].xml (Strict types aren't different in extensions, but overrides can be)
+    zip.start_file("[Content_Types].xml", d).unwrap();
+    zip.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml"
+    ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>"#,
+    )
+    .unwrap();
+
+    // Package relationships: using Strict relationship type for the main office document
+    zip.start_file("_rels/.rels", d).unwrap();
+    zip.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1"
+    Type="http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument"
+    Target="word/document.xml"/>
+</Relationships>"#,
+    )
+    .unwrap();
+
+    // Word document relationships: using Strict relationship types
+    zip.start_file("word/_rels/document.xml.rels", d).unwrap();
+    zip.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+</Relationships>"#,
+    )
+    .unwrap();
+
+    // Strict namespace for wordprocessingml elements in document.xml
+    zip.start_file("word/document.xml", d).unwrap();
+    zip.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://purl.oclc.org/ooxml/wordprocessingml/main">
+  <w:body>
+    <w:p>
+      <w:r>
+        <w:t>Strict Namespace Text</w:t>
+      </w:r>
+    </w:p>
+  </w:body>
+</w:document>"#,
+    )
+    .unwrap();
+
+    zip.finish().unwrap();
+
+    // Import and assert it matches
+    let result = DocxImporter::new(DocxImportOptions::default()).run(Cursor::new(buf));
+
+    let import_res = result.expect("Strict namespace document should import successfully");
+    assert_eq!(import_res.document.sections.len(), 1);
+}
+
+/// Verification of table cell/column edge cases:
+/// Tables containing negative column widths, zero width, or malformed attributes
+/// should import safely without panicking.
+#[test]
+fn test_table_with_invalid_attributes() {
+    use zip::CompressionMethod;
+    use zip::ZipWriter;
+    use zip::write::FileOptions;
+
+    let mut buf = Vec::new();
+    let mut zip = ZipWriter::new(Cursor::new(&mut buf));
+    let d = FileOptions::<()>::default().compression_method(CompressionMethod::Deflated);
+
+    zip.start_file("[Content_Types].xml", d).unwrap();
+    zip.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml"
+    ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>"#,
+    )
+    .unwrap();
+
+    zip.start_file("_rels/.rels", d).unwrap();
+    zip.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1"
+    Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"
+    Target="word/document.xml"/>
+</Relationships>"#,
+    )
+    .unwrap();
+
+    zip.start_file("word/_rels/document.xml.rels", d).unwrap();
+    zip.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+</Relationships>"#,
+    )
+    .unwrap();
+
+    zip.start_file("word/document.xml", d).unwrap();
+    zip.write_all(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:tbl>
+      <w:tblPr>
+        <w:tblW w:w="-500" w:type="dxa"/>
+      </w:tblPr>
+      <w:tblGrid>
+        <w:gridCol w:w="0"/>
+        <w:gridCol w:w="-1000"/>
+      </w:tblGrid>
+      <w:tr>
+        <w:tc>
+          <w:tcPr>
+            <w:tcW w:w="0" w:type="dxa"/>
+            <w:tcMar>
+              <w:top w:w="-50" w:type="dxa"/>
+            </w:tcMar>
+          </w:tcPr>
+          <w:p><w:r><w:t>Cell 1</w:t></w:r></w:p>
+        </w:tc>
+        <w:tc>
+          <w:p><w:r><w:t>Cell 2</w:t></w:r></w:p>
+        </w:tc>
+      </w:tr>
+    </w:tbl>
+  </w:body>
+</w:document>"#
+            .to_string()
+            .into_bytes()
+            .as_slice(),
+    )
+    .unwrap();
+
+    zip.finish().unwrap();
+
+    let result = DocxImporter::new(DocxImportOptions::default())
+        .run(Cursor::new(buf))
+        .expect("should import safely despite invalid/negative table attributes");
+
+    let doc = &result.document;
+    let all_blocks: Vec<&loki_doc_model::content::block::Block> =
+        doc.sections.iter().flat_map(|s| s.blocks.iter()).collect();
+    let table = all_blocks
+        .iter()
+        .find_map(|b| {
+            if let loki_doc_model::content::block::Block::Table(t) = b {
+                Some(t.as_ref())
+            } else {
+                None
+            }
+        })
+        .expect("table must be present");
+
+    assert_eq!(table.bodies[0].body_rows[0].cells.len(), 2);
+}
+
+/// Hyperlink relationship missing test:
+/// A hyperlink element pointing to an invalid/missing relationship ID
+/// should fall back to using the relationship ID as a bookmark fragment target (e.g. "#rIdInvalid")
+/// and emit an OoxmlWarning.
+#[test]
+fn test_hyperlink_missing_relationship() {
+    use loki_ooxml::OoxmlWarning;
+    use zip::CompressionMethod;
+    use zip::ZipWriter;
+    use zip::write::FileOptions;
+
+    let mut buf = Vec::new();
+    let mut zip = ZipWriter::new(Cursor::new(&mut buf));
+    let d = FileOptions::<()>::default().compression_method(CompressionMethod::Deflated);
+
+    zip.start_file("[Content_Types].xml", d).unwrap();
+    zip.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml"
+    ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>"#,
+    )
+    .unwrap();
+
+    zip.start_file("_rels/.rels", d).unwrap();
+    zip.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1"
+    Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"
+    Target="word/document.xml"/>
+</Relationships>"#,
+    )
+    .unwrap();
+
+    // No relationships defined in document.xml.rels for the hyperlink rId99!
+    zip.start_file("word/_rels/document.xml.rels", d).unwrap();
+    zip.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+</Relationships>"#,
+    )
+    .unwrap();
+
+    zip.start_file("word/document.xml", d).unwrap();
+    zip.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:body>
+    <w:p>
+      <w:hyperlink r:id="rId99">
+        <w:r>
+          <w:t>Hyperlink Text</w:t>
+        </w:r>
+      </w:hyperlink>
+    </w:p>
+  </w:body>
+</w:document>"#,
+    )
+    .unwrap();
+
+    zip.finish().unwrap();
+
+    let result = DocxImporter::new(DocxImportOptions::default())
+        .run(Cursor::new(buf))
+        .expect("import should succeed despite missing hyperlink relationship");
+
+    assert!(
+        result
+            .warnings
+            .iter()
+            .any(|w| matches!(w, OoxmlWarning::UnresolvedRelationship { id, .. } if id == "rId99")),
+        "should have emitted an UnresolvedRelationship warning for rId99, got {:?}",
+        result.warnings
+    );
+
+    let doc = &result.document;
+    let all_blocks: Vec<&loki_doc_model::content::block::Block> =
+        doc.sections.iter().flat_map(|s| s.blocks.iter()).collect();
+    // The importer always produces Block::StyledPara for body paragraphs.
+    let inlines: &[Inline] = match all_blocks[0] {
+        Block::StyledPara(p) => &p.inlines,
+        Block::Para(inlines) => inlines,
+        other => panic!("expected a paragraph block, got {:?}", other),
+    };
+
+    let link = inlines
+        .iter()
+        .find_map(|inline| {
+            if let Inline::Link(_, _, target) = inline {
+                Some(target)
+            } else {
+                None
+            }
+        })
+        .expect("hyperlink inline must be present");
+
+    assert_eq!(link.url, "#rId99");
 }

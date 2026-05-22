@@ -235,7 +235,13 @@ fn map_body_child(child: &OdfBodyChild, ctx: &mut OdfMappingContext<'_>) -> Opti
         OdfBodyChild::Table(table) => Some(map_table(table, ctx)),
         OdfBodyChild::TableOfContent(toc) => Some(map_toc(toc, ctx)),
         OdfBodyChild::Section(section) => Some(map_section(section, ctx)),
-        OdfBodyChild::Other => None,
+        OdfBodyChild::Other { element } => {
+            ctx.warnings.push(OdfWarning::UnrecognisedElement {
+                element: element.clone(),
+                context: "body index block (unimplemented)".to_string(),
+            });
+            None
+        }
     }
 }
 
@@ -443,7 +449,12 @@ fn map_frame(frame: &OdfFrame, ctx: &mut OdfMappingContext<'_>) -> Option<Inline
                 .push(Block::Div(NodeAttr::default(), inner));
             None
         }
-        OdfFrameKind::Other => None,
+        OdfFrameKind::Other => {
+            ctx.warnings.push(OdfWarning::DroppedFrame {
+                name: frame.name.clone(),
+            });
+            None
+        }
     }
 }
 
@@ -458,7 +469,13 @@ fn map_list(list: &OdfList, ctx: &mut OdfMappingContext<'_>) -> Block {
         .collect();
 
     if ordered {
-        let attrs = build_list_attributes(list, ctx.styles);
+        let mut attrs = build_list_attributes(list, ctx.styles);
+        // Per-item start_value on the first item overrides the style-level start.
+        // text:continue-numbering is not tracked across lists (no cross-list state),
+        // so only the explicit start_value override is applied here.
+        if let Some(first_start) = list.items.first().and_then(|i| i.start_value) {
+            attrs.start_number = first_start.cast_signed();
+        }
         Block::OrderedList(attrs, items)
     } else {
         Block::BulletList(items)
@@ -570,8 +587,8 @@ fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Block {
                 .cells
                 .iter()
                 .filter_map(|odf_cell| {
-                    // TODO(odf-rowspan): covered cells suppressed but row_span
-                    // not yet propagated to the spanning cell
+                    // Covered cells are suppressed; the spanning cell carries
+                    // `row_span` from `table:number-rows-spanned` (read by the reader).
                     if odf_cell.is_covered {
                         return None;
                     }

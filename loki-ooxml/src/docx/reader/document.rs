@@ -214,7 +214,7 @@ pub(crate) fn parse_ppr_element(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxP
                     ppr.sect_pr = Some(parse_sect_pr(reader)?);
                 }
                 b"rPr" => {
-                    parse_rpr_element(reader)?;
+                    ppr.ppr_rpr = Some(parse_rpr_element(reader)?);
                 }
                 name => apply_ppr_attr(name, e, &mut ppr),
             },
@@ -281,6 +281,7 @@ fn apply_ppr_attr(name: &[u8], e: &quick_xml::events::BytesStart<'_>, ppr: &mut 
         }
         b"bidi" => ppr.bidi = Some(toggle_prop(attr_val(e, b"val").as_deref())),
         b"widowControl" => ppr.widow_control = Some(toggle_prop(attr_val(e, b"val").as_deref())),
+        b"shd" => ppr.shd_fill = attr_val(e, b"fill"),
         _ => {}
     }
 }
@@ -338,8 +339,16 @@ pub(crate) fn parse_rpr_element(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxR
                     b"w" => {
                         rpr.scale = attr_val(e, b"val").as_deref().and_then(|v| v.parse().ok());
                     }
-                    b"lang" => rpr.lang = attr_val(e, b"val"),
+                    b"lang" => {
+                        rpr.lang = attr_val(e, b"val");
+                        rpr.lang_complex = attr_val(e, b"bidi");
+                        rpr.lang_east_asian = attr_val(e, b"eastAsia");
+                    }
                     b"vertAlign" => rpr.vert_align = attr_val(e, b"val"),
+                    b"shd" => rpr.shd_fill = attr_val(e, b"fill"),
+                    b"outline" => {
+                        rpr.outline = Some(toggle_prop(attr_val(e, b"val").as_deref()));
+                    }
                     _ => {}
                 }
             }

@@ -51,8 +51,9 @@ pub(crate) enum OdfBodyChild {
     TableOfContent(OdfTableOfContent),
     /// A named text section (`text:section`). ODF 1.3 §5.4.
     Section(OdfSection),
-    /// Any body-level element not specifically modelled above.
-    Other,
+    /// A recognised but unimplemented body-level element (e.g. index blocks).
+    /// The element local name is carried for warning emission.
+    Other { element: String },
 }
 
 // ── Lists ──────────────────────────────────────────────────────────────────────

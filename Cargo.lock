@@ -3865,6 +3865,7 @@ dependencies = [
  "loki-doc-model",
  "loki-layout",
  "loki-primitives",
+ "loki-sheet-model",
  "quick-xml 0.36.2",
  "thiserror 2.0.18",
  "zip",
@@ -3882,6 +3883,7 @@ dependencies = [
  "loki-layout",
  "loki-opc",
  "loki-primitives",
+ "loki-sheet-model",
  "quick-xml 0.36.2",
  "thiserror 2.0.18",
  "zip",
@@ -3898,6 +3900,35 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "zip",
+]
+
+[[package]]
+name = "loki-presentation"
+version = "0.1.0"
+dependencies = [
+ "anyrender_vello",
+ "appthere-ui",
+ "dioxus",
+ "dirs",
+ "fontique 0.8.0",
+ "kurbo 0.12.0",
+ "loki-doc-model",
+ "loki-file-access",
+ "loki-i18n",
+ "loki-layout",
+ "loki-odf",
+ "loki-ooxml",
+ "loki-renderer",
+ "loki-vello",
+ "loro",
+ "peniko",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+ "unicode-segmentation",
+ "vello",
+ "wgpu_context",
 ]
 
 [[package]]
@@ -3937,6 +3968,47 @@ dependencies = [
  "tracing",
  "vello",
  "wgpu 26.0.1",
+]
+
+[[package]]
+name = "loki-sheet-model"
+version = "0.1.0"
+dependencies = [
+ "loki-primitives",
+ "loro",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "loki-spreadsheet"
+version = "0.1.0"
+dependencies = [
+ "anyrender_vello",
+ "appthere-ui",
+ "dioxus",
+ "dirs",
+ "fontique 0.8.0",
+ "kurbo 0.12.0",
+ "loki-doc-model",
+ "loki-file-access",
+ "loki-i18n",
+ "loki-layout",
+ "loki-odf",
+ "loki-ooxml",
+ "loki-renderer",
+ "loki-sheet-model",
+ "loki-vello",
+ "loro",
+ "peniko",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+ "unicode-segmentation",
+ "vello",
+ "wgpu_context",
 ]
 
 [[package]]

@@ -52,6 +52,12 @@ pub const NS_MANIFEST: &str = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.
 /// uncompressed, with no trailing newline. ODF 1.3 §3.3.
 pub const MIME_ODT: &str = "application/vnd.oasis.opendocument.text";
 
+/// MIME type for an ODS (`OpenDocument` Spreadsheet) package.
+///
+/// This string must appear verbatim as the first entry in the ZIP archive,
+/// uncompressed, with no trailing newline. ODF 1.3 §3.3.
+pub const MIME_ODS: &str = "application/vnd.oasis.opendocument.spreadsheet";
+
 // ── ODF version strings ────────────────────────────────────────────────────────
 
 /// Version string for ODF 1.1 (ISO/IEC 26300:2006/Amd 1:2012).

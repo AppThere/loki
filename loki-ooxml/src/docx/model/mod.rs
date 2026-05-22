@@ -13,5 +13,6 @@ pub mod fields;
 pub mod footnotes;
 pub mod numbering;
 pub mod paragraph;
+pub mod section;
 pub mod settings;
 pub mod styles;

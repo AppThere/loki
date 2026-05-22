@@ -16,6 +16,9 @@ target/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+# LLM Wiki for data storage types
+llmwiki/
+
 # .DS_Store on macOS
 .DS_Store
 .DS_Store

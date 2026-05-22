@@ -29,3 +29,27 @@ home-open-file = Open File…
 
 # File picker filter label (not shown to user on all platforms)
 home-filter-label = Documents
+
+# Spreadsheet Templates & Filters
+home-template-blank-spreadsheet = Blank Spreadsheet
+home-template-blank-spreadsheet-description = Empty spreadsheet
+home-template-blank-spreadsheet-format = XLSX
+home-template-budget = Budget Planner
+home-template-budget-description = Monthly budget template
+home-template-budget-format = XLSX
+home-template-inventory = Inventory List
+home-template-inventory-description = Simple inventory tracker
+home-template-inventory-format = XLSX
+home-filter-label-spreadsheet = Spreadsheets
+
+# Presentation Templates & Filters
+home-template-blank-presentation = Blank Presentation
+home-template-blank-presentation-description = Empty slide deck
+home-template-blank-presentation-format = PPTX
+home-template-pitch = Pitch Deck
+home-template-pitch-description = Investor pitch deck
+home-template-pitch-format = PPTX
+home-template-portfolio = Portfolio
+home-template-portfolio-description = Visual design portfolio
+home-template-portfolio-format = PPTX
+home-filter-label-presentation = Presentations

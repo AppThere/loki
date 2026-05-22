@@ -171,6 +171,10 @@ pub struct ParaProps {
     /// achieved via `keep_with_next` on the preceding paragraph).
     pub page_break_after: Option<bool>,
 
+    /// Force a column break after this paragraph.
+    /// OOXML `w:br @w:type="column"` promoted to paragraph level.
+    pub column_break_after: Option<bool>,
+
     // ── List reference ────────────────────────────────────────────────────
     /// The list style this paragraph participates in.
     /// See ADR-0004 for the two-level list model rationale.
@@ -233,6 +237,7 @@ impl ParaProps {
         inherit!(widow_control);
         inherit!(page_break_before);
         inherit!(page_break_after);
+        inherit!(column_break_after);
         inherit!(list_id);
         inherit!(list_level);
         inherit!(outline_level);

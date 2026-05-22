@@ -5,6 +5,8 @@
 //!
 //! Mirrors ECMA-376 §17.3.1 (paragraphs) and §17.3.2 (runs).
 
+pub use super::section::{DocxHdrFtrRef, DocxPgMar, DocxPgSz, DocxSectPr};
+
 /// Intermediate model for `w:p` (ECMA-376 §17.3.1.22).
 #[derive(Debug, Clone, Default)]
 pub struct DocxParagraph {
@@ -64,6 +66,12 @@ pub struct DocxPPr {
     pub bidi: Option<bool>,
     /// Widow/orphan control (`w:widowControl`; default on).
     pub widow_control: Option<bool>,
+    /// Paragraph shading fill color from `w:shd @w:fill` (hex, no `#`).
+    pub shd_fill: Option<String>,
+    /// Paragraph-mark run properties from `w:pPr/w:rPr`.
+    /// Carries formatting that applies to the paragraph mark itself (e.g. a
+    /// font override that affects the default spacing of an empty paragraph).
+    pub ppr_rpr: Option<DocxRPr>,
 }
 
 /// `w:ind` indentation attributes (ECMA-376 §17.3.1.12).
@@ -208,10 +216,18 @@ pub struct DocxRPr {
     pub spacing: Option<i32>,
     /// `w:w @w:val` — horizontal scale percentage.
     pub scale: Option<i32>,
-    /// `w:lang @w:val` — language tag.
+    /// `w:lang @w:val` — primary language tag.
     pub lang: Option<String>,
+    /// `w:lang @w:bidi` — complex-script language tag.
+    pub lang_complex: Option<String>,
+    /// `w:lang @w:eastAsia` — East Asian language tag.
+    pub lang_east_asian: Option<String>,
     /// `w:vertAlign @w:val` — vertical alignment (`"superscript"`, `"subscript"`).
     pub vert_align: Option<String>,
+    /// Run shading fill color from `w:shd @w:fill` (hex, no `#`).
+    pub shd_fill: Option<String>,
+    /// `w:outline` toggle — hollow/outline text effect.
+    pub outline: Option<bool>,
 }
 
 /// `w:rFonts` font name attributes (ECMA-376 §17.3.2.26).
@@ -236,61 +252,6 @@ pub struct DocxHyperlink {
     pub anchor: Option<String>,
     /// Contained runs.
     pub runs: Vec<DocxRun>,
-}
-
-/// Section properties from `w:sectPr` (ECMA-376 §17.6.17).
-#[derive(Debug, Clone, Default)]
-pub struct DocxSectPr {
-    /// Page size from `w:pgSz`.
-    pub pg_sz: Option<DocxPgSz>,
-    /// Page margins from `w:pgMar`.
-    pub pg_mar: Option<DocxPgMar>,
-    /// Header references (type → `rel_id`).
-    pub header_refs: Vec<DocxHdrFtrRef>,
-    /// Footer references.
-    pub footer_refs: Vec<DocxHdrFtrRef>,
-    /// `<w:titlePg/>` — distinct first-page header/footer active (ECMA-376 §17.6.17).
-    pub title_page: bool,
-}
-
-/// `w:pgSz` page size (ECMA-376 §17.6.13).
-#[derive(Debug, Clone)]
-pub struct DocxPgSz {
-    /// `@w:w` — page width in twips.
-    pub w: i32,
-    /// `@w:h` — page height in twips.
-    pub h: i32,
-    /// `@w:orient` — orientation (`"landscape"` or `"portrait"`).
-    pub orient: Option<String>,
-}
-
-/// `w:pgMar` page margins (ECMA-376 §17.6.11).
-#[derive(Debug, Clone)]
-pub struct DocxPgMar {
-    /// `@w:top` in twips.
-    pub top: i32,
-    /// `@w:bottom` in twips.
-    pub bottom: i32,
-    /// `@w:left` in twips.
-    pub left: i32,
-    /// `@w:right` in twips.
-    pub right: i32,
-    /// `@w:header` in twips.
-    pub header: i32,
-    /// `@w:footer` in twips.
-    pub footer: i32,
-    /// `@w:gutter` in twips.
-    pub gutter: i32,
-}
-
-/// A header or footer reference from `w:headerReference` / `w:footerReference`.
-/// ECMA-376 §17.10.5 / §17.10.3.
-#[derive(Debug, Clone)]
-pub struct DocxHdrFtrRef {
-    /// `@w:type` — `"default"`, `"first"`, or `"even"`.
-    pub hf_type: String,
-    /// `@r:id` — relationship id.
-    pub rel_id: String,
 }
 
 /// An inline drawing from `w:drawing` (ECMA-376 §17.3.3.9).

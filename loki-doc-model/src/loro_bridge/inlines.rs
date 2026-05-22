@@ -4,12 +4,13 @@
 //! Inline content serialization and deserialization for the Loro bridge.
 
 use super::BridgeError;
+use super::decode::{
+    decode_highlight_color, decode_strikethrough, decode_underline, decode_vertical_align,
+};
 use crate::content::attr::NodeAttr;
 use crate::content::inline::{Inline, StyledRun};
 use crate::loro_schema::*;
-use crate::style::props::char_props::{
-    CharProps, HighlightColor, StrikethroughStyle, UnderlineStyle, VerticalAlign,
-};
+use crate::style::props::char_props::CharProps;
 use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 use loro::{LoroText, LoroValue};
@@ -152,7 +153,13 @@ pub(super) fn apply_char_props_marks(
         text.mark(start..end, MARK_HIGHLIGHT_COLOR, format!("{v:?}"))?;
     }
     if let Some(v) = &props.language {
-        text.mark(start..end, MARK_LANGUAGE, format!("{:?}", v))?;
+        text.mark(start..end, MARK_LANGUAGE, v.as_str())?;
+    }
+    if let Some(v) = &props.language_complex {
+        text.mark(start..end, MARK_LANGUAGE_COMPLEX, v.as_str())?;
+    }
+    if let Some(v) = &props.language_east_asian {
+        text.mark(start..end, MARK_LANGUAGE_EAST_ASIAN, v.as_str())?;
     }
     if let Some(v) = &props.hyperlink {
         text.mark(start..end, MARK_LINK_URL, v.clone())?;
@@ -263,61 +270,18 @@ fn read_char_props_from_marks(
         MARK_HIGHLIGHT_COLOR,
         decode_highlight_color
     );
-    // language — complex type, deferred; TODO(loro-bridge)
+    if let Some(LoroValue::String(s)) = attrs.get(MARK_LANGUAGE) {
+        props.language = Some(crate::meta::language::LanguageTag::new(s.to_string()));
+        any = true;
+    }
+    if let Some(LoroValue::String(s)) = attrs.get(MARK_LANGUAGE_COMPLEX) {
+        props.language_complex = Some(crate::meta::language::LanguageTag::new(s.to_string()));
+        any = true;
+    }
+    if let Some(LoroValue::String(s)) = attrs.get(MARK_LANGUAGE_EAST_ASIAN) {
+        props.language_east_asian = Some(crate::meta::language::LanguageTag::new(s.to_string()));
+        any = true;
+    }
 
     if any { Some(props) } else { None }
-}
-
-// ── Enum decode helpers ───────────────────────────────────────────────────────
-
-pub(super) fn decode_underline(s: &str) -> Option<UnderlineStyle> {
-    match s {
-        "Single" => Some(UnderlineStyle::Single),
-        "Double" => Some(UnderlineStyle::Double),
-        "Dotted" => Some(UnderlineStyle::Dotted),
-        "Dash" => Some(UnderlineStyle::Dash),
-        "Wave" => Some(UnderlineStyle::Wave),
-        "Thick" => Some(UnderlineStyle::Thick),
-        _ => None,
-    }
-}
-
-pub(super) fn decode_strikethrough(s: &str) -> Option<StrikethroughStyle> {
-    match s {
-        "Single" => Some(StrikethroughStyle::Single),
-        "Double" => Some(StrikethroughStyle::Double),
-        _ => None,
-    }
-}
-
-pub(super) fn decode_vertical_align(s: &str) -> Option<VerticalAlign> {
-    match s {
-        "Superscript" => Some(VerticalAlign::Superscript),
-        "Subscript" => Some(VerticalAlign::Subscript),
-        "Baseline" => Some(VerticalAlign::Baseline),
-        _ => None,
-    }
-}
-
-pub(super) fn decode_highlight_color(s: &str) -> Option<HighlightColor> {
-    match s {
-        "Yellow" => Some(HighlightColor::Yellow),
-        "Green" => Some(HighlightColor::Green),
-        "Cyan" => Some(HighlightColor::Cyan),
-        "Magenta" => Some(HighlightColor::Magenta),
-        "Blue" => Some(HighlightColor::Blue),
-        "Red" => Some(HighlightColor::Red),
-        "DarkBlue" => Some(HighlightColor::DarkBlue),
-        "DarkCyan" => Some(HighlightColor::DarkCyan),
-        "DarkGreen" => Some(HighlightColor::DarkGreen),
-        "DarkMagenta" => Some(HighlightColor::DarkMagenta),
-        "DarkRed" => Some(HighlightColor::DarkRed),
-        "DarkYellow" => Some(HighlightColor::DarkYellow),
-        "DarkGray" => Some(HighlightColor::DarkGray),
-        "LightGray" => Some(HighlightColor::LightGray),
-        "Black" => Some(HighlightColor::Black),
-        "White" => Some(HighlightColor::White),
-        "None" => Some(HighlightColor::None),
-        _ => None,
-    }
 }

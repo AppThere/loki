@@ -20,7 +20,7 @@ use zip::ZipArchive;
 
 use crate::constants::{
     ENTRY_CONTENT, ENTRY_MANIFEST, ENTRY_META, ENTRY_MIMETYPE, ENTRY_SETTINGS, ENTRY_STYLES,
-    MIME_ODT,
+    MIME_ODT, MIME_ODS,
 };
 use crate::error::{OdfError, OdfResult};
 use crate::version::OdfVersion;
@@ -36,6 +36,9 @@ use crate::version::OdfVersion;
 pub struct OdfPackage {
     /// The detected ODF version of this package.
     pub version: OdfVersion,
+
+    /// The detected ODF mimetype of this package.
+    pub mimetype: String,
 
     /// Raw bytes of `content.xml`. ODF 1.3 §3.1.
     pub content: Vec<u8>,
@@ -84,7 +87,7 @@ impl OdfPackage {
         let mut archive = ZipArchive::new(reader)?;
 
         // ── 1. Validate mimetype entry ─────────────────────────────────────
-        validate_mimetype(&mut archive)?;
+        let mimetype = validate_mimetype(&mut archive)?;
 
         // ── 2. Require META-INF/manifest.xml ──────────────────────────────
         {
@@ -117,6 +120,7 @@ impl OdfPackage {
 
         Ok(Self {
             version,
+            mimetype,
             content,
             styles,
             meta,
@@ -200,7 +204,7 @@ impl OdfPackage {
 /// exactly [`MIME_ODT`] with no trailing newline.
 ///
 /// ODF 1.3 §3.4.
-fn validate_mimetype<R: Read + Seek>(archive: &mut ZipArchive<R>) -> OdfResult<()> {
+fn validate_mimetype<R: Read + Seek>(archive: &mut ZipArchive<R>) -> OdfResult<String> {
     if archive.is_empty() {
         return Err(OdfError::MissingPart {
             part: ENTRY_MIMETYPE.into(),
@@ -229,20 +233,27 @@ fn validate_mimetype<R: Read + Seek>(archive: &mut ZipArchive<R>) -> OdfResult<(
     let mut buf = Vec::new();
     entry.read_to_end(&mut buf)?;
 
-    if buf != MIME_ODT.as_bytes() {
+    let mimetype_str = String::from_utf8(buf).map_err(|_| OdfError::MalformedElement {
+        element: ENTRY_MIMETYPE.into(),
+        part: ENTRY_MIMETYPE.into(),
+        reason: "mimetype entry contains invalid UTF-8".into(),
+    })?;
+
+    if mimetype_str != MIME_ODT && mimetype_str != MIME_ODS {
         return Err(OdfError::MalformedElement {
             element: ENTRY_MIMETYPE.into(),
             part: ENTRY_MIMETYPE.into(),
             reason: format!(
-                "mimetype must contain {:?} with no trailing newline, \
+                "mimetype must contain either {:?} or {:?} with no trailing newline, \
                  found {:?}",
                 MIME_ODT,
-                String::from_utf8_lossy(&buf)
+                MIME_ODS,
+                mimetype_str
             ),
         });
     }
 
-    Ok(())
+    Ok(mimetype_str)
 }
 
 /// Read a named ZIP entry into a `Vec<u8>`, returning `None` if absent.

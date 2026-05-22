@@ -4,11 +4,12 @@
 //! Serialization: Loki document model → Loro CRDT containers.
 
 use super::BridgeError;
+use super::decode::{encode_alignment, encode_border, encode_line_height, encode_spacing};
 use super::inlines::map_inlines;
 use crate::content::block::Block;
 use crate::loro_schema::*;
 use crate::style::props::char_props::CharProps;
-use crate::style::props::para_props::{LineHeight, ParaProps, ParagraphAlignment, Spacing};
+use crate::style::props::para_props::ParaProps;
 use loro::{LoroMap, LoroMovableList, LoroText};
 
 // ── Block serialization ───────────────────────────────────────────────────────
@@ -123,11 +124,20 @@ pub(super) fn map_para_props(props: &ParaProps, map: &LoroMap) -> Result<(), Bri
     if let Some(v) = props.page_break_after {
         map.insert(PROP_PAGE_BREAK_AFTER, v)?;
     }
+    if let Some(v) = props.page_break_before {
+        map.insert(PROP_PAGE_BREAK_BEFORE, v)?;
+    }
     if let Some(v) = props.bidi {
         map.insert(PROP_BIDI, v)?;
     }
     if let Some(v) = props.widow_control {
         map.insert(PROP_WIDOW_CONTROL, i32::from(v))?;
+    }
+    if let Some(v) = props.orphan_control {
+        map.insert(PROP_ORPHAN_CONTROL, i32::from(v))?;
+    }
+    if let Some(v) = props.outline_level {
+        map.insert(PROP_OUTLINE_LEVEL, i32::from(v))?;
     }
     if let Some(v) = props.list_level {
         map.insert(PROP_LIST_LEVEL, i32::from(v))?;
@@ -143,6 +153,33 @@ pub(super) fn map_para_props(props: &ParaProps, map: &LoroMap) -> Result<(), Bri
     }
     if let Some(v) = &props.list_id {
         map.insert(PROP_LIST_ID, v.as_str())?;
+    }
+    if let Some(v) = &props.border_top {
+        map.insert(PROP_BORDER_TOP, encode_border(v))?;
+    }
+    if let Some(v) = &props.border_bottom {
+        map.insert(PROP_BORDER_BOTTOM, encode_border(v))?;
+    }
+    if let Some(v) = &props.border_left {
+        map.insert(PROP_BORDER_LEFT, encode_border(v))?;
+    }
+    if let Some(v) = &props.border_right {
+        map.insert(PROP_BORDER_RIGHT, encode_border(v))?;
+    }
+    if let Some(v) = &props.border_between {
+        map.insert(PROP_BORDER_BETWEEN, encode_border(v))?;
+    }
+    if let Some(v) = &props.padding_top {
+        map.insert(PROP_PADDING_TOP, v.value())?;
+    }
+    if let Some(v) = &props.padding_bottom {
+        map.insert(PROP_PADDING_BOTTOM, v.value())?;
+    }
+    if let Some(v) = &props.padding_left {
+        map.insert(PROP_PADDING_LEFT, v.value())?;
+    }
+    if let Some(v) = &props.padding_right {
+        map.insert(PROP_PADDING_RIGHT, v.value())?;
     }
     if let Some(v) = &props.tab_stops {
         map.insert(PROP_TAB_STOPS, format!("{:?}", v))?;
@@ -222,32 +259,14 @@ pub(super) fn map_char_props_to_map(props: &CharProps, map: &LoroMap) -> Result<
     if let Some(v) = &props.highlight_color {
         map.insert("highlight_color", format!("{v:?}"))?;
     }
+    if let Some(v) = &props.language {
+        map.insert("language", v.as_str())?;
+    }
+    if let Some(v) = &props.language_complex {
+        map.insert("language_complex", v.as_str())?;
+    }
+    if let Some(v) = &props.language_east_asian {
+        map.insert("language_east_asian", v.as_str())?;
+    }
     Ok(())
-}
-
-// ── Encode helpers ────────────────────────────────────────────────────────────
-
-pub(super) fn encode_alignment(a: &ParagraphAlignment) -> &'static str {
-    match a {
-        ParagraphAlignment::Left => "Left",
-        ParagraphAlignment::Right => "Right",
-        ParagraphAlignment::Center => "Center",
-        ParagraphAlignment::Justify => "Justify",
-        ParagraphAlignment::Distribute => "Distribute",
-    }
-}
-
-pub(super) fn encode_spacing(s: &Spacing) -> String {
-    match s {
-        Spacing::Exact(pts) => format!("Exact:{}", pts.value()),
-        Spacing::Percent(pct) => format!("Percent:{}", pct),
-    }
-}
-
-pub(super) fn encode_line_height(lh: &LineHeight) -> String {
-    match lh {
-        LineHeight::Exact(pts) => format!("Exact:{}", pts.value()),
-        LineHeight::AtLeast(pts) => format!("AtLeast:{}", pts.value()),
-        LineHeight::Multiple(m) => format!("Multiple:{}", m),
-    }
 }

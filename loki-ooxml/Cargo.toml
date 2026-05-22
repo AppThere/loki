@@ -17,6 +17,7 @@ pptx = []
 [dependencies]
 loki-opc       = { path = "../loki-opc" }
 loki-doc-model = { path = "../loki-doc-model" }
+loki-sheet-model = { path = "../loki-sheet-model" }
 loki-primitives = { path = "../loki-primitives" }
 appthere-color = "0.1.1"
 quick-xml      = { version = "0.36", features = ["serialize"] }

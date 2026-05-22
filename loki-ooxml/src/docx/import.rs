@@ -147,9 +147,7 @@ pub(crate) fn parse_and_map_package(
     options: &DocxImportOptions,
 ) -> OoxmlResult<(loki_doc_model::document::Document, Vec<OoxmlWarning>)> {
     // ── Locate the main document part ─────────────────────────────────
-    let doc_rel = package
-        .relationships()
-        .by_type(REL_OFFICE_DOCUMENT)
+    let doc_rel = rels_by_type(package.relationships(), REL_OFFICE_DOCUMENT)
         .next()
         .ok_or_else(|| OoxmlError::MissingPart {
             relationship_type: REL_OFFICE_DOCUMENT.to_owned(),
@@ -173,7 +171,7 @@ pub(crate) fn parse_and_map_package(
     let doc_rels = package.part_relationships(&doc_part_name);
 
     let raw_styles = if let Some(rels) = doc_rels {
-        if let Some(rel) = rels.by_type(REL_STYLES).next() {
+        if let Some(rel) = rels_by_type(rels, REL_STYLES).next() {
             let name = resolve_part_name(doc_part_name.as_str(), &rel.target)?;
             if let Some(part) = package.part(&name) {
                 Some(parse_styles(&part.bytes).map_err(|e| map_xml_err(e, name.as_str()))?)
@@ -227,12 +225,12 @@ pub(crate) fn parse_and_map_package(
     let mut footer_parts: HashMap<String, Vec<DocxParagraph>> = HashMap::new();
 
     if let Some(rels) = doc_rels {
-        for rel in rels.by_type(REL_HYPERLINK) {
+        for rel in rels_by_type(rels, REL_HYPERLINK) {
             hyperlinks.insert(rel.id.clone(), rel.target.clone());
         }
 
         if options.embed_images {
-            for rel in rels.by_type(REL_IMAGE) {
+            for rel in rels_by_type(rels, REL_IMAGE) {
                 if let Ok(img_name) = resolve_part_name(doc_part_name.as_str(), &rel.target)
                     && let Some(part) = package.part(&img_name)
                 {
@@ -241,7 +239,7 @@ pub(crate) fn parse_and_map_package(
             }
         }
 
-        for rel in rels.by_type(REL_HEADER) {
+        for rel in rels_by_type(rels, REL_HEADER) {
             if let Ok(name) = resolve_part_name(doc_part_name.as_str(), &rel.target)
                 && let Some(part) = package.part(&name)
                 && let Ok(paras) = parse_header_footer(&part.bytes, name.as_str())
@@ -250,7 +248,7 @@ pub(crate) fn parse_and_map_package(
             }
         }
 
-        for rel in rels.by_type(REL_FOOTER) {
+        for rel in rels_by_type(rels, REL_FOOTER) {
             if let Ok(name) = resolve_part_name(doc_part_name.as_str(), &rel.target)
                 && let Some(part) = package.part(&name)
                 && let Ok(paras) = parse_header_footer(&part.bytes, name.as_str())
@@ -300,6 +298,21 @@ fn resolve_part_name(base: &str, target: &str) -> OpcResult<PartName> {
     PartName::new(format!("{dir}{target}")).map_err(OoxmlError::Opc)
 }
 
+/// Helper to retrieve relationships by type supporting both transitional and strict namespaces.
+fn rels_by_type<'a>(
+    rels: &'a loki_opc::RelationshipSet,
+    transitional_type: &str,
+) -> impl Iterator<Item = &'a loki_opc::Relationship> {
+    let strict_type = transitional_type.replace(
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/",
+        "http://purl.oclc.org/ooxml/officeDocument/relationships/",
+    );
+    let strict_owned = strict_type;
+    let trans_owned = transitional_type.to_owned();
+    rels.iter()
+        .filter(move |r| r.rel_type == trans_owned || r.rel_type == strict_owned)
+}
+
 type OpcResult<T> = Result<T, OoxmlError>;
 
 /// Resolves an optional related part by relationship type and parses it.
@@ -319,7 +332,7 @@ where
     let Some(rels) = doc_rels else {
         return Ok(None);
     };
-    let Some(rel) = rels.by_type(rel_type).next() else {
+    let Some(rel) = rels_by_type(rels, rel_type).next() else {
         return Ok(None);
     };
     let part_name = resolve_part_name(base_part, &rel.target)?;

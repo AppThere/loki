@@ -417,6 +417,7 @@ fn parse_para_props_element(e: &quick_xml::events::BytesStart<'_>) -> OdfParaPro
         padding: local_attr_val(e, b"padding"),
         background_color: local_attr_val(e, b"background-color"),
         tab_stops: Vec::new(),
+        writing_mode: local_attr_val(e, b"writing-mode"),
     }
 }
 
@@ -445,7 +446,12 @@ fn parse_para_props_with_children(
                 if e.local_name().into_inner() == b"tab-stop" {
                     let position = local_attr_val(e, b"position").unwrap_or_default();
                     let tab_type = local_attr_val(e, b"type");
-                    pp.tab_stops.push(OdfTabStop { position, tab_type });
+                    let leader_style = local_attr_val(e, b"leader-style");
+                    pp.tab_stops.push(OdfTabStop {
+                        position,
+                        tab_type,
+                        leader_style,
+                    });
                 }
             }
             Ok(Event::End(ref e)) => {
@@ -479,7 +485,12 @@ fn parse_tab_stops(reader: &mut Reader<&[u8]>) -> OdfResult<Vec<OdfTabStop>> {
                 if e.local_name().into_inner() == b"tab-stop" {
                     let position = local_attr_val(e, b"position").unwrap_or_default();
                     let tab_type = local_attr_val(e, b"type");
-                    stops.push(OdfTabStop { position, tab_type });
+                    let leader_style = local_attr_val(e, b"leader-style");
+                    stops.push(OdfTabStop {
+                        position,
+                        tab_type,
+                        leader_style,
+                    });
                 }
             }
             Ok(Event::End(ref e)) => {
@@ -524,6 +535,15 @@ fn parse_text_props_attrs(e: &quick_xml::events::BytesStart<'_>) -> OdfTextProps
         letter_spacing: local_attr_val(e, b"letter-spacing"),
         font_size_complex: local_attr_val(e, b"font-size-complex"),
         font_name_complex: local_attr_val(e, b"font-name-complex"),
+        font_name_asian: local_attr_val(e, b"font-name-asian"),
+        text_outline: local_attr_val(e, b"text-outline").map(|v| v != "false"),
+        word_spacing: local_attr_val(e, b"word-spacing"),
+        letter_kerning: local_attr_val(e, b"letter-kerning").map(|v| v == "true"),
+        text_scale: local_attr_val(e, b"text-scale"),
+        language_complex: local_attr_val(e, b"language-complex"),
+        country_complex: local_attr_val(e, b"country-complex"),
+        language_asian: local_attr_val(e, b"language-asian"),
+        country_asian: local_attr_val(e, b"country-asian"),
     }
 }
 

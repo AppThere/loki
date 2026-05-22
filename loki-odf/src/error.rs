@@ -125,4 +125,11 @@ pub enum OdfWarning {
         /// Local element name of the preserved element.
         element: String,
     },
+
+    /// A `draw:frame` was encountered whose content kind is not modelled
+    /// (e.g. OLE objects, charts). Its content is dropped.
+    DroppedFrame {
+        /// `draw:name` of the frame, if present.
+        name: Option<String>,
+    },
 }

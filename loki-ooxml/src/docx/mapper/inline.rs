@@ -59,10 +59,15 @@ pub(crate) fn map_inlines(children: &[DocxParaChild], ctx: &mut MappingContext<'
             }
             DocxParaChild::Hyperlink(h) => {
                 let url = if let Some(rel_id) = &h.rel_id {
-                    ctx.hyperlinks
-                        .get(rel_id)
-                        .cloned()
-                        .unwrap_or_else(|| format!("#{rel_id}"))
+                    if let Some(target) = ctx.hyperlinks.get(rel_id) {
+                        target.clone()
+                    } else {
+                        ctx.warnings.push(OoxmlWarning::UnresolvedRelationship {
+                            id: rel_id.clone(),
+                            context: "hyperlink".to_string(),
+                        });
+                        format!("#{rel_id}")
+                    }
                 } else if let Some(anchor) = &h.anchor {
                     format!("#{anchor}")
                 } else {
@@ -182,8 +187,8 @@ fn process_run_child(
         DocxRunChild::Break { break_type } => {
             if matches!(state, FieldState::Normal) {
                 match break_type.as_deref() {
-                    // Page break is surfaced at the paragraph level via page_break_after.
-                    // TODO(column-break): column breaks are not yet modelled; treat as no-op.
+                    // Page and column breaks are promoted to paragraph-level flags
+                    // (page_break_after / column_break_after) in map_paragraph.
                     Some("page" | "column") => {}
                     _ => raw.push(Inline::LineBreak),
                 }

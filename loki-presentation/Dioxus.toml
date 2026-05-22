@@ -1,0 +1,13 @@
+# Dioxus CLI configuration for loki-presentation.
+#
+# Run serve from inside loki-presentation/ or with --package loki-presentation.
+
+[application]
+name = "loki-presentation"
+
+[bundle]
+identifier = "com.appthere.loki.presentation"
+publisher = "AppThere"
+
+[android]
+min_sdk_version = 26

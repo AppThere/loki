@@ -11,7 +11,7 @@ use crate::docx::model::paragraph::{DocxParaChild, DocxParagraph, DocxRunChild};
 
 use super::document::MappingContext;
 use super::inline::map_inlines;
-use super::props::map_ppr;
+use super::props::{map_ppr, map_rpr};
 
 /// Maps a `w:p` paragraph to zero or more [`Block`]s.
 ///
@@ -35,6 +35,20 @@ pub(crate) fn map_paragraph(p: &DocxParagraph, ctx: &mut MappingContext<'_>) -> 
         para_props
             .get_or_insert_with(Default::default)
             .page_break_after = Some(true);
+    }
+
+    // Detect `<w:br w:type="column"/>` and promote to column_break_after.
+    let has_column_break = p.children.iter().any(|child| match child {
+        DocxParaChild::Run(run) => run
+            .children
+            .iter()
+            .any(|rc| matches!(rc, DocxRunChild::Break { break_type: Some(t) } if t == "column")),
+        _ => false,
+    });
+    if has_column_break {
+        para_props
+            .get_or_insert_with(Default::default)
+            .column_break_after = Some(true);
     }
 
     let style_id = p
@@ -78,10 +92,16 @@ pub(crate) fn map_paragraph(p: &DocxParagraph, ctx: &mut MappingContext<'_>) -> 
         return vec![Block::Heading(level, attr, inlines)];
     }
 
+    let direct_char_props = p
+        .ppr
+        .as_ref()
+        .and_then(|ppr| ppr.ppr_rpr.as_ref())
+        .map(|rpr| Box::new(map_rpr(rpr)));
+
     vec![Block::StyledPara(StyledParagraph {
         style_id,
         direct_para_props: para_props.map(Box::new),
-        direct_char_props: None,
+        direct_char_props,
         inlines,
         attr: NodeAttr::default(),
     })]

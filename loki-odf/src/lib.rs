@@ -42,12 +42,15 @@
 
 pub mod constants;
 pub mod error;
+pub mod ods;
 pub mod odt;
 pub mod package;
 pub mod version;
 pub(crate) mod xml_util;
 
 pub use error::{OdfError, OdfResult, OdfWarning};
+pub use ods::export::{OdsExport, OdsExportOptions};
+pub use ods::import::{OdsImport, OdsImportOptions, OdsImportResult};
 pub use odt::export::OdtExport;
 pub use odt::import::{OdtImport, OdtImportOptions, OdtImportResult};
 pub use version::OdfVersion;
