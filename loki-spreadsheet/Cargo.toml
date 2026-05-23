@@ -32,7 +32,7 @@ loki-vello      = { path = "../loki-vello" }
 # Shared AppThere design tokens and UI components.
 appthere-ui     = { path = "../appthere-ui" }
 # Cross-platform file picker.
-loki-file-access = "0.1.1"
+loki-file-access.workspace = true
 # Typed error derivation.
 thiserror       = "2"
 # Vello/wgpu integration point for custom GPU paint sources.
