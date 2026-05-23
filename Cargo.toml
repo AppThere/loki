@@ -8,6 +8,7 @@ dioxus    = { version = "0.7", features = ["native"] }
 thiserror = "2"
 appthere-canvas = { path = "appthere-canvas", features = ["gpu", "dioxus", "font-cache"] }
 loki-file-access = { git = "https://github.com/appthere/loki-file-access", branch = "main" }
+android-activity = "0.6"
 
 [patch.crates-io]
 # PATCH: fixes missing fontconfig_sys alias and dlopen/static feature-unification

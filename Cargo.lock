@@ -3909,6 +3909,7 @@ dependencies = [
 name = "loki-presentation"
 version = "0.1.0"
 dependencies = [
+ "android-activity",
  "anyrender_vello",
  "appthere-ui",
  "dioxus",
@@ -3988,6 +3989,7 @@ dependencies = [
 name = "loki-spreadsheet"
 version = "0.1.0"
 dependencies = [
+ "android-activity",
  "anyrender_vello",
  "appthere-ui",
  "dioxus",
@@ -4018,6 +4020,7 @@ dependencies = [
 name = "loki-text"
 version = "0.1.0"
 dependencies = [
+ "android-activity",
  "anyrender_vello",
  "appthere-ui",
  "dioxus",

@@ -73,3 +73,6 @@ compile_sdk_version = 34
 
 [package.metadata.android.application]
 label = "Loki Spreadsheet"
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { workspace = true }
