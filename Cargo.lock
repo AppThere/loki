@@ -280,6 +280,7 @@ version = "0.1.0"
 dependencies = [
  "dioxus",
  "peniko",
+ "read-fonts 0.37.0",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -3884,7 +3885,9 @@ dependencies = [
  "loki-opc",
  "loki-primitives",
  "loki-sheet-model",
+ "parley 0.8.0",
  "quick-xml 0.36.2",
+ "read-fonts 0.37.0",
  "thiserror 2.0.18",
  "zip",
 ]
@@ -4054,6 +4057,8 @@ dependencies = [
  "loki-ooxml",
  "peniko",
  "pollster 0.4.0",
+ "read-fonts 0.37.0",
+ "skrifa 0.40.0",
  "thiserror 2.0.18",
  "vello",
  "wgpu 26.0.1",

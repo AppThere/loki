@@ -257,6 +257,21 @@ fn load_font<'a>(
             let font_info = family.fonts().get(family_index)?;
             let blob = font_info.load(Some(source_cache))?;
             let blob_index = font_info.index();
+
+            #[cfg(debug_assertions)]
+            if family.name().contains("Calibri") || family.name().contains("calibri") {
+                if let Ok(font_ref) = read_fonts::FontRef::from_index(blob.as_ref(), blob_index) {
+                    use read_fonts::TableProvider;
+                    let units_per_em = font_ref.head().map(|head| head.units_per_em()).unwrap_or(0);
+                    std::eprintln!(
+                        "FONT RESOLUTION: requested=Calibri, resolved_family={}, units_per_em={}, blob_index={}",
+                        family.name(),
+                        units_per_em,
+                        blob_index
+                    );
+                }
+            }
+
             let synthesis =
                 font_info.synthesis(attributes.width, attributes.style, attributes.weight);
             *status = Entry::Ok(QueryFont {

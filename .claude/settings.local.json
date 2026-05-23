@@ -17,7 +17,9 @@
       "Bash(awk '/CharProps/,/^impl/')",
       "Bash(Select-Object -First 10)",
       "Bash(xargs grep -l \"paragraph-properties\")",
-      "Bash(echo \"NOT_FOUND_$?\")"
+      "Bash(echo \"NOT_FOUND_$?\")",
+      "Bash(git stash *)",
+      "Bash(cargo build *)"
     ]
   },
   "enableAllProjectMcpServers": true,

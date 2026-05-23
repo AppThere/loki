@@ -51,7 +51,7 @@ fn main() {
         layout_document(
             &mut font_resources,
             &document,
-            LayoutMode::Pageless,
+            LayoutMode::Paginated,
             1.0,
             &loki_layout::LayoutOptions::default(),
         )
@@ -102,8 +102,16 @@ fn main() {
 
     let t_layout = t0.elapsed();
 
-    let canvas_width = (layout.content_width() + 32.0) as u32;
-    let canvas_height = (layout.total_height() + 32.0) as u32;
+    let page_index = if input_path.is_some() { Some(0) } else { None };
+
+    let (canvas_width, canvas_height) = match &layout {
+        DocumentLayout::Paginated(pl) if page_index.is_some() => {
+            ((pl.page_size.width + 32.0) as u32, (pl.page_size.height + 32.0) as u32)
+        }
+        _ => {
+            ((layout.content_width() + 32.0) as u32, (layout.total_height() + 32.0) as u32)
+        }
+    };
 
     // ── 2. Build Vello scene ──────────────────────────────────────────────────
     let t1 = std::time::Instant::now();
@@ -115,7 +123,7 @@ fn main() {
         &mut font_cache,
         (16.0, 16.0),
         1.0,
-        None,
+        page_index,
     );
     let t_scene = t1.elapsed();
 

@@ -580,8 +580,16 @@ fn paint_items(
                     (content_height * scale) as f64,
                 );
 
+                // COMPAT(vello-0.6): push_layer's `transform` only applies to
+                // the clip shape, NOT to content drawn inside the layer (see
+                // Vello 0.6 Scene::push_layer docs). To rotate actual content
+                // we draw into a temporary scene and append it with the
+                // rotation transform via Scene::append, which DOES transform
+                // all drawing operations.
                 scene.push_layer(BlendMode::default(), 1.0, transform, &local_clip);
-                paint_items(scene, items, font_cache, (0.0, 0.0), scale);
+                let mut rotated_scene = vello::Scene::new();
+                paint_items(&mut rotated_scene, items, font_cache, (0.0, 0.0), scale);
+                scene.append(&rotated_scene, Some(transform));
                 scene.pop_layer();
             }
             _ => {

@@ -39,6 +39,18 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::must_use_candidate)]
+#![allow(clippy::collapsible_if)]
+#![allow(clippy::too_many_lines)]
+// Pre-existing patterns in ods/export.rs and ods/import.rs — structural refactor deferred
+#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::format_push_string)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::needless_raw_string_hashes)]
+#![allow(clippy::unnested_or_patterns)]
+#![allow(clippy::bool_to_int_with_if)]
+#![allow(clippy::needless_range_loop)]
+#![allow(clippy::single_match)]
+#![allow(clippy::if_not_else)]
 
 pub mod constants;
 pub mod error;

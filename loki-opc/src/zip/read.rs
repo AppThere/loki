@@ -28,6 +28,9 @@ pub fn read_package_from_zip<R: Read + Seek>(reader: &mut R) -> OpcResult<Packag
 
     let mut ct_xml = Vec::new();
     zip.by_index(ct_index)?.read_to_end(&mut ct_xml)?;
+    if let Some(transcoded) = transcode_utf16_to_utf8(&ct_xml) {
+        ct_xml = transcoded;
+    }
 
     let ctm = parse_content_types(&ct_xml, &mut pkg.warnings)?;
     *pkg.content_type_map_mut() = ctm.clone();
@@ -69,6 +72,9 @@ pub fn read_package_from_zip<R: Read + Seek>(reader: &mut R) -> OpcResult<Packag
 
         let mut data = Vec::new();
         file.read_to_end(&mut data)?;
+        if name.as_str().ends_with(".xml") || name.as_str().ends_with(".rels") {
+            data = transcode_utf16_to_utf8(&data).unwrap_or(data);
+        }
 
         let media_type = ctm.resolve(&name).unwrap_or("").to_string();
         if media_type.is_empty() {
@@ -165,4 +171,31 @@ pub fn read_package_from_zip<R: Read + Seek>(reader: &mut R) -> OpcResult<Packag
     }
 
     Ok(pkg)
+}
+
+/// Transcode a UTF-16 (BE or LE) XML buffer to UTF-8 on the fly.
+fn transcode_utf16_to_utf8(buf: &[u8]) -> Option<Vec<u8>> {
+    if buf.len() < 2 {
+        return None;
+    }
+    let big_endian = match (buf[0], buf[1]) {
+        (0xFE, 0xFF) => true,
+        (0xFF, 0xFE) => false,
+        _ => return None,
+    };
+
+    let u16_data: Vec<u16> = if big_endian {
+        buf[2..]
+            .chunks_exact(2)
+            .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+            .collect()
+    } else {
+        buf[2..]
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect()
+    };
+
+    let string = String::from_utf16_lossy(&u16_data);
+    Some(string.into_bytes())
 }

@@ -23,6 +23,7 @@ use loki_doc_model::layout::header_footer::HeaderFooter;
 use loki_doc_model::layout::page::PageLayout;
 use loki_doc_model::style::list_style::ListId;
 use loki_doc_model::{NodeAttr, Section, StyleCatalog};
+use loki_primitives::units::Points;
 
 use crate::LayoutOptions;
 use crate::color::LayoutColor;
@@ -288,37 +289,59 @@ fn flow_block(state: &mut FlowState, block: &Block, idx: usize) {
         }
         Block::BulletList(items) => {
             let old_indent = state.current_indent;
-            state.current_indent += 18.0;
+            let list_indent = old_indent + 18.0;
             for item in items {
                 for (b_idx, b) in item.iter().enumerate() {
                     if b_idx == 0
                         && let Block::StyledPara(p) = b
                     {
                         let mut p = p.clone();
-                        p.inlines.insert(0, Inline::Str("• ".into()));
+                        p.inlines.insert(0, Inline::Str("•\t".into()));
+                        let mut direct = p.direct_para_props.take().unwrap_or_default();
+                        direct.indent_hanging = Some(Points::new(18.0));
+                        direct.indent_start = Some(Points::new(list_indent as f64));
+                        p.direct_para_props = Some(direct);
+
+                        let prev_indent = state.current_indent;
+                        state.current_indent = 0.0;
                         flow_paragraph(state, &p, idx);
+                        state.current_indent = prev_indent;
                         continue;
                     }
+                    let prev_indent = state.current_indent;
+                    state.current_indent = list_indent;
                     flow_block(state, b, idx);
+                    state.current_indent = prev_indent;
                 }
             }
             state.current_indent = old_indent;
         }
         Block::OrderedList(attrs, items) => {
             let old_indent = state.current_indent;
-            state.current_indent += 18.0;
+            let list_indent = old_indent + 18.0;
             for (i, item) in items.iter().enumerate() {
-                let marker = format!("{}. ", attrs.start_number + i as i32);
+                let marker = format!("{}.\t", attrs.start_number + i as i32);
                 for (b_idx, b) in item.iter().enumerate() {
                     if b_idx == 0
                         && let Block::StyledPara(p) = b
                     {
                         let mut p = p.clone();
                         p.inlines.insert(0, Inline::Str(marker.clone()));
+                        let mut direct = p.direct_para_props.take().unwrap_or_default();
+                        direct.indent_hanging = Some(Points::new(18.0));
+                        direct.indent_start = Some(Points::new(list_indent as f64));
+                        p.direct_para_props = Some(direct);
+
+                        let prev_indent = state.current_indent;
+                        state.current_indent = 0.0;
                         flow_paragraph(state, &p, idx);
+                        state.current_indent = prev_indent;
                         continue;
                     }
+                    let prev_indent = state.current_indent;
+                    state.current_indent = list_indent;
                     flow_block(state, b, idx);
+                    state.current_indent = prev_indent;
                 }
             }
             state.current_indent = old_indent;
@@ -723,6 +746,71 @@ fn measure_cell_height(
     }
 }
 
+fn resolve_column_widths(
+    state: &FlowState,
+    tbl: &loki_doc_model::content::table::core::Table,
+) -> Vec<f32> {
+    use loki_doc_model::content::table::col::{ColWidth, TableWidth};
+
+    let col_count = tbl.col_count().max(1);
+    let table_width = match tbl.width.as_ref() {
+        Some(TableWidth::Fixed(w)) => *w,
+        Some(TableWidth::Percent(p)) => state.content_width * (p / 100.0),
+        _ => state.content_width,
+    };
+    let table_width = table_width.max(0.0);
+
+    let mut resolved_widths = vec![0.0f32; col_count];
+    let mut proportional_shares = vec![0.0f32; col_count];
+    let mut total_fixed_width = 0.0f32;
+    let mut total_proportional_shares = 0.0f32;
+
+    for i in 0..col_count {
+        let spec = tbl.col_specs.get(i);
+        let width_spec = spec.map(|s| s.width).unwrap_or(ColWidth::Default);
+        match width_spec {
+            ColWidth::Fixed(pts) => {
+                let w = pts_to_f32(pts);
+                resolved_widths[i] = w;
+                total_fixed_width += w;
+            }
+            ColWidth::Proportional(share) => {
+                proportional_shares[i] = share;
+                total_proportional_shares += share;
+            }
+            ColWidth::Default | _ => {
+                proportional_shares[i] = 1.0;
+                total_proportional_shares += 1.0;
+            }
+        }
+    }
+
+    let remaining_width = (table_width - total_fixed_width).max(0.0);
+    if total_proportional_shares > 0.0 {
+        let share_unit = remaining_width / total_proportional_shares;
+        for i in 0..col_count {
+            let spec = tbl.col_specs.get(i);
+            let width_spec = spec.map(|s| s.width).unwrap_or(ColWidth::Default);
+            match width_spec {
+                ColWidth::Proportional(_) | ColWidth::Default => {
+                    resolved_widths[i] = proportional_shares[i] * share_unit;
+                }
+                _ => {}
+            }
+        }
+    } else if total_fixed_width > 0.0 {
+        let scale = table_width / total_fixed_width;
+        for w in &mut resolved_widths {
+            *w *= scale;
+        }
+    } else {
+        let uniform_w = table_width / col_count as f32;
+        resolved_widths.fill(uniform_w);
+    }
+
+    resolved_widths
+}
+
 // Helper to layout cell blocks inside a nested flow state.
 // Helper requires passing all context values to configure the FlowState.
 #[allow(clippy::too_many_arguments)]
@@ -772,10 +860,9 @@ fn flow_table(
     tbl: &loki_doc_model::content::table::core::Table,
     idx: usize,
 ) {
-    use loki_doc_model::content::table::row::CellTextDirection;
+    use loki_doc_model::content::table::row::{CellTextDirection, CellVerticalAlign};
 
-    let col_count = tbl.col_count().max(1);
-    let col_w = state.content_width / col_count as f32;
+    let col_widths = resolve_column_widths(state, tbl);
 
     let mut rows = Vec::new();
     rows.extend(&tbl.head.rows);
@@ -789,11 +876,14 @@ fn flow_table(
 
     // Pass 1: Measure all cells with row_span == 1
     for (row_idx, row) in rows.iter().enumerate() {
+        let mut col_start = 0;
         for cell in &row.cells {
+            let col_end = (col_start + cell.col_span as usize).min(col_widths.len());
             if cell.row_span == 1 {
                 let pad_left = cell.props.padding_left.map(pts_to_f32).unwrap_or(0.0);
                 let pad_right = cell.props.padding_right.map(pts_to_f32).unwrap_or(0.0);
-                let cell_content_width = (col_w - pad_left - pad_right).max(0.0);
+                let cell_w: f32 = col_widths[col_start..col_end].iter().sum();
+                let cell_content_width = (cell_w - pad_left - pad_right).max(0.0);
                 let h = measure_cell_height(
                     state.resources,
                     state.catalog,
@@ -805,13 +895,16 @@ fn flow_table(
                 );
                 row_heights[row_idx] = row_heights[row_idx].max(h);
             }
+            col_start = col_end;
         }
         row_heights[row_idx] = row_heights[row_idx].max(crate::MIN_ROW_HEIGHT);
     }
 
     // Pass 2: Distribute spanning cell heights across spanned rows
     for (row_idx, row) in rows.iter().enumerate() {
+        let mut col_start = 0;
         for cell in &row.cells {
+            let col_end = (col_start + cell.col_span as usize).min(col_widths.len());
             if cell.row_span > 1 {
                 let span = cell.row_span as usize;
                 let spanned_height: f32 = row_heights
@@ -820,7 +913,8 @@ fn flow_table(
                     .sum();
                 let pad_left = cell.props.padding_left.map(pts_to_f32).unwrap_or(0.0);
                 let pad_right = cell.props.padding_right.map(pts_to_f32).unwrap_or(0.0);
-                let cell_content_width = (col_w - pad_left - pad_right).max(0.0);
+                let cell_w: f32 = col_widths[col_start..col_end].iter().sum();
+                let cell_content_width = (cell_w - pad_left - pad_right).max(0.0);
                 let needed = measure_cell_height(
                     state.resources,
                     state.catalog,
@@ -836,6 +930,7 @@ fn flow_table(
                     row_heights[last] += extra;
                 }
             }
+            col_start = col_end;
         }
     }
 
@@ -859,7 +954,9 @@ fn flow_table(
         let mut cell_starts = Vec::new();
 
         // Pass 3a: Flow cell content blocks
+        let mut col_start = 0;
         for (c_idx, cell) in row.cells.iter().enumerate() {
+            let col_end = (col_start + cell.col_span as usize).min(col_widths.len());
             let old_indent = state.current_indent;
             let old_width = state.content_width;
 
@@ -868,8 +965,9 @@ fn flow_table(
             let pad_left = cell.props.padding_left.map(pts_to_f32).unwrap_or(0.0);
             let pad_right = cell.props.padding_right.map(pts_to_f32).unwrap_or(0.0);
 
-            let cell_x = old_indent + (c_idx as f32 * col_w);
-            let cell_content_width = (col_w - pad_left - pad_right).max(0.0);
+            let cell_w: f32 = col_widths[col_start..col_end].iter().sum();
+            let cell_x = old_indent + col_widths[0..col_start].iter().sum::<f32>();
+            let cell_content_width = (cell_w - pad_left - pad_right).max(0.0);
 
             let cell_height = if cell.row_span == 1 {
                 row_max_h
@@ -921,10 +1019,20 @@ fn flow_table(
                     idx,
                 );
 
+                let max_x = get_items_max_x(&inner_items);
+                let content_visual_height = max_x;
+                let cell_avail_h = (cell_height - pad_top - pad_bottom).max(0.0);
+                let extra_space = (cell_avail_h - content_visual_height).max(0.0);
+                let y_offset = match cell.props.vertical_align {
+                    Some(CellVerticalAlign::Middle) => extra_space / 2.0,
+                    Some(CellVerticalAlign::Bottom) => extra_space,
+                    _ => 0.0,
+                };
+
                 vec![PositionedItem::RotatedGroup {
                     origin: LayoutPoint {
                         x: cell_x,
-                        y: row_y_start,
+                        y: row_y_start + y_offset,
                     },
                     degrees,
                     content_width: cell_height,
@@ -938,6 +1046,26 @@ fn flow_table(
                 for block in &cell.blocks {
                     flow_block(state, block, idx);
                 }
+
+                // If it fits on a single page, apply vertical alignment
+                let cell_page_start = cell_starts[c_idx].0;
+                let cell_item_start = cell_starts[c_idx].1;
+                if cell_page_start == state.page_number {
+                    let content_h = (state.cursor_y - (row_y_start + pad_top)).max(0.0);
+                    let cell_avail_h = (cell_height - pad_top - pad_bottom).max(0.0);
+                    let extra_space = (cell_avail_h - content_h).max(0.0);
+                    let y_offset = match cell.props.vertical_align {
+                        Some(CellVerticalAlign::Middle) => extra_space / 2.0,
+                        Some(CellVerticalAlign::Bottom) => extra_space,
+                        _ => 0.0,
+                    };
+                    if y_offset > 0.0 {
+                        for item in &mut state.current_items[cell_item_start..] {
+                            item.translate(0.0, y_offset);
+                        }
+                    }
+                }
+
                 Vec::new()
             };
 
@@ -947,6 +1075,7 @@ fn flow_table(
 
             state.current_indent = old_indent;
             state.content_width = old_width;
+            col_start = col_end;
         }
 
         let row_page_end = state.page_number;
@@ -997,6 +1126,15 @@ fn flow_table(
 
         // Pass 3b: Emit background and border decorations for this row's cells
         for p in original_row_page..=row_page_end {
+            let mut col_start_map = Vec::new();
+            {
+                let mut curr_col = 0;
+                for cell in &row.cells {
+                    col_start_map.push(curr_col);
+                    curr_col = (curr_col + cell.col_span as usize).min(col_widths.len());
+                }
+            }
+
             for (c_idx, cell) in row.cells.iter().enumerate().rev() {
                 let cell_page_start = cell_starts[c_idx].0;
                 let cell_item_start = cell_starts[c_idx].1;
@@ -1020,11 +1158,14 @@ fn flow_table(
                 }
 
                 let y = get_cell_y_on_page(p);
-                let cell_x = table_indent + (c_idx as f32 * col_w);
+                let col_start = col_start_map[c_idx];
+                let col_end = (col_start + cell.col_span as usize).min(col_widths.len());
+                let cell_w: f32 = col_widths[col_start..col_end].iter().sum();
+                let cell_x = table_indent + col_widths[0..col_start].iter().sum::<f32>();
                 let cell_rect = LayoutRect {
                     origin: LayoutPoint { x: cell_x, y },
                     size: LayoutSize {
-                        width: col_w,
+                        width: cell_w,
                         height: h,
                     },
                 };

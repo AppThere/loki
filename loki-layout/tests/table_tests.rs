@@ -271,3 +271,168 @@ fn test_table_min_row_height() {
     assert_eq!(bg_rects.len(), 1);
     assert_eq!(bg_rects[0].rect.height(), loki_layout::MIN_ROW_HEIGHT);
 }
+
+#[test]
+fn test_table_non_uniform_columns() {
+    let mut r = test_resources();
+    let bg = Some(DocumentColor::Rgb(appthere_color::RgbColor::new(
+        1.0, 0.0, 0.0,
+    )));
+
+    let c0 = make_cell_tall(vec!["Col 0"], bg.clone(), 1);
+    let c1 = make_cell_tall(vec!["Col 1"], bg.clone(), 1);
+    let c2 = make_cell_tall(vec!["Col 2"], bg.clone(), 1);
+
+    let row = Row::new(vec![c0, c1, c2]);
+    let table = Block::Table(Box::new(Table {
+        attr: loki_doc_model::content::attr::NodeAttr::default(),
+        caption: Default::default(),
+        width: Some(loki_doc_model::content::table::col::TableWidth::Fixed(
+            300.0,
+        )),
+        col_specs: vec![
+            ColSpec {
+                alignment: ColAlignment::Default,
+                width: ColWidth::Fixed(loki_primitives::units::Points::new(100.0)),
+            },
+            ColSpec {
+                alignment: ColAlignment::Default,
+                width: ColWidth::Proportional(1.0),
+            },
+            ColSpec {
+                alignment: ColAlignment::Default,
+                width: ColWidth::Proportional(2.0),
+            },
+        ],
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![row])],
+        foot: TableFoot::empty(),
+    }));
+
+    let section = Section {
+        layout: PageLayout::default(),
+        blocks: vec![table],
+        extensions: ExtensionBag::default(),
+    };
+
+    let (items, _) = flow_pageless(&mut r, &section);
+    let bg_rects: Vec<_> = items
+        .iter()
+        .filter_map(|i| match i {
+            PositionedItem::FilledRect(rect) => Some(rect),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(bg_rects.len(), 3, "Should have 3 cell background rects");
+
+    let w0 = bg_rects[0].rect.width();
+    let w1 = bg_rects[1].rect.width();
+    let w2 = bg_rects[2].rect.width();
+
+    assert!(
+        (w0 - 100.0).abs() < 1e-3,
+        "Col 0 width: expected 100, got {}",
+        w0
+    );
+    assert!(
+        (w1 - 66.6666).abs() < 1e-1,
+        "Col 1 width: expected ~66.7, got {}",
+        w1
+    );
+    assert!(
+        (w2 - 133.3333).abs() < 1e-1,
+        "Col 2 width: expected ~133.3, got {}",
+        w2
+    );
+}
+
+#[test]
+fn test_table_cell_vertical_alignment() {
+    use loki_doc_model::content::table::row::CellVerticalAlign;
+    let mut r = test_resources();
+
+    // Column 0: A tall cell with multiple paragraphs to stretch the row height.
+    let c0 = make_cell_tall(vec!["Line 1", "Line 2", "Line 3", "Line 4"], None, 1);
+
+    // Column 1: A short cell with middle alignment.
+    let mut c1 = make_cell_tall(vec!["Middle"], None, 1);
+    c1.props.vertical_align = Some(CellVerticalAlign::Middle);
+
+    // Column 2: A short cell with bottom alignment.
+    let mut c2 = make_cell_tall(vec!["Bottom"], None, 1);
+    c2.props.vertical_align = Some(CellVerticalAlign::Bottom);
+
+    let row = Row::new(vec![c0, c1, c2]);
+    let table = Block::Table(Box::new(Table {
+        attr: loki_doc_model::content::attr::NodeAttr::default(),
+        caption: Default::default(),
+        width: Some(loki_doc_model::content::table::col::TableWidth::Fixed(
+            300.0,
+        )),
+        col_specs: vec![
+            ColSpec {
+                alignment: ColAlignment::Default,
+                width: ColWidth::Fixed(loki_primitives::units::Points::new(100.0)),
+            },
+            ColSpec {
+                alignment: ColAlignment::Default,
+                width: ColWidth::Fixed(loki_primitives::units::Points::new(100.0)),
+            },
+            ColSpec {
+                alignment: ColAlignment::Default,
+                width: ColWidth::Fixed(loki_primitives::units::Points::new(100.0)),
+            },
+        ],
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![row])],
+        foot: TableFoot::empty(),
+    }));
+
+    let section = Section {
+        layout: PageLayout::default(),
+        blocks: vec![table],
+        extensions: ExtensionBag::default(),
+    };
+
+    let (items, _) = flow_pageless(&mut r, &section);
+
+    let glyph_runs: Vec<_> = items
+        .iter()
+        .filter_map(|i| match i {
+            PositionedItem::GlyphRun(run) => Some(run),
+            _ => None,
+        })
+        .collect();
+
+    // Group runs by their x coordinate (relative to each other: x0 < x1 < x2).
+    let run0 = glyph_runs
+        .iter()
+        .find(|run| run.origin.x < 150.0)
+        .expect("col 0 run");
+    let run1 = glyph_runs
+        .iter()
+        .find(|run| run.origin.x >= 150.0 && run.origin.x < 250.0)
+        .expect("col 1 run");
+    let run2 = glyph_runs
+        .iter()
+        .find(|run| run.origin.x >= 250.0)
+        .expect("col 2 run");
+
+    let y0 = run0.origin.y;
+    let y1 = run1.origin.y;
+    let y2 = run2.origin.y;
+
+    assert!(
+        y0 < y1,
+        "Middle-aligned run y ({}) should be below top-aligned run y ({})",
+        y1,
+        y0
+    );
+    assert!(
+        y1 < y2,
+        "Bottom-aligned run y ({}) should be below middle-aligned run y ({})",
+        y2,
+        y1
+    );
+}

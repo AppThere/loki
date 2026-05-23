@@ -244,9 +244,8 @@ fn validate_mimetype<R: Read + Seek>(archive: &mut ZipArchive<R>) -> OdfResult<S
             element: ENTRY_MIMETYPE.into(),
             part: ENTRY_MIMETYPE.into(),
             reason: format!(
-                "mimetype must contain either {:?} or {:?} with no trailing newline, \
-                 found {:?}",
-                MIME_ODT, MIME_ODS, mimetype_str
+                "mimetype must contain either {MIME_ODT:?} or {MIME_ODS:?} with no trailing newline, \
+                 found {mimetype_str:?}"
             ),
         });
     }
@@ -263,11 +262,42 @@ fn read_entry<R: Read + Seek>(
         Ok(mut entry) => {
             let mut buf = Vec::new();
             entry.read_to_end(&mut buf)?;
-            Ok(Some(buf))
+            if let Some(transcoded) = transcode_utf16_to_utf8(&buf) {
+                Ok(Some(transcoded))
+            } else {
+                Ok(Some(buf))
+            }
         }
         Err(zip::result::ZipError::FileNotFound) => Ok(None),
         Err(e) => Err(OdfError::Zip(e)),
     }
+}
+
+/// Transcode a UTF-16 (BE or LE) XML buffer to UTF-8 on the fly.
+fn transcode_utf16_to_utf8(buf: &[u8]) -> Option<Vec<u8>> {
+    if buf.len() < 2 {
+        return None;
+    }
+    let big_endian = match (buf[0], buf[1]) {
+        (0xFE, 0xFF) => true,
+        (0xFF, 0xFE) => false,
+        _ => return None,
+    };
+
+    let u16_data: Vec<u16> = if big_endian {
+        buf[2..]
+            .chunks_exact(2)
+            .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+            .collect()
+    } else {
+        buf[2..]
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect()
+    };
+
+    let string = String::from_utf16_lossy(&u16_data);
+    Some(string.into_bytes())
 }
 
 /// Walk all ZIP entries, collect those under `Pictures/` with their inferred
@@ -517,5 +547,52 @@ mod tests {
             infer_media_type("Pictures/file.tiff"),
             "application/octet-stream"
         );
+    }
+
+    fn encode_utf16(s: &str, be: bool) -> Vec<u8> {
+        let u16s: Vec<u16> = s.encode_utf16().collect();
+        let mut bytes = Vec::new();
+        if be {
+            bytes.push(0xFE);
+            bytes.push(0xFF);
+            for val in u16s {
+                bytes.extend_from_slice(&val.to_be_bytes());
+            }
+        } else {
+            bytes.push(0xFF);
+            bytes.push(0xFE);
+            for val in u16s {
+                bytes.extend_from_slice(&val.to_le_bytes());
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn test_open_utf16_package_transcodes_to_utf8() {
+        let content_str = r#"<?xml version="1.0"?><office:document-content office:version="1.3"/>"#;
+        let content_be = encode_utf16(content_str, true);
+
+        let styles_str = r#"<?xml version="1.0"?><office:document-styles/>"#;
+        let styles_le = encode_utf16(styles_str, false);
+
+        let zip_bytes = build_zip(
+            true,
+            MIME_ODT.as_bytes(),
+            &[
+                (ENTRY_MANIFEST, b"<manifest:manifest/>"),
+                (ENTRY_CONTENT, &content_be),
+                (ENTRY_STYLES, &styles_le),
+            ],
+        );
+
+        let pkg = OdfPackage::open(Cursor::new(zip_bytes)).unwrap();
+
+        let content_utf8 = String::from_utf8(pkg.content).unwrap();
+        let styles_utf8 = String::from_utf8(pkg.styles).unwrap();
+
+        assert_eq!(content_utf8, content_str);
+        assert_eq!(styles_utf8, styles_str);
+        assert_eq!(pkg.version, OdfVersion::V1_3);
     }
 }

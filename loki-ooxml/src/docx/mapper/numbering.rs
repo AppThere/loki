@@ -30,6 +30,30 @@ fn map_lvl_jc(jc: Option<&str>) -> LabelAlignment {
     }
 }
 
+/// Normalize a bullet character, remapping Wingdings/Symbol PUA code points
+/// (U+E000..U+F8FF) to the closest standard Unicode equivalent.
+///
+/// DOCX files produced by Microsoft Word commonly store bullet characters as
+/// Private Use Area code points such as U+F0B7 (Wingdings bullet).  These only
+/// render correctly when the Wingdings or Symbol font is explicitly applied.
+/// Because the layout engine uses a plain `Inline::Str` for the marker (no
+/// per-run font override), the character is shaped with the paragraph's default
+/// font, which has no glyph for PUA code points → tofu.
+///
+/// Remapping to standard Unicode lets any font render the bullet correctly.
+fn normalize_bullet_char(c: char) -> char {
+    match c {
+        '\u{F06C}' | '\u{F076}' | '\u{F0D8}' => '●', // Wingdings: filled circle → BLACK CIRCLE
+        '\u{F06E}' => '○',                           // Wingdings: white circle → WHITE CIRCLE
+        '\u{F0FC}' => '■',                           // Wingdings: filled square → BLACK SQUARE
+        '\u{F0E8}' => '✓',                           // Wingdings 2: check mark → CHECK MARK
+        '\u{F067}' => '–',                           // Wingdings: dash → EN DASH
+        // Bullet variants (F0B7/F0A7) and all remaining PUA chars fall back to bullet.
+        '\u{E000}'..='\u{F8FF}' => '•',
+        _ => c,
+    }
+}
+
 /// Counts `%N` tokens in a level-text format string (e.g. `"%1.%2."` → 2).
 fn count_display_levels(lvl_text: &str) -> u8 {
     // A %N token is '%' followed by an ASCII digit.
@@ -100,8 +124,8 @@ fn map_level_kind(
                 Some("○") => BulletChar::Char('○'),
                 Some("▪") => BulletChar::Char('▪'),
                 Some(s) => {
-                    // Take first Unicode scalar; fall back to bullet.
-                    BulletChar::Char(s.chars().next().unwrap_or('•'))
+                    let raw = s.chars().next().unwrap_or('•');
+                    BulletChar::Char(normalize_bullet_char(raw))
                 }
             };
             ListLevelKind::Bullet {
@@ -318,5 +342,60 @@ mod tests {
         assert_eq!(count_display_levels("%1.%2."), 2);
         assert_eq!(count_display_levels("%1."), 1);
         assert_eq!(count_display_levels("•"), 0);
+    }
+
+    #[test]
+    fn pua_wingdings_bullet_normalized_to_unicode() {
+        // U+F0B7 is the Wingdings bullet (PUA); must be remapped to U+2022 •.
+        let numbering = make_numbering(0, 1, vec![bullet_level(0, "\u{F0B7}")], vec![]);
+        let mut catalog = StyleCatalog::new();
+        map_numbering(&numbering, &mut catalog);
+        let ls = catalog.list_styles.get(&ListId::new("1")).unwrap();
+        assert!(
+            matches!(
+                ls.levels[0].kind,
+                ListLevelKind::Bullet {
+                    char: BulletChar::Char('•'),
+                    ..
+                }
+            ),
+            "U+F0B7 Wingdings bullet should normalize to U+2022 BULLET"
+        );
+    }
+
+    #[test]
+    fn pua_wingdings_square_normalized_to_unicode() {
+        // U+F0FC is the Wingdings filled square; must remap to ■.
+        let numbering = make_numbering(0, 1, vec![bullet_level(0, "\u{F0FC}")], vec![]);
+        let mut catalog = StyleCatalog::new();
+        map_numbering(&numbering, &mut catalog);
+        let ls = catalog.list_styles.get(&ListId::new("1")).unwrap();
+        assert!(matches!(
+            ls.levels[0].kind,
+            ListLevelKind::Bullet {
+                char: BulletChar::Char('■'),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn standard_unicode_bullet_unchanged() {
+        // Non-PUA Unicode bullets must not be remapped.
+        for (ch, _desc) in [
+            ('•', "bullet"),
+            ('–', "en-dash"),
+            ('○', "circle"),
+            ('▪', "square"),
+        ] {
+            let numbering = make_numbering(0, 1, vec![bullet_level(0, &ch.to_string())], vec![]);
+            let mut catalog = StyleCatalog::new();
+            map_numbering(&numbering, &mut catalog);
+            let ls = catalog.list_styles.get(&ListId::new("1")).unwrap();
+            assert!(
+                matches!(&ls.levels[0].kind, ListLevelKind::Bullet { char: BulletChar::Char(c), .. } if *c == ch),
+                "Standard bullet char '{ch}' should not be remapped"
+            );
+        }
     }
 }

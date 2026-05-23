@@ -345,6 +345,10 @@ pub struct ParagraphLayout {
     /// Wrapped in `Arc` so `ParagraphLayout` remains cheaply cloneable when
     /// the editing layer shares layouts across the page editing index.
     pub parley_layout: Option<Arc<parley::Layout<LayoutColor>>>,
+    /// Original to cleaned byte index mappings.
+    pub orig_to_clean: Vec<usize>,
+    /// Cleaned to original byte index mappings.
+    pub clean_to_orig: Vec<usize>,
 }
 
 impl std::fmt::Debug for ParagraphLayout {
@@ -360,6 +364,8 @@ impl std::fmt::Debug for ParagraphLayout {
                 "parley_layout",
                 &self.parley_layout.as_ref().map(|_| "<Layout>"),
             )
+            .field("orig_to_clean", &self.orig_to_clean)
+            .field("clean_to_orig", &self.clean_to_orig)
             .finish()
     }
 }
@@ -374,6 +380,11 @@ impl ParagraphLayout {
         let layout = self.parley_layout.as_deref()?;
         let cursor = Cursor::from_point(layout, x, y);
         let byte_offset = cursor.index();
+        let mapped_offset = self
+            .clean_to_orig
+            .get(byte_offset)
+            .copied()
+            .unwrap_or_else(|| self.clean_to_orig.last().copied().unwrap_or(0));
         let affinity = match cursor.affinity() {
             parley::Affinity::Upstream => Affinity::Upstream,
             parley::Affinity::Downstream => Affinity::Downstream,
@@ -386,7 +397,7 @@ impl ParagraphLayout {
             .position(|&(_, max_y)| y < max_y)
             .unwrap_or_else(|| self.line_boundaries.len().saturating_sub(1));
         Some(HitTestResult {
-            byte_offset,
+            byte_offset: mapped_offset,
             affinity,
             line_index,
         })
@@ -406,27 +417,40 @@ impl ParagraphLayout {
     /// when the paragraph has no lines.
     pub fn line_end_offset(&self, byte_offset: usize, text: &str) -> Option<usize> {
         let layout = self.parley_layout.as_ref()?;
-        // Find the line whose text range contains byte_offset, or fall back to
+        let clean_offset = self
+            .orig_to_clean
+            .get(byte_offset)
+            .copied()
+            .unwrap_or_else(|| self.orig_to_clean.last().copied().unwrap_or(0));
+        // Find the line whose text range contains clean_offset, or fall back to
         // the last line (handles cursor positioned at text.len()).
         let line = layout
             .lines()
             .find(|l| {
                 let r = l.text_range();
-                r.start <= byte_offset && byte_offset < r.end
+                r.start <= clean_offset && clean_offset < r.end
             })
             .or_else(|| layout.lines().last())?;
 
         let range = line.text_range();
         let end = range.end;
 
-        // Trim a trailing '\n' so End lands before the newline byte, not after.
+        let mapped_end = self
+            .clean_to_orig
+            .get(end)
+            .copied()
+            .unwrap_or_else(|| self.clean_to_orig.last().copied().unwrap_or(0));
+
+        // Trim a trailing '\n' or '\r\n' so End lands before the newline byte, not after.
         // In loki-text, paragraph breaks are modelled as separate blocks, so
         // '\n' inside a block's text is unusual — this guard handles edge cases.
-        let trimmed = if end > 0 && text.as_bytes().get(end - 1).copied() == Some(b'\n') {
-            end - 1
-        } else {
-            end
-        };
+        let mut trimmed = mapped_end;
+        if trimmed > 0 && text.as_bytes().get(trimmed - 1).copied() == Some(b'\n') {
+            trimmed -= 1;
+        }
+        if trimmed > 0 && text.as_bytes().get(trimmed - 1).copied() == Some(b'\r') {
+            trimmed -= 1;
+        }
 
         Some(trimmed)
     }
@@ -439,7 +463,12 @@ impl ParagraphLayout {
     /// position by Parley.
     pub fn cursor_rect(&self, byte_offset: usize) -> Option<CursorRect> {
         let layout = self.parley_layout.as_deref()?;
-        let cursor = Cursor::from_byte_index(layout, byte_offset, parley::Affinity::Downstream);
+        let clean_offset = self
+            .orig_to_clean
+            .get(byte_offset)
+            .copied()
+            .unwrap_or_else(|| self.orig_to_clean.last().copied().unwrap_or(0));
+        let cursor = Cursor::from_byte_index(layout, clean_offset, parley::Affinity::Downstream);
         // width=1.0 requests a 1-point wide caret geometry.
         let bb = cursor.geometry(layout, 1.0);
         let y = bb.y0 as f32;
@@ -463,7 +492,10 @@ const DEFAULT_TAB_INTERVAL: f32 = 36.0;
 ///
 /// Searches `stops` (sorted ascending) first; falls back to the default
 /// 36 pt grid when no explicit stop is defined beyond `x`.
-fn next_tab_stop(stops: &[ResolvedTabStop], x: f32) -> f32 {
+fn next_tab_stop(stops: &[ResolvedTabStop], x: f32, indent_hanging: f32) -> f32 {
+    if indent_hanging > 0.0 && x < indent_hanging - 0.5 {
+        return indent_hanging;
+    }
     if let Some(s) = stops.iter().find(|s| s.position > x + 0.5) {
         s.position
     } else {
@@ -558,6 +590,70 @@ fn push_para_styles(
 /// sessions can call [`ParagraphLayout::hit_test_point`] and
 /// [`ParagraphLayout::cursor_rect`]. In read-only rendering mode pass
 /// `false` to avoid the memory cost on large documents.
+fn clean_text_and_spans(
+    text: &str,
+    spans: &[StyleSpan],
+) -> (String, Vec<StyleSpan>, Vec<usize>, Vec<usize>) {
+    let mut clean_text = String::with_capacity(text.len());
+    let mut orig_to_clean = vec![0; text.len() + 1];
+    let mut clean_to_orig = Vec::with_capacity(text.len() + 1);
+
+    let mut orig_idx = 0;
+    let mut clean_idx = 0;
+
+    for c in text.chars() {
+        let c_len = c.len_utf8();
+        let keep = c == '\t' || c == '\n' || (!c.is_control() && c != '\u{feff}');
+        if keep {
+            for i in 0..c_len {
+                orig_to_clean[orig_idx + i] = clean_idx + i;
+                clean_to_orig.push(orig_idx + i);
+            }
+            clean_text.push(c);
+            orig_idx += c_len;
+            clean_idx += c_len;
+        } else {
+            for i in 0..c_len {
+                orig_to_clean[orig_idx + i] = clean_idx;
+            }
+            orig_idx += c_len;
+        }
+    }
+    orig_to_clean[orig_idx] = clean_idx;
+    clean_to_orig.push(orig_idx);
+
+    let clean_spans = spans
+        .iter()
+        .map(|span| {
+            let mut clean_span = span.clone();
+            let start = orig_to_clean
+                .get(span.range.start)
+                .copied()
+                .unwrap_or(clean_idx);
+            let end = orig_to_clean
+                .get(span.range.end)
+                .copied()
+                .unwrap_or(clean_idx);
+            clean_span.range = start..end;
+            clean_span
+        })
+        .collect();
+
+    (clean_text, clean_spans, orig_to_clean, clean_to_orig)
+}
+
+/// Lay out a single paragraph using Parley.
+///
+/// `text_content` is the flattened text from all inline runs. `style_spans`
+/// maps byte ranges to resolved character properties. `available_width` is
+/// the maximum line width in points. `display_scale` is the HiDPI scale
+/// factor (use `1.0` for layout-only / headless use).
+///
+/// When `preserve_for_editing` is `true`, the Parley `Layout` object is
+/// retained in [`ParagraphLayout::parley_layout`] so that subsequent editing
+/// sessions can call [`ParagraphLayout::hit_test_point`] and
+/// [`ParagraphLayout::cursor_rect`]. In read-only rendering mode pass
+/// `false` to avoid the memory cost on large documents.
 pub fn layout_paragraph(
     resources: &mut FontResources,
     text_content: &str,
@@ -567,7 +663,10 @@ pub fn layout_paragraph(
     display_scale: f32,
     preserve_for_editing: bool,
 ) -> ParagraphLayout {
-    if text_content.is_empty() {
+    let (clean_text, clean_spans, orig_to_clean, clean_to_orig) =
+        clean_text_and_spans(text_content, style_spans);
+
+    if clean_text.is_empty() {
         if !preserve_for_editing {
             return ParagraphLayout {
                 height: 0.0,
@@ -577,6 +676,8 @@ pub fn layout_paragraph(
                 last_baseline: 0.0,
                 line_boundaries: vec![],
                 parley_layout: None,
+                orig_to_clean,
+                clean_to_orig,
             };
         }
         // Build a phantom single-space layout so cursor_rect can return a
@@ -604,6 +705,8 @@ pub fn layout_paragraph(
             last_baseline: first_baseline,
             line_boundaries: vec![],
             parley_layout: Some(Arc::new(phantom)),
+            orig_to_clean,
+            clean_to_orig,
         };
     }
 
@@ -618,7 +721,7 @@ pub fn layout_paragraph(
     // Parley 0.8 has no native tab stop API. Two-pass approach:
     //   Pass 1 (probe): zero-width InlineBoxes at each \t → measure x-positions.
     //   Pass 2 (final): InlineBoxes sized to advance to the next tab stop.
-    let tab_char_positions: Vec<usize> = text_content
+    let tab_char_positions: Vec<usize> = clean_text
         .char_indices()
         .filter(|(_, c)| *c == '\t')
         .map(|(i, _)| i)
@@ -627,11 +730,11 @@ pub fn layout_paragraph(
     let tab_inline_widths: Vec<f32> = if !tab_char_positions.is_empty() {
         let mut probe = resources.layout_cx.ranged_builder(
             &mut resources.font_cx,
-            text_content,
+            &clean_text,
             display_scale,
             true,
         );
-        push_para_styles(&mut probe, para_props, style_spans);
+        push_para_styles(&mut probe, para_props, &clean_spans);
         for (idx, &pos) in tab_char_positions.iter().enumerate() {
             probe.push_inline_box(InlineBox {
                 id: idx as u64,
@@ -640,7 +743,7 @@ pub fn layout_paragraph(
                 height: 0.0,
             });
         }
-        let mut probe_layout = probe.build(text_content);
+        let mut probe_layout = probe.build(&clean_text);
         probe_layout.break_all_lines(Some(line_w));
 
         let mut x_positions = vec![0.0f32; tab_char_positions.len()];
@@ -656,7 +759,9 @@ pub fn layout_paragraph(
         }
         x_positions
             .iter()
-            .map(|&x| (next_tab_stop(&para_props.tab_stops, x) - x).max(0.0))
+            .map(|&x| {
+                (next_tab_stop(&para_props.tab_stops, x, para_props.indent_hanging) - x).max(0.0)
+            })
             .collect()
     } else {
         vec![]
@@ -665,11 +770,11 @@ pub fn layout_paragraph(
     // ── Main (final) layout pass ──────────────────────────────────────────────
     let mut builder = resources.layout_cx.ranged_builder(
         &mut resources.font_cx,
-        text_content,
+        &clean_text,
         display_scale,
         true,
     );
-    push_para_styles(&mut builder, para_props, style_spans);
+    push_para_styles(&mut builder, para_props, &clean_spans);
     for (idx, &pos) in tab_char_positions.iter().enumerate() {
         let width = tab_inline_widths.get(idx).copied().unwrap_or(0.0);
         builder.push_inline_box(InlineBox {
@@ -680,13 +785,15 @@ pub fn layout_paragraph(
         });
     }
 
-    let mut layout = builder.build(text_content);
+    let mut layout = builder.build(&clean_text);
     layout.break_all_lines(Some(line_w));
     layout.align(
         Some(line_w),
         para_props.alignment,
         AlignmentOptions::default(),
     );
+
+
 
     let total_height = layout.height();
     let total_width = layout.width();
@@ -748,12 +855,29 @@ pub fn layout_paragraph(
                 .collect();
 
             let text_range = run.text_range();
-            let link_url = span_link_url_for_range(style_spans, text_range.clone());
+
+            #[cfg(debug_assertions)]
+            {
+                let font_name = span_font_name_for_range(&clean_spans, text_range.clone())
+                    .unwrap_or_else(|| "Unknown".to_string());
+                if font_name.contains("Calibri") || font_name.contains("calibri") {
+                    eprintln!(
+                        "CALIBRI LAYOUT RUN: font={}, font_size={}, advance={}, glyph_count={}, text={:?}",
+                        font_name,
+                        run.font_size(),
+                        glyph_run.advance(),
+                        glyphs.len(),
+                        &clean_text[text_range.clone()]
+                    );
+                }
+            }
+
+            let link_url = span_link_url_for_range(&clean_spans, text_range.clone());
 
             // ── Highlight colour (gap #10) ──────────────────────────────────────
             // Emit a filled rect sized to the run's ink extent BEFORE the glyph
             // run so the background renders below the text.
-            if let Some(hl_color) = span_highlight_for_range(style_spans, text_range.clone()) {
+            if let Some(hl_color) = span_highlight_for_range(&clean_spans, text_range.clone()) {
                 let m = run.metrics();
                 items.push(PositionedItem::FilledRect(PositionedRect {
                     rect: LayoutRect::new(
@@ -771,7 +895,7 @@ pub fn layout_paragraph(
             // it appears as a hard shadow behind the main run.
             // TODO(shadow): replace with Vello blur filter for soft shadow once
             // scene.rs blur pipeline is verified stable (see TODO in scene.rs).
-            if span_has_shadow(style_spans, text_range.clone()) {
+            if span_has_shadow(&clean_spans, text_range.clone()) {
                 items.push(PositionedItem::GlyphRun(PositionedGlyphRun {
                     origin: LayoutPoint {
                         x: run_offset + indent_x + 0.5,
@@ -886,6 +1010,8 @@ pub fn layout_paragraph(
         last_baseline,
         line_boundaries,
         parley_layout,
+        orig_to_clean,
+        clean_to_orig,
     }
 }
 
@@ -1047,6 +1173,15 @@ fn span_link_url_for_range(spans: &[StyleSpan], text_range: Range<usize>) -> Opt
         .iter()
         .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
         .and_then(|s| s.link_url.clone())
+}
+
+/// Returns the font name for the first span fully containing `text_range`,
+/// or `None` if no span in that range carries a font name.
+fn span_font_name_for_range(spans: &[StyleSpan], text_range: Range<usize>) -> Option<String> {
+    spans
+        .iter()
+        .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
+        .and_then(|s| s.font_name.clone())
 }
 
 /// Returns `true` if the first span fully containing `text_range` has

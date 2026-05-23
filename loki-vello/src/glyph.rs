@@ -27,7 +27,9 @@ pub fn paint_glyph_run(
         return;
     }
 
-    let font = font_cache.get_or_insert(&run.font_data, run.font_index);
+
+
+    let font = font_cache.get_or_insert(&run.font_data, run.font_index).clone();
 
     // Translate to the run's baseline origin in scaled (pixel) space.
     let transform =
@@ -43,15 +45,15 @@ pub fn paint_glyph_run(
         y: g.y * scale,
     });
 
-    // Empty normalized coords = non-variable (static) font.
-    let coords: &[vello::NormalizedCoord] = &[];
+    let coords = font_cache.get_coords(&run.font_data, run.font_index);
+    let coords_i16: Vec<i16> = coords.iter().map(|c| c.to_bits()).collect();
 
     scene
-        .draw_glyphs(font)
+        .draw_glyphs(&font)
         .font_size(run.font_size * scale)
         .transform(transform)
         .glyph_transform(None)
-        .normalized_coords(coords)
+        .normalized_coords(&coords_i16)
         .brush(&brush)
         .hint(false)
         .draw(peniko::Fill::NonZero, glyphs);

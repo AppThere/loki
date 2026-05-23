@@ -84,11 +84,28 @@ pub(crate) fn map_inlines(children: &[DocxParaChild], ctx: &mut MappingContext<'
                     LinkTarget { url, title: None },
                 ));
             }
-            DocxParaChild::BookmarkStart { name, .. } => {
+            DocxParaChild::BookmarkStart { id, name } => {
+                // COMPAT(microsoft): w:bookmarkStart/End IDs must be unique per
+                // OOXML §17.13.6.2, but programmatically generated documents
+                // frequently use duplicate IDs (e.g. all bookmarks with id="1").
+                // We handle this gracefully by tracking open bookmarks in a LIFO
+                // stack within the MappingContext, popping the most recent matching
+                // ID to resolve the bookmark name at BookmarkEnd.
+                ctx.open_bookmarks.push((id.clone(), name.clone()));
                 result.push(Inline::Bookmark(BookmarkKind::Start, name.clone()));
             }
             DocxParaChild::BookmarkEnd { id } => {
-                result.push(Inline::Bookmark(BookmarkKind::End, id.clone()));
+                let name = if let Some(pos) = ctx
+                    .open_bookmarks
+                    .iter()
+                    .rposition(|(open_id, _)| open_id == id)
+                {
+                    let (_, name) = ctx.open_bookmarks.remove(pos);
+                    name
+                } else {
+                    id.clone()
+                };
+                result.push(Inline::Bookmark(BookmarkKind::End, name));
             }
             DocxParaChild::TrackDel(_) => {
                 // Deleted content is skipped; it is no longer part of the document.
@@ -407,6 +424,7 @@ mod tests {
             images,
             options,
             warnings: Vec::new(),
+            open_bookmarks: Vec::new(),
         }
     }
 
@@ -686,7 +704,9 @@ mod tests {
         assert!(
             matches!(&inlines[0], Inline::Bookmark(BookmarkKind::Start, name) if name == "myBookmark")
         );
-        assert!(matches!(&inlines[2], Inline::Bookmark(BookmarkKind::End, id) if id == "1"));
+        assert!(
+            matches!(&inlines[2], Inline::Bookmark(BookmarkKind::End, name) if name == "myBookmark")
+        );
     }
 
     #[test]

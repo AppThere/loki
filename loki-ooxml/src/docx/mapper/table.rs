@@ -307,6 +307,7 @@ mod tests {
             images,
             options,
             warnings: Vec::new(),
+            open_bookmarks: Vec::new(),
         }
     }
 

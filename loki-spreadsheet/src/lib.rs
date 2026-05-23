@@ -6,6 +6,9 @@
 //! Exposes the module tree for integration testing and potential embedding.
 //! The binary entry point lives in `main.rs` and calls [`app::App`].
 
+// Pre-existing pattern in routes/editor/editor_inner.rs — structural refactor deferred
+#![allow(clippy::manual_strip)]
+
 pub mod app;
 pub mod error;
 pub mod new_document;

@@ -35,6 +35,8 @@ features = ["std"]
 loki-opc    = { path = "../loki-opc" }
 loki-layout = { path = "../loki-layout" }
 zip = { version = "2", default-features = false, features = ["deflate"] }
+parley = "0.8"
+read-fonts = "0.37.0"
 
 [package.metadata.docs.rs]
 all-features = true

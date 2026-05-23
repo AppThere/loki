@@ -32,6 +32,17 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::must_use_candidate)]
+// Pre-existing patterns in xlsx/export.rs — structural refactor deferred
+#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::format_push_string)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::unnested_or_patterns)]
+#![allow(clippy::collapsible_if)]
+#![allow(clippy::collapsible_else_if)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::cloned_instead_of_copied)]
+#![allow(clippy::map_unwrap_or)]
+#![allow(clippy::useless_format)]
 
 pub mod constants;
 pub mod error;

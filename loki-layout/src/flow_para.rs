@@ -382,6 +382,8 @@ fn build_chain_layouts<'s>(
                         last_baseline: 0.0,
                         line_boundaries: vec![],
                         parley_layout: None,
+                        orig_to_clean: vec![0],
+                        clean_to_orig: vec![0],
                     },
                 )
             }

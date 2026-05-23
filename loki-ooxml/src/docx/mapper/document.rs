@@ -50,6 +50,8 @@ pub(crate) struct MappingContext<'a> {
     pub options: &'a DocxImportOptions,
     /// Non-fatal warnings accumulated during mapping.
     pub warnings: Vec<OoxmlWarning>,
+    /// Stack of currently open bookmark IDs and their names, to resolve names at `BookmarkEnd`.
+    pub open_bookmarks: Vec<(String, String)>,
 }
 
 // ── Page layout ───────────────────────────────────────────────────────────────
@@ -261,6 +263,7 @@ pub(crate) fn map_document(
             images,
             options,
             warnings: Vec::new(),
+            open_bookmarks: Vec::new(),
         };
         let result = map_notes_to_blocks(raw_footnotes, &mut note_ctx);
         all_warnings.extend(note_ctx.warnings);
@@ -275,6 +278,7 @@ pub(crate) fn map_document(
             images,
             options,
             warnings: Vec::new(),
+            open_bookmarks: Vec::new(),
         };
         let result = map_notes_to_blocks(raw_endnotes, &mut note_ctx);
         all_warnings.extend(note_ctx.warnings);
@@ -292,6 +296,7 @@ pub(crate) fn map_document(
         images,
         options,
         warnings: Vec::new(),
+        open_bookmarks: Vec::new(),
     };
 
     let mut sections: Vec<Section> = Vec::new();
