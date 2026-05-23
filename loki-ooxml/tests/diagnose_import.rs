@@ -6,8 +6,8 @@ use std::io::BufReader;
 
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::Inline;
-use loki_ooxml::docx::import::{DocxImportOptions, DocxImporter};
 use loki_doc_model::style::props::char_props::CharProps;
+use loki_ooxml::docx::import::{DocxImportOptions, DocxImporter};
 
 #[test]
 fn diagnose_loki_architecture_import() {
@@ -43,7 +43,7 @@ fn diagnose_loki_architecture_import() {
                 let blob = font_info.load(Some(&mut font_cx.source_cache));
                 let blob_len = blob.as_ref().map(|b| b.len()).unwrap_or(0);
                 let blob_index = font_info.index();
-                
+
                 let mut mappings = Vec::new();
                 let mut file_type = "Unknown".to_string();
                 if let Some(b) = &blob {
@@ -66,10 +66,15 @@ fn diagnose_loki_architecture_import() {
                     }
                     if let Ok(font_ref) = read_fonts::FontRef::from_index(b.as_ref(), blob_index) {
                         use read_fonts::TableProvider;
-                        let mut tags: Vec<String> = font_ref.table_directory().table_records().iter().map(|r| {
-                            let tag_bytes = r.tag().into_bytes();
-                            String::from_utf8_lossy(&tag_bytes).to_string()
-                        }).collect();
+                        let mut tags: Vec<String> = font_ref
+                            .table_directory()
+                            .table_records()
+                            .iter()
+                            .map(|r| {
+                                let tag_bytes = r.tag().into_bytes();
+                                String::from_utf8_lossy(&tag_bytes).to_string()
+                            })
+                            .collect();
                         file_type = format!("{} tables: {:?}", file_type, tags);
                         if let Ok(fvar) = font_ref.fvar() {
                             if let Ok(axes) = fvar.axes() {

@@ -41,7 +41,11 @@ impl FontDataCache {
     }
 
     /// Returns the cached normalized coordinates (defaulting to zero) for the font's axes.
-    pub fn get_coords(&mut self, data: &Arc<Vec<u8>>, font_index: u32) -> &[read_fonts::types::F2Dot14] {
+    pub fn get_coords(
+        &mut self,
+        data: &Arc<Vec<u8>>,
+        font_index: u32,
+    ) -> &[read_fonts::types::F2Dot14] {
         let key = (Arc::as_ptr(data) as usize, font_index);
         self.coords.entry(key).or_insert_with(|| {
             if let Ok(font_ref) = read_fonts::FontRef::from_index(&**data, font_index) {
@@ -54,7 +58,7 @@ impl FontDataCache {
             }
             vec![]
         })
-     }
+    }
 }
 
 fn strip_bitmap_tables(data: &mut [u8]) {
@@ -70,7 +74,12 @@ fn strip_bitmap_tables(data: &mut [u8]) {
         }
         for i in 0..num_fonts {
             let offset_idx = 12 + i * 4;
-            let offset = u32::from_be_bytes([data[offset_idx], data[offset_idx+1], data[offset_idx+2], data[offset_idx+3]]) as usize;
+            let offset = u32::from_be_bytes([
+                data[offset_idx],
+                data[offset_idx + 1],
+                data[offset_idx + 2],
+                data[offset_idx + 3],
+            ]) as usize;
             if offset < data.len() {
                 strip_sfnt_bitmap_tables(data, offset);
             }
@@ -93,7 +102,13 @@ fn strip_sfnt_bitmap_tables(data: &mut [u8], offset: usize) {
     for i in 0..num_tables {
         let entry_offset = directory_start + i * 16;
         let tag = &mut data[entry_offset..entry_offset + 4];
-        if tag == b"EBLC" || tag == b"EBDT" || tag == b"EBSC" || tag == b"CBLC" || tag == b"CBDT" || tag == b"sbix" {
+        if tag == b"EBLC"
+            || tag == b"EBDT"
+            || tag == b"EBSC"
+            || tag == b"CBLC"
+            || tag == b"CBDT"
+            || tag == b"sbix"
+        {
             // Rename to make them unrecognized (e.g. prefix with 'X')
             tag[0] = b'X';
         }

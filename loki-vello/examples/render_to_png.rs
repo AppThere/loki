@@ -105,12 +105,14 @@ fn main() {
     let page_index = if input_path.is_some() { Some(0) } else { None };
 
     let (canvas_width, canvas_height) = match &layout {
-        DocumentLayout::Paginated(pl) if page_index.is_some() => {
-            ((pl.page_size.width + 32.0) as u32, (pl.page_size.height + 32.0) as u32)
-        }
-        _ => {
-            ((layout.content_width() + 32.0) as u32, (layout.total_height() + 32.0) as u32)
-        }
+        DocumentLayout::Paginated(pl) if page_index.is_some() => (
+            (pl.page_size.width + 32.0) as u32,
+            (pl.page_size.height + 32.0) as u32,
+        ),
+        _ => (
+            (layout.content_width() + 32.0) as u32,
+            (layout.total_height() + 32.0) as u32,
+        ),
     };
 
     // ── 2. Build Vello scene ──────────────────────────────────────────────────

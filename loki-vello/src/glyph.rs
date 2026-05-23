@@ -27,9 +27,9 @@ pub fn paint_glyph_run(
         return;
     }
 
-
-
-    let font = font_cache.get_or_insert(&run.font_data, run.font_index).clone();
+    let font = font_cache
+        .get_or_insert(&run.font_data, run.font_index)
+        .clone();
 
     // Translate to the run's baseline origin in scaled (pixel) space.
     let transform =

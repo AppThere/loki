@@ -793,8 +793,6 @@ pub fn layout_paragraph(
         AlignmentOptions::default(),
     );
 
-
-
     let total_height = layout.height();
     let total_width = layout.width();
     let first_baseline = layout
