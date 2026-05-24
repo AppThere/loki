@@ -64,6 +64,7 @@ These conventions apply to all crates in the workspace.
   44×44 logical pixel touch target (WCAG 2.5.8) in a doc comment.
 - **Checkpoints:** Run `cargo check --workspace` after each logical unit of
   work. Do not accumulate failures across steps.
+- **Documentation Sync:** Any change to layout, rendering, or import/export properties must update the living status registry in [fidelity-status.md](file:///Users/kevin/project/loki/docs/fidelity-status.md).
 - **Final pass:** `cargo fmt --all` and `cargo clippy --workspace -- -D warnings`
   must both pass before any PR or commit is considered complete.
 

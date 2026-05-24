@@ -663,8 +663,14 @@ pub fn layout_paragraph(
     display_scale: f32,
     preserve_for_editing: bool,
 ) -> ParagraphLayout {
-    let (clean_text, clean_spans, orig_to_clean, clean_to_orig) =
+    let (clean_text, mut clean_spans, orig_to_clean, clean_to_orig) =
         clean_text_and_spans(text_content, style_spans);
+
+    for span in &mut clean_spans {
+        if let Some(ref name) = span.font_name {
+            span.font_name = Some(resources.resolve_font_name(name));
+        }
+    }
 
     if clean_text.is_empty() {
         if !preserve_for_editing {

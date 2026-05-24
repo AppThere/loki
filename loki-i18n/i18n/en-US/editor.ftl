@@ -18,3 +18,9 @@ editor-untitled-n = Untitled { $n }
 # Status bar app-specific labels
 editor-sheet-label = Sheet { $current } of { $total }
 editor-slide-label = Slide { $current } of { $total }
+
+# Font warning banner
+editor-font-substitution-title = Font Substitution
+editor-font-substitution-message = Some fonts in this document are not available and were substituted. Layout and formatting might differ from Office 365.
+editor-font-substitution-download = Download original fonts:
+editor-font-dismiss = Dismiss

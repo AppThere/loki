@@ -1,4 +1,8 @@
 # OOXML Export Round-Trip Gap Audit
+
+> [!NOTE]
+> This document is a historical audit snapshot from May 10, 2026. For the current, living implementation status of layout and rendering properties, please refer to the central status registry: [fidelity-status.md](file:///Users/kevin/project/loki/docs/fidelity-status.md).
+
 **Date:** 2026-05-10
 **Branch:** main
 

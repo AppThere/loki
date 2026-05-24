@@ -2,10 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Shared Parley font and layout context.
-//!
-//! [`FontResources`] wraps a [`parley::FontContext`] (font database) and a
-//! [`parley::LayoutContext`] (shaping scratch space). Both are expensive to
-//! construct and should be reused across many layout calls.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -32,15 +28,33 @@ pub struct FontResources {
     /// Keying by the slice's base pointer (cast to `u64`) ensures that glyph
     /// runs from the same Parley-internal blob share a single `Arc`.
     pub(crate) font_data_cache: HashMap<u64, Arc<Vec<u8>>>,
+    /// Tracks font availability and substitutions.
+    ///
+    /// Key: requested font name.
+    /// Value: `Some(substitute)` if substituted, or `None` if missing without standard substitute.
+    pub substitutions: HashMap<String, Option<String>>,
 }
 
 impl FontResources {
     /// Creates a new `FontResources`, loading system fonts via Fontique.
     pub fn new() -> Self {
+        let mut font_cx = parley::FontContext::new();
+
+        // Dynamically scan and register app-bundled fonts from the assets directory.
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let assets_fonts = exe_dir.join("assets").join("fonts");
+                if assets_fonts.is_dir() {
+                    font_cx.collection.load_fonts_from_paths(vec![assets_fonts]);
+                }
+            }
+        }
+
         Self {
-            font_cx: parley::FontContext::new(),
+            font_cx,
             layout_cx: parley::LayoutContext::new(),
             font_data_cache: HashMap::new(),
+            substitutions: HashMap::new(),
         }
     }
 
@@ -53,10 +67,86 @@ impl FontResources {
         let blob = parley::fontique::Blob::from(data);
         self.font_cx.collection.register_fonts(blob, None);
     }
+
+    /// Resolves the requested font family name, checking availability and applying standard substitutes if needed.
+    ///
+    /// If the font is available, returns the original name.
+    /// If the font is missing, check standard substitutes and return the substitute if available, recording the change.
+    /// If both the font and its substitute are missing (or no substitute exists), returns the original name and records it as missing.
+    pub fn resolve_font_name(&mut self, name: &str) -> String {
+        // Return cached result if we already processed this font.
+        if let Some(sub) = self.substitutions.get(name) {
+            return sub.as_ref().cloned().unwrap_or_else(|| name.to_string());
+        }
+
+        // Check if the requested font name is available in the collection.
+        // Fontique family_id lookup is case-insensitive.
+        if self.font_cx.collection.family_id(name).is_some() {
+            return name.to_string();
+        }
+
+        // Font is not available. Check standard substitutes (case-insensitive).
+        let substitute = match name.to_lowercase().as_str() {
+            "arial" => Some("Arimo"),
+            "courier new" => Some("Cousine"),
+            "times new roman" => Some("Tinos"),
+            "calibri" => Some("Carlito"),
+            "cambria" => Some("Caladea"),
+            _ => None,
+        };
+
+        if let Some(sub_name) = substitute {
+            // Check if the substitute is available.
+            if self.font_cx.collection.family_id(sub_name).is_some() {
+                self.substitutions.insert(name.to_string(), Some(sub_name.to_string()));
+                return sub_name.to_string();
+            }
+        }
+
+        // No substitute exists, or it is also missing. Record as unresolved.
+        self.substitutions.insert(name.to_string(), None);
+        name.to_string()
+    }
 }
 
 impl Default for FontResources {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_font_resolution_fallback() {
+        let mut r = FontResources::new();
+
+        // Aptos should be missing (not installed in typical environments)
+        let resolved = r.resolve_font_name("Aptos");
+        assert_eq!(resolved, "Aptos");
+        assert!(r.substitutions.contains_key("Aptos"));
+        assert_eq!(r.substitutions.get("Aptos"), Some(&None));
+
+        // Test standard substitute: Calibri -> Carlito (if Carlito is missing, it should resolve to Calibri and track as None)
+        let resolved = r.resolve_font_name("Calibri");
+        if r.font_cx.collection.family_id("Carlito").is_some() {
+            assert_eq!(resolved, "Carlito");
+            assert_eq!(r.substitutions.get("Calibri"), Some(&Some("Carlito".to_string())));
+        } else {
+            assert_eq!(resolved, "Calibri");
+            assert_eq!(r.substitutions.get("Calibri"), Some(&None));
+        }
+
+        // Test case-insensitive behavior: calibri -> Carlito or calibri
+        let resolved = r.resolve_font_name("calibri");
+        if r.font_cx.collection.family_id("Carlito").is_some() {
+            assert_eq!(resolved, "Carlito");
+            assert_eq!(r.substitutions.get("calibri"), Some(&Some("Carlito".to_string())));
+        } else {
+            assert_eq!(resolved, "calibri");
+            assert_eq!(r.substitutions.get("calibri"), Some(&None));
+        }
     }
 }

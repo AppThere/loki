@@ -30,3 +30,7 @@ loki-doc-model = { path = "../loki-doc-model" }
 
 [[example]]
 name = "render_to_png"
+
+[[test]]
+name = "visual_conformance"
+
