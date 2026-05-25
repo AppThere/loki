@@ -241,12 +241,30 @@ pub(super) fn EditorInner(path: String) -> Element {
         }
 
         let link = match requested.to_lowercase().as_str() {
-            "aptos" => Some(("Aptos", "https://www.microsoft.com/en-us/download/details.aspx?id=106037")),
-            "calibri" => Some(("Calibri", "https://learn.microsoft.com/en-us/typography/font-list/calibri")),
-            "cambria" => Some(("Cambria", "https://learn.microsoft.com/en-us/typography/font-list/cambria")),
-            "arial" => Some(("Arial", "https://learn.microsoft.com/en-us/typography/font-list/arial")),
-            "courier new" => Some(("Courier New", "https://learn.microsoft.com/en-us/typography/font-list/courier-new")),
-            "times new roman" => Some(("Times New Roman", "https://learn.microsoft.com/en-us/typography/font-list/times-new-roman")),
+            "aptos" => Some((
+                "Aptos",
+                "https://www.microsoft.com/en-us/download/details.aspx?id=106037",
+            )),
+            "calibri" => Some((
+                "Calibri",
+                "https://learn.microsoft.com/en-us/typography/font-list/calibri",
+            )),
+            "cambria" => Some((
+                "Cambria",
+                "https://learn.microsoft.com/en-us/typography/font-list/cambria",
+            )),
+            "arial" => Some((
+                "Arial",
+                "https://learn.microsoft.com/en-us/typography/font-list/arial",
+            )),
+            "courier new" => Some((
+                "Courier New",
+                "https://learn.microsoft.com/en-us/typography/font-list/courier-new",
+            )),
+            "times new roman" => Some((
+                "Times New Roman",
+                "https://learn.microsoft.com/en-us/typography/font-list/times-new-roman",
+            )),
             _ => None,
         };
         if let Some((label, url)) = link {

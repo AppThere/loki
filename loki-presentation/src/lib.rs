@@ -9,3 +9,11 @@ pub mod recent_documents;
 pub mod routes;
 pub mod tabs;
 pub mod utils;
+
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+fn android_main(android_app: android_activity::AndroidApp) {
+    blitz_shell::set_android_app(android_app);
+    loki_i18n::init();
+    dioxus::launch(app::App);
+}

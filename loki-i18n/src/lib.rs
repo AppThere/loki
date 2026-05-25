@@ -45,8 +45,7 @@ static BUNDLE: OnceLock<LokiBundle> = OnceLock::new();
 /// no-ops — [`OnceLock`] guarantees single initialisation.
 pub fn init() {
     BUNDLE.get_or_init(|| {
-        let locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
-        LokiBundle::load(&locale)
+        LokiBundle::load(&sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string()))
     });
 }
 

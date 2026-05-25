@@ -191,20 +191,76 @@ impl<Rend: WindowRenderer> View<Rend> {
         let animation_time = self.current_animation_time();
         self.doc.resolve(animation_time);
 
-        // Resume renderer
+        // On Android, inner_size() reads from the ANativeWindow buffer dimensions
+        // which are zero until the first WindowResized event fires (the window
+        // object exists after InitWindow/Resumed, but its buffer size is set later
+        // by onNativeWindowChanged → WindowResized).  Calling renderer.resume()
+        // with (0,0) would configure a wgpu surface of zero size and the Stylo
+        // device would compute 100vh = 0, collapsing all elements to zero height.
+        // Defer renderer activation to handle_winit_event(Resized) in that case.
+        let actual = self.window.inner_size();
+        log::info!("[LOKI/resume] inner_size=({},{})", actual.width, actual.height);
+
+        if actual.width == 0 || actual.height == 0 {
+            log::info!("[LOKI/resume] zero dims — deferring renderer to Resized");
+            self.waker = Some(create_waker(&self.event_loop_proxy, self.window_id()));
+            return;
+        }
+
+        // Correct stored viewport if it diverges from the actual window size
+        let (stored_w, stored_h) = self.doc.viewport().window_size;
+        if stored_w != actual.width || stored_h != actual.height {
+            log::info!("[LOKI/resume] correcting viewport ({stored_w},{stored_h}) → ({},{})", actual.width, actual.height);
+            {
+                let mut vp = self.doc.viewport_mut();
+                vp.window_size = (actual.width, actual.height);
+            }
+            self.doc.resolve(animation_time);
+        }
+
         let (width, height) = self.doc.viewport().window_size;
         let scale = self.doc.viewport().scale_f64();
+        log::info!("[LOKI/resume] activating renderer ({width},{height}) scale={scale}");
+
+        // Resume renderer
         self.renderer.resume(self.window.clone(), width, height);
         if !self.renderer.is_active() {
             panic!("Renderer failed to resume");
         };
 
-        // Render
+        log::info!("[LOKI/resume] calling render");
         self.renderer
             .render(|scene| paint_scene(scene, &self.doc, scale, width, height));
+        log::info!("[LOKI/resume] render done");
 
         // Set waker
         self.waker = Some(create_waker(&self.event_loop_proxy, self.window_id()));
+    }
+
+    /// Activate the renderer for the first time using real surface dimensions.
+    ///
+    /// Called from handle_winit_event(Resized) when renderer.resume() was
+    /// deferred because inner_size() was (0,0) during the initial resumed() call.
+    fn activate_renderer(&mut self, width: u32, height: u32) {
+        let animation_time = self.current_animation_time();
+        log::info!("[LOKI/activate] activating renderer ({width},{height})");
+        {
+            let mut vp = self.doc.viewport_mut();
+            vp.window_size = (width, height);
+        }
+        self.doc.resolve(animation_time);
+        let scale = self.doc.viewport().scale_f64();
+        self.renderer.resume(self.window.clone(), width, height);
+        if !self.renderer.is_active() {
+            log::info!("[LOKI/activate] renderer.resume() failed");
+            return;
+        }
+        log::info!("[LOKI/activate] rendering initial frame");
+        self.renderer
+            .render(|scene| paint_scene(scene, &self.doc, scale, width, height));
+        // Request another redraw so any pending CSS/DOM changes (applied while
+        // the renderer was inactive) are also painted.
+        self.request_redraw();
     }
 
     pub fn suspend(&mut self) {
@@ -242,6 +298,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.doc.resolve(animation_time);
         let (width, height) = self.doc.viewport().window_size;
         let scale = self.doc.viewport().scale_f64();
+        log::info!("[LOKI/redraw] viewport=({width},{height}) scale={scale}");
         self.renderer
             .render(|scene| paint_scene(scene, &self.doc, scale, width, height));
 
@@ -280,6 +337,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 // Currently handled at the level above in application.rs
             }
             WindowEvent::RedrawRequested => {
+                log::info!("[LOKI/event] RedrawRequested");
                 self.redraw();
             }
 
@@ -292,7 +350,16 @@ impl<Rend: WindowRenderer> View<Rend> {
                 }
             },
             WindowEvent::Resized(physical_size) => {
-                self.with_viewport(|v| v.window_size = (physical_size.width, physical_size.height));
+                log::info!("[LOKI/event] Resized({},{}) renderer_active={}", physical_size.width, physical_size.height, self.renderer.is_active());
+                if !self.renderer.is_active()
+                    && physical_size.width > 0
+                    && physical_size.height > 0
+                {
+                    // Renderer was deferred because inner_size() was (0,0) at resume time.
+                    self.activate_renderer(physical_size.width, physical_size.height);
+                } else {
+                    self.with_viewport(|v| v.window_size = (physical_size.width, physical_size.height));
+                }
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.with_viewport(|v| v.set_hidpi_scale(scale_factor as f32));

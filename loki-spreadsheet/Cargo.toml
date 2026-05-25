@@ -9,6 +9,7 @@ repository = "https://github.com/appthere/loki"
 [lib]
 name = "loki_spreadsheet"
 path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
 
 [[bin]]
 name = "loki-spreadsheet"
@@ -76,3 +77,4 @@ label = "Loki Spreadsheet"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { workspace = true }
+blitz-shell = "0.2.3"

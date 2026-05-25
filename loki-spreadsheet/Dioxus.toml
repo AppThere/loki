@@ -1,6 +1,12 @@
 # Dioxus CLI configuration for loki-spreadsheet.
 #
 # Run serve from inside loki-spreadsheet/ or with --package loki-spreadsheet.
+#
+# Android (device or emulator, API ≥ 26, Vulkan required):
+#   dx serve --platform android --package loki-spreadsheet
+#
+# Desktop native:
+#   dx serve --platform native --package loki-spreadsheet
 
 [application]
 name = "loki-spreadsheet"

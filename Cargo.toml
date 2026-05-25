@@ -32,3 +32,43 @@ blitz-dom = { path = "patches/blitz-dom" }
 # PATCH: forwards WindowEvent::Touch to Dioxus touch handlers.
 # Remove when blitz-shell implements touch natively. See docs/patches.md.
 blitz-shell = { path = "patches/blitz-shell" }
+
+# PATCH: default reqwest features pull in native-tls → libssl.so, which is
+# absent on Android, causing an UnsatisfiedLinkError at launch.  This patch
+# switches reqwest to rustls-tls-webpki-roots (pure Rust, no system OpenSSL).
+# Remove when blitz-net upstream switches to rustls or makes TLS a feature flag.
+blitz-net = { path = "patches/blitz-net" }
+
+# PATCH: CreateHeadElement user events apply CSS but never call request_redraw(),
+# leaving the screen blank on Android where the OS does not post an automatic
+# RedrawRequested after resumed() (unlike desktop).  Fix: call request_redraw()
+# after each CreateHeadElement is processed.  Remove when upstream dioxus-native
+# handles the redraw itself.
+dioxus-native = { path = "patches/dioxus-native" }
+
+[patch."https://github.com/appthere/loki-file-access"]
+# PATCH: fixes two Android bugs —
+# (1) ndk_context stores Application (not Activity); startActivityForResult needs
+#     the actual NativeActivity, obtained via AndroidApp::activity_as_ptr().
+# (2) ANativeActivityCallbacks has no onActivityResult; returns a clear error
+#     instead of hanging indefinitely, and exports the JNI hook for the future
+#     Gradle-based FilePickerActivity shim.
+loki-file-access = { path = "patches/loki-file-access" }
+
+# ── Build profiles ─────────────────────────────────────────────────────────────
+#
+# The unoptimized debug profile embeds full DWARF symbols for every dependency.
+# wgpu + stylo + vello + parley together produce a 700+ MB .so in debug mode.
+# Stripping debug info from external crates brings Android APK size to <100 MB
+# while keeping full debuggability for workspace crates.
+#
+# opt-level = 1 on dependencies also speeds up runtime significantly (wgpu,
+# stylo, and vello are nearly unusable at opt-level = 0 on device).
+
+[profile.dev.package."*"]
+debug = false    # no DWARF for third-party crates — biggest size win
+opt-level = 1   # single-pass codegen; improves rendering performance in dev
+
+[profile.dev]
+debug = true     # full debug info retained for workspace crates
+opt-level = 0   # fast incremental recompile for your own code

@@ -9,6 +9,7 @@ repository = "https://github.com/appthere/loki"
 [lib]
 name = "loki_text"
 path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
 
 [[bin]]
 name = "loki-text"
@@ -78,3 +79,6 @@ label = "Loki"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { workspace = true }
+blitz-shell = "0.2.3"
+android_logger = "0.15"
+log = "0.4"

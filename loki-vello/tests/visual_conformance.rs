@@ -14,9 +14,7 @@ use std::sync::OnceLock;
 
 use image::{Rgba, RgbaImage};
 use loki_doc_model::io::DocumentImport;
-use loki_layout::{
-    layout_document, DocumentLayout, FontResources, LayoutMode, LayoutOptions,
-};
+use loki_layout::{DocumentLayout, FontResources, LayoutMode, LayoutOptions, layout_document};
 use loki_odf::odt::import::{OdtImport, OdtImportOptions};
 use loki_ooxml::docx::import::{DocxImport, DocxImportOptions};
 use loki_vello::{FontDataCache, paint_layout};
@@ -346,8 +344,8 @@ fn test_visual_conformance() {
         };
 
         for page_idx in 0..page_count {
-            let rendered_img = render_page(&layout, page_idx, &mut font_resources)
-                .expect("failed to render page");
+            let rendered_img =
+                render_page(&layout, page_idx, &mut font_resources).expect("failed to render page");
 
             let ref_filename = format!("{}_page{}.png", stem, page_idx);
             let ref_path = refs_dir.join(&ref_filename);

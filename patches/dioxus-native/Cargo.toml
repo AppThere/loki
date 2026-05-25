@@ -1,0 +1,62 @@
+[package]
+name = "dioxus-native"
+version = "0.7.4"
+edition = "2021"
+description = "Native renderer for Dioxus based on blitz"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/DioxusLabs/dioxus/"
+homepage = "https://dioxuslabs.com/learn/0.7/getting_started"
+
+[lib]
+name = "dioxus_native"
+path = "src/lib.rs"
+
+[features]
+default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "clipboard", "file_dialog"]
+prelude = ["dep:dioxus-core-macro", "dep:dioxus-hooks", "dep:dioxus-signals", "dep:dioxus-stores", "dep:manganis"]
+svg = ["blitz-dom/svg", "blitz-paint/svg"]
+incremental = ["blitz-dom/incremental"]
+autofocus = ["blitz-dom/autofocus"]
+system-fonts = ["blitz-dom/system_fonts"]
+clipboard = ["blitz-shell/clipboard"]
+file_dialog = ["file-dialog"]
+file-dialog = ["blitz-shell/file_dialog"]
+accessibility = ["blitz-shell/accessibility", "blitz-dom/accessibility"]
+net = ["dep:tokio", "dep:blitz-net"]
+html = ["dep:blitz-html"]
+hot-reload = ["dep:dioxus-cli-config", "dep:dioxus-devtools"]
+tracing = ["dep:tracing", "dioxus-native-dom/tracing", "blitz-shell/tracing", "blitz-dom/tracing"]
+
+[dependencies]
+anyrender = { version = "0.6.2", default-features = false }
+log = { version = "0.4" }
+anyrender_vello = { version = "0.6", default-features = false }
+blitz-dom = { version = "0.2.4", default-features = false }
+blitz-html = { version = "0.2", optional = true }
+blitz-net = { version = "0.2", optional = true }
+blitz-paint = { version = "0.2", optional = true }
+blitz-shell = { version = "0.2", default-features = false }
+blitz-traits = { version = "0.2" }
+dioxus-asset-resolver = { version = "0.7.4", features = ["native"] }
+dioxus-cli-config = { version = "0.7.4", optional = true }
+dioxus-core = { version = "0.7.4" }
+dioxus-core-macro = { version = "0.7.4", optional = true }
+dioxus-devtools = { version = "0.7.4", optional = true }
+dioxus-document = { version = "0.7.4", default-features = false }
+dioxus-history = { version = "0.7.4", default-features = false }
+dioxus-hooks = { version = "0.7.4", optional = true }
+dioxus-html = { version = "0.7.4", default-features = false }
+dioxus-native-dom = { version = "0.7.4" }
+dioxus-signals = { version = "0.7.4", optional = true }
+dioxus-stores = { version = "0.7.4", optional = true }
+futures-util = { version = "0.3", default-features = false }
+keyboard-types = { version = "0.7", default-features = false }
+manganis = { version = "0.7.4", features = ["dioxus"], optional = true }
+rustc-hash = { version = "2.1.1" }
+tokio = { version = "1.48", features = ["rt-multi-thread"], optional = true }
+tracing = { version = "0.1.41", optional = true }
+webbrowser = { version = "1.0" }
+winit = { version = "0.30.11", features = ["rwh_06"] }
+
+[target.'cfg(any(target_os = "android", all(target_os = "ios", target_abi = "sim")))'.dependencies]
+anyrender_vello_cpu = { version = "0.8", features = ["pixels_window_renderer"], default-features = false }

@@ -4,7 +4,7 @@
 
 use appthere_ui::{AtHomeTab, BuiltinTemplate, RecentDocument};
 use dioxus::prelude::*;
-use loki_file_access::{FilePicker, PickOptions};
+use loki_file_access::{FilePicker, PickOptions, PickerError};
 use loki_i18n::fl;
 
 use crate::new_document::new_blank_tab;
@@ -111,6 +111,9 @@ pub fn Home() -> Element {
                     nav.push(Route::Editor { path });
                 }
                 Ok(None) => {}
+                Err(PickerError::Platform { .. }) => {
+                    *err_sig.write() = Some(fl!("error-picker-not-supported"));
+                }
                 Err(e) => {
                     *err_sig.write() = Some(e.to_string());
                 }
@@ -153,6 +156,7 @@ pub fn Home() -> Element {
             browse_label:        String::new(),
             open_file_label:     fl!("home-open-file"),
             empty_recent_label:  fl!("home-no-recent"),
+            pick_error:          pick_error,
             on_template_select:  on_template_select,
             on_browse_templates: |_| {},
             on_recent_open:      on_recent_open,

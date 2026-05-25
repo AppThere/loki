@@ -10,9 +10,3 @@ fn main() {
     loki_i18n::init();
     dioxus::launch(loki_text::app::App);
 }
-
-#[cfg(target_os = "android")]
-#[no_mangle]
-pub extern "C" fn android_main(_app: *mut std::ffi::c_void) {
-    main();
-}

@@ -9,6 +9,7 @@ repository = "https://github.com/appthere/loki"
 [lib]
 name = "loki_presentation"
 path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
 
 [[bin]]
 name = "loki-presentation"
@@ -74,3 +75,4 @@ label = "Loki Presentation"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { workspace = true }
+blitz-shell = "0.2.3"

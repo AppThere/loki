@@ -7,11 +7,13 @@ use std::sync::{Arc, Mutex};
 
 use appthere_canvas::{PageCache, PageIndex, ScrollState};
 use appthere_ui::tokens;
+#[cfg(not(target_os = "android"))]
 use dioxus::native::use_wgpu;
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 
 use crate::doc_page_source::DocPageSource;
+#[cfg(not(target_os = "android"))]
 use crate::page_paint_source::LokiPageSource;
 use crate::renderer_state::RendererState;
 use crate::scroll_driver::{on_scroll_event, use_settle_detector};
@@ -78,6 +80,7 @@ impl PartialEq for PageTileProps {
 }
 
 /// A single page rendered into a Blitz GPU canvas.
+#[cfg(not(target_os = "android"))]
 #[allow(non_snake_case)]
 fn PageTile(props: PageTileProps) -> Element {
     let cache = props.cache.clone();
@@ -143,6 +146,25 @@ fn PageTile(props: PageTileProps) -> Element {
                     h = props.h,
                 ),
             }
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+#[allow(non_snake_case)]
+fn PageTile(props: PageTileProps) -> Element {
+    // COMPAT(dioxus-native): GPU canvas (use_wgpu/CustomPaintSource) unavailable
+    // with the CPU renderer on Android. Pages render as placeholder blocks.
+    rsx! {
+        div {
+            style: format!(
+                "display: block; width: {w}px; height: {h}px; \
+                 margin-left: auto; margin-right: auto; \
+                 margin-bottom: {gap}px; background: #2a2a2a;",
+                w = props.w,
+                h = props.h,
+                gap = tokens::PAGE_GAP_PX,
+            ),
         }
     }
 }

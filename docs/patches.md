@@ -136,6 +136,152 @@ touch variants.
 
 ---
 
+### blitz-net — 0.2.1
+
+**Source:** `patches/blitz-net/` (local), vendored from the crates.io release of
+`blitz-net 0.2.1`. Only `Cargo.toml` is modified; `src/lib.rs` is unchanged.
+
+**Fixes:** The crates.io release of `blitz-net 0.2.1` depends on `reqwest`
+with default features, which includes `native-tls`. `native-tls` dynamically
+links `libssl.so` at runtime. Android does not ship `libssl.so` as a system
+library (it ships `libssl.so.3` in some images, but the path and soname differ
+from what OpenSSL expects). The result is:
+
+```
+java.lang.UnsatisfiedLinkError: dlopen failed: library "libssl.so" not found
+```
+
+in `WryActivity.<clinit>` at `System.loadLibrary("main")` — the app crashes
+before any Rust code runs.
+
+The patch switches `reqwest` to `{ default-features = false, features =
+["rustls-tls-webpki-roots"] }`. `rustls-tls-webpki-roots` is a pure-Rust TLS
+stack that embeds the Mozilla trust bundle; it requires no system OpenSSL.
+
+**Root cause:** `blitz-net` did not gate the TLS backend behind a Cargo
+feature, so Android callers have no way to opt out of `native-tls` without
+a source patch.
+
+**Upstream status:** No issue filed as of 2026-05-24. Monitor blitz-net
+releases for a `rustls` or configurable-TLS feature.
+
+**Removal condition:** Remove when blitz-net upstream ships a version that
+uses rustls by default or provides a feature flag to disable native-tls.
+
+**Added:** 2026-05-24
+
+---
+
+### dioxus-native — 0.7.4
+
+**Source:** `patches/dioxus-native/` (local), vendored from the crates.io
+release of `dioxus-native 0.7.4`. Only `src/dioxus_application.rs` is
+modified; all other files are unchanged.
+
+**Fixes:** `document::Style {}` components send `CreateHeadElement` events via
+the winit event-loop proxy during `initial_build()`. These events are processed
+in `DioxusNativeApplication::handle_blitz_shell_event()`:
+
+```rust
+DioxusNativeEvent::CreateHeadElement { .. } => {
+    doc.create_head_element(name, attributes, contents);
+    window.poll(); // returns false — no VirtualDom work pending
+    // ← no request_redraw() here
+}
+```
+
+After CSS is applied, `window.poll()` returns `false` (no reactive VirtualDom
+work was triggered by a style insertion) so `request_redraw()` is never called.
+
+On desktop (Windows/macOS), this is masked because the OS posts a
+`WindowEvent::Resized` event immediately after the window is created, which
+calls `with_viewport()` → `request_redraw()` — causing a re-render that picks
+up the newly applied CSS. On Android, no such automatic event is posted after
+`resumed()`, so the screen remains blank (wgpu clear color is white).
+
+Additionally, the `window.request_redraw()` call in `resumed()` at line 153 of
+the original is a no-op: `View::request_redraw()` guards on
+`self.renderer.is_active()`, and the renderer is not yet active at that point
+(it is activated by the subsequent `self.inner.resumed(event_loop)` call).
+
+The patch adds `window.request_redraw()` after `window.poll()` in the
+`CreateHeadElement` handler, ensuring CSS changes always trigger a repaint.
+
+**Root cause:** Upstream assumed OS-level redraw events would cover the
+CSS-application step; this assumption holds on desktop but not on Android.
+
+**Upstream status:** No issue filed as of 2026-05-24. Upstream repository is
+[DioxusLabs/dioxus](https://github.com/DioxusLabs/dioxus).
+
+**Removal condition:** Remove when upstream dioxus-native calls
+`request_redraw()` after applying head elements, or when the event processing
+is made synchronous (the `todo(jon)` comment in the original acknowledges this).
+
+**Added:** 2026-05-24
+
+---
+
+### loki-file-access — 0.1.2
+
+**Source:** `patches/loki-file-access/` (local), vendored from the git source at
+commit `176b590fb2da82b2ab278a15b34f0bea56ae0a7a` of
+[appthere/loki-file-access](https://github.com/appthere/loki-file-access).
+
+**Fixes:** Two Android-specific bugs that caused a crash when tapping "Open
+File" on a NativeActivity (cargo-apk) build:
+
+1. **Wrong activity reference for `startActivityForResult`.** android-activity
+   v0.6 intentionally stores the `Application` object (not the `Activity`) in
+   `ndk_context`, because `Application` outlives the Activity lifecycle.
+   `startActivityForResult` only exists on `Activity`, so calling it on the
+   `Application` object threw a `java.lang.NoSuchMethodError` / ART abort. The
+   patch adds `init_android(activity_as_ptr)` — called from `android_main` with
+   `AndroidApp::activity_as_ptr()` — which stores the actual NativeActivity
+   `GlobalRef` in an `AtomicPtr<c_void>`. `start_activity_for_result` now
+   prefers this pointer over `ndk_context::android_context().context()`.
+
+2. **JNI exception not cleared on failure.** When `startActivityForResult`
+   failed (e.g., called on the wrong receiver type), a JNI exception was left
+   pending. The next `FindClass` JNI call made while an exception was pending
+   caused ART's checked-JNI mode to abort the process. The patch calls
+   `env.exception_clear()` when `call_method` returns an error.
+
+3. **Fail-fast for NativeActivity without Java shim.** `ANativeActivityCallbacks`
+   has no `onActivityResult` field — NDK NativeActivity can never receive
+   `startActivityForResult` results. Rather than hanging the async task
+   indefinitely, the patch returns `Err(PickerError::Platform)` immediately with
+   an explanatory message when the NativeActivity pointer is set but no Java
+   `FilePickerActivity` shim is registered.
+
+4. **Pre-wired JNI callback for future Gradle build.** The function
+   `Java_com_appthere_loki_FilePickerActivity_nativeOnResult` is exported from
+   the binary. Once a Gradle-based build includes `FilePickerActivity.kt`
+   (calling `nativeOnResult` from `onActivityResult`), end-to-end file picking
+   will work without further changes to this crate.
+
+**Also fixes:** `jni::errors::JniError` → `jni::errors::Error` in `jvm_err` and
+`attach_err` helpers (the original used the wrong variant type for the jni
+0.21.x API), and corrects a `#[no_mangle]` → `#[unsafe(no_mangle)]` attribute
+for Rust 2024 edition compatibility.
+
+**Root cause:** loki-file-access 0.1.2 was designed for desktop and WASM; the
+Android implementation was scaffolded but never exercised on a real NativeActivity
+build before this patch.
+
+**Upstream status:** The appthere/loki-file-access repository is maintained by
+the same team. These fixes should be pushed upstream and the patch removed once
+they are merged and a new version is published.
+
+**Removal condition:** Push these fixes to `appthere/loki-file-access`, publish
+a new version, and update the workspace dependency to point at the registry
+version. The `[patch."https://github.com/appthere/loki-file-access"]` entry and
+the `patches/loki-file-access/` directory can then be removed. Full end-to-end
+file picking additionally requires a Gradle build with `FilePickerActivity.kt`.
+
+**Added:** 2026-05-25
+
+---
+
 ## Removing a patch
 
 Before removing a patch:

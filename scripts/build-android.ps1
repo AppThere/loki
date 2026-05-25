@@ -1,0 +1,180 @@
+<#
+.SYNOPSIS
+    Full Android build pipeline for Loki Text including FilePickerActivity.
+
+.DESCRIPTION
+    1. Compiles FilePickerActivity.java → classes.dex using Android SDK tools.
+    2. Runs `cargo apk build` to produce the native library + bare APK.
+    3. Post-processes the APK:
+         a. Replaces the auto-generated AndroidManifest.xml with the custom one
+            from loki-text/AndroidManifest.xml (adds FilePickerActivity + hasCode=true).
+         b. Injects classes.dex.
+    4. Zipaligns and signs with the debug keystore.
+    5. Optionally installs via adb.
+
+.PARAMETER Release
+    Build a release APK instead of debug.
+
+.PARAMETER Install
+    Install the finished APK on a connected device/emulator via adb.
+
+.PARAMETER SkipCargoApk
+    Skip cargo apk build (useful when only the manifest/DEX changed).
+
+.EXAMPLE
+    .\scripts\build-android.ps1 -Install
+    .\scripts\build-android.ps1 -Release -Install
+#>
+
+param(
+    [switch]$Release,
+    [switch]$Install,
+    [switch]$SkipCargoApk
+)
+
+$ErrorActionPreference = "Stop"
+Set-Location (Split-Path $PSScriptRoot -Parent)
+
+# Ensure Android NDK is set for cargo-apk.
+if (-not $env:ANDROID_NDK_ROOT) {
+    $ndkBase = "$env:LOCALAPPDATA\Android\Sdk\ndk"
+    if (Test-Path $ndkBase) {
+        $env:ANDROID_NDK_ROOT = (Get-ChildItem $ndkBase | Sort-Object Name -Descending | Select-Object -First 1 -ExpandProperty FullName)
+        Write-Host "==> Auto-detected NDK: $env:ANDROID_NDK_ROOT"
+    } else {
+        throw "ANDROID_NDK_ROOT not set and $ndkBase not found."
+    }
+}
+
+# ── Tool paths ────────────────────────────────────────────────────────────────
+
+$sdk        = $env:LOCALAPPDATA + "\Android\Sdk"
+$btVer      = (Get-ChildItem "$sdk\build-tools" | Sort-Object Name -Descending | Select-Object -First 1).Name
+$bt         = "$sdk\build-tools\$btVer"
+$aapt       = "$bt\aapt.exe"
+$d8         = "$bt\d8.bat"
+$zipalign   = "$bt\zipalign.exe"
+$apksigner  = "$bt\apksigner.bat"
+$platform   = (Get-ChildItem "$sdk\platforms\android-*" | Sort-Object Name -Descending | Select-Object -First 1).FullName + "\android.jar"
+$javac      = "C:\Program Files\Android\Android Studio\jbr\bin\javac.exe"
+if (-not (Test-Path $javac)) {
+    $javac = (Get-Command javac -ErrorAction SilentlyContinue)?.Source
+    if (-not $javac) { throw "javac not found. Install JDK or Android Studio." }
+}
+$debugKey   = "$env:USERPROFILE\.android\debug.keystore"
+
+Write-Host "==> Build tools: $bt"
+Write-Host "==> Platform:    $platform"
+Write-Host "==> javac:       $javac"
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+
+$profile       = if ($Release) { "release" } else { "debug" }
+$javaSrc       = "patches\loki-file-access\android\FilePickerActivity.java"
+$manifestXml   = "loki-text\AndroidManifest.xml"
+$outDir        = "target\android-pkg"
+$apkSrc        = "$PWD\target\$profile\apk\loki_text.apk"
+
+New-Item -ItemType Directory -Force $outDir | Out-Null
+$outDir = (Resolve-Path $outDir).Path   # make absolute for aapt
+
+# ── Step 1: Compile FilePickerActivity.java → classes.dex ────────────────────
+
+Write-Host "`n==> Compiling FilePickerActivity.java..."
+$classesDir = "$outDir\java-classes"
+$dexDir     = "$outDir\dex-out"
+New-Item -ItemType Directory -Force $classesDir, $dexDir | Out-Null
+
+& $javac -source 8 -target 8 -classpath $platform -d $classesDir $javaSrc
+if ($LASTEXITCODE -ne 0) { throw "javac failed" }
+
+$classFile = "$classesDir\io\github\appthere\lokifileaccess\FilePickerActivity.class"
+& $d8 $classFile --output $dexDir --min-api 26
+if ($LASTEXITCODE -ne 0) { throw "d8 failed" }
+
+$dexPath = "$dexDir\classes.dex"
+Write-Host "    DEX: $dexPath"
+
+# ── Step 2: cargo apk build ───────────────────────────────────────────────────
+
+if (-not $SkipCargoApk) {
+    Write-Host "`n==> cargo apk build ($profile)..."
+    $buildArgs = @("apk", "build", "--package", "loki-text")
+    if ($Release) { $buildArgs += "--release" }
+    & cargo @buildArgs
+    # cargo-apk may exit non-zero due to a post-build artifact-check panic in
+    # cargo-subcommand (Bin vs Cdylib confusion) even when the APK was built
+    # successfully.  Check for the APK directly instead of trusting exit code.
+    if ($LASTEXITCODE -ne 0 -and -not (Test-Path $apkSrc)) {
+        throw "cargo apk build failed and APK not found at $apkSrc"
+    }
+}
+
+if (-not (Test-Path $apkSrc)) {
+    throw "APK not found at $apkSrc — run without -SkipCargoApk first."
+}
+
+# ── Step 3: Generate binary AndroidManifest.xml via aapt ─────────────────────
+
+Write-Host "`n==> Packaging custom AndroidManifest.xml → binary AXML..."
+$manifestApk     = "$outDir\manifest-only.apk"
+$manifestExtract = "$outDir\manifest-extract"
+New-Item -ItemType Directory -Force $manifestExtract | Out-Null
+
+& $aapt package -f -F $manifestApk -M $manifestXml -I $platform
+if ($LASTEXITCODE -ne 0) { throw "aapt package (manifest) failed" }
+
+# Extract the binary AXML manifest from the temporary APK
+Expand-Archive -Path $manifestApk -DestinationPath $manifestExtract -Force
+if (-not (Test-Path "$manifestExtract\AndroidManifest.xml")) {
+    throw "Binary manifest not found in aapt output"
+}
+
+# ── Step 4: Patch the cargo-apk APK ──────────────────────────────────────────
+
+Write-Host "`n==> Patching APK (replace manifest + inject DEX)..."
+$apkWork = "$outDir\loki-patched.apk"
+Copy-Item $apkSrc $apkWork -Force
+
+# Replace binary AndroidManifest.xml
+Push-Location $manifestExtract
+& $aapt remove $apkWork AndroidManifest.xml 2>$null
+& $aapt add $apkWork AndroidManifest.xml
+if ($LASTEXITCODE -ne 0) { throw "aapt add manifest failed" }
+Pop-Location
+
+# Inject classes.dex
+Push-Location $dexDir
+& $aapt add $apkWork classes.dex
+if ($LASTEXITCODE -ne 0) { throw "aapt add dex failed" }
+Pop-Location
+
+# ── Step 5: Zipalign ─────────────────────────────────────────────────────────
+
+Write-Host "`n==> Zipaligning..."
+$apkAligned = "$outDir\loki-aligned.apk"
+Remove-Item $apkAligned -ErrorAction SilentlyContinue
+& $zipalign -f 4 $apkWork $apkAligned
+if ($LASTEXITCODE -ne 0) { throw "zipalign failed" }
+
+# ── Step 6: Sign ─────────────────────────────────────────────────────────────
+
+Write-Host "`n==> Signing with debug keystore..."
+& $apksigner sign `
+    --ks $debugKey `
+    --ks-key-alias androiddebugkey `
+    --ks-pass pass:android `
+    --key-pass pass:android `
+    $apkAligned
+if ($LASTEXITCODE -ne 0) { throw "apksigner failed" }
+
+Write-Host "`n==> APK ready: $apkAligned"
+
+# ── Step 7: Install ───────────────────────────────────────────────────────────
+
+if ($Install) {
+    Write-Host "`n==> Installing on device..."
+    & adb install -r $apkAligned
+    if ($LASTEXITCODE -ne 0) { throw "adb install failed" }
+    Write-Host "==> Installed successfully!"
+}

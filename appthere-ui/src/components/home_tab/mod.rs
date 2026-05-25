@@ -70,9 +70,7 @@ pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
     let viewport_width = use_signal(|| 375.0_f32);
     let is_desktop = viewport_width() >= BREAKPOINT_DESKTOP_PX;
 
-    // Holds the last file-picker error message, if any.
-    let mut pick_error: Signal<Option<String>> = use_signal(|| None);
-
+    let mut pick_error = props.pick_error;
     let mut open_hovered = use_signal(|| false);
     let open_bg = if open_hovered() {
         COLOR_ACCENT_PRIMARY_HOVER
@@ -261,6 +259,10 @@ pub struct AtHomeTabProps {
     pub open_file_label: String,
     /// Message shown when `recent_documents` is empty.
     pub empty_recent_label: String,
+
+    /// Shared signal holding the current file-picker error message, if any.
+    /// Cleared automatically when the user taps "Open File" again.
+    pub pick_error: Signal<Option<String>>,
 
     // ── Callbacks ─────────────────────────────────────────────────────────────
     /// Called when a template card is selected. Argument is the index into `templates`.

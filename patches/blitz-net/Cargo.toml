@@ -1,0 +1,31 @@
+[package]
+name = "blitz-net"
+version = "0.2.1"
+edition = "2024"
+rust-version = "1.86.0"
+description = "Blitz networking"
+homepage = "https://github.com/dioxuslabs/blitz"
+documentation = "https://docs.rs/blitz-net"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/dioxuslabs/blitz"
+
+[lib]
+name = "blitz_net"
+path = "src/lib.rs"
+
+[features]
+cookies = ["reqwest/cookies"]
+debug_log = []
+multipart = [
+    "reqwest/multipart",
+    "reqwest/stream",
+]
+
+[dependencies]
+blitz-traits = { version = "0.2.0", default-features = false }
+data-url = "0.3.1"
+# PATCH: default reqwest features include native-tls, which dynamically links
+# libssl.so — unavailable on Android. Switch to pure-Rust rustls so no system
+# OpenSSL is required at runtime.  Remove when blitz-net upstream adopts rustls.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots"] }
+tokio = "1.42"

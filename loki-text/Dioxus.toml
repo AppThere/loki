@@ -6,14 +6,16 @@
 #
 # IMPORTANT — platform notes:
 #
-#   loki-text uses `features = ["native"]` (the Blitz/wgpu GPU renderer).
-#   `dx serve --platform android` activates the `mobile` feature instead,
-#   which is the WebView renderer and requires dioxus-desktop ≥ 0.7.4
-#   (not yet published as a stable crate as of 2026-05-08).
+#   loki-text uses `features = ["native"]` (the Blitz/wgpu GPU renderer) on all
+#   platforms including Android.  The Android entry point (`android_main`) lives
+#   in `src/lib.rs` — it calls `blitz_shell::set_android_app` so that the Blitz
+#   event loop can retrieve the AndroidApp before `dioxus::launch` creates it.
 #
-#   For Android/iOS with the Blitz renderer, use cargo-apk or xbuild
-#   instead of dx — see docs/mobile-build.md (to be added).
-#   For desktop native testing, use: dx serve --platform native
+#   Run on a connected device or emulator (API ≥ 26, Vulkan required):
+#     dx serve --platform android --package loki-text
+#
+#   For desktop native testing:
+#     dx serve --platform native --package loki-text
 
 [application]
 name = "loki-text"

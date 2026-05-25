@@ -41,12 +41,12 @@ impl FontResources {
         let mut font_cx = parley::FontContext::new();
 
         // Dynamically scan and register app-bundled fonts from the assets directory.
-        if let Ok(exe_path) = std::env::current_exe() {
-            if let Some(exe_dir) = exe_path.parent() {
-                let assets_fonts = exe_dir.join("assets").join("fonts");
-                if assets_fonts.is_dir() {
-                    font_cx.collection.load_fonts_from_paths(vec![assets_fonts]);
-                }
+        if let Ok(exe_path) = std::env::current_exe()
+            && let Some(exe_dir) = exe_path.parent()
+        {
+            let assets_fonts = exe_dir.join("assets").join("fonts");
+            if assets_fonts.is_dir() {
+                font_cx.collection.load_fonts_from_paths(vec![assets_fonts]);
             }
         }
 
@@ -98,7 +98,8 @@ impl FontResources {
         if let Some(sub_name) = substitute {
             // Check if the substitute is available.
             if self.font_cx.collection.family_id(sub_name).is_some() {
-                self.substitutions.insert(name.to_string(), Some(sub_name.to_string()));
+                self.substitutions
+                    .insert(name.to_string(), Some(sub_name.to_string()));
                 return sub_name.to_string();
             }
         }
@@ -133,7 +134,10 @@ mod tests {
         let resolved = r.resolve_font_name("Calibri");
         if r.font_cx.collection.family_id("Carlito").is_some() {
             assert_eq!(resolved, "Carlito");
-            assert_eq!(r.substitutions.get("Calibri"), Some(&Some("Carlito".to_string())));
+            assert_eq!(
+                r.substitutions.get("Calibri"),
+                Some(&Some("Carlito".to_string()))
+            );
         } else {
             assert_eq!(resolved, "Calibri");
             assert_eq!(r.substitutions.get("Calibri"), Some(&None));
@@ -143,7 +147,10 @@ mod tests {
         let resolved = r.resolve_font_name("calibri");
         if r.font_cx.collection.family_id("Carlito").is_some() {
             assert_eq!(resolved, "Carlito");
-            assert_eq!(r.substitutions.get("calibri"), Some(&Some("Carlito".to_string())));
+            assert_eq!(
+                r.substitutions.get("calibri"),
+                Some(&Some("Carlito".to_string()))
+            );
         } else {
             assert_eq!(resolved, "calibri");
             assert_eq!(r.substitutions.get("calibri"), Some(&None));

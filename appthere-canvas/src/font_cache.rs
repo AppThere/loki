@@ -48,7 +48,7 @@ impl FontDataCache {
     ) -> &[read_fonts::types::F2Dot14] {
         let key = (Arc::as_ptr(data) as usize, font_index);
         self.coords.entry(key).or_insert_with(|| {
-            if let Ok(font_ref) = read_fonts::FontRef::from_index(&**data, font_index) {
+            if let Ok(font_ref) = read_fonts::FontRef::from_index(data, font_index) {
                 use read_fonts::TableProvider;
                 if let Ok(fvar) = font_ref.fvar() {
                     if let Ok(axes) = fvar.axes() {

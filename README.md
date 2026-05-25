@@ -122,17 +122,30 @@ virtual manifest with no `[package]` section, which cargo-apk cannot use.
 # Connect a device via USB (enable USB debugging) or start an emulator
 adb devices                            # confirm device is visible
 
-# Build, install, and launch on the connected device
+# Build, install, and launch on the connected device (aarch64 for real device)
 cd loki-text
-cargo apk run --bin loki-text --release
+ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/<version>" \
+  cargo apk run --bin loki-text --target aarch64-linux-android --release
 ```
 
-For debug builds (faster compile):
+For the **x86_64 emulator** (debug build, faster iteration):
 
 ```bash
 cd loki-text
-cargo apk run --bin loki-text
+ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/<version>" \
+  cargo apk build --lib --target x86_64-linux-android
+# Install manually — debug APKs are large, so skip incremental protocol:
+adb uninstall com.appthere.loki
+adb install --no-incremental target/debug/apk/loki_text.apk
+adb shell am start -n com.appthere.loki/android.app.NativeActivity
 ```
+
+> **NDK note:** Set `ANDROID_NDK_ROOT` explicitly for each cargo-apk invocation;
+> cargo-apk does not reliably pick it up from `ANDROID_HOME` on all platforms.
+> On Windows use `$env:LOCALAPPDATA\Android\Sdk\ndk\<version>`.
+
+> **Large APK:** Debug builds are ~800 MB. `adb install` without
+> `--no-incremental` will fail with `INSTALL_FAILED_INSUFFICIENT_STORAGE`.
 
 ## Running on iOS
 
@@ -163,6 +176,8 @@ See [`docs/patches.md`](docs/patches.md) for the full list and removal condition
 |-------|--------|
 | `patches/blitz-shell` | Forwards `WindowEvent::Touch` as mouse events (upstream has empty `{}` arm) |
 | `patches/dioxus-native-dom` | Implements `convert_touch_data` and other `unimplemented!()` event converters |
+| `patches/dioxus-native` | Calls `request_redraw()` after CSS head-element insertion (Android blank screen fix) |
+| `patches/blitz-net` | Switches reqwest from native-tls to rustls (Android has no `libssl.so`) |
 | `patches/blitz-dom` | Fixes tabindex focus-on-click for non-input elements |
 | `patches/fontique` | Fixes missing `fontconfig_sys` alias in the crates.io 0.8.0 publish |
 

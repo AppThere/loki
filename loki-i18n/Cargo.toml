@@ -13,4 +13,4 @@ fluent = "0.17"
 fluent-bundle = "0.16"
 unic-langid = "0.9"
 sys-locale = "0.3"
-rust-embed = "8"
+rust-embed = { version = "8", features = ["debug-embed"] }

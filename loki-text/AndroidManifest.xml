@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AndroidManifest.xml — loki-text
+  Used by scripts/build-android.ps1 instead of the cargo-apk generated manifest.
+  Contains both NativeActivity (app entry point) and FilePickerActivity (SAF trampoline).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.appthere.loki">
+
+    <uses-sdk
+        android:minSdkVersion="26"
+        android:targetSdkVersion="34" />
+
+    <!--
+      android:hasCode="true" is required when Java activities are present.
+      FilePickerActivity is compiled into classes.dex and injected by the build script.
+    -->
+    <application
+        android:label="Loki"
+        android:hasCode="true">
+
+        <!--
+          NativeActivity is the main app entry point.
+          android:exported="true" is required on API 31+ for activities with intent filters.
+        -->
+        <activity
+            android:name="android.app.NativeActivity"
+            android:label="Loki"
+            android:exported="true"
+            android:configChanges="orientation|keyboardHidden|screenSize">
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="loki_text" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          FilePickerActivity — transparent Java trampoline for SAF file picking.
+          NativeActivity's ANativeActivityCallbacks has no onActivityResult; this
+          Activity receives the SAF result and delivers it to Rust via JNI.
+          android:exported="false" — started only from within this app.
+          Theme.Translucent.NoTitleBar — no visible window; just a picker dialog.
+        -->
+        <activity
+            android:name="io.github.appthere.lokifileaccess.FilePickerActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:exported="false" />
+
+    </application>
+
+</manifest>
