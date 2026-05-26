@@ -56,10 +56,14 @@ $d8         = "$bt\d8.bat"
 $zipalign   = "$bt\zipalign.exe"
 $apksigner  = "$bt\apksigner.bat"
 $platform   = (Get-ChildItem "$sdk\platforms\android-*" | Sort-Object Name -Descending | Select-Object -First 1).FullName + "\android.jar"
-$javac      = "C:\Program Files\Android\Android Studio\jbr\bin\javac.exe"
-if (-not (Test-Path $javac)) {
+# Prefer JAVA_HOME, then Android Studio bundled JDK, then system PATH.
+if ($env:JAVA_HOME -and (Test-Path "$env:JAVA_HOME\bin\javac.exe")) {
+    $javac = "$env:JAVA_HOME\bin\javac.exe"
+} elseif (Test-Path "C:\Program Files\Android\Android Studio\jbr\bin\javac.exe") {
+    $javac = "C:\Program Files\Android\Android Studio\jbr\bin\javac.exe"
+} else {
     $javac = (Get-Command javac -ErrorAction SilentlyContinue)?.Source
-    if (-not $javac) { throw "javac not found. Install JDK or Android Studio." }
+    if (-not $javac) { throw "javac not found. Set JAVA_HOME, install JDK, or install Android Studio." }
 }
 $debugKey   = "$env:USERPROFILE\.android\debug.keystore"
 
