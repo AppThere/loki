@@ -13,6 +13,20 @@ pub mod utils;
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 fn android_main(android_app: android_activity::AndroidApp) {
+    android_logger::init_once(
+        android_logger::Config::default()
+            .with_tag("LOKI")
+            .with_max_level(log::LevelFilter::Debug),
+    );
+    // SAFETY: activity_as_ptr() is a GlobalRef owned by android_app, which
+    // blitz_shell::set_android_app keeps alive for the process lifetime.
+    unsafe { loki_file_access::init_android(android_app.activity_as_ptr()) };
+    let (top, bottom) = loki_file_access::query_insets_dp();
+    appthere_ui::set_safe_area_insets(appthere_ui::SafeAreaInsets {
+        top,
+        bottom,
+        ..Default::default()
+    });
     blitz_shell::set_android_app(android_app);
     loki_i18n::init();
     dioxus::launch(app::App);

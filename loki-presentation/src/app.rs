@@ -2,7 +2,7 @@
 
 //! Root application component for loki-presentation.
 
-use appthere_ui::AtThemeContext;
+use appthere_ui::{use_safe_area, AtThemeContext};
 use dioxus::prelude::*;
 
 use crate::recent_documents::RecentDocuments;
@@ -25,6 +25,8 @@ pub fn App() -> Element {
     provide_context(tabs);
     provide_context(active_tab);
     provide_context(recent_docs);
+
+    let insets = use_safe_area();
 
     rsx! {
         document::Style {
@@ -49,7 +51,9 @@ pub fn App() -> Element {
         }
 
         div {
-            style: "margin: 0; padding: 0; width: 100vw; height: 100vh; \
+            style: "margin: 0; \
+                    padding: {insets.top}px {insets.right}px {insets.bottom}px {insets.left}px; \
+                    width: 100vw; height: 100vh; \
                     overflow: hidden; box-sizing: border-box;",
             Router::<Route> {}
         }

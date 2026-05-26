@@ -17,7 +17,7 @@
 //! container's `height: 100vh` to overflow (`100vh + 8px`), making the
 //! window vertically scrollable.
 
-use appthere_ui::AtThemeContext;
+use appthere_ui::{use_safe_area, AtThemeContext};
 use dioxus::prelude::*;
 
 use crate::recent_documents::RecentDocuments;
@@ -46,6 +46,10 @@ pub fn App() -> Element {
     provide_context(tabs);
     provide_context(active_tab);
     provide_context(recent_docs);
+
+    // Read OS-reported system-bar insets (non-zero on Android edge-to-edge).
+    // Zero on desktop platforms, so this has no visual effect there.
+    let insets = use_safe_area();
 
     rsx! {
         // Reset the body margin injected by Blitz's user-agent stylesheet so
@@ -96,9 +100,13 @@ pub fn App() -> Element {
 
         div {
             // Shell owns height: 100vh and the flex column layout.
-            // This div simply fills the viewport so the Router has a sized
-            // container to work inside.
-            style: "margin: 0; padding: 0; width: 100vw; height: 100vh; \
+            // Padding offsets the system status bar (top) and navigation bar
+            // (bottom) so content is never obscured on Android edge-to-edge.
+            // On desktop both insets are 0, so this is a no-op there.
+            // COMPAT(dioxus-native): box-sizing: border-box confirmed working.
+            style: "margin: 0; \
+                    padding: {insets.top}px {insets.right}px {insets.bottom}px {insets.left}px; \
+                    width: 100vw; height: 100vh; \
                     overflow: hidden; box-sizing: border-box;",
             Router::<Route> {}
         }

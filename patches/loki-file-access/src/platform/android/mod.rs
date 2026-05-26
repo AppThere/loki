@@ -41,6 +41,7 @@
 mod jni_activity;
 mod jni_common;
 mod jni_fd;
+mod jni_insets;
 mod jni_intents;
 
 use std::sync::{Arc, Mutex, OnceLock};
@@ -74,6 +75,15 @@ fn pending_pick(
 /// the `AndroidApp`, which must outlive all file-picker calls.
 pub unsafe fn init_android(activity_as_ptr: *mut std::ffi::c_void) {
     jni_common::store_activity_ptr(activity_as_ptr);
+}
+
+/// Query Android system-bar heights from OS resources.
+///
+/// Returns `(top_dp, bottom_dp)` — heights in density-independent pixels for
+/// the status bar (top) and navigation bar (bottom). Safe to call immediately
+/// after [`init_android`] before the window is laid out.
+pub fn query_insets_dp() -> (f32, f32) {
+    jni_insets::query_insets_dp()
 }
 
 // ── JNI result callback (called from Java FilePickerActivity) ─────────────────

@@ -31,6 +31,13 @@ fn android_main(android_app: android_activity::AndroidApp) {
     // blitz_shell::set_android_app below keeps android_app alive for the
     // duration of the process, so the pointer remains valid.
     unsafe { loki_file_access::init_android(android_app.activity_as_ptr()) };
+    let (top, bottom) = loki_file_access::query_insets_dp();
+    log::info!("android_main: safe area insets top={top} bottom={bottom}");
+    appthere_ui::set_safe_area_insets(appthere_ui::SafeAreaInsets {
+        top,
+        bottom,
+        ..Default::default()
+    });
     blitz_shell::set_android_app(android_app);
     log::info!("android_main: i18n init");
     loki_i18n::init();

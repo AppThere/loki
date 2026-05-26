@@ -26,6 +26,7 @@
 #![warn(missing_docs)]
 
 pub mod components;
+pub mod safe_area;
 pub mod theme;
 pub mod tokens;
 
@@ -37,4 +38,5 @@ pub use components::{
     AtStatusBarProps, AtTabBar, AtTabBarProps, AtTitleBar, AtTitleBarProps, BuiltinTemplate,
     Platform, RecentDocument,
 };
+pub use safe_area::{set_safe_area_insets, use_safe_area, SafeAreaInsets};
 pub use theme::{use_theme, AtThemeContext, ThemeVariant};
