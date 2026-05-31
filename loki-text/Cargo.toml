@@ -12,7 +12,7 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [[bin]]
-name = "loki-text"
+name = "loki-text-desktop"
 path = "src/main.rs"
 
 [dependencies]

@@ -1194,6 +1194,7 @@ fn span_link_url_for_range(spans: &[StyleSpan], text_range: Range<usize>) -> Opt
 
 /// Returns the font name for the first span fully containing `text_range`,
 /// or `None` if no span in that range carries a font name.
+#[cfg(debug_assertions)]
 fn span_font_name_for_range(spans: &[StyleSpan], text_range: Range<usize>) -> Option<String> {
     spans
         .iter()
