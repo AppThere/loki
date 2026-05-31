@@ -74,6 +74,12 @@ pub fn Shell() -> Element {
                         return; // Home tab cannot be closed.
                     }
                     let vec_idx = idx - 1;
+                    // Guard: idx is captured at render time; a rapid second close event
+                    // before the deferred DOM re-render produces a stale vec_idx that is
+                    // already out of bounds after the first removal.
+                    if vec_idx >= tabs.read().len() {
+                        return;
+                    }
                     let current_active = *active_tab.read();
 
                     tabs.write().remove(vec_idx);
