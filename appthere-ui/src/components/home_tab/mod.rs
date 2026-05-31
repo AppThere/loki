@@ -18,14 +18,13 @@ use template_gallery::AtTemplateGallery;
 
 use crate::tokens::colors::{
     COLOR_ACCENT_PRIMARY, COLOR_ACCENT_PRIMARY_HOVER, COLOR_STATUS_ERROR_BG,
-    COLOR_STATUS_ERROR_BORDER, COLOR_STATUS_ERROR_TEXT, COLOR_SURFACE_BASE, COLOR_SURFACE_PAGE,
-    COLOR_TEXT_ON_CHROME, COLOR_TEXT_ON_CHROME_SECONDARY, COLOR_TEXT_PRIMARY,
+    COLOR_STATUS_ERROR_BORDER, COLOR_STATUS_ERROR_TEXT, COLOR_SURFACE_BASE, COLOR_TEXT_ON_CHROME,
+    COLOR_TEXT_ON_CHROME_SECONDARY, COLOR_TEXT_PRIMARY,
 };
 use crate::tokens::layout::BREAKPOINT_DESKTOP_PX;
 use crate::tokens::spacing::{RADIUS_SM, SPACE_2, SPACE_3, SPACE_4, SPACE_6, TOUCH_MIN};
 use crate::tokens::typography::{
-    FONT_FAMILY_UI, FONT_SIZE_BODY, FONT_SIZE_HEADING, FONT_SIZE_LABEL, FONT_WEIGHT_BOLD,
-    FONT_WEIGHT_SEMIBOLD,
+    FONT_FAMILY_UI, FONT_SIZE_BODY, FONT_SIZE_LABEL, FONT_WEIGHT_SEMIBOLD,
 };
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -88,7 +87,7 @@ pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
     } else {
         format!(
             "display: flex; flex-direction: column; \
-             padding: {pad}px; flex: 1; overflow-y: auto;",
+             padding: {pad}px; flex: 1; min-height: 0; overflow-y: auto;",
             pad = SPACE_4,
         )
     };
@@ -102,28 +101,6 @@ pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
                 font = FONT_FAMILY_UI,
                 fg   = COLOR_TEXT_PRIMARY,
             ),
-
-            // ── Header bar ────────────────────────────────────────────────────
-            div {
-                style: format!(
-                    "height: 48px; background: {bg}; \
-                     border-bottom: 1px solid #E0E0E0; \
-                     display: flex; align-items: center; \
-                     padding: 0 {pad}px; flex-shrink: 0;",
-                    bg  = COLOR_SURFACE_PAGE,
-                    pad = SPACE_4,
-                ),
-                span {
-                    style: format!(
-                        "font-size: {size}px; font-weight: {weight}; \
-                         color: {fg}; flex: 1;",
-                        size   = FONT_SIZE_HEADING,
-                        weight = FONT_WEIGHT_BOLD,
-                        fg     = COLOR_TEXT_PRIMARY,
-                    ),
-                    "{props.app_name}"
-                }
-            }
 
             // ── Body: gallery + recent list ───────────────────────────────────
             div {
@@ -174,12 +151,19 @@ pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
                         "{props.recent_label}"
                     }
                     AtRecentFileList {
-                        documents: props.recent_documents.clone(),
-                        recent_label: props.recent_label.clone(),
-                        empty_label: props.empty_recent_label.clone(),
+                        documents:       props.recent_documents.clone(),
+                        recent_label:    props.recent_label.clone(),
+                        empty_label:     props.empty_recent_label.clone(),
                         open_file_label: props.open_file_label.clone(),
-                        on_select: move |idx| { props.on_recent_open.call(idx); },
-                        on_open_file: move |_| { props.on_open_file.call(()); },
+                        menu_aria_label: props.recent_menu_aria_label.clone(),
+                        remove_label:    props.recent_remove_label.clone(),
+                        delete_label:    props.recent_delete_label.clone(),
+                        open_copy_label: props.recent_open_copy_label.clone(),
+                        on_select:    move |idx| { props.on_recent_open.call(idx); },
+                        on_open_file: move |_|   { props.on_open_file.call(()); },
+                        on_remove:    move |idx| { props.on_recent_remove.call(idx); },
+                        on_delete:    move |idx| { props.on_recent_delete.call(idx); },
+                        on_open_copy: move |idx| { props.on_recent_open_copy.call(idx); },
                     }
                 }
             }
@@ -239,9 +223,6 @@ pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
 /// Props for [`AtHomeTab`].
 #[derive(Props, Clone, PartialEq)]
 pub struct AtHomeTabProps {
-    /// Application name shown in the header bar.
-    pub app_name: String,
-
     /// Template entries for the gallery.
     pub templates: Vec<BuiltinTemplate>,
 
@@ -260,6 +241,16 @@ pub struct AtHomeTabProps {
     /// Message shown when `recent_documents` is empty.
     pub empty_recent_label: String,
 
+    // ── Recent document row context-menu labels ───────────────────────────────
+    /// Accessible label for the ⋮ button on each recent document row.
+    pub recent_menu_aria_label: String,
+    /// "Remove from recents" menu item label.
+    pub recent_remove_label: String,
+    /// "Delete file" menu item label.
+    pub recent_delete_label: String,
+    /// "Open as copy" menu item label.
+    pub recent_open_copy_label: String,
+
     /// Shared signal holding the current file-picker error message, if any.
     /// Cleared automatically when the user taps "Open File" again.
     pub pick_error: Signal<Option<String>>,
@@ -273,4 +264,10 @@ pub struct AtHomeTabProps {
     pub on_recent_open: EventHandler<usize>,
     /// Called when the "Open File" button is pressed.
     pub on_open_file: EventHandler<()>,
+    /// Called when "Remove from recents" is chosen. Argument is the entry index.
+    pub on_recent_remove: EventHandler<usize>,
+    /// Called when "Delete file" is chosen. Argument is the entry index.
+    pub on_recent_delete: EventHandler<usize>,
+    /// Called when "Open as copy" is chosen. Argument is the entry index.
+    pub on_recent_open_copy: EventHandler<usize>,
 }

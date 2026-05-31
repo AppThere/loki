@@ -17,6 +17,15 @@ impl BaseDocument {
             nodes.insert(node_id, (id, builder));
         });
 
+        // Only use focus_node_id if that node was actually included in the tree.
+        // A stale focus (removed or unvisited node) causes accesskit_consumer to
+        // panic with "Focused id is not in the node list".
+        let focus = self
+            .focus_node_id
+            .filter(|id| nodes.contains_key(id))
+            .map(|id| NodeId(id as u64))
+            .unwrap_or(NodeId(u64::MAX));
+
         let mut nodes: Vec<_> = nodes
             .into_iter()
             .map(|(_, (id, node))| (id, node))
@@ -27,7 +36,7 @@ impl BaseDocument {
         TreeUpdate {
             nodes,
             tree: Some(tree),
-            focus: NodeId(self.focus_node_id.map(|id| id as u64).unwrap_or(u64::MAX)),
+            focus,
         }
     }
 

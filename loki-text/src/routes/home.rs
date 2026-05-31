@@ -162,6 +162,59 @@ pub fn Home() -> Element {
         }
     };
 
+    // ── on_recent_remove ──────────────────────────────────────────────────────
+    let on_recent_remove = move |idx: usize| {
+        let path = recent_docs.read().entries.get(idx).map(|e| e.path.clone());
+        if let Some(path) = path {
+            recent_docs.write().remove(&path);
+            recent_docs.read().save();
+        }
+    };
+
+    // ── on_recent_delete ──────────────────────────────────────────────────────
+    let on_recent_delete = move |idx: usize| {
+        let path = recent_docs.read().entries.get(idx).map(|e| e.path.clone());
+        if let Some(path) = path {
+            recent_docs.write().remove(&path);
+            recent_docs.read().save();
+            // TODO(ux): Close any open tab for this file; add confirmation dialog.
+            let _ = std::fs::remove_file(&path);
+        }
+    };
+
+    // ── on_recent_open_copy ───────────────────────────────────────────────────
+    let on_recent_open_copy = move |idx: usize| {
+        let nav = navigator;
+        let entry = recent_docs.read().entries.get(idx).cloned();
+        if let Some(entry) = entry {
+            let src = std::path::Path::new(&entry.path);
+            let Some(parent) = src.parent() else {
+                return;
+            };
+            let stem = src
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
+            let ext = src
+                .extension()
+                .map(|e| e.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let copy_name = if ext.is_empty() {
+                format!("{stem} Copy")
+            } else {
+                format!("{stem} Copy.{ext}")
+            };
+            // TODO(ux): Handle name conflicts (e.g., increment a counter suffix).
+            let dest = parent.join(&copy_name);
+            if std::fs::copy(src, &dest).is_ok() {
+                let dest_str = dest.to_string_lossy().into_owned();
+                push_or_switch_tab(tabs, active_tab, dest_str.clone());
+                nav.push(Route::Editor { path: dest_str });
+            }
+        }
+    };
+
     // ── Map RecentEntry → RecentDocument (appthere-ui type) ──────────────────
     let recent_list: Vec<RecentDocument> = recent_docs
         .read()
@@ -176,21 +229,27 @@ pub fn Home() -> Element {
 
     rsx! {
         AtHomeTab {
-            app_name:            fl!("shell-app-name"),
-            templates:           make_templates(),
-            recent_documents:    recent_list,
-            templates_label:     fl!("home-templates-heading"),
-            recent_label:        fl!("home-recent-heading"),
+            templates:              make_templates(),
+            recent_documents:       recent_list,
+            templates_label:        fl!("home-templates-heading"),
+            recent_label:           fl!("home-recent-heading"),
             // Empty string hides the Browse card until template browsing is implemented.
-            browse_label:        String::new(),
-            open_file_label:     fl!("home-open-file"),
-            empty_recent_label:  fl!("home-no-recent"),
-            pick_error:          pick_error,
-            on_template_select:  on_template_select,
+            browse_label:           String::new(),
+            open_file_label:        fl!("home-open-file"),
+            empty_recent_label:     fl!("home-no-recent"),
+            recent_menu_aria_label: fl!("home-recent-menu-aria"),
+            recent_remove_label:    fl!("home-recent-menu-remove"),
+            recent_delete_label:    fl!("home-recent-menu-delete"),
+            recent_open_copy_label: fl!("home-recent-menu-open-copy"),
+            pick_error:             pick_error,
+            on_template_select:     on_template_select,
             // TODO(browse-templates): open a template browser dialog.
-            on_browse_templates: |_| {},
-            on_recent_open:      on_recent_open,
-            on_open_file:        on_open_file,
+            on_browse_templates:    |_| {},
+            on_recent_open:         on_recent_open,
+            on_open_file:           on_open_file,
+            on_recent_remove:       on_recent_remove,
+            on_recent_delete:       on_recent_delete,
+            on_recent_open_copy:    on_recent_open_copy,
         }
     }
 }

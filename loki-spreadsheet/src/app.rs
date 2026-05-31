@@ -2,7 +2,7 @@
 
 //! Root application component for loki-spreadsheet.
 
-use appthere_ui::{use_safe_area, AtThemeContext};
+use appthere_ui::{AtThemeContext, use_safe_area};
 use dioxus::prelude::*;
 
 use crate::recent_documents::RecentDocuments;

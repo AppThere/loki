@@ -110,9 +110,17 @@ pub fn Shell() -> Element {
             }
 
             // ── Route outlet (fills remaining vertical space) ─────────────────
+            // COMPAT(dioxus-native): Taffy does not propagate a definite height
+            // from a flex:1 child back into its own children's flex:1 items.
+            // Using height:calc(100vh - Npx) gives an explicit definite length
+            // that Taffy resolves correctly — required for overflow-y:auto scroll
+            // to engage in both the home and editor route content.
             div {
-                style: "flex: 1; overflow: hidden; \
-                        display: flex; flex-direction: column;",
+                style: format!(
+                    "height: calc(100vh - {h}px); overflow: hidden; \
+                     display: flex; flex-direction: column;",
+                    h = tokens::TAB_BAR_HEIGHT,
+                ),
                 Outlet::<Route> {}
             }
         }

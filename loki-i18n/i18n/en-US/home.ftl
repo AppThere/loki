@@ -27,6 +27,12 @@ home-browse-templates = Browse templates…
 home-no-recent = No recent documents. Open a file to get started.
 home-open-file = Open File…
 
+# Recent document row context menu
+home-recent-menu-aria = Document options
+home-recent-menu-remove = Remove from recents
+home-recent-menu-delete = Delete file
+home-recent-menu-open-copy = Open as copy
+
 # File picker filter label (not shown to user on all platforms)
 home-filter-label = Documents
 

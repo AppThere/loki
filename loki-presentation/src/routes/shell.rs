@@ -74,9 +74,13 @@ pub fn Shell() -> Element {
             }
 
             // ── Route outlet (fills remaining vertical space) ─────────────────
+            // COMPAT(dioxus-native): explicit calc height required — see loki-text shell.rs.
             div {
-                style: "flex: 1; overflow: hidden; \
-                        display: flex; flex-direction: column;",
+                style: format!(
+                    "height: calc(100vh - {h}px); overflow: hidden; \
+                     display: flex; flex-direction: column;",
+                    h = tokens::TAB_BAR_HEIGHT,
+                ),
                 Outlet::<Route> {}
             }
         }

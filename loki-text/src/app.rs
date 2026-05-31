@@ -17,7 +17,7 @@
 //! container's `height: 100vh` to overflow (`100vh + 8px`), making the
 //! window vertically scrollable.
 
-use appthere_ui::{use_safe_area, AtThemeContext};
+use appthere_ui::{AtThemeContext, use_safe_area};
 use dioxus::prelude::*;
 
 use crate::recent_documents::RecentDocuments;
