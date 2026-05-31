@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 
 use appthere_ui::tokens;
 use dioxus::prelude::*;
-use loki_doc_model::set_block_style;
+use loki_doc_model::{StyleId, set_block_style, set_block_type_heading, set_block_type_para};
 use loki_i18n::fl;
 
 use crate::editing::cursor::CursorState;
@@ -33,47 +33,59 @@ use crate::routes::editor::editor_keydown_ctrl::post_mutation_sync;
 /// Height of the open style picker panel in CSS pixels.
 pub const PICKER_HEIGHT_PX: f32 = 160.0;
 
-/// Returns the list of style names available in the document.
+/// Returns (display_name, style_key) pairs for all styles available in the document.
 ///
-/// Combines built-in styles (Default Paragraph Style, Heading 1–6) with
-/// all named paragraph styles from the document's style catalog.
-/// Duplicates are removed.
-pub fn collect_style_names(doc_state: &Arc<Mutex<DocumentState>>) -> Vec<String> {
-    let mut names: Vec<String> = vec![
-        "Default Paragraph Style".into(),
-        "Heading 1".into(),
-        "Heading 2".into(),
-        "Heading 3".into(),
-        "Heading 4".into(),
-        "Heading 5".into(),
-        "Heading 6".into(),
+/// `style_key` is the string that [`loki_doc_model::get_block_style_name`] returns
+/// for a block carrying that style, and the string passed to [`set_block_style`]
+/// (or the dispatch logic for built-in types).  `display_name` is shown in the UI.
+///
+/// For built-in headings and the default paragraph style the two are identical.
+/// For catalog styles the key is the [`StyleId`] string and the display name is
+/// `ParagraphStyle::display_name` (falling back to the id if unset).
+pub fn collect_style_names(doc_state: &Arc<Mutex<DocumentState>>) -> Vec<(String, String)> {
+    let mut entries: Vec<(String, String)> = vec![
+        (
+            "Default Paragraph Style".into(),
+            "Default Paragraph Style".into(),
+        ),
+        ("Heading 1".into(), "Heading 1".into()),
+        ("Heading 2".into(), "Heading 2".into()),
+        ("Heading 3".into(), "Heading 3".into()),
+        ("Heading 4".into(), "Heading 4".into()),
+        ("Heading 5".into(), "Heading 5".into()),
+        ("Heading 6".into(), "Heading 6".into()),
     ];
 
     if let Ok(state) = doc_state.lock()
         && let Some(doc) = &state.document
     {
         for (id, style) in &doc.styles.paragraph_styles {
-            let name = style
+            let display = style
                 .display_name
                 .clone()
                 .unwrap_or_else(|| id.as_str().to_string());
-            if !names.contains(&name) {
-                names.push(name);
+            let key = id.as_str().to_string();
+            // Skip if the key already appears in built-ins (e.g. a catalog style
+            // whose id is literally "Heading 1").
+            if !entries.iter().any(|(_, k)| k == &key) {
+                entries.push((display, key));
             }
         }
     }
-    names
+    entries
 }
 
 /// Returns (font_size_px, font_weight, italic) for a style preview chip.
 ///
-/// Built-in headings use fixed sizes scaled to fit within the chip.
-/// Custom styles read `char_props` from the style catalog, capped at 18 px.
+/// `display_name` is matched against built-in names.  `style_key` is used to
+/// look up custom styles in the catalog by [`StyleId`] (O(1), avoids display-
+/// name mismatch with catalog IDs).
 fn style_preview_font(
-    name: &str,
+    display_name: &str,
+    style_key: &str,
     doc_state: &Arc<Mutex<DocumentState>>,
 ) -> (f32, &'static str, bool) {
-    match name {
+    match display_name {
         "Default Paragraph Style" => (tokens::FONT_SIZE_LABEL, "400", false),
         "Heading 1" => (18.0, "700", false),
         "Heading 2" => (16.0, "700", false),
@@ -82,28 +94,23 @@ fn style_preview_font(
         "Heading 5" => (12.0, "600", true),
         "Heading 6" => (11.0, "600", true),
         _ => {
-            // Try to read from the style catalog.
             if let Ok(state) = doc_state.lock()
                 && let Some(doc) = &state.document
+                && let Some(style) = doc.styles.paragraph_styles.get(&StyleId::new(style_key))
             {
-                for (_, style) in &doc.styles.paragraph_styles {
-                    let display = style.display_name.as_deref().unwrap_or(style.id.as_str());
-                    if display == name {
-                        // 1 pt ≈ 1.333 CSS px (96/72). Cap at 18 px.
-                        let fs = style
-                            .char_props
-                            .font_size
-                            .map(|s| (s.value() as f32 * (96.0 / 72.0)).min(18.0))
-                            .unwrap_or(tokens::FONT_SIZE_LABEL);
-                        let fw = if style.char_props.bold == Some(true) {
-                            "700"
-                        } else {
-                            "400"
-                        };
-                        let fi = style.char_props.italic == Some(true);
-                        return (fs, fw, fi);
-                    }
-                }
+                // 1 pt ≈ 1.333 CSS px (96/72). Cap at 18 px.
+                let fs = style
+                    .char_props
+                    .font_size
+                    .map(|s| (s.value() as f32 * (96.0 / 72.0)).min(18.0))
+                    .unwrap_or(tokens::FONT_SIZE_LABEL);
+                let fw = if style.char_props.bold == Some(true) {
+                    "700"
+                } else {
+                    "400"
+                };
+                let fi = style.char_props.italic == Some(true);
+                return (fs, fw, fi);
             }
             (tokens::FONT_SIZE_LABEL, "400", false)
         }
@@ -128,14 +135,16 @@ pub fn style_picker_panel(
     mut is_style_picker_open: Signal<bool>,
     mut style_search_query: Signal<String>,
 ) -> Element {
-    let all_style_names = collect_style_names(&doc_state);
+    let all_entries = collect_style_names(&doc_state);
     let current = current_style_name;
 
-    // Filter by search query (case-insensitive substring match).
+    // Filter by search query (case-insensitive match against the display name).
     let query_lower = style_search_query.read().to_lowercase();
-    let style_names: Vec<String> = all_style_names
+    let style_entries: Vec<(String, String)> = all_entries
         .into_iter()
-        .filter(|n| query_lower.is_empty() || n.to_lowercase().contains(&query_lower))
+        .filter(|(display, _)| {
+            query_lower.is_empty() || display.to_lowercase().contains(&query_lower)
+        })
         .collect();
 
     rsx! {
@@ -230,16 +239,18 @@ pub fn style_picker_panel(
                     p2 = tokens::SPACE_4,
                 ),
 
-                {style_names.into_iter().map(|name| {
-                    let is_active = name == current;
+                {style_entries.into_iter().map(|(display_name, style_key)| {
+                    let is_active = style_key == current;
                     let ds_click = Arc::clone(&doc_state);
                     let ds_preview = Arc::clone(&doc_state);
-                    let n = name.clone();
+                    // style_key drives both the active check and the mutation dispatch.
+                    let k = style_key.clone();
+                    let dname = display_name.clone();
                     let (preview_fs, preview_fw, preview_fi) =
-                        style_preview_font(&name, &ds_preview);
+                        style_preview_font(&display_name, &style_key, &ds_preview);
                     rsx! {
                         button {
-                            key: "{name}",
+                            key: "{dname}",
                             style: format!(
                                 "padding: {p}px {p2}px; border-radius: 4px; \
                                  border: 1px solid {border}; cursor: pointer; \
@@ -264,13 +275,24 @@ pub fn style_picker_panel(
                                 },
                                 fg     = tokens::COLOR_TEXT_ON_CHROME,
                             ),
-                            aria_label: fl!("ribbon-style-apply-aria", name = name.clone()),
+                            aria_label: fl!("ribbon-style-apply-aria", name = dname.clone()),
                             onclick: move |_| {
                                 let ldoc_guard = loro_doc.read();
                                 if let Some(ldoc) = ldoc_guard.as_ref()
                                     && let Some(focus) = cursor_state.read().focus.as_ref()
                                 {
-                                    let _ = set_block_style(ldoc, focus.paragraph_index, &n);
+                                    let idx = focus.paragraph_index;
+                                    if k == "Default Paragraph Style" {
+                                        let _ = set_block_type_para(ldoc, idx);
+                                    } else if let Some(lvl_str) = k.strip_prefix("Heading ") {
+                                        if let Ok(level) = lvl_str.parse::<u8>() {
+                                            let _ = set_block_type_heading(ldoc, idx, level);
+                                        } else {
+                                            let _ = set_block_style(ldoc, idx, &k);
+                                        }
+                                    } else {
+                                        let _ = set_block_style(ldoc, idx, &k);
+                                    }
                                     apply_mutation_and_relayout(&ds_click, ldoc);
                                 }
                                 post_mutation_sync(
@@ -284,7 +306,7 @@ pub fn style_picker_panel(
                                 style_search_query.set(String::new());
                                 is_style_picker_open.set(false);
                             },
-                            "{name}"
+                            "{dname}"
                         }
                     }
                 })}

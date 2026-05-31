@@ -64,6 +64,42 @@ pub fn get_block_style_name(loro: &LoroDoc, block_index: usize) -> String {
     }
 }
 
+/// Changes the block at `block_index` to an unstyled plain paragraph (`para`).
+///
+/// The block type is set to `BLOCK_TYPE_PARA`.  Any previously-stored
+/// `style_id` or heading keys are ignored on the next bridge read because
+/// `map_loro_block` dispatches exclusively on `KEY_TYPE`.
+///
+/// # Errors
+///
+/// - [`MutationError::BlockIndexOutOfRange`] if `block_index` is out of range.
+/// - [`MutationError::Loro`] for underlying Loro errors.
+pub fn set_block_type_para(loro: &LoroDoc, block_index: usize) -> Result<(), MutationError> {
+    let (_, block_map) = get_block_map_and_list(loro, block_index)?;
+    block_map.insert(KEY_TYPE, BLOCK_TYPE_PARA)?;
+    Ok(())
+}
+
+/// Changes the block at `block_index` to a heading block of the given `level`.
+///
+/// Sets `KEY_TYPE = BLOCK_TYPE_HEADING` and `KEY_HEADING_LEVEL = level`.
+/// Any previously-stored `style_id` keys are ignored on the next bridge read.
+///
+/// # Errors
+///
+/// - [`MutationError::BlockIndexOutOfRange`] if `block_index` is out of range.
+/// - [`MutationError::Loro`] for underlying Loro errors.
+pub fn set_block_type_heading(
+    loro: &LoroDoc,
+    block_index: usize,
+    level: u8,
+) -> Result<(), MutationError> {
+    let (_, block_map) = get_block_map_and_list(loro, block_index)?;
+    block_map.insert(KEY_TYPE, BLOCK_TYPE_HEADING)?;
+    block_map.insert(KEY_HEADING_LEVEL, level as i64)?;
+    Ok(())
+}
+
 /// Applies the named paragraph style `style_id` to the block at `block_index`.
 ///
 /// For `styled_para` and `para` blocks, writes the `style_id` key and
