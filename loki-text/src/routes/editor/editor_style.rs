@@ -31,7 +31,7 @@ use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 use crate::routes::editor::editor_keydown_ctrl::post_mutation_sync;
 
 /// Height of the open style picker panel in CSS pixels.
-pub const PICKER_HEIGHT_PX: f32 = 120.0;
+pub const PICKER_HEIGHT_PX: f32 = 160.0;
 
 /// Returns the list of style names available in the document.
 ///
@@ -115,6 +115,7 @@ fn style_preview_font(
 /// Plain function — no hooks.  All reactive state is passed in as signals.
 /// `current_style_name` is a plain `String` computed inline in `EditorInner`'s
 /// render body, ensuring it is always current without a post-render effect.
+/// `style_search_query` is cleared on close so the next open starts fresh.
 #[allow(clippy::too_many_arguments)]
 pub fn style_picker_panel(
     doc_state: Arc<Mutex<DocumentState>>,
@@ -125,9 +126,17 @@ pub fn style_picker_panel(
     can_redo: Signal<bool>,
     current_style_name: String,
     mut is_style_picker_open: Signal<bool>,
+    mut style_search_query: Signal<String>,
 ) -> Element {
-    let style_names = collect_style_names(&doc_state);
+    let all_style_names = collect_style_names(&doc_state);
     let current = current_style_name;
+
+    // Filter by search query (case-insensitive substring match).
+    let query_lower = style_search_query.read().to_lowercase();
+    let style_names: Vec<String> = all_style_names
+        .into_iter()
+        .filter(|n| query_lower.is_empty() || n.to_lowercase().contains(&query_lower))
+        .collect();
 
     rsx! {
         div {
@@ -170,8 +179,41 @@ pub fn style_picker_panel(
                         p  = tokens::SPACE_1,
                     ),
                     aria_label: "Close style picker",
-                    onclick: move |_| { is_style_picker_open.set(false); },
+                    onclick: move |_| {
+                        style_search_query.set(String::new());
+                        is_style_picker_open.set(false);
+                    },
                     "✕"
+                }
+            }
+
+            // ── Search input ──────────────────────────────────────────────────
+            div {
+                style: format!(
+                    "display: flex; flex-direction: row; align-items: center; \
+                     padding: 0 {p}px {pb}px {p}px; flex-shrink: 0;",
+                    p  = tokens::SPACE_4,
+                    pb = tokens::SPACE_2,
+                ),
+                input {
+                    r#type: "text",
+                    value: "{style_search_query}",
+                    placeholder: fl!("ribbon-style-search-placeholder"),
+                    oninput: move |evt| style_search_query.set(evt.value()),
+                    style: format!(
+                        "flex: 1; height: 28px; padding: 0 {p}px; \
+                         background: {bg}; border: 1px solid {border}; \
+                         border-radius: {r}px; \
+                         font-family: {ff}; font-size: {fs}px; \
+                         color: {fg}; box-sizing: border-box;",
+                        p      = tokens::SPACE_2,
+                        bg     = tokens::COLOR_SURFACE_2,
+                        border = tokens::COLOR_BORDER_DEFAULT,
+                        r      = tokens::RADIUS_SM,
+                        ff     = tokens::FONT_FAMILY_UI,
+                        fs     = tokens::FONT_SIZE_BODY,
+                        fg     = tokens::COLOR_TEXT_ON_CHROME,
+                    ),
                 }
             }
 
@@ -239,6 +281,7 @@ pub fn style_picker_panel(
                                     can_undo,
                                     can_redo,
                                 );
+                                style_search_query.set(String::new());
                                 is_style_picker_open.set(false);
                             },
                             "{name}"

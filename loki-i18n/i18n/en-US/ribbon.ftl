@@ -28,4 +28,5 @@ ribbon-redo-aria = Redo (Ctrl+Y)
 ribbon-group-styles = Styles
 ribbon-style-select-aria = Paragraph style
 ribbon-style-picker-heading = Paragraph Styles
+ribbon-style-search-placeholder = Search styles…
 ribbon-style-apply-aria = Apply style: { $name }

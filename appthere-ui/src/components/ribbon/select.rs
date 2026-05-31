@@ -65,11 +65,12 @@ pub fn AtRibbonSelect(props: AtRibbonSelectProps) -> Element {
         button {
             style: format!(
                 "display: flex; flex-direction: row; align-items: center; gap: {gap}px; \
-                 min-height: {h}px; padding: 0 {p}px; \
+                 width: {w}px; min-height: {h}px; padding: 0 {p}px; \
                  background: {bg}; border: 1px solid {border}; border-radius: 4px; \
                  font-family: {ff}; font-size: {fs}px; font-weight: {fw}; \
-                 color: {fg}; cursor: pointer; white-space: nowrap; flex-shrink: 0;",
+                 color: {fg}; cursor: pointer; flex-shrink: 0;",
                 gap    = SPACE_2,
+                w      = 180,
                 h      = TOUCH_MIN,
                 p      = SPACE_2,
                 bg     = bg_color,
@@ -84,7 +85,7 @@ pub fn AtRibbonSelect(props: AtRibbonSelectProps) -> Element {
 
             span {
                 style: format!(
-                    "max-width: 140px; overflow: hidden; \
+                    "flex: 1; min-width: 0; overflow: hidden; \
                      font-family: {ff}; font-size: {fs}px; color: {fg};",
                     ff = FONT_FAMILY_UI,
                     fs = FONT_SIZE_BODY,

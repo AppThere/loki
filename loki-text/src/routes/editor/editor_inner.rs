@@ -58,6 +58,9 @@ pub(super) fn EditorInner(path: String) -> Element {
     // ── Font warning dismiss state ───────────────────────────────────────────
     let mut dismiss_font_warning = use_signal(|| false);
 
+    // ── Style search query (cleared on picker close) ─────────────────────────
+    let style_search_query = use_signal(String::new);
+
     let EditorState {
         doc_state,
         mut loro_doc,
@@ -448,6 +451,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     can_redo,
                     current_style_name.clone(),
                     is_style_picker_open,
+                    style_search_query,
                 )}
             }
 

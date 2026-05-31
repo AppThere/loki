@@ -60,22 +60,6 @@ pub(super) fn home_tab_content(
     let ds_sub = Arc::clone(doc_state);
 
     rsx! {
-        // ── Styles group ──────────────────────────────────────────────────────
-        AtRibbonGroup {
-            label:      None,
-            aria_label: fl!("ribbon-group-styles"),
-
-            AtRibbonSelect {
-                value:      current_style_name.clone(),
-                aria_label: fl!("ribbon-style-select-aria"),
-                is_open:    *is_style_picker_open.read(),
-                on_open:    move |_| {
-                    let currently_open = *is_style_picker_open.read();
-                    is_style_picker_open.set(!currently_open);
-                },
-            }
-        }
-
         // ── History group ─────────────────────────────────────────────────────
         AtRibbonGroup {
             label:      None,
@@ -122,6 +106,23 @@ pub(super) fn home_tab_content(
             }
         }
 
+        // ── Styles group ──────────────────────────────────────────────────────
+        AtRibbonGroup {
+            label:      None,
+            aria_label: fl!("ribbon-group-styles"),
+
+            AtRibbonSelect {
+                value:      current_style_name.clone(),
+                aria_label: fl!("ribbon-style-select-aria"),
+                is_open:    *is_style_picker_open.read(),
+                on_open:    move |_| {
+                    let currently_open = *is_style_picker_open.read();
+                    is_style_picker_open.set(!currently_open);
+                },
+            }
+        }
+
+        // ── Inline formatting group ───────────────────────────────────────────
         AtRibbonGroup {
             label:      None,
             aria_label: fl!("ribbon-group-inline"),
