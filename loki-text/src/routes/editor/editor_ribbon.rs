@@ -8,7 +8,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use appthere_ui::{AtRibbonGroup, AtRibbonIconButton};
+use appthere_ui::{AtRibbonGroup, AtRibbonIconButton, AtRibbonSelect};
 use dioxus::prelude::*;
 use loki_i18n::fl;
 use loro::LoroDoc;
@@ -28,7 +28,7 @@ use super::editor_keydown_ctrl::post_mutation_sync;
 ///
 /// Because [`Signal<T>`] is `Copy`, all signal parameters are copied freely
 /// into closures.  One `Arc::clone` is made per button for `doc_state`.
-#[allow(clippy::too_many_arguments)] // 6 formatting signals + undo signals + doc_state + loro_doc + cursor_state
+#[allow(clippy::too_many_arguments)]
 pub(super) fn home_tab_content(
     doc_state: &Arc<Mutex<DocumentState>>,
     loro_doc: Signal<Option<LoroDoc>>,
@@ -42,6 +42,8 @@ pub(super) fn home_tab_content(
     strikethrough_active: Signal<bool>,
     superscript_active: Signal<bool>,
     subscript_active: Signal<bool>,
+    current_style_name: Signal<String>,
+    mut is_style_picker_open: Signal<bool>,
 ) -> Element {
     // One Arc clone per button — cheap reference-count increment.
     let ds_undo = Arc::clone(doc_state);
@@ -54,6 +56,23 @@ pub(super) fn home_tab_content(
     let ds_sub = Arc::clone(doc_state);
 
     rsx! {
+        // ── Styles group ──────────────────────────────────────────────────────
+        AtRibbonGroup {
+            label:      None,
+            aria_label: fl!("ribbon-group-styles"),
+
+            AtRibbonSelect {
+                value:      current_style_name.read().clone(),
+                aria_label: fl!("ribbon-style-select-aria"),
+                is_open:    *is_style_picker_open.read(),
+                on_open:    move |_| {
+                    let currently_open = *is_style_picker_open.read();
+                    is_style_picker_open.set(!currently_open);
+                },
+            }
+        }
+
+        // ── History group ─────────────────────────────────────────────────────
         AtRibbonGroup {
             label:      None,
             aria_label: fl!("ribbon-group-history"),

@@ -118,22 +118,38 @@ pub fn hit_test_page(
 
     // ── 5. Identify the paragraph under the click ─────────────────────────────
     // paragraphs are content-area-local (x, y) in layout points.
+    //
+    // Primary: find the paragraph whose vertical extent covers the click.
+    // Fallback A: click above all content → first paragraph.
+    // Fallback B: click below all content → last paragraph.
+    // Both fallbacks are needed so that clicking anywhere on a blank-document
+    // page (which has a single zero-height empty paragraph) places the cursor.
     let para_data = editing_data
         .paragraphs
         .iter()
         .rev()
-        .find(|p| p.origin.1 <= content_y && content_y <= p.origin.1 + p.layout.height)?;
+        .find(|p| p.origin.1 <= content_y && content_y <= p.origin.1 + p.layout.height)
+        .or_else(|| {
+            // Prefer the last paragraph for clicks below all content; it covers
+            // both the "below last line" and the "empty document" cases.
+            editing_data.paragraphs.last()
+        })?;
 
     // ── 6. Map to byte offset within the paragraph ────────────────────────────
     let x_in_para = content_x - para_data.origin.0;
-    let y_in_para = content_y - para_data.origin.1;
+    let y_in_para = (content_y - para_data.origin.1).max(0.0);
 
-    let hit = para_data.layout.hit_test_point(x_in_para, y_in_para)?;
+    // hit_test_point returns None only when preserve_for_editing is false.
+    // In editing mode it always returns Some; fall back to offset 0 defensively.
+    let byte_offset = para_data
+        .layout
+        .hit_test_point(x_in_para, y_in_para)
+        .map_or(0, |h| h.byte_offset);
 
     Some(DocumentPosition {
         page_index,
         paragraph_index: para_data.block_index,
-        byte_offset: hit.byte_offset,
+        byte_offset,
     })
 }
 

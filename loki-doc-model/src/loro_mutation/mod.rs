@@ -25,9 +25,11 @@
 //! All `byte_offset` and `len` parameters are **UTF-8 byte positions**.
 
 mod block;
+mod style;
 mod text;
 
 pub use self::block::{merge_block, split_block};
+pub use self::style::{get_block_style_name, set_block_style};
 pub use self::text::{delete_text, get_block_text, get_mark_at, insert_text, mark_text};
 
 use loro::{LoroDoc, LoroMap, LoroMovableList, LoroText};

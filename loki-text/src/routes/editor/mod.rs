@@ -20,6 +20,7 @@ mod editor_path_sync;
 mod editor_pointer;
 mod editor_ribbon;
 mod editor_state;
+mod editor_style;
 
 use dioxus::prelude::*;
 use editor_inner::EditorInner;

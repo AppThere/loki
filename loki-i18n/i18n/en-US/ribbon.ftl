@@ -23,3 +23,9 @@ ribbon-subscript-aria = Subscript
 ribbon-group-history = History
 ribbon-undo-aria = Undo (Ctrl+Z)
 ribbon-redo-aria = Redo (Ctrl+Y)
+
+# Styles group (Home tab)
+ribbon-group-styles = Styles
+ribbon-style-select-aria = Paragraph style
+ribbon-style-picker-heading = Paragraph Styles
+ribbon-style-apply-aria = Apply style: { $name }

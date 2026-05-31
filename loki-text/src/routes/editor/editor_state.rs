@@ -50,6 +50,11 @@ pub(super) struct EditorState {
     pub can_undo: Signal<bool>,
     /// Whether Ctrl+Y / Ctrl+Shift+Z is currently applicable.
     pub can_redo: Signal<bool>,
+    /// Display name of the paragraph style at the cursor position.
+    /// Empty string when no cursor is placed or the block index cannot be read.
+    pub current_style_name: Signal<String>,
+    /// Whether the style picker panel is currently open above the ribbon.
+    pub is_style_picker_open: Signal<bool>,
 }
 
 /// Initialises and returns all per-document editing signals.
@@ -94,5 +99,7 @@ pub(super) fn use_editor_state() -> EditorState {
         undo_manager: use_signal(|| None),
         can_undo: use_signal(|| false),
         can_redo: use_signal(|| false),
+        current_style_name: use_signal(String::new),
+        is_style_picker_open: use_signal(|| false),
     }
 }

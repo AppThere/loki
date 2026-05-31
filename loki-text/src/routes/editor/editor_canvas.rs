@@ -76,6 +76,8 @@ pub(super) fn render_canvas_area(
             // COMPAT(dioxus-native): flex: 1 is confirmed working. Requires
             // height: 100vh on the parent so Taffy can resolve the flex fraction.
             // tabindex="0" enables keyboard focus for onkeydown to fire.
+            // autofocus ensures the canvas receives keyboard focus immediately
+            // when the editor mounts, so the user can type without clicking first.
             style: format!(
                 "flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; \
                  background: {bg}; padding: {p}px 0;",
@@ -83,6 +85,7 @@ pub(super) fn render_canvas_area(
                 p  = tokens::SPACE_6,
             ),
             tabindex: "0",
+            autofocus: "true",
 
             // Outer div records drag origin; cursor placement happens in
             // on_tile_click on the per-page div (element_coordinates, no origin math).

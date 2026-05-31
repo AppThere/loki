@@ -38,6 +38,7 @@ use super::editor_load::load_document;
 use super::editor_path_sync::sync_path_and_reset;
 use super::editor_ribbon::home_tab_content;
 use super::editor_state::{EditorState, use_editor_state};
+use super::editor_style::style_picker_panel;
 use crate::editing::state::seed_layout_from_document;
 use crate::error::LoadError;
 
@@ -77,6 +78,8 @@ pub(super) fn EditorInner(path: String) -> Element {
         mut undo_manager,
         mut can_undo,
         mut can_redo,
+        mut current_style_name,
+        mut is_style_picker_open,
     } = use_editor_state();
 
     // ── Synchronous Path Sync & State Reset ──────────────────────────────────
@@ -96,6 +99,8 @@ pub(super) fn EditorInner(path: String) -> Element {
         &mut can_undo,
         &mut can_redo,
         &mut dismiss_font_warning,
+        &mut current_style_name,
+        &mut is_style_picker_open,
     );
 
     // Pre-clone the Arc so each closure can capture its own owned clone.
@@ -106,6 +111,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_keydown = Arc::clone(&doc_state);
     let doc_state_pages = Arc::clone(&doc_state);
     let doc_state_ribbon = Arc::clone(&doc_state);
+    let doc_state_style_picker = Arc::clone(&doc_state);
     let doc_state_seed = Arc::clone(&doc_state);
 
     // ── Document load — reactive on path_signal ───────────────────────────────
@@ -133,6 +139,20 @@ pub(super) fn EditorInner(path: String) -> Element {
                     let um = loro::UndoManager::new(&l_doc);
                     loro_doc.set(Some(l_doc));
                     undo_manager.set(Some(um));
+
+                    // Auto-place the cursor at the start of the document so the
+                    // user can type immediately without needing to click first.
+                    if cursor_state.read().focus.is_none() {
+                        use crate::editing::cursor::DocumentPosition;
+                        let start = DocumentPosition {
+                            page_index: 0,
+                            paragraph_index: 0,
+                            byte_offset: 0,
+                        };
+                        let mut cs = cursor_state.write();
+                        cs.anchor = Some(start.clone());
+                        cs.focus = Some(start);
+                    }
                 }
                 Err(e) => tracing::warn!("Failed to initialize Loro sync bridge: {}", e),
             }
@@ -157,11 +177,11 @@ pub(super) fn EditorInner(path: String) -> Element {
         }
     });
 
-    // ── Inline formatting signal sync ────────────────────────────────────────
+    // ── Inline formatting + style signal sync ────────────────────────────────
     //
     // Subscribes to cursor_state and loro_doc so this effect re-runs whenever
     // the cursor moves or the document changes. Updates the ribbon button
-    // active states to reflect the marks at the focus position.
+    // active states and the current paragraph style name.
     use_effect(move || {
         let cs = cursor_state.read();
         let ldoc_guard = loro_doc.read();
@@ -186,6 +206,9 @@ pub(super) fn EditorInner(path: String) -> Element {
                 get_mark_at(ldoc, bi, bo, MARK_VERTICAL_ALIGN),
                 Ok(Some(LoroValue::String(ref s))) if s.as_str() == "Subscript"
             ));
+            // Update current paragraph style name for the ribbon select button.
+            let style_name = loki_doc_model::get_block_style_name(ldoc, bi);
+            current_style_name.set(style_name);
         } else {
             bold_active.set(false);
             italic_active.set(false);
@@ -193,6 +216,7 @@ pub(super) fn EditorInner(path: String) -> Element {
             strikethrough_active.set(false);
             superscript_active.set(false);
             subscript_active.set(false);
+            current_style_name.set(String::new());
         }
     });
 
@@ -402,6 +426,23 @@ pub(super) fn EditorInner(path: String) -> Element {
                 }
             }
 
+            // ── Paragraph style picker panel (inline, above ribbon) ───────────
+            // Rendered between canvas and ribbon in the flex column so it
+            // works without position: absolute (unsupported in Blitz).
+            // COMPAT(dioxus-native): see editor_style.rs for layout rationale.
+            if *is_style_picker_open.read() {
+                {style_picker_panel(
+                    doc_state_style_picker,
+                    loro_doc,
+                    cursor_state,
+                    undo_manager,
+                    can_undo,
+                    can_redo,
+                    current_style_name,
+                    is_style_picker_open,
+                )}
+            }
+
             // ── Ribbon (formatting controls) ──────────────────────────────────
             AtRibbon {
                 tabs: vec![
@@ -428,6 +469,8 @@ pub(super) fn EditorInner(path: String) -> Element {
                     strikethrough_active,
                     superscript_active,
                     subscript_active,
+                    current_style_name,
+                    is_style_picker_open,
                 ),
             }
 
