@@ -78,7 +78,6 @@ pub(super) fn EditorInner(path: String) -> Element {
         mut undo_manager,
         mut can_undo,
         mut can_redo,
-        mut current_style_name,
         mut is_style_picker_open,
     } = use_editor_state();
 
@@ -99,9 +98,20 @@ pub(super) fn EditorInner(path: String) -> Element {
         &mut can_undo,
         &mut can_redo,
         &mut dismiss_font_warning,
-        &mut current_style_name,
         &mut is_style_picker_open,
     );
+
+    // Compute the current paragraph style name directly from signals so it is
+    // always up-to-date in the same render cycle as cursor movement.
+    let current_style_name = {
+        let cs = cursor_state.read();
+        let ldoc = loro_doc.read();
+        if let (Some(l), Some(focus)) = (ldoc.as_ref(), cs.focus.as_ref()) {
+            loki_doc_model::get_block_style_name(l, focus.paragraph_index)
+        } else {
+            String::new()
+        }
+    };
 
     // Pre-clone the Arc so each closure can capture its own owned clone.
     let doc_state_mousedown = Arc::clone(&doc_state);
@@ -113,6 +123,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_ribbon = Arc::clone(&doc_state);
     let doc_state_style_picker = Arc::clone(&doc_state);
     let doc_state_seed = Arc::clone(&doc_state);
+    let doc_state_render = Arc::clone(&doc_state);
 
     // ── Document load — reactive on path_signal ───────────────────────────────
     let document_load: Resource<(String, Result<Document, LoadError>)> = use_resource(move || {
@@ -206,9 +217,6 @@ pub(super) fn EditorInner(path: String) -> Element {
                 get_mark_at(ldoc, bi, bo, MARK_VERTICAL_ALIGN),
                 Ok(Some(LoroValue::String(ref s))) if s.as_str() == "Subscript"
             ));
-            // Update current paragraph style name for the ribbon select button.
-            let style_name = loki_doc_model::get_block_style_name(ldoc, bi);
-            current_style_name.set(style_name);
         } else {
             bold_active.set(false);
             italic_active.set(false);
@@ -216,7 +224,6 @@ pub(super) fn EditorInner(path: String) -> Element {
             strikethrough_active.set(false);
             superscript_active.set(false);
             subscript_active.set(false);
-            current_style_name.set(String::new());
         }
     });
 
@@ -328,6 +335,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                 doc_state_touch,
                 doc_state_touchend,
                 doc_state_keydown,
+                doc_state_render,
                 is_dragging,
                 drag_origin,
                 touch_state,
@@ -438,7 +446,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     undo_manager,
                     can_undo,
                     can_redo,
-                    current_style_name,
+                    current_style_name.clone(),
                     is_style_picker_open,
                 )}
             }

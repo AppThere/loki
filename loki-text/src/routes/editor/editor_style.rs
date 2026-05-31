@@ -65,9 +65,56 @@ pub fn collect_style_names(doc_state: &Arc<Mutex<DocumentState>>) -> Vec<String>
     names
 }
 
+/// Returns (font_size_px, font_weight, italic) for a style preview chip.
+///
+/// Built-in headings use fixed sizes scaled to fit within the chip.
+/// Custom styles read `char_props` from the style catalog, capped at 18 px.
+fn style_preview_font(
+    name: &str,
+    doc_state: &Arc<Mutex<DocumentState>>,
+) -> (f32, &'static str, bool) {
+    match name {
+        "Default Paragraph Style" => (tokens::FONT_SIZE_LABEL, "400", false),
+        "Heading 1" => (18.0, "700", false),
+        "Heading 2" => (16.0, "700", false),
+        "Heading 3" => (14.0, "600", false),
+        "Heading 4" => (13.0, "600", true),
+        "Heading 5" => (12.0, "600", true),
+        "Heading 6" => (11.0, "600", true),
+        _ => {
+            // Try to read from the style catalog.
+            if let Ok(state) = doc_state.lock()
+                && let Some(doc) = &state.document
+            {
+                for (_, style) in &doc.styles.paragraph_styles {
+                    let display = style.display_name.as_deref().unwrap_or(style.id.as_str());
+                    if display == name {
+                        // 1 pt ≈ 1.333 CSS px (96/72). Cap at 18 px.
+                        let fs = style
+                            .char_props
+                            .font_size
+                            .map(|s| (s.value() as f32 * (96.0 / 72.0)).min(18.0))
+                            .unwrap_or(tokens::FONT_SIZE_LABEL);
+                        let fw = if style.char_props.bold == Some(true) {
+                            "700"
+                        } else {
+                            "400"
+                        };
+                        let fi = style.char_props.italic == Some(true);
+                        return (fs, fw, fi);
+                    }
+                }
+            }
+            (tokens::FONT_SIZE_LABEL, "400", false)
+        }
+    }
+}
+
 /// Renders the inline style picker panel.
 ///
 /// Plain function — no hooks.  All reactive state is passed in as signals.
+/// `current_style_name` is a plain `String` computed inline in `EditorInner`'s
+/// render body, ensuring it is always current without a post-render effect.
 #[allow(clippy::too_many_arguments)]
 pub fn style_picker_panel(
     doc_state: Arc<Mutex<DocumentState>>,
@@ -76,11 +123,11 @@ pub fn style_picker_panel(
     undo_manager: Signal<Option<loro::UndoManager>>,
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
-    mut current_style_name: Signal<String>,
+    current_style_name: String,
     mut is_style_picker_open: Signal<bool>,
 ) -> Element {
     let style_names = collect_style_names(&doc_state);
-    let current = current_style_name.read().clone();
+    let current = current_style_name;
 
     rsx! {
         div {
@@ -143,8 +190,11 @@ pub fn style_picker_panel(
 
                 {style_names.into_iter().map(|name| {
                     let is_active = name == current;
-                    let ds = Arc::clone(&doc_state);
+                    let ds_click = Arc::clone(&doc_state);
+                    let ds_preview = Arc::clone(&doc_state);
                     let n = name.clone();
+                    let (preview_fs, preview_fw, preview_fi) =
+                        style_preview_font(&name, &ds_preview);
                     rsx! {
                         button {
                             key: "{name}",
@@ -152,6 +202,7 @@ pub fn style_picker_panel(
                                 "padding: {p}px {p2}px; border-radius: 4px; \
                                  border: 1px solid {border}; cursor: pointer; \
                                  font-family: {ff}; font-size: {fs}px; \
+                                 font-weight: {fw}; font-style: {fi}; \
                                  background: {bg}; color: {fg}; flex-shrink: 0;",
                                 p      = tokens::SPACE_1,
                                 p2     = tokens::SPACE_2,
@@ -161,7 +212,9 @@ pub fn style_picker_panel(
                                     tokens::COLOR_BORDER_CHROME
                                 },
                                 ff     = tokens::FONT_FAMILY_UI,
-                                fs     = tokens::FONT_SIZE_LABEL,
+                                fs     = preview_fs,
+                                fw     = preview_fw,
+                                fi     = if preview_fi { "italic" } else { "normal" },
                                 bg     = if is_active {
                                     tokens::COLOR_SURFACE_3
                                 } else {
@@ -176,11 +229,10 @@ pub fn style_picker_panel(
                                     && let Some(focus) = cursor_state.read().focus.as_ref()
                                 {
                                     let _ = set_block_style(ldoc, focus.paragraph_index, &n);
-                                    apply_mutation_and_relayout(&ds, ldoc);
+                                    apply_mutation_and_relayout(&ds_click, ldoc);
                                 }
-                                current_style_name.set(name.clone());
                                 post_mutation_sync(
-                                    &ds,
+                                    &ds_click,
                                     loro_doc,
                                     cursor_state,
                                     undo_manager,

@@ -21,9 +21,13 @@ use crate::tokens;
 ///
 /// # Icons
 ///
-/// `icon_label` is currently a text label (e.g. "B", "I", "U").
-/// // TODO(icons): Replace text labels with Tabler Icons SVGs once an icon
-/// // system pass is completed.
+/// Pass an [`crate::components::icons::AtIcon`] as the `children` slot to
+/// render a Lucide SVG icon.  When `children` is empty, the button renders
+/// as a blank 44×44 press target (aria_label is still announced).
+///
+/// # COMPAT(dioxus-native): SVG rendering via Blitz is unconfirmed.
+/// If SVG icons do not render, `aria_label` provides the accessible name and
+/// the button remains functional.
 ///
 /// # Hover state
 ///
@@ -32,9 +36,6 @@ use crate::tokens;
 /// // matching the pattern in `tab_strip.rs`.
 #[component]
 pub fn AtRibbonIconButton(
-    /// Short visible label (e.g. "B" for Bold, "I" for Italic).
-    /// Will be replaced by an SVG icon in a future pass.
-    icon_label: String,
     /// Full accessible name for screen readers and tooltips.
     aria_label: String,
     /// Whether this button is in the active/toggled state
@@ -44,6 +45,8 @@ pub fn AtRibbonIconButton(
     is_disabled: bool,
     /// Callback when the button is clicked or tapped.
     on_click: EventHandler<()>,
+    /// Icon content to render inside the button (typically an [`AtIcon`]).
+    children: Element,
 ) -> Element {
     let mut hovered = use_signal(|| false);
 
@@ -55,7 +58,7 @@ pub fn AtRibbonIconButton(
         "transparent"
     };
 
-    let text_color = if is_disabled {
+    let icon_color = if is_disabled {
         tokens::COLOR_ICON_DISABLED
     } else if is_active {
         tokens::COLOR_TEXT_ACCENT
@@ -70,15 +73,11 @@ pub fn AtRibbonIconButton(
                  display: flex; align-items: center; justify-content: center; \
                  background: {bg}; border: none; \
                  border-radius: {radius}px; cursor: pointer; \
-                 color: {fg}; \
-                 font-family: {font}; font-size: {size}px; font-weight: {weight};",
+                 color: {fg};",
                 touch  = tokens::TOUCH_MIN,
                 radius = tokens::RADIUS_MD,
                 bg     = bg,
-                fg     = text_color,
-                font   = tokens::FONT_FAMILY_UI,
-                size   = tokens::FONT_SIZE_BODY,
-                weight = tokens::FONT_WEIGHT_BOLD,
+                fg     = icon_color,
             ),
             aria_label:   aria_label.clone(),
             aria_pressed: if is_active { "true" } else { "false" },
@@ -90,7 +89,7 @@ pub fn AtRibbonIconButton(
                     on_click.call(());
                 }
             },
-            "{icon_label}"
+            {children}
         }
     }
 }

@@ -44,8 +44,9 @@ const A4_HEIGHT_PX: u32 = 1123;
 /// one `DocPageSource` via [`Arc`]; whichever page renders first after a
 /// generation advance causes the layout recompute; the rest reuse the result.
 pub struct DocPageSource {
-    /// Shared document reference.
-    doc: Arc<Document>,
+    /// Current document — interior-mutable so callers can push post-mutation
+    /// documents without recreating the source.
+    doc: Mutex<Arc<Document>>,
     /// Generation-keyed layout cache.  `None` until first render.
     layout_cache: Mutex<Option<(u64, PaginatedLayout)>>,
     /// Shared font cache for rendering (used by the `PageSource::render` path).
@@ -62,7 +63,7 @@ impl DocPageSource {
     /// Creates a new [`DocPageSource`] backed by `doc`.
     pub fn new(doc: Arc<Document>) -> Self {
         Self {
-            doc,
+            doc: Mutex::new(doc),
             layout_cache: Mutex::new(None),
             font_cache: Mutex::new(FontDataCache::new()),
             renderer: Mutex::new(None),
@@ -80,6 +81,23 @@ impl DocPageSource {
     /// Call this after applying a document mutation so that [`LokiPageSource`]
     /// instances re-render on their next frame.
     pub fn advance_generation(&self) {
+        self.generation.fetch_add(1, Ordering::AcqRel);
+    }
+
+    /// Replaces the document and invalidates the layout cache.
+    ///
+    /// Compares by [`Arc`] pointer; returns immediately when the pointer is
+    /// unchanged (no allocation cost between renders with no mutations).
+    /// When the doc has changed, clears the layout cache and advances the
+    /// generation so the next [`layout_for_generation`] call recomputes.
+    pub fn update_doc(&self, new_doc: Arc<Document>) {
+        let mut guard = self.doc.lock().unwrap_or_else(|e| e.into_inner());
+        if Arc::ptr_eq(&*guard, &new_doc) {
+            return;
+        }
+        *guard = new_doc;
+        drop(guard);
+        *self.layout_cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
         self.generation.fetch_add(1, Ordering::AcqRel);
     }
 
@@ -101,13 +119,14 @@ impl DocPageSource {
             .map(|(g, _)| *g != generation)
             .unwrap_or(true);
         if needs_recompute {
+            let doc = self.doc.lock().unwrap_or_else(|e| e.into_inner()).clone();
             let mut resources = FontResources::new();
             let options = LayoutOptions {
                 preserve_for_editing: true,
             };
             let layout = match loki_layout::layout_document(
                 &mut resources,
-                &self.doc,
+                &doc,
                 LayoutMode::Paginated,
                 1.0,
                 &options,

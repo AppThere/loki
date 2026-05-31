@@ -18,7 +18,9 @@ use loki_layout::{DocumentLayout, FontResources, LayoutMode, LayoutOptions, Pagi
 /// with event handlers for cursor hit-testing and mutation tracking.
 pub struct DocumentState {
     /// Currently loaded document, or `None` when no file is open.
-    pub document: Option<Document>,
+    /// Stored as `Arc` so post-mutation versions can be passed cheaply to
+    /// the renderer without cloning the full document tree.
+    pub document: Option<Arc<Document>>,
     /// Bumped after each document mutation; drives cursor re-render and
     /// `layout_document` invalidation.
     pub generation: u64,
@@ -95,7 +97,7 @@ pub fn seed_layout_from_document(doc_state: &Arc<Mutex<DocumentState>>, doc: &Do
     let Ok(mut state) = doc_state.lock() else {
         return;
     };
-    state.document = Some(doc.clone());
+    state.document = Some(Arc::new(doc.clone()));
     state.paginated_layout = paginated_layout;
     state.page_count = page_count;
     state.page_width_px = page_width_px;
@@ -172,7 +174,7 @@ pub fn apply_mutation_and_relayout(
         tracing::warn!("apply_mutation_and_relayout: doc_state lock poisoned (publish)");
         return false;
     };
-    state.document = Some(doc);
+    state.document = Some(Arc::new(doc));
     state.paginated_layout = paginated_layout;
     state.page_count = page_count;
     state.page_width_px = page_width_px;

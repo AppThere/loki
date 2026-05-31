@@ -57,6 +57,7 @@ pub(super) fn render_canvas_area(
     doc_state_touch: std::sync::Arc<std::sync::Mutex<DocumentState>>,
     doc_state_touchend: std::sync::Arc<std::sync::Mutex<DocumentState>>,
     doc_state_keydown: std::sync::Arc<std::sync::Mutex<DocumentState>>,
+    doc_state_render: std::sync::Arc<std::sync::Mutex<DocumentState>>,
     mut is_dragging: Signal<bool>,
     mut drag_origin: Signal<Option<(f32, f32)>>,
     touch_state: Signal<Option<TouchInteractionState>>,
@@ -150,7 +151,14 @@ pub(super) fn render_canvas_area(
 
             match &*document_load.value().read_unchecked() {
                 Some((loaded_path, Ok(doc))) if loaded_path == &path_signal() => {
-                    let arc_doc = Arc::new(doc.clone());
+                    // Use the live post-mutation document from doc_state when
+                    // available; fall back to the original resource doc before
+                    // seed_layout_from_document has run.
+                    let arc_doc = doc_state_render
+                        .lock()
+                        .ok()
+                        .and_then(|s| s.document.clone())
+                        .unwrap_or_else(|| Arc::new(doc.clone()));
                     let cursor_pos = {
                         let cs = cursor_state.read();
                         cs.focus.as_ref().map(|pos| RendererCursorPos {

@@ -178,6 +178,11 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
     // to avoid "hook list already borrowed: BorrowMutError".
     let scroll = use_signal(|| ScrollState::new(props.viewport_height_px));
     let renderer = use_hook(|| RendererState::new(props.doc.clone(), scroll));
+    // Push the latest document into the page source on every render.
+    // `update_doc` compares by Arc pointer and returns immediately when
+    // the document has not changed since the last render, so this is
+    // cheap between mutations.
+    renderer.source.update_doc(props.doc.clone());
     provide_context(renderer.clone());
 
     // Shared cursor holder: written by PageTile on each render, read by

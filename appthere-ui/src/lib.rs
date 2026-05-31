@@ -30,6 +30,10 @@ pub mod safe_area;
 pub mod theme;
 pub mod tokens;
 
+pub use components::icons::{
+    AtIcon, LUCIDE_BOLD, LUCIDE_ITALIC, LUCIDE_REDO, LUCIDE_STRIKETHROUGH, LUCIDE_SUBSCRIPT,
+    LUCIDE_SUPERSCRIPT, LUCIDE_UNDERLINE, LUCIDE_UNDO,
+};
 pub use components::ribbon::{
     AtRibbon, AtRibbonGroup, AtRibbonIconButton, AtRibbonSelect, RibbonTabDesc, RibbonTabIndex,
 };

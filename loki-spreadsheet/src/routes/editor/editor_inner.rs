@@ -4,7 +4,10 @@
 //! Spreadsheet editor inner view.
 
 use appthere_ui::tokens;
-use appthere_ui::{AtRibbon, AtRibbonGroup, AtRibbonIconButton, AtStatusBar, RibbonTabDesc};
+use appthere_ui::{
+    AtIcon, AtRibbon, AtRibbonGroup, AtRibbonIconButton, AtStatusBar, LUCIDE_BOLD, LUCIDE_ITALIC,
+    LUCIDE_REDO, LUCIDE_UNDERLINE, LUCIDE_UNDO, RibbonTabDesc,
+};
 use dioxus::prelude::*;
 use loki_file_access::{FileAccessToken, FilePicker, SaveOptions};
 use loki_i18n::fl;
@@ -624,7 +627,6 @@ pub(super) fn EditorInner(path: String) -> Element {
             aria_label: "File".to_string(),
 
             AtRibbonIconButton {
-                icon_label: "Save".to_string(),
                 aria_label: "Save Document".to_string(),
                 is_active:  false,
                 is_disabled: is_disabled,
@@ -638,6 +640,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                         navigator,
                     );
                 },
+                span { "Save" }
             }
         }
 
@@ -646,7 +649,6 @@ pub(super) fn EditorInner(path: String) -> Element {
             aria_label: fl!("ribbon-group-history"),
 
             AtRibbonIconButton {
-                icon_label:  "\u{21A9}".to_string(),
                 aria_label:  fl!("ribbon-undo-aria"),
                 is_active:   false,
                 is_disabled: is_disabled || !*can_undo.read(),
@@ -665,9 +667,9 @@ pub(super) fn EditorInner(path: String) -> Element {
                     }
                     sync_undo_redo(loro_doc, undo_manager, can_undo, can_redo);
                 },
+                AtIcon { path_d: LUCIDE_UNDO.to_string() }
             }
             AtRibbonIconButton {
-                icon_label:  "\u{21AA}".to_string(),
                 aria_label:  fl!("ribbon-redo-aria"),
                 is_active:   false,
                 is_disabled: is_disabled || !*can_redo.read(),
@@ -686,6 +688,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     }
                     sync_undo_redo(loro_doc, undo_manager, can_undo, can_redo);
                 },
+                AtIcon { path_d: LUCIDE_REDO.to_string() }
             }
         }
 
@@ -694,7 +697,6 @@ pub(super) fn EditorInner(path: String) -> Element {
             aria_label: fl!("ribbon-group-inline"),
 
             AtRibbonIconButton {
-                icon_label: "B".to_string(),
                 aria_label: fl!("ribbon-bold-aria"),
                 is_active:  is_bold_active,
                 is_disabled: is_disabled,
@@ -710,10 +712,10 @@ pub(super) fn EditorInner(path: String) -> Element {
                         sync_undo_redo(loro_doc, undo_manager, can_undo, can_redo);
                     }
                 },
+                AtIcon { path_d: LUCIDE_BOLD.to_string() }
             }
 
             AtRibbonIconButton {
-                icon_label: "I".to_string(),
                 aria_label: fl!("ribbon-italic-aria"),
                 is_active:  is_italic_active,
                 is_disabled: is_disabled,
@@ -729,10 +731,10 @@ pub(super) fn EditorInner(path: String) -> Element {
                         sync_undo_redo(loro_doc, undo_manager, can_undo, can_redo);
                     }
                 },
+                AtIcon { path_d: LUCIDE_ITALIC.to_string() }
             }
 
             AtRibbonIconButton {
-                icon_label: "U".to_string(),
                 aria_label: fl!("ribbon-underline-aria"),
                 is_active:  is_underline_active,
                 is_disabled: is_disabled,
@@ -748,6 +750,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                         sync_undo_redo(loro_doc, undo_manager, can_undo, can_redo);
                     }
                 },
+                AtIcon { path_d: LUCIDE_UNDERLINE.to_string() }
             }
         }
 
@@ -756,7 +759,6 @@ pub(super) fn EditorInner(path: String) -> Element {
             aria_label: "Alignment".to_string(),
 
             AtRibbonIconButton {
-                icon_label: "L".to_string(),
                 aria_label: "Align Left".to_string(),
                 is_active:  match active_coords { Some((r, c)) => get_cell_format(r, c).align == loki_sheet_model::CellAlign::Left, _ => false },
                 is_disabled: is_disabled,
@@ -771,10 +773,10 @@ pub(super) fn EditorInner(path: String) -> Element {
                         sync_undo_redo(loro_doc, undo_manager, can_undo, can_redo);
                     }
                 },
+                span { "L" }
             }
 
             AtRibbonIconButton {
-                icon_label: "C".to_string(),
                 aria_label: "Align Center".to_string(),
                 is_active:  match active_coords { Some((r, c)) => get_cell_format(r, c).align == loki_sheet_model::CellAlign::Center, _ => false },
                 is_disabled: is_disabled,
@@ -789,10 +791,10 @@ pub(super) fn EditorInner(path: String) -> Element {
                         sync_undo_redo(loro_doc, undo_manager, can_undo, can_redo);
                     }
                 },
+                span { "C" }
             }
 
             AtRibbonIconButton {
-                icon_label: "R".to_string(),
                 aria_label: "Align Right".to_string(),
                 is_active:  match active_coords { Some((r, c)) => get_cell_format(r, c).align == loki_sheet_model::CellAlign::Right, _ => false },
                 is_disabled: is_disabled,
@@ -807,6 +809,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                         sync_undo_redo(loro_doc, undo_manager, can_undo, can_redo);
                     }
                 },
+                span { "R" }
             }
         }
 
@@ -815,7 +818,6 @@ pub(super) fn EditorInner(path: String) -> Element {
             aria_label: "Number Formatting".to_string(),
 
             AtRibbonIconButton {
-                icon_label: "123".to_string(),
                 aria_label: "Format General".to_string(),
                 is_active:  match active_coords { Some((r, c)) => get_cell_format(r, c).num_format == loki_sheet_model::NumberFormat::General, _ => false },
                 is_disabled: is_disabled,
@@ -830,10 +832,10 @@ pub(super) fn EditorInner(path: String) -> Element {
                         sync_undo_redo(loro_doc, undo_manager, can_undo, can_redo);
                     }
                 },
+                span { "123" }
             }
 
             AtRibbonIconButton {
-                icon_label: "$".to_string(),
                 aria_label: "Format Currency".to_string(),
                 is_active:  match active_coords { Some((r, c)) => get_cell_format(r, c).num_format == loki_sheet_model::NumberFormat::Currency, _ => false },
                 is_disabled: is_disabled,
@@ -848,10 +850,10 @@ pub(super) fn EditorInner(path: String) -> Element {
                         sync_undo_redo(loro_doc, undo_manager, can_undo, can_redo);
                     }
                 },
+                span { "$" }
             }
 
             AtRibbonIconButton {
-                icon_label: "%".to_string(),
                 aria_label: "Format Percentage".to_string(),
                 is_active:  match active_coords { Some((r, c)) => get_cell_format(r, c).num_format == loki_sheet_model::NumberFormat::Percent, _ => false },
                 is_disabled: is_disabled,
@@ -866,6 +868,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                         sync_undo_redo(loro_doc, undo_manager, can_undo, can_redo);
                     }
                 },
+                span { "%" }
             }
         }
     };

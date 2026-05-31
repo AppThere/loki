@@ -115,7 +115,6 @@ pub(super) fn EditorInner(path: String) -> Element {
             aria_label: "Slides Management".to_string(),
 
             AtRibbonIconButton {
-                icon_label:  "+".to_string(),
                 aria_label:  "Add Slide".to_string(),
                 is_active:   false,
                 is_disabled: false,
@@ -126,15 +125,16 @@ pub(super) fn EditorInner(path: String) -> Element {
                     active_slide_idx.set(new_idx);
                     editing_part.set(None);
                 },
+                span { "+" }
             }
             AtRibbonIconButton {
-                icon_label:  "\u{2212}".to_string(),
                 aria_label:  "Delete Slide".to_string(),
                 is_active:   false,
                 is_disabled: total_slides <= 1,
                 on_click: move |_| {
                     delete_slide(active_slide_idx());
                 },
+                span { "\u{2212}" }
             }
         }
 
@@ -143,43 +143,43 @@ pub(super) fn EditorInner(path: String) -> Element {
             aria_label: "Slide Themes".to_string(),
 
             AtRibbonIconButton {
-                icon_label: "Dark".to_string(),
                 aria_label: "Dark Theme".to_string(),
                 is_active:  active_slide.background_color == "#1E1E1E",
                 is_disabled: false,
                 on_click: move |_| {
                     apply_theme("#1E1E1E", "#FFFFFF");
                 },
+                span { "Dark" }
             }
 
             AtRibbonIconButton {
-                icon_label: "Light".to_string(),
                 aria_label: "Light Theme".to_string(),
                 is_active:  active_slide.background_color == "#FFFFFF",
                 is_disabled: false,
                 on_click: move |_| {
                     apply_theme("#FFFFFF", "#1A1A1A");
                 },
+                span { "Light" }
             }
 
             AtRibbonIconButton {
-                icon_label: "Blue".to_string(),
                 aria_label: "Blue Accent Theme".to_string(),
                 is_active:  active_slide.background_color == "#3D7EFF",
                 is_disabled: false,
                 on_click: move |_| {
                     apply_theme("#3D7EFF", "#FFFFFF");
                 },
+                span { "Blue" }
             }
 
             AtRibbonIconButton {
-                icon_label: "Beige".to_string(),
                 aria_label: "Warm Beige Theme".to_string(),
                 is_active:  active_slide.background_color == "#FAF6EE",
                 is_disabled: false,
                 on_click: move |_| {
                     apply_theme("#FAF6EE", "#4A3525");
                 },
+                span { "Beige" }
             }
         }
     };

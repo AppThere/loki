@@ -8,7 +8,11 @@
 
 use std::sync::{Arc, Mutex};
 
-use appthere_ui::{AtRibbonGroup, AtRibbonIconButton, AtRibbonSelect};
+use appthere_ui::{
+    AtIcon, AtRibbonGroup, AtRibbonIconButton, AtRibbonSelect, LUCIDE_BOLD, LUCIDE_ITALIC,
+    LUCIDE_REDO, LUCIDE_STRIKETHROUGH, LUCIDE_SUBSCRIPT, LUCIDE_SUPERSCRIPT, LUCIDE_UNDERLINE,
+    LUCIDE_UNDO,
+};
 use dioxus::prelude::*;
 use loki_i18n::fl;
 use loro::LoroDoc;
@@ -42,7 +46,7 @@ pub(super) fn home_tab_content(
     strikethrough_active: Signal<bool>,
     superscript_active: Signal<bool>,
     subscript_active: Signal<bool>,
-    current_style_name: Signal<String>,
+    current_style_name: String,
     mut is_style_picker_open: Signal<bool>,
 ) -> Element {
     // One Arc clone per button — cheap reference-count increment.
@@ -62,7 +66,7 @@ pub(super) fn home_tab_content(
             aria_label: fl!("ribbon-group-styles"),
 
             AtRibbonSelect {
-                value:      current_style_name.read().clone(),
+                value:      current_style_name.clone(),
                 aria_label: fl!("ribbon-style-select-aria"),
                 is_open:    *is_style_picker_open.read(),
                 on_open:    move |_| {
@@ -78,7 +82,6 @@ pub(super) fn home_tab_content(
             aria_label: fl!("ribbon-group-history"),
 
             AtRibbonIconButton {
-                icon_label:  "\u{21A9}".to_string(),
                 aria_label:  fl!("ribbon-undo-aria"),
                 is_active:   false,
                 is_disabled: !*can_undo.read(),
@@ -95,10 +98,10 @@ pub(super) fn home_tab_content(
                     }
                     post_mutation_sync(&ds_undo, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
                 },
+                AtIcon { path_d: LUCIDE_UNDO.to_string() }
             }
 
             AtRibbonIconButton {
-                icon_label:  "\u{21AA}".to_string(),
                 aria_label:  fl!("ribbon-redo-aria"),
                 is_active:   false,
                 is_disabled: !*can_redo.read(),
@@ -115,6 +118,7 @@ pub(super) fn home_tab_content(
                     }
                     post_mutation_sync(&ds_redo, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
                 },
+                AtIcon { path_d: LUCIDE_REDO.to_string() }
             }
         }
 
@@ -123,9 +127,8 @@ pub(super) fn home_tab_content(
             aria_label: fl!("ribbon-group-inline"),
 
             AtRibbonIconButton {
-                icon_label: "B".to_string(),
-                aria_label: fl!("ribbon-bold-aria"),
-                is_active:  *bold_active.read(),
+                aria_label:  fl!("ribbon-bold-aria"),
+                is_active:   *bold_active.read(),
                 is_disabled: false,
                 on_click: move |_| {
                     let ldoc_guard = loro_doc.read();
@@ -135,12 +138,12 @@ pub(super) fn home_tab_content(
                     }
                     post_mutation_sync(&ds_bold, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
                 },
+                AtIcon { path_d: LUCIDE_BOLD.to_string() }
             }
 
             AtRibbonIconButton {
-                icon_label: "I".to_string(),
-                aria_label: fl!("ribbon-italic-aria"),
-                is_active:  *italic_active.read(),
+                aria_label:  fl!("ribbon-italic-aria"),
+                is_active:   *italic_active.read(),
                 is_disabled: false,
                 on_click: move |_| {
                     let ldoc_guard = loro_doc.read();
@@ -150,12 +153,12 @@ pub(super) fn home_tab_content(
                     }
                     post_mutation_sync(&ds_italic, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
                 },
+                AtIcon { path_d: LUCIDE_ITALIC.to_string() }
             }
 
             AtRibbonIconButton {
-                icon_label: "U".to_string(),
-                aria_label: fl!("ribbon-underline-aria"),
-                is_active:  *underline_active.read(),
+                aria_label:  fl!("ribbon-underline-aria"),
+                is_active:   *underline_active.read(),
                 is_disabled: false,
                 on_click: move |_| {
                     let ldoc_guard = loro_doc.read();
@@ -165,12 +168,12 @@ pub(super) fn home_tab_content(
                     }
                     post_mutation_sync(&ds_underline, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
                 },
+                AtIcon { path_d: LUCIDE_UNDERLINE.to_string() }
             }
 
             AtRibbonIconButton {
-                icon_label: "S\u{0336}".to_string(),
-                aria_label: fl!("ribbon-strikethrough-aria"),
-                is_active:  *strikethrough_active.read(),
+                aria_label:  fl!("ribbon-strikethrough-aria"),
+                is_active:   *strikethrough_active.read(),
                 is_disabled: false,
                 on_click: move |_| {
                     let ldoc_guard = loro_doc.read();
@@ -180,12 +183,12 @@ pub(super) fn home_tab_content(
                     }
                     post_mutation_sync(&ds_strike, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
                 },
+                AtIcon { path_d: LUCIDE_STRIKETHROUGH.to_string() }
             }
 
             AtRibbonIconButton {
-                icon_label: "x\u{00B2}".to_string(),
-                aria_label: fl!("ribbon-superscript-aria"),
-                is_active:  *superscript_active.read(),
+                aria_label:  fl!("ribbon-superscript-aria"),
+                is_active:   *superscript_active.read(),
                 is_disabled: false,
                 on_click: move |_| {
                     let ldoc_guard = loro_doc.read();
@@ -195,12 +198,12 @@ pub(super) fn home_tab_content(
                     }
                     post_mutation_sync(&ds_super, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
                 },
+                AtIcon { path_d: LUCIDE_SUPERSCRIPT.to_string() }
             }
 
             AtRibbonIconButton {
-                icon_label: "x\u{2082}".to_string(),
-                aria_label: fl!("ribbon-subscript-aria"),
-                is_active:  *subscript_active.read(),
+                aria_label:  fl!("ribbon-subscript-aria"),
+                is_active:   *subscript_active.read(),
                 is_disabled: false,
                 on_click: move |_| {
                     let ldoc_guard = loro_doc.read();
@@ -210,6 +213,7 @@ pub(super) fn home_tab_content(
                     }
                     post_mutation_sync(&ds_sub, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
                 },
+                AtIcon { path_d: LUCIDE_SUBSCRIPT.to_string() }
             }
         }
     }

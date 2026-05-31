@@ -7,6 +7,7 @@
 
 pub mod document_tab;
 pub mod home_tab;
+pub mod icons;
 pub mod platform;
 pub mod ribbon;
 pub mod status_bar;
