@@ -56,7 +56,7 @@ use loki_doc_model::style::list_style::ListLevelKind;
 use crate::geometry::LayoutRect;
 use crate::items::{PositionedImage, PositionedItem};
 use crate::para::{ParagraphLayout, ResolvedParaProps, format_list_marker, layout_paragraph};
-use crate::resolve::{emu_to_pt, flatten_paragraph, resolve_para_props};
+use crate::resolve::{emu_to_pt, flatten_paragraph, pts_to_f32, resolve_para_props};
 use crate::result::PageParagraphData;
 
 use super::{FlowState, LayoutWarning, finish_page};
@@ -68,7 +68,26 @@ const CHAIN_LIMIT: usize = 5;
 
 /// Resolve, lay out, and place a single paragraph block.
 pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, block_index: usize) {
-    let resolved = resolve_para_props(para, state.catalog);
+    let mut resolved = resolve_para_props(para, state.catalog);
+
+    // ── List level indentation fallback ─────────────────────────────────────
+    // OOXML defines indentation on both the paragraph and its numbering level.
+    // The level's pPr is the authoritative indent when the paragraph's own
+    // pPr carries no indent (both indent_start and indent_hanging are 0.0).
+    // This handles documents where `w:ind` is only on the abstract num level.
+    if let Some(ref lm) = resolved.list_marker
+        && resolved.indent_start == 0.0
+        && resolved.indent_hanging == 0.0
+        && let Some(list_style) = state.catalog.list_styles.get(&lm.list_id)
+        && let Some(level_def) = list_style.levels.get(lm.level as usize)
+    {
+        let level_indent = pts_to_f32(level_def.indent_start);
+        let level_hanging = pts_to_f32(level_def.hanging_indent);
+        if level_indent > 0.0 || level_hanging > 0.0 {
+            resolved.indent_start = level_indent;
+            resolved.indent_hanging = level_hanging;
+        }
+    }
 
     // ── List marker synthesis ────────────────────────────────────────────────
     // When the paragraph carries list membership, look up the list style,

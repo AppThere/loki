@@ -878,6 +878,19 @@ pub fn layout_paragraph(
 
             let link_url = span_link_url_for_range(&clean_spans, text_range.clone());
 
+            // ── Vertical offset for super/subscript (gap #3) ───────────────────
+            // Parley does not expose baseline-shift, so font size is reduced to
+            // 58 % in push_para_styles. We manually shift the run origin here so
+            // the text actually appears above/below the baseline.
+            // Superscript: raise by 35 % of the original (pre-reduction) font size.
+            // Subscript:   lower by 20 % of the original font size.
+            let va_offset = span_vertical_align_for_range(&clean_spans, text_range.clone())
+                .map(|(va, orig_size)| match va {
+                    VerticalAlign::Superscript => -orig_size * 0.35,
+                    VerticalAlign::Subscript => orig_size * 0.20,
+                })
+                .unwrap_or(0.0);
+
             // ── Highlight colour (gap #10) ──────────────────────────────────────
             // Emit a filled rect sized to the run's ink extent BEFORE the glyph
             // run so the background renders below the text.
@@ -886,7 +899,7 @@ pub fn layout_paragraph(
                 items.push(PositionedItem::FilledRect(PositionedRect {
                     rect: LayoutRect::new(
                         run_offset + indent_x,
-                        run_baseline - m.ascent,
+                        run_baseline - m.ascent + va_offset,
                         glyph_run.advance(),
                         m.ascent + m.descent,
                     ),
@@ -903,7 +916,7 @@ pub fn layout_paragraph(
                 items.push(PositionedItem::GlyphRun(PositionedGlyphRun {
                     origin: LayoutPoint {
                         x: run_offset + indent_x + 0.5,
-                        y: run_baseline + 0.5,
+                        y: run_baseline + va_offset + 0.5,
                     },
                     font_data: font_data.clone(),
                     font_index: run.font().index,
@@ -922,7 +935,7 @@ pub fn layout_paragraph(
             items.push(PositionedItem::GlyphRun(PositionedGlyphRun {
                 origin: LayoutPoint {
                     x: run_offset + indent_x,
-                    y: run_baseline,
+                    y: run_baseline + va_offset,
                 },
                 font_data,
                 font_index: run.font().index,
@@ -1195,6 +1208,19 @@ fn span_has_shadow(spans: &[StyleSpan], text_range: Range<usize>) -> bool {
         .iter()
         .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
         .is_some_and(|s| s.shadow)
+}
+
+/// Returns the vertical alignment and original (pre-reduction) font size for
+/// the first span fully containing `text_range`, or `None` if no vertical
+/// alignment is set on that span.
+fn span_vertical_align_for_range(
+    spans: &[StyleSpan],
+    text_range: Range<usize>,
+) -> Option<(VerticalAlign, f32)> {
+    spans
+        .iter()
+        .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
+        .and_then(|s| s.vertical_align.map(|va| (va, s.font_size)))
 }
 
 #[cfg(test)]

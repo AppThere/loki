@@ -322,7 +322,14 @@ fn char_props_to_style_span(props: &CharProps, range: Range<usize>) -> StyleSpan
     };
 
     // Highlight colour (gap #10): convert named palette to LayoutColor.
-    let highlight_color = map_highlight_color(props.highlight_color);
+    // Fall back to background_color (w:shd @fill on runs) when no named
+    // highlight is set — both serve the same visual role.
+    let highlight_color = map_highlight_color(props.highlight_color).or_else(|| {
+        props
+            .background_color
+            .as_ref()
+            .map(|c| resolve_color(Some(c)))
+    });
 
     // Underline (gap #17): preserve variant (Parley renders all as single).
     let underline = match props.underline {

@@ -39,11 +39,17 @@ pub fn paint_glyph_run(
 
     // Map layout GlyphEntry → vello::Glyph.  Positions are in the run's local
     // coordinate space; the transform above handles the run origin.
-    let glyphs = run.glyphs.iter().map(|g| vello::Glyph {
-        id: g.id as u32,
-        x: g.x * scale,
-        y: g.y * scale,
-    });
+    // Glyph id 0 is the .notdef glyph (rendered as a tofu box by most fonts).
+    // Skip it so characters with no font coverage are invisible, matching Word.
+    let glyphs = run
+        .glyphs
+        .iter()
+        .filter(|g| g.id != 0)
+        .map(|g| vello::Glyph {
+            id: g.id as u32,
+            x: g.x * scale,
+            y: g.y * scale,
+        });
 
     let coords = font_cache.get_coords(&run.font_data, run.font_index);
     let coords_i16: Vec<i16> = coords.iter().map(|c| c.to_bits()).collect();

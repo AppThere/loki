@@ -71,11 +71,20 @@ fn map_page_layout(sect_pr: Option<&DocxSectPr>) -> PageLayout {
     let mut layout = PageLayout::default();
 
     if let Some(ref pg_sz) = sp.pg_sz {
-        layout.page_size = PageSize {
-            width: Points::new(f64::from(pg_sz.w) / 20.0),
-            height: Points::new(f64::from(pg_sz.h) / 20.0),
+        let is_landscape = pg_sz.orient.as_deref() == Some("landscape");
+        // Some producers store landscape pages with portrait w/h values (w < h)
+        // and rely on orient="landscape" to indicate the swap. Normalise so that
+        // page_size.width is always the wider dimension for landscape pages.
+        let (w, h) = if is_landscape && pg_sz.w < pg_sz.h {
+            (pg_sz.h, pg_sz.w)
+        } else {
+            (pg_sz.w, pg_sz.h)
         };
-        layout.orientation = if pg_sz.orient.as_deref() == Some("landscape") {
+        layout.page_size = PageSize {
+            width: Points::new(f64::from(w) / 20.0),
+            height: Points::new(f64::from(h) / 20.0),
+        };
+        layout.orientation = if is_landscape {
             PageOrientation::Landscape
         } else {
             PageOrientation::Portrait
