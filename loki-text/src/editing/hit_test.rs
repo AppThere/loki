@@ -111,6 +111,11 @@ pub fn hit_test_page(
     let page = layout.pages.get(page_index)?;
     let editing_data = page.editing_data.as_ref()?;
 
+    // Clicks above the page top are outside the canvas — no valid position.
+    if canvas_y < 0.0 {
+        return None;
+    }
+
     // ── 4. Page-content-area-local coordinates ────────────────────────────────
     // page.margins is in layout points; margins.left/top are already in pt.
     let content_x = canvas_x - page.margins.left;
