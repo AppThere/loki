@@ -297,6 +297,13 @@ impl<Rend: WindowRenderer> View<Rend> {
         let animation_time = self.current_animation_time();
         self.doc.resolve(animation_time);
         let (width, height) = self.doc.viewport().window_size;
+        // On Windows, minimising the window fires Resized(0,0), which sets the
+        // viewport to (0,0).  Poll events still run and can trigger a redraw;
+        // calling renderer.render() with zero dimensions panics inside WGPU.
+        // Skip the render entirely — the window is not visible anyway.
+        if width == 0 || height == 0 {
+            return;
+        }
         let scale = self.doc.viewport().scale_f64();
         log::info!("[LOKI/redraw] viewport=({width},{height}) scale={scale}");
         self.renderer
