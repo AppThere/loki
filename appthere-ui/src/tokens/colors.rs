@@ -97,6 +97,24 @@ pub const CANVAS_PAGE_BG: &str = "#FAFAFA";
 /// Dark margin area surrounding pages inside the canvas.
 pub const CANVAS_MARGIN_BG: &str = "#1C1C1C";
 
+// ── Scrollbar ─────────────────────────────────────────────────────────────────
+
+/// Scrollbar thumb — resting state (subtle semi-transparent light overlay).
+///
+/// # COMPAT(dioxus-native)
+///
+/// `scrollbar-color` is an unconfirmed CSS property in Blitz — verify at
+/// runtime.  Falls back gracefully: if unsupported the platform default
+/// scrollbar is shown.
+pub const COLOR_SCROLLBAR_THUMB: &str = "rgba(255,255,255,0.22)";
+
+/// Scrollbar thumb — hover / active state (more opaque, clearly visible).
+///
+/// # COMPAT(dioxus-native)
+///
+/// Same caveat as [`COLOR_SCROLLBAR_THUMB`].
+pub const COLOR_SCROLLBAR_THUMB_HOVER: &str = "rgba(255,255,255,0.52)";
+
 // ── Status: error ─────────────────────────────────────────────────────────────
 
 /// Error banner background fill.

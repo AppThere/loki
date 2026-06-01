@@ -70,6 +70,7 @@ pub(super) fn render_canvas_area(
     can_redo: Signal<bool>,
     path_signal: Signal<String>,
     document_load: Resource<(String, Result<Document, LoadError>)>,
+    mut canvas_hovered: Signal<bool>,
     page_gap_px: f32,
 ) -> Element {
     rsx! {
@@ -79,14 +80,26 @@ pub(super) fn render_canvas_area(
             // tabindex="0" enables keyboard focus for onkeydown to fire.
             // autofocus ensures the canvas receives keyboard focus immediately
             // when the editor mounts, so the user can type without clicking first.
+            // COMPAT(dioxus-native): scrollbar-width / scrollbar-color are
+            // unconfirmed in Blitz — they are Stylo (Firefox CSS engine)
+            // properties.  If unsupported the platform-default scrollbar is
+            // shown; no functionality is lost.
             style: format!(
                 "flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; \
-                 background: {bg}; padding: {p}px 0;",
-                bg = tokens::COLOR_SURFACE_BASE,
-                p  = tokens::SPACE_6,
+                 background: {bg}; padding: {p}px 0; \
+                 scrollbar-width: thin; scrollbar-color: {thumb} transparent;",
+                bg    = tokens::COLOR_SURFACE_BASE,
+                p     = tokens::SPACE_6,
+                thumb = if canvas_hovered() {
+                    tokens::COLOR_SCROLLBAR_THUMB_HOVER
+                } else {
+                    tokens::COLOR_SCROLLBAR_THUMB
+                },
             ),
             tabindex: "0",
             autofocus: "true",
+            onmouseenter: move |_| { canvas_hovered.set(true); },
+            onmouseleave: move |_| { canvas_hovered.set(false); },
 
             // Outer div records drag origin; cursor placement happens in
             // on_tile_click on the per-page div (element_coordinates, no origin math).

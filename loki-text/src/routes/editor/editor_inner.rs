@@ -239,6 +239,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     //   patches/dioxus-native-dom/src/events.rs convert_scroll_data
     let _ = scroll_offset;
 
+    let canvas_hovered = use_signal(|| false);
     let page_gap_px = tokens::PAGE_GAP_PX;
 
     let page_label = if total_pages() == 0 {
@@ -351,6 +352,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                 can_redo,
                 path_signal,
                 document_load,
+                canvas_hovered,
                 page_gap_px,
             )}
 

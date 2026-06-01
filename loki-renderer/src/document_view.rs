@@ -59,6 +59,9 @@ struct PageTileProps {
     shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
     cursor_holder: Arc<Mutex<Option<RendererCursorPos>>>,
     cursor_pos: Option<RendererCursorPos>,
+    /// Document generation — incremented on every mutation so that style
+    /// changes that don't move the cursor still dirty the canvas.
+    doc_gen: u64,
     /// Called with `(page_index, x_pt, y_pt)` in layout points when the user
     /// clicks anywhere on this page tile. The parent uses this to call
     /// `hit_test_page` without needing window-relative origin math.
@@ -74,6 +77,7 @@ impl PartialEq for PageTileProps {
             && self.h == other.h
             && Arc::ptr_eq(&self.cursor_holder, &other.cursor_holder)
             && self.cursor_pos == other.cursor_pos
+            && self.doc_gen == other.doc_gen
         // on_tile_click intentionally excluded — EventHandler identity does not
         // affect render output; omitting it avoids spurious re-renders.
     }
@@ -107,14 +111,18 @@ fn PageTile(props: PageTileProps) -> Element {
         )
     });
 
-    // A dummy data attribute that changes whenever the cursor moves, forcing
-    // Blitz to mark the canvas dirty and call render() again.
+    // Combines cursor position and document generation so that both cursor
+    // movement AND document mutations (e.g. style changes that don't shift
+    // the cursor) mark the canvas dirty and trigger render() again.
     // COMPAT(dioxus-native): data-* attributes confirmed working in Blitz.
     let data_cursor = match props.cursor_pos {
         Some(cp) if cp.page_index == props.page_index => {
-            format!("{}-{}", cp.paragraph_index, cp.byte_offset)
+            format!(
+                "{}-{}-{}",
+                cp.paragraph_index, cp.byte_offset, props.doc_gen
+            )
         }
-        _ => String::new(),
+        _ => props.doc_gen.to_string(),
     };
 
     rsx! {
@@ -257,6 +265,7 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                         shared_renderer: renderer.shared_renderer.clone(),
                         cursor_holder: cursor_holder.clone(),
                         cursor_pos,
+                        doc_gen,
                         on_tile_click,
                     }
                 }

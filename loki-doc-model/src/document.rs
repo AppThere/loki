@@ -12,7 +12,11 @@ use crate::io::source::DocumentSource;
 use crate::layout::section::Section;
 use crate::meta::core::DocumentMeta;
 use crate::settings::DocumentSettings;
-use crate::style::catalog::StyleCatalog;
+use crate::style::catalog::{StyleCatalog, StyleId};
+use crate::style::para_style::ParagraphStyle;
+use crate::style::props::char_props::CharProps;
+use crate::style::props::para_props::ParaProps;
+use loki_primitives::units::Points;
 
 /// The root of a Loki document.
 ///
@@ -97,15 +101,47 @@ impl Document {
     /// Creates a blank document ready for editing.
     ///
     /// Contains one section with one empty paragraph so the cursor can be
-    /// placed and text can be typed immediately.
+    /// placed and text can be typed immediately.  The style catalog is
+    /// pre-populated with built-in heading styles (H1–H6) so that applying
+    /// a heading style from the style picker immediately produces a visible
+    /// change in the rendered output.
     #[must_use]
     pub fn new_blank() -> Self {
         use crate::content::block::Block;
         let mut section = Section::new();
         section.blocks.push(Block::Para(vec![]));
+        let mut styles = StyleCatalog::default();
+        // Standard heading sizes (in points). Body text defaults to 12 pt.
+        let heading_defs: &[(&str, &str, f32, bool)] = &[
+            ("Heading1", "Heading 1", 24.0, true),
+            ("Heading2", "Heading 2", 18.0, true),
+            ("Heading3", "Heading 3", 14.0, true),
+            ("Heading4", "Heading 4", 12.0, true),
+            ("Heading5", "Heading 5", 10.0, true),
+            ("Heading6", "Heading 6", 10.0, false),
+        ];
+        for &(id, name, size_pt, bold) in heading_defs {
+            let style = ParagraphStyle {
+                id: StyleId::new(id),
+                display_name: Some(name.to_string()),
+                parent: None,
+                linked_char_style: None,
+                next_style_id: None,
+                para_props: ParaProps::default(),
+                char_props: CharProps {
+                    bold: Some(bold),
+                    font_size: Some(Points::new(f64::from(size_pt))),
+                    ..Default::default()
+                },
+                is_default: false,
+                is_custom: false,
+                extensions: Default::default(),
+            };
+            styles.paragraph_styles.insert(StyleId::new(id), style);
+        }
         Self {
             meta: DocumentMeta::default(),
-            styles: StyleCatalog::default(),
+            styles,
             sections: vec![section],
             settings: None,
             source: None,
