@@ -12,7 +12,7 @@ use crate::editing::state::DocumentState;
 
 /// Synchronises `path_signal` with the `path` prop and resets all per-document
 /// signals when the active document changes.
-#[allow(clippy::too_many_arguments)] // 12 args: all per-document reset targets
+#[allow(clippy::too_many_arguments)] // 14 args: all per-document reset targets
 pub(super) fn sync_path_and_reset(
     path: &str,
     path_signal: &mut Signal<String>,
@@ -26,6 +26,8 @@ pub(super) fn sync_path_and_reset(
     can_redo: &mut Signal<bool>,
     dismiss_font_warning: &mut Signal<bool>,
     is_style_picker_open: &mut Signal<bool>,
+    is_para_props_open: &mut Signal<bool>,
+    save_message: &mut Signal<Option<String>>,
 ) {
     let current = path_signal.peek().clone();
     if current == path {
@@ -56,4 +58,6 @@ pub(super) fn sync_path_and_reset(
     can_redo.set(false);
     dismiss_font_warning.set(false);
     is_style_picker_open.set(false);
+    is_para_props_open.set(false);
+    save_message.set(None);
 }

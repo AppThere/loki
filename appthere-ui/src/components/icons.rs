@@ -40,6 +40,25 @@ pub const LUCIDE_SUPERSCRIPT: &str = "M4 19l8-8M12 19l-8-8m14.5-9.5V9h-4l4-4.5";
 /// Lucide `subscript` — two subpaths.
 pub const LUCIDE_SUBSCRIPT: &str = "M4 5l8 8M12 5l-8 8m14.5 6.5V19h-4l4-4.5";
 
+/// Lucide `save` — floppy-disk outline.
+pub const LUCIDE_SAVE: &str =
+    "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8";
+
+/// Lucide `align-left` — three lines, all left-aligned.
+pub const LUCIDE_ALIGN_LEFT: &str = "M15 12H3M17 6H3M13 18H3";
+
+/// Lucide `align-center` — three lines, centred.
+pub const LUCIDE_ALIGN_CENTER: &str = "M17 12H7M21 6H3M19 18H5";
+
+/// Lucide `align-right` — three lines, all right-aligned.
+pub const LUCIDE_ALIGN_RIGHT: &str = "M21 12H9M21 6H7M21 18H11";
+
+/// Lucide `align-justify` — three equal-width lines.
+pub const LUCIDE_ALIGN_JUSTIFY: &str = "M3 6h18M3 12h18M3 18h18";
+
+/// Lucide `pilcrow` — paragraph mark (¶).
+pub const LUCIDE_PILCROW: &str = "M13 4v16M17 4v16M8 4h4a4 4 0 0 1 0 8H8";
+
 // ── AtIcon component ──────────────────────────────────────────────────────────
 
 /// Renders a single Lucide SVG icon.

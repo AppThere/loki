@@ -52,6 +52,10 @@ pub(super) struct EditorState {
     pub can_redo: Signal<bool>,
     /// Whether the style picker panel is currently open above the ribbon.
     pub is_style_picker_open: Signal<bool>,
+    /// Whether the paragraph properties panel is currently open above the ribbon.
+    pub is_para_props_open: Signal<bool>,
+    /// Last save result message (`None` = nothing to show).
+    pub save_message: Signal<Option<String>>,
 }
 
 /// Initialises and returns all per-document editing signals.
@@ -97,5 +101,7 @@ pub(super) fn use_editor_state() -> EditorState {
         can_undo: use_signal(|| false),
         can_redo: use_signal(|| false),
         is_style_picker_open: use_signal(|| false),
+        is_para_props_open: use_signal(|| false),
+        save_message: use_signal(|| None),
     }
 }

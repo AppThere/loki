@@ -30,7 +30,8 @@ mod text;
 
 pub use self::block::{merge_block, split_block};
 pub use self::style::{
-    get_block_style_name, set_block_style, set_block_type_heading, set_block_type_para,
+    get_block_alignment, get_block_style_name, set_block_alignment, set_block_style,
+    set_block_type_heading, set_block_type_para,
 };
 pub use self::text::{delete_text, get_block_text, get_mark_at, insert_text, mark_text};
 

@@ -24,9 +24,22 @@ ribbon-group-history = History
 ribbon-undo-aria = Undo (Ctrl+Z)
 ribbon-redo-aria = Redo (Ctrl+Y)
 
+# Document group (Home tab)
+ribbon-group-document = Document
+ribbon-save-aria = Save (Ctrl+S)
+
 # Styles group (Home tab)
 ribbon-group-styles = Styles
 ribbon-style-select-aria = Paragraph style
 ribbon-style-picker-heading = Paragraph Styles
 ribbon-style-search-placeholder = Search styles…
 ribbon-style-apply-aria = Apply style: { $name }
+
+# Paragraph group (Home tab)
+ribbon-group-paragraph = Paragraph
+ribbon-para-props-aria = Paragraph properties
+ribbon-para-props-heading = Paragraph Properties
+ribbon-align-left-aria = Align left
+ribbon-align-centre-aria = Centre
+ribbon-align-right-aria = Align right
+ribbon-align-justify-aria = Justify

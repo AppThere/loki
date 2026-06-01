@@ -10,8 +10,8 @@ use std::sync::{Arc, Mutex};
 
 use appthere_ui::{
     AtIcon, AtRibbonGroup, AtRibbonIconButton, AtRibbonSelect, LUCIDE_BOLD, LUCIDE_ITALIC,
-    LUCIDE_REDO, LUCIDE_STRIKETHROUGH, LUCIDE_SUBSCRIPT, LUCIDE_SUPERSCRIPT, LUCIDE_UNDERLINE,
-    LUCIDE_UNDO,
+    LUCIDE_PILCROW, LUCIDE_REDO, LUCIDE_SAVE, LUCIDE_STRIKETHROUGH, LUCIDE_SUBSCRIPT,
+    LUCIDE_SUPERSCRIPT, LUCIDE_UNDERLINE, LUCIDE_UNDO,
 };
 use dioxus::prelude::*;
 use loki_i18n::fl;
@@ -22,6 +22,7 @@ use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
 use super::editor_formatting;
 use super::editor_keydown_ctrl::post_mutation_sync;
+use super::editor_save::save_document_to_path;
 
 /// Builds the Home tab ribbon content element.
 ///
@@ -48,8 +49,12 @@ pub(super) fn home_tab_content(
     subscript_active: Signal<bool>,
     current_style_name: String,
     mut is_style_picker_open: Signal<bool>,
+    path_signal: Signal<String>,
+    mut save_message: Signal<Option<String>>,
+    mut is_para_props_open: Signal<bool>,
 ) -> Element {
     // One Arc clone per button — cheap reference-count increment.
+    let ds_save = Arc::clone(doc_state);
     let ds_undo = Arc::clone(doc_state);
     let ds_redo = Arc::clone(doc_state);
     let ds_bold = Arc::clone(doc_state);
@@ -60,6 +65,27 @@ pub(super) fn home_tab_content(
     let ds_sub = Arc::clone(doc_state);
 
     rsx! {
+        // ── Document group ────────────────────────────────────────────────────
+        AtRibbonGroup {
+            label:      None,
+            aria_label: fl!("ribbon-group-document"),
+
+            AtRibbonIconButton {
+                aria_label:  fl!("ribbon-save-aria"),
+                is_active:   false,
+                is_disabled: false,
+                on_click: move |_| {
+                    let path = path_signal();
+                    let msg = match save_document_to_path(&path, &ds_save) {
+                        Ok(()) => fl!("editor-save-success"),
+                        Err(e) => fl!("editor-save-error", reason = e.to_string()),
+                    };
+                    save_message.set(Some(msg));
+                },
+                AtIcon { path_d: LUCIDE_SAVE.to_string() }
+            }
+        }
+
         // ── History group ─────────────────────────────────────────────────────
         AtRibbonGroup {
             label:      None,
@@ -119,6 +145,23 @@ pub(super) fn home_tab_content(
                     let currently_open = *is_style_picker_open.read();
                     is_style_picker_open.set(!currently_open);
                 },
+            }
+        }
+
+        // ── Paragraph group ───────────────────────────────────────────────────
+        AtRibbonGroup {
+            label:      None,
+            aria_label: fl!("ribbon-group-paragraph"),
+
+            AtRibbonIconButton {
+                aria_label:  fl!("ribbon-para-props-aria"),
+                is_active:   *is_para_props_open.read(),
+                is_disabled: false,
+                on_click: move |_| {
+                    let currently_open = *is_para_props_open.read();
+                    is_para_props_open.set(!currently_open);
+                },
+                AtIcon { path_d: LUCIDE_PILCROW.to_string() }
             }
         }
 

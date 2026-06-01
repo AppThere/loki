@@ -253,7 +253,12 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                 // Block flow: height determined by stacked page tiles.
                 // position:relative is retained so future absolutely-positioned
                 // overlays (cursor, selection) have a containing block.
-                style: "position: relative; width: 100%;",
+                // padding-bottom ensures a gap after the last page when scrolled
+                // all the way down, matching the top padding on the scroll container.
+                style: format!(
+                    "position: relative; width: 100%; padding-bottom: {pb}px;",
+                    pb = tokens::SPACE_6,
+                ),
                 for (idx, w, h) in pages {
                     PageTile {
                         key: "{idx}",

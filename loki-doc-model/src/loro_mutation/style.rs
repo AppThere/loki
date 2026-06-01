@@ -3,11 +3,12 @@
 
 //! Block-level style mutations: read and apply named paragraph styles.
 
-use loro::LoroDoc;
+use loro::{LoroDoc, LoroMap};
 
 use super::{MutationError, get_block_map_and_list};
 use crate::loro_schema::{
-    BLOCK_TYPE_HEADING, BLOCK_TYPE_PARA, BLOCK_TYPE_STYLED_PARA, KEY_HEADING_LEVEL, KEY_TYPE,
+    BLOCK_TYPE_HEADING, BLOCK_TYPE_PARA, BLOCK_TYPE_STYLED_PARA, KEY_HEADING_LEVEL, KEY_PARA_PROPS,
+    KEY_TYPE, PROP_ALIGNMENT,
 };
 
 /// Returns a display string for the current named style of the block at
@@ -146,5 +147,55 @@ pub fn set_block_style(
         }
     }
 
+    Ok(())
+}
+
+/// Returns the current paragraph alignment for the block at `block_index`.
+///
+/// Returns `"Left"` if no alignment is stored (the default).
+pub fn get_block_alignment(loro: &LoroDoc, block_index: usize) -> String {
+    let Ok((_, block_map)) = get_block_map_and_list(loro, block_index) else {
+        return "Left".to_string();
+    };
+    let Some(props_map) = block_map
+        .get(KEY_PARA_PROPS)
+        .and_then(|v| v.into_container().ok())
+        .and_then(|c| c.into_map().ok())
+    else {
+        return "Left".to_string();
+    };
+    props_map
+        .get(PROP_ALIGNMENT)
+        .and_then(|v| v.into_value().ok())
+        .and_then(|v| v.into_string().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "Left".to_string())
+}
+
+/// Sets the paragraph alignment for the block at `block_index`.
+///
+/// Valid values: `"Left"`, `"Center"`, `"Right"`, `"Justify"`.
+/// Creates the `para_props` sub-map if it does not yet exist.
+///
+/// # Errors
+///
+/// - [`MutationError::BlockIndexOutOfRange`] if `block_index` is out of range.
+/// - [`MutationError::Loro`] for underlying Loro errors.
+pub fn set_block_alignment(
+    loro: &LoroDoc,
+    block_index: usize,
+    alignment: &str,
+) -> Result<(), MutationError> {
+    let (_, block_map) = get_block_map_and_list(loro, block_index)?;
+    let props_map = if let Some(existing) = block_map
+        .get(KEY_PARA_PROPS)
+        .and_then(|v| v.into_container().ok())
+        .and_then(|c| c.into_map().ok())
+    {
+        existing
+    } else {
+        block_map.insert_container(KEY_PARA_PROPS, LoroMap::new())?
+    };
+    props_map.insert(PROP_ALIGNMENT, alignment)?;
     Ok(())
 }

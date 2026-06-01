@@ -35,6 +35,7 @@ use loro::LoroValue;
 
 use super::editor_canvas::render_canvas_area;
 use super::editor_load::load_document;
+use super::editor_para::para_props_panel;
 use super::editor_path_sync::sync_path_and_reset;
 use super::editor_ribbon::home_tab_content;
 use super::editor_state::{EditorState, use_editor_state};
@@ -82,6 +83,8 @@ pub(super) fn EditorInner(path: String) -> Element {
         mut can_undo,
         mut can_redo,
         mut is_style_picker_open,
+        mut is_para_props_open,
+        mut save_message,
     } = use_editor_state();
 
     // ── Synchronous Path Sync & State Reset ──────────────────────────────────
@@ -102,6 +105,8 @@ pub(super) fn EditorInner(path: String) -> Element {
         &mut can_redo,
         &mut dismiss_font_warning,
         &mut is_style_picker_open,
+        &mut is_para_props_open,
+        &mut save_message,
     );
 
     // Compute the current paragraph style name directly from signals so it is
@@ -125,6 +130,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_pages = Arc::clone(&doc_state);
     let doc_state_ribbon = Arc::clone(&doc_state);
     let doc_state_style_picker = Arc::clone(&doc_state);
+    let doc_state_para = Arc::clone(&doc_state);
     let doc_state_seed = Arc::clone(&doc_state);
     let doc_state_render = Arc::clone(&doc_state);
 
@@ -328,8 +334,9 @@ pub(super) fn EditorInner(path: String) -> Element {
         div {
             style: format!(
                 "display: flex; flex-direction: column; flex: 1; \
-                 overflow: hidden; background: {bg}; font-family: system-ui, sans-serif;",
+                 overflow: hidden; background: {bg}; font-family: {ff};",
                 bg = tokens::COLOR_SURFACE_BASE,
+                ff = tokens::FONT_FAMILY_UI,
             ),
 
             // ── Scrollable page canvas ────────────────────────────────────────
@@ -362,12 +369,13 @@ pub(super) fn EditorInner(path: String) -> Element {
                     style: format!(
                         "display: flex; flex-direction: row; align-items: center; justify-content: space-between; \
                          padding: {p}px {p2}px; background: {bg}; border-top: 1px solid {border}; \
-                         border-bottom: 1px solid {border}; font-family: system-ui, sans-serif; font-size: {size}px; \
+                         border-bottom: 1px solid {border}; font-family: {ff}; font-size: {size}px; \
                          color: {fg}; flex-shrink: 0;",
                         p      = tokens::SPACE_2,
                         p2     = tokens::SPACE_4,
                         bg     = tokens::COLOR_SURFACE_2,
                         border = tokens::COLOR_CONTEXTUAL_TAB,
+                        ff     = tokens::FONT_FAMILY_UI,
                         size   = tokens::FONT_SIZE_BODY - 1.0,
                         fg     = tokens::COLOR_TEXT_ON_CHROME,
                     ),
@@ -457,6 +465,52 @@ pub(super) fn EditorInner(path: String) -> Element {
                 )}
             }
 
+            // ── Paragraph properties panel (inline, above ribbon) ─────────────
+            // COMPAT(dioxus-native): see editor_para.rs for layout rationale.
+            if *is_para_props_open.read() {
+                {para_props_panel(
+                    doc_state_para,
+                    loro_doc,
+                    cursor_state,
+                    undo_manager,
+                    can_undo,
+                    can_redo,
+                    is_para_props_open,
+                )}
+            }
+
+            // ── Save message banner ───────────────────────────────────────────
+            if let Some(msg) = save_message.read().clone() {
+                div {
+                    style: format!(
+                        "display: flex; flex-direction: row; align-items: center; \
+                         justify-content: space-between; padding: {p}px {p2}px; \
+                         background: {bg}; border-top: 1px solid {border}; \
+                         font-family: {ff}; font-size: {size}px; \
+                         color: {fg}; flex-shrink: 0;",
+                        p      = tokens::SPACE_2,
+                        p2     = tokens::SPACE_4,
+                        bg     = tokens::COLOR_SURFACE_2,
+                        border = tokens::COLOR_BORDER_CHROME,
+                        ff     = tokens::FONT_FAMILY_UI,
+                        size   = tokens::FONT_SIZE_LABEL,
+                        fg     = tokens::COLOR_TEXT_ON_CHROME,
+                    ),
+                    span { "{msg}" }
+                    button {
+                        style: format!(
+                            "background: transparent; border: none; font-size: {fs}px; \
+                             color: {fg}; cursor: pointer; padding: {p}px;",
+                            fs = tokens::FONT_SIZE_LABEL,
+                            fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
+                            p  = tokens::SPACE_1,
+                        ),
+                        onclick: move |_| { save_message.set(None); },
+                        "\u{2715}"
+                    }
+                }
+            }
+
             // ── Ribbon (formatting controls) ──────────────────────────────────
             AtRibbon {
                 tabs: vec![
@@ -485,6 +539,9 @@ pub(super) fn EditorInner(path: String) -> Element {
                     subscript_active,
                     current_style_name,
                     is_style_picker_open,
+                    path_signal,
+                    save_message,
+                    is_para_props_open,
                 ),
             }
 

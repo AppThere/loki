@@ -105,13 +105,19 @@ impl Document {
     /// pre-populated with built-in heading styles (H1–H6) so that applying
     /// a heading style from the style picker immediately produces a visible
     /// change in the rendered output.
+    ///
+    /// The page size is chosen based on the system locale: US Letter for
+    /// `_US`, `_CA`, `_MX`, and other Letter-paper regions; A4 everywhere else.
     #[must_use]
     pub fn new_blank() -> Self {
         use crate::content::block::Block;
-        let mut section = Section::new();
-        section.blocks.push(Block::Para(vec![]));
+        use crate::layout::page::PageLayout;
+        let layout = PageLayout {
+            page_size: default_page_size_for_locale(),
+            ..PageLayout::default()
+        };
+        let section = Section::with_layout_and_blocks(layout, vec![Block::Para(vec![])]);
         let mut styles = StyleCatalog::default();
-        // Standard heading sizes (in points). Body text defaults to 12 pt.
         let heading_defs: &[(&str, &str, f32, bool)] = &[
             ("Heading1", "Heading 1", 24.0, true),
             ("Heading2", "Heading 2", 18.0, true),
@@ -262,6 +268,40 @@ impl Default for Document {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// ── Locale-based page-size helpers ────────────────────────────────────────────
+
+/// Returns the appropriate default page size for the running locale.
+///
+/// Reads `LC_PAPER`, `LC_ALL`, `LANGUAGE`, and `LANG` environment variables
+/// (in priority order).  Returns US Letter for regions that use it; A4 for
+/// all others.  Falls back to A4 if no locale can be determined.
+fn default_page_size_for_locale() -> crate::layout::page::PageSize {
+    use crate::layout::page::PageSize;
+    for var in &["LC_PAPER", "LC_ALL", "LANGUAGE", "LANG"] {
+        if let Ok(val) = std::env::var(var) {
+            let upper = val.to_uppercase();
+            if upper.is_empty() {
+                continue;
+            }
+            if uses_letter_paper(&upper) {
+                return PageSize::letter();
+            }
+            return PageSize::a4();
+        }
+    }
+    PageSize::a4()
+}
+
+/// Returns `true` when `locale_upper` (an uppercased locale string) indicates
+/// a region that uses US Letter paper by convention.
+fn uses_letter_paper(locale_upper: &str) -> bool {
+    const LETTER_REGIONS: &[&str] = &[
+        "_US", "_CA", "_MX", "_PH", "_CO", "_CL", "_VE", "_BO", "_SV", "_GT", "_HN", "_NI", "_CR",
+        "_DO", "_PR",
+    ];
+    LETTER_REGIONS.iter().any(|r| locale_upper.contains(r))
 }
 
 #[cfg(test)]
