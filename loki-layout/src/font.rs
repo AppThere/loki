@@ -104,17 +104,6 @@ impl FontResources {
             }
         }
 
-        // No named substitute found — try common system/bundled fonts as generic fallbacks.
-        const GENERIC_FALLBACKS: &[&str] =
-            &["Segoe UI", "Noto Sans", "Liberation Sans", "DejaVu Sans"];
-        for fallback in GENERIC_FALLBACKS {
-            if self.font_cx.collection.family_id(fallback).is_some() {
-                self.substitutions
-                    .insert(name.to_string(), Some(fallback.to_string()));
-                return fallback.to_string();
-            }
-        }
-
         // Nothing available — record as unresolved so the banner reports it.
         self.substitutions.insert(name.to_string(), None);
         name.to_string()
