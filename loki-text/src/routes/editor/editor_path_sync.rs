@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 
+use super::editor_state::StyleDraft;
 use crate::editing::cursor::CursorState;
 use crate::editing::state::DocumentState;
 
@@ -26,7 +27,7 @@ pub(super) fn sync_path_and_reset(
     can_redo: &mut Signal<bool>,
     dismiss_font_warning: &mut Signal<bool>,
     is_style_picker_open: &mut Signal<bool>,
-    is_para_props_open: &mut Signal<bool>,
+    editing_style_draft: &mut Signal<Option<StyleDraft>>,
     save_message: &mut Signal<Option<String>>,
 ) {
     let current = path_signal.peek().clone();
@@ -58,6 +59,6 @@ pub(super) fn sync_path_and_reset(
     can_redo.set(false);
     dismiss_font_warning.set(false);
     is_style_picker_open.set(false);
-    is_para_props_open.set(false);
+    editing_style_draft.set(None);
     save_message.set(None);
 }

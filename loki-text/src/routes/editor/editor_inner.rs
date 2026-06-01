@@ -35,11 +35,11 @@ use loro::LoroValue;
 
 use super::editor_canvas::render_canvas_area;
 use super::editor_load::load_document;
-use super::editor_para::para_props_panel;
 use super::editor_path_sync::sync_path_and_reset;
 use super::editor_ribbon::home_tab_content;
 use super::editor_state::{EditorState, use_editor_state};
 use super::editor_style::style_picker_panel;
+use super::editor_style_editor::style_editor_panel;
 use crate::editing::state::seed_layout_from_document;
 use crate::error::LoadError;
 
@@ -83,7 +83,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         mut can_undo,
         mut can_redo,
         mut is_style_picker_open,
-        mut is_para_props_open,
+        mut editing_style_draft,
         mut save_message,
     } = use_editor_state();
 
@@ -105,7 +105,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         &mut can_redo,
         &mut dismiss_font_warning,
         &mut is_style_picker_open,
-        &mut is_para_props_open,
+        &mut editing_style_draft,
         &mut save_message,
     );
 
@@ -130,7 +130,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_pages = Arc::clone(&doc_state);
     let doc_state_ribbon = Arc::clone(&doc_state);
     let doc_state_style_picker = Arc::clone(&doc_state);
-    let doc_state_para = Arc::clone(&doc_state);
+    let doc_state_style_editor = Arc::clone(&doc_state);
     let doc_state_seed = Arc::clone(&doc_state);
     let doc_state_render = Arc::clone(&doc_state);
 
@@ -465,17 +465,14 @@ pub(super) fn EditorInner(path: String) -> Element {
                 )}
             }
 
-            // ── Paragraph properties panel (inline, above ribbon) ─────────────
-            // COMPAT(dioxus-native): see editor_para.rs for layout rationale.
-            if *is_para_props_open.read() {
-                {para_props_panel(
-                    doc_state_para,
+            // ── Style catalog editor panel (inline, above ribbon) ─────────────
+            // COMPAT(dioxus-native): position: absolute is unsupported in
+            // Blitz — rendered inline in the flex column, above the ribbon.
+            if editing_style_draft.read().is_some() {
+                {style_editor_panel(
+                    doc_state_style_editor,
                     loro_doc,
-                    cursor_state,
-                    undo_manager,
-                    can_undo,
-                    can_redo,
-                    is_para_props_open,
+                    editing_style_draft,
                 )}
             }
 
@@ -541,7 +538,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     is_style_picker_open,
                     path_signal,
                     save_message,
-                    is_para_props_open,
+                    editing_style_draft,
                 ),
             }
 

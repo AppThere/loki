@@ -16,13 +16,14 @@ mod editor_inner;
 mod editor_keydown;
 mod editor_keydown_ctrl;
 mod editor_load;
-mod editor_para;
 mod editor_path_sync;
 mod editor_pointer;
 mod editor_ribbon;
 mod editor_save;
 mod editor_state;
 mod editor_style;
+mod editor_style_catalog;
+mod editor_style_editor;
 
 use dioxus::prelude::*;
 use editor_inner::EditorInner;

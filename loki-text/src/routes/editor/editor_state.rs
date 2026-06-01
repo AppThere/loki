@@ -19,6 +19,28 @@ use crate::editing::touch::TouchInteractionState;
 // open. Distraction-free reading is handled by the View ribbon tab (future
 // pass), not by a separate mode.
 
+/// Draft edit state for the style catalog editor panel.
+///
+/// `None` on the outer signal → editor closed.  `Some(draft)` → editor open,
+/// editing the catalog style identified by `draft.id`.  String fields use an
+/// empty string to represent `None` so they bind cleanly to text inputs.
+#[derive(Clone, PartialEq, Default)]
+pub(super) struct StyleDraft {
+    pub id: String,
+    pub name: String,
+    pub parent: String,
+    pub next: String,
+    pub alignment: String,
+    pub font_size_str: String,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub space_before_str: String,
+    pub space_after_str: String,
+    pub indent_first_str: String,
+    pub is_custom: bool,
+}
+
 /// All per-document signals for the editor, grouped for ergonomic initialisation.
 pub(super) struct EditorState {
     pub doc_state: Arc<Mutex<DocumentState>>,
@@ -52,8 +74,8 @@ pub(super) struct EditorState {
     pub can_redo: Signal<bool>,
     /// Whether the style picker panel is currently open above the ribbon.
     pub is_style_picker_open: Signal<bool>,
-    /// Whether the paragraph properties panel is currently open above the ribbon.
-    pub is_para_props_open: Signal<bool>,
+    /// Style catalog editor draft — `Some` when the editor panel is open.
+    pub editing_style_draft: Signal<Option<StyleDraft>>,
     /// Last save result message (`None` = nothing to show).
     pub save_message: Signal<Option<String>>,
 }
@@ -101,7 +123,7 @@ pub(super) fn use_editor_state() -> EditorState {
         can_undo: use_signal(|| false),
         can_redo: use_signal(|| false),
         is_style_picker_open: use_signal(|| false),
-        is_para_props_open: use_signal(|| false),
+        editing_style_draft: use_signal(|| None),
         save_message: use_signal(|| None),
     }
 }

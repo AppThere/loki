@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use dioxus::prelude::*;
 use keyboard_types::{Key, Modifiers};
 use loki_doc_model::loro_mutation::{delete_text, get_block_text};
-use loki_doc_model::split_block;
+use loki_doc_model::{StyleId, get_block_style_name, set_block_style, split_block};
 
 use super::editor_formatting;
 use crate::editing::cursor::{CursorState, DocumentPosition, next_grapheme_boundary};
@@ -202,9 +202,30 @@ pub(super) fn handle_enter_key(
     let Some(ldoc) = ldoc_guard.as_ref() else {
         return;
     };
+
+    // Resolve next_style_id for the current block's style before splitting.
+    let next_style: Option<String> = {
+        let style_name = get_block_style_name(ldoc, focus.paragraph_index);
+        doc_state.lock().ok().and_then(|state| {
+            state
+                .document
+                .as_ref()?
+                .styles
+                .paragraph_styles
+                .get(&StyleId::new(&style_name))
+                .and_then(|s| s.next_style_id.clone())
+        })
+    };
+
     if split_block(ldoc, focus.paragraph_index, focus.byte_offset).is_err() {
         return;
     }
+
+    // Apply the next_style to the newly created block if one is defined.
+    if let Some(ref nstyle) = next_style {
+        let _ = set_block_style(ldoc, focus.paragraph_index + 1, nstyle);
+    }
+
     apply_mutation_and_relayout(doc_state, ldoc);
     post_mutation_sync(
         doc_state,

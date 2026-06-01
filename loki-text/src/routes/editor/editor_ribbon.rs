@@ -23,6 +23,9 @@ use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 use super::editor_formatting;
 use super::editor_keydown_ctrl::post_mutation_sync;
 use super::editor_save::save_document_to_path;
+use super::editor_state::StyleDraft;
+use super::editor_style_catalog::get_catalog_style;
+use super::editor_style_editor::style_to_draft;
 
 /// Builds the Home tab ribbon content element.
 ///
@@ -51,10 +54,12 @@ pub(super) fn home_tab_content(
     mut is_style_picker_open: Signal<bool>,
     path_signal: Signal<String>,
     mut save_message: Signal<Option<String>>,
-    mut is_para_props_open: Signal<bool>,
+    mut editing_style_draft: Signal<Option<StyleDraft>>,
 ) -> Element {
     // One Arc clone per button — cheap reference-count increment.
     let ds_save = Arc::clone(doc_state);
+    let ds_para = Arc::clone(doc_state);
+    let current_style_name_para = current_style_name.clone();
     let ds_undo = Arc::clone(doc_state);
     let ds_redo = Arc::clone(doc_state);
     let ds_bold = Arc::clone(doc_state);
@@ -155,11 +160,22 @@ pub(super) fn home_tab_content(
 
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-para-props-aria"),
-                is_active:   *is_para_props_open.read(),
+                is_active:   editing_style_draft.read().is_some(),
                 is_disabled: false,
                 on_click: move |_| {
-                    let currently_open = *is_para_props_open.read();
-                    is_para_props_open.set(!currently_open);
+                    if editing_style_draft.read().is_some() {
+                        editing_style_draft.set(None);
+                        return;
+                    }
+                    let draft = get_catalog_style(&ds_para, &current_style_name_para)
+                        .map(|s| style_to_draft(&s))
+                        .unwrap_or_else(|| StyleDraft {
+                            id: current_style_name_para.clone(),
+                            name: current_style_name_para.clone(),
+                            alignment: "Left".to_string(),
+                            ..StyleDraft::default()
+                        });
+                    editing_style_draft.set(Some(draft));
                 },
                 AtIcon { path_d: LUCIDE_PILCROW.to_string() }
             }
