@@ -29,7 +29,11 @@
 param(
     [switch]$Release,
     [switch]$Install,
-    [switch]$SkipCargoApk
+    [switch]$SkipCargoApk,
+    # Pass -Gpu to enable the real Vello GPU renderer (VelloWindowRenderer / use_wgpu).
+    # Requires a Vulkan-capable physical device; omit for the Android emulator
+    # (which uses SwiftShader and lacks the compute shader support Vello needs).
+    [switch]$Gpu
 )
 
 $ErrorActionPreference = "Stop"
@@ -62,7 +66,8 @@ if ($env:JAVA_HOME -and (Test-Path "$env:JAVA_HOME\bin\javac.exe")) {
 } elseif (Test-Path "C:\Program Files\Android\Android Studio\jbr\bin\javac.exe") {
     $javac = "C:\Program Files\Android\Android Studio\jbr\bin\javac.exe"
 } else {
-    $javac = (Get-Command javac -ErrorAction SilentlyContinue)?.Source
+    $javacCmd = Get-Command javac -ErrorAction SilentlyContinue
+    $javac = if ($javacCmd) { $javacCmd.Source } else { $null }
     if (-not $javac) { throw "javac not found. Set JAVA_HOME, install JDK, or install Android Studio." }
 }
 $debugKey   = "$env:USERPROFILE\.android\debug.keystore"
@@ -81,6 +86,21 @@ $apkSrc        = "$PWD\target\$profile\apk\loki_text.apk"
 
 New-Item -ItemType Directory -Force $outDir | Out-Null
 $outDir = (Resolve-Path $outDir).Path   # make absolute for aapt
+
+# ── Step 0: Stage debug keystore for cargo-apk release signing ───────────────
+# cargo-apk refuses to build a release APK without a signing config
+# (loki-text/Cargo.toml [package.metadata.android.signing.release]).
+# We satisfy it by copying the Android Studio debug keystore to a path inside
+# target/android-pkg/ before cargo apk runs.  Our own apksigner step (Step 6)
+# re-signs the final APK with the same key, so cargo-apk's signature is
+# overwritten and serves only to unblock the build.
+$stagedKeystore = "$outDir\signing.keystore"
+if (Test-Path $debugKey) {
+    Copy-Item $debugKey $stagedKeystore -Force
+    Write-Host "==> Staged signing keystore: $stagedKeystore"
+} else {
+    throw "Android debug keystore not found at $debugKey.`nRun Android Studio once to generate it, or set a different path."
+}
 
 # ── Step 1: Compile FilePickerActivity.java → classes.dex ────────────────────
 
@@ -105,6 +125,14 @@ if (-not $SkipCargoApk) {
     Write-Host "`n==> cargo apk build ($profile)..."
     $buildArgs = @("apk", "build", "--package", "loki-text")
     if ($Release) { $buildArgs += "--release" }
+    # On a physical Vulkan device, -Gpu enables the full Vello GPU renderer.
+    # The android_gpu cfg flag is checked throughout dioxus-native and loki-renderer.
+    if ($Gpu -and ($env:RUSTFLAGS -notlike "*--cfg android_gpu*")) {
+        $env:RUSTFLAGS = ($env:RUSTFLAGS + " --cfg android_gpu").Trim()
+    }
+    if ($Gpu) {
+        Write-Host "    GPU renderer enabled (RUSTFLAGS: $env:RUSTFLAGS)"
+    }
     & cargo @buildArgs
     # cargo-apk may exit non-zero due to a post-build artifact-check panic in
     # cargo-subcommand (Bin vs Cdylib confusion) even when the APK was built
@@ -115,7 +143,7 @@ if (-not $SkipCargoApk) {
 }
 
 if (-not (Test-Path $apkSrc)) {
-    throw "APK not found at $apkSrc — run without -SkipCargoApk first."
+    throw "APK not found at $apkSrc - run without -SkipCargoApk first."
 }
 
 # ── Step 3: Generate binary AndroidManifest.xml via aapt ─────────────────────
@@ -123,13 +151,22 @@ if (-not (Test-Path $apkSrc)) {
 Write-Host "`n==> Packaging custom AndroidManifest.xml → binary AXML..."
 $manifestApk     = "$outDir\manifest-only.apk"
 $manifestExtract = "$outDir\manifest-extract"
+# Always start with an empty extraction directory so that re-runs do not fail
+# on "file already exists" from the previous build's AndroidManifest.xml.
+if (Test-Path $manifestExtract) { Remove-Item -Recurse -Force $manifestExtract }
 New-Item -ItemType Directory -Force $manifestExtract | Out-Null
 
 & $aapt package -f -F $manifestApk -M $manifestXml -I $platform
 if ($LASTEXITCODE -ne 0) { throw "aapt package (manifest) failed" }
 
-# Extract the binary AXML manifest from the temporary APK
-Expand-Archive -Path $manifestApk -DestinationPath $manifestExtract -Force
+# Extract the binary AXML manifest from the temporary APK.
+# ZipFile::ExtractToDirectory is used instead of Expand-Archive because it
+# gives deterministic error messages on Windows long paths and does not
+# require the file to carry a .zip extension (APKs are ZIPs; PS7+ Expand-
+# Archive reads magic bytes and would also work, but the .NET API is simpler
+# to control and is already loaded via Add-Type for other operations).
+Add-Type -Assembly System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::ExtractToDirectory($manifestApk, $manifestExtract)
 if (-not (Test-Path "$manifestExtract\AndroidManifest.xml")) {
     throw "Binary manifest not found in aapt output"
 }

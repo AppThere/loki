@@ -4,6 +4,7 @@
 package io.github.appthere.lokifileaccess;
 
 import android.app.Activity;
+import android.content.ClipData;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
@@ -93,14 +94,28 @@ public class FilePickerActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        String uri = null;
+        String result = null;
         if (resultCode == RESULT_OK && data != null) {
-            Uri u = data.getData();
-            if (u != null) {
-                uri = u.toString();
+            // Multi-select delivers URIs through ClipData; single-select uses getData().
+            // Join all URIs with '\n' so a single nativeOnResult call carries the full
+            // selection without requiring a JNI array parameter.
+            ClipData clip = data.getClipData();
+            if (clip != null && clip.getItemCount() > 0) {
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < clip.getItemCount(); i++) {
+                    Uri u = clip.getItemAt(i).getUri();
+                    if (u != null) {
+                        if (sb.length() > 0) sb.append('\n');
+                        sb.append(u.toString());
+                    }
+                }
+                if (sb.length() > 0) result = sb.toString();
+            } else {
+                Uri u = data.getData();
+                if (u != null) result = u.toString();
             }
         }
-        nativeOnResult(uri);
+        nativeOnResult(result);
         finish();
     }
 

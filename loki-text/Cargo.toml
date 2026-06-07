@@ -77,6 +77,17 @@ compile_sdk_version = 34
 [package.metadata.android.application]
 label = "Loki"
 
+# cargo-apk requires a signing config for release builds.
+# scripts/build-android.ps1 copies the Android Studio debug keystore to this
+# path (target/android-pkg/signing.keystore) before running `cargo apk build
+# --release`, satisfying cargo-apk.  The build script's own apksigner step
+# (Step 6) re-signs the final post-processed APK with the same key, so this
+# cargo-apk signature is overwritten and exists only to unblock the build.
+# For Play Store distribution replace with a real release keystore.
+[package.metadata.android.signing.release]
+path = "../target/android-pkg/signing.keystore"
+keystore_password = "android"
+
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { workspace = true }
 blitz-shell = "0.2.3"

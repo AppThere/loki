@@ -11,13 +11,27 @@ pub use anyrender_vello::{
 
 // The Android emulator (SwiftShader) and iOS simulator both lack support for
 // Vello's GPU compute pipeline.  Use the CPU renderer in both environments.
-#[cfg(any(target_os = "android", all(target_os = "ios", target_abi = "sim")))]
+//
+// Physical Android devices that have a working Vulkan driver can use the GPU
+// path by setting the `android_gpu` cfg flag at build time:
+//   RUSTFLAGS='--cfg android_gpu' cargo apk build …
+// The emulator build omits that flag and continues to use the CPU renderer.
+#[cfg(any(
+    all(target_os = "android", not(android_gpu)),
+    all(target_os = "ios", target_abi = "sim"),
+))]
 pub use anyrender_vello_cpu::VelloCpuWindowRenderer as InnerRenderer;
 
-#[cfg(not(any(target_os = "android", all(target_os = "ios", target_abi = "sim"))))]
+#[cfg(not(any(
+    all(target_os = "android", not(android_gpu)),
+    all(target_os = "ios", target_abi = "sim"),
+)))]
 pub use anyrender_vello::VelloWindowRenderer as InnerRenderer;
 
-#[cfg(not(any(target_os = "android", all(target_os = "ios", target_abi = "sim"))))]
+#[cfg(not(any(
+    all(target_os = "android", not(android_gpu)),
+    all(target_os = "ios", target_abi = "sim"),
+)))]
 pub fn use_wgpu<T: CustomPaintSource>(create_source: impl FnOnce() -> T) -> u64 {
     use dioxus_core::{consume_context, use_hook_with_cleanup};
 
@@ -53,7 +67,10 @@ impl DioxusNativeWindowRenderer {
         Self::with_inner_renderer(vello_renderer)
     }
 
-    #[cfg(not(any(target_os = "android", all(target_os = "ios", target_abi = "sim"))))]
+    #[cfg(not(any(
+        all(target_os = "android", not(android_gpu)),
+        all(target_os = "ios", target_abi = "sim"),
+    )))]
     pub fn with_features_and_limits(features: Option<Features>, limits: Option<Limits>) -> Self {
         let vello_renderer = InnerRenderer::with_options(VelloRendererOptions {
             features,
@@ -70,7 +87,10 @@ impl DioxusNativeWindowRenderer {
     }
 }
 
-#[cfg(not(any(target_os = "android", all(target_os = "ios", target_abi = "sim"))))]
+#[cfg(not(any(
+    all(target_os = "android", not(android_gpu)),
+    all(target_os = "ios", target_abi = "sim"),
+)))]
 impl DioxusNativeWindowRenderer {
     pub fn register_custom_paint_source(&self, source: Box<dyn CustomPaintSource>) -> u64 {
         self.inner.borrow_mut().register_custom_paint_source(source)

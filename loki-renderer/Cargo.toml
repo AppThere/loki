@@ -21,3 +21,9 @@ tokio             = { version = "1", features = ["time", "sync"] }
 
 [dev-dependencies]
 pollster = "0.4"
+
+[lints.rust]
+# android_gpu is a custom cfg flag set via RUSTFLAGS='--cfg android_gpu' when
+# building for a Vulkan-capable physical Android device.  Declare it so rustc
+# does not emit unexpected_cfg warnings (and so -D warnings does not fail CI).
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(android_gpu)'] }

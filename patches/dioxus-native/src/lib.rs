@@ -27,7 +27,10 @@ use assets::DioxusNativeNetProvider;
 pub use dioxus_application::{DioxusNativeApplication, DioxusNativeEvent};
 pub use dioxus_renderer::{DioxusNativeWindowRenderer, Features, Limits};
 
-#[cfg(not(any(target_os = "android", all(target_os = "ios", target_abi = "sim"))))]
+#[cfg(not(any(
+    all(target_os = "android", not(android_gpu)),
+    all(target_os = "ios", target_abi = "sim"),
+)))]
 pub use dioxus_renderer::use_wgpu;
 
 pub use config::Config;
@@ -149,9 +152,15 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
             ..Default::default()
         },
     );
-    #[cfg(not(any(target_os = "android", all(target_os = "ios", target_abi = "sim"))))]
+    #[cfg(not(any(
+        all(target_os = "android", not(android_gpu)),
+        all(target_os = "ios", target_abi = "sim"),
+    )))]
     let renderer = DioxusNativeWindowRenderer::with_features_and_limits(features, limits);
-    #[cfg(any(target_os = "android", all(target_os = "ios", target_abi = "sim")))]
+    #[cfg(any(
+        all(target_os = "android", not(android_gpu)),
+        all(target_os = "ios", target_abi = "sim"),
+    ))]
     let renderer = DioxusNativeWindowRenderer::new();
     let config = WindowConfig::with_attributes(
         Box::new(doc) as _,

@@ -17,6 +17,7 @@
 //! container's `height: 100vh` to overflow (`100vh + 8px`), making the
 //! window vertically scrollable.
 
+use appthere_ui::tokens;
 use appthere_ui::{AtThemeContext, use_safe_area};
 use dioxus::prelude::*;
 
@@ -103,11 +104,28 @@ pub fn App() -> Element {
             // Padding offsets the system status bar (top) and navigation bar
             // (bottom) so content is never obscured on Android edge-to-edge.
             // On desktop both insets are 0, so this is a no-op there.
+            // background matches COLOR_SURFACE_CHROME so the padded system-bar
+            // areas (notification bar at top, gesture strip at bottom) are filled
+            // with the tab-bar chrome color instead of the default white.
             // COMPAT(dioxus-native): box-sizing: border-box confirmed working.
-            style: "margin: 0; \
-                    padding: {insets.top}px {insets.right}px {insets.bottom}px {insets.left}px; \
-                    width: 100vw; height: 100vh; \
-                    overflow: hidden; box-sizing: border-box;",
+            style: format!(
+                "margin: 0; \
+                 padding: {top}px {right}px {bottom}px {left}px; \
+                 width: 100vw; height: 100vh; \
+                 overflow: hidden; box-sizing: border-box; \
+                 background: {bg};",
+                // Round each inset to the nearest integer so the CSS pixel
+                // values match the rounded values used by Shell's calc()
+                // expressions.  Without rounding, sub-pixel dp values (e.g.
+                // 33.52 on a Pixel 6 at density 2.625) produce a fractional
+                // padding that is resolved differently from Shell's integer
+                // subtraction, leaving a hairline gap on high-density displays.
+                top    = insets.top.round() as i32,
+                right  = insets.right.round() as i32,
+                bottom = insets.bottom.round() as i32,
+                left   = insets.left.round() as i32,
+                bg     = tokens::COLOR_SURFACE_CHROME,
+            ),
             Router::<Route> {}
         }
     }

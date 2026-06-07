@@ -25,12 +25,10 @@ fn android_main(android_app: android_activity::AndroidApp) {
             .with_max_level(log::LevelFilter::Debug),
     );
     log::info!("android_main: start");
-    // Store the NativeActivity Java object so loki-file-access can call
-    // startActivityForResult on the Activity (not Application).
-    // SAFETY: activity_as_ptr() is a GlobalRef owned by android_app.
-    // blitz_shell::set_android_app below keeps android_app alive for the
-    // duration of the process, so the pointer remains valid.
-    unsafe { loki_file_access::init_android(android_app.activity_as_ptr()) };
+    // init_android is a no-op kept for API compatibility; the Application
+    // context used by all JNI calls comes from ndk_context, which
+    // android-activity initialises before android_main is called.
+    unsafe { loki_file_access::init_android(std::ptr::null_mut()) };
     let (top, bottom) = loki_file_access::query_insets_dp();
     log::info!("android_main: safe area insets top={top} bottom={bottom}");
     appthere_ui::set_safe_area_insets(appthere_ui::SafeAreaInsets {

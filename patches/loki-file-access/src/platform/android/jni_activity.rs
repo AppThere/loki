@@ -14,7 +14,7 @@
 //!    `nativeOnResult(uri)` — the pre-compiled JNI hook in the Rust binary.
 //! 4. The Rust future resolves.
 
-use super::jni_common::{activity_jobject, attach_err, jvm_err, platform_err};
+use super::jni_common::{attach_err, jvm_err, platform_err};
 use crate::api::{PickOptions, SaveOptions};
 use crate::error::PickerError;
 
@@ -149,28 +149,51 @@ fn put_string_extra(
     Ok(())
 }
 
-/// Call `Context.startActivity(intent)` on the NativeActivity.
+/// Call `Context.startActivity(intent)` using the Application context.
 ///
-/// NativeActivity CAN call `startActivity` — the restriction only applies to
-/// *receiving* `onActivityResult`.  `FilePickerActivity` receives its own result
-/// and delivers it to Rust via the pre-compiled JNI hook.
+/// `ndk_context` provides the Application object set by android-activity before
+/// `android_main` is called.  Starting an Activity from a non-Activity context
+/// requires `FLAG_ACTIVITY_NEW_TASK`, which is added to the intent here.
+///
+/// `FilePickerActivity` is a transparent trampoline: it receives its own
+/// `onActivityResult` from the SAF picker (within its own task) and delivers
+/// the URI to Rust via `nativeOnResult`.  No result needs to flow back to
+/// NativeActivity, so the new-task restriction is not a problem.
 fn start_activity(
     env: &mut jni::JNIEnv<'_>,
     intent: &jni::objects::JObject<'_>,
 ) -> Result<(), PickerError> {
-    // SAFETY: activity_jobject() returns a GlobalRef valid for the app lifetime.
-    let activity = unsafe { activity_jobject() };
+    // FLAG_ACTIVITY_NEW_TASK — required when calling startActivity from a
+    // non-Activity Context such as Application.
+    const FLAG_ACTIVITY_NEW_TASK: i32 = 0x1000_0000;
+    let flags_result = env.call_method(
+        intent,
+        "addFlags",
+        "(I)Landroid/content/Intent;",
+        &[jni::objects::JValueGen::Int(FLAG_ACTIVITY_NEW_TASK)],
+    );
+    if let Err(e) = flags_result {
+        // Clear any pending JNI exception before returning so subsequent
+        // JNI calls on this env do not trigger an ART abort.
+        let _ = env.exception_clear();
+        return Err(platform_err("addFlags", e));
+    }
+
+    let ctx = ndk_context::android_context();
+    // SAFETY: ndk_context stores the Application jobject initialised by
+    // android-activity before android_main runs.  Valid for the process lifetime.
+    let context = unsafe { jni::objects::JObject::from_raw(ctx.context().cast()) };
 
     let result = env.call_method(
-        &activity,
+        &context,
         "startActivity",
         "(Landroid/content/Intent;)V",
         &[jni::objects::JValueGen::Object(intent)],
     );
 
     if result.is_err() {
-        // Clear any pending JNI exception (e.g. ActivityNotFoundException)
-        // so subsequent JNI calls in this env don't trigger an ART abort.
+        // Clear any pending JNI exception (e.g. ActivityNotFoundException) so
+        // subsequent JNI calls in this env do not trigger an ART abort.
         let _ = env.exception_clear();
     }
 

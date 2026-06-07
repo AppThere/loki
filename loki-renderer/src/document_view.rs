@@ -7,13 +7,17 @@ use std::sync::{Arc, Mutex};
 
 use appthere_canvas::{PageCache, PageIndex, ScrollState};
 use appthere_ui::tokens;
-#[cfg(not(target_os = "android"))]
+// use_wgpu and LokiPageSource are enabled on: desktop, and Android devices
+// built with RUSTFLAGS='--cfg android_gpu' (Vulkan-capable physical devices).
+// The Android emulator uses SwiftShader which lacks Vello's compute pipeline,
+// so it falls through to the CPU-renderer placeholder path below.
+#[cfg(any(not(target_os = "android"), android_gpu))]
 use dioxus::native::use_wgpu;
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 
 use crate::doc_page_source::DocPageSource;
-#[cfg(not(target_os = "android"))]
+#[cfg(any(not(target_os = "android"), android_gpu))]
 use crate::page_paint_source::LokiPageSource;
 use crate::renderer_state::RendererState;
 use crate::scroll_driver::{on_scroll_event, use_settle_detector};
@@ -84,7 +88,7 @@ impl PartialEq for PageTileProps {
 }
 
 /// A single page rendered into a Blitz GPU canvas.
-#[cfg(not(target_os = "android"))]
+#[cfg(any(not(target_os = "android"), android_gpu))]
 #[allow(non_snake_case)]
 fn PageTile(props: PageTileProps) -> Element {
     let cache = props.cache.clone();
@@ -158,20 +162,25 @@ fn PageTile(props: PageTileProps) -> Element {
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(all(target_os = "android", not(android_gpu)))]
 #[allow(non_snake_case)]
 fn PageTile(props: PageTileProps) -> Element {
-    // COMPAT(dioxus-native): GPU canvas (use_wgpu/CustomPaintSource) unavailable
-    // with the CPU renderer on Android. Pages render as placeholder blocks.
+    // COMPAT(dioxus-native): GPU canvas unavailable on the Android emulator
+    // (SwiftShader lacks Vello compute pipeline support). Pages render as white
+    // page placeholders so the canvas looks like a document rather than a void.
+    // On a Vulkan-capable physical device, build with RUSTFLAGS='--cfg android_gpu'
+    // to enable the real GPU path above instead of this placeholder.
     rsx! {
         div {
             style: format!(
                 "display: block; width: {w}px; height: {h}px; \
                  margin-left: auto; margin-right: auto; \
-                 margin-bottom: {gap}px; background: #2a2a2a;",
-                w = props.w,
-                h = props.h,
+                 margin-bottom: {gap}px; \
+                 background: {bg}; border: 1px solid #e0e0e0;",
+                w   = props.w,
+                h   = props.h,
                 gap = tokens::PAGE_GAP_PX,
+                bg  = tokens::CANVAS_PAGE_BG,
             ),
         }
     }

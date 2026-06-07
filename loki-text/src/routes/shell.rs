@@ -17,7 +17,7 @@
 //! ```
 
 use appthere_ui::tokens;
-use appthere_ui::{AtDocumentTabData, AtTabBar};
+use appthere_ui::{AtDocumentTabData, AtTabBar, use_safe_area};
 use dioxus::prelude::*;
 use loki_i18n::fl;
 
@@ -29,7 +29,8 @@ use crate::tabs::OpenTab;
 /// Reads `Signal<Vec<OpenTab>>` and `Signal<usize>` from Dioxus context
 /// (injected at the [`crate::app::App`] root) to drive [`AtTabBar`].
 ///
-/// **Height: 100vh** — this component owns the full viewport height constraint.
+/// Height is `calc(100vh − safe_top − safe_bottom)` so it fits exactly within
+/// the inset-padded content area of the App root div on edge-to-edge platforms.
 /// Child routes must use `flex: 1` on their outermost div so they fill the
 /// space below the tab bar.
 #[component]
@@ -38,14 +39,40 @@ pub fn Shell() -> Element {
     let mut active_tab = use_context::<Signal<usize>>();
     let navigator = use_navigator();
 
+    // Safe-area insets are set by android_main from the OS-reported system-bar
+    // heights before Dioxus launches. On desktop they are always (0, 0, 0, 0).
+    // Shell subtracts them so its height never exceeds the padded content area
+    // inside the App root div, preventing the ribbon from being clipped off-screen
+    // by the bottom inset on devices with gesture navigation.
+    let insets = use_safe_area();
+
+    // Pre-sum insets so the calc() expression uses a single subtraction term.
+    // COMPAT(dioxus-native): `calc(100vh - Npx)` (single term) is confirmed
+    // working in Blitz/Taffy. Multi-term expressions (`100vh - Xpx - Ypx`) are
+    // unconfirmed and may not resolve to a definite length in Taffy, which would
+    // produce a zero/NaN height and panic during scene composition.
+    // Round each inset individually before summing so the total matches the sum
+    // of the per-side pixel values written by App (e.g. top=34 + bottom=34 = 68,
+    // not round(33.52 + 33.52) = 67).
+    let inset_top_px = insets.top.round() as u32;
+    let inset_bottom_px = insets.bottom.round() as u32;
+    let inset_total_px = inset_top_px + inset_bottom_px;
+    // calc(100vh - 0px) is identical to 100vh in CSS; no special case needed.
+    let shell_height = format!("calc(100vh - {inset_total_px}px)");
+    let outlet_height = {
+        let total = inset_total_px + tokens::TAB_BAR_HEIGHT as u32;
+        format!("calc(100vh - {total}px)")
+    };
+
     rsx! {
         div {
-            // COMPAT(dioxus-native): height: 100vh is confirmed working and
-            // gives Taffy a definite length for child flex: 1 to resolve
-            // against. This is the single element asserting the full viewport
-            // height — all child route components use flex: 1 instead.
+            // COMPAT(dioxus-native): explicit calc(100vh - Npx) gives Taffy a
+            // definite length for child flex: 1 to resolve against. The safe-area
+            // insets are pre-summed into a single value so the expression stays in
+            // the `calc(100vh - Npx)` form that is confirmed working in Blitz.
             style: format!(
-                "height: 100vh; display: flex; flex-direction: column; \
+                "height: {shell_height}; \
+                 display: flex; flex-direction: column; \
                  overflow: hidden; background: {bg};",
                 bg = tokens::COLOR_SURFACE_BASE,
             ),
@@ -121,11 +148,12 @@ pub fn Shell() -> Element {
             // Using height:calc(100vh - Npx) gives an explicit definite length
             // that Taffy resolves correctly — required for overflow-y:auto scroll
             // to engage in both the home and editor route content.
+            // The insets are subtracted alongside the tab bar so the calculation
+            // stays consistent with the Shell container height above.
             div {
                 style: format!(
-                    "height: calc(100vh - {h}px); overflow: hidden; \
-                     display: flex; flex-direction: column;",
-                    h = tokens::TAB_BAR_HEIGHT,
+                    "height: {outlet_height}; \
+                     overflow: hidden; display: flex; flex-direction: column;",
                 ),
                 Outlet::<Route> {}
             }

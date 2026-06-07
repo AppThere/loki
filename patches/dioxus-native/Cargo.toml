@@ -60,3 +60,9 @@ winit = { version = "0.30.11", features = ["rwh_06"] }
 
 [target.'cfg(any(target_os = "android", all(target_os = "ios", target_abi = "sim")))'.dependencies]
 anyrender_vello_cpu = { version = "0.8", features = ["pixels_window_renderer"], default-features = false }
+
+[lints.rust]
+# android_gpu is a custom cfg flag set via RUSTFLAGS='--cfg android_gpu' when
+# building for a Vulkan-capable physical Android device.  Declare it so rustc
+# does not emit unexpected_cfg warnings (and so -D warnings does not fail CI).
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(android_gpu)'] }
