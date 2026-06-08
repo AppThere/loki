@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Bundled metric-compatible fallback fonts for the Android CPU renderer.
 //!
@@ -22,6 +22,8 @@
 //!
 //! [`face_css`] returns `""` on desktop and Android GPU builds (no-op).
 //! Font bytes are only embedded on `target_os = "android"`.
+
+#![forbid(unsafe_code)]
 
 /// Returns a complete `@font-face` CSS block for all bundled fonts, with each
 /// font embedded as a `data:font/truetype;base64,…` URI.

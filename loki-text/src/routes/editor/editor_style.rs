@@ -187,7 +187,7 @@ pub fn style_picker_panel(
                         fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
                         p  = tokens::SPACE_1,
                     ),
-                    aria_label: "Close style picker",
+                    aria_label: fl!("editor-style-picker-close-aria"),
                     onclick: move |_| {
                         style_search_query.set(String::new());
                         is_style_picker_open.set(false);

@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! List-style mapper: converts [`OdfListStyle`]s into
 //! format-neutral [`ListStyle`]s and inserts them into a [`StyleCatalog`].

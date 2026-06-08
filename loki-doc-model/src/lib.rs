@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Format-neutral document model for the Loki suite (text documents).
 //!
@@ -136,6 +136,8 @@
 //! assert_eq!(doc.sections.len(), 1);
 //! assert_eq!(doc.sections[0].blocks.len(), 4);
 //! ```
+
+#![forbid(unsafe_code)]
 
 pub mod content;
 pub mod document;

@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Codec helpers: string encode/decode functions shared between the Loro
 //! bridge write path (`write.rs`) and read path (`props_read.rs`, `inlines.rs`).

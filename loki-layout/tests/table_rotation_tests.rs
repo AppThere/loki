@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::content::block::Block;

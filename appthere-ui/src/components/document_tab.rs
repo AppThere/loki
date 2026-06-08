@@ -3,6 +3,7 @@
 //! `AtDocumentTab` — a single closeable document tab for use inside [`AtTabBar`].
 
 use dioxus::prelude::*;
+use loki_i18n::fl;
 
 use crate::tokens::colors::{
     COLOR_TAB_ACTIVE_BG, COLOR_TAB_ACTIVE_INDICATOR, COLOR_TAB_INACTIVE_HOVER,
@@ -134,7 +135,7 @@ pub fn AtDocumentTab(props: AtDocumentTabProps) -> Element {
 
             // Close button (×)
             button {
-                "aria-label": "Close tab",
+                "aria-label": fl!("editor-tab-close-aria"),
                 style: format!(
                     "background: {bg}; border: none; border-radius: {r}px; \
                      color: {fg}; font-size: 12px; cursor: pointer; \

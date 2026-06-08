@@ -1,5 +1,10 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
+
+// SAFETY: `unsafe { loki_file_access::init_android(...) }` is required for the
+// Android NativeActivity entry point; there is no safe alternative in the
+// current android-activity / loki-file-access API.
+// TODO(safe): remove when loki-file-access exposes a safe init wrapper.
 
 //! `loki-text` library — Dioxus Native word-processor components and routing.
 //!

@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Reader for `styles.xml` and the `office:automatic-styles` section of
 //! `content.xml`.  Returns an [`OdfStylesheet`].  ODF 1.3 §14–§16.

@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Reader for `meta.xml` — extracts [`OdfMeta`] from the document metadata
 //! part. ODF 1.3 §3.1 (`office:meta`).

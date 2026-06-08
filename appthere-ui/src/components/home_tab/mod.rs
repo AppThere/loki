@@ -13,6 +13,7 @@ mod recent_files;
 mod template_gallery;
 
 use dioxus::prelude::*;
+use loki_i18n::fl;
 use recent_files::AtRecentFileList;
 use template_gallery::AtTemplateGallery;
 
@@ -194,7 +195,7 @@ pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
                         fg     = COLOR_STATUS_ERROR_TEXT,
                         size   = FONT_SIZE_LABEL,
                     ),
-                    "Could not open file picker: {err}"
+                    { fl!("error-file-picker", err = err.to_string()) }
                 }
             }
 

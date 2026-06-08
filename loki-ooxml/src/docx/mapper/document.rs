@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Top-level document mapper: orchestrates all sub-mappers and produces a
 //! [`loki_doc_model::Document`].

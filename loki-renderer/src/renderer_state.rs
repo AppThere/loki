@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! [`RendererState`] — Dioxus context holding the render cache, scroll signal,
 //! phase sender, and shared Vello renderer.

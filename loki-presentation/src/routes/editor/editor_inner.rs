@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Presentation editor inner view.
 
@@ -426,6 +426,9 @@ pub(super) fn EditorInner(path: String) -> Element {
                     RibbonTabDesc { label: fl!("ribbon-tab-view"),   is_contextual: false, aria_label: None },
                 ],
                 active_tab: 0,
+                collapsed: false,
+                on_toggle_collapse: move |_| {},
+                toggle_aria_label: fl!("ribbon-collapse-aria"),
                 on_tab_select: move |_idx| {},
                 tab_content: home_tab
             }

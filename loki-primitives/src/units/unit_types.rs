@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 /// PostScript points. 1 pt = 1/72 inch. The base typographic unit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
