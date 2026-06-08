@@ -83,6 +83,9 @@ pub struct View<Rend: WindowRenderer> {
 
     /// In-progress touch contact for tap/scroll/long-press classification.
     pub touch_start: Option<TouchState>,
+    /// Last logical-pixel position during an active scroll gesture.
+    /// `Some` while the finger is scrolling; `None` otherwise.
+    pub touch_scroll_last_pos: Option<(f64, f64)>,
 
     #[cfg(feature = "accessibility")]
     /// Accessibility adapter for `accesskit`.
@@ -135,6 +138,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             mouse_pos: Default::default(),
             is_visible: winit_window.is_visible().unwrap_or(true),
             touch_start: None,
+            touch_scroll_last_pos: None,
             #[cfg(feature = "accessibility")]
             accessibility: AccessibilityState::new(&winit_window, proxy.clone()),
         }
@@ -545,44 +549,80 @@ impl<Rend: WindowRenderer> View<Rend> {
                             start_pos: (logical.x, logical.y),
                             start_time: Instant::now(),
                         });
+                        self.touch_scroll_last_pos = None;
                         self.request_redraw();
                     }
                     TouchPhase::Moved => {
                         self.mouse_pos = (lx, ly);
-                        self.doc.handle_ui_event(UiEvent::MouseMove(BlitzMouseButtonEvent {
-                            x: lx,
-                            y: ly,
-                            button: MouseEventButton::Main,
-                            buttons: self.buttons,
-                            mods: winit_modifiers_to_kbt_modifiers(
-                                self.keyboard_modifiers.state(),
-                            ),
-                        }));
-                        // If movement exceeds the slop threshold the touch is a
-                        // scroll; cancel long-press tracking.
+
+                        // Classify the gesture once it moves beyond the slop
+                        // threshold or exceeds the long-press hold time.
                         if let Some(ref ts) = self.touch_start {
                             let dx = logical.x - ts.start_pos.0;
                             let dy = logical.y - ts.start_pos.1;
-                            if dx.hypot(dy) > TOUCH_SLOP_PX
-                                || ts.start_time.elapsed() >= LONG_PRESS_DURATION
-                            {
+                            if dx.hypot(dy) > TOUCH_SLOP_PX {
+                                // Finger moved — it's a scroll gesture.
+                                self.touch_start = None;
+                                self.touch_scroll_last_pos = Some((logical.x, logical.y));
+                            } else if ts.start_time.elapsed() >= LONG_PRESS_DURATION {
+                                // Held in place — long-press, not a scroll.
                                 self.touch_start = None;
                             }
                         }
+
+                        if self.touch_scroll_last_pos.is_none() {
+                            // Not yet scrolling — forward as mouse move so that
+                            // Dioxus ontouchmove / long-press handlers fire.
+                            self.doc.handle_ui_event(UiEvent::MouseMove(BlitzMouseButtonEvent {
+                                x: lx,
+                                y: ly,
+                                button: MouseEventButton::Main,
+                                buttons: self.buttons,
+                                mods: winit_modifiers_to_kbt_modifiers(
+                                    self.keyboard_modifiers.state(),
+                                ),
+                            }));
+                        }
+
+                        // Drive CSS overflow scroll when a scroll gesture is active.
+                        if let Some(last) = self.touch_scroll_last_pos {
+                            let scroll_x = logical.x - last.0;
+                            let scroll_y = logical.y - last.1;
+                            self.touch_scroll_last_pos = Some((logical.x, logical.y));
+                            let changed = if let Some(id) = self.doc.get_hover_node_id() {
+                                self.doc.scroll_node_by_has_changed(id, scroll_x, scroll_y)
+                            } else {
+                                self.doc.scroll_viewport_by_has_changed(scroll_x, scroll_y)
+                            };
+                            if changed {
+                                self.request_redraw();
+                                return; // redraw already requested above
+                            }
+                        }
+
                         self.request_redraw();
                     }
                     TouchPhase::Ended | TouchPhase::Cancelled => {
-                        self.buttons ^= MouseEventButton::Main.into();
-                        self.doc.handle_ui_event(UiEvent::MouseUp(BlitzMouseButtonEvent {
-                            x: lx,
-                            y: ly,
-                            button: MouseEventButton::Main,
-                            buttons: self.buttons,
-                            mods: winit_modifiers_to_kbt_modifiers(
-                                self.keyboard_modifiers.state(),
-                            ),
-                        }));
+                        // Check before clearing: was this a scroll gesture?
+                        let was_scroll = self.touch_scroll_last_pos.is_some();
+                        self.touch_scroll_last_pos = None;
                         self.touch_start = None;
+                        self.buttons ^= MouseEventButton::Main.into();
+                        // Synthesise MouseUp only for tap gestures.  Emitting
+                        // MouseUp after a scroll would fire onclick on the element
+                        // under the finger when the user lifts off at the end of
+                        // a scroll, causing unintended activations.
+                        if !was_scroll {
+                            self.doc.handle_ui_event(UiEvent::MouseUp(BlitzMouseButtonEvent {
+                                x: lx,
+                                y: ly,
+                                button: MouseEventButton::Main,
+                                buttons: self.buttons,
+                                mods: winit_modifiers_to_kbt_modifiers(
+                                    self.keyboard_modifiers.state(),
+                                ),
+                            }));
+                        }
                         self.request_redraw();
                     }
                 }

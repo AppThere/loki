@@ -13,7 +13,10 @@
 
 pub mod doc_page_source;
 pub mod document_view;
+#[cfg(any(not(target_os = "android"), android_gpu))]
 pub mod page_paint_source;
+#[cfg(all(target_os = "android", not(android_gpu)))]
+pub(crate) mod page_tile_cpu;
 pub mod renderer_state;
 pub mod scroll_driver;
 

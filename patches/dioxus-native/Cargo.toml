@@ -59,7 +59,11 @@ webbrowser = { version = "1.0" }
 winit = { version = "0.30.11", features = ["rwh_06"] }
 
 [target.'cfg(any(target_os = "android", all(target_os = "ios", target_abi = "sim")))'.dependencies]
-anyrender_vello_cpu = { version = "0.8", features = ["pixels_window_renderer"], default-features = false }
+# COMPAT(android-mali-r54p2): pixels_window_renderer uses wgpu 0.19 (Vulkan),
+# which triggers VK_ERROR_DEVICE_LOST on the Mali-G715 Vulkan driver r54p2
+# (Pixel 9, Tensor G4). softbuffer_window_renderer writes directly to the
+# ANativeWindow framebuffer with no GPU involvement, bypassing the broken driver.
+anyrender_vello_cpu = { version = "0.8", features = ["softbuffer_window_renderer"], default-features = false }
 
 [lints.rust]
 # android_gpu is a custom cfg flag set via RUSTFLAGS='--cfg android_gpu' when

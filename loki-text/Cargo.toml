@@ -64,6 +64,8 @@ serde_json = "1"
 loki-i18n = { path = "../loki-i18n" }
 # Tiered-cache page renderer with DocumentView component.
 loki-renderer = { path = "../loki-renderer" }
+# Bundled fallback fonts for the Android CPU renderer.
+loki-fonts.workspace = true
 
 [package.metadata.android]
 package = "com.appthere.loki"

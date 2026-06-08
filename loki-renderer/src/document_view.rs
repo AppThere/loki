@@ -5,7 +5,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use appthere_canvas::{PageCache, PageIndex, ScrollState};
+use appthere_canvas::ScrollState;
+#[cfg(any(not(target_os = "android"), android_gpu))]
+use appthere_canvas::{PageCache, PageIndex};
+#[cfg(any(not(target_os = "android"), android_gpu))]
 use appthere_ui::tokens;
 // use_wgpu and LokiPageSource are enabled on: desktop, and Android devices
 // built with RUSTFLAGS='--cfg android_gpu' (Vulkan-capable physical devices).
@@ -16,11 +19,15 @@ use dioxus::native::use_wgpu;
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 
+#[cfg(any(not(target_os = "android"), android_gpu))]
 use crate::doc_page_source::DocPageSource;
 #[cfg(any(not(target_os = "android"), android_gpu))]
 use crate::page_paint_source::LokiPageSource;
 use crate::renderer_state::RendererState;
 use crate::scroll_driver::{on_scroll_event, use_settle_detector};
+
+#[cfg(all(target_os = "android", not(android_gpu)))]
+use crate::page_tile_cpu::CpuDocView;
 
 // ── RendererCursorPos ─────────────────────────────────────────────────────────
 
@@ -53,25 +60,27 @@ impl PartialEq for DocumentViewProps {
 
 // ── PageTile ──────────────────────────────────────────────────────────────────
 
+#[cfg(any(not(target_os = "android"), android_gpu))]
 #[derive(Clone, Props)]
-struct PageTileProps {
-    cache: Arc<Mutex<PageCache<PageIndex>>>,
-    source: Arc<DocPageSource>,
-    page_index: usize,
-    w: f64,
-    h: f64,
-    shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
-    cursor_holder: Arc<Mutex<Option<RendererCursorPos>>>,
-    cursor_pos: Option<RendererCursorPos>,
+pub(crate) struct PageTileProps {
+    pub(crate) cache: Arc<Mutex<PageCache<PageIndex>>>,
+    pub(crate) source: Arc<DocPageSource>,
+    pub(crate) page_index: usize,
+    pub(crate) w: f64,
+    pub(crate) h: f64,
+    pub(crate) shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
+    pub(crate) cursor_holder: Arc<Mutex<Option<RendererCursorPos>>>,
+    pub(crate) cursor_pos: Option<RendererCursorPos>,
     /// Document generation — incremented on every mutation so that style
     /// changes that don't move the cursor still dirty the canvas.
-    doc_gen: u64,
+    pub(crate) doc_gen: u64,
     /// Called with `(page_index, x_pt, y_pt)` in layout points when the user
     /// clicks anywhere on this page tile. The parent uses this to call
     /// `hit_test_page` without needing window-relative origin math.
-    on_tile_click: EventHandler<(usize, f32, f32)>,
+    pub(crate) on_tile_click: EventHandler<(usize, f32, f32)>,
 }
 
+#[cfg(any(not(target_os = "android"), android_gpu))]
 impl PartialEq for PageTileProps {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.cache, &other.cache)
@@ -162,29 +171,6 @@ fn PageTile(props: PageTileProps) -> Element {
     }
 }
 
-#[cfg(all(target_os = "android", not(android_gpu)))]
-#[allow(non_snake_case)]
-fn PageTile(props: PageTileProps) -> Element {
-    // COMPAT(dioxus-native): GPU canvas unavailable on the Android emulator
-    // (SwiftShader lacks Vello compute pipeline support). Pages render as white
-    // page placeholders so the canvas looks like a document rather than a void.
-    // On a Vulkan-capable physical device, build with RUSTFLAGS='--cfg android_gpu'
-    // to enable the real GPU path above instead of this placeholder.
-    rsx! {
-        div {
-            style: format!(
-                "display: block; width: {w}px; height: {h}px; \
-                 margin-left: auto; margin-right: auto; \
-                 margin-bottom: {gap}px; \
-                 background: {bg}; border: 1px solid #e0e0e0;",
-                w   = props.w,
-                h   = props.h,
-                gap = tokens::PAGE_GAP_PX,
-                bg  = tokens::CANVAS_PAGE_BG,
-            ),
-        }
-    }
-}
 
 // ── DocumentView ──────────────────────────────────────────────────────────────
 
@@ -203,8 +189,14 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
     provide_context(renderer.clone());
 
     // Shared cursor holder: written by PageTile on each render, read by
-    // LokiPageSource during the GPU paint call.
+    // LokiPageSource during the GPU paint call.  Declared on all paths to
+    // keep hook indices stable; the CPU path uses an _ prefix to suppress
+    // the unused-variable lint.
+    #[cfg(any(not(target_os = "android"), android_gpu))]
     let cursor_holder: Arc<Mutex<Option<RendererCursorPos>>> =
+        use_hook(|| Arc::new(Mutex::new(None)));
+    #[cfg(all(target_os = "android", not(android_gpu)))]
+    let _cursor_holder: Arc<Mutex<Option<RendererCursorPos>>> =
         use_hook(|| Arc::new(Mutex::new(None)));
 
     let renderer_settle = renderer.clone();
@@ -218,72 +210,75 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         on_scroll_event(scroll, evt.scroll_top(), &phase_tx);
     };
 
-    // loki-layout page dimensions are in typographic points (1pt = 1/72 inch).
-    // CSS pixels assume 96dpi. Conversion: 1pt = 96/72 CSS px.
-    const PTS_TO_CSS_PX: f64 = 96.0 / 72.0;
-
     let doc_gen = renderer.source.current_generation();
-    let layout_guard = renderer.source.layout_for_generation(doc_gen);
-    let mut total_height = 0.0f64;
-    let pages: Vec<(usize, f64, f64)> = if let Some((_, layout)) = layout_guard.as_ref() {
-        layout
-            .pages
-            .iter()
-            .enumerate()
-            .map(|(i, p)| {
-                let h = p.page_size.height as f64 * PTS_TO_CSS_PX;
-                total_height += h + tokens::PAGE_GAP_PX as f64;
-                (i, p.page_size.width as f64 * PTS_TO_CSS_PX, h)
-            })
-            .collect()
-    } else {
-        vec![]
-    };
-    drop(layout_guard);
 
-    let (hot, warm, cold) = renderer
-        .cache
-        .lock()
-        .map(|g| g.page_count_by_tier())
-        .unwrap_or((0, 0, 0));
-    tracing::debug!(hot, warm, cold, "DocumentView rendered");
-
-    let cursor_pos = props.cursor_pos;
-    let on_tile_click = props.on_tile_click;
-
-    rsx! {
+    // ── Android CPU: flat web-style renderer ─────────────────────────────────
+    // All hooks have been called above; early return is safe.
+    #[cfg(all(target_os = "android", not(android_gpu)))]
+    return rsx! {
         div {
-            // No overflow-y: auto here — scrolling is owned by the parent
-            // container in editor_canvas.rs.  DocumentView is a non-scrolling
-            // block that fills its parent's content area.
             style: "width: 100%; height: 100%;",
             onscroll: onscroll,
+            CpuDocView { source: renderer.source.clone(), doc_gen }
+        }
+    };
+
+    // ── GPU / desktop: paged tile renderer ───────────────────────────────────
+    #[cfg(any(not(target_os = "android"), android_gpu))]
+    {
+        const PTS_TO_CSS_PX: f64 = 96.0 / 72.0;
+        let layout_guard = renderer.source.layout_for_generation(doc_gen);
+        let pages: Vec<(usize, f64, f64)> = if let Some((_, layout)) = layout_guard.as_ref() {
+            layout
+                .pages
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    let h = p.page_size.height as f64 * PTS_TO_CSS_PX;
+                    (i, p.page_size.width as f64 * PTS_TO_CSS_PX, h)
+                })
+                .collect()
+        } else {
+            vec![]
+        };
+        drop(layout_guard);
+
+        let (hot, warm, cold) = renderer
+            .cache
+            .lock()
+            .map(|g| g.page_count_by_tier())
+            .unwrap_or((0, 0, 0));
+        tracing::debug!(hot, warm, cold, "DocumentView rendered");
+
+        let cursor_pos = props.cursor_pos;
+        let on_tile_click = props.on_tile_click;
+
+        return rsx! {
             div {
-                // Block flow: height determined by stacked page tiles.
-                // position:relative is retained so future absolutely-positioned
-                // overlays (cursor, selection) have a containing block.
-                // padding-bottom ensures a gap after the last page when scrolled
-                // all the way down, matching the top padding on the scroll container.
-                style: format!(
-                    "position: relative; width: 100%; padding-bottom: {pb}px;",
-                    pb = tokens::SPACE_6,
-                ),
-                for (idx, w, h) in pages {
-                    PageTile {
-                        key: "{idx}",
-                        cache: renderer.cache.clone(),
-                        source: renderer.source.clone(),
-                        page_index: idx,
-                        w,
-                        h,
-                        shared_renderer: renderer.shared_renderer.clone(),
-                        cursor_holder: cursor_holder.clone(),
-                        cursor_pos,
-                        doc_gen,
-                        on_tile_click,
+                style: "width: 100%; height: 100%;",
+                onscroll: onscroll,
+                div {
+                    style: format!(
+                        "position: relative; width: 100%; padding-bottom: {pb}px;",
+                        pb = tokens::SPACE_6,
+                    ),
+                    for (idx, w, h) in pages {
+                        PageTile {
+                            key: "{idx}",
+                            cache: renderer.cache.clone(),
+                            source: renderer.source.clone(),
+                            page_index: idx,
+                            w,
+                            h,
+                            shared_renderer: renderer.shared_renderer.clone(),
+                            cursor_holder: cursor_holder.clone(),
+                            cursor_pos,
+                            doc_gen,
+                            on_tile_click,
+                        }
                     }
                 }
             }
-        }
+        };
     }
 }

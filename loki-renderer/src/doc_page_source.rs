@@ -71,6 +71,11 @@ impl DocPageSource {
         }
     }
 
+    /// Returns the current document.
+    pub fn document(&self) -> Arc<Document> {
+        self.doc.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
     /// Returns the current document generation.
     pub fn current_generation(&self) -> u64 {
         self.generation.load(Ordering::Acquire)

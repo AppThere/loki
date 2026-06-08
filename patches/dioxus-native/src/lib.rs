@@ -161,7 +161,10 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
         all(target_os = "android", not(android_gpu)),
         all(target_os = "ios", target_abi = "sim"),
     ))]
-    let renderer = DioxusNativeWindowRenderer::new();
+    let renderer = {
+        let _ = (features, limits);
+        DioxusNativeWindowRenderer::new()
+    };
     let config = WindowConfig::with_attributes(
         Box::new(doc) as _,
         renderer.clone(),

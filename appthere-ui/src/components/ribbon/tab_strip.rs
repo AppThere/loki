@@ -35,6 +35,13 @@ pub fn AtRibbonTabStrip(
     active_tab: RibbonTabIndex,
     /// Fired with the clicked tab's index.
     on_tab_select: EventHandler<RibbonTabIndex>,
+    /// Whether the ribbon content row is currently collapsed.
+    collapsed: bool,
+    /// Fired when the collapse/expand toggle button is pressed.
+    on_toggle_collapse: EventHandler<()>,
+    /// Accessible label for the collapse/expand toggle button.
+    /// Should be `fl!("ribbon-collapse-aria")` or `fl!("ribbon-expand-aria")`.
+    toggle_aria_label: String,
 ) -> Element {
     rsx! {
         div {
@@ -59,6 +66,27 @@ pub fn AtRibbonTabStrip(
                     is_active: idx == active_tab,
                     on_select: move |i| on_tab_select.call(i),
                 }
+            }
+
+            // Spacer pushes the collapse button to the trailing edge.
+            div { style: "flex: 1;" }
+
+            // Collapse / expand toggle.
+            // Minimum touch target: RIBBON_TAB_STRIP_HEIGHT × min-width 44 px.
+            button {
+                aria_label: toggle_aria_label,
+                style: format!(
+                    "min-width: {touch}px; height: {h}px; padding: 0 {p}px; \
+                     background: transparent; border: none; cursor: pointer; \
+                     color: {fg}; font-size: 11px; flex-shrink: 0; \
+                     display: flex; align-items: center; justify-content: center;",
+                    touch = tokens::TOUCH_MIN,
+                    h     = tokens::RIBBON_TAB_STRIP_HEIGHT,
+                    p     = tokens::SPACE_2,
+                    fg    = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
+                ),
+                onclick: move |_| on_toggle_collapse.call(()),
+                if collapsed { "▼" } else { "▲" }
             }
         }
     }

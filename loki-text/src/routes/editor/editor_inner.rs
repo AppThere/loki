@@ -59,6 +59,9 @@ pub(super) fn EditorInner(path: String) -> Element {
     // ── Font warning dismiss state ───────────────────────────────────────────
     let mut dismiss_font_warning = use_signal(|| false);
 
+    // ── Ribbon collapse state ────────────────────────────────────────────────
+    let mut ribbon_collapsed = use_signal(|| false);
+
     // ── Style search query (cleared on picker close) ─────────────────────────
     let style_search_query = use_signal(String::new);
 
@@ -520,6 +523,15 @@ pub(super) fn EditorInner(path: String) -> Element {
                 active_tab: 0,
                 on_tab_select: move |_idx| {
                     // TODO(ribbon): Wire ribbon tab selection to per-document state.
+                },
+                collapsed: ribbon_collapsed(),
+                on_toggle_collapse: move |_| {
+                    ribbon_collapsed.set(!ribbon_collapsed());
+                },
+                toggle_aria_label: if ribbon_collapsed() {
+                    fl!("ribbon-expand-aria")
+                } else {
+                    fl!("ribbon-collapse-aria")
                 },
                 tab_content: home_tab_content(
                     &doc_state_ribbon,

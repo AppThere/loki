@@ -21,7 +21,8 @@ use crate::tokens::colors::{
     COLOR_STATUS_ERROR_BORDER, COLOR_STATUS_ERROR_TEXT, COLOR_SURFACE_BASE, COLOR_TEXT_ON_CHROME,
     COLOR_TEXT_ON_CHROME_SECONDARY, COLOR_TEXT_PRIMARY,
 };
-use crate::tokens::layout::BREAKPOINT_DESKTOP_PX;
+use crate::safe_area::use_safe_area;
+use crate::tokens::layout::{BREAKPOINT_DESKTOP_PX, TAB_BAR_HEIGHT};
 use crate::tokens::spacing::{RADIUS_SM, SPACE_2, SPACE_3, SPACE_4, SPACE_6, TOUCH_MIN};
 use crate::tokens::typography::{
     FONT_FAMILY_UI, FONT_SIZE_BODY, FONT_SIZE_LABEL, FONT_WEIGHT_SEMIBOLD,
@@ -69,6 +70,14 @@ pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
     let viewport_width = use_signal(|| 375.0_f32);
     let is_desktop = viewport_width() >= BREAKPOINT_DESKTOP_PX;
 
+    // Taffy does not propagate a definite height from a flex:1 child back to
+    // its own children's flex:1 items.  Match the Shell outlet's height exactly
+    // so that overflow-y:auto on the body div has a definite height to scroll
+    // within.  This mirrors the pattern used in shell.rs for the Outlet wrapper.
+    let insets = use_safe_area();
+    let inset_total = insets.top.round() as u32 + insets.bottom.round() as u32;
+    let outer_height = format!("calc(100vh - {}px)", inset_total + TAB_BAR_HEIGHT as u32);
+
     let mut pick_error = props.pick_error;
     let mut open_hovered = use_signal(|| false);
     let open_bg = if open_hovered() {
@@ -95,8 +104,10 @@ pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
     rsx! {
         div {
             style: format!(
-                "display: flex; flex-direction: column; flex: 1; \
+                "display: flex; flex-direction: column; \
+                 height: {h}; overflow: hidden; \
                  background: {bg}; font-family: {font}; color: {fg};",
+                h    = outer_height,
                 bg   = COLOR_SURFACE_BASE,
                 font = FONT_FAMILY_UI,
                 fg   = COLOR_TEXT_PRIMARY,

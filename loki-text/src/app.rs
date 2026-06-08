@@ -99,6 +99,15 @@ pub fn App() -> Element {
             }}"
         }
 
+        // Bundled fallback fonts for the Android CPU renderer — Carlito (Calibri),
+        // Caladea (Cambria), Arimo (Arial), Cousine (Courier New), Tinos (Times NR).
+        // loki_fonts::face_css() returns "" on desktop and Android GPU paths, so
+        // this document::Style is a safe no-op on those targets.
+        document::Style {
+            r#type: "text/css",
+            "{loki_fonts::face_css()}"
+        }
+
         div {
             // Shell owns height: 100vh and the flex column layout.
             // Padding offsets the system status bar (top) and navigation bar

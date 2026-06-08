@@ -66,11 +66,14 @@ pub struct RibbonTabDesc {
 
 // ── AtRibbon ─────────────────────────────────────────────────────────────────
 
-/// Shell ribbon component — tab strip + content row.
+/// Shell ribbon component — tab strip + optional content row.
 ///
 /// Positioned between the canvas area and [`AtStatusBar`] in the editor.
 /// Fires `on_tab_select` when a tab label is clicked.  The active tab's button
 /// content is provided by the caller via `tab_content`.
+///
+/// When `collapsed` is `true` the content row is hidden and only the tab strip
+/// remains visible, saving screen space on narrow / landscape-phone viewports.
 ///
 /// # Touch target
 ///
@@ -88,6 +91,13 @@ pub fn AtRibbon(
     /// Content for the active tab's button row.  Pass `rsx! {}` to render
     /// an empty content row (e.g. when no document is open).
     tab_content: Element,
+    /// When `true` the content row is hidden; only the tab strip is visible.
+    collapsed: bool,
+    /// Fired when the user presses the collapse/expand toggle in the tab strip.
+    on_toggle_collapse: EventHandler<()>,
+    /// Accessible label for the toggle button — should be the translated
+    /// "Collapse ribbon" or "Expand ribbon" string from the caller.
+    toggle_aria_label: String,
 ) -> Element {
     rsx! {
         div {
@@ -102,10 +112,15 @@ pub fn AtRibbon(
                 tabs: tabs,
                 active_tab: active_tab,
                 on_tab_select: move |idx| on_tab_select.call(idx),
+                collapsed: collapsed,
+                on_toggle_collapse: move |_| on_toggle_collapse.call(()),
+                toggle_aria_label: toggle_aria_label,
             }
 
-            AtRibbonContent {
-                {tab_content}
+            if !collapsed {
+                AtRibbonContent {
+                    {tab_content}
+                }
             }
         }
     }

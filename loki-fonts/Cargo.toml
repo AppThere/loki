@@ -1,0 +1,10 @@
+# Copyright 2026 AppThere Loki contributors
+[package]
+name = "loki-fonts"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Bundled metric-compatible fallback fonts for the Android CPU renderer"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(android_gpu)'] }

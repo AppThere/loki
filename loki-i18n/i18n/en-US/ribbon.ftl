@@ -48,3 +48,7 @@ ribbon-align-justify-aria = Justify
 ribbon-style-editor-heading = Edit Style
 ribbon-style-new-aria = New custom style
 ribbon-style-apply-changes = Apply Changes
+
+# Ribbon collapse toggle
+ribbon-collapse-aria = Collapse ribbon
+ribbon-expand-aria = Expand ribbon

@@ -17,8 +17,25 @@ pub mod tabs;
 pub mod utils;
 
 #[cfg(target_os = "android")]
+// COMPAT(android-16): On Android 16 (API 36) ANativeActivity_onCreate fires
+// twice in rapid succession, spawning two concurrent android_main threads.
+// A static OnceLock would also block legitimate activity-recreation relaunches
+// within the same process (process reuse), so use a Mutex<bool> "is-running"
+// flag instead: set on entry, cleared on exit, so concurrent duplicates are
+// rejected while sequential re-entries (activity destroyed → recreated) succeed.
+static ANDROID_MAIN_RUNNING: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
+
+#[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 fn android_main(android_app: android_activity::AndroidApp) {
+    {
+        let mut running = ANDROID_MAIN_RUNNING.lock().unwrap_or_else(|p| p.into_inner());
+        if *running {
+            // Concurrent duplicate invocation on Android 16 — discard it.
+            return;
+        }
+        *running = true;
+    }
     android_logger::init_once(
         android_logger::Config::default()
             .with_tag("LOKI")
@@ -36,10 +53,18 @@ fn android_main(android_app: android_activity::AndroidApp) {
         bottom,
         ..Default::default()
     });
+    // Store the internal data path before android_app is moved, so that
+    // recent_documents can persist to a writable location on Android.
+    if let Some(data_path) = android_app.internal_data_path() {
+        crate::recent_documents::set_android_data_dir(data_path);
+    }
     blitz_shell::set_android_app(android_app);
     log::info!("android_main: i18n init");
     loki_i18n::init();
     log::info!("android_main: launching dioxus");
     dioxus::launch(app::App);
     log::info!("android_main: dioxus exited");
+    // Clear the running flag so a subsequent activity-recreation relaunch
+    // (in the same process) is allowed to proceed.
+    *ANDROID_MAIN_RUNNING.lock().unwrap_or_else(|p| p.into_inner()) = false;
 }

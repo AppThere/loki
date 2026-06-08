@@ -35,6 +35,16 @@ import android.os.Bundle;
  */
 public class FilePickerActivity extends Activity {
 
+    static {
+        // Android 7+ scopes native-library JNI lookups to the class loader that
+        // called System.loadLibrary.  NativeActivity loads libloki_text.so from
+        // the framework bootstrap class loader; FilePickerActivity runs under the
+        // application PathClassLoader.  Without this call, nativeOnResult cannot
+        // be resolved and throws UnsatisfiedLinkError at runtime.
+        // Safe to call if the library is already loaded — ART returns immediately.
+        System.loadLibrary("loki_text");
+    }
+
     private static final int REQUEST_OPEN   = 1001;
     private static final int REQUEST_CREATE = 1002;
 

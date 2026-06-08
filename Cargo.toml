@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["loki-doc-model","loki-sheet-model","loki-opc","loki-primitives","loki-ooxml","loki-odf","loki-layout","loki-vello","appthere-ui","loki-text","loki-spreadsheet","loki-presentation","loki-render-cache","loki-renderer","loki-i18n","appthere-canvas"]
+members = ["loki-doc-model","loki-sheet-model","loki-opc","loki-primitives","loki-ooxml","loki-odf","loki-layout","loki-vello","appthere-ui","loki-text","loki-spreadsheet","loki-presentation","loki-render-cache","loki-renderer","loki-i18n","appthere-canvas","loki-fonts"]
 
 [workspace.dependencies]
 # Shared across appthere-ui and any other workspace member that needs Dioxus.
@@ -8,6 +8,7 @@ dioxus    = { version = "0.7", features = ["native"] }
 thiserror = "2"
 appthere-canvas = { path = "appthere-canvas", features = ["gpu", "dioxus", "font-cache"] }
 loki-file-access = { git = "https://github.com/appthere/loki-file-access", branch = "main" }
+loki-fonts = { path = "loki-fonts" }
 android-activity = "0.6"
 
 [patch.crates-io]

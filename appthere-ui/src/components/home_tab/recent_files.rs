@@ -92,7 +92,6 @@ pub(crate) fn AtRecentFileList(props: AtRecentFileListProps) -> Element {
             for (idx, doc) in props.documents.iter().take(RECENT_VISIBLE_LIMIT).enumerate() {
                 {
                     let title    = doc.title.clone();
-                    let path     = doc.path.clone();
                     let modified = doc.modified_at.clone();
                     let mut row_hovered = use_signal(|| false);
                     let row_bg = if row_hovered() { "#F5F5F5" } else { COLOR_SURFACE_PAGE };
@@ -143,14 +142,6 @@ pub(crate) fn AtRecentFileList(props: AtRecentFileListProps) -> Element {
                                             fg     = COLOR_TEXT_PRIMARY,
                                         ),
                                         "{title}"
-                                    }
-                                    span {
-                                        style: format!(
-                                            "font-size: {size}px; color: {fg};",
-                                            size = FONT_SIZE_LABEL,
-                                            fg   = COLOR_TEXT_SECONDARY,
-                                        ),
-                                        "{path}"
                                     }
                                     span {
                                         style: format!(

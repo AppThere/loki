@@ -18,8 +18,10 @@ use super::jni_common::{attach_err, jvm_err, platform_err};
 use crate::api::{PickOptions, SaveOptions};
 use crate::error::PickerError;
 
-// Java class coordinates for FilePickerActivity.
-const FPA_PACKAGE: &str = "io.github.appthere.lokifileaccess";
+// Fully-qualified Java class name for FilePickerActivity.
+// NOTE: do NOT use this as a ComponentName package — that field identifies the
+// APK, not the Java package.  Use Intent.setClassName(Context, String) instead
+// so the runtime APK package name is derived from the Application context.
 const FPA_CLASS: &str = "io.github.appthere.lokifileaccess.FilePickerActivity";
 
 // ── Public entry points ───────────────────────────────────────────────────────
@@ -79,6 +81,15 @@ pub(super) fn fire_create_file_picker(
 // ── Private helpers ───────────────────────────────────────────────────────────
 
 /// Build an explicit `Intent` targeting `FilePickerActivity` with a `mode` extra.
+///
+/// Uses `Intent.setClassName(Context, String)` rather than constructing a
+/// `ComponentName` directly.  `ComponentName(pkg, cls)` uses `pkg` as the
+/// *application* identifier (the APK package name), not the Java package.
+/// Hardcoding the Java package `io.github.appthere.lokifileaccess` would cause
+/// Android to return `START_CLASS_NOT_FOUND` (-92) because no installed APK has
+/// that package name.  `setClassName(Context, cls)` derives the package from the
+/// Application context at runtime, correctly targeting this APK regardless of
+/// what package name the host app uses.
 fn build_fpa_intent<'a>(
     env: &mut jni::JNIEnv<'a>,
     mode: &str,
@@ -91,35 +102,24 @@ fn build_fpa_intent<'a>(
         .new_object(&intent_cls, "()V", &[])
         .map_err(|e| platform_err("Intent()", e))?;
 
-    // new ComponentName(String pkg, String cls)
-    let cn_cls = env
-        .find_class("android/content/ComponentName")
-        .map_err(|e| platform_err("ComponentName class", e))?;
-    let pkg = env
-        .new_string(FPA_PACKAGE)
-        .map_err(|e| platform_err("fpa package", e))?;
-    let cls = env
+    // intent.setClassName(context, FPA_CLASS) — resolves the APK package from
+    // the Application context so the component is found in this app's process.
+    let ctx = ndk_context::android_context();
+    // SAFETY: ndk_context stores the Application jobject initialised before android_main.
+    let context = unsafe { jni::objects::JObject::from_raw(ctx.context().cast()) };
+    let cls_str = env
         .new_string(FPA_CLASS)
-        .map_err(|e| platform_err("fpa class", e))?;
-    let component = env
-        .new_object(
-            &cn_cls,
-            "(Ljava/lang/String;Ljava/lang/String;)V",
-            &[
-                jni::objects::JValueGen::Object(&pkg),
-                jni::objects::JValueGen::Object(&cls),
-            ],
-        )
-        .map_err(|e| platform_err("ComponentName()", e))?;
-
-    // intent.setComponent(component)
+        .map_err(|e| platform_err("fpa class string", e))?;
     env.call_method(
         &intent,
-        "setComponent",
-        "(Landroid/content/ComponentName;)Landroid/content/Intent;",
-        &[jni::objects::JValueGen::Object(&component)],
+        "setClassName",
+        "(Landroid/content/Context;Ljava/lang/String;)Landroid/content/Intent;",
+        &[
+            jni::objects::JValueGen::Object(&context),
+            jni::objects::JValueGen::Object(&cls_str),
+        ],
     )
-    .map_err(|e| platform_err("setComponent", e))?;
+    .map_err(|e| platform_err("setClassName", e))?;
 
     // intent.putExtra("mode", mode)
     put_string_extra(env, &intent, "mode", mode)?;

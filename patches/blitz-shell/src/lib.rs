@@ -65,21 +65,35 @@ pub fn create_default_event_loop<Event>() -> EventLoop<Event> {
 }
 
 #[cfg(target_os = "android")]
-static ANDROID_APP: std::sync::OnceLock<android_activity::AndroidApp> = std::sync::OnceLock::new();
+// COMPAT(android-16): ANativeActivity_onCreate fires twice in rapid succession
+// on Android 16 (API 36), spawning two concurrent android_main threads.  A
+// OnceLock would panic on the second call; a Mutex allows both threads to
+// write safely (last writer wins) so the process does not abort.
+static ANDROID_APP: std::sync::Mutex<Option<android_activity::AndroidApp>> =
+    std::sync::Mutex::new(None);
 
 #[cfg(target_os = "android")]
 #[cfg_attr(docsrs, doc(cfg(target_os = "android")))]
 /// Set the current [`AndroidApp`](android_activity::AndroidApp).
+///
+/// Safe to call multiple times — subsequent calls update the stored app
+/// instance, which is necessary when the activity is recreated within the
+/// same process on Android 16+.
 pub fn set_android_app(app: android_activity::AndroidApp) {
-    ANDROID_APP.set(app).unwrap()
+    *ANDROID_APP.lock().unwrap() = Some(app);
 }
 
 #[cfg(target_os = "android")]
 #[cfg_attr(docsrs, doc(cfg(target_os = "android")))]
 /// Get the current [`AndroidApp`](android_activity::AndroidApp).
-/// This will panic if the android activity has not been setup with [`set_android_app`].
+/// This will panic if the android activity has not been set up with [`set_android_app`].
 pub fn current_android_app() -> android_activity::AndroidApp {
-    ANDROID_APP.get().unwrap().clone()
+    ANDROID_APP
+        .lock()
+        .unwrap()
+        .as_ref()
+        .expect("AndroidApp not initialized — call set_android_app first")
+        .clone()
 }
 
 pub struct BlitzShellProvider {
