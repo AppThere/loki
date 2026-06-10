@@ -19,6 +19,10 @@ editor-untitled-n = Untitled { $n }
 editor-sheet-label = Sheet { $current } of { $total }
 editor-slide-label = Slide { $current } of { $total }
 
+# Presentation preview banner — shown because .pptx/.odp loading and saving
+# are not yet implemented; the slides on screen are a non-editable sample.
+editor-presentation-preview = Preview only — opening and saving presentations isn't supported yet. These sample slides are not your file, and changes won't be saved.
+
 # Font warning banner
 editor-font-substitution-title = Font Substitution
 editor-font-substitution-message = Some fonts in this document are not available and were substituted. Layout and formatting might differ from Office 365.

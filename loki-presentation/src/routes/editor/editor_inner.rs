@@ -206,6 +206,17 @@ pub(super) fn EditorInner(path: String) -> Element {
                 }
             }
 
+            // ── Preview-only banner ──────────────────────────────────────────
+            // .pptx/.odp parsing is not implemented, so the slides below are a
+            // built-in sample, not the opened file. Make that explicit instead
+            // of presenting fake content under the real filename.
+            div {
+                style: "flex-shrink: 0; padding: 8px 16px; background: #4A3A1A; \
+                        border-bottom: 1px solid #6A5A2A; color: #F0E0B0; \
+                        font-size: 12px;",
+                {fl!("editor-presentation-preview")}
+            }
+
             // ── Sidebar + Canvas Area ────────────────────────────────────────
             div {
                 style: "flex: 1; display: flex; flex-direction: row; overflow: hidden;",
