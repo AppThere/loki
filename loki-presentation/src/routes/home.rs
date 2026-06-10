@@ -4,7 +4,7 @@
 
 use appthere_ui::{AtHomeTab, BuiltinTemplate, RecentDocument};
 use dioxus::prelude::*;
-use loki_file_access::{FilePicker, PickOptions, PickerError};
+use loki_file_access::{FileAccessToken, FilePicker, PickOptions, PickerError, SaveOptions};
 use loki_i18n::fl;
 
 use crate::new_document::new_blank_tab;
@@ -57,6 +57,29 @@ fn push_or_switch_tab(mut tabs: Signal<Vec<OpenTab>>, mut active_tab: Signal<usi
             is_discarded: false,
         });
         *active_tab.write() = tabs.read().len(); // new tab is last; +1 for Home
+    }
+}
+
+/// Close any open tab whose `path` matches `path`, resetting the active tab to
+/// Home when the closed (or a now-shifted) tab was selected.
+fn close_tab_for_path(mut tabs: Signal<Vec<OpenTab>>, mut active_tab: Signal<usize>, path: &str) {
+    let removed = tabs.read().iter().position(|t| t.path == path);
+    if let Some(idx) = removed {
+        tabs.write().remove(idx);
+        // active_tab is 1-based (index 0 = Home). Reset to Home if the active
+        // selection pointed at or past the removed tab to avoid a stale index.
+        if *active_tab.read() > idx {
+            *active_tab.write() = 0;
+        }
+    }
+}
+
+/// Build a "<stem> Copy.<ext>" filename from a token's display name.
+fn suggested_copy_name(token: &FileAccessToken) -> String {
+    let name = token.display_name();
+    match name.rsplit_once('.') {
+        Some((stem, ext)) if !stem.is_empty() => format!("{stem} Copy.{ext}"),
+        _ => format!("{name} Copy"),
     }
 }
 
@@ -145,47 +168,87 @@ pub fn Home() -> Element {
     };
 
     // ── on_recent_delete ──────────────────────────────────────────────────────
+    //
+    // `path` is a serialised FileAccessToken, not a filesystem path. Decode it,
+    // delete the underlying file via the capability token, close any open tab
+    // for it, then drop the recents entry.
     let on_recent_delete = move |idx: usize| {
-        let path = recent_docs.read().entries.get(idx).map(|e| e.path.clone());
-        if let Some(path) = path {
-            recent_docs.write().remove(&path);
-            recent_docs.read().save();
-            // TODO(ux): Close any open tab for this file; add confirmation dialog.
-            let _ = std::fs::remove_file(&path);
+        let mut err_sig = pick_error;
+        let Some(path) = recent_docs.read().entries.get(idx).map(|e| e.path.clone()) else {
+            return;
+        };
+
+        match FileAccessToken::deserialize(&path) {
+            Ok(token) => {
+                if let Err(e) = token.delete() {
+                    *err_sig.write() = Some(fl!("error-recent-delete-failed", err = e.to_string()));
+                }
+            }
+            Err(_) => {
+                *err_sig.write() = Some(fl!("error-recent-invalid-token"));
+            }
         }
+
+        close_tab_for_path(tabs, active_tab, &path);
+        // TODO(ux): Add a confirmation dialog before destructive deletion.
+        recent_docs.write().remove(&path);
+        recent_docs.read().save();
     };
 
     // ── on_recent_open_copy ───────────────────────────────────────────────────
+    //
+    // The stored `path` is a serialised FileAccessToken. Prompt for a save
+    // destination, copy the source bytes into it through the capability tokens
+    // (works on every platform), then open the new document.
     let on_recent_open_copy = move |idx: usize| {
         let nav = navigator;
-        let entry = recent_docs.read().entries.get(idx).cloned();
-        if let Some(entry) = entry {
-            let src = std::path::Path::new(&entry.path);
-            let Some(parent) = src.parent() else {
+        let mut err_sig = pick_error;
+        let tabs = tabs;
+        let active_tab = active_tab;
+        let mut recent = recent_docs;
+        let Some(path) = recent_docs.read().entries.get(idx).map(|e| e.path.clone()) else {
+            return;
+        };
+
+        spawn(async move {
+            let source = match FileAccessToken::deserialize(&path) {
+                Ok(t) => t,
+                Err(_) => {
+                    *err_sig.write() = Some(fl!("error-recent-invalid-token"));
+                    return;
+                }
+            };
+
+            let picker = FilePicker::new();
+            let opts = SaveOptions {
+                mime_type: MIME_TYPES.first().map(|s| (*s).to_string()),
+                suggested_name: Some(suggested_copy_name(&source)),
+            };
+            let dest = match picker.pick_file_to_save(opts).await {
+                Ok(Some(t)) => t,
+                Ok(None) => return, // user cancelled
+                Err(PickerError::Platform { .. }) => {
+                    *err_sig.write() = Some(fl!("error-picker-not-supported"));
+                    return;
+                }
+                Err(e) => {
+                    *err_sig.write() = Some(e.to_string());
+                    return;
+                }
+            };
+
+            if let Err(e) = source.copy_bytes_to(&dest) {
+                *err_sig.write() = Some(fl!("error-recent-copy-failed", err = e.to_string()));
                 return;
-            };
-            let stem = src
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned();
-            let ext = src
-                .extension()
-                .map(|e| e.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let copy_name = if ext.is_empty() {
-                format!("{stem} Copy")
-            } else {
-                format!("{stem} Copy.{ext}")
-            };
-            // TODO(ux): Handle name conflicts (e.g., increment a counter suffix).
-            let dest = parent.join(&copy_name);
-            if std::fs::copy(src, &dest).is_ok() {
-                let dest_str = dest.to_string_lossy().into_owned();
-                push_or_switch_tab(tabs, active_tab, dest_str.clone());
-                nav.push(Route::Editor { path: dest_str });
             }
-        }
+
+            let dest_path = dest.serialize();
+            let title = display_title_from_path(&dest_path);
+            push_or_switch_tab(tabs, active_tab, dest_path.clone());
+            recent.write().record(dest_path.clone(), title);
+            recent.read().save();
+            nav.push(Route::Editor { path: dest_path });
+        });
     };
 
     let recent_list: Vec<RecentDocument> = recent_docs

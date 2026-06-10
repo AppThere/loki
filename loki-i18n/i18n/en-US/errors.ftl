@@ -14,3 +14,8 @@ error-go-back = Go back
 
 # File picker
 error-file-picker = Could not open file picker: { $err }
+
+# Recent-document actions
+error-recent-invalid-token = This recent entry is invalid and has been removed.
+error-recent-delete-failed = The file could not be deleted: { $err }
+error-recent-copy-failed = The copy could not be created: { $err }

@@ -242,6 +242,17 @@ pub(crate) fn open_write(inner: &TokenInner) -> Result<Box<dyn WriteSeek>, Acces
     }
 }
 
+/// Delete the file referenced by a token.
+///
+/// Deleting a SAF document URI requires `DocumentsContract.deleteDocument`,
+/// which is not yet wired through JNI.  Return an explicit unsupported error
+/// rather than silently succeeding.
+pub(crate) fn delete(_inner: &TokenInner) -> Result<(), AccessError> {
+    Err(AccessError::Unsupported {
+        operation: "delete (Android SAF content-URI deletion not implemented)".into(),
+    })
+}
+
 /// Check whether a persistable URI permission is still held.
 pub(crate) fn check_permission(inner: &TokenInner) -> PermissionStatus {
     match inner {
