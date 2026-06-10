@@ -22,6 +22,7 @@ use dioxus::prelude::*;
 use loki_i18n::fl;
 
 use crate::routes::Route;
+use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
 
 /// Persistent application shell.
@@ -37,6 +38,7 @@ use crate::tabs::OpenTab;
 pub fn Shell() -> Element {
     let mut tabs = use_context::<Signal<Vec<OpenTab>>>();
     let mut active_tab = use_context::<Signal<usize>>();
+    let mut doc_sessions = use_context::<Signal<DocSessions>>();
     let navigator = use_navigator();
 
     // Safe-area insets are set by android_main from the OS-reported system-bar
@@ -108,6 +110,14 @@ pub fn Shell() -> Element {
                         return;
                     }
                     let current_active = *active_tab.read();
+
+                    // Drop the closed document's stashed editing session so a
+                    // later reopen loads fresh from disk instead of resurrecting
+                    // discarded unsaved edits.
+                    let closed_path = tabs.read().get(vec_idx).map(|t| t.path.clone());
+                    if let Some(p) = closed_path {
+                        doc_sessions.write().remove(&p);
+                    }
 
                     tabs.write().remove(vec_idx);
                     let new_len = tabs.read().len();

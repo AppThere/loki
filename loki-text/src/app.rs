@@ -23,6 +23,7 @@ use dioxus::prelude::*;
 
 use crate::recent_documents::RecentDocuments;
 use crate::routes::Route;
+use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
 
 /// Root application component.
@@ -44,9 +45,14 @@ pub fn App() -> Element {
     // Recent-documents list — loaded once from disk at startup.
     let recent_docs: Signal<RecentDocuments> = use_signal(RecentDocuments::load);
 
+    // Stashed editing sessions for inactive document tabs — unsaved edits
+    // survive tab switches by round-tripping through this map.
+    let doc_sessions: Signal<DocSessions> = use_signal(DocSessions::new);
+
     provide_context(tabs);
     provide_context(active_tab);
     provide_context(recent_docs);
+    provide_context(doc_sessions);
 
     // Read OS-reported system-bar insets (non-zero on Android edge-to-edge).
     // Zero on desktop platforms, so this has no visual effect there.

@@ -18,11 +18,15 @@
 //! `scroll_height() = 0`.  The scroll container therefore uses `flex: 1` within
 //! a parent that has `height: 100vh` so taffy can resolve the fraction.
 //!
-//! `node.scroll_offset` is internal to blitz-dom (no public Dioxus API), so
-//! `visible_rect` stays `None` and `onwheel` handlers never fire.
+//! Scroll position reaches Dioxus through the PATCH(loki) chain: blitz-dom
+//! collects the nodes whose offsets changed (`scroll_node_by_collect`),
+//! blitz-shell forwards them via `Document::handle_scroll_changes`, and
+//! dioxus-native-dom dispatches `scroll` events with `NativeScrollData` —
+//! the `onscroll` handler below receives them.
 //!
-//! TODO(partial-render): wire scroll_offset → DocumentView viewport once Blitz
-//! exposes a scroll-position hook to Dioxus components.
+//! TODO(partial-render): also feed scroll_offset into DocumentView's
+//! ScrollState (appthere_canvas::on_scroll_event) so cache tiering tracks
+//! the real viewport instead of assuming the top of the document.
 //!
 //! Click-to-cursor-position is handled by `make_mousedown_handler` in
 //! `editor_pointer.rs`, which calls `hit_test_document` and updates the cursor.
@@ -58,11 +62,13 @@ pub(super) fn render_canvas_area(
     doc_state_touchend: std::sync::Arc<std::sync::Mutex<DocumentState>>,
     doc_state_keydown: std::sync::Arc<std::sync::Mutex<DocumentState>>,
     doc_state_render: std::sync::Arc<std::sync::Mutex<DocumentState>>,
+    doc_state_scroll: std::sync::Arc<std::sync::Mutex<DocumentState>>,
     mut is_dragging: Signal<bool>,
     mut drag_origin: Signal<Option<(f32, f32)>>,
     touch_state: Signal<Option<TouchInteractionState>>,
     window_width: Signal<f32>,
-    scroll_offset: Signal<f32>,
+    mut scroll_offset: Signal<f32>,
+    mut current_page: Signal<u32>,
     mut cursor_state: Signal<CursorState>,
     loro_doc: Signal<Option<loro::LoroDoc>>,
     undo_manager: Signal<Option<loro::UndoManager>>,
@@ -101,6 +107,30 @@ pub(super) fn render_canvas_area(
             autofocus: "true",
             onmouseenter: move |_| { canvas_hovered.set(true); },
             onmouseleave: move |_| { canvas_hovered.set(false); },
+
+            // Scroll events are dispatched by the patched Blitz shell
+            // (PATCH(loki) in blitz-shell/blitz-dom/dioxus-native-dom) after a
+            // wheel or touch gesture changes this container's scroll offset.
+            // Updates the status-bar page indicator: the current page is the
+            // one occupying the vertical centre of the viewport.
+            onscroll: move |evt: ScrollEvent| {
+                let top = evt.scroll_top() as f32;
+                scroll_offset.set(top);
+                let viewport_h = evt.client_height() as f32;
+                let (page_h, count) = match doc_state_scroll.lock() {
+                    Ok(s) => (s.page_height_px, s.page_count),
+                    Err(_) => return,
+                };
+                let slot = page_h + page_gap_px;
+                if slot <= 0.0 || count == 0 {
+                    return;
+                }
+                let page = (((top + viewport_h * 0.5) / slot).floor() as i64 + 1)
+                    .clamp(1, count as i64) as u32;
+                if *current_page.peek() != page {
+                    current_page.set(page);
+                }
+            },
 
             // Outer div records drag origin; cursor placement happens in
             // on_tile_click on the per-page div (element_coordinates, no origin math).

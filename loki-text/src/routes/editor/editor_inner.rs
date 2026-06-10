@@ -35,7 +35,9 @@ use loro::LoroValue;
 
 use super::editor_canvas::render_canvas_area;
 use super::editor_load::load_document;
-use super::editor_path_sync::sync_path_and_reset;
+use super::editor_path_sync::{
+    PathSyncSignals, restore_session, stash_outgoing, sync_path_and_reset,
+};
 use super::editor_ribbon::home_tab_content;
 use super::editor_save::{export_document_to_token, save_document_to_path};
 use super::editor_state::{EditorState, use_editor_state};
@@ -46,6 +48,7 @@ use crate::error::LoadError;
 use crate::new_document::is_untitled;
 use crate::recent_documents::RecentDocuments;
 use crate::routes::Route;
+use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
 use crate::utils::display_title_from_path;
 use loki_file_access::{FilePicker, SaveOptions};
@@ -84,7 +87,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         touch_state,
         window_width,
         scroll_offset,
-        mut current_page,
+        current_page,
         mut total_pages,
         mut bold_active,
         mut italic_active,
@@ -93,10 +96,10 @@ pub(super) fn EditorInner(path: String) -> Element {
         mut superscript_active,
         mut subscript_active,
         mut undo_manager,
-        mut can_undo,
-        mut can_redo,
-        mut is_style_picker_open,
-        mut editing_style_draft,
+        can_undo,
+        can_redo,
+        is_style_picker_open,
+        editing_style_draft,
         mut save_message,
         save_request,
     } = use_editor_state();
@@ -104,31 +107,101 @@ pub(super) fn EditorInner(path: String) -> Element {
     // ── Tab/recents context for Save As and the unsaved-changes indicator ────
     let mut tabs = use_context::<Signal<Vec<OpenTab>>>();
     let recent_docs = use_context::<Signal<RecentDocuments>>();
+    // Stashed sessions for inactive tabs — unsaved edits survive tab switches.
+    let doc_sessions = use_context::<Signal<DocSessions>>();
     // Document generation considered "clean" (matches the on-disk file).
     // Captured when the document finishes loading and after each successful
     // save; the tab is dirty whenever the live generation differs.
     let mut baseline_gen = use_signal(|| 0_u64);
 
-    // ── Synchronous Path Sync & State Reset ──────────────────────────────────
+    // ── Session restore at mount ─────────────────────────────────────────────
     //
-    // Resets all per-document state synchronously during the render phase so
-    // the reset happens BEFORE `use_resource` evaluates.  See `editor_path_sync`
-    // for the full reset logic.
+    // Navigating Editor → Home unmounts this component (different routes), so
+    // returning to a document tab mounts a fresh EditorInner. Restore the
+    // stashed session here — before `use_resource` evaluates — so unsaved
+    // edits survive the round trip. The matching stash happens in the
+    // unmount hook below.
+    {
+        let doc_state_restore = Arc::clone(&doc_state);
+        let mut sessions_at_mount = doc_sessions;
+        use_hook(move || {
+            let initial_path = path_signal.peek().clone();
+            let restored = sessions_at_mount.write().remove(&initial_path);
+            if let Some(session) = restored {
+                let mut sig = PathSyncSignals {
+                    cursor_state,
+                    loro_doc,
+                    undo_manager,
+                    total_pages,
+                    current_page,
+                    can_undo,
+                    can_redo,
+                    dismiss_font_warning,
+                    is_style_picker_open,
+                    editing_style_draft,
+                    save_message,
+                    baseline_gen,
+                };
+                restore_session(session, &doc_state_restore, &mut sig);
+            }
+        });
+    }
+
+    // ── Session stash at unmount ─────────────────────────────────────────────
+    //
+    // Skipped when the tab was closed (Shell already dropped the session and
+    // re-stashing would resurrect discarded edits on reopen).
+    {
+        let doc_state_drop = Arc::clone(&doc_state);
+        let tabs_at_drop = tabs;
+        let mut sessions_at_drop = doc_sessions;
+        use_drop(move || {
+            let path = path_signal.peek().clone();
+            if !tabs_at_drop.peek().iter().any(|t| t.path == path) {
+                return;
+            }
+            let mut sig = PathSyncSignals {
+                cursor_state,
+                loro_doc,
+                undo_manager,
+                total_pages,
+                current_page,
+                can_undo,
+                can_redo,
+                dismiss_font_warning,
+                is_style_picker_open,
+                editing_style_draft,
+                save_message,
+                baseline_gen,
+            };
+            stash_outgoing(&path, &doc_state_drop, &mut sessions_at_drop, &mut sig);
+        });
+    }
+
+    // ── Synchronous Path Sync & Session Handover ─────────────────────────────
+    //
+    // Stashes the outgoing document's live state and restores (or resets) the
+    // incoming document's state synchronously during the render phase so the
+    // handover happens BEFORE `use_resource` evaluates.  See `editor_path_sync`.
     sync_path_and_reset(
         &path,
         &mut path_signal,
         &doc_state,
-        &mut cursor_state,
-        &mut loro_doc,
-        &mut undo_manager,
-        &mut total_pages,
-        &mut current_page,
-        &mut can_undo,
-        &mut can_redo,
-        &mut dismiss_font_warning,
-        &mut is_style_picker_open,
-        &mut editing_style_draft,
-        &mut save_message,
+        doc_sessions,
+        &mut PathSyncSignals {
+            cursor_state,
+            loro_doc,
+            undo_manager,
+            total_pages,
+            current_page,
+            can_undo,
+            can_redo,
+            dismiss_font_warning,
+            is_style_picker_open,
+            editing_style_draft,
+            save_message,
+            baseline_gen,
+        },
     );
 
     // Compute the current paragraph style name directly from signals so it is
@@ -155,6 +228,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_style_editor = Arc::clone(&doc_state);
     let doc_state_seed = Arc::clone(&doc_state);
     let doc_state_render = Arc::clone(&doc_state);
+    let doc_state_scroll = Arc::clone(&doc_state);
 
     // ── Document load — reactive on path_signal ───────────────────────────────
     let document_load: Resource<(String, Result<Document, LoadError>)> = use_resource(move || {
@@ -264,12 +338,10 @@ pub(super) fn EditorInner(path: String) -> Element {
 
     // ── Current page from scroll offset ──────────────────────────────────────
     //
-    // TODO(scroll): current_page update on scroll is blocked — Blitz native's
-    // convert_scroll_data is unimplemented! (panics at runtime), so onscroll
-    // handlers cannot be used safely.  current_page stays at 1 until Blitz
-    // exposes a scroll-position hook.  See:
-    //   patches/dioxus-native-dom/src/events.rs convert_scroll_data
-    let _ = scroll_offset;
+    // Updated by the onscroll handler in editor_canvas.rs. Scroll events are
+    // dispatched by the patched Blitz shell (PATCH(loki) in blitz-shell /
+    // blitz-dom / dioxus-native-dom) whenever a wheel or touch gesture changes
+    // the scroll container's offset.
 
     // ── Unsaved-changes (dirty) tracking ─────────────────────────────────────
     //
@@ -474,11 +546,13 @@ pub(super) fn EditorInner(path: String) -> Element {
                 doc_state_touchend,
                 doc_state_keydown,
                 doc_state_render,
+                doc_state_scroll,
                 is_dragging,
                 drag_origin,
                 touch_state,
                 window_width,
                 scroll_offset,
+                current_page,
                 cursor_state,
                 loro_doc,
                 undo_manager,
