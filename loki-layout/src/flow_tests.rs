@@ -975,3 +975,150 @@ fn table_cell_borders_produce_border_rect() {
         "2×2 table with borders should produce ≥2 BorderRect items, got {border_rects}"
     );
 }
+
+// ── PAGE / NUMPAGES field substitution in headers & footers ──────────────────
+
+mod page_fields {
+    use super::*;
+    use crate::FieldContext;
+    use loki_doc_model::content::field::types::{Field, FieldKind};
+    use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
+
+    fn para_with_inlines(inlines: Vec<Inline>) -> StyledParagraph {
+        StyledParagraph {
+            style_id: None,
+            direct_para_props: None,
+            direct_char_props: None,
+            inlines,
+            attr: NodeAttr::default(),
+        }
+    }
+
+    fn page_field_footer() -> HeaderFooter {
+        let mut hf = HeaderFooter::new(HeaderFooterKind::Default);
+        hf.blocks = vec![Block::StyledPara(para_with_inlines(vec![
+            Inline::Str("Page ".into()),
+            Inline::Field(Field::new(FieldKind::PageNumber).with_current_value("1")),
+            Inline::Str(" of ".into()),
+            Inline::Field(Field::new(FieldKind::PageCount).with_current_value("1")),
+        ]))];
+        hf
+    }
+
+    #[test]
+    fn detects_page_field_in_styled_para() {
+        assert!(blocks_contain_page_field(&page_field_footer().blocks));
+    }
+
+    #[test]
+    fn detects_page_field_nested_in_strong() {
+        let para = para_with_inlines(vec![Inline::Strong(vec![Inline::Field(Field::new(
+            FieldKind::PageNumber,
+        ))])]);
+        assert!(blocks_contain_page_field(&[Block::StyledPara(para)]));
+    }
+
+    #[test]
+    fn no_page_field_in_plain_text() {
+        let para = para_with_inlines(vec![Inline::Str("Confidential".into())]);
+        assert!(!blocks_contain_page_field(&[Block::StyledPara(para)]));
+    }
+
+    #[test]
+    fn substitution_replaces_fields_with_context_values() {
+        let mut blocks = page_field_footer().blocks;
+        substitute_page_fields(
+            &mut blocks,
+            &FieldContext {
+                page_number: 7,
+                page_count: 12,
+            },
+        );
+        let Block::StyledPara(p) = &blocks[0] else {
+            panic!("expected StyledPara");
+        };
+        let text: String = p
+            .inlines
+            .iter()
+            .map(|i| match i {
+                Inline::Str(s) => s.as_str(),
+                _ => "<non-text>",
+            })
+            .collect();
+        assert_eq!(text, "Page 7 of 12");
+    }
+
+    #[test]
+    fn assign_headers_footers_renders_distinct_page_numbers() {
+        let mut r = test_resources();
+        // Three short paragraphs with page breaks → 3 pages.
+        let mut paras = vec![make_para("one")];
+        let mut p2 = make_para("two");
+        p2.direct_para_props = Some(Box::new(ParaProps {
+            page_break_before: Some(true),
+            ..Default::default()
+        }));
+        let mut p3 = make_para("three");
+        p3.direct_para_props = Some(Box::new(ParaProps {
+            page_break_before: Some(true),
+            ..Default::default()
+        }));
+        paras.push(p2);
+        paras.push(p3);
+
+        let mut layout = tiny_layout();
+        layout.footer = Some(page_field_footer());
+        let section = section_of(paras, layout.clone());
+
+        let (mut pages, _) = flow_paginated(&mut r, &section);
+        assert_eq!(pages.len(), 3, "expected 3 pages");
+
+        let catalog = StyleCatalog::new();
+        assign_headers_footers(&mut pages, &layout, &mut r, &catalog, 1.0, 3);
+
+        for page in &pages {
+            assert!(
+                !page.footer_items.is_empty(),
+                "page {} should have footer items",
+                page.page_number
+            );
+        }
+        // The PAGE field renders a different number on each page, so the
+        // glyph runs must differ between pages (Debug form captures glyphs).
+        let f1 = format!("{:?}", pages[0].footer_items);
+        let f2 = format!("{:?}", pages[1].footer_items);
+        let f3 = format!("{:?}", pages[2].footer_items);
+        assert_ne!(f1, f2, "page 1 and 2 footers should differ");
+        assert_ne!(f2, f3, "page 2 and 3 footers should differ");
+    }
+
+    #[test]
+    fn static_footer_is_identical_across_pages() {
+        let mut r = test_resources();
+        let mut paras = vec![make_para("one")];
+        let mut p2 = make_para("two");
+        p2.direct_para_props = Some(Box::new(ParaProps {
+            page_break_before: Some(true),
+            ..Default::default()
+        }));
+        paras.push(p2);
+
+        let mut hf = HeaderFooter::new(HeaderFooterKind::Default);
+        hf.blocks = vec![Block::StyledPara(para_with_inlines(vec![Inline::Str(
+            "Confidential".into(),
+        )]))];
+        let mut layout = tiny_layout();
+        layout.footer = Some(hf);
+        let section = section_of(paras, layout.clone());
+
+        let (mut pages, _) = flow_paginated(&mut r, &section);
+        assert_eq!(pages.len(), 2, "expected 2 pages");
+
+        let catalog = StyleCatalog::new();
+        assign_headers_footers(&mut pages, &layout, &mut r, &catalog, 1.0, 2);
+
+        let f1 = format!("{:?}", pages[0].footer_items);
+        let f2 = format!("{:?}", pages[1].footer_items);
+        assert_eq!(f1, f2, "static footers should be identical on every page");
+    }
+}

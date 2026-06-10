@@ -12,7 +12,7 @@ This is the living source of truth documenting which document features, characte
 | **Section Breaks** | Yes | Yes | Yes | Supports multiple sections with different page layouts. |
 | **Headers & Footers** | Yes | Yes | Partial | Dynamic assignment supported; export lacks full plumbing. |
 | **Footnotes & Endnotes** | Yes | Yes | Yes | Rendered at end of section with separator rules. |
-| **Dynamic Fields** | Yes | Partial | No | Inline fields render snapshots. Post-layout computation (ADR-0008) is proposed. |
+| **Dynamic Fields** | Yes | Partial | No | PAGE / NUMPAGES fields in headers & footers render real per-page values (per-page re-layout in `assign_headers_footers`). Body-text fields still render snapshots. Post-layout computation (ADR-0008) is proposed. |
 | **Line-boundary Splitting** | — | Yes | — | Paragraphs split cleanly across pages using `ClippedGroup` masks. |
 | **keep-together** | Yes | Yes | Yes | Prevents paragraph line breaks across pages when enabled. |
 | **keep-with-next** | Yes | Yes | Yes | Scans forward up to 5 blocks to place headings and body together. |

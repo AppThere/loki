@@ -409,11 +409,19 @@ fn layout_blocks_reflow(
     catalog: &StyleCatalog,
     available_width: f32,
     display_scale: f32,
+    field_context: Option<crate::FieldContext>,
 ) -> (Vec<PositionedItem>, f32) {
     use crate::LayoutOptions;
+    let mut blocks = blocks.to_vec();
+    // Substitute PAGE / NUMPAGES fields with their resolved values before
+    // layout — the blocks are already a per-call clone, so this never
+    // mutates the document.
+    if let Some(ctx) = field_context {
+        substitute_page_fields(&mut blocks, &ctx);
+    }
     let synthetic = Section {
         layout: PageLayout::default(),
-        blocks: blocks.to_vec(),
+        blocks,
         extensions: ExtensionBag::default(),
     };
     let mode = LayoutMode::Reflow { available_width };
@@ -432,11 +440,162 @@ fn layout_blocks_reflow(
     }
 }
 
+/// Visit every inline vector reachable from `blocks` (paragraphs, headings,
+/// list items, table cells, nested containers), calling `f` on each.
+///
+/// Shared traversal for page-field detection and substitution in
+/// headers/footers.
+fn visit_inline_vecs_mut(blocks: &mut [Block], f: &mut impl FnMut(&mut Vec<Inline>)) {
+    use loki_doc_model::content::table::core::Table;
+
+    fn visit_table(table: &mut Table, f: &mut impl FnMut(&mut Vec<Inline>)) {
+        let rows = table
+            .head
+            .rows
+            .iter_mut()
+            .chain(table.foot.rows.iter_mut())
+            .chain(
+                table
+                    .bodies
+                    .iter_mut()
+                    .flat_map(|b| b.head_rows.iter_mut().chain(b.body_rows.iter_mut())),
+            );
+        for row in rows {
+            for cell in &mut row.cells {
+                visit_inline_vecs_mut(&mut cell.blocks, f);
+            }
+        }
+    }
+
+    for block in blocks {
+        match block {
+            Block::Plain(inlines) | Block::Para(inlines) | Block::Heading(_, _, inlines) => {
+                f(inlines)
+            }
+            Block::StyledPara(p) => f(&mut p.inlines),
+            Block::LineBlock(lines) => {
+                for line in lines {
+                    f(line);
+                }
+            }
+            Block::BlockQuote(ch) | Block::Div(_, ch) | Block::Figure(_, _, ch) => {
+                visit_inline_vecs_mut(ch, f)
+            }
+            Block::OrderedList(_, items) | Block::BulletList(items) => {
+                for item in items {
+                    visit_inline_vecs_mut(item, f);
+                }
+            }
+            Block::Table(table) => visit_table(table, f),
+            _ => {}
+        }
+    }
+}
+
+/// `true` when any inline reachable from `inlines` is a PAGE or NUMPAGES
+/// field.
+fn inlines_contain_page_field(inlines: &[Inline]) -> bool {
+    use loki_doc_model::content::field::types::FieldKind;
+    inlines.iter().any(|inline| match inline {
+        Inline::Field(field) => {
+            matches!(field.kind, FieldKind::PageNumber | FieldKind::PageCount)
+        }
+        Inline::Strong(ch)
+        | Inline::Emph(ch)
+        | Inline::Underline(ch)
+        | Inline::Strikeout(ch)
+        | Inline::Superscript(ch)
+        | Inline::Subscript(ch)
+        | Inline::SmallCaps(ch)
+        | Inline::Quoted(_, ch)
+        | Inline::Span(_, ch)
+        | Inline::Cite(_, ch) => inlines_contain_page_field(ch),
+        Inline::Link(_, ch, _) => inlines_contain_page_field(ch),
+        Inline::StyledRun(run) => inlines_contain_page_field(&run.content),
+        _ => false,
+    })
+}
+
+/// `true` when any inline in `blocks` is a PAGE or NUMPAGES field, in which
+/// case the header/footer must be laid out per page rather than once.
+fn blocks_contain_page_field(blocks: &[Block]) -> bool {
+    use loki_doc_model::content::table::core::Table;
+
+    fn table_contains(table: &Table) -> bool {
+        let rows = table.head.rows.iter().chain(table.foot.rows.iter()).chain(
+            table
+                .bodies
+                .iter()
+                .flat_map(|b| b.head_rows.iter().chain(b.body_rows.iter())),
+        );
+        rows.into_iter().any(|row| {
+            row.cells
+                .iter()
+                .any(|c| blocks_contain_page_field(&c.blocks))
+        })
+    }
+
+    blocks.iter().any(|block| match block {
+        Block::Plain(i) | Block::Para(i) | Block::Heading(_, _, i) => inlines_contain_page_field(i),
+        Block::StyledPara(p) => inlines_contain_page_field(&p.inlines),
+        Block::LineBlock(lines) => lines.iter().any(|l| inlines_contain_page_field(l)),
+        Block::BlockQuote(ch) | Block::Div(_, ch) | Block::Figure(_, _, ch) => {
+            blocks_contain_page_field(ch)
+        }
+        Block::OrderedList(_, items) | Block::BulletList(items) => {
+            items.iter().any(|i| blocks_contain_page_field(i))
+        }
+        Block::Table(table) => table_contains(table),
+        _ => false,
+    })
+}
+
+/// Replace every PAGE / NUMPAGES field reachable from `blocks` with a plain
+/// text inline carrying its resolved value from `ctx`.
+fn substitute_page_fields(blocks: &mut [Block], ctx: &crate::FieldContext) {
+    use loki_doc_model::content::field::types::FieldKind;
+
+    fn substitute_inlines(inlines: &mut [Inline], ctx: &crate::FieldContext) {
+        for inline in inlines.iter_mut() {
+            match inline {
+                Inline::Field(field) => {
+                    let value = match field.kind {
+                        FieldKind::PageNumber => Some(ctx.page_number.to_string()),
+                        FieldKind::PageCount => Some(ctx.page_count.to_string()),
+                        _ => None,
+                    };
+                    if let Some(v) = value {
+                        *inline = Inline::Str(v);
+                    }
+                }
+                Inline::Strong(ch)
+                | Inline::Emph(ch)
+                | Inline::Underline(ch)
+                | Inline::Strikeout(ch)
+                | Inline::Superscript(ch)
+                | Inline::Subscript(ch)
+                | Inline::SmallCaps(ch)
+                | Inline::Quoted(_, ch)
+                | Inline::Span(_, ch)
+                | Inline::Cite(_, ch) => substitute_inlines(ch, ctx),
+                Inline::Link(_, ch, _) => substitute_inlines(ch, ctx),
+                Inline::StyledRun(run) => substitute_inlines(&mut run.content, ctx),
+                _ => {}
+            }
+        }
+    }
+
+    visit_inline_vecs_mut(blocks, &mut |inlines| substitute_inlines(inlines, ctx));
+}
+
 /// Populate header/footer items for each page in `pages`.
 ///
-/// Pre-lays-out all unique header/footer variants once (in reflow mode), then
-/// assigns translated copies to each page. Items are translated to page-local
-/// coordinates:
+/// Variants without PAGE / NUMPAGES fields are laid out once (in reflow mode)
+/// and cloned onto each page. Variants containing page fields are re-laid-out
+/// per page with a [`crate::FieldContext`] carrying the real page number and
+/// `total_page_count`, so "Page X of Y" chrome renders correctly.
+///
+/// Items are translated to page-local coordinates:
 /// - Header top: `margins.header`
 /// - Footer top: `page_height - margins.footer - footer_height`
 pub(crate) fn assign_headers_footers(
@@ -445,66 +604,129 @@ pub(crate) fn assign_headers_footers(
     resources: &mut FontResources,
     catalog: &StyleCatalog,
     display_scale: f32,
+    total_page_count: u32,
 ) {
-    // Pre-layout each variant that is present.
     let content_width = pages
         .first()
         .map(|p| (p.page_size.width - p.margins.horizontal()).max(0.0))
         .unwrap_or(0.0);
 
-    let mut lay = |hf: &HeaderFooter| -> (Vec<PositionedItem>, f32) {
-        layout_blocks_reflow(resources, &hf.blocks, catalog, content_width, display_scale)
+    // Lay out a variant once when it has no page fields; `None` marks
+    // variants that must be re-laid-out per page.
+    let mut lay_static = |hf: &HeaderFooter| -> Option<(Vec<PositionedItem>, f32)> {
+        if blocks_contain_page_field(&hf.blocks) {
+            None
+        } else {
+            Some(layout_blocks_reflow(
+                resources,
+                &hf.blocks,
+                catalog,
+                content_width,
+                display_scale,
+                None,
+            ))
+        }
     };
 
-    let hdr_default: Option<(Vec<PositionedItem>, f32)> = layout.header.as_ref().map(&mut lay);
-    let hdr_first: Option<(Vec<PositionedItem>, f32)> = layout.header_first.as_ref().map(&mut lay);
-    let hdr_even: Option<(Vec<PositionedItem>, f32)> = layout.header_even.as_ref().map(&mut lay);
-    let ftr_default: Option<(Vec<PositionedItem>, f32)> = layout.footer.as_ref().map(&mut lay);
-    let ftr_first: Option<(Vec<PositionedItem>, f32)> = layout.footer_first.as_ref().map(&mut lay);
-    let ftr_even: Option<(Vec<PositionedItem>, f32)> = layout.footer_even.as_ref().map(&mut lay);
+    let hdr_default = layout.header.as_ref().map(&mut lay_static);
+    let hdr_first = layout.header_first.as_ref().map(&mut lay_static);
+    let hdr_even = layout.header_even.as_ref().map(&mut lay_static);
+    let ftr_default = layout.footer.as_ref().map(&mut lay_static);
+    let ftr_first = layout.footer_first.as_ref().map(&mut lay_static);
+    let ftr_even = layout.footer_even.as_ref().map(&mut lay_static);
 
     use crate::resolve::pts_to_f32;
     let hdr_margin_y = pts_to_f32(layout.margins.header);
     let ftr_margin = pts_to_f32(layout.margins.footer);
     let left_margin = pts_to_f32(layout.margins.left);
 
+    // Selects the variant for page `pn`: (source blocks, pre-laid items).
+    // `pre` is `None` when the variant contains page fields and must be
+    // re-laid-out for each page.
+    #[allow(clippy::type_complexity)] // local helper; aliasing hides intent
+    fn select<'a>(
+        pn: usize,
+        first_src: &'a Option<HeaderFooter>,
+        first_pre: &'a Option<Option<(Vec<PositionedItem>, f32)>>,
+        even_src: &'a Option<HeaderFooter>,
+        even_pre: &'a Option<Option<(Vec<PositionedItem>, f32)>>,
+        def_src: &'a Option<HeaderFooter>,
+        def_pre: &'a Option<Option<(Vec<PositionedItem>, f32)>>,
+    ) -> Option<(&'a HeaderFooter, &'a Option<(Vec<PositionedItem>, f32)>)> {
+        if pn == 1 && first_src.is_some() {
+            first_src.as_ref().zip(first_pre.as_ref())
+        } else if pn.is_multiple_of(2) && even_src.is_some() {
+            even_src.as_ref().zip(even_pre.as_ref())
+        } else {
+            def_src.as_ref().zip(def_pre.as_ref())
+        }
+    }
+
     for page in pages.iter_mut() {
         let page_h = page.page_size.height;
         let pn = page.page_number;
-
-        let hdr = if pn == 1 && hdr_first.is_some() {
-            hdr_first.as_ref()
-        } else if pn % 2 == 0 && hdr_even.is_some() {
-            hdr_even.as_ref()
-        } else {
-            hdr_default.as_ref()
+        let ctx = crate::FieldContext {
+            page_number: pn as u32,
+            page_count: total_page_count,
         };
 
-        let ftr = if pn == 1 && ftr_first.is_some() {
-            ftr_first.as_ref()
-        } else if pn % 2 == 0 && ftr_even.is_some() {
-            ftr_even.as_ref()
-        } else {
-            ftr_default.as_ref()
-        };
+        let hdr = select(
+            pn,
+            &layout.header_first,
+            &hdr_first,
+            &layout.header_even,
+            &hdr_even,
+            &layout.header,
+            &hdr_default,
+        );
+        let ftr = select(
+            pn,
+            &layout.footer_first,
+            &ftr_first,
+            &layout.footer_even,
+            &ftr_even,
+            &layout.footer,
+            &ftr_default,
+        );
 
-        if let Some((items, h)) = hdr {
-            let mut translated: Vec<PositionedItem> = items.clone();
-            for item in &mut translated {
+        if let Some((hf, pre)) = hdr {
+            let (mut items, h) = match pre {
+                Some((items, h)) => (items.clone(), *h),
+                // Contains page fields — lay out fresh for this page.
+                None => layout_blocks_reflow(
+                    resources,
+                    &hf.blocks,
+                    catalog,
+                    content_width,
+                    display_scale,
+                    Some(ctx),
+                ),
+            };
+            for item in &mut items {
                 item.translate(left_margin, hdr_margin_y);
             }
-            page.header_items = translated;
-            page.header_height = *h;
+            page.header_items = items;
+            page.header_height = h;
         }
 
-        if let Some((items, h)) = ftr {
+        if let Some((hf, pre)) = ftr {
+            let (mut items, h) = match pre {
+                Some((items, h)) => (items.clone(), *h),
+                None => layout_blocks_reflow(
+                    resources,
+                    &hf.blocks,
+                    catalog,
+                    content_width,
+                    display_scale,
+                    Some(ctx),
+                ),
+            };
             let footer_y = page_h - ftr_margin - h;
-            let mut translated: Vec<PositionedItem> = items.clone();
-            for item in &mut translated {
+            for item in &mut items {
                 item.translate(left_margin, footer_y);
             }
-            page.footer_items = translated;
-            page.footer_height = *h;
+            page.footer_items = items;
+            page.footer_height = h;
         }
     }
 }

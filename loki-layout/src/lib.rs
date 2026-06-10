@@ -76,6 +76,15 @@ pub struct LayoutOptions {
     pub preserve_for_editing: bool,
 }
 
+/// Resolved page numbering for field substitution during layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FieldContext {
+    /// 1-based page number of the page being laid out.
+    pub page_number: u32,
+    /// Total page count of the document.
+    pub page_count: u32,
+}
+
 /// Lays out a full document into absolute positions.
 ///
 /// This processes all sections in the document and returns a single [`DocumentLayout`].
@@ -94,10 +103,13 @@ pub fn layout_document(
 ) -> DocumentLayout {
     match mode {
         LayoutMode::Paginated => {
-            let mut all_pages = Vec::new();
             let mut global_page_count = 0;
             let mut first_page_size = None;
 
+            // Pass 1: flow every section's body so the total page count is
+            // known before headers/footers are laid out (NUMPAGES fields need
+            // the document-wide total).
+            let mut flowed: Vec<(&loki_doc_model::Section, Vec<LayoutPage>)> = Vec::new();
             for section in &doc.sections {
                 let pl = &section.layout;
                 let page_size = LayoutSize::new(
@@ -129,16 +141,23 @@ pub fn layout_document(
                     page.page_number += global_page_count;
                 }
 
+                flowed.push((section, pages));
+                global_page_count += section_page_count;
+            }
+
+            // Pass 2: headers/footers, with the document-wide page total
+            // available for PAGE / NUMPAGES field substitution.
+            let mut all_pages = Vec::new();
+            for (section, mut pages) in flowed {
                 flow::assign_headers_footers(
                     &mut pages,
                     &section.layout,
                     resources,
                     &doc.styles,
                     display_scale,
+                    global_page_count as u32,
                 );
-
                 all_pages.extend(pages);
-                global_page_count += section_page_count;
             }
 
             DocumentLayout::Paginated(PaginatedLayout {
