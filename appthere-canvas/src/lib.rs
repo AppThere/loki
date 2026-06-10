@@ -10,15 +10,23 @@
 //! - `dioxus` — enables Dioxus scroll helpers in [`crate::dioxus`].
 //! - `font-cache` — enables [`FontDataCache`].
 
-pub mod cache;
-pub mod key;
-pub mod scroll;
-pub mod source;
+// The page-render cache, tier policy, scroll state, key trait, and GPU texture
+// utilities are the canonical implementation in `loki-render-cache`, re-exported
+// here so existing `appthere_canvas::*` paths keep working unchanged. This crate
+// adds the Dioxus scroll driver and font cache on top.
+pub use loki_render_cache::{
+    assign_tier, CacheKey, CacheTier, CachedPage, PageCache, PageGeometry, PageIndex, RenderError,
+    RetierResult, ScrollPhase, ScrollState, SETTLE_DURATION,
+};
 
+// Re-export the `texture` module too, so module-qualified paths such as
+// `appthere_canvas::texture::GpuTexture` continue to resolve.
 #[cfg(feature = "gpu")]
-pub mod blit;
+pub use loki_render_cache::texture;
 #[cfg(feature = "gpu")]
-pub mod texture;
+pub use loki_render_cache::{
+    allocate_texture, downsample_texture, BlitPipeline, GpuTexture, PageSource,
+};
 
 #[cfg(feature = "font-cache")]
 pub mod font_cache;
@@ -26,23 +34,5 @@ pub mod font_cache;
 #[cfg(feature = "dioxus")]
 pub mod dioxus;
 
-pub use cache::retier::RetierResult;
-pub use cache::tier::{assign_tier, CacheTier, PageGeometry};
-pub use cache::{CachedPage, PageCache};
-pub use key::CacheKey;
-pub use scroll::{ScrollPhase, ScrollState, SETTLE_DURATION};
-pub use source::RenderError;
-
-#[cfg(feature = "gpu")]
-pub use blit::BlitPipeline;
-#[cfg(feature = "gpu")]
-pub use source::PageSource;
-#[cfg(feature = "gpu")]
-pub use texture::{allocate_texture, downsample_texture, GpuTexture};
-
 #[cfg(feature = "font-cache")]
 pub use font_cache::FontDataCache;
-
-/// Opaque index identifying a document page within the cache.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct PageIndex(pub u32);

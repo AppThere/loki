@@ -16,7 +16,7 @@
 use dioxus::prelude::{spawn, use_drop, use_hook, ReadableExt, Signal, WritableExt};
 use tokio::sync::watch;
 
-use crate::scroll::{ScrollPhase, ScrollState, SETTLE_DURATION};
+use crate::{ScrollPhase, ScrollState, SETTLE_DURATION};
 
 /// Call from the document scroll handler.
 ///
