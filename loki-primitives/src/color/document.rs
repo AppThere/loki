@@ -82,6 +82,11 @@ impl DocumentColor {
         if !s.starts_with('#') {
             return Err(err());
         }
+        // Reject non-ASCII input before byte-slicing below: a multibyte UTF-8
+        // character straddling a slice boundary would otherwise panic.
+        if !s.is_ascii() {
+            return Err(err());
+        }
         let hex = &s[1..];
         if hex.len() != 6 && hex.len() != 8 {
             return Err(err());
@@ -132,6 +137,25 @@ mod tests {
 
         assert!(matches!(
             DocumentColor::from_hex("not-a-color"),
+            Err(ColorParseError::InvalidFormat { .. })
+        ));
+    }
+
+    #[test]
+    fn test_hex_multibyte_utf8_rejected_without_panic() {
+        // 'é' is 2 bytes in UTF-8; "#1é345" has a 6-byte payload, so it passes
+        // the length check. Byte-slicing it would split 'é' mid-character and
+        // panic; the ASCII guard must reject it instead.
+        assert!(matches!(
+            DocumentColor::from_hex("#1é345"),
+            Err(ColorParseError::InvalidFormat { .. })
+        ));
+        assert!(matches!(
+            DocumentColor::from_hex("é2345é"),
+            Err(ColorParseError::InvalidFormat { .. })
+        ));
+        assert!(matches!(
+            DocumentColor::from_hex("#ééé"),
             Err(ColorParseError::InvalidFormat { .. })
         ));
     }

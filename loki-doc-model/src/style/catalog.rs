@@ -19,6 +19,14 @@ use crate::style::props::para_props::ParaProps;
 use crate::style::table_style::TableStyle;
 use indexmap::IndexMap;
 
+/// Maximum number of parent links followed when resolving a style chain.
+///
+/// Guards against cyclic `parent` references in corrupt documents
+/// (e.g. A.parent = B, B.parent = A), which would otherwise loop forever.
+/// When the cap is exceeded, inheritance stops at the last style reached —
+/// the chain is treated as if it ended at a root style.
+pub const MAX_STYLE_CHAIN_DEPTH: usize = 32;
+
 /// Unique identifier for a named style.
 ///
 /// Used to reference a style from content nodes and from other styles
@@ -93,108 +101,50 @@ impl StyleCatalog {
     /// Resolves the paragraph properties for a style by walking the parent
     /// chain and merging properties (child wins over parent). ADR-0003.
     ///
+    /// The walk is capped at [`MAX_STYLE_CHAIN_DEPTH`] links so that cyclic
+    /// `parent` references in corrupt documents degrade gracefully (the chain
+    /// is truncated) instead of overflowing the stack.
+    ///
     /// Returns `None` if the style id is not in the catalog.
     #[must_use]
     pub fn resolve_para(&self, id: &StyleId) -> Option<ResolvedParaProps> {
         let style = self.paragraph_styles.get(id)?;
-        let own = style.para_props.clone();
-        if let Some(ref parent_id) = style.parent
-            && let Some(parent_resolved) = self.resolve_para(parent_id)
-        {
-            return Some(own.merged_with_parent(&parent_resolved));
+        let mut resolved = style.para_props.clone();
+        let mut parent_id = style.parent.as_ref();
+        for _ in 0..MAX_STYLE_CHAIN_DEPTH {
+            let Some(parent) = parent_id.and_then(|pid| self.paragraph_styles.get(pid)) else {
+                break;
+            };
+            resolved = resolved.merged_with_parent(&parent.para_props);
+            parent_id = parent.parent.as_ref();
         }
-        Some(own)
+        Some(resolved)
     }
 
     /// Resolves the character properties for a paragraph style by walking
     /// the parent chain. ADR-0003.
     ///
+    /// The walk is capped at [`MAX_STYLE_CHAIN_DEPTH`] links so that cyclic
+    /// `parent` references in corrupt documents degrade gracefully (the chain
+    /// is truncated) instead of overflowing the stack.
+    ///
     /// Returns `None` if the style id is not in the catalog.
     #[must_use]
     pub fn resolve_char(&self, id: &StyleId) -> Option<ResolvedCharProps> {
         let style = self.paragraph_styles.get(id)?;
-        let own = style.char_props.clone();
-        if let Some(ref parent_id) = style.parent
-            && let Some(parent_resolved) = self.resolve_char(parent_id)
-        {
-            return Some(own.merged_with_parent(&parent_resolved));
+        let mut resolved = style.char_props.clone();
+        let mut parent_id = style.parent.as_ref();
+        for _ in 0..MAX_STYLE_CHAIN_DEPTH {
+            let Some(parent) = parent_id.and_then(|pid| self.paragraph_styles.get(pid)) else {
+                break;
+            };
+            resolved = resolved.merged_with_parent(&parent.char_props);
+            parent_id = parent.parent.as_ref();
         }
-        Some(own)
+        Some(resolved)
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::content::attr::ExtensionBag;
-    use loki_primitives::units::Points;
-
-    fn make_catalog_with_parent_child() -> StyleCatalog {
-        let mut catalog = StyleCatalog::new();
-
-        let parent = ParagraphStyle {
-            id: StyleId::new("Normal"),
-            display_name: Some("Normal".into()),
-            parent: None,
-            linked_char_style: None,
-            next_style_id: None,
-            para_props: ParaProps::default(),
-            char_props: CharProps {
-                font_size: Some(Points::new(12.0)),
-                bold: Some(false),
-                ..Default::default()
-            },
-            is_default: true,
-            is_custom: false,
-            extensions: ExtensionBag::default(),
-        };
-
-        let child = ParagraphStyle {
-            id: StyleId::new("Heading1"),
-            display_name: Some("Heading 1".into()),
-            parent: Some(StyleId::new("Normal")),
-            linked_char_style: None,
-            next_style_id: None,
-            para_props: ParaProps::default(),
-            char_props: CharProps {
-                font_size: Some(Points::new(24.0)),
-                bold: Some(true),
-                ..Default::default()
-            },
-            is_default: false,
-            is_custom: false,
-            extensions: ExtensionBag::default(),
-        };
-
-        catalog
-            .paragraph_styles
-            .insert(StyleId::new("Normal"), parent);
-        catalog
-            .paragraph_styles
-            .insert(StyleId::new("Heading1"), child);
-        catalog
-    }
-
-    #[test]
-    fn resolve_child_overrides_parent() {
-        let catalog = make_catalog_with_parent_child();
-        let resolved = catalog.resolve_char(&StyleId::new("Heading1")).unwrap();
-        assert_eq!(resolved.font_size, Some(Points::new(24.0)));
-        assert_eq!(resolved.bold, Some(true));
-    }
-
-    #[test]
-    fn resolve_child_inherits_parent_unset() {
-        let catalog = make_catalog_with_parent_child();
-        // The parent has font_size=12pt. The child overrides to 24pt.
-        // But italic is None in both — should still be None after resolution.
-        let resolved = catalog.resolve_char(&StyleId::new("Heading1")).unwrap();
-        assert!(resolved.italic.is_none());
-    }
-
-    #[test]
-    fn resolve_missing_style_returns_none() {
-        let catalog = StyleCatalog::new();
-        assert!(catalog.resolve_para(&StyleId::new("NonExistent")).is_none());
-    }
-}
+#[path = "catalog_tests.rs"]
+mod tests;

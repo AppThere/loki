@@ -449,3 +449,82 @@ fn flatten_footnote_mark_superscript_vertical_align() {
         "note mark span must have Superscript vertical_align"
     );
 }
+
+// ── character-style chain cycle tests ─────────────────────────────────────────
+
+/// Build a catalog whose character styles form a parent cycle:
+/// A.parent = B, B.parent = A.
+fn cyclic_char_style_catalog() -> StyleCatalog {
+    use loki_doc_model::style::char_style::CharacterStyle;
+    let mut catalog = StyleCatalog::new();
+    let mk = |id: &str, parent: &str, props: CharProps| CharacterStyle {
+        id: StyleId::new(id),
+        display_name: None,
+        parent: Some(StyleId::new(parent)),
+        char_props: props,
+        extensions: ExtensionBag::default(),
+    };
+    catalog.character_styles.insert(
+        StyleId::new("A"),
+        mk(
+            "A",
+            "B",
+            CharProps {
+                bold: Some(true),
+                ..Default::default()
+            },
+        ),
+    );
+    catalog.character_styles.insert(
+        StyleId::new("B"),
+        mk(
+            "B",
+            "A",
+            CharProps {
+                italic: Some(true),
+                ..Default::default()
+            },
+        ),
+    );
+    catalog
+}
+
+#[test]
+fn char_style_chain_cycle_terminates_without_overflow() {
+    let catalog = cyclic_char_style_catalog();
+    let run = StyledRun {
+        style_id: Some(StyleId::new("A")),
+        direct_props: None,
+        content: vec![Inline::Str("cyclic".into())],
+        attr: NodeAttr::default(),
+    };
+    // Must not overflow the stack; own value wins, parent value inherited.
+    let span = resolve_char_props(&run, &catalog, &CharProps::default());
+    assert!(span.bold, "A's own bold must survive");
+    assert!(
+        span.italic,
+        "B's italic must be inherited through the cycle"
+    );
+}
+
+#[test]
+fn char_style_self_referential_parent_terminates() {
+    use loki_doc_model::style::char_style::CharacterStyle;
+    let mut catalog = StyleCatalog::new();
+    catalog.character_styles.insert(
+        StyleId::new("Loop"),
+        CharacterStyle {
+            id: StyleId::new("Loop"),
+            display_name: None,
+            parent: Some(StyleId::new("Loop")),
+            char_props: CharProps {
+                bold: Some(true),
+                ..Default::default()
+            },
+            extensions: ExtensionBag::default(),
+        },
+    );
+    let props = resolve_char_style_chain(&catalog, &StyleId::new("Loop"));
+    assert_eq!(props.bold, Some(true));
+    assert!(props.italic.is_none());
+}

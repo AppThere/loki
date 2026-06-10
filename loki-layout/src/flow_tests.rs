@@ -371,6 +371,79 @@ fn split_fragment_b_clip_starts_at_top_of_next_page() {
     );
 }
 
+// ── force-split termination tests (line taller than page) ────────────────────
+
+/// Regression test: a single line taller than the page combined with a
+/// nonzero `space_before` previously hung `split_and_place_loop` — every
+/// fresh page started at `cursor_y == space_before > 0`, so the
+/// "flush and retry" arm fired forever and pages were pushed unboundedly.
+#[test]
+fn line_taller_than_page_with_space_before_terminates() {
+    use loki_doc_model::style::props::char_props::CharProps;
+    let mut r = test_resources();
+    // 120pt font on a page with 90pt content height: the single line cannot
+    // fit even on a fresh page.
+    let para = StyledParagraph {
+        direct_para_props: Some(Box::new(ParaProps {
+            space_before: Some(Spacing::Exact(Points::new(20.0))),
+            ..Default::default()
+        })),
+        direct_char_props: Some(Box::new(CharProps {
+            font_size: Some(Points::new(120.0)),
+            ..Default::default()
+        })),
+        ..make_para("Huge")
+    };
+    let section = section_of(vec![para], tiny_layout());
+    let (pages, warnings) = flow_paginated(&mut r, &section);
+    assert!(
+        !pages.is_empty() && pages.len() <= 4,
+        "layout must terminate with a bounded page count, got {} pages",
+        pages.len()
+    );
+    let exceeds = warnings
+        .iter()
+        .any(|w| matches!(w, LayoutWarning::BlockExceedsPageHeight { .. }));
+    assert!(exceeds, "expected BlockExceedsPageHeight; got {warnings:?}");
+}
+
+/// Multiple consecutive lines each taller than the page must also terminate
+/// (exercises the progress guard in the normal split arm and repeated
+/// force-splits across fragments).
+#[test]
+fn multiple_lines_each_taller_than_page_terminate() {
+    use loki_doc_model::style::props::char_props::CharProps;
+    let mut r = test_resources();
+    // Each word at 120pt is wider than the 180pt content width, so each gets
+    // its own ~140pt line — taller than the 90pt content height.
+    let para = StyledParagraph {
+        direct_para_props: Some(Box::new(ParaProps {
+            space_before: Some(Spacing::Exact(Points::new(20.0))),
+            ..Default::default()
+        })),
+        direct_char_props: Some(Box::new(CharProps {
+            font_size: Some(Points::new(120.0)),
+            ..Default::default()
+        })),
+        ..make_para("Www Www Www")
+    };
+    let section = section_of(vec![para], tiny_layout());
+    let (pages, _) = flow_paginated(&mut r, &section);
+    assert!(
+        !pages.is_empty() && pages.len() <= 10,
+        "layout must terminate with a bounded page count, got {} pages",
+        pages.len()
+    );
+    // Every emitted page after the first must carry content (no run of empty
+    // filler pages from repeated flushing).
+    for (i, page) in pages.iter().enumerate().skip(1) {
+        assert!(
+            !page.content_items.is_empty(),
+            "page {i} should have content"
+        );
+    }
+}
+
 // ── keep-together tests ───────────────────────────────────────────────────────
 
 #[test]

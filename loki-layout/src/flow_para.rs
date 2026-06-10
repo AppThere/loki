@@ -494,6 +494,14 @@ fn split_and_place_loop(
 ) {
     // paragraph-local y of the current fragment's top edge.
     let mut frag_start = 0.0f32;
+    // Whether the current fragment has already triggered a page flush without
+    // making progress. Guards against an infinite flush loop: when
+    // `space_before > 0`, a fresh page starts at `cursor_y == space_before`
+    // (> 0), so the "flush and retry" arm below would otherwise be taken on
+    // every iteration for a line taller than the available height, pushing an
+    // unbounded number of empty pages. After one unproductive flush, the
+    // force-split arm runs instead.
+    let mut flushed_without_progress = false;
 
     loop {
         let frag_height = para_layout.height - frag_start;
@@ -540,26 +548,33 @@ fn split_and_place_loop(
         }
 
         // Find split_k: largest k such that line_boundaries[k].1 ≤ frag_start + page_remaining.
+        // The boundary must also lie strictly past frag_start, otherwise the
+        // split makes no progress (zero-height fragment → infinite loop).
         let max_visible_y = frag_start + page_remaining;
-        let split_k = (0..para_layout.line_boundaries.len())
-            .rev()
-            .find(|&k| para_layout.line_boundaries[k].1 <= max_visible_y);
+        let split_k = (0..para_layout.line_boundaries.len()).rev().find(|&k| {
+            let line_max = para_layout.line_boundaries[k].1;
+            line_max > frag_start && line_max <= max_visible_y
+        });
 
         match split_k {
-            None if state.cursor_y > 0.0 => {
+            None if state.cursor_y > 0.0 && !flushed_without_progress => {
                 // No lines of this fragment fit on the current page; flush and retry.
                 // Re-apply space_before on the fresh page (ADR 004 §3 retry).
                 finish_page(state);
                 state.cursor_y += resolved.space_before;
+                flushed_without_progress = true;
             }
             None => {
                 // Even a full fresh page cannot fit a single line of this fragment
                 // (a single line taller than the entire page height — extremely rare).
-                // Force-split at line 0 to avoid an infinite loop.
+                // Force-split at the first line boundary past frag_start to
+                // avoid an infinite loop; that line overflows its page and is
+                // clipped, but layout terminates with bounded output.
                 let split_y = para_layout
                     .line_boundaries
-                    .first()
-                    .map(|&(_, max)| max.max(frag_start + 1.0))
+                    .iter()
+                    .map(|&(_, max)| max)
+                    .find(|&max| max > frag_start)
                     .unwrap_or(para_layout.height);
                 if split_y <= frag_start {
                     // Still no progress: emit remainder and bail.
@@ -590,6 +605,7 @@ fn split_and_place_loop(
                 );
                 finish_page(state);
                 frag_start = split_y;
+                flushed_without_progress = false;
             }
             Some(k) => {
                 // Emit Fragment A covering para-local [frag_start, split_y).
@@ -605,6 +621,7 @@ fn split_and_place_loop(
                 );
                 finish_page(state);
                 frag_start = split_y;
+                flushed_without_progress = false;
                 // space_before is NOT re-applied between split fragments; only
                 // the "no lines fit → flush" branch above re-applies it.
             }

@@ -248,18 +248,27 @@ pub fn flatten_paragraph(
 
 // ── Private helpers ───────────────────────────────────────────────────────────
 
+/// Maximum number of parent links followed when resolving a character-style
+/// chain. Guards against cyclic `parent` references in corrupt documents
+/// (e.g. A.parent = B, B.parent = A). When the cap is exceeded, inheritance
+/// stops — the chain is treated as if it ended at a root style.
+const MAX_STYLE_CHAIN_DEPTH: usize = 32;
+
 /// Walk the character-style parent chain in [`StyleCatalog::character_styles`].
 fn resolve_char_style_chain(catalog: &StyleCatalog, id: &StyleId) -> CharProps {
     let Some(style) = catalog.character_styles.get(id) else {
         return CharProps::default();
     };
-    let own = style.char_props.clone();
-    if let Some(ref parent_id) = style.parent {
-        let parent = resolve_char_style_chain(catalog, parent_id);
-        own.merged_with_parent(&parent)
-    } else {
-        own
+    let mut resolved = style.char_props.clone();
+    let mut parent_id = style.parent.as_ref();
+    for _ in 0..MAX_STYLE_CHAIN_DEPTH {
+        let Some(parent) = parent_id.and_then(|pid| catalog.character_styles.get(pid)) else {
+            break;
+        };
+        resolved = resolved.merged_with_parent(&parent.char_props);
+        parent_id = parent.parent.as_ref();
     }
+    resolved
 }
 
 /// Compute the effective [`CharProps`] for a run (3-layer merge).
