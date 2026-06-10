@@ -7,7 +7,7 @@
 use std::sync::{Arc, Mutex};
 
 use appthere_canvas::{PageCache, PageGeometry, PageIndex, ScrollPhase, ScrollState};
-use dioxus::prelude::{ReadableExt, Signal};
+use dioxus::prelude::{ReadableExt, Signal, WritableExt};
 use loki_doc_model::document::Document;
 use tokio::sync::watch;
 
@@ -31,6 +31,11 @@ pub struct RendererState {
     /// Shared Vello renderer — created lazily by the first `LokiPageSource`
     /// to call `resume()`.  All page sources for the same document share this.
     pub shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
+    /// Incremented by [`RendererState::on_settle`] after each retier so that
+    /// `DocumentView` re-renders and every page tile's invalidation key
+    /// changes — this forces Blitz to repaint demoted pages at their new
+    /// (smaller) tier resolution, which is what actually frees texture memory.
+    pub settle_epoch: Signal<u64>,
 }
 
 impl RendererState {
@@ -41,9 +46,11 @@ impl RendererState {
     /// component before this function is called.  Hooks must not be called
     /// inside `use_hook` closures; this function therefore accepts `scroll`
     /// as a parameter instead of creating it internally.
-    pub fn new(doc: Arc<Document>, scroll: Signal<ScrollState>) -> Self {
+    pub fn new(doc: Arc<Document>, scroll: Signal<ScrollState>, settle_epoch: Signal<u64>) -> Self {
         let source = Arc::new(DocPageSource::new(doc));
         let cache = Arc::new(Mutex::new(PageCache::new()));
+        // The receiver is created on demand via `phase_tx.subscribe()` in the
+        // settle detector; the sender lives here for the view's lifetime.
         let (tx, _rx) = watch::channel(ScrollPhase::Idle);
         let phase_tx = Arc::new(tx);
         let shared_renderer = Arc::new(Mutex::new(None));
@@ -53,6 +60,7 @@ impl RendererState {
             source,
             phase_tx,
             shared_renderer,
+            settle_epoch,
         }
     }
 
@@ -101,6 +109,17 @@ impl RendererState {
             .lock()
             .map(|g| g.page_count_by_tier())
             .unwrap_or((0, 0, 0));
+
+        // If any page's tier changed, bump the settle epoch so DocumentView
+        // re-renders and the affected tiles repaint at their new resolution.
+        // Demoted (Hot→Warm/Cold) pages re-render smaller, freeing texture
+        // memory; promoted pages re-render at full resolution. Unchanged pages
+        // hit LokiPageSource's reuse guard and cost nothing.
+        if !result.rerender.is_empty() || !result.downsample.is_empty() {
+            let mut epoch = self.settle_epoch;
+            let next = epoch.peek().wrapping_add(1);
+            epoch.set(next);
+        }
 
         tracing::info!(
             rerender = result.rerender.len(),

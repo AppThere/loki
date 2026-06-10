@@ -37,13 +37,28 @@ fn inline_html(inline: &Inline) -> String {
         Inline::Code(_, s) => format!("<code>{}</code>", html_escape(s)),
         Inline::StyledRun(run) => {
             let mut out = inlines_html(&run.content);
-            if run.direct_props.as_ref().map(|p| p.strikethrough.is_some()).unwrap_or(false) {
+            if run
+                .direct_props
+                .as_ref()
+                .map(|p| p.strikethrough.is_some())
+                .unwrap_or(false)
+            {
                 out = format!("<s>{out}</s>");
             }
-            if run.direct_props.as_ref().and_then(|p| p.italic).unwrap_or(false) {
+            if run
+                .direct_props
+                .as_ref()
+                .and_then(|p| p.italic)
+                .unwrap_or(false)
+            {
                 out = format!("<em>{out}</em>");
             }
-            if run.direct_props.as_ref().and_then(|p| p.bold).unwrap_or(false) {
+            if run
+                .direct_props
+                .as_ref()
+                .and_then(|p| p.bold)
+                .unwrap_or(false)
+            {
                 out = format!("<strong>{out}</strong>");
             }
             out

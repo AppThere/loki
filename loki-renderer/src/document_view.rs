@@ -74,6 +74,9 @@ pub(crate) struct PageTileProps {
     /// Document generation — incremented on every mutation so that style
     /// changes that don't move the cursor still dirty the canvas.
     pub(crate) doc_gen: u64,
+    /// Settle epoch — incremented after each scroll-settle retier so that a
+    /// tier change repaints this tile at its new resolution.
+    pub(crate) settle_epoch: u64,
     /// Called with `(page_index, x_pt, y_pt)` in layout points when the user
     /// clicks anywhere on this page tile. The parent uses this to call
     /// `hit_test_page` without needing window-relative origin math.
@@ -91,6 +94,7 @@ impl PartialEq for PageTileProps {
             && Arc::ptr_eq(&self.cursor_holder, &other.cursor_holder)
             && self.cursor_pos == other.cursor_pos
             && self.doc_gen == other.doc_gen
+            && self.settle_epoch == other.settle_epoch
         // on_tile_click intentionally excluded — EventHandler identity does not
         // affect render output; omitting it avoids spurious re-renders.
     }
@@ -131,11 +135,11 @@ fn PageTile(props: PageTileProps) -> Element {
     let data_cursor = match props.cursor_pos {
         Some(cp) if cp.page_index == props.page_index => {
             format!(
-                "{}-{}-{}",
-                cp.paragraph_index, cp.byte_offset, props.doc_gen
+                "{}-{}-{}-{}",
+                cp.paragraph_index, cp.byte_offset, props.doc_gen, props.settle_epoch
             )
         }
-        _ => props.doc_gen.to_string(),
+        _ => format!("{}-{}", props.doc_gen, props.settle_epoch),
     };
 
     rsx! {
@@ -171,7 +175,6 @@ fn PageTile(props: PageTileProps) -> Element {
     }
 }
 
-
 // ── DocumentView ──────────────────────────────────────────────────────────────
 
 /// Root document rendering component.
@@ -180,7 +183,10 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
     // use_signal must be called at the top level — not inside use_hook —
     // to avoid "hook list already borrowed: BorrowMutError".
     let scroll = use_signal(|| ScrollState::new(props.viewport_height_px));
-    let renderer = use_hook(|| RendererState::new(props.doc.clone(), scroll));
+    // Bumped by on_settle after each retier; read below so a settle forces a
+    // re-render that repaints demoted tiles at their new resolution.
+    let settle_epoch = use_signal(|| 0u64);
+    let renderer = use_hook(|| RendererState::new(props.doc.clone(), scroll, settle_epoch));
     // Push the latest document into the page source on every render.
     // `update_doc` compares by Arc pointer and returns immediately when
     // the document has not changed since the last render, so this is
@@ -200,7 +206,7 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         use_hook(|| Arc::new(Mutex::new(None)));
 
     let renderer_settle = renderer.clone();
-    let (_task, _tx) = use_settle_detector(renderer.scroll, move || {
+    use_settle_detector(&renderer.phase_tx, move || {
         renderer_settle.on_settle();
     });
 
@@ -252,6 +258,9 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
 
         let cursor_pos = props.cursor_pos;
         let on_tile_click = props.on_tile_click;
+        // Read (and subscribe to) the settle epoch so a scroll-settle retier
+        // re-renders this component and repaints demoted tiles.
+        let epoch = settle_epoch();
 
         return rsx! {
             div {
@@ -274,6 +283,7 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                             cursor_holder: cursor_holder.clone(),
                             cursor_pos,
                             doc_gen,
+                            settle_epoch: epoch,
                             on_tile_click,
                         }
                     }
