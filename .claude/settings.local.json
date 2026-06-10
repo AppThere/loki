@@ -77,7 +77,21 @@
       "WebFetch(domain:cs.android.com)",
       "WebFetch(domain:www.apiref.com)",
       "Bash(python -c \"import json,sys; meta=json.load\\(sys.stdin\\); [print\\(p['manifest_path']\\) for p in meta['packages'] if p['name']=='jni']\")",
-      "Bash(git pull *)"
+      "Bash(git pull *)",
+      "PowerShell(.\\\\scripts\\\\build-android.ps1 -Install)",
+      "PowerShell(.\\\\scripts\\\\build-android.ps1 -Install -Gpu)",
+      "Read(//tmp/**)",
+      "Bash(cp -r ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/anyrender_vello-0.6.2 /d/project/loki/patches/anyrender_vello)",
+      "Bash(rm -f /d/project/loki/patches/anyrender_vello/.cargo_vcs_info.json /d/project/loki/patches/anyrender_vello/Cargo.toml.orig)",
+      "Bash(cargo update *)",
+      "Bash(awk '/configuring surface/,/RustPanic/' /tmp/loki_gpu2.txt)",
+      "Bash(awk '/08:09:48/,0')",
+      "Bash(awk '/08:09:49/,0')",
+      "Bash(awk '/08:09:49\\\\.5/,0')",
+      "WebFetch(domain:github.com)",
+      "PowerShell(gh pr list --head claude/codebase-security-audit-2oykpx --state all --json number,state,title,url)",
+      "PowerShell(git diff *)",
+      "PowerShell(cargo clippy *)"
     ]
   },
   "enableAllProjectMcpServers": true,
