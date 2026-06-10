@@ -190,7 +190,9 @@ fn generate_content(workbook: &Workbook) -> String {
 
                         // `cols` is derived from `cells.keys()`, so this lookup
                         // should always succeed; skip on the impossible miss.
-                        let Some(cell) = cells.get(&c) else { continue; };
+                        let Some(cell) = cells.get(&c) else {
+                            continue;
+                        };
                         let style_attr = if let Some(ref s) = cell.style {
                             if let Some(style_name) = unique_styles.get(s) {
                                 format!(" table:style-name=\"{}\"", style_name)

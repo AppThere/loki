@@ -78,6 +78,32 @@ pub enum OdfError {
     /// Failed to parse a floating-point attribute value.
     #[error("float parse error: {0}")]
     ParseFloat(#[from] std::num::ParseFloatError),
+
+    /// A single ZIP entry inflated past the per-entry decompression budget
+    /// (zip-bomb guard).
+    #[error("ZIP entry {name:?} exceeds the per-entry decompressed size limit of {limit} bytes")]
+    EntryTooLarge {
+        /// Name of the offending ZIP entry.
+        name: String,
+        /// The per-entry budget, in bytes, that was exceeded.
+        limit: u64,
+    },
+
+    /// The aggregate decompressed size of all entries passed the package
+    /// budget (zip-bomb guard).
+    #[error("package exceeds the total decompressed size limit of {limit} bytes")]
+    PackageTooLarge {
+        /// The aggregate budget, in bytes, that was exceeded.
+        limit: u64,
+    },
+
+    /// Recursive XML structures (nested spans, links, or lists) exceeded the
+    /// supported nesting depth (stack-exhaustion guard).
+    #[error("XML element nesting exceeds the maximum supported depth of {limit}")]
+    NestingTooDeep {
+        /// The maximum nesting depth that was exceeded.
+        limit: usize,
+    },
 }
 
 /// Convenience alias for `Result<T, OdfError>`.

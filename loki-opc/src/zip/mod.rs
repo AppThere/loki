@@ -3,5 +3,6 @@
 
 //! Wrapping dependencies executing Native file descriptor translations mapping buffers resolving parameters structurally verifying requirements transparently executing payloads precisely supporting limits accurately defining configurations isolating components explicitly supporting paths reliably.
 
+pub(crate) mod limits;
 pub mod read;
 pub mod write;

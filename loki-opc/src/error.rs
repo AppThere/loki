@@ -79,6 +79,22 @@ pub enum OpcError {
     /// Indicated when a searched logical name cannot map to physical assets directly.
     #[error("part not found: {0:?}")]
     PartNotFound(String),
+
+    /// A single ZIP entry inflated past the per-entry decompression budget (zip-bomb guard).
+    #[error("ZIP entry {name:?} exceeds the per-entry decompressed size limit of {limit} bytes")]
+    EntryTooLarge {
+        /// Name of the offending ZIP entry.
+        name: String,
+        /// The per-entry budget, in bytes, that was exceeded.
+        limit: u64,
+    },
+
+    /// The aggregate decompressed size of all entries passed the package budget (zip-bomb guard).
+    #[error("package exceeds the total decompressed size limit of {limit} bytes")]
+    PackageTooLarge {
+        /// The aggregate budget, in bytes, that was exceeded.
+        limit: u64,
+    },
 }
 
 /// Convenience result mapped across internal IO parsing values and validations.

@@ -29,8 +29,7 @@ fn empty_bytes_returns_error() {
 #[test]
 fn garbage_bytes_returns_error() {
     let garbage = b"this is not a ZIP file at all \x00\x01\x02\xFF";
-    let result =
-        OdtImporter::new(OdtImportOptions::default()).run(Cursor::new(garbage.as_slice()));
+    let result = OdtImporter::new(OdtImportOptions::default()).run(Cursor::new(garbage.as_slice()));
     assert!(
         result.is_err(),
         "garbage bytes must return Err, not Ok or panic"
@@ -70,8 +69,7 @@ fn truncated_content_xml_returns_error() {
 #[test]
 fn content_xml_invalid_xml_returns_error() {
     // Invalid XML: closing tag name does not match opening tag.
-    let bad_xml =
-        b"<?xml version=\"1.0\"?><office:document-content></office:document-WRONG>";
+    let bad_xml = b"<?xml version=\"1.0\"?><office:document-content></office:document-WRONG>";
     let styles = helpers::empty_styles_xml("1.2");
     let zip = helpers::build_odt_zip(bad_xml, &styles, None);
     let result = OdtImporter::new(OdtImportOptions::default()).run(Cursor::new(zip));

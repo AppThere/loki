@@ -38,6 +38,7 @@ use loki_doc_model::style::list_style::{ListId, ListLevelKind, NumberingScheme};
 use loki_primitives::units::Points;
 
 use crate::error::OdfWarning;
+use crate::limits::{MAX_REPEATED_SPACES, MAX_TABLE_COLUMNS};
 use crate::odt::import::OdtImportOptions;
 use crate::odt::mapper::lists::map_list_styles;
 use crate::odt::mapper::props::map_cell_props;
@@ -307,7 +308,13 @@ fn map_inline(child: &OdfParagraphChild, ctx: &mut OdfMappingContext<'_>) -> Opt
         OdfParagraphChild::Frame(frame) => map_frame(frame, ctx),
         OdfParagraphChild::SoftReturn | OdfParagraphChild::Other => None,
         OdfParagraphChild::Tab => Some(Inline::Str("\t".into())),
-        OdfParagraphChild::Space { count } => Some(Inline::Str(" ".repeat(*count as usize))),
+        OdfParagraphChild::Space { count } => {
+            // Clamp attacker-controlled <text:s text:c="N"/> counts so a tiny
+            // element cannot force a multi-gigabyte allocation.
+            Some(Inline::Str(
+                " ".repeat((*count).min(MAX_REPEATED_SPACES) as usize),
+            ))
+        }
         OdfParagraphChild::LineBreak => Some(Inline::LineBreak),
     }
 }
@@ -565,7 +572,9 @@ fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Block {
         .col_defs
         .iter()
         .flat_map(|def| {
-            let count = def.columns_repeated.max(1) as usize;
+            // Clamp attacker-controlled number-columns-repeated so a single
+            // table:table-column cannot expand into billions of ColSpecs.
+            let count = def.columns_repeated.clamp(1, MAX_TABLE_COLUMNS) as usize;
             let width = def
                 .style_name
                 .as_deref()

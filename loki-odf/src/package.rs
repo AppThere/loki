@@ -23,6 +23,7 @@ use crate::constants::{
     MIME_ODS, MIME_ODT,
 };
 use crate::error::{OdfError, OdfResult};
+use crate::limits::read_entry_capped;
 use crate::version::OdfVersion;
 
 /// Contents of an opened ODF package.
@@ -86,8 +87,12 @@ impl OdfPackage {
     pub fn open(reader: impl Read + Seek) -> OdfResult<Self> {
         let mut archive = ZipArchive::new(reader)?;
 
+        // Aggregate decompressed-byte budget for the whole package
+        // (zip-bomb guard); threaded through every entry read.
+        let mut total_decompressed: u64 = 0;
+
         // ── 1. Validate mimetype entry ─────────────────────────────────────
-        let mimetype = validate_mimetype(&mut archive)?;
+        let mimetype = validate_mimetype(&mut archive, &mut total_decompressed)?;
 
         // ── 2. Require META-INF/manifest.xml ──────────────────────────────
         {
@@ -99,21 +104,21 @@ impl OdfPackage {
         }
 
         // ── 3. Read content.xml (required) ────────────────────────────────
-        let content =
-            read_entry(&mut archive, ENTRY_CONTENT)?.ok_or_else(|| OdfError::MissingPart {
+        let content = read_entry(&mut archive, ENTRY_CONTENT, &mut total_decompressed)?
+            .ok_or_else(|| OdfError::MissingPart {
                 part: ENTRY_CONTENT.into(),
             })?;
 
         // ── 4. Read styles.xml (optional; fall back to empty element) ─────
-        let styles = read_entry(&mut archive, ENTRY_STYLES)?
+        let styles = read_entry(&mut archive, ENTRY_STYLES, &mut total_decompressed)?
             .unwrap_or_else(|| b"<office:document-styles/>".to_vec());
 
         // ── 5. Read optional parts ────────────────────────────────────────
-        let meta = read_entry(&mut archive, ENTRY_META)?;
-        let settings = read_entry(&mut archive, ENTRY_SETTINGS)?;
+        let meta = read_entry(&mut archive, ENTRY_META, &mut total_decompressed)?;
+        let settings = read_entry(&mut archive, ENTRY_SETTINGS, &mut total_decompressed)?;
 
         // ── 6. Collect images from Pictures/ ─────────────────────────────
-        let images = collect_images(&mut archive)?;
+        let images = collect_images(&mut archive, &mut total_decompressed)?;
 
         // ── 7. Detect version from content.xml ────────────────────────────
         let (version, version_was_absent) = Self::detect_version(&content)?;
@@ -204,7 +209,10 @@ impl OdfPackage {
 /// exactly [`MIME_ODT`] with no trailing newline.
 ///
 /// ODF 1.3 §3.4.
-fn validate_mimetype<R: Read + Seek>(archive: &mut ZipArchive<R>) -> OdfResult<String> {
+fn validate_mimetype<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    total_decompressed: &mut u64,
+) -> OdfResult<String> {
     if archive.is_empty() {
         return Err(OdfError::MissingPart {
             part: ENTRY_MIMETYPE.into(),
@@ -230,8 +238,7 @@ fn validate_mimetype<R: Read + Seek>(archive: &mut ZipArchive<R>) -> OdfResult<S
         });
     }
 
-    let mut buf = Vec::new();
-    entry.read_to_end(&mut buf)?;
+    let buf = read_entry_capped(&mut entry, ENTRY_MIMETYPE, total_decompressed)?;
 
     let mimetype_str = String::from_utf8(buf).map_err(|_| OdfError::MalformedElement {
         element: ENTRY_MIMETYPE.into(),
@@ -257,11 +264,11 @@ fn validate_mimetype<R: Read + Seek>(archive: &mut ZipArchive<R>) -> OdfResult<S
 fn read_entry<R: Read + Seek>(
     archive: &mut ZipArchive<R>,
     name: &str,
+    total_decompressed: &mut u64,
 ) -> OdfResult<Option<Vec<u8>>> {
     match archive.by_name(name) {
         Ok(mut entry) => {
-            let mut buf = Vec::new();
-            entry.read_to_end(&mut buf)?;
+            let buf = read_entry_capped(&mut entry, name, total_decompressed)?;
             if let Some(transcoded) = transcode_utf16_to_utf8(&buf) {
                 Ok(Some(transcoded))
             } else {
@@ -304,6 +311,7 @@ fn transcode_utf16_to_utf8(buf: &[u8]) -> Option<Vec<u8>> {
 /// media type.
 fn collect_images<R: Read + Seek>(
     archive: &mut ZipArchive<R>,
+    total_decompressed: &mut u64,
 ) -> OdfResult<HashMap<String, (String, Vec<u8>)>> {
     let mut images = HashMap::new();
 
@@ -316,8 +324,7 @@ fn collect_images<R: Read + Seek>(
     for name in names {
         if let Ok(mut entry) = archive.by_name(&name) {
             let media_type = infer_media_type(&name);
-            let mut bytes = Vec::new();
-            entry.read_to_end(&mut bytes)?;
+            let bytes = read_entry_capped(&mut entry, &name, total_decompressed)?;
             images.insert(name, (media_type.into(), bytes));
         }
     }

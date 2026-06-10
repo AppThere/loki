@@ -13,6 +13,9 @@ use std::io::{Read, Seek};
 
 use crate::constants::ENTRY_CONTENT;
 use crate::error::OdfError;
+use crate::limits::{
+    MAX_MATERIALIZED_CELLS_TOTAL, MAX_MATERIALIZED_REPEAT, MAX_SHEET_COLS, MAX_SHEET_ROWS,
+};
 use crate::package::OdfPackage;
 use crate::xml_util::local_attr_val;
 
@@ -49,8 +52,11 @@ impl OdsImport {
         let mut sheets = Vec::new();
         let mut current_sheet = None;
         let mut current_row_repeated = 1;
-        let mut row_idx = 0;
-        let mut col_idx = 0;
+        let mut row_idx: u32 = 0;
+        let mut col_idx: u32 = 0;
+        // Aggregate count of materialized cells across the whole workbook,
+        // bounding the row×column amplification the per-axis caps allow.
+        let mut materialized_cells: u64 = 0;
 
         let mut in_table = false;
         let mut in_row = false;
@@ -83,9 +89,12 @@ impl OdsImport {
                         b"table-row" => {
                             if in_table {
                                 col_idx = 0;
+                                // Attacker-controlled repeat count: clamp to the
+                                // sheet's row space so index math stays bounded.
                                 current_row_repeated = local_attr_val(e, b"number-rows-repeated")
                                     .and_then(|s| s.parse::<u32>().ok())
-                                    .unwrap_or(1);
+                                    .unwrap_or(1)
+                                    .min(MAX_SHEET_ROWS);
                                 in_row = true;
                             }
                         }
@@ -93,9 +102,12 @@ impl OdsImport {
                             if in_row {
                                 cell_formula = local_attr_val(e, b"formula");
                                 cell_style_name = local_attr_val(e, b"style-name");
+                                // Attacker-controlled repeat count: clamp to the
+                                // sheet's column space so index math stays bounded.
                                 cell_cols_repeated = local_attr_val(e, b"number-columns-repeated")
                                     .and_then(|s| s.parse::<u32>().ok())
-                                    .unwrap_or(1);
+                                    .unwrap_or(1)
+                                    .min(MAX_SHEET_COLS);
 
                                 office_value = local_attr_val(e, b"value");
                                 office_string_value = local_attr_val(e, b"string-value");
@@ -122,26 +134,34 @@ impl OdsImport {
                                 let style_name = local_attr_val(e, b"style-name");
                                 let cols_repeated = local_attr_val(e, b"number-columns-repeated")
                                     .and_then(|s| s.parse::<u32>().ok())
-                                    .unwrap_or(1);
+                                    .unwrap_or(1)
+                                    .min(MAX_SHEET_COLS);
 
                                 let style = style_name.and_then(|name| styles.get(&name).cloned());
                                 if let Some(ref mut ws) = current_sheet {
                                     if style.is_some() {
-                                        for r in row_idx..(row_idx + current_row_repeated) {
-                                            for c in col_idx..(col_idx + cols_repeated) {
-                                                ws.cells.insert(
-                                                    (r, c),
-                                                    Cell {
-                                                        value: String::new(),
-                                                        formula: None,
-                                                        style: style.clone(),
-                                                    },
-                                                );
-                                            }
-                                        }
+                                        // Only materialize a bounded number of
+                                        // cells; the cursor still advances by the
+                                        // full clamped repeat count below.
+                                        let mat_rows =
+                                            current_row_repeated.min(MAX_MATERIALIZED_REPEAT);
+                                        let mat_cols = cols_repeated.min(MAX_MATERIALIZED_REPEAT);
+                                        fill_cells(
+                                            ws,
+                                            row_idx,
+                                            col_idx,
+                                            mat_rows,
+                                            mat_cols,
+                                            &mut materialized_cells,
+                                            &Cell {
+                                                value: String::new(),
+                                                formula: None,
+                                                style: style.clone(),
+                                            },
+                                        );
                                     }
                                 }
-                                col_idx += cols_repeated;
+                                col_idx = col_idx.saturating_add(cols_repeated);
                             }
                         }
                         _ => {}
@@ -173,28 +193,36 @@ impl OdsImport {
                                         || cleaned_formula.is_some()
                                         || style.is_some()
                                     {
-                                        for r in row_idx..(row_idx + current_row_repeated) {
-                                            for c in col_idx..(col_idx + cell_cols_repeated) {
-                                                ws.cells.insert(
-                                                    (r, c),
-                                                    Cell {
-                                                        value: raw_val.clone(),
-                                                        formula: cleaned_formula.clone(),
-                                                        style: style.clone(),
-                                                    },
-                                                );
-                                            }
-                                        }
+                                        // Only materialize a bounded number of
+                                        // cells; the cursor still advances by the
+                                        // full clamped repeat count below.
+                                        let mat_rows =
+                                            current_row_repeated.min(MAX_MATERIALIZED_REPEAT);
+                                        let mat_cols =
+                                            cell_cols_repeated.min(MAX_MATERIALIZED_REPEAT);
+                                        fill_cells(
+                                            ws,
+                                            row_idx,
+                                            col_idx,
+                                            mat_rows,
+                                            mat_cols,
+                                            &mut materialized_cells,
+                                            &Cell {
+                                                value: raw_val.clone(),
+                                                formula: cleaned_formula.clone(),
+                                                style: style.clone(),
+                                            },
+                                        );
                                     }
                                 }
 
-                                col_idx += cell_cols_repeated;
+                                col_idx = col_idx.saturating_add(cell_cols_repeated);
                                 in_cell = false;
                             }
                         }
                         b"table-row" => {
                             if in_row {
-                                row_idx += current_row_repeated;
+                                row_idx = row_idx.saturating_add(current_row_repeated);
                                 in_row = false;
                             }
                         }
@@ -240,6 +268,31 @@ impl OdsImport {
 }
 
 // ── XML Parsing Helpers ──────────────────────────────────────────────────────
+
+/// Inserts copies of `template` into the `mat_rows × mat_cols` block whose
+/// top-left corner is `(row_idx, col_idx)`, charging each insert against the
+/// workbook-wide [`MAX_MATERIALIZED_CELLS_TOTAL`] budget. Once the budget is
+/// exhausted no further cells are inserted (the caller still advances its
+/// cursor), bounding the row×column amplification the per-axis caps permit.
+fn fill_cells(
+    ws: &mut Worksheet,
+    row_idx: u32,
+    col_idx: u32,
+    mat_rows: u32,
+    mat_cols: u32,
+    materialized_cells: &mut u64,
+    template: &Cell,
+) {
+    for r in row_idx..row_idx.saturating_add(mat_rows) {
+        for c in col_idx..col_idx.saturating_add(mat_cols) {
+            if *materialized_cells >= MAX_MATERIALIZED_CELLS_TOTAL {
+                return;
+            }
+            ws.cells.insert((r, c), template.clone());
+            *materialized_cells += 1;
+        }
+    }
+}
 
 fn local_name<'a>(e: &'a quick_xml::events::BytesStart<'a>) -> &'a [u8] {
     let name = e.local_name().into_inner();

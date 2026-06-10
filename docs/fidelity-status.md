@@ -107,3 +107,20 @@ When any font substitutions or missing fonts (such as **Aptos**, which has no op
 1. Flags the substitution/missing font status in the document's layout context.
 2. Displays a premium, dismissible UI warning banner at the bottom of the editor viewport (above the status bar/ribbon) containing details of the substituted fonts.
 3. Provides official download links for Microsoft proprietary fonts (e.g. Aptos) to help users obtain the original fonts for high-fidelity rendering.
+
+---
+
+## 7. Import Security Limits (Hostile-Input Hardening)
+
+ODF/OPC import enforces hard limits against crafted hostile files (audit
+2026-06-10, S1–S4). Legitimate documents are unaffected; values at or beyond
+these limits are clamped or rejected with a typed error.
+
+| Limit | Value | Behaviour when exceeded |
+| :--- | :--- | :--- |
+| Decompressed size per ZIP entry (loki-opc, loki-odf) | 256 MiB | `EntryTooLarge` error |
+| Aggregate decompressed size per package (loki-opc, loki-odf) | 1 GiB | `PackageTooLarge` error |
+| ODS materialized cells per repeat axis (`number-rows/columns-repeated`) | 10,000 | Clamped; row/column cursors still advance by the full sheet-clamped repeat (1,048,576 rows / 16,384 cols) |
+| ODT table columns expanded per `table:table-column` repeat | 16,384 | Clamped |
+| ODT spaces per `<text:s text:c="N"/>` | 10,000 | Clamped |
+| ODT nesting depth (`text:span` / `text:a` / `text:list`) | 100 | `NestingTooDeep` error |

@@ -9,5 +9,6 @@
 //! preserved verbatim.
 
 pub(crate) mod document;
+pub(crate) mod inlines;
 pub(crate) mod meta;
 pub(crate) mod styles;

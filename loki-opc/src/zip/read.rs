@@ -16,6 +16,7 @@ use crate::{
     package::Package,
     part::{PartData, PartName},
     relationships::{package_relationships_part, parse_relationships_part},
+    zip::limits::read_entry_capped,
 };
 
 /// Reads packages sequentially organizing files correctly instantiating metadata components generating logic properly resolving variants matching properties enforcing parameters effectively preserving identifiers robustly returning limits cleanly.
@@ -26,8 +27,14 @@ pub fn read_package_from_zip<R: Read + Seek>(reader: &mut R) -> OpcResult<Packag
     let ct_index = crate::compat::content_types::find_content_types(&mut zip, &mut pkg.warnings)
         .ok_or(OpcError::MissingContentTypes)?;
 
-    let mut ct_xml = Vec::new();
-    zip.by_index(ct_index)?.read_to_end(&mut ct_xml)?;
+    // Aggregate decompressed-byte budget for the whole package (zip-bomb guard).
+    let mut total_decompressed: u64 = 0;
+
+    let mut ct_xml = {
+        let mut ct_file = zip.by_index(ct_index)?;
+        let ct_name = ct_file.name().to_string();
+        read_entry_capped(&mut ct_file, &ct_name, &mut total_decompressed)?
+    };
     if let Some(transcoded) = transcode_utf16_to_utf8(&ct_xml) {
         ct_xml = transcoded;
     }
@@ -70,8 +77,7 @@ pub fn read_package_from_zip<R: Read + Seek>(reader: &mut R) -> OpcResult<Packag
         // Push to seen names dynamically validating bounds internally resolving uniqueness properly.
         seen_names.push(name.as_str().to_string());
 
-        let mut data = Vec::new();
-        file.read_to_end(&mut data)?;
+        let mut data = read_entry_capped(&mut file, name.as_str(), &mut total_decompressed)?;
         if name.as_str().ends_with(".xml") || name.as_str().ends_with(".rels") {
             data = transcode_utf16_to_utf8(&data).unwrap_or(data);
         }
