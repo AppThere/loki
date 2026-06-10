@@ -27,6 +27,7 @@ ribbon-redo-aria = Redo (Ctrl+Y)
 # Document group (Home tab)
 ribbon-group-document = Document
 ribbon-save-aria = Save (Ctrl+S)
+ribbon-save-as-aria = Save As…
 
 # Styles group (Home tab)
 ribbon-group-styles = Styles

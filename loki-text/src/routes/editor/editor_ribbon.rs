@@ -19,6 +19,7 @@ use loro::LoroDoc;
 
 use crate::editing::cursor::CursorState;
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
+use crate::new_document::is_untitled;
 
 use super::editor_formatting;
 use super::editor_keydown_ctrl::post_mutation_sync;
@@ -55,6 +56,8 @@ pub(super) fn home_tab_content(
     path_signal: Signal<String>,
     mut save_message: Signal<Option<String>>,
     mut editing_style_draft: Signal<Option<StyleDraft>>,
+    save_as: Callback<()>,
+    mut baseline_gen: Signal<u64>,
 ) -> Element {
     // One Arc clone per button — cheap reference-count increment.
     let ds_save = Arc::clone(doc_state);
@@ -81,11 +84,31 @@ pub(super) fn home_tab_content(
                 is_disabled: false,
                 on_click: move |_| {
                     let path = path_signal();
+                    // An untitled document has no file yet — route to Save As.
+                    if is_untitled(&path) {
+                        save_as.call(());
+                        return;
+                    }
                     let msg = match save_document_to_path(&path, &ds_save) {
-                        Ok(()) => fl!("editor-save-success"),
+                        Ok(()) => {
+                            // Mark the current generation as clean so the tab's
+                            // unsaved-changes indicator clears.
+                            baseline_gen.set(cursor_state.peek().document_generation);
+                            fl!("editor-save-success")
+                        }
                         Err(e) => fl!("editor-save-error", reason = e.to_string()),
                     };
                     save_message.set(Some(msg));
+                },
+                AtIcon { path_d: LUCIDE_SAVE.to_string() }
+            }
+
+            AtRibbonIconButton {
+                aria_label:  fl!("ribbon-save-as-aria"),
+                is_active:   false,
+                is_disabled: false,
+                on_click: move |_| {
+                    save_as.call(());
                 },
                 AtIcon { path_d: LUCIDE_SAVE.to_string() }
             }

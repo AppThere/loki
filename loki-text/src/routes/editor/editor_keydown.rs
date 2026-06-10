@@ -34,6 +34,7 @@ pub(super) fn make_keydown_handler(
     undo_manager: Signal<Option<loro::UndoManager>>,
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
+    mut save_request: Signal<u32>,
 ) -> impl FnMut(Event<KeyboardData>) {
     move |evt: Event<KeyboardData>| {
         let key = evt.key();
@@ -44,6 +45,13 @@ pub(super) fn make_keydown_handler(
         // cross-platform consistency. blitz-shell maps macOS
         // Cmd → Modifiers::SUPER (not META), so we check SUPER too.
         if modifiers.ctrl() || modifiers.meta() || modifiers.contains(Modifiers::SUPER) {
+            // Ctrl/Cmd+S → request a save. EditorInner performs it (it owns the
+            // tab/recents context the keydown handler can't reach).
+            if matches!(&key, Key::Character(c) if c.eq_ignore_ascii_case("s")) {
+                let next = save_request.peek().wrapping_add(1);
+                save_request.set(next);
+                return;
+            }
             handle_ctrl_keys(
                 &doc_state,
                 cursor_state,

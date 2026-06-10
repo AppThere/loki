@@ -78,6 +78,10 @@ pub(super) struct EditorState {
     pub editing_style_draft: Signal<Option<StyleDraft>>,
     /// Last save result message (`None` = nothing to show).
     pub save_message: Signal<Option<String>>,
+    /// Monotonic counter bumped by the Ctrl+S handler. `EditorInner` watches it
+    /// and runs the save (or Save As for untitled documents) — the keydown
+    /// handler has no access to the tab/recents context, so it signals instead.
+    pub save_request: Signal<u32>,
 }
 
 /// Initialises and returns all per-document editing signals.
@@ -125,5 +129,6 @@ pub(super) fn use_editor_state() -> EditorState {
         is_style_picker_open: use_signal(|| false),
         editing_style_draft: use_signal(|| None),
         save_message: use_signal(|| None),
+        save_request: use_signal(|| 0_u32),
     }
 }

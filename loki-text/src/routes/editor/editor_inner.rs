@@ -37,11 +37,21 @@ use super::editor_canvas::render_canvas_area;
 use super::editor_load::load_document;
 use super::editor_path_sync::sync_path_and_reset;
 use super::editor_ribbon::home_tab_content;
+use super::editor_save::{export_document_to_token, save_document_to_path};
 use super::editor_state::{EditorState, use_editor_state};
 use super::editor_style::style_picker_panel;
 use super::editor_style_editor::style_editor_panel;
 use crate::editing::state::seed_layout_from_document;
 use crate::error::LoadError;
+use crate::new_document::is_untitled;
+use crate::recent_documents::RecentDocuments;
+use crate::routes::Route;
+use crate::tabs::OpenTab;
+use crate::utils::display_title_from_path;
+use loki_file_access::{FilePicker, SaveOptions};
+
+/// MIME type used when saving documents (DOCX is the only writable format).
+const DOCX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 // EditorMode removed — the editor is always in edit mode when a document is
 // open. Distraction-free reading is handled by the View ribbon tab (future
@@ -88,7 +98,16 @@ pub(super) fn EditorInner(path: String) -> Element {
         mut is_style_picker_open,
         mut editing_style_draft,
         mut save_message,
+        save_request,
     } = use_editor_state();
+
+    // ── Tab/recents context for Save As and the unsaved-changes indicator ────
+    let mut tabs = use_context::<Signal<Vec<OpenTab>>>();
+    let recent_docs = use_context::<Signal<RecentDocuments>>();
+    // Document generation considered "clean" (matches the on-disk file).
+    // Captured when the document finishes loading and after each successful
+    // save; the tab is dirty whenever the live generation differs.
+    let mut baseline_gen = use_signal(|| 0_u64);
 
     // ── Synchronous Path Sync & State Reset ──────────────────────────────────
     //
@@ -146,7 +165,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         }
     });
 
-    let _navigator = use_navigator();
+    let navigator = use_navigator();
 
     // ── Loro bridge: initialise CRDT once the document is loaded ─────────────
     use_effect(move || {
@@ -162,6 +181,10 @@ pub(super) fn EditorInner(path: String) -> Element {
                     let um = loro::UndoManager::new(&l_doc);
                     loro_doc.set(Some(l_doc));
                     undo_manager.set(Some(um));
+
+                    // The freshly-loaded document matches the file on disk:
+                    // record the current generation as the clean baseline.
+                    baseline_gen.set(cursor_state.peek().document_generation);
 
                     // Auto-place the cursor at the start of the document so the
                     // user can type immediately without needing to click first.
@@ -247,6 +270,107 @@ pub(super) fn EditorInner(path: String) -> Element {
     // exposes a scroll-position hook.  See:
     //   patches/dioxus-native-dom/src/events.rs convert_scroll_data
     let _ = scroll_offset;
+
+    // ── Unsaved-changes (dirty) tracking ─────────────────────────────────────
+    //
+    // The tab shows a dirty indicator when the live document generation differs
+    // from the clean baseline captured at load/save. Untitled documents are
+    // always dirty until the first Save As. Runs whenever the cursor's mirrored
+    // generation, the path, or the baseline changes.
+    use_effect(move || {
+        let live_gen = cursor_state.read().document_generation;
+        let path = path_signal();
+        let base = baseline_gen();
+        let dirty = is_untitled(&path) || live_gen != base;
+        let mut t = tabs.write();
+        if let Some(tab) = t.iter_mut().find(|tab| tab.path == path)
+            && tab.is_dirty != dirty
+        {
+            tab.is_dirty = dirty;
+        }
+    });
+
+    // ── Save As ──────────────────────────────────────────────────────────────
+    //
+    // Picks a destination via the platform save dialog, exports DOCX to it, then
+    // repoints the current tab at the new file and records it in recents. This
+    // is the only way to persist an untitled document.
+    let doc_state_saveas = Arc::clone(&doc_state);
+    let save_as = use_callback(move |_: ()| {
+        let doc_state = Arc::clone(&doc_state_saveas);
+        let mut tabs = tabs;
+        let mut recent = recent_docs;
+        let mut save_message = save_message;
+        let mut baseline_gen = baseline_gen;
+        let nav = navigator;
+        let cur_path = path_signal.peek().clone();
+        let suggested = {
+            let stem = display_title_from_path(&cur_path);
+            format!("{stem}.docx")
+        };
+        spawn(async move {
+            let picker = FilePicker::new();
+            let opts = SaveOptions {
+                mime_type: Some(DOCX_MIME.to_string()),
+                suggested_name: Some(suggested),
+            };
+            match picker.pick_file_to_save(opts).await {
+                Ok(Some(token)) => match export_document_to_token(&token, &doc_state) {
+                    Ok(()) => {
+                        let new_path = token.serialize();
+                        let new_title = display_title_from_path(&new_path);
+                        {
+                            let mut t = tabs.write();
+                            if let Some(tab) = t.iter_mut().find(|tab| tab.path == cur_path) {
+                                tab.path = new_path.clone();
+                                tab.title = new_title.clone();
+                                tab.is_dirty = false;
+                            }
+                        }
+                        recent.write().record(new_path.clone(), new_title);
+                        recent.read().save();
+                        save_message.set(Some(fl!("editor-save-success")));
+                        // Navigate to the saved file; the editor reloads it and
+                        // re-establishes a clean baseline.
+                        baseline_gen.set(0);
+                        nav.push(Route::Editor { path: new_path });
+                    }
+                    Err(e) => {
+                        save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
+                    }
+                },
+                Ok(None) => { /* user cancelled — no-op */ }
+                Err(e) => {
+                    save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
+                }
+            }
+        });
+    });
+
+    // ── Ctrl+S handler ───────────────────────────────────────────────────────
+    //
+    // The keydown handler bumps `save_request`; perform the save here, where the
+    // tab/recents context is reachable. Untitled documents route to Save As.
+    let doc_state_savereq = Arc::clone(&doc_state);
+    use_effect(move || {
+        let n = save_request(); // subscribe — fires on each Ctrl+S
+        if n == 0 {
+            return; // initial value — nothing requested yet
+        }
+        let path = path_signal.peek().clone();
+        if is_untitled(&path) {
+            save_as.call(());
+            return;
+        }
+        let msg = match save_document_to_path(&path, &doc_state_savereq) {
+            Ok(()) => {
+                baseline_gen.set(cursor_state.peek().document_generation);
+                fl!("editor-save-success")
+            }
+            Err(e) => fl!("editor-save-error", reason = e.to_string()),
+        };
+        save_message.set(Some(msg));
+    });
 
     let canvas_hovered = use_signal(|| false);
     let page_gap_px = tokens::PAGE_GAP_PX;
@@ -360,6 +484,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                 undo_manager,
                 can_undo,
                 can_redo,
+                save_request,
                 path_signal,
                 document_load,
                 canvas_hovered,
@@ -551,6 +676,8 @@ pub(super) fn EditorInner(path: String) -> Element {
                     path_signal,
                     save_message,
                     editing_style_draft,
+                    save_as,
+                    baseline_gen,
                 ),
             }
 

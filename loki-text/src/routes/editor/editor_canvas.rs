@@ -68,6 +68,7 @@ pub(super) fn render_canvas_area(
     undo_manager: Signal<Option<loro::UndoManager>>,
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
+    save_request: Signal<u32>,
     path_signal: Signal<String>,
     document_load: Resource<(String, Result<Document, LoadError>)>,
     mut canvas_hovered: Signal<bool>,
@@ -160,6 +161,7 @@ pub(super) fn render_canvas_area(
                 undo_manager,
                 can_undo,
                 can_redo,
+                save_request,
             ),
 
             match &*document_load.value().read_unchecked() {

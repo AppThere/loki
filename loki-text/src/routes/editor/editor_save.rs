@@ -46,8 +46,6 @@ pub(super) fn save_document_to_path(
     path: &str,
     doc_state: &Arc<Mutex<DocumentState>>,
 ) -> Result<(), SaveError> {
-    use super::editor_load::{DocumentFormat, detect_format};
-
     if is_untitled(path) {
         return Err(SaveError::UnsupportedFormat(
             "untitled document — use File \u{2192} Save As".to_string(),
@@ -57,7 +55,22 @@ pub(super) fn save_document_to_path(
     let token =
         FileAccessToken::deserialize(path).map_err(|e| SaveError::InvalidToken(e.to_string()))?;
 
-    match detect_format(&token) {
+    export_document_to_token(&token, doc_state)
+}
+
+/// Exports the current document to `token` as DOCX.
+///
+/// Shared by [`save_document_to_path`] (titled save) and the Save As flow,
+/// which passes a freshly-picked destination token directly. Rejects ODT and
+/// unknown formats; buffers the bytes in memory before a single write to avoid
+/// partial-write corruption.
+pub(super) fn export_document_to_token(
+    token: &FileAccessToken,
+    doc_state: &Arc<Mutex<DocumentState>>,
+) -> Result<(), SaveError> {
+    use super::editor_load::{DocumentFormat, detect_format};
+
+    match detect_format(token) {
         DocumentFormat::Docx => {}
         DocumentFormat::Odt => {
             return Err(SaveError::UnsupportedFormat(
