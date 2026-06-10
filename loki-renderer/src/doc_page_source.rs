@@ -234,7 +234,20 @@ impl PageSource for DocPageSource {
             match vello::Renderer::new(
                 device,
                 RendererOptions {
+                    // COMPAT(android-mali): Mali r54 drivers (Pixel 9 /
+                    // Mali-G715) lose the Vulkan device executing Vello's
+                    // compute dispatches. use_cpu runs the compute stages on
+                    // the CPU; fine rasterization stays on the GPU.
+                    #[cfg(target_os = "android")]
+                    use_cpu: true,
+                    #[cfg(not(target_os = "android"))]
                     use_cpu: false,
+                    // COMPAT(android-mali): Mali drivers (Pixel 9 / Mali-G715)
+                    // lose the Vulkan device executing Vello's MSAA fine-raster
+                    // pipelines; compile only the area-AA variants on Android.
+                    #[cfg(target_os = "android")]
+                    antialiasing_support: AaSupport::area_only(),
+                    #[cfg(not(target_os = "android"))]
                     antialiasing_support: AaSupport::all(),
                     num_init_threads: NonZeroUsize::new(1),
                     pipeline_cache: None,

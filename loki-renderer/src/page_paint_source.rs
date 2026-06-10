@@ -100,7 +100,20 @@ impl CustomPaintSource for LokiPageSource {
             match vello::Renderer::new(
                 &device_handle.device,
                 RendererOptions {
+                    // COMPAT(android-mali): Mali r54 drivers (Pixel 9 /
+                    // Mali-G715) lose the Vulkan device executing Vello's
+                    // compute dispatches. use_cpu runs the compute stages on
+                    // the CPU; fine rasterization stays on the GPU.
+                    #[cfg(target_os = "android")]
+                    use_cpu: true,
+                    #[cfg(not(target_os = "android"))]
                     use_cpu: false,
+                    // COMPAT(android-mali): Mali drivers (Pixel 9 / Mali-G715)
+                    // lose the Vulkan device executing Vello's MSAA fine-raster
+                    // pipelines; compile only the area-AA variants on Android.
+                    #[cfg(target_os = "android")]
+                    antialiasing_support: AaSupport::area_only(),
+                    #[cfg(not(target_os = "android"))]
                     antialiasing_support: AaSupport::all(),
                     num_init_threads: NonZeroUsize::new(1),
                     pipeline_cache: None,
@@ -246,6 +259,10 @@ impl CustomPaintSource for LokiPageSource {
             base_color: vello::peniko::Color::WHITE,
             width: w_phys,
             height: h_phys,
+            // COMPAT(android-mali): area AA on Android — see resume().
+            #[cfg(target_os = "android")]
+            antialiasing_method: AaConfig::Area,
+            #[cfg(not(target_os = "android"))]
             antialiasing_method: AaConfig::Msaa16,
         };
         if let Err(e) = renderer.render_to_texture(device, queue, &scene, &view, &params) {

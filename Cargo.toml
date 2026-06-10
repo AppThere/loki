@@ -40,6 +40,12 @@ blitz-shell = { path = "patches/blitz-shell" }
 # Remove when blitz-net upstream switches to rustls or makes TLS a feature flag.
 blitz-net = { path = "patches/blitz-net" }
 
+# PATCH: Mali GPU drivers (Pixel 9 / Mali-G715 r54p2) lose the Vulkan device
+# when Vello compiles shader modules from multiple threads concurrently.
+# Forces num_init_threads = 1 on Android (upstream only does this for macOS).
+# Remove when anyrender_vello applies the Android workaround upstream.
+anyrender_vello = { path = "patches/anyrender_vello" }
+
 # PATCH: CreateHeadElement user events apply CSS but never call request_redraw(),
 # leaving the screen blank on Android where the OS does not post an automatic
 # RedrawRequested after resumed() (unlike desktop).  Fix: call request_redraw()
