@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Document-wide settings that apply globally rather than per-paragraph.
 //!

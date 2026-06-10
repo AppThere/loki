@@ -211,7 +211,7 @@ pub(super) fn style_editor_panel(
                         fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
                         p = tokens::SPACE_1,
                     ),
-                    aria_label: "Close style editor",
+                    aria_label: fl!("editor-style-editor-close-aria"),
                     onclick: move |_| editing_style_draft.set(None),
                     "\u{2715}"
                 }
@@ -340,7 +340,7 @@ pub(super) fn style_editor_panel(
                             style: "display: flex; flex-direction: row; align-items: center; gap: 8px; flex: 1;",
                             span {
                                 style: format!("font-family: {ff}; font-size: {fs}px; color: {fg}; min-width: 56px;", ff = tokens::FONT_FAMILY_UI, fs = tokens::FONT_SIZE_LABEL, fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY),
-                                "Based on"
+                                { fl!("editor-style-based-on-label") }
                             }
                             input {
                                 r#type: "text",
@@ -356,7 +356,7 @@ pub(super) fn style_editor_panel(
                             style: "display: flex; flex-direction: row; align-items: center; gap: 8px; flex: 1;",
                             span {
                                 style: format!("font-family: {ff}; font-size: {fs}px; color: {fg}; min-width: 56px;", ff = tokens::FONT_FAMILY_UI, fs = tokens::FONT_SIZE_LABEL, fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY),
-                                "Next style"
+                                { fl!("editor-style-next-style-label") }
                             }
                             input {
                                 r#type: "text",
@@ -377,7 +377,7 @@ pub(super) fn style_editor_panel(
                             style: "display: flex; flex-direction: row; align-items: center; gap: 4px;",
                             span {
                                 style: format!("font-family: {ff}; font-size: {fs}px; color: {fg}; margin-right: 4px;", ff = tokens::FONT_FAMILY_UI, fs = tokens::FONT_SIZE_LABEL, fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY),
-                                "Align"
+                                { fl!("editor-style-align-label") }
                             }
                             {["Left", "Center", "Right", "Justify"].iter().map(|&aval| {
                                 let is_a = draft_alignment.as_str() == aval;

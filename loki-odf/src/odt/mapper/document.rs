@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Document-level mapper: converts the ODF intermediate representation into
 //! the format-neutral [`loki_doc_model::Document`].

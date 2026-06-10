@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Offscreen visual conformance integration tests for Loki rendering backends.
 //!

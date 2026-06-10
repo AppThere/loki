@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Integration tests for the ODT import pipeline:
 //! ZIP → package reader → XML readers → mappers → `loki_doc_model::Document`.

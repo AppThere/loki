@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Minimal ODT package builder for integration tests.
 //!
@@ -50,6 +50,30 @@ pub fn build_odt_zip(content_xml: &[u8], styles_xml: &[u8], meta_xml: Option<&[u
         zip.start_file("meta.xml", deflated).unwrap();
         zip.write_all(meta).unwrap();
     }
+
+    zip.finish().unwrap();
+    buf
+}
+
+/// Build an in-memory ODF ZIP archive that intentionally omits `content.xml`.
+///
+/// Used by malformed-input tests to verify the importer returns `Err` rather
+/// than panicking when a mandatory package entry is absent.
+pub fn build_odt_zip_no_content(styles_xml: &[u8]) -> Vec<u8> {
+    let mut buf = Vec::new();
+    let mut zip = ZipWriter::new(Cursor::new(&mut buf));
+
+    let stored = FileOptions::<()>::default().compression_method(CompressionMethod::Stored);
+    zip.start_file("mimetype", stored).unwrap();
+    zip.write_all(MIME_ODT.as_bytes()).unwrap();
+
+    let deflated = FileOptions::<()>::default().compression_method(CompressionMethod::Deflated);
+
+    zip.start_file("META-INF/manifest.xml", deflated).unwrap();
+    zip.write_all(MANIFEST).unwrap();
+
+    zip.start_file("styles.xml", deflated).unwrap();
+    zip.write_all(styles_xml).unwrap();
 
     zip.finish().unwrap();
     buf

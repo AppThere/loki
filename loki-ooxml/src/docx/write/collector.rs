@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Export state collector for hyperlinks, media, and footnotes.
 
@@ -52,6 +52,15 @@ pub struct ExportCollector {
     next_r_id: u32,
     next_footnote_id: u32,
     next_endnote_id: u32,
+
+    /// Counter for bookmark numeric IDs (ECMA-376 §17.13.6.2).
+    next_bookmark_id: u32,
+    /// Stack of open (unmatched) bookmark IDs keyed by bookmark name.
+    ///
+    /// On `w:bookmarkStart` we push the allocated ID; on `w:bookmarkEnd` we
+    /// pop it so the two elements share the same `w:id` attribute, as Word
+    /// requires.  A LIFO stack handles duplicate bookmark names correctly.
+    open_bookmarks: HashMap<String, Vec<u32>>,
 }
 
 impl ExportCollector {
@@ -70,7 +79,40 @@ impl ExportCollector {
             next_r_id: 10,
             next_footnote_id: 1,
             next_endnote_id: 1,
+            next_bookmark_id: 0,
+            open_bookmarks: HashMap::new(),
         }
+    }
+
+    /// Allocates the next bookmark ID for a `w:bookmarkStart` element.
+    ///
+    /// Pushes the ID onto a per-name stack so [`resolve_bookmark_id`] can
+    /// retrieve it when the matching `w:bookmarkEnd` is written.
+    pub fn assign_bookmark_id(&mut self, name: &str) -> u32 {
+        let id = self.next_bookmark_id;
+        self.next_bookmark_id += 1;
+        self.open_bookmarks
+            .entry(name.to_string())
+            .or_default()
+            .push(id);
+        id
+    }
+
+    /// Returns the ID previously assigned to the named bookmark's `Start`.
+    ///
+    /// Pops from the LIFO stack for `name`.  If no matching `Start` was seen
+    /// (malformed document), allocates a fresh ID so we still produce valid
+    /// XML rather than panicking.
+    pub fn resolve_bookmark_id(&mut self, name: &str) -> u32 {
+        if let Some(stack) = self.open_bookmarks.get_mut(name) {
+            if let Some(id) = stack.pop() {
+                return id;
+            }
+        }
+        // Orphaned End with no prior Start — allocate a new ID.
+        let id = self.next_bookmark_id;
+        self.next_bookmark_id += 1;
+        id
     }
 
     /// Registers a header or footer and returns its assigned rId.

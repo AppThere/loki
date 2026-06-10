@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Shared XML parsing utilities for ODF part readers.
 // Items in this module are pub(crate) utility functions consumed by importer

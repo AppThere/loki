@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Document color semantics, measurement units, and 2D geometry for the Loki suite.
 //!
@@ -42,6 +42,7 @@
 //! );
 //! ```
 
+#![forbid(unsafe_code)]
 #![warn(unsafe_op_in_unsafe_fn)]
 
 pub mod color;

@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! `word/document.xml` serializer.
 //!
@@ -903,7 +903,7 @@ fn write_inline<W: std::io::Write>(
             write_styled_run(w, run, props, collector);
         }
         Inline::Bookmark(kind, name) => {
-            write_bookmark(w, *kind, name);
+            write_bookmark(w, *kind, name, collector);
         }
         Inline::Math(_, s) => {
             write_text_run(w, s, props);
@@ -1039,15 +1039,20 @@ fn write_empty_checked<W: std::io::Write>(w: &mut Writer<W>, text: &str) -> quic
     w.write_event(Event::End(quick_xml::events::BytesEnd::new("w:t")))
 }
 
-static BOOKMARK_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-
 fn write_bookmark<W: std::io::Write>(
     w: &mut Writer<W>,
     kind: loki_doc_model::content::inline::BookmarkKind,
     name: &str,
+    collector: &mut ExportCollector,
 ) {
     use loki_doc_model::content::inline::BookmarkKind;
-    let id = BOOKMARK_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    // The same numeric ID must appear on both `w:bookmarkStart` and its
+    // paired `w:bookmarkEnd` (ECMA-376 §17.13.6.2).  We allocate on Start
+    // and look up on End via the collector's per-name LIFO stack.
+    let id = match kind {
+        BookmarkKind::Start => collector.assign_bookmark_id(name),
+        BookmarkKind::End => collector.resolve_bookmark_id(name),
+    };
     let id_s = id.to_string();
     match kind {
         BookmarkKind::Start => {

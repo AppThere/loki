@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Dioxus signal integration and orchestration layer for the Loki render cache.
 //!
@@ -10,6 +10,8 @@
 //! | [`page_paint_source`] | Per-page `CustomPaintSource` (`LokiPageSource`) |
 //! | [`renderer_state`] | [`RendererState`] — Dioxus context holding cache + scroll + renderer |
 //! | [`document_view`] | [`DocumentView`] root component |
+
+#![forbid(unsafe_code)]
 
 pub mod doc_page_source;
 pub mod document_view;

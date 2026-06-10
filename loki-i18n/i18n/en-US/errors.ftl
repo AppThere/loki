@@ -11,3 +11,6 @@ error-picker-not-supported = File picker is not yet supported on this device.
 
 # Navigation
 error-go-back = Go back
+
+# File picker
+error-file-picker = Could not open file picker: { $err }

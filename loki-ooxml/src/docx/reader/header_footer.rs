@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Reader for `word/header*.xml` and `word/footer*.xml` → `Vec<DocxParagraph>`.
 //!
