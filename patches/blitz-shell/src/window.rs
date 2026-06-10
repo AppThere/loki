@@ -490,11 +490,18 @@ impl<Rend: WindowRenderer> View<Rend> {
                     winit::event::MouseScrollDelta::PixelDelta(offsets) => (offsets.x, offsets.y)
                 };
 
+                // PATCH(loki): collect per-node scroll changes and forward them
+                // to the embedder so Dioxus `onscroll` handlers fire.
+                let mut changes = Vec::new();
                 let has_changed = if let Some(hover_node_id) = self.doc.get_hover_node_id() {
-                    self.doc.scroll_node_by_has_changed(hover_node_id, scroll_x, scroll_y)
+                    self.doc
+                        .scroll_node_by_collect(hover_node_id, scroll_x, scroll_y, &mut changes)
                 } else {
                     self.doc.scroll_viewport_by_has_changed(scroll_x, scroll_y)
                 };
+                if !changes.is_empty() {
+                    self.doc.handle_scroll_changes(&changes);
+                }
 
                 if has_changed {
                     self.request_redraw();
@@ -589,11 +596,18 @@ impl<Rend: WindowRenderer> View<Rend> {
                             let scroll_x = logical.x - last.0;
                             let scroll_y = logical.y - last.1;
                             self.touch_scroll_last_pos = Some((logical.x, logical.y));
+                            // PATCH(loki): collect per-node scroll changes and
+                            // forward them so Dioxus `onscroll` handlers fire.
+                            let mut changes = Vec::new();
                             let changed = if let Some(id) = self.doc.get_hover_node_id() {
-                                self.doc.scroll_node_by_has_changed(id, scroll_x, scroll_y)
+                                self.doc
+                                    .scroll_node_by_collect(id, scroll_x, scroll_y, &mut changes)
                             } else {
                                 self.doc.scroll_viewport_by_has_changed(scroll_x, scroll_y)
                             };
+                            if !changes.is_empty() {
+                                self.doc.handle_scroll_changes(&changes);
+                            }
                             if changed {
                                 self.request_redraw();
                                 return; // redraw already requested above

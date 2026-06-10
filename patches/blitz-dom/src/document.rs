@@ -87,6 +87,16 @@ pub trait Document: Deref<Target = BaseDocument> + DerefMut + 'static {
         false
     }
 
+    /// PATCH(loki): notify the embedder that a scroll gesture changed node
+    /// scroll offsets. `changes` holds `(node_id, scroll_x, scroll_y)` for
+    /// each affected node (post-scroll offsets). Embedders that route events
+    /// into a UI framework (e.g. Dioxus) can dispatch `scroll` events from
+    /// here; the default is a no-op. Exists because blitz-traits 0.2 has no
+    /// scroll DomEventData variant.
+    fn handle_scroll_changes(&mut self, changes: &[(usize, f64, f64)]) {
+        let _ = changes;
+    }
+
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
     /// Get the [`Document`]'s id
@@ -1256,6 +1266,24 @@ impl BaseDocument {
     /// Will bubble scrolling up to parent node once it can no longer scroll further
     /// If we're already at the root node, bubbles scrolling up to the viewport
     pub fn scroll_node_by_has_changed(&mut self, node_id: usize, x: f64, y: f64) -> bool {
+        let mut changed = Vec::new();
+        self.scroll_node_by_collect(node_id, x, y, &mut changed)
+    }
+
+    /// As [`Self::scroll_node_by_has_changed`], but additionally records each
+    /// node whose scroll offset changed as `(node_id, scroll_x, scroll_y)`
+    /// (post-scroll offsets) into `changed`.
+    ///
+    /// PATCH(loki): added so the shell can dispatch DOM `scroll` events to the
+    /// embedder for the nodes that actually consumed a scroll gesture —
+    /// blitz-traits has no scroll DomEventData variant to route this through.
+    pub fn scroll_node_by_collect(
+        &mut self,
+        node_id: usize,
+        x: f64,
+        y: f64,
+        changed: &mut Vec<(usize, f64, f64)>,
+    ) -> bool {
         let Some(node) = self.nodes.get_mut(node_id) else {
             return false;
         };
@@ -1312,10 +1340,14 @@ impl BaseDocument {
         }
 
         let has_changed = node.scroll_offset != initial;
+        if has_changed {
+            changed.push((node_id, node.scroll_offset.x, node.scroll_offset.y));
+        }
 
         if bubble_x != 0.0 || bubble_y != 0.0 {
             if let Some(parent) = node.parent {
-                return self.scroll_node_by_has_changed(parent, bubble_x, bubble_y) | has_changed;
+                return self.scroll_node_by_collect(parent, bubble_x, bubble_y, changed)
+                    | has_changed;
             } else {
                 return self.scroll_viewport_by_has_changed(bubble_x, bubble_y) | has_changed;
             }

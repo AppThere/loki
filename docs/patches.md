@@ -282,6 +282,77 @@ file picking additionally requires a Gradle build with `FilePickerActivity.kt`.
 
 ---
 
+### blitz-dom — 0.2.4
+
+**Source:** `patches/blitz-dom/` (local).
+
+**Fixes:**
+
+1. **Click-to-focus for non-input elements.** Upstream `handle_click` walks up
+   the DOM but calls `clear_focus()` for any element that isn't
+   input/label/a — clicking a wgpu canvas cleared keyboard focus from the
+   nearest `tabindex="0"` ancestor, preventing `onkeydown` from firing. The
+   patch checks `is_focussable()` and calls `set_focus_to()` instead.
+
+2. **Scroll-change collection (PATCH(loki), 2026-06-10).**
+   `scroll_node_by_collect` records each node whose scroll offset changed
+   during a scroll gesture (including bubbling), and the `Document` trait
+   gains a default-no-op `handle_scroll_changes` hook. blitz-shell calls the
+   hook after wheel/touch scrolling; dioxus-native-dom implements it on
+   `DioxusDocument` to dispatch DOM `scroll` events (with `NativeScrollData`
+   payloads) into the VirtualDom, so Dioxus `onscroll` handlers fire.
+   Routed through the `Document` trait because blitz-traits 0.2 has no
+   scroll `DomEventData` variant.
+
+**Removal condition:** Upstream blitz-dom implements tabindex focus-on-click
+for non-input elements and dispatches scroll events to embedders.
+
+**Added:** 2026-05-18 (focus); extended 2026-06-10 (scroll events, together
+with matching changes in the blitz-shell and dioxus-native-dom patches).
+
+---
+
+### anyrender_vello — 0.6.2
+
+**Source:** `patches/anyrender_vello/` (local), vendored from crates.io 0.6.2.
+
+**Fixes:** Two Mali GPU driver crashes on Android (Pixel 9 / Mali-G715,
+driver r54p2) that killed the Vulkan device at startup with
+`Device::poll: Validation Error — Parent device is lost`:
+
+1. **Concurrent shader-module creation.** `DEFAULT_THREADS` was `None` on
+   Android (Vello then uses one thread per core), and Mali drivers race
+   during parallel pipeline compilation. Forced to 1 on Android, matching
+   what upstream already does for macOS and what Vello's own `with_winit`
+   example does for Android.
+
+2. **Compute-dispatch device loss.** Even with single-threaded init, the
+   Mali r54 driver loses the device executing Vello's GPU compute stages on
+   the first frame. On Android the renderer is now created with
+   `use_cpu: true` (compute stages run on the CPU; fine rasterization and
+   the surface presentation stay on the GPU) and area-only antialiasing
+   (`AaSupport::area_only()` / `AaConfig::Area`). The same settings are
+   applied to the workspace's own Vello renderers in
+   `loki-renderer/src/page_paint_source.rs` and `doc_page_source.rs`
+   (COMPAT(android-mali) comments).
+
+**Root cause:** Arm Mali driver bugs with Vulkan compute — the same driver
+family produces device-lost crashes in other engines (e.g. Godot) on
+Pixel 8/9-class devices.
+
+**Upstream status:** Not filed as of 2026-06-10. The `num_init_threads`
+Android default is a candidate upstream fix for anyrender_vello; the
+`use_cpu` fallback is a Loki-specific mitigation pending a Mali driver fix.
+
+**Removal condition:** A Mali driver update (or wgpu/Vello workaround) that
+survives Vello's GPU compute pipeline on Mali-G715, plus an anyrender_vello
+release with the Android `num_init_threads` default. Re-test with
+`use_cpu: false` and MSAA16 before removing.
+
+**Added:** 2026-06-10
+
+---
+
 ## Removing a patch
 
 Before removing a patch:

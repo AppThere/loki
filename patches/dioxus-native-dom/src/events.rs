@@ -7,9 +7,9 @@ use dioxus_html::{
     },
     AnimationData, CancelData, ClipboardData, CompositionData, DragData, FocusData, FormData,
     FormValue, HasFileData, HasFocusData, HasFormData, HasKeyboardData, HasMouseData,
-    HasTouchData, HasTouchPointData, HtmlEventConverter, ImageData, KeyboardData, MediaData,
-    MountedData, MouseData, PlatformEventData, PointerData, ResizeData, ScrollData, SelectionData,
-    ToggleData, TouchData, TouchPoint, TransitionData, VisibleData, WheelData,
+    HasScrollData, HasTouchData, HasTouchPointData, HtmlEventConverter, ImageData, KeyboardData,
+    MediaData, MountedData, MouseData, PlatformEventData, PointerData, ResizeData, ScrollData,
+    SelectionData, ToggleData, TouchData, TouchPoint, TransitionData, VisibleData, WheelData,
 };
 use keyboard_types::{Code, Key, Location, Modifiers};
 use std::any::Any;
@@ -73,8 +73,14 @@ impl HtmlEventConverter for NativeConverter {
         unimplemented!("todo: convert_pointer_data in dioxus-native. requires support in blitz")
     }
 
-    fn convert_scroll_data(&self, _event: &PlatformEventData) -> ScrollData {
-        unimplemented!("todo: convert_scroll_data in dioxus-native. requires support in blitz")
+    fn convert_scroll_data(&self, event: &PlatformEventData) -> ScrollData {
+        // PATCH(loki): scroll events are dispatched by
+        // DioxusDocument::handle_scroll_changes (see dioxus_document.rs).
+        event
+            .downcast::<NativeScrollData>()
+            .expect("scroll event payload must be NativeScrollData")
+            .clone()
+            .into()
     }
 
     fn convert_selection_data(&self, _event: &PlatformEventData) -> SelectionData {
@@ -264,6 +270,52 @@ pub struct NativeFocusData {}
 impl HasFocusData for NativeFocusData {
     fn as_any(&self) -> &dyn std::any::Any {
         self as &dyn std::any::Any
+    }
+}
+
+// ── Scroll data ───────────────────────────────────────────────────────────────
+
+/// PATCH(loki): scroll-position payload dispatched by
+/// `DioxusDocument::handle_scroll_changes` when a Blitz scroll gesture changes
+/// a node's scroll offset. Geometry values come from the node's final Taffy
+/// layout at dispatch time.
+#[derive(Clone, Debug)]
+pub struct NativeScrollData {
+    pub scroll_top: f64,
+    pub scroll_left: f64,
+    pub scroll_width: i32,
+    pub scroll_height: i32,
+    pub client_width: i32,
+    pub client_height: i32,
+}
+
+impl HasScrollData for NativeScrollData {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn scroll_top(&self) -> f64 {
+        self.scroll_top
+    }
+
+    fn scroll_left(&self) -> f64 {
+        self.scroll_left
+    }
+
+    fn scroll_width(&self) -> i32 {
+        self.scroll_width
+    }
+
+    fn scroll_height(&self) -> i32 {
+        self.scroll_height
+    }
+
+    fn client_width(&self) -> i32 {
+        self.client_width
+    }
+
+    fn client_height(&self) -> i32 {
+        self.client_height
     }
 }
 

@@ -1,5 +1,7 @@
 //! Integration between Dioxus and Blitz
-use crate::events::{BlitzKeyboardData, NativeClickData, NativeConverter, NativeFormData};
+use crate::events::{
+    BlitzKeyboardData, NativeClickData, NativeConverter, NativeFormData, NativeScrollData,
+};
 use crate::mutation_writer::{DioxusState, MutationWriter};
 use crate::qual_name;
 use crate::NodeId;
@@ -224,6 +226,32 @@ impl Document for DioxusDocument {
         };
         let mut driver = EventDriver::new(self.inner.mutate(), handler);
         driver.handle_ui_event(event);
+    }
+
+    // PATCH(loki): dispatch DOM `scroll` events into the Dioxus VirtualDom for
+    // each node whose scroll offset changed. Routed via this trait hook (not
+    // the EventDriver) because blitz-traits 0.2 has no scroll DomEventData
+    // variant. Scroll events do not bubble, matching web semantics.
+    fn handle_scroll_changes(&mut self, changes: &[(usize, f64, f64)]) {
+        for &(node_id, scroll_x, scroll_y) in changes {
+            let Some(node) = self.inner.get_node(node_id) else {
+                continue;
+            };
+            let Some(id) = get_dioxus_id(node) else {
+                continue; // node has no Dioxus listener attribute — skip
+            };
+            let layout = &node.final_layout;
+            let data = wrap_event_data(NativeScrollData {
+                scroll_top: scroll_y,
+                scroll_left: scroll_x,
+                scroll_width: layout.scroll_width() as i32,
+                scroll_height: layout.scroll_height() as i32,
+                client_width: layout.size.width as i32,
+                client_height: layout.size.height as i32,
+            });
+            let event = Event::new(data, false);
+            self.vdom.runtime().handle_event("scroll", event, id);
+        }
     }
 }
 
