@@ -48,6 +48,9 @@ pub(super) fn decode_vertical_align(s: &str) -> Option<VerticalAlign> {
 
 pub(super) fn decode_highlight_color(s: &str) -> Option<HighlightColor> {
     match s {
+        // Explicit "no highlight" (e.g. highlight removed by the user) —
+        // distinct from an absent mark, which means "inherit".
+        "None" => Some(HighlightColor::None),
         "Black" => Some(HighlightColor::Black),
         "Blue" => Some(HighlightColor::Blue),
         "Cyan" => Some(HighlightColor::Cyan),

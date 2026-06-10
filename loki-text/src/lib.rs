@@ -34,7 +34,9 @@ static ANDROID_MAIN_RUNNING: std::sync::Mutex<bool> = std::sync::Mutex::new(fals
 #[unsafe(no_mangle)]
 fn android_main(android_app: android_activity::AndroidApp) {
     {
-        let mut running = ANDROID_MAIN_RUNNING.lock().unwrap_or_else(|p| p.into_inner());
+        let mut running = ANDROID_MAIN_RUNNING
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         if *running {
             // Concurrent duplicate invocation on Android 16 — discard it.
             return;
@@ -46,6 +48,12 @@ fn android_main(android_app: android_activity::AndroidApp) {
             .with_tag("LOKI")
             .with_max_level(log::LevelFilter::Debug),
     );
+    // Route panic messages to logcat. The default panic hook writes to
+    // stderr, which Android discards — without this, any Rust panic (e.g.
+    // during GPU renderer init) is indistinguishable from a native crash.
+    std::panic::set_hook(Box::new(|info| {
+        log::error!("PANIC: {info}");
+    }));
     log::info!("android_main: start");
     // init_android is a no-op kept for API compatibility; the Application
     // context used by all JNI calls comes from ndk_context, which
@@ -71,5 +79,7 @@ fn android_main(android_app: android_activity::AndroidApp) {
     log::info!("android_main: dioxus exited");
     // Clear the running flag so a subsequent activity-recreation relaunch
     // (in the same process) is allowed to proceed.
-    *ANDROID_MAIN_RUNNING.lock().unwrap_or_else(|p| p.into_inner()) = false;
+    *ANDROID_MAIN_RUNNING
+        .lock()
+        .unwrap_or_else(|p| p.into_inner()) = false;
 }

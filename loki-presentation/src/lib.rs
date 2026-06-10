@@ -18,6 +18,12 @@ fn android_main(android_app: android_activity::AndroidApp) {
             .with_tag("LOKI")
             .with_max_level(log::LevelFilter::Debug),
     );
+    // Route panic messages to logcat. The default panic hook writes to
+    // stderr, which Android discards — without this, any Rust panic (e.g.
+    // during GPU renderer init) is indistinguishable from a native crash.
+    std::panic::set_hook(Box::new(|info| {
+        log::error!("PANIC: {info}");
+    }));
     // SAFETY: activity_as_ptr() is a GlobalRef owned by android_app, which
     // blitz_shell::set_android_app keeps alive for the process lifetime.
     unsafe { loki_file_access::init_android(android_app.activity_as_ptr()) };

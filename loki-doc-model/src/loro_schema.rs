@@ -58,6 +58,13 @@ pub const BLOCK_TYPE_CODE_BLOCK: &str = "code_block";
 pub const BLOCK_TYPE_HR: &str = "hr";
 pub const BLOCK_TYPE_BLOCKQUOTE: &str = "blockquote";
 pub const BLOCK_TYPE_STYLED_PARA: &str = "styled_para";
+/// Block preserved as an opaque JSON snapshot (see `loro_bridge::opaque`).
+/// Used for block types without a native CRDT mapping so that round-trips
+/// through Loro are lossless; the snapshot lives under [`KEY_OPAQUE_JSON`].
+pub const BLOCK_TYPE_OPAQUE: &str = "opaque";
+
+/// Key for the serialized JSON snapshot of a [`BLOCK_TYPE_OPAQUE`] block.
+pub const KEY_OPAQUE_JSON: &str = "opaque_json";
 
 // -----------------------------------------------------------------------------
 // CharProps Mark Keys
@@ -83,6 +90,9 @@ pub const MARK_SMALL_CAPS: &str = "small_caps";
 pub const MARK_ALL_CAPS: &str = "all_caps";
 pub const MARK_SHADOW: &str = "shadow";
 pub const MARK_KERNING: &str = "kerning";
+/// Named character style (`StyledRun::style_id`) carried as a mark so that
+/// run-level style references survive Loro round-trips.
+pub const MARK_CHAR_STYLE_ID: &str = "char_style_id";
 pub const MARK_OUTLINE: &str = "outline";
 
 // -----------------------------------------------------------------------------

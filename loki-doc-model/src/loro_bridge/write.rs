@@ -14,7 +14,14 @@ use loro::{LoroMap, LoroMovableList, LoroText};
 
 // ── Block serialization ───────────────────────────────────────────────────────
 
-pub(super) fn map_block(block: &Block, index: usize, map: &LoroMap) -> Result<(), BridgeError> {
+pub(super) fn map_block(block: &Block, map: &LoroMap) -> Result<(), BridgeError> {
+    // Blocks (or paragraphs whose inline content) the flat text schema cannot
+    // represent are preserved verbatim as opaque JSON snapshots so that a
+    // document_to_loro → loro_to_document round-trip is lossless. See
+    // `opaque.rs` for the rationale.
+    if !super::opaque::block_round_trips_as_text(block) {
+        return super::opaque::write_opaque_block(block, map);
+    }
     match block {
         Block::Para(inlines) => {
             map.insert(KEY_TYPE, BLOCK_TYPE_PARA)?;
@@ -64,23 +71,11 @@ pub(super) fn map_block(block: &Block, index: usize, map: &LoroMap) -> Result<()
             let content = map.insert_container(KEY_CONTENT, LoroText::new())?;
             map_inlines(inlines, &content)?;
         }
-        Block::BulletList(_) => {
-            tracing::debug!("stub: bullet list at index {}", index);
-        }
-        Block::OrderedList(_, _) => {
-            tracing::debug!("stub: ordered list at index {}", index);
-        }
-        Block::Table(_) => {
-            tracing::debug!("stub: table at index {}", index);
-        }
-        Block::Figure(_, _, _) => {
-            tracing::debug!("stub: figure at index {}", index);
-        }
-        Block::BlockQuote(_) => {
-            tracing::debug!("stub: block quote at index {}", index);
-        }
+        // All structurally unsupported variants (lists, tables, figures,
+        // blockquotes, …) take the opaque-snapshot early return above; this
+        // arm only guards future #[non_exhaustive] additions.
         _ => {
-            tracing::debug!("stub: other block variant at index {}", index);
+            super::opaque::write_opaque_block(block, map)?;
         }
     }
     Ok(())
@@ -92,7 +87,7 @@ pub(super) fn map_blocks_to_list(
 ) -> Result<(), BridgeError> {
     for (i, block) in blocks.iter().enumerate() {
         let block_map = list.insert_container(i, LoroMap::new())?;
-        map_block(block, i, &block_map)?;
+        map_block(block, &block_map)?;
     }
     Ok(())
 }

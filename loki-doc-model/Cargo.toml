@@ -9,7 +9,11 @@ keywords = ["document", "odf", "ooxml", "model", "loki"]
 categories = ["data-structures", "encoding", "text-processing"]
 
 [features]
-default = []
+# `serde` is on by default: the Loro bridge preserves block types that have no
+# native CRDT mapping yet (tables, lists, figures, …) as opaque JSON snapshots,
+# which requires the model types to be serializable. Building with
+# `default-features = false` degrades those blocks to the lossy legacy stubs.
+default = ["serde"]
 serde = [
     "dep:serde",
     "dep:serde_json",

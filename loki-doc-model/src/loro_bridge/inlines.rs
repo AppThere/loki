@@ -1,21 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! Inline content serialization and deserialization for the Loro bridge.
+//! Inline content serialization for the Loro bridge (write direction).
+//!
+//! Deserialization lives in `inlines_read.rs`; the two files are split to
+//! stay under the 300-line ceiling.
 
 use super::BridgeError;
-use super::decode::{
-    decode_highlight_color, decode_strikethrough, decode_underline, decode_vertical_align,
-};
-use crate::content::attr::NodeAttr;
-use crate::content::inline::{Inline, StyledRun};
+use crate::content::inline::Inline;
 use crate::loro_schema::*;
 use crate::style::props::char_props::CharProps;
-use loki_primitives::color::DocumentColor;
-use loki_primitives::units::Points;
-use loro::{LoroText, LoroValue};
+use loro::LoroText;
 
 // ── Serialization ─────────────────────────────────────────────────────────────
+
+/// Inserts `inlines`' plain text at the end of `text` and returns the
+/// `(start, end)` unicode range it occupies.
+fn insert_inline_text(text: &LoroText, inlines: &[Inline]) -> Result<(usize, usize), BridgeError> {
+    let start = text.len_unicode();
+    let text_str = extract_plain_text(inlines);
+    if !text_str.is_empty() {
+        text.insert(start, &text_str)?;
+    }
+    Ok((start, text.len_unicode()))
+}
 
 pub(super) fn map_inlines(inlines: &[Inline], text: &LoroText) -> Result<(), BridgeError> {
     for inline in inlines {
@@ -31,39 +39,67 @@ pub(super) fn map_inlines(inlines: &[Inline], text: &LoroText) -> Result<(), Bri
                 text.insert(start, "\n")?;
             }
             Inline::StyledRun(run) => {
-                let text_str = extract_plain_text(&run.content);
-                text.insert(start, &text_str)?;
-                let end = text.len_unicode();
-                if start < end
-                    && let Some(props) = &run.direct_props
-                {
-                    apply_char_props_marks(props, start, end, text)?;
+                let (start, end) = insert_inline_text(text, &run.content)?;
+                if start < end {
+                    if let Some(props) = &run.direct_props {
+                        apply_char_props_marks(props, start, end, text)?;
+                    }
+                    if let Some(style_id) = &run.style_id {
+                        text.mark(start..end, MARK_CHAR_STYLE_ID, style_id.0.as_str())?;
+                    }
                 }
             }
             Inline::Emph(inner) => {
-                let text_str = extract_plain_text(inner);
-                text.insert(start, &text_str)?;
-                let end = text.len_unicode();
+                let (start, end) = insert_inline_text(text, inner)?;
                 if start < end {
                     text.mark(start..end, MARK_ITALIC, true)?;
                 }
             }
             Inline::Strong(inner) => {
-                let text_str = extract_plain_text(inner);
-                text.insert(start, &text_str)?;
-                let end = text.len_unicode();
+                let (start, end) = insert_inline_text(text, inner)?;
                 if start < end {
                     text.mark(start..end, MARK_BOLD, true)?;
                 }
             }
             Inline::Underline(inner) => {
-                let text_str = extract_plain_text(inner);
-                text.insert(start, &text_str)?;
-                let end = text.len_unicode();
+                let (start, end) = insert_inline_text(text, inner)?;
                 if start < end {
                     text.mark(start..end, MARK_UNDERLINE, "Single")?;
                 }
             }
+            Inline::Strikeout(inner) => {
+                let (start, end) = insert_inline_text(text, inner)?;
+                if start < end {
+                    text.mark(start..end, MARK_STRIKETHROUGH, "Single")?;
+                }
+            }
+            Inline::Superscript(inner) => {
+                let (start, end) = insert_inline_text(text, inner)?;
+                if start < end {
+                    text.mark(start..end, MARK_VERTICAL_ALIGN, "Superscript")?;
+                }
+            }
+            Inline::Subscript(inner) => {
+                let (start, end) = insert_inline_text(text, inner)?;
+                if start < end {
+                    text.mark(start..end, MARK_VERTICAL_ALIGN, "Subscript")?;
+                }
+            }
+            Inline::SmallCaps(inner) => {
+                let (start, end) = insert_inline_text(text, inner)?;
+                if start < end {
+                    text.mark(start..end, MARK_SMALL_CAPS, true)?;
+                }
+            }
+            Inline::Link(_, inner, target) => {
+                let (start, end) = insert_inline_text(text, inner)?;
+                if start < end {
+                    text.mark(start..end, MARK_LINK_URL, target.url.as_str())?;
+                }
+            }
+            // Text-bearing wrappers without a dedicated mark: keep the text.
+            // Quote type / span attrs / citation metadata are not yet carried
+            // through the CRDT — TODO(loro-bridge).
             _ => {
                 let text_str = extract_plain_text(std::slice::from_ref(inline));
                 if !text_str.is_empty() {
@@ -75,6 +111,12 @@ pub(super) fn map_inlines(inlines: &[Inline], text: &LoroText) -> Result<(), Bri
     Ok(())
 }
 
+/// Recursively extracts the visible text of `inlines`.
+///
+/// Covers every text-bearing variant; content-bearing variants that cannot be
+/// flattened to text (`Note`, `Image`, `Field`, …) never reach this function
+/// in the write path — their containing block is preserved as an opaque
+/// snapshot instead (see `opaque.rs`).
 pub(super) fn extract_plain_text(inlines: &[Inline]) -> String {
     let mut out = String::new();
     for inline in inlines {
@@ -82,10 +124,19 @@ pub(super) fn extract_plain_text(inlines: &[Inline]) -> String {
             Inline::Str(s) => out.push_str(s),
             Inline::Space => out.push(' '),
             Inline::SoftBreak | Inline::LineBreak => out.push('\n'),
+            Inline::Code(_, s) | Inline::Math(_, s) => out.push_str(s),
             Inline::StyledRun(run) => out.push_str(&extract_plain_text(&run.content)),
-            Inline::Emph(inner) => out.push_str(&extract_plain_text(inner)),
-            Inline::Strong(inner) => out.push_str(&extract_plain_text(inner)),
-            Inline::Underline(inner) => out.push_str(&extract_plain_text(inner)),
+            Inline::Emph(inner)
+            | Inline::Strong(inner)
+            | Inline::Underline(inner)
+            | Inline::Strikeout(inner)
+            | Inline::Superscript(inner)
+            | Inline::Subscript(inner)
+            | Inline::SmallCaps(inner)
+            | Inline::Quoted(_, inner)
+            | Inline::Cite(_, inner)
+            | Inline::Span(_, inner)
+            | Inline::Link(_, inner, _) => out.push_str(&extract_plain_text(inner)),
             _ => {}
         }
     }
@@ -165,123 +216,4 @@ pub(super) fn apply_char_props_marks(
         text.mark(start..end, MARK_LINK_URL, v.clone())?;
     }
     Ok(())
-}
-
-// ── Deserialization ───────────────────────────────────────────────────────────
-
-pub(super) fn reconstruct_inlines(map: &loro::LoroMap) -> Result<Vec<Inline>, BridgeError> {
-    let mut inlines = Vec::new();
-    let Some(content_val) = map.get(KEY_CONTENT) else {
-        return Ok(inlines);
-    };
-    let Some(text_container) = content_val
-        .into_container()
-        .ok()
-        .and_then(|c| c.into_text().ok())
-    else {
-        return Ok(inlines);
-    };
-
-    for span in text_container.to_delta() {
-        if let loro::TextDelta::Insert { insert, attributes } = span {
-            match attributes {
-                None => inlines.push(Inline::Str(insert.to_string())),
-                Some(attrs) => {
-                    let props = read_char_props_from_marks(&attrs);
-                    if props.is_some() {
-                        let run = StyledRun {
-                            style_id: None,
-                            direct_props: props.map(Box::new),
-                            content: vec![Inline::Str(insert.to_string())],
-                            attr: NodeAttr::default(),
-                        };
-                        inlines.push(Inline::StyledRun(run));
-                    } else {
-                        inlines.push(Inline::Str(insert.to_string()));
-                    }
-                }
-            }
-        }
-    }
-    Ok(inlines)
-}
-
-fn read_char_props_from_marks(
-    attrs: &rustc_hash::FxHashMap<String, LoroValue>,
-) -> Option<CharProps> {
-    let mut props = CharProps::default();
-    let mut any = false;
-
-    macro_rules! read_bool {
-        ($field:ident, $key:expr) => {
-            if let Some(LoroValue::Bool(v)) = attrs.get($key) {
-                props.$field = Some(*v);
-                any = true;
-            }
-        };
-    }
-    macro_rules! read_f64 {
-        ($field:ident, $key:expr, $map:expr) => {
-            if let Some(LoroValue::Double(v)) = attrs.get($key) {
-                props.$field = Some($map(*v));
-                any = true;
-            }
-        };
-    }
-    macro_rules! read_str {
-        ($field:ident, $key:expr, $decode:expr) => {
-            if let Some(LoroValue::String(s)) = attrs.get($key) {
-                if let Some(v) = $decode(s.as_str()) {
-                    props.$field = Some(v);
-                    any = true;
-                }
-            }
-        };
-    }
-
-    read_bool!(bold, MARK_BOLD);
-    read_bool!(italic, MARK_ITALIC);
-    read_bool!(outline, MARK_OUTLINE);
-    read_bool!(shadow, MARK_SHADOW);
-    read_bool!(small_caps, MARK_SMALL_CAPS);
-    read_bool!(all_caps, MARK_ALL_CAPS);
-    read_bool!(kerning, MARK_KERNING);
-
-    read_f64!(font_size, MARK_FONT_SIZE_PT, Points::new);
-    read_f64!(scale, MARK_SCALE, |v: f64| v as f32);
-    read_f64!(letter_spacing, MARK_LETTER_SPACING, Points::new);
-    read_f64!(word_spacing, MARK_WORD_SPACING, Points::new);
-
-    if let Some(LoroValue::String(s)) = attrs.get(MARK_FONT_FAMILY) {
-        props.font_name = Some(s.to_string());
-        any = true;
-    }
-    if let Some(LoroValue::String(s)) = attrs.get(MARK_LINK_URL) {
-        props.hyperlink = Some(s.to_string());
-        any = true;
-    }
-
-    read_str!(underline, MARK_UNDERLINE, decode_underline);
-    read_str!(strikethrough, MARK_STRIKETHROUGH, decode_strikethrough);
-    read_str!(vertical_align, MARK_VERTICAL_ALIGN, decode_vertical_align);
-    read_str!(color, MARK_COLOR, |s: &str| DocumentColor::from_hex(s).ok());
-    read_str!(
-        highlight_color,
-        MARK_HIGHLIGHT_COLOR,
-        decode_highlight_color
-    );
-    if let Some(LoroValue::String(s)) = attrs.get(MARK_LANGUAGE) {
-        props.language = Some(crate::meta::language::LanguageTag::new(s.to_string()));
-        any = true;
-    }
-    if let Some(LoroValue::String(s)) = attrs.get(MARK_LANGUAGE_COMPLEX) {
-        props.language_complex = Some(crate::meta::language::LanguageTag::new(s.to_string()));
-        any = true;
-    }
-    if let Some(LoroValue::String(s)) = attrs.get(MARK_LANGUAGE_EAST_ASIAN) {
-        props.language_east_asian = Some(crate::meta::language::LanguageTag::new(s.to_string()));
-        any = true;
-    }
-
-    if any { Some(props) } else { None }
 }

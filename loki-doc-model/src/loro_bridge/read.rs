@@ -4,7 +4,7 @@
 //! Deserialization: Loro CRDT containers → Loki document model.
 
 use super::BridgeError;
-use super::inlines::reconstruct_inlines;
+use super::inlines_read::reconstruct_inlines;
 use super::props_read::{
     get_bool_from_map, get_f64_from_map, get_i64_from_map, get_str_from_map,
     reconstruct_char_props_from_map, reconstruct_para_props,
@@ -80,6 +80,9 @@ pub(super) fn map_loro_block(map: &LoroMap) -> Result<Block, BridgeError> {
             Ok(Block::CodeBlock(NodeAttr::default(), text))
         }
         BLOCK_TYPE_HR => Ok(Block::HorizontalRule),
+        BLOCK_TYPE_OPAQUE => Ok(super::opaque::read_opaque_block(map)),
+        // Legacy stubs: blocks written by bridge versions that predate the
+        // opaque-snapshot scheme carry no content and cannot be recovered.
         BLOCK_TYPE_TABLE => {
             tracing::debug!("TODO/stub: loro bridge table");
             Ok(Block::HorizontalRule)

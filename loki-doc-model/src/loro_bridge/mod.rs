@@ -11,6 +11,8 @@
 
 mod decode;
 mod inlines;
+mod inlines_read;
+mod opaque;
 mod props_read;
 mod read;
 mod write;
@@ -129,6 +131,7 @@ pub fn document_to_loro(doc: &Document) -> Result<LoroDoc, BridgeError> {
         MARK_SHADOW,
         MARK_KERNING,
         MARK_OUTLINE,
+        MARK_CHAR_STYLE_ID,
     ] {
         style_config.insert(
             loro::InternalString::from(*key),
@@ -259,5 +262,13 @@ pub fn derive_loro_cursor(
         .ok()
         .and_then(|c| c.into_text().ok())?;
 
-    text.get_cursor(byte_offset, loro::cursor::Side::Right)
+    // `get_cursor` takes a Unicode position, but Loki's editing layer works in
+    // UTF-8 byte offsets — convert first or the cursor lands on the wrong
+    // character in any non-ASCII text.
+    let unicode_pos = text.convert_pos(
+        byte_offset,
+        loro::cursor::PosType::Bytes,
+        loro::cursor::PosType::Unicode,
+    )?;
+    text.get_cursor(unicode_pos, loro::cursor::Side::Right)
 }
