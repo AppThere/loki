@@ -18,6 +18,7 @@ This is the living source of truth documenting which document features, characte
 | **keep-with-next** | Yes | Yes | Yes | Scans forward up to 5 blocks to place headings and body together. |
 | **Widow/Orphan Control** | Yes | No | No | Ignored at layout time (Word defaults to "on"). |
 | **Bookmarks** | Yes | No | Yes | Bookmarks are written/parsed but do not affect layout. |
+| **Reflow (non-paginated) view** | — | Yes | — | `LayoutMode::Reflow` + `RenderMode::Reflow` render a continuous web-style flow through the same layout/Vello pipeline as paginated view (full font/size/alignment fidelity), sliced into zero-gap GPU band tiles. No headers/footers/page chrome by design. No editing data yet: cursor, click-to-cursor, and selection are unavailable in reflow view (typing/undo still apply to the document). Android CPU builds (no `android_gpu`) fall back to a low-fidelity HTML flow (`reflow_view.rs`). |
 
 ---
 

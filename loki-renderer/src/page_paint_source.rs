@@ -13,7 +13,6 @@
 //!    scale via Vello, and registers the fresh texture with Blitz.
 //! 4. Updates the cache to record the new tier assignment.
 
-use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
 use anyrender_vello::wgpu::{
@@ -22,7 +21,7 @@ use anyrender_vello::wgpu::{
 use anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle};
 use appthere_canvas::{CacheTier, PageCache, PageIndex};
 use loki_vello::FontDataCache;
-use vello::{AaConfig, AaSupport, RenderParams, RendererOptions, Scene};
+use vello::{AaConfig, RenderParams, Scene};
 
 use crate::doc_page_source::DocPageSource;
 use crate::document_view::RendererCursorPos;
@@ -97,28 +96,7 @@ impl CustomPaintSource for LokiPageSource {
 
         let mut guard = self.renderer.lock().unwrap_or_else(|p| p.into_inner());
         if guard.is_none() {
-            match vello::Renderer::new(
-                &device_handle.device,
-                RendererOptions {
-                    // COMPAT(android-mali): Mali r54 drivers (Pixel 9 /
-                    // Mali-G715) lose the Vulkan device executing Vello's
-                    // compute dispatches. use_cpu runs the compute stages on
-                    // the CPU; fine rasterization stays on the GPU.
-                    #[cfg(target_os = "android")]
-                    use_cpu: true,
-                    #[cfg(not(target_os = "android"))]
-                    use_cpu: false,
-                    // COMPAT(android-mali): Mali drivers (Pixel 9 / Mali-G715)
-                    // lose the Vulkan device executing Vello's MSAA fine-raster
-                    // pipelines; compile only the area-AA variants on Android.
-                    #[cfg(target_os = "android")]
-                    antialiasing_support: AaSupport::area_only(),
-                    #[cfg(not(target_os = "android"))]
-                    antialiasing_support: AaSupport::all(),
-                    num_init_threads: NonZeroUsize::new(1),
-                    pipeline_cache: None,
-                },
-            ) {
+            match crate::vello_init::create_vello_renderer(&device_handle.device) {
                 Ok(r) => *guard = Some(r),
                 Err(e) => tracing::warn!(
                     page = self.page_index,
@@ -218,7 +196,8 @@ impl CustomPaintSource for LokiPageSource {
                     return None;
                 }
                 let guard = self.source.layout_for_generation(current_generation);
-                let (_, layout) = guard.as_ref()?;
+                // Reflow layouts carry no editing data — no cursor is painted.
+                let layout = guard.as_ref()?.1.as_paginated()?;
                 let page = layout.pages.get(self.page_index)?;
                 let editing_data = page.editing_data.as_ref()?;
                 let para_data = editing_data
@@ -239,13 +218,11 @@ impl CustomPaintSource for LokiPageSource {
         let layout_guard = self.source.layout_for_generation(current_generation);
         let (_, layout) = layout_guard.as_ref()?;
         let mut scene = Scene::new();
-        loki_vello::paint_single_page(
+        layout.paint_tile(
             &mut scene,
-            layout,
             &mut self.font_cache,
-            (0.0, 0.0),
-            render_scale,
             self.page_index,
+            render_scale,
             cursor_paint.as_ref(),
         );
         drop(layout_guard);

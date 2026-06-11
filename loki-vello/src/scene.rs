@@ -479,7 +479,7 @@ pub fn paint_continuous(
 ///
 /// Rather than pushing a Vello layer for the offset, we adjust item
 /// coordinates directly to avoid layer overhead.
-fn paint_items(
+pub(crate) fn paint_items(
     scene: &mut vello::Scene,
     items: &[PositionedItem],
     font_cache: &mut FontDataCache,

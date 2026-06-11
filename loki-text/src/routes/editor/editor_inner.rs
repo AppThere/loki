@@ -457,6 +457,30 @@ pub(super) fn EditorInner(path: String) -> Element {
         save_message.set(Some(msg));
     });
 
+    // ── Measure the canvas at mount ──────────────────────────────────────────
+    //
+    // Scroll metrics are otherwise only populated by the first DOM scroll
+    // event, which would leave the view-mode default and the reflow layout
+    // width unknown until the user scrolls. Query the mounted scroll
+    // container's client rect once (backed by the dioxus-native MountedData
+    // patch) and seed the metrics.
+    use_effect(move || {
+        let Some(evt) = canvas_mounted() else { return };
+        if scroll_metrics.peek().client_width > 0.0 {
+            return;
+        }
+        let mut metrics = scroll_metrics;
+        spawn(async move {
+            if let Ok(rect) = evt.get_client_rect().await {
+                let mut m = metrics.write();
+                if m.client_width <= 0.0 {
+                    m.client_width = rect.size.width as f32;
+                    m.client_height = rect.size.height as f32;
+                }
+            }
+        });
+    });
+
     // ── Default view mode by viewport width ──────────────────────────────────
     //
     // Paginated on wide viewports, reflowed on narrow ones — until the user

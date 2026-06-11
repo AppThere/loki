@@ -17,11 +17,20 @@ pub mod doc_page_source;
 pub mod document_view;
 #[cfg(any(not(target_os = "android"), android_gpu))]
 pub mod page_paint_source;
+pub(crate) mod page_source_impl;
+#[cfg(any(not(target_os = "android"), android_gpu))]
+pub(crate) mod page_tile;
+// The HTML-flow fallback view is only compiled on the Android CPU path; GPU
+// targets render reflow mode through the layout engine (RenderMode::Reflow).
+#[cfg(all(target_os = "android", not(android_gpu)))]
 pub(crate) mod reflow_view;
+pub mod render_layout;
 pub mod renderer_state;
 pub mod scroll_driver;
+pub(crate) mod vello_init;
 
 pub use doc_page_source::DocPageSource;
 pub use document_view::{DocumentView, DocumentViewProps, RendererCursorPos, ViewMode};
+pub use render_layout::{RenderLayout, RenderMode};
 pub use renderer_state::RendererState;
 pub use scroll_driver::{on_scroll_event, use_settle_detector};

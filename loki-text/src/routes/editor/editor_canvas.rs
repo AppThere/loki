@@ -269,7 +269,18 @@ pub(super) fn render_canvas_area(
                             viewport_height_px: 800.0,
                             cursor_pos,
                             view_mode: view_mode(),
+                            // Width for reflow layout; <= 0 until the canvas is
+                            // measured (mount rect or first scroll event).
+                            reflow_width_px: scroll_metrics().client_width as f64,
                             on_tile_click: move |(page_index, x_pt, y_pt): (usize, f32, f32)| {
+                                // TODO(reflow-editing): tile coordinates are
+                                // reflow-local but the hit-test layout below is
+                                // paginated — the mapping is wrong, so suppress
+                                // click-to-cursor in reflow mode until the
+                                // continuous layout carries editing data.
+                                if *view_mode.peek() == ViewMode::Reflow {
+                                    return;
+                                }
                                 let layout_opt = {
                                     let Ok(state) = doc_state_mousedown.lock() else { return };
                                     state.paginated_layout.clone()
