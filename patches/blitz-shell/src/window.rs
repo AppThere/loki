@@ -81,6 +81,11 @@ pub struct View<Rend: WindowRenderer> {
     pub animation_timer: Option<Instant>,
     pub is_visible: bool,
 
+    /// Whether the on-screen keyboard / IME is currently requested.
+    /// Mirrors the last value passed to `Window::set_ime_allowed` so we only
+    /// call into the (JNI-backed, on Android) winit IME path on real changes.
+    pub ime_active: bool,
+
     /// In-progress touch contact for tap/scroll/long-press classification.
     pub touch_start: Option<TouchState>,
     /// Last logical-pixel position during an active scroll gesture.
@@ -100,8 +105,14 @@ impl<Rend: WindowRenderer> View<Rend> {
     ) -> Self {
         let winit_window = Arc::from(event_loop.create_window(config.attributes).unwrap());
 
-        // TODO: make this conditional on text input focus
-        winit_window.set_ime_allowed(true);
+        // Start with the IME disabled and let focus drive it
+        // (`update_ime_for_focus`).  On Android `set_ime_allowed(true)` calls
+        // `AndroidApp::show_soft_input`, so leaving it on here would pop the
+        // soft keyboard at launch (and the call is a no-op before the window is
+        // focused anyway).  We raise it only when a text-editing element — one
+        // carrying `inputmode` (≠ "none"), or an `<input>`/`<textarea>` — gains
+        // focus, and lower it when focus leaves.
+        winit_window.set_ime_allowed(false);
 
         // Create viewport
         let size = winit_window.inner_size();
@@ -137,6 +148,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             buttons: MouseEventButtons::None,
             mouse_pos: Default::default(),
             is_visible: winit_window.is_visible().unwrap_or(true),
+            ime_active: false,
             touch_start: None,
             touch_scroll_last_pos: None,
             #[cfg(feature = "accessibility")]
@@ -339,6 +351,56 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.accessibility.update_tree(&self.doc);
     }
 
+    /// Returns `true` when the currently-focused DOM node is a text-editing
+    /// surface that should summon the platform soft keyboard / IME.
+    ///
+    /// PATCH(loki): blitz-dom focuses any element with `tabindex`/`<button>` on
+    /// click, but only some of those accept text.  We treat a node as a text
+    /// target when it is an `<input>` (of a textual type) / `<textarea>`, or
+    /// when it carries an `inputmode` attribute whose value is not `"none"`.
+    /// The Loki editor canvas is a focusable `<div inputmode="text">`, so a tap
+    /// on it raises the keyboard while a tap on a ribbon `<button>` does not.
+    fn focused_node_wants_ime(&self) -> bool {
+        let Some(node_id) = self.doc.get_focussed_node_id() else {
+            return false;
+        };
+        let Some(node) = self.doc.get_node(node_id) else {
+            return false;
+        };
+        let Some(el) = node.data.downcast_element() else {
+            return false;
+        };
+
+        let attr = |name: &str| {
+            el.attrs
+                .iter()
+                .find(|a| a.name.local.as_ref() == name)
+                .map(|a| a.value.as_str())
+        };
+
+        match el.name.local.as_ref() {
+            "textarea" => true,
+            "input" => !matches!(
+                attr("type"),
+                Some("button" | "submit" | "reset" | "checkbox" | "radio" | "file" | "hidden")
+            ),
+            // Any element may opt in to the keyboard via the standard inputmode
+            // hint (the editor canvas does); `inputmode="none"` opts out.
+            _ => matches!(attr("inputmode"), Some(mode) if mode != "none"),
+        }
+    }
+
+    /// Sync the platform IME / soft keyboard to the current focus, calling into
+    /// winit (and thus `AndroidApp::show/hide_soft_input` on Android) only when
+    /// the desired state actually changes.
+    fn update_ime_for_focus(&mut self) {
+        let wants_ime = self.focused_node_wants_ime();
+        if wants_ime != self.ime_active {
+            self.ime_active = wants_ime;
+            self.window.set_ime_allowed(wants_ime);
+        }
+    }
+
     pub fn handle_winit_event(&mut self, event: WindowEvent) {
         match event {
             // Window lifecycle events
@@ -438,6 +500,8 @@ impl<Rend: WindowRenderer> View<Rend> {
                 };
 
                 self.doc.handle_ui_event(event);
+                // Tab / Shift-Tab can move focus between fields — keep IME in sync.
+                self.update_ime_for_focus();
                 self.request_redraw();
             }
 
@@ -482,6 +546,8 @@ impl<Rend: WindowRenderer> View<Rend> {
                     ElementState::Released => UiEvent::MouseUp(event),
                 };
                 self.doc.handle_ui_event(event);
+                // Focus is assigned on click (MouseUp); sync the soft keyboard.
+                self.update_ime_for_focus();
                 self.request_redraw();
             }
             WindowEvent::MouseWheel { delta, .. } => {
@@ -636,6 +702,10 @@ impl<Rend: WindowRenderer> View<Rend> {
                                     self.keyboard_modifiers.state(),
                                 ),
                             }));
+                            // A tap assigns focus (or clears it); raise or drop
+                            // the Android soft keyboard accordingly.  Skipped for
+                            // scroll gestures, which never change focus.
+                            self.update_ime_for_focus();
                         }
                         self.request_redraw();
                     }

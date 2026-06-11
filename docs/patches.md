@@ -122,8 +122,22 @@ to `View` to track in-progress touch contacts for long-press detection.
 Constants `TOUCH_SLOP_PX` (8.0 logical px) and `LONG_PRESS_DURATION` (500 ms)
 gate scroll vs. tap vs. long-press classification.
 
+**Soft-keyboard / IME on focus:** Upstream calls `set_ime_allowed(true)` once,
+unconditionally, at window creation. On Android that maps to
+`AndroidApp::show_soft_input`, which is a no-op before the window is focused —
+so the on-screen keyboard never appears, and there is no later trigger. This
+patch instead starts with the IME disabled and drives it from DOM focus:
+`update_ime_for_focus` runs after every focus-changing event (click / tap /
+Tab) and calls `Window::set_ime_allowed(true)` only when the focused node is a
+text-editing surface — an `<input>`/`<textarea>`, or any element carrying an
+`inputmode` attribute that is not `"none"`. The Loki editor canvas is a
+focusable `<div inputmode="text">`, so tapping it raises the keyboard while
+tapping a ribbon `<button>` (focusable, but not a text target) lowers it. An
+`ime_active: bool` field debounces redundant winit calls.
+
 **Root cause:** Upstream has a `// Todo implement touch scrolling` comment at
-the touch arm — the feature is planned but not implemented.
+the touch arm — the feature is planned but not implemented. The IME call is a
+hard-coded `// TODO: make this conditional on text input focus`.
 
 **Upstream status:** No known issue filed as of 2026-05-08. Monitor blitz-shell
 releases for native touch implementation.

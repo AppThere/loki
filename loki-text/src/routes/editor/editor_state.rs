@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 
+use super::editor_scrollbar::ScrollMetrics;
 use crate::editing::cursor::CursorState;
 use crate::editing::state::DocumentState;
 use crate::editing::touch::TouchInteractionState;
@@ -51,6 +52,9 @@ pub(super) struct EditorState {
     pub touch_state: Signal<Option<TouchInteractionState>>,
     pub window_width: Signal<f32>,
     pub scroll_offset: Signal<f32>,
+    /// Live scroll geometry of the canvas container, mirrored from the most
+    /// recent DOM `scroll` event and consumed by the custom scrollbars.
+    pub scroll_metrics: Signal<ScrollMetrics>,
     pub current_page: Signal<u32>,
     pub total_pages: Signal<u32>,
     /// Active state of inline character formatting at the cursor position.
@@ -115,6 +119,7 @@ pub(super) fn use_editor_state() -> EditorState {
         touch_state: use_signal(|| None),
         window_width: use_signal(|| 1280.0_f32),
         scroll_offset: use_signal(|| 0.0_f32),
+        scroll_metrics: use_signal(ScrollMetrics::default),
         current_page,
         total_pages,
         bold_active: use_signal(|| false),

@@ -43,6 +43,7 @@ use super::editor_keydown::make_keydown_handler;
 use super::editor_pointer::{
     make_mousemove_handler, make_touchend_handler, make_touchmove_handler,
 };
+use super::editor_scrollbar::{ScrollMetrics, horizontal_scrollbar, vertical_scrollbar};
 use crate::editing::cursor::CursorState;
 use crate::editing::hit_test::hit_test_page;
 use crate::editing::state::DocumentState;
@@ -68,7 +69,9 @@ pub(super) fn render_canvas_area(
     touch_state: Signal<Option<TouchInteractionState>>,
     window_width: Signal<f32>,
     mut scroll_offset: Signal<f32>,
+    mut scroll_metrics: Signal<ScrollMetrics>,
     mut current_page: Signal<u32>,
+    total_pages: Signal<u32>,
     mut cursor_state: Signal<CursorState>,
     loro_doc: Signal<Option<loro::LoroDoc>>,
     undo_manager: Signal<Option<loro::UndoManager>>,
@@ -81,18 +84,39 @@ pub(super) fn render_canvas_area(
     page_gap_px: f32,
 ) -> Element {
     rsx! {
+        // Outer wrapper occupies the editor column's flex:1 slot and lays out
+        // the scroll viewport beside a vertical scrollbar, with a horizontal
+        // scrollbar underneath.  Blitz paints no scrollbar chrome, so these are
+        // custom indicators (see editor_scrollbar).
+        div {
+            style: "flex: 1; min-height: 0; display: flex; flex-direction: column;",
+            div {
+                style: "flex: 1; min-height: 0; display: flex; flex-direction: row;",
         div {
             // COMPAT(dioxus-native): flex: 1 is confirmed working. Requires
             // height: 100vh on the parent so Taffy can resolve the flex fraction.
             // tabindex="0" enables keyboard focus for onkeydown to fire.
             // autofocus ensures the canvas receives keyboard focus immediately
             // when the editor mounts, so the user can type without clicking first.
-            // COMPAT(dioxus-native): scrollbar-width / scrollbar-color are
-            // unconfirmed in Blitz — they are Stylo (Firefox CSS engine)
-            // properties.  If unsupported the platform-default scrollbar is
-            // shown; no functionality is lost.
+            //
+            // overflow-x: auto (was hidden) lets the user pan a page that is
+            // wider than the viewport — e.g. a US-Letter page on a narrow phone,
+            // or any page while zoomed in.  The patched Blitz shell synthesises
+            // horizontal touch-drag into a scroll on this container (window.rs),
+            // and `can_x_scroll` is only true when overflow-x is auto/scroll.
+            //
+            // COMPAT(dioxus-native): scrollbar-width / scrollbar-color are Stylo
+            // (Firefox CSS engine) properties that blitz-paint 0.2.x does not
+            // paint — Blitz renders no scrollbar chrome at all.  They are kept
+            // as forward-compatible hints; scrolling itself works via touch/wheel
+            // regardless.  A visible scrollbar requires a custom widget.
+            //
+            // inputmode="text" marks this as a text-editing surface so the
+            // patched Blitz shell raises the Android soft keyboard when the
+            // canvas gains focus (window.rs::update_ime_for_focus).  Without it
+            // the on-screen keyboard never appears on mobile.
             style: format!(
-                "flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; \
+                "flex: 1; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: auto; \
                  background: {bg}; padding: {p}px 0; \
                  scrollbar-width: thin; scrollbar-color: {thumb} transparent;",
                 bg    = tokens::COLOR_SURFACE_BASE,
@@ -105,6 +129,7 @@ pub(super) fn render_canvas_area(
             ),
             tabindex: "0",
             autofocus: "true",
+            inputmode: "text",
             onmouseenter: move |_| { canvas_hovered.set(true); },
             onmouseleave: move |_| { canvas_hovered.set(false); },
 
@@ -117,6 +142,17 @@ pub(super) fn render_canvas_area(
                 let top = evt.scroll_top() as f32;
                 scroll_offset.set(top);
                 let viewport_h = evt.client_height() as f32;
+                // Mirror the full geometry so the custom scrollbars can size and
+                // place their thumbs.  scroll_width / scroll_height are the
+                // scrollable distance (content − client); see editor_scrollbar.
+                scroll_metrics.set(ScrollMetrics {
+                    scroll_top: top,
+                    scroll_left: evt.scroll_left() as f32,
+                    scroll_width: evt.scroll_width() as f32,
+                    scroll_height: evt.scroll_height() as f32,
+                    client_width: evt.client_width() as f32,
+                    client_height: viewport_h,
+                });
                 let (page_h, count) = match doc_state_scroll.lock() {
                     Ok(s) => (s.page_height_px, s.page_count),
                     Err(_) => return,
@@ -249,6 +285,13 @@ pub(super) fn render_canvas_area(
 
                 _ => rsx! { div {} },
             }
+        }
+                // Vertical scroll indicator (right-edge gutter, always present).
+                {vertical_scrollbar(scroll_metrics(), current_page(), total_pages())}
+            }
+            // Horizontal scroll indicator (bottom; only when the page is wider
+            // than the viewport).
+            {horizontal_scrollbar(scroll_metrics())}
         }
     }
 }
