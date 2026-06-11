@@ -36,7 +36,7 @@ use std::sync::Arc;
 use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
-use loki_renderer::{DocumentView, RendererCursorPos};
+use loki_renderer::{DocumentView, RendererCursorPos, ViewMode};
 
 use super::editor_error_view::EditorErrorView;
 use super::editor_keydown::make_keydown_handler;
@@ -72,6 +72,7 @@ pub(super) fn render_canvas_area(
     mut scroll_metrics: Signal<ScrollMetrics>,
     mut current_page: Signal<u32>,
     total_pages: Signal<u32>,
+    view_mode: Signal<ViewMode>,
     mut cursor_state: Signal<CursorState>,
     loro_doc: Signal<Option<loro::LoroDoc>>,
     undo_manager: Signal<Option<loro::UndoManager>>,
@@ -256,6 +257,7 @@ pub(super) fn render_canvas_area(
                             // See diagnostic report, finding 1.
                             viewport_height_px: 800.0,
                             cursor_pos,
+                            view_mode: view_mode(),
                             on_tile_click: move |(page_index, x_pt, y_pt): (usize, f32, f32)| {
                                 let layout_opt = {
                                     let Ok(state) = doc_state_mousedown.lock() else { return };

@@ -34,6 +34,13 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
     } else {
         COLOR_SURFACE_3
     };
+    let mut view_hovered = use_signal(|| false);
+    let view_bg = if view_hovered() {
+        "#444444"
+    } else {
+        COLOR_SURFACE_3
+    };
+    let show_view_toggle = !props.view_mode_label.is_empty();
 
     rsx! {
         div {
@@ -88,6 +95,32 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                     fg   = COLOR_TEXT_ON_CHROME_SECONDARY,
                 ),
                 "{props.language_label}"
+            }
+
+            // View-mode toggle (paginated ⇆ reflowed). Hidden unless a label is
+            // supplied, so apps that do not offer the toggle are unaffected.
+            // **Minimum interactive size: 44×44 logical pixels (WCAG 2.5.8).**
+            // TODO(a11y): expand the invisible touch target to TOUCH_MIN.
+            if show_view_toggle {
+                button {
+                    "aria-label": props.view_mode_aria_label.clone(),
+                    style: format!(
+                        "background: {bg}; border: none; border-radius: {r}px; \
+                         color: {fg}; font-size: {size}px; font-weight: {weight}; \
+                         cursor: pointer; padding: {pv}px {ph}px; flex-shrink: 0;",
+                        bg     = view_bg,
+                        r      = RADIUS_SM,
+                        fg     = COLOR_TEXT_ON_CHROME_SECONDARY,
+                        size   = FONT_SIZE_XS,
+                        weight = FONT_WEIGHT_MEDIUM,
+                        pv     = SPACE_1,
+                        ph     = SPACE_2,
+                    ),
+                    onmouseenter: move |_| { view_hovered.set(true); },
+                    onmouseleave: move |_| { view_hovered.set(false); },
+                    onclick: move |_| { props.on_view_mode_click.call(()); },
+                    "{props.view_mode_label}"
+                }
             }
 
             // Zoom badge (clickable button)
@@ -157,4 +190,19 @@ pub struct AtStatusBarProps {
 
     /// Aria label for the zoom button.
     pub zoom_aria_label: String,
+
+    /// Label for the optional view-mode toggle (e.g. `"Paginated"`/`"Reflowed"`).
+    /// Empty (the default) hides the toggle, so apps that do not offer it are
+    /// unaffected.
+    #[props(default)]
+    pub view_mode_label: String,
+
+    /// Aria label for the view-mode toggle button.
+    #[props(default)]
+    pub view_mode_aria_label: String,
+
+    /// Callback invoked when the view-mode toggle is clicked. Defaults to a
+    /// no-op when not provided.
+    #[props(default)]
+    pub on_view_mode_click: Callback<()>,
 }

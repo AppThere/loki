@@ -7,7 +7,9 @@ use crate::event::{BlitzShellEvent, create_waker};
 use anyrender::WindowRenderer;
 use blitz_dom::Document;
 use blitz_paint::paint_scene;
-use blitz_traits::events::{BlitzMouseButtonEvent, MouseEventButton, MouseEventButtons, UiEvent};
+use blitz_traits::events::{
+    BlitzKeyEvent, BlitzMouseButtonEvent, KeyState, MouseEventButton, MouseEventButtons, UiEvent,
+};
 use blitz_traits::shell::Viewport;
 use winit::keyboard::PhysicalKey;
 
@@ -390,6 +392,39 @@ impl<Rend: WindowRenderer> View<Rend> {
         }
     }
 
+    /// Returns `true` when the focused node is a Blitz-native text field
+    /// (`<input>` / `<textarea>`), which has its own IME handling and must not
+    /// receive synthetic keydown events.
+    fn focused_is_native_text_input(&self) -> bool {
+        self.doc
+            .get_focussed_node_id()
+            .and_then(|id| self.doc.get_node(id))
+            .and_then(|node| node.data.downcast_element())
+            .is_some_and(|el| matches!(el.name.local.as_ref(), "input" | "textarea"))
+    }
+
+    /// Dispatch `text` to the focused node as a synthetic key press/release pair
+    /// carrying the whole string as `Key::Character`.  Used to deliver committed
+    /// IME / soft-keyboard text to the custom editor canvas, whose `onkeydown`
+    /// handler inserts `Key::Character(_)` payloads verbatim.
+    fn dispatch_synthetic_text(&mut self, text: &str) {
+        let base = BlitzKeyEvent {
+            key: keyboard_types::Key::Character(text.to_string()),
+            code: keyboard_types::Code::Unidentified,
+            modifiers: keyboard_types::Modifiers::default(),
+            location: keyboard_types::Location::Standard,
+            is_auto_repeating: false,
+            is_composing: false,
+            state: KeyState::Pressed,
+            text: Some(text.into()),
+        };
+        self.doc.handle_ui_event(UiEvent::KeyDown(base.clone()));
+        self.doc.handle_ui_event(UiEvent::KeyUp(BlitzKeyEvent {
+            state: KeyState::Released,
+            ..base
+        }));
+    }
+
     /// Sync the platform IME / soft keyboard to the current focus, calling into
     /// winit (and thus `AndroidApp::show/hide_soft_input` on Android) only when
     /// the desired state actually changes.
@@ -446,6 +481,22 @@ impl<Rend: WindowRenderer> View<Rend> {
 
             // Text / keyboard events
             WindowEvent::Ime(ime_event) => {
+                // PATCH(loki): route committed IME text from a custom editing
+                // surface (the Loki canvas — an `inputmode` element, not a Blitz
+                // TextInput) into the focused node as a synthetic keydown so the
+                // existing `onkeydown` insertion path handles it.  This is what
+                // makes the Android soft keyboard actually type into the canvas.
+                // Real `<input>`/`<textarea>` keep Blitz's native IME handling.
+                if let winit::event::Ime::Commit(text) = &ime_event {
+                    if !text.is_empty()
+                        && self.focused_node_wants_ime()
+                        && !self.focused_is_native_text_input()
+                    {
+                        self.dispatch_synthetic_text(text);
+                        self.request_redraw();
+                        return;
+                    }
+                }
                 self.doc.handle_ui_event(UiEvent::Ime(winit_ime_to_blitz(ime_event)));
                 self.request_redraw();
             },

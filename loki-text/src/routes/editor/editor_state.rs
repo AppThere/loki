@@ -11,6 +11,8 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 
+use loki_renderer::ViewMode;
+
 use super::editor_scrollbar::ScrollMetrics;
 use crate::editing::cursor::CursorState;
 use crate::editing::state::DocumentState;
@@ -57,6 +59,12 @@ pub(super) struct EditorState {
     pub scroll_metrics: Signal<ScrollMetrics>,
     pub current_page: Signal<u32>,
     pub total_pages: Signal<u32>,
+    /// Active layout mode (paginated vs reflowable). Defaults by viewport width
+    /// (see `editor_inner`) until the user toggles it.
+    pub view_mode: Signal<ViewMode>,
+    /// `true` once the user has explicitly chosen a view mode, which freezes the
+    /// automatic width-based default so it stops overriding their choice.
+    pub view_mode_user_set: Signal<bool>,
     /// Active state of inline character formatting at the cursor position.
     /// Updated whenever the cursor moves or a formatting toggle is applied.
     pub bold_active: Signal<bool>,
@@ -122,6 +130,8 @@ pub(super) fn use_editor_state() -> EditorState {
         scroll_metrics: use_signal(ScrollMetrics::default),
         current_page,
         total_pages,
+        view_mode: use_signal(ViewMode::default),
+        view_mode_user_set: use_signal(|| false),
         bold_active: use_signal(|| false),
         italic_active: use_signal(|| false),
         underline_active: use_signal(|| false),

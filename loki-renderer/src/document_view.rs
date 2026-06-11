@@ -26,8 +26,22 @@ use crate::page_paint_source::LokiPageSource;
 use crate::renderer_state::RendererState;
 use crate::scroll_driver::{on_scroll_event, use_settle_detector};
 
-#[cfg(all(target_os = "android", not(android_gpu)))]
-use crate::page_tile_cpu::CpuDocView;
+use crate::reflow_view::ReflowDocView;
+
+// ── ViewMode ──────────────────────────────────────────────────────────────────
+
+/// How the document is laid out in the canvas.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum ViewMode {
+    /// Fixed print layout — one fixed-size page tile per page (needs the GPU
+    /// paint path). This is the default on large viewports.
+    #[default]
+    Paginated,
+    /// Reflowable, web-page-style continuous layout that wraps to the viewport
+    /// width. The default on small viewports, and the only mode available on
+    /// the Android CPU path.
+    Reflow,
+}
 
 // ── RendererCursorPos ─────────────────────────────────────────────────────────
 
@@ -47,6 +61,9 @@ pub struct DocumentViewProps {
     pub doc: Arc<Document>,
     pub viewport_height_px: f64,
     pub cursor_pos: Option<RendererCursorPos>,
+    /// Current layout mode. Ignored on the Android CPU path, which only supports
+    /// [`ViewMode::Reflow`].
+    pub view_mode: ViewMode,
     /// Called with `(page_index, x_pt, y_pt)` in layout points when the user
     /// clicks a page tile. The caller performs the hit test and updates cursor state.
     pub on_tile_click: EventHandler<(usize, f32, f32)>,
@@ -225,13 +242,26 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         div {
             style: "width: 100%; height: 100%;",
             onscroll: onscroll,
-            CpuDocView { source: renderer.source.clone(), doc_gen }
+            ReflowDocView { source: renderer.source.clone(), doc_gen }
         }
     };
 
-    // ── GPU / desktop: paged tile renderer ───────────────────────────────────
+    // ── GPU / desktop ─────────────────────────────────────────────────────────
     #[cfg(any(not(target_os = "android"), android_gpu))]
     {
+        // Reflowable mode: render the web-style flow instead of page tiles.
+        // Early return keeps `onscroll` available for the paginated path below.
+        if props.view_mode == ViewMode::Reflow {
+            return rsx! {
+                div {
+                    style: "width: 100%; height: 100%;",
+                    onscroll: onscroll,
+                    ReflowDocView { source: renderer.source.clone(), doc_gen }
+                }
+            };
+        }
+
+        // ── Paginated: paged tile renderer ───────────────────────────────────
         const PTS_TO_CSS_PX: f64 = 96.0 / 72.0;
         let layout_guard = renderer.source.layout_for_generation(doc_gen);
         let pages: Vec<(usize, f64, f64)> = if let Some((_, layout)) = layout_guard.as_ref() {
