@@ -187,7 +187,17 @@ impl DocPageSource {
                         1.0,
                         &options,
                     ) {
-                        DocumentLayout::Continuous(cl) => RenderLayout::Reflow(cl),
+                        DocumentLayout::Continuous(cl) => {
+                            // Size tiles to the widest content (e.g. a fixed-width
+                            // table that overflows the wrap width) so it can be
+                            // reached by horizontal scrolling rather than clipped.
+                            let widest = loki_vello::content_max_x(&cl).max(content_width);
+                            let tile_width_pt = widest + 2.0 * REFLOW_PADDING_PT;
+                            RenderLayout::Reflow {
+                                layout: cl,
+                                tile_width_pt,
+                            }
+                        }
                         _ => unreachable!(
                             "LayoutMode::Reflow must return DocumentLayout::Continuous"
                         ),

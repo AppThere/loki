@@ -353,6 +353,29 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.accessibility.update_tree(&self.doc);
     }
 
+    /// PATCH(loki): re-dispatch `onscroll` to every scroll container with its
+    /// fresh client geometry.  This lets reactive embedders (the editor's
+    /// width-driven reflow / view-mode default) react to a window resize, to the
+    /// first real size on Android, and to a scroll container that mounted after
+    /// the initial layout (e.g. once an async document load completes) — all
+    /// without requiring the user to scroll first.
+    pub fn resync_scroll_geometry(&mut self) {
+        let (w, h) = self.doc.viewport().window_size;
+        if w == 0 || h == 0 {
+            return;
+        }
+        // Resolve so each scroll container's `final_layout` reflects the new
+        // viewport before its geometry is read for the scroll event.
+        let time = self.current_animation_time();
+        self.doc.resolve(time);
+        let mut changes = Vec::new();
+        self.doc.collect_scroll_containers(&mut changes);
+        if !changes.is_empty() {
+            self.doc.handle_scroll_changes(&changes);
+            self.request_redraw();
+        }
+    }
+
     /// Returns `true` when the currently-focused DOM node is a text-editing
     /// surface that should summon the platform soft keyboard / IME.
     ///
@@ -467,6 +490,12 @@ impl<Rend: WindowRenderer> View<Rend> {
                     self.activate_renderer(physical_size.width, physical_size.height);
                 } else {
                     self.with_viewport(|v| v.window_size = (physical_size.width, physical_size.height));
+                }
+                // Re-emit onscroll with the new client size so width-reactive
+                // embedders (reflow layout, view-mode default) update on resize
+                // and on the first real Android size.
+                if physical_size.width > 0 && physical_size.height > 0 {
+                    self.resync_scroll_geometry();
                 }
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {

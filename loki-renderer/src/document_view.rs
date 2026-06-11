@@ -191,14 +191,24 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         // re-renders this component and repaints demoted tiles.
         let epoch = settle_epoch();
 
+        // White backdrop behind reflow tiles so any hairline seam where two
+        // zero-gap bands meet shows white (matching the page) rather than the
+        // grey canvas. Paginated mode keeps the grey inter-page gutter.
+        let wrapper_bg = if is_reflow {
+            " background: #FFFFFF;"
+        } else {
+            ""
+        };
+
         return rsx! {
             div {
                 style: "width: 100%; height: 100%;",
                 onscroll: onscroll,
                 div {
                     style: format!(
-                        "position: relative; width: 100%; padding-bottom: {pb}px;",
+                        "position: relative; width: 100%; padding-bottom: {pb}px;{bg}",
                         pb = tokens::SPACE_6,
+                        bg = wrapper_bg,
                     ),
                     for (idx, w, h) in pages {
                         PageTile {

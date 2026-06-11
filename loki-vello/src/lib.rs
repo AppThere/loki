@@ -36,7 +36,7 @@ pub mod image;
 pub mod rect;
 pub mod scene;
 
-pub use band::paint_continuous_band;
+pub use band::{content_max_x, paint_continuous_band};
 pub use error::{VelloError, VelloResult};
 pub use font_cache::FontDataCache;
 pub use scene::{

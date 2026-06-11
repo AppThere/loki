@@ -61,6 +61,46 @@ fn y_extent(item: &PositionedItem) -> (f32, f32) {
     }
 }
 
+/// Right-edge x of an item in layout points (conservative over-estimate).
+///
+/// Used to size reflow tiles to the widest content so wide elements (e.g.
+/// fixed-width tables) can be reached by horizontal scrolling instead of being
+/// clipped.
+fn x_extent(item: &PositionedItem) -> f32 {
+    match item {
+        PositionedItem::GlyphRun(r) => {
+            let run_w = r
+                .glyphs
+                .iter()
+                .map(|g| g.x + g.advance)
+                .fold(0.0_f32, f32::max);
+            r.origin.x + run_w
+        }
+        PositionedItem::FilledRect(r) | PositionedItem::HorizontalRule(r) => {
+            r.rect.origin.x + r.rect.size.width
+        }
+        PositionedItem::BorderRect(r) => r.rect.origin.x + r.rect.size.width,
+        PositionedItem::Image(img) => img.rect.origin.x + img.rect.size.width,
+        PositionedItem::Decoration(d) => d.x + d.width,
+        // Children are masked to the clip rect, so it bounds the visible width.
+        PositionedItem::ClippedGroup { clip_rect, .. } => clip_rect.origin.x + clip_rect.size.width,
+        PositionedItem::RotatedGroup {
+            origin,
+            content_width,
+            content_height,
+            ..
+        } => origin.x + content_width.max(*content_height),
+        // `PositionedItem` is `#[non_exhaustive]`; unknown variants contribute
+        // nothing to the width estimate.
+        _ => 0.0,
+    }
+}
+
+/// Maximum right-edge x over all items of `layout`, in layout points.
+pub fn content_max_x(layout: &ContinuousLayout) -> f32 {
+    layout.items.iter().map(x_extent).fold(0.0_f32, f32::max)
+}
+
 /// Paint the items of `layout` that overlap the vertical band
 /// `[band_top, band_top + band_height)` (layout points), translated so the
 /// band top maps to `y = 0` and shifted right by `x_offset` points.
@@ -90,5 +130,39 @@ pub fn paint_continuous_band(
             (x_offset, -band_top),
             scale,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use loki_layout::{LayoutColor, LayoutRect, PositionedRect};
+
+    fn rect(x: f32, w: f32) -> PositionedItem {
+        PositionedItem::FilledRect(PositionedRect {
+            rect: LayoutRect::new(x, 0.0, w, 10.0),
+            color: LayoutColor::BLACK,
+        })
+    }
+
+    #[test]
+    fn content_max_x_uses_widest_right_edge() {
+        let layout = ContinuousLayout {
+            content_width: 300.0,
+            total_height: 100.0,
+            items: vec![rect(0.0, 200.0), rect(100.0, 500.0), rect(50.0, 10.0)],
+        };
+        // Widest right edge is 100 + 500 = 600.
+        assert_eq!(content_max_x(&layout), 600.0);
+    }
+
+    #[test]
+    fn content_max_x_empty_is_zero() {
+        let layout = ContinuousLayout {
+            content_width: 300.0,
+            total_height: 0.0,
+            items: vec![],
+        };
+        assert_eq!(content_max_x(&layout), 0.0);
     }
 }

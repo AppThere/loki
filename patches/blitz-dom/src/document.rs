@@ -1384,6 +1384,28 @@ impl BaseDocument {
         self.scroll_viewport_by_has_changed(x, y);
     }
 
+    /// PATCH(loki): collect every scroll-container node (overflow-x or -y is
+    /// `scroll`/`auto`) as `(node_id, scroll_x, scroll_y)`.
+    ///
+    /// The shell calls this after a viewport resize and feeds the result to
+    /// `handle_scroll_changes`, so embedders re-receive `onscroll` with the new
+    /// client size — without waiting for the user to scroll. This is what lets
+    /// the reflow view relayout to the new window width on resize.
+    pub fn collect_scroll_containers(&self, out: &mut Vec<(usize, f64, f64)>) {
+        for (id, node) in self.nodes.iter() {
+            let scrollable = node
+                .primary_styles()
+                .map(|s| {
+                    matches!(s.clone_overflow_x(), Overflow::Scroll | Overflow::Auto)
+                        || matches!(s.clone_overflow_y(), Overflow::Scroll | Overflow::Auto)
+                })
+                .unwrap_or(false);
+            if scrollable {
+                out.push((id, node.scroll_offset.x, node.scroll_offset.y));
+            }
+        }
+    }
+
     /// Scroll the viewport by the given values
     pub fn scroll_viewport_by_has_changed(&mut self, x: f64, y: f64) -> bool {
         let content_size = self.root_element().final_layout.size;

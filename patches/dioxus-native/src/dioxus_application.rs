@@ -272,6 +272,10 @@ impl DioxusNativeApplication {
                     .handle_event("mounted", Event::new(data, false), element_id);
             }
             view.poll();
+            // A newly-mounted scroll container (e.g. the editor canvas after an
+            // async document load) needs its initial onscroll so width-reactive
+            // embedders learn the client size without a user scroll.
+            view.resync_scroll_geometry();
             view.request_redraw();
         }
     }

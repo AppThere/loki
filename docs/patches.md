@@ -144,9 +144,20 @@ focusable `<div inputmode="text">`, so tapping it raises the keyboard while
 tapping a ribbon `<button>` (focusable, but not a text target) lowers it. An
 `ime_active: bool` field debounces redundant winit calls.
 
+**Scroll re-sync on resize (PATCH(loki), 2026-06-12):** `resync_scroll_geometry`
+re-dispatches `onscroll` (via `collect_scroll_containers` + `handle_scroll_changes`)
+to every scroll container with its fresh client geometry. Called from the
+`Resized` handler and, through `View::resync_scroll_geometry` (now `pub`), from
+dioxus-native's `flush_mounted` when a scroll container mounts. This is what
+lets the editor's width-driven reflow / view-mode default react to a window
+resize, to the first real Android size, and to the canvas appearing after an
+async document load — without the user having to scroll first.
+
 **Root cause:** Upstream has a `// Todo implement touch scrolling` comment at
 the touch arm — the feature is planned but not implemented. The IME call is a
-hard-coded `// TODO: make this conditional on text input focus`.
+hard-coded `// TODO: make this conditional on text input focus`. Upstream also
+has no mechanism to notify embedders of element size changes (no
+`ResizeObserver` / resize events).
 
 **Upstream status:** No known issue filed as of 2026-05-08. Monitor blitz-shell
 releases for native touch implementation.
@@ -342,6 +353,13 @@ file picking additionally requires a Gradle build with `FilePickerActivity.kt`.
    scrolls a node to an absolute `(x, y)` offset (clamped, change-collecting),
    implemented on top of `scroll_node_by_collect`. Backs `MountedData::scroll`
    in the dioxus-native patch (draggable scrollbar thumb, scroll-to-cursor).
+
+4. **Scroll-container enumeration (PATCH(loki), 2026-06-12).**
+   `collect_scroll_containers` returns every node whose computed overflow is
+   `scroll`/`auto`. blitz-shell calls it after a viewport resize (and after a
+   scroll container mounts) and feeds the result to `handle_scroll_changes`, so
+   the embedder re-receives `onscroll` with the new client size — letting the
+   reflow view relayout to the window width without a user scroll.
 
 **Removal condition:** Upstream blitz-dom implements tabindex focus-on-click
 for non-input elements, dispatches scroll events to embedders, and exposes an

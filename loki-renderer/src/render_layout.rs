@@ -15,10 +15,12 @@
 use loki_layout::{ContinuousLayout, PaginatedLayout};
 use loki_vello::{CursorPaint, FontDataCache};
 
-/// Height of one reflow render tile in layout points (~1365 CSS px).  Tall
-/// enough to keep tile counts low, short enough that a Hot-tier texture
-/// (2× scale) stays well inside common GPU texture limits.
-pub const REFLOW_TILE_HEIGHT_PT: f32 = 1024.0;
+/// Height of one reflow render tile in layout points.  Chosen so the CSS-pixel
+/// height is an exact integer (768 pt × 96/72 = 1024 px): fractional tile
+/// heights leave a sub-pixel seam where stacked tiles meet.  Tall enough to
+/// keep tile counts low, short enough that a Hot-tier texture (2× scale) stays
+/// well inside common GPU texture limits.
+pub const REFLOW_TILE_HEIGHT_PT: f32 = 768.0;
 
 /// Horizontal reading-margin inset in points (24 CSS px each side).  The
 /// reflow layout is computed at `tile width − 2 × inset` and painted shifted
@@ -72,9 +74,16 @@ pub enum RenderLayout {
     /// Paginated print layout — one tile per real page.
     Paginated(PaginatedLayout),
     /// Continuous reflow layout — sliced into virtual tiles of
-    /// [`REFLOW_TILE_HEIGHT_PT`].  The stored width is the full tile width in
-    /// points (content width plus both padding insets).
-    Reflow(ContinuousLayout),
+    /// [`REFLOW_TILE_HEIGHT_PT`].
+    Reflow {
+        /// The continuous layout (items in absolute canvas coordinates).
+        layout: ContinuousLayout,
+        /// Full tile width in points: `max(wrap width, widest content) + both
+        /// padding insets`.  Wider than the viewport when content overflows
+        /// (e.g. a fixed-width table), so it can be reached by horizontal
+        /// scrolling instead of being clipped.
+        tile_width_pt: f32,
+    },
 }
 
 impl RenderLayout {
@@ -84,22 +93,22 @@ impl RenderLayout {
     pub fn as_paginated(&self) -> Option<&PaginatedLayout> {
         match self {
             RenderLayout::Paginated(pl) => Some(pl),
-            RenderLayout::Reflow(_) => None,
+            RenderLayout::Reflow { .. } => None,
         }
     }
 
     /// `true` when this is a reflow (zero-gap virtual tile) layout.
     pub fn is_reflow(&self) -> bool {
-        matches!(self, RenderLayout::Reflow(_))
+        matches!(self, RenderLayout::Reflow { .. })
     }
 
     /// Number of render tiles (pages, or reflow bands).
     pub fn page_count(&self) -> usize {
         match self {
             RenderLayout::Paginated(pl) => pl.pages.len(),
-            RenderLayout::Reflow(cl) => {
-                (cl.total_height / REFLOW_TILE_HEIGHT_PT).ceil().max(1.0) as usize
-            }
+            RenderLayout::Reflow { layout, .. } => (layout.total_height / REFLOW_TILE_HEIGHT_PT)
+                .ceil()
+                .max(1.0) as usize,
         }
     }
 
@@ -110,14 +119,16 @@ impl RenderLayout {
                 .pages
                 .get(index)
                 .map(|p| (p.page_size.width, p.page_size.height)),
-            RenderLayout::Reflow(cl) => {
+            RenderLayout::Reflow {
+                layout,
+                tile_width_pt,
+            } => {
                 if index >= self.page_count() {
                     return None;
                 }
-                let width = cl.content_width + 2.0 * REFLOW_PADDING_PT;
                 let band_top = index as f32 * REFLOW_TILE_HEIGHT_PT;
-                let height = (cl.total_height - band_top).clamp(1.0, REFLOW_TILE_HEIGHT_PT);
-                Some((width, height))
+                let height = (layout.total_height - band_top).clamp(1.0, REFLOW_TILE_HEIGHT_PT);
+                Some((*tile_width_pt, height))
             }
         }
     }
@@ -149,7 +160,7 @@ impl RenderLayout {
                     cursor_paint,
                 );
             }
-            RenderLayout::Reflow(cl) => {
+            RenderLayout::Reflow { layout, .. } => {
                 let band_top = index as f32 * REFLOW_TILE_HEIGHT_PT;
                 let band_h = self
                     .page_size_pts(index)
@@ -157,7 +168,7 @@ impl RenderLayout {
                     .unwrap_or(REFLOW_TILE_HEIGHT_PT);
                 loki_vello::paint_continuous_band(
                     scene,
-                    cl,
+                    layout,
                     font_cache,
                     REFLOW_PADDING_PT,
                     scale,
@@ -166,5 +177,58 @@ impl RenderLayout {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use loki_layout::ContinuousLayout;
+
+    fn reflow(total_height: f32, tile_width_pt: f32) -> RenderLayout {
+        RenderLayout::Reflow {
+            layout: ContinuousLayout {
+                content_width: 0.0,
+                total_height,
+                items: vec![],
+            },
+            tile_width_pt,
+        }
+    }
+
+    #[test]
+    fn reflow_tile_count_and_sizes() {
+        // 768 * 2 + 100 = 1636 → 3 tiles (two full, one 100pt remainder).
+        let rl = reflow(1636.0, 500.0);
+        assert_eq!(rl.page_count(), 3);
+        assert_eq!(rl.page_size_pts(0), Some((500.0, 768.0)));
+        assert_eq!(rl.page_size_pts(1), Some((500.0, 768.0)));
+        assert_eq!(rl.page_size_pts(2), Some((500.0, 100.0)));
+        assert_eq!(rl.page_size_pts(3), None);
+        assert!(rl.is_reflow());
+        assert!(rl.as_paginated().is_none());
+    }
+
+    #[test]
+    fn reflow_always_has_at_least_one_tile() {
+        let rl = reflow(0.0, 400.0);
+        assert_eq!(rl.page_count(), 1);
+        assert_eq!(rl.page_size_pts(0), Some((400.0, 1.0)));
+    }
+
+    #[test]
+    fn render_mode_width_tolerant_equality() {
+        let a = RenderMode::Reflow {
+            available_width_pt: 600.0,
+        };
+        let b = RenderMode::Reflow {
+            available_width_pt: 600.3,
+        };
+        let c = RenderMode::Reflow {
+            available_width_pt: 620.0,
+        };
+        assert!(a.matches(&b));
+        assert!(!a.matches(&c));
+        assert!(!a.matches(&RenderMode::Paginated));
     }
 }
