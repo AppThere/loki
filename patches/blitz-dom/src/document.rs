@@ -1262,6 +1262,30 @@ impl BaseDocument {
         self.scroll_node_by_has_changed(node_id, x, y);
     }
 
+    /// Scroll a node to an absolute `(x, y)` offset (in CSS pixels), clamped to
+    /// the node's scroll range, recording the change into `changed` for `onscroll`
+    /// dispatch.  Returns `true` if the offset moved.
+    ///
+    /// PATCH(loki): backs `MountedData::scroll`/`scroll_to` in dioxus-native so
+    /// the editor can drive programmatic scrolling (draggable scrollbar thumb,
+    /// scroll-to-cursor).  Implemented in terms of `scroll_node_by_collect`,
+    /// which already clamps and bubbles, by converting the target into a delta.
+    pub fn scroll_node_to_collect(
+        &mut self,
+        node_id: usize,
+        x: f64,
+        y: f64,
+        changed: &mut Vec<(usize, f64, f64)>,
+    ) -> bool {
+        let Some(node) = self.nodes.get(node_id) else {
+            return false;
+        };
+        let current = node.scroll_offset;
+        // `scroll_node_by_collect` computes `new = current - delta`, so the delta
+        // that lands on the target is `current - target`.
+        self.scroll_node_by_collect(node_id, current.x - x, current.y - y, changed)
+    }
+
     /// Scroll a node by given x and y
     /// Will bubble scrolling up to parent node once it can no longer scroll further
     /// If we're already at the root node, bubbles scrolling up to the viewport

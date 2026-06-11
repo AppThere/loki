@@ -73,6 +73,15 @@ event type whose `HtmlEventConverter` implementation is a placeholder
   `convert_animation_data`, `convert_selection_data`, `convert_toggle_data`,
   `convert_transition_data`, `convert_resize_data`, `convert_visible_data`
 
+**`onmounted` / `MountedData` (PATCH(loki), 2026-06-11).** `convert_mounted_data`
+is implemented, and `onmounted` is now dispatched: `create_event_listener`
+queues `mounted` listeners into `DioxusState::pending_mounted`, and
+`DioxusDocument::take_pending_mounted` drains them (resolved to blitz node ids)
+for the embedder to fire. `mounted.rs` provides the `MountedElement`
+`RenderedElementBacking` plus a `MountedBackend` trait — the transport that
+actually touches the live document, implemented in `dioxus-native` so this crate
+stays free of any winit/shell dependency.
+
 Vendoring the crate locally means Loki can build against a known snapshot and
 apply targeted fixes without being blocked by an upstream release. See
 `docs/editing/input-event-audit.md` — the **Blockers** section — for a
@@ -221,8 +230,19 @@ the original is a no-op: `View::request_redraw()` guards on
 The patch adds `window.request_redraw()` after `window.poll()` in the
 `CreateHeadElement` handler, ensuring CSS changes always trigger a repaint.
 
+**`MountedData` / programmatic scroll (PATCH(loki), 2026-06-11).** Two
+`DioxusNativeEvent` variants are added — `ScrollNode` (absolute scroll, backing
+`MountedData::scroll`) and `QueryNodeGeometry` (a one-shot-reply geometry read,
+backing `get_scroll_offset` / `get_scroll_size` / `get_client_rect`). A
+`ProxyMountedBackend` (impl of dioxus-native-dom's `MountedBackend`) posts these
+events through the event-loop proxy. `flush_mounted` drains
+`DioxusDocument::take_pending_mounted` after each poll and dispatches the
+`mounted` event with a `MountedElement` backing, so `onmounted` fires. This is
+what enables the editor's draggable scrollbar thumb.
+
 **Root cause:** Upstream assumed OS-level redraw events would cover the
 CSS-application step; this assumption holds on desktop but not on Android.
+Upstream also leaves `onmounted` / `MountedData` unimplemented for native.
 
 **Upstream status:** No issue filed as of 2026-05-24. Upstream repository is
 [DioxusLabs/dioxus](https://github.com/DioxusLabs/dioxus).
@@ -318,11 +338,18 @@ file picking additionally requires a Gradle build with `FilePickerActivity.kt`.
    Routed through the `Document` trait because blitz-traits 0.2 has no
    scroll `DomEventData` variant.
 
-**Removal condition:** Upstream blitz-dom implements tabindex focus-on-click
-for non-input elements and dispatches scroll events to embedders.
+3. **Absolute scroll (PATCH(loki), 2026-06-11).** `scroll_node_to_collect`
+   scrolls a node to an absolute `(x, y)` offset (clamped, change-collecting),
+   implemented on top of `scroll_node_by_collect`. Backs `MountedData::scroll`
+   in the dioxus-native patch (draggable scrollbar thumb, scroll-to-cursor).
 
-**Added:** 2026-05-18 (focus); extended 2026-06-10 (scroll events, together
-with matching changes in the blitz-shell and dioxus-native-dom patches).
+**Removal condition:** Upstream blitz-dom implements tabindex focus-on-click
+for non-input elements, dispatches scroll events to embedders, and exposes an
+absolute node-scroll API.
+
+**Added:** 2026-05-18 (focus); extended 2026-06-10 (scroll events) and
+2026-06-11 (absolute scroll), together with matching changes in the blitz-shell
+and dioxus-native(-dom) patches.
 
 ---
 

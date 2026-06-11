@@ -11,9 +11,11 @@
 
 mod dioxus_document;
 mod events;
+mod mounted;
 mod mutation_writer;
 pub use blitz_dom::DocumentConfig;
 pub use dioxus_document::DioxusDocument;
+pub use mounted::{MountedBackend, MountedElement, NodeGeometryData};
 
 use blitz_dom::{ns, LocalName, Namespace, QualName};
 type NodeId = usize;

@@ -43,7 +43,9 @@ use super::editor_keydown::make_keydown_handler;
 use super::editor_pointer::{
     make_mousemove_handler, make_touchend_handler, make_touchmove_handler,
 };
-use super::editor_scrollbar::{ScrollMetrics, horizontal_scrollbar, vertical_scrollbar};
+use super::editor_scrollbar::{
+    CanvasMounted, ScrollMetrics, ThumbDrag, horizontal_scrollbar, vertical_scrollbar,
+};
 use crate::editing::cursor::CursorState;
 use crate::editing::hit_test::hit_test_page;
 use crate::editing::state::DocumentState;
@@ -70,6 +72,9 @@ pub(super) fn render_canvas_area(
     window_width: Signal<f32>,
     mut scroll_offset: Signal<f32>,
     mut scroll_metrics: Signal<ScrollMetrics>,
+    mut canvas_mounted: CanvasMounted,
+    vbar_drag: ThumbDrag,
+    hbar_drag: ThumbDrag,
     mut current_page: Signal<u32>,
     total_pages: Signal<u32>,
     view_mode: Signal<ViewMode>,
@@ -131,6 +136,12 @@ pub(super) fn render_canvas_area(
             tabindex: "0",
             autofocus: "true",
             inputmode: "text",
+
+            // Capture the scroll container's MountedData so the scrollbar thumbs
+            // can drive programmatic scrolling (dioxus-native scroll_to patch).
+            onmounted: move |evt: MountedEvent| {
+                canvas_mounted.set(Some(evt));
+            },
             onmouseenter: move |_| { canvas_hovered.set(true); },
             onmouseleave: move |_| { canvas_hovered.set(false); },
 
@@ -288,12 +299,18 @@ pub(super) fn render_canvas_area(
                 _ => rsx! { div {} },
             }
         }
-                // Vertical scroll indicator (right-edge gutter, always present).
-                {vertical_scrollbar(scroll_metrics(), current_page(), total_pages())}
+                // Vertical scroll indicator + drag handle (right-edge gutter).
+                {vertical_scrollbar(
+                    scroll_metrics(),
+                    current_page(),
+                    total_pages(),
+                    canvas_mounted,
+                    vbar_drag,
+                )}
             }
-            // Horizontal scroll indicator (bottom; only when the page is wider
-            // than the viewport).
-            {horizontal_scrollbar(scroll_metrics())}
+            // Horizontal scroll indicator + drag handle (bottom; only when the
+            // page is wider than the viewport).
+            {horizontal_scrollbar(scroll_metrics(), canvas_mounted, hbar_drag)}
         }
     }
 }

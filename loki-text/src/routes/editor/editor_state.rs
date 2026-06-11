@@ -13,7 +13,7 @@ use dioxus::prelude::*;
 
 use loki_renderer::ViewMode;
 
-use super::editor_scrollbar::ScrollMetrics;
+use super::editor_scrollbar::{CanvasMounted, ScrollMetrics, ThumbDrag};
 use crate::editing::cursor::CursorState;
 use crate::editing::state::DocumentState;
 use crate::editing::touch::TouchInteractionState;
@@ -57,6 +57,12 @@ pub(super) struct EditorState {
     /// Live scroll geometry of the canvas container, mirrored from the most
     /// recent DOM `scroll` event and consumed by the custom scrollbars.
     pub scroll_metrics: Signal<ScrollMetrics>,
+    /// `MountedData` for the scroll container, captured via `onmounted`; lets the
+    /// scrollbar thumbs drive programmatic scrolling (dioxus-native scroll patch).
+    pub canvas_mounted: CanvasMounted,
+    /// In-progress vertical / horizontal scrollbar thumb drags.
+    pub vbar_drag: ThumbDrag,
+    pub hbar_drag: ThumbDrag,
     pub current_page: Signal<u32>,
     pub total_pages: Signal<u32>,
     /// Active layout mode (paginated vs reflowable). Defaults by viewport width
@@ -128,6 +134,9 @@ pub(super) fn use_editor_state() -> EditorState {
         window_width: use_signal(|| 1280.0_f32),
         scroll_offset: use_signal(|| 0.0_f32),
         scroll_metrics: use_signal(ScrollMetrics::default),
+        canvas_mounted: use_signal(|| None),
+        vbar_drag: use_signal(|| None),
+        hbar_drag: use_signal(|| None),
         current_page,
         total_pages,
         view_mode: use_signal(ViewMode::default),
