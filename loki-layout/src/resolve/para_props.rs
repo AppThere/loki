@@ -1,0 +1,137 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
+
+//! Paragraph property resolution and border conversion.
+
+use loki_doc_model::style::list_style::ListId;
+use loki_doc_model::style::props::border::{Border as DocBorder, BorderStyle as DocBorderStyle};
+use loki_doc_model::style::props::para_props::{
+    LineHeight as DocLineHeight, ParaProps, ParagraphAlignment, Spacing,
+};
+use loki_doc_model::style::props::tab_stop::TabAlignment;
+use parley::Alignment;
+
+use crate::geometry::LayoutInsets;
+use crate::items::{BorderEdge, BorderStyle};
+use crate::para::{ResolvedLineHeight, ResolvedListMarker, ResolvedParaProps, ResolvedTabStop};
+
+use super::color::resolve_color;
+use super::units::pts_to_f32;
+
+/// Map a doc [`Border`][DocBorder] to a layout [`BorderEdge`], or `None` when
+/// the border style is [`DocBorderStyle::None`].
+pub(crate) fn convert_border(border: &DocBorder) -> Option<BorderEdge> {
+    if border.style == DocBorderStyle::None {
+        return None;
+    }
+    Some(BorderEdge {
+        color: resolve_color(border.color.as_ref()),
+        width: pts_to_f32(border.width),
+        style: match border.style {
+            DocBorderStyle::Dashed => BorderStyle::Dashed,
+            DocBorderStyle::Dotted => BorderStyle::Dotted,
+            DocBorderStyle::Double => BorderStyle::Double,
+            _ => BorderStyle::Solid,
+        },
+    })
+}
+
+/// Map a [`Spacing`] variant to a point value; percentage-based spacing
+/// falls back to `0.0` (line height is not known at this stage).
+#[inline]
+fn resolve_spacing(s: Option<Spacing>) -> f32 {
+    match s {
+        Some(Spacing::Exact(pts)) => pts_to_f32(pts),
+        _ => 0.0,
+    }
+}
+
+/// Map a [`ParaProps`] record to the layout [`ResolvedParaProps`].
+pub(crate) fn map_para_props(p: &ParaProps) -> ResolvedParaProps {
+    ResolvedParaProps {
+        alignment: match p.alignment {
+            Some(ParagraphAlignment::Right) => Alignment::End,
+            Some(ParagraphAlignment::Center) => Alignment::Center,
+            Some(ParagraphAlignment::Justify) => Alignment::Justify,
+            _ => Alignment::Start,
+        },
+        space_before: resolve_spacing(p.space_before),
+        space_after: resolve_spacing(p.space_after),
+        indent_start: p.indent_start.map(pts_to_f32).unwrap_or(0.0),
+        indent_end: p.indent_end.map(pts_to_f32).unwrap_or(0.0),
+        indent_first_line: p.indent_first_line.map(pts_to_f32).unwrap_or(0.0),
+        line_height: p.line_height.and_then(|lh| match lh {
+            // IMPORTANT: The OOXML mapper stores Multiple as a ratio, NOT a
+            // percentage, despite the doc-model comment (e.g. line=240 →
+            // Multiple(1.0), line=360 → Multiple(1.5)). Do NOT divide by 100.
+            //
+            // lineRule="auto" with line=240 (single spacing) is the most common
+            // case. Return None so Parley uses natural font metrics
+            // (ascender + descender + leading — exactly what "auto" means).
+            // For non-unity multipliers, MetricsRelative scales those natural
+            // metrics (1.5 = one-and-a-half spacing, 2.0 = double spacing).
+            DocLineHeight::Multiple(m) => {
+                if (m - 1.0).abs() < 0.02 {
+                    None // Single spacing — let Parley default take over
+                } else {
+                    Some(ResolvedLineHeight::MetricsRelative(m))
+                }
+            }
+            DocLineHeight::Exact(pts) => Some(ResolvedLineHeight::Exact(pts_to_f32(pts))),
+            DocLineHeight::AtLeast(pts) => Some(ResolvedLineHeight::AtLeast(pts_to_f32(pts))),
+            // Future variants — fall back to natural metrics.
+            _ => None,
+        }),
+        background_color: p.background_color.as_ref().map(|c| resolve_color(Some(c))),
+        border_top: p.border_top.as_ref().and_then(convert_border),
+        border_bottom: p.border_bottom.as_ref().and_then(convert_border),
+        border_left: p.border_left.as_ref().and_then(convert_border),
+        border_right: p.border_right.as_ref().and_then(convert_border),
+        padding: LayoutInsets {
+            top: p.padding_top.map(pts_to_f32).unwrap_or(0.0),
+            right: p.padding_right.map(pts_to_f32).unwrap_or(0.0),
+            bottom: p.padding_bottom.map(pts_to_f32).unwrap_or(0.0),
+            left: p.padding_left.map(pts_to_f32).unwrap_or(0.0),
+        },
+        keep_together: p.keep_together.unwrap_or(false),
+        keep_with_next: p.keep_with_next.unwrap_or(false),
+        page_break_before: p.page_break_before.unwrap_or(false),
+        page_break_after: p.page_break_after.unwrap_or(false),
+        // NOTE(bidi): `ParaProps.bidi` (RTL paragraph direction) is not forwarded.
+        // Parley 0.6 has no `StyleProperty` for text direction and exposes no
+        // public bidi level API (`BidiLevel`/`BidiResolver` are pub(crate)).
+        // Parley runs BiDi automatically from Unicode character classes, so
+        // purely RTL text in RTL scripts will display correctly without explicit
+        // direction. Explicit `bidi: true` paragraphs in mixed-direction documents
+        // may render incorrectly. Revisit when Parley exposes a direction API.
+        // Tracked: fidelity audit gap #19 (deferred).
+        indent_hanging: p.indent_hanging.map(pts_to_f32).unwrap_or(0.0),
+        list_marker: match (&p.list_id, p.list_level) {
+            (Some(id), Some(level)) => Some(ResolvedListMarker {
+                list_id: ListId::new(id.as_str()),
+                level,
+            }),
+            _ => None,
+        },
+        // Tab stops (gap #7): convert from Points to f32, sort ascending,
+        // drop Clear entries (already filtered by the OOXML mapper).
+        tab_stops: {
+            let mut stops: Vec<ResolvedTabStop> = p
+                .tab_stops
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .filter(|s| s.alignment != TabAlignment::Clear)
+                .map(|s| ResolvedTabStop {
+                    position: pts_to_f32(s.position),
+                })
+                .collect();
+            stops.sort_by(|a, b| {
+                a.position
+                    .partial_cmp(&b.position)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            stops
+        },
+    }
+}

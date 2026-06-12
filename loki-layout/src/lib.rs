@@ -34,6 +34,12 @@ pub mod para;
 pub mod resolve;
 pub mod result;
 
+mod flow_block;
+mod flow_helpers;
+mod flow_table;
+mod flow_table_decor;
+mod flow_table_measure;
+
 pub use color::LayoutColor;
 pub use error::{LayoutError, LayoutResult};
 pub use flow::{FlowOutput, LayoutWarning, flow_section};

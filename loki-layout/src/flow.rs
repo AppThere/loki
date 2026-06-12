@@ -11,8 +11,8 @@
 //! Paragraph placement, splitting, and keep-with-next chain logic live in
 //! the `para_impl` submodule (`flow_para.rs`).
 
-#[path = "flow_para.rs"]
-mod para_impl;
+#[path = "para_impl/mod.rs"]
+pub(crate) mod para_impl;
 
 use std::collections::HashMap;
 
