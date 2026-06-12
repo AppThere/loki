@@ -75,4 +75,4 @@ pub use error::{AccessError, PickerError, TokenParseError};
 pub use token::{FileAccessToken, PermissionStatus, ReadSeek, WriteSeek};
 
 #[cfg(target_os = "android")]
-pub use platform::{init_android, on_activity_result, query_insets_dp};
+pub use platform::{init_android, on_activity_result, query_insets_dp, query_window_insets_dp};

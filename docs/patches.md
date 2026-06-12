@@ -309,6 +309,19 @@ File" on a NativeActivity (cargo-apk) build:
 0.21.x API), and corrects a `#[no_mangle]` → `#[unsafe(no_mangle)]` attribute
 for Rust 2024 edition compatibility.
 
+**Adds (PATCH(loki), 2026-06-13):** `query_window_insets_dp(activity_ptr)` —
+orientation-aware safe-area insets `(top, bottom, left, right)` in dp from
+`decorView.getRootWindowInsets().getInsets(systemBars | displayCutout)`. Unlike
+the existing `query_insets_dp` (which reads the orientation-independent
+`status_bar_height` / `navigation_bar_height` resources), this reflects the real
+per-side insets, so landscape — where the navigation bar / cutout move to a side
+— is padded correctly instead of keeping the portrait top/bottom values. Needs
+the **Activity** (passed in via `AndroidApp::activity_as_ptr()`), since
+`ndk_context` holds the `Application`, which has no window. Returns `None`
+(caller falls back to `query_insets_dp`) before the view is attached or on
+API < 30. loki-text re-queries it on resize via a hidden scroll-container
+sensor and pushes the result into `appthere_ui::update_safe_area_insets`.
+
 **Root cause:** loki-file-access 0.1.2 was designed for desktop and WASM; the
 Android implementation was scaffolded but never exercised on a real NativeActivity
 build before this patch.

@@ -26,6 +26,53 @@ use crate::routes::Route;
 use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
 
+/// Query the current orientation-aware safe-area insets, falling back to the
+/// orientation-independent resource heights (status/navigation bar) before the
+/// window is laid out or on API levels without `getInsets(int)`.
+#[cfg(target_os = "android")]
+fn current_safe_area() -> appthere_ui::SafeAreaInsets {
+    let activity = blitz_shell::current_android_app().activity_as_ptr();
+    if let Some((top, bottom, left, right)) = loki_file_access::query_window_insets_dp(activity) {
+        appthere_ui::SafeAreaInsets {
+            top,
+            bottom,
+            left,
+            right,
+        }
+    } else {
+        let (top, bottom) = loki_file_access::query_insets_dp();
+        appthere_ui::SafeAreaInsets {
+            top,
+            bottom,
+            ..Default::default()
+        }
+    }
+}
+
+/// Hidden zero-size scroll container that re-queries orientation-aware
+/// safe-area insets on every resize.
+///
+/// The blitz shell re-emits `onscroll` to every scroll container after a resize
+/// (`resync_scroll_geometry`); this element catches that tick app-wide and
+/// updates the reactive insets, so rotating to landscape no longer keeps the
+/// portrait padding (which over-condenses the usable area and pads the wrong
+/// edges when the navigation bar / cutout move to a side). On desktop it renders
+/// nothing.
+#[component]
+fn SafeAreaResizeSensor() -> Element {
+    #[cfg(target_os = "android")]
+    return rsx! {
+        div {
+            style: "width: 0px; height: 0px; overflow: auto;",
+            onscroll: move |_| {
+                appthere_ui::update_safe_area_insets(current_safe_area());
+            },
+        }
+    };
+    #[cfg(not(target_os = "android"))]
+    rsx! {}
+}
+
 /// Root application component.
 ///
 /// Injects [`AtThemeContext`] (defaults to `ThemeVariant::Dark`) and two tab
@@ -141,6 +188,10 @@ pub fn App() -> Element {
                 left   = insets.left.round() as i32,
                 bg     = tokens::COLOR_SURFACE_CHROME,
             ),
+
+            // Re-query safe-area insets on resize (Android orientation change).
+            SafeAreaResizeSensor {}
+
             Router::<Route> {}
         }
     }

@@ -2,49 +2,87 @@
 
 //! Safe-area insets for edge-to-edge display on mobile platforms.
 //!
-//! On Android and iOS, system bars (status bar, navigation bar) draw over the
-//! application window. Call [`set_safe_area_insets`] from the platform's entry
-//! point (e.g. `android_main`) with values queried from the OS, then read them
-//! in the root component via [`use_safe_area`] to apply padding so content is
-//! not obscured.
+//! On Android and iOS, system bars (status bar, navigation bar) and display
+//! cutouts draw over the application window. The platform entry point seeds an
+//! initial value with [`set_safe_area_insets`]; the root component reads it via
+//! [`use_safe_area`] and applies padding so content is not obscured.
 //!
-//! On desktop platforms the global is never set, so [`use_safe_area`] returns
-//! all-zero insets and the root component padding is effectively a no-op.
+//! The insets are **not** fixed for the lifetime of the app: on Android they
+//! change with orientation (in landscape the navigation bar / cutout move to a
+//! side). Call [`update_safe_area_insets`] from within the Dioxus runtime (e.g.
+//! a resize handler) to push new values — readers of [`use_safe_area`]
+//! re-render so the padding follows the current orientation.
+//!
+//! On desktop platforms nothing ever updates the value, so [`use_safe_area`]
+//! returns all-zero insets and the root padding is effectively a no-op.
 
-use std::sync::OnceLock;
+use std::sync::RwLock;
 
-/// Platform system-bar insets in density-independent pixels (CSS px / Android dp).
+use dioxus::prelude::*;
+
+/// Platform system-bar / cutout insets in density-independent pixels (CSS px /
+/// Android dp).
 ///
 /// All values default to `0.0` so the type is safe to use on platforms where
 /// edge-to-edge is not applicable (Windows, macOS, Linux).
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub struct SafeAreaInsets {
-    /// Height of the status bar (top system bar).
+    /// Height of the top system inset (status bar / top cutout).
     pub top: f32,
-    /// Height of the navigation bar (bottom system bar, or gesture strip).
+    /// Height of the bottom system inset (navigation bar / gesture strip).
     pub bottom: f32,
-    /// Width of any left system decoration (rare; non-zero on some landscape layouts).
+    /// Width of the left system inset (non-zero in some landscape layouts).
     pub left: f32,
-    /// Width of any right system decoration (rare; non-zero on some landscape layouts).
+    /// Width of the right system inset (non-zero in some landscape layouts).
     pub right: f32,
 }
 
-static INSETS: OnceLock<SafeAreaInsets> = OnceLock::new();
+/// Current insets. A plain `RwLock` (not a signal) so the platform entry point
+/// can seed it before the Dioxus runtime exists.
+static INSETS: RwLock<SafeAreaInsets> = RwLock::new(SafeAreaInsets {
+    top: 0.0,
+    bottom: 0.0,
+    left: 0.0,
+    right: 0.0,
+});
 
-/// Store the platform safe-area insets.
-///
-/// Must be called before [`dioxus::launch`] so the values are visible to the
-/// first component render. Subsequent calls are silently ignored (the OS values
-/// do not change after the window is created on the supported platforms).
+/// Reactivity trigger: bumped by [`update_safe_area_insets`] so components that
+/// read [`use_safe_area`] re-render. Separate from `INSETS` because a global
+/// signal cannot be written before the runtime is initialised.
+static VERSION: GlobalSignal<u64> = Signal::global(|| 0);
+
+/// Seed the platform safe-area insets, typically from the platform entry point
+/// (e.g. `android_main`) before `dioxus::launch`. Does not notify — the first
+/// render reads the stored value.
 pub fn set_safe_area_insets(insets: SafeAreaInsets) {
-    // OnceLock::set returns Err if already initialised; that is intentional.
-    let _ = INSETS.set(insets);
+    if let Ok(mut w) = INSETS.write() {
+        *w = insets;
+    }
 }
 
-/// Return the stored safe-area insets, defaulting to all-zero if never set.
+/// Update the safe-area insets at runtime (e.g. on an orientation change) and
+/// re-render every [`use_safe_area`] reader. No-op when the value is unchanged,
+/// so it is safe to call on every resize tick.
+///
+/// Must be called from within the Dioxus runtime (it writes a global signal).
+pub fn update_safe_area_insets(insets: SafeAreaInsets) {
+    let unchanged = INSETS.read().map(|cur| *cur == insets).unwrap_or(false);
+    if unchanged {
+        return;
+    }
+    if let Ok(mut w) = INSETS.write() {
+        *w = insets;
+    }
+    *VERSION.write() += 1;
+}
+
+/// Return the current safe-area insets, defaulting to all-zero if never set.
 ///
 /// Call this inside a Dioxus component to apply the insets as padding on the
-/// root container so system bars do not obscure application content.
+/// root container. Subscribes to [`update_safe_area_insets`], so the component
+/// re-renders when the insets change (orientation change).
 pub fn use_safe_area() -> SafeAreaInsets {
-    INSETS.get().copied().unwrap_or_default()
+    // Subscribe to updates.
+    let _ = VERSION();
+    INSETS.read().map(|i| *i).unwrap_or_default()
 }

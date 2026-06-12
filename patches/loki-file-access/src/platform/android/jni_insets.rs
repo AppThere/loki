@@ -89,6 +89,146 @@ fn query_with_env(env: &mut JNIEnv<'_>) -> Option<(f32, f32)> {
     Some((top_dp, bottom_dp))
 }
 
+// ── Orientation-aware window insets (edge-to-edge) ──────────────────────────────
+
+/// Query the actual per-side safe-area insets from the activity's window, in dp.
+///
+/// Returns `(top, bottom, left, right)` from
+/// `decorView.getRootWindowInsets().getInsets(systemBars | displayCutout)` —
+/// the real, orientation-aware insets for an edge-to-edge window (e.g. in
+/// landscape the navigation bar / cutout move to a side, so `left`/`right`
+/// become non-zero and `top` shrinks).  Unlike [`query_insets_dp`], this is not
+/// orientation-independent.
+///
+/// `activity_ptr` is the activity `jobject` from
+/// `android_activity::AndroidApp::activity_as_ptr()` — the `ndk_context` context
+/// is the *Application*, which has no window, so the activity must be passed in.
+///
+/// Returns `None` (caller should fall back to [`query_insets_dp`]) when the view
+/// is not yet attached (`getRootWindowInsets` is null), on API < 30
+/// (`getInsets(int)` unavailable), or on any JNI failure.
+pub(super) fn query_window_insets_dp(
+    activity_ptr: *mut std::ffi::c_void,
+) -> Option<(f32, f32, f32, f32)> {
+    if activity_ptr.is_null() {
+        return None;
+    }
+    let ctx = ndk_context::android_context();
+    // SAFETY: ndk_context stores the JVM pointer initialised by android-activity
+    // before android_main; valid for the process lifetime.
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }.ok()?;
+    let mut env = vm.attach_current_thread().ok()?;
+    let result = window_insets_with_env(&mut env, activity_ptr);
+    // Clear any pending exception (e.g. NoSuchMethodError on API < 30) so the
+    // calling thread stays usable.
+    let _ = env.exception_clear();
+    result
+}
+
+fn window_insets_with_env(
+    env: &mut JNIEnv<'_>,
+    activity_ptr: *mut std::ffi::c_void,
+) -> Option<(f32, f32, f32, f32)> {
+    // SAFETY: `activity_ptr` is a global reference jobject owned by AndroidApp,
+    // valid for the activity's lifetime.
+    let activity = unsafe { JObject::from_raw(activity_ptr.cast()) };
+
+    // activity.getWindow().getDecorView().getRootWindowInsets()
+    let window = env
+        .call_method(&activity, "getWindow", "()Landroid/view/Window;", &[])
+        .ok()?
+        .l()
+        .ok()?;
+    let decor = env
+        .call_method(&window, "getDecorView", "()Landroid/view/View;", &[])
+        .ok()?
+        .l()
+        .ok()?;
+    let insets_obj = env
+        .call_method(
+            &decor,
+            "getRootWindowInsets",
+            "()Landroid/view/WindowInsets;",
+            &[],
+        )
+        .ok()?
+        .l()
+        .ok()?;
+    if insets_obj.as_raw().is_null() {
+        return None; // view not attached yet
+    }
+
+    // mask = WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout()
+    // (both static int methods, API 30+).
+    let type_cls = env.find_class("android/view/WindowInsets$Type").ok()?;
+    let system_bars = env
+        .call_static_method(&type_cls, "systemBars", "()I", &[])
+        .ok()?
+        .i()
+        .ok()?;
+    let cutout = env
+        .call_static_method(&type_cls, "displayCutout", "()I", &[])
+        .ok()?
+        .i()
+        .ok()?;
+    let mask = system_bars | cutout;
+
+    // insets = windowInsets.getInsets(mask) → android.graphics.Insets (API 30+)
+    let insets = env
+        .call_method(
+            &insets_obj,
+            "getInsets",
+            "(I)Landroid/graphics/Insets;",
+            &[JValueGen::Int(mask)],
+        )
+        .ok()?
+        .l()
+        .ok()?;
+    let left = env.get_field(&insets, "left", "I").ok()?.i().ok()?;
+    let top = env.get_field(&insets, "top", "I").ok()?.i().ok()?;
+    let right = env.get_field(&insets, "right", "I").ok()?.i().ok()?;
+    let bottom = env.get_field(&insets, "bottom", "I").ok()?.i().ok()?;
+
+    let density = display_density(env)?;
+    if density <= 0.0 {
+        return None;
+    }
+    Some((
+        top as f32 / density,
+        bottom as f32 / density,
+        left as f32 / density,
+        right as f32 / density,
+    ))
+}
+
+/// Display density (e.g. 2.625) from the Application's `DisplayMetrics`.
+fn display_density(env: &mut JNIEnv<'_>) -> Option<f32> {
+    let ctx = ndk_context::android_context();
+    // SAFETY: ndk_context stores the Application jobject; it provides Resources.
+    let context = unsafe { JObject::from_raw(ctx.context().cast()) };
+    let resources = env
+        .call_method(
+            &context,
+            "getResources",
+            "()Landroid/content/res/Resources;",
+            &[],
+        )
+        .ok()?
+        .l()
+        .ok()?;
+    let metrics = env
+        .call_method(
+            &resources,
+            "getDisplayMetrics",
+            "()Landroid/util/DisplayMetrics;",
+            &[],
+        )
+        .ok()?
+        .l()
+        .ok()?;
+    env.get_field(&metrics, "density", "F").ok()?.f().ok()
+}
+
 /// Look up one Android system dimension resource and convert physical pixels → dp.
 fn dimen_dp(
     env: &mut JNIEnv<'_>,
