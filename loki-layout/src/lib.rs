@@ -31,6 +31,7 @@ pub mod geometry;
 pub mod items;
 pub mod mode;
 pub mod para;
+mod para_cache;
 pub mod resolve;
 pub mod result;
 

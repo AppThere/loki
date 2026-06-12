@@ -51,6 +51,8 @@ cargo bench -p loki-layout --bench layout_scaling -- 'paginated/100'
 Indicative only — absolute numbers are machine-dependent; the **shape** is the
 finding. Re-run on your target hardware (Windows / Pixel 9) for device numbers.
 
+### Before the shaping cache (whole-document re-shape per keystroke)
+
 | paras | paginate | reflow | keystroke | µs/para |
 |------:|---------:|-------:|----------:|--------:|
 | 10    | 1.4 ms   | 1.4 ms | 1.5 ms    | ~155 |
@@ -58,12 +60,44 @@ finding. Re-run on your target hardware (Windows / Pixel 9) for device numbers.
 | 500   | 77.6 ms  | 79.6 ms| 83.3 ms   | ~166 |
 | 1000  | 161 ms   | 160 ms | 166 ms    | ~166 |
 
-`FontResources::new()` ≈ 7 ms here (higher on systems with more installed
-fonts).
+Cost-per-paragraph was roughly flat, i.e. each keystroke re-shaped the whole
+document — O(n).
 
-**Reading:** cost-per-paragraph is roughly flat across document sizes, so each
-keystroke recomputes the whole document — cost is O(n) in document length. At
-~1000 paragraphs (~40 pages) a single keystroke already costs ~166 ms, versus
-the ~10 ms target for a fluid editor. The Loro traversal adds only a few ms on
-top of layout, so `layout_document` is the primary cost centre and the first
-target for the incremental-layout work (Tier 0 of the assessment roadmap).
+### After the shaping cache (`para_cache`, re-shape only the changed paragraph)
+
+| paras | paginate | reflow | keystroke | speed-up (keystroke) |
+|------:|---------:|-------:|----------:|---------------------:|
+| 10    | 0.13 ms  | 0.11 ms| 0.16 ms   | ~10× |
+| 100   | 1.5 ms   | 1.4 ms | 1.8 ms    | ~9× |
+| 500   | 8.7 ms   | 7.8 ms | 10.4 ms   | ~8× |
+| 1000  | 16.4 ms  | 16.2 ms| 22.2 ms   | ~7.5× |
+
+(Criterion confirms the 1000-paragraph keystroke at ~22 ms, down from ~166 ms.)
+
+`FontResources::new()` ≈ 7 ms here (higher on systems with more installed
+fonts) — previously paid on **every** generation by the renderer path; now paid
+once (see below).
+
+**Reading:** with shaping memoised, an edit re-shapes only the changed
+paragraph; the other `N − 1` are served from cache. Layout is no longer the
+dominant per-keystroke cost. The residual ~22 ms at 1000 paragraphs is now
+dominated by `loro_to_document` (full CRDT walk) plus the per-paragraph clone +
+key-hash — the next optimisation targets (Tier-0 items #1 dirty-block tracking
+and the single-canonical-layout merge).
+
+> The `edit_path` keystroke bench re-inserts the same character each iteration,
+> so after warm-up the edited paragraph is also a cache hit; a real keystroke
+> types a fresh character and pays one extra paragraph shape (~150 µs), which is
+> immaterial against the totals above.
+
+## What changed (Tier-0 fixes)
+
+- **Paragraph shaping cache** (`loki-layout/src/para_cache.rs`): memoises
+  `ParagraphLayout` inside the shared `FontResources`, keyed by a hash of every
+  shaping input (text + `Debug` of spans/props + width + scale + preserve
+  flag). Layout output is **byte-identical** — only re-computation is skipped.
+- **Persistent renderer font/shaping context**
+  (`loki-renderer/src/doc_page_source.rs`): `DocPageSource` now holds one
+  `FontResources` for its lifetime instead of constructing a fresh one per
+  generation, so the ~20 MB system-font scan happens once and the shaping cache
+  survives across keystrokes on the render path too.

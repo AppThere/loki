@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::color::LayoutColor;
+use crate::para_cache::ParaCache;
 
 /// Shared font and layout context.
 ///
@@ -33,6 +34,12 @@ pub struct FontResources {
     /// Key: requested font name.
     /// Value: `Some(substitute)` if substituted, or `None` if missing without standard substitute.
     pub substitutions: HashMap<String, Option<String>>,
+    /// Memoised paragraph layouts, keyed by a hash of every shaping input.
+    ///
+    /// Lets [`crate::para::layout_paragraph`] skip re-shaping paragraphs that
+    /// did not change between layout passes (the common case on a keystroke,
+    /// where only one paragraph differs). See [`ParaCache`].
+    pub(crate) para_cache: ParaCache,
 }
 
 impl FontResources {
@@ -55,6 +62,7 @@ impl FontResources {
             layout_cx: parley::LayoutContext::new(),
             font_data_cache: HashMap::new(),
             substitutions: HashMap::new(),
+            para_cache: ParaCache::default(),
         }
     }
 

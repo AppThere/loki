@@ -125,3 +125,17 @@ these limits are clamped or rejected with a typed error.
 | ODT table columns expanded per `table:table-column` repeat | 16,384 | Clamped |
 | ODT spaces per `<text:s text:c="N"/>` | 10,000 | Clamped |
 | ODT nesting depth (`text:span` / `text:a` / `text:list`) | 100 | `NestingTooDeep` error |
+
+---
+
+## 8. Layout Performance (Editing Path)
+
+These are performance characteristics, not fidelity changes — layout output is
+byte-identical with and without the caches below. See
+[benchmarks.md](file:///home/user/loki/docs/benchmarks.md) for the harness and
+numbers.
+
+| Mechanism | Where | Effect |
+| :--- | :--- | :--- |
+| Paragraph shaping cache (`para_cache`) | `loki-layout` `FontResources` | Re-shapes only the changed paragraph per keystroke; unchanged paragraphs are served from cache. Keystroke cost on a ~1000-paragraph doc dropped ~166 ms → ~22 ms. Keyed by a hash of every shaping input (text + `Debug` of spans/props + width + scale + preserve flag), bounded by a two-generation LRU (`CACHE_CAP` = 4096). |
+| Persistent renderer shaping context | `loki-renderer` `DocPageSource` | One `FontResources` for the source's lifetime instead of one per generation: the ~20 MB system-font scan runs once, and the shaping cache persists across keystrokes on the render path. |

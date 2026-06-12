@@ -61,6 +61,12 @@ pub struct DocPageSource {
     render_mode: Mutex<RenderMode>,
     /// Shared font cache for rendering (used by the `PageSource::render` path).
     pub(crate) font_cache: Mutex<FontDataCache>,
+    /// Persistent layout font/shaping context, reused across generations.
+    ///
+    /// Holds the system-font scan (~20 MB, otherwise repeated on every
+    /// generation) and the paragraph shaping cache, so a keystroke re-shapes
+    /// only the changed paragraph instead of the whole document.
+    layout_resources: Mutex<FontResources>,
     /// Lazily-initialised Vello renderer for the `PageSource::render` path.
     pub(crate) renderer: Mutex<Option<vello::Renderer>>,
     /// Monotone generation counter.  Starts at 1 so that `LokiPageSource`
@@ -77,6 +83,7 @@ impl DocPageSource {
             layout_cache: Mutex::new(None),
             render_mode: Mutex::new(RenderMode::Paginated),
             font_cache: Mutex::new(FontDataCache::new()),
+            layout_resources: Mutex::new(FontResources::new()),
             renderer: Mutex::new(None),
             generation: Arc::new(AtomicU64::new(1)),
         }
@@ -185,14 +192,18 @@ impl DocPageSource {
         if needs_recompute {
             let doc = self.doc.lock().unwrap_or_else(|e| e.into_inner()).clone();
             let mode = *self.render_mode.lock().unwrap_or_else(|e| e.into_inner());
-            let mut resources = FontResources::new();
+            let mut resources = self
+                .layout_resources
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let resources = &mut *resources;
             let layout = match mode {
                 RenderMode::Paginated => {
                     let options = LayoutOptions {
                         preserve_for_editing: true,
                     };
                     match loki_layout::layout_document(
-                        &mut resources,
+                        resources,
                         &doc,
                         LayoutMode::Paginated,
                         1.0,
@@ -213,7 +224,7 @@ impl DocPageSource {
                     let content_width =
                         (available_width_pt - 2.0 * REFLOW_PADDING_PT).max(MIN_REFLOW_CONTENT_PT);
                     match loki_layout::layout_document(
-                        &mut resources,
+                        resources,
                         &doc,
                         LayoutMode::Reflow {
                             available_width: content_width,

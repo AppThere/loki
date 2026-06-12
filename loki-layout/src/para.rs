@@ -691,7 +691,47 @@ fn clean_text_and_spans(
 /// sessions can call [`ParagraphLayout::hit_test_point`] and
 /// [`ParagraphLayout::cursor_rect`]. In read-only rendering mode pass
 /// `false` to avoid the memory cost on large documents.
+///
+/// The result is memoised in `resources.para_cache`: when the same inputs are
+/// laid out again (e.g. every paragraph except the edited one, on a keystroke)
+/// the cached layout is cloned instead of re-shaped. See
+/// [`crate::para_cache`].
 pub fn layout_paragraph(
+    resources: &mut FontResources,
+    text_content: &str,
+    style_spans: &[StyleSpan],
+    para_props: &ResolvedParaProps,
+    available_width: f32,
+    display_scale: f32,
+    preserve_for_editing: bool,
+) -> ParagraphLayout {
+    let key = crate::para_cache::para_key(
+        text_content,
+        style_spans,
+        para_props,
+        available_width,
+        display_scale,
+        preserve_for_editing,
+    );
+    if let Some(hit) = resources.para_cache.get(key) {
+        return hit;
+    }
+    let result = layout_paragraph_uncached(
+        resources,
+        text_content,
+        style_spans,
+        para_props,
+        available_width,
+        display_scale,
+        preserve_for_editing,
+    );
+    resources.para_cache.put(key, result.clone());
+    result
+}
+
+/// Lays out a single paragraph using Parley, without consulting or populating
+/// the shaping cache. [`layout_paragraph`] wraps this with memoisation.
+fn layout_paragraph_uncached(
     resources: &mut FontResources,
     text_content: &str,
     style_spans: &[StyleSpan],
