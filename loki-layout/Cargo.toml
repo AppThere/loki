@@ -17,6 +17,20 @@ fontique = "0.8"
 thiserror = "2"
 tracing = "0.1"
 
+[dev-dependencies]
+# Statistical benchmark harness (layout + edit-path scaling).
+criterion = "0.5"
+# Drives real CRDT mutations through the edit-path benchmark / report.
+loro = "1.11.1"
+
+[[bench]]
+name = "layout_scaling"
+harness = false
+
+[[bench]]
+name = "edit_path"
+harness = false
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
