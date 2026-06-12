@@ -77,16 +77,27 @@ impl RendererState {
         // CSS pixels assume 96dpi. Conversion: 1pt = 96/72 CSS px.
         // ScrollState.viewport_top_px is in CSS px; these must match.
         const PTS_TO_CSS_PX: f64 = 96.0 / 72.0;
+        // Reflow tiles stack with zero gap (a continuous flow); paginated
+        // pages are separated by the page gap. Must match DocumentView's CSS.
+        let gap_px = if layout.is_reflow() {
+            0.0
+        } else {
+            appthere_ui::tokens::PAGE_GAP_PX as f64
+        };
+        let page_count = layout.page_count();
         let mut current_top = 0.0;
-        let mut pages = Vec::with_capacity(layout.pages.len());
-        for (i, p) in layout.pages.iter().enumerate() {
-            let h_px = p.page_size.height as f64 * PTS_TO_CSS_PX;
+        let mut pages = Vec::with_capacity(page_count);
+        for i in 0..page_count {
+            let h_px = layout
+                .page_size_pts(i)
+                .map(|(_, h)| h as f64 * PTS_TO_CSS_PX)
+                .unwrap_or(0.0);
             pages.push(PageGeometry {
                 index: PageIndex(i as u32),
                 top_px: current_top,
                 bottom_px: current_top + h_px,
             });
-            current_top += h_px + appthere_ui::tokens::PAGE_GAP_PX as f64;
+            current_top += h_px + gap_px;
         }
         drop(layout_guard);
         tracing::Span::current().record("page_count", pages.len());

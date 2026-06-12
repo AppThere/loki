@@ -36,14 +36,17 @@ use std::sync::Arc;
 use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
-use loki_renderer::{DocumentView, RendererCursorPos};
+use loki_renderer::{DocumentView, RendererCursorPos, ViewMode};
 
 use super::editor_error_view::EditorErrorView;
 use super::editor_keydown::make_keydown_handler;
 use super::editor_pointer::{
     make_mousemove_handler, make_touchend_handler, make_touchmove_handler,
 };
-use crate::editing::cursor::CursorState;
+use super::editor_scrollbar::{
+    CanvasMounted, ScrollMetrics, ThumbDrag, horizontal_scrollbar, vertical_scrollbar,
+};
+use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::hit_test::hit_test_page;
 use crate::editing::state::DocumentState;
 use crate::editing::touch::TouchInteractionState;
@@ -68,7 +71,13 @@ pub(super) fn render_canvas_area(
     touch_state: Signal<Option<TouchInteractionState>>,
     window_width: Signal<f32>,
     mut scroll_offset: Signal<f32>,
+    mut scroll_metrics: Signal<ScrollMetrics>,
+    mut canvas_mounted: CanvasMounted,
+    vbar_drag: ThumbDrag,
+    hbar_drag: ThumbDrag,
     mut current_page: Signal<u32>,
+    total_pages: Signal<u32>,
+    view_mode: Signal<ViewMode>,
     mut cursor_state: Signal<CursorState>,
     loro_doc: Signal<Option<loro::LoroDoc>>,
     undo_manager: Signal<Option<loro::UndoManager>>,
@@ -81,18 +90,39 @@ pub(super) fn render_canvas_area(
     page_gap_px: f32,
 ) -> Element {
     rsx! {
+        // Outer wrapper occupies the editor column's flex:1 slot and lays out
+        // the scroll viewport beside a vertical scrollbar, with a horizontal
+        // scrollbar underneath.  Blitz paints no scrollbar chrome, so these are
+        // custom indicators (see editor_scrollbar).
+        div {
+            style: "flex: 1; min-height: 0; display: flex; flex-direction: column;",
+            div {
+                style: "flex: 1; min-height: 0; display: flex; flex-direction: row;",
         div {
             // COMPAT(dioxus-native): flex: 1 is confirmed working. Requires
             // height: 100vh on the parent so Taffy can resolve the flex fraction.
             // tabindex="0" enables keyboard focus for onkeydown to fire.
             // autofocus ensures the canvas receives keyboard focus immediately
             // when the editor mounts, so the user can type without clicking first.
-            // COMPAT(dioxus-native): scrollbar-width / scrollbar-color are
-            // unconfirmed in Blitz — they are Stylo (Firefox CSS engine)
-            // properties.  If unsupported the platform-default scrollbar is
-            // shown; no functionality is lost.
+            //
+            // overflow-x: auto (was hidden) lets the user pan a page that is
+            // wider than the viewport — e.g. a US-Letter page on a narrow phone,
+            // or any page while zoomed in.  The patched Blitz shell synthesises
+            // horizontal touch-drag into a scroll on this container (window.rs),
+            // and `can_x_scroll` is only true when overflow-x is auto/scroll.
+            //
+            // COMPAT(dioxus-native): scrollbar-width / scrollbar-color are Stylo
+            // (Firefox CSS engine) properties that blitz-paint 0.2.x does not
+            // paint — Blitz renders no scrollbar chrome at all.  They are kept
+            // as forward-compatible hints; scrolling itself works via touch/wheel
+            // regardless.  A visible scrollbar requires a custom widget.
+            //
+            // inputmode="text" marks this as a text-editing surface so the
+            // patched Blitz shell raises the Android soft keyboard when the
+            // canvas gains focus (window.rs::update_ime_for_focus).  Without it
+            // the on-screen keyboard never appears on mobile.
             style: format!(
-                "flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; \
+                "flex: 1; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: auto; \
                  background: {bg}; padding: {p}px 0; \
                  scrollbar-width: thin; scrollbar-color: {thumb} transparent;",
                 bg    = tokens::COLOR_SURFACE_BASE,
@@ -105,6 +135,13 @@ pub(super) fn render_canvas_area(
             ),
             tabindex: "0",
             autofocus: "true",
+            inputmode: "text",
+
+            // Capture the scroll container's MountedData so the scrollbar thumbs
+            // can drive programmatic scrolling (dioxus-native scroll_to patch).
+            onmounted: move |evt: MountedEvent| {
+                canvas_mounted.set(Some(evt));
+            },
             onmouseenter: move |_| { canvas_hovered.set(true); },
             onmouseleave: move |_| { canvas_hovered.set(false); },
 
@@ -117,6 +154,17 @@ pub(super) fn render_canvas_area(
                 let top = evt.scroll_top() as f32;
                 scroll_offset.set(top);
                 let viewport_h = evt.client_height() as f32;
+                // Mirror the full geometry so the custom scrollbars can size and
+                // place their thumbs.  scroll_width / scroll_height are the
+                // scrollable distance (content − client); see editor_scrollbar.
+                scroll_metrics.set(ScrollMetrics {
+                    scroll_top: top,
+                    scroll_left: evt.scroll_left() as f32,
+                    scroll_width: evt.scroll_width() as f32,
+                    scroll_height: evt.scroll_height() as f32,
+                    client_width: evt.client_width() as f32,
+                    client_height: viewport_h,
+                });
                 let (page_h, count) = match doc_state_scroll.lock() {
                     Ok(s) => (s.page_height_px, s.page_count),
                     Err(_) => return,
@@ -147,6 +195,7 @@ pub(super) fn render_canvas_area(
                 scroll_offset,
                 cursor_state,
                 page_gap_px,
+                view_mode,
             ),
 
             onmouseup: move |_| {
@@ -192,34 +241,51 @@ pub(super) fn render_canvas_area(
                 can_undo,
                 can_redo,
                 save_request,
+                view_mode,
+                scroll_metrics,
             ),
 
             match &*document_load.value().read_unchecked() {
                 Some((loaded_path, Ok(doc))) if loaded_path == &path_signal() => {
                     // Use the live post-mutation document from doc_state when
                     // available; fall back to the original resource doc before
-                    // seed_layout_from_document has run.
-                    let arc_doc = doc_state_render
-                        .lock()
-                        .ok()
-                        .and_then(|s| s.document.clone())
-                        .unwrap_or_else(|| Arc::new(doc.clone()));
-                    let cursor_pos = {
+                    // seed_layout_from_document has run. Read the matching
+                    // paginated layout under the same lock so the renderer can
+                    // reuse it (single canonical layout) instead of recomputing.
+                    let (doc_opt, paginated_layout) = match doc_state_render.lock() {
+                        Ok(s) => (s.document.clone(), s.paginated_layout.clone()),
+                        Err(_) => (None, None),
+                    };
+                    let arc_doc = doc_opt.unwrap_or_else(|| Arc::new(doc.clone()));
+                    let (cursor_pos, selection_anchor) = {
                         let cs = cursor_state.read();
-                        cs.focus.as_ref().map(|pos| RendererCursorPos {
+                        let to_renderer = |pos: &DocumentPosition| RendererCursorPos {
                             page_index: pos.page_index,
                             paragraph_index: pos.paragraph_index,
                             byte_offset: pos.byte_offset,
-                        })
+                        };
+                        (
+                            cs.focus.as_ref().map(to_renderer),
+                            cs.anchor.as_ref().map(to_renderer),
+                        )
                     };
                     rsx! {
                         DocumentView {
                             doc: arc_doc,
+                            paginated_layout,
                             // TODO(loki): measure actual viewport height — affects
                             // cache tier zones only, not visual correctness.
                             // See diagnostic report, finding 1.
                             viewport_height_px: 800.0,
                             cursor_pos,
+                            selection_anchor,
+                            view_mode: view_mode(),
+                            // Width for reflow layout; <= 0 until the canvas is
+                            // measured (mount rect or first scroll event).
+                            reflow_width_px: scroll_metrics().client_width as f64,
+                            // Paginated: hit-test against the editor's paginated
+                            // layout (reflow clicks are hit-tested inside
+                            // DocumentView and arrive via on_reflow_click).
                             on_tile_click: move |(page_index, x_pt, y_pt): (usize, f32, f32)| {
                                 let layout_opt = {
                                     let Ok(state) = doc_state_mousedown.lock() else { return };
@@ -238,6 +304,39 @@ pub(super) fn render_canvas_area(
                                 cs.anchor = Some(pos.clone());
                                 cs.focus = Some(pos);
                             },
+                            // Reflow: DocumentView already resolved the click to a
+                            // (paragraph, byte) position in the continuous layout.
+                            on_reflow_click: move |(para, byte): (usize, usize)| {
+                                let loro_cursor = loro_doc.read().as_ref().and_then(|ldoc| {
+                                    derive_loro_cursor(ldoc, para, byte)
+                                });
+                                let pos = DocumentPosition {
+                                    // page_index is meaningless in reflow; 0 is a
+                                    // safe placeholder (the caret is painted from
+                                    // paragraph/byte, not page, in reflow mode).
+                                    page_index: 0,
+                                    paragraph_index: para,
+                                    byte_offset: byte,
+                                };
+                                let mut cs = cursor_state.write();
+                                cs.loro_cursor = loro_cursor;
+                                cs.anchor = Some(pos.clone());
+                                cs.focus = Some(pos);
+                            },
+                            // Reflow drag-select: move only the focus, keeping the
+                            // anchor so a range selection grows under the pointer.
+                            on_reflow_drag: move |(para, byte): (usize, usize)| {
+                                let loro_cursor = loro_doc.read().as_ref().and_then(|ldoc| {
+                                    derive_loro_cursor(ldoc, para, byte)
+                                });
+                                let mut cs = cursor_state.write();
+                                cs.loro_cursor = loro_cursor;
+                                cs.focus = Some(DocumentPosition {
+                                    page_index: 0,
+                                    paragraph_index: para,
+                                    byte_offset: byte,
+                                });
+                            },
                         }
                     }
                 },
@@ -249,6 +348,19 @@ pub(super) fn render_canvas_area(
 
                 _ => rsx! { div {} },
             }
+        }
+                // Vertical scroll indicator + drag handle (right-edge gutter).
+                {vertical_scrollbar(
+                    scroll_metrics(),
+                    current_page(),
+                    total_pages(),
+                    canvas_mounted,
+                    vbar_drag,
+                )}
+            }
+            // Horizontal scroll indicator + drag handle (bottom; only when the
+            // page is wider than the viewport).
+            {horizontal_scrollbar(scroll_metrics(), canvas_mounted, hbar_drag)}
         }
     }
 }

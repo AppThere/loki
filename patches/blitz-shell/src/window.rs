@@ -7,7 +7,9 @@ use crate::event::{BlitzShellEvent, create_waker};
 use anyrender::WindowRenderer;
 use blitz_dom::Document;
 use blitz_paint::paint_scene;
-use blitz_traits::events::{BlitzMouseButtonEvent, MouseEventButton, MouseEventButtons, UiEvent};
+use blitz_traits::events::{
+    BlitzKeyEvent, BlitzMouseButtonEvent, KeyState, MouseEventButton, MouseEventButtons, UiEvent,
+};
 use blitz_traits::shell::Viewport;
 use winit::keyboard::PhysicalKey;
 
@@ -81,6 +83,11 @@ pub struct View<Rend: WindowRenderer> {
     pub animation_timer: Option<Instant>,
     pub is_visible: bool,
 
+    /// Whether the on-screen keyboard / IME is currently requested.
+    /// Mirrors the last value passed to `Window::set_ime_allowed` so we only
+    /// call into the (JNI-backed, on Android) winit IME path on real changes.
+    pub ime_active: bool,
+
     /// In-progress touch contact for tap/scroll/long-press classification.
     pub touch_start: Option<TouchState>,
     /// Last logical-pixel position during an active scroll gesture.
@@ -100,8 +107,14 @@ impl<Rend: WindowRenderer> View<Rend> {
     ) -> Self {
         let winit_window = Arc::from(event_loop.create_window(config.attributes).unwrap());
 
-        // TODO: make this conditional on text input focus
-        winit_window.set_ime_allowed(true);
+        // Start with the IME disabled and let focus drive it
+        // (`update_ime_for_focus`).  On Android `set_ime_allowed(true)` calls
+        // `AndroidApp::show_soft_input`, so leaving it on here would pop the
+        // soft keyboard at launch (and the call is a no-op before the window is
+        // focused anyway).  We raise it only when a text-editing element — one
+        // carrying `inputmode` (≠ "none"), or an `<input>`/`<textarea>` — gains
+        // focus, and lower it when focus leaves.
+        winit_window.set_ime_allowed(false);
 
         // Create viewport
         let size = winit_window.inner_size();
@@ -137,6 +150,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             buttons: MouseEventButtons::None,
             mouse_pos: Default::default(),
             is_visible: winit_window.is_visible().unwrap_or(true),
+            ime_active: false,
             touch_start: None,
             touch_scroll_last_pos: None,
             #[cfg(feature = "accessibility")]
@@ -339,6 +353,112 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.accessibility.update_tree(&self.doc);
     }
 
+    /// PATCH(loki): re-dispatch `onscroll` to every scroll container with its
+    /// fresh client geometry.  This lets reactive embedders (the editor's
+    /// width-driven reflow / view-mode default) react to a window resize, to the
+    /// first real size on Android, and to a scroll container that mounted after
+    /// the initial layout (e.g. once an async document load completes) — all
+    /// without requiring the user to scroll first.
+    pub fn resync_scroll_geometry(&mut self) {
+        let (w, h) = self.doc.viewport().window_size;
+        if w == 0 || h == 0 {
+            return;
+        }
+        // Resolve so each scroll container's `final_layout` reflects the new
+        // viewport before its geometry is read for the scroll event.
+        let time = self.current_animation_time();
+        self.doc.resolve(time);
+        let mut changes = Vec::new();
+        self.doc.collect_scroll_containers(&mut changes);
+        if !changes.is_empty() {
+            self.doc.handle_scroll_changes(&changes);
+            self.request_redraw();
+        }
+    }
+
+    /// Returns `true` when the currently-focused DOM node is a text-editing
+    /// surface that should summon the platform soft keyboard / IME.
+    ///
+    /// PATCH(loki): blitz-dom focuses any element with `tabindex`/`<button>` on
+    /// click, but only some of those accept text.  We treat a node as a text
+    /// target when it is an `<input>` (of a textual type) / `<textarea>`, or
+    /// when it carries an `inputmode` attribute whose value is not `"none"`.
+    /// The Loki editor canvas is a focusable `<div inputmode="text">`, so a tap
+    /// on it raises the keyboard while a tap on a ribbon `<button>` does not.
+    fn focused_node_wants_ime(&self) -> bool {
+        let Some(node_id) = self.doc.get_focussed_node_id() else {
+            return false;
+        };
+        let Some(node) = self.doc.get_node(node_id) else {
+            return false;
+        };
+        let Some(el) = node.data.downcast_element() else {
+            return false;
+        };
+
+        let attr = |name: &str| {
+            el.attrs
+                .iter()
+                .find(|a| a.name.local.as_ref() == name)
+                .map(|a| a.value.as_str())
+        };
+
+        match el.name.local.as_ref() {
+            "textarea" => true,
+            "input" => !matches!(
+                attr("type"),
+                Some("button" | "submit" | "reset" | "checkbox" | "radio" | "file" | "hidden")
+            ),
+            // Any element may opt in to the keyboard via the standard inputmode
+            // hint (the editor canvas does); `inputmode="none"` opts out.
+            _ => matches!(attr("inputmode"), Some(mode) if mode != "none"),
+        }
+    }
+
+    /// Returns `true` when the focused node is a Blitz-native text field
+    /// (`<input>` / `<textarea>`), which has its own IME handling and must not
+    /// receive synthetic keydown events.
+    fn focused_is_native_text_input(&self) -> bool {
+        self.doc
+            .get_focussed_node_id()
+            .and_then(|id| self.doc.get_node(id))
+            .and_then(|node| node.data.downcast_element())
+            .is_some_and(|el| matches!(el.name.local.as_ref(), "input" | "textarea"))
+    }
+
+    /// Dispatch `text` to the focused node as a synthetic key press/release pair
+    /// carrying the whole string as `Key::Character`.  Used to deliver committed
+    /// IME / soft-keyboard text to the custom editor canvas, whose `onkeydown`
+    /// handler inserts `Key::Character(_)` payloads verbatim.
+    fn dispatch_synthetic_text(&mut self, text: &str) {
+        let base = BlitzKeyEvent {
+            key: keyboard_types::Key::Character(text.to_string()),
+            code: keyboard_types::Code::Unidentified,
+            modifiers: keyboard_types::Modifiers::default(),
+            location: keyboard_types::Location::Standard,
+            is_auto_repeating: false,
+            is_composing: false,
+            state: KeyState::Pressed,
+            text: Some(text.into()),
+        };
+        self.doc.handle_ui_event(UiEvent::KeyDown(base.clone()));
+        self.doc.handle_ui_event(UiEvent::KeyUp(BlitzKeyEvent {
+            state: KeyState::Released,
+            ..base
+        }));
+    }
+
+    /// Sync the platform IME / soft keyboard to the current focus, calling into
+    /// winit (and thus `AndroidApp::show/hide_soft_input` on Android) only when
+    /// the desired state actually changes.
+    fn update_ime_for_focus(&mut self) {
+        let wants_ime = self.focused_node_wants_ime();
+        if wants_ime != self.ime_active {
+            self.ime_active = wants_ime;
+            self.window.set_ime_allowed(wants_ime);
+        }
+    }
+
     pub fn handle_winit_event(&mut self, event: WindowEvent) {
         match event {
             // Window lifecycle events
@@ -371,6 +491,12 @@ impl<Rend: WindowRenderer> View<Rend> {
                 } else {
                     self.with_viewport(|v| v.window_size = (physical_size.width, physical_size.height));
                 }
+                // Re-emit onscroll with the new client size so width-reactive
+                // embedders (reflow layout, view-mode default) update on resize
+                // and on the first real Android size.
+                if physical_size.width > 0 && physical_size.height > 0 {
+                    self.resync_scroll_geometry();
+                }
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.with_viewport(|v| v.set_hidpi_scale(scale_factor as f32));
@@ -384,6 +510,22 @@ impl<Rend: WindowRenderer> View<Rend> {
 
             // Text / keyboard events
             WindowEvent::Ime(ime_event) => {
+                // PATCH(loki): route committed IME text from a custom editing
+                // surface (the Loki canvas — an `inputmode` element, not a Blitz
+                // TextInput) into the focused node as a synthetic keydown so the
+                // existing `onkeydown` insertion path handles it.  This is what
+                // makes the Android soft keyboard actually type into the canvas.
+                // Real `<input>`/`<textarea>` keep Blitz's native IME handling.
+                if let winit::event::Ime::Commit(text) = &ime_event {
+                    if !text.is_empty()
+                        && self.focused_node_wants_ime()
+                        && !self.focused_is_native_text_input()
+                    {
+                        self.dispatch_synthetic_text(text);
+                        self.request_redraw();
+                        return;
+                    }
+                }
                 self.doc.handle_ui_event(UiEvent::Ime(winit_ime_to_blitz(ime_event)));
                 self.request_redraw();
             },
@@ -438,6 +580,8 @@ impl<Rend: WindowRenderer> View<Rend> {
                 };
 
                 self.doc.handle_ui_event(event);
+                // Tab / Shift-Tab can move focus between fields — keep IME in sync.
+                self.update_ime_for_focus();
                 self.request_redraw();
             }
 
@@ -482,6 +626,8 @@ impl<Rend: WindowRenderer> View<Rend> {
                     ElementState::Released => UiEvent::MouseUp(event),
                 };
                 self.doc.handle_ui_event(event);
+                // Focus is assigned on click (MouseUp); sync the soft keyboard.
+                self.update_ime_for_focus();
                 self.request_redraw();
             }
             WindowEvent::MouseWheel { delta, .. } => {
@@ -636,6 +782,10 @@ impl<Rend: WindowRenderer> View<Rend> {
                                     self.keyboard_modifiers.state(),
                                 ),
                             }));
+                            // A tap assigns focus (or clears it); raise or drop
+                            // the Android soft keyboard accordingly.  Skipped for
+                            // scroll gestures, which never change focus.
+                            self.update_ime_for_focus();
                         }
                         self.request_redraw();
                     }

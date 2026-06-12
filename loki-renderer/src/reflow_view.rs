@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! CPU-side flat document renderer for Android (no `android_gpu`).
+//! HTML-flow fallback document view for the Android CPU path.
 //!
-//! Renders the document as a continuous scrollable flow of HTML elements so the
-//! CPU Vello renderer can display content without GPU compute shaders.  A flat
-//! web-style layout is used instead of paginated layout to avoid horizontal
-//! overflow on narrow mobile screens and to reduce visible fidelity loss.
+//! Renders the document as one scrollable column of HTML elements that wraps to
+//! the viewport width.  Only compiled on Android without `android_gpu`, where
+//! Vello's compute pipeline (and therefore the GPU tile renderer) is
+//! unavailable.  All GPU targets render reflow mode through the real layout
+//! engine instead (`RenderMode::Reflow` — full font/size/alignment fidelity);
+//! see `render_layout.rs`.
 //!
-//! Formatting fidelity is intentionally limited — inline bold/italic/strikeout
-//! are preserved; exact glyph positions, images, and tables are not.
+//! Formatting fidelity here is intentionally limited — inline
+//! bold/italic/strikeout are preserved; exact glyph positions, fonts, images,
+//! and tables are not.
 
 use std::sync::Arc;
 
@@ -114,7 +117,7 @@ fn block_content(block: &Block) -> Option<(String, String)> {
         Block::BlockQuote(inner_blocks) => {
             let text: String = inner_blocks
                 .iter()
-                .flat_map(|b| block_content(b))
+                .flat_map(block_content)
                 .map(|(h, _)| h)
                 .collect::<Vec<_>>()
                 .join(" ");
@@ -133,29 +136,30 @@ fn block_content(block: &Block) -> Option<(String, String)> {
     }
 }
 
-// ── CpuDocView ────────────────────────────────────────────────────────────────
+// ── ReflowDocView ───────────────────────────────────────────────────────────
 
-/// Props for [`CpuDocView`].
+/// Props for [`ReflowDocView`].
 #[derive(Clone, Props)]
-pub(crate) struct CpuDocViewProps {
+pub(crate) struct ReflowDocViewProps {
     pub(crate) source: Arc<DocPageSource>,
     /// Incremented on every document mutation so the component re-renders.
     pub(crate) doc_gen: u64,
 }
 
-impl PartialEq for CpuDocViewProps {
+impl PartialEq for ReflowDocViewProps {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.source, &other.source) && self.doc_gen == other.doc_gen
     }
 }
 
-/// Flat web-style document renderer for the Android CPU path.
+/// Reflowable web-style document renderer.
 ///
-/// Renders all blocks in document order as a single fluid column.  Uses the
-/// device's default `sans-serif` font and adapts to the viewport width so that
-/// text does not overflow horizontally on narrow screens.
+/// Renders all blocks in document order as a single fluid column that wraps to
+/// the viewport width.  The content column is capped at a comfortable reading
+/// measure and centred (like a web article) so it stays readable on wide
+/// desktop windows, while still shrinking to fit narrow phone screens.
 #[allow(non_snake_case)]
-pub(crate) fn CpuDocView(props: CpuDocViewProps) -> Element {
+pub(crate) fn ReflowDocView(props: ReflowDocViewProps) -> Element {
     let doc = props.source.document();
     let items: Vec<(String, String)> = doc.blocks_flat().filter_map(block_content).collect();
 
@@ -164,10 +168,12 @@ pub(crate) fn CpuDocView(props: CpuDocViewProps) -> Element {
             // Prefer bundled metric-compatible families (injected via @font-face
             // in loki-text/src/app.rs) then fall back to system generic families.
             // Explicit white background so the gray canvas behind DocumentView
-            // does not bleed through the reflowable content area.
+            // does not bleed through the reflowable content area.  max-width +
+            // auto margins give a web-article reading measure on wide windows;
+            // width:100% lets it shrink to fit narrow screens.
             style: "font-family: 'Carlito', 'Arimo', sans-serif; padding: 16px; \
                     box-sizing: border-box; color: #1a1a1a; width: 100%; \
-                    background: #FAFAFA;",
+                    max-width: 820px; margin: 0 auto; background: #FAFAFA;",
             for (inner_html, div_style) in &items {
                 div {
                     style: "{div_style}",

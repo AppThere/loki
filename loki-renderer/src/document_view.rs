@@ -3,31 +3,49 @@
 
 //! DocumentView component for rendering pages from loki-renderer cache.
 
+#[cfg(any(not(target_os = "android"), android_gpu))]
+use std::cell::Cell;
+#[cfg(any(not(target_os = "android"), android_gpu))]
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use appthere_canvas::ScrollState;
 #[cfg(any(not(target_os = "android"), android_gpu))]
-use appthere_canvas::{PageCache, PageIndex};
-#[cfg(any(not(target_os = "android"), android_gpu))]
 use appthere_ui::tokens;
-// use_wgpu and LokiPageSource are enabled on: desktop, and Android devices
-// built with RUSTFLAGS='--cfg android_gpu' (Vulkan-capable physical devices).
-// The Android emulator uses SwiftShader which lacks Vello's compute pipeline,
-// so it falls through to the CPU-renderer placeholder path below.
-#[cfg(any(not(target_os = "android"), android_gpu))]
-use dioxus::native::use_wgpu;
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
+use loki_layout::PaginatedLayout;
 
+// PageTile (and the wgpu paint path under it) is enabled on: desktop, and
+// Android devices built with RUSTFLAGS='--cfg android_gpu' (Vulkan-capable
+// physical devices). The Android emulator uses SwiftShader which lacks Vello's
+// compute pipeline, so it falls through to the CPU-renderer path below.
 #[cfg(any(not(target_os = "android"), android_gpu))]
-use crate::doc_page_source::DocPageSource;
+use crate::page_tile::PageTile;
 #[cfg(any(not(target_os = "android"), android_gpu))]
-use crate::page_paint_source::LokiPageSource;
+use crate::render_layout::RenderMode;
 use crate::renderer_state::RendererState;
 use crate::scroll_driver::{on_scroll_event, use_settle_detector};
 
+// The HTML-flow fallback is only used on the Android CPU path; GPU targets
+// render reflow mode through the real layout engine (RenderMode::Reflow).
 #[cfg(all(target_os = "android", not(android_gpu)))]
-use crate::page_tile_cpu::CpuDocView;
+use crate::reflow_view::ReflowDocView;
+
+// ── ViewMode ──────────────────────────────────────────────────────────────────
+
+/// How the document is laid out in the canvas.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum ViewMode {
+    /// Fixed print layout — one fixed-size page tile per page (needs the GPU
+    /// paint path). This is the default on large viewports.
+    #[default]
+    Paginated,
+    /// Reflowable, web-page-style continuous layout that wraps to the viewport
+    /// width. The default on small viewports, and the only mode available on
+    /// the Android CPU path.
+    Reflow,
+}
 
 // ── RendererCursorPos ─────────────────────────────────────────────────────────
 
@@ -39,139 +57,64 @@ pub struct RendererCursorPos {
     pub byte_offset: usize,
 }
 
+/// Caret + optional range selection for GPU painting. `anchor == focus` (by
+/// paragraph/byte) means a collapsed caret with no selection.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RendererSelection {
+    pub focus: RendererCursorPos,
+    pub anchor: RendererCursorPos,
+}
+
+impl RendererSelection {
+    /// True when there is no range selection (anchor and focus coincide).
+    pub fn is_collapsed(&self) -> bool {
+        self.anchor.paragraph_index == self.focus.paragraph_index
+            && self.anchor.byte_offset == self.focus.byte_offset
+    }
+}
+
 // ── DocumentViewProps ─────────────────────────────────────────────────────────
 
 /// Props for the DocumentView component.
 #[derive(Props, Clone)]
 pub struct DocumentViewProps {
     pub doc: Arc<Document>,
+    /// Paginated layout already computed by the editor for `doc`, reused in
+    /// paginated mode so the renderer does not lay the document out a second
+    /// time (the single canonical layout). `None` falls back to computing it
+    /// on the render path (e.g. before the first editor layout, or on the
+    /// Android CPU reflow path).
+    pub paginated_layout: Option<Arc<PaginatedLayout>>,
     pub viewport_height_px: f64,
+    /// The caret / selection focus position.
     pub cursor_pos: Option<RendererCursorPos>,
+    /// The selection anchor. When it differs from `cursor_pos`, a range
+    /// selection is highlighted between them (reflow mode).
+    pub selection_anchor: Option<RendererCursorPos>,
+    /// Current layout mode. Ignored on the Android CPU path, which only supports
+    /// [`ViewMode::Reflow`].
+    pub view_mode: ViewMode,
+    /// Available viewport width in CSS pixels for [`ViewMode::Reflow`].
+    /// `<= 0` means "not yet measured" — the view falls back to paginated
+    /// rendering until a real width arrives.
+    pub reflow_width_px: f64,
     /// Called with `(page_index, x_pt, y_pt)` in layout points when the user
-    /// clicks a page tile. The caller performs the hit test and updates cursor state.
+    /// clicks a page tile in **paginated** mode. The caller performs the hit test
+    /// and updates cursor state.
     pub on_tile_click: EventHandler<(usize, f32, f32)>,
+    /// Called with `(block_index, byte_offset)` when the user clicks in
+    /// **reflow** mode. This component owns the reflow layout, so it hit-tests
+    /// the click itself and reports the resolved document position.
+    pub on_reflow_click: EventHandler<(usize, usize)>,
+    /// Called with `(block_index, byte_offset)` while drag-selecting in
+    /// **reflow** mode (mouse moved with a button held). The caller extends the
+    /// selection focus to this position.
+    pub on_reflow_drag: EventHandler<(usize, usize)>,
 }
 
 impl PartialEq for DocumentViewProps {
     fn eq(&self, _other: &Self) -> bool {
         false // Conservatively always re-render
-    }
-}
-
-// ── PageTile ──────────────────────────────────────────────────────────────────
-
-#[cfg(any(not(target_os = "android"), android_gpu))]
-#[derive(Clone, Props)]
-pub(crate) struct PageTileProps {
-    pub(crate) cache: Arc<Mutex<PageCache<PageIndex>>>,
-    pub(crate) source: Arc<DocPageSource>,
-    pub(crate) page_index: usize,
-    pub(crate) w: f64,
-    pub(crate) h: f64,
-    pub(crate) shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
-    pub(crate) cursor_holder: Arc<Mutex<Option<RendererCursorPos>>>,
-    pub(crate) cursor_pos: Option<RendererCursorPos>,
-    /// Document generation — incremented on every mutation so that style
-    /// changes that don't move the cursor still dirty the canvas.
-    pub(crate) doc_gen: u64,
-    /// Settle epoch — incremented after each scroll-settle retier so that a
-    /// tier change repaints this tile at its new resolution.
-    pub(crate) settle_epoch: u64,
-    /// Called with `(page_index, x_pt, y_pt)` in layout points when the user
-    /// clicks anywhere on this page tile. The parent uses this to call
-    /// `hit_test_page` without needing window-relative origin math.
-    pub(crate) on_tile_click: EventHandler<(usize, f32, f32)>,
-}
-
-#[cfg(any(not(target_os = "android"), android_gpu))]
-impl PartialEq for PageTileProps {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.cache, &other.cache)
-            && Arc::ptr_eq(&self.source, &other.source)
-            && self.page_index == other.page_index
-            && self.w == other.w
-            && self.h == other.h
-            && Arc::ptr_eq(&self.cursor_holder, &other.cursor_holder)
-            && self.cursor_pos == other.cursor_pos
-            && self.doc_gen == other.doc_gen
-            && self.settle_epoch == other.settle_epoch
-        // on_tile_click intentionally excluded — EventHandler identity does not
-        // affect render output; omitting it avoids spurious re-renders.
-    }
-}
-
-/// A single page rendered into a Blitz GPU canvas.
-#[cfg(any(not(target_os = "android"), android_gpu))]
-#[allow(non_snake_case)]
-fn PageTile(props: PageTileProps) -> Element {
-    let cache = props.cache.clone();
-    let source = props.source.clone();
-    let page_index = props.page_index;
-    let shared_renderer = props.shared_renderer.clone();
-    let cursor_holder = props.cursor_holder.clone();
-    let cursor_holder_wgpu = props.cursor_holder.clone();
-    let on_tile_click = props.on_tile_click;
-
-    // Write current cursor to shared holder on every render so LokiPageSource
-    // can read it during the GPU paint call.
-    if let Ok(mut guard) = cursor_holder.lock() {
-        *guard = props.cursor_pos;
-    }
-
-    let canvas_id = use_wgpu(move || {
-        LokiPageSource::new(
-            cache,
-            source,
-            page_index,
-            shared_renderer,
-            cursor_holder_wgpu,
-        )
-    });
-
-    // Combines cursor position and document generation so that both cursor
-    // movement AND document mutations (e.g. style changes that don't shift
-    // the cursor) mark the canvas dirty and trigger render() again.
-    // COMPAT(dioxus-native): data-* attributes confirmed working in Blitz.
-    let data_cursor = match props.cursor_pos {
-        Some(cp) if cp.page_index == props.page_index => {
-            format!(
-                "{}-{}-{}-{}",
-                cp.paragraph_index, cp.byte_offset, props.doc_gen, props.settle_epoch
-            )
-        }
-        _ => format!("{}-{}", props.doc_gen, props.settle_epoch),
-    };
-
-    rsx! {
-        div {
-            // COMPAT(dioxus-native): position:absolute is unsupported in Blitz.
-            // Use block flow with auto margins for horizontal centring instead.
-            style: format!(
-                "display: block; width: {w}px; height: {h}px; \
-                 margin-left: auto; margin-right: auto; \
-                 margin-bottom: {gap}px;",
-                w   = props.w,
-                h   = props.h,
-                gap = tokens::PAGE_GAP_PX,
-            ),
-            // element_coordinates() gives coords relative to this div's top-left,
-            // which exactly equals page-local CSS pixels — no origin math needed.
-            onmousedown: move |evt: MouseEvent| {
-                let e = evt.element_coordinates();
-                let x_pt = e.x as f32 * (72.0 / 96.0);
-                let y_pt = e.y as f32 * (72.0 / 96.0);
-                on_tile_click.call((page_index, x_pt, y_pt));
-            },
-            canvas {
-                "src": "{canvas_id}",
-                "data-cursor": "{data_cursor}",
-                style: format!(
-                    "width: {w}px; height: {h}px; display: block;",
-                    w = props.w,
-                    h = props.h,
-                ),
-            }
-        }
     }
 }
 
@@ -199,10 +142,10 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
     // keep hook indices stable; the CPU path uses an _ prefix to suppress
     // the unused-variable lint.
     #[cfg(any(not(target_os = "android"), android_gpu))]
-    let cursor_holder: Arc<Mutex<Option<RendererCursorPos>>> =
+    let cursor_holder: Arc<Mutex<Option<RendererSelection>>> =
         use_hook(|| Arc::new(Mutex::new(None)));
     #[cfg(all(target_os = "android", not(android_gpu)))]
-    let _cursor_holder: Arc<Mutex<Option<RendererCursorPos>>> =
+    let _cursor_holder: Arc<Mutex<Option<RendererSelection>>> =
         use_hook(|| Arc::new(Mutex::new(None)));
 
     let renderer_settle = renderer.clone();
@@ -216,32 +159,80 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         on_scroll_event(scroll, evt.scroll_top(), &phase_tx);
     };
 
-    let doc_gen = renderer.source.current_generation();
-
     // ── Android CPU: flat web-style renderer ─────────────────────────────────
     // All hooks have been called above; early return is safe.
     #[cfg(all(target_os = "android", not(android_gpu)))]
-    return rsx! {
-        div {
-            style: "width: 100%; height: 100%;",
-            onscroll: onscroll,
-            CpuDocView { source: renderer.source.clone(), doc_gen }
-        }
-    };
+    {
+        let doc_gen = renderer.source.current_generation();
+        return rsx! {
+            div {
+                style: "width: 100%; height: 100%;",
+                onscroll: onscroll,
+                ReflowDocView { source: renderer.source.clone(), doc_gen }
+            }
+        };
+    }
 
-    // ── GPU / desktop: paged tile renderer ───────────────────────────────────
+    // ── GPU / desktop ─────────────────────────────────────────────────────────
     #[cfg(any(not(target_os = "android"), android_gpu))]
     {
+        // Select the render mode before reading the generation: switching mode
+        // (or a reflow width change) invalidates the layout cache and advances
+        // the generation so every tile repaints against the new layout.
+        // Reflow runs the real layout engine at the viewport width (full
+        // formatting fidelity), presented as zero-gap virtual tiles.
+        let render_mode = if props.view_mode == ViewMode::Reflow && props.reflow_width_px > 1.0 {
+            RenderMode::Reflow {
+                available_width_pt: (props.reflow_width_px * 72.0 / 96.0) as f32,
+            }
+        } else {
+            RenderMode::Paginated
+        };
+        renderer.source.set_render_mode(render_mode);
+        // Single canonical layout: in paginated mode reuse the layout the editor
+        // already computed for this document instead of laying it out again.
+        // Provided after set_render_mode so it is keyed to the current
+        // generation; reflow mode computes its own width-dependent layout.
+        if render_mode == RenderMode::Paginated
+            && let Some(layout) = props.paginated_layout.clone()
+        {
+            renderer.source.provide_paginated_layout(layout);
+        }
+        let doc_gen = renderer.source.current_generation();
+
+        // Initial / post-change tiering.
+        //
+        // The scroll-settle detector only retiers *after* a scroll gesture, so
+        // without this a freshly-loaded (or just-mutated) document would render
+        // every page at the Hot-tier default — a full-resolution texture per
+        // page, even far off screen (a 20-page doc ≈ 20 × ~12 MB). When the
+        // layout generation changes, schedule one retier so pages outside the
+        // hot/warm zone are demoted immediately, bounding texture memory to the
+        // viewport neighbourhood regardless of document length. Deferred via
+        // `spawn` so the `settle_epoch` write happens after this render, and
+        // guarded so it runs once per generation. Reuses the proven
+        // `on_settle` demotion path.
+        let last_tiered_gen: Rc<Cell<u64>> = use_hook(|| Rc::new(Cell::new(u64::MAX)));
+        if last_tiered_gen.get() != doc_gen {
+            last_tiered_gen.set(doc_gen);
+            let renderer_retier = renderer.clone();
+            spawn(async move {
+                renderer_retier.on_settle();
+            });
+        }
+
         const PTS_TO_CSS_PX: f64 = 96.0 / 72.0;
         let layout_guard = renderer.source.layout_for_generation(doc_gen);
+        let is_reflow = layout_guard
+            .as_ref()
+            .map(|(_, l)| l.is_reflow())
+            .unwrap_or(false);
         let pages: Vec<(usize, f64, f64)> = if let Some((_, layout)) = layout_guard.as_ref() {
-            layout
-                .pages
-                .iter()
-                .enumerate()
-                .map(|(i, p)| {
-                    let h = p.page_size.height as f64 * PTS_TO_CSS_PX;
-                    (i, p.page_size.width as f64 * PTS_TO_CSS_PX, h)
+            (0..layout.page_count())
+                .filter_map(|i| {
+                    layout
+                        .page_size_pts(i)
+                        .map(|(w, h)| (i, w as f64 * PTS_TO_CSS_PX, h as f64 * PTS_TO_CSS_PX))
                 })
                 .collect()
         } else {
@@ -254,13 +245,54 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
             .lock()
             .map(|g| g.page_count_by_tier())
             .unwrap_or((0, 0, 0));
-        tracing::debug!(hot, warm, cold, "DocumentView rendered");
+        tracing::debug!(hot, warm, cold, is_reflow, "DocumentView rendered");
 
-        let cursor_pos = props.cursor_pos;
+        // Caret + selection flow through for both modes; LokiPageSource paints
+        // them via the page editing data (paginated) or the continuous editing
+        // data (reflow). In reflow, rewrite the focus `page_index` to the band
+        // tile that actually holds the caret so that tile is invalidated as the
+        // caret moves.
+        let to_band = |cp: RendererCursorPos| {
+            if is_reflow {
+                let band = renderer
+                    .source
+                    .reflow_cursor_band(cp.paragraph_index, cp.byte_offset)
+                    .unwrap_or(0);
+                RendererCursorPos {
+                    page_index: band,
+                    ..cp
+                }
+            } else {
+                cp
+            }
+        };
+        let selection = props.cursor_pos.map(|focus| {
+            let focus = to_band(focus);
+            RendererSelection {
+                anchor: props.selection_anchor.map(to_band).unwrap_or(focus),
+                focus,
+            }
+        });
+        let gap_px = if is_reflow {
+            0.0
+        } else {
+            tokens::PAGE_GAP_PX as f64
+        };
         let on_tile_click = props.on_tile_click;
+        let on_reflow_click = props.on_reflow_click;
+        let on_reflow_drag = props.on_reflow_drag;
         // Read (and subscribe to) the settle epoch so a scroll-settle retier
         // re-renders this component and repaints demoted tiles.
         let epoch = settle_epoch();
+
+        // White backdrop behind reflow tiles so any hairline seam where two
+        // zero-gap bands meet shows white (matching the page) rather than the
+        // grey canvas. Paginated mode keeps the grey inter-page gutter.
+        let wrapper_bg = if is_reflow {
+            " background: #FFFFFF;"
+        } else {
+            ""
+        };
 
         return rsx! {
             div {
@@ -268,8 +300,9 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                 onscroll: onscroll,
                 div {
                     style: format!(
-                        "position: relative; width: 100%; padding-bottom: {pb}px;",
+                        "position: relative; width: 100%; padding-bottom: {pb}px;{bg}",
                         pb = tokens::SPACE_6,
+                        bg = wrapper_bg,
                     ),
                     for (idx, w, h) in pages {
                         PageTile {
@@ -281,10 +314,40 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                             h,
                             shared_renderer: renderer.shared_renderer.clone(),
                             cursor_holder: cursor_holder.clone(),
-                            cursor_pos,
+                            selection,
                             doc_gen,
                             settle_epoch: epoch,
-                            on_tile_click,
+                            gap_px,
+                            // In reflow, hit-test the click here (this component
+                            // owns the reflow layout) and report the resolved
+                            // (paragraph, byte). In paginated, forward the raw
+                            // tile coordinates for the editor to hit-test.
+                            on_tile_click: {
+                                let source = renderer.source.clone();
+                                move |(i, x, y): (usize, f32, f32)| {
+                                    if is_reflow {
+                                        if let Some((para, byte)) =
+                                            source.reflow_hit_test(i, x, y)
+                                        {
+                                            on_reflow_click.call((para, byte));
+                                        }
+                                    } else {
+                                        on_tile_click.call((i, x, y));
+                                    }
+                                }
+                            },
+                            // Drag-select: reflow only (paginated drag is handled
+                            // at the scroll-container level by the editor).
+                            on_tile_drag: {
+                                let source = renderer.source.clone();
+                                move |(i, x, y): (usize, f32, f32)| {
+                                    if is_reflow
+                                        && let Some((para, byte)) = source.reflow_hit_test(i, x, y)
+                                    {
+                                        on_reflow_drag.call((para, byte));
+                                    }
+                                }
+                            },
                         }
                     }
                 }

@@ -26,6 +26,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod band;
 pub mod color;
 pub mod decor;
 pub mod error;
@@ -35,6 +36,7 @@ pub mod image;
 pub mod rect;
 pub mod scene;
 
+pub use band::{content_max_x, paint_continuous_band};
 pub use error::{VelloError, VelloResult};
 pub use font_cache::FontDataCache;
 pub use scene::{

@@ -41,3 +41,8 @@ editor-style-editor-close-aria = Close style editor
 editor-style-based-on-label = Based on
 editor-style-next-style-label = Next style
 editor-style-align-label = Align
+
+# View mode (paginated vs reflowed) toggle in the status bar
+editor-view-paginated = Paginated
+editor-view-reflowed = Reflowed
+editor-view-toggle-aria = Toggle between paginated and reflowed view

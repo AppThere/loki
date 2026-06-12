@@ -9,6 +9,8 @@ use dioxus::prelude::*;
 use loki_doc_model::loro_bridge::derive_loro_cursor;
 use loki_doc_model::loro_mutation::get_block_text;
 
+use loki_renderer::ViewMode;
+
 use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::hit_test::hit_test_document;
 use crate::editing::state::DocumentState;
@@ -23,6 +25,7 @@ use crate::editing::touch::{TouchInteractionState, TouchPhase, word_boundaries_a
 /// Guards behind a 4 CSS-px drag threshold to prevent cursor jitter during
 /// a plain click from creating a spurious selection.  Transitions
 /// `is_dragging` to `true` the first time the threshold is exceeded.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn make_mousemove_handler(
     doc_state: Arc<Mutex<DocumentState>>,
     mut is_dragging: Signal<bool>,
@@ -31,8 +34,14 @@ pub(super) fn make_mousemove_handler(
     scroll_offset: Signal<f32>,
     mut cursor_state: Signal<CursorState>,
     page_gap_px: f32,
+    view_mode: Signal<ViewMode>,
 ) -> impl FnMut(MouseEvent) {
     move |evt: MouseEvent| {
+        // Reflow drag-select is handled per-tile (clean tile-local coordinates);
+        // this window-relative paginated path must not interfere there.
+        if view_mode() == ViewMode::Reflow {
+            return;
+        }
         if drag_origin().is_none() {
             return;
         }

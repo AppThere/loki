@@ -58,6 +58,9 @@ pub enum FlowOutput {
         items: Vec<PositionedItem>,
         /// Total canvas height in points.
         height: f32,
+        /// Per-paragraph editing data (canvas-local origins). Empty unless
+        /// `preserve_for_editing` is set. Used for reflow hit-testing/cursor.
+        paragraphs: Vec<crate::result::PageParagraphData>,
         /// Non-fatal warnings collected during layout.
         warnings: Vec<LayoutWarning>,
     },
@@ -267,10 +270,15 @@ pub fn flow_section(
             for item in &mut state.current_items {
                 item.translate(dx, 0.0);
             }
+            // Keep paragraph editing origins consistent with the shifted items.
+            for para in &mut state.current_paragraphs {
+                para.origin.0 += dx;
+            }
         }
         FlowOutput::Canvas {
             items: state.current_items,
             height: state.cursor_y,
+            paragraphs: state.current_paragraphs,
             warnings: state.warnings,
         }
     }

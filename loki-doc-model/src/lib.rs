@@ -145,7 +145,7 @@ pub mod loro_schema;
 pub mod settings;
 pub use loro_schema::*;
 pub mod loro_bridge;
-pub use loro_bridge::{BridgeError, document_to_loro, loro_to_document};
+pub use loro_bridge::{BridgeError, IncrementalReader, document_to_loro, loro_to_document};
 pub mod loro_mutation;
 pub use loro_mutation::{
     MutationError, delete_text, get_block_alignment, get_block_style_name, get_block_text,

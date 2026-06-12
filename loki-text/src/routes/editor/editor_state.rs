@@ -11,6 +11,9 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 
+use loki_renderer::ViewMode;
+
+use super::editor_scrollbar::{CanvasMounted, ScrollMetrics, ThumbDrag};
 use crate::editing::cursor::CursorState;
 use crate::editing::state::DocumentState;
 use crate::editing::touch::TouchInteractionState;
@@ -51,8 +54,23 @@ pub(super) struct EditorState {
     pub touch_state: Signal<Option<TouchInteractionState>>,
     pub window_width: Signal<f32>,
     pub scroll_offset: Signal<f32>,
+    /// Live scroll geometry of the canvas container, mirrored from the most
+    /// recent DOM `scroll` event and consumed by the custom scrollbars.
+    pub scroll_metrics: Signal<ScrollMetrics>,
+    /// `MountedData` for the scroll container, captured via `onmounted`; lets the
+    /// scrollbar thumbs drive programmatic scrolling (dioxus-native scroll patch).
+    pub canvas_mounted: CanvasMounted,
+    /// In-progress vertical / horizontal scrollbar thumb drags.
+    pub vbar_drag: ThumbDrag,
+    pub hbar_drag: ThumbDrag,
     pub current_page: Signal<u32>,
     pub total_pages: Signal<u32>,
+    /// Active layout mode (paginated vs reflowable). Defaults by viewport width
+    /// (see `editor_inner`) until the user toggles it.
+    pub view_mode: Signal<ViewMode>,
+    /// `true` once the user has explicitly chosen a view mode, which freezes the
+    /// automatic width-based default so it stops overriding their choice.
+    pub view_mode_user_set: Signal<bool>,
     /// Active state of inline character formatting at the cursor position.
     /// Updated whenever the cursor moves or a formatting toggle is applied.
     pub bold_active: Signal<bool>,
@@ -115,8 +133,14 @@ pub(super) fn use_editor_state() -> EditorState {
         touch_state: use_signal(|| None),
         window_width: use_signal(|| 1280.0_f32),
         scroll_offset: use_signal(|| 0.0_f32),
+        scroll_metrics: use_signal(ScrollMetrics::default),
+        canvas_mounted: use_signal(|| None),
+        vbar_drag: use_signal(|| None),
+        hbar_drag: use_signal(|| None),
         current_page,
         total_pages,
+        view_mode: use_signal(ViewMode::default),
+        view_mode_user_set: use_signal(|| false),
         bold_active: use_signal(|| false),
         italic_active: use_signal(|| false),
         underline_active: use_signal(|| false),

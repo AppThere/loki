@@ -93,6 +93,17 @@ pub fn query_insets_dp() -> (f32, f32) {
     jni_insets::query_insets_dp()
 }
 
+/// Query orientation-aware safe-area insets from the activity window, in dp.
+///
+/// Returns `(top, bottom, left, right)` from the real window insets (system bars
+/// + display cutout), which — unlike [`query_insets_dp`] — change with
+/// orientation. `activity_ptr` is `AndroidApp::activity_as_ptr()`. Returns
+/// `None` before the window is laid out / on API < 30; callers fall back to
+/// [`query_insets_dp`].
+pub fn query_window_insets_dp(activity_ptr: *mut std::ffi::c_void) -> Option<(f32, f32, f32, f32)> {
+    jni_insets::query_window_insets_dp(activity_ptr)
+}
+
 // ── JNI result callback (called from Java FilePickerActivity) ─────────────────
 
 /// Delivers the selected URI (or `null` for cancellation) to the pending Rust future.

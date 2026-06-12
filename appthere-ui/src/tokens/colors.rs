@@ -115,6 +115,13 @@ pub const COLOR_SCROLLBAR_THUMB: &str = "rgba(255,255,255,0.22)";
 /// Same caveat as [`COLOR_SCROLLBAR_THUMB`].
 pub const COLOR_SCROLLBAR_THUMB_HOVER: &str = "rgba(255,255,255,0.52)";
 
+/// Scrollbar track / gutter fill for the custom scrollbar widget.
+///
+/// Blitz (blitz-paint 0.2.x) paints no scrollbar chrome of its own, so the
+/// Loki editor draws its own thin track + thumb.  This is the faint groove the
+/// thumb rides in; kept subtle so it does not compete with document content.
+pub const COLOR_SCROLLBAR_TRACK: &str = "rgba(255,255,255,0.06)";
+
 // ── Status: error ─────────────────────────────────────────────────────────────
 
 /// Error banner background fill.

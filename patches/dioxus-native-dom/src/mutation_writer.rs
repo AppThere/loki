@@ -19,6 +19,9 @@ pub struct DioxusState {
     pub(crate) node_id_mapping: Vec<Option<NodeId>>,
     /// Count of each handler type
     pub(crate) event_handler_counts: [u32; 32],
+    /// PATCH(loki): elements that registered an `onmounted` listener since the
+    /// last drain, awaiting a `mounted` event dispatch (see `DioxusDocument`).
+    pub(crate) pending_mounted: Vec<ElementId>,
 }
 
 impl DioxusState {
@@ -29,6 +32,7 @@ impl DioxusState {
             stack: vec![root_id],
             node_id_mapping: vec![Some(root_id)],
             event_handler_counts: [0; 32],
+            pending_mounted: Vec::new(),
         }
     }
 
@@ -240,6 +244,13 @@ impl WriteMutations for MutationWriter<'_> {
     }
 
     fn create_event_listener(&mut self, name: &'static str, id: ElementId) {
+        // PATCH(loki): `mounted` is not a real DOM event — Dioxus expects the
+        // renderer to fire it once the element exists. Queue it for dispatch in
+        // `DioxusDocument` after the mutation batch is applied.
+        if name == "mounted" {
+            self.state.pending_mounted.push(id);
+        }
+
         // We're going to actually set the listener here as a placeholder - in JS this would also be a placeholder
         // we might actually just want to attach the attribute to the root element (delegation)
         let value = AttributeValue::Text("<rust func>".into());

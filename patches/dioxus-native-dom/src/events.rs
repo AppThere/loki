@@ -65,8 +65,14 @@ impl HtmlEventConverter for NativeConverter {
         unimplemented!("todo: convert_media_data in dioxus-native. requires support in blitz")
     }
 
-    fn convert_mounted_data(&self, _event: &PlatformEventData) -> MountedData {
-        unimplemented!("todo: convert_mounted_data in dioxus-native. requires support in blitz")
+    fn convert_mounted_data(&self, event: &PlatformEventData) -> MountedData {
+        // PATCH(loki): the embedder dispatches `mounted` with a MountedElement
+        // backing (see DioxusDocument::take_pending_mounted + dioxus-native).
+        let element = event
+            .downcast::<crate::mounted::MountedElement>()
+            .expect("mounted event payload must be a MountedElement")
+            .clone();
+        MountedData::new(element)
     }
 
     fn convert_pointer_data(&self, _event: &PlatformEventData) -> PointerData {

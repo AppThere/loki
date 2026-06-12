@@ -27,7 +27,9 @@ pub(crate) use android::{
     check_permission, delete, open_read, open_write, pick_open_multi, pick_open_single, pick_save,
 };
 #[cfg(target_os = "android")]
-pub use android::{init_android, on_activity_result, query_insets_dp};
+pub use android::{
+    init_android, on_activity_result, query_insets_dp, query_window_insets_dp,
+};
 
 #[cfg(target_os = "ios")]
 mod ios;

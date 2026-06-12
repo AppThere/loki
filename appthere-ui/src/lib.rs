@@ -43,5 +43,5 @@ pub use components::{
     AtStatusBarProps, AtTabBar, AtTabBarProps, AtTitleBar, AtTitleBarProps, BuiltinTemplate,
     Platform, RecentDocument,
 };
-pub use safe_area::{set_safe_area_insets, use_safe_area, SafeAreaInsets};
+pub use safe_area::{set_safe_area_insets, update_safe_area_insets, use_safe_area, SafeAreaInsets};
 pub use theme::{use_theme, AtThemeContext, ThemeVariant};

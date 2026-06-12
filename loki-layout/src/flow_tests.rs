@@ -45,6 +45,7 @@ fn flow_pageless(
             items,
             height,
             warnings,
+            ..
         } => (items, height, warnings),
         _ => panic!("expected Canvas output"),
     }
@@ -750,6 +751,7 @@ fn flow_with_catalog(
             items,
             height,
             warnings,
+            ..
         } => (items, height, warnings),
         _ => panic!("expected Canvas"),
     }

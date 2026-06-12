@@ -97,6 +97,7 @@ fn main() {
                     },
                 }),
             ],
+            paragraphs: vec![],
         })
     };
 

@@ -73,6 +73,15 @@ event type whose `HtmlEventConverter` implementation is a placeholder
   `convert_animation_data`, `convert_selection_data`, `convert_toggle_data`,
   `convert_transition_data`, `convert_resize_data`, `convert_visible_data`
 
+**`onmounted` / `MountedData` (PATCH(loki), 2026-06-11).** `convert_mounted_data`
+is implemented, and `onmounted` is now dispatched: `create_event_listener`
+queues `mounted` listeners into `DioxusState::pending_mounted`, and
+`DioxusDocument::take_pending_mounted` drains them (resolved to blitz node ids)
+for the embedder to fire. `mounted.rs` provides the `MountedElement`
+`RenderedElementBacking` plus a `MountedBackend` trait — the transport that
+actually touches the live document, implemented in `dioxus-native` so this crate
+stays free of any winit/shell dependency.
+
 Vendoring the crate locally means Loki can build against a known snapshot and
 apply targeted fixes without being blocked by an upstream release. See
 `docs/editing/input-event-audit.md` — the **Blockers** section — for a
@@ -122,8 +131,33 @@ to `View` to track in-progress touch contacts for long-press detection.
 Constants `TOUCH_SLOP_PX` (8.0 logical px) and `LONG_PRESS_DURATION` (500 ms)
 gate scroll vs. tap vs. long-press classification.
 
+**Soft-keyboard / IME on focus:** Upstream calls `set_ime_allowed(true)` once,
+unconditionally, at window creation. On Android that maps to
+`AndroidApp::show_soft_input`, which is a no-op before the window is focused —
+so the on-screen keyboard never appears, and there is no later trigger. This
+patch instead starts with the IME disabled and drives it from DOM focus:
+`update_ime_for_focus` runs after every focus-changing event (click / tap /
+Tab) and calls `Window::set_ime_allowed(true)` only when the focused node is a
+text-editing surface — an `<input>`/`<textarea>`, or any element carrying an
+`inputmode` attribute that is not `"none"`. The Loki editor canvas is a
+focusable `<div inputmode="text">`, so tapping it raises the keyboard while
+tapping a ribbon `<button>` (focusable, but not a text target) lowers it. An
+`ime_active: bool` field debounces redundant winit calls.
+
+**Scroll re-sync on resize (PATCH(loki), 2026-06-12):** `resync_scroll_geometry`
+re-dispatches `onscroll` (via `collect_scroll_containers` + `handle_scroll_changes`)
+to every scroll container with its fresh client geometry. Called from the
+`Resized` handler and, through `View::resync_scroll_geometry` (now `pub`), from
+dioxus-native's `flush_mounted` when a scroll container mounts. This is what
+lets the editor's width-driven reflow / view-mode default react to a window
+resize, to the first real Android size, and to the canvas appearing after an
+async document load — without the user having to scroll first.
+
 **Root cause:** Upstream has a `// Todo implement touch scrolling` comment at
-the touch arm — the feature is planned but not implemented.
+the touch arm — the feature is planned but not implemented. The IME call is a
+hard-coded `// TODO: make this conditional on text input focus`. Upstream also
+has no mechanism to notify embedders of element size changes (no
+`ResizeObserver` / resize events).
 
 **Upstream status:** No known issue filed as of 2026-05-08. Monitor blitz-shell
 releases for native touch implementation.
@@ -207,8 +241,19 @@ the original is a no-op: `View::request_redraw()` guards on
 The patch adds `window.request_redraw()` after `window.poll()` in the
 `CreateHeadElement` handler, ensuring CSS changes always trigger a repaint.
 
+**`MountedData` / programmatic scroll (PATCH(loki), 2026-06-11).** Two
+`DioxusNativeEvent` variants are added — `ScrollNode` (absolute scroll, backing
+`MountedData::scroll`) and `QueryNodeGeometry` (a one-shot-reply geometry read,
+backing `get_scroll_offset` / `get_scroll_size` / `get_client_rect`). A
+`ProxyMountedBackend` (impl of dioxus-native-dom's `MountedBackend`) posts these
+events through the event-loop proxy. `flush_mounted` drains
+`DioxusDocument::take_pending_mounted` after each poll and dispatches the
+`mounted` event with a `MountedElement` backing, so `onmounted` fires. This is
+what enables the editor's draggable scrollbar thumb.
+
 **Root cause:** Upstream assumed OS-level redraw events would cover the
 CSS-application step; this assumption holds on desktop but not on Android.
+Upstream also leaves `onmounted` / `MountedData` unimplemented for native.
 
 **Upstream status:** No issue filed as of 2026-05-24. Upstream repository is
 [DioxusLabs/dioxus](https://github.com/DioxusLabs/dioxus).
@@ -264,6 +309,19 @@ File" on a NativeActivity (cargo-apk) build:
 0.21.x API), and corrects a `#[no_mangle]` → `#[unsafe(no_mangle)]` attribute
 for Rust 2024 edition compatibility.
 
+**Adds (PATCH(loki), 2026-06-13):** `query_window_insets_dp(activity_ptr)` —
+orientation-aware safe-area insets `(top, bottom, left, right)` in dp from
+`decorView.getRootWindowInsets().getInsets(systemBars | displayCutout)`. Unlike
+the existing `query_insets_dp` (which reads the orientation-independent
+`status_bar_height` / `navigation_bar_height` resources), this reflects the real
+per-side insets, so landscape — where the navigation bar / cutout move to a side
+— is padded correctly instead of keeping the portrait top/bottom values. Needs
+the **Activity** (passed in via `AndroidApp::activity_as_ptr()`), since
+`ndk_context` holds the `Application`, which has no window. Returns `None`
+(caller falls back to `query_insets_dp`) before the view is attached or on
+API < 30. loki-text re-queries it on resize via a hidden scroll-container
+sensor and pushes the result into `appthere_ui::update_safe_area_insets`.
+
 **Root cause:** loki-file-access 0.1.2 was designed for desktop and WASM; the
 Android implementation was scaffolded but never exercised on a real NativeActivity
 build before this patch.
@@ -304,11 +362,25 @@ file picking additionally requires a Gradle build with `FilePickerActivity.kt`.
    Routed through the `Document` trait because blitz-traits 0.2 has no
    scroll `DomEventData` variant.
 
-**Removal condition:** Upstream blitz-dom implements tabindex focus-on-click
-for non-input elements and dispatches scroll events to embedders.
+3. **Absolute scroll (PATCH(loki), 2026-06-11).** `scroll_node_to_collect`
+   scrolls a node to an absolute `(x, y)` offset (clamped, change-collecting),
+   implemented on top of `scroll_node_by_collect`. Backs `MountedData::scroll`
+   in the dioxus-native patch (draggable scrollbar thumb, scroll-to-cursor).
 
-**Added:** 2026-05-18 (focus); extended 2026-06-10 (scroll events, together
-with matching changes in the blitz-shell and dioxus-native-dom patches).
+4. **Scroll-container enumeration (PATCH(loki), 2026-06-12).**
+   `collect_scroll_containers` returns every node whose computed overflow is
+   `scroll`/`auto`. blitz-shell calls it after a viewport resize (and after a
+   scroll container mounts) and feeds the result to `handle_scroll_changes`, so
+   the embedder re-receives `onscroll` with the new client size — letting the
+   reflow view relayout to the window width without a user scroll.
+
+**Removal condition:** Upstream blitz-dom implements tabindex focus-on-click
+for non-input elements, dispatches scroll events to embedders, and exposes an
+absolute node-scroll API.
+
+**Added:** 2026-05-18 (focus); extended 2026-06-10 (scroll events) and
+2026-06-11 (absolute scroll), together with matching changes in the blitz-shell
+and dioxus-native(-dom) patches.
 
 ---
 

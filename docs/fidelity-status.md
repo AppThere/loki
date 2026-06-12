@@ -18,6 +18,7 @@ This is the living source of truth documenting which document features, characte
 | **keep-with-next** | Yes | Yes | Yes | Scans forward up to 5 blocks to place headings and body together. |
 | **Widow/Orphan Control** | Yes | No | No | Ignored at layout time (Word defaults to "on"). |
 | **Bookmarks** | Yes | No | Yes | Bookmarks are written/parsed but do not affect layout. |
+| **Reflow (non-paginated) view** | — | Yes | — | `LayoutMode::Reflow` + `RenderMode::Reflow` render a continuous web-style flow through the same layout/Vello pipeline as paginated view (full font/size/alignment fidelity), sliced into zero-gap GPU band tiles (768pt ⇒ exact 1024 CSS px, so tiles stack seamlessly). Relayouts to the window width on resize (shell re-emits `onscroll` for scroll containers). Content wider than the viewport (e.g. a fixed-width table) widens the tiles so it is reachable by horizontal scrolling rather than clipped. No headers/footers/page chrome by design; the status-bar page indicator is hidden in reflow. **Editing:** `ContinuousLayout` carries per-paragraph editing data, so click-to-cursor, caret placement/painting, range-selection highlighting (mouse drag-select + Shift+Arrow), and reflow-native arrow / Home / End navigation all work, plus typing/undo/formatting. Still missing: typing/Backspace over a selection does not yet delete the selected range first (it inserts at the focus), and touch long-press selection is not wired for reflow. Android CPU builds (no `android_gpu`) fall back to a low-fidelity HTML flow (`reflow_view.rs`) with no caret. |
 
 ---
 
@@ -124,3 +125,19 @@ these limits are clamped or rejected with a typed error.
 | ODT table columns expanded per `table:table-column` repeat | 16,384 | Clamped |
 | ODT spaces per `<text:s text:c="N"/>` | 10,000 | Clamped |
 | ODT nesting depth (`text:span` / `text:a` / `text:list`) | 100 | `NestingTooDeep` error |
+
+---
+
+## 8. Layout Performance (Editing Path)
+
+These are performance characteristics, not fidelity changes — layout output is
+byte-identical with and without the caches below. See
+[benchmarks.md](file:///home/user/loki/docs/benchmarks.md) for the harness and
+numbers.
+
+| Mechanism | Where | Effect |
+| :--- | :--- | :--- |
+| Paragraph shaping cache (`para_cache`) | `loki-layout` `FontResources` | Re-shapes only the changed paragraph per keystroke; unchanged paragraphs are served from cache. Keystroke cost on a ~1000-paragraph doc dropped ~166 ms → ~22 ms. Keyed by a hash of every shaping input (text + `Debug` of spans/props + width + scale + preserve flag), bounded by a two-generation LRU (`CACHE_CAP` = 4096). |
+| Persistent renderer shaping context | `loki-renderer` `DocPageSource` | One `FontResources` for the source's lifetime instead of one per generation: the ~20 MB system-font scan runs once, and the shaping cache persists across keystrokes on the render path. |
+| Incremental Loro→Document reconstruction (`IncrementalReader`) | `loki-doc-model` `loro_bridge` | A keystroke re-derives only the changed block instead of walking the whole CRDT, by diffing Loro versions and mapping changed containers to block indices. Structural/section/layout changes fall back to a full `loro_to_document`, so output is byte-identical. Keystroke on a ~1000-paragraph doc: full-rebuild ~17.7 ms → incremental ~14 ms (~166 ms → ~14 ms across both Tier-0 commits). |
+| Single canonical layout | `loki-renderer` `DocPageSource` / `DocumentView` | Paginated mode lays the document out once: the editor's `Arc<PaginatedLayout>` is handed to the renderer (`provide_paginated_layout`) and reused for painting instead of a second `layout_document` pass. Reflow mode still computes its own width-dependent layout. The editor (hit-testing) and renderer (painting) now share one layout object. Output unchanged. |

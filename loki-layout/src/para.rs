@@ -17,7 +17,7 @@ use loki_doc_model::style::list_style::{
 };
 use parley::{
     Alignment, AlignmentOptions, Cursor, FontFamily, FontStyle, FontWeight, InlineBox, LineHeight,
-    PositionedLayoutItem, RangedBuilder, StyleProperty,
+    PositionedLayoutItem, RangedBuilder, Selection, StyleProperty,
 };
 
 use crate::color::LayoutColor;
@@ -479,6 +479,43 @@ impl ParagraphLayout {
             height,
         })
     }
+
+    /// Selection highlight rectangles (paragraph-local layout points) covering
+    /// the byte range `[start, end)`, one or more per visual line.  Empty when
+    /// the range is collapsed, out of editing mode, or has no glyphs.
+    ///
+    /// Byte offsets are clamped into range. Used for selection painting in both
+    /// view modes via [`crate::ContinuousLayout::selection_rects`].
+    pub fn selection_rects(&self, start: usize, end: usize) -> Vec<LayoutRect> {
+        let Some(layout) = self.parley_layout.as_deref() else {
+            return Vec::new();
+        };
+        let to_clean = |b: usize| {
+            self.orig_to_clean
+                .get(b)
+                .copied()
+                .unwrap_or_else(|| self.orig_to_clean.last().copied().unwrap_or(0))
+        };
+        let (lo, hi) = if start <= end {
+            (start, end)
+        } else {
+            (end, start)
+        };
+        let anchor = Cursor::from_byte_index(layout, to_clean(lo), parley::Affinity::Downstream);
+        let focus = Cursor::from_byte_index(layout, to_clean(hi), parley::Affinity::Downstream);
+        Selection::new(anchor, focus)
+            .geometry(layout)
+            .into_iter()
+            .map(|(bb, _line)| {
+                LayoutRect::new(
+                    bb.x0 as f32,
+                    bb.y0 as f32,
+                    (bb.x1 - bb.x0) as f32,
+                    (bb.y1 - bb.y0) as f32,
+                )
+            })
+            .collect()
+    }
 }
 
 // ── Tab stop helpers (gap #7) ─────────────────────────────────────────────────
@@ -654,7 +691,47 @@ fn clean_text_and_spans(
 /// sessions can call [`ParagraphLayout::hit_test_point`] and
 /// [`ParagraphLayout::cursor_rect`]. In read-only rendering mode pass
 /// `false` to avoid the memory cost on large documents.
+///
+/// The result is memoised in `resources.para_cache`: when the same inputs are
+/// laid out again (e.g. every paragraph except the edited one, on a keystroke)
+/// the cached layout is cloned instead of re-shaped. See
+/// [`crate::para_cache`].
 pub fn layout_paragraph(
+    resources: &mut FontResources,
+    text_content: &str,
+    style_spans: &[StyleSpan],
+    para_props: &ResolvedParaProps,
+    available_width: f32,
+    display_scale: f32,
+    preserve_for_editing: bool,
+) -> ParagraphLayout {
+    let key = crate::para_cache::para_key(
+        text_content,
+        style_spans,
+        para_props,
+        available_width,
+        display_scale,
+        preserve_for_editing,
+    );
+    if let Some(hit) = resources.para_cache.get(key) {
+        return hit;
+    }
+    let result = layout_paragraph_uncached(
+        resources,
+        text_content,
+        style_spans,
+        para_props,
+        available_width,
+        display_scale,
+        preserve_for_editing,
+    );
+    resources.para_cache.put(key, result.clone());
+    result
+}
+
+/// Lays out a single paragraph using Parley, without consulting or populating
+/// the shaping cache. [`layout_paragraph`] wraps this with memoisation.
+fn layout_paragraph_uncached(
     resources: &mut FontResources,
     text_content: &str,
     style_spans: &[StyleSpan],

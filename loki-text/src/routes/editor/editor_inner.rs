@@ -31,6 +31,7 @@ use loki_doc_model::loro_schema::{
     MARK_BOLD, MARK_ITALIC, MARK_STRIKETHROUGH, MARK_UNDERLINE, MARK_VERTICAL_ALIGN,
 };
 use loki_i18n::fl;
+use loki_renderer::ViewMode;
 use loro::LoroValue;
 
 use super::editor_canvas::render_canvas_area;
@@ -55,6 +56,12 @@ use loki_file_access::{FilePicker, SaveOptions};
 
 /// MIME type used when saving documents (DOCX is the only writable format).
 const DOCX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+/// Viewport width (logical px) below which the editor defaults to the
+/// reflowable view: a US-Letter page (~816px) plus margins no longer fits, so
+/// paginated view would otherwise force horizontal scrolling. The user can
+/// still toggle back to paginated.
+const REFLOW_BREAKPOINT_PX: f32 = 900.0;
 
 // EditorMode removed — the editor is always in edit mode when a document is
 // open. Distraction-free reading is handled by the View ribbon tab (future
@@ -87,8 +94,14 @@ pub(super) fn EditorInner(path: String) -> Element {
         touch_state,
         window_width,
         scroll_offset,
+        scroll_metrics,
+        canvas_mounted,
+        vbar_drag,
+        hbar_drag,
         current_page,
         mut total_pages,
+        mut view_mode,
+        mut view_mode_user_set,
         mut bold_active,
         mut italic_active,
         mut underline_active,
@@ -444,10 +457,61 @@ pub(super) fn EditorInner(path: String) -> Element {
         save_message.set(Some(msg));
     });
 
+    // ── Measure the canvas at mount ──────────────────────────────────────────
+    //
+    // Scroll metrics are otherwise only populated by the first DOM scroll
+    // event, which would leave the view-mode default and the reflow layout
+    // width unknown until the user scrolls. Query the mounted scroll
+    // container's client rect once (backed by the dioxus-native MountedData
+    // patch) and seed the metrics.
+    use_effect(move || {
+        let Some(evt) = canvas_mounted() else { return };
+        if scroll_metrics.peek().client_width > 0.0 {
+            return;
+        }
+        let mut metrics = scroll_metrics;
+        spawn(async move {
+            if let Ok(rect) = evt.get_client_rect().await {
+                let mut m = metrics.write();
+                if m.client_width <= 0.0 {
+                    m.client_width = rect.size.width as f32;
+                    m.client_height = rect.size.height as f32;
+                }
+            }
+        });
+    });
+
+    // ── Default view mode by viewport width ──────────────────────────────────
+    //
+    // Paginated on wide viewports, reflowed on narrow ones — until the user
+    // picks a mode explicitly (which sets `view_mode_user_set` and freezes this
+    // default). The viewport width becomes known from the scroll container's
+    // `client_width`, reported on the first DOM scroll event.
+    use_effect(move || {
+        if *view_mode_user_set.read() {
+            return;
+        }
+        let width = scroll_metrics.read().client_width;
+        if width <= 0.0 {
+            return;
+        }
+        let desired = if width < REFLOW_BREAKPOINT_PX {
+            ViewMode::Reflow
+        } else {
+            ViewMode::Paginated
+        };
+        if *view_mode.peek() != desired {
+            view_mode.set(desired);
+        }
+    });
+
     let canvas_hovered = use_signal(|| false);
     let page_gap_px = tokens::PAGE_GAP_PX;
 
-    let page_label = if total_pages() == 0 {
+    let page_label = if view_mode() == ViewMode::Reflow {
+        // Reflow has no fixed pages — hide the page indicator entirely.
+        String::new()
+    } else if total_pages() == 0 {
         fl!("editor-page-loading") // empty in en-US — avoids flash while loading
     } else {
         fl!(
@@ -552,7 +616,13 @@ pub(super) fn EditorInner(path: String) -> Element {
                 touch_state,
                 window_width,
                 scroll_offset,
+                scroll_metrics,
+                canvas_mounted,
+                vbar_drag,
+                hbar_drag,
                 current_page,
+                total_pages,
+                view_mode,
                 cursor_state,
                 loro_doc,
                 undo_manager,
@@ -765,6 +835,22 @@ pub(super) fn EditorInner(path: String) -> Element {
                 collaborator_label: String::new(),
                 zoom_aria_label:    fl!("editor-zoom-aria"),
                 on_zoom_click:      |_| {},
+                view_mode_label:    if view_mode() == ViewMode::Reflow {
+                    fl!("editor-view-reflowed")
+                } else {
+                    fl!("editor-view-paginated")
+                },
+                view_mode_aria_label: fl!("editor-view-toggle-aria"),
+                on_view_mode_click: move |_| {
+                    // User override freezes the width-based default.
+                    view_mode_user_set.set(true);
+                    let next = if *view_mode.peek() == ViewMode::Reflow {
+                        ViewMode::Paginated
+                    } else {
+                        ViewMode::Reflow
+                    };
+                    view_mode.set(next);
+                },
             }
         }
     }
