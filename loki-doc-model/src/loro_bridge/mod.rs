@@ -10,12 +10,15 @@
 //! - `inlines` — inline content helpers shared by both directions
 
 mod decode;
+mod incremental;
 mod inlines;
 mod inlines_read;
 mod opaque;
 mod props_read;
 mod read;
 mod write;
+
+pub use incremental::IncrementalReader;
 
 use crate::document::Document;
 use crate::layout::header_footer::HeaderFooter;

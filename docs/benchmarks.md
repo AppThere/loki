@@ -80,10 +80,24 @@ once (see below).
 
 **Reading:** with shaping memoised, an edit re-shapes only the changed
 paragraph; the other `N − 1` are served from cache. Layout is no longer the
-dominant per-keystroke cost. The residual ~22 ms at 1000 paragraphs is now
-dominated by `loro_to_document` (full CRDT walk) plus the per-paragraph clone +
-key-hash — the next optimisation targets (Tier-0 items #1 dirty-block tracking
-and the single-canonical-layout merge).
+dominant per-keystroke cost.
+
+### After incremental reconstruction (`IncrementalReader`)
+
+Replacing the full `loro_to_document` walk with a diff-driven re-derive of only
+the changed block (`edit_path` bench, 1000-paragraph doc, Criterion):
+
+| keystroke path | time @ 1000 paras |
+|----|---:|
+| `loro_to_document` + cached layout | ~17.7 ms |
+| `IncrementalReader` + cached layout | ~14.0 ms |
+
+The full CRDT walk is gone from the hot path (~3.7 ms / ~21 % off the
+keystroke; the gap widens with document size). End to end across both Tier-0
+commits, the 1000-paragraph keystroke went from **~166 ms → ~14 ms (~12×)**.
+The residual is now `layout_document`'s per-paragraph positioning (cache-key
+hash + `ParagraphLayout` clone + flow), i.e. the single-canonical-layout merge
+is the next lever.
 
 > The `edit_path` keystroke bench re-inserts the same character each iteration,
 > so after warm-up the edited paragraph is also a cache hit; a real keystroke
@@ -101,3 +115,12 @@ and the single-canonical-layout merge).
   `FontResources` for its lifetime instead of constructing a fresh one per
   generation, so the ~20 MB system-font scan happens once and the shaping cache
   survives across keystrokes on the render path too.
+- **Incremental Loro→Document reconstruction**
+  (`loki-doc-model/src/loro_bridge/incremental.rs`): `IncrementalReader` keeps
+  the last-derived `Document` plus the Loro version it reflects, diffs the new
+  version against the old, and re-reconstructs only the changed block(s) when
+  the edit is confined to existing blocks in section 0. Structural changes
+  (split/merge/insert/delete), section/layout/metadata changes, or any
+  unmappable diff fall back to a full `loro_to_document`, so the result is
+  always byte-identical to a full rebuild. Wired into
+  `apply_mutation_and_relayout`; reset when a new document loads.

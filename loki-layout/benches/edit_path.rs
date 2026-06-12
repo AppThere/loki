@@ -19,7 +19,7 @@
 //! Run: `cargo bench -p loki-layout --bench edit_path`
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use loki_doc_model::loro_bridge::{document_to_loro, loro_to_document};
+use loki_doc_model::loro_bridge::{IncrementalReader, document_to_loro, loro_to_document};
 use loki_doc_model::loro_mutation::{delete_text, insert_text};
 use loki_layout::{FontResources, LayoutMode, LayoutOptions, layout_document};
 use std::hint::black_box;
@@ -71,5 +71,48 @@ fn bench_keystroke(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_keystroke);
+/// Same keystroke pipeline, but reconstructing the document with
+/// [`IncrementalReader`] (re-derive only the changed block) instead of a full
+/// `loro_to_document`. Compare against `bench_keystroke` to see the win from
+/// incremental reconstruction on top of the paragraph shaping cache.
+fn bench_keystroke_incremental(c: &mut Criterion) {
+    let mut resources = FontResources::new();
+    let options = LayoutOptions {
+        preserve_for_editing: true,
+    };
+
+    let mut group = c.benchmark_group("edit_path_incremental");
+    for &n in support::SWEEP {
+        let doc = support::build_doc(n, support::WORDS_PER_PARA);
+        let loro = match document_to_loro(&doc) {
+            Ok(d) => d,
+            Err(e) => panic!("document_to_loro failed for n={n}: {e}"),
+        };
+        let mut reader = match IncrementalReader::seed(&loro) {
+            Ok(r) => r,
+            Err(e) => panic!("IncrementalReader::seed failed for n={n}: {e}"),
+        };
+
+        group.throughput(Throughput::Elements(n as u64));
+        group.bench_with_input(BenchmarkId::new("incremental+layout", n), &n, |b, _| {
+            b.iter(|| {
+                let _ = insert_text(&loro, 0, 0, "x");
+                if let Ok(derived) = reader.update(&loro) {
+                    let layout = layout_document(
+                        &mut resources,
+                        derived,
+                        LayoutMode::Paginated,
+                        1.0,
+                        &options,
+                    );
+                    black_box(&layout);
+                }
+                let _ = delete_text(&loro, 0, 0, 1);
+            });
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_keystroke, bench_keystroke_incremental);
 criterion_main!(benches);
