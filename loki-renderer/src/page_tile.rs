@@ -12,7 +12,7 @@ use dioxus::native::use_wgpu;
 use dioxus::prelude::*;
 
 use crate::doc_page_source::DocPageSource;
-use crate::document_view::RendererCursorPos;
+use crate::document_view::RendererSelection;
 use crate::page_paint_source::LokiPageSource;
 
 #[derive(Clone, Props)]
@@ -23,8 +23,8 @@ pub(crate) struct PageTileProps {
     pub(crate) w: f64,
     pub(crate) h: f64,
     pub(crate) shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
-    pub(crate) cursor_holder: Arc<Mutex<Option<RendererCursorPos>>>,
-    pub(crate) cursor_pos: Option<RendererCursorPos>,
+    pub(crate) cursor_holder: Arc<Mutex<Option<RendererSelection>>>,
+    pub(crate) selection: Option<RendererSelection>,
     /// Document generation — incremented on every mutation so that style
     /// changes that don't move the cursor still dirty the canvas.
     pub(crate) doc_gen: u64,
@@ -34,10 +34,12 @@ pub(crate) struct PageTileProps {
     /// Vertical gap below this tile in CSS px — the page gap in paginated
     /// mode, `0` in reflow mode so bands stitch into a continuous flow.
     pub(crate) gap_px: f64,
-    /// Called with `(page_index, x_pt, y_pt)` in layout points when the user
-    /// clicks anywhere on this page tile. The parent uses this to call
-    /// `hit_test_page` without needing window-relative origin math.
+    /// Called with `(page_index, x_pt, y_pt)` in layout points on mouse-down.
     pub(crate) on_tile_click: EventHandler<(usize, f32, f32)>,
+    /// Called with `(page_index, x_pt, y_pt)` on mouse-move while a button is
+    /// held (drag-select). No-op for the paginated path (handled at the
+    /// container level).
+    pub(crate) on_tile_drag: EventHandler<(usize, f32, f32)>,
 }
 
 impl PartialEq for PageTileProps {
@@ -48,12 +50,12 @@ impl PartialEq for PageTileProps {
             && self.w == other.w
             && self.h == other.h
             && Arc::ptr_eq(&self.cursor_holder, &other.cursor_holder)
-            && self.cursor_pos == other.cursor_pos
+            && self.selection == other.selection
             && self.doc_gen == other.doc_gen
             && self.settle_epoch == other.settle_epoch
             && self.gap_px == other.gap_px
-        // on_tile_click intentionally excluded — EventHandler identity does not
-        // affect render output; omitting it avoids spurious re-renders.
+        // event handlers intentionally excluded — identity does not affect
+        // render output; omitting them avoids spurious re-renders.
     }
 }
 
@@ -67,11 +69,12 @@ pub(crate) fn PageTile(props: PageTileProps) -> Element {
     let cursor_holder = props.cursor_holder.clone();
     let cursor_holder_wgpu = props.cursor_holder.clone();
     let on_tile_click = props.on_tile_click;
+    let on_tile_drag = props.on_tile_drag;
 
-    // Write current cursor to shared holder on every render so LokiPageSource
-    // can read it during the GPU paint call.
+    // Write the current selection to the shared holder on every render so
+    // LokiPageSource can read it during the GPU paint call.
     if let Ok(mut guard) = cursor_holder.lock() {
-        *guard = props.cursor_pos;
+        *guard = props.selection;
     }
 
     let canvas_id = use_wgpu(move || {
@@ -84,17 +87,26 @@ pub(crate) fn PageTile(props: PageTileProps) -> Element {
         )
     });
 
-    // Combines cursor position and document generation so that both cursor
-    // movement AND document mutations (e.g. style changes that don't shift
-    // the cursor) mark the canvas dirty and trigger render() again.
+    // Marks the canvas dirty (so Blitz re-invokes the paint source) on caret,
+    // selection, document, or tier changes. When a range selection is active it
+    // is encoded into *every* tile's key — a selection can span bands, so all of
+    // them must repaint as it changes. A collapsed caret only dirties the tile
+    // it sits on, keeping plain caret movement cheap.
     // COMPAT(dioxus-native): data-* attributes confirmed working in Blitz.
-    let data_cursor = match props.cursor_pos {
-        Some(cp) if cp.page_index == props.page_index => {
-            format!(
-                "{}-{}-{}-{}",
-                cp.paragraph_index, cp.byte_offset, props.doc_gen, props.settle_epoch
-            )
-        }
+    let data_cursor = match props.selection {
+        Some(sel) if !sel.is_collapsed() => format!(
+            "s{}-{}-{}-{}-{}-{}",
+            sel.anchor.paragraph_index,
+            sel.anchor.byte_offset,
+            sel.focus.paragraph_index,
+            sel.focus.byte_offset,
+            props.doc_gen,
+            props.settle_epoch
+        ),
+        Some(sel) if sel.focus.page_index == props.page_index => format!(
+            "{}-{}-{}-{}",
+            sel.focus.paragraph_index, sel.focus.byte_offset, props.doc_gen, props.settle_epoch
+        ),
         _ => format!("{}-{}", props.doc_gen, props.settle_epoch),
     };
 
@@ -117,6 +129,17 @@ pub(crate) fn PageTile(props: PageTileProps) -> Element {
                 let x_pt = e.x as f32 * (72.0 / 96.0);
                 let y_pt = e.y as f32 * (72.0 / 96.0);
                 on_tile_click.call((page_index, x_pt, y_pt));
+            },
+            // Drag-select: while a button is held, extend the selection to the
+            // pointer. Tile-local coordinates again avoid origin math.
+            onmousemove: move |evt: MouseEvent| {
+                if evt.held_buttons().is_empty() {
+                    return;
+                }
+                let e = evt.element_coordinates();
+                let x_pt = e.x as f32 * (72.0 / 96.0);
+                let y_pt = e.y as f32 * (72.0 / 96.0);
+                on_tile_drag.call((page_index, x_pt, y_pt));
             },
             canvas {
                 "src": "{canvas_id}",

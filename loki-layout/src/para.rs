@@ -17,7 +17,7 @@ use loki_doc_model::style::list_style::{
 };
 use parley::{
     Alignment, AlignmentOptions, Cursor, FontFamily, FontStyle, FontWeight, InlineBox, LineHeight,
-    PositionedLayoutItem, RangedBuilder, StyleProperty,
+    PositionedLayoutItem, RangedBuilder, Selection, StyleProperty,
 };
 
 use crate::color::LayoutColor;
@@ -478,6 +478,43 @@ impl ParagraphLayout {
             y,
             height,
         })
+    }
+
+    /// Selection highlight rectangles (paragraph-local layout points) covering
+    /// the byte range `[start, end)`, one or more per visual line.  Empty when
+    /// the range is collapsed, out of editing mode, or has no glyphs.
+    ///
+    /// Byte offsets are clamped into range. Used for selection painting in both
+    /// view modes via [`crate::ContinuousLayout::selection_rects`].
+    pub fn selection_rects(&self, start: usize, end: usize) -> Vec<LayoutRect> {
+        let Some(layout) = self.parley_layout.as_deref() else {
+            return Vec::new();
+        };
+        let to_clean = |b: usize| {
+            self.orig_to_clean
+                .get(b)
+                .copied()
+                .unwrap_or_else(|| self.orig_to_clean.last().copied().unwrap_or(0))
+        };
+        let (lo, hi) = if start <= end {
+            (start, end)
+        } else {
+            (end, start)
+        };
+        let anchor = Cursor::from_byte_index(layout, to_clean(lo), parley::Affinity::Downstream);
+        let focus = Cursor::from_byte_index(layout, to_clean(hi), parley::Affinity::Downstream);
+        Selection::new(anchor, focus)
+            .geometry(layout)
+            .into_iter()
+            .map(|(bb, _line)| {
+                LayoutRect::new(
+                    bb.x0 as f32,
+                    bb.y0 as f32,
+                    (bb.x1 - bb.x0) as f32,
+                    (bb.y1 - bb.y0) as f32,
+                )
+            })
+            .collect()
     }
 }
 

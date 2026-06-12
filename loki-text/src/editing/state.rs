@@ -10,7 +10,9 @@
 use std::sync::{Arc, Mutex};
 
 use loki_doc_model::document::Document;
-use loki_layout::{DocumentLayout, FontResources, LayoutMode, LayoutOptions, PaginatedLayout};
+use loki_layout::{
+    ContinuousLayout, DocumentLayout, FontResources, LayoutMode, LayoutOptions, PaginatedLayout,
+};
 
 /// Shared document editing state.
 ///
@@ -36,6 +38,10 @@ pub struct DocumentState {
     /// Shared Parley font + shaping context — one per editor to avoid the
     /// ≈20 MB font-scan cost on every mutation.
     pub shared_font_resources: Arc<Mutex<FontResources>>,
+    /// Lazily-computed reflow layout for reflow-mode navigation, keyed by
+    /// `(generation, content-width key)`.  Recomputed when stale.  Separate from
+    /// the renderer's copy; only built when the user navigates in reflow mode.
+    pub reflow_cache: Option<(u64, i32, Arc<ContinuousLayout>)>,
 }
 
 impl DocumentState {
@@ -49,8 +55,53 @@ impl DocumentState {
             page_width_px: appthere_ui::tokens::PAGE_WIDTH_PX,
             page_height_px: appthere_ui::tokens::PAGE_HEIGHT_PX,
             shared_font_resources: Arc::new(Mutex::new(FontResources::new())),
+            reflow_cache: None,
         }
     }
+}
+
+/// Returns the reflow [`ContinuousLayout`] for the current document laid out at
+/// `content_width_pt`, computing and caching it on `DocumentState` when stale.
+///
+/// Used by reflow-mode arrow navigation, which needs the reflowed line geometry
+/// (the paginated layout wraps at a different width). Returns `None` when no
+/// document is loaded.
+pub fn ensure_reflow_layout(
+    doc_state: &Arc<Mutex<DocumentState>>,
+    content_width_pt: f32,
+) -> Option<Arc<ContinuousLayout>> {
+    let mut state = doc_state.lock().unwrap_or_else(|e| e.into_inner());
+    let doc = state.document.clone()?;
+    let width_key = content_width_pt.round() as i32;
+    if let Some((cached_gen, key, layout)) = &state.reflow_cache
+        && *cached_gen == state.generation
+        && *key == width_key
+    {
+        return Some(layout.clone());
+    }
+    let layout = {
+        let mut resources = state
+            .shared_font_resources
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let options = LayoutOptions {
+            preserve_for_editing: true,
+        };
+        match loki_layout::layout_document(
+            &mut resources,
+            &doc,
+            LayoutMode::Reflow {
+                available_width: content_width_pt,
+            },
+            1.0,
+            &options,
+        ) {
+            DocumentLayout::Continuous(cl) => Arc::new(cl),
+            _ => return None,
+        }
+    };
+    state.reflow_cache = Some((state.generation, width_key, layout.clone()));
+    Some(layout)
 }
 
 impl Default for DocumentState {

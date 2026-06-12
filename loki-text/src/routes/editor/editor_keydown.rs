@@ -9,15 +9,23 @@ use keyboard_types::Modifiers;
 use loki_doc_model::loro_mutation::{delete_text, get_block_text, insert_text};
 use loki_doc_model::merge_block;
 
+use loki_renderer::ViewMode;
+use loki_renderer::render_layout::{MIN_REFLOW_CONTENT_PT, REFLOW_PADDING_PT};
+
 use super::editor_keydown_ctrl::{
     handle_ctrl_keys, handle_delete_key, handle_enter_key, post_mutation_sync,
 };
+use super::editor_scrollbar::ScrollMetrics;
 
 use crate::editing::cursor::{CursorState, DocumentPosition, prev_grapheme_boundary};
 use crate::editing::navigation::{
     navigate_down, navigate_end, navigate_home, navigate_left, navigate_right, navigate_up,
 };
-use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
+use crate::editing::reflow_nav::{
+    reflow_navigate_down, reflow_navigate_end, reflow_navigate_home, reflow_navigate_left,
+    reflow_navigate_right, reflow_navigate_up,
+};
+use crate::editing::state::{DocumentState, apply_mutation_and_relayout, ensure_reflow_layout};
 
 // EditorMode removed — the editor is always in edit mode when a document is
 // open. Distraction-free reading is handled by the View ribbon tab (future
@@ -27,6 +35,7 @@ use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 ///
 /// Dispatches printable characters, `Backspace`, `Delete`, arrow navigation,
 /// `Home`/`End`, and `Enter` (paragraph split).
+#[allow(clippy::too_many_arguments)]
 pub(super) fn make_keydown_handler(
     doc_state: Arc<Mutex<DocumentState>>,
     mut cursor_state: Signal<CursorState>,
@@ -35,6 +44,8 @@ pub(super) fn make_keydown_handler(
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
     mut save_request: Signal<u32>,
+    view_mode: Signal<ViewMode>,
+    scroll_metrics: Signal<ScrollMetrics>,
 ) -> impl FnMut(Event<KeyboardData>) {
     move |evt: Event<KeyboardData>| {
         let key = evt.key();
@@ -194,78 +205,61 @@ pub(super) fn make_keydown_handler(
                 );
             }
 
-            // ── Arrow-key navigation ──────────────────────────────────────────
-            Key::ArrowLeft | Key::ArrowRight => {
+            // ── Arrow / Home / End navigation (mode-aware) ────────────────────
+            // Shift extends the selection (keeps the anchor); no Shift collapses
+            // it to the new focus. Reflow uses the reflowed line geometry; the
+            // paginated path is unchanged.
+            Key::ArrowLeft
+            | Key::ArrowRight
+            | Key::ArrowUp
+            | Key::ArrowDown
+            | Key::Home
+            | Key::End => {
                 let shift_held = modifiers.shift();
-                let layout_opt = {
-                    let state = doc_state.lock().unwrap_or_else(|e| e.into_inner());
-                    state.paginated_layout.clone()
-                };
-                let Some(layout) = layout_opt else { return };
                 let ldoc_guard = loro_doc.read();
-                let new_pos = if key == Key::ArrowLeft {
-                    navigate_left(&focus, &layout, |idx| {
-                        ldoc_guard
-                            .as_ref()
-                            .map(|l| get_block_text(l, idx))
-                            .unwrap_or_default()
-                    })
-                } else {
-                    navigate_right(&focus, &layout, |idx| {
-                        ldoc_guard
-                            .as_ref()
-                            .map(|l| get_block_text(l, idx))
-                            .unwrap_or_default()
-                    })
+                let get_text = |idx: usize| {
+                    ldoc_guard
+                        .as_ref()
+                        .map(|l| get_block_text(l, idx))
+                        .unwrap_or_default()
                 };
-                if let Some(np) = new_pos {
-                    let mut cs = cursor_state.write();
-                    cs.focus = Some(np.clone());
-                    if !shift_held {
-                        cs.anchor = Some(np);
-                    }
-                }
-            }
 
-            Key::ArrowUp | Key::ArrowDown => {
-                let shift_held = modifiers.shift();
-                let layout_opt = {
-                    let state = doc_state.lock().unwrap_or_else(|e| e.into_inner());
-                    state.paginated_layout.clone()
-                };
-                let Some(layout) = layout_opt else { return };
-                let new_pos = if key == Key::ArrowUp {
-                    navigate_up(&focus, &layout)
-                } else {
-                    navigate_down(&focus, &layout)
-                };
-                if let Some(np) = new_pos {
-                    let mut cs = cursor_state.write();
-                    cs.focus = Some(np.clone());
-                    if !shift_held {
-                        cs.anchor = Some(np);
+                let new_pos = if view_mode() == ViewMode::Reflow {
+                    let width_px = scroll_metrics.peek().client_width;
+                    if width_px <= 1.0 {
+                        return;
                     }
-                }
-            }
-
-            Key::Home | Key::End => {
-                let shift_held = modifiers.shift();
-                let layout_opt = {
-                    let state = doc_state.lock().unwrap_or_else(|e| e.into_inner());
-                    state.paginated_layout.clone()
-                };
-                let Some(layout) = layout_opt else { return };
-                let ldoc_guard = loro_doc.read();
-                let new_pos = if key == Key::Home {
-                    navigate_home(&focus, &layout)
+                    let content_w = (width_px * (72.0 / 96.0) - 2.0 * REFLOW_PADDING_PT)
+                        .max(MIN_REFLOW_CONTENT_PT);
+                    let Some(layout) = ensure_reflow_layout(&doc_state, content_w) else {
+                        return;
+                    };
+                    match &key {
+                        Key::ArrowLeft => reflow_navigate_left(&focus, &layout, get_text),
+                        Key::ArrowRight => reflow_navigate_right(&focus, &layout, get_text),
+                        Key::ArrowUp => reflow_navigate_up(&focus, &layout),
+                        Key::ArrowDown => reflow_navigate_down(&focus, &layout),
+                        Key::Home => reflow_navigate_home(&focus, &layout),
+                        Key::End => reflow_navigate_end(&focus, &layout, get_text),
+                        _ => None,
+                    }
                 } else {
-                    navigate_end(&focus, &layout, |idx| {
-                        ldoc_guard
-                            .as_ref()
-                            .map(|l| get_block_text(l, idx))
-                            .unwrap_or_default()
-                    })
+                    let layout_opt = {
+                        let state = doc_state.lock().unwrap_or_else(|e| e.into_inner());
+                        state.paginated_layout.clone()
+                    };
+                    let Some(layout) = layout_opt else { return };
+                    match &key {
+                        Key::ArrowLeft => navigate_left(&focus, &layout, get_text),
+                        Key::ArrowRight => navigate_right(&focus, &layout, get_text),
+                        Key::ArrowUp => navigate_up(&focus, &layout),
+                        Key::ArrowDown => navigate_down(&focus, &layout),
+                        Key::Home => navigate_home(&focus, &layout),
+                        Key::End => navigate_end(&focus, &layout, get_text),
+                        _ => None,
+                    }
                 };
+
                 if let Some(np) = new_pos {
                     let mut cs = cursor_state.write();
                     cs.focus = Some(np.clone());

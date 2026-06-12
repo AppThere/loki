@@ -195,6 +195,7 @@ pub(super) fn render_canvas_area(
                 scroll_offset,
                 cursor_state,
                 page_gap_px,
+                view_mode,
             ),
 
             onmouseup: move |_| {
@@ -240,6 +241,8 @@ pub(super) fn render_canvas_area(
                 can_undo,
                 can_redo,
                 save_request,
+                view_mode,
+                scroll_metrics,
             ),
 
             match &*document_load.value().read_unchecked() {
@@ -252,13 +255,17 @@ pub(super) fn render_canvas_area(
                         .ok()
                         .and_then(|s| s.document.clone())
                         .unwrap_or_else(|| Arc::new(doc.clone()));
-                    let cursor_pos = {
+                    let (cursor_pos, selection_anchor) = {
                         let cs = cursor_state.read();
-                        cs.focus.as_ref().map(|pos| RendererCursorPos {
+                        let to_renderer = |pos: &DocumentPosition| RendererCursorPos {
                             page_index: pos.page_index,
                             paragraph_index: pos.paragraph_index,
                             byte_offset: pos.byte_offset,
-                        })
+                        };
+                        (
+                            cs.focus.as_ref().map(to_renderer),
+                            cs.anchor.as_ref().map(to_renderer),
+                        )
                     };
                     rsx! {
                         DocumentView {
@@ -268,6 +275,7 @@ pub(super) fn render_canvas_area(
                             // See diagnostic report, finding 1.
                             viewport_height_px: 800.0,
                             cursor_pos,
+                            selection_anchor,
                             view_mode: view_mode(),
                             // Width for reflow layout; <= 0 until the canvas is
                             // measured (mount rect or first scroll event).
@@ -311,6 +319,20 @@ pub(super) fn render_canvas_area(
                                 cs.loro_cursor = loro_cursor;
                                 cs.anchor = Some(pos.clone());
                                 cs.focus = Some(pos);
+                            },
+                            // Reflow drag-select: move only the focus, keeping the
+                            // anchor so a range selection grows under the pointer.
+                            on_reflow_drag: move |(para, byte): (usize, usize)| {
+                                let loro_cursor = loro_doc.read().as_ref().and_then(|ldoc| {
+                                    derive_loro_cursor(ldoc, para, byte)
+                                });
+                                let mut cs = cursor_state.write();
+                                cs.loro_cursor = loro_cursor;
+                                cs.focus = Some(DocumentPosition {
+                                    page_index: 0,
+                                    paragraph_index: para,
+                                    byte_offset: byte,
+                                });
                             },
                         }
                     }

@@ -52,6 +52,22 @@ pub struct RendererCursorPos {
     pub byte_offset: usize,
 }
 
+/// Caret + optional range selection for GPU painting. `anchor == focus` (by
+/// paragraph/byte) means a collapsed caret with no selection.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RendererSelection {
+    pub focus: RendererCursorPos,
+    pub anchor: RendererCursorPos,
+}
+
+impl RendererSelection {
+    /// True when there is no range selection (anchor and focus coincide).
+    pub fn is_collapsed(&self) -> bool {
+        self.anchor.paragraph_index == self.focus.paragraph_index
+            && self.anchor.byte_offset == self.focus.byte_offset
+    }
+}
+
 // ── DocumentViewProps ─────────────────────────────────────────────────────────
 
 /// Props for the DocumentView component.
@@ -59,7 +75,11 @@ pub struct RendererCursorPos {
 pub struct DocumentViewProps {
     pub doc: Arc<Document>,
     pub viewport_height_px: f64,
+    /// The caret / selection focus position.
     pub cursor_pos: Option<RendererCursorPos>,
+    /// The selection anchor. When it differs from `cursor_pos`, a range
+    /// selection is highlighted between them (reflow mode).
+    pub selection_anchor: Option<RendererCursorPos>,
     /// Current layout mode. Ignored on the Android CPU path, which only supports
     /// [`ViewMode::Reflow`].
     pub view_mode: ViewMode,
@@ -75,6 +95,10 @@ pub struct DocumentViewProps {
     /// **reflow** mode. This component owns the reflow layout, so it hit-tests
     /// the click itself and reports the resolved document position.
     pub on_reflow_click: EventHandler<(usize, usize)>,
+    /// Called with `(block_index, byte_offset)` while drag-selecting in
+    /// **reflow** mode (mouse moved with a button held). The caller extends the
+    /// selection focus to this position.
+    pub on_reflow_drag: EventHandler<(usize, usize)>,
 }
 
 impl PartialEq for DocumentViewProps {
@@ -107,10 +131,10 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
     // keep hook indices stable; the CPU path uses an _ prefix to suppress
     // the unused-variable lint.
     #[cfg(any(not(target_os = "android"), android_gpu))]
-    let cursor_holder: Arc<Mutex<Option<RendererCursorPos>>> =
+    let cursor_holder: Arc<Mutex<Option<RendererSelection>>> =
         use_hook(|| Arc::new(Mutex::new(None)));
     #[cfg(all(target_os = "android", not(android_gpu)))]
-    let _cursor_holder: Arc<Mutex<Option<RendererCursorPos>>> =
+    let _cursor_holder: Arc<Mutex<Option<RendererSelection>>> =
         use_hook(|| Arc::new(Mutex::new(None)));
 
     let renderer_settle = renderer.clone();
@@ -182,11 +206,12 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
             .unwrap_or((0, 0, 0));
         tracing::debug!(hot, warm, cold, is_reflow, "DocumentView rendered");
 
-        // Cursor flows through for both modes; LokiPageSource paints it via the
-        // page editing data (paginated) or the continuous editing data (reflow).
-        // In reflow, rewrite `page_index` to the band tile that actually holds
-        // the caret so that tile (and only it) is invalidated as the caret moves.
-        let cursor_pos = props.cursor_pos.map(|cp| {
+        // Caret + selection flow through for both modes; LokiPageSource paints
+        // them via the page editing data (paginated) or the continuous editing
+        // data (reflow). In reflow, rewrite the focus `page_index` to the band
+        // tile that actually holds the caret so that tile is invalidated as the
+        // caret moves.
+        let to_band = |cp: RendererCursorPos| {
             if is_reflow {
                 let band = renderer
                     .source
@@ -199,6 +224,13 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
             } else {
                 cp
             }
+        };
+        let selection = props.cursor_pos.map(|focus| {
+            let focus = to_band(focus);
+            RendererSelection {
+                anchor: props.selection_anchor.map(to_band).unwrap_or(focus),
+                focus,
+            }
         });
         let gap_px = if is_reflow {
             0.0
@@ -207,6 +239,7 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         };
         let on_tile_click = props.on_tile_click;
         let on_reflow_click = props.on_reflow_click;
+        let on_reflow_drag = props.on_reflow_drag;
         // Read (and subscribe to) the settle epoch so a scroll-settle retier
         // re-renders this component and repaints demoted tiles.
         let epoch = settle_epoch();
@@ -240,7 +273,7 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                             h,
                             shared_renderer: renderer.shared_renderer.clone(),
                             cursor_holder: cursor_holder.clone(),
-                            cursor_pos,
+                            selection,
                             doc_gen,
                             settle_epoch: epoch,
                             gap_px,
@@ -259,6 +292,18 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                                         }
                                     } else {
                                         on_tile_click.call((i, x, y));
+                                    }
+                                }
+                            },
+                            // Drag-select: reflow only (paginated drag is handled
+                            // at the scroll-container level by the editor).
+                            on_tile_drag: {
+                                let source = renderer.source.clone();
+                                move |(i, x, y): (usize, f32, f32)| {
+                                    if is_reflow
+                                        && let Some((para, byte)) = source.reflow_hit_test(i, x, y)
+                                    {
+                                        on_reflow_drag.call((para, byte));
                                     }
                                 }
                             },

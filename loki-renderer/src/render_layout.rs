@@ -12,8 +12,8 @@
 //! work unchanged.  Tiles are stacked with zero gap; items spanning a tile
 //! boundary are painted into both tiles (see `loki_vello::band`).
 
-use loki_layout::{ContinuousLayout, CursorRect, PageParagraphData, PaginatedLayout};
-use loki_vello::{CursorPaint, FontDataCache};
+use loki_layout::{ContinuousLayout, CursorRect, PaginatedLayout};
+use loki_vello::{CursorPaint, FontDataCache, SelectionRect};
 
 /// Height of one reflow render tile in layout points.  Chosen so the CSS-pixel
 /// height is an exact integer (768 pt × 96/72 = 1024 px): fractional tile
@@ -133,63 +133,30 @@ impl RenderLayout {
         }
     }
 
-    /// Reflow editing data, or `None` in paginated mode.
-    fn reflow_paragraphs(&self) -> Option<&[PageParagraphData]> {
+    /// The continuous layout, or `None` in paginated mode.
+    fn continuous(&self) -> Option<&ContinuousLayout> {
         match self {
-            RenderLayout::Reflow { layout, .. } => Some(&layout.paragraphs),
+            RenderLayout::Reflow { layout, .. } => Some(layout),
             RenderLayout::Paginated(_) => None,
         }
     }
 
     /// Hit-test a point in **canvas** coordinates (layout points, padding
     /// already removed) against the reflow layout, returning
-    /// `(block_index, byte_offset)`.  `None` in paginated mode or when there is
-    /// no editing data.  Mirrors `hit_test_page` for the continuous canvas.
+    /// `(block_index, byte_offset)`.  `None` in paginated mode.
     pub fn reflow_hit_test(&self, canvas_x: f32, canvas_y: f32) -> Option<(usize, usize)> {
-        let paragraphs = self.reflow_paragraphs()?;
-        if paragraphs.is_empty() {
-            return None;
-        }
-        // Paragraph whose vertical extent covers the click; fall back to the
-        // first (click above content) or last (below content).
-        let para = paragraphs
-            .iter()
-            .rev()
-            .find(|p| p.origin.1 <= canvas_y && canvas_y <= p.origin.1 + p.layout.height)
-            .or_else(|| {
-                if canvas_y < paragraphs[0].origin.1 {
-                    paragraphs.first()
-                } else {
-                    paragraphs.last()
-                }
-            })?;
-        let x_in = canvas_x - para.origin.0;
-        let y_in = (canvas_y - para.origin.1).max(0.0);
-        let byte = para
-            .layout
-            .hit_test_point(x_in, y_in)
-            .map_or(0, |h| h.byte_offset);
-        Some((para.block_index, byte))
+        self.continuous()?.hit_test(canvas_x, canvas_y)
     }
 
-    /// Cursor rectangle in **canvas** coordinates for `(block_index,
-    /// byte_offset)`, or `None` in paginated mode / when the paragraph or offset
-    /// is not found.
+    /// Caret rectangle in **canvas** coordinates for `(block_index,
+    /// byte_offset)`, or `None` in paginated mode / when not found.
     pub(crate) fn reflow_cursor_canvas(
         &self,
         block_index: usize,
         byte_offset: usize,
     ) -> Option<CursorRect> {
-        let para = self
-            .reflow_paragraphs()?
-            .iter()
-            .find(|p| p.block_index == block_index)?;
-        let cr = para.layout.cursor_rect(byte_offset)?;
-        Some(CursorRect {
-            x: para.origin.0 + cr.x,
-            y: para.origin.1 + cr.y,
-            height: cr.height,
-        })
+        self.continuous()?
+            .cursor_rect_canvas(block_index, byte_offset)
     }
 
     /// Paint render tile `index` into `scene` at `scale`.
@@ -200,6 +167,7 @@ impl RenderLayout {
     /// `reflow_cursor` = `(block_index, byte_offset)` when it falls in the band.
     /// The reflow band has no explicit background — the caller's
     /// `RenderParams::base_color` (white) provides it.
+    #[allow(clippy::too_many_arguments)]
     pub fn paint_tile(
         &self,
         scene: &mut vello::Scene,
@@ -208,6 +176,7 @@ impl RenderLayout {
         scale: f32,
         cursor_paint: Option<&CursorPaint>,
         reflow_cursor: Option<(usize, usize)>,
+        reflow_selection: Option<((usize, usize), (usize, usize))>,
     ) {
         match self {
             RenderLayout::Paginated(pl) => {
@@ -227,6 +196,42 @@ impl RenderLayout {
                     .page_size_pts(index)
                     .map(|(_, h)| h)
                     .unwrap_or(REFLOW_TILE_HEIGHT_PT);
+                let offset = (REFLOW_PADDING_PT, -band_top);
+
+                // Selection highlight first, so glyphs and the caret sit on top.
+                // Clip to rects that intersect this band; paint_cursor draws the
+                // selection rects (cursor_rect height 0 ⇒ no caret here).
+                if let Some((a, b)) = reflow_selection {
+                    let sel: Vec<SelectionRect> = layout
+                        .selection_rects(a, b)
+                        .into_iter()
+                        .filter(|r| {
+                            r.origin.y + r.size.height >= band_top
+                                && r.origin.y <= band_top + band_h
+                        })
+                        .map(|r| SelectionRect {
+                            x: r.origin.x,
+                            y: r.origin.y,
+                            width: r.size.width,
+                            height: r.size.height,
+                        })
+                        .collect();
+                    if !sel.is_empty() {
+                        loki_vello::paint_cursor(
+                            scene,
+                            &CursorRect {
+                                x: 0.0,
+                                y: 0.0,
+                                height: 0.0,
+                            },
+                            &sel,
+                            &[],
+                            offset,
+                            scale,
+                        );
+                    }
+                }
+
                 loki_vello::paint_continuous_band(
                     scene,
                     layout,
@@ -236,6 +241,7 @@ impl RenderLayout {
                     band_top,
                     band_h,
                 );
+
                 // Caret: paint when its canvas rect intersects this band,
                 // translated into band-local space (same offset as the items).
                 if let Some((para, byte)) = reflow_cursor
@@ -243,14 +249,7 @@ impl RenderLayout {
                     && cr.y + cr.height >= band_top
                     && cr.y <= band_top + band_h
                 {
-                    loki_vello::paint_cursor(
-                        scene,
-                        &cr,
-                        &[],
-                        &[],
-                        (REFLOW_PADDING_PT, -band_top),
-                        scale,
-                    );
+                    loki_vello::paint_cursor(scene, &cr, &[], &[], offset, scale);
                 }
             }
         }

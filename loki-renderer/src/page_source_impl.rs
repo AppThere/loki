@@ -78,6 +78,7 @@ impl PageSource for DocPageSource {
             scale,
             None,
             None,
+            None,
         );
         drop(font_cache);
         drop(layout_guard);

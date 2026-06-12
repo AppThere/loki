@@ -24,7 +24,7 @@ use loki_vello::FontDataCache;
 use vello::{AaConfig, RenderParams, Scene};
 
 use crate::doc_page_source::DocPageSource;
-use crate::document_view::RendererCursorPos;
+use crate::document_view::RendererSelection;
 
 // ── LokiPageSource ────────────────────────────────────────────────────────────
 
@@ -55,10 +55,10 @@ pub(crate) struct LokiPageSource {
     /// Physical pixel dimensions `(w, h)` of `texture_handle`.
     texture_size: (u32, u32),
     /// Shared cursor position written by PageTile on every Dioxus render.
-    cursor_holder: Arc<Mutex<Option<RendererCursorPos>>>,
+    cursor_holder: Arc<Mutex<Option<RendererSelection>>>,
     /// Cursor position at which `texture_handle` was rendered — used to
     /// invalidate the reuse guard when the cursor moves.
-    cursor_at_render: Option<RendererCursorPos>,
+    cursor_at_render: Option<RendererSelection>,
 }
 
 impl LokiPageSource {
@@ -67,7 +67,7 @@ impl LokiPageSource {
         source: Arc<DocPageSource>,
         page_index: usize,
         renderer: Arc<Mutex<Option<vello::Renderer>>>,
-        cursor_holder: Arc<Mutex<Option<RendererCursorPos>>>,
+        cursor_holder: Arc<Mutex<Option<RendererSelection>>>,
     ) -> Self {
         Self {
             cache,
@@ -145,8 +145,8 @@ impl CustomPaintSource for LokiPageSource {
         // Step 3: read current document generation.
         let current_generation = self.source.current_generation();
 
-        // Read current cursor position from the shared holder.
-        let current_cursor: Option<RendererCursorPos> =
+        // Read the current caret + selection from the shared holder.
+        let current_sel: Option<RendererSelection> =
             self.cursor_holder.lock().ok().and_then(|g| *g);
 
         // Step 4: reuse guard — return existing handle when nothing changed.
@@ -154,7 +154,7 @@ impl CustomPaintSource for LokiPageSource {
             && self.texture_tier == Some(current_tier)
             && self.texture_generation == current_generation
             && self.texture_size == (w_phys, h_phys)
-            && self.cursor_at_render == current_cursor
+            && self.cursor_at_render == current_sel
         {
             return self.texture_handle.clone();
         }
@@ -191,7 +191,8 @@ impl CustomPaintSource for LokiPageSource {
         // Compute cursor paint data in a scoped block so the layout guard is
         // dropped before the second layout_for_generation call below.
         let cursor_paint = {
-            current_cursor.and_then(|cp| {
+            current_sel.and_then(|sel| {
+                let cp = sel.focus;
                 if cp.page_index != self.page_index {
                     return None;
                 }
@@ -215,10 +216,17 @@ impl CustomPaintSource for LokiPageSource {
             })
         };
 
-        // Reflow caret: passed as (block_index, byte_offset); paint_tile paints
-        // it on whichever band tile it falls in (paginated mode uses the
-        // page-relative `cursor_paint` above instead).
-        let reflow_cursor = current_cursor.map(|cp| (cp.paragraph_index, cp.byte_offset));
+        // Reflow caret + selection, as (block_index, byte_offset) pairs;
+        // paint_tile paints them on whichever band tile they fall in (paginated
+        // mode uses the page-relative `cursor_paint` above instead).
+        let reflow_cursor =
+            current_sel.map(|sel| (sel.focus.paragraph_index, sel.focus.byte_offset));
+        let reflow_selection = current_sel.filter(|sel| !sel.is_collapsed()).map(|sel| {
+            (
+                (sel.anchor.paragraph_index, sel.anchor.byte_offset),
+                (sel.focus.paragraph_index, sel.focus.byte_offset),
+            )
+        });
 
         let layout_guard = self.source.layout_for_generation(current_generation);
         let (_, layout) = layout_guard.as_ref()?;
@@ -230,6 +238,7 @@ impl CustomPaintSource for LokiPageSource {
             render_scale,
             cursor_paint.as_ref(),
             reflow_cursor,
+            reflow_selection,
         );
         drop(layout_guard);
 
@@ -265,7 +274,7 @@ impl CustomPaintSource for LokiPageSource {
         self.texture_tier = Some(current_tier);
         self.texture_generation = current_generation;
         self.texture_size = (w_phys, h_phys);
-        self.cursor_at_render = current_cursor;
+        self.cursor_at_render = current_sel;
 
         // Step 10: update cache metadata.
         if let Ok(mut g) = self.cache.lock() {
