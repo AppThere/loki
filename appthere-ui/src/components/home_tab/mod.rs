@@ -17,12 +17,12 @@ use loki_i18n::fl;
 use recent_files::AtRecentFileList;
 use template_gallery::AtTemplateGallery;
 
+use crate::safe_area::use_safe_area;
 use crate::tokens::colors::{
     COLOR_ACCENT_PRIMARY, COLOR_ACCENT_PRIMARY_HOVER, COLOR_STATUS_ERROR_BG,
     COLOR_STATUS_ERROR_BORDER, COLOR_STATUS_ERROR_TEXT, COLOR_SURFACE_BASE, COLOR_TEXT_ON_CHROME,
     COLOR_TEXT_ON_CHROME_SECONDARY, COLOR_TEXT_PRIMARY,
 };
-use crate::safe_area::use_safe_area;
 use crate::tokens::layout::{BREAKPOINT_DESKTOP_PX, TAB_BAR_HEIGHT};
 use crate::tokens::spacing::{RADIUS_SM, SPACE_2, SPACE_3, SPACE_4, SPACE_6, TOUCH_MIN};
 use crate::tokens::typography::{

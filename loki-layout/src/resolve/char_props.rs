@@ -11,9 +11,7 @@ use loki_doc_model::style::props::char_props::{
     VerticalAlign as DocVerticalAlign,
 };
 
-use crate::para::{
-    FontVariant, StrikethroughStyle, StyleSpan, UnderlineStyle, VerticalAlign,
-};
+use crate::para::{FontVariant, StrikethroughStyle, StyleSpan, UnderlineStyle, VerticalAlign};
 
 use super::color::{map_highlight_color, resolve_color};
 use super::units::pts_to_f32;

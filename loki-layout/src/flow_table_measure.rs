@@ -5,8 +5,8 @@
 
 use std::collections::HashMap;
 
-use loki_doc_model::content::block::Block;
 use loki_doc_model::StyleCatalog;
+use loki_doc_model::content::block::Block;
 
 use crate::LayoutOptions;
 use crate::flow::FlowState;
@@ -79,7 +79,11 @@ pub(crate) fn measure_cell_height(
         Some(CellTextDirection::TbRl | CellTextDirection::TbLr | CellTextDirection::BtLr)
     );
 
-    let flow_w = if is_rotated { 10000.0 } else { cell_content_width };
+    let flow_w = if is_rotated {
+        10000.0
+    } else {
+        cell_content_width
+    };
 
     let mut temp_state = FlowState {
         resources,

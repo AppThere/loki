@@ -135,7 +135,7 @@ pub fn layout_document(
                     page.page_number += global_page_count;
                 }
 
-                flow::assign_headers_footers(
+                flow_helpers::assign_headers_footers(
                     &mut pages,
                     &section.layout,
                     resources,

@@ -8,8 +8,7 @@ use quick_xml::Reader;
 use quick_xml::events::Event;
 
 use crate::docx::model::paragraph::{
-    DocxBorderEdge, DocxDrawing, DocxHdrFtrRef, DocxPBdr, DocxPgMar, DocxPgSz, DocxSectPr,
-    DocxTab,
+    DocxBorderEdge, DocxDrawing, DocxHdrFtrRef, DocxPBdr, DocxPgMar, DocxPgSz, DocxSectPr, DocxTab,
 };
 use crate::docx::reader::util::{attr_val, local_name, parse_emu};
 use crate::error::{OoxmlError, OoxmlResult};

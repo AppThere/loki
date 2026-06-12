@@ -16,9 +16,9 @@ mod types;
 
 // ── Public re-exports ─────────────────────────────────────────────────────────
 
+pub use continuous::paint_continuous;
 pub use cursor::paint_cursor;
 pub use paginated::{paint_paginated, paint_single_page};
-pub use continuous::paint_continuous;
 pub use types::{CursorPaint, SelectionHandle, SelectionHandleKind, SelectionRect};
 
 // ── Public API ────────────────────────────────────────────────────────────────

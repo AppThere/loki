@@ -5,9 +5,9 @@ use std::collections::HashMap;
 
 use loki_doc_model::content::block::Block;
 
-use super::*;
 use super::meta;
 use super::page_layout::resolve_master_page_name;
+use super::*;
 use crate::odt::import::OdtImportOptions;
 use crate::odt::model::document::{OdfBodyChild, OdfDocument};
 use crate::odt::model::paragraph::{OdfParagraph, OdfParagraphChild};
@@ -54,8 +54,7 @@ fn empty_document_produces_empty_section() {
 fn heading_is_emitted_as_heading_block() {
     let para = text_paragraph("Title", true, Some(1));
     let doc = empty_doc(vec![OdfBodyChild::Heading(para)]);
-    let (result, _) =
-        map_document(&doc, &empty_stylesheet(), None, &HashMap::new(), &options());
+    let (result, _) = map_document(&doc, &empty_stylesheet(), None, &HashMap::new(), &options());
     let blocks = &result.sections[0].blocks;
     assert_eq!(blocks.len(), 1);
     assert!(
@@ -87,8 +86,7 @@ fn heading_suppressed_when_emit_heading_blocks_false() {
 fn paragraph_is_emitted_as_styled_para() {
     let para = text_paragraph("Hello", false, None);
     let doc = empty_doc(vec![OdfBodyChild::Paragraph(para)]);
-    let (result, _) =
-        map_document(&doc, &empty_stylesheet(), None, &HashMap::new(), &options());
+    let (result, _) = map_document(&doc, &empty_stylesheet(), None, &HashMap::new(), &options());
     let blocks = &result.sections[0].blocks;
     assert!(
         matches!(blocks[0], Block::StyledPara(_)),
@@ -101,8 +99,7 @@ fn paragraph_is_emitted_as_styled_para() {
 fn text_content_preserved_in_heading() {
     let para = text_paragraph("Introduction", true, Some(1));
     let doc = empty_doc(vec![OdfBodyChild::Heading(para)]);
-    let (result, _) =
-        map_document(&doc, &empty_stylesheet(), None, &HashMap::new(), &options());
+    let (result, _) = map_document(&doc, &empty_stylesheet(), None, &HashMap::new(), &options());
     if let Block::Heading(_, _, inlines) = &result.sections[0].blocks[0] {
         assert_eq!(inlines.len(), 1);
         assert!(matches!(&inlines[0], loki_doc_model::Inline::Str(s) if s == "Introduction"));

@@ -5,7 +5,7 @@ use loki_layout::PaginatedLayout;
 
 use crate::editing::cursor::DocumentPosition;
 
-use super::{hit_test_page, PX_TO_PT};
+use super::{PX_TO_PT, hit_test_page};
 
 /// Translates a window-relative pointer position into a [`DocumentPosition`]
 /// using the paginated layout's editing data.

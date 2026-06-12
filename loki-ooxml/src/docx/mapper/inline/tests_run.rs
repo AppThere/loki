@@ -135,9 +135,7 @@ fn footnote_ref_with_content() {
         children: vec![DocxRunChild::FootnoteRef { id: 1 }],
     })];
     let inlines = map_inlines(&children, &mut ctx);
-    assert!(
-        matches!(&inlines[0], Inline::Note(NoteKind::Footnote, blocks) if !blocks.is_empty())
-    );
+    assert!(matches!(&inlines[0], Inline::Note(NoteKind::Footnote, blocks) if !blocks.is_empty()));
 }
 
 #[test]
@@ -149,9 +147,7 @@ fn footnote_ref_missing_emits_warning() {
         children: vec![DocxRunChild::FootnoteRef { id: 99 }],
     })];
     let inlines = map_inlines(&children, &mut ctx);
-    assert!(
-        matches!(&inlines[0], Inline::Note(NoteKind::Footnote, blocks) if blocks.is_empty())
-    );
+    assert!(matches!(&inlines[0], Inline::Note(NoteKind::Footnote, blocks) if blocks.is_empty()));
     assert_eq!(ctx.warnings.len(), 1);
     assert!(matches!(
         &ctx.warnings[0],

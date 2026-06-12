@@ -34,7 +34,9 @@ static ANDROID_MAIN_RUNNING: std::sync::Mutex<bool> = std::sync::Mutex::new(fals
 #[unsafe(no_mangle)]
 fn android_main(android_app: android_activity::AndroidApp) {
     {
-        let mut running = ANDROID_MAIN_RUNNING.lock().unwrap_or_else(|p| p.into_inner());
+        let mut running = ANDROID_MAIN_RUNNING
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         if *running {
             // Concurrent duplicate invocation on Android 16 — discard it.
             return;
@@ -71,5 +73,7 @@ fn android_main(android_app: android_activity::AndroidApp) {
     log::info!("android_main: dioxus exited");
     // Clear the running flag so a subsequent activity-recreation relaunch
     // (in the same process) is allowed to proceed.
-    *ANDROID_MAIN_RUNNING.lock().unwrap_or_else(|p| p.into_inner()) = false;
+    *ANDROID_MAIN_RUNNING
+        .lock()
+        .unwrap_or_else(|p| p.into_inner()) = false;
 }

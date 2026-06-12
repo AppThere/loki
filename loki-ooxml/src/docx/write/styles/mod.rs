@@ -32,11 +32,7 @@ pub(super) fn write_styles_xml(catalog: &StyleCatalog) -> Vec<u8> {
     let mut w = Writer::new(&mut out);
     let _ = write_decl(&mut w);
 
-    let _ = write_start(
-        &mut w,
-        "w:styles",
-        &[("xmlns:w", NS_W), ("xmlns:r", NS_R)],
-    );
+    let _ = write_start(&mut w, "w:styles", &[("xmlns:w", NS_W), ("xmlns:r", NS_R)]);
 
     write_doc_defaults(&mut w);
     write_normal_style(&mut w, catalog);

@@ -62,12 +62,12 @@ pub(super) fn EditorInner(path: String) -> Element {
         scroll_offset,
         mut current_page,
         mut total_pages,
-        mut bold_active,
-        mut italic_active,
-        mut underline_active,
-        mut strikethrough_active,
-        mut superscript_active,
-        mut subscript_active,
+        bold_active,
+        italic_active,
+        underline_active,
+        strikethrough_active,
+        superscript_active,
+        subscript_active,
         mut undo_manager,
         mut can_undo,
         mut can_redo,
@@ -106,12 +106,14 @@ pub(super) fn EditorInner(path: String) -> Element {
     };
 
     // Clone Arc handles — each closure below captures one owned clone.
-    let (doc_state_mousedown, doc_state_mousemove) = (Arc::clone(&doc_state), Arc::clone(&doc_state));
-    let (doc_state_touch, doc_state_touchend)      = (Arc::clone(&doc_state), Arc::clone(&doc_state));
-    let (doc_state_keydown, doc_state_pages)        = (Arc::clone(&doc_state), Arc::clone(&doc_state));
-    let (doc_state_ribbon, doc_state_style_picker)  = (Arc::clone(&doc_state), Arc::clone(&doc_state));
-    let (doc_state_style_editor, doc_state_seed)    = (Arc::clone(&doc_state), Arc::clone(&doc_state));
-    let doc_state_render                            = Arc::clone(&doc_state);
+    let (doc_state_mousedown, doc_state_mousemove) =
+        (Arc::clone(&doc_state), Arc::clone(&doc_state));
+    let (doc_state_touch, doc_state_touchend) = (Arc::clone(&doc_state), Arc::clone(&doc_state));
+    let (doc_state_keydown, doc_state_pages) = (Arc::clone(&doc_state), Arc::clone(&doc_state));
+    let (doc_state_ribbon, doc_state_style_picker) =
+        (Arc::clone(&doc_state), Arc::clone(&doc_state));
+    let (doc_state_style_editor, doc_state_seed) = (Arc::clone(&doc_state), Arc::clone(&doc_state));
+    let doc_state_render = Arc::clone(&doc_state);
 
     // ── Document load — reactive on path_signal ───────────────────────────────
     let document_load: Resource<(String, Result<Document, LoadError>)> = use_resource(move || {

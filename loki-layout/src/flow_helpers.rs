@@ -4,14 +4,14 @@
 //! Miscellaneous flow helpers: horizontal rule, footnotes, para synthesisers,
 //! and header/footer layout.
 
+use loki_doc_model::StyleCatalog;
+use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::content::block::Block;
+use loki_doc_model::content::block::StyledParagraph;
 use loki_doc_model::content::inline::Inline;
 use loki_doc_model::layout::header_footer::HeaderFooter;
 use loki_doc_model::layout::page::PageLayout;
 use loki_doc_model::{NodeAttr, Section};
-use loki_doc_model::content::attr::ExtensionBag;
-use loki_doc_model::content::block::StyledParagraph;
-use loki_doc_model::StyleCatalog;
 
 use crate::LayoutOptions;
 use crate::color::LayoutColor;
@@ -171,7 +171,14 @@ fn layout_blocks_reflow(
     };
     let mode = LayoutMode::Reflow { available_width };
     let options = LayoutOptions::default();
-    match flow_section(resources, &synthetic, catalog, &mode, display_scale, &options) {
+    match flow_section(
+        resources,
+        &synthetic,
+        catalog,
+        &mode,
+        display_scale,
+        &options,
+    ) {
         FlowOutput::Canvas { items, height, .. } => (items, height),
         FlowOutput::Pages { .. } => unreachable!("Reflow mode always returns Canvas"),
     }

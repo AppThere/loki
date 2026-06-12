@@ -19,7 +19,11 @@ pub(super) struct SlideCanvasProps {
 /// Minimum touch target: text areas are at least 44×44 logical pixels.
 #[component]
 pub(super) fn SlideCanvas(props: SlideCanvasProps) -> Element {
-    let SlideCanvasProps { mut slides, active_slide_idx, mut editing_part } = props;
+    let SlideCanvasProps {
+        mut slides,
+        active_slide_idx,
+        mut editing_part,
+    } = props;
 
     let active_slide = slides.read()[active_slide_idx()].clone();
 

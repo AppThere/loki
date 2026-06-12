@@ -19,7 +19,7 @@ use loki_doc_model::loro_schema::{
 use loro::LoroValue;
 
 use crate::editing::cursor::{CursorState, DocumentPosition};
-use crate::editing::state::{seed_layout_from_document, DocumentState};
+use crate::editing::state::{DocumentState, seed_layout_from_document};
 use crate::error::LoadError;
 
 /// Returns the closure for the Loro-bridge initialisation effect.
@@ -89,6 +89,8 @@ pub(super) fn make_page_count_effect(
 /// Subscribes to `cursor_state` and `loro_doc` so it re-runs whenever the
 /// cursor moves or the document changes, keeping ribbon button active-states
 /// in sync.
+// Pre-existing pattern — structural refactor deferred; signals can't be bundled into a struct
+#[allow(clippy::too_many_arguments)]
 pub(super) fn make_formatting_effect(
     cursor_state: Signal<CursorState>,
     loro_doc: Signal<Option<loro::LoroDoc>>,

@@ -8,9 +8,9 @@
 //! `<office:document>/<office:body>/<office:text>` and OOXML's
 //! `w:document/w:body`.
 
-mod locale;
 #[cfg(test)]
 mod document_tests;
+mod locale;
 
 use locale::default_page_size_for_locale;
 

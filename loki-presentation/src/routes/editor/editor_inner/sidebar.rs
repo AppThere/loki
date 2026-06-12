@@ -19,7 +19,11 @@ pub(super) struct SlideSidebarProps {
 /// Minimum touch target: each thumbnail is at least 44×44 logical pixels.
 #[component]
 pub(super) fn SlideSidebar(props: SlideSidebarProps) -> Element {
-    let SlideSidebarProps { mut slides, mut active_slide_idx, mut editing_part } = props;
+    let SlideSidebarProps {
+        mut slides,
+        mut active_slide_idx,
+        mut editing_part,
+    } = props;
 
     let mut delete_slide = move |idx: usize| {
         let mut sls = slides.write();

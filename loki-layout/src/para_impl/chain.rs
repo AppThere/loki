@@ -9,8 +9,10 @@ use loki_doc_model::content::block::StyledParagraph;
 use crate::para::{ParagraphLayout, ResolvedParaProps, layout_paragraph};
 use crate::resolve::{flatten_paragraph, resolve_para_props};
 
-use crate::flow::{FlowState, LayoutWarning, finish_page, synthesize_heading_para, synthesize_plain_para};
 use super::place::place_paragraph_layout;
+use crate::flow::{FlowState, LayoutWarning};
+use crate::flow_block::finish_page;
+use crate::flow_helpers::{synthesize_heading_para, synthesize_plain_para};
 
 /// Maximum keep-with-next chain length before truncation (ADR 004 §4).
 const CHAIN_LIMIT: usize = 5;

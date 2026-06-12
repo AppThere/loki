@@ -5,8 +5,8 @@
 
 use super::helpers::make_ctx;
 use crate::docx::import::DocxImportOptions;
-use crate::docx::model::styles::{DocxTableCell, DocxTcPr};
 use crate::docx::mapper::table::cell::map_cell;
+use crate::docx::model::styles::{DocxTableCell, DocxTcPr};
 use loki_doc_model::content::block::Block;
 use loki_doc_model::style::catalog::StyleCatalog;
 use loki_opc::PartData;

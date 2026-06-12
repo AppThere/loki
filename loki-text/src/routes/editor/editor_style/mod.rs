@@ -8,5 +8,4 @@
 mod helpers;
 mod panel;
 
-pub use helpers::collect_style_names;
-pub use panel::{PICKER_HEIGHT_PX, style_picker_panel};
+pub use panel::style_picker_panel;

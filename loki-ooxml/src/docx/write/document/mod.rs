@@ -29,7 +29,9 @@ use crate::docx::write::xml::{
 };
 
 use list::write_list_item;
-use para::{write_code_block, write_horizontal_rule, write_line_block, write_para, write_styled_para};
+use para::{
+    write_code_block, write_horizontal_rule, write_line_block, write_para, write_styled_para,
+};
 use sect_pr::write_sect_pr;
 use table::write_table;
 

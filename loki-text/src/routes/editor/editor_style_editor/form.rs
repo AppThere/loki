@@ -10,7 +10,10 @@ use loki_i18n::fl;
 use super::super::editor_state::StyleDraft;
 
 /// Renders the "Name" text-field row.
-pub(super) fn name_row(mut editing_style_draft: Signal<Option<StyleDraft>>, name: String) -> Element {
+pub(super) fn name_row(
+    mut editing_style_draft: Signal<Option<StyleDraft>>,
+    name: String,
+) -> Element {
     rsx! {
         div {
             style: "display: flex; flex-direction: row; align-items: center; gap: 8px;",

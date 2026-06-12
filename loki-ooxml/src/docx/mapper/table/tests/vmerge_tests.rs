@@ -4,8 +4,8 @@
 //! Unit tests for `compute_v_merge_spans`.
 
 use super::helpers::{simple_cell, simple_row};
-use crate::docx::model::styles::{DocxTableCell, DocxTcPr, DocxVMerge};
 use crate::docx::mapper::table::vmerge::compute_v_merge_spans;
+use crate::docx::model::styles::{DocxTableCell, DocxTcPr, DocxVMerge};
 
 fn merge_cell(v_merge: DocxVMerge) -> DocxTableCell {
     DocxTableCell {

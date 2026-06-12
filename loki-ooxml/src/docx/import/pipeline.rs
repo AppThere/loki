@@ -95,7 +95,7 @@ pub(crate) fn parse_and_map_package(
 
     // ── Build hyperlinks, images, headers, footers ────────────────────
     let (hyperlinks, images, header_parts, footer_parts) =
-        collect_rel_resources(package, doc_rels, &doc_part_name, options)?;
+        collect_rel_resources(package, doc_rels, &doc_part_name, options);
 
     // ── Map everything to the abstract model ──────────────────────────
     let result = map_document(
@@ -139,6 +139,13 @@ fn parse_styles_part(
     Ok(raw_styles.unwrap_or_default())
 }
 
+type RelResources = (
+    HashMap<String, String>,
+    HashMap<String, PartData>,
+    HashMap<String, Vec<DocxParagraph>>,
+    HashMap<String, Vec<DocxParagraph>>,
+);
+
 /// Collects hyperlinks, images, header paragraphs, and footer paragraphs from
 /// the document part relationships.
 fn collect_rel_resources(
@@ -146,12 +153,7 @@ fn collect_rel_resources(
     doc_rels: Option<&loki_opc::RelationshipSet>,
     doc_part_name: &loki_opc::PartName,
     options: &DocxImportOptions,
-) -> OoxmlResult<(
-    HashMap<String, String>,
-    HashMap<String, PartData>,
-    HashMap<String, Vec<DocxParagraph>>,
-    HashMap<String, Vec<DocxParagraph>>,
-)> {
+) -> RelResources {
     let mut hyperlinks: HashMap<String, String> = HashMap::new();
     let mut images: HashMap<String, PartData> = HashMap::new();
     let mut header_parts: HashMap<String, Vec<DocxParagraph>> = HashMap::new();
@@ -191,5 +193,5 @@ fn collect_rel_resources(
         }
     }
 
-    Ok((hyperlinks, images, header_parts, footer_parts))
+    (hyperlinks, images, header_parts, footer_parts)
 }

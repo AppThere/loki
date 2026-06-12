@@ -15,12 +15,8 @@ fn para_margins_to_spacing() {
         ..Default::default()
     };
     let out = map_para_props(&props);
-    assert!(
-        matches!(out.space_before, Some(Spacing::Exact(p)) if (p.value() - 6.0).abs() < 1e-6)
-    );
-    assert!(
-        matches!(out.space_after, Some(Spacing::Exact(p)) if (p.value() - 12.0).abs() < 1e-6)
-    );
+    assert!(matches!(out.space_before, Some(Spacing::Exact(p)) if (p.value() - 6.0).abs() < 1e-6));
+    assert!(matches!(out.space_after, Some(Spacing::Exact(p)) if (p.value() - 12.0).abs() < 1e-6));
     assert!(out.indent_start.is_some());
     assert!(out.indent_end.is_some());
 }

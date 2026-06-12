@@ -13,9 +13,7 @@ use loki_doc_model::style::props::char_props::{
 use crate::para::StyleSpan;
 
 use super::char_props::{effective_run_char_props, push_text};
-use super::inline_types::{
-    field_display_text, superscript_mark, CollectedImage, CollectedNote,
-};
+use super::inline_types::{CollectedImage, CollectedNote, field_display_text, superscript_mark};
 
 /// Recursively collect text from an [`Inline`] tree, building `buf` + `spans`.
 ///

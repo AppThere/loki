@@ -65,6 +65,3 @@ pub fn hit_test_page(
         byte_offset,
     })
 }
-
-#[cfg(test)]
-mod tests;

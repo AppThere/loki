@@ -26,7 +26,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     let _navigator = use_navigator();
     let title = use_memo(move || display_title_from_path(&path));
 
-    let mut slides = use_signal(|| {
+    let slides = use_signal(|| {
         vec![
             Slide {
                 title: "Loki Presentation Suite".to_string(),

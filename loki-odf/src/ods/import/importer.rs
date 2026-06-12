@@ -84,10 +84,9 @@ impl OdsImport {
                         b"table-row" => {
                             if in_table {
                                 col_idx = 0;
-                                current_row_repeated =
-                                    local_attr_val(e, b"number-rows-repeated")
-                                        .and_then(|s| s.parse::<u32>().ok())
-                                        .unwrap_or(1);
+                                current_row_repeated = local_attr_val(e, b"number-rows-repeated")
+                                    .and_then(|s| s.parse::<u32>().ok())
+                                    .unwrap_or(1);
                                 in_row = true;
                             }
                         }
@@ -95,10 +94,9 @@ impl OdsImport {
                             if in_row {
                                 cell_formula = local_attr_val(e, b"formula");
                                 cell_style_name = local_attr_val(e, b"style-name");
-                                cell_cols_repeated =
-                                    local_attr_val(e, b"number-columns-repeated")
-                                        .and_then(|s| s.parse::<u32>().ok())
-                                        .unwrap_or(1);
+                                cell_cols_repeated = local_attr_val(e, b"number-columns-repeated")
+                                    .and_then(|s| s.parse::<u32>().ok())
+                                    .unwrap_or(1);
 
                                 office_value = local_attr_val(e, b"value");
                                 office_string_value = local_attr_val(e, b"string-value");
@@ -123,13 +121,11 @@ impl OdsImport {
                         b"table-cell" => {
                             if in_row {
                                 let style_name = local_attr_val(e, b"style-name");
-                                let cols_repeated =
-                                    local_attr_val(e, b"number-columns-repeated")
-                                        .and_then(|s| s.parse::<u32>().ok())
-                                        .unwrap_or(1);
+                                let cols_repeated = local_attr_val(e, b"number-columns-repeated")
+                                    .and_then(|s| s.parse::<u32>().ok())
+                                    .unwrap_or(1);
 
-                                let style =
-                                    style_name.and_then(|name| styles.get(&name).cloned());
+                                let style = style_name.and_then(|name| styles.get(&name).cloned());
                                 if let Some(ref mut ws) = current_sheet {
                                     if style.is_some() {
                                         for r in row_idx..(row_idx + current_row_repeated) {

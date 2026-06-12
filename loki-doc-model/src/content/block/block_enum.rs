@@ -3,12 +3,12 @@
 
 //! The [`Block`] enum — block-level document elements.
 
-use crate::content::attr::NodeAttr;
-use crate::content::inline::Inline;
-use crate::content::table::core::Table;
 use super::generated::{Caption, IndexBlock, NotesBlockKind, TableOfContentsBlock};
 use super::list::ListAttributes;
 use super::styled_para::StyledParagraph;
+use crate::content::attr::NodeAttr;
+use crate::content::inline::Inline;
+use crate::content::table::core::Table;
 
 /// A block-level document element.
 ///

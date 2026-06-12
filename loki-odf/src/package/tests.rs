@@ -8,8 +8,8 @@ use std::io::{Cursor, Write};
 use zip::CompressionMethod;
 use zip::write::{FileOptions, ZipWriter};
 
-use super::images::infer_media_type;
 use super::OdfPackage;
+use super::images::infer_media_type;
 use crate::constants::{ENTRY_CONTENT, ENTRY_MANIFEST, ENTRY_MIMETYPE, ENTRY_STYLES, MIME_ODT};
 use crate::error::OdfError;
 use crate::version::OdfVersion;

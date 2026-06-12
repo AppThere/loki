@@ -79,23 +79,23 @@ mod para_props;
 mod units;
 
 // Re-export public types.
+pub use color::resolve_color;
 pub use inline_types::{CollectedImage, CollectedNote};
 pub use units::{emu_to_pt, pts_to_f32};
-pub use color::resolve_color;
 
 // Re-export crate-internal helpers used outside this module.
 pub(crate) use para_props::convert_border;
 
 // Re-exports for tests (resolve_tests.rs uses `use super::*`).
 #[cfg(test)]
-pub(crate) use char_props::char_props_to_style_span;
-#[cfg(test)]
 pub(crate) use crate::color::LayoutColor;
+#[cfg(test)]
+pub(crate) use char_props::char_props_to_style_span;
 
+use loki_doc_model::content::block::StyledParagraph;
 use loki_doc_model::content::inline::StyledRun;
 use loki_doc_model::style::catalog::StyleCatalog;
 use loki_doc_model::style::props::char_props::CharProps;
-use loki_doc_model::content::block::StyledParagraph;
 
 use crate::para::{ResolvedParaProps, StyleSpan};
 

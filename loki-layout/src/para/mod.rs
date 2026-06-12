@@ -30,7 +30,7 @@ use std::sync::Arc;
 
 use parley::{AlignmentOptions, InlineBox, PositionedLayoutItem};
 
-use crate::color::LayoutColor;
+pub use crate::color::LayoutColor;
 use crate::font::FontResources;
 use crate::items::PositionedItem;
 
@@ -69,8 +69,13 @@ pub fn layout_paragraph(
 
     if clean_text.is_empty() {
         return layout_empty_paragraph(
-            resources, para_props, available_width, display_scale,
-            preserve_for_editing, orig_to_clean, clean_to_orig,
+            resources,
+            para_props,
+            available_width,
+            display_scale,
+            preserve_for_editing,
+            orig_to_clean,
+            clean_to_orig,
         );
     }
 
@@ -80,7 +85,12 @@ pub fn layout_paragraph(
     let line_w = (available_width - para_props.indent_start - para_props.indent_end).max(0.0);
 
     let tab_inline_widths = compute_tab_widths(
-        resources, &clean_text, &clean_spans, para_props, display_scale, line_w,
+        resources,
+        &clean_text,
+        &clean_spans,
+        para_props,
+        display_scale,
+        line_w,
     );
 
     let tab_char_positions: Vec<usize> = clean_text
@@ -90,32 +100,63 @@ pub fn layout_paragraph(
         .collect();
 
     let mut builder = resources.layout_cx.ranged_builder(
-        &mut resources.font_cx, &clean_text, display_scale, true,
+        &mut resources.font_cx,
+        &clean_text,
+        display_scale,
+        true,
     );
     push_para_styles(&mut builder, para_props, &clean_spans);
     for (idx, &pos) in tab_char_positions.iter().enumerate() {
         let width = tab_inline_widths.get(idx).copied().unwrap_or(0.0);
-        builder.push_inline_box(InlineBox { id: idx as u64, index: pos, width, height: 0.0 });
+        builder.push_inline_box(InlineBox {
+            id: idx as u64,
+            index: pos,
+            width,
+            height: 0.0,
+        });
     }
 
     let mut layout = builder.build(&clean_text);
     layout.break_all_lines(Some(line_w));
-    layout.align(Some(line_w), para_props.alignment, AlignmentOptions::default());
+    layout.align(
+        Some(line_w),
+        para_props.alignment,
+        AlignmentOptions::default(),
+    );
 
     let total_height = layout.height();
     let total_width = layout.width();
-    let first_baseline = layout.lines().next().map(|l| l.metrics().baseline).unwrap_or(0.0);
-    let last_baseline = layout.lines().last().map(|l| l.metrics().baseline).unwrap_or(0.0);
+    let first_baseline = layout
+        .lines()
+        .next()
+        .map(|l| l.metrics().baseline)
+        .unwrap_or(0.0);
+    let last_baseline = layout
+        .lines()
+        .last()
+        .map(|l| l.metrics().baseline)
+        .unwrap_or(0.0);
     let line_boundaries: Vec<(f32, f32)> = layout
         .lines()
         .map(|l| (l.metrics().min_coord, l.metrics().max_coord))
         .collect();
 
     let mut items: Vec<PositionedItem> = Vec::new();
-    collect_glyph_runs(&layout, &clean_text, &clean_spans, para_props, resources, &mut items);
+    collect_glyph_runs(
+        &layout,
+        &clean_text,
+        &clean_spans,
+        para_props,
+        resources,
+        &mut items,
+    );
     prepend_border_and_background(&mut items, para_props, total_width, total_height);
 
-    let parley_layout = if preserve_for_editing { Some(Arc::new(layout)) } else { None };
+    let parley_layout = if preserve_for_editing {
+        Some(Arc::new(layout))
+    } else {
+        None
+    };
 
     ParagraphLayout {
         height: total_height,
@@ -142,25 +183,41 @@ fn layout_empty_paragraph(
 ) -> ParagraphLayout {
     if !preserve_for_editing {
         return ParagraphLayout {
-            height: 0.0, width: 0.0, items: vec![], first_baseline: 0.0,
-            last_baseline: 0.0, line_boundaries: vec![], parley_layout: None,
-            orig_to_clean, clean_to_orig,
+            height: 0.0,
+            width: 0.0,
+            items: vec![],
+            first_baseline: 0.0,
+            last_baseline: 0.0,
+            line_boundaries: vec![],
+            parley_layout: None,
+            orig_to_clean,
+            clean_to_orig,
         };
     }
     // Build a phantom single-space layout so cursor_rect can return a
     // properly-sized caret for empty paragraphs.
-    let mut builder = resources.layout_cx.ranged_builder(
-        &mut resources.font_cx, " ", display_scale, true,
-    );
+    let mut builder =
+        resources
+            .layout_cx
+            .ranged_builder(&mut resources.font_cx, " ", display_scale, true);
     push_para_styles(&mut builder, para_props, &[]);
     let mut phantom = builder.build(" ");
     phantom.break_all_lines(Some(available_width));
-    let first_baseline = phantom.lines().next().map(|l| l.metrics().baseline).unwrap_or(0.0);
+    let first_baseline = phantom
+        .lines()
+        .next()
+        .map(|l| l.metrics().baseline)
+        .unwrap_or(0.0);
     ParagraphLayout {
-        height: 0.0, width: 0.0, items: vec![], first_baseline,
-        last_baseline: first_baseline, line_boundaries: vec![],
+        height: 0.0,
+        width: 0.0,
+        items: vec![],
+        first_baseline,
+        last_baseline: first_baseline,
+        line_boundaries: vec![],
         parley_layout: Some(Arc::new(phantom)),
-        orig_to_clean, clean_to_orig,
+        orig_to_clean,
+        clean_to_orig,
     }
 }
 
@@ -184,12 +241,18 @@ fn compute_tab_widths(
     if tab_char_positions.is_empty() {
         return vec![];
     }
-    let mut probe = resources.layout_cx.ranged_builder(
-        &mut resources.font_cx, clean_text, display_scale, true,
-    );
+    let mut probe =
+        resources
+            .layout_cx
+            .ranged_builder(&mut resources.font_cx, clean_text, display_scale, true);
     push_para_styles(&mut probe, para_props, clean_spans);
     for (idx, &pos) in tab_char_positions.iter().enumerate() {
-        probe.push_inline_box(InlineBox { id: idx as u64, index: pos, width: 0.0, height: 0.0 });
+        probe.push_inline_box(InlineBox {
+            id: idx as u64,
+            index: pos,
+            width: 0.0,
+            height: 0.0,
+        });
     }
     let mut probe_layout = probe.build(clean_text);
     probe_layout.break_all_lines(Some(line_w));
@@ -198,15 +261,15 @@ fn compute_tab_widths(
         for item in line.items() {
             if let PositionedLayoutItem::InlineBox(pib) = item {
                 let idx = pib.id as usize;
-                if idx < x_positions.len() { x_positions[idx] = pib.x; }
+                if idx < x_positions.len() {
+                    x_positions[idx] = pib.x;
+                }
             }
         }
     }
     x_positions
         .iter()
-        .map(|&x| {
-            (next_tab_stop(&para_props.tab_stops, x, para_props.indent_hanging) - x).max(0.0)
-        })
+        .map(|&x| (next_tab_stop(&para_props.tab_stops, x, para_props.indent_hanging) - x).max(0.0))
         .collect()
 }
 

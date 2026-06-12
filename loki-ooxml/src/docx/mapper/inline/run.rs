@@ -3,8 +3,8 @@
 
 //! Run processing: maps [`DocxRun`] and [`DocxRunChild`] into [`Inline`]s.
 
-use loki_doc_model::content::block::Block;
 use loki_doc_model::content::attr::NodeAttr;
+use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::{Inline, NoteKind, StyledRun};
 use loki_doc_model::style::catalog::StyleId;
 use loki_doc_model::style::props::char_props::CharProps;
@@ -15,7 +15,7 @@ use crate::error::{NoteKind as WarnNoteKind, OoxmlWarning};
 use super::super::document::MappingContext;
 use super::super::images::map_drawing;
 use super::super::props::map_rpr;
-use super::field_state::{process_fld_char, FieldState};
+use super::field_state::{FieldState, process_fld_char};
 
 // ── Run processing ─────────────────────────────────────────────────────────────
 

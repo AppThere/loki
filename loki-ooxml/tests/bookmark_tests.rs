@@ -61,7 +61,11 @@ fn collect_bookmark_ids(xml: &str) -> Vec<(String, u32)> {
                 let is_start = elem_local == b"bookmarkStart";
                 let is_end = elem_local == b"bookmarkEnd";
                 if is_start || is_end {
-                    let elem_name = if is_start { "bookmarkStart" } else { "bookmarkEnd" };
+                    let elem_name = if is_start {
+                        "bookmarkStart"
+                    } else {
+                        "bookmarkEnd"
+                    };
                     for attr in e.attributes().flatten() {
                         if local_name(attr.key.as_ref()) == b"id" {
                             if let Ok(val) = attr.unescape_value() {
@@ -226,7 +230,10 @@ fn duplicate_bookmark_name_ids_independently_matched() {
     }
 
     // The two bookmark pairs must have distinct IDs (Word requires uniqueness).
-    assert_ne!(starts[0], starts[1], "duplicate-name bookmark IDs must differ");
+    assert_ne!(
+        starts[0], starts[1],
+        "duplicate-name bookmark IDs must differ"
+    );
 
     // Verify document-order pairing: first Start → first End, second → second.
     assert_eq!(

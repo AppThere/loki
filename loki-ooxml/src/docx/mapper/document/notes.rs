@@ -9,8 +9,8 @@ use loki_doc_model::content::block::Block;
 
 use crate::docx::model::footnotes::{DocxNoteType, DocxNotes};
 
-use super::context::MappingContext;
 use super::super::paragraph::map_paragraph;
+use super::context::MappingContext;
 
 /// Maps a notes part to a `HashMap<id, Vec<Block>>` using the given context.
 ///

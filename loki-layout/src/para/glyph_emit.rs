@@ -44,7 +44,9 @@ pub(super) fn collect_glyph_runs(
             para_props.indent_start
         };
         for item in line.items() {
-            let PositionedLayoutItem::GlyphRun(glyph_run) = item else { continue; };
+            let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                continue;
+            };
             let run = glyph_run.run();
             let style = glyph_run.style();
             let run_offset = glyph_run.offset();
@@ -75,7 +77,10 @@ pub(super) fn collect_glyph_runs(
                 if font_name.contains("Calibri") || font_name.contains("calibri") {
                     eprintln!(
                         "CALIBRI LAYOUT RUN: font={}, font_size={}, advance={}, glyph_count={}, text={:?}",
-                        font_name, run.font_size(), glyph_run.advance(), glyphs.len(),
+                        font_name,
+                        run.font_size(),
+                        glyph_run.advance(),
+                        glyphs.len(),
                         &clean_text[text_range.clone()]
                     );
                 }
@@ -126,7 +131,10 @@ pub(super) fn collect_glyph_runs(
 
             // Main glyph run.
             items.push(PositionedItem::GlyphRun(PositionedGlyphRun {
-                origin: LayoutPoint { x: run_offset + indent_x, y: run_baseline + va_offset },
+                origin: LayoutPoint {
+                    x: run_offset + indent_x,
+                    y: run_baseline + va_offset,
+                },
                 font_data,
                 font_index: run.font().index,
                 font_size: run.font_size(),

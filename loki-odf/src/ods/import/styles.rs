@@ -91,8 +91,7 @@ pub(super) fn parse_ods_styles(
                                         current_style.italic = true;
                                     }
                                 }
-                                if let Some(underline) =
-                                    local_attr_val(e, b"text-underline-style")
+                                if let Some(underline) = local_attr_val(e, b"text-underline-style")
                                 {
                                     if underline != "none" {
                                         current_style.underline = true;

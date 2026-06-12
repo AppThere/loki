@@ -34,8 +34,7 @@ impl OdsExport {
         zip.start_file(ENTRY_MIMETYPE, stored)?;
         zip.write_all(MIME_ODS.as_bytes())?;
 
-        let deflated =
-            FileOptions::<()>::default().compression_method(CompressionMethod::Deflated);
+        let deflated = FileOptions::<()>::default().compression_method(CompressionMethod::Deflated);
 
         // 2. META-INF/manifest.xml
         zip.start_file(ENTRY_MANIFEST, deflated)?;

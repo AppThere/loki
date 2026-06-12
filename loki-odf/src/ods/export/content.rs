@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use loki_sheet_model::{CellAlign, CellStyle, NumberFormat, Workbook, Worksheet, Cell};
+use loki_sheet_model::{Cell, CellAlign, CellStyle, NumberFormat, Workbook, Worksheet};
 
 use super::xml_utils::{escape_xml, to_ods_formula};
 
@@ -62,10 +62,7 @@ pub(super) fn generate_content(workbook: &Workbook) -> String {
     content_xml
 }
 
-fn append_style_definitions(
-    content_xml: &mut String,
-    unique_styles: &HashMap<CellStyle, String>,
-) {
+fn append_style_definitions(content_xml: &mut String, unique_styles: &HashMap<CellStyle, String>) {
     for (style, name) in unique_styles {
         content_xml.push_str(&format!(
             "    <style:style style:name=\"{}\" style:family=\"table-cell\"",
@@ -183,11 +180,7 @@ fn append_sheet_rows(
     }
 }
 
-fn append_cell(
-    content_xml: &mut String,
-    cell: &Cell,
-    unique_styles: &HashMap<CellStyle, String>,
-) {
+fn append_cell(content_xml: &mut String, cell: &Cell, unique_styles: &HashMap<CellStyle, String>) {
     let style_attr = if let Some(ref s) = cell.style {
         if let Some(style_name) = unique_styles.get(s) {
             format!(" table:style-name=\"{}\"", style_name)
@@ -206,8 +199,7 @@ fn append_cell(
     };
 
     let val_str = &cell.value;
-    let is_bool =
-        val_str.eq_ignore_ascii_case("true") || val_str.eq_ignore_ascii_case("false");
+    let is_bool = val_str.eq_ignore_ascii_case("true") || val_str.eq_ignore_ascii_case("false");
     let is_num = val_str.parse::<f64>().is_ok();
 
     if is_bool {

@@ -11,5 +11,5 @@ mod conversions;
 mod form;
 mod panel;
 
-pub(crate) use conversions::{draft_to_style, style_to_draft};
-pub(crate) use panel::{STYLE_EDITOR_HEIGHT_PX, style_editor_panel};
+pub(crate) use conversions::style_to_draft;
+pub(crate) use panel::style_editor_panel;

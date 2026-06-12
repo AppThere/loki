@@ -12,8 +12,8 @@ use crate::items::{PositionedImage, PositionedItem};
 use crate::para::{format_list_marker, layout_paragraph};
 use crate::resolve::{emu_to_pt, flatten_paragraph, pts_to_f32, resolve_para_props};
 
-use crate::flow::{FlowState, finish_page};
 use super::place::place_paragraph_layout;
+use crate::flow::{FlowState, finish_page};
 
 /// Resolve, lay out, and place a single paragraph block.
 pub(crate) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, block_index: usize) {

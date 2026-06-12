@@ -29,9 +29,9 @@ mod document_tests;
 pub(crate) use frame::read_frame;
 pub(crate) use list::{read_list, read_toc};
 pub(crate) use table::read_table;
-pub(crate) use util::skip_element;
 #[allow(unused_imports)]
 pub(crate) use util::read_text_content;
+pub(crate) use util::skip_element;
 
 use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};

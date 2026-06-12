@@ -29,8 +29,7 @@ pub(super) fn save_document(
             let picker = FilePicker::new();
             let opts = SaveOptions {
                 mime_type: Some(
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        .to_string(),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string(),
                 ),
                 suggested_name: Some("Workbook.xlsx".to_string()),
             };
@@ -61,8 +60,7 @@ pub(super) fn save_document(
                             .map_err(|e| e.to_string())
                     }
                     DocumentFormat::Ods => {
-                        loki_odf::OdsExport::export(&wb, &mut *writer)
-                            .map_err(|e| e.to_string())
+                        loki_odf::OdsExport::export(&wb, &mut *writer).map_err(|e| e.to_string())
                     }
                     DocumentFormat::Unsupported(ext) => {
                         Err(format!("Unsupported format: .{}", ext))

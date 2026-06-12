@@ -29,8 +29,8 @@ pub(super) fn default_page_size_for_locale() -> crate::layout::page::PageSize {
 /// a region that uses US Letter paper by convention.
 fn uses_letter_paper(locale_upper: &str) -> bool {
     const LETTER_REGIONS: &[&str] = &[
-        "_US", "_CA", "_MX", "_PH", "_CO", "_CL", "_VE", "_BO", "_SV", "_GT", "_HN", "_NI",
-        "_CR", "_DO", "_PR",
+        "_US", "_CA", "_MX", "_PH", "_CO", "_CL", "_VE", "_BO", "_SV", "_GT", "_HN", "_NI", "_CR",
+        "_DO", "_PR",
     ];
     LETTER_REGIONS.iter().any(|r| locale_upper.contains(r))
 }

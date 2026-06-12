@@ -7,8 +7,7 @@ use quick_xml::Reader;
 use quick_xml::events::Event;
 
 use crate::docx::model::paragraph::{
-    DocxHyperlink, DocxInd, DocxNumPr, DocxPPr, DocxParaChild, DocxParagraph, DocxRun,
-    DocxSpacing,
+    DocxHyperlink, DocxInd, DocxNumPr, DocxPPr, DocxParaChild, DocxParagraph, DocxRun, DocxSpacing,
 };
 use crate::docx::reader::util::{attr_val, local_name, toggle_prop};
 use crate::error::{OoxmlError, OoxmlResult};

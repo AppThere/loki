@@ -9,7 +9,9 @@ use loki_doc_model::content::table::core::Table;
 use loki_doc_model::content::table::row::Cell;
 
 use crate::docx::write::collector::ExportCollector;
-use crate::docx::write::xml::{color_to_hex, pts_to_twips, write_empty, write_end, write_start, wval};
+use crate::docx::write::xml::{
+    color_to_hex, pts_to_twips, write_empty, write_end, write_start, wval,
+};
 
 use super::write_blocks;
 

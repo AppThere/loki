@@ -171,7 +171,6 @@ fn PageTile(props: PageTileProps) -> Element {
     }
 }
 
-
 // ── DocumentView ──────────────────────────────────────────────────────────────
 
 /// Root document rendering component.

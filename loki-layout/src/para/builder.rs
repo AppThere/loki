@@ -3,9 +3,7 @@
 
 //! Parley builder helpers: style-pushing, text cleaning, and tab-stop logic.
 
-use parley::{
-    FontFamily, FontStyle, FontWeight, LineHeight, RangedBuilder, StyleProperty,
-};
+use parley::{FontFamily, FontStyle, FontWeight, LineHeight, RangedBuilder, StyleProperty};
 
 use crate::color::LayoutColor;
 

@@ -72,7 +72,7 @@ pub(super) struct GridProps {
 
 pub(super) fn render_grid(p: GridProps) -> Element {
     let GridProps {
-        mut workbook_snap,
+        workbook_snap,
         loro_doc,
         undo_manager,
         can_undo,
@@ -84,20 +84,16 @@ pub(super) fn render_grid(p: GridProps) -> Element {
         active_coords,
     } = p;
 
-    let is_col_selected = move |col_idx: usize| {
-        active_coords.map_or(false, |(_, c)| c == col_idx)
-    };
+    let is_col_selected = move |col_idx: usize| active_coords.is_some_and(|(_, c)| c == col_idx);
 
-    let is_row_selected = move |row_idx: usize| {
-        active_coords.map_or(false, |(r, _)| r == row_idx)
-    };
+    let is_row_selected = move |row_idx: usize| active_coords.is_some_and(|(r, _)| r == row_idx);
 
     let is_cell_selected = move |r: usize, c: usize| {
-        active_coords.map_or(false, |(sel_r, sel_c)| sel_r == r && sel_c == c)
+        active_coords.is_some_and(|(sel_r, sel_c)| sel_r == r && sel_c == c)
     };
 
     let is_cell_editing = move |r: usize, c: usize| {
-        editing_cell().map_or(false, |(edit_r, edit_c)| edit_r == r && edit_c == c)
+        editing_cell().is_some_and(|(edit_r, edit_c)| edit_r == r && edit_c == c)
     };
 
     let get_display_val = move |r: usize, c: usize| {

@@ -29,7 +29,9 @@ use super::util::skip_element;
 /// [`OdfParagraphChild::Other`].
 #[allow(clippy::too_many_lines)]
 // Function body is a single large match over XML events; splitting would reduce readability.
-pub(super) fn read_inline_children(reader: &mut Reader<&[u8]>) -> OdfResult<Vec<OdfParagraphChild>> {
+pub(super) fn read_inline_children(
+    reader: &mut Reader<&[u8]>,
+) -> OdfResult<Vec<OdfParagraphChild>> {
     let mut children = Vec::new();
     let mut buf = Vec::new();
     loop {

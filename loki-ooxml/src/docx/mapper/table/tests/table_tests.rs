@@ -5,9 +5,9 @@
 
 use super::helpers::{make_ctx, simple_cell, simple_row};
 use crate::docx::import::DocxImportOptions;
+use crate::docx::mapper::table::map_table;
 use crate::docx::model::paragraph::DocxParagraph;
 use crate::docx::model::styles::{DocxTableCell, DocxTableModel, DocxTableRow, DocxTcPr, DocxTrPr};
-use crate::docx::mapper::table::map_table;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::table::col::ColWidth;
 use loki_doc_model::style::catalog::StyleCatalog;

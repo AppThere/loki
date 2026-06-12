@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
+// Pre-existing pattern — table cells contain type names without backticks
+#![allow(clippy::doc_markdown)]
+
 //! Mapping plan — audit tables for the OOXML → doc-model translation layer.
 //!
 //! This module contains no executable code; it documents the intermediate

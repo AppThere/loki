@@ -28,7 +28,7 @@ use loki_doc_model::{set_block_style, set_block_type_heading, set_block_type_par
 use loki_i18n::fl;
 
 use crate::editing::cursor::CursorState;
-use crate::editing::state::{apply_mutation_and_relayout, DocumentState};
+use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 use crate::routes::editor::editor_keydown_ctrl::post_mutation_sync;
 
 use super::helpers::{collect_style_names, style_preview_font};

@@ -4,9 +4,9 @@
 //! Shared test helpers for table mapper tests.
 
 use crate::docx::import::DocxImportOptions;
+use crate::docx::mapper::document::MappingContext;
 use crate::docx::model::paragraph::DocxParagraph;
 use crate::docx::model::styles::{DocxTableCell, DocxTableRow};
-use crate::docx::mapper::document::MappingContext;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::style::catalog::StyleCatalog;
 use loki_opc::PartData;

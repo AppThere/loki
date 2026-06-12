@@ -3,8 +3,8 @@
 
 //! Tests for the OOXML field state machine and field instruction parser.
 
-use super::map_inlines;
 use super::field_state::parse_field_instruction;
+use super::map_inlines;
 use crate::docx::import::DocxImportOptions;
 use crate::docx::model::paragraph::{DocxParaChild, DocxRun, DocxRunChild};
 use loki_doc_model::content::block::Block;
@@ -201,7 +201,5 @@ fn parse_ref_field() {
 #[test]
 fn parse_unknown_field_is_raw() {
     let kind = parse_field_instruction(" HYPERLINK \"https://example.com\" ");
-    assert!(
-        matches!(kind, FieldKind::Raw { instruction } if instruction.contains("HYPERLINK"))
-    );
+    assert!(matches!(kind, FieldKind::Raw { instruction } if instruction.contains("HYPERLINK")));
 }

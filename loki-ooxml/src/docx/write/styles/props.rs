@@ -8,7 +8,9 @@ use quick_xml::Writer;
 use loki_doc_model::style::props::char_props::CharProps;
 use loki_doc_model::style::props::para_props::ParaProps;
 
-use crate::docx::write::xml::{hex_color_val, pts_to_half_pts, pts_to_twips, write_empty, write_end, write_start, wval};
+use crate::docx::write::xml::{
+    hex_color_val, pts_to_half_pts, pts_to_twips, write_empty, write_end, write_start, wval,
+};
 
 /// Writes a `<w:pPr>` element from [`ParaProps`] (empty if nothing set).
 pub(super) fn write_para_props_elem<W: std::io::Write>(w: &mut Writer<W>, pp: &ParaProps) {

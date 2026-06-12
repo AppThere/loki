@@ -11,9 +11,9 @@ mod field_state;
 mod run;
 
 #[cfg(test)]
-mod tests_run;
-#[cfg(test)]
 mod tests_field;
+#[cfg(test)]
+mod tests_run;
 
 use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::inline::{BookmarkKind, Inline, LinkTarget};

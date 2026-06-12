@@ -12,8 +12,8 @@ use loki_primitives::units::Points;
 
 use crate::docx::model::paragraph::{DocxParagraph, DocxSectPr};
 
-use super::context::MappingContext;
 use super::super::paragraph::map_paragraph;
+use super::context::MappingContext;
 
 /// Converts a [`DocxSectPr`] to a [`PageLayout`].
 ///

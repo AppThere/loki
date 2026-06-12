@@ -3,9 +3,9 @@
 
 //! Generated content blocks: captions, TOC, index, and notes.
 
+use super::Block;
 use crate::content::attr::NodeAttr;
 use crate::content::inline::Inline;
-use super::Block;
 
 /// A figure caption.
 ///

@@ -112,7 +112,11 @@ pub(crate) fn place_row_decorations(
             let border_left = cell.props.border_left.as_ref().and_then(convert_border);
             let border_right = cell.props.border_right.as_ref().and_then(convert_border);
 
-            let insert_idx = if p == cell_page_start { cell_item_start } else { 0 };
+            let insert_idx = if p == cell_page_start {
+                cell_item_start
+            } else {
+                0
+            };
 
             if p == state.page_number {
                 if has_borders {

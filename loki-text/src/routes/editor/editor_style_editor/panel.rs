@@ -35,7 +35,6 @@ pub(crate) fn style_editor_panel(
         None => return rsx! {},
     };
 
-    let styles = catalog_style_list(&doc_state);
     let ds_list = Arc::clone(&doc_state);
     let ds_new = Arc::clone(&doc_state);
     let ds_apply = Arc::clone(&doc_state);

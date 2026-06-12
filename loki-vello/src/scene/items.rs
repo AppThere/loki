@@ -100,11 +100,13 @@ pub(super) fn paint_items(
 
                 let angle = (*degrees as f64).to_radians();
 
-                let transform = Affine::translate((
-                    (cx_physical * scale) as f64,
-                    (cy_physical * scale) as f64,
-                )) * Affine::rotate(angle)
-                    * Affine::translate((-(cx_local * scale) as f64, -(cy_local * scale) as f64));
+                let transform =
+                    Affine::translate(((cx_physical * scale) as f64, (cy_physical * scale) as f64))
+                        * Affine::rotate(angle)
+                        * Affine::translate((
+                            -(cx_local * scale) as f64,
+                            -(cy_local * scale) as f64,
+                        ));
 
                 let local_clip = vello::kurbo::Rect::new(
                     0.0,
