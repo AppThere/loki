@@ -46,7 +46,7 @@ use super::editor_pointer::{
 use super::editor_scrollbar::{
     CanvasMounted, ScrollMetrics, ThumbDrag, horizontal_scrollbar, vertical_scrollbar,
 };
-use crate::editing::cursor::CursorState;
+use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::hit_test::hit_test_page;
 use crate::editing::state::DocumentState;
 use crate::editing::touch::TouchInteractionState;
@@ -272,15 +272,10 @@ pub(super) fn render_canvas_area(
                             // Width for reflow layout; <= 0 until the canvas is
                             // measured (mount rect or first scroll event).
                             reflow_width_px: scroll_metrics().client_width as f64,
+                            // Paginated: hit-test against the editor's paginated
+                            // layout (reflow clicks are hit-tested inside
+                            // DocumentView and arrive via on_reflow_click).
                             on_tile_click: move |(page_index, x_pt, y_pt): (usize, f32, f32)| {
-                                // TODO(reflow-editing): tile coordinates are
-                                // reflow-local but the hit-test layout below is
-                                // paginated — the mapping is wrong, so suppress
-                                // click-to-cursor in reflow mode until the
-                                // continuous layout carries editing data.
-                                if *view_mode.peek() == ViewMode::Reflow {
-                                    return;
-                                }
                                 let layout_opt = {
                                     let Ok(state) = doc_state_mousedown.lock() else { return };
                                     state.paginated_layout.clone()
@@ -293,6 +288,25 @@ pub(super) fn render_canvas_area(
                                 let loro_cursor = loro_doc.read().as_ref().and_then(|ldoc| {
                                     derive_loro_cursor(ldoc, pos.paragraph_index, pos.byte_offset)
                                 });
+                                let mut cs = cursor_state.write();
+                                cs.loro_cursor = loro_cursor;
+                                cs.anchor = Some(pos.clone());
+                                cs.focus = Some(pos);
+                            },
+                            // Reflow: DocumentView already resolved the click to a
+                            // (paragraph, byte) position in the continuous layout.
+                            on_reflow_click: move |(para, byte): (usize, usize)| {
+                                let loro_cursor = loro_doc.read().as_ref().and_then(|ldoc| {
+                                    derive_loro_cursor(ldoc, para, byte)
+                                });
+                                let pos = DocumentPosition {
+                                    // page_index is meaningless in reflow; 0 is a
+                                    // safe placeholder (the caret is painted from
+                                    // paragraph/byte, not page, in reflow mode).
+                                    page_index: 0,
+                                    paragraph_index: para,
+                                    byte_offset: byte,
+                                };
                                 let mut cs = cursor_state.write();
                                 cs.loro_cursor = loro_cursor;
                                 cs.anchor = Some(pos.clone());

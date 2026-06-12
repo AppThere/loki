@@ -151,6 +151,7 @@ mod tests {
             content_width: 300.0,
             total_height: 100.0,
             items: vec![rect(0.0, 200.0), rect(100.0, 500.0), rect(50.0, 10.0)],
+            paragraphs: vec![],
         };
         // Widest right edge is 100 + 500 = 600.
         assert_eq!(content_max_x(&layout), 600.0);
@@ -162,6 +163,7 @@ mod tests {
             content_width: 300.0,
             total_height: 0.0,
             items: vec![],
+            paragraphs: vec![],
         };
         assert_eq!(content_max_x(&layout), 0.0);
     }

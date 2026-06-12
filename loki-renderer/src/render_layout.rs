@@ -12,7 +12,7 @@
 //! work unchanged.  Tiles are stacked with zero gap; items spanning a tile
 //! boundary are painted into both tiles (see `loki_vello::band`).
 
-use loki_layout::{ContinuousLayout, PaginatedLayout};
+use loki_layout::{ContinuousLayout, CursorRect, PageParagraphData, PaginatedLayout};
 use loki_vello::{CursorPaint, FontDataCache};
 
 /// Height of one reflow render tile in layout points.  Chosen so the CSS-pixel
@@ -133,13 +133,73 @@ impl RenderLayout {
         }
     }
 
+    /// Reflow editing data, or `None` in paginated mode.
+    fn reflow_paragraphs(&self) -> Option<&[PageParagraphData]> {
+        match self {
+            RenderLayout::Reflow { layout, .. } => Some(&layout.paragraphs),
+            RenderLayout::Paginated(_) => None,
+        }
+    }
+
+    /// Hit-test a point in **canvas** coordinates (layout points, padding
+    /// already removed) against the reflow layout, returning
+    /// `(block_index, byte_offset)`.  `None` in paginated mode or when there is
+    /// no editing data.  Mirrors `hit_test_page` for the continuous canvas.
+    pub fn reflow_hit_test(&self, canvas_x: f32, canvas_y: f32) -> Option<(usize, usize)> {
+        let paragraphs = self.reflow_paragraphs()?;
+        if paragraphs.is_empty() {
+            return None;
+        }
+        // Paragraph whose vertical extent covers the click; fall back to the
+        // first (click above content) or last (below content).
+        let para = paragraphs
+            .iter()
+            .rev()
+            .find(|p| p.origin.1 <= canvas_y && canvas_y <= p.origin.1 + p.layout.height)
+            .or_else(|| {
+                if canvas_y < paragraphs[0].origin.1 {
+                    paragraphs.first()
+                } else {
+                    paragraphs.last()
+                }
+            })?;
+        let x_in = canvas_x - para.origin.0;
+        let y_in = (canvas_y - para.origin.1).max(0.0);
+        let byte = para
+            .layout
+            .hit_test_point(x_in, y_in)
+            .map_or(0, |h| h.byte_offset);
+        Some((para.block_index, byte))
+    }
+
+    /// Cursor rectangle in **canvas** coordinates for `(block_index,
+    /// byte_offset)`, or `None` in paginated mode / when the paragraph or offset
+    /// is not found.
+    pub(crate) fn reflow_cursor_canvas(
+        &self,
+        block_index: usize,
+        byte_offset: usize,
+    ) -> Option<CursorRect> {
+        let para = self
+            .reflow_paragraphs()?
+            .iter()
+            .find(|p| p.block_index == block_index)?;
+        let cr = para.layout.cursor_rect(byte_offset)?;
+        Some(CursorRect {
+            x: para.origin.0 + cr.x,
+            y: para.origin.1 + cr.y,
+            height: cr.height,
+        })
+    }
+
     /// Paint render tile `index` into `scene` at `scale`.
     ///
-    /// Paginated tiles paint the full page (chrome, shadow, optional cursor);
-    /// reflow tiles paint the band of the continuous flow they cover, inset by
-    /// [`REFLOW_PADDING_PT`].  The reflow band has no explicit background — the
-    /// caller's `RenderParams::base_color` (white) provides it.  `cursor_paint`
-    /// is ignored in reflow mode, which carries no editing data.
+    /// Paginated tiles paint the full page (chrome, shadow, optional cursor via
+    /// `cursor_paint`).  Reflow tiles paint the band of the continuous flow they
+    /// cover, inset by [`REFLOW_PADDING_PT`]; the reflow caret is painted from
+    /// `reflow_cursor` = `(block_index, byte_offset)` when it falls in the band.
+    /// The reflow band has no explicit background — the caller's
+    /// `RenderParams::base_color` (white) provides it.
     pub fn paint_tile(
         &self,
         scene: &mut vello::Scene,
@@ -147,6 +207,7 @@ impl RenderLayout {
         index: usize,
         scale: f32,
         cursor_paint: Option<&CursorPaint>,
+        reflow_cursor: Option<(usize, usize)>,
     ) {
         match self {
             RenderLayout::Paginated(pl) => {
@@ -175,6 +236,22 @@ impl RenderLayout {
                     band_top,
                     band_h,
                 );
+                // Caret: paint when its canvas rect intersects this band,
+                // translated into band-local space (same offset as the items).
+                if let Some((para, byte)) = reflow_cursor
+                    && let Some(cr) = self.reflow_cursor_canvas(para, byte)
+                    && cr.y + cr.height >= band_top
+                    && cr.y <= band_top + band_h
+                {
+                    loki_vello::paint_cursor(
+                        scene,
+                        &cr,
+                        &[],
+                        &[],
+                        (REFLOW_PADDING_PT, -band_top),
+                        scale,
+                    );
+                }
             }
         }
     }
@@ -191,6 +268,7 @@ mod tests {
                 content_width: 0.0,
                 total_height,
                 items: vec![],
+                paragraphs: vec![],
             },
             tile_width_pt,
         }
@@ -214,6 +292,80 @@ mod tests {
         let rl = reflow(0.0, 400.0);
         assert_eq!(rl.page_count(), 1);
         assert_eq!(rl.page_size_pts(0), Some((400.0, 1.0)));
+    }
+
+    fn one_para_reflow(text: &str, origin: (f32, f32)) -> RenderLayout {
+        use loki_layout::{
+            FontResources, LayoutColor, PageParagraphData, ResolvedParaProps, StyleSpan,
+            layout_paragraph,
+        };
+        let mut resources = FontResources::new();
+        let para = layout_paragraph(
+            &mut resources,
+            text,
+            &[StyleSpan {
+                range: 0..text.len(),
+                font_name: None,
+                font_size: 12.0,
+                bold: false,
+                italic: false,
+                color: LayoutColor::BLACK,
+                underline: None,
+                strikethrough: None,
+                line_height: None,
+                vertical_align: None,
+                highlight_color: None,
+                letter_spacing: None,
+                font_variant: None,
+                word_spacing: None,
+                shadow: false,
+                link_url: None,
+            }],
+            &ResolvedParaProps::default(),
+            400.0,
+            1.0,
+            true,
+        );
+        let height = para.height;
+        RenderLayout::Reflow {
+            layout: ContinuousLayout {
+                content_width: 400.0,
+                total_height: origin.1 + height,
+                items: vec![],
+                paragraphs: vec![PageParagraphData {
+                    block_index: 3,
+                    layout: std::sync::Arc::new(para),
+                    origin,
+                }],
+            },
+            tile_width_pt: 436.0,
+        }
+    }
+
+    #[test]
+    fn reflow_hit_test_resolves_paragraph_and_offset() {
+        let rl = one_para_reflow("Hello world", (5.0, 10.0));
+        // Click inside the paragraph: returns its block_index and a byte offset.
+        let (block, byte) = rl.reflow_hit_test(8.0, 12.0).expect("hit");
+        assert_eq!(block, 3);
+        assert!(byte <= "Hello world".len());
+        // Far past the end of the line maps to the last offset.
+        let (_, byte_end) = rl.reflow_hit_test(390.0, 12.0).expect("hit end");
+        assert_eq!(byte_end, "Hello world".len());
+        // Paginated layouts have no reflow hit-testing.
+        assert_eq!(reflow(100.0, 400.0).reflow_hit_test(8.0, 12.0), None);
+    }
+
+    #[test]
+    fn reflow_caret_is_offset_by_paragraph_origin() {
+        let rl = one_para_reflow("Hello world", (5.0, 40.0));
+        let cr = rl.reflow_cursor_canvas(3, 0).expect("caret at start");
+        // Caret at byte 0 sits at the paragraph's canvas origin (x≈5, y≈40).
+        assert!((cr.x - 5.0).abs() < 2.0, "x={}", cr.x);
+        assert!((cr.y - 40.0).abs() < 4.0, "y={}", cr.y);
+        assert!(cr.height > 0.0);
+        // Unknown paragraph → None.
+        assert!(rl.reflow_cursor_canvas(99, 0).is_none());
     }
 
     #[test]

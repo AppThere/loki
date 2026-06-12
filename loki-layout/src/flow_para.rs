@@ -215,7 +215,9 @@ pub(super) fn place_paragraph_layout(
             state.current_paragraphs.push(PageParagraphData {
                 block_index,
                 layout: Arc::new(para_layout.clone()),
-                origin: (0.0, dy),
+                // Match the item translation below so hit-testing and cursor
+                // geometry line up with the rendered glyphs (lists indent dx).
+                origin: (dx, dy),
             });
         }
         for mut item in para_layout.items {

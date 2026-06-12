@@ -71,7 +71,14 @@ impl PageSource for DocPageSource {
 
         let mut scene = Scene::new();
         let mut font_cache = self.font_cache.lock().unwrap_or_else(|e| e.into_inner());
-        layout.paint_tile(&mut scene, &mut font_cache, index.0 as usize, scale, None);
+        layout.paint_tile(
+            &mut scene,
+            &mut font_cache,
+            index.0 as usize,
+            scale,
+            None,
+            None,
+        );
         drop(font_cache);
         drop(layout_guard);
 

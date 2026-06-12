@@ -508,7 +508,10 @@ pub(super) fn EditorInner(path: String) -> Element {
     let canvas_hovered = use_signal(|| false);
     let page_gap_px = tokens::PAGE_GAP_PX;
 
-    let page_label = if total_pages() == 0 {
+    let page_label = if view_mode() == ViewMode::Reflow {
+        // Reflow has no fixed pages — hide the page indicator entirely.
+        String::new()
+    } else if total_pages() == 0 {
         fl!("editor-page-loading") // empty in en-US — avoids flash while loading
     } else {
         fl!(

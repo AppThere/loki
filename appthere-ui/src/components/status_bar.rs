@@ -62,24 +62,29 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
 
             // ── Left: document statistics ─────────────────────────────────────
 
-            // Page label (e.g. "Page 1 of 4")
-            span {
-                style: format!(
-                    "font-size: {size}px; color: {fg};",
-                    size = FONT_SIZE_XS,
-                    fg   = COLOR_TEXT_ON_CHROME_SECONDARY,
-                ),
-                "{props.page_label}"
+            // Page label (e.g. "Page 1 of 4"). Hidden when empty (e.g. the
+            // reflow view, which has no fixed pages).
+            if !props.page_label.is_empty() {
+                span {
+                    style: format!(
+                        "font-size: {size}px; color: {fg};",
+                        size = FONT_SIZE_XS,
+                        fg   = COLOR_TEXT_ON_CHROME_SECONDARY,
+                    ),
+                    "{props.page_label}"
+                }
             }
 
-            // Word count label (e.g. "1,847 words")
-            span {
-                style: format!(
-                    "font-size: {size}px; color: {fg};",
-                    size = FONT_SIZE_XS,
-                    fg   = COLOR_TEXT_ON_CHROME_SECONDARY,
-                ),
-                "{props.word_count_label}"
+            // Word count label (e.g. "1,847 words"). Hidden when empty.
+            if !props.word_count_label.is_empty() {
+                span {
+                    style: format!(
+                        "font-size: {size}px; color: {fg};",
+                        size = FONT_SIZE_XS,
+                        fg   = COLOR_TEXT_ON_CHROME_SECONDARY,
+                    ),
+                    "{props.word_count_label}"
+                }
             }
 
             // Flex spacer — pushes right-side content to the far right

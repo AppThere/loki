@@ -691,6 +691,7 @@ mod tests {
             content_width: 400.0,
             total_height: 100.0,
             items,
+            paragraphs: vec![],
         })
     }
 

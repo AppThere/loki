@@ -157,6 +157,11 @@ pub struct ContinuousLayout {
     pub total_height: f32,
     /// All positioned items. Origins are absolute within the canvas.
     pub items: Vec<PositionedItem>,
+    /// Per-paragraph editing data (layout + absolute canvas origin), in document
+    /// order. Populated only when `LayoutOptions::preserve_for_editing` is
+    /// `true`; empty otherwise. Used for hit-testing and cursor positioning in
+    /// the reflow editor, mirroring [`PageEditingData`] for paginated pages.
+    pub paragraphs: Vec<PageParagraphData>,
 }
 
 #[cfg(test)]
@@ -179,6 +184,7 @@ mod tests {
             content_width: 500.0,
             total_height: 200.0,
             items: vec![make_filled(0.0), make_filled(20.0), make_filled(40.0)],
+            paragraphs: vec![],
         });
         assert_eq!(layout.all_items().count(), 3);
     }
@@ -266,6 +272,7 @@ mod tests {
             content_width: 480.0,
             total_height: 100.0,
             items: vec![],
+            paragraphs: vec![],
         });
         assert_eq!(layout.content_width(), 480.0);
     }

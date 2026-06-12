@@ -167,12 +167,16 @@ pub fn layout_document(
         }
         _ => {
             let mut all_items = Vec::new();
+            let mut all_paragraphs = Vec::new();
             let mut total_height = 0.0;
             let mut max_width: f32 = 0.0;
 
             for section in &doc.sections {
                 let FlowOutput::Canvas {
-                    mut items, height, ..
+                    mut items,
+                    height,
+                    mut paragraphs,
+                    ..
                 } = flow_section(
                     resources,
                     section,
@@ -184,11 +188,16 @@ pub fn layout_document(
                 else {
                     unreachable!("flow_section in non-paginated mode always returns Canvas");
                 };
-                // Offset section items by the height of all preceding sections.
+                // Offset section items (and editing origins) by the height of
+                // all preceding sections so coordinates are canvas-absolute.
                 for item in &mut items {
                     item.translate(0.0, total_height);
                 }
+                for para in &mut paragraphs {
+                    para.origin.1 += total_height;
+                }
                 all_items.extend(items);
+                all_paragraphs.extend(paragraphs);
                 total_height += height;
 
                 let pl = &section.layout;
@@ -203,6 +212,7 @@ pub fn layout_document(
                 },
                 total_height,
                 items: all_items,
+                paragraphs: all_paragraphs,
             })
         }
     }

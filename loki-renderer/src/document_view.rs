@@ -68,8 +68,13 @@ pub struct DocumentViewProps {
     /// rendering until a real width arrives.
     pub reflow_width_px: f64,
     /// Called with `(page_index, x_pt, y_pt)` in layout points when the user
-    /// clicks a page tile. The caller performs the hit test and updates cursor state.
+    /// clicks a page tile in **paginated** mode. The caller performs the hit test
+    /// and updates cursor state.
     pub on_tile_click: EventHandler<(usize, f32, f32)>,
+    /// Called with `(block_index, byte_offset)` when the user clicks in
+    /// **reflow** mode. This component owns the reflow layout, so it hit-tests
+    /// the click itself and reports the resolved document position.
+    pub on_reflow_click: EventHandler<(usize, usize)>,
 }
 
 impl PartialEq for DocumentViewProps {
@@ -177,16 +182,31 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
             .unwrap_or((0, 0, 0));
         tracing::debug!(hot, warm, cold, is_reflow, "DocumentView rendered");
 
-        // Reflow layouts carry no per-page editing data, so the cursor cannot
-        // be mapped to a tile — suppress it rather than painting it at a
-        // paginated position that no longer exists on screen.
-        let cursor_pos = if is_reflow { None } else { props.cursor_pos };
+        // Cursor flows through for both modes; LokiPageSource paints it via the
+        // page editing data (paginated) or the continuous editing data (reflow).
+        // In reflow, rewrite `page_index` to the band tile that actually holds
+        // the caret so that tile (and only it) is invalidated as the caret moves.
+        let cursor_pos = props.cursor_pos.map(|cp| {
+            if is_reflow {
+                let band = renderer
+                    .source
+                    .reflow_cursor_band(cp.paragraph_index, cp.byte_offset)
+                    .unwrap_or(0);
+                RendererCursorPos {
+                    page_index: band,
+                    ..cp
+                }
+            } else {
+                cp
+            }
+        });
         let gap_px = if is_reflow {
             0.0
         } else {
             tokens::PAGE_GAP_PX as f64
         };
         let on_tile_click = props.on_tile_click;
+        let on_reflow_click = props.on_reflow_click;
         // Read (and subscribe to) the settle epoch so a scroll-settle retier
         // re-renders this component and repaints demoted tiles.
         let epoch = settle_epoch();
@@ -224,7 +244,24 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                             doc_gen,
                             settle_epoch: epoch,
                             gap_px,
-                            on_tile_click,
+                            // In reflow, hit-test the click here (this component
+                            // owns the reflow layout) and report the resolved
+                            // (paragraph, byte). In paginated, forward the raw
+                            // tile coordinates for the editor to hit-test.
+                            on_tile_click: {
+                                let source = renderer.source.clone();
+                                move |(i, x, y): (usize, f32, f32)| {
+                                    if is_reflow {
+                                        if let Some((para, byte)) =
+                                            source.reflow_hit_test(i, x, y)
+                                        {
+                                            on_reflow_click.call((para, byte));
+                                        }
+                                    } else {
+                                        on_tile_click.call((i, x, y));
+                                    }
+                                }
+                            },
                         }
                     }
                 }

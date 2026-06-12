@@ -215,6 +215,11 @@ impl CustomPaintSource for LokiPageSource {
             })
         };
 
+        // Reflow caret: passed as (block_index, byte_offset); paint_tile paints
+        // it on whichever band tile it falls in (paginated mode uses the
+        // page-relative `cursor_paint` above instead).
+        let reflow_cursor = current_cursor.map(|cp| (cp.paragraph_index, cp.byte_offset));
+
         let layout_guard = self.source.layout_for_generation(current_generation);
         let (_, layout) = layout_guard.as_ref()?;
         let mut scene = Scene::new();
@@ -224,6 +229,7 @@ impl CustomPaintSource for LokiPageSource {
             self.page_index,
             render_scale,
             cursor_paint.as_ref(),
+            reflow_cursor,
         );
         drop(layout_guard);
 
