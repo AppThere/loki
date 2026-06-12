@@ -128,6 +128,9 @@ pub fn seed_layout_from_document(doc_state: &Arc<Mutex<DocumentState>>, doc: &Do
         let fr_arc = state.shared_font_resources.clone();
         drop(state);
         let mut fr = fr_arc.lock().unwrap_or_else(|e| e.into_inner());
+        // New document: drop the previous document's memoised paragraph layouts
+        // so the shaping cache does not accumulate across loads.
+        fr.clear_paragraph_cache();
         loki_layout::layout_document(
             &mut fr,
             doc,

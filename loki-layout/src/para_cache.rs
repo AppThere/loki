@@ -23,9 +23,12 @@ use std::hash::{Hash, Hasher};
 use crate::para::{ParagraphLayout, ResolvedParaProps, StyleSpan};
 
 /// Maximum live entries before the cache rotates (evicting the older
-/// generation). Sized to keep every paragraph of a large document (~4000
-/// paragraphs ≈ 150 pages) resident across edits; memory is a few KB per entry.
-const CACHE_CAP: usize = 4096;
+/// generation). Each entry retains a `ParagraphLayout` (glyph runs, byte-index
+/// maps, and a Parley `Layout`), a few KB to tens of KB, so this is a real
+/// memory ceiling. 2048 (×2 generations) comfortably covers a ~80-page document
+/// — well beyond typical use — while the per-document [`ParaCache::clear`] on
+/// load prevents accumulation across documents.
+const CACHE_CAP: usize = 2048;
 
 /// Two-generation paragraph-layout cache (approximate LRU).
 ///
@@ -61,6 +64,15 @@ impl ParaCache {
             self.previous = std::mem::take(&mut self.current);
         }
         self.current.insert(key, value);
+    }
+
+    /// Drops every cached entry, freeing the retained `ParagraphLayout`s.
+    ///
+    /// Called when a new document is loaded so the cache does not retain the
+    /// previous document's paragraph layouts.
+    pub(crate) fn clear(&mut self) {
+        self.current.clear();
+        self.previous.clear();
     }
 
     /// Number of distinct entries currently resident (both generations). Used by
@@ -218,6 +230,21 @@ mod tests {
         bold.bold = true;
         lay(&mut r, base, &[bold], 400.0);
         assert_eq!(r.para_cache.len(), 4, "different style span must miss");
+    }
+
+    #[test]
+    fn clear_drops_all_entries() {
+        let mut r = resources();
+        lay(&mut r, "one", &[span("one")], 400.0);
+        lay(&mut r, "two", &[span("two")], 400.0);
+        assert_eq!(r.para_cache.len(), 2);
+
+        r.clear_paragraph_cache();
+        assert_eq!(r.para_cache.len(), 0, "clear should drop every entry");
+
+        // A subsequent layout repopulates from scratch (miss, not stale hit).
+        lay(&mut r, "one", &[span("one")], 400.0);
+        assert_eq!(r.para_cache.len(), 1);
     }
 
     #[test]

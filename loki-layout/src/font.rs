@@ -66,6 +66,13 @@ impl FontResources {
         }
     }
 
+    /// Drops every memoised paragraph layout, freeing the retained
+    /// `ParagraphLayout`s. Call when switching documents so the shaping cache
+    /// does not retain the previous document's layouts.
+    pub fn clear_paragraph_cache(&mut self) {
+        self.para_cache.clear();
+    }
+
     /// Registers additional font data (e.g. fonts embedded in the document).
     ///
     /// `data` must be valid font bytes (TTF / OTF / TTC). The font is added

@@ -3,6 +3,10 @@
 
 //! DocumentView component for rendering pages from loki-renderer cache.
 
+#[cfg(any(not(target_os = "android"), android_gpu))]
+use std::cell::Cell;
+#[cfg(any(not(target_os = "android"), android_gpu))]
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use appthere_canvas::ScrollState;
@@ -195,6 +199,27 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
             renderer.source.provide_paginated_layout(layout);
         }
         let doc_gen = renderer.source.current_generation();
+
+        // Initial / post-change tiering.
+        //
+        // The scroll-settle detector only retiers *after* a scroll gesture, so
+        // without this a freshly-loaded (or just-mutated) document would render
+        // every page at the Hot-tier default — a full-resolution texture per
+        // page, even far off screen (a 20-page doc ≈ 20 × ~12 MB). When the
+        // layout generation changes, schedule one retier so pages outside the
+        // hot/warm zone are demoted immediately, bounding texture memory to the
+        // viewport neighbourhood regardless of document length. Deferred via
+        // `spawn` so the `settle_epoch` write happens after this render, and
+        // guarded so it runs once per generation. Reuses the proven
+        // `on_settle` demotion path.
+        let last_tiered_gen: Rc<Cell<u64>> = use_hook(|| Rc::new(Cell::new(u64::MAX)));
+        if last_tiered_gen.get() != doc_gen {
+            last_tiered_gen.set(doc_gen);
+            let renderer_retier = renderer.clone();
+            spawn(async move {
+                renderer_retier.on_settle();
+            });
+        }
 
         const PTS_TO_CSS_PX: f64 = 96.0 / 72.0;
         let layout_guard = renderer.source.layout_for_generation(doc_gen);
