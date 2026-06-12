@@ -12,6 +12,8 @@
 //! work unchanged.  Tiles are stacked with zero gap; items spanning a tile
 //! boundary are painted into both tiles (see `loki_vello::band`).
 
+use std::sync::Arc;
+
 use loki_layout::{ContinuousLayout, CursorRect, PaginatedLayout};
 use loki_vello::{CursorPaint, FontDataCache, SelectionRect};
 
@@ -72,7 +74,11 @@ impl RenderMode {
 #[derive(Debug, Clone)]
 pub enum RenderLayout {
     /// Paginated print layout — one tile per real page.
-    Paginated(PaginatedLayout),
+    ///
+    /// Held behind an [`Arc`] so the editor's already-computed layout can be
+    /// shared with the renderer without a deep clone (the single canonical
+    /// layout — see [`crate::DocPageSource::provide_paginated_layout`]).
+    Paginated(Arc<PaginatedLayout>),
     /// Continuous reflow layout — sliced into virtual tiles of
     /// [`REFLOW_TILE_HEIGHT_PT`].
     Reflow {
@@ -92,7 +98,7 @@ impl RenderLayout {
     /// degrade gracefully in reflow mode, which carries no editing data.
     pub fn as_paginated(&self) -> Option<&PaginatedLayout> {
         match self {
-            RenderLayout::Paginated(pl) => Some(pl),
+            RenderLayout::Paginated(pl) => Some(pl.as_ref()),
             RenderLayout::Reflow { .. } => None,
         }
     }

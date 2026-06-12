@@ -249,12 +249,14 @@ pub(super) fn render_canvas_area(
                 Some((loaded_path, Ok(doc))) if loaded_path == &path_signal() => {
                     // Use the live post-mutation document from doc_state when
                     // available; fall back to the original resource doc before
-                    // seed_layout_from_document has run.
-                    let arc_doc = doc_state_render
-                        .lock()
-                        .ok()
-                        .and_then(|s| s.document.clone())
-                        .unwrap_or_else(|| Arc::new(doc.clone()));
+                    // seed_layout_from_document has run. Read the matching
+                    // paginated layout under the same lock so the renderer can
+                    // reuse it (single canonical layout) instead of recomputing.
+                    let (doc_opt, paginated_layout) = match doc_state_render.lock() {
+                        Ok(s) => (s.document.clone(), s.paginated_layout.clone()),
+                        Err(_) => (None, None),
+                    };
+                    let arc_doc = doc_opt.unwrap_or_else(|| Arc::new(doc.clone()));
                     let (cursor_pos, selection_anchor) = {
                         let cs = cursor_state.read();
                         let to_renderer = |pos: &DocumentPosition| RendererCursorPos {
@@ -270,6 +272,7 @@ pub(super) fn render_canvas_area(
                     rsx! {
                         DocumentView {
                             doc: arc_doc,
+                            paginated_layout,
                             // TODO(loki): measure actual viewport height — affects
                             // cache tier zones only, not visual correctness.
                             // See diagnostic report, finding 1.

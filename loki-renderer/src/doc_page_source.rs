@@ -28,7 +28,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use loki_doc_model::document::Document;
-use loki_layout::{DocumentLayout, FontResources, LayoutMode, LayoutOptions};
+use loki_layout::{DocumentLayout, FontResources, LayoutMode, LayoutOptions, PaginatedLayout};
 use loki_vello::FontDataCache;
 
 use crate::render_layout::{
@@ -172,6 +172,29 @@ impl DocPageSource {
         self.generation.fetch_add(1, Ordering::AcqRel);
     }
 
+    /// Pre-seeds the layout cache with a paginated layout computed elsewhere
+    /// (by the editor in `apply_mutation_and_relayout`), so
+    /// [`Self::layout_for_generation`] reuses it instead of laying the document
+    /// out a second time — the single canonical layout (Tier-0 #3).
+    ///
+    /// Only meaningful in paginated mode; the caller provides a layout only when
+    /// the active render mode is paginated. The provided layout must correspond
+    /// to the current document (i.e. supplied right after the matching
+    /// [`Self::update_doc`]). No-op when the cache already holds this
+    /// generation, so the renderer never discards a layout it already has.
+    pub fn provide_paginated_layout(&self, layout: Arc<PaginatedLayout>) {
+        let generation = self.current_generation();
+        let mut guard = self.layout_cache.lock().unwrap_or_else(|e| e.into_inner());
+        let already_current = guard
+            .as_ref()
+            .map(|(g, _)| *g == generation)
+            .unwrap_or(false);
+        if already_current {
+            return;
+        }
+        *guard = Some((generation, RenderLayout::Paginated(layout)));
+    }
+
     /// Returns a guard holding the layout for `generation`, recomputing if stale.
     ///
     /// The guard keeps the [`RenderLayout`] alive without cloning.
@@ -209,7 +232,7 @@ impl DocPageSource {
                         1.0,
                         &options,
                     ) {
-                        DocumentLayout::Paginated(pl) => RenderLayout::Paginated(pl),
+                        DocumentLayout::Paginated(pl) => RenderLayout::Paginated(Arc::new(pl)),
                         _ => unreachable!(
                             "LayoutMode::Paginated must return DocumentLayout::Paginated"
                         ),
@@ -254,3 +277,7 @@ impl DocPageSource {
         guard
     }
 }
+
+#[cfg(test)]
+#[path = "doc_page_source_tests.rs"]
+mod tests;

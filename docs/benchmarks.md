@@ -95,9 +95,19 @@ the changed block (`edit_path` bench, 1000-paragraph doc, Criterion):
 The full CRDT walk is gone from the hot path (~3.7 ms / ~21 % off the
 keystroke; the gap widens with document size). End to end across both Tier-0
 commits, the 1000-paragraph keystroke went from **~166 ms → ~14 ms (~12×)**.
-The residual is now `layout_document`'s per-paragraph positioning (cache-key
-hash + `ParagraphLayout` clone + flow), i.e. the single-canonical-layout merge
-is the next lever.
+
+### Single canonical layout (no second pass)
+
+The remaining `layout_document` cost (~14 ms at 1000 paragraphs) was being paid
+**twice per keystroke** at the application level: once by the editor
+(`apply_mutation_and_relayout`, for hit-testing / cursor / page count) and again
+by the renderer (`DocPageSource::layout_for_generation`, for painting) — the same
+call on the same document. The editor now hands its computed `Arc<PaginatedLayout>`
+to the renderer, which reuses it instead of laying the document out again, so a
+paginated keystroke does **one** layout pass rather than two (≈ halves the
+per-keystroke layout cost on the desktop/tablet default path). This is an
+application-wiring change rather than a microbenchmark target; the reuse and its
+invalidation are covered by `loki-renderer` unit tests.
 
 > The `edit_path` keystroke bench re-inserts the same character each iteration,
 > so after warm-up the edited paragraph is also a cache hit; a real keystroke
@@ -124,3 +134,13 @@ is the next lever.
   unmappable diff fall back to a full `loro_to_document`, so the result is
   always byte-identical to a full rebuild. Wired into
   `apply_mutation_and_relayout`; reset when a new document loads.
+- **Single canonical layout**
+  (`loki-renderer/src/doc_page_source.rs`, `render_layout.rs`,
+  `document_view.rs`): `RenderLayout::Paginated` now holds an
+  `Arc<PaginatedLayout>`, and `DocPageSource::provide_paginated_layout`
+  pre-seeds the renderer's layout cache with the layout the editor already
+  computed (passed down as a `DocumentView` prop). In paginated mode the
+  renderer reuses it instead of running `layout_document` a second time;
+  reflow mode (width-dependent) still computes its own. Output is identical —
+  both sides ran the same `layout_document` call — and the editor and renderer
+  now share one layout object rather than two copies.

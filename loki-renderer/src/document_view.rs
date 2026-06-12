@@ -10,6 +10,7 @@ use appthere_canvas::ScrollState;
 use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
+use loki_layout::PaginatedLayout;
 
 // PageTile (and the wgpu paint path under it) is enabled on: desktop, and
 // Android devices built with RUSTFLAGS='--cfg android_gpu' (Vulkan-capable
@@ -74,6 +75,12 @@ impl RendererSelection {
 #[derive(Props, Clone)]
 pub struct DocumentViewProps {
     pub doc: Arc<Document>,
+    /// Paginated layout already computed by the editor for `doc`, reused in
+    /// paginated mode so the renderer does not lay the document out a second
+    /// time (the single canonical layout). `None` falls back to computing it
+    /// on the render path (e.g. before the first editor layout, or on the
+    /// Android CPU reflow path).
+    pub paginated_layout: Option<Arc<PaginatedLayout>>,
     pub viewport_height_px: f64,
     /// The caret / selection focus position.
     pub cursor_pos: Option<RendererCursorPos>,
@@ -178,6 +185,15 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
             RenderMode::Paginated
         };
         renderer.source.set_render_mode(render_mode);
+        // Single canonical layout: in paginated mode reuse the layout the editor
+        // already computed for this document instead of laying it out again.
+        // Provided after set_render_mode so it is keyed to the current
+        // generation; reflow mode computes its own width-dependent layout.
+        if render_mode == RenderMode::Paginated
+            && let Some(layout) = props.paginated_layout.clone()
+        {
+            renderer.source.provide_paginated_layout(layout);
+        }
         let doc_gen = renderer.source.current_generation();
 
         const PTS_TO_CSS_PX: f64 = 96.0 / 72.0;
