@@ -55,6 +55,49 @@ pub(super) fn color_from_srgb(hex: &str) -> Option<DocumentColor> {
     DocumentColor::from_hex(&format!("#{hex}")).ok()
 }
 
+// ── Inverse conversions (model → `DrawingML`), used by the exporter ─────────────
+
+/// Converts points to EMU.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+pub(super) fn pt_to_emu(pt: f64) -> i64 {
+    (pt * EMU_PER_PT).round() as i64
+}
+
+/// Converts degrees to a `DrawingML` rotation (60 000ths of a degree).
+#[allow(clippy::cast_possible_truncation)]
+pub(super) fn deg_to_rot(deg: f64) -> i64 {
+    (deg * 60_000.0).round() as i64
+}
+
+/// Converts a point font size to `a:rPr@sz` (hundredths of a point).
+#[allow(clippy::cast_possible_truncation)]
+pub(super) fn pt_to_font_size(pt: f64) -> i64 {
+    (pt * 100.0).round() as i64
+}
+
+/// The `a:prstGeom@prst` name for a [`PresetShape`].
+pub(super) fn prst_from_preset(preset: PresetShape) -> &'static str {
+    match preset {
+        PresetShape::Rectangle => "rect",
+        PresetShape::RoundedRectangle { .. } => "roundRect",
+        PresetShape::Ellipse => "ellipse",
+        PresetShape::Line => "line",
+        PresetShape::Triangle => "triangle",
+        PresetShape::RightTriangle => "rtTriangle",
+        PresetShape::Diamond => "diamond",
+        PresetShape::Pentagon => "pentagon",
+        PresetShape::Hexagon => "hexagon",
+    }
+}
+
+/// The 6-hex-digit `a:srgbClr@val` (no `#`) for a color, or `None` for
+/// non-RGB (e.g. theme) colors that can't be flattened.
+pub(super) fn srgb_from_color(color: &DocumentColor) -> Option<String> {
+    color
+        .to_hex()
+        .map(|h| h.trim_start_matches('#').to_string())
+}
+
 /// Opaque black, used as the default stroke color when a line has no explicit
 /// fill color.
 pub(super) fn default_black() -> DocumentColor {

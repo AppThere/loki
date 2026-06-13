@@ -12,12 +12,15 @@
 //! connectors, custom geometry, gradients, and theme-color / layout-inherited
 //! properties are not yet resolved and are reported as warnings.
 
+pub mod export;
 pub mod import;
 mod presentation_part;
 mod shapes;
 mod sppr;
 mod text;
 mod units;
+mod write_presentation;
+mod write_slide;
 
 use loki_graphics::Shape;
 use loki_presentation_model::PlaceholderKind;
@@ -28,6 +31,22 @@ use std::io::BufRead;
 /// Whether an end tag's local name (namespace prefix stripped) equals `name`.
 pub(super) fn end_is(e: &BytesEnd<'_>, name: &[u8]) -> bool {
     e.name().local_name().into_inner() == name
+}
+
+/// Escapes a string for inclusion in XML text or a double-quoted attribute.
+pub(super) fn escape_xml(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            _ => out.push(ch),
+        }
+    }
+    out
 }
 
 /// A shape parsed from a slide, plus its placeholder role (if any).

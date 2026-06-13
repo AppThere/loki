@@ -13,8 +13,8 @@
 //! | Feature | Default | Description |
 //! |---------|---------|-------------|
 //! | `docx`  | yes     | DOCX (Word) import via [`docx::import::DocxImport`] |
-//! | `xlsx`  | no      | XLSX (Excel) import/export via [`xlsx::import::XlsxImport`] |
-//! | `pptx`  | no      | PPTX (`PowerPoint`) import via [`pptx::import::PptxImport`] |
+//! | `xlsx`  | no      | XLSX (Excel) import/export (`xlsx::import::XlsxImport`) |
+//! | `pptx`  | no      | PPTX (`PowerPoint`) import/export (`pptx::import::PptxImport`, `pptx::export::PptxExport`) |
 //!
 //! # Quick start
 //!
@@ -71,5 +71,7 @@ pub use xlsx::export::XlsxExport;
 #[cfg(feature = "xlsx")]
 pub use xlsx::import::{XlsxImport, XlsxImportOptions, XlsxImportResult};
 
+#[cfg(feature = "pptx")]
+pub use pptx::export::{PptxExport, PptxExportOptions};
 #[cfg(feature = "pptx")]
 pub use pptx::import::{PptxImport, PptxImportOptions, PptxImportResult};

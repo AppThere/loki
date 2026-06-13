@@ -115,15 +115,21 @@ foundation, not just UI polish.
    (shared vector model: shapes, paths, fills, text, drawing page) and
    `loki-presentation-model` (`Presentation`/`Slide`/placeholders over it).
 
-2. **PPTX import/export — import DONE, export pending.** Added a `pptx`
-   feature/module to `loki-ooxml` (`PptxImport`): reads `presentation.xml`
-   (slide size + ordered slide list) and `slideN.xml` (`p:sp`/`p:pic` shapes —
-   transform, preset geometry, solid fill, line stroke, text, placeholder role)
-   into `loki-presentation-model`, over the existing `loki-opc` plumbing.
+2. **PPTX import/export — DONE (round-trips through the importer).** Added a
+   `pptx` feature/module to `loki-ooxml`:
+   - `PptxImport` reads `presentation.xml` (slide size + ordered slide list)
+     and `slideN.xml` (`p:sp`/`p:pic` shapes — transform, preset geometry,
+     solid fill, line stroke, text, placeholder role) into
+     `loki-presentation-model`, over the `loki-opc` plumbing.
+   - `PptxExport` serialises a `Presentation` back to a PPTX package (the
+     inverse: `presentation.xml` + per-slide `slideN.xml` with the same shape
+     surface). Verified by model → export → import round-trip + idempotence
+     tests.
    Unsupported constructs (groups, tables/charts, custom geometry, gradients,
-   layout-inherited/theme properties) are reported as warnings. **Remaining:**
-   PPTX **export** (needed for save-without-data-loss); slide layouts/masters
-   for inherited placeholder geometry; ODP via `loki-odf` (optional parity).
+   image/group export, layout-inherited/theme properties) are
+   skipped/reported. **Remaining:** slide layouts/masters + theme (needed for
+   *strict PowerPoint* to open the file — our importer round-trips without
+   them); image & group export; ODP via `loki-odf` (optional parity).
 
 3. **~~Loro CRDT bridge~~ — DONE.** `loki-presentation-model::loro_bridge`
    (`presentation_to_loro` / `loro_to_presentation`), slide-snapshot granularity
