@@ -3,10 +3,14 @@
 
 //! Editor route — thin routing shell.
 
+mod cell_ref;
 mod editor_error_view;
 mod editor_inner;
 mod editor_load;
 mod editor_state;
+mod formula;
+#[cfg(test)]
+mod formula_tests;
 
 use dioxus::prelude::*;
 use editor_inner::EditorInner;

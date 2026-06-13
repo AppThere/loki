@@ -29,27 +29,24 @@ and `loki-presentation` and the crates they depend on.
 
 ### MVP gaps (prioritised)
 
-1. **Grid is hardcoded to A1:J30** (`editor_inner.rs:22` `COLS = A..J`, loops
-   `0..30`/`0..10`; `parse_cell_ref` rejects col≥10 / row≥30). Any data outside
-   10×30 is **invisible and uneditable** in the UI — though it is preserved on
-   save because the full `Workbook` model round-trips. This is the #1 blocker:
-   opening a normal spreadsheet shows only a corner of it.
-   - *Fix:* drive the grid from the workbook's used range (max row/col across
-     all cells, with sensible padding) and generate column labels
-     (A, B, …, Z, AA, …) instead of a fixed array. Virtualise rows for large
-     sheets. Generalise `parse_cell_ref` to arbitrary columns/rows.
+1. **~~Grid is hardcoded to A1:J30~~ — DONE (this branch).** The grid now follows
+   the workbook's used range plus padding, clamped to a render-friendly cap
+   (`cell_ref::grid_dimensions`), with bijective column labels (A…Z, AA…,
+   `col_to_label`) and a generalised `parse_cell_ref` supporting arbitrary
+   multi-letter columns and full-height rows (bounded by the XLSX limits). Data
+   outside the old 10×30 window is now visible and editable.
+   - *Remaining follow-up:* true **row/column virtualization** so sheets larger
+     than the cap (currently 500×52) render fully without a DOM-size cap.
 
-2. **Formula engine is `SUM(range)` + naive left-to-right `+`/`-` only**
-   (`evaluate_cell`, `editor_inner.rs:46`). No `*` `/`, no operator precedence,
-   no parentheses, no other functions; unrecognised formulas evaluate to `0`
-   with no error indication. For MVP it should at least support:
-   - arithmetic with precedence and parentheses (`* / + -`),
-   - the common functions `AVERAGE`, `MIN`, `MAX`, `COUNT`, `IF`,
-   - an error sentinel (`#NAME?`, `#DIV/0!`, `#REF!`) instead of silent `0`.
-   - *Note:* cycle detection already exists (`visited` set). A small Pratt /
-     shunting-yard parser would replace the hand-rolled scanner cleanly. This
-     is the natural home for the first `loki-spreadsheet` unit tests
-     (input→expected tables) — the crate currently has **0 tests**.
+2. **~~Formula engine is `SUM` + naive `+`/`-`~~ — DONE (this branch).** Replaced
+   the hand-rolled scanner with a recursive-descent evaluator
+   (`formula/{lexer,eval}.rs`): operator precedence, parentheses, unary minus,
+   `+ - * /`, the functions `SUM`/`AVERAGE`/`MIN`/`MAX`/`COUNT`/`IF`, A1 ranges,
+   and Excel-style error values (`#NAME?`/`#VALUE!`/`#DIV/0!`/`#REF!`/`#NUM!`)
+   with error contagion through references instead of a silent `0`. Covered by
+   31 unit tests (`loki-spreadsheet` went from **0 → 31 tests**).
+   - *Remaining follow-up:* more functions (`COUNTIF`, `ROUND`, text fns),
+     string/boolean value types, and `<`/`>`/`=` comparisons for richer `IF`.
 
 3. **Save/load errors are invisible to the user** — every failure in
    `save_document` and the mutation path is `tracing::error!` only
@@ -75,7 +72,8 @@ ranges, column/row resize and insert/delete.
 ### Effort estimate
 **Small–medium.** Items 1–3 are the core; none require new crates. The model
 and I/O already exist and are tested. This is the cheaper of the two apps to
-finish.
+finish. **Items 1 and 2 are now done** (see status above); items 3 (surface
+save/load errors) and 4 (keyboard cell navigation) remain for a usable MVP.
 
 ---
 

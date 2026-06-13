@@ -13,162 +13,13 @@ use loki_file_access::{FileAccessToken, FilePicker, SaveOptions};
 use loki_i18n::fl;
 use std::collections::HashSet;
 
+use super::cell_ref::{col_to_label, grid_dimensions};
 use super::editor_load::{DocumentFormat, detect_format, load_document};
 use super::editor_state::{EditorState, use_editor_state};
+use super::formula::{evaluate_cell, format_evaluated_value};
 use crate::routes::Route;
 use crate::routes::dioxus_router::Navigator;
 use crate::utils::display_title_from_path;
-
-const COLS: &[&str] = &["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
-
-/// Helper to parse cell reference (e.g. "B2" -> row=1, col=1)
-fn parse_cell_ref(s: &str) -> Option<(usize, usize)> {
-    let s = s.trim().to_uppercase();
-    if s.is_empty() {
-        return None;
-    }
-    let first_char = s.chars().next()?;
-    if !first_char.is_ascii_alphabetic() {
-        return None;
-    }
-    let col = (first_char as u32) as i32 - ('A' as u32) as i32;
-    if !(0..10).contains(&col) {
-        return None;
-    }
-    let row_str = &s[1..];
-    let row = row_str.parse::<usize>().ok()?.checked_sub(1)?;
-    if row >= 30 {
-        return None;
-    }
-    Some((row, col as usize))
-}
-
-/// Helper to evaluate formulas starting with '=' or cell references in the workbook
-fn evaluate_cell(
-    row: usize,
-    col: usize,
-    wb: &loki_sheet_model::Workbook,
-    visited: &mut HashSet<(usize, usize)>,
-) -> String {
-    if visited.contains(&(row, col)) {
-        return "#REF!".to_string();
-    }
-    visited.insert((row, col));
-
-    let sheet = match wb.get_sheet(0) {
-        Some(s) => s,
-        None => {
-            visited.remove(&(row, col));
-            return "".to_string();
-        }
-    };
-
-    let cell = match sheet.get_cell(row as u32, col as u32) {
-        Some(c) => c,
-        None => {
-            visited.remove(&(row, col));
-            return "".to_string();
-        }
-    };
-
-    let Some(formula_raw) = &cell.formula else {
-        visited.remove(&(row, col));
-        return cell.value.clone();
-    };
-
-    let formula = formula_raw.trim().to_uppercase();
-    let result = if formula.starts_with("SUM(") && formula.ends_with(')') {
-        let range_str = &formula[4..formula.len() - 1];
-        if let Some((start, end)) = range_str.split_once(':') {
-            if let (Some((r1, c1)), Some((r2, c2))) = (parse_cell_ref(start), parse_cell_ref(end)) {
-                let mut sum = 0.0;
-                let min_r = r1.min(r2);
-                let max_r = r1.max(r2);
-                let min_c = c1.min(c2);
-                let max_c = c1.max(c2);
-                for r in min_r..=max_r {
-                    for c in min_c..=max_c {
-                        let cell_val_str = evaluate_cell(r, c, wb, visited);
-                        if let Ok(num) = cell_val_str.parse::<f64>() {
-                            sum += num;
-                        }
-                    }
-                }
-                sum.to_string()
-            } else {
-                "#VALUE!".to_string()
-            }
-        } else {
-            "#VALUE!".to_string()
-        }
-    } else {
-        // Simple expression parser for B2-B3-B4 or B2+B3
-        let mut tokens_list = Vec::new();
-        let mut current_token = String::new();
-        for ch in formula.chars() {
-            if ch == '+' || ch == '-' {
-                if !current_token.trim().is_empty() {
-                    tokens_list.push(current_token.trim().to_string());
-                }
-                tokens_list.push(ch.to_string());
-                current_token = String::new();
-            } else {
-                current_token.push(ch);
-            }
-        }
-        if !current_token.trim().is_empty() {
-            tokens_list.push(current_token.trim().to_string());
-        }
-
-        if tokens_list.is_empty() {
-            "0".to_string()
-        } else {
-            let mut total = 0.0;
-            let mut next_op = '+';
-            let mut first = true;
-
-            for token in tokens_list {
-                if token == "+" {
-                    next_op = '+';
-                } else if token == "-" {
-                    next_op = '-';
-                } else {
-                    let val_f = if let Some((r, c)) = parse_cell_ref(&token) {
-                        let cell_val_str = evaluate_cell(r, c, wb, visited);
-                        cell_val_str.parse::<f64>().unwrap_or(0.0)
-                    } else {
-                        token.parse::<f64>().unwrap_or(0.0)
-                    };
-
-                    if first {
-                        total = val_f;
-                        first = false;
-                    } else if next_op == '+' {
-                        total += val_f;
-                    } else {
-                        total -= val_f;
-                    }
-                }
-            }
-            total.to_string()
-        }
-    };
-
-    visited.remove(&(row, col));
-    result
-}
-
-fn format_evaluated_value(val_str: &str, format: &loki_sheet_model::CellStyle) -> String {
-    if let Ok(num) = val_str.parse::<f64>() {
-        match format.num_format {
-            loki_sheet_model::NumberFormat::Currency => format!("${:.2}", num),
-            loki_sheet_model::NumberFormat::Percent => format!("{:.1}%", num * 100.0),
-            loki_sheet_model::NumberFormat::General => val_str.to_string(),
-        }
-    } else {
-        val_str.to_string()
-    }
-}
 
 /// Helper to mutate Loro cells in-place
 fn mutate_cell(
@@ -510,8 +361,12 @@ pub(super) fn EditorInner(path: String) -> Element {
 
     let active_coords = selected_cell();
 
+    // Grid extent follows the workbook's used range (clamped), so data outside
+    // the old fixed A1:J30 window is visible and editable.
+    let (num_rows, num_cols) = grid_dimensions(&workbook_snap.read());
+
     let ref_text = match active_coords {
-        Some((r, c)) => format!("{}{}", COLS[c], r + 1),
+        Some((r, c)) => format!("{}{}", col_to_label(c), r + 1),
         None => "".to_string(),
     };
 
@@ -935,7 +790,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                             ),
                         }
                         // Column Labels
-                        for (col_idx, col_name) in COLS.iter().enumerate() {
+                        for col_idx in 0..num_cols {
                             div {
                                 style: format!(
                                     "width: 100px; height: 26px; background: {bg}; \
@@ -947,13 +802,13 @@ pub(super) fn EditorInner(path: String) -> Element {
                                     border = tokens::COLOR_BORDER_DEFAULT,
                                     fg = tokens::COLOR_TEXT_PRIMARY,
                                 ),
-                                "{col_name}"
+                                "{col_to_label(col_idx)}"
                             }
                         }
                     }
 
                     // Grid Body Rows
-                    for row_idx in 0..30 {
+                    for row_idx in 0..num_rows {
                         div {
                             style: "display: flex; flex-direction: row;",
                             // Sticky Row Header
@@ -972,7 +827,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                             }
 
                             // Row Cells
-                            for col_idx in 0..10 {
+                            for col_idx in 0..num_cols {
                                 {
                                     let is_sel = is_cell_selected(row_idx, col_idx);
                                     let is_edit = is_cell_editing(row_idx, col_idx);
