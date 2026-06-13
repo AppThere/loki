@@ -57,9 +57,16 @@ Verified still-open items worth prioritising:
 
 ## 2. Feature enhancements
 
-- **Save As / Ctrl+S in `loki-text`.** The spreadsheet has `pick_file_to_save`;
-  `loki-text` does not, so untitled documents can never be persisted. Lift the
-  save-picker into shared code and bind `Ctrl/Cmd+S`.
+- **~~Save As / Ctrl+S in `loki-text`~~ — already implemented.** Correcting an
+  earlier error in this document: `loki-text` *does* have Save As. `Ctrl/Cmd+S`
+  is bound in `editor_keydown.rs:61` (bumps a `save_request` signal), the
+  `save_as` callback in `editor_inner.rs:384` runs the platform picker
+  (`pick_file_to_save`), exports DOCX via `export_document_to_token`, repoints
+  the tab, records the file in recents, and navigates to it; the ribbon Save
+  button routes untitled documents to the same flow. The remaining save gaps
+  are **ODT export** (still a stub — `SaveError::UnsupportedFormat`) and
+  **per-tab edit retention on tab switch** (audit F3, partially wired:
+  `is_dirty` is now set/cleared in `editor_inner.rs`).
 - **Selection-aware typing & clipboard.** Typing/Backspace over an active
   selection should replace it; add cut/copy/paste. Currently insertion happens
   at the focus without deleting the selection (also noted for the reflow view in
@@ -117,34 +124,41 @@ Remaining items from `memory-audit-2026-06-12.md` that are still *Recommended*:
 
 ## 5. Test coverage
 
-718 `#[test]` functions today, but coverage is very uneven:
+Coverage was very uneven across crates. This branch added the first tests to
+three previously-uncovered crates and corrected an i18n bug along the way:
 
-| Crate | Tests | Note |
+| Crate | Tests (before → after) | Note |
 |---|---|---|
-| loki-odf / loki-ooxml / loki-doc-model / loki-layout | 176 / 160 / 132 / 124 | strong |
-| **loki-opc** | 10 | thin for a crate going public — add round-trip + deviation-shim + zip-bomb-limit tests |
-| **loki-spreadsheet, loki-presentation** | **0** | no tests on the app/editor logic |
-| **loki-sheet-model, loki-i18n, loki-fonts** | **0** | pure logic crates, cheap to cover |
-| **appthere-ui, appthere-canvas** | **0** | token/cache logic is unit-testable |
+| loki-odf / loki-ooxml / loki-doc-model / loki-layout | 176 / 160 / 132 / 124 | strong (unchanged) |
+| **loki-opc** | **10 → 27** | added `tests/api_tests.rs`: PartName grammar, ContentTypeMap, RelationshipSet, `.rels` + content-types round-trips, compat shims, `resolve_relative_reference`, full package ZIP round-trip |
+| **loki-sheet-model** | **0 → 13** | added `tests/round_trip.rs`: model invariants + full Loro CRDT round-trip (metadata, formulas, styles, multi-sheet, high coordinates, idempotence) |
+| **loki-i18n** | **0 → 6** | added loader unit tests; **fixed** the `en-US-posix` fallback bug (it was treated as `en-US`, got no fallback, and rendered raw keys) by comparing the parsed `LanguageIdentifier` instead of `starts_with("en-US")` |
+| **loki-spreadsheet, loki-presentation** | **0** | still uncovered — app/editor logic; needs render-free helpers extracted to test |
+| **loki-fonts** | **0** | public API is a no-op off-Android; not worth testing headless |
+| **appthere-ui, appthere-canvas** | **0** | token/cache logic is unit-testable (next target) |
 
-Highest-leverage, lowest-cost additions:
+Remaining highest-leverage additions:
 
-1. `loki-opc`: assert the zip-bomb budgets actually trigger
-   (`EntryTooLarge`/`PackageTooLarge`), the compat shims emit the right
-   `DeviationWarning`, and `resolve_relative_reference` handles `../` targets.
-2. `loki-i18n`: the `en-US-posix` fallback bug (raw keys rendered) is a
-   one-test regression guard.
-3. `loki-sheet-model`: cell/range model invariants.
+1. **`loki-opc` zip-bomb budgets** — the `EntryTooLarge`/`PackageTooLarge`
+   guards are still only covered by the inline `limits.rs` tests; an end-to-end
+   test that feeds a crafted over-budget archive through `Package::open` would
+   lock in the S1 fix at the public boundary.
+2. **`appthere-ui` / `appthere-canvas`** — extract token/tier-policy logic into
+   pure functions and unit-test them.
+3. **Spreadsheet formula engine** — once it grows past `SUM`, it needs a table
+   of input→expected cases.
 
 ---
 
 ## Recommended priority order
 
-1. **F1 presentation data-loss** + **Save As/Ctrl+S in loki-text** — users can
-   still lose work.
+1. **F1 presentation data-loss** — opening a real `.pptx`/`.odp` shows a
+   hardcoded demo and silently discards edits; still the biggest data-loss risk
+   now that loki-text Save As is in place.
 2. **C4 Unicode cursor offsets** — silent corruption for non-ASCII editing.
-3. **Test coverage for the zero-test crates** and `loki-opc` budgets — lock in
-   the security fixes before they regress.
+3. **Remaining test coverage** — `loki-opc` zip-bomb budgets at the public
+   boundary, then `appthere-ui`/`appthere-canvas` (this branch covered
+   loki-opc/loki-sheet-model/loki-i18n).
 4. **Quality sweep**: word-salad docs in remaining crates, 300-line splits,
    i18n the app crates, delete root junk.
 5. **Performance**: page virtualization + inactive-tab eviction (largest

@@ -20,7 +20,7 @@ pub struct PartData {
 }
 
 impl PartData {
-    /// Constructs structural payload.
+    /// Creates a part from raw `bytes` and a `media_type` (with no growth hint).
     pub fn new(bytes: Vec<u8>, media_type: impl Into<String>) -> Self {
         Self {
             bytes,
@@ -29,7 +29,7 @@ impl PartData {
         }
     }
 
-    /// Maps simple `xml` default strings automatically onto parsed parts.
+    /// Creates an `application/xml` part from raw `bytes`.
     pub fn xml(bytes: Vec<u8>) -> Self {
         Self::new(bytes, "application/xml")
     }
