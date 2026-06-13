@@ -4,6 +4,7 @@
 //! `loki-presentation` library — Dioxus Native presentation components and routing.
 
 pub mod app;
+pub mod error;
 pub mod new_document;
 pub mod recent_documents;
 pub mod routes;

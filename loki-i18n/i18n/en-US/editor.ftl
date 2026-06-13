@@ -22,6 +22,12 @@ editor-slide-label = Slide { $current } of { $total }
 # Presentation preview banner — shown because .pptx/.odp loading and saving
 # are not yet implemented; the slides on screen are a non-editable sample.
 editor-presentation-preview = Preview only — opening and saving presentations isn't supported yet. These sample slides are not your file, and changes won't be saved.
+# Shown when a real .pptx is opened (read-only import).
+editor-presentation-readonly = Read-only preview — editing and saving presentations is coming soon.
+# Shown when an opened presentation has no slides.
+editor-presentation-empty = This presentation has no slides.
+# Shown when a presentation file fails to open.
+editor-load-failed = Could not open this presentation: { $reason }
 
 # Font warning banner
 editor-font-substitution-title = Font Substitution

@@ -5,6 +5,8 @@
 
 mod editor_error_view;
 mod editor_inner;
+mod editor_load;
+mod slide_view;
 
 use dioxus::prelude::*;
 use editor_inner::EditorInner;

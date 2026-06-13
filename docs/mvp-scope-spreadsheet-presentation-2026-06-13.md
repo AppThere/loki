@@ -129,16 +129,18 @@ foundation, not just UI polish.
    (`presentation_to_loro` / `loro_to_presentation`), slide-snapshot granularity
    for the MVP.
 
-4. **Wire load + save into the editor.** Replace the hardcoded `vec![Slide…]`
-   with `load_document(path)` (import → model → signal) following the
-   `loki-spreadsheet` `editor_load.rs` pattern, and add Save / Save As
-   (`pick_file_to_save`, exporter, recents, dirty flag) following the
-   `loki-text`/`loki-spreadsheet` save flow.
+4. **Wire load into the editor — DONE (read-only); save pending.** Opening a
+   file now imports it via `PptxImport` (`editor_load::load_presentation`,
+   `use_resource` on the route path) and renders the **real slides** instead of
+   the hardcoded demo deck. `slide_view` flattens each slide to title / subtitle
+   / bullets (see item 5). Load failures surface through `EditorErrorView`.
+   **Remaining:** editing the model and Save / Save As (needs PPTX export).
 
-5. **Reconcile the rendering approach.** Decide whether MVP keeps the current
-   HTML/CSS slide editor (fastest path; just bind it to the model) or moves to
-   the Vello GPU canvas the deps imply. **Recommendation:** keep HTML/CSS for
-   MVP and bind it to the real model + persistence; defer the GPU canvas.
+5. **Rendering approach — decided: HTML/CSS for MVP.** The editor stays on the
+   HTML/CSS renderer and binds to the model. Because Blitz has no absolute
+   positioning, `slide_view` renders a readable title/subtitle/bullet flow
+   rather than pixel-exact shape placement; faithful per-shape positioning is
+   the deferred GPU-canvas follow-up.
 
 6. **Fix the known editor bugs while rebuilding** (from `audit-2026-06-10.md`
    F1/F7): in-memory edits lost on tab switch; index-based slide keys
