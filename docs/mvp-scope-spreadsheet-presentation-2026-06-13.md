@@ -48,16 +48,23 @@ and `loki-presentation` and the crates they depend on.
    - *Remaining follow-up:* more functions (`COUNTIF`, `ROUND`, text fns),
      string/boolean value types, and `<`/`>`/`=` comparisons for richer `IF`.
 
-3. **Save/load errors are invisible to the user** — every failure in
-   `save_document` and the mutation path is `tracing::error!` only
-   (`editor_inner.rs:295,306,361,369,392,412`); there is no error banner like
-   the one `loki-text` shows. A silent save failure looks like success.
-   - *Fix:* add an error/toast signal (loki-text's `save_message` pattern) and
-     surface load/save/mutation failures.
+3. **~~Save errors are invisible to the user~~ — DONE (this branch).** `save_document`
+   now threads a `save_message` signal: picker, token, open-write, and export
+   failures set a localised message (`editor-save-error` / `error-file-picker`),
+   and a successful save sets `editor-save-success`. A dismissible banner renders
+   the message between the title bar and the grid. (Load errors were already
+   surfaced via `EditorErrorView`.)
+   - *Remaining follow-up:* surface the in-edit mutation-sync failures
+     (`apply_change`) too; today those remain `tracing`-only.
 
-4. **No keyboard cell navigation.** Selection is click-only; there is no
-   Arrow/Tab/Enter movement between cells and no Enter-commits-and-moves-down in
-   the grid. This is a baseline spreadsheet usability expectation.
+4. **~~No keyboard cell navigation~~ — DONE (this branch).** The grid container is
+   now focusable (`tabindex="0"`); when not editing, **Arrow keys** move the
+   selection, **Tab/Shift+Tab** move horizontally, **Enter** moves down, **F2**
+   enters edit mode, and **Delete/Backspace** clears the cell. (Runtime
+   focus/key delivery depends on the blitz-dom focus patch and is pending
+   on-device verification.)
+   - *Remaining follow-up:* type-to-edit (begin editing on a printable key),
+     and range selection via Shift+Arrow.
 
 5. **Dead chrome:** ribbon tab selection (`on_tab_select` no-op), ribbon
    collapse (`on_toggle_collapse` no-op), and zoom (`zoom_percent` hardcoded
@@ -70,10 +77,11 @@ frozen panes, cell comments, conditional formatting, find/replace, copy/paste of
 ranges, column/row resize and insert/delete.
 
 ### Effort estimate
-**Small–medium.** Items 1–3 are the core; none require new crates. The model
+**Small–medium.** Items 1–4 are the core; none require new crates. The model
 and I/O already exist and are tested. This is the cheaper of the two apps to
-finish. **Items 1 and 2 are now done** (see status above); items 3 (surface
-save/load errors) and 4 (keyboard cell navigation) remain for a usable MVP.
+finish. **Items 1–4 are now done** (see status above); only item 5 (dead
+ribbon/zoom chrome) remains, plus the noted follow-ups (grid virtualization,
+richer formulas, type-to-edit). The spreadsheet is at or near a usable MVP.
 
 ---
 

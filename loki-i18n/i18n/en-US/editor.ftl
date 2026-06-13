@@ -33,6 +33,7 @@ editor-font-dismiss = Dismiss
 editor-save-success = Document saved
 editor-save-error = Could not save: { $reason }
 editor-save-untitled-hint = Use File → Save As to save new documents
+editor-dismiss-aria = Dismiss
 
 # Style picker / style editor chrome
 editor-tab-close-aria = Close tab

@@ -191,12 +191,14 @@ fn save_document(
     mut tabs: Signal<Vec<crate::tabs::OpenTab>>,
     active_tab: Signal<usize>,
     navigator: Navigator,
+    mut save_message: Signal<Option<String>>,
 ) {
     let active_tab_idx = *active_tab.peek();
     let current_path = path_signal.peek().clone();
     let wb = workbook_snap.peek().clone();
 
     spawn(async move {
+        save_message.set(None); // clear any previous status
         let token = if crate::new_document::is_untitled(&current_path) {
             let picker = FilePicker::new();
             let opts = SaveOptions {
@@ -207,9 +209,9 @@ fn save_document(
             };
             match picker.pick_file_to_save(opts).await {
                 Ok(Some(t)) => t,
-                Ok(None) => return,
+                Ok(None) => return, // user cancelled — not an error
                 Err(e) => {
-                    tracing::error!("Failed to pick save path: {:?}", e);
+                    save_message.set(Some(fl!("error-file-picker", err = e.to_string())));
                     return;
                 }
             }
@@ -217,50 +219,51 @@ fn save_document(
             match FileAccessToken::deserialize(&current_path) {
                 Ok(t) => t,
                 Err(e) => {
-                    tracing::error!("Failed to deserialize path token: {:?}", e);
+                    save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
                     return;
                 }
             }
         };
 
         let format = detect_format(&token);
-        match token.open_write() {
-            Ok(mut writer) => {
-                let res = match format {
-                    DocumentFormat::Xlsx => {
-                        loki_ooxml::xlsx::export::XlsxExport::export(&wb, &mut *writer)
-                            .map_err(|e| e.to_string())
-                    }
-                    DocumentFormat::Ods => {
-                        loki_odf::OdsExport::export(&wb, &mut *writer).map_err(|e| e.to_string())
-                    }
-                    DocumentFormat::Unsupported(ext) => {
-                        Err(format!("Unsupported format: .{}", ext))
-                    }
-                };
-
-                if let Err(e) = res {
-                    tracing::error!("Failed to export workbook: {:?}", e);
-                } else {
-                    let new_path = token.serialize();
-                    let new_title = display_title_from_path(&new_path);
-
-                    path_signal.set(new_path.clone());
-
-                    if active_tab_idx > 0 {
-                        let mut tabs_mut = tabs.write();
-                        if let Some(tab) = tabs_mut.get_mut(active_tab_idx - 1) {
-                            tab.path = new_path.clone();
-                            tab.title = new_title;
-                            tab.is_dirty = false;
-                        }
-                    }
-
-                    navigator.push(Route::Editor { path: new_path });
-                }
-            }
+        let mut writer = match token.open_write() {
+            Ok(w) => w,
             Err(e) => {
-                tracing::error!("Failed to open file for writing: {:?}", e);
+                save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
+                return;
+            }
+        };
+
+        let res = match format {
+            DocumentFormat::Xlsx => loki_ooxml::xlsx::export::XlsxExport::export(&wb, &mut *writer)
+                .map_err(|e| e.to_string()),
+            DocumentFormat::Ods => {
+                loki_odf::OdsExport::export(&wb, &mut *writer).map_err(|e| e.to_string())
+            }
+            DocumentFormat::Unsupported(ext) => Err(format!("Unsupported format: .{ext}")),
+        };
+
+        match res {
+            Err(e) => {
+                save_message.set(Some(fl!("editor-save-error", reason = e)));
+            }
+            Ok(()) => {
+                let new_path = token.serialize();
+                let new_title = display_title_from_path(&new_path);
+
+                path_signal.set(new_path.clone());
+
+                if active_tab_idx > 0 {
+                    let mut tabs_mut = tabs.write();
+                    if let Some(tab) = tabs_mut.get_mut(active_tab_idx - 1) {
+                        tab.path = new_path.clone();
+                        tab.title = new_title;
+                        tab.is_dirty = false;
+                    }
+                }
+
+                save_message.set(Some(fl!("editor-save-success")));
+                navigator.push(Route::Editor { path: new_path });
             }
         }
     });
@@ -318,6 +321,9 @@ pub(super) fn EditorInner(path: String) -> Element {
         mut selected_cell,
         mut editing_cell,
     } = use_editor_state();
+
+    // Transient save status (success or error) shown as a dismissible banner.
+    let mut save_message = use_signal(|| Option::<String>::None);
 
     // ── Synchronous Path Sync & State Reset ──────────────────────────────────
     sync_path_and_reset(
@@ -493,6 +499,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                         tabs,
                         active_tab,
                         navigator,
+                        save_message,
                     );
                 },
                 span { "Save" }
@@ -774,8 +781,65 @@ pub(super) fn EditorInner(path: String) -> Element {
                 }
 
                 // ── Grid Area ────────────────────────────────────────────────────
+                //
+                // `tabindex` makes the grid focusable so it can receive key events
+                // (clicking a cell focuses this container via the blitz-dom focus
+                // patch). Arrow keys / Tab / Enter move the selection, F2 edits,
+                // Delete/Backspace clears the cell.
                 div {
-                    style: "flex: 1; overflow: auto; display: flex; flex-direction: column; background: #FFFFFF; position: relative;",
+                    style: "flex: 1; overflow: auto; display: flex; flex-direction: column; background: #FFFFFF; position: relative; outline: none;",
+                    tabindex: "0",
+                    onkeydown: move |e| {
+                        if editing_cell.peek().is_some() {
+                            return; // the cell input handles keys while editing
+                        }
+                        let Some((r, c)) = *selected_cell.peek() else {
+                            return;
+                        };
+                        match e.key() {
+                            Key::ArrowUp => {
+                                e.prevent_default();
+                                selected_cell.set(Some((r.saturating_sub(1), c)));
+                            }
+                            Key::ArrowDown => {
+                                e.prevent_default();
+                                selected_cell.set(Some(((r + 1).min(num_rows - 1), c)));
+                            }
+                            Key::ArrowLeft => {
+                                e.prevent_default();
+                                selected_cell.set(Some((r, c.saturating_sub(1))));
+                            }
+                            Key::ArrowRight => {
+                                e.prevent_default();
+                                selected_cell.set(Some((r, (c + 1).min(num_cols - 1))));
+                            }
+                            Key::Enter => {
+                                e.prevent_default();
+                                selected_cell.set(Some(((r + 1).min(num_rows - 1), c)));
+                            }
+                            Key::Tab => {
+                                e.prevent_default();
+                                let nc = if e.modifiers().shift() {
+                                    c.saturating_sub(1)
+                                } else {
+                                    (c + 1).min(num_cols - 1)
+                                };
+                                selected_cell.set(Some((r, nc)));
+                            }
+                            Key::F2 => {
+                                e.prevent_default();
+                                editing_cell.set(Some((r, c)));
+                            }
+                            Key::Delete | Key::Backspace => {
+                                e.prevent_default();
+                                apply_change(loro_doc, workbook_snap, tabs, active_tab_idx, |ldoc| {
+                                    mutate_cell(ldoc, 0, r as u32, c as u32, String::new(), None)
+                                });
+                                sync_undo_redo(loro_doc, undo_manager, can_undo, can_redo);
+                            }
+                            _ => {}
+                        }
+                    },
 
                     // Sticky Header Row
                     div {
@@ -965,6 +1029,23 @@ pub(super) fn EditorInner(path: String) -> Element {
                 span {
                     style: "font-size: 11px; color: #888888;",
                     "Local File • XLSX / ODS"
+                }
+            }
+
+            // ── Save status banner (dismissible) ─────────────────────────────
+            if let Some(msg) = save_message() {
+                div {
+                    style: "display: flex; flex-direction: row; justify-content: space-between; \
+                            align-items: center; padding: 6px 16px; background: #2A3A4A; \
+                            border-bottom: 1px solid #3A4A5A; color: #DCEAF6; font-size: 12px;",
+                    span { "{msg}" }
+                    button {
+                        style: "background: none; border: none; color: #DCEAF6; cursor: pointer; \
+                                font-size: 14px; padding: 0 4px;",
+                        aria_label: fl!("editor-dismiss-aria"),
+                        onclick: move |_| { save_message.set(None); },
+                        "\u{00D7}"
+                    }
                 }
             }
 
