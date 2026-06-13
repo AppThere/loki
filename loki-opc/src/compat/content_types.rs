@@ -1,13 +1,16 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
 
-//! Extends media type references parsing components mapping fallbacks evaluating bounds enforcing restrictions providing metadata attributes tracking parameters efficiently supporting missing properties cleanly mapping identifiers natively supporting [MS-OI29500] / [MS-OE376].
+//! Content-types compatibility shims: fallback media types for unmapped
+//! extensions and locating a `[Content_Types].xml` part that some writers place
+//! off-root or with non-canonical casing ([MS-OI29500] / [MS-OE376]).
 
 #[allow(unused_imports)]
 use crate::error::DeviationWarning;
 use zip::ZipArchive;
 
-/// Maps extensions implicitly injecting identifiers mapping elements avoiding failures locating parameters accurately generating types defining constraints perfectly providing components comprehensively resolving constraints uniquely substituting variables properly preventing crashes directly tracking variants.
+/// Returns a best-guess media type for a file `extension` when the package
+/// omits it from `[Content_Types].xml`. Returns `""` for unknown extensions.
 pub fn fallback_media_type(extension: &str) -> &'static str {
     match extension.to_ascii_lowercase().as_str() {
         "xml" => "application/xml",
@@ -24,7 +27,11 @@ pub fn fallback_media_type(extension: &str) -> &'static str {
     }
 }
 
-/// Identifies primary xml configuration metadata scanning maps locating definitions safely mapping paths ignoring explicit capitalizations executing fallbacks correctly tracking strings properly defining constraints matching outputs isolating values recursively evaluating limits strictly checking contents correctly finding structures properly resolving definitions matching boundaries perfectly targeting limits.
+/// Finds the index of the `[Content_Types].xml` entry in a ZIP archive.
+///
+/// Prefers the exact, spec-mandated root name. Outside the `strict` feature it
+/// also accepts a case-insensitive match anywhere in the archive, recording a
+/// [`DeviationWarning::ContentTypesNotAtRoot`]. Returns `None` if absent.
 #[allow(clippy::ptr_arg)]
 pub fn find_content_types<R: std::io::Read + std::io::Seek>(
     zip: &mut ZipArchive<R>,

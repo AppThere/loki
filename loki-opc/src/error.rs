@@ -9,74 +9,77 @@ use thiserror::Error;
 #[non_exhaustive]
 #[derive(Debug, Error)]
 pub enum OpcError {
-    /// Issued when a part name breaks the ABNF conventions defined in §6.2.2.
+    /// A part name violates the OPC ABNF grammar (§6.2.2).
     #[error("invalid part name {name:?}: {reason}")]
     InvalidPartName {
-        /// Attempted logical component address.
+        /// The offending part name.
         name: String,
         /// The violation encountered.
         reason: &'static str,
     },
 
-    /// Corrupt XML payload specifically mapping `[Content_Types].xml`.
+    /// `[Content_Types].xml` could not be parsed.
     #[error("invalid content types XML: {0}")]
     InvalidContentTypes(String),
 
-    /// Relationships missing required ID, targeting incorrect types, or breaking uniqueness.
+    /// A relationships part is malformed (missing id, bad target, or a
+    /// duplicate id).
     #[error("invalid relationships XML in {part:?}: {reason}")]
     InvalidRelationships {
-        /// Relationships component file.
+        /// The relationships part that failed to parse.
         part: String,
-        /// Descriptive error payload.
+        /// Human-readable description of the problem.
         reason: String,
     },
 
-    /// Thrown solely when `strict` forces checking for unique item maps failing case insensitivity rules.
+    /// Two part names collide case-insensitively (only raised under `strict`).
     #[error("duplicate part name (case-insensitive collision): {0:?} and {1:?}")]
     DuplicatePartName(String, String),
 
-    /// Passed through issues deriving from physical storage implementations.
+    /// Error from the underlying ZIP container.
     #[error("ZIP error: {0}")]
     Zip(#[from] zip::result::ZipError),
 
-    /// General syntax issues derived through validation handlers and payload parsers via `quick_xml`.
+    /// Error from the `quick_xml` parser.
     #[error("XML parse error: {0}")]
     Xml(#[from] quick_xml::Error),
 
-    /// I/O operations failed during access across file descriptors.
+    /// Underlying I/O failure.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
-    /// Blocked because ZIP implementations utilize LZMA, BZIP2, or other restricted compression values outside allowed standard.
+    /// A ZIP entry uses a compression method other than stored or deflate.
     #[error("unsupported ZIP compression method: {0}")]
     UnsupportedCompression(String),
 
-    /// Triggered initially upon package validation.
+    /// The archive has no `[Content_Types].xml` and is not a valid OPC package.
     #[error("missing [Content_Types].xml — not a valid OPC package")]
     MissingContentTypes,
 
-    /// Multiple `.core-properties` XML types present despite explicit restriction dictating only one allowed globally per §8.2.
+    /// More than one core-properties part is present; the spec allows at most
+    /// one (§8.2).
     #[error("multiple Core Properties parts found — spec allows at most one (§8.2)")]
     MultipleCorePropsParts,
 
-    /// Chronological schema violations via ISO parsing.
+    /// A core-properties date/time field is not valid ISO 8601 / W3CDTF.
     #[error("date/time parse error in core properties: {0}")]
     DateTimeParse(String),
 
-    /// Encountered missing values during file conversion, bypassing explicit mappings.
+    /// No content type could be resolved for a part.
     #[error("unknown media type for part {part:?} with extension {extension:?}")]
     UnknownMediaType {
-        /// Failing component address.
+        /// The part with no resolvable media type.
         part: String,
-        /// Corresponding native filesystem string.
+        /// The part's file extension.
         extension: String,
     },
 
-    /// Refused handling access to digital signatures intentionally.
+    /// The package uses digital signatures, which this version cannot read or
+    /// write (§10).
     #[error("digital signatures are not supported in loki-opc v0.1.0 (§10)")]
     DigitalSignaturesNotSupported,
 
-    /// Indicated when a searched logical name cannot map to physical assets directly.
+    /// A lookup referenced a part name that is not in the package.
     #[error("part not found: {0:?}")]
     PartNotFound(String),
 
@@ -97,7 +100,7 @@ pub enum OpcError {
     },
 }
 
-/// Convenience result mapped across internal IO parsing values and validations.
+/// Result alias for fallible `loki-opc` operations.
 pub type OpcResult<T> = Result<T, OpcError>;
 
 /// A deviation from ISO/IEC 29500-2:2021 observed during package open.
@@ -108,45 +111,45 @@ pub type OpcResult<T> = Result<T, OpcError>;
 pub enum DeviationWarning {
     /// A ZIP entry used `\` as a path separator. Normalised to `/` per §7.3.3.
     BackslashInPartName {
-        /// Captured violation literal.
+        /// The original entry name containing the backslash.
         original: String,
     },
 
     /// A part name used non-canonical percent-encoding. Re-encoded to canonical form per §7.3.4.
     NonCanonicalPercentEncoding {
-        /// Escaped strings failing structural checks.
+        /// The original, non-canonical part name.
         original: String,
-        /// Fallback successfully rewritten format matching the original intent.
+        /// The canonicalised part name that replaced it.
         normalised: String,
     },
 
-    /// A part had a missing or empty media type in [Content_Types].xml. A fallback was applied per §6.2.3.
+    /// A part had a missing or empty media type in `[Content_Types].xml`. A fallback was applied per §6.2.3.
     MissingMediaType {
-        /// Part identifier mapped correctly but skipped locally mapping types natively.
+        /// The part with no declared media type.
         part: String,
-        /// Applied implicit substitution identifier correctly identifying the part intent.
+        /// The fallback media type that was applied.
         fallback: String,
     },
 
     /// Two part names were equivalent under §6.3.5 case-folding. The first was retained.
     DuplicatePartName {
-        /// Primary mapping retained matching its origin sequence.
+        /// The part name that was kept.
         retained: String,
-        /// Secondary reference stripped from extraction output.
+        /// The colliding part name that was dropped.
         discarded: String,
     },
 
     /// Two relationships in one `.rels` file had the same `Id`. The first was retained per §6.5.3.
     DuplicateRelationshipId {
-        /// The duplicated id literal parsed matching both parts uniformly.
+        /// The duplicated relationship id.
         id: String,
-        /// Local package tracking mapping.
+        /// The relationships part the duplicate was found in.
         part: String,
     },
 
     /// `[Content_Types].xml` was not found at the root. A case-insensitive fallback match was used.
     ContentTypesNotAtRoot {
-        /// String sequence where the structural marker was found correctly.
+        /// The path where the content-types part was actually found.
         found_at: String,
     },
 }

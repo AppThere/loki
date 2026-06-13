@@ -1,7 +1,7 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
 
-//! Implements serde structural XML extraction directly utilizing derivations correctly isolating bounds dynamically loading properties efficiently.
+//! Deserialises the core-properties XML part via serde-derived structs.olating bounds dynamically loading properties efficiently.
 
 use quick_xml::de::from_reader;
 use serde::Deserialize;
@@ -56,7 +56,10 @@ fn parse_date(s: &str) -> OpcResult<chrono::DateTime<chrono::Utc>> {
         .map_err(|e| OpcError::DateTimeParse(e.to_string()))
 }
 
-/// Invokes standard XML parsing sequentially checking ISO date fields thoroughly bypassing complex native limits universally tracking structure strictly identifying structures securely extracting bounds successfully.
+/// Parses the core-properties part from its XML bytes.
+///
+/// Date fields are parsed as RFC 3339 / W3CDTF; a malformed date yields
+/// [`OpcError::DateTimeParse`] and malformed XML yields [`OpcError::Xml`].
 pub fn parse_core_properties(xml: &[u8]) -> OpcResult<CoreProperties> {
     let parsed: CorePropsXml = from_reader(xml).map_err(|e| {
         OpcError::Xml(quick_xml::Error::Io(

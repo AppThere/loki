@@ -1,7 +1,7 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
 
-//! Types and implementation of OPC package elements containing URI addressing handlers.
+//! OPC parts: validated [`PartName`]s and relationship-target addressing.
 
 pub mod addressing;
 mod name;

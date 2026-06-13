@@ -1,7 +1,7 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
 
-//! Validations and addressing properties governing package limits on valid names natively.
+//! Validated OPC part names: parsing and the grammar rules from §6.2.2.
 
 use crate::error::{OpcError, OpcResult};
 
@@ -78,10 +78,12 @@ impl PartName {
         Self::new_unchecked(s)
     }
 
-    /// Extracts structural limits avoiding multiple validation calls internally.
+    /// Wraps an already-validated string as a [`PartName`] without re-running
+    /// grammar validation.
     ///
     /// # Safety note
-    /// Used internally when ZIP contents are validated beforehand.
+    /// Only for internal use where the name is known to be valid (e.g. ZIP
+    /// entries already checked during read).
     pub fn new_unchecked(s: String) -> OpcResult<Self> {
         Ok(Self(s))
     }

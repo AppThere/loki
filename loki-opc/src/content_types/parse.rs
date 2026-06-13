@@ -1,7 +1,7 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
 
-//! Extraction bounds structurally matching format types binding identifiers properly parsing internal parameters.
+//! Parses `[Content_Types].xml` into a [`ContentTypeMap`].
 
 use quick_xml::Reader;
 use quick_xml::events::Event;
@@ -13,7 +13,8 @@ use crate::part::PartName;
 #[cfg(not(feature = "strict"))]
 use crate::error::DeviationWarning;
 
-/// Compiles tracking data validating components resolving ISO specification limits iteratively mapping targets internally.
+/// Parses `[Content_Types].xml` into a [`ContentTypeMap`], reading `Default`
+/// (by extension) and `Override` (by part name) elements.
 #[allow(clippy::ptr_arg)]
 pub fn parse_content_types(
     xml: &[u8],

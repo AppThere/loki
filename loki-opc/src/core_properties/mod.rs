@@ -1,7 +1,10 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
 
-//! Handling metadata extraction identifying creation, update schedules comprehensively matching properties strictly.
+//! OPC core properties (`/docProps/core.xml`) — Dublin Core document metadata
+//! such as title, creator, and the created/modified timestamps. Parsing and
+//! writing are gated behind the `serde` feature; without it the accessors are
+//! no-op stubs.
 
 use chrono::{DateTime, Utc};
 
@@ -32,34 +35,34 @@ pub fn write_core_properties(_props: &CoreProperties) -> crate::error::OpcResult
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CoreProperties {
-    /// Categorical type descriptor.
+    /// Document category.
     pub category: Option<String>,
-    /// Editing revision status.
+    /// Content status (e.g. "Draft", "Final").
     pub content_status: Option<String>,
-    /// Creation bounds mapping natively to W3CDTF chronological ISO.
+    /// Creation timestamp (serialised as W3CDTF/ISO 8601).
     pub created: Option<DateTime<Utc>>,
-    /// Identity string generating asset natively.
+    /// Name of the document's author.
     pub creator: Option<String>,
-    /// Contextual overview metadata segment.
+    /// Free-text description.
     pub description: Option<String>,
-    /// Structural identifier properties.
+    /// Unique identifier for the document.
     pub identifier: Option<String>,
-    /// Arbitrary tags defining metadata items.
+    /// Space- or comma-separated keywords.
     pub keywords: Option<String>,
-    /// Semantic language boundary descriptions.
+    /// Document language tag (e.g. "en-US").
     pub language: Option<String>,
-    /// Last editor name definitions recursively tracked across updates.
+    /// Name of the user who last modified the document.
     pub last_modified_by: Option<String>,
-    /// Chronological stamp for last physical export generation natively.
+    /// Timestamp of the last print.
     pub last_printed: Option<DateTime<Utc>>,
-    /// Mutational chronology tracked via standardized format constraints mapping internally.
+    /// Last-modification timestamp (serialised as W3CDTF/ISO 8601).
     pub modified: Option<DateTime<Utc>>,
-    /// Monotonic revision sequence number mapping file updates.
+    /// Revision number.
     pub revision: Option<String>,
-    /// Metadata subject parameters identifying specific content targets natively.
+    /// Document subject.
     pub subject: Option<String>,
-    /// Human-readable title defining root semantic scope comprehensively.
+    /// Document title.
     pub title: Option<String>,
-    /// Abstract configuration identifying parameters defining structural values explicitly tracking generation mapping bounds securely.
+    /// Version label.
     pub version: Option<String>,
 }

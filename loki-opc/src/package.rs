@@ -55,13 +55,13 @@ impl Package {
 
     /// Open a package from a reader.
     ///
-    /// Reads the ZIP structure, validates [Content_Types].xml and all
+    /// Reads the ZIP structure, validates `[Content_Types].xml` and all
     /// relationship parts, and resolves all part names per §7.3.
     /// Deviation handling is applied automatically unless the `strict`
     /// feature is enabled.
     pub fn open(mut reader: impl Read + Seek) -> OpcResult<Self> {
-        // ZIP handling is deferred to the reader module internally,
-        // which parses `[Content_Types].xml` and subsequent `.rels` metadata files natively.
+        // ZIP handling is delegated to the reader module, which parses
+        // `[Content_Types].xml` and the `.rels` parts.
         crate::zip::read::read_package_from_zip(&mut reader)
     }
 
@@ -114,7 +114,7 @@ impl Package {
         self.parts.keys()
     }
 
-    /// Package-level parts map strictly for read operations natively.
+    /// Read-only access to the internal part map (used by the serializer).
     pub(crate) fn parts_map(&self) -> &HashMap<PartName, PartData> {
         &self.parts
     }
