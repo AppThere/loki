@@ -38,8 +38,8 @@ pub use id::ShapeId;
 pub use path::{Path, PathSegment};
 pub use preset::PresetShape;
 pub use shape::{
-    Geometry, GeometryShape, Group, ImageFormat, ImageRef, ImageShape, Shape, ShapeKind,
-    ShapeTransform,
+    Geometry, GeometryShape, Group, ImageFormat, ImageRef, ImageShape, ImageSource, Shape,
+    ShapeKind, ShapeTransform,
 };
 pub use style::{Fill, GradientStop, LineCap, LineDash, LineJoin, LinearGradient, Stroke};
 pub use text::{TextAlign, TextBody, TextParagraph, TextRun, TextRunProps, VerticalAnchor};

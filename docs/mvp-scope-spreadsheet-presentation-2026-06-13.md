@@ -111,23 +111,23 @@ foundation, not just UI polish.
 
 ### MVP gaps (build order)
 
-1. **Define a presentation document model.** New crate
-   `loki-presentation-model` (mirroring `loki-sheet-model`): `Presentation`,
-   `Slide`, `Shape`/`TextBox` (title, body, bullets), basic theme/colours, slide
-   size. Keep it format-neutral.
+1. **~~Define a presentation document model~~ — DONE.** Added `loki-graphics`
+   (shared vector model: shapes, paths, fills, text, drawing page) and
+   `loki-presentation-model` (`Presentation`/`Slide`/placeholders over it).
 
-2. **PPTX import/export.** Add a `pptx` feature/module to `loki-ooxml`
-   (PresentationML: `presentation.xml`, `slideN.xml`, slide layouts/masters,
-   relationships). This is the largest single piece — it is a new OOXML part
-   family on top of the existing OPC plumbing (`loki-opc` already handles the
-   ZIP/parts/relationships, which helps). Import-first is acceptable for MVP;
-   export can follow but is needed for "save without data loss."
-   - *Optional:* ODP via `loki-odf` for parity with the spreadsheet's dual
-     format support — can be deferred past MVP if PPTX lands first.
+2. **PPTX import/export — import DONE, export pending.** Added a `pptx`
+   feature/module to `loki-ooxml` (`PptxImport`): reads `presentation.xml`
+   (slide size + ordered slide list) and `slideN.xml` (`p:sp`/`p:pic` shapes —
+   transform, preset geometry, solid fill, line stroke, text, placeholder role)
+   into `loki-presentation-model`, over the existing `loki-opc` plumbing.
+   Unsupported constructs (groups, tables/charts, custom geometry, gradients,
+   layout-inherited/theme properties) are reported as warnings. **Remaining:**
+   PPTX **export** (needed for save-without-data-loss); slide layouts/masters
+   for inherited placeholder geometry; ODP via `loki-odf` (optional parity).
 
-3. **Loro CRDT bridge** for the model (mirroring `loki-sheet-model::loro_bridge`
-   and `loki-doc-model`), so editing, undo/redo, and save snapshots are
-   consistent with the other apps.
+3. **~~Loro CRDT bridge~~ — DONE.** `loki-presentation-model::loro_bridge`
+   (`presentation_to_loro` / `loro_to_presentation`), slide-snapshot granularity
+   for the MVP.
 
 4. **Wire load + save into the editor.** Replace the hardcoded `vec![Slide…]`
    with `load_document(path)` (import → model → signal) following the
