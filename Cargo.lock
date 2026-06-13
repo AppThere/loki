@@ -3815,6 +3815,14 @@ name = "loki-fonts"
 version = "0.1.0"
 
 [[package]]
+name = "loki-graphics"
+version = "0.1.0"
+dependencies = [
+ "loki-primitives",
+ "serde",
+]
+
+[[package]]
 name = "loki-i18n"
 version = "0.1.0"
 dependencies = [
@@ -3919,6 +3927,17 @@ dependencies = [
  "unicode-segmentation",
  "vello",
  "wgpu_context",
+]
+
+[[package]]
+name = "loki-presentation-model"
+version = "0.1.0"
+dependencies = [
+ "loki-graphics",
+ "loro",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
