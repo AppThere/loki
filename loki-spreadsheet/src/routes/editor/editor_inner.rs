@@ -67,6 +67,57 @@ fn mutate_cell(
     Ok(())
 }
 
+/// Default rendered column width in CSS px (when the document specifies none).
+const DEFAULT_COL_PX: f64 = 100.0;
+/// Resize clamps (CSS px).
+const MIN_COL_PX: f64 = 24.0;
+const MAX_COL_PX: f64 = 800.0;
+
+/// CSS px ↔ points (96 px/in vs 72 pt/in).
+fn px_to_pt(px: f64) -> f64 {
+    px * 72.0 / 96.0
+}
+fn pt_to_px(pt: f64) -> f64 {
+    pt * 96.0 / 72.0
+}
+
+/// In-progress column drag state (CSS px).
+#[derive(Clone, Copy, PartialEq)]
+struct ColResize {
+    col: usize,
+    start_x: f64,
+    start_px: f64,
+    current_px: f64,
+}
+
+/// Writes a column width (points) into the Loro sheet's `columns` map.
+fn mutate_column_width(
+    ldoc: &loro::LoroDoc,
+    sheet_idx: usize,
+    col: u32,
+    width_pt: f64,
+) -> Result<(), loro::LoroError> {
+    let sheets_list = ldoc.get_list(loki_sheet_model::loro_bridge::KEY_SHEETS);
+    let sheet_val = sheets_list
+        .get(sheet_idx)
+        .ok_or_else(|| loro::LoroError::internal("Sheet not found"))?;
+    let sheet_map = sheet_val
+        .into_container()
+        .ok()
+        .and_then(|c| c.into_map().ok())
+        .ok_or_else(|| loro::LoroError::internal("Sheet is not a map"))?;
+    let cols_map = match sheet_map.get("columns") {
+        Some(val) => val
+            .into_container()
+            .ok()
+            .and_then(|c| c.into_map().ok())
+            .ok_or_else(|| loro::LoroError::internal("Columns container is not a map"))?,
+        None => sheet_map.insert_container("columns", loro::LoroMap::new())?,
+    };
+    cols_map.insert(col.to_string().as_str(), width_pt)?;
+    Ok(())
+}
+
 /// Helper to mutate cell style properties in-place
 fn mutate_cell_style<F>(
     ldoc: &loro::LoroDoc,
@@ -370,6 +421,49 @@ pub(super) fn EditorInner(path: String) -> Element {
     // Grid extent follows the workbook's used range (clamped), so data outside
     // the old fixed A1:J30 window is visible and editable.
     let (num_rows, num_cols) = grid_dimensions(&workbook_snap.read());
+
+    // ── Column widths & drag-to-resize ─────────────────────────────────────────
+    let mut col_resize = use_signal(|| Option::<ColResize>::None);
+
+    // The rendered width (CSS px) of `col`: the live drag width while resizing,
+    // else the document's width, else the default.
+    let col_px = move |col: usize| -> f64 {
+        if let Some(r) = col_resize()
+            && r.col == col
+        {
+            return r.current_px;
+        }
+        workbook_snap
+            .read()
+            .get_sheet(0)
+            .and_then(|s| s.column_width(col as u32))
+            .map_or(DEFAULT_COL_PX, pt_to_px)
+    };
+
+    // Commit a column width (px) to the model through Loro.
+    let commit_col_width = move |col: usize, px: f64| {
+        let pt = px_to_pt(px.clamp(MIN_COL_PX, MAX_COL_PX));
+        apply_change(loro_doc, workbook_snap, tabs, active_tab_idx, |ldoc| {
+            mutate_column_width(ldoc, 0, col as u32, pt)
+        });
+        sync_undo_redo(loro_doc, undo_manager, can_undo, can_redo);
+    };
+
+    // Auto-fit: width to the widest cell text in the column.
+    let auto_fit_col = move |col: usize| {
+        let mut max_chars = col_to_label(col).len();
+        let wb = workbook_snap.read();
+        if let Some(sheet) = wb.get_sheet(0) {
+            for row in 0..num_rows {
+                if let Some(cell) = sheet.get_cell(row as u32, col as u32) {
+                    max_chars = max_chars.max(cell.value.chars().count());
+                }
+            }
+        }
+        drop(wb);
+        let px = (max_chars as f64 * 7.5 + 16.0).clamp(MIN_COL_PX, MAX_COL_PX);
+        commit_col_width(col, px);
+    };
 
     let ref_text = match active_coords {
         Some((r, c)) => format!("{}{}", col_to_label(c), r + 1),
@@ -789,6 +883,29 @@ pub(super) fn EditorInner(path: String) -> Element {
                 div {
                     style: "flex: 1; overflow: auto; display: flex; flex-direction: column; background: #FFFFFF; position: relative; outline: none;",
                     tabindex: "0",
+                    // COMPAT(dioxus-native): drag-to-resize relies on continuous
+                    // onmousemove during a button-held drag, which Blitz may not
+                    // deliver yet (needs runtime verification). Double-click
+                    // auto-fit uses only click events and is unaffected.
+                    onmousemove: move |e| {
+                        if let Some(mut r) = col_resize() {
+                            let x = e.client_coordinates().x;
+                            r.current_px = (r.start_px + (x - r.start_x)).clamp(MIN_COL_PX, MAX_COL_PX);
+                            col_resize.set(Some(r));
+                        }
+                    },
+                    onmouseup: move |_| {
+                        if let Some(r) = col_resize() {
+                            commit_col_width(r.col, r.current_px);
+                            col_resize.set(None);
+                        }
+                    },
+                    onmouseleave: move |_| {
+                        if let Some(r) = col_resize() {
+                            commit_col_width(r.col, r.current_px);
+                            col_resize.set(None);
+                        }
+                    },
                     onkeydown: move |e| {
                         if editing_cell.peek().is_some() {
                             return; // the cell input handles keys while editing
@@ -853,21 +970,44 @@ pub(super) fn EditorInner(path: String) -> Element {
                                 border = tokens::COLOR_BORDER_DEFAULT,
                             ),
                         }
-                        // Column Labels
+                        // Column Labels (with a right-edge resize handle)
                         for col_idx in 0..num_cols {
                             div {
                                 style: format!(
-                                    "width: 100px; height: 26px; background: {bg}; \
+                                    "width: {w}px; height: 26px; background: {bg}; \
                                      border-right: 1px solid {border}; border-bottom: 1px solid {border}; \
                                      box-sizing: border-box; \
-                                     display: flex; align-items: center; justify-content: center; \
+                                     display: flex; align-items: center; \
                                      font-size: 11px; font-weight: bold; color: {fg}; \
                                      flex-shrink: 0;",
+                                    w = col_px(col_idx),
                                     bg = if is_col_selected(col_idx) { "#CADAFC" } else { "#F0F0F0" },
                                     border = tokens::COLOR_BORDER_DEFAULT,
                                     fg = tokens::COLOR_TEXT_PRIMARY,
                                 ),
-                                "{col_to_label(col_idx)}"
+                                span {
+                                    style: "flex: 1; min-width: 0; text-align: center; overflow: hidden;",
+                                    "{col_to_label(col_idx)}"
+                                }
+                                // Drag to resize; double-click to auto-fit.
+                                div {
+                                    style: "width: 6px; height: 100%; cursor: col-resize; \
+                                            flex-shrink: 0; background: rgba(0,0,0,0.06);",
+                                    onmousedown: move |e| {
+                                        e.stop_propagation();
+                                        let start_px = col_px(col_idx);
+                                        col_resize.set(Some(ColResize {
+                                            col: col_idx,
+                                            start_x: e.client_coordinates().x,
+                                            start_px,
+                                            current_px: start_px,
+                                        }));
+                                    },
+                                    ondoubleclick: move |e| {
+                                        e.stop_propagation();
+                                        auto_fit_col(col_idx);
+                                    },
+                                }
                             }
                         }
                     }
@@ -923,7 +1063,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                                     rsx! {
                                         div {
                                             style: format!(
-                                                "width: 100px; height: 26px; \
+                                                "width: {w}px; height: 26px; \
                                                  border-right: 1px solid {border}; border-bottom: 1px solid {border}; \
                                                  display: flex; align-items: center; \
                                                  padding: 0 6px; box-sizing: border-box; overflow: hidden; \
@@ -936,6 +1076,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                                                  justify-content: {justify}; \
                                                  outline: {outline}; \
                                                  z-index: {z_index};",
+                                                w = col_px(col_idx),
                                                 border = tokens::COLOR_BORDER_DEFAULT,
                                                 bg_color = if is_sel { "#E8F0FE" } else { "#FFFFFF" },
                                                 font_weight = if fmt.bold { "bold" } else { "normal" },

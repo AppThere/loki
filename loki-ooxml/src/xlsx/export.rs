@@ -325,6 +325,13 @@ fn generate_shared_strings_xml(shared_strings: &[String]) -> String {
     xml
 }
 
+/// Converts a column width in points back to XLSX character units (inverse of
+/// [`crate::xlsx::import::xlsx_char_width_to_pt`]).
+fn pt_to_xlsx_char_width(pt: f64) -> f64 {
+    let px = pt * 96.0 / 72.0;
+    (px - crate::xlsx::import::CELL_PADDING_PX) / crate::xlsx::import::CHAR_WIDTH_PX
+}
+
 fn generate_sheet_xml(
     sheet: &Worksheet,
     shared_strings_map: &HashMap<String, usize>,
@@ -333,6 +340,22 @@ fn generate_sheet_xml(
     let mut xml = String::new();
     xml.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n");
     xml.push_str("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">\n");
+
+    // Custom column widths (<cols> must precede <sheetData> per the schema).
+    if !sheet.column_widths.is_empty() {
+        let mut cols: Vec<(u32, f64)> = sheet.column_widths.iter().map(|(&c, &w)| (c, w)).collect();
+        cols.sort_unstable_by_key(|&(c, _)| c);
+        xml.push_str("  <cols>\n");
+        for (c, pt) in cols {
+            let n = c + 1; // 1-based column index
+            let width = pt_to_xlsx_char_width(pt);
+            xml.push_str(&format!(
+                "    <col min=\"{n}\" max=\"{n}\" width=\"{width}\" customWidth=\"1\"/>\n"
+            ));
+        }
+        xml.push_str("  </cols>\n");
+    }
+
     xml.push_str("  <sheetData>\n");
 
     // Group and sort cells

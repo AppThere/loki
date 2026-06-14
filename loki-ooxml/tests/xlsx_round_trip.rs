@@ -277,3 +277,24 @@ fn test_xlsx_round_trip_basic() {
         }
     }
 }
+
+#[test]
+fn test_xlsx_column_widths_round_trip() {
+    let mut workbook = Workbook::new();
+    {
+        let sheet = workbook.get_sheet_mut(0).unwrap();
+        sheet.get_cell_mut(0, 0).value = "x".to_string();
+        sheet.set_column_width(0, 75.0);
+        sheet.set_column_width(2, 48.0);
+    }
+
+    let mut buf = Cursor::new(Vec::new());
+    XlsxExport::export(&workbook, &mut buf).unwrap();
+    let imported =
+        XlsxImport::import(Cursor::new(buf.into_inner()), XlsxImportOptions::default()).unwrap();
+
+    let sheet = imported.get_sheet(0).unwrap();
+    assert!((sheet.column_width(0).unwrap() - 75.0).abs() < 1e-6);
+    assert!((sheet.column_width(2).unwrap() - 48.0).abs() < 1e-6);
+    assert_eq!(sheet.column_width(1), None);
+}

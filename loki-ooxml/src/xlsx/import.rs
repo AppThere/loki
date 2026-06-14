@@ -384,6 +384,22 @@ fn parse_worksheet(
                     current_formula = None;
                     current_value.clear();
                 }
+                b"col" => {
+                    // <col min="1" max="3" width="12.5" customWidth="1"/> — widths
+                    // are in character units; 1-based, inclusive range.
+                    let min = local_attr_val(e, b"min").and_then(|s| s.parse::<u32>().ok());
+                    let max = local_attr_val(e, b"max").and_then(|s| s.parse::<u32>().ok());
+                    let width = local_attr_val(e, b"width").and_then(|s| s.parse::<f64>().ok());
+                    if let (Some(min), Some(max), Some(width)) = (min, max, width) {
+                        let pt = xlsx_char_width_to_pt(width);
+                        let lo = min.saturating_sub(1);
+                        // Cap the span so a "to the last column" range can't bloat the map.
+                        let hi = max.saturating_sub(1).min(lo.saturating_add(1023));
+                        for c in lo..=hi {
+                            worksheet.set_column_width(c, pt);
+                        }
+                    }
+                }
                 b"f" => {
                     in_f = true;
                 }
@@ -487,6 +503,24 @@ fn parse_worksheet(
     }
 
     Ok(worksheet)
+}
+
+// ── Column width conversion ──────────────────────────────────────────────────
+//
+// XLSX column width is in "character" units of the Normal-style font. Using the
+// default Calibri 11 max-digit-width (7px) plus 5px cell padding, and 96 px/in
+// vs 72 pt/in, the conversion is linear and exactly invertible by
+// `crate::xlsx::export::pt_to_xlsx_char_width`.
+
+/// Pixels per character (Calibri 11 max digit width).
+pub(crate) const CHAR_WIDTH_PX: f64 = 7.0;
+/// Fixed cell padding in pixels.
+pub(crate) const CELL_PADDING_PX: f64 = 5.0;
+
+/// Converts an XLSX character-unit column width to points.
+pub(crate) fn xlsx_char_width_to_pt(width_chars: f64) -> f64 {
+    let px = width_chars * CHAR_WIDTH_PX + CELL_PADDING_PX;
+    px * 72.0 / 96.0
 }
 
 // ── Part Name Resolution Helpers ─────────────────────────────────────────────

@@ -193,6 +193,21 @@ fn round_trip_preserves_high_cell_coordinates() {
 }
 
 #[test]
+fn round_trip_column_widths() {
+    let mut wb = Workbook::new();
+    {
+        let sheet = wb.get_sheet_mut(0).unwrap();
+        sheet.set_column_width(0, 120.5);
+        sheet.set_column_width(3, 48.0);
+    }
+    let back = round_trip(&wb);
+    let sheet = back.get_sheet(0).unwrap();
+    assert_eq!(sheet.column_width(0), Some(120.5));
+    assert_eq!(sheet.column_width(3), Some(48.0));
+    assert_eq!(sheet.column_width(1), None);
+}
+
+#[test]
 fn round_trip_is_idempotent() {
     let mut wb = Workbook::new();
     wb.meta.title = Some("T".to_string());
