@@ -3,55 +3,168 @@
 
 //! Presentation editor inner view.
 //!
-//! Loads the presentation from the route `path` via the PPTX importer and
-//! renders the real slides read-only. Faithful per-shape positioning needs the
-//! GPU slide canvas; until then [`super::slide_view`] flattens each slide to a
-//! title / subtitle / bullet flow (Blitz does not support absolute
-//! positioning). Editing and saving are tracked follow-ups.
+//! Loads a presentation from the route `path` (PPTX importer), holds it in an
+//! editable signal, and writes it back via the PPTX exporter on Save / Save As.
+//! Text editing flattens each slide to title/subtitle/bullets (Blitz has no
+//! absolute positioning); faithful per-shape placement is the GPU-canvas
+//! follow-up. Each edit writes back to the exact shape the value came from (see
+//! [`super::slide_view`] / [`super::edit`]).
 
 use appthere_ui::AtStatusBar;
 use appthere_ui::tokens;
 use dioxus::prelude::*;
+use loki_file_access::{FileAccessToken, FilePicker, SaveOptions};
 use loki_i18n::fl;
+use loki_presentation_model::Presentation;
 
+use super::edit;
+use super::editor_canvas::{EditMsg, SlideCanvas, SlideThumbnails};
 use super::editor_error_view::EditorErrorView;
 use super::editor_load::load_presentation;
-use super::slide_view::{SlideView, slide_views};
+use super::editor_save::export_to_token;
+use super::slide_view::slide_views;
+use crate::new_document::is_untitled;
+use crate::recent_documents::RecentDocuments;
+use crate::routes::Route;
+use crate::tabs::OpenTab;
 use crate::utils::display_title_from_path;
+
+const PPTX_MIME: &str = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 /// Presentation editor inner component.
 #[component]
 pub(super) fn EditorInner(path: String) -> Element {
-    let title = use_memo({
-        let path = path.clone();
-        move || display_title_from_path(&path)
-    });
-    let mut active_idx = use_signal(|| 0usize);
+    let navigator = use_navigator();
+    let mut tabs = use_context::<Signal<Vec<OpenTab>>>();
+    let recent_docs = use_context::<Signal<RecentDocuments>>();
 
-    // Load (and re-load on path change) the presentation off the file token.
-    let load = use_resource({
-        let path = path.clone();
-        move || {
-            let path = path.clone();
-            async move { load_presentation(path) }
+    let mut path_signal = use_signal(|| path.clone());
+    let mut doc = use_signal(|| Option::<Presentation>::None);
+    let mut load_error = use_signal(|| Option::<String>::None);
+    let mut active_idx = use_signal(|| 0usize);
+    let mut dirty = use_signal(|| false);
+    let mut save_message = use_signal(|| Option::<String>::None);
+
+    // Reset per-document state when the route path changes (tab switch / Save As
+    // navigation reuses this component instance).
+    if *path_signal.peek() != path {
+        path_signal.set(path.clone());
+        doc.set(None);
+        load_error.set(None);
+        active_idx.set(0);
+        dirty.set(false);
+        save_message.set(None);
+    }
+
+    // Load reactively on path; populate the editable doc once resolved.
+    let load = use_resource(move || async move { load_presentation(path_signal()) });
+    use_effect(move || {
+        if doc.peek().is_some() || load_error.peek().is_some() {
+            return;
+        }
+        match &*load.value().read_unchecked() {
+            Some(Ok(p)) => doc.set(Some(p.clone())),
+            Some(Err(e)) => load_error.set(Some(e.to_string())),
+            None => {}
         }
     });
 
-    // Extract render-ready, owned data from the resource so the borrow is
-    // released before building the view.
-    let value = load.value();
-    let (views, error): (Vec<SlideView>, Option<String>) = match &*value.read_unchecked() {
-        None => (Vec::new(), None),
-        Some(Ok(pres)) => (slide_views(pres), None),
-        Some(Err(e)) => (Vec::new(), Some(e.to_string())),
-    };
+    // Mirror the dirty flag onto the tab indicator.
+    use_effect(move || {
+        let d = dirty();
+        let p = path_signal.peek().clone();
+        let mut t = tabs.write();
+        if let Some(tab) = t.iter_mut().find(|tb| tb.path == p)
+            && tab.is_dirty != d
+        {
+            tab.is_dirty = d;
+        }
+    });
 
-    if let Some(message) = error {
+    let title = use_memo(move || display_title_from_path(&path_signal()));
+
+    // ── Save As ───────────────────────────────────────────────────────────────
+    let save_as = use_callback(move |_: ()| {
+        let Some(pres) = doc.peek().clone() else {
+            return;
+        };
+        let cur_path = path_signal.peek().clone();
+        let suggested = format!("{}.pptx", display_title_from_path(&cur_path));
+        let mut tabs = tabs;
+        let mut recent = recent_docs;
+        let nav = navigator;
+        spawn(async move {
+            let picker = FilePicker::new();
+            let opts = SaveOptions {
+                mime_type: Some(PPTX_MIME.to_string()),
+                suggested_name: Some(suggested),
+            };
+            match picker.pick_file_to_save(opts).await {
+                Ok(Some(token)) => match export_to_token(&token, &pres) {
+                    Ok(()) => {
+                        let new_path = token.serialize();
+                        let new_title = display_title_from_path(&new_path);
+                        {
+                            let mut t = tabs.write();
+                            if let Some(tab) = t.iter_mut().find(|tb| tb.path == cur_path) {
+                                tab.path = new_path.clone();
+                                tab.title = new_title.clone();
+                                tab.is_dirty = false;
+                            }
+                        }
+                        recent.write().record(new_path.clone(), new_title);
+                        recent.read().save();
+                        dirty.set(false);
+                        save_message.set(Some(fl!("editor-save-success")));
+                        nav.push(Route::Editor { path: new_path });
+                    }
+                    Err(e) => save_message.set(Some(fl!("editor-save-error", reason = e))),
+                },
+                Ok(None) => {}
+                Err(e) => save_message.set(Some(fl!("editor-save-error", reason = e.to_string()))),
+            }
+        });
+    });
+
+    // ── Save ──────────────────────────────────────────────────────────────────
+    let save = use_callback(move |_: ()| {
+        let cur = path_signal.peek().clone();
+        if is_untitled(&cur) {
+            save_as.call(());
+            return;
+        }
+        let Some(pres) = doc.peek().clone() else {
+            return;
+        };
+        match FileAccessToken::deserialize(&cur) {
+            Ok(token) => match export_to_token(&token, &pres) {
+                Ok(()) => {
+                    dirty.set(false);
+                    save_message.set(Some(fl!("editor-save-success")));
+                }
+                Err(e) => save_message.set(Some(fl!("editor-save-error", reason = e))),
+            },
+            Err(e) => save_message.set(Some(fl!("editor-save-error", reason = e.to_string()))),
+        }
+    });
+
+    // ── Render states ──────────────────────────────────────────────────────────
+    if let Some(message) = load_error() {
         return rsx! {
             EditorErrorView { message: fl!("editor-load-failed", reason = message) }
         };
     }
+    let Some(pres) = doc() else {
+        return rsx! {
+            div {
+                style: "flex: 1; display: flex; align-items: center; justify-content: center; \
+                        color: #888888; font-size: 14px;",
+                {fl!("editor-presentation-loading")}
+            }
+        };
+    };
 
+    let views = slide_views(&pres);
     let total = views.len();
     let idx = active_idx().min(total.saturating_sub(1));
     let active = views.get(idx).cloned();
@@ -64,71 +177,81 @@ pub(super) fn EditorInner(path: String) -> Element {
                 bg = tokens::COLOR_SURFACE_BASE,
             ),
 
-            // ── Title bar ────────────────────────────────────────────────────
+            // ── Toolbar ────────────────────────────────────────────────────────
             div {
-                style: "display: flex; flex-direction: row; justify-content: space-between; \
-                        align-items: center; padding: 6px 16px; background: #1E1E1E; \
-                        border-bottom: 1px solid #3A3A3A;",
+                style: "display: flex; flex-direction: row; align-items: center; gap: 8px; \
+                        padding: 6px 16px; background: #1E1E1E; border-bottom: 1px solid #3A3A3A;",
                 span {
-                    style: "font-size: 13px; font-weight: bold; color: #E8E8E8;",
+                    style: "font-size: 13px; font-weight: bold; color: #E8E8E8; margin-right: 8px;",
                     "{title}"
                 }
-                span {
-                    style: "font-size: 11px; color: #888888;",
-                    "Local File • PPTX"
+                button {
+                    style: toolbar_btn_style(),
+                    onclick: move |_| save.call(()),
+                    {fl!("editor-action-save")}
+                }
+                button {
+                    style: toolbar_btn_style(),
+                    onclick: move |_| {
+                        if let Some(p) = doc.write().as_mut() { edit::add_slide(p); }
+                        dirty.set(true);
+                    },
+                    {fl!("editor-action-add-slide")}
+                }
+                button {
+                    style: toolbar_btn_style(),
+                    onclick: move |_| {
+                        if let Some(p) = doc.write().as_mut() { edit::delete_slide(p, idx); }
+                        dirty.set(true);
+                    },
+                    {fl!("editor-action-delete-slide")}
                 }
             }
 
-            // ── Read-only banner ─────────────────────────────────────────────
-            div {
-                style: "flex-shrink: 0; padding: 8px 16px; background: #1A3A4A; \
-                        border-bottom: 1px solid #2A5A6A; color: #B0E0F0; font-size: 12px;",
-                {fl!("editor-presentation-readonly")}
+            // ── Save status banner ─────────────────────────────────────────────
+            if let Some(msg) = save_message() {
+                div {
+                    style: "display: flex; flex-direction: row; justify-content: space-between; \
+                            align-items: center; padding: 6px 16px; background: #2A3A4A; \
+                            border-bottom: 1px solid #3A4A5A; color: #DCEAF6; font-size: 12px;",
+                    span { "{msg}" }
+                    button {
+                        style: "background: none; border: none; color: #DCEAF6; cursor: pointer; \
+                                font-size: 14px; padding: 0 4px;",
+                        aria_label: fl!("editor-dismiss-aria"),
+                        onclick: move |_| save_message.set(None),
+                        "\u{00D7}"
+                    }
+                }
             }
 
-            // ── Sidebar + canvas ─────────────────────────────────────────────
+            // ── Sidebar + canvas ───────────────────────────────────────────────
             div {
                 style: "flex: 1; display: flex; flex-direction: row; overflow: hidden;",
 
-                // Slide thumbnails
-                div {
-                    style: "width: 180px; background: #252525; border-right: 1px solid #3A3A3A; \
-                            display: flex; flex-direction: column; overflow-y: auto; \
-                            padding: 12px; gap: 12px;",
-                    for (i, v) in views.iter().enumerate() {
-                        div {
-                            key: "{i}",
-                            style: format!(
-                                "position: relative; width: 100%; height: 90px; background: {bg}; \
-                                 border: 2px solid {border}; border-radius: 6px; cursor: pointer; \
-                                 padding: 8px; box-sizing: border-box; display: flex; \
-                                 flex-direction: column; justify-content: space-between;",
-                                bg = v.bg_css,
-                                border = if i == idx { "#3D7EFF" } else { "#444444" },
-                            ),
-                            onclick: move |_| active_idx.set(i),
-                            span {
-                                style: format!(
-                                    "font-size: 10px; font-weight: bold; overflow: hidden; \
-                                     text-overflow: ellipsis; white-space: nowrap; color: {fg};",
-                                    fg = v.fg_css,
-                                ),
-                                {thumbnail_label(v, i)}
-                            }
-                            span {
-                                style: "font-size: 10px; color: #888888; align-self: flex-start;",
-                                "{i + 1}"
-                            }
-                        }
-                    }
+                SlideThumbnails {
+                    views: views.clone(),
+                    active: idx,
+                    on_select: move |i: usize| active_idx.set(i),
                 }
 
-                // Center canvas
                 div {
                     style: "flex: 1; display: flex; align-items: center; justify-content: center; \
                             padding: 24px; overflow: auto;",
                     if let Some(v) = active {
-                        SlideCanvas { view: v }
+                        SlideCanvas {
+                            view: v,
+                            on_edit: move |msg: EditMsg| {
+                                if let Some(p) = doc.write().as_mut() {
+                                    edit::set_shape_text(p, idx, &msg.shape_id, msg.para, &msg.text);
+                                }
+                                dirty.set(true);
+                            },
+                            on_add_bullet: move |()| {
+                                if let Some(p) = doc.write().as_mut() { edit::add_bullet(p, idx); }
+                                dirty.set(true);
+                            },
+                        }
                     } else {
                         span {
                             style: "color: #888888; font-size: 14px;",
@@ -138,7 +261,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                 }
             }
 
-            // ── Status bar ───────────────────────────────────────────────────
+            // ── Status bar ─────────────────────────────────────────────────────
             AtStatusBar {
                 page_label: fl!(
                     "editor-slide-label",
@@ -157,59 +280,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     }
 }
 
-/// Renders a single slide's flattened content onto a 16:9 canvas.
-#[component]
-fn SlideCanvas(view: SlideView) -> Element {
-    rsx! {
-        div {
-            style: format!(
-                "width: 720px; height: 405px; background: {bg}; color: {fg}; \
-                 border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); \
-                 padding: 40px; box-sizing: border-box; display: flex; \
-                 flex-direction: column; justify-content: flex-start;",
-                bg = view.bg_css,
-                fg = view.fg_css,
-            ),
-            if !view.title.is_empty() {
-                h1 {
-                    style: "font-size: 32px; font-weight: bold; margin: 0;",
-                    "{view.title}"
-                }
-            }
-            if !view.subtitle.is_empty() {
-                p {
-                    style: "font-size: 16px; font-style: italic; margin: 10px 0 0 0; opacity: 0.85;",
-                    "{view.subtitle}"
-                }
-            }
-            if !view.bullets.is_empty() {
-                ul {
-                    style: "margin: 24px 0 0 0; padding-left: 20px; flex: 1;",
-                    for (i, bullet) in view.bullets.iter().enumerate() {
-                        li {
-                            key: "{i}",
-                            style: "margin: 8px 0; font-size: 16px; list-style-type: square;",
-                            "{bullet}"
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// The text shown on a slide thumbnail: the title, else the first bullet, else a
-/// generic "Slide N".
-fn thumbnail_label(view: &SlideView, index: usize) -> String {
-    if !view.title.is_empty() {
-        view.title.clone()
-    } else if let Some(first) = view.bullets.first() {
-        first.clone()
-    } else {
-        fl!(
-            "editor-slide-label",
-            current = (index + 1) as i64,
-            total = (index + 1) as i64
-        )
-    }
+fn toolbar_btn_style() -> &'static str {
+    "padding: 4px 10px; background: #333333; border: 1px solid #555555; border-radius: 4px; \
+     color: #E8E8E8; font-size: 12px; cursor: pointer;"
 }

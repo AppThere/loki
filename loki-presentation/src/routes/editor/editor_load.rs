@@ -53,10 +53,9 @@ pub(super) fn load_presentation(path: String) -> Result<Presentation, LoadError>
     }
 }
 
-/// A new, empty single-slide presentation.
+/// A new presentation with one editable (title + body) slide.
 fn blank_presentation() -> Presentation {
-    use loki_presentation_model::Slide;
     let mut p = Presentation::default();
-    p.add_slide(Slide::new("slide1", p.slide_size));
+    super::edit::add_slide(&mut p);
     p
 }

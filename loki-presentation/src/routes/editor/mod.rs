@@ -3,9 +3,12 @@
 
 //! Editor route — thin routing shell.
 
+mod edit;
+mod editor_canvas;
 mod editor_error_view;
 mod editor_inner;
 mod editor_load;
+mod editor_save;
 mod slide_view;
 
 use dioxus::prelude::*;

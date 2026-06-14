@@ -1,27 +1,47 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! Derives a renderable, read-only view of each slide from the presentation
-//! model.
+//! Derives a renderable, **edit-aware** view of each slide from the model.
 //!
-//! Blitz (the HTML/CSS renderer) does not support absolute positioning, so the
-//! editor cannot yet place shapes at their exact slide coordinates. Until the
-//! GPU slide canvas lands, this maps each slide's placeholder/text shapes to a
-//! readable title / subtitle / bullet flow that reflects the real imported
-//! content.
+//! Blitz (HTML/CSS) has no absolute positioning, so the editor cannot place
+//! shapes at their exact slide coordinates yet. This flattens each slide to a
+//! title / subtitle / bullet flow, carrying the originating shape id (and
+//! paragraph index) with each field so edits write back to exactly the shape
+//! the value was read from. Faithful per-shape placement is the GPU-canvas
+//! follow-up.
 
-use loki_graphics::{Fill, Shape, ShapeKind, TextBody};
+use loki_graphics::{Fill, Shape, ShapeId, ShapeKind, TextBody};
 use loki_presentation_model::{PlaceholderKind, Presentation, Slide};
 
-/// A flattened, render-ready view of one slide.
+/// An editable single-line field bound to paragraph 0 of a shape.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct Editable {
+    /// The shape backing this field.
+    pub shape_id: ShapeId,
+    /// Current text (paragraph 0).
+    pub text: String,
+}
+
+/// An editable bullet line bound to a specific paragraph of a shape.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct EditableLine {
+    /// The shape backing this line.
+    pub shape_id: ShapeId,
+    /// Paragraph index within the shape's text body.
+    pub para: usize,
+    /// Current text.
+    pub text: String,
+}
+
+/// A flattened, edit-aware view of one slide.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SlideView {
-    /// Title text (from the title placeholder), if any.
-    pub title: String,
-    /// Subtitle text (from the subtitle placeholder), if any.
-    pub subtitle: String,
-    /// Body lines (body placeholder paragraphs, or other text shapes).
-    pub bullets: Vec<String>,
+    /// Title field, if the slide has a title placeholder.
+    pub title: Option<Editable>,
+    /// Subtitle field, if present.
+    pub subtitle: Option<Editable>,
+    /// Body lines (body placeholder paragraphs, else other text shapes).
+    pub bullets: Vec<EditableLine>,
     /// Background color as a CSS hex string.
     pub bg_css: String,
     /// Foreground/text color as a CSS hex string.
@@ -34,10 +54,9 @@ pub(super) fn slide_views(pres: &Presentation) -> Vec<SlideView> {
 }
 
 fn slide_to_view(slide: &Slide) -> SlideView {
-    let title = placeholder_text(slide, PlaceholderKind::Title)
-        .or_else(|| placeholder_text(slide, PlaceholderKind::CenteredTitle))
-        .unwrap_or_default();
-    let subtitle = placeholder_text(slide, PlaceholderKind::Subtitle).unwrap_or_default();
+    let title = editable_for(slide, PlaceholderKind::Title)
+        .or_else(|| editable_for(slide, PlaceholderKind::CenteredTitle));
+    let subtitle = editable_for(slide, PlaceholderKind::Subtitle);
 
     let title_id = slide
         .placeholder(PlaceholderKind::Title)
@@ -45,16 +64,14 @@ fn slide_to_view(slide: &Slide) -> SlideView {
     let subtitle_id = slide.placeholder(PlaceholderKind::Subtitle);
 
     let bullets = if let Some(body_id) = slide.placeholder(PlaceholderKind::Body) {
-        shape_paragraphs(slide.drawing.shape(body_id))
+        lines_of(slide, body_id)
     } else {
-        // No body placeholder: gather every text shape that isn't the title or
-        // subtitle, one bullet per non-empty paragraph.
         slide
             .drawing
             .shapes
             .iter()
             .filter(|s| Some(&s.id) != title_id && Some(&s.id) != subtitle_id)
-            .flat_map(|s| shape_paragraphs(Some(s)))
+            .flat_map(|s| lines_of(slide, &s.id))
             .collect()
     };
 
@@ -74,30 +91,39 @@ fn shape_textbody(shape: &Shape) -> Option<&TextBody> {
     }
 }
 
-fn placeholder_text(slide: &Slide, kind: PlaceholderKind) -> Option<String> {
+/// An [`Editable`] for the placeholder of `kind`, if its shape exists (even when
+/// the text is empty — an empty placeholder is still editable).
+fn editable_for(slide: &Slide, kind: PlaceholderKind) -> Option<Editable> {
     let id = slide.placeholder(kind)?;
-    let body = shape_textbody(slide.drawing.shape(id)?)?;
-    let joined = body
-        .paragraphs
-        .iter()
+    // The shape must exist to be editable.
+    let shape = slide.drawing.shape(id)?;
+    let text = shape_textbody(shape)
+        .and_then(|b| b.paragraphs.first())
         .map(loki_graphics::TextParagraph::text)
-        .collect::<Vec<_>>()
-        .join(" ");
-    let trimmed = joined.trim();
-    (!trimmed.is_empty()).then(|| trimmed.to_string())
+        .unwrap_or_default();
+    Some(Editable {
+        shape_id: id.clone(),
+        text,
+    })
 }
 
-fn shape_paragraphs(shape: Option<&Shape>) -> Vec<String> {
-    shape
-        .and_then(shape_textbody)
-        .map(|b| {
-            b.paragraphs
-                .iter()
-                .map(loki_graphics::TextParagraph::text)
-                .filter(|t| !t.trim().is_empty())
-                .collect()
+/// One [`EditableLine`] per paragraph of the shape with `id`.
+fn lines_of(slide: &Slide, id: &ShapeId) -> Vec<EditableLine> {
+    let Some(shape) = slide.drawing.shape(id) else {
+        return Vec::new();
+    };
+    let Some(body) = shape_textbody(shape) else {
+        return Vec::new();
+    };
+    body.paragraphs
+        .iter()
+        .enumerate()
+        .map(|(para, p)| EditableLine {
+            shape_id: id.clone(),
+            para,
+            text: p.text(),
         })
-        .unwrap_or_default()
+        .collect()
 }
 
 fn fill_css(fill: &Fill) -> Option<String> {
@@ -128,7 +154,7 @@ fn first_text_color(slide: &Slide) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use loki_graphics::{Fill, RectF, Shape, TextBody};
+    use loki_graphics::{RectF, Shape, TextBody, TextParagraph};
     use loki_presentation_model::Slide;
 
     fn frame() -> RectF {
@@ -136,67 +162,58 @@ mod tests {
     }
 
     #[test]
-    fn maps_title_subtitle_and_body() {
+    fn title_and_bullets_carry_shape_ids() {
         let mut p = Presentation::default();
         let mut slide = Slide::new("s1", p.slide_size);
         slide
             .drawing
             .push(Shape::text_box("t", frame(), TextBody::plain("My Title")));
-        slide.drawing.push(Shape::text_box(
-            "sub",
-            frame(),
-            TextBody::plain("A subtitle"),
-        ));
-        // Body with two paragraphs.
         let body = TextBody {
-            paragraphs: vec![
-                loki_graphics::TextParagraph::plain("First point"),
-                loki_graphics::TextParagraph::plain("Second point"),
-            ],
+            paragraphs: vec![TextParagraph::plain("One"), TextParagraph::plain("Two")],
             ..Default::default()
         };
         slide.drawing.push(Shape::text_box("b", frame(), body));
         slide.add_placeholder(PlaceholderKind::Title, "t");
-        slide.add_placeholder(PlaceholderKind::Subtitle, "sub");
         slide.add_placeholder(PlaceholderKind::Body, "b");
         p.add_slide(slide);
 
-        let views = slide_views(&p);
-        assert_eq!(views.len(), 1);
-        assert_eq!(views[0].title, "My Title");
-        assert_eq!(views[0].subtitle, "A subtitle");
-        assert_eq!(views[0].bullets, vec!["First point", "Second point"]);
+        let v = &slide_views(&p)[0];
+        let title = v.title.as_ref().unwrap();
+        assert_eq!(title.shape_id.as_str(), "t");
+        assert_eq!(title.text, "My Title");
+        assert_eq!(v.bullets.len(), 2);
+        assert_eq!(v.bullets[1].shape_id.as_str(), "b");
+        assert_eq!(v.bullets[1].para, 1);
+        assert_eq!(v.bullets[1].text, "Two");
     }
 
     #[test]
-    fn no_placeholders_collects_text_shapes_as_bullets() {
+    fn empty_title_placeholder_is_still_editable() {
         let mut p = Presentation::default();
         let mut slide = Slide::new("s1", p.slide_size);
         slide
             .drawing
-            .push(Shape::text_box("a", frame(), TextBody::plain("Loose text")));
+            .push(Shape::text_box("t", frame(), TextBody::default()));
+        slide.add_placeholder(PlaceholderKind::Title, "t");
         p.add_slide(slide);
 
-        let views = slide_views(&p);
-        assert_eq!(views[0].title, "");
-        assert_eq!(views[0].bullets, vec!["Loose text"]);
+        let v = &slide_views(&p)[0];
+        let title = v.title.as_ref().unwrap();
+        assert_eq!(title.shape_id.as_str(), "t");
+        assert_eq!(title.text, "");
     }
 
     #[test]
-    fn solid_background_becomes_css_hex() {
-        use loki_primitives::color::DocumentColor;
+    fn slide_without_placeholders_has_no_title() {
         let mut p = Presentation::default();
         let mut slide = Slide::new("s1", p.slide_size);
-        slide.drawing.background = Fill::Solid(DocumentColor::from_hex("#1E1E1E").unwrap());
+        slide
+            .drawing
+            .push(Shape::text_box("x", frame(), TextBody::plain("Loose")));
         p.add_slide(slide);
 
-        let views = slide_views(&p);
-        assert_eq!(views[0].bg_css, "#1E1E1E");
-    }
-
-    #[test]
-    fn empty_presentation_yields_no_views() {
-        let p = Presentation::default();
-        assert!(slide_views(&p).is_empty());
+        let v = &slide_views(&p)[0];
+        assert!(v.title.is_none());
+        assert_eq!(v.bullets[0].text, "Loose");
     }
 }

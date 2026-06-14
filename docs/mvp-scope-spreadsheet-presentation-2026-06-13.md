@@ -139,12 +139,16 @@ foundation, not just UI polish.
    (`presentation_to_loro` / `loro_to_presentation`), slide-snapshot granularity
    for the MVP.
 
-4. **Wire load into the editor — DONE (read-only); save pending.** Opening a
-   file now imports it via `PptxImport` (`editor_load::load_presentation`,
-   `use_resource` on the route path) and renders the **real slides** instead of
-   the hardcoded demo deck. `slide_view` flattens each slide to title / subtitle
-   / bullets (see item 5). Load failures surface through `EditorErrorView`.
-   **Remaining:** editing the model and Save / Save As (needs PPTX export).
+4. **Wire load + edit + save into the editor — DONE.** Opening a file imports it
+   via `PptxImport` (`editor_load::load_presentation`) into an editable
+   `Signal<Option<Presentation>>`. The editor is now **editable**: title,
+   subtitle, and bullet text edit in place (`edit::set_shape_text`, bound to the
+   exact source shape via `slide_view`), plus Add/Delete slide and Add bullet.
+   **Save / Save As** export via `PptxExport` (`editor_save::export_to_token`),
+   with a dismissible status banner, recents + tab-path update on Save As, and a
+   dirty indicator on the tab. Load failures surface through `EditorErrorView`.
+   **Remaining:** richer editing (run-level formatting, shape add/move/resize),
+   Loro-backed undo, and faithful per-shape layout (item 5).
 
 5. **Rendering approach — decided: HTML/CSS for MVP.** The editor stays on the
    HTML/CSS renderer and binds to the model. Because Blitz has no absolute

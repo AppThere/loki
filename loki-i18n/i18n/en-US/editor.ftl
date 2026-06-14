@@ -28,6 +28,16 @@ editor-presentation-readonly = Read-only preview — editing and saving presenta
 editor-presentation-empty = This presentation has no slides.
 # Shown when a presentation file fails to open.
 editor-load-failed = Could not open this presentation: { $reason }
+# Shown while a presentation is loading.
+editor-presentation-loading = Loading…
+# Presentation editor toolbar actions.
+editor-action-save = Save
+editor-action-add-slide = Add slide
+editor-action-delete-slide = Delete slide
+editor-action-add-bullet = Add bullet
+# Placeholder prompts for empty presentation text fields.
+editor-placeholder-title = Title
+editor-placeholder-subtitle = Subtitle
 
 # Font warning banner
 editor-font-substitution-title = Font Substitution

@@ -47,6 +47,11 @@ impl Drawing {
     pub fn shape(&self, id: &ShapeId) -> Option<&Shape> {
         self.shapes.iter().find(|s| &s.id == id)
     }
+
+    /// Finds a top-level shape by id for mutation (does not descend into groups).
+    pub fn shape_mut(&mut self, id: &ShapeId) -> Option<&mut Shape> {
+        self.shapes.iter_mut().find(|s| &s.id == id)
+    }
 }
 
 #[cfg(test)]
