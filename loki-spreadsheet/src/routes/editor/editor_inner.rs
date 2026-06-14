@@ -849,7 +849,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                             style: format!(
                                 "width: 50px; height: 26px; background: #E1E1E1; \
                                  border-right: 1px solid {border}; border-bottom: 1px solid {border}; \
-                                 flex-shrink: 0;",
+                                 box-sizing: border-box; flex-shrink: 0;",
                                 border = tokens::COLOR_BORDER_DEFAULT,
                             ),
                         }
@@ -859,6 +859,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                                 style: format!(
                                     "width: 100px; height: 26px; background: {bg}; \
                                      border-right: 1px solid {border}; border-bottom: 1px solid {border}; \
+                                     box-sizing: border-box; \
                                      display: flex; align-items: center; justify-content: center; \
                                      font-size: 11px; font-weight: bold; color: {fg}; \
                                      flex-shrink: 0;",
@@ -880,6 +881,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                                 style: format!(
                                     "width: 50px; height: 26px; background: {bg}; \
                                      border-right: 1px solid {border}; border-bottom: 1px solid {border}; \
+                                     box-sizing: border-box; \
                                      display: flex; align-items: center; justify-content: center; \
                                      font-size: 11px; font-weight: bold; color: {fg}; \
                                      flex-shrink: 0; position: sticky; left: 0; z-index: 5;",
@@ -897,6 +899,11 @@ pub(super) fn EditorInner(path: String) -> Element {
                                     let is_edit = is_cell_editing(row_idx, col_idx);
                                     let val = get_display_val(row_idx, col_idx);
                                     let fmt = get_cell_format(row_idx, col_idx);
+                                    let text_align = match fmt.align {
+                                        loki_sheet_model::CellAlign::Center => "center",
+                                        loki_sheet_model::CellAlign::Right => "right",
+                                        _ => "left",
+                                    };
                                     let edit_val = if is_edit {
                                         let wb = workbook_snap.read();
                                         let cell_opt = wb.get_sheet(0).and_then(|s| s.get_cell(row_idx as u32, col_idx as u32));
@@ -919,7 +926,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                                                 "width: 100px; height: 26px; \
                                                  border-right: 1px solid {border}; border-bottom: 1px solid {border}; \
                                                  display: flex; align-items: center; \
-                                                 padding: 0 6px; box-sizing: border-box; \
+                                                 padding: 0 6px; box-sizing: border-box; overflow: hidden; \
                                                  flex-shrink: 0; position: relative; \
                                                  background: {bg_color}; cursor: cell; \
                                                  font-size: 12px; \
@@ -977,8 +984,17 @@ pub(super) fn EditorInner(path: String) -> Element {
                                                     }
                                                 }
                                             } else {
+                                                // The cell's `overflow: hidden` (above) is what
+                                                // guarantees text can't paint over neighbouring cells.
+                                                // COMPAT(dioxus-native): `text-overflow: ellipsis` and
+                                                // `white-space: nowrap` are unconfirmed in Blitz — they
+                                                // refine truncation but the cell clip is the hard limit.
                                                 span {
-                                                    style: "overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%;",
+                                                    style: format!(
+                                                        "display: block; width: 100%; min-width: 0; \
+                                                         overflow: hidden; text-overflow: ellipsis; \
+                                                         white-space: nowrap; text-align: {text_align};"
+                                                    ),
                                                     "{val}"
                                                 }
                                             }
