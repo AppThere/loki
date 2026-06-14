@@ -17,13 +17,22 @@ const NS_A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
 ///
 /// Slide relationship ids are `rId{n}` (1-based, matching the order the
 /// exporter registers them in the presentation part's `.rels`); slide ids start
-/// at 256 per the spec convention.
+/// at 256 per the spec convention. The slide master is registered after the
+/// slides, so its relationship id is `rId{slide_count + 1}`.
 pub(super) fn presentation_xml(pres: &Presentation) -> String {
     let mut s = String::new();
     s.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n");
     let _ = write!(
         s,
         "<p:presentation xmlns:p=\"{NS_P}\" xmlns:r=\"{NS_R}\" xmlns:a=\"{NS_A}\">"
+    );
+
+    // Children must appear in schema order: sldMasterIdLst, sldIdLst, sldSz,
+    // notesSz (ECMA-376 §19.2.1.26).
+    let master_rid = pres.slides.len() + 1;
+    let _ = write!(
+        s,
+        "<p:sldMasterIdLst><p:sldMasterId id=\"2147483648\" r:id=\"rId{master_rid}\"/></p:sldMasterIdLst>"
     );
 
     s.push_str("<p:sldIdLst>");
@@ -38,6 +47,8 @@ pub(super) fn presentation_xml(pres: &Presentation) -> String {
         pt_to_emu(pres.slide_size.width),
         pt_to_emu(pres.slide_size.height),
     );
+    // Standard portrait notes size (7.5in × 10in).
+    s.push_str("<p:notesSz cx=\"6858000\" cy=\"9144000\"/>");
     s.push_str("</p:presentation>");
     s
 }

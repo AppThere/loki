@@ -141,3 +141,43 @@ fn idempotent_second_round_trip() {
     let twice = export_then_import(&once);
     assert_eq!(once, twice);
 }
+
+#[test]
+fn exported_package_has_master_layout_and_theme() {
+    use loki_opc::{Package, PartName};
+
+    let mut buf = Cursor::new(Vec::new());
+    PptxExport::export(&sample(), &mut buf).expect("export");
+    let pkg = Package::open(Cursor::new(buf.into_inner())).expect("open exported package");
+
+    // The scaffold parts PowerPoint requires must all be present.
+    for path in [
+        "/ppt/theme/theme1.xml",
+        "/ppt/slideMasters/slideMaster1.xml",
+        "/ppt/slideLayouts/slideLayout1.xml",
+    ] {
+        assert!(
+            pkg.part(&PartName::new(path).unwrap()).is_some(),
+            "missing {path}"
+        );
+    }
+
+    // presentation.xml references the master; each slide references the layout.
+    let pres = PartName::new("/ppt/presentation.xml").unwrap();
+    let pres_rels = pkg.part_relationships(&pres).expect("presentation rels");
+    assert!(
+        pres_rels
+            .iter()
+            .any(|r| r.rel_type.ends_with("/slideMaster")),
+        "presentation should reference the slide master"
+    );
+
+    let slide = PartName::new("/ppt/slides/slide1.xml").unwrap();
+    let slide_rels = pkg.part_relationships(&slide).expect("slide rels");
+    assert!(
+        slide_rels
+            .iter()
+            .any(|r| r.rel_type.ends_with("/slideLayout")),
+        "slide should reference the slide layout"
+    );
+}

@@ -125,11 +125,15 @@ foundation, not just UI polish.
      inverse: `presentation.xml` + per-slide `slideN.xml` with the same shape
      surface). Verified by model → export → import round-trip + idempotence
      tests.
+   - Export emits the **slide master, slide layout, and theme** parts (generic
+     Office defaults) plus the master/layout relationships each slide and the
+     presentation require, so the output is structured for *strict PowerPoint*
+     to open (verified at the package level; on-device PowerPoint check
+     pending). Our importer ignores those parts, so the round-trip is unchanged.
    Unsupported constructs (groups, tables/charts, custom geometry, gradients,
-   image/group export, layout-inherited/theme properties) are
-   skipped/reported. **Remaining:** slide layouts/masters + theme (needed for
-   *strict PowerPoint* to open the file — our importer round-trips without
-   them); image & group export; ODP via `loki-odf` (optional parity).
+   image/group export, authored theme colors) are skipped/reported.
+   **Remaining:** image & group export; deriving real masters/layouts/theme
+   from the document; ODP via `loki-odf` (optional parity).
 
 3. **~~Loro CRDT bridge~~ — DONE.** `loki-presentation-model::loro_bridge`
    (`presentation_to_loro` / `loro_to_presentation`), slide-snapshot granularity

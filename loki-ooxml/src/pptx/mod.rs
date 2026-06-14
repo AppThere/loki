@@ -19,8 +19,10 @@ mod shapes;
 mod sppr;
 mod text;
 mod units;
+mod write_master;
 mod write_presentation;
 mod write_slide;
+mod write_theme;
 
 use loki_graphics::Shape;
 use loki_presentation_model::PlaceholderKind;
