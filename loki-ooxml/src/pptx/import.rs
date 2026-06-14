@@ -236,10 +236,26 @@ fn resolve_rel_target(
 /// Resolves a relationship target (absolute or relative to `base`) to a [`PartName`].
 fn resolve_part_name(base: &str, target: &str) -> Result<PartName, OoxmlError> {
     if target.starts_with('/') {
-        return PartName::new(target).map_err(OoxmlError::Opc);
+        return PartName::new(normalize_part_path(target)).map_err(OoxmlError::Opc);
     }
     let dir = base.rfind('/').map_or("/", |i| &base[..=i]);
-    PartName::new(format!("{dir}{target}")).map_err(OoxmlError::Opc)
+    let raw = format!("{dir}{target}");
+    PartName::new(normalize_part_path(&raw)).map_err(OoxmlError::Opc)
+}
+
+/// Collapses `.` and `..` segments in an OPC part path, preserving the leading `/`.
+fn normalize_part_path(path: &str) -> String {
+    let mut segments: Vec<&str> = Vec::new();
+    for seg in path.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                segments.pop();
+            }
+            s => segments.push(s),
+        }
+    }
+    format!("/{}", segments.join("/"))
 }
 
 fn rels_by_type<'a>(

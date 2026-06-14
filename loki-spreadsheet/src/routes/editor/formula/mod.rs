@@ -95,10 +95,15 @@ fn eval_cell_inner(
     };
     match &cell.formula {
         None => cell.value.clone(),
-        Some(f) => match evaluate_formula(f, wb, visited) {
-            Ok(v) => format_number(v),
-            Err(e) => e.code().to_string(),
-        },
+        Some(f) => {
+            if !f.trim_start().starts_with('=') {
+                return f.clone();
+            }
+            match evaluate_formula(f, wb, visited) {
+                Ok(v) => format_number(v),
+                Err(e) => e.code().to_string(),
+            }
+        }
     }
 }
 

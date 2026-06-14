@@ -19,7 +19,9 @@ pub enum PresetShape {
     Rectangle,
     /// Rectangle with rounded corners.
     RoundedRectangle {
-        /// Corner radius in points.
+        /// Corner arc radius as a fraction of `min(width, height) / 2`
+        /// (range 0.0–0.5, where 0.5 produces a fully rounded shape).
+        /// Stored normalised from OOXML adj values (divide by 100 000).
         corner_radius: f64,
     },
     /// Ellipse inscribed in the frame.

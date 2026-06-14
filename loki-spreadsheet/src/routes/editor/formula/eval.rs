@@ -156,6 +156,9 @@ impl Parser<'_, '_> {
 
     fn parse_function(&mut self, name: &str) -> Result<f64, FormulaError> {
         self.pos += 2; // consume Ident and '('
+        if name.eq_ignore_ascii_case("if") {
+            return self.parse_if_function();
+        }
         let mut args = Vec::new();
         if self.peek_at(0) != Some(&Token::RParen) {
             loop {
@@ -168,6 +171,55 @@ impl Parser<'_, '_> {
         }
         self.expect(Token::RParen)?;
         dispatch(name, &args)
+    }
+
+    /// Evaluates `IF(cond, then, else)` lazily: only the taken branch is parsed.
+    fn parse_if_function(&mut self) -> Result<f64, FormulaError> {
+        let cond_arg = self.parse_argument()?;
+        self.expect(Token::Comma)?;
+        let scalar = |a: Arg| match a {
+            Arg::Scalar(v) => Ok(v),
+            Arg::Range(vs) if vs.len() == 1 => Ok(vs[0]),
+            _ => Err(FormulaError::Value),
+        };
+        let cond = scalar(cond_arg)?;
+        let result = if cond != 0.0 {
+            let then_val = scalar(self.parse_argument()?)?;
+            if self.peek_at(0) == Some(&Token::Comma) {
+                self.pos += 1;
+                self.skip_argument();
+            }
+            then_val
+        } else {
+            self.skip_argument();
+            self.expect(Token::Comma)?;
+            scalar(self.parse_argument()?)?
+        };
+        self.expect(Token::RParen)?;
+        Ok(result)
+    }
+
+    /// Advances `pos` past the current argument without evaluating it,
+    /// stopping before a `,` or `)` at depth 0.
+    fn skip_argument(&mut self) {
+        let mut depth = 0i32;
+        loop {
+            match self.peek_at(0) {
+                Some(Token::LParen) => {
+                    depth += 1;
+                    self.pos += 1;
+                }
+                Some(Token::RParen) if depth > 0 => {
+                    depth -= 1;
+                    self.pos += 1;
+                }
+                Some(Token::Comma) if depth == 0 => break,
+                Some(Token::RParen) | None => break,
+                _ => {
+                    self.pos += 1;
+                }
+            }
+        }
     }
 
     /// Parses one function argument: a range (`A1:B2`), a bare cell reference, or

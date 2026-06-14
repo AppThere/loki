@@ -42,7 +42,14 @@ pub(super) fn slide_xml(slide: &Slide) -> String {
         "<p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>",
     );
 
-    let mut next_id = 2u32;
+    let max_numeric_id = slide
+        .drawing
+        .shapes
+        .iter()
+        .filter_map(|s| s.id.as_str().parse::<u32>().ok().filter(|&n| n != 0))
+        .max()
+        .unwrap_or(1);
+    let mut next_id = max_numeric_id + 1;
     for shape in &slide.drawing.shapes {
         if let ShapeKind::Geometry(g) = &shape.kind {
             let ph = placeholders.get(shape.id.as_str()).copied();
@@ -142,12 +149,15 @@ fn write_xfrm(s: &mut String, t: &ShapeTransform) {
 }
 
 fn write_fill(s: &mut String, fill: &Fill) {
-    if let Fill::Solid(color) = fill
-        && let Some(hex) = srgb_from_color(color)
-    {
-        let _ = write!(s, "<a:solidFill><a:srgbClr val=\"{hex}\"/></a:solidFill>");
+    match fill {
+        Fill::None => s.push_str("<a:noFill/>"),
+        Fill::Solid(color) => {
+            if let Some(hex) = srgb_from_color(color) {
+                let _ = write!(s, "<a:solidFill><a:srgbClr val=\"{hex}\"/></a:solidFill>");
+            }
+        }
+        Fill::LinearGradient(_) => {} // gradient export is a follow-up
     }
-    // Fill::None and gradients emit nothing (gradient export is a follow-up).
 }
 
 fn write_ln(s: &mut String, stroke: Option<&Stroke>) {
@@ -167,8 +177,12 @@ fn write_txbody(s: &mut String, tb: &TextBody) {
         VerticalAnchor::Bottom => s.push_str(" anchor=\"b\""),
     }
     s.push_str("/><a:lstStyle/>");
-    for para in &tb.paragraphs {
-        write_paragraph(s, para);
+    if tb.paragraphs.is_empty() {
+        s.push_str("<a:p/>");
+    } else {
+        for para in &tb.paragraphs {
+            write_paragraph(s, para);
+        }
     }
     s.push_str("</p:txBody>");
 }

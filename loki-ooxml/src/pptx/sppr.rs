@@ -63,7 +63,11 @@ pub(super) fn parse_sppr<R: BufRead>(
                     if let Some(prst) = local_attr_val(&e, b"prst") {
                         props.preset = preset_from_prst(&prst);
                     }
-                    skip_subtree(reader)?;
+                    if matches!(props.preset, PresetShape::RoundedRectangle { .. }) {
+                        parse_avlst_adj(reader, &mut props.preset)?;
+                    } else {
+                        skip_subtree(reader)?;
+                    }
                 }
                 b"solidFill" => {
                     props.fill = parse_solid_fill_color(reader)?.map_or(Fill::None, Fill::Solid);
@@ -170,4 +174,37 @@ fn attr_i64(e: &BytesStart<'_>, name: &[u8]) -> i64 {
     local_attr_val(e, name)
         .and_then(|v| v.parse::<i64>().ok())
         .unwrap_or(0)
+}
+
+/// Parses the `adj` guide from a `<a:prstGeom><a:avLst>` subtree and stores it
+/// in `preset` as a normalised fraction (0.0–0.5 for `roundRect`).
+///
+/// Consumes through the closing `</a:prstGeom>` tag.
+fn parse_avlst_adj<R: BufRead>(
+    reader: &mut Reader<R>,
+    preset: &mut PresetShape,
+) -> Result<(), quick_xml::Error> {
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf)? {
+            Event::Empty(e) if local_name(&e) == b"gd" => {
+                if local_attr_val(&e, b"name").as_deref() == Some("adj") {
+                    if let Some(fmla) = local_attr_val(&e, b"fmla") {
+                        if let Some(val_str) = fmla.strip_prefix("val ") {
+                            if let Ok(adj) = val_str.trim().parse::<f64>() {
+                                *preset = PresetShape::RoundedRectangle {
+                                    corner_radius: adj / 100_000.0,
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+            Event::End(e) if end_is(&e, b"prstGeom") => break,
+            Event::Eof => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok(())
 }

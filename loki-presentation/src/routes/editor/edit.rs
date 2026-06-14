@@ -44,7 +44,13 @@ pub(super) fn set_shape_text(
 
 /// Appends a new editable slide (with empty title + body placeholders).
 pub(super) fn add_slide(pres: &mut Presentation) {
-    let id = format!("slide{}", pres.slides.len() + 1);
+    let max = pres
+        .slides
+        .iter()
+        .filter_map(|s| s.id.as_str().strip_prefix("slide")?.parse::<u64>().ok())
+        .max()
+        .unwrap_or(0);
+    let id = format!("slide{}", max + 1);
     let slide = new_editable_slide(&id, pres.slide_size);
     pres.add_slide(slide);
 }
