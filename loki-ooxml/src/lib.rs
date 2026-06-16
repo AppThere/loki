@@ -13,8 +13,8 @@
 //! | Feature | Default | Description |
 //! |---------|---------|-------------|
 //! | `docx`  | yes     | DOCX (Word) import via [`docx::import::DocxImport`] |
-//! | `xlsx`  | no      | XLSX (Excel) — **not yet implemented** |
-//! | `pptx`  | no      | PPTX (`PowerPoint`) — **not yet implemented** |
+//! | `xlsx`  | no      | XLSX (Excel) import/export (`xlsx::import::XlsxImport`) |
+//! | `pptx`  | no      | PPTX (`PowerPoint`) import/export (`pptx::import::PptxImport`, `pptx::export::PptxExport`) |
 //!
 //! # Quick start
 //!
@@ -55,7 +55,7 @@ pub mod docx;
 pub mod xlsx;
 
 #[cfg(feature = "pptx")]
-compile_error!("`pptx` feature is not yet implemented in loki-ooxml v0.1.0");
+pub mod pptx;
 
 pub use error::{NoteKind, OoxmlError, OoxmlResult, OoxmlWarning};
 
@@ -70,3 +70,8 @@ pub use docx::mapper::{MapperError, map_document};
 pub use xlsx::export::XlsxExport;
 #[cfg(feature = "xlsx")]
 pub use xlsx::import::{XlsxImport, XlsxImportOptions, XlsxImportResult};
+
+#[cfg(feature = "pptx")]
+pub use pptx::export::{PptxExport, PptxExportOptions};
+#[cfg(feature = "pptx")]
+pub use pptx::import::{PptxImport, PptxImportOptions, PptxImportResult};

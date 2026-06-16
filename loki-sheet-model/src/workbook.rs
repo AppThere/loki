@@ -99,6 +99,9 @@ pub struct Worksheet {
     pub name: String,
     /// Grid of cells indexed by (row, col) coordinates (0-indexed).
     pub cells: HashMap<(u32, u32), Cell>,
+    /// Custom column widths in points, keyed by 0-indexed column. Columns
+    /// absent from the map use the application's default width.
+    pub column_widths: HashMap<u32, f64>,
 }
 
 impl Worksheet {
@@ -107,6 +110,7 @@ impl Worksheet {
         Self {
             name: name.into(),
             cells: HashMap::new(),
+            column_widths: HashMap::new(),
         }
     }
 
@@ -118,6 +122,16 @@ impl Worksheet {
     /// Retrieve a mutable reference to cell at row and col, creating a default one if absent.
     pub fn get_cell_mut(&mut self, row: u32, col: u32) -> &mut Cell {
         self.cells.entry((row, col)).or_default()
+    }
+
+    /// The custom width (points) of `col`, if one is set.
+    pub fn column_width(&self, col: u32) -> Option<f64> {
+        self.column_widths.get(&col).copied()
+    }
+
+    /// Sets the custom width (points) of `col`.
+    pub fn set_column_width(&mut self, col: u32, width_pt: f64) {
+        self.column_widths.insert(col, width_pt);
     }
 }
 

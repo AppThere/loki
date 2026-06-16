@@ -108,7 +108,16 @@ impl WriteMutations for MutationWriter<'_> {
         // If there is an existing node already mapped to that ID and it has no parent, then drop it
         // TODO: more automated GC/ref-counted semantics for node lifetimes
         if let Some(node_id) = self.state.try_element_to_node_id(id) {
-            self.docm.remove_node_if_unparented(node_id);
+            // PATCH(loki): never GC-drop a node that is still referenced by the
+            // working stack. A node detached during reconciliation (e.g. when a
+            // document is swapped — 13→5 pages) can be both unparented *and*
+            // still on the stack from an earlier `push_root`; dropping it frees
+            // its slab slot, leaving a stale key on the stack that the next
+            // `load_child` → `node_at_path` indexes, panicking with the opaque
+            // slab "invalid key". Only reclaim genuinely-unreferenced nodes.
+            if !self.state.stack.contains(&node_id) {
+                self.docm.remove_node_if_unparented(node_id);
+            }
         }
 
         // Map the node at specified path

@@ -91,7 +91,14 @@
       "WebFetch(domain:github.com)",
       "PowerShell(gh pr list --head claude/codebase-security-audit-2oykpx --state all --json number,state,title,url)",
       "PowerShell(git diff *)",
-      "PowerShell(cargo clippy *)"
+      "PowerShell(cargo clippy *)",
+      "Bash(rustup component *)",
+      "Bash(rust-analyzer *)",
+      "mcp__code-review-graph__detect_changes_tool",
+      "Bash(git push *)",
+      "Bash(rustup show *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(claude plugin *)"
     ]
   },
   "enableAllProjectMcpServers": true,

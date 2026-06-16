@@ -119,4 +119,10 @@ pub enum OoxmlWarning {
         /// The relationship id that could not be resolved.
         rel_id: String,
     },
+
+    /// A construct that the importer does not yet support was skipped.
+    Unsupported {
+        /// A short description of the skipped feature (e.g. `"p:grpSp"`).
+        feature: String,
+    },
 }

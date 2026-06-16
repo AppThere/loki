@@ -1,7 +1,11 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
 
-//! Wrapping dependencies executing Native file descriptor translations mapping buffers resolving parameters structurally verifying requirements transparently executing payloads precisely supporting limits accurately defining configurations isolating components explicitly supporting paths reliably.
+//! ZIP container I/O for OPC packages.
+//!
+//! [`mod@read`] deserialises a [`crate::package::Package`] from a ZIP archive
+//! and [`mod@write`] serialises one back out. The `limits` module holds the
+//! decompression budgets that guard both paths against zip-bomb inputs.
 
 pub(crate) mod limits;
 pub mod read;

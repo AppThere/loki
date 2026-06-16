@@ -13,162 +13,13 @@ use loki_file_access::{FileAccessToken, FilePicker, SaveOptions};
 use loki_i18n::fl;
 use std::collections::HashSet;
 
+use super::cell_ref::{col_to_label, grid_dimensions};
 use super::editor_load::{DocumentFormat, detect_format, load_document};
 use super::editor_state::{EditorState, use_editor_state};
+use super::formula::{evaluate_cell, format_evaluated_value};
 use crate::routes::Route;
 use crate::routes::dioxus_router::Navigator;
 use crate::utils::display_title_from_path;
-
-const COLS: &[&str] = &["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
-
-/// Helper to parse cell reference (e.g. "B2" -> row=1, col=1)
-fn parse_cell_ref(s: &str) -> Option<(usize, usize)> {
-    let s = s.trim().to_uppercase();
-    if s.is_empty() {
-        return None;
-    }
-    let first_char = s.chars().next()?;
-    if !first_char.is_ascii_alphabetic() {
-        return None;
-    }
-    let col = (first_char as u32) as i32 - ('A' as u32) as i32;
-    if !(0..10).contains(&col) {
-        return None;
-    }
-    let row_str = &s[1..];
-    let row = row_str.parse::<usize>().ok()?.checked_sub(1)?;
-    if row >= 30 {
-        return None;
-    }
-    Some((row, col as usize))
-}
-
-/// Helper to evaluate formulas starting with '=' or cell references in the workbook
-fn evaluate_cell(
-    row: usize,
-    col: usize,
-    wb: &loki_sheet_model::Workbook,
-    visited: &mut HashSet<(usize, usize)>,
-) -> String {
-    if visited.contains(&(row, col)) {
-        return "#REF!".to_string();
-    }
-    visited.insert((row, col));
-
-    let sheet = match wb.get_sheet(0) {
-        Some(s) => s,
-        None => {
-            visited.remove(&(row, col));
-            return "".to_string();
-        }
-    };
-
-    let cell = match sheet.get_cell(row as u32, col as u32) {
-        Some(c) => c,
-        None => {
-            visited.remove(&(row, col));
-            return "".to_string();
-        }
-    };
-
-    let Some(formula_raw) = &cell.formula else {
-        visited.remove(&(row, col));
-        return cell.value.clone();
-    };
-
-    let formula = formula_raw.trim().to_uppercase();
-    let result = if formula.starts_with("SUM(") && formula.ends_with(')') {
-        let range_str = &formula[4..formula.len() - 1];
-        if let Some((start, end)) = range_str.split_once(':') {
-            if let (Some((r1, c1)), Some((r2, c2))) = (parse_cell_ref(start), parse_cell_ref(end)) {
-                let mut sum = 0.0;
-                let min_r = r1.min(r2);
-                let max_r = r1.max(r2);
-                let min_c = c1.min(c2);
-                let max_c = c1.max(c2);
-                for r in min_r..=max_r {
-                    for c in min_c..=max_c {
-                        let cell_val_str = evaluate_cell(r, c, wb, visited);
-                        if let Ok(num) = cell_val_str.parse::<f64>() {
-                            sum += num;
-                        }
-                    }
-                }
-                sum.to_string()
-            } else {
-                "#VALUE!".to_string()
-            }
-        } else {
-            "#VALUE!".to_string()
-        }
-    } else {
-        // Simple expression parser for B2-B3-B4 or B2+B3
-        let mut tokens_list = Vec::new();
-        let mut current_token = String::new();
-        for ch in formula.chars() {
-            if ch == '+' || ch == '-' {
-                if !current_token.trim().is_empty() {
-                    tokens_list.push(current_token.trim().to_string());
-                }
-                tokens_list.push(ch.to_string());
-                current_token = String::new();
-            } else {
-                current_token.push(ch);
-            }
-        }
-        if !current_token.trim().is_empty() {
-            tokens_list.push(current_token.trim().to_string());
-        }
-
-        if tokens_list.is_empty() {
-            "0".to_string()
-        } else {
-            let mut total = 0.0;
-            let mut next_op = '+';
-            let mut first = true;
-
-            for token in tokens_list {
-                if token == "+" {
-                    next_op = '+';
-                } else if token == "-" {
-                    next_op = '-';
-                } else {
-                    let val_f = if let Some((r, c)) = parse_cell_ref(&token) {
-                        let cell_val_str = evaluate_cell(r, c, wb, visited);
-                        cell_val_str.parse::<f64>().unwrap_or(0.0)
-                    } else {
-                        token.parse::<f64>().unwrap_or(0.0)
-                    };
-
-                    if first {
-                        total = val_f;
-                        first = false;
-                    } else if next_op == '+' {
-                        total += val_f;
-                    } else {
-                        total -= val_f;
-                    }
-                }
-            }
-            total.to_string()
-        }
-    };
-
-    visited.remove(&(row, col));
-    result
-}
-
-fn format_evaluated_value(val_str: &str, format: &loki_sheet_model::CellStyle) -> String {
-    if let Ok(num) = val_str.parse::<f64>() {
-        match format.num_format {
-            loki_sheet_model::NumberFormat::Currency => format!("${:.2}", num),
-            loki_sheet_model::NumberFormat::Percent => format!("{:.1}%", num * 100.0),
-            loki_sheet_model::NumberFormat::General => val_str.to_string(),
-        }
-    } else {
-        val_str.to_string()
-    }
-}
 
 /// Helper to mutate Loro cells in-place
 fn mutate_cell(
@@ -213,6 +64,57 @@ fn mutate_cell(
     } else {
         let _ = cell_map.delete("formula");
     }
+    Ok(())
+}
+
+/// Default rendered column width in CSS px (when the document specifies none).
+const DEFAULT_COL_PX: f64 = 100.0;
+/// Resize clamps (CSS px).
+const MIN_COL_PX: f64 = 24.0;
+const MAX_COL_PX: f64 = 800.0;
+
+/// CSS px ↔ points (96 px/in vs 72 pt/in).
+fn px_to_pt(px: f64) -> f64 {
+    px * 72.0 / 96.0
+}
+fn pt_to_px(pt: f64) -> f64 {
+    pt * 96.0 / 72.0
+}
+
+/// In-progress column drag state (CSS px).
+#[derive(Clone, Copy, PartialEq)]
+struct ColResize {
+    col: usize,
+    start_x: f64,
+    start_px: f64,
+    current_px: f64,
+}
+
+/// Writes a column width (points) into the Loro sheet's `columns` map.
+fn mutate_column_width(
+    ldoc: &loro::LoroDoc,
+    sheet_idx: usize,
+    col: u32,
+    width_pt: f64,
+) -> Result<(), loro::LoroError> {
+    let sheets_list = ldoc.get_list(loki_sheet_model::loro_bridge::KEY_SHEETS);
+    let sheet_val = sheets_list
+        .get(sheet_idx)
+        .ok_or_else(|| loro::LoroError::internal("Sheet not found"))?;
+    let sheet_map = sheet_val
+        .into_container()
+        .ok()
+        .and_then(|c| c.into_map().ok())
+        .ok_or_else(|| loro::LoroError::internal("Sheet is not a map"))?;
+    let cols_map = match sheet_map.get("columns") {
+        Some(val) => val
+            .into_container()
+            .ok()
+            .and_then(|c| c.into_map().ok())
+            .ok_or_else(|| loro::LoroError::internal("Columns container is not a map"))?,
+        None => sheet_map.insert_container("columns", loro::LoroMap::new())?,
+    };
+    cols_map.insert(col.to_string().as_str(), width_pt)?;
     Ok(())
 }
 
@@ -340,12 +242,14 @@ fn save_document(
     mut tabs: Signal<Vec<crate::tabs::OpenTab>>,
     active_tab: Signal<usize>,
     navigator: Navigator,
+    mut save_message: Signal<Option<String>>,
 ) {
     let active_tab_idx = *active_tab.peek();
     let current_path = path_signal.peek().clone();
     let wb = workbook_snap.peek().clone();
 
     spawn(async move {
+        save_message.set(None); // clear any previous status
         let token = if crate::new_document::is_untitled(&current_path) {
             let picker = FilePicker::new();
             let opts = SaveOptions {
@@ -356,9 +260,9 @@ fn save_document(
             };
             match picker.pick_file_to_save(opts).await {
                 Ok(Some(t)) => t,
-                Ok(None) => return,
+                Ok(None) => return, // user cancelled — not an error
                 Err(e) => {
-                    tracing::error!("Failed to pick save path: {:?}", e);
+                    save_message.set(Some(fl!("error-file-picker", err = e.to_string())));
                     return;
                 }
             }
@@ -366,50 +270,51 @@ fn save_document(
             match FileAccessToken::deserialize(&current_path) {
                 Ok(t) => t,
                 Err(e) => {
-                    tracing::error!("Failed to deserialize path token: {:?}", e);
+                    save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
                     return;
                 }
             }
         };
 
         let format = detect_format(&token);
-        match token.open_write() {
-            Ok(mut writer) => {
-                let res = match format {
-                    DocumentFormat::Xlsx => {
-                        loki_ooxml::xlsx::export::XlsxExport::export(&wb, &mut *writer)
-                            .map_err(|e| e.to_string())
-                    }
-                    DocumentFormat::Ods => {
-                        loki_odf::OdsExport::export(&wb, &mut *writer).map_err(|e| e.to_string())
-                    }
-                    DocumentFormat::Unsupported(ext) => {
-                        Err(format!("Unsupported format: .{}", ext))
-                    }
-                };
-
-                if let Err(e) = res {
-                    tracing::error!("Failed to export workbook: {:?}", e);
-                } else {
-                    let new_path = token.serialize();
-                    let new_title = display_title_from_path(&new_path);
-
-                    path_signal.set(new_path.clone());
-
-                    if active_tab_idx > 0 {
-                        let mut tabs_mut = tabs.write();
-                        if let Some(tab) = tabs_mut.get_mut(active_tab_idx - 1) {
-                            tab.path = new_path.clone();
-                            tab.title = new_title;
-                            tab.is_dirty = false;
-                        }
-                    }
-
-                    navigator.push(Route::Editor { path: new_path });
-                }
-            }
+        let mut writer = match token.open_write() {
+            Ok(w) => w,
             Err(e) => {
-                tracing::error!("Failed to open file for writing: {:?}", e);
+                save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
+                return;
+            }
+        };
+
+        let res = match format {
+            DocumentFormat::Xlsx => loki_ooxml::xlsx::export::XlsxExport::export(&wb, &mut *writer)
+                .map_err(|e| e.to_string()),
+            DocumentFormat::Ods => {
+                loki_odf::OdsExport::export(&wb, &mut *writer).map_err(|e| e.to_string())
+            }
+            DocumentFormat::Unsupported(ext) => Err(format!("Unsupported format: .{ext}")),
+        };
+
+        match res {
+            Err(e) => {
+                save_message.set(Some(fl!("editor-save-error", reason = e)));
+            }
+            Ok(()) => {
+                let new_path = token.serialize();
+                let new_title = display_title_from_path(&new_path);
+
+                path_signal.set(new_path.clone());
+
+                if active_tab_idx > 0 {
+                    let mut tabs_mut = tabs.write();
+                    if let Some(tab) = tabs_mut.get_mut(active_tab_idx - 1) {
+                        tab.path = new_path.clone();
+                        tab.title = new_title;
+                        tab.is_dirty = false;
+                    }
+                }
+
+                save_message.set(Some(fl!("editor-save-success")));
+                navigator.push(Route::Editor { path: new_path });
             }
         }
     });
@@ -468,6 +373,9 @@ pub(super) fn EditorInner(path: String) -> Element {
         mut editing_cell,
     } = use_editor_state();
 
+    // Transient save status (success or error) shown as a dismissible banner.
+    let mut save_message = use_signal(|| Option::<String>::None);
+
     // ── Synchronous Path Sync & State Reset ──────────────────────────────────
     sync_path_and_reset(
         &path,
@@ -510,8 +418,55 @@ pub(super) fn EditorInner(path: String) -> Element {
 
     let active_coords = selected_cell();
 
+    // Grid extent follows the workbook's used range (clamped), so data outside
+    // the old fixed A1:J30 window is visible and editable.
+    let (num_rows, num_cols) = grid_dimensions(&workbook_snap.read());
+
+    // ── Column widths & drag-to-resize ─────────────────────────────────────────
+    let mut col_resize = use_signal(|| Option::<ColResize>::None);
+
+    // The rendered width (CSS px) of `col`: the live drag width while resizing,
+    // else the document's width, else the default.
+    let col_px = move |col: usize| -> f64 {
+        if let Some(r) = col_resize()
+            && r.col == col
+        {
+            return r.current_px;
+        }
+        workbook_snap
+            .read()
+            .get_sheet(0)
+            .and_then(|s| s.column_width(col as u32))
+            .map_or(DEFAULT_COL_PX, pt_to_px)
+    };
+
+    // Commit a column width (px) to the model through Loro.
+    let commit_col_width = move |col: usize, px: f64| {
+        let pt = px_to_pt(px.clamp(MIN_COL_PX, MAX_COL_PX));
+        apply_change(loro_doc, workbook_snap, tabs, active_tab_idx, |ldoc| {
+            mutate_column_width(ldoc, 0, col as u32, pt)
+        });
+        sync_undo_redo(loro_doc, undo_manager, can_undo, can_redo);
+    };
+
+    // Auto-fit: width to the widest cell text in the column.
+    let auto_fit_col = move |col: usize| {
+        let mut max_chars = col_to_label(col).len();
+        let wb = workbook_snap.read();
+        if let Some(sheet) = wb.get_sheet(0) {
+            for row in 0..num_rows {
+                if let Some(cell) = sheet.get_cell(row as u32, col as u32) {
+                    max_chars = max_chars.max(cell.value.chars().count());
+                }
+            }
+        }
+        drop(wb);
+        let px = (max_chars as f64 * 7.5 + 16.0).clamp(MIN_COL_PX, MAX_COL_PX);
+        commit_col_width(col, px);
+    };
+
     let ref_text = match active_coords {
-        Some((r, c)) => format!("{}{}", COLS[c], r + 1),
+        Some((r, c)) => format!("{}{}", col_to_label(c), r + 1),
         None => "".to_string(),
     };
 
@@ -638,6 +593,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                         tabs,
                         active_tab,
                         navigator,
+                        save_message,
                     );
                 },
                 span { "Save" }
@@ -919,8 +875,88 @@ pub(super) fn EditorInner(path: String) -> Element {
                 }
 
                 // ── Grid Area ────────────────────────────────────────────────────
+                //
+                // `tabindex` makes the grid focusable so it can receive key events
+                // (clicking a cell focuses this container via the blitz-dom focus
+                // patch). Arrow keys / Tab / Enter move the selection, F2 edits,
+                // Delete/Backspace clears the cell.
                 div {
-                    style: "flex: 1; overflow: auto; display: flex; flex-direction: column; background: #FFFFFF; position: relative;",
+                    style: "flex: 1; overflow: auto; display: flex; flex-direction: column; background: #FFFFFF; position: relative; outline: none;",
+                    tabindex: "0",
+                    // COMPAT(dioxus-native): drag-to-resize relies on continuous
+                    // onmousemove during a button-held drag, which Blitz may not
+                    // deliver yet (needs runtime verification). Double-click
+                    // auto-fit uses only click events and is unaffected.
+                    onmousemove: move |e| {
+                        if let Some(mut r) = col_resize() {
+                            let x = e.client_coordinates().x;
+                            r.current_px = (r.start_px + (x - r.start_x)).clamp(MIN_COL_PX, MAX_COL_PX);
+                            col_resize.set(Some(r));
+                        }
+                    },
+                    onmouseup: move |_| {
+                        if let Some(r) = col_resize() {
+                            commit_col_width(r.col, r.current_px);
+                            col_resize.set(None);
+                        }
+                    },
+                    onmouseleave: move |_| {
+                        if let Some(r) = col_resize() {
+                            commit_col_width(r.col, r.current_px);
+                            col_resize.set(None);
+                        }
+                    },
+                    onkeydown: move |e| {
+                        if editing_cell.peek().is_some() {
+                            return; // the cell input handles keys while editing
+                        }
+                        let Some((r, c)) = *selected_cell.peek() else {
+                            return;
+                        };
+                        match e.key() {
+                            Key::ArrowUp => {
+                                e.prevent_default();
+                                selected_cell.set(Some((r.saturating_sub(1), c)));
+                            }
+                            Key::ArrowDown => {
+                                e.prevent_default();
+                                selected_cell.set(Some(((r + 1).min(num_rows - 1), c)));
+                            }
+                            Key::ArrowLeft => {
+                                e.prevent_default();
+                                selected_cell.set(Some((r, c.saturating_sub(1))));
+                            }
+                            Key::ArrowRight => {
+                                e.prevent_default();
+                                selected_cell.set(Some((r, (c + 1).min(num_cols - 1))));
+                            }
+                            Key::Enter => {
+                                e.prevent_default();
+                                selected_cell.set(Some(((r + 1).min(num_rows - 1), c)));
+                            }
+                            Key::Tab => {
+                                e.prevent_default();
+                                let nc = if e.modifiers().shift() {
+                                    c.saturating_sub(1)
+                                } else {
+                                    (c + 1).min(num_cols - 1)
+                                };
+                                selected_cell.set(Some((r, nc)));
+                            }
+                            Key::F2 => {
+                                e.prevent_default();
+                                editing_cell.set(Some((r, c)));
+                            }
+                            Key::Delete | Key::Backspace => {
+                                e.prevent_default();
+                                apply_change(loro_doc, workbook_snap, tabs, active_tab_idx, |ldoc| {
+                                    mutate_cell(ldoc, 0, r as u32, c as u32, String::new(), None)
+                                });
+                                sync_undo_redo(loro_doc, undo_manager, can_undo, can_redo);
+                            }
+                            _ => {}
+                        }
+                    },
 
                     // Sticky Header Row
                     div {
@@ -930,30 +966,54 @@ pub(super) fn EditorInner(path: String) -> Element {
                             style: format!(
                                 "width: 50px; height: 26px; background: #E1E1E1; \
                                  border-right: 1px solid {border}; border-bottom: 1px solid {border}; \
-                                 flex-shrink: 0;",
+                                 box-sizing: border-box; flex-shrink: 0;",
                                 border = tokens::COLOR_BORDER_DEFAULT,
                             ),
                         }
-                        // Column Labels
-                        for (col_idx, col_name) in COLS.iter().enumerate() {
+                        // Column Labels (with a right-edge resize handle)
+                        for col_idx in 0..num_cols {
                             div {
                                 style: format!(
-                                    "width: 100px; height: 26px; background: {bg}; \
+                                    "width: {w}px; height: 26px; background: {bg}; \
                                      border-right: 1px solid {border}; border-bottom: 1px solid {border}; \
-                                     display: flex; align-items: center; justify-content: center; \
+                                     box-sizing: border-box; \
+                                     display: flex; align-items: center; \
                                      font-size: 11px; font-weight: bold; color: {fg}; \
                                      flex-shrink: 0;",
+                                    w = col_px(col_idx),
                                     bg = if is_col_selected(col_idx) { "#CADAFC" } else { "#F0F0F0" },
                                     border = tokens::COLOR_BORDER_DEFAULT,
                                     fg = tokens::COLOR_TEXT_PRIMARY,
                                 ),
-                                "{col_name}"
+                                span {
+                                    style: "flex: 1; min-width: 0; text-align: center; overflow: hidden;",
+                                    "{col_to_label(col_idx)}"
+                                }
+                                // Drag to resize; double-click to auto-fit.
+                                div {
+                                    style: "width: 6px; height: 100%; cursor: col-resize; \
+                                            flex-shrink: 0; background: rgba(0,0,0,0.06);",
+                                    onmousedown: move |e| {
+                                        e.stop_propagation();
+                                        let start_px = col_px(col_idx);
+                                        col_resize.set(Some(ColResize {
+                                            col: col_idx,
+                                            start_x: e.client_coordinates().x,
+                                            start_px,
+                                            current_px: start_px,
+                                        }));
+                                    },
+                                    ondoubleclick: move |e| {
+                                        e.stop_propagation();
+                                        auto_fit_col(col_idx);
+                                    },
+                                }
                             }
                         }
                     }
 
                     // Grid Body Rows
-                    for row_idx in 0..30 {
+                    for row_idx in 0..num_rows {
                         div {
                             style: "display: flex; flex-direction: row;",
                             // Sticky Row Header
@@ -961,6 +1021,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                                 style: format!(
                                     "width: 50px; height: 26px; background: {bg}; \
                                      border-right: 1px solid {border}; border-bottom: 1px solid {border}; \
+                                     box-sizing: border-box; \
                                      display: flex; align-items: center; justify-content: center; \
                                      font-size: 11px; font-weight: bold; color: {fg}; \
                                      flex-shrink: 0; position: sticky; left: 0; z-index: 5;",
@@ -972,12 +1033,17 @@ pub(super) fn EditorInner(path: String) -> Element {
                             }
 
                             // Row Cells
-                            for col_idx in 0..10 {
+                            for col_idx in 0..num_cols {
                                 {
                                     let is_sel = is_cell_selected(row_idx, col_idx);
                                     let is_edit = is_cell_editing(row_idx, col_idx);
                                     let val = get_display_val(row_idx, col_idx);
                                     let fmt = get_cell_format(row_idx, col_idx);
+                                    let text_align = match fmt.align {
+                                        loki_sheet_model::CellAlign::Center => "center",
+                                        loki_sheet_model::CellAlign::Right => "right",
+                                        _ => "left",
+                                    };
                                     let edit_val = if is_edit {
                                         let wb = workbook_snap.read();
                                         let cell_opt = wb.get_sheet(0).and_then(|s| s.get_cell(row_idx as u32, col_idx as u32));
@@ -997,10 +1063,10 @@ pub(super) fn EditorInner(path: String) -> Element {
                                     rsx! {
                                         div {
                                             style: format!(
-                                                "width: 100px; height: 26px; \
+                                                "width: {w}px; height: 26px; \
                                                  border-right: 1px solid {border}; border-bottom: 1px solid {border}; \
                                                  display: flex; align-items: center; \
-                                                 padding: 0 6px; box-sizing: border-box; \
+                                                 padding: 0 6px; box-sizing: border-box; overflow: hidden; \
                                                  flex-shrink: 0; position: relative; \
                                                  background: {bg_color}; cursor: cell; \
                                                  font-size: 12px; \
@@ -1010,6 +1076,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                                                  justify-content: {justify}; \
                                                  outline: {outline}; \
                                                  z-index: {z_index};",
+                                                w = col_px(col_idx),
                                                 border = tokens::COLOR_BORDER_DEFAULT,
                                                 bg_color = if is_sel { "#E8F0FE" } else { "#FFFFFF" },
                                                 font_weight = if fmt.bold { "bold" } else { "normal" },
@@ -1058,8 +1125,17 @@ pub(super) fn EditorInner(path: String) -> Element {
                                                     }
                                                 }
                                             } else {
+                                                // The cell's `overflow: hidden` (above) is what
+                                                // guarantees text can't paint over neighbouring cells.
+                                                // COMPAT(dioxus-native): `text-overflow: ellipsis` and
+                                                // `white-space: nowrap` are unconfirmed in Blitz — they
+                                                // refine truncation but the cell clip is the hard limit.
                                                 span {
-                                                    style: "overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%;",
+                                                    style: format!(
+                                                        "display: block; width: 100%; min-width: 0; \
+                                                         overflow: hidden; text-overflow: ellipsis; \
+                                                         white-space: nowrap; text-align: {text_align};"
+                                                    ),
                                                     "{val}"
                                                 }
                                             }
@@ -1110,6 +1186,23 @@ pub(super) fn EditorInner(path: String) -> Element {
                 span {
                     style: "font-size: 11px; color: #888888;",
                     "Local File • XLSX / ODS"
+                }
+            }
+
+            // ── Save status banner (dismissible) ─────────────────────────────
+            if let Some(msg) = save_message() {
+                div {
+                    style: "display: flex; flex-direction: row; justify-content: space-between; \
+                            align-items: center; padding: 6px 16px; background: #2A3A4A; \
+                            border-bottom: 1px solid #3A4A5A; color: #DCEAF6; font-size: 12px;",
+                    span { "{msg}" }
+                    button {
+                        style: "background: none; border: none; color: #DCEAF6; cursor: pointer; \
+                                font-size: 14px; padding: 0 4px;",
+                        aria_label: fl!("editor-dismiss-aria"),
+                        onclick: move |_| { save_message.set(None); },
+                        "\u{00D7}"
+                    }
                 }
             }
 

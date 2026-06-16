@@ -1,7 +1,9 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
 
-//! Maps chronological definitions formatting attributes exactly translating strings sequentially defining output layouts explicitly targeting compatibility tracking bounds efficiently utilizing serializers strictly validating payloads correctly identifying configuration logic reliably.
+//! Serialises [`CoreProperties`] to the `/docProps/core.xml` part, emitting the
+//! `cp`/`dc`/`dcterms`/`dcmitype`/`xsi` namespaces and W3CDTF-typed date
+//! elements. Absent fields are omitted from the output.
 
 use serde::Serialize;
 
@@ -84,7 +86,8 @@ fn format_date(dt: Option<chrono::DateTime<chrono::Utc>>) -> Option<DateValueOut
     })
 }
 
-/// Applies serialization bindings internally linking outputs validating properties mapping structure consistently exposing formatting seamlessly converting bounds cleanly preserving metadata properties appropriately generating items strictly enforcing limits reliably writing outputs natively encapsulating configuration comprehensively defining tags transparently exporting payloads perfectly capturing models successfully defining data explicitly.
+/// Serialises `props` to the core-properties XML part, prefixed with an XML
+/// declaration. Returns [`OpcError::Xml`] if serialisation fails.
 pub fn write_core_properties(props: &CoreProperties) -> OpcResult<Vec<u8>> {
     let out = CorePropsXmlOut {
         xmlns_cp: "http://schemas.openxmlformats.org/package/2006/metadata/core-properties",

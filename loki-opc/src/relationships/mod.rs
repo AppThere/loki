@@ -1,7 +1,8 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
 
-//! Relationships mapping and resolution configuration handling targeting components within elements recursively.
+//! OPC relationships: the `Relationship`/`RelationshipSet` model plus parsing
+//! and writing of `.rels` parts and resolution of relationship targets.
 
 mod location;
 mod parse;
@@ -17,10 +18,10 @@ pub use write::write_relationships_part;
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TargetMode {
-    /// Mapping logically to paths inside the contained zip file.
+    /// Target is a part inside the package (relative IRI).
     #[default]
     Internal,
-    /// Absolute or independent URIs linking external resources blindly.
+    /// Target is an external resource (absolute IRI).
     External,
 }
 
@@ -46,30 +47,30 @@ pub struct RelationshipSet {
 }
 
 impl RelationshipSet {
-    /// Retrieves a specific relationship uniquely by its string layout.
+    /// Returns the relationship with the given `id`, if present.
     pub fn get(&self, id: &str) -> Option<&Relationship> {
         self.relationships.iter().find(|r| r.id == id)
     }
 
-    /// Provides immutable list extraction iterative streams.
+    /// Iterates over all relationships in the set.
     pub fn iter(&self) -> impl Iterator<Item = &Relationship> {
         self.relationships.iter()
     }
 
-    /// Extrapolates relationships filtered rigidly by specific format type values.
+    /// Iterates over relationships whose type matches `rel_type`.
     pub fn by_type<'a>(&'a self, rel_type: &'a str) -> impl Iterator<Item = &'a Relationship> {
         self.relationships
             .iter()
             .filter(move |r| r.rel_type == rel_type)
     }
 
-    /// Mounts additional relationships inside the struct mapping.
+    /// Appends a relationship to the set.
     pub fn add(&mut self, rel: Relationship) -> OpcResult<()> {
         self.relationships.push(rel);
         Ok(())
     }
 
-    /// Expunges relationship identifiers removing their associations directly.
+    /// Removes and returns the relationship with the given `id`, if present.
     pub fn remove(&mut self, id: &str) -> Option<Relationship> {
         if let Some(pos) = self.relationships.iter().position(|x| x.id == id) {
             Some(self.relationships.remove(pos))
@@ -78,13 +79,13 @@ impl RelationshipSet {
         }
     }
 
-    /// Indication if local mappings contain elements correctly.
+    /// Returns `true` if the set contains no relationships.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.relationships.is_empty()
     }
 
-    /// Returns size metrics for active metadata maps.
+    /// Returns the number of relationships in the set.
     #[must_use]
     pub fn len(&self) -> usize {
         self.relationships.len()

@@ -12,13 +12,16 @@ categories = ["encoding", "parser-implementations", "text-processing"]
 default = ["docx"]
 docx = []
 xlsx = []
-pptx = []
+pptx = ["dep:loki-graphics", "dep:loki-presentation-model"]
 
 [dependencies]
 loki-opc       = { path = "../loki-opc" }
 loki-doc-model = { path = "../loki-doc-model" }
 loki-sheet-model = { path = "../loki-sheet-model" }
 loki-primitives = { path = "../loki-primitives" }
+# Presentation import targets (pptx feature only).
+loki-graphics = { path = "../loki-graphics", optional = true }
+loki-presentation-model = { path = "../loki-presentation-model", optional = true }
 appthere-color = "0.1.1"
 quick-xml      = { version = "0.36", features = ["serialize"] }
 thiserror      = "2"

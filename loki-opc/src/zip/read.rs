@@ -1,7 +1,14 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
 
-//! Parsing logic integrating zip inputs sequentially extracting items matching parameters efficiently structuring files tracking metadata correctly isolating identifiers explicitly extracting structures natively avoiding memory overloads mapping bytes accurately mapping configurations perfectly handling offsets explicitly identifying paths reliably processing packages securely validating outputs transparently isolating resources perfectly preserving components implicitly tracking metadata cleanly.
+//! Reads an OPC package from a ZIP archive.
+//!
+//! Each entry is decompressed under the per-entry and aggregate byte budgets in
+//! the `zip::limits` budgets (zip-bomb guard), normalised through the
+//! [`crate::compat`] shims (backslash separators, non-canonical percent
+//! encoding), and routed by suffix: `.rels` parts become relationship sets,
+//! everything else becomes a [`PartData`] keyed by [`PartName`]. UTF-16 XML
+//! parts are transcoded to UTF-8 on the fly.
 
 use std::collections::HashMap;
 use std::io::{Read, Seek};
@@ -19,7 +26,13 @@ use crate::{
     zip::limits::read_entry_capped,
 };
 
-/// Reads packages sequentially organizing files correctly instantiating metadata components generating logic properly resolving variants matching properties enforcing parameters effectively preserving identifiers robustly returning limits cleanly.
+/// Reads an OPC [`Package`] from a seekable ZIP `reader`.
+///
+/// Resolves `[Content_Types].xml`, every content part, package- and part-level
+/// relationships, core properties, and the thumbnail. Returns
+/// [`OpcError::MissingContentTypes`] when the archive has no content-types part
+/// and [`OpcError::UnsupportedCompression`] for entries that are neither stored
+/// nor deflated. Decompression is bounded by the `zip::limits` budgets.
 pub fn read_package_from_zip<R: Read + Seek>(reader: &mut R) -> OpcResult<Package> {
     let mut zip = ZipArchive::new(reader).map_err(OpcError::Zip)?;
     let mut pkg = Package::new();
@@ -74,7 +87,6 @@ pub fn read_package_from_zip<R: Read + Seek>(reader: &mut R) -> OpcResult<Packag
         let name =
             crate::compat::part_names::normalize_percent_encoding(&name_str, &mut pkg.warnings)?;
 
-        // Push to seen names dynamically validating bounds internally resolving uniqueness properly.
         seen_names.push(name.as_str().to_string());
 
         let mut data = read_entry_capped(&mut file, name.as_str(), &mut total_decompressed)?;
@@ -94,7 +106,8 @@ pub fn read_package_from_zip<R: Read + Seek>(reader: &mut R) -> OpcResult<Packag
             let rs = parse_relationships_part(&data, name.as_str(), &mut pkg.warnings)?;
             let mut rel_set = crate::relationships::RelationshipSet::default();
             for r in rs {
-                // Tracking duplicate properties naturally mapping configurations protecting states natively matching outputs completely validating logic implicitly validating parts securely configuring relationships accurately checking mappings internally parsing logic faithfully isolating strings completely exposing outputs perfectly translating definitions reliably configuring fields structurally evaluating items exactly handling structures natively loading sets correctly avoiding loops explicitly ensuring reliability defining states systematically generating maps cleanly maintaining logic perfectly exporting items strictly loading parameters reliably returning arrays accurately converting parameters smoothly generating lists appropriately translating targets smoothly isolating parts consistently identifying scopes naturally providing fallbacks gracefully loading identifiers exactly formatting parameters correctly loading maps carefully preserving paths efficiently substituting states sequentially exposing rules successfully passing constraints optimally verifying conditions flawlessly validating data structurally checking fields safely extracting strings fluently exposing targets comprehensively enforcing requirements smoothly locating structures natively finding entries transparently checking bounds dependably checking fields robustly retrieving components implicitly configuring sequences explicitly structuring sets explicitly establishing mappings intuitively processing sets seamlessly.
+                // Duplicate relationship ids within a part are dropped by
+                // `add`; the first occurrence wins.
                 let _ = rel_set.add(r);
             }
 

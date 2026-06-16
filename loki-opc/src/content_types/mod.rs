@@ -1,7 +1,8 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
 
-//! Tracking metadata resolution parameters mapping specific extensions/paths internally isolating overrides.
+//! The `[Content_Types].xml` model: per-extension default media types plus
+//! per-part overrides, with override taking precedence on lookup.
 
 mod parse;
 mod write;
@@ -13,7 +14,7 @@ use crate::part::PartName;
 pub use parse::parse_content_types;
 pub use write::write_content_types;
 
-/// Content type tracking structure defining explicit URI targets resolving strictly matching components.
+/// Maps parts to their media types via extension defaults and per-part overrides.
 #[derive(Debug, Clone, Default)]
 pub struct ContentTypeMap {
     defaults: HashMap<String, String>,
@@ -21,19 +22,22 @@ pub struct ContentTypeMap {
 }
 
 impl ContentTypeMap {
-    /// Registers fallback content mapping identifying arbitrary files relying identically upon extension definitions.
+    /// Registers a default media type for all parts with the given `extension`
+    /// (matched case-insensitively).
     pub fn add_default(&mut self, extension: &str, media_type: &str) {
         self.defaults
             .insert(extension.to_ascii_lowercase(), media_type.to_string());
     }
 
-    /// Extends overrides matching paths precisely avoiding defaults explicitly identifying components universally.
+    /// Registers a media type override for a specific `part_name`, taking
+    /// precedence over the extension default.
     pub fn add_override(&mut self, part_name: &PartName, media_type: &str) {
         self.overrides
             .insert(part_name.clone(), media_type.to_string());
     }
 
-    /// Evaluates resolution targeting paths exclusively providing deterministic lookup bounds tracking targets.
+    /// Resolves the media type for `name`: an override if present, otherwise the
+    /// default for its extension, otherwise `None`.
     #[must_use]
     pub fn resolve(&self, name: &PartName) -> Option<&str> {
         if let Some(res) = self.overrides.get(name) {
@@ -49,12 +53,12 @@ impl ContentTypeMap {
         None
     }
 
-    /// Provide underlying maps iterating outputs dynamically serializing properties mapping files.
+    /// The extension → media-type default map (used by the serializer).
     pub(crate) fn defaults(&self) -> &HashMap<String, String> {
         &self.defaults
     }
 
-    /// Extract configuration overrides internally binding path parameters identifying parts implicitly.
+    /// The part → media-type override map (used by the serializer).
     pub(crate) fn overrides(&self) -> &HashMap<PartName, String> {
         &self.overrides
     }

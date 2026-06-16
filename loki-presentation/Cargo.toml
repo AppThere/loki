@@ -21,9 +21,12 @@ dioxus          = { version = "0.7", features = ["native", "router"] }
 # Format-neutral document model.
 loki-doc-model  = { path = "../loki-doc-model" }
 # OOXML import/export.
-loki-ooxml      = { path = "../loki-ooxml" }
+loki-ooxml      = { path = "../loki-ooxml", features = ["pptx"] }
 # ODF import/export.
 loki-odf        = { path = "../loki-odf" }
+# Presentation document model + shared vector-graphics model.
+loki-presentation-model = { path = "../loki-presentation-model" }
+loki-graphics   = { path = "../loki-graphics" }
 # Layout engine.
 loki-layout     = { path = "../loki-layout" }
 # In-workspace Vello GPU rendering backend.
@@ -73,6 +76,16 @@ compile_sdk_version = 34
 [package.metadata.android.application]
 label = "Loki Presentation"
 
+[package.metadata.android.signing.release]
+path = "../target/android-pkg/signing.keystore"
+keystore_password = "android"
+
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { workspace = true }
 blitz-shell = "0.2.3"
+android_logger = "0.15"
+log = "0.4"
+
+[dev-dependencies]
+# Used by slide_view tests to construct DocumentColor values.
+loki-primitives = { path = "../loki-primitives" }

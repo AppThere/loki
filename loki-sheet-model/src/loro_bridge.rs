@@ -36,6 +36,12 @@ fn get_bool_from_map(map: &LoroMap, key: &str) -> Option<bool> {
         .and_then(|v| v.into_bool().ok())
 }
 
+fn get_f64_from_map(map: &LoroMap, key: &str) -> Option<f64> {
+    map.get(key)
+        .and_then(|v| v.into_value().ok())
+        .and_then(|v| v.into_double().ok())
+}
+
 /// Converts a Loki workbook model into a fresh LoroDoc.
 pub fn workbook_to_loro(wb: &Workbook) -> Result<LoroDoc, BridgeError> {
     let loro_doc = LoroDoc::new();
@@ -70,6 +76,14 @@ pub fn workbook_to_loro(wb: &Workbook) -> Result<LoroDoc, BridgeError> {
                 style_map.insert("underline", style.underline)?;
                 style_map.insert("align", style.align.as_str())?;
                 style_map.insert("num_format", style.num_format.as_str())?;
+            }
+        }
+
+        // Custom column widths (points), keyed by column index.
+        if !sheet.column_widths.is_empty() {
+            let cols_map = sheet_map.insert_container("columns", LoroMap::new())?;
+            for (&col, &width) in &sheet.column_widths {
+                cols_map.insert(col.to_string().as_str(), width)?;
             }
         }
     }
@@ -177,7 +191,27 @@ pub fn loro_to_workbook(loro: &LoroDoc) -> Result<Workbook, BridgeError> {
             }
         }
 
-        wb.sheets.push(Worksheet { name, cells });
+        let mut column_widths = HashMap::new();
+        if let Some(cols_map) = sheet_map
+            .get("columns")
+            .and_then(|val| val.into_container().ok())
+            .and_then(|c| c.into_map().ok())
+        {
+            for key_string in cols_map.keys() {
+                let key_str: &str = key_string.as_ref();
+                if let (Ok(col), Some(width)) =
+                    (key_str.parse::<u32>(), get_f64_from_map(&cols_map, key_str))
+                {
+                    column_widths.insert(col, width);
+                }
+            }
+        }
+
+        wb.sheets.push(Worksheet {
+            name,
+            cells,
+            column_widths,
+        });
     }
 
     if wb.sheets.is_empty() {

@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "loki-graphics"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Format-neutral vector-graphics model shared across the AppThere suite (Loki Presentation, Iris Draw)"
+repository = "https://github.com/appthere/loki"
+keywords = ["vector", "graphics", "shapes", "drawing", "model"]
+categories = ["data-structures", "graphics"]
+
+[features]
+default = []
+# Adds serde derives to every model type (and pulls them through loki-primitives).
+serde = ["dep:serde", "loki-primitives/serde"]
+
+[dependencies]
+loki-primitives = { path = "../loki-primitives" }
+serde = { version = "1", features = ["derive"], optional = true }

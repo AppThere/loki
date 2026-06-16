@@ -1,11 +1,16 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
 
-//! Handles backslash substitutions identifying non-compliant ZIP paths locally ensuring standardizations mapping files transparently supporting [MS-OI29500] / [MS-OE376].
+//! ZIP path compatibility shim: rewrite backslash separators emitted by
+//! non-conformant writers to forward slashes ([MS-OI29500] / [MS-OE376]).
 
 use crate::error::DeviationWarning;
 
-/// Replaces restricted backslash segments emitted by early configuration drivers matching native separators unconditionally correctly isolating mapping limits explicitly verifying output boundaries generating standard paths exclusively generating tracking variants globally supporting legacy parsing.
+/// Rewrites backslashes in a ZIP entry `name` to forward slashes.
+///
+/// Outside the `strict` feature, names containing a backslash are normalised and
+/// a [`DeviationWarning::BackslashInPartName`] is recorded; conformant names are
+/// returned unchanged.
 #[allow(clippy::ptr_arg)]
 pub fn normalize_backslash(
     name: &str,

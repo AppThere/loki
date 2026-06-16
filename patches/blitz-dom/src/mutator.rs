@@ -109,10 +109,32 @@ impl DocumentMutator<'_> {
     }
 
     pub fn node_at_path(&self, start_node_id: usize, path: &[u8]) -> usize {
-        let mut current = &self.doc.nodes[start_node_id];
+        // PATCH(loki): the bare `slab` index panics with an opaque "invalid key"
+        // when the reconciler references a node that has already been freed
+        // (a node-lifetime/GC gap — see `assign_node_id` in dioxus-native-dom).
+        // Surface the offending id / path / available children so the
+        // divergence can be diagnosed instead of crashing with no context.
+        let mut current = self.doc.nodes.get(start_node_id).unwrap_or_else(|| {
+            panic!(
+                "node_at_path: start node {start_node_id} is not in the document \
+                 (stale reconciler reference; path={path:?})"
+            )
+        });
         for i in path {
-            let new_id = current.children[*i as usize];
-            current = &self.doc.nodes[new_id];
+            let new_id = *current.children.get(*i as usize).unwrap_or_else(|| {
+                panic!(
+                    "node_at_path: child index {i} out of range at node {} \
+                     (node has {} children; path={path:?})",
+                    current.id,
+                    current.children.len(),
+                )
+            });
+            current = self.doc.nodes.get(new_id).unwrap_or_else(|| {
+                panic!(
+                    "node_at_path: child node {new_id} is not in the document \
+                     (stale reconciler reference; path={path:?})"
+                )
+            });
         }
         current.id
     }

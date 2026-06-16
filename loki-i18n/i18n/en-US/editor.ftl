@@ -22,6 +22,22 @@ editor-slide-label = Slide { $current } of { $total }
 # Presentation preview banner — shown because .pptx/.odp loading and saving
 # are not yet implemented; the slides on screen are a non-editable sample.
 editor-presentation-preview = Preview only — opening and saving presentations isn't supported yet. These sample slides are not your file, and changes won't be saved.
+# Shown when a real .pptx is opened (read-only import).
+editor-presentation-readonly = Read-only preview — editing and saving presentations is coming soon.
+# Shown when an opened presentation has no slides.
+editor-presentation-empty = This presentation has no slides.
+# Shown when a presentation file fails to open.
+editor-load-failed = Could not open this presentation: { $reason }
+# Shown while a presentation is loading.
+editor-presentation-loading = Loading…
+# Presentation editor toolbar actions.
+editor-action-save = Save
+editor-action-add-slide = Add slide
+editor-action-delete-slide = Delete slide
+editor-action-add-bullet = Add bullet
+# Placeholder prompts for empty presentation text fields.
+editor-placeholder-title = Title
+editor-placeholder-subtitle = Subtitle
 
 # Font warning banner
 editor-font-substitution-title = Font Substitution
@@ -33,6 +49,7 @@ editor-font-dismiss = Dismiss
 editor-save-success = Document saved
 editor-save-error = Could not save: { $reason }
 editor-save-untitled-hint = Use File → Save As to save new documents
+editor-dismiss-aria = Dismiss
 
 # Style picker / style editor chrome
 editor-tab-close-aria = Close tab

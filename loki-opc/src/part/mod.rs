@@ -1,7 +1,7 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
 
-//! Types and implementation of OPC package elements containing URI addressing handlers.
+//! OPC parts: validated [`PartName`]s and relationship-target addressing.
 
 pub mod addressing;
 mod name;
@@ -20,7 +20,7 @@ pub struct PartData {
 }
 
 impl PartData {
-    /// Constructs structural payload.
+    /// Creates a part from raw `bytes` and a `media_type` (with no growth hint).
     pub fn new(bytes: Vec<u8>, media_type: impl Into<String>) -> Self {
         Self {
             bytes,
@@ -29,7 +29,7 @@ impl PartData {
         }
     }
 
-    /// Maps simple `xml` default strings automatically onto parsed parts.
+    /// Creates an `application/xml` part from raw `bytes`.
     pub fn xml(bytes: Vec<u8>) -> Self {
         Self::new(bytes, "application/xml")
     }

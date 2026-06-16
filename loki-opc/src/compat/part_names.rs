@@ -1,14 +1,21 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
 
-//! Fallbacks correcting percent escaped character combinations enforcing URI standardizations handling malformed files structurally preserving content boundaries strictly avoiding data losses generating tracking parameters mapping equivalents efficiently protecting integrity explicitly executing limits transparently executing [MS-OI29500] / [MS-OE376] conventions reliably.
+//! Part-name compatibility shims: re-canonicalise non-standard percent encoding
+//! and resolve case-insensitive duplicate part names ([MS-OI29500] /
+//! [MS-OE376]).
 
 #[cfg(feature = "strict")]
 use crate::error::OpcError;
 use crate::error::{DeviationWarning, OpcResult};
 use crate::part::PartName;
 
-/// Attempts percent decoding non standard formatting re-encoding strings canonically securely isolating paths natively generating valid descriptors verifying structures exclusively translating properties protecting tracking outputs.
+/// Parses `name` into a [`PartName`], repairing non-canonical percent encoding.
+///
+/// Under `strict` this is a plain [`PartName::new`]. Otherwise, if the raw name
+/// is rejected, it is percent-decoded and re-encoded canonically before a
+/// second attempt, recording a [`DeviationWarning::NonCanonicalPercentEncoding`]
+/// on success. The original parse error is returned if re-encoding still fails.
 #[allow(clippy::ptr_arg)]
 pub fn normalize_percent_encoding(
     name: &str,
@@ -24,9 +31,9 @@ pub fn normalize_percent_encoding(
         match PartName::new(name) {
             Ok(pn) => Ok(pn),
             Err(e) => {
-                // Simplified fallback logic for decoding and re-encoding: Attempt a basic URL decode then recode.
-                // Normally this would require an RFC3987 encoding step, but for basic ASCII / spaces mis-encodings
-                // this acts as a stub resolving known deviations cleanly.
+                // Simplified decode/re-encode fallback. A fully conformant
+                // implementation would follow RFC 3987, but this handles the
+                // common ASCII / space mis-encodings emitted by real writers.
                 let mut decoded = String::new();
                 let mut bytes = name.as_bytes().iter();
                 while let Some(&b) = bytes.next() {
@@ -70,7 +77,12 @@ pub fn normalize_percent_encoding(
     }
 }
 
-/// Strip explicitly duplicate files ignoring case resolving conflicts parsing files sequentially verifying matching configurations checking properties efficiently preserving extraction mappings tracking limits accurately reporting conflicts correctly tracking variants reliably validating bounds successfully matching outputs isolating identifiers seamlessly.
+/// Resolves a set of case-insensitively colliding part `names` to the single
+/// one to retain (the first).
+///
+/// Under `strict` a collision is an error ([`OpcError::DuplicatePartName`]).
+/// Otherwise the first name is kept and the rest recorded as
+/// [`DeviationWarning::DuplicatePartName`].
 #[allow(clippy::ptr_arg)]
 pub fn resolve_duplicate<'a>(
     names: &'a [&'a str],

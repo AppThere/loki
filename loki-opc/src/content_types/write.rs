@@ -1,7 +1,7 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
 
-//! Output generation explicitly formatting properties defining metadata matching specification boundaries correctly identifying items.
+//! Serialises a [`ContentTypeMap`] to the `[Content_Types].xml` part.
 
 use quick_xml::Writer;
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, Event};
@@ -9,7 +9,8 @@ use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, Event};
 use crate::content_types::ContentTypeMap;
 use crate::error::OpcResult;
 
-/// Structures mappings systematically isolating standard components serializing definitions safely internally tracking constraints universally.
+/// Serialises `map` to `[Content_Types].xml` bytes, emitting a `Default`
+/// element per extension and an `Override` element per part.
 pub fn write_content_types(map: &ContentTypeMap) -> OpcResult<Vec<u8>> {
     let mut writer = Writer::new_with_indent(Vec::new(), b' ', 2);
 

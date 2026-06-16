@@ -1,11 +1,12 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
 
-//! Resolving pack IRI values inside package configurations.
+//! Resolves relationship target references against a base part name (§8.3).
 
 use crate::part::PartName;
 
-/// Normalizes relative IRI segments tracking relational states to resolve fully qualified `PartName` limits.
+/// Resolves a relationship `target` (absolute or relative to `base`) into an
+/// absolute [`PartName`]. Returns `None` if the result is not a valid part name.
 pub fn resolve_relative_reference(base: &PartName, target: &str) -> Option<PartName> {
     if target.starts_with('/') {
         return PartName::new(target).ok();

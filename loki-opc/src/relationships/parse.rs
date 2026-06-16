@@ -1,7 +1,8 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
 
-//! `quick-xml` event mode parsing implementing ISO metadata structure extraction targeting relationship types specifically.
+//! Parses a `.rels` part into `Relationship` records using `quick-xml`'s
+//! event-mode reader.
 
 use quick_xml::Reader;
 use quick_xml::events::Event;
@@ -86,7 +87,7 @@ pub fn parse_relationships_part(
                                 id: id.clone(),
                                 part: part_name.to_string(),
                             });
-                            continue; // Discard subsequent duplicate IDs explicitly parsing structures natively.
+                            continue; // First id wins; drop later duplicates.
                         }
                     }
 

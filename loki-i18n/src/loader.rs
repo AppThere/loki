@@ -43,11 +43,16 @@ impl LokiBundle {
 
         let bundle = load_locale(&langid);
 
-        let fallback = if !locale_str.starts_with("en-US") {
-            let fb_id: LanguageIdentifier = FALLBACK_LOCALE.parse().expect("en-US is valid");
-            Some(load_locale(&fb_id))
-        } else {
+        // Keep an en-US fallback bundle unless the requested locale resolves
+        // *exactly* to en-US. Comparing the parsed `LanguageIdentifier` (rather
+        // than a `starts_with("en-US")` string check) is important: variants
+        // like `en-US-posix` have no embedded `.ftl` files of their own, so
+        // without a fallback every key would render as its raw identifier.
+        let fb_id: LanguageIdentifier = FALLBACK_LOCALE.parse().expect("en-US is valid");
+        let fallback = if langid == fb_id {
             None
+        } else {
+            Some(load_locale(&fb_id))
         };
 
         LokiBundle { bundle, fallback }
@@ -103,4 +108,56 @@ fn format_from(bundle: &Bundle, key: &str, args: Option<&FluentArgs<'_>>) -> Opt
     let mut errors = vec![];
     let value = bundle.format_pattern(pattern, args, &mut errors);
     Some(value.into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A key that exists in en-US/shell.ftl. Used to distinguish a resolved
+    // translation from the raw-key fallback.
+    const KNOWN_KEY: &str = "shell-app-name";
+    const KNOWN_VALUE: &str = "Loki Text";
+
+    #[test]
+    fn exact_en_us_resolves() {
+        let b = LokiBundle::load("en-US");
+        assert_eq!(b.get(KNOWN_KEY, None), KNOWN_VALUE);
+    }
+
+    #[test]
+    fn en_us_posix_resolves_via_fallback() {
+        // Regression: `en-US-posix` has no embedded .ftl files of its own.
+        // Before the fix it was treated as en-US (no fallback) and rendered the
+        // raw key. It must now resolve through the en-US fallback bundle.
+        let b = LokiBundle::load("en-US-posix");
+        assert_eq!(b.get(KNOWN_KEY, None), KNOWN_VALUE);
+    }
+
+    #[test]
+    fn unknown_locale_falls_back_to_en_us() {
+        let b = LokiBundle::load("zz-ZZ");
+        assert_eq!(b.get(KNOWN_KEY, None), KNOWN_VALUE);
+    }
+
+    #[test]
+    fn bare_language_subtag_falls_back() {
+        // `en` (no region) likewise has no embedded files and must fall back.
+        let b = LokiBundle::load("en");
+        assert_eq!(b.get(KNOWN_KEY, None), KNOWN_VALUE);
+    }
+
+    #[test]
+    fn missing_key_returns_the_key_itself() {
+        let b = LokiBundle::load("en-US");
+        let missing = "this-key-does-not-exist";
+        assert_eq!(b.get(missing, None), missing);
+    }
+
+    #[test]
+    fn garbage_locale_string_does_not_panic() {
+        // An unparseable locale must degrade to en-US, not panic.
+        let b = LokiBundle::load("!!!not-a-locale!!!");
+        assert_eq!(b.get(KNOWN_KEY, None), KNOWN_VALUE);
+    }
 }

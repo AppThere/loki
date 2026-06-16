@@ -1,7 +1,7 @@
 // Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
 
-//! Exposes metadata configuration targeting generation parameters sequentially structuring output formats internally.
+//! Serialises a [`RelationshipSet`] to a `.rels` part.
 
 use quick_xml::Writer;
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, Event};
@@ -10,7 +10,9 @@ use crate::constants::RELATIONSHIPS_NS;
 use crate::error::OpcResult;
 use crate::relationships::{RelationshipSet, TargetMode};
 
-/// Encodes relationships structural layouts strictly parsing streams output bounds precisely.
+/// Serialises `set` to `.rels` XML bytes: a `<Relationships>` root with one
+/// `<Relationship>` element per entry (emitting `TargetMode="External"` only
+/// for external targets).
 pub fn write_relationships_part(set: &RelationshipSet) -> OpcResult<Vec<u8>> {
     let mut writer = Writer::new_with_indent(Vec::new(), b' ', 2);
 

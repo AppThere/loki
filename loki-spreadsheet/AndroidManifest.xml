@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AndroidManifest.xml — loki-spreadsheet
+  Used by scripts/build-android.ps1 instead of the cargo-apk generated manifest.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.appthere.loki.spreadsheet">
+
+    <uses-sdk
+        android:minSdkVersion="26"
+        android:targetSdkVersion="34" />
+
+    <application
+        android:label="Loki Spreadsheet"
+        android:hasCode="false">
+
+        <!--
+          NativeActivity is the main app entry point.
+          android:exported="true" is required on API 31+ for activities with intent filters.
+          android:configChanges prevents activity restart on rotation/keyboard events.
+        -->
+        <activity
+            android:name="android.app.NativeActivity"
+            android:label="Loki Spreadsheet"
+            android:exported="true"
+            android:configChanges="orientation|keyboardHidden|screenSize">
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="loki_spreadsheet" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+    </application>
+
+</manifest>
