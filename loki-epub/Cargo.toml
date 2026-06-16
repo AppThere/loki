@@ -1,0 +1,23 @@
+[package]
+name = "loki-epub"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "EPUB 3.3 export for the Loki document suite"
+repository = "https://github.com/appthere/loki"
+keywords = ["epub", "ebook", "export", "publishing", "loki"]
+categories = ["encoding", "text-processing"]
+
+[dependencies]
+loki-doc-model = { path = "../loki-doc-model" }
+loki-primitives = { path = "../loki-primitives" }
+thiserror = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[dependencies.chrono]
+version = "0.4"
+default-features = false
+features = ["std", "clock"]
+
+[package.metadata.docs.rs]
+all-features = true

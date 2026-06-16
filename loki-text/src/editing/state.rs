@@ -208,6 +208,10 @@ pub fn apply_mutation_and_relayout(
         if let Some(orig) = &state.document {
             doc.styles = orig.styles.clone();
             doc.source = orig.source.clone();
+            // The Loro CRDT does not round-trip document metadata, so carry the
+            // original meta forward; otherwise Publish-tab metadata edits would
+            // be lost on the next keystroke.
+            doc.meta = orig.meta.clone();
         }
         doc
     };

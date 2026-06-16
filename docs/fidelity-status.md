@@ -141,3 +141,28 @@ numbers.
 | Persistent renderer shaping context | `loki-renderer` `DocPageSource` | One `FontResources` for the source's lifetime instead of one per generation: the ~20 MB system-font scan runs once, and the shaping cache persists across keystrokes on the render path. |
 | Incremental Loro→Document reconstruction (`IncrementalReader`) | `loki-doc-model` `loro_bridge` | A keystroke re-derives only the changed block instead of walking the whole CRDT, by diffing Loro versions and mapping changed containers to block indices. Structural/section/layout changes fall back to a full `loro_to_document`, so output is byte-identical. Keystroke on a ~1000-paragraph doc: full-rebuild ~17.7 ms → incremental ~14 ms (~166 ms → ~14 ms across both Tier-0 commits). |
 | Single canonical layout | `loki-renderer` `DocPageSource` / `DocumentView` | Paginated mode lays the document out once: the editor's `Arc<PaginatedLayout>` is handed to the renderer (`provide_paginated_layout`) and reused for painting instead of a second `layout_document` pass. Reflow mode still computes its own width-dependent layout. The editor (hit-testing) and renderer (painting) now share one layout object. Output unchanged. |
+
+---
+
+## 9. Publishing Export (PDF/X & EPUB 3.3)
+
+The **Publish** ribbon tab in Loki Text exports the open document to print-ready
+PDF/X and to reflowable EPUB 3.3, and edits Dublin Core metadata. PDF export
+(`loki-pdf`) reuses the shared `loki-layout` engine to reproduce the document's
+own paginated geometry, then serialises positioned glyph runs with `pdf-writer`.
+EPUB export (`loki-epub`) serialises the abstract content tree to XHTML inside an
+OCF (ZIP) container.
+
+| Feature | Source | Status | Notes |
+| :--- | :--- | :---: | :--- |
+| **PDF/X-1a / X-3 / X-4** | `loki-pdf` | Yes | Conformance level selectable per export. Drives PDF version (1.4 / 1.4 / 1.6), the `GTS_PDFXVersion` Info key, and the XMP `pdfx`/`pdfxid` claim. |
+| **Font embedding** | `loki-pdf` | Yes | Every face used by the layout is embedded as a `CIDFontType2` program (`Identity-H`), glyphs addressed by id. Full program embedded; **subsetting is deferred** (larger files). |
+| **CMYK colour + OutputIntent** | `loki-pdf` | Yes | All text/graphics emitted in DeviceCMYK with a PDF/X `OutputIntent`. Default printing condition is FOGRA39. An ICC `DestOutputProfile` is embedded only when supplied via `OutputIntent::icc_profile`; otherwise the registered condition identifier is referenced (supply a licensed profile for full certification). |
+| **XMP + Info + trailer ID + Trapped** | `loki-pdf` | Yes | XMP metadata packet, Document Info dictionary, trailer `/ID`, and `Trapped` flag all written (PDF/X requirements). |
+| **Text decorations / rules / borders / fills** | `loki-pdf` | Yes | Underline/strikethrough/overline, horizontal rules, table borders and cell fills emitted as CMYK fills. |
+| **Images in PDF** | `loki-pdf` | No | Image XObjects not yet embedded (text/vector only). |
+| **Clipping / rotation in PDF** | `loki-pdf` | Partial | `ClippedGroup` renders children without the clip mask; `RotatedGroup` renders at the group origin without rotation (over-paint preferred to omission). |
+| **EPUB 3.3 container** | `loki-epub` | Yes | OCF ZIP with `mimetype` stored first, `META-INF/container.xml`, package document, navigation document, one XHTML content document, and a stylesheet. |
+| **EPUB package metadata** | `loki-epub` | Yes | Required `dc:identifier` (synthesised UUID when absent) / `dc:title` / `dc:language` / `dcterms:modified`, plus all available Dublin Core fields. |
+| **EPUB content** | `loki-epub` | Partial | Paragraphs, headings (with a derived TOC `nav`), lists, blockquotes, code, rules, definition lists, and inline formatting. **Tables render as placeholders; images render as alt text** (resources not yet packaged). |
+| **Dublin Core metadata editor** | `loki-text` | Yes | Publish-tab **Metadata** button edits the DCMES + DCMI Terms fields (`DocumentMeta` + `DublinCoreMeta`). Metadata is preserved across keystrokes (carried forward in `apply_mutation_and_relayout`) but does **not** yet round-trip through the Loro CRDT or DOCX/ODT export. |

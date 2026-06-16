@@ -108,6 +108,7 @@ but are **not perfectly round-tripped through the Loro CRDT**.
 |---|---|---|
 | `tab_stops` | Written as unreadable Debug string; not read back. | Medium |
 | `background_color` (paragraph) | Written as Debug string; not decoded on read. | Low |
+| `DocumentMeta` / `DublinCoreMeta` | Publish-tab metadata edits are carried forward across keystrokes in `apply_mutation_and_relayout`, but document metadata is not stored in the Loro CRDT nor written back to DOCX/ODT on export. | Medium |
 
 ---
 

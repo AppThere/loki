@@ -36,9 +36,11 @@ use loro::LoroValue;
 
 use super::editor_canvas::render_canvas_area;
 use super::editor_load::load_document;
+use super::editor_metadata_panel::metadata_panel;
 use super::editor_path_sync::{
     PathSyncSignals, restore_session, stash_outgoing, sync_path_and_reset,
 };
+use super::editor_publish::{publish_panel, publish_tab_content};
 use super::editor_ribbon::home_tab_content;
 use super::editor_save::{export_document_to_token, save_document_to_path};
 use super::editor_state::{EditorState, use_editor_state};
@@ -115,6 +117,10 @@ pub(super) fn EditorInner(path: String) -> Element {
         editing_style_draft,
         mut save_message,
         save_request,
+        mut active_ribbon_tab,
+        is_publish_panel_open,
+        pdf_level,
+        editing_metadata,
     } = use_editor_state();
 
     // ── Tab/recents context for Save As and the unsaved-changes indicator ────
@@ -237,6 +243,9 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_keydown = Arc::clone(&doc_state);
     let doc_state_pages = Arc::clone(&doc_state);
     let doc_state_ribbon = Arc::clone(&doc_state);
+    let doc_state_publish = Arc::clone(&doc_state);
+    let doc_state_publish_panel = Arc::clone(&doc_state);
+    let doc_state_meta = Arc::clone(&doc_state);
     let doc_state_style_picker = Arc::clone(&doc_state);
     let doc_state_style_editor = Arc::clone(&doc_state);
     let doc_state_seed = Arc::clone(&doc_state);
@@ -748,6 +757,22 @@ pub(super) fn EditorInner(path: String) -> Element {
                 )}
             }
 
+            // ── Metadata editor panel (Dublin Core) ───────────────────────────
+            if editing_metadata.read().is_some() {
+                {metadata_panel(doc_state_meta, editing_metadata, save_message)}
+            }
+
+            // ── PDF/X export panel (conformance-level picker) ─────────────────
+            if is_publish_panel_open() {
+                {publish_panel(
+                    doc_state_publish_panel,
+                    path_signal,
+                    save_message,
+                    is_publish_panel_open,
+                    pdf_level,
+                )}
+            }
+
             // ── Save message banner ───────────────────────────────────────────
             if let Some(msg) = save_message.read().clone() {
                 div {
@@ -783,15 +808,16 @@ pub(super) fn EditorInner(path: String) -> Element {
             // ── Ribbon (formatting controls) ──────────────────────────────────
             AtRibbon {
                 tabs: vec![
-                    RibbonTabDesc { label: fl!("ribbon-tab-home"),   is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-insert"), is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-format"), is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-review"), is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-view"),   is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-home"),    is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-insert"),  is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-format"),  is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-review"),  is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-view"),    is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-publish"), is_contextual: false, aria_label: None },
                 ],
-                active_tab: 0,
-                on_tab_select: move |_idx| {
-                    // TODO(ribbon): Wire ribbon tab selection to per-document state.
+                active_tab: active_ribbon_tab(),
+                on_tab_select: move |idx| {
+                    active_ribbon_tab.set(idx);
                 },
                 collapsed: ribbon_collapsed(),
                 on_toggle_collapse: move |_| {
@@ -802,7 +828,15 @@ pub(super) fn EditorInner(path: String) -> Element {
                 } else {
                     fl!("ribbon-collapse-aria")
                 },
-                tab_content: home_tab_content(
+                tab_content: match active_ribbon_tab() {
+                    5 => publish_tab_content(
+                        &doc_state_publish,
+                        path_signal,
+                        save_message,
+                        is_publish_panel_open,
+                        editing_metadata,
+                    ),
+                    _ => home_tab_content(
                     &doc_state_ribbon,
                     loro_doc,
                     cursor_state,
@@ -823,6 +857,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     save_as,
                     baseline_gen,
                 ),
+                },
             }
 
             // ── Status bar ────────────────────────────────────────────────────

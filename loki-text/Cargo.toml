@@ -24,6 +24,10 @@ loki-doc-model  = { path = "../loki-doc-model" }
 loki-ooxml      = { path = "../loki-ooxml" }
 # ODT/ODF import — converts OpenDocument Text files to loki_doc_model::Document.
 loki-odf        = { path = "../loki-odf" }
+# PDF / PDF-X export for the Publish ribbon tab.
+loki-pdf        = { path = "../loki-pdf" }
+# EPUB 3.3 export for the Publish ribbon tab.
+loki-epub       = { path = "../loki-epub" }
 # Layout engine — converts Document to DocumentLayout for scene painting.
 loki-layout     = { path = "../loki-layout" }
 # In-workspace Vello GPU rendering backend.

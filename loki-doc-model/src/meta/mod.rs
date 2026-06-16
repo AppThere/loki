@@ -8,7 +8,9 @@
 //! correspondence between the two formats.
 
 pub mod core;
+pub mod dublin_core;
 pub mod language;
 
 pub use core::{CustomProperty, CustomPropertyValue, DocumentMeta};
+pub use dublin_core::{DCMI_TYPE_TEXT, DublinCoreMeta};
 pub use language::LanguageTag;

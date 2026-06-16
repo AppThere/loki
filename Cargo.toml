@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["loki-doc-model","loki-sheet-model","loki-opc","loki-primitives","loki-ooxml","loki-odf","loki-layout","loki-vello","appthere-ui","loki-text","loki-spreadsheet","loki-presentation","loki-render-cache","loki-renderer","loki-i18n","appthere-canvas","loki-fonts","loki-graphics","loki-presentation-model"]
+members = ["loki-doc-model","loki-sheet-model","loki-opc","loki-primitives","loki-ooxml","loki-odf","loki-layout","loki-vello","appthere-ui","loki-text","loki-spreadsheet","loki-presentation","loki-render-cache","loki-renderer","loki-i18n","appthere-canvas","loki-fonts","loki-graphics","loki-presentation-model","loki-epub","loki-pdf"]
 
 [workspace.dependencies]
 # Shared across appthere-ui and any other workspace member that needs Dioxus.
