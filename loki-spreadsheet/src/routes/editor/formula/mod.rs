@@ -95,15 +95,13 @@ fn eval_cell_inner(
     };
     match &cell.formula {
         None => cell.value.clone(),
-        Some(f) => {
-            if !f.trim_start().starts_with('=') {
-                return f.clone();
-            }
-            match evaluate_formula(f, wb, visited) {
-                Ok(v) => format_number(v),
-                Err(e) => e.code().to_string(),
-            }
-        }
+        // `cell.formula` is populated only when the cell holds a formula (the
+        // editor strips the leading `=` before storing, and importers store the
+        // bare expression), so a present formula is always evaluated.
+        Some(f) => match evaluate_formula(f, wb, visited) {
+            Ok(v) => format_number(v),
+            Err(e) => e.code().to_string(),
+        },
     }
 }
 

@@ -173,22 +173,22 @@ impl Parser<'_, '_> {
         dispatch(name, &args)
     }
 
-    /// Evaluates `IF(cond, then, else)` lazily: only the taken branch is parsed.
+    /// Evaluates `IF(cond, then, else)` lazily: only the taken branch is
+    /// evaluated, so the untaken branch may reference cells that would error.
+    /// Exactly three arguments are required; a missing or extra argument is a
+    /// `#VALUE!` error.
     fn parse_if_function(&mut self) -> Result<f64, FormulaError> {
-        let cond_arg = self.parse_argument()?;
-        self.expect(Token::Comma)?;
         let scalar = |a: Arg| match a {
             Arg::Scalar(v) => Ok(v),
             Arg::Range(vs) if vs.len() == 1 => Ok(vs[0]),
             _ => Err(FormulaError::Value),
         };
-        let cond = scalar(cond_arg)?;
+        let cond = scalar(self.parse_argument()?)?;
+        self.expect(Token::Comma)?;
         let result = if cond != 0.0 {
             let then_val = scalar(self.parse_argument()?)?;
-            if self.peek_at(0) == Some(&Token::Comma) {
-                self.pos += 1;
-                self.skip_argument();
-            }
+            self.expect(Token::Comma)?;
+            self.skip_argument();
             then_val
         } else {
             self.skip_argument();
@@ -292,22 +292,7 @@ fn dispatch(name: &str, args: &[Arg]) -> Result<f64, FormulaError> {
             let v = flatten(args).into_iter().fold(f64::NEG_INFINITY, f64::max);
             Ok(if v.is_finite() { v } else { 0.0 })
         }
-        "IF" => {
-            if args.len() != 3 {
-                return Err(FormulaError::Value);
-            }
-            let scalar = |a: &Arg| match a {
-                Arg::Scalar(v) => Ok(*v),
-                Arg::Range(vs) if vs.len() == 1 => Ok(vs[0]),
-                _ => Err(FormulaError::Value),
-            };
-            let cond = scalar(&args[0])?;
-            if cond != 0.0 {
-                scalar(&args[1])
-            } else {
-                scalar(&args[2])
-            }
-        }
+        // `IF` is handled lazily in `parse_if_function` before reaching here.
         _ => Err(FormulaError::Name),
     }
 }

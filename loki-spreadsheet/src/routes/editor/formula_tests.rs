@@ -159,7 +159,19 @@ fn if_selects_branch_on_truthiness() {
 #[test]
 fn if_wrong_arity_is_value_error() {
     let w = Workbook::new();
+    // Too few arguments (missing else branch).
     assert_eq!(eval("IF(1, 2)", &w), Err(FormulaError::Value));
+    // Too many arguments.
+    assert_eq!(eval("IF(1, 2, 3, 4)", &w), Err(FormulaError::Value));
+}
+
+#[test]
+fn if_short_circuits_untaken_branch() {
+    // The untaken branch (A1 = 1/0) must not be evaluated, so no #DIV/0!
+    // propagates: IF picks the live branch lazily.
+    let w = wb(&[(0, 0, "", Some("1/0"))]);
+    assert_eq!(eval("IF(1, 99, A1)", &w), Ok(99.0));
+    assert_eq!(eval("IF(0, A1, 99)", &w), Ok(99.0));
 }
 
 // ── Errors ───────────────────────────────────────────────────────────────────────
