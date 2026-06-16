@@ -1,16 +1,20 @@
 <#
 .SYNOPSIS
-    Full Android build pipeline for Loki Text including FilePickerActivity.
+    Full Android build pipeline for Loki apps including optional FilePickerActivity.
 
 .DESCRIPTION
-    1. Compiles FilePickerActivity.java → classes.dex using Android SDK tools.
+    1. Compiles FilePickerActivity.java → classes.dex (loki-text only).
     2. Runs `cargo apk build` to produce the native library + bare APK.
     3. Post-processes the APK:
          a. Replaces the auto-generated AndroidManifest.xml with the custom one
-            from loki-text/AndroidManifest.xml (adds FilePickerActivity + hasCode=true).
-         b. Injects classes.dex.
+            from <app>/AndroidManifest.xml (loki-text also adds FilePickerActivity
+            + hasCode=true; other apps use the simpler NativeActivity-only manifest).
+         b. Injects classes.dex (loki-text only).
     4. Zipaligns and signs with the debug keystore.
     5. Optionally installs via adb.
+
+.PARAMETER App
+    Which app to build: text (default), spreadsheet, or presentation.
 
 .PARAMETER Release
     Build a release APK instead of debug.
@@ -21,12 +25,21 @@
 .PARAMETER SkipCargoApk
     Skip cargo apk build (useful when only the manifest/DEX changed).
 
+.PARAMETER Gpu
+    Enable the real Vello GPU renderer (VelloWindowRenderer / use_wgpu).
+    Requires a Vulkan-capable physical device; omit for the Android emulator
+    (which uses SwiftShader and lacks the compute shader support Vello needs).
+
 .EXAMPLE
     .\scripts\build-android.ps1 -Install
-    .\scripts\build-android.ps1 -Release -Install
+    .\scripts\build-android.ps1 -Release -Install -Gpu
+    .\scripts\build-android.ps1 -App spreadsheet -Release -Install -Gpu
+    .\scripts\build-android.ps1 -App presentation -Release -Install -Gpu
 #>
 
 param(
+    [ValidateSet("text", "spreadsheet", "presentation")]
+    [string]$App = "text",
     [switch]$Release,
     [switch]$Install,
     [switch]$SkipCargoApk,
@@ -76,20 +89,46 @@ Write-Host "==> Build tools: $bt"
 Write-Host "==> Platform:    $platform"
 Write-Host "==> javac:       $javac"
 
+# ── App-specific config ───────────────────────────────────────────────────────
+
+switch ($App) {
+    "text" {
+        $cargoPackage  = "loki-text"
+        $apkBaseName   = "loki_text"
+        $manifestXml   = "loki-text\AndroidManifest.xml"
+        $includeDex    = $true
+        $launchActivity = "com.appthere.loki/android.app.NativeActivity"
+    }
+    "spreadsheet" {
+        $cargoPackage  = "loki-spreadsheet"
+        $apkBaseName   = "loki_spreadsheet"
+        $manifestXml   = "loki-spreadsheet\AndroidManifest.xml"
+        $includeDex    = $false
+        $launchActivity = "com.appthere.loki.spreadsheet/android.app.NativeActivity"
+    }
+    "presentation" {
+        $cargoPackage  = "loki-presentation"
+        $apkBaseName   = "loki_presentation"
+        $manifestXml   = "loki-presentation\AndroidManifest.xml"
+        $includeDex    = $false
+        $launchActivity = "com.appthere.loki.presentation/android.app.NativeActivity"
+    }
+}
+
+Write-Host "==> App:         $App ($cargoPackage)"
+
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 $profile       = if ($Release) { "release" } else { "debug" }
 $javaSrc       = "patches\loki-file-access\android\FilePickerActivity.java"
-$manifestXml   = "loki-text\AndroidManifest.xml"
 $outDir        = "target\android-pkg"
-$apkSrc        = "$PWD\target\$profile\apk\loki_text.apk"
+$apkSrc        = "$PWD\target\$profile\apk\$apkBaseName.apk"
 
 New-Item -ItemType Directory -Force $outDir | Out-Null
 $outDir = (Resolve-Path $outDir).Path   # make absolute for aapt
 
 # ── Step 0: Stage debug keystore for cargo-apk release signing ───────────────
-# cargo-apk refuses to build a release APK without a signing config
-# (loki-text/Cargo.toml [package.metadata.android.signing.release]).
+# cargo-apk refuses to build a release APK without a signing config.
 # We satisfy it by copying the Android Studio debug keystore to a path inside
 # target/android-pkg/ before cargo apk runs.  Our own apksigner step (Step 6)
 # re-signs the final APK with the same key, so cargo-apk's signature is
@@ -102,28 +141,30 @@ if (Test-Path $debugKey) {
     throw "Android debug keystore not found at $debugKey.`nRun Android Studio once to generate it, or set a different path."
 }
 
-# ── Step 1: Compile FilePickerActivity.java → classes.dex ────────────────────
+# ── Step 1: Compile FilePickerActivity.java → classes.dex (loki-text only) ───
 
-Write-Host "`n==> Compiling FilePickerActivity.java..."
-$classesDir = "$outDir\java-classes"
-$dexDir     = "$outDir\dex-out"
-New-Item -ItemType Directory -Force $classesDir, $dexDir | Out-Null
+if ($includeDex) {
+    Write-Host "`n==> Compiling FilePickerActivity.java..."
+    $classesDir = "$outDir\java-classes"
+    $dexDir     = "$outDir\dex-out"
+    New-Item -ItemType Directory -Force $classesDir, $dexDir | Out-Null
 
-& $javac -source 8 -target 8 -classpath $platform -d $classesDir $javaSrc
-if ($LASTEXITCODE -ne 0) { throw "javac failed" }
+    & $javac -source 8 -target 8 -classpath $platform -d $classesDir $javaSrc
+    if ($LASTEXITCODE -ne 0) { throw "javac failed" }
 
-$classFile = "$classesDir\io\github\appthere\lokifileaccess\FilePickerActivity.class"
-& $d8 $classFile --output $dexDir --min-api 26
-if ($LASTEXITCODE -ne 0) { throw "d8 failed" }
+    $classFile = "$classesDir\io\github\appthere\lokifileaccess\FilePickerActivity.class"
+    & $d8 $classFile --output $dexDir --min-api 26
+    if ($LASTEXITCODE -ne 0) { throw "d8 failed" }
 
-$dexPath = "$dexDir\classes.dex"
-Write-Host "    DEX: $dexPath"
+    $dexPath = "$dexDir\classes.dex"
+    Write-Host "    DEX: $dexPath"
+}
 
 # ── Step 2: cargo apk build ───────────────────────────────────────────────────
 
 if (-not $SkipCargoApk) {
-    Write-Host "`n==> cargo apk build ($profile)..."
-    $buildArgs = @("apk", "build", "--package", "loki-text")
+    Write-Host "`n==> cargo apk build ($profile, app=$App)..."
+    $buildArgs = @("apk", "build", "--package", $cargoPackage)
     if ($Release) { $buildArgs += "--release" }
     # On a physical Vulkan device, -Gpu enables the full Vello GPU renderer.
     # The android_gpu cfg flag is checked throughout dioxus-native and loki-renderer.
@@ -149,8 +190,8 @@ if (-not (Test-Path $apkSrc)) {
 # ── Step 3: Generate binary AndroidManifest.xml via aapt ─────────────────────
 
 Write-Host "`n==> Packaging custom AndroidManifest.xml → binary AXML..."
-$manifestApk     = "$outDir\manifest-only.apk"
-$manifestExtract = "$outDir\manifest-extract"
+$manifestApk     = "$outDir\manifest-only-$App.apk"
+$manifestExtract = "$outDir\manifest-extract-$App"
 # Always start with an empty extraction directory so that re-runs do not fail
 # on "file already exists" from the previous build's AndroidManifest.xml.
 if (Test-Path $manifestExtract) { Remove-Item -Recurse -Force $manifestExtract }
@@ -160,11 +201,6 @@ New-Item -ItemType Directory -Force $manifestExtract | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "aapt package (manifest) failed" }
 
 # Extract the binary AXML manifest from the temporary APK.
-# ZipFile::ExtractToDirectory is used instead of Expand-Archive because it
-# gives deterministic error messages on Windows long paths and does not
-# require the file to carry a .zip extension (APKs are ZIPs; PS7+ Expand-
-# Archive reads magic bytes and would also work, but the .NET API is simpler
-# to control and is already loaded via Add-Type for other operations).
 Add-Type -Assembly System.IO.Compression.FileSystem
 [System.IO.Compression.ZipFile]::ExtractToDirectory($manifestApk, $manifestExtract)
 if (-not (Test-Path "$manifestExtract\AndroidManifest.xml")) {
@@ -173,8 +209,8 @@ if (-not (Test-Path "$manifestExtract\AndroidManifest.xml")) {
 
 # ── Step 4: Patch the cargo-apk APK ──────────────────────────────────────────
 
-Write-Host "`n==> Patching APK (replace manifest + inject DEX)..."
-$apkWork = "$outDir\loki-patched.apk"
+Write-Host "`n==> Patching APK (replace manifest$(if ($includeDex) {' + inject DEX'}))..."
+$apkWork = "$outDir\$apkBaseName-patched.apk"
 Copy-Item $apkSrc $apkWork -Force
 
 # Replace binary AndroidManifest.xml
@@ -184,16 +220,18 @@ Push-Location $manifestExtract
 if ($LASTEXITCODE -ne 0) { throw "aapt add manifest failed" }
 Pop-Location
 
-# Inject classes.dex
-Push-Location $dexDir
-& $aapt add $apkWork classes.dex
-if ($LASTEXITCODE -ne 0) { throw "aapt add dex failed" }
-Pop-Location
+# Inject classes.dex (loki-text only — needs FilePickerActivity)
+if ($includeDex) {
+    Push-Location $dexDir
+    & $aapt add $apkWork classes.dex
+    if ($LASTEXITCODE -ne 0) { throw "aapt add dex failed" }
+    Pop-Location
+}
 
 # ── Step 5: Zipalign ─────────────────────────────────────────────────────────
 
 Write-Host "`n==> Zipaligning..."
-$apkAligned = "$outDir\loki-aligned.apk"
+$apkAligned = "$outDir\$apkBaseName-aligned.apk"
 Remove-Item $apkAligned -ErrorAction SilentlyContinue
 & $zipalign -f 4 $apkWork $apkAligned
 if ($LASTEXITCODE -ne 0) { throw "zipalign failed" }
@@ -214,8 +252,10 @@ Write-Host "`n==> APK ready: $apkAligned"
 # ── Step 7: Install ───────────────────────────────────────────────────────────
 
 if ($Install) {
-    Write-Host "`n==> Installing on device..."
-    & adb install -r $apkAligned
+    Write-Host "`n==> Installing $App on device..."
+    # -r: replace existing; -d: allow version downgrade (dev builds use version code 0).
+    & adb install -r -d $apkAligned
     if ($LASTEXITCODE -ne 0) { throw "adb install failed" }
     Write-Host "==> Installed successfully!"
+    Write-Host "==> Launch: adb shell am start -n $launchActivity"
 }

@@ -4,8 +4,25 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+#[cfg(target_os = "android")]
+use std::sync::OnceLock;
 
 use crate::new_document;
+
+// ── Android data-dir override ─────────────────────────────────────────────────
+// On Android, dirs::data_dir() returns None.  android_main() calls
+// set_android_data_dir() with the value from AndroidApp::internal_data_path()
+// before Dioxus launches, giving recent_file_path() a writable location.
+
+#[cfg(target_os = "android")]
+static ANDROID_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// Store the Android internal data path before `dioxus::launch`.
+/// Safe to call multiple times (ignored after the first call).
+#[cfg(target_os = "android")]
+pub fn set_android_data_dir(path: PathBuf) {
+    let _ = ANDROID_DATA_DIR.set(path);
+}
 
 const MAX_RECENT: usize = 20;
 const RECENT_FILE: &str = "AppThere/Loki/recent_presentation.json";
@@ -63,7 +80,13 @@ impl RecentDocuments {
     }
 }
 
+// On Android CPU the cfg-gated return is always taken; "" fallback is
+// unreachable on that target but reachable on desktop/GPU.
+#[allow(unreachable_code)]
 fn recent_file_path() -> Option<PathBuf> {
+    #[cfg(target_os = "android")]
+    return ANDROID_DATA_DIR.get().map(|d| d.join(RECENT_FILE));
+
     dirs::data_dir().map(|d| d.join(RECENT_FILE))
 }
 

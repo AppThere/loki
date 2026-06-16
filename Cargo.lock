@@ -3905,6 +3905,7 @@ name = "loki-presentation"
 version = "0.1.0"
 dependencies = [
  "android-activity",
+ "android_logger",
  "anyrender_vello",
  "appthere-ui",
  "blitz-shell",
@@ -3912,6 +3913,7 @@ dependencies = [
  "dirs",
  "fontique 0.8.0",
  "kurbo 0.12.0",
+ "log",
  "loki-doc-model",
  "loki-file-access",
  "loki-graphics",
@@ -4000,6 +4002,7 @@ name = "loki-spreadsheet"
 version = "0.1.0"
 dependencies = [
  "android-activity",
+ "android_logger",
  "anyrender_vello",
  "appthere-ui",
  "blitz-shell",
@@ -4007,6 +4010,7 @@ dependencies = [
  "dirs",
  "fontique 0.8.0",
  "kurbo 0.12.0",
+ "log",
  "loki-doc-model",
  "loki-file-access",
  "loki-i18n",

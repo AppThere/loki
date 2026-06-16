@@ -12,11 +12,27 @@ pub mod tabs;
 pub mod utils;
 
 #[cfg(target_os = "android")]
+// COMPAT(android-16): On Android 16 (API 36) ANativeActivity_onCreate fires
+// twice in rapid succession, spawning two concurrent android_main threads.
+// A Mutex<bool> "is-running" flag rejects concurrent duplicates while allowing
+// sequential re-entries after activity-recreation (process reuse).
+static ANDROID_MAIN_RUNNING: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
+
+#[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 fn android_main(android_app: android_activity::AndroidApp) {
+    {
+        let mut running = ANDROID_MAIN_RUNNING
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if *running {
+            return;
+        }
+        *running = true;
+    }
     android_logger::init_once(
         android_logger::Config::default()
-            .with_tag("LOKI")
+            .with_tag("LOKI-PRESENT")
             .with_max_level(log::LevelFilter::Debug),
     );
     // Route panic messages to logcat. The default panic hook writes to
@@ -25,6 +41,7 @@ fn android_main(android_app: android_activity::AndroidApp) {
     std::panic::set_hook(Box::new(|info| {
         log::error!("PANIC: {info}");
     }));
+    log::info!("android_main: start");
     // SAFETY: activity_as_ptr() is a GlobalRef owned by android_app, which
     // blitz_shell::set_android_app keeps alive for the process lifetime.
     unsafe { loki_file_access::init_android(android_app.activity_as_ptr()) };
@@ -34,7 +51,16 @@ fn android_main(android_app: android_activity::AndroidApp) {
         bottom,
         ..Default::default()
     });
+    if let Some(data_path) = android_app.internal_data_path() {
+        crate::recent_documents::set_android_data_dir(data_path);
+    }
     blitz_shell::set_android_app(android_app);
+    log::info!("android_main: i18n init");
     loki_i18n::init();
+    log::info!("android_main: launching dioxus");
     dioxus::launch(app::App);
+    log::info!("android_main: dioxus exited");
+    *ANDROID_MAIN_RUNNING
+        .lock()
+        .unwrap_or_else(|p| p.into_inner()) = false;
 }

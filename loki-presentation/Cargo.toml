@@ -76,9 +76,15 @@ compile_sdk_version = 34
 [package.metadata.android.application]
 label = "Loki Presentation"
 
+[package.metadata.android.signing.release]
+path = "../target/android-pkg/signing.keystore"
+keystore_password = "android"
+
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { workspace = true }
 blitz-shell = "0.2.3"
+android_logger = "0.15"
+log = "0.4"
 
 [dev-dependencies]
 # Used by slide_view tests to construct DocumentColor values.
