@@ -12,17 +12,36 @@ use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_i18n::fl;
 
+use super::editor_keydown_ctrl::post_mutation_sync;
 use super::editor_metadata::{MetaDraft, MetaField, apply_meta_draft};
-use crate::editing::state::DocumentState;
+use crate::editing::cursor::CursorState;
+use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
 /// Height of the open metadata panel in CSS pixels.
 pub(super) const METADATA_PANEL_HEIGHT_PX: f32 = 280.0;
+
+/// Signals the metadata panel needs to persist edits through Loro and refresh
+/// the undo/dirty state. Grouped to keep the function signature manageable.
+#[derive(Clone, Copy)]
+pub(super) struct MetaPanelSync {
+    /// The document's Loro CRDT handle.
+    pub loro_doc: Signal<Option<loro::LoroDoc>>,
+    /// Cursor state (mirrors the document generation for dirty tracking).
+    pub cursor_state: Signal<CursorState>,
+    /// Undo manager, refreshed after the metadata mutation.
+    pub undo_manager: Signal<Option<loro::UndoManager>>,
+    /// Whether undo is available.
+    pub can_undo: Signal<bool>,
+    /// Whether redo is available.
+    pub can_redo: Signal<bool>,
+}
 
 /// Renders the metadata editor panel when `editing_metadata` is `Some`.
 pub(super) fn metadata_panel(
     doc_state: Arc<Mutex<DocumentState>>,
     mut editing_metadata: Signal<Option<MetaDraft>>,
     mut save_message: Signal<Option<String>>,
+    sync: MetaPanelSync,
 ) -> Element {
     let draft = match editing_metadata.read().clone() {
         Some(d) => d,
@@ -100,9 +119,31 @@ pub(super) fn metadata_panel(
                 button {
                     style: action_button_style(true),
                     onclick: move |_| {
-                        if let Some(d) = editing_metadata.read().clone() {
-                            apply_meta_draft(&ds_apply, &d);
-                            save_message.set(Some(fl!("metadata-saved")));
+                        if let Some(d) = editing_metadata.peek().clone() {
+                            // Persist through Loro, then re-derive the document
+                            // (which reads metadata back from the CRDT) so the
+                            // change is durable and undoable.
+                            let applied = {
+                                let guard = sync.loro_doc.read();
+                                if let Some(ldoc) = guard.as_ref() {
+                                    apply_meta_draft(ldoc, &ds_apply, &d);
+                                    apply_mutation_and_relayout(&ds_apply, ldoc);
+                                    true
+                                } else {
+                                    false
+                                }
+                            };
+                            if applied {
+                                post_mutation_sync(
+                                    &ds_apply,
+                                    sync.loro_doc,
+                                    sync.cursor_state,
+                                    sync.undo_manager,
+                                    sync.can_undo,
+                                    sync.can_redo,
+                                );
+                                save_message.set(Some(fl!("metadata-saved")));
+                            }
                         }
                         editing_metadata.set(None);
                     },

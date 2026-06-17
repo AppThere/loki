@@ -17,10 +17,11 @@ use pdf_writer::types::OutputIntentSubtype;
 use pdf_writer::{Finish, Name, Pdf, Rect, Ref, TextStr};
 
 use crate::error::PdfError;
-use crate::fonts::FontBank;
+use crate::fonts::{FaceRefs, FontBank};
+use crate::image::{ImageBank, ImageRefs};
 use crate::metadata::{build_xmp, write_info};
 use crate::options::PdfXOptions;
-use crate::page::render_page_content;
+use crate::page::{PageBanks, render_page_content};
 
 /// Builds the PDF/X byte stream for `layout`.
 pub fn write_document(
@@ -28,12 +29,21 @@ pub fn write_document(
     doc: &Document,
     options: &PdfXOptions,
 ) -> Result<Vec<u8>, PdfError> {
-    // ── Pass 1: build content streams, collecting the faces they use. ────────
+    // ── Pass 1: build content streams, collecting fonts and images. ──────────
     let mut bank = FontBank::new();
+    let mut images = ImageBank::new();
     let contents: Vec<Vec<u8>> = layout
         .pages
         .iter()
-        .map(|page| render_page_content(page, &mut bank))
+        .map(|page| {
+            render_page_content(
+                page,
+                &mut PageBanks {
+                    fonts: &mut bank,
+                    images: &mut images,
+                },
+            )
+        })
         .collect();
 
     // ── Allocate indirect references. ────────────────────────────────────────
@@ -50,6 +60,7 @@ pub fn write_document(
     let info_id = alloc();
     let icc_id = options.output_intent.icc_profile.as_ref().map(|_| alloc());
     let face_refs = bank.allocate_refs(&mut next);
+    let image_refs = images.allocate_refs(&mut next);
 
     // ── Document setup. ──────────────────────────────────────────────────────
     let (major, minor) = options.level.pdf_version();
@@ -69,19 +80,22 @@ pub fn write_document(
     {
         write_page(
             &mut pdf,
-            *page_id,
-            page_tree_id,
-            page.page_size.width,
-            page.page_size.height,
-            *content_id,
-            &bank,
-            &face_refs,
+            PageWrite {
+                page_id: *page_id,
+                page_tree_id,
+                width: page.page_size.width,
+                height: page.page_size.height,
+                content_id: *content_id,
+            },
+            (&bank, &face_refs),
+            (&images, &image_refs),
         );
         pdf.stream(*content_id, bytes);
     }
 
-    // ── Fonts, info, XMP, ICC. ───────────────────────────────────────────────
+    // ── Fonts, images, info, XMP, ICC. ───────────────────────────────────────
     bank.embed(&mut pdf, &face_refs)?;
+    images.embed(&mut pdf, &image_refs);
 
     let modified = doc.meta.modified.unwrap_or_else(Utc::now);
     let created = doc.meta.created.unwrap_or(modified);
@@ -152,28 +166,44 @@ fn write_catalog(
     catalog.finish();
 }
 
-#[allow(clippy::too_many_arguments)]
-fn write_page(
-    pdf: &mut Pdf,
+/// Per-page identity and geometry passed to [`write_page`].
+struct PageWrite {
     page_id: Ref,
     page_tree_id: Ref,
     width: f32,
     height: f32,
     content_id: Ref,
-    bank: &FontBank,
-    face_refs: &[crate::fonts::FaceRefs],
+}
+
+fn write_page(
+    pdf: &mut Pdf,
+    p: PageWrite,
+    fonts: (&FontBank, &[FaceRefs]),
+    images: (&ImageBank, &[ImageRefs]),
 ) {
-    let mut page = pdf.page(page_id);
-    page.parent(page_tree_id);
-    page.media_box(Rect::new(0.0, 0.0, width, height));
-    page.contents(content_id);
+    let (font_bank, face_refs) = fonts;
+    let (image_bank, image_refs) = images;
+
+    let mut page = pdf.page(p.page_id);
+    page.parent(p.page_tree_id);
+    page.media_box(Rect::new(0.0, 0.0, p.width, p.height));
+    page.contents(p.content_id);
     {
         let mut resources = page.resources();
-        let mut fonts = resources.fonts();
-        for (face, fr) in bank.faces().iter().zip(face_refs) {
-            fonts.pair(Name(face.resource.as_bytes()), fr.type0);
+        {
+            let mut font_dict = resources.fonts();
+            for (face, fr) in font_bank.faces().iter().zip(face_refs) {
+                font_dict.pair(Name(face.resource.as_bytes()), fr.type0);
+            }
+            font_dict.finish();
         }
-        fonts.finish();
+        if !image_bank.is_empty() {
+            let mut xobjects = resources.x_objects();
+            for (entry, ir) in image_bank.entries().iter().zip(image_refs) {
+                xobjects.pair(Name(entry.resource.as_bytes()), ir.xobject);
+            }
+            xobjects.finish();
+        }
         resources.finish();
     }
     page.finish();

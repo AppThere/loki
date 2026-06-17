@@ -759,7 +759,18 @@ pub(super) fn EditorInner(path: String) -> Element {
 
             // ── Metadata editor panel (Dublin Core) ───────────────────────────
             if editing_metadata.read().is_some() {
-                {metadata_panel(doc_state_meta, editing_metadata, save_message)}
+                {metadata_panel(
+                    doc_state_meta,
+                    editing_metadata,
+                    save_message,
+                    super::editor_metadata_panel::MetaPanelSync {
+                        loro_doc,
+                        cursor_state,
+                        undo_manager,
+                        can_undo,
+                        can_redo,
+                    },
+                )}
             }
 
             // ── PDF/X export panel (conformance-level picker) ─────────────────

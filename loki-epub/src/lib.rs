@@ -27,9 +27,12 @@
 pub mod container;
 pub mod content;
 pub mod error;
+pub mod images;
+pub mod inlines;
 pub mod nav;
 pub mod opf_meta;
 pub mod package;
+pub mod tables;
 mod xml;
 
 use std::collections::hash_map::DefaultHasher;
@@ -74,7 +77,8 @@ fn write_epub(doc: &Document, writer: impl Write + Seek) -> Result<(), EpubError
     let rendered = content::render_content(doc);
     let content_doc = wrap_content_document(&title, &rendered.body);
     let nav_doc = nav::build_nav_xhtml(&title, &rendered.toc);
-    let package = package::build_package_opf(&doc.meta, &identifier, &modified_iso);
+    let package =
+        package::build_package_opf(&doc.meta, &identifier, &modified_iso, &rendered.images);
 
     let mut zip = zip::ZipWriter::new(writer);
 
@@ -100,6 +104,13 @@ fn write_epub(doc: &Document, writer: impl Write + Seek) -> Result<(), EpubError
         container::STYLE_CSS,
         deflated,
     )?;
+
+    // Image resources. Already-compressed formats are stored verbatim to avoid
+    // wasteful double compression.
+    for image in &rendered.images {
+        zip.start_file(format!("{}/{}", container::EPUB_DIR, image.href), stored)?;
+        zip.write_all(&image.bytes)?;
+    }
 
     zip.finish()?;
     Ok(())

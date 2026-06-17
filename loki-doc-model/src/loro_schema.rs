@@ -6,6 +6,18 @@
 /// Key for the Document metadata map.
 pub const KEY_METADATA: &str = "metadata";
 
+/// Key (within the metadata map) for the JSON snapshot of
+/// [`crate::meta::DocumentMeta`].
+///
+/// The full metadata struct — core properties plus the Dublin Core extension —
+/// is stored as a single JSON string so it round-trips losslessly through the
+/// CRDT (the same approach as opaque block snapshots). [`KEY_META_TITLE`] is
+/// also written as a plain mirror for human inspection / legacy readers.
+pub const KEY_META_JSON: &str = "meta_json";
+
+/// Key (within the metadata map) for the plain-text document title mirror.
+pub const KEY_META_TITLE: &str = "title";
+
 /// Key for the Document style catalog map.
 pub const KEY_STYLE_CATALOG: &str = "style_catalog";
 

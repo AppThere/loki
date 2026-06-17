@@ -13,12 +13,14 @@ mod decode;
 mod incremental;
 mod inlines;
 mod inlines_read;
+mod meta;
 mod opaque;
 mod props_read;
 mod read;
 mod write;
 
 pub use incremental::IncrementalReader;
+pub use meta::{read_document_meta, write_document_meta};
 
 use crate::document::Document;
 use crate::layout::header_footer::HeaderFooter;
@@ -145,11 +147,9 @@ pub fn document_to_loro(doc: &Document) -> Result<LoroDoc, BridgeError> {
     }
     loro_doc.config_text_style(style_config);
 
-    // Metadata
+    // Metadata — full DocumentMeta (core + Dublin Core) as a lossless snapshot.
     let meta_map = loro_doc.get_map(KEY_METADATA);
-    if let Some(title) = &doc.meta.title {
-        meta_map.insert("title", title.as_str())?;
-    }
+    meta::write_meta(&doc.meta, &meta_map)?;
 
     // Sections
     let sections_list = loro_doc.get_list(KEY_SECTIONS);
@@ -174,15 +174,9 @@ pub fn document_to_loro(doc: &Document) -> Result<LoroDoc, BridgeError> {
 pub fn loro_to_document(loro: &LoroDoc) -> Result<Document, BridgeError> {
     let mut doc = Document::new();
 
-    // Metadata
+    // Metadata — full DocumentMeta (core + Dublin Core) from the snapshot.
     let meta_map: loro::LoroMap = loro.get_map(KEY_METADATA);
-    if let Some(title) = meta_map
-        .get("title")
-        .and_then(|v| v.into_value().ok())
-        .and_then(|v| v.into_string().ok())
-    {
-        doc.meta.title = Some(title.to_string());
-    }
+    doc.meta = meta::read_meta(&meta_map);
 
     // Sections
     let sections_list = loro.get_list(KEY_SECTIONS);

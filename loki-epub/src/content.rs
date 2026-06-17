@@ -2,14 +2,19 @@
 // Copyright 2026 AppThere Loki contributors
 
 //! Converts the abstract [`loki_doc_model::Document`] content tree into an
-//! XHTML body fragment, collecting heading anchors for the navigation document.
+//! XHTML body fragment, collecting heading anchors for the navigation document
+//! and image resources for packaging.
+//!
+//! Block-level dispatch lives here; inline rendering is in [`crate::inlines`],
+//! table serialisation in [`crate::tables`], and image handling in
+//! [`crate::images`].
 
 use loki_doc_model::Document;
 use loki_doc_model::content::block::Block;
-use loki_doc_model::content::inline::{Inline, QuoteType};
-use loki_doc_model::style::props::char_props::{CharProps, VerticalAlign};
+use loki_doc_model::content::inline::Inline;
 
-use crate::xml::{escape_attr, escape_text};
+use crate::images::EpubImage;
+use crate::inlines::{heading_level, plain_text};
 
 /// A single entry in the EPUB table of contents.
 pub struct TocEntry {
@@ -21,12 +26,15 @@ pub struct TocEntry {
     pub text: String,
 }
 
-/// The rendered content document and its derived table of contents.
+/// The rendered content document, its derived table of contents, and the image
+/// resources it references.
 pub struct RenderedContent {
     /// The XHTML `<body>` inner markup.
     pub body: String,
     /// Heading anchors in document order.
     pub toc: Vec<TocEntry>,
+    /// Packaged image resources referenced by the body.
+    pub images: Vec<EpubImage>,
 }
 
 /// Renders all sections of `doc` into a single XHTML body fragment.
@@ -39,17 +47,27 @@ pub fn render_content(doc: &Document) -> RenderedContent {
             ctx.render_block(block, &mut body);
         }
     }
-    RenderedContent { body, toc: ctx.toc }
+    RenderedContent {
+        body,
+        toc: ctx.toc,
+        images: ctx.images,
+    }
 }
 
+/// Shared rendering state. Fields are `pub(crate)` so the per-concern rendering
+/// modules ([`crate::inlines`], [`crate::tables`], [`crate::images`]) can
+/// contribute `impl RenderCtx` blocks.
 #[derive(Default)]
-struct RenderCtx {
-    toc: Vec<TocEntry>,
-    heading_seq: usize,
+pub(crate) struct RenderCtx {
+    pub(crate) toc: Vec<TocEntry>,
+    pub(crate) heading_seq: usize,
+    pub(crate) images: Vec<EpubImage>,
+    pub(crate) image_seq: usize,
 }
 
 impl RenderCtx {
-    fn render_block(&mut self, block: &Block, out: &mut String) {
+    /// Renders a block-level element.
+    pub(crate) fn render_block(&mut self, block: &Block, out: &mut String) {
         match block {
             Block::Para(inlines) | Block::Plain(inlines) => {
                 out.push_str("<p>");
@@ -80,7 +98,7 @@ impl RenderCtx {
             }
             Block::CodeBlock(_attr, code) => {
                 out.push_str("<pre><code>");
-                out.push_str(&escape_text(code));
+                out.push_str(&crate::xml::escape_text(code));
                 out.push_str("</code></pre>\n");
             }
             Block::LineBlock(lines) => {
@@ -110,12 +128,22 @@ impl RenderCtx {
                 }
                 out.push_str("</dl>\n");
             }
-            Block::Table(_) => {
-                // TODO(epub-table): full table serialisation is deferred; emit
-                // a placeholder paragraph so content order is preserved.
-                out.push_str("<p class=\"loki-table-placeholder\">[table]</p>\n");
+            Block::Table(table) => self.render_table(table, out),
+            Block::Figure(_attr, caption, blocks) => {
+                out.push_str("<figure>\n");
+                for b in blocks {
+                    self.render_block(b, out);
+                }
+                if !caption.full.is_empty() {
+                    out.push_str("<figcaption>\n");
+                    for b in &caption.full {
+                        self.render_block(b, out);
+                    }
+                    out.push_str("</figcaption>\n");
+                }
+                out.push_str("</figure>\n");
             }
-            Block::Figure(_, _, blocks) | Block::Div(_, blocks) => {
+            Block::Div(_attr, blocks) => {
                 for b in blocks {
                     self.render_block(b, out);
                 }
@@ -155,166 +183,6 @@ impl RenderCtx {
         }
         out.push_str(&format!("</{tag}>\n"));
     }
-
-    fn render_inlines(&mut self, inlines: &[Inline], out: &mut String) {
-        for inline in inlines {
-            self.render_inline(inline, out);
-        }
-    }
-
-    fn render_inline(&mut self, inline: &Inline, out: &mut String) {
-        match inline {
-            Inline::Str(s) => out.push_str(&escape_text(s)),
-            Inline::Space | Inline::SoftBreak => out.push(' '),
-            Inline::LineBreak => out.push_str("<br/>"),
-            Inline::Emph(c) => self.wrap("em", c, out),
-            Inline::Strong(c) => self.wrap("strong", c, out),
-            Inline::Underline(c) => self.wrap_span("text-decoration:underline", c, out),
-            Inline::Strikeout(c) => self.wrap("s", c, out),
-            Inline::Superscript(c) => self.wrap("sup", c, out),
-            Inline::Subscript(c) => self.wrap("sub", c, out),
-            Inline::SmallCaps(c) => self.wrap_span("font-variant:small-caps", c, out),
-            Inline::Code(_, s) => {
-                out.push_str("<code>");
-                out.push_str(&escape_text(s));
-                out.push_str("</code>");
-            }
-            Inline::Quoted(kind, c) => {
-                let (open, close) = match kind {
-                    QuoteType::SingleQuote => ('\u{2018}', '\u{2019}'),
-                    QuoteType::DoubleQuote => ('\u{201C}', '\u{201D}'),
-                };
-                out.push(open);
-                self.render_inlines(c, out);
-                out.push(close);
-            }
-            Inline::Link(_attr, c, target) => {
-                out.push_str(&format!("<a href=\"{}\">", escape_attr(&target.url)));
-                self.render_inlines(c, out);
-                out.push_str("</a>");
-            }
-            Inline::Image(_attr, alt, _target) => {
-                // TODO(epub-image): image resources are not yet packaged; emit
-                // the alt text so meaning is preserved.
-                self.render_inlines(alt, out);
-            }
-            Inline::StyledRun(run) => {
-                self.render_styled_run(run.direct_props.as_deref(), &run.content, out)
-            }
-            Inline::Span(_, c) | Inline::Cite(_, c) => self.render_inlines(c, out),
-            Inline::Note(_, _)
-            | Inline::Math(_, _)
-            | Inline::RawInline(_, _)
-            | Inline::Field(_)
-            | Inline::Comment(_)
-            | Inline::Bookmark(_, _) => {}
-            // `Inline` is non-exhaustive; future variants render as nothing.
-            _ => {}
-        }
-    }
-
-    fn render_styled_run(
-        &mut self,
-        props: Option<&CharProps>,
-        content: &[Inline],
-        out: &mut String,
-    ) {
-        let mut close: Vec<&str> = Vec::new();
-        if let Some(p) = props {
-            if p.bold == Some(true) {
-                out.push_str("<strong>");
-                close.push("</strong>");
-            }
-            if p.italic == Some(true) {
-                out.push_str("<em>");
-                close.push("</em>");
-            }
-            if p.strikethrough.is_some() {
-                out.push_str("<s>");
-                close.push("</s>");
-            }
-            match p.vertical_align {
-                Some(VerticalAlign::Superscript) => {
-                    out.push_str("<sup>");
-                    close.push("</sup>");
-                }
-                Some(VerticalAlign::Subscript) => {
-                    out.push_str("<sub>");
-                    close.push("</sub>");
-                }
-                _ => {}
-            }
-            if p.underline.is_some() {
-                out.push_str("<span style=\"text-decoration:underline\">");
-                close.push("</span>");
-            }
-        }
-        self.render_inlines(content, out);
-        for tag in close.iter().rev() {
-            out.push_str(tag);
-        }
-    }
-
-    fn wrap(&mut self, tag: &str, content: &[Inline], out: &mut String) {
-        out.push_str(&format!("<{tag}>"));
-        self.render_inlines(content, out);
-        out.push_str(&format!("</{tag}>"));
-    }
-
-    fn wrap_span(&mut self, style: &str, content: &[Inline], out: &mut String) {
-        out.push_str(&format!("<span style=\"{style}\">"));
-        self.render_inlines(content, out);
-        out.push_str("</span>");
-    }
-}
-
-/// Maps a paragraph style id to a heading level, if it names one.
-///
-/// Recognises `Heading1`…`Heading6`, `Heading 1`…`Heading 6`, and the bare
-/// `Title` style (level 1).
-fn heading_level(style_id: &str) -> Option<u8> {
-    let lower = style_id.to_ascii_lowercase();
-    if lower == "title" {
-        return Some(1);
-    }
-    let digits: String = lower.trim_start_matches("heading").trim().to_string();
-    if lower.starts_with("heading")
-        && let Ok(n) = digits.parse::<u8>()
-    {
-        return Some(n.clamp(1, 6));
-    }
-    None
-}
-
-/// Extracts the concatenated plain text of an inline sequence (for TOC labels).
-fn plain_text(inlines: &[Inline]) -> String {
-    let mut s = String::new();
-    collect_plain(inlines, &mut s);
-    s.trim().to_string()
-}
-
-fn collect_plain(inlines: &[Inline], out: &mut String) {
-    for inline in inlines {
-        match inline {
-            Inline::Str(t) => out.push_str(t),
-            Inline::Space | Inline::SoftBreak | Inline::LineBreak => out.push(' '),
-            Inline::Code(_, t) => out.push_str(t),
-            Inline::Emph(c)
-            | Inline::Strong(c)
-            | Inline::Underline(c)
-            | Inline::Strikeout(c)
-            | Inline::Superscript(c)
-            | Inline::Subscript(c)
-            | Inline::SmallCaps(c)
-            | Inline::Quoted(_, c)
-            | Inline::Span(_, c)
-            | Inline::Link(_, c, _)
-            | Inline::Image(_, c, _)
-            | Inline::Cite(_, c) => collect_plain(c, out),
-            Inline::StyledRun(run) => collect_plain(&run.content, out),
-            _ => {}
-        }
-    }
 }
 
 #[cfg(test)]
@@ -350,5 +218,26 @@ mod tests {
             .push(Block::Para(vec![Inline::Str("a < b & c".into())]));
         let rendered = render_content(&doc);
         assert!(rendered.body.contains("a &lt; b &amp; c"));
+    }
+
+    #[test]
+    fn packages_inline_image() {
+        let mut doc = Document::new();
+        let sec = doc.first_section_mut().unwrap();
+        sec.blocks.clear();
+        let target = loki_doc_model::content::inline::LinkTarget::new("data:image/png;base64,SGk=");
+        sec.blocks.push(Block::Para(vec![Inline::Image(
+            NodeAttr::default(),
+            vec![Inline::Str("Alt".into())],
+            target,
+        )]));
+        let rendered = render_content(&doc);
+        assert_eq!(rendered.images.len(), 1);
+        assert_eq!(rendered.images[0].href, "images/img0.png");
+        assert!(
+            rendered
+                .body
+                .contains("<img src=\"images/img0.png\" alt=\"Alt\"/>")
+        );
     }
 }

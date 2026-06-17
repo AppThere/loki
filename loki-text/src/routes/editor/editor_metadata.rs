@@ -134,28 +134,39 @@ pub(super) fn meta_to_draft(doc_state: &Arc<Mutex<DocumentState>>) -> MetaDraft 
     MetaDraft { values }
 }
 
-/// Commits a [`MetaDraft`] into the live document's metadata.
-pub(super) fn apply_meta_draft(doc_state: &Arc<Mutex<DocumentState>>, draft: &MetaDraft) {
-    let Ok(mut state) = doc_state.lock() else {
-        return;
-    };
-    let Some(doc_arc) = state.document.as_mut() else {
-        return;
-    };
-    let doc = Arc::make_mut(doc_arc);
+/// Persists a [`MetaDraft`] into the document's metadata **through the Loro
+/// CRDT**, so the change survives incremental rebuilds, participates in
+/// undo/redo, and round-trips through Loro import/export.
+///
+/// The draft's editable fields are merged onto the current metadata (preserving
+/// non-editable fields such as creation/modification dates and revision count),
+/// then written to the metadata map. The caller is expected to follow with
+/// `apply_mutation_and_relayout` so the live document is re-derived from Loro.
+pub(super) fn apply_meta_draft(
+    loro: &loro::LoroDoc,
+    doc_state: &Arc<Mutex<DocumentState>>,
+    draft: &MetaDraft,
+) {
+    // Start from the current metadata so non-edited fields are preserved.
+    let mut meta = doc_state
+        .lock()
+        .ok()
+        .and_then(|s| s.document.as_ref().map(|d| d.meta.clone()))
+        .unwrap_or_default();
+
     let some = |s: &str| {
         let t = s.trim();
         (!t.is_empty()).then(|| t.to_string())
     };
     for (field, value) in &draft.values {
-        let dc = &mut doc.meta.dublin_core;
+        let dc = &mut meta.dublin_core;
         match field {
-            MetaField::Title => doc.meta.title = some(value),
-            MetaField::Creator => doc.meta.creator = some(value),
-            MetaField::Subject => doc.meta.subject = some(value),
-            MetaField::Description => doc.meta.description = some(value),
-            MetaField::Keywords => doc.meta.keywords = some(value),
-            MetaField::Language => doc.meta.language = some(value).map(LanguageTag::new),
+            MetaField::Title => meta.title = some(value),
+            MetaField::Creator => meta.creator = some(value),
+            MetaField::Subject => meta.subject = some(value),
+            MetaField::Description => meta.description = some(value),
+            MetaField::Keywords => meta.keywords = some(value),
+            MetaField::Language => meta.language = some(value).map(LanguageTag::new),
             MetaField::Publisher => dc.publisher = some(value),
             MetaField::Contributors => {
                 dc.contributors = value
@@ -177,4 +188,9 @@ pub(super) fn apply_meta_draft(doc_state: &Arc<Mutex<DocumentState>>, draft: &Me
             MetaField::Citation => dc.bibliographic_citation = some(value),
         }
     }
+
+    if let Err(e) = loki_doc_model::loro_bridge::write_document_meta(loro, &meta) {
+        tracing::warn!("failed to persist metadata to Loro: {e}");
+    }
+    loro.commit();
 }

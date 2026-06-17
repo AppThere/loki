@@ -3951,6 +3951,7 @@ dependencies = [
 name = "loki-epub"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "chrono",
  "loki-doc-model",
  "loki-primitives",
@@ -4073,7 +4074,10 @@ dependencies = [
 name = "loki-pdf"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "chrono",
+ "flate2",
+ "image",
  "loki-doc-model",
  "loki-layout",
  "loki-primitives",

@@ -21,6 +21,7 @@ pub mod build;
 pub mod color;
 pub mod error;
 pub mod fonts;
+pub mod image;
 pub mod metadata;
 pub mod options;
 pub mod page;

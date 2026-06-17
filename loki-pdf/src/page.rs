@@ -11,25 +11,34 @@
 
 use loki_layout::{
     DecorationKind, LayoutPage, LayoutRect, PositionedDecoration, PositionedGlyphRun,
-    PositionedItem,
+    PositionedImage, PositionedItem,
 };
-use pdf_writer::{Content, Str};
+use pdf_writer::{Content, Name, Str};
 
 use crate::color::{Cmyk, layout_to_cmyk};
 use crate::fonts::FontBank;
+use crate::image::ImageBank;
+
+/// The set of banks a page's content draws into while it is rendered.
+pub struct PageBanks<'a> {
+    /// Font faces and the glyphs they use.
+    pub fonts: &'a mut FontBank,
+    /// Decoded, CMYK image XObjects.
+    pub images: &'a mut ImageBank,
+}
 
 /// Builds the content-stream bytes for `page`, registering every glyph run's
-/// face and used glyphs into `bank`.
-pub fn render_page_content(page: &LayoutPage, bank: &mut FontBank) -> Vec<u8> {
+/// face and every image into `banks`.
+pub fn render_page_content(page: &LayoutPage, banks: &mut PageBanks) -> Vec<u8> {
     let height = page.page_size.height;
     let mut content = Content::new();
 
     let (mx, my) = (page.margins.left, page.margins.top);
     for item in &page.content_items {
-        render_item(item, height, mx, my, bank, &mut content);
+        render_item(item, height, mx, my, banks, &mut content);
     }
     for item in page.header_items.iter().chain(page.footer_items.iter()) {
-        render_item(item, height, 0.0, 0.0, bank, &mut content);
+        render_item(item, height, 0.0, 0.0, banks, &mut content);
     }
     content.finish().to_vec()
 }
@@ -41,34 +50,57 @@ fn render_item(
     page_h: f32,
     ox: f32,
     oy: f32,
-    bank: &mut FontBank,
+    banks: &mut PageBanks,
     content: &mut Content,
 ) {
     match item {
-        PositionedItem::GlyphRun(run) => render_run(run, page_h, ox, oy, bank, content),
+        PositionedItem::GlyphRun(run) => render_run(run, page_h, ox, oy, banks.fonts, content),
         PositionedItem::FilledRect(r) | PositionedItem::HorizontalRule(r) => {
             fill_rect(&r.rect, layout_to_cmyk(r.color), page_h, ox, oy, content);
         }
         PositionedItem::Decoration(d) => render_decoration(d, page_h, ox, oy, content),
         PositionedItem::BorderRect(b) => render_border(b, page_h, ox, oy, content),
+        PositionedItem::Image(img) => draw_image(img, page_h, ox, oy, banks.images, content),
         PositionedItem::ClippedGroup { items, .. } => {
             // TODO(pdf-clip): clipping is not yet emitted; render children so
             // no content is dropped (over-paint is preferable to omission).
             for child in items {
-                render_item(child, page_h, ox, oy, bank, content);
+                render_item(child, page_h, ox, oy, banks, content);
             }
         }
         PositionedItem::RotatedGroup { origin, items, .. } => {
             // TODO(pdf-rotate): rotation transform is not yet emitted; render
             // children at the group origin without rotation.
             for child in items {
-                render_item(child, page_h, ox + origin.x, oy + origin.y, bank, content);
+                render_item(child, page_h, ox + origin.x, oy + origin.y, banks, content);
             }
         }
-        // Images are not yet embedded (see crate docs).
-        PositionedItem::Image(_) => {}
         _ => {}
     }
+}
+
+/// Draws an image by registering it in the bank and painting its XObject scaled
+/// into the image rect. PDF image space is a unit square, so the CTM maps it to
+/// the destination rectangle (origin bottom-left after the y-flip).
+fn draw_image(
+    img: &PositionedImage,
+    page_h: f32,
+    ox: f32,
+    oy: f32,
+    images: &mut ImageBank,
+    content: &mut Content,
+) {
+    let Some(resource) = images.use_image(&img.src) else {
+        return;
+    };
+    let w = img.rect.size.width;
+    let h = img.rect.size.height;
+    let x = ox + img.rect.origin.x;
+    let y = page_h - (oy + img.rect.origin.y + h);
+    content.save_state();
+    content.transform([w, 0.0, 0.0, h, x, y]);
+    content.x_object(Name(resource.as_bytes()));
+    content.restore_state();
 }
 
 fn render_run(

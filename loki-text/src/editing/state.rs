@@ -206,12 +206,12 @@ pub fn apply_mutation_and_relayout(
             None => return false,
         };
         if let Some(orig) = &state.document {
+            // Styles and source are not stored in the CRDT, so carry them
+            // forward. Metadata *is* round-tripped through Loro (read back by
+            // `loro_to_document`), so it is intentionally not carried forward
+            // here — the Loro snapshot is the source of truth.
             doc.styles = orig.styles.clone();
             doc.source = orig.source.clone();
-            // The Loro CRDT does not round-trip document metadata, so carry the
-            // original meta forward; otherwise Publish-tab metadata edits would
-            // be lost on the next keystroke.
-            doc.meta = orig.meta.clone();
         }
         doc
     };
