@@ -166,3 +166,26 @@ OCF (ZIP) container.
 | **EPUB package metadata** | `loki-epub` | Yes | Required `dc:identifier` (synthesised UUID when absent) / `dc:title` / `dc:language` / `dcterms:modified`, plus all available Dublin Core fields. |
 | **EPUB content** | `loki-epub` | Yes | Paragraphs, headings (with a derived TOC `nav`), lists, blockquotes, code, rules, definition lists, **tables** (`<thead>`/`<tbody>`/`<tfoot>` with `colspan`/`rowspan`), inline formatting, and **images** (`data:` URIs packaged as `EPUB/images/*` resources and listed in the manifest; external URLs referenced in place). Math, fields, and comments are dropped. |
 | **Dublin Core metadata editor** | `loki-text` | Yes | Publish-tab **Metadata** button edits the DCMES + DCMI Terms fields (`DocumentMeta` + `DublinCoreMeta`). Edits are persisted **through the Loro CRDT** (`loro_bridge::write_document_meta`, stored as a JSON snapshot under the metadata map), so they survive incremental rebuilds, participate in undo/redo, and round-trip through Loro import/export. Metadata is **not** yet written back to DOCX/ODT on export. |
+
+---
+
+## 10. ACID Fidelity Test Harness (`loki-acid`)
+
+The `loki-acid` crate operationalises the ACID rendering test plan
+([`loki-acid/TEST_PLAN.md`](file:///home/user/loki/loki-acid/TEST_PLAN.md)): a
+machine-readable catalog of 139 constructs (`TC-*`) that alternative office
+suites render differently from the canonical Microsoft 365 (OOXML) / LibreOffice
+(ODF) render, plus the harness to diff Loki against golden references.
+
+| Layer | Status | Notes |
+| :--- | :---: | :--- |
+| **Case catalog** | Yes | All 139 cases (DOCX 38, XLSX 30, PPTX 29, ODT 14, ODP 9, ODG 9, ODS 10) transcribed with severity + format. |
+| **Fixtures** | Yes | `acid_docx/odt/xlsx/ods/odp/odg` embedded via `include_bytes!`. PPTX fixture not yet supplied. |
+| **Page-count + glyph-coverage canaries** | Yes | Computed from the layout (no GPU). `cargo run -p loki-acid --example acid_report` imports every fixture and reports page/sheet counts and tofu (`.notdef`) pages. |
+| **SSIM / pixel diff** | Scaffolded | Pure, unit-tested SSIM + abs-diff metrics and golden discovery (`goldens/<stem>/page-NNN.png` ↔ `renders/<stem>/page-NNN.png`). The pixel test is a documented no-op until both trees are populated. |
+| **Loki headless raster** | Pending | Loki's renderer is GPU-backed; producing `renders/*` headlessly (GPU runner or a future `vello_cpu` path) is the one remaining wiring step. |
+| **ODF round-trip structural diff** | Pending | Tracked alongside the ODP/ODG importers and ODS/ODP/ODG export. |
+
+Importer coverage exercised by the harness today: DOCX + ODT (import → paginate →
+glyph coverage), XLSX + ODS (import → workbook). ODP/ODG have no importer yet and
+are catalogued as pending.
