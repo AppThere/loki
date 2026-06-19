@@ -251,19 +251,9 @@ impl Document for DioxusDocument {
     fn handle_scroll_changes(&mut self, changes: &[(usize, f64, f64)]) {
         for &(node_id, scroll_x, scroll_y) in changes {
             let Some(node) = self.inner.get_node(node_id) else {
-                // DIAG(loki-scroll): temporary — remove once the frozen-thumb
-                // regression is fixed.
-                eprintln!("[loki-scroll-diag] dispatch node={node_id}: node missing");
                 continue;
             };
-            let dioxus_id = get_dioxus_id(node);
-            // DIAG(loki-scroll): temporary — shows whether the scrolled node
-            // carries a `data-dioxus-id` (i.e. has an `onscroll` listener Dioxus
-            // can target). A `None` here is the frozen-thumb root cause.
-            eprintln!(
-                "[loki-scroll-diag] dispatch node={node_id} dioxus_id={dioxus_id:?} top={scroll_y}"
-            );
-            let Some(id) = dioxus_id else {
+            let Some(id) = get_dioxus_id(node) else {
                 continue; // node has no Dioxus listener attribute — skip
             };
             let layout = &node.final_layout;

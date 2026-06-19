@@ -4,7 +4,14 @@ members = ["loki-doc-model","loki-sheet-model","loki-opc","loki-primitives","lok
 
 [workspace.dependencies]
 # Shared across appthere-ui and any other workspace member that needs Dioxus.
-dioxus    = { version = "0.7", features = ["native"] }
+#
+# PINNED to =0.7.4 (do not loosen to "0.7"): the `[patch.crates-io]` entries
+# below vendor `dioxus-native` / `dioxus-native-dom` at 0.7.4 (they implement
+# the scroll-event dispatch and `MountedData::scroll` the editor's scrollbar
+# relies on). A caret "0.7" req lets the resolver pick a newer 0.7.x from
+# crates.io, which silently drops those patches ("Patch ... was not used") and
+# breaks scrolling/drag. Bump this only together with re-vendoring the patches.
+dioxus    = { version = "=0.7.4", features = ["native"] }
 thiserror = "2"
 appthere-canvas = { path = "appthere-canvas", features = ["gpu", "dioxus", "font-cache"] }
 loki-file-access = { git = "https://github.com/appthere/loki-file-access", branch = "main" }
