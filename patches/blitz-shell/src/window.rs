@@ -638,13 +638,22 @@ impl<Rend: WindowRenderer> View<Rend> {
 
                 // PATCH(loki): collect per-node scroll changes and forward them
                 // to the embedder so Dioxus `onscroll` handlers fire.
+                let hover = self.doc.get_hover_node_id();
                 let mut changes = Vec::new();
-                let has_changed = if let Some(hover_node_id) = self.doc.get_hover_node_id() {
+                let has_changed = if let Some(hover_node_id) = hover {
                     self.doc
                         .scroll_node_by_collect(hover_node_id, scroll_x, scroll_y, &mut changes)
                 } else {
                     self.doc.scroll_viewport_by_has_changed(scroll_x, scroll_y)
                 };
+                // DIAG(loki-scroll): temporary — remove once the frozen-thumb
+                // regression is fixed. Reports whether the wheel found a hover
+                // node and whether any scroll-container change was collected to
+                // dispatch `onscroll`.
+                eprintln!(
+                    "[loki-scroll-diag] wheel hover={hover:?} collected={} changed={has_changed}",
+                    changes.len()
+                );
                 if !changes.is_empty() {
                     self.doc.handle_scroll_changes(&changes);
                 }
