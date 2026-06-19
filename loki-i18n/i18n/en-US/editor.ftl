@@ -4,6 +4,8 @@
 editor-page-label = Page { $current } of { $total }
 # Intentionally empty — shows nothing while the document is loading.
 editor-page-loading =
+# Shown on the blank page placeholder while a document opens.
+editor-document-loading = Opening document…
 editor-word-count = { $count ->
     [one]   1 word
    *[other] { $count } words
