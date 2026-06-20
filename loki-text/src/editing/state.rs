@@ -123,6 +123,11 @@ impl Default for DocumentState {
 ///
 /// [`make_mousedown_handler`]: crate::routes::editor::editor_pointer::make_mousedown_handler
 pub fn seed_layout_from_document(doc_state: &Arc<Mutex<DocumentState>>, doc: &Document) {
+    // Open-path timing: this synchronous paginated layout is the dominant cost
+    // of opening a document (tens of ms for a multi-page file). Logged under the
+    // `loki_text::open` target so the open latency is measurable on-device:
+    //   RUST_LOG=loki_text::open=info cargo run -p loki-text --release
+    let started = std::time::Instant::now();
     let layout = {
         let Ok(state) = doc_state.lock() else { return };
         let fr_arc = state.shared_font_resources.clone();
@@ -166,6 +171,12 @@ pub fn seed_layout_from_document(doc_state: &Arc<Mutex<DocumentState>>, doc: &Do
     // the previous Loro document so it re-seeds against the new one.
     state.incremental = None;
     state.generation = state.generation.wrapping_add(1);
+    tracing::info!(
+        target: "loki_text::open",
+        pages = page_count,
+        elapsed_ms = started.elapsed().as_secs_f64() * 1000.0,
+        "seed_layout_from_document: first paginated layout complete",
+    );
 }
 
 /// Re-derives the document from `loro_doc`, runs a full layout pass, and
