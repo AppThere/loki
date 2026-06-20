@@ -264,40 +264,67 @@ pub(super) fn EditorInner(path: String) -> Element {
     let navigator = use_navigator();
 
     // ── Loro bridge: initialise CRDT once the document is loaded ─────────────
+    //
+    // The first paginated layout (`seed_layout_from_document`) is a synchronous,
+    // main-thread pass that takes tens of ms on a multi-page document. Running
+    // it inline here — in a post-render effect — blocks the frame, so the
+    // loading indicator never paints and the open just appears to freeze.
+    //
+    // Instead, defer the heavy work into a spawned task that yields once before
+    // laying out: the runtime paints the loading indicator (the canvas shows it
+    // until `total_pages > 0`, set at the end of this task) and then the layout
+    // runs. The guard `loro_doc().is_none()` is only cleared at the end, and no
+    // subscribed signal changes across the yield, so the task is spawned once.
     use_effect(move || {
         if let Some((loaded_path, Ok(doc))) = &*document_load.value().read_unchecked()
             && loaded_path == &path_signal()
             && loro_doc().is_none()
         {
-            // Seed the layout so hit-testing works on the very first click,
-            // before any Loro mutation triggers apply_mutation_and_relayout.
-            seed_layout_from_document(&doc_state_seed, doc);
-            match document_to_loro(doc) {
-                Ok(l_doc) => {
-                    let um = loro::UndoManager::new(&l_doc);
-                    loro_doc.set(Some(l_doc));
-                    undo_manager.set(Some(um));
+            let doc = doc.clone();
+            let doc_state_seed = Arc::clone(&doc_state_seed);
+            spawn(async move {
+                // Let the loading indicator paint before the blocking layout.
+                super::editor_load::yield_now().await;
 
-                    // The freshly-loaded document matches the file on disk:
-                    // record the current generation as the clean baseline.
-                    baseline_gen.set(cursor_state.peek().document_generation);
+                // Seed the layout so hit-testing works on the very first click,
+                // before any Loro mutation triggers apply_mutation_and_relayout.
+                seed_layout_from_document(&doc_state_seed, &doc);
+                let page_count = doc_state_seed
+                    .lock()
+                    .map(|s| s.page_count as u32)
+                    .unwrap_or(0);
 
-                    // Auto-place the cursor at the start of the document so the
-                    // user can type immediately without needing to click first.
-                    if cursor_state.read().focus.is_none() {
-                        use crate::editing::cursor::DocumentPosition;
-                        let start = DocumentPosition {
-                            page_index: 0,
-                            paragraph_index: 0,
-                            byte_offset: 0,
-                        };
-                        let mut cs = cursor_state.write();
-                        cs.anchor = Some(start.clone());
-                        cs.focus = Some(start);
+                match document_to_loro(&doc) {
+                    Ok(l_doc) => {
+                        let um = loro::UndoManager::new(&l_doc);
+                        loro_doc.set(Some(l_doc));
+                        undo_manager.set(Some(um));
+
+                        // The freshly-loaded document matches the file on disk:
+                        // record the current generation as the clean baseline.
+                        baseline_gen.set(cursor_state.peek().document_generation);
+
+                        // Auto-place the cursor at the start of the document so
+                        // the user can type immediately without clicking first.
+                        if cursor_state.read().focus.is_none() {
+                            use crate::editing::cursor::DocumentPosition;
+                            let start = DocumentPosition {
+                                page_index: 0,
+                                paragraph_index: 0,
+                                byte_offset: 0,
+                            };
+                            let mut cs = cursor_state.write();
+                            cs.anchor = Some(start.clone());
+                            cs.focus = Some(start);
+                        }
+
+                        // Publish the page count now the layout is ready — this
+                        // lifts the canvas's loading gate (total_pages > 0).
+                        total_pages.set(page_count);
                     }
+                    Err(e) => tracing::warn!("Failed to initialize Loro sync bridge: {}", e),
                 }
-                Err(e) => tracing::warn!("Failed to initialize Loro sync bridge: {}", e),
-            }
+            });
         }
     });
 

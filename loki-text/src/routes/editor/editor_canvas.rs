@@ -284,7 +284,14 @@ pub(super) fn render_canvas_area(
             ),
 
             match &*document_load.value().read_unchecked() {
-                Some((loaded_path, Ok(doc))) if loaded_path == &path_signal() => {
+                // Gate on `total_pages > 0`: the document has loaded *and* the
+                // first paginated layout is ready (published by the deferred
+                // Loro-bridge task in editor_inner). Until then the resource may
+                // be Ok but `paginated_layout` is still None, which would render
+                // a blank canvas — keep the loading indicator up instead.
+                Some((loaded_path, Ok(doc)))
+                    if loaded_path == &path_signal() && total_pages() > 0 =>
+                {
                     // Use the live post-mutation document from doc_state when
                     // available; fall back to the original resource doc before
                     // seed_layout_from_document has run. Read the matching
