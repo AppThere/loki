@@ -18,6 +18,7 @@
 //! correctness gate.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::Inline;
@@ -94,6 +95,10 @@ pub struct PaginatedReuse {
     /// section end, so a content change can renumber/repaginate the tail —
     /// incremental reuse is disabled when this is set.
     pub has_footnotes: bool,
+    /// Whether any header/footer references a PAGE / NUMPAGES field. When the
+    /// page count changes, NUMPAGES on *reused* pages goes stale, so the header
+    /// pass must run over all pages in that case (see the driver).
+    pub has_page_fields: bool,
 }
 
 /// `true` if any inline in `inlines` (recursively) is a footnote/endnote.
@@ -205,7 +210,6 @@ pub fn relayout_paginated_incremental(
         .iter()
         .rfind(|cp| cp.block_index <= c)?;
     let prefix_pages = pp.page_index;
-    let mut pages: Vec<LayoutPage> = prev_layout.pages[..prefix_pages].to_vec();
     let mut new_checkpoints: Vec<PageStart> = prev_reuse
         .checkpoints
         .iter()
@@ -237,7 +241,12 @@ pub fn relayout_paginated_incremental(
         },
     );
 
-    pages.extend(resumed.pages);
+    // Re-flowed ("middle") pages carry absolute page numbers from the resumed
+    // flow; reused prefix/suffix pages keep theirs (the prefix is before the
+    // edit; a resync only fires when the page count up to that point is
+    // identical). No global renumber is needed — which is what lets reused pages
+    // stay shared (`Arc` clone) instead of being deep-copied via `make_mut`.
+    let mut middle = resumed.pages;
     for cp in resumed.checkpoints {
         new_checkpoints.push(PageStart {
             page_index: cp.page_index + prefix_pages,
@@ -245,10 +254,7 @@ pub fn relayout_paginated_incremental(
             checkpoint: cp.checkpoint,
         });
     }
-
-    // ── Suffix splice when the flow resynchronised ──
     if let Some(splice) = splice_from {
-        pages.extend(prev_layout.pages[splice..].iter().cloned());
         new_checkpoints.extend(
             prev_reuse
                 .checkpoints
@@ -258,19 +264,49 @@ pub fn relayout_paginated_incremental(
         );
     }
 
-    // ── Renumber and re-assign headers/footers (NUMPAGES depends on count) ──
-    for (idx, page) in pages.iter_mut().enumerate() {
-        page.page_number = idx + 1;
+    let prev_total = prev_layout.pages.len();
+    let suffix_len = splice_from.map_or(0, |s| prev_total - s);
+    let new_total = prefix_pages + middle.len() + suffix_len;
+    // NUMPAGES on reused pages only goes stale when the page count changes *and*
+    // a header references it; that rare case needs a full header pass.
+    let needs_full_header_pass = prev_reuse.has_page_fields && new_total != prev_total;
+
+    // Headers/footers on reused pages are still valid in the common case; assign
+    // only to the re-flowed middle pages (which the resumed flow left without).
+    if !needs_full_header_pass {
+        crate::flow::assign_headers_footers(
+            &mut middle,
+            &doc.sections[0].layout,
+            resources,
+            &doc.styles,
+            display_scale,
+            new_total as u32,
+        );
     }
-    let total = pages.len() as u32;
-    crate::flow::assign_headers_footers(
-        &mut pages,
-        &doc.sections[0].layout,
-        resources,
-        &doc.styles,
-        display_scale,
-        total,
-    );
+
+    // ── Assemble: reused prefix (Arc bump) + fresh middle + reused suffix ──
+    let mut pages: Vec<Arc<LayoutPage>> = Vec::with_capacity(new_total);
+    pages.extend(prev_layout.pages[..prefix_pages].iter().cloned());
+    pages.extend(middle.into_iter().map(Arc::new));
+    if let Some(splice) = splice_from {
+        pages.extend(prev_layout.pages[splice..].iter().cloned());
+    }
+
+    if needs_full_header_pass {
+        // Rare: a page-count-changing edit in a NUMPAGES document. Materialise
+        // every page and re-run the header pass with the new total. O(pages),
+        // but only on this uncommon edit shape.
+        let mut all: Vec<LayoutPage> = pages.iter().map(|p| (**p).clone()).collect();
+        crate::flow::assign_headers_footers(
+            &mut all,
+            &doc.sections[0].layout,
+            resources,
+            &doc.styles,
+            display_scale,
+            new_total as u32,
+        );
+        pages = all.into_iter().map(Arc::new).collect();
+    }
 
     Some((
         PaginatedLayout {
@@ -280,6 +316,7 @@ pub fn relayout_paginated_incremental(
         PaginatedReuse {
             checkpoints: new_checkpoints,
             has_footnotes: false,
+            has_page_fields: prev_reuse.has_page_fields,
         },
     ))
 }

@@ -228,7 +228,7 @@ mod tests {
         };
         PaginatedLayout {
             page_size,
-            pages: vec![page],
+            pages: vec![Arc::new(page)],
         }
     }
 
@@ -299,11 +299,11 @@ mod tests {
             // Build a two-page layout by duplicating the single-page layout.
             let single = make_test_layout();
             let page0 = single.pages[0].clone();
-            let mut page1 = page0.clone();
+            let mut page1 = (*page0).clone();
             page1.page_number = 2;
             PaginatedLayout {
                 page_size: single.page_size,
-                pages: vec![page0, page1],
+                pages: vec![page0, Arc::new(page1)],
             }
         };
         let page_h_px = pt_to_px(layout.page_size.height);
@@ -352,11 +352,11 @@ mod tests {
         let layout = {
             let single = make_test_layout();
             let page0 = single.pages[0].clone();
-            let mut page1 = page0.clone();
+            let mut page1 = (*page0).clone();
             page1.page_number = 2;
             PaginatedLayout {
                 page_size: single.page_size,
-                pages: vec![page0, page1],
+                pages: vec![page0, Arc::new(page1)],
             }
         };
         let page = &layout.pages[0];
@@ -399,11 +399,11 @@ mod tests {
         let layout = {
             let single = make_test_layout();
             let page0 = single.pages[0].clone();
-            let mut page1 = page0.clone();
+            let mut page1 = (*page0).clone();
             page1.page_number = 2;
             PaginatedLayout {
                 page_size: single.page_size,
-                pages: vec![page0, page1],
+                pages: vec![page0, Arc::new(page1)],
             }
         };
         let page = &layout.pages[0];

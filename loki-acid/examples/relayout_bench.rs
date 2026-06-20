@@ -154,5 +154,6 @@ fn main() {
     }
 
     eprintln!("\n  Incremental reuses unchanged pages and re-flows only the edited region.");
-    eprintln!("  Stage 1 clones reused pages; Arc-shared pages (Stage 2) remove that O(n) tail.");
+    eprintln!("  Pages are Arc-shared, so reuse is a refcount bump — the remaining cost is");
+    eprintln!("  pointer copies + the re-flowed middle, not deep content clones.");
 }

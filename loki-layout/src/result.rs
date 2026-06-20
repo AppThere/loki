@@ -51,7 +51,7 @@ impl DocumentLayout {
     /// Useful for testing without caring about page structure.
     pub fn all_items(&self) -> impl Iterator<Item = &PositionedItem> + '_ {
         match self {
-            Self::Paginated(p) => Box::new(p.pages.iter().flat_map(LayoutPage::all_items))
+            Self::Paginated(p) => Box::new(p.pages.iter().flat_map(|pg| pg.all_items()))
                 as Box<dyn Iterator<Item = &PositionedItem> + '_>,
             Self::Continuous(c) => Box::new(c.items.iter()),
         }
@@ -82,7 +82,12 @@ pub struct PaginatedLayout {
     /// Physical page dimensions.
     pub page_size: LayoutSize,
     /// All pages in document order.
-    pub pages: Vec<LayoutPage>,
+    ///
+    /// Pages are `Arc`-wrapped so incremental relayout
+    /// ([`crate::relayout_paginated_incremental`]) can reuse an unchanged page
+    /// by cloning its `Arc` (a refcount bump) instead of deep-copying its
+    /// content — the key to O(changed) per-keystroke relayout.
+    pub pages: Vec<Arc<LayoutPage>>,
 }
 
 impl PaginatedLayout {
@@ -390,7 +395,7 @@ mod tests {
         };
         let layout = DocumentLayout::Paginated(PaginatedLayout {
             page_size: LayoutSize::new(595.0, 842.0),
-            pages: vec![page1, page2],
+            pages: vec![Arc::new(page1), Arc::new(page2)],
         });
         // page1: 2 content + 1 header = 3; page2: 1 content + 1 footer = 2 → total 5
         assert_eq!(layout.all_items().count(), 5);
@@ -436,7 +441,7 @@ mod tests {
         };
         let layout = DocumentLayout::Paginated(PaginatedLayout {
             page_size: LayoutSize::new(595.0, 842.0),
-            pages: vec![make_page(1), make_page(2)],
+            pages: vec![Arc::new(make_page(1)), Arc::new(make_page(2))],
         });
         assert_eq!(layout.total_height(), 842.0 * 2.0);
     }

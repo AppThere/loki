@@ -242,14 +242,20 @@ pub fn layout_paginated_full(
         all_pages.extend(pages);
     }
 
+    let has_page_fields = doc
+        .sections
+        .iter()
+        .any(|s| flow::page_layout_has_page_fields(&s.layout));
+
     (
         PaginatedLayout {
             page_size: first_page_size.unwrap_or_default(),
-            pages: all_pages,
+            pages: all_pages.into_iter().map(std::sync::Arc::new).collect(),
         },
         PaginatedReuse {
             checkpoints,
             has_footnotes: incremental::document_has_notes(doc),
+            has_page_fields,
         },
     )
 }

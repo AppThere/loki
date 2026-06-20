@@ -629,6 +629,24 @@ fn inlines_contain_page_field(inlines: &[Inline]) -> bool {
     })
 }
 
+/// `true` when any of `pl`'s header/footer variants contains a PAGE / NUMPAGES
+/// field. Used by incremental relayout: when a header references the page count,
+/// a page-count change invalidates the headers on *reused* pages too, so the
+/// fast path must re-run the header pass over all pages in that case.
+pub(crate) fn page_layout_has_page_fields(pl: &PageLayout) -> bool {
+    [
+        &pl.header,
+        &pl.header_first,
+        &pl.header_even,
+        &pl.footer,
+        &pl.footer_first,
+        &pl.footer_even,
+    ]
+    .into_iter()
+    .flatten()
+    .any(|hf| blocks_contain_page_field(&hf.blocks))
+}
+
 /// `true` when any inline in `blocks` is a PAGE or NUMPAGES field, in which
 /// case the header/footer must be laid out per page rather than once.
 fn blocks_contain_page_field(blocks: &[Block]) -> bool {

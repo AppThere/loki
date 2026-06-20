@@ -375,7 +375,7 @@ mod tests {
         };
         PaginatedLayout {
             page_size,
-            pages: vec![page],
+            pages: vec![Arc::new(page)],
         }
     }
 
@@ -545,7 +545,7 @@ mod tests {
         };
         PaginatedLayout {
             page_size,
-            pages: vec![page],
+            pages: vec![Arc::new(page)],
         }
     }
 
