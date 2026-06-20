@@ -1,11 +1,13 @@
 # Incremental paginated layout
 
-Status: **Stage 3 landed** (multi-section; wired into the editor). Owner: layout.
-Guardrail: `loki-acid/examples/relayout_bench.rs` + the `incremental == full`
-property test in `loki-layout`. Stage 1 (clone-based) ~13× at 257 pages; Stage 2
-(`Arc`-shared pages) ~49× with a near-flat cost; Stage 3 extends the fast path to
-**multi-section documents** — incremental now fires on the real (3-section) acid
-fixture (~37–85× depending on size), where it previously always fell back.
+Status: **Stage 4 landed** (block insert/delete; wired into the editor). Owner:
+layout. Guardrail: `loki-acid/examples/relayout_bench.rs` + the `incremental ==
+full` property test in `loki-layout`. Stage 1 (clone-based) ~13× at 257 pages;
+Stage 2 (`Arc`-shared pages) ~49× near-flat; Stage 3 added **multi-section**
+documents (fires on the real 3-section acid fixture); Stage 4 added **block
+insert/delete** (the Enter / Backspace-at-boundary keys), previously a full
+fallback (a middle insert is ~2× — it re-flows the changed section's tail rather
+than suffix-resyncing, because a count change shifts later block indices).
 
 ## Problem
 
@@ -122,5 +124,15 @@ or one that touches a PAGE/NUMPAGES header, falls back to a full layout.
   rather than O(document)).
 - **Stage 3** *(done)*: multi-section documents — reuse unchanged sections wholesale,
   incremental within the changed section.
-- **Stage 4+**: footnote-bearing docs (section-end resync), block insert/delete,
-  mid-split resume — each added only with the property test extended first.
+- **Stage 4** *(done)*: block insert/delete. The block diff is generalised to a
+  common prefix + common suffix (it tolerates a length change). Because an
+  insert/delete shifts the block indices stored in later pages' editing data,
+  the in-section suffix resync is disabled for a count change; the changed
+  section is re-flowed from the edit to its end, and later whole sections are
+  still reused when the section's page count is unchanged. (Known limitation: a
+  count-*changing* insert in a non-last section re-flows the section tail and
+  then declines, so the editor's full fallback repeats some work — uncommon, and
+  correct.)
+- **Stage 5+**: footnote-bearing docs (section-end resync), mid-split resume,
+  cross-section resume for count-changing edits — each added only with the
+  property test extended first.

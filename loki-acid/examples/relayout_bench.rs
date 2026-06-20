@@ -72,6 +72,26 @@ fn same_height_edit(doc: &Document) -> Document {
     d
 }
 
+/// Returns a copy of `doc` with a short paragraph inserted in the middle of the
+/// first section — a block-count-changing edit (the Enter key).
+fn insert_edit(doc: &Document) -> Document {
+    let mut d = doc.clone();
+    if let Some(section) = d.sections.first_mut() {
+        let idx = section.blocks.len() / 2;
+        section.blocks.insert(
+            idx,
+            Block::StyledPara(loki_doc_model::content::block::StyledParagraph {
+                style_id: None,
+                direct_para_props: None,
+                direct_char_props: None,
+                inlines: vec![Inline::Str("Inserted paragraph.".to_string())],
+                attr: Default::default(),
+            }),
+        );
+    }
+    d
+}
+
 /// Median wall-clock of `ITERS` runs of `f`.
 fn bench_median(mut f: impl FnMut()) -> Duration {
     let mut samples = Vec::with_capacity(ITERS);
@@ -93,12 +113,12 @@ fn main() {
     };
 
     eprintln!(
-        "relayout_bench — full vs incremental relayout, height-preserving \
-         single-block edit ({ITERS} iters/size)\n"
+        "relayout_bench — full vs incremental relayout: a height-preserving edit \
+         and a paragraph insert ({ITERS} iters/size)\n"
     );
     eprintln!(
-        "  {:>6}  {:>7}  {:>6}  {:>10}  {:>10}  {:>8}",
-        "factor", "blocks", "pages", "full", "incremental", "speedup"
+        "  {:>6}  {:>6}  {:>10}  {:>11}  {:>9}  {:>11}",
+        "blocks", "pages", "full", "incr (edit)", "speedup", "incr (insert)"
     );
 
     for factor in [1usize, 2, 4, 8, 16] {
@@ -111,8 +131,10 @@ fn main() {
         let (prev_layout, reuse) = layout_paginated_full(&mut fonts, &doc, 1.0, &opts);
         let pages = prev_layout.pages.len();
 
-        // The edit the editor would relayout after: one character in the middle.
+        // The edits the editor would relayout after: one character (height-
+        // preserving) and a paragraph insert (Enter, block-count-changing).
         let edited = same_height_edit(&doc);
+        let inserted = insert_edit(&doc);
 
         // Full relayout of the edited document (today's per-keystroke cost).
         let full = bench_median(|| {
@@ -137,13 +159,35 @@ fn main() {
             }
         });
 
+        // Incremental relayout for a block insert (Enter).
+        let mut insert_fired = false;
+        let incr_insert = bench_median(|| {
+            if relayout_paginated_incremental(
+                &mut fonts,
+                &inserted,
+                &doc,
+                &prev_layout,
+                &reuse,
+                1.0,
+                &opts,
+            )
+            .is_some()
+            {
+                insert_fired = true;
+            }
+        });
+
         let speedup = ms(full) / ms(incr).max(0.0001);
         eprintln!(
-            "  {factor:>6}  {blocks:>7}  {pages:>6}  {:>7.2} ms  {:>7.2} ms  {:>6.1}x{}",
+            "  {blocks:>6}  {pages:>6}  {:>7.2} ms  {:>8.2} ms  {:>6.1}x  {:>8.2} ms{}",
             ms(full),
             ms(incr),
             speedup,
-            if fired { "" } else { "  (fell back!)" },
+            ms(incr_insert),
+            match (fired, insert_fired) {
+                (true, true) => "",
+                _ => "  (fell back!)",
+            },
         );
     }
 

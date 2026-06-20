@@ -64,14 +64,20 @@ pub struct PageStart {
     pub(crate) checkpoint: FlowCheckpoint,
 }
 
-/// Returns the index of the first block that differs between `old` and `new`,
-/// or `None` when the two block slices are equal. Requires equal length (a
-/// length change is a structural edit the incremental path does not handle).
-pub(crate) fn first_changed_block(old: &[Block], new: &[Block]) -> Option<usize> {
-    if old.len() != new.len() {
-        return Some(old.len().min(new.len()));
-    }
-    old.iter().zip(new.iter()).position(|(a, b)| a != b)
+/// Length of the longest common prefix of `old` and `new` (the index of the
+/// first differing block). Works across length changes (block insert/delete).
+pub(crate) fn common_prefix_len(old: &[Block], new: &[Block]) -> usize {
+    let max = old.len().min(new.len());
+    (0..max).take_while(|&i| old[i] == new[i]).count()
+}
+
+/// Length of the longest common suffix of `old` and `new` that does not overlap
+/// the common prefix. Used to bound the changed region for block insert/delete.
+pub(crate) fn common_suffix_len(old: &[Block], new: &[Block], prefix: usize) -> usize {
+    let max = old.len().min(new.len()) - prefix;
+    (0..max)
+        .take_while(|&i| old[old.len() - 1 - i] == new[new.len() - 1 - i])
+        .count()
 }
 
 /// Returns `true` when `old[from..]` and `new[from..]` are element-wise equal —
@@ -213,15 +219,28 @@ pub fn relayout_paginated_incremental(
 
     let new_blocks = &doc.sections[sc].blocks;
     let old_blocks = &prev_doc.sections[sc].blocks;
-    if new_blocks.len() != old_blocks.len() {
-        return None; // block insert/delete/move — structural
-    }
-    let Some(c) = first_changed_block(old_blocks, new_blocks) else {
+    // First changed block (works across a block insert/delete). The section
+    // differs and its layout is unchanged, so the blocks genuinely differ.
+    let c = common_prefix_len(old_blocks, new_blocks);
+    if c == old_blocks.len() && c == new_blocks.len() {
+        // Blocks are identical (the section differed only in non-block data);
+        // the layout is unchanged, so reuse it verbatim.
         return Some((prev_layout.clone(), prev_reuse.clone()));
-    };
-    if block_has_note(&new_blocks[c]) {
-        return None; // the edit introduced a footnote
     }
+    let suffix = common_suffix_len(old_blocks, new_blocks, c);
+    // A footnote introduced anywhere in the changed region disables reuse (the
+    // previous layout is already gated on containing no notes).
+    if new_blocks[c..new_blocks.len() - suffix]
+        .iter()
+        .any(block_has_note)
+    {
+        return None;
+    }
+    // Same block count ⇒ in-section suffix resync is sound (block indices align).
+    // A count change (insert/delete) shifts later block indices, so resync is
+    // disabled and section `sc` is re-flowed to its end; later whole sections are
+    // still reusable when `sc`'s page count is unchanged.
+    let allow_resync = old_blocks.len() == new_blocks.len();
 
     let total_pages = prev_layout.pages.len();
     let sc_start = section_page_start(&prev_reuse.checkpoints, sc)?;
@@ -254,10 +273,11 @@ pub fn relayout_paginated_incremental(
         pp.block_index,
         &pp.checkpoint,
         |b, s| {
-            if let Some(old) = prev_reuse
-                .checkpoints
-                .iter()
-                .find(|cp| cp.section_index == sc && cp.block_index == b && &cp.checkpoint == s)
+            if allow_resync
+                && let Some(old) = prev_reuse
+                    .checkpoints
+                    .iter()
+                    .find(|cp| cp.section_index == sc && cp.block_index == b && &cp.checkpoint == s)
                 && blocks_equal_from(old_blocks, new_blocks, b)
             {
                 splice_from = Some(old.page_index);

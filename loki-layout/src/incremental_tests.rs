@@ -91,6 +91,20 @@ fn multi_section_doc() -> Document {
     doc
 }
 
+/// Inserts a new paragraph after block `idx` in `section` (an Enter-like split).
+fn insert_block(doc: &Document, section: usize, idx: usize, text: &str) -> Document {
+    let mut d = doc.clone();
+    d.sections[section].blocks.insert(idx + 1, para(text));
+    d
+}
+
+/// Deletes block `idx` in `section`.
+fn delete_block(doc: &Document, section: usize, idx: usize) -> Document {
+    let mut d = doc.clone();
+    d.sections[section].blocks.remove(idx);
+    d
+}
+
 /// Flips the first character of block `idx` in `section` — a length-preserving
 /// (height-preserving) edit confined to that section.
 fn flip_char(doc: &Document, section: usize, idx: usize) -> Document {
@@ -209,6 +223,48 @@ fn height_changing_edits_match_full_layout() {
             &edited,
             &format!("height-change edit @ {idx}"),
         );
+    }
+}
+
+#[test]
+fn block_insert_delete_match_full_layout() {
+    let mut fonts = FontResources::new();
+    let doc = base_doc();
+    let prev = layout_paginated_full(&mut fonts, &doc, 1.0, &opts());
+
+    // Inserts (Enter-like) at start / middle / end. A single-section document is
+    // its own last section, so these fire even when they add a page.
+    let mut fired = false;
+    for idx in [3usize, 24, 46] {
+        let edited = insert_block(&doc, 0, idx, "Inserted short paragraph of text.");
+        let (_, _, f) = check_edit(&mut fonts, &doc, &prev, &edited, &format!("insert @ {idx}"));
+        fired |= f;
+    }
+    // Deletions (Backspace-at-boundary-like).
+    for idx in [2usize, 30] {
+        let edited = delete_block(&doc, 0, idx);
+        let (_, _, f) = check_edit(&mut fonts, &doc, &prev, &edited, &format!("delete @ {idx}"));
+        fired |= f;
+    }
+    assert!(fired, "incremental should fire on block insert/delete");
+}
+
+#[test]
+fn multi_section_block_insert_delete_match_full() {
+    let mut fonts = FontResources::new();
+    let doc = multi_section_doc();
+    let prev = layout_paginated_full(&mut fonts, &doc, 1.0, &opts());
+
+    // Insert/delete in a middle section and the first section. Either the fast
+    // path fires (page-neutral → later sections reused) or it declines; both are
+    // asserted equal to a full layout by check_edit.
+    let cases = [
+        insert_block(&doc, 1, 15, "Inserted line in section one."),
+        delete_block(&doc, 0, 10),
+        insert_block(&doc, 2, 5, "Inserted line in the last section."),
+    ];
+    for (i, edited) in cases.iter().enumerate() {
+        let _ = check_edit(&mut fonts, &doc, &prev, edited, &format!("ms ins/del {i}"));
     }
 }
 
