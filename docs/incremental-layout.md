@@ -1,8 +1,9 @@
 # Incremental paginated layout
 
-Status: **in progress** (Stage 1). Owner: layout. Guardrail:
+Status: **Stage 1 landed** (wired into the editor). Owner: layout. Guardrail:
 `loki-acid/examples/relayout_bench.rs` + the `incremental == full` property
-test in `loki-layout`.
+test in `loki-layout`. Measured ~13× faster per keystroke at 257 pages
+(10.6 ms → 0.85 ms) for a height-preserving single-block edit.
 
 ## Problem
 

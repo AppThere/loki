@@ -26,8 +26,8 @@ use std::sync::{Arc, Mutex};
 
 use futures_channel::oneshot;
 use loki_doc_model::document::Document;
-use loki_layout::DocumentLayout;
 
+use crate::editing::relayout::LaidOut;
 use crate::editing::state::{DocumentState, compute_seed_layout};
 
 /// Lays out `doc` on a worker thread and resolves to `(doc, layout)`.
@@ -43,7 +43,7 @@ use crate::editing::state::{DocumentState, compute_seed_layout};
 pub(super) async fn compute_layout_off_main_thread(
     doc_state: Arc<Mutex<DocumentState>>,
     doc: Document,
-) -> Option<(Document, DocumentLayout)> {
+) -> Option<(Document, LaidOut)> {
     let fr_arc = {
         let state = doc_state.lock().ok()?;
         state.shared_font_resources.clone()
