@@ -639,25 +639,39 @@ impl<Rend: WindowRenderer> View<Rend> {
                 // PATCH(loki): collect per-node scroll changes and forward them
                 // to the embedder so Dioxus `onscroll` handlers fire.
                 //
-                // PATCH(loki): the hover node is only set on cursor-move events,
-                // so right after navigating to a new view (e.g. opening a
-                // document) there is no hover node until the mouse moves — and
-                // the wheel would otherwise scroll the root viewport, not the
-                // focused `overflow:auto` container, so the document does not
-                // scroll until the user first interacts with it. Fall back to the
-                // focused node (the Loki editor canvas is a focusable scroll
-                // container) so the wheel scrolls it immediately.
+                // PATCH(loki): scroll the hover node first, then fall back to the
+                // focused node, then the viewport. The hover node is only updated
+                // on cursor-move events, so right after navigating to a new view
+                // (e.g. opening a document) it is either unset or **stale** — left
+                // pointing at a node from the previous view, which scrolls
+                // nothing. The old `hover.or_else(focused)` form only consulted
+                // the focused node when hover was `None`, so a stale-but-present
+                // hover node swallowed the gesture and the document would not
+                // scroll until the user moved the mouse or grabbed the scrollbar.
+                // Treating a hover node that consumed no scroll as "no target"
+                // lets the wheel fall through to the focused node (the Loki editor
+                // canvas is a focusable scroll container), so it scrolls
+                // immediately on first paint.
                 let mut changes = Vec::new();
-                let target = self
-                    .doc
-                    .get_hover_node_id()
-                    .or_else(|| self.doc.get_focussed_node_id());
-                let has_changed = if let Some(node_id) = target {
-                    self.doc
+                let mut has_changed = false;
+                for node_id in [
+                    self.doc.get_hover_node_id(),
+                    self.doc.get_focussed_node_id(),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    if self
+                        .doc
                         .scroll_node_by_collect(node_id, scroll_x, scroll_y, &mut changes)
-                } else {
-                    self.doc.scroll_viewport_by_has_changed(scroll_x, scroll_y)
-                };
+                    {
+                        has_changed = true;
+                        break;
+                    }
+                }
+                if !has_changed {
+                    has_changed = self.doc.scroll_viewport_by_has_changed(scroll_x, scroll_y);
+                }
                 if !changes.is_empty() {
                     self.doc.handle_scroll_changes(&changes);
                 }

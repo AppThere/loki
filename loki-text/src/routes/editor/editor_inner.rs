@@ -555,6 +555,41 @@ pub(super) fn EditorInner(path: String) -> Element {
         });
     });
 
+    // ── Re-sync scroll geometry when the document content mounts ─────────────
+    //
+    // The scroll container is measured once at mount (above) while it still
+    // holds only the loading placeholder (~one page tall), so its scrollable
+    // distance (`scroll_height`) is near zero. When the real `DocumentView`
+    // mounts (`total_pages > 0`) the content grows by many pages, but no DOM
+    // scroll event fires — so `scroll_metrics.scroll_height` stays stale and the
+    // custom scrollbar thumb is sized as if the document were a single page.
+    // Re-query the mounted container's geometry whenever the page count changes
+    // and refresh the scrollable distance, so the thumb reflects the true
+    // document length before the first scroll. (`get_scroll_size` reports the
+    // full content size; subtracting the client extent yields the scrollable
+    // distance the scrollbar geometry expects — see editor_scrollbar.)
+    use_effect(move || {
+        let pages = total_pages(); // subscribe — re-runs when the count changes
+        if pages == 0 {
+            return;
+        }
+        let Some(evt) = canvas_mounted() else { return };
+        let mut metrics = scroll_metrics;
+        spawn(async move {
+            let (Ok(size), Ok(rect)) = (evt.get_scroll_size().await, evt.get_client_rect().await)
+            else {
+                return;
+            };
+            let client_w = rect.size.width as f32;
+            let client_h = rect.size.height as f32;
+            let mut m = metrics.write();
+            m.client_width = client_w;
+            m.client_height = client_h;
+            m.scroll_width = (size.width as f32 - client_w).max(0.0);
+            m.scroll_height = (size.height as f32 - client_h).max(0.0);
+        });
+    });
+
     // ── Default view mode by viewport width ──────────────────────────────────
     //
     // Paginated on wide viewports, reflowed on narrow ones — until the user

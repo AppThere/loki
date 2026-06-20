@@ -170,15 +170,18 @@ lets the editor's width-driven reflow / view-mode default react to a window
 resize, to the first real Android size, and to the canvas appearing after an
 async document load — without the user having to scroll first.
 
-**Wheel scroll without a hover node (PATCH(loki), 2026-06-20):** the
-`MouseWheel` handler scrolls from the hovered node, falling back to the *focused*
-node when there is no hover node, and only then to the root viewport. The hover
-node is set on cursor-move events, so immediately after navigating to a new view
-(e.g. opening a document) there is no hover node until the mouse moves; without
-the focused-node fallback the wheel scrolls the root viewport instead of the
-editor's focused `overflow:auto` container, so the document does not scroll until
-the user first interacts with it. The editor canvas is a focusable scroll
-container (`tabindex`/`autofocus`), so the fallback scrolls it immediately.
+**Wheel scroll without a (fresh) hover node (PATCH(loki), 2026-06-20):** the
+`MouseWheel` handler scrolls the hovered node first, falls back to the *focused*
+node, and only then to the root viewport. The hover node is updated on
+cursor-move events, so immediately after navigating to a new view (e.g. opening a
+document) it is either unset *or stale* — left pointing at a node from the
+previous view that scrolls nothing. The original form (`hover.or_else(focused)`)
+only consulted the focused node when hover was `None`, so a stale-but-present
+hover node swallowed the gesture and the wheel did nothing until the user moved
+the mouse or grabbed the scrollbar. The handler now treats a hover node that
+consumed no scroll as "no target" and falls through to the focused node. The
+editor canvas is a focusable scroll container (`tabindex`/`autofocus`), so the
+fallback scrolls it immediately on first paint.
 
 **Root cause:** Upstream has a `// Todo implement touch scrolling` comment at
 the touch arm — the feature is planned but not implemented. The IME call is a
