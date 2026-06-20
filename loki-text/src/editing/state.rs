@@ -159,11 +159,24 @@ pub(crate) fn compute_seed_layout(
     font_resources: &Arc<Mutex<FontResources>>,
     doc: &Document,
 ) -> LaidOut {
+    // Open-path timing (the worker thread). Logged under `loki_text::open` so the
+    // CPU layout cost of opening a document is visible on-device:
+    //   RUST_LOG=loki_text::open=info cargo run -p loki-text --release
+    let started = std::time::Instant::now();
     let mut fr = font_resources.lock().unwrap_or_else(|e| e.into_inner());
+    let lock_ms = started.elapsed().as_secs_f64() * 1000.0;
     // New document: drop the previous document's memoised paragraph layouts so
     // the shaping cache does not accumulate across loads.
     fr.clear_paragraph_cache();
-    relayout_paginated(&mut fr, doc, None)
+    let out = relayout_paginated(&mut fr, doc, None);
+    tracing::info!(
+        target: "loki_text::open",
+        pages = out.layout.pages.len(),
+        font_lock_ms = lock_ms,
+        elapsed_ms = started.elapsed().as_secs_f64() * 1000.0,
+        "compute_seed_layout: worker paginated layout complete",
+    );
+    out
 }
 
 /// Publishes a pre-computed paginated layout into `doc_state`, returning the

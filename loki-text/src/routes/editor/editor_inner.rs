@@ -284,6 +284,7 @@ pub(super) fn EditorInner(path: String) -> Element {
             let doc = doc.clone();
             let doc_state_seed = Arc::clone(&doc_state_seed);
             spawn(async move {
+                let open_start = std::time::Instant::now();
                 // Lay out off the main thread; the await is a cross-thread yield.
                 let Some((doc, layout)) =
                     super::editor_layout_task::compute_layout_off_main_thread(
@@ -332,9 +333,21 @@ pub(super) fn EditorInner(path: String) -> Element {
                             cs.focus = Some(start);
                         }
 
-                        // Publish the page count now the layout is ready — this
-                        // lifts the canvas's loading gate (total_pages > 0).
-                        total_pages.set(page_count as u32);
+                        // Lifting the canvas's loading gate (total_pages > 0)
+                        // mounts the GPU DocumentView, whose first paint blocks
+                        // the main thread. Defer it one scheduler tick so the
+                        // loading indicator paints a frame first — that frame
+                        // then stays on screen through the GPU first-paint freeze
+                        // instead of a blank canvas.
+                        spawn(async move {
+                            total_pages.set(page_count as u32);
+                            tracing::info!(
+                                target: "loki_text::open",
+                                pages = page_count,
+                                elapsed_ms = open_start.elapsed().as_secs_f64() * 1000.0,
+                                "open: layout ready, DocumentView mounting (CPU done)",
+                            );
+                        });
                     }
                     Err(e) => tracing::warn!("Failed to initialize Loro sync bridge: {}", e),
                 }
