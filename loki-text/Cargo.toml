@@ -17,7 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Dioxus Native (Blitz renderer) with client-side router.
-dioxus          = { version = "=0.7.4", features = ["native", "router"] }
+dioxus          = { version = "=0.7.9", features = ["native", "router"] }
 # Format-neutral document model — passed to WgpuSurface after import.
 loki-doc-model  = { path = "../loki-doc-model" }
 # DOCX/OOXML import — converts file bytes to loki_doc_model::Document.

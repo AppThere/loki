@@ -1581,9 +1581,9 @@ dependencies = [
 
 [[package]]
 name = "dioxus"
-version = "0.7.4"
+version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d5b0aec58753daee127a5fe2d1a40b0db8cebc0b8a7f97b34df2492cb90d78e"
+checksum = "7c01ecf7ddbae18a419ad3d83c486101a85ffc5740ea09cdd0f09a30dc12170d"
 dependencies = [
  "dioxus-asset-resolver",
  "dioxus-cli-config",
@@ -1831,7 +1831,7 @@ dependencies = [
 
 [[package]]
 name = "dioxus-native"
-version = "0.7.4"
+version = "0.7.9"
 dependencies = [
  "anyrender",
  "anyrender_vello",
@@ -1862,7 +1862,7 @@ dependencies = [
 
 [[package]]
 name = "dioxus-native-dom"
-version = "0.7.4"
+version = "0.7.9"
 dependencies = [
  "blitz-dom",
  "blitz-traits",
@@ -8424,7 +8424,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

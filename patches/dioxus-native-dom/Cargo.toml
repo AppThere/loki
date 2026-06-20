@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "dioxus-native-dom"
-version = "0.7.4"
+version = "0.7.9"
 authors = [
     "Jonathan Kelley",
     "Nico Burns",
@@ -65,14 +65,14 @@ default-features = false
 version = "0.2"
 
 [dependencies.dioxus-core]
-version = "0.7.4"
+version = "0.7.9"
 
 [dependencies.dioxus-html]
-version = "0.7.4"
+version = "0.7.9"
 default-features = false
 
 [dependencies.futures-util]
-version = "0.3"
+version = "0.3.32"
 default-features = false
 
 [dependencies.keyboard-types]
