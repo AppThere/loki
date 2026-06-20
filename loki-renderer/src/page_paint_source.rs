@@ -134,13 +134,14 @@ impl CustomPaintSource for LokiPageSource {
             return None;
         };
 
-        // Step 1: read current tier from cache (default Hot for first frame).
-        let current_tier = self
-            .cache
-            .lock()
-            .ok()
-            .and_then(|g| g.get(PageIndex(self.page_index as u32)).map(|p| p.tier))
-            .unwrap_or(CacheTier::Hot);
+        // Step 1: every mounted tile renders at full resolution.
+        //
+        // Tile virtualization (see DocumentView) only mounts pages within ~one
+        // screen of the viewport, so the resolution-tiering that downsampled
+        // far pages is now both redundant (memory is bounded by mounting) and
+        // wrong (it tiered off a scroll position the renderer never receives,
+        // downsampling the very page being viewed/edited). Always render Hot.
+        let current_tier = CacheTier::Hot;
 
         // Step 2: compute target physical texture dimensions.
         let scale_factor = current_tier.scale_factor();
