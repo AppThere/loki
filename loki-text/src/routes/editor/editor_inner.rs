@@ -280,11 +280,22 @@ pub(super) fn EditorInner(path: String) -> Element {
             && loaded_path == &path_signal()
             && loro_doc().is_none()
         {
+            tracing::info!(
+                target: "loki_text::open",
+                "open: loro effect firing — cloning document + spawning layout task",
+            );
             let loaded_path = loaded_path.clone();
+            let clone_start = std::time::Instant::now();
             let doc = doc.clone();
+            tracing::info!(
+                target: "loki_text::open",
+                clone_ms = clone_start.elapsed().as_secs_f64() * 1000.0,
+                "open: document cloned",
+            );
             let doc_state_seed = Arc::clone(&doc_state_seed);
             spawn(async move {
                 let open_start = std::time::Instant::now();
+                tracing::info!(target: "loki_text::open", "open: layout task polled (start)");
                 // Lay out off the main thread; the await is a cross-thread yield.
                 let Some((doc, layout)) =
                     super::editor_layout_task::compute_layout_off_main_thread(

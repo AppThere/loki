@@ -45,6 +45,9 @@ pub struct FontResources {
 impl FontResources {
     /// Creates a new `FontResources`, loading system fonts via Fontique.
     pub fn new() -> Self {
+        // Timing under `loki_text::open` so the one-time system-font-scan cost
+        // (paid by the first document open in an editor) is visible on-device.
+        let started = std::time::Instant::now();
         let mut font_cx = parley::FontContext::new();
 
         // Dynamically scan and register app-bundled fonts from the assets directory.
@@ -56,6 +59,11 @@ impl FontResources {
                 font_cx.collection.load_fonts_from_paths(vec![assets_fonts]);
             }
         }
+        tracing::info!(
+            target: "loki_text::open",
+            elapsed_ms = started.elapsed().as_secs_f64() * 1000.0,
+            "FontResources::new: font context built",
+        );
 
         Self {
             font_cx,
