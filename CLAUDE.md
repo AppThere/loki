@@ -39,6 +39,40 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 
 ---
 
+## Engineering principles — fix the cause, not the symptom
+
+**Always prefer the correct, root-cause fix over a quick patch.** A change is
+not done when the symptom disappears; it is done when you understand *why* the
+symptom occurred and have addressed that cause. This is a hard expectation, not
+a preference.
+
+- **Diagnose before you change.** Reproduce the issue, find the actual cause
+  (read the code, add temporary diagnostics, bisect), and state it explicitly
+  before editing. If you cannot explain the mechanism, you are not ready to fix
+  it. (Example: the "frozen scrollbar" bug was not in the editor at all — it was
+  a `[patch]` silently dropped by a dioxus version bump; the fix was to restore
+  the patch, not to rewrite the scrollbar.)
+- **No silent workarounds.** Do not paper over a problem with a sleep, a retry,
+  a magic offset, a broad `#[allow]`, swallowing an error, or disabling a test.
+  If a true fix is genuinely out of scope, say so, implement the smallest honest
+  stopgap, and record it as `// TODO(<topic>):` plus a tech-debt entry — never
+  present a stopgap as a fix.
+- **Fix it where it belongs.** Put the change at the correct layer (the model,
+  the layout engine, the patch, the build config), not wherever is easiest to
+  reach. Reuse existing mechanisms instead of bolting on parallel ones.
+- **Leave diagnostics out of the committed tree.** Temporary `eprintln!`/debug
+  code used to localise a bug must be removed once the cause is found.
+- **Verify the fix addresses the cause.** Add or update a test that would have
+  caught the bug, and run `cargo check --workspace` / the relevant suite.
+- **Report honestly.** If something is a workaround, partial, or unverified, say
+  so plainly with the reason — do not round up to "done".
+
+Patches and stopgaps are sometimes the *correct* tool (see
+[docs/patches.md](docs/patches.md)), but only when they are deliberate,
+documented, and carry a removal condition.
+
+---
+
 ## Coding conventions
 
 These conventions apply to all crates in the workspace.
@@ -64,7 +98,7 @@ These conventions apply to all crates in the workspace.
   44×44 logical pixel touch target (WCAG 2.5.8) in a doc comment.
 - **Checkpoints:** Run `cargo check --workspace` after each logical unit of
   work. Do not accumulate failures across steps.
-- **Documentation Sync:** Any change to layout, rendering, or import/export properties must update the living status registry in [fidelity-status.md](file:///Users/kevin/project/loki/docs/fidelity-status.md).
+- **Documentation Sync:** Any change to layout, rendering, or import/export properties must update the living status registry in [docs/fidelity-status.md](docs/fidelity-status.md).
 - **Final pass:** `cargo fmt --all` and `cargo clippy --workspace -- -D warnings`
   must both pass before any PR or commit is considered complete.
 
@@ -109,6 +143,61 @@ but are **not perfectly round-tripped through the Loro CRDT**.
 | `tab_stops` | Written as unreadable Debug string; not read back. | Medium |
 | `background_color` (paragraph) | Written as Debug string; not decoded on read. | Low |
 | `DocumentMeta` / `DublinCoreMeta` | Round-trips **through the Loro CRDT** as a JSON snapshot (`loro_bridge::meta`), so Publish-tab edits are durable and undoable. Still **not** written back to DOCX/ODT on export (export drops the extended Dublin Core fields). | Low |
+
+---
+
+## Workspace layout & capabilities
+
+The workspace is a set of focused crates (one responsibility each). Key groups:
+
+- **Model & bridge:** `loki-doc-model` (format-neutral `Document`, metadata,
+  styles, and the Loro CRDT bridge in `loro_bridge`), `loki-primitives`,
+  `loki-sheet-model`, `loki-presentation-model`.
+- **Formats (one crate per family):**
+  - `loki-opc` — OPC/ZIP container shared by OOXML/ODF.
+  - `loki-ooxml` — DOCX/XLSX import + DOCX export.
+  - `loki-odf` — ODT/ODS import + ODT/ODS export.
+  - `loki-pdf` — **PDF/X** export (X-1a/X-3/X-4) via `pdf-writer`; reuses
+    `loki-layout` for positioning, embeds fonts + images (CMYK).
+  - `loki-epub` — **EPUB 3.3** export (XHTML + OCF ZIP).
+- **Layout & rendering:** `loki-layout` (renderer-agnostic, Parley-based),
+  `loki-vello` / `loki-renderer` / `loki-render-cache` (GPU paint + tiering).
+- **UI & apps:** `appthere-ui` (shared design system), `appthere-canvas`,
+  `loki-i18n`, `loki-fonts`, and the binaries `loki-text` (word processor —
+  the mature app), `loki-spreadsheet`, `loki-presentation`.
+- **Testing:** `loki-acid` — the ACID rendering-fidelity harness (catalog of
+  `TC-*` cases, embedded fixtures, page-count/glyph-coverage canaries, SSIM
+  primitives, and the `load_bench` open-latency benchmark). See
+  `loki-acid/README.md`.
+
+The **Publish** ribbon tab in `loki-text` drives PDF/X + EPUB export and the
+Dublin Core metadata editor.
+
+When you add a crate, add it to the `[workspace] members` list in the root
+`Cargo.toml` and give it a single clear responsibility; do not fold unrelated
+concerns into an existing crate.
+
+---
+
+## Dependency patches & the Dioxus version pin
+
+Some upstream crates (Dioxus Native + Blitz) are patched locally via
+`[patch.crates-io]`. **Every patch is documented in
+[docs/patches.md](docs/patches.md)** with its purpose, root cause, and removal
+condition — keep that file in sync whenever a patch is added, changed, or
+removed.
+
+**Dioxus is pinned to an exact version (`=0.7.9`) in every crate that depends on
+it.** This is deliberate, not laziness: the vendored `dioxus-native` /
+`dioxus-native-dom` patches (which implement the editor's scroll-event dispatch,
+`MountedData::scroll`, `onmounted`, touch, and IME support) are versioned, and a
+loose `"0.7"` requirement lets Cargo resolve a newer 0.7.x from crates.io that
+**silently drops the patches** (`warning: Patch ... was not used`) — which breaks
+scrolling, drag, and input. Do **not** loosen the pin.
+
+To move Dioxus to a new version, follow **"Upgrading Dioxus" in
+[docs/patches.md](docs/patches.md)** (re-vendor the two patches against the new
+upstream source, then bump the pin) — never just bump the version number.
 
 ---
 
@@ -214,7 +303,12 @@ All user-visible strings in `loki-text` and future Loki suite apps must use
    - `ribbon.ftl` — ribbon tabs and controls
    - `errors.ftl` — error messages shown to the user
    - `document.ftl` — document-level labels (save, export, etc.)
+   - `publish.ftl` — Publish tab: PDF/EPUB export and Dublin Core metadata
 2. Use the string in code via `fl!("your-key")`.
+
+   **Adding a whole new domain** (a new `.ftl` file) requires registering it in
+   the `DOMAINS` array in `loki-i18n/src/loader.rs` — files are not
+   auto-discovered.
 3. For strings with arguments: `fl!("key", arg = value)`.
    Integer arguments must be `i64`, float arguments `f64`.
 

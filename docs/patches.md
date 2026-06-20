@@ -53,13 +53,30 @@ fontique 0.6, or upstream aligns feature flags).
 
 ---
 
-### dioxus-native-dom — 0.7.4
+### dioxus-native-dom — 0.7.9
 
-**Source:** `patches/dioxus-native-dom/` (local), vendored from upstream
-commit `1eb00b5e0080ab4bd6a11ddd0a01c97f28493e04` in
+**Version pin:** the whole dioxus family is pinned to `=0.7.9` in the root
+`Cargo.toml` (and every crate that declares `dioxus`). This patch is
+version-specific; a loose `"0.7"` requirement lets Cargo prefer a newer 0.7.x
+from crates.io and **silently drop this patch** — see "Upgrading Dioxus" below.
+
+**Source:** `patches/dioxus-native-dom/` (local), originally vendored from
+upstream commit `1eb00b5e0080ab4bd6a11ddd0a01c97f28493e04` in
 [DioxusLabs/dioxus](https://github.com/DioxusLabs/dioxus)
 (`packages/native-dom/` path). The vendor copy carries local modifications
-(`dirty: true` in `.cargo_vcs_info.json`).
+(`dirty: true` in `.cargo_vcs_info.json`). **Re-vendored 0.7.4 → 0.7.9 on
+2026-06-19:** upstream `src/` was byte-identical between the two versions, so
+re-vendoring was a manifest version bump only (the loki source modifications
+already applied).
+
+**Scroll-event dispatch (PATCH(loki)).** `DioxusDocument::handle_scroll_changes`
+dispatches the DOM `scroll` event into the Dioxus `VirtualDom` for each node
+whose scroll offset changed (blitz-traits 0.2 has no scroll `DomEventData`
+variant), so `onscroll` handlers fire — this is what drives the editor's custom
+scrollbar thumb. `mounted.rs` additionally implements `MountedData::scroll`, the
+programmatic scroll the scrollbar thumb-drag uses. If this patch is dropped, the
+content still scrolls (blitz-shell handles the wheel) but the thumb freezes and
+drag is a no-op.
 
 **Fixes:** The upstream dioxus-native-dom 0.7.4 panics at runtime for any
 event type whose `HtmlEventConverter` implementation is a placeholder
@@ -206,11 +223,19 @@ uses rustls by default or provides a feature flag to disable native-tls.
 
 ---
 
-### dioxus-native — 0.7.4
+### dioxus-native — 0.7.9
 
-**Source:** `patches/dioxus-native/` (local), vendored from the crates.io
-release of `dioxus-native 0.7.4`. Only `src/dioxus_application.rs` is
-modified; all other files are unchanged.
+**Version pin:** pinned to `=0.7.9` (see the dioxus-native-dom entry above and
+"Upgrading Dioxus" below).
+
+**Source:** `patches/dioxus-native/` (local), originally vendored from the
+crates.io release of `dioxus-native 0.7.4`. `src/dioxus_application.rs`,
+`src/dioxus_renderer.rs`, and `src/lib.rs` carry loki modifications; the
+manifest also carries loki customisations (Android Mali `softbuffer` workaround,
+the `android_gpu` cfg lint, extra deps). **Re-vendored 0.7.4 → 0.7.9 on
+2026-06-19:** upstream `src/` was byte-identical between the two versions, so
+only the dioxus-family version requirements in the hand-maintained `Cargo.toml`
+were bumped (the loki manifest customisations preserved).
 
 **Fixes:** `document::Style {}` components send `CreateHeadElement` events via
 the winit event-loop proxy during `initial_build()`. These events are processed
@@ -424,6 +449,96 @@ release with the Android `num_init_threads` default. Re-test with
 **Added:** 2026-06-10
 
 ---
+
+## Upgrading Dioxus
+
+Dioxus is pinned to an exact version (`=X.Y.Z`) in **every** crate that declares
+it, because two patches (`dioxus-native`, `dioxus-native-dom`) are vendored at
+that version. **Never just bump the version number** — Cargo will prefer the
+crates.io release over a stale-versioned patch and silently drop it
+(`warning: Patch ... was not used`), breaking scrolling, drag, `onmounted`,
+touch, and IME with no compile error. Re-vendor the two patches first.
+
+Let `OLD` be the current pin and `NEW` the target (e.g. `OLD=0.7.4`,
+`NEW=0.7.9`).
+
+1. **Fetch pristine upstream sources** for both versions of both patched crates,
+   so you can see exactly what upstream changed and what loki changed:
+
+   ```bash
+   tmp=$(mktemp -d)
+   for c in dioxus-native dioxus-native-dom; do
+     for v in "$OLD" "$NEW"; do
+       curl -fsSL "https://static.crates.io/crates/$c/$c-$v.crate" \
+         | tar xz -C "$tmp"        # extracts $tmp/$c-$v/
+     done
+   done
+   ```
+
+2. **Check how much upstream changed** between `OLD` and `NEW`:
+
+   ```bash
+   diff -rq "$tmp/dioxus-native-dom-$OLD/src" "$tmp/dioxus-native-dom-$NEW/src"
+   diff -rq "$tmp/dioxus-native-$OLD/src"     "$tmp/dioxus-native-$NEW/src"
+   ```
+
+   - **No source differences** (as for 0.7.4 → 0.7.9): the existing patched
+     `src/` already matches `NEW`; the re-vendor is a **manifest bump only**
+     (steps 4–5).
+   - **Source differences**: do a **3-way merge** per changed file — the loki
+     delta is `diff(pristine-OLD, patches/<crate>)`; re-apply it onto the
+     `pristine-NEW` file (the loki edits are marked `PATCH(loki)`). Replace the
+     patch `src/` with `pristine-NEW` + the re-applied loki edits, then continue.
+
+3. **Confirm what loki customised in each manifest** (so you preserve it):
+
+   ```bash
+   diff "$tmp/dioxus-native-dom-$OLD/Cargo.toml" patches/dioxus-native-dom/Cargo.toml
+   diff "$tmp/dioxus-native-$OLD/Cargo.toml"     patches/dioxus-native/Cargo.toml
+   ```
+
+4. **Update each patch manifest to `NEW`:**
+   - If loki did **not** customise it (e.g. `dioxus-native-dom`): copy the
+     pristine `NEW` manifest verbatim —
+     `cp "$tmp/dioxus-native-dom-$NEW/Cargo.toml" patches/dioxus-native-dom/Cargo.toml`.
+   - If loki **did** customise it (e.g. `dioxus-native`): bump the crate
+     `version` and the `dioxus-*` dependency requirements `OLD → NEW` **in
+     place**, preserving the loki customisations.
+   - Either way the patch crate's own `version` must equal `NEW` so it matches
+     what `dioxus = "=NEW"` pulls in.
+
+5. **Move the pin** in every crate that declares dioxus:
+
+   ```bash
+   for f in Cargo.toml loki-renderer/Cargo.toml appthere-canvas/Cargo.toml \
+            loki-text/Cargo.toml loki-presentation/Cargo.toml loki-spreadsheet/Cargo.toml; do
+     sed -i "s/version = \"=$OLD\"/version = \"=$NEW\"/" "$f"
+   done
+   ```
+
+   Also update the pin comment in the root `Cargo.toml` and the version in the
+   two patch section headers in this file.
+
+6. **Re-resolve the lockfile** for the whole dioxus family:
+
+   ```bash
+   PKGS=$(grep -oE 'name = "dioxus[a-z-]*"' Cargo.lock | sed 's/name = //;s/"//g' | sort -u | tr '\n' ' ')
+   cargo update $PKGS --precise "$NEW"
+   ```
+
+7. **Verify the patches actually apply** (this is the whole point):
+
+   ```bash
+   cargo check --workspace 2>&1 | grep -i "was not used"   # must print NOTHING
+   grep -A2 'name = "dioxus-native-dom"' Cargo.lock          # version = NEW, no `source` line (= local path)
+   ```
+
+   `cargo check --workspace`, `cargo fmt --all`, and
+   `cargo clippy --workspace -- -D warnings` must all pass. Finally, run the app
+   and confirm scroll-wheel moves the thumb and thumb-drag scrolls the page.
+
+8. **Update docs:** the two patch section headers and re-vendor dates here, and
+   the Dioxus pin note in `CLAUDE.md`.
 
 ## Removing a patch
 
