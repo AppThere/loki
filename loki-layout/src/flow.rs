@@ -270,6 +270,9 @@ fn run_paginated_loop(
             }
             state.checkpoints.push(PageStart {
                 page_index: state.pages.len(),
+                // section_index is filled in by `layout_paginated_full`; the
+                // flow does not know its document-global section position.
+                section_index: 0,
                 block_index: i,
                 checkpoint: cp,
             });

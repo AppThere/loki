@@ -50,15 +50,17 @@ pub struct FlowCheckpoint {
     pub(crate) current_indent: f32,
 }
 
-/// A clean-page-top checkpoint: which page started, at which top-level block,
-/// and the [`FlowCheckpoint`] needed to resume the flow there.
+/// A clean-page-top checkpoint: which page started, in which section, at which
+/// (section-local) block, and the [`FlowCheckpoint`] needed to resume there.
 #[derive(Debug, Clone)]
 pub struct PageStart {
-    /// Index into `PaginatedLayout::pages` of the page that starts here.
+    /// Index into `PaginatedLayout::pages` (document-global) of the page here.
     pub page_index: usize,
-    /// Index of the top-level section-0 block this page begins flowing.
+    /// Index of the document section this page belongs to.
+    pub section_index: usize,
+    /// Index of the top-level block within its section that this page begins.
     pub block_index: usize,
-    /// Resumable flow state at this page top.
+    /// Resumable flow state at this page top (page number is section-local).
     pub(crate) checkpoint: FlowCheckpoint,
 }
 
@@ -89,16 +91,20 @@ pub(crate) struct ResumedFlow {
 /// editor so the next edit can attempt [`relayout_paginated_incremental`].
 #[derive(Debug, Clone)]
 pub struct PaginatedReuse {
-    /// Clean-page-top checkpoints, in increasing page/block order.
+    /// Clean-page-top checkpoints across all sections, in increasing page order.
     pub checkpoints: Vec<PageStart>,
     /// Whether the document contains any footnote/endnote. Footnotes render at
     /// section end, so a content change can renumber/repaginate the tail —
     /// incremental reuse is disabled when this is set.
     pub has_footnotes: bool,
-    /// Whether any header/footer references a PAGE / NUMPAGES field. When the
-    /// page count changes, NUMPAGES on *reused* pages goes stale, so the header
-    /// pass must run over all pages in that case (see the driver).
-    pub has_page_fields: bool,
+}
+
+/// Global page index where `section` begins, from its block-0 checkpoint.
+fn section_page_start(checkpoints: &[PageStart], section: usize) -> Option<usize> {
+    checkpoints
+        .iter()
+        .find(|c| c.section_index == section && c.block_index == 0)
+        .map(|c| c.page_index)
 }
 
 /// `true` if any inline in `inlines` (recursively) is a footnote/endnote.
@@ -182,33 +188,51 @@ pub fn relayout_paginated_incremental(
 ) -> Option<(PaginatedLayout, PaginatedReuse)> {
     // ── Eligibility (mirrors loro_bridge::IncrementalReader's fast-path) ──
     if !options.preserve_for_editing
-        || doc.sections.len() != 1
-        || prev_doc.sections.len() != 1
         || prev_reuse.has_footnotes
         || prev_reuse.checkpoints.is_empty()
+        || doc.sections.len() != prev_doc.sections.len()
     {
         return None;
     }
 
-    let new_blocks = &doc.sections[0].blocks;
-    let old_blocks = &prev_doc.sections[0].blocks;
+    // Exactly one section's blocks may differ, and its page layout (margins,
+    // headers, page size) must be unchanged; any other difference is structural.
+    let mut changed = None;
+    for i in 0..doc.sections.len() {
+        if doc.sections[i] != prev_doc.sections[i] {
+            if changed.is_some() || doc.sections[i].layout != prev_doc.sections[i].layout {
+                return None;
+            }
+            changed = Some(i);
+        }
+    }
+    let Some(sc) = changed else {
+        // Nothing changed — reuse the previous layout verbatim.
+        return Some((prev_layout.clone(), prev_reuse.clone()));
+    };
+
+    let new_blocks = &doc.sections[sc].blocks;
+    let old_blocks = &prev_doc.sections[sc].blocks;
     if new_blocks.len() != old_blocks.len() {
         return None; // block insert/delete/move — structural
     }
-
     let Some(c) = first_changed_block(old_blocks, new_blocks) else {
-        // No content change — reuse the previous layout verbatim.
         return Some((prev_layout.clone(), prev_reuse.clone()));
     };
     if block_has_note(&new_blocks[c]) {
         return None; // the edit introduced a footnote
     }
 
-    // ── Prefix: last clean page top at or before the changed block ──
+    let total_pages = prev_layout.pages.len();
+    let sc_start = section_page_start(&prev_reuse.checkpoints, sc)?;
+    let sc_old_end = section_page_start(&prev_reuse.checkpoints, sc + 1).unwrap_or(total_pages);
+    let is_last_section = sc + 1 == doc.sections.len();
+
+    // ── Prefix: last clean page top in section `sc` at or before block `c` ──
     let pp = prev_reuse
         .checkpoints
         .iter()
-        .rfind(|cp| cp.block_index <= c)?;
+        .rfind(|cp| cp.section_index == sc && cp.block_index <= c)?;
     let prefix_pages = pp.page_index;
     let mut new_checkpoints: Vec<PageStart> = prev_reuse
         .checkpoints
@@ -217,11 +241,13 @@ pub fn relayout_paginated_incremental(
         .cloned()
         .collect();
 
-    // ── Re-flow from the prefix boundary, resyncing against old checkpoints ──
+    // ── Re-flow section `sc` from the prefix boundary, resyncing against the old
+    // section-`sc` checkpoints. A resync splices the global page suffix (this
+    // section's tail *and every later section*), which are all unchanged. ──
     let mut splice_from: Option<usize> = None;
     let resumed = crate::flow::flow_section_resume(
         resources,
-        &doc.sections[0],
+        &doc.sections[sc],
         &doc.styles,
         display_scale,
         options,
@@ -231,7 +257,7 @@ pub fn relayout_paginated_incremental(
             if let Some(old) = prev_reuse
                 .checkpoints
                 .iter()
-                .find(|cp| cp.block_index == b && &cp.checkpoint == s)
+                .find(|cp| cp.section_index == sc && cp.block_index == b && &cp.checkpoint == s)
                 && blocks_equal_from(old_blocks, new_blocks, b)
             {
                 splice_from = Some(old.page_index);
@@ -241,20 +267,36 @@ pub fn relayout_paginated_incremental(
         },
     );
 
-    // Re-flowed ("middle") pages carry absolute page numbers from the resumed
-    // flow; reused prefix/suffix pages keep theirs (the prefix is before the
-    // edit; a resync only fires when the page count up to that point is
-    // identical). No global renumber is needed — which is what lets reused pages
-    // stay shared (`Arc` clone) instead of being deep-copied via `make_mut`.
+    // Re-flowed ("middle") pages carry section-local numbers from the resumed
+    // flow; lift them to document-global by the section's page start (0 for a
+    // single-section document). Reused pages keep their numbers — no `make_mut`.
     let mut middle = resumed.pages;
+    for page in &mut middle {
+        page.page_number += sc_start;
+    }
     for cp in resumed.checkpoints {
         new_checkpoints.push(PageStart {
             page_index: cp.page_index + prefix_pages,
+            section_index: sc,
             block_index: cp.block_index,
             checkpoint: cp.checkpoint,
         });
     }
-    if let Some(splice) = splice_from {
+
+    // ── Decide the reusable suffix and the new total page count ──
+    let sc_new_end = prefix_pages + middle.len();
+    let suffix_start = match splice_from {
+        // Resynced inside `sc`: everything from here to the document end is
+        // identical (section tail + later sections). Count is unchanged.
+        Some(splice) => Some(splice),
+        // `sc` re-flowed to its end without a resync. Later pages are reusable
+        // only if the section's page count is unchanged (so they stay aligned).
+        None if sc_new_end == sc_old_end && !is_last_section => Some(sc_old_end),
+        None if is_last_section => None, // last section: a count change is fine
+        None => return None,             // count change with later sections → full
+    };
+    let new_total = suffix_start.map_or(sc_new_end, |s| sc_new_end + (total_pages - s));
+    if let Some(splice) = suffix_start {
         new_checkpoints.extend(
             prev_reuse
                 .checkpoints
@@ -264,48 +306,34 @@ pub fn relayout_paginated_incremental(
         );
     }
 
-    let prev_total = prev_layout.pages.len();
-    let suffix_len = splice_from.map_or(0, |s| prev_total - s);
-    let new_total = prefix_pages + middle.len() + suffix_len;
-    // NUMPAGES on reused pages only goes stale when the page count changes *and*
-    // a header references it; that rare case needs a full header pass.
-    let needs_full_header_pass = prev_reuse.has_page_fields && new_total != prev_total;
-
-    // Headers/footers on reused pages are still valid in the common case; assign
-    // only to the re-flowed middle pages (which the resumed flow left without).
-    if !needs_full_header_pass {
-        crate::flow::assign_headers_footers(
-            &mut middle,
-            &doc.sections[0].layout,
-            resources,
-            &doc.styles,
-            display_scale,
-            new_total as u32,
-        );
+    // ── Headers/footers. Reused pages keep theirs (valid because their page
+    // numbers are unchanged); assign only the fresh middle pages. The exception
+    // is a page-count change combined with a header that references the count —
+    // then reused NUMPAGES is stale, so re-run the full per-section pass. ──
+    let count_changed = new_total != total_pages;
+    let needs_full_header_pass = count_changed
+        && doc
+            .sections
+            .iter()
+            .any(|s| crate::flow::page_layout_has_page_fields(&s.layout));
+    if needs_full_header_pass {
+        return None; // uncommon: defer to a correct full layout
     }
+    crate::flow::assign_headers_footers(
+        &mut middle,
+        &doc.sections[sc].layout,
+        resources,
+        &doc.styles,
+        display_scale,
+        new_total as u32,
+    );
 
     // ── Assemble: reused prefix (Arc bump) + fresh middle + reused suffix ──
     let mut pages: Vec<Arc<LayoutPage>> = Vec::with_capacity(new_total);
     pages.extend(prev_layout.pages[..prefix_pages].iter().cloned());
     pages.extend(middle.into_iter().map(Arc::new));
-    if let Some(splice) = splice_from {
+    if let Some(splice) = suffix_start {
         pages.extend(prev_layout.pages[splice..].iter().cloned());
-    }
-
-    if needs_full_header_pass {
-        // Rare: a page-count-changing edit in a NUMPAGES document. Materialise
-        // every page and re-run the header pass with the new total. O(pages),
-        // but only on this uncommon edit shape.
-        let mut all: Vec<LayoutPage> = pages.iter().map(|p| (**p).clone()).collect();
-        crate::flow::assign_headers_footers(
-            &mut all,
-            &doc.sections[0].layout,
-            resources,
-            &doc.styles,
-            display_scale,
-            new_total as u32,
-        );
-        pages = all.into_iter().map(Arc::new).collect();
     }
 
     Some((
@@ -316,7 +344,6 @@ pub fn relayout_paginated_incremental(
         PaginatedReuse {
             checkpoints: new_checkpoints,
             has_footnotes: false,
-            has_page_fields: prev_reuse.has_page_fields,
         },
     ))
 }

@@ -178,15 +178,14 @@ pub fn layout_paginated_full(
     options: &LayoutOptions,
 ) -> (PaginatedLayout, PaginatedReuse) {
     let mode = LayoutMode::Paginated;
-    let single_section = doc.sections.len() == 1;
     let mut global_page_count = 0;
     let mut first_page_size = None;
-    let mut checkpoints = Vec::new();
+    let mut checkpoints: Vec<PageStart> = Vec::new();
 
     // Pass 1: flow every section's body so the total page count is known before
     // headers/footers are laid out (NUMPAGES fields need the document-wide total).
     let mut flowed: Vec<(&loki_doc_model::Section, Vec<LayoutPage>)> = Vec::new();
-    for section in &doc.sections {
+    for (section_index, section) in doc.sections.iter().enumerate() {
         let pl = &section.layout;
         let page_size = LayoutSize::new(
             pts_to_f32(pl.page_size.width),
@@ -218,9 +217,13 @@ pub fn layout_paginated_full(
         for page in &mut pages {
             page.page_number += global_page_count;
         }
-        // Single-section: section-local indices are already document-global.
-        if single_section {
-            checkpoints = section_checkpoints;
+        // Lift the section-local checkpoints to document-global: tag the section
+        // and offset page_index by the running page count (page_number inside
+        // the checkpoint stays section-local — see the incremental driver).
+        for mut cp in section_checkpoints {
+            cp.section_index = section_index;
+            cp.page_index += global_page_count;
+            checkpoints.push(cp);
         }
 
         flowed.push((section, pages));
@@ -242,11 +245,6 @@ pub fn layout_paginated_full(
         all_pages.extend(pages);
     }
 
-    let has_page_fields = doc
-        .sections
-        .iter()
-        .any(|s| flow::page_layout_has_page_fields(&s.layout));
-
     (
         PaginatedLayout {
             page_size: first_page_size.unwrap_or_default(),
@@ -255,7 +253,6 @@ pub fn layout_paginated_full(
         PaginatedReuse {
             checkpoints,
             has_footnotes: incremental::document_has_notes(doc),
-            has_page_fields,
         },
     )
 }

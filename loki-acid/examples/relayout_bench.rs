@@ -33,22 +33,15 @@ fn ms(d: Duration) -> f64 {
     d.as_secs_f64() * 1000.0
 }
 
-/// Builds a **single-section** document whose blocks are every section's blocks
-/// flattened and repeated `factor` times. Single-section is the incremental
-/// path's eligibility (the editor's common case); the acid fixture itself has
-/// several sections.
+/// Grows `base` by repeating each section's blocks `factor` times, preserving
+/// the document's section structure (the acid fixture has several sections —
+/// incremental relayout now supports multi-section documents).
 fn grow(base: &Document, factor: usize) -> Document {
-    let all_blocks: Vec<_> = base
-        .sections
-        .iter()
-        .flat_map(|s| s.blocks.iter().cloned())
-        .collect();
     let mut doc = base.clone();
-    let mut first = doc.sections.first().cloned().unwrap_or_default();
-    first.blocks = (0..factor)
-        .flat_map(|_| all_blocks.iter().cloned())
-        .collect();
-    doc.sections = vec![first];
+    for section in &mut doc.sections {
+        let original = section.blocks.clone();
+        section.blocks = (0..factor).flat_map(|_| original.iter().cloned()).collect();
+    }
     doc
 }
 
@@ -56,22 +49,23 @@ fn count_paragraphs(doc: &Document) -> usize {
     doc.sections.iter().map(|s| s.blocks.len()).sum()
 }
 
-/// Returns a copy of `doc` with one character flipped in block `idx` — a
-/// length-preserving (height-preserving) single-block content edit, the common
-/// keystroke case the incremental path optimises.
-fn same_height_edit(doc: &Document, idx: usize) -> Document {
+/// Returns a copy of `doc` with one character flipped in a middle block of the
+/// first section — a length-preserving (height-preserving) single-block content
+/// edit, the common keystroke case the incremental path optimises.
+fn same_height_edit(doc: &Document) -> Document {
     let mut d = doc.clone();
-    if let Some(section) = d.sections.first_mut()
-        && let Some(Block::StyledPara(p)) = section.blocks.get_mut(idx)
-    {
-        for inline in p.inlines.iter_mut() {
-            if let Inline::Str(text) = inline
-                && !text.is_empty()
-            {
-                let mut chars: Vec<char> = text.chars().collect();
-                chars[0] = if chars[0] == 'Z' { 'Y' } else { 'Z' };
-                *text = chars.into_iter().collect();
-                return d;
+    if let Some(section) = d.sections.first_mut() {
+        let idx = section.blocks.len() / 2;
+        if let Some(Block::StyledPara(p)) = section.blocks.get_mut(idx) {
+            for inline in p.inlines.iter_mut() {
+                if let Inline::Str(text) = inline
+                    && !text.is_empty()
+                {
+                    let mut chars: Vec<char> = text.chars().collect();
+                    chars[0] = if chars[0] == 'Z' { 'Y' } else { 'Z' };
+                    *text = chars.into_iter().collect();
+                    return d;
+                }
             }
         }
     }
@@ -118,7 +112,7 @@ fn main() {
         let pages = prev_layout.pages.len();
 
         // The edit the editor would relayout after: one character in the middle.
-        let edited = same_height_edit(&doc, blocks / 2);
+        let edited = same_height_edit(&doc);
 
         // Full relayout of the edited document (today's per-keystroke cost).
         let full = bench_median(|| {

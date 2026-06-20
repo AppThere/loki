@@ -68,6 +68,44 @@ fn edit_block(doc: &Document, idx: usize, text: &str) -> Document {
     d
 }
 
+/// A three-section document, each section spanning multiple pages.
+fn multi_section_doc() -> Document {
+    let mut doc = Document::new_blank();
+    let mut sections = Vec::new();
+    for s in 0..3 {
+        let mut blocks = Vec::new();
+        for i in 0..30 {
+            blocks.push(para(&format!(
+                "Section {s} paragraph {i} with enough words to wrap across the \
+                 page width and occupy a couple of lines of body content."
+            )));
+        }
+        sections.push(Section {
+            layout: PageLayout::default(),
+            blocks,
+            extensions: Default::default(),
+        });
+    }
+    doc.sections = sections;
+    doc.styles = StyleCatalog::default();
+    doc
+}
+
+/// Flips the first character of block `idx` in `section` — a length-preserving
+/// (height-preserving) edit confined to that section.
+fn flip_char(doc: &Document, section: usize, idx: usize) -> Document {
+    let mut d = doc.clone();
+    if let Block::StyledPara(p) = &mut d.sections[section].blocks[idx]
+        && let Some(Inline::Str(t)) = p.inlines.first_mut()
+        && !t.is_empty()
+    {
+        let mut chars: Vec<char> = t.chars().collect();
+        chars[0] = if chars[0] == 'Z' { 'Y' } else { 'Z' };
+        *t = chars.into_iter().collect();
+    }
+    d
+}
+
 /// Compares two paginated layouts for visual equality (page count + per-page
 /// content/ header/footer Debug).
 fn pages_eq(a: &PaginatedLayout, b: &PaginatedLayout) -> bool {
@@ -172,6 +210,46 @@ fn height_changing_edits_match_full_layout() {
             &format!("height-change edit @ {idx}"),
         );
     }
+}
+
+#[test]
+fn multi_section_edits_match_full_layout() {
+    let mut fonts = FontResources::new();
+    let doc = multi_section_doc();
+    let prev = layout_paginated_full(&mut fonts, &doc, 1.0, &opts());
+    assert!(prev.0.pages.len() > 3, "fixture should span multiple pages");
+    // Checkpoints must span all three sections.
+    assert!(
+        prev.1.checkpoints.iter().any(|c| c.section_index == 2),
+        "checkpoints should be tagged with their section"
+    );
+
+    // A height-preserving edit in *each* section must fire and match full.
+    let mut fired = false;
+    for s in [0usize, 1, 2] {
+        let edited = flip_char(&doc, s, 15);
+        let (_, _, f) = check_edit(
+            &mut fonts,
+            &doc,
+            &prev,
+            &edited,
+            &format!("multi-section edit @ s{s}"),
+        );
+        fired |= f;
+    }
+    assert!(
+        fired,
+        "incremental should fire on height-preserving multi-section edits"
+    );
+
+    // A height-*changing* edit in a non-last section must still match full
+    // (the driver declines and check_edit falls back).
+    let grown = {
+        let mut d = doc.clone();
+        d.sections[0].blocks[15] = para(&"word ".repeat(120));
+        d
+    };
+    let _ = check_edit(&mut fonts, &doc, &prev, &grown, "multi-section grow @ s0");
 }
 
 #[test]
