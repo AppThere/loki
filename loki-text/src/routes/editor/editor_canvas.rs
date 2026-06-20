@@ -318,10 +318,14 @@ pub(super) fn render_canvas_area(
                         DocumentView {
                             doc: arc_doc,
                             paginated_layout,
-                            // TODO(loki): measure actual viewport height — affects
-                            // cache tier zones only, not visual correctness.
-                            // See diagnostic report, finding 1.
-                            viewport_height_px: 800.0,
+                            // Real measured viewport height (falls back to a
+                            // sensible default before the first measure). Drives
+                            // tile virtualization: only pages within ~one screen
+                            // of the viewport are GPU-rendered.
+                            viewport_height_px: {
+                                let h = scroll_metrics().client_height as f64;
+                                if h > 1.0 { h } else { 800.0 }
+                            },
                             cursor_pos,
                             selection_anchor,
                             view_mode: view_mode(),

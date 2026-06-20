@@ -294,6 +294,29 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
             ""
         };
 
+        // ── Viewport virtualization ──────────────────────────────────────────
+        // Only pages near the viewport get a GPU tile; the rest render as cheap
+        // page-sized placeholders. This bounds first-paint (and texture memory)
+        // to the visible neighbourhood instead of GPU-painting every page of the
+        // document up front — the dominant open-latency cost. The window is the
+        // visible range grown by one screen on each side, so a scroll reveals an
+        // already-painted tile. Reading the scroll offset here subscribes this
+        // component to scroll, so the window follows the viewport; unchanged
+        // tiles are skipped by `PageTile`'s `PartialEq`, so scrolling repaints
+        // nothing on the GPU until a new page enters the window.
+        let heights: Vec<f64> = pages.iter().map(|&(_, _, h)| h).collect();
+        let visibility = crate::virtualize::visible_window(
+            &heights,
+            gap_px,
+            scroll.read().viewport_top_px,
+            props.viewport_height_px,
+        );
+        let tiles: Vec<(usize, f64, f64, bool)> = pages
+            .iter()
+            .zip(visibility)
+            .map(|(&(idx, w, h), visible)| (idx, w, h, visible))
+            .collect();
+
         return rsx! {
             div {
                 style: "width: 100%; height: 100%;",
@@ -304,50 +327,66 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                         pb = tokens::SPACE_6,
                         bg = wrapper_bg,
                     ),
-                    for (idx, w, h) in pages {
-                        PageTile {
-                            key: "{idx}",
-                            cache: renderer.cache.clone(),
-                            source: renderer.source.clone(),
-                            page_index: idx,
-                            w,
-                            h,
-                            shared_renderer: renderer.shared_renderer.clone(),
-                            cursor_holder: cursor_holder.clone(),
-                            selection,
-                            doc_gen,
-                            settle_epoch: epoch,
-                            gap_px,
-                            // In reflow, hit-test the click here (this component
-                            // owns the reflow layout) and report the resolved
-                            // (paragraph, byte). In paginated, forward the raw
-                            // tile coordinates for the editor to hit-test.
-                            on_tile_click: {
-                                let source = renderer.source.clone();
-                                move |(i, x, y): (usize, f32, f32)| {
-                                    if is_reflow {
-                                        if let Some((para, byte)) =
-                                            source.reflow_hit_test(i, x, y)
-                                        {
-                                            on_reflow_click.call((para, byte));
+                    for (idx, w, h, visible) in tiles {
+                        if visible {
+                            PageTile {
+                                key: "{idx}",
+                                cache: renderer.cache.clone(),
+                                source: renderer.source.clone(),
+                                page_index: idx,
+                                w,
+                                h,
+                                shared_renderer: renderer.shared_renderer.clone(),
+                                cursor_holder: cursor_holder.clone(),
+                                selection,
+                                doc_gen,
+                                settle_epoch: epoch,
+                                gap_px,
+                                // In reflow, hit-test the click here (this component
+                                // owns the reflow layout) and report the resolved
+                                // (paragraph, byte). In paginated, forward the raw
+                                // tile coordinates for the editor to hit-test.
+                                on_tile_click: {
+                                    let source = renderer.source.clone();
+                                    move |(i, x, y): (usize, f32, f32)| {
+                                        if is_reflow {
+                                            if let Some((para, byte)) =
+                                                source.reflow_hit_test(i, x, y)
+                                            {
+                                                on_reflow_click.call((para, byte));
+                                            }
+                                        } else {
+                                            on_tile_click.call((i, x, y));
                                         }
-                                    } else {
-                                        on_tile_click.call((i, x, y));
                                     }
-                                }
-                            },
-                            // Drag-select: reflow only (paginated drag is handled
-                            // at the scroll-container level by the editor).
-                            on_tile_drag: {
-                                let source = renderer.source.clone();
-                                move |(i, x, y): (usize, f32, f32)| {
-                                    if is_reflow
-                                        && let Some((para, byte)) = source.reflow_hit_test(i, x, y)
-                                    {
-                                        on_reflow_drag.call((para, byte));
+                                },
+                                // Drag-select: reflow only (paginated drag is handled
+                                // at the scroll-container level by the editor).
+                                on_tile_drag: {
+                                    let source = renderer.source.clone();
+                                    move |(i, x, y): (usize, f32, f32)| {
+                                        if is_reflow
+                                            && let Some((para, byte)) =
+                                                source.reflow_hit_test(i, x, y)
+                                        {
+                                            on_reflow_drag.call((para, byte));
+                                        }
                                     }
-                                }
-                            },
+                                },
+                            }
+                        } else {
+                            // Off-window placeholder: same box as the tile (so the
+                            // scroll geometry and scrollbar are unchanged), painted
+                            // as a blank page. Becomes a real tile when scrolled near.
+                            div {
+                                key: "{idx}",
+                                style: format!(
+                                    "display: block; width: {w}px; height: {h}px; \
+                                     margin-left: auto; margin-right: auto; \
+                                     margin-bottom: {gap}px; background: #FFFFFF;",
+                                    gap = gap_px,
+                                ),
+                            }
                         }
                     }
                 }
