@@ -170,6 +170,16 @@ lets the editor's width-driven reflow / view-mode default react to a window
 resize, to the first real Android size, and to the canvas appearing after an
 async document load — without the user having to scroll first.
 
+**Wheel scroll without a hover node (PATCH(loki), 2026-06-20):** the
+`MouseWheel` handler scrolls from the hovered node, falling back to the *focused*
+node when there is no hover node, and only then to the root viewport. The hover
+node is set on cursor-move events, so immediately after navigating to a new view
+(e.g. opening a document) there is no hover node until the mouse moves; without
+the focused-node fallback the wheel scrolls the root viewport instead of the
+editor's focused `overflow:auto` container, so the document does not scroll until
+the user first interacts with it. The editor canvas is a focusable scroll
+container (`tabindex`/`autofocus`), so the fallback scrolls it immediately.
+
 **Root cause:** Upstream has a `// Todo implement touch scrolling` comment at
 the touch arm — the feature is planned but not implemented. The IME call is a
 hard-coded `// TODO: make this conditional on text input focus`. Upstream also

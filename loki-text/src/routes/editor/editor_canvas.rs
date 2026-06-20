@@ -326,6 +326,10 @@ pub(super) fn render_canvas_area(
                                 let h = scroll_metrics().client_height as f64;
                                 if h > 1.0 { h } else { 800.0 }
                             },
+                            // Real scroll offset so the renderer can virtualize
+                            // tiles to the viewport (this scroll container is the
+                            // editor's, so the position must be passed in).
+                            viewport_top_px: scroll_offset() as f64,
                             cursor_pos,
                             selection_anchor,
                             view_mode: view_mode(),

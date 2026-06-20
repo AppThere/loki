@@ -86,6 +86,12 @@ pub struct DocumentViewProps {
     /// Android CPU reflow path).
     pub paginated_layout: Option<Arc<PaginatedLayout>>,
     pub viewport_height_px: f64,
+    /// Current vertical scroll offset of the editor's scroll container, in CSS
+    /// px. Drives tile virtualization: only pages within ~one screen of this
+    /// offset are GPU-rendered. The editor owns the scroll container (this
+    /// component is laid out inside it), so the scroll position must be passed
+    /// in — the renderer's own scroll signal is not updated by the real scroll.
+    pub viewport_top_px: f64,
     /// The caret / selection focus position.
     pub cursor_pos: Option<RendererCursorPos>,
     /// The selection anchor. When it differs from `cursor_pos`, a range
@@ -308,7 +314,7 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         let visibility = crate::virtualize::visible_window(
             &heights,
             gap_px,
-            scroll.read().viewport_top_px,
+            props.viewport_top_px,
             props.viewport_height_px,
         );
         let tiles: Vec<(usize, f64, f64, bool)> = pages

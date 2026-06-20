@@ -638,10 +638,23 @@ impl<Rend: WindowRenderer> View<Rend> {
 
                 // PATCH(loki): collect per-node scroll changes and forward them
                 // to the embedder so Dioxus `onscroll` handlers fire.
+                //
+                // PATCH(loki): the hover node is only set on cursor-move events,
+                // so right after navigating to a new view (e.g. opening a
+                // document) there is no hover node until the mouse moves — and
+                // the wheel would otherwise scroll the root viewport, not the
+                // focused `overflow:auto` container, so the document does not
+                // scroll until the user first interacts with it. Fall back to the
+                // focused node (the Loki editor canvas is a focusable scroll
+                // container) so the wheel scrolls it immediately.
                 let mut changes = Vec::new();
-                let has_changed = if let Some(hover_node_id) = self.doc.get_hover_node_id() {
+                let target = self
+                    .doc
+                    .get_hover_node_id()
+                    .or_else(|| self.doc.get_focussed_node_id());
+                let has_changed = if let Some(node_id) = target {
                     self.doc
-                        .scroll_node_by_collect(hover_node_id, scroll_x, scroll_y, &mut changes)
+                        .scroll_node_by_collect(node_id, scroll_x, scroll_y, &mut changes)
                 } else {
                     self.doc.scroll_viewport_by_has_changed(scroll_x, scroll_y)
                 };
