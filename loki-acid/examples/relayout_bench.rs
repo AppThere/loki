@@ -17,9 +17,14 @@
 use std::io::Cursor;
 use std::time::{Duration, Instant};
 
+use loki_doc_model::content::block::Block;
+use loki_doc_model::content::inline::Inline;
 use loki_doc_model::document::Document;
 use loki_doc_model::io::DocumentImport;
-use loki_layout::{FontResources, LayoutMode, LayoutOptions, layout_document};
+use loki_layout::{
+    FontResources, LayoutMode, LayoutOptions, layout_document, layout_paginated_full,
+    relayout_paginated_incremental,
+};
 use loki_ooxml::{DocxImport, DocxImportOptions};
 
 const ITERS: usize = 7;
@@ -28,21 +33,61 @@ fn ms(d: Duration) -> f64 {
     d.as_secs_f64() * 1000.0
 }
 
-/// Builds a document with the first section's blocks repeated `factor` times.
+/// Builds a **single-section** document whose blocks are every section's blocks
+/// flattened and repeated `factor` times. Single-section is the incremental
+/// path's eligibility (the editor's common case); the acid fixture itself has
+/// several sections.
 fn grow(base: &Document, factor: usize) -> Document {
+    let all_blocks: Vec<_> = base
+        .sections
+        .iter()
+        .flat_map(|s| s.blocks.iter().cloned())
+        .collect();
     let mut doc = base.clone();
-    if let Some(first) = doc.sections.first_mut() {
-        let original = first.blocks.clone();
-        first.blocks.clear();
-        for _ in 0..factor {
-            first.blocks.extend(original.iter().cloned());
-        }
-    }
+    let mut first = doc.sections.first().cloned().unwrap_or_default();
+    first.blocks = (0..factor)
+        .flat_map(|_| all_blocks.iter().cloned())
+        .collect();
+    doc.sections = vec![first];
     doc
 }
 
 fn count_paragraphs(doc: &Document) -> usize {
     doc.sections.iter().map(|s| s.blocks.len()).sum()
+}
+
+/// Returns a copy of `doc` with one character flipped in block `idx` — a
+/// length-preserving (height-preserving) single-block content edit, the common
+/// keystroke case the incremental path optimises.
+fn same_height_edit(doc: &Document, idx: usize) -> Document {
+    let mut d = doc.clone();
+    if let Some(section) = d.sections.first_mut()
+        && let Some(Block::StyledPara(p)) = section.blocks.get_mut(idx)
+    {
+        for inline in p.inlines.iter_mut() {
+            if let Inline::Str(text) = inline
+                && !text.is_empty()
+            {
+                let mut chars: Vec<char> = text.chars().collect();
+                chars[0] = if chars[0] == 'Z' { 'Y' } else { 'Z' };
+                *text = chars.into_iter().collect();
+                return d;
+            }
+        }
+    }
+    d
+}
+
+/// Median wall-clock of `ITERS` runs of `f`.
+fn bench_median(mut f: impl FnMut()) -> Duration {
+    let mut samples = Vec::with_capacity(ITERS);
+    for _ in 0..ITERS {
+        let t = Instant::now();
+        f();
+        samples.push(t.elapsed());
+    }
+    samples.sort_unstable();
+    samples[samples.len() / 2]
 }
 
 fn main() {
@@ -53,41 +98,61 @@ fn main() {
         preserve_for_editing: true,
     };
 
-    eprintln!("relayout_bench — warm relayout vs document size ({ITERS} iters/size)\n");
     eprintln!(
-        "  {:>6}  {:>7}  {:>6}  {:>9}  {:>10}",
-        "factor", "blocks", "pages", "median", "per-block"
+        "relayout_bench — full vs incremental relayout, height-preserving \
+         single-block edit ({ITERS} iters/size)\n"
+    );
+    eprintln!(
+        "  {:>6}  {:>7}  {:>6}  {:>10}  {:>10}  {:>8}",
+        "factor", "blocks", "pages", "full", "incremental", "speedup"
     );
 
     for factor in [1usize, 2, 4, 8, 16] {
         let doc = grow(&base, factor);
         let blocks = count_paragraphs(&doc);
 
-        // One warm FontResources reused across iterations — this models the
-        // editor, where the shared context is warm after the first layout.
+        // Warm FontResources reused across iterations — models the editor, whose
+        // shared context is warm after the first layout.
         let mut fonts = FontResources::new();
-        let pages = match layout_document(&mut fonts, &doc, LayoutMode::Paginated, 1.0, &opts) {
-            loki_layout::DocumentLayout::Paginated(p) => p.pages.len(),
-            _ => 0,
-        };
+        let (prev_layout, reuse) = layout_paginated_full(&mut fonts, &doc, 1.0, &opts);
+        let pages = prev_layout.pages.len();
 
-        let mut samples = Vec::with_capacity(ITERS);
-        for _ in 0..ITERS {
-            // Editing invalidates the paragraph that changed; model the common
-            // case (caches warm) by keeping the cache populated between passes.
-            let t = Instant::now();
-            let _ = layout_document(&mut fonts, &doc, LayoutMode::Paginated, 1.0, &opts);
-            samples.push(t.elapsed());
-        }
-        samples.sort_unstable();
-        let median = samples[samples.len() / 2];
+        // The edit the editor would relayout after: one character in the middle.
+        let edited = same_height_edit(&doc, blocks / 2);
+
+        // Full relayout of the edited document (today's per-keystroke cost).
+        let full = bench_median(|| {
+            let _ = layout_document(&mut fonts, &edited, LayoutMode::Paginated, 1.0, &opts);
+        });
+
+        // Incremental relayout against the previous layout + reuse metadata.
+        let mut fired = false;
+        let incr = bench_median(|| {
+            if relayout_paginated_incremental(
+                &mut fonts,
+                &edited,
+                &doc,
+                &prev_layout,
+                &reuse,
+                1.0,
+                &opts,
+            )
+            .is_some()
+            {
+                fired = true;
+            }
+        });
+
+        let speedup = ms(full) / ms(incr).max(0.0001);
         eprintln!(
-            "  {factor:>6}  {blocks:>7}  {pages:>6}  {:>7.2} ms  {:>7.1} µs",
-            ms(median),
-            ms(median) / blocks as f64 * 1000.0,
+            "  {factor:>6}  {blocks:>7}  {pages:>6}  {:>7.2} ms  {:>7.2} ms  {:>6.1}x{}",
+            ms(full),
+            ms(incr),
+            speedup,
+            if fired { "" } else { "  (fell back!)" },
         );
     }
 
-    eprintln!("\n  Warm relayout is O(blocks): every edit rebuilds the whole positioned-item");
-    eprintln!("  list + editing index. 'per-block' is the incremental-layout target.");
+    eprintln!("\n  Incremental reuses unchanged pages and re-flows only the edited region.");
+    eprintln!("  Stage 1 clones reused pages; Arc-shared pages (Stage 2) remove that O(n) tail.");
 }
