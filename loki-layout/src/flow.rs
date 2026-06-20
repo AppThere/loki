@@ -29,6 +29,7 @@ use crate::LayoutOptions;
 use crate::color::LayoutColor;
 use crate::font::FontResources;
 use crate::geometry::{LayoutInsets, LayoutPoint, LayoutRect, LayoutSize};
+use crate::incremental::{FlowCheckpoint, PageStart};
 use crate::items::{PositionedBorderRect, PositionedItem, PositionedRect};
 use crate::mode::LayoutMode;
 use crate::resolve::{
@@ -49,6 +50,9 @@ pub enum FlowOutput {
     Pages {
         /// Completed pages with content items in page-local coordinates.
         pages: Vec<LayoutPage>,
+        /// Clean-page-top checkpoints for incremental relayout (empty for
+        /// nested/non-top-level flows).
+        checkpoints: Vec<PageStart>,
         /// Non-fatal warnings collected during layout.
         warnings: Vec<LayoutWarning>,
     },
@@ -151,6 +155,23 @@ pub(super) struct FlowState<'a> {
     pub(super) pending_footnotes: Vec<CollectedNote>,
     /// Paragraph metadata for the current page (block index, layout, origin).
     pub(super) current_paragraphs: Vec<PageParagraphData>,
+    /// Clean-page-top checkpoints recorded during a top-level paginated flow,
+    /// used by incremental relayout. Populated only by [`run_paginated_loop`];
+    /// nested flows (tables, cells, headers) never call it, so it stays empty.
+    pub(super) checkpoints: Vec<PageStart>,
+}
+
+impl FlowState<'_> {
+    /// Snapshots the resumable flow state at a clean page top.
+    pub(super) fn snapshot_checkpoint(&self) -> FlowCheckpoint {
+        FlowCheckpoint {
+            page_number: self.page_number,
+            list_counters: self.list_counters.clone(),
+            prev_list_id: self.prev_list_id.clone(),
+            note_counter: self.note_counter,
+            current_indent: self.current_indent,
+        }
+    }
 }
 
 impl<'a> FlowState<'a> {
@@ -177,26 +198,17 @@ impl<'a> FlowState<'a> {
     }
 }
 
-// ── Public API ────────────────────────────────────────────────────────────────
+// ── Flow construction & paginated loop (shared with incremental relayout) ──────
 
-/// Flow all blocks from a section into positioned items.
-///
-/// Returns a [`FlowOutput`] discriminated by layout mode:
-///
-/// - [`FlowOutput::Pages`]: each page's items are in page-content-area-local
-///   coordinates (origin `(0, 0)` at the content-area top-left). The `margins`
-///   field on each [`LayoutPage`] carries the insets. No further translation
-///   by the caller is needed.
-/// - [`FlowOutput::Canvas`]: all items on a single canvas. In `Pageless` mode
-///   items are offset by `margins.left`; in `Reflow` mode there is no offset.
-pub fn flow_section(
-    resources: &mut FontResources,
-    section: &Section,
-    catalog: &StyleCatalog,
-    mode: &LayoutMode,
+/// Builds a fresh [`FlowState`] for `section` in `mode`.
+fn new_flow_state<'a>(
+    resources: &'a mut FontResources,
+    section: &'a Section,
+    catalog: &'a StyleCatalog,
+    mode: &'a LayoutMode,
     display_scale: f32,
-    options: &LayoutOptions,
-) -> FlowOutput {
+    options: &'a LayoutOptions,
+) -> FlowState<'a> {
     let pl = &section.layout;
     let page_w = pts_to_f32(pl.page_size.width);
     let page_h = pts_to_f32(pl.page_size.height);
@@ -210,8 +222,7 @@ pub fn flow_section(
         LayoutMode::Reflow { available_width } => *available_width,
         _ => (page_w - margins.horizontal()).max(0.0),
     };
-
-    let mut state = FlowState {
+    FlowState {
         resources,
         catalog,
         mode,
@@ -232,24 +243,117 @@ pub fn flow_section(
         note_counter: 0,
         pending_footnotes: Vec::new(),
         current_paragraphs: Vec::new(),
-    };
+        checkpoints: Vec::new(),
+    }
+}
+
+/// Runs the top-level paginated block loop over `blocks[start..]`.
+///
+/// At every *clean page top* (content cursor at 0, no items placed yet, i.e.
+/// between top-level blocks) it offers the position to `resync`: if `resync`
+/// returns `true` the loop stops and returns `Some(block_index)` (the caller
+/// splices a reused page suffix from there); otherwise the position is recorded
+/// as a [`PageStart`] checkpoint and flowing continues. Returns `None` when the
+/// loop reaches the end of `blocks`.
+fn run_paginated_loop(
+    state: &mut FlowState,
+    blocks: &[Block],
+    start: usize,
+    mut resync: impl FnMut(usize, &FlowCheckpoint) -> bool,
+) -> Option<usize> {
+    let mut i = start;
+    while i < blocks.len() {
+        if state.cursor_y == 0.0 && state.current_items.is_empty() {
+            let cp = state.snapshot_checkpoint();
+            if resync(i, &cp) {
+                return Some(i);
+            }
+            state.checkpoints.push(PageStart {
+                page_index: state.pages.len(),
+                block_index: i,
+                checkpoint: cp,
+            });
+        }
+        let block = &blocks[i];
+        if let Block::StyledPara(para) = block
+            && resolve_para_props(para, state.catalog).keep_with_next
+        {
+            let consumed = flow_keep_with_next_chain(state, blocks, i);
+            i += consumed;
+            continue;
+        }
+        flow_block(state, block, i);
+        i += 1;
+    }
+    None
+}
+
+/// Resumes a paginated body flow at `start_block` from a [`FlowCheckpoint`],
+/// for incremental relayout. See [`crate::incremental`].
+///
+/// Returns the pages produced from `start_block` up to either the end of the
+/// section or the first clean page top where `resync` fires. When it runs to the
+/// end, the trailing footnotes and final partial page are flushed; when it stops
+/// at a resync the current page is empty (a clean page top) and is not flushed,
+/// so the caller can splice the reused suffix without a duplicate page.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn flow_section_resume(
+    resources: &mut FontResources,
+    section: &Section,
+    catalog: &StyleCatalog,
+    display_scale: f32,
+    options: &LayoutOptions,
+    start_block: usize,
+    seed: &FlowCheckpoint,
+    resync: impl FnMut(usize, &FlowCheckpoint) -> bool,
+) -> crate::incremental::ResumedFlow {
+    let mode = LayoutMode::Paginated;
+    let mut state = new_flow_state(resources, section, catalog, &mode, display_scale, options);
+    state.page_number = seed.page_number;
+    state.list_counters = seed.list_counters.clone();
+    state.prev_list_id = seed.prev_list_id.clone();
+    state.note_counter = seed.note_counter;
+    state.current_indent = seed.current_indent;
+
+    let resynced_at = run_paginated_loop(&mut state, &section.blocks, start_block, resync);
+    if resynced_at.is_none() {
+        // Reached the end: flush trailing footnotes and the final partial page.
+        // On a resync stop the current page is an empty clean page top, so it is
+        // intentionally left unflushed for the caller to splice the reused suffix.
+        flow_footnotes(&mut state);
+        finish_page(&mut state);
+    }
+    crate::incremental::ResumedFlow {
+        pages: state.pages,
+        checkpoints: state.checkpoints,
+    }
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+/// Flow all blocks from a section into positioned items.
+///
+/// Returns a [`FlowOutput`] discriminated by layout mode:
+///
+/// - [`FlowOutput::Pages`]: each page's items are in page-content-area-local
+///   coordinates (origin `(0, 0)` at the content-area top-left). The `margins`
+///   field on each [`LayoutPage`] carries the insets. No further translation
+///   by the caller is needed.
+/// - [`FlowOutput::Canvas`]: all items on a single canvas. In `Pageless` mode
+///   items are offset by `margins.left`; in `Reflow` mode there is no offset.
+pub fn flow_section(
+    resources: &mut FontResources,
+    section: &Section,
+    catalog: &StyleCatalog,
+    mode: &LayoutMode,
+    display_scale: f32,
+    options: &LayoutOptions,
+) -> FlowOutput {
+    let mut state = new_flow_state(resources, section, catalog, mode, display_scale, options);
 
     if mode.is_paginated() {
-        // In paginated mode, intercept keep_with_next chains at the top level
-        // before dispatching to flow_block.
-        let mut i = 0;
-        while i < section.blocks.len() {
-            let block = &section.blocks[i];
-            if let Block::StyledPara(para) = block
-                && resolve_para_props(para, catalog).keep_with_next
-            {
-                let consumed = flow_keep_with_next_chain(&mut state, &section.blocks, i);
-                i += consumed;
-                continue;
-            }
-            flow_block(&mut state, block, i);
-            i += 1;
-        }
+        // Top-level paginated flow: record checkpoints, never resync.
+        run_paginated_loop(&mut state, &section.blocks, 0, |_, _| false);
     } else {
         for (idx, block) in section.blocks.iter().enumerate() {
             flow_block(&mut state, block, idx);
@@ -262,11 +366,12 @@ pub fn flow_section(
         finish_page(&mut state);
         FlowOutput::Pages {
             pages: state.pages,
+            checkpoints: state.checkpoints,
             warnings: state.warnings,
         }
     } else {
         if matches!(mode, LayoutMode::Pageless) {
-            let dx = margins.left;
+            let dx = state.margins.left;
             for item in &mut state.current_items {
                 item.translate(dx, 0.0);
             }
@@ -961,6 +1066,7 @@ fn measure_cell_height(
         note_counter: 0,
         pending_footnotes: Vec::new(),
         current_paragraphs: Vec::new(),
+        checkpoints: Vec::new(),
     };
 
     for block in &cell.blocks {
@@ -1076,6 +1182,7 @@ fn flow_cell_blocks(
         note_counter: 0,
         pending_footnotes: Vec::new(),
         current_paragraphs: Vec::new(),
+        checkpoints: Vec::new(),
     };
 
     for block in blocks {

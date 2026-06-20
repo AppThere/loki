@@ -28,6 +28,7 @@ pub mod error;
 pub mod flow;
 pub mod font;
 pub mod geometry;
+pub mod incremental;
 pub mod items;
 pub mod mode;
 pub mod para;
@@ -40,6 +41,9 @@ pub use error::{LayoutError, LayoutResult};
 pub use flow::{FlowOutput, LayoutWarning, flow_section};
 pub use font::FontResources;
 pub use geometry::{LayoutInsets, LayoutPoint, LayoutRect, LayoutSize};
+pub use incremental::{
+    FlowCheckpoint, PageStart, PaginatedReuse, document_has_notes, relayout_paginated_incremental,
+};
 pub use items::{
     BorderEdge, BorderStyle, DecorationKind, GlyphEntry, GlyphSynthesis, PositionedBorderRect,
     PositionedDecoration, PositionedGlyphRun, PositionedImage, PositionedItem, PositionedRect,
@@ -103,69 +107,9 @@ pub fn layout_document(
     options: &LayoutOptions,
 ) -> DocumentLayout {
     match mode {
-        LayoutMode::Paginated => {
-            let mut global_page_count = 0;
-            let mut first_page_size = None;
-
-            // Pass 1: flow every section's body so the total page count is
-            // known before headers/footers are laid out (NUMPAGES fields need
-            // the document-wide total).
-            let mut flowed: Vec<(&loki_doc_model::Section, Vec<LayoutPage>)> = Vec::new();
-            for section in &doc.sections {
-                let pl = &section.layout;
-                let page_size = LayoutSize::new(
-                    pts_to_f32(pl.page_size.width),
-                    pts_to_f32(pl.page_size.height),
-                );
-                if first_page_size.is_none() {
-                    first_page_size = Some(page_size);
-                }
-
-                // flow_section builds LayoutPage objects directly; use them
-                // as-is (no re-binning). This fixes the margins.top offset
-                // bug described in ADR 004 §Context B.3.
-                let FlowOutput::Pages { mut pages, .. } = flow_section(
-                    resources,
-                    section,
-                    &doc.styles,
-                    &mode,
-                    display_scale,
-                    options,
-                ) else {
-                    unreachable!("flow_section in Paginated mode always returns Pages");
-                };
-
-                // Renumber pages first so select_header/select_footer receive
-                // the correct absolute page number for first/even selection.
-                let section_page_count = pages.len();
-                for page in &mut pages {
-                    page.page_number += global_page_count;
-                }
-
-                flowed.push((section, pages));
-                global_page_count += section_page_count;
-            }
-
-            // Pass 2: headers/footers, with the document-wide page total
-            // available for PAGE / NUMPAGES field substitution.
-            let mut all_pages = Vec::new();
-            for (section, mut pages) in flowed {
-                flow::assign_headers_footers(
-                    &mut pages,
-                    &section.layout,
-                    resources,
-                    &doc.styles,
-                    display_scale,
-                    global_page_count as u32,
-                );
-                all_pages.extend(pages);
-            }
-
-            DocumentLayout::Paginated(PaginatedLayout {
-                page_size: first_page_size.unwrap_or_default(),
-                pages: all_pages,
-            })
-        }
+        LayoutMode::Paginated => DocumentLayout::Paginated(
+            layout_paginated_full(resources, doc, display_scale, options).0,
+        ),
         _ => {
             let mut all_items = Vec::new();
             let mut all_paragraphs = Vec::new();
@@ -217,4 +161,95 @@ pub fn layout_document(
             })
         }
     }
+}
+
+/// Full paginated layout that also returns the clean-page-top checkpoints used
+/// by [`relayout_paginated_incremental`].
+///
+/// Identical output to `layout_document(.., Paginated, ..)`; the second tuple
+/// element is the reuse metadata. Checkpoints are only returned for
+/// single-section documents (the incremental path's eligibility); multi-section
+/// documents return an empty checkpoint list, which simply disables incremental
+/// reuse for them.
+pub fn layout_paginated_full(
+    resources: &mut FontResources,
+    doc: &loki_doc_model::Document,
+    display_scale: f32,
+    options: &LayoutOptions,
+) -> (PaginatedLayout, PaginatedReuse) {
+    let mode = LayoutMode::Paginated;
+    let single_section = doc.sections.len() == 1;
+    let mut global_page_count = 0;
+    let mut first_page_size = None;
+    let mut checkpoints = Vec::new();
+
+    // Pass 1: flow every section's body so the total page count is known before
+    // headers/footers are laid out (NUMPAGES fields need the document-wide total).
+    let mut flowed: Vec<(&loki_doc_model::Section, Vec<LayoutPage>)> = Vec::new();
+    for section in &doc.sections {
+        let pl = &section.layout;
+        let page_size = LayoutSize::new(
+            pts_to_f32(pl.page_size.width),
+            pts_to_f32(pl.page_size.height),
+        );
+        if first_page_size.is_none() {
+            first_page_size = Some(page_size);
+        }
+
+        let FlowOutput::Pages {
+            mut pages,
+            checkpoints: section_checkpoints,
+            ..
+        } = flow_section(
+            resources,
+            section,
+            &doc.styles,
+            &mode,
+            display_scale,
+            options,
+        )
+        else {
+            unreachable!("flow_section in Paginated mode always returns Pages");
+        };
+
+        // Renumber pages so select_header/select_footer receive the correct
+        // absolute page number for first/even selection.
+        let section_page_count = pages.len();
+        for page in &mut pages {
+            page.page_number += global_page_count;
+        }
+        // Single-section: section-local indices are already document-global.
+        if single_section {
+            checkpoints = section_checkpoints;
+        }
+
+        flowed.push((section, pages));
+        global_page_count += section_page_count;
+    }
+
+    // Pass 2: headers/footers, with the document-wide page total available for
+    // PAGE / NUMPAGES field substitution.
+    let mut all_pages = Vec::new();
+    for (section, mut pages) in flowed {
+        flow::assign_headers_footers(
+            &mut pages,
+            &section.layout,
+            resources,
+            &doc.styles,
+            display_scale,
+            global_page_count as u32,
+        );
+        all_pages.extend(pages);
+    }
+
+    (
+        PaginatedLayout {
+            page_size: first_page_size.unwrap_or_default(),
+            pages: all_pages,
+        },
+        PaginatedReuse {
+            checkpoints,
+            has_footnotes: incremental::document_has_notes(doc),
+        },
+    )
 }
