@@ -57,6 +57,8 @@ kurbo           = "0.12"
 # dlopen mode is in effect.
 fontique        = { version = "0.8", features = ["fontconfig-dlopen"] }
 loro = "1.11.1"
+# oneshot channel used to await the off-main-thread document-open layout.
+futures-channel = "0.3"
 # Unicode grapheme cluster segmentation for correct backspace/delete behaviour.
 unicode-segmentation = "1"
 # Platform-specific data/config directory paths for recent-documents persistence.

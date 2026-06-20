@@ -129,6 +129,7 @@ yet been split. Do not add new code to them without splitting first.
 | File | Current lines | Priority |
 |---|---|---|
 | `loki-text/src/components/document_source.rs` | 1117 | High |
+| `loki-text/src/routes/editor/editor_inner.rs` | ~945 | High |
 | `loki-doc-model/src/loro_bridge/inlines.rs` | ~280 | Low |
 
 (`read.rs` was split into `read.rs` + `props_read.rs`; both are now under 300 lines.)

@@ -15,6 +15,7 @@ mod editor_formatting;
 mod editor_inner;
 mod editor_keydown;
 mod editor_keydown_ctrl;
+mod editor_layout_task;
 mod editor_load;
 mod editor_metadata;
 mod editor_metadata_panel;

@@ -4132,6 +4132,7 @@ dependencies = [
  "dioxus",
  "dirs",
  "fontique 0.8.0",
+ "futures-channel",
  "kurbo 0.12.0",
  "log",
  "loki-doc-model",

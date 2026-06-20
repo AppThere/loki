@@ -46,7 +46,6 @@ use super::editor_save::{export_document_to_token, save_document_to_path};
 use super::editor_state::{EditorState, use_editor_state};
 use super::editor_style::style_picker_panel;
 use super::editor_style_editor::style_editor_panel;
-use crate::editing::state::seed_layout_from_document;
 use crate::error::LoadError;
 use crate::new_document::is_untitled;
 use crate::recent_documents::RecentDocuments;
@@ -265,34 +264,49 @@ pub(super) fn EditorInner(path: String) -> Element {
 
     // ── Loro bridge: initialise CRDT once the document is loaded ─────────────
     //
-    // The first paginated layout (`seed_layout_from_document`) is a synchronous,
-    // main-thread pass that takes tens of ms on a multi-page document. Running
-    // it inline here — in a post-render effect — blocks the frame, so the
-    // loading indicator never paints and the open just appears to freeze.
+    // The first paginated layout is a CPU-heavy pass (tens of ms on a multi-page
+    // document, because the shared font caches start cold). Running it inline in
+    // this post-render effect blocks the frame, so the loading indicator never
+    // paints and the open appears to freeze.
     //
-    // Instead, defer the heavy work into a spawned task that yields once before
-    // laying out: the runtime paints the loading indicator (the canvas shows it
-    // until `total_pages > 0`, set at the end of this task) and then the layout
-    // runs. The guard `loro_doc().is_none()` is only cleared at the end, and no
-    // subscribed signal changes across the yield, so the task is spawned once.
+    // Instead, lay out on a worker thread (`compute_layout_off_main_thread`) and
+    // await the result: the main thread stays free to paint the loading
+    // indicator (the canvas shows it until `total_pages > 0`, set at the end of
+    // this task) and remains responsive. The guard `loro_doc().is_none()` is
+    // only cleared at the end of the task, and no signal this effect subscribes
+    // to changes while the worker runs, so the task is spawned once per open.
     use_effect(move || {
         if let Some((loaded_path, Ok(doc))) = &*document_load.value().read_unchecked()
             && loaded_path == &path_signal()
             && loro_doc().is_none()
         {
+            let loaded_path = loaded_path.clone();
             let doc = doc.clone();
             let doc_state_seed = Arc::clone(&doc_state_seed);
             spawn(async move {
-                // Let the loading indicator paint before the blocking layout.
-                super::editor_load::yield_now().await;
+                // Lay out off the main thread; the await is a cross-thread yield.
+                let Some((doc, layout)) =
+                    super::editor_layout_task::compute_layout_off_main_thread(
+                        Arc::clone(&doc_state_seed),
+                        doc,
+                    )
+                    .await
+                else {
+                    return;
+                };
+
+                // The user may have switched tabs while the worker ran. If so,
+                // `path_signal` now points at a different document whose state
+                // was already reset/restored — publishing here would clobber it,
+                // so bail out and discard the stale layout.
+                if path_signal.peek().as_str() != loaded_path {
+                    return;
+                }
 
                 // Seed the layout so hit-testing works on the very first click,
                 // before any Loro mutation triggers apply_mutation_and_relayout.
-                seed_layout_from_document(&doc_state_seed, &doc);
-                let page_count = doc_state_seed
-                    .lock()
-                    .map(|s| s.page_count as u32)
-                    .unwrap_or(0);
+                let page_count =
+                    crate::editing::state::publish_seed_layout(&doc_state_seed, &doc, layout);
 
                 match document_to_loro(&doc) {
                     Ok(l_doc) => {
@@ -320,7 +334,7 @@ pub(super) fn EditorInner(path: String) -> Element {
 
                         // Publish the page count now the layout is ready — this
                         // lifts the canvas's loading gate (total_pages > 0).
-                        total_pages.set(page_count);
+                        total_pages.set(page_count as u32);
                     }
                     Err(e) => tracing::warn!("Failed to initialize Loro sync bridge: {}", e),
                 }

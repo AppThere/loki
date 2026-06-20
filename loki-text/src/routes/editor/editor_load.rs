@@ -18,29 +18,6 @@ use loki_ooxml::docx::import::{DocxImport, DocxImportOptions};
 use crate::error::LoadError;
 use crate::new_document;
 
-/// Cooperatively yields control back to the async runtime exactly once.
-///
-/// Awaiting this in a spawned task lets the Dioxus scheduler commit and paint
-/// the current frame before the task's remaining (synchronous, main-thread)
-/// work runs. The editor uses it to paint the loading indicator before the
-/// blocking first paginated layout — see the Loro-bridge effect in
-/// `editor_inner`. It is *not* a timed sleep: it resolves on the next poll, so
-/// it adds no fixed delay.
-pub(super) async fn yield_now() {
-    let mut yielded = false;
-    std::future::poll_fn(move |cx| {
-        if yielded {
-            std::task::Poll::Ready(())
-        } else {
-            // Re-schedule immediately; the runtime gets one turn to render.
-            yielded = true;
-            cx.waker().wake_by_ref();
-            std::task::Poll::Pending
-        }
-    })
-    .await
-}
-
 /// Detected document format, derived from the file extension in the token's
 /// display name.
 pub(super) enum DocumentFormat {
