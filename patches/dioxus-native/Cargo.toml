@@ -12,7 +12,23 @@ name = "dioxus_native"
 path = "src/lib.rs"
 
 [features]
-default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "clipboard", "file_dialog"]
+# PATCH(loki): `autofocus` added to the default set so an element carrying
+# `autofocus="true"` (the Loki editor canvas) actually receives focus when it
+# mounts. Upstream leaves this feature off by default and the `dioxus` meta
+# crate's `native` feature does not turn it on, so without this the editor
+# canvas never becomes the focused node — keyboard input needs a click first,
+# and the wheel cannot fall back to the focused scroll container on first paint.
+default = [
+    "accessibility",
+    "autofocus",
+    "hot-reload",
+    "net",
+    "html",
+    "svg",
+    "system-fonts",
+    "clipboard",
+    "file_dialog",
+]
 prelude = ["dep:dioxus-core-macro", "dep:dioxus-hooks", "dep:dioxus-signals", "dep:dioxus-stores", "dep:manganis"]
 svg = ["blitz-dom/svg", "blitz-paint/svg"]
 incremental = ["blitz-dom/incremental"]

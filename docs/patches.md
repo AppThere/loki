@@ -170,18 +170,29 @@ lets the editor's width-driven reflow / view-mode default react to a window
 resize, to the first real Android size, and to the canvas appearing after an
 async document load — without the user having to scroll first.
 
-**Wheel scroll without a (fresh) hover node (PATCH(loki), 2026-06-20):** the
-`MouseWheel` handler scrolls the hovered node first, falls back to the *focused*
-node, and only then to the root viewport. The hover node is updated on
-cursor-move events, so immediately after navigating to a new view (e.g. opening a
-document) it is either unset *or stale* — left pointing at a node from the
-previous view that scrolls nothing. The original form (`hover.or_else(focused)`)
-only consulted the focused node when hover was `None`, so a stale-but-present
-hover node swallowed the gesture and the wheel did nothing until the user moved
-the mouse or grabbed the scrollbar. The handler now treats a hover node that
-consumed no scroll as "no target" and falls through to the focused node. The
-editor canvas is a focusable scroll container (`tabindex`/`autofocus`), so the
-fallback scrolls it immediately on first paint.
+**Wheel/touch scroll target the document, never the UI (PATCH(loki),
+2026-06-20):** the `MouseWheel` handler scrolls the hovered node first, then
+falls back to the *focused* node, and **never** the root viewport. Two parts:
+
+- *First-paint scroll.* The hover node is updated only on cursor-move events, so
+  immediately after navigating to a new view (e.g. opening a document) it is
+  either unset *or stale* — left pointing at a node from the previous view that
+  scrolls nothing. The original form (`hover.or_else(focused)`) only consulted
+  the focused node when hover was `None`, so a stale-but-present hover node
+  swallowed the gesture and the wheel did nothing until the user moved the mouse.
+  The handler now treats a hover node that consumed no scroll as "no target" and
+  falls through to the focused node. The editor canvas is a focusable scroll
+  container that is focused on mount (see the `autofocus` patch below), so the
+  wheel scrolls it immediately on first paint.
+
+- *No root-viewport scroll.* Both the wheel and touch-drag handlers now use
+  `scroll_node_within_collect` (blitz-dom), which is identical to
+  `scroll_node_by_collect` except that scrolling which bubbles past the root
+  element is dropped rather than nudging the viewport. The Loki shell is a fixed
+  full-window layout with no scrollable root, so a gesture that runs off the end
+  of the document — or starts over a non-scrolling element like the ribbon —
+  must do nothing instead of shifting the whole UI by the sub-pixel slack
+  between the root content and the window (a long-standing ~1px "UI jiggle").
 
 **Root cause:** Upstream has a `// Todo implement touch scrolling` comment at
 the touch arm — the feature is planned but not implemented. The IME call is a
@@ -288,6 +299,16 @@ events through the event-loop proxy. `flush_mounted` drains
 `DioxusDocument::take_pending_mounted` after each poll and dispatches the
 `mounted` event with a `MountedElement` backing, so `onmounted` fires. This is
 what enables the editor's draggable scrollbar thumb.
+
+**`autofocus` enabled by default (PATCH(loki), 2026-06-20).** `autofocus` is
+added to the `default` feature set in `patches/dioxus-native/Cargo.toml` (it
+forwards to `blitz-dom/autofocus`). Upstream ships this feature **off**, and the
+`dioxus` meta crate's `native` feature does not turn it on, so an element with
+`autofocus="true"` was never focused on mount. The Loki editor canvas declares
+`autofocus="true"` so the user can type — and scroll with the wheel — the moment
+a document opens, without clicking first; this re-enables that intended
+behaviour. When re-vendoring the manifest during a Dioxus upgrade, preserve this
+addition (it is a loki customisation, like the Android `softbuffer` deps).
 
 **Root cause:** Upstream assumed OS-level redraw events would cover the
 CSS-application step; this assumption holds on desktop but not on Android.
@@ -411,6 +432,15 @@ file picking additionally requires a Gradle build with `FilePickerActivity.kt`.
    scroll container mounts) and feeds the result to `handle_scroll_changes`, so
    the embedder re-receives `onscroll` with the new client size — letting the
    reflow view relayout to the window width without a user scroll.
+
+5. **Non-viewport-bubbling scroll (PATCH(loki), 2026-06-20).**
+   `scroll_node_within_collect` mirrors `scroll_node_by_collect` but drops any
+   scroll that bubbles past the root element instead of moving the viewport
+   (both delegate to a shared `scroll_node_by_collect_inner` taking a
+   `bubble_to_viewport` flag). blitz-shell's wheel and touch handlers use it so
+   the fixed full-window Loki shell never scrolls as a whole — a gesture that
+   overruns the document, or starts over the ribbon, does nothing rather than
+   jiggling the UI by the sub-pixel root/window slack.
 
 **Removal condition:** Upstream blitz-dom implements tabindex focus-on-click
 for non-input elements, dispatches scroll events to embedders, and exposes an

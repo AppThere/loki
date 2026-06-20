@@ -640,18 +640,22 @@ impl<Rend: WindowRenderer> View<Rend> {
                 // to the embedder so Dioxus `onscroll` handlers fire.
                 //
                 // PATCH(loki): scroll the hover node first, then fall back to the
-                // focused node, then the viewport. The hover node is only updated
-                // on cursor-move events, so right after navigating to a new view
-                // (e.g. opening a document) it is either unset or **stale** — left
-                // pointing at a node from the previous view, which scrolls
-                // nothing. The old `hover.or_else(focused)` form only consulted
-                // the focused node when hover was `None`, so a stale-but-present
-                // hover node swallowed the gesture and the document would not
-                // scroll until the user moved the mouse or grabbed the scrollbar.
-                // Treating a hover node that consumed no scroll as "no target"
-                // lets the wheel fall through to the focused node (the Loki editor
-                // canvas is a focusable scroll container), so it scrolls
-                // immediately on first paint.
+                // focused node. The hover node is only updated on cursor-move
+                // events, so right after navigating to a new view (e.g. opening a
+                // document) it is either unset or **stale** — left pointing at a
+                // node from the previous view, which scrolls nothing. Treating a
+                // hover node that consumed no scroll as "no target" lets the wheel
+                // fall through to the focused node (the Loki editor canvas is a
+                // focusable scroll container — `autofocus` is enabled, so it is
+                // focused on mount), so it scrolls immediately on first paint
+                // without the user having to move the mouse first.
+                //
+                // `scroll_node_within_collect` never bubbles to the root
+                // viewport: the Loki shell is a fixed full-window layout with no
+                // scrollable root, so a gesture that runs off the end of the
+                // document — or starts over a non-scrolling element like the
+                // ribbon — does nothing instead of shifting the whole UI by the
+                // sub-pixel slack between the root content and the window.
                 let mut changes = Vec::new();
                 let mut has_changed = false;
                 for node_id in [
@@ -663,14 +667,11 @@ impl<Rend: WindowRenderer> View<Rend> {
                 {
                     if self
                         .doc
-                        .scroll_node_by_collect(node_id, scroll_x, scroll_y, &mut changes)
+                        .scroll_node_within_collect(node_id, scroll_x, scroll_y, &mut changes)
                     {
                         has_changed = true;
                         break;
                     }
-                }
-                if !has_changed {
-                    has_changed = self.doc.scroll_viewport_by_has_changed(scroll_x, scroll_y);
                 }
                 if !changes.is_empty() {
                     self.doc.handle_scroll_changes(&changes);
@@ -771,13 +772,25 @@ impl<Rend: WindowRenderer> View<Rend> {
                             self.touch_scroll_last_pos = Some((logical.x, logical.y));
                             // PATCH(loki): collect per-node scroll changes and
                             // forward them so Dioxus `onscroll` handlers fire.
+                            // `scroll_node_within_collect` never bubbles to the
+                            // root viewport, so dragging past the end of the
+                            // document does not shift the fixed shell (see the
+                            // MouseWheel handler for the rationale). The touch
+                            // hover node is fresh — Started hit-tests at the touch
+                            // point — so the focused-node fallback is unneeded.
                             let mut changes = Vec::new();
-                            let changed = if let Some(id) = self.doc.get_hover_node_id() {
-                                self.doc
-                                    .scroll_node_by_collect(id, scroll_x, scroll_y, &mut changes)
-                            } else {
-                                self.doc.scroll_viewport_by_has_changed(scroll_x, scroll_y)
-                            };
+                            let changed = self
+                                .doc
+                                .get_hover_node_id()
+                                .map(|id| {
+                                    self.doc.scroll_node_within_collect(
+                                        id,
+                                        scroll_x,
+                                        scroll_y,
+                                        &mut changes,
+                                    )
+                                })
+                                .unwrap_or(false);
                             if !changes.is_empty() {
                                 self.doc.handle_scroll_changes(&changes);
                             }

@@ -1308,6 +1308,40 @@ impl BaseDocument {
         y: f64,
         changed: &mut Vec<(usize, f64, f64)>,
     ) -> bool {
+        self.scroll_node_by_collect_inner(node_id, x, y, changed, true)
+    }
+
+    /// As [`Self::scroll_node_by_collect`], but scrolling that bubbles past the
+    /// root element is **dropped** instead of nudging the root viewport.
+    ///
+    /// PATCH(loki): the Loki shell is a fixed full-window layout with no
+    /// scrollable root, so a wheel/touch gesture that runs off the end of a
+    /// scroll container (or starts over a non-scrolling element like the ribbon)
+    /// must do nothing rather than shift the whole UI by the sub-pixel slack
+    /// between the root content and the window. Used by the wheel/touch handlers
+    /// so only real DOM scroll containers move.
+    pub fn scroll_node_within_collect(
+        &mut self,
+        node_id: usize,
+        x: f64,
+        y: f64,
+        changed: &mut Vec<(usize, f64, f64)>,
+    ) -> bool {
+        self.scroll_node_by_collect_inner(node_id, x, y, changed, false)
+    }
+
+    /// Shared implementation for [`Self::scroll_node_by_collect`] and
+    /// [`Self::scroll_node_within_collect`]. When `bubble_to_viewport` is false,
+    /// scrolling that reaches the root element without being consumed is dropped
+    /// instead of moving the viewport.
+    fn scroll_node_by_collect_inner(
+        &mut self,
+        node_id: usize,
+        x: f64,
+        y: f64,
+        changed: &mut Vec<(usize, f64, f64)>,
+        bubble_to_viewport: bool,
+    ) -> bool {
         let Some(node) = self.nodes.get_mut(node_id) else {
             return false;
         };
@@ -1370,9 +1404,14 @@ impl BaseDocument {
 
         if bubble_x != 0.0 || bubble_y != 0.0 {
             if let Some(parent) = node.parent {
-                return self.scroll_node_by_collect(parent, bubble_x, bubble_y, changed)
-                    | has_changed;
-            } else {
+                return self.scroll_node_by_collect_inner(
+                    parent,
+                    bubble_x,
+                    bubble_y,
+                    changed,
+                    bubble_to_viewport,
+                ) | has_changed;
+            } else if bubble_to_viewport {
                 return self.scroll_viewport_by_has_changed(bubble_x, bubble_y) | has_changed;
             }
         }
