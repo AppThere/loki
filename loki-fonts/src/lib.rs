@@ -25,6 +25,57 @@
 
 #![forbid(unsafe_code)]
 
+use std::sync::OnceLock;
+
+/// Returns a self-contained `@font-face` block for the **Atkinson Hyperlegible
+/// Next** UI variable font, embedded as a `data:font/truetype;base64,…` URI.
+///
+/// Embedded on **all** platforms (the single variable font is ~112 KB). Unlike
+/// the `dioxus:///assets/...` URL the apps previously used — which resolves
+/// relative to the executable and fails to load on Android/ChromeOS (and
+/// silently relies on a system-installed copy on desktop) — the `data:` URI is
+/// decoded by `blitz_net` on every platform, so the UI chrome renders in the
+/// intended face everywhere. Built once and cached for the process lifetime.
+pub fn ui_face_css() -> &'static str {
+    static UI_FACE_CSS: OnceLock<String> = OnceLock::new();
+    UI_FACE_CSS.get_or_init(|| {
+        const FONT: &[u8] = include_bytes!("../fonts/AtkinsonHyperlegibleNext-VF.ttf");
+        let b64 = base64_encode(FONT);
+        format!(
+            "@font-face{{font-family:'Atkinson Hyperlegible Next';\
+             font-weight:100 900;font-style:normal;\
+             src:url('data:font/truetype;base64,{b64}') format('truetype');}}"
+        )
+    })
+}
+
+/// Standard base64 encoder (no line wrapping), shared by [`ui_face_css`] and the
+/// Android fallback-font CSS. Dependency-free to keep this crate `include_bytes`
+/// only.
+pub(crate) fn base64_encode(input: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(T[((n >> 18) & 63) as usize] as char);
+        out.push(T[((n >> 12) & 63) as usize] as char);
+        out.push(if chunk.len() > 1 {
+            T[((n >> 6) & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            T[(n & 63) as usize] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
 /// Returns a complete `@font-face` CSS block for all bundled fonts, with each
 /// font embedded as a `data:font/truetype;base64,…` URI.
 ///
@@ -197,7 +248,7 @@ mod imp {
         let total_bytes: usize = FACES.iter().map(|f| f.bytes.len()).sum();
         let mut css = String::with_capacity(total_bytes * 4 / 3 + FACES.len() * 256);
         for face in FACES {
-            let b64 = base64_encode(face.bytes);
+            let b64 = crate::base64_encode(face.bytes);
             write!(
                 css,
                 "@font-face{{font-family:'{family}';font-weight:{weight};\
@@ -210,29 +261,5 @@ mod imp {
             .unwrap();
         }
         css
-    }
-
-    fn base64_encode(input: &[u8]) -> String {
-        const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        let mut out = String::with_capacity((input.len() + 2) / 3 * 4);
-        for chunk in input.chunks(3) {
-            let b0 = chunk[0] as u32;
-            let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
-            let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
-            let n = (b0 << 16) | (b1 << 8) | b2;
-            out.push(T[((n >> 18) & 63) as usize] as char);
-            out.push(T[((n >> 12) & 63) as usize] as char);
-            out.push(if chunk.len() > 1 {
-                T[((n >> 6) & 63) as usize] as char
-            } else {
-                '='
-            });
-            out.push(if chunk.len() > 2 {
-                T[(n & 63) as usize] as char
-            } else {
-                '='
-            });
-        }
-        out
     }
 }

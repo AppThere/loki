@@ -41,14 +41,11 @@ pub fn App() -> Element {
             "
         }
 
+        // UI font, embedded as a `data:` URI so it bundles into the binary and
+        // loads on every platform (see `loki_fonts::ui_face_css`).
         document::Style {
-            "@font-face {{
-                font-family: 'Atkinson Hyperlegible Next';
-                src: url('dioxus:///assets/fonts/AtkinsonHyperlegibleNext-VF.ttf')
-                     format('truetype');
-                font-weight: 100 900;
-                font-style: normal;
-            }}"
+            r#type: "text/css",
+            "{loki_fonts::ui_face_css()}"
         }
 
         div {

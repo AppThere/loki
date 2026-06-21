@@ -9,9 +9,9 @@
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::{
-    AtIcon, AtRibbonGroup, AtRibbonIconButton, AtRibbonSelect, LUCIDE_BOLD, LUCIDE_ITALIC,
-    LUCIDE_PILCROW, LUCIDE_REDO, LUCIDE_SAVE, LUCIDE_STRIKETHROUGH, LUCIDE_SUBSCRIPT,
-    LUCIDE_SUPERSCRIPT, LUCIDE_UNDERLINE, LUCIDE_UNDO,
+    AtIcon, AtRibbonGroup, AtRibbonIconButton, AtRibbonSelect, LUCIDE_BOLD, LUCIDE_DOWNLOAD,
+    LUCIDE_ITALIC, LUCIDE_PILCROW, LUCIDE_REDO, LUCIDE_SAVE, LUCIDE_STRIKETHROUGH,
+    LUCIDE_SUBSCRIPT, LUCIDE_SUPERSCRIPT, LUCIDE_UNDERLINE, LUCIDE_UNDO,
 };
 use dioxus::prelude::*;
 use loki_i18n::fl;
@@ -110,7 +110,7 @@ pub(super) fn home_tab_content(
                 on_click: move |_| {
                     save_as.call(());
                 },
-                AtIcon { path_d: LUCIDE_SAVE.to_string() }
+                AtIcon { path_d: LUCIDE_DOWNLOAD.to_string() }
             }
         }
 

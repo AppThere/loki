@@ -33,6 +33,8 @@ loki-vello      = { path = "../loki-vello" }
 # Shared AppThere design tokens and UI components.
 appthere-ui     = { path = "../appthere-ui" }
 loki-app-shell  = { path = "../loki-app-shell" }
+# Bundled UI font (Atkinson Hyperlegible Next) + Android fallback faces.
+loki-fonts.workspace = true
 # Cross-platform file picker.
 loki-file-access.workspace = true
 # Typed error derivation.
