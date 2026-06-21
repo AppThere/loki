@@ -14,45 +14,6 @@ temporary and has a documented removal condition.
 
 ## Active patches
 
-### fontique — 0.8.0
-
-**Source:** `patches/fontique/` (local), vendored from upstream commit
-`8dbecc0545a0c97eb605937b928bc186d2d1295c` in
-[linebender/parley](https://github.com/linebender/parley) (`fontique/` path
-in that monorepo).
-
-**Fixes:** Two related issues with the crates.io publication of fontique 0.8.0:
-
-1. **Missing package alias.** The crates.io publication lost the
-   `fontconfig_sys = { package = "yeslogic-fontconfig-sys", ... }` alias
-   during Cargo normalization. The source in
-   `src/backend/fontconfig.rs` uses `use fontconfig_sys::…` and requires
-   this alias to compile.
-
-2. **Workspace feature-unification conflict.** `blitz-dom` depends on
-   fontique 0.6.0 and activates `yeslogic-fontconfig-sys/dlopen` for the
-   entire build graph. Without the patch, fontique 0.8.0 is built without
-   dlopen and fails on static-C imports because the two versions of the
-   yeslogic-fontconfig-sys feature cannot agree. The patch enables
-   `fontconfig-dlopen` on 0.8.0 so both versions use the same linkage mode.
-
-**Root cause:** Bug in the fontique 0.8.0 crates.io publish pipeline (package
-alias dropped during Cargo manifest normalisation). Compounded by Cargo
-feature-unification behaviour when two semver-incompatible versions of
-fontique coexist in the dependency graph.
-
-**Upstream status:** No upstream issue filed as of 2026-05-03. Upstream
-repository is [linebender/parley](https://github.com/linebender/parley).
-
-**Removal condition:** Remove when a post-0.8.0 fontique release on crates.io
-restores the `fontconfig_sys` package alias and the dlopen/static linkage
-conflict is resolved (either fontique 0.8 is no longer paired with blitz-dom's
-fontique 0.6, or upstream aligns feature flags).
-
-**Added:** 2026-04-13 (introduced in the loki-text scaffold commit).
-
----
-
 ### dioxus-native-dom — 0.7.9
 
 **Version pin:** the whole dioxus family is pinned to `=0.7.9` in the root
@@ -604,3 +565,23 @@ Before removing a patch:
 3. Run `cargo check --workspace` and `cargo test --workspace`.
 4. Remove the patch source directory (`patches/<crate>/`).
 5. Update or remove the corresponding entry in this file.
+
+## Removed patches
+
+### fontique — removed 2026-06-21 (was 0.8.0)
+
+The `patches/fontique` patch (added 2026-04-13) worked around two issues with
+the crates.io publication of **fontique 0.8.0**: (1) a missing
+`fontconfig_sys = { package = "yeslogic-fontconfig-sys", … }` alias dropped
+during the publish pipeline, and (2) a dlopen/static feature-unification
+conflict with blitz-dom's fontique 0.6.
+
+Removed when Loki's own crates moved from fontique 0.8 to **fontique 0.10**
+(alongside the parley 0.8 → 0.10 upgrade). fontique 0.10 restores the
+`fontconfig_sys` alias, so issue (1) no longer applies. Issue (2) is now
+handled without a patch by enabling the `fontconfig-dlopen` feature directly on
+`loki-layout`'s fontique dependency (fontique is re-exported through parley, so
+this turns dlopen on wherever fontique appears — including crates such as
+`loki-vello` whose graph does not contain blitz-dom). blitz-dom's own fontique
+0.6 continues to enable `yeslogic-fontconfig-sys/dlopen`, so both fontique
+generations agree on linkage mode.

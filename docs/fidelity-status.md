@@ -54,7 +54,7 @@ This is the living source of truth documenting which document features, characte
 | **Tab Stops** | Yes | Yes | Yes | Position-sorted tab stops supported. |
 | **Background Color** | Yes | Yes | Yes | Paragraph background shading supported. |
 | **border_between** | Yes | No | No | Rules between adjacent same-styled paragraphs ignored. |
-| **bidi / RTL** | Yes | No | No | RTL paragraphs ignored due to Parley 0.6 API limitations. |
+| **bidi / RTL** | Yes | No | No | RTL paragraphs ignored due to Parley API limitations. |
 
 ---
 

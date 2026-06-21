@@ -16,8 +16,8 @@ use loki_doc_model::style::list_style::{
     BulletChar, ListId, ListLevel, ListLevelKind, NumberingScheme,
 };
 use parley::{
-    Alignment, AlignmentOptions, Cursor, FontFamily, FontStyle, FontWeight, InlineBox, LineHeight,
-    PositionedLayoutItem, RangedBuilder, Selection, StyleProperty,
+    Alignment, AlignmentOptions, Cursor, FontFamily, FontStyle, FontWeight, InlineBox,
+    InlineBoxKind, LineHeight, PositionedLayoutItem, RangedBuilder, Selection, StyleProperty,
 };
 
 use crate::color::LayoutColor;
@@ -821,6 +821,7 @@ fn layout_paragraph_uncached(
         for (idx, &pos) in tab_char_positions.iter().enumerate() {
             probe.push_inline_box(InlineBox {
                 id: idx as u64,
+                kind: InlineBoxKind::InFlow,
                 index: pos,
                 width: 0.0,
                 height: 0.0,
@@ -862,6 +863,7 @@ fn layout_paragraph_uncached(
         let width = tab_inline_widths.get(idx).copied().unwrap_or(0.0);
         builder.push_inline_box(InlineBox {
             id: idx as u64,
+            kind: InlineBoxKind::InFlow,
             index: pos,
             width,
             height: 0.0,
@@ -870,11 +872,7 @@ fn layout_paragraph_uncached(
 
     let mut layout = builder.build(&clean_text);
     layout.break_all_lines(Some(line_w));
-    layout.align(
-        Some(line_w),
-        para_props.alignment,
-        AlignmentOptions::default(),
-    );
+    layout.align(para_props.alignment, AlignmentOptions::default());
 
     let total_height = layout.height();
     let total_width = layout.width();
@@ -890,7 +888,7 @@ fn layout_paragraph_uncached(
         .unwrap_or(0.0);
     let line_boundaries: Vec<(f32, f32)> = layout
         .lines()
-        .map(|l| (l.metrics().min_coord, l.metrics().max_coord))
+        .map(|l| (l.metrics().block_min_coord, l.metrics().block_max_coord))
         .collect();
 
     let mut items: Vec<PositionedItem> = Vec::new();

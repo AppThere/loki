@@ -49,12 +49,12 @@ peniko          = "0.5"
 # Kurbo geometry primitives.
 kurbo           = "0.12"
 # Font config.
-fontique        = { version = "0.8", features = ["fontconfig-dlopen"] }
+fontique        = { version = "0.10", features = ["fontconfig-dlopen"] }
 loro = "1.11.1"
 # Unicode segmentation.
 unicode-segmentation = "1"
 # Platform-specific paths.
-dirs = "5"
+dirs = "6"
 # Serialisation.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
