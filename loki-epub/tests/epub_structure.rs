@@ -163,6 +163,86 @@ fn content_document_carries_the_body_text() {
 }
 
 #[test]
+fn table_and_embedded_image_survive_the_full_export() {
+    use loki_doc_model::content::inline::LinkTarget;
+    use loki_doc_model::content::table::col::{ColAlignment, ColSpec};
+    use loki_doc_model::content::table::core::{
+        Table, TableBody, TableCaption, TableFoot, TableHead,
+    };
+    use loki_doc_model::content::table::row::{Cell, Row};
+
+    let mut doc = Document::new();
+    doc.meta.title = Some("Rich Content".into());
+    let sec = doc.first_section_mut().unwrap();
+    sec.blocks.clear();
+
+    // A captioned, right-aligned-column table.
+    let table = Table {
+        attr: Default::default(),
+        caption: TableCaption {
+            short: None,
+            full: vec![Inline::Str("Quarterly figures".into())],
+        },
+        width: None,
+        col_specs: vec![ColSpec {
+            alignment: ColAlignment::Right,
+            width: loki_doc_model::content::table::col::ColWidth::Proportional(1.0),
+        }],
+        head: TableHead {
+            attr: Default::default(),
+            rows: vec![Row::new(vec![Cell::simple(vec![Block::Para(vec![
+                Inline::Str("Revenue".into()),
+            ])])])],
+        },
+        bodies: vec![TableBody::from_rows(vec![Row::new(vec![Cell::simple(
+            vec![Block::Para(vec![Inline::Str("£42".into())])],
+        )])])],
+        foot: TableFoot::empty(),
+    };
+    sec.blocks.push(Block::Table(Box::new(table)));
+
+    // An embedded PNG ("Hi" => base64 "SGk=").
+    let target = LinkTarget::new("data:image/png;base64,SGk=");
+    sec.blocks.push(Block::Para(vec![Inline::Image(
+        NodeAttr::default(),
+        vec![Inline::Str("Chart".into())],
+        target,
+    )]));
+
+    let bytes = export_bytes(&doc);
+    let mut archive = ZipArchive::new(Cursor::new(bytes)).expect("open ocf zip");
+
+    // The content document must carry real table markup and stay well-formed.
+    let content = read_entry(&mut archive, "EPUB/content.xhtml");
+    assert_well_formed("EPUB/content.xhtml (with table + image)", &content);
+    assert!(content.contains("<table"), "no table element: {content}");
+    assert!(
+        content.contains("<caption>Quarterly figures</caption>"),
+        "caption dropped: {content}"
+    );
+    assert!(content.contains("text-align:right"), "column align lost");
+    assert!(
+        content.contains("<img src=\"images/img0.png\" alt=\"Chart\"/>"),
+        "image reference missing: {content}"
+    );
+
+    // The image bytes must be packaged and declared in the manifest.
+    let mut img = Vec::new();
+    archive
+        .by_name("EPUB/images/img0.png")
+        .expect("image entry packaged")
+        .read_to_end(&mut img)
+        .unwrap();
+    assert_eq!(img, b"Hi", "packaged image bytes wrong");
+
+    let opf = read_entry(&mut archive, "EPUB/package.opf");
+    assert!(
+        opf.contains("href=\"images/img0.png\"") && opf.contains("media-type=\"image/png\""),
+        "image not in manifest: {opf}"
+    );
+}
+
+#[test]
 fn untitled_document_still_produces_a_valid_package() {
     // A blank document (no title/creator) must still yield a spec-valid package
     // with a synthesised identifier and the fallback title.
