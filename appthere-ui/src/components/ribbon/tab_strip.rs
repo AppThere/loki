@@ -86,7 +86,9 @@ pub fn AtRibbonTabStrip(
                     fg    = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
                 ),
                 onclick: move |_| on_toggle_collapse.call(()),
-                if collapsed { "▼" } else { "▲" }
+                // Collapsed → up chevron (click to reveal the content row);
+                // expanded → down chevron (click to hide it).
+                if collapsed { "▲" } else { "▼" }
             }
         }
     }

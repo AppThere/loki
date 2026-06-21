@@ -144,8 +144,18 @@ pub(crate) fn PageTile(props: PageTileProps) -> Element {
             canvas {
                 "src": "{canvas_id}",
                 "data-cursor": "{data_cursor}",
+                // I-beam over the page so the document reads as editable text.
+                // Blitz resolves the cursor from the hovered node's computed
+                // `cursor` and only updates it when the hovered node changes
+                // (blitz-dom get_cursor / hover dispatch). A page is a single
+                // canvas node, so the cursor cannot vary by position within it
+                // (e.g. body vs. margin) without splitting the page into multiple
+                // nodes — which would break full-page GPU painting. The page
+                // therefore shows the text cursor uniformly; the surrounding grey
+                // canvas background and inter-page gaps are separate nodes and
+                // keep the default arrow.
                 style: format!(
-                    "width: {w}px; height: {h}px; display: block;",
+                    "width: {w}px; height: {h}px; display: block; cursor: text;",
                     w = props.w,
                     h = props.h,
                 ),
