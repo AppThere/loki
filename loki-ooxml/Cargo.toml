@@ -41,6 +41,10 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 parley = "0.10"
 read-fonts = "0.40"
 quick-xml = { version = "0.36" }
+# The PPTX round-trip integration test (gated on the `pptx` feature) builds a
+# presentation from these crates directly.
+loki-presentation-model = { path = "../loki-presentation-model" }
+loki-graphics = { path = "../loki-graphics", features = ["serde"] }
 
 [package.metadata.docs.rs]
 all-features = true
