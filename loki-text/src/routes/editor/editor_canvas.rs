@@ -22,11 +22,8 @@
 //! collects the nodes whose offsets changed (`scroll_node_by_collect`),
 //! blitz-shell forwards them via `Document::handle_scroll_changes`, and
 //! dioxus-native-dom dispatches `scroll` events with `NativeScrollData` —
-//! the `onscroll` handler below receives them.
-//!
-//! TODO(partial-render): also feed scroll_offset into DocumentView's
-//! ScrollState (appthere_canvas::on_scroll_event) so cache tiering tracks
-//! the real viewport instead of assuming the top of the document.
+//! the `onscroll` handler below receives them. The scroll offset is passed to
+//! `DocumentView` as `viewport_top_px`, which drives tile virtualization.
 //!
 //! Click-to-cursor-position is handled by `make_mousedown_handler` in
 //! `editor_pointer.rs`, which calls `hit_test_document` and updates the cursor.

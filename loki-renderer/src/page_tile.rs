@@ -7,7 +7,6 @@
 
 use std::sync::{Arc, Mutex};
 
-use appthere_canvas::{PageCache, PageIndex};
 use dioxus::native::use_wgpu;
 use dioxus::prelude::*;
 
@@ -17,7 +16,6 @@ use crate::page_paint_source::LokiPageSource;
 
 #[derive(Clone, Props)]
 pub(crate) struct PageTileProps {
-    pub(crate) cache: Arc<Mutex<PageCache<PageIndex>>>,
     pub(crate) source: Arc<DocPageSource>,
     pub(crate) page_index: usize,
     pub(crate) w: f64,
@@ -28,9 +26,6 @@ pub(crate) struct PageTileProps {
     /// Document generation — incremented on every mutation so that style
     /// changes that don't move the cursor still dirty the canvas.
     pub(crate) doc_gen: u64,
-    /// Settle epoch — incremented after each scroll-settle retier so that a
-    /// tier change repaints this tile at its new resolution.
-    pub(crate) settle_epoch: u64,
     /// Vertical gap below this tile in CSS px — the page gap in paginated
     /// mode, `0` in reflow mode so bands stitch into a continuous flow.
     pub(crate) gap_px: f64,
@@ -44,15 +39,13 @@ pub(crate) struct PageTileProps {
 
 impl PartialEq for PageTileProps {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.cache, &other.cache)
-            && Arc::ptr_eq(&self.source, &other.source)
+        Arc::ptr_eq(&self.source, &other.source)
             && self.page_index == other.page_index
             && self.w == other.w
             && self.h == other.h
             && Arc::ptr_eq(&self.cursor_holder, &other.cursor_holder)
             && self.selection == other.selection
             && self.doc_gen == other.doc_gen
-            && self.settle_epoch == other.settle_epoch
             && self.gap_px == other.gap_px
         // event handlers intentionally excluded — identity does not affect
         // render output; omitting them avoids spurious re-renders.
@@ -62,7 +55,6 @@ impl PartialEq for PageTileProps {
 /// A single page rendered into a Blitz GPU canvas.
 #[allow(non_snake_case)]
 pub(crate) fn PageTile(props: PageTileProps) -> Element {
-    let cache = props.cache.clone();
     let source = props.source.clone();
     let page_index = props.page_index;
     let shared_renderer = props.shared_renderer.clone();
@@ -78,36 +70,29 @@ pub(crate) fn PageTile(props: PageTileProps) -> Element {
     }
 
     let canvas_id = use_wgpu(move || {
-        LokiPageSource::new(
-            cache,
-            source,
-            page_index,
-            shared_renderer,
-            cursor_holder_wgpu,
-        )
+        LokiPageSource::new(source, page_index, shared_renderer, cursor_holder_wgpu)
     });
 
     // Marks the canvas dirty (so Blitz re-invokes the paint source) on caret,
-    // selection, document, or tier changes. When a range selection is active it
-    // is encoded into *every* tile's key — a selection can span bands, so all of
+    // selection, or document changes. When a range selection is active it is
+    // encoded into *every* tile's key — a selection can span bands, so all of
     // them must repaint as it changes. A collapsed caret only dirties the tile
     // it sits on, keeping plain caret movement cheap.
     // COMPAT(dioxus-native): data-* attributes confirmed working in Blitz.
     let data_cursor = match props.selection {
         Some(sel) if !sel.is_collapsed() => format!(
-            "s{}-{}-{}-{}-{}-{}",
+            "s{}-{}-{}-{}-{}",
             sel.anchor.paragraph_index,
             sel.anchor.byte_offset,
             sel.focus.paragraph_index,
             sel.focus.byte_offset,
             props.doc_gen,
-            props.settle_epoch
         ),
         Some(sel) if sel.focus.page_index == props.page_index => format!(
-            "{}-{}-{}-{}",
-            sel.focus.paragraph_index, sel.focus.byte_offset, props.doc_gen, props.settle_epoch
+            "{}-{}-{}",
+            sel.focus.paragraph_index, sel.focus.byte_offset, props.doc_gen
         ),
-        _ => format!("{}-{}", props.doc_gen, props.settle_epoch),
+        _ => format!("{}", props.doc_gen),
     };
 
     rsx! {

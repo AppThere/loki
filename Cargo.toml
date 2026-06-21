@@ -15,7 +15,7 @@ members = ["loki-doc-model","loki-sheet-model","loki-opc","loki-primitives","lok
 # so re-vendoring was only a manifest version bump — re-check that on the next bump.
 dioxus    = { version = "=0.7.9", features = ["native"] }
 thiserror = "2"
-appthere-canvas = { path = "appthere-canvas", features = ["gpu", "dioxus", "font-cache"] }
+appthere-canvas = { path = "appthere-canvas", features = ["gpu", "font-cache"] }
 loki-file-access = { git = "https://github.com/appthere/loki-file-access", branch = "main" }
 loki-fonts = { path = "loki-fonts" }
 android-activity = "0.6"

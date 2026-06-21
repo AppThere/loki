@@ -5,7 +5,6 @@
 
 use std::sync::{Arc, Mutex};
 
-use appthere_canvas::ScrollState;
 #[cfg(any(not(target_os = "android"), android_gpu))]
 use appthere_ui::tokens;
 use dioxus::prelude::*;
@@ -21,7 +20,6 @@ use crate::page_tile::PageTile;
 #[cfg(any(not(target_os = "android"), android_gpu))]
 use crate::render_layout::RenderMode;
 use crate::renderer_state::RendererState;
-use crate::scroll_driver::{on_scroll_event, use_settle_detector};
 
 // The HTML-flow fallback is only used on the Android CPU path; GPU targets
 // render reflow mode through the real layout engine (RenderMode::Reflow).
@@ -125,13 +123,7 @@ impl PartialEq for DocumentViewProps {
 /// Root document rendering component.
 #[component]
 pub fn DocumentView(props: DocumentViewProps) -> Element {
-    // use_signal must be called at the top level — not inside use_hook —
-    // to avoid "hook list already borrowed: BorrowMutError".
-    let scroll = use_signal(|| ScrollState::new(props.viewport_height_px));
-    // Bumped by on_settle after each retier; read below so a settle forces a
-    // re-render that repaints demoted tiles at their new resolution.
-    let settle_epoch = use_signal(|| 0u64);
-    let renderer = use_hook(|| RendererState::new(props.doc.clone(), scroll, settle_epoch));
+    let renderer = use_hook(|| RendererState::new(props.doc.clone()));
     // Push the latest document into the page source on every render.
     // `update_doc` compares by Arc pointer and returns immediately when
     // the document has not changed since the last render, so this is
@@ -150,17 +142,6 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
     let _cursor_holder: Arc<Mutex<Option<RendererSelection>>> =
         use_hook(|| Arc::new(Mutex::new(None)));
 
-    let renderer_settle = renderer.clone();
-    use_settle_detector(&renderer.phase_tx, move || {
-        renderer_settle.on_settle();
-    });
-
-    let scroll = renderer.scroll;
-    let phase_tx = renderer.phase_tx.clone();
-    let onscroll = move |evt: Event<ScrollData>| {
-        on_scroll_event(scroll, evt.scroll_top(), &phase_tx);
-    };
-
     // ── Android CPU: flat web-style renderer ─────────────────────────────────
     // All hooks have been called above; early return is safe.
     #[cfg(all(target_os = "android", not(android_gpu)))]
@@ -169,7 +150,6 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         return rsx! {
             div {
                 style: "width: 100%; height: 100%;",
-                onscroll: onscroll,
                 ReflowDocView { source: renderer.source.clone(), doc_gen }
             }
         };
@@ -202,11 +182,9 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         }
         let doc_gen = renderer.source.current_generation();
 
-        // No per-generation retier: tile virtualization already bounds rendered
-        // pages to the viewport neighbourhood, and every mounted tile renders at
-        // full resolution (see LokiPageSource). Scheduling a retier on every
-        // mutation previously re-ran on each keystroke and, off a scroll position
-        // the renderer never receives, downsampled the page being edited.
+        // Tile virtualization bounds rendered pages to the viewport
+        // neighbourhood, and every mounted tile renders at full resolution
+        // (see LokiPageSource) — there is no resolution-tiering cache.
 
         const PTS_TO_CSS_PX: f64 = 96.0 / 72.0;
         let layout_guard = renderer.source.layout_for_generation(doc_gen);
@@ -227,12 +205,7 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         };
         drop(layout_guard);
 
-        let (hot, warm, cold) = renderer
-            .cache
-            .lock()
-            .map(|g| g.page_count_by_tier())
-            .unwrap_or((0, 0, 0));
-        tracing::debug!(hot, warm, cold, is_reflow, "DocumentView rendered");
+        tracing::debug!(is_reflow, "DocumentView rendered");
 
         // Caret + selection flow through for both modes; LokiPageSource paints
         // them via the page editing data (paginated) or the continuous editing
@@ -268,9 +241,6 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         let on_tile_click = props.on_tile_click;
         let on_reflow_click = props.on_reflow_click;
         let on_reflow_drag = props.on_reflow_drag;
-        // Read (and subscribe to) the settle epoch so a scroll-settle retier
-        // re-renders this component and repaints demoted tiles.
-        let epoch = settle_epoch();
 
         // White backdrop behind reflow tiles so any hairline seam where two
         // zero-gap bands meet shows white (matching the page) rather than the
@@ -307,7 +277,6 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         return rsx! {
             div {
                 style: "width: 100%; height: 100%;",
-                onscroll: onscroll,
                 // PATCH(loki): this root mounts when the document content first
                 // appears inside the editor's scroll container — typically after
                 // an async load, replacing a one-page loading placeholder. The
@@ -320,8 +289,8 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                 // non-scrollable container (does nothing until a mouse-move forces
                 // a re-resolve) and the scrollbar thumb is sized for one page.
                 // The handler is intentionally empty — its mere presence makes the
-                // shell resolve layout and re-dispatch `onscroll` with the true
-                // content height the moment the document mounts.
+                // shell resolve layout and re-dispatch scroll geometry the moment
+                // the document mounts.
                 onmounted: move |_| {},
                 div {
                     style: format!(
@@ -333,7 +302,6 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                         if visible {
                             PageTile {
                                 key: "{idx}",
-                                cache: renderer.cache.clone(),
                                 source: renderer.source.clone(),
                                 page_index: idx,
                                 w,
@@ -342,7 +310,6 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                                 cursor_holder: cursor_holder.clone(),
                                 selection,
                                 doc_gen,
-                                settle_epoch: epoch,
                                 gap_px,
                                 // In reflow, hit-test the click here (this component
                                 // owns the reflow layout) and report the resolved

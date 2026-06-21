@@ -193,7 +193,8 @@ The workspace is a set of focused crates (one responsibility each). Key groups:
     `loki-layout` for positioning, embeds fonts + images (CMYK).
   - `loki-epub` — **EPUB 3.3** export (XHTML + OCF ZIP).
 - **Layout & rendering:** `loki-layout` (renderer-agnostic, Parley-based),
-  `loki-vello` / `loki-renderer` / `loki-render-cache` (GPU paint + tiering).
+  `loki-vello` / `loki-renderer` / `loki-render-cache` (GPU paint; per-page
+  tiles bounded by viewport virtualization).
 - **UI & apps:** `appthere-ui` (shared design system), `appthere-canvas`,
   `loki-i18n`, `loki-fonts`, and the binaries `loki-text` (word processor —
   the mature app), `loki-spreadsheet`, `loki-presentation`.
