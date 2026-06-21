@@ -883,12 +883,11 @@ pub(super) fn EditorInner(path: String) -> Element {
 
             // ── Ribbon (formatting controls) ──────────────────────────────────
             AtRibbon {
+                // Only Home and Publish have controls today; the former Insert/
+                // Format/Review/View tabs had no content of their own (they fell
+                // through to Home's controls) and are omitted until they do.
                 tabs: vec![
                     RibbonTabDesc { label: fl!("ribbon-tab-home"),    is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-insert"),  is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-format"),  is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-review"),  is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-view"),    is_contextual: false, aria_label: None },
                     RibbonTabDesc { label: fl!("ribbon-tab-publish"), is_contextual: false, aria_label: None },
                 ],
                 active_tab: active_ribbon_tab(),
@@ -905,7 +904,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     fl!("ribbon-collapse-aria")
                 },
                 tab_content: match active_ribbon_tab() {
-                    5 => publish_tab_content(
+                    1 => publish_tab_content(
                         &doc_state_publish,
                         path_signal,
                         save_message,
