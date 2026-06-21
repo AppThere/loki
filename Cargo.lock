@@ -3817,9 +3817,12 @@ version = "0.1.0"
 dependencies = [
  "image",
  "loki-doc-model",
+ "loki-graphics",
  "loki-layout",
  "loki-odf",
  "loki-ooxml",
+ "loki-presentation-model",
+ "loki-primitives",
  "loki-sheet-model",
  "serde",
  "serde_json",

@@ -11,7 +11,9 @@ use std::io::Cursor;
 use loki_doc_model::Document;
 use loki_doc_model::io::DocumentImport;
 use loki_odf::{OdsImport, OdsImportOptions, OdtImport, OdtImportOptions};
+use loki_ooxml::pptx::import::{PptxImport, PptxImportOptions};
 use loki_ooxml::{DocxImport, DocxImportOptions, XlsxImport, XlsxImportOptions};
+use loki_presentation_model::Presentation;
 use loki_sheet_model::workbook::Workbook;
 
 use crate::catalog::Format;
@@ -25,6 +27,8 @@ pub enum Fixture {
     Odt,
     /// `acid_xlsx.xlsx` — spreadsheet.
     Xlsx,
+    /// `acid_pptx.pptx` — presentation.
+    Pptx,
     /// `acid_ods.ods` — OpenDocument Spreadsheet.
     Ods,
     /// `acid_odp.odp` — OpenDocument Presentation (no importer yet).
@@ -39,6 +43,8 @@ pub enum Imported {
     Document(Box<Document>),
     /// A spreadsheet workbook.
     Workbook(Box<Workbook>),
+    /// A slide presentation.
+    Presentation(Box<Presentation>),
 }
 
 impl Fixture {
@@ -49,6 +55,7 @@ impl Fixture {
             Fixture::Docx,
             Fixture::Odt,
             Fixture::Xlsx,
+            Fixture::Pptx,
             Fixture::Ods,
             Fixture::Odp,
             Fixture::Odg,
@@ -62,6 +69,7 @@ impl Fixture {
             Fixture::Docx => Format::Docx,
             Fixture::Odt => Format::Odt,
             Fixture::Xlsx => Format::Xlsx,
+            Fixture::Pptx => Format::Pptx,
             Fixture::Ods => Format::Ods,
             Fixture::Odp => Format::Odp,
             Fixture::Odg => Format::Odg,
@@ -75,6 +83,7 @@ impl Fixture {
             Fixture::Docx => "acid_docx.docx",
             Fixture::Odt => "acid_odt.odt",
             Fixture::Xlsx => "acid_xlsx.xlsx",
+            Fixture::Pptx => "acid_pptx.pptx",
             Fixture::Ods => "acid_ods.ods",
             Fixture::Odp => "acid_odp.odp",
             Fixture::Odg => "acid_odg.odg",
@@ -88,6 +97,7 @@ impl Fixture {
             Fixture::Docx => include_bytes!("../assets/acid_docx.docx"),
             Fixture::Odt => include_bytes!("../assets/acid_odt.odt"),
             Fixture::Xlsx => include_bytes!("../assets/acid_xlsx.xlsx"),
+            Fixture::Pptx => include_bytes!("../assets/acid_pptx.pptx"),
             Fixture::Ods => include_bytes!("../assets/acid_ods.ods"),
             Fixture::Odp => include_bytes!("../assets/acid_odp.odp"),
             Fixture::Odg => include_bytes!("../assets/acid_odg.odg"),
@@ -99,7 +109,7 @@ impl Fixture {
     pub fn has_importer(self) -> bool {
         matches!(
             self,
-            Fixture::Docx | Fixture::Odt | Fixture::Xlsx | Fixture::Ods
+            Fixture::Docx | Fixture::Odt | Fixture::Xlsx | Fixture::Pptx | Fixture::Ods
         )
     }
 
@@ -121,6 +131,9 @@ impl Fixture {
                 .map_err(|e| e.to_string()),
             Fixture::Ods => OdsImport::import(cursor, OdsImportOptions::default())
                 .map(|w| Imported::Workbook(Box::new(w)))
+                .map_err(|e| e.to_string()),
+            Fixture::Pptx => PptxImport::import(cursor, PptxImportOptions::default())
+                .map(|p| Imported::Presentation(Box::new(p)))
                 .map_err(|e| e.to_string()),
             Fixture::Odp | Fixture::Odg => Err("no importer yet for this ODF format".to_string()),
         }

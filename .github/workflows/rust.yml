@@ -23,8 +23,8 @@ jobs:
     - uses: Swatinem/rust-cache@v2
     - name: Format check
       run: cargo fmt --all --check
-    - name: Clippy (workspace, warnings denied)
-      run: cargo clippy --workspace -- -D warnings
+    - name: Clippy (workspace, all features, warnings denied)
+      run: cargo clippy --workspace --all-features -- -D warnings
 
   build-and-test:
     runs-on: ubuntu-latest

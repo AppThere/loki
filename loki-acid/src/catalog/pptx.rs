@@ -3,8 +3,12 @@
 
 //! PPTX acid cases (TEST_PLAN.md §3).
 //!
-//! Note: no `acid_pptx.pptx` fixture has been supplied yet, so these cases are
-//! catalogued but not yet exercised by the harness.
+//! A self-generated `acid_pptx.pptx` fixture is now supplied (see
+//! `examples/gen_acid_pptx.rs`), so the import/pagination canaries run for the
+//! PPTX format. The fixture is written by Loki's own exporter and therefore only
+//! covers constructs Loki can already emit — the catalogued cases below that
+//! depend on gradients, SmartArt, charts, animations, or grouped-shape child
+//! transforms still await a PowerPoint-authored deck and a golden render.
 
 use super::{Format::Pptx, TestCase, tc};
 use crate::severity::Severity::{P0, P1, P2};

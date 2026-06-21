@@ -72,6 +72,26 @@ fn spreadsheet_fixtures_have_sheets() {
 }
 
 #[test]
+fn presentation_fixture_has_slides() {
+    let Ok(Imported::Presentation(p)) = Fixture::Pptx.import() else {
+        panic!("acid_pptx.pptx did not import as a presentation");
+    };
+    assert!(
+        p.slide_count() >= 1,
+        "acid_pptx.pptx imported with no slides"
+    );
+    // The aggregate report must surface the slide count for the PPTX fixture.
+    let report = report::run();
+    let pptx = report
+        .fixtures
+        .iter()
+        .find(|f| f.format == loki_acid::Format::Pptx)
+        .expect("pptx fixture in report");
+    assert_eq!(pptx.slide_count, Some(p.slide_count()));
+    assert!(pptx.import_ok, "pptx fixture failed structural import");
+}
+
+#[test]
 fn aggregate_report_covers_all_fixtures() {
     let report = report::run();
     assert_eq!(report.fixtures.len(), Fixture::all().len());
