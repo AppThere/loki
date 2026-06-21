@@ -115,6 +115,10 @@ pub fn layout_document(
             let mut all_paragraphs = Vec::new();
             let mut total_height = 0.0;
             let mut max_width: f32 = 0.0;
+            // Running base so block indices are *global* (document order across
+            // every section), matching the index space the editor and the
+            // `loro_mutation` layer use to address blocks.
+            let mut block_base = 0usize;
 
             for section in &doc.sections {
                 let FlowOutput::Canvas {
@@ -140,10 +144,12 @@ pub fn layout_document(
                 }
                 for para in &mut paragraphs {
                     para.origin.1 += total_height;
+                    para.block_index += block_base;
                 }
                 all_items.extend(items);
                 all_paragraphs.extend(paragraphs);
                 total_height += height;
+                block_base += section.blocks.len();
 
                 let pl = &section.layout;
                 let page_w = pts_to_f32(pl.page_size.width);
@@ -179,6 +185,9 @@ pub fn layout_paginated_full(
 ) -> (PaginatedLayout, PaginatedReuse) {
     let mode = LayoutMode::Paginated;
     let mut global_page_count = 0;
+    // Running base so editing block indices are global across sections (see the
+    // continuous path and the `loro_mutation` resolver).
+    let mut block_base = 0usize;
     let mut first_page_size = None;
     let mut checkpoints: Vec<PageStart> = Vec::new();
 
@@ -216,6 +225,13 @@ pub fn layout_paginated_full(
         let section_page_count = pages.len();
         for page in &mut pages {
             page.page_number += global_page_count;
+            // Globalise editing block indices across sections so hit-test /
+            // cursor positions resolve to the right section's block.
+            if let Some(ed) = page.editing_data.as_mut() {
+                for para in &mut ed.paragraphs {
+                    para.block_index += block_base;
+                }
+            }
         }
         // Lift the section-local checkpoints to document-global: tag the section
         // and offset page_index by the running page count (page_number inside
@@ -228,6 +244,7 @@ pub fn layout_paginated_full(
 
         flowed.push((section, pages));
         global_page_count += section_page_count;
+        block_base += section.blocks.len();
     }
 
     // Pass 2: headers/footers, with the document-wide page total available for

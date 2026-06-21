@@ -23,7 +23,7 @@ use crate::loro_schema::{
 /// Returns an empty string when `block_index` is out of range or the block
 /// cannot be read, so callers can treat `""` as "no cursor / no block."
 pub fn get_block_style_name(loro: &LoroDoc, block_index: usize) -> String {
-    let Ok((_, block_map)) = get_block_map_and_list(loro, block_index) else {
+    let Ok((_, block_map, _)) = get_block_map_and_list(loro, block_index) else {
         return String::new();
     };
 
@@ -76,7 +76,7 @@ pub fn get_block_style_name(loro: &LoroDoc, block_index: usize) -> String {
 /// - [`MutationError::BlockIndexOutOfRange`] if `block_index` is out of range.
 /// - [`MutationError::Loro`] for underlying Loro errors.
 pub fn set_block_type_para(loro: &LoroDoc, block_index: usize) -> Result<(), MutationError> {
-    let (_, block_map) = get_block_map_and_list(loro, block_index)?;
+    let (_, block_map, _) = get_block_map_and_list(loro, block_index)?;
     block_map.insert(KEY_TYPE, BLOCK_TYPE_PARA)?;
     Ok(())
 }
@@ -95,7 +95,7 @@ pub fn set_block_type_heading(
     block_index: usize,
     level: u8,
 ) -> Result<(), MutationError> {
-    let (_, block_map) = get_block_map_and_list(loro, block_index)?;
+    let (_, block_map, _) = get_block_map_and_list(loro, block_index)?;
     block_map.insert(KEY_TYPE, BLOCK_TYPE_HEADING)?;
     block_map.insert(KEY_HEADING_LEVEL, level as i64)?;
     Ok(())
@@ -119,7 +119,7 @@ pub fn set_block_style(
     block_index: usize,
     style_id: &str,
 ) -> Result<(), MutationError> {
-    let (_, block_map) = get_block_map_and_list(loro, block_index)?;
+    let (_, block_map, _) = get_block_map_and_list(loro, block_index)?;
 
     let block_type = block_map
         .get(KEY_TYPE)
@@ -154,7 +154,7 @@ pub fn set_block_style(
 ///
 /// Returns `"Left"` if no alignment is stored (the default).
 pub fn get_block_alignment(loro: &LoroDoc, block_index: usize) -> String {
-    let Ok((_, block_map)) = get_block_map_and_list(loro, block_index) else {
+    let Ok((_, block_map, _)) = get_block_map_and_list(loro, block_index) else {
         return "Left".to_string();
     };
     let Some(props_map) = block_map
@@ -186,7 +186,7 @@ pub fn set_block_alignment(
     block_index: usize,
     alignment: &str,
 ) -> Result<(), MutationError> {
-    let (_, block_map) = get_block_map_and_list(loro, block_index)?;
+    let (_, block_map, _) = get_block_map_and_list(loro, block_index)?;
     let props_map = if let Some(existing) = block_map
         .get(KEY_PARA_PROPS)
         .and_then(|v| v.into_container().ok())

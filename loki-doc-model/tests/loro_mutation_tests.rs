@@ -588,3 +588,130 @@ fn split_block_with_char_props_inherits_direct_char_props() {
         }
     }
 }
+
+// ── Multi-section editing ──────────────────────────────────────────────────────
+
+/// Build a multi-section `Document`; each inner slice is one section's
+/// paragraphs. Editor block indices are global across sections (section 0's
+/// blocks occupy `0..a`, section 1's `a..a+b`, and so on).
+fn make_doc_with_sections(sections: &[&[&str]]) -> Document {
+    let mut doc = Document::new();
+    doc.sections.clear();
+    for paras in sections {
+        let mut section = Section::new();
+        for text in *paras {
+            section.blocks.push(Block::StyledPara(StyledParagraph {
+                style_id: Some(StyleId::new("Normal")),
+                direct_para_props: None,
+                direct_char_props: None,
+                inlines: vec![Inline::Str((*text).into())],
+                attr: NodeAttr::default(),
+            }));
+        }
+        doc.sections.push(section);
+    }
+    doc
+}
+
+/// Plain-text content of a paragraph/heading block (for assertions).
+fn block_text(block: &Block) -> String {
+    let inlines = match block {
+        Block::StyledPara(sp) => &sp.inlines,
+        Block::Para(inlines) => inlines,
+        _ => return String::new(),
+    };
+    inlines
+        .iter()
+        .filter_map(|i| match i {
+            Inline::Str(s) => Some(s.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn insert_text_targets_the_correct_section() {
+    // Global index 2 is the first block of section 1.
+    let ldoc = document_to_loro(&make_doc_with_sections(&[&["a0", "a1"], &["b0", "b1"]]))
+        .expect("to loro");
+
+    insert_text(&ldoc, 2, 0, "X").expect("insert into section 1");
+
+    assert_eq!(get_block_text(&ldoc, 2), "Xb0", "edit lands in section 1");
+    assert_eq!(
+        get_block_text(&ldoc, 0),
+        "a0",
+        "section 0 block 0 untouched"
+    );
+    assert_eq!(
+        get_block_text(&ldoc, 1),
+        "a1",
+        "section 0 block 1 untouched"
+    );
+
+    let doc = loki_doc_model::loro_bridge::loro_to_document(&ldoc).expect("rebuild");
+    assert_eq!(doc.sections.len(), 2);
+    assert_eq!(block_text(&doc.sections[1].blocks[0]), "Xb0");
+    assert_eq!(block_text(&doc.sections[0].blocks[0]), "a0");
+}
+
+#[test]
+fn split_block_in_second_section_only_affects_that_section() {
+    // Global: 0="a0"; 1="b0"; 2="b1".
+    let ldoc =
+        document_to_loro(&make_doc_with_sections(&[&["a0"], &["b0", "b1"]])).expect("to loro");
+
+    split_block(&ldoc, 1, 1).expect("split b0 -> 'b' + '0'");
+
+    let doc = loki_doc_model::loro_bridge::loro_to_document(&ldoc).expect("rebuild");
+    assert_eq!(doc.sections[0].blocks.len(), 1, "section 0 unchanged");
+    assert_eq!(doc.sections[1].blocks.len(), 3, "section 1 gained a block");
+    assert_eq!(block_text(&doc.sections[1].blocks[0]), "b");
+    assert_eq!(block_text(&doc.sections[1].blocks[1]), "0");
+    assert_eq!(block_text(&doc.sections[1].blocks[2]), "b1");
+}
+
+#[test]
+fn merge_within_a_section_works() {
+    // Global: 0="a0"; 1="b0"; 2="b1". Merge b1 into b0.
+    let ldoc =
+        document_to_loro(&make_doc_with_sections(&[&["a0"], &["b0", "b1"]])).expect("to loro");
+
+    let offset = merge_block(&ldoc, 2).expect("merge within section 1");
+    assert_eq!(offset, 2, "join offset is the former byte length of 'b0'");
+
+    let doc = loki_doc_model::loro_bridge::loro_to_document(&ldoc).expect("rebuild");
+    assert_eq!(doc.sections[0].blocks.len(), 1);
+    assert_eq!(doc.sections[1].blocks.len(), 1, "section 1 lost a block");
+    assert_eq!(block_text(&doc.sections[1].blocks[0]), "b0b1");
+}
+
+#[test]
+fn merge_across_a_section_break_is_rejected() {
+    // Global index 1 is the first block of section 1, so its predecessor lives
+    // in section 0 — a cross-section merge, which is not supported.
+    let ldoc = document_to_loro(&make_doc_with_sections(&[&["a0"], &["b0"]])).expect("to loro");
+
+    let err = merge_block(&ldoc, 1).expect_err("cross-section merge must be rejected");
+    assert!(
+        matches!(err, MutationError::CrossSectionMerge),
+        "got {err:?}"
+    );
+
+    // Nothing changed.
+    let doc = loki_doc_model::loro_bridge::loro_to_document(&ldoc).expect("rebuild");
+    assert_eq!(doc.sections[0].blocks.len(), 1);
+    assert_eq!(doc.sections[1].blocks.len(), 1);
+    assert_eq!(block_text(&doc.sections[1].blocks[0]), "b0");
+}
+
+#[test]
+fn global_index_past_the_last_section_errors() {
+    let ldoc = document_to_loro(&make_doc_with_sections(&[&["a0"], &["b0"]])).expect("to loro");
+    // Only global indices 0 and 1 exist (one block per section).
+    let err = insert_text(&ldoc, 2, 0, "X").expect_err("index past last block");
+    assert!(
+        matches!(err, MutationError::BlockIndexOutOfRange(2)),
+        "got {err:?}"
+    );
+}
