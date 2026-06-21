@@ -103,6 +103,56 @@ fn flatten_emph_sets_italic() {
 }
 
 #[test]
+fn formatting_does_not_leak_to_following_siblings() {
+    // Regression for the `walk_inlines` mutate-and-restore optimisation: a plain
+    // run *after* a Strong must not inherit bold (the effective props must be
+    // restored once the styled run's children are processed).
+    let catalog = StyleCatalog::new();
+    let para = empty_para(vec![
+        Inline::Strong(vec![Inline::Str("a".into())]),
+        Inline::Str("b".into()),
+    ]);
+    let (text, spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
+    assert_eq!(text, "ab");
+    let bold_a = spans
+        .iter()
+        .find(|s| s.range == (0..1))
+        .expect("span for 'a'");
+    let plain_b = spans
+        .iter()
+        .find(|s| s.range == (1..2))
+        .expect("span for 'b'");
+    assert!(bold_a.bold, "'a' inside Strong must be bold");
+    assert!(
+        !plain_b.bold,
+        "'b' after Strong must NOT be bold (effective props restored)"
+    );
+}
+
+#[test]
+fn nested_formatting_accumulates_and_restores() {
+    // Strong( Emph("ab") + "cd" ) + "ef":
+    //   "ab" → bold + italic, "cd" → bold only (Emph restored),
+    //   "ef" → unformatted (Strong restored).
+    let catalog = StyleCatalog::new();
+    let para = empty_para(vec![
+        Inline::Strong(vec![
+            Inline::Emph(vec![Inline::Str("ab".into())]),
+            Inline::Str("cd".into()),
+        ]),
+        Inline::Str("ef".into()),
+    ]);
+    let (text, spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
+    assert_eq!(text, "abcdef");
+    let ab = spans.iter().find(|s| s.range == (0..2)).expect("span 'ab'");
+    let cd = spans.iter().find(|s| s.range == (2..4)).expect("span 'cd'");
+    let ef = spans.iter().find(|s| s.range == (4..6)).expect("span 'ef'");
+    assert!(ab.bold && ab.italic, "'ab' must be bold + italic");
+    assert!(cd.bold && !cd.italic, "'cd' must stay bold but not italic");
+    assert!(!ef.bold && !ef.italic, "'ef' must be unformatted");
+}
+
+#[test]
 fn flatten_styled_run_applies_direct_props() {
     let catalog = StyleCatalog::new();
     let run = StyledRun {
