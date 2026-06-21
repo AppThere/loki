@@ -55,3 +55,18 @@ impl Default for AtThemeContext {
 pub fn use_theme() -> AtThemeContext {
     use_context::<AtThemeContext>()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn theme_variant_defaults_to_dark() {
+        assert_eq!(ThemeVariant::default(), ThemeVariant::Dark);
+    }
+
+    #[test]
+    fn theme_context_defaults_to_dark_variant() {
+        assert_eq!(AtThemeContext::default().variant, ThemeVariant::Dark);
+    }
+}

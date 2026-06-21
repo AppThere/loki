@@ -41,6 +41,19 @@ pub fn face_css() -> &'static str {
     ""
 }
 
+#[cfg(all(test, not(target_os = "android")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn face_css_is_empty_on_non_android() {
+        // Desktop and Android-GPU builds must not embed any @font-face CSS
+        // (the ~7 MB of font bytes are android-cpu-only). This is the documented
+        // no-op contract relied on by the shared App component.
+        assert_eq!(face_css(), "");
+    }
+}
+
 // ── Android-only implementation ───────────────────────────────────────────────
 // The entire font-data and CSS-generation block is compiled only on Android so
 // that desktop binaries do not embed ~7 MB of font bytes.
