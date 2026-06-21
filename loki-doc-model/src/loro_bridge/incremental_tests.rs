@@ -162,3 +162,116 @@ fn no_mutation_returns_cached() {
     let derived = reader.update(&loro).expect("update").clone();
     assert_matches_full(&derived, &loro);
 }
+
+// ── Fast-path engagement (not just correctness) ────────────────────────────────
+
+/// Builds a document of several sections, each with the given number of simple
+/// paragraphs.
+fn doc_with_sections(section_sizes: &[usize]) -> Document {
+    let sections = section_sizes
+        .iter()
+        .enumerate()
+        .map(|(s, &n)| {
+            let blocks: Vec<Block> = (0..n)
+                .map(|i| Block::Para(vec![Inline::Str(format!("s{s} paragraph {i}"))]))
+                .collect();
+            Section::with_layout_and_blocks(Default::default(), blocks)
+        })
+        .collect();
+    let mut doc = Document::new();
+    doc.sections = sections;
+    doc
+}
+
+/// Section-aware analogue of [`insert_text`] (which only targets section 0):
+/// navigates to block `block` of section `sec` and inserts `text` at `offset`.
+/// Used to simulate a multi-section / remote edit that reaches a non-zero
+/// section, which the production mutation helpers do not currently produce.
+fn insert_in_section(loro: &loro::LoroDoc, sec: usize, block: usize, offset: usize, text: &str) {
+    use crate::loro_schema::{KEY_BLOCKS, KEY_CONTENT, KEY_SECTIONS};
+    let content = loro
+        .get_list(KEY_SECTIONS)
+        .get(sec)
+        .and_then(|v| v.into_container().ok())
+        .and_then(|c| c.into_map().ok())
+        .and_then(|m| m.get(KEY_BLOCKS))
+        .and_then(|v| v.into_container().ok())
+        .and_then(|c| c.into_movable_list().ok())
+        .and_then(|list| list.get(block))
+        .and_then(|v| v.into_container().ok())
+        .and_then(|c| c.into_map().ok())
+        .and_then(|m| m.get(KEY_CONTENT))
+        .and_then(|v| v.into_container().ok())
+        .and_then(|c| c.into_text().ok())
+        .expect("navigate to section/block text");
+    content.insert_utf8(offset, text).expect("insert");
+}
+
+#[test]
+fn text_edit_uses_incremental_fast_path() {
+    let loro = document_to_loro(&doc_with_paras(6)).expect("to loro");
+    let mut reader = IncrementalReader::seed(&loro).expect("seed");
+
+    insert_text(&loro, 3, 0, "X").expect("insert");
+    reader.update(&loro).expect("update");
+
+    assert!(
+        reader.last_update_was_incremental(),
+        "a plain text edit must take the block-local fast path"
+    );
+}
+
+#[test]
+fn structural_edit_reports_non_incremental() {
+    let loro = document_to_loro(&doc_with_paras(4)).expect("to loro");
+    let mut reader = IncrementalReader::seed(&loro).expect("seed");
+
+    split_block(&loro, 1, 4).expect("split");
+    reader.update(&loro).expect("update");
+
+    assert!(
+        !reader.last_update_was_incremental(),
+        "a block split changes the block count and must fall back to a full rebuild"
+    );
+}
+
+#[test]
+fn edit_in_second_section_is_incremental() {
+    // A multi-section document (or a remote peer's edit) reaching section 1 must
+    // patch that section incrementally rather than rebuilding the whole document.
+    let loro = document_to_loro(&doc_with_sections(&[3, 3])).expect("to loro");
+    let mut reader = IncrementalReader::seed(&loro).expect("seed");
+
+    insert_in_section(&loro, 1, 2, 0, "Z");
+    let derived = reader.update(&loro).expect("update").clone();
+
+    assert!(
+        reader.last_update_was_incremental(),
+        "an edit confined to a section-1 block must take the fast path"
+    );
+    assert_matches_full(&derived, &loro);
+    if let Some(Block::Para(inlines)) = derived.sections[1].blocks.get(2) {
+        assert!(
+            matches!(inlines.first(), Some(Inline::Str(s)) if s.starts_with('Z')),
+            "the edited section-1 paragraph should reflect the insert"
+        );
+    } else {
+        panic!("expected Para at section 1, block 2");
+    }
+}
+
+#[test]
+fn edits_across_sections_stay_incremental_and_consistent() {
+    let loro = document_to_loro(&doc_with_sections(&[2, 2, 2])).expect("to loro");
+    let mut reader = IncrementalReader::seed(&loro).expect("seed");
+
+    for (sec, block, ch) in [(0usize, 1usize, "a"), (2, 0, "b"), (1, 1, "c")] {
+        insert_in_section(&loro, sec, block, 0, ch);
+        let derived = reader.update(&loro).expect("update").clone();
+        assert!(
+            reader.last_update_was_incremental(),
+            "edit to section {sec} block {block} should be incremental"
+        );
+        assert_matches_full(&derived, &loro);
+    }
+}

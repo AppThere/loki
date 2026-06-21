@@ -9,8 +9,7 @@
 //! reconstructed [`Document`] together with the Loro version it reflects; on
 //! [`IncrementalReader::update`] it diffs the new version against the old and,
 //! when every change is confined to the text / marks / properties of existing
-//! blocks in section 0 (the common typing case), re-reconstructs only those
-//! blocks.
+//! blocks (in any section), re-reconstructs only those blocks.
 //!
 //! Anything else — a block insert/delete/move, a section/layout/metadata change,
 //! a diff error, or a change it cannot map to a single block — falls back to a
@@ -21,13 +20,16 @@
 //!
 //! Loro's `get_path_to_container` returns the path root→target as
 //! `(container_id, index_of_that_container_within_its_parent)` tuples. For the
-//! text of block *N* in section 0 the path passes through
-//! `(blocks_list, Key("blocks"))` immediately followed by
-//! `(block_map, Seq(N))`, so the block index is the `Seq` of the element right
-//! after the blocks-list element. A change to the blocks list itself (an insert
-//! or delete) has no such following element and is treated as structural.
+//! text of block *N* in section *S* the path passes through
+//! `(sections_list, Key("sections"))`, `(section_map, Seq(S))`,
+//! `(blocks_list, Key("blocks"))`, then `(block_map, Seq(N))`. Each section's
+//! blocks-list container id is collected up front, so the element immediately
+//! following a known blocks list yields the block index `N`, and the matched
+//! blocks list yields the section index `S`. A change *to* a blocks list (an
+//! insert or delete) or to the sections list itself is treated as structural and
+//! triggers a full rebuild.
 
-use loro::{ContainerID, ContainerTrait, Frontiers, Index, LoroDoc, LoroMovableList};
+use loro::{ContainerID, ContainerTrait, Frontiers, Index, LoroDoc, LoroList, LoroMovableList};
 
 use super::BridgeError;
 use super::read::map_loro_block;
@@ -39,6 +41,7 @@ use crate::loro_schema::{KEY_BLOCKS, KEY_SECTIONS};
 pub struct IncrementalReader {
     cached: Document,
     version: Frontiers,
+    last_was_incremental: bool,
 }
 
 impl IncrementalReader {
@@ -51,6 +54,7 @@ impl IncrementalReader {
         Ok(Self {
             cached,
             version: loro.state_frontiers(),
+            last_was_incremental: false,
         })
     }
 
@@ -60,75 +64,111 @@ impl IncrementalReader {
         loro.commit();
         let now = loro.state_frontiers();
         if now == self.version {
+            // No change since the last call — neither a patch nor a full rebuild.
+            self.last_was_incremental = true;
             return Ok(&self.cached);
         }
-        if !self.try_incremental(loro, &now) {
+        if self.try_incremental(loro, &now) {
+            self.last_was_incremental = true;
+        } else {
             self.cached = super::loro_to_document(loro)?;
+            self.last_was_incremental = false;
         }
         self.version = now;
         Ok(&self.cached)
+    }
+
+    /// Whether the most recent [`update`](Self::update) used the block-local fast
+    /// path (`true`) rather than a full rebuild (`false`).
+    ///
+    /// Primarily for instrumentation and tests; a no-op update (no version
+    /// change) reports `true` because it does no full rebuild.
+    pub fn last_update_was_incremental(&self) -> bool {
+        self.last_was_incremental
     }
 
     /// Attempts a block-local incremental update. Returns `false` to request a
     /// full rebuild (leaving `self.cached` untouched or only partially patched —
     /// the caller overwrites it entirely in that case).
     fn try_incremental(&mut self, loro: &LoroDoc, now: &Frontiers) -> bool {
-        let Some(blocks_list) = section0_blocks_list(loro) else {
+        let sections = loro.get_list(KEY_SECTIONS);
+        let sections_id = sections.id();
+
+        // The blocks-list container of every section, in section order. Their
+        // ids let us map a changed container back to `(section, block)`.
+        let mut blocks_lists: Vec<LoroMovableList> = Vec::with_capacity(sections.len());
+        for s in 0..sections.len() {
+            let Some(list) = section_blocks_list(&sections, s) else {
+                return false;
+            };
+            blocks_lists.push(list);
+        }
+        if blocks_lists.is_empty() {
             return false;
-        };
-        let blocks_id = blocks_list.id();
+        }
 
         let Ok(diff) = loro.diff(&self.version, now) else {
             return false;
         };
 
-        // Collect the distinct section-0 block indices touched by this diff.
-        let mut dirty: Vec<usize> = Vec::new();
+        // Collect the distinct `(section, block)` pairs touched by this diff.
+        let mut dirty: Vec<(usize, usize)> = Vec::new();
         for (cid, _diff) in diff.iter() {
-            if *cid == blocks_id {
-                return false; // structural change to the block list itself
+            if *cid == sections_id {
+                return false; // structural change to the sections list itself
             }
-            match block_index_for(loro, cid, &blocks_id) {
-                Some(n) => {
-                    if !dirty.contains(&n) {
-                        dirty.push(n);
+            if blocks_lists.iter().any(|l| l.id() == *cid) {
+                return false; // structural change to a section's block list
+            }
+            match locate_block(loro, cid, &blocks_lists) {
+                Some(sb) => {
+                    if !dirty.contains(&sb) {
+                        dirty.push(sb);
                     }
                 }
-                None => return false, // change outside section-0 block contents
+                None => return false, // change outside any section's block contents
             }
         }
         if dirty.is_empty() {
             return false;
         }
 
-        let Some(section) = self.cached.sections.first_mut() else {
-            return false;
-        };
         // Index space must match: text/mark/prop edits never change block count.
-        if dirty.iter().any(|&n| n >= section.blocks.len()) {
-            return false;
+        for &(s, n) in &dirty {
+            match self.cached.sections.get(s) {
+                Some(section) if n < section.blocks.len() => {}
+                _ => return false,
+            }
         }
-        for n in dirty {
-            let Some(block_map) = blocks_list
+
+        for (s, n) in dirty {
+            let Some(block_map) = blocks_lists[s]
                 .get(n)
                 .and_then(|v| v.into_container().ok())
                 .and_then(|c| c.into_map().ok())
             else {
                 return false;
             };
-            match map_loro_block(&block_map) {
-                Ok(block) => section.blocks[n] = block,
-                Err(_) => return false,
-            }
+            let Ok(block) = map_loro_block(&block_map) else {
+                return false;
+            };
+            let Some(slot) = self
+                .cached
+                .sections
+                .get_mut(s)
+                .and_then(|section| section.blocks.get_mut(n))
+            else {
+                return false;
+            };
+            *slot = block;
         }
         true
     }
 }
 
-/// Resolves section 0's blocks movable list, if present.
-fn section0_blocks_list(loro: &LoroDoc) -> Option<LoroMovableList> {
-    let sections = loro.get_list(KEY_SECTIONS);
-    let section = sections.get(0)?.into_container().ok()?.into_map().ok()?;
+/// Resolves section `s`'s blocks movable list, if present.
+fn section_blocks_list(sections: &LoroList, s: usize) -> Option<LoroMovableList> {
+    let section = sections.get(s)?.into_container().ok()?.into_map().ok()?;
     section
         .get(KEY_BLOCKS)?
         .into_container()
@@ -137,23 +177,28 @@ fn section0_blocks_list(loro: &LoroDoc) -> Option<LoroMovableList> {
         .ok()
 }
 
-/// Returns the section-0 block index that `cid` lives inside, or `None` when
-/// `cid` is not a descendant of the blocks list (or is the list itself).
+/// Returns the `(section_index, block_index)` that `cid` lives inside, or `None`
+/// when `cid` is not a descendant of any section's blocks list.
 ///
 /// The block index is the `Seq` of the path element immediately following the
-/// blocks-list element (see the module docs).
-fn block_index_for(loro: &LoroDoc, cid: &ContainerID, blocks_id: &ContainerID) -> Option<usize> {
+/// blocks-list element; the section index is the position of that blocks list in
+/// `blocks_lists` (see the module docs).
+fn locate_block(
+    loro: &LoroDoc,
+    cid: &ContainerID,
+    blocks_lists: &[LoroMovableList],
+) -> Option<(usize, usize)> {
     let path = loro.get_path_to_container(cid)?;
-    let mut after_blocks = false;
+    let mut pending_section: Option<usize> = None;
     for (container, index) in &path {
-        if after_blocks {
+        if let Some(section) = pending_section {
             return match index {
-                Index::Seq(n) => Some(*n),
+                Index::Seq(n) => Some((section, *n)),
                 _ => None,
             };
         }
-        if container == blocks_id {
-            after_blocks = true;
+        if let Some(section) = blocks_lists.iter().position(|l| l.id() == *container) {
+            pending_section = Some(section);
         }
     }
     None
