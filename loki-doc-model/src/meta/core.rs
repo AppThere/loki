@@ -7,6 +7,7 @@
 //! `docProps/app.xml`) define a set of core document properties.
 //! TR 29166 §7.2.1 describes the structural correspondence.
 
+use super::dublin_core::DublinCoreMeta;
 use super::language::LanguageTag;
 
 /// Core document metadata.
@@ -65,6 +66,11 @@ pub struct DocumentMeta {
 
     /// Custom (user-defined) document properties.
     pub custom_properties: Vec<CustomProperty>,
+
+    /// Extended Dublin Core metadata used by the publishing exporters
+    /// (PDF/X and EPUB 3.3).  Holds the DCMES / DCMI Terms fields that are not
+    /// already represented by the core fields above.  Default = empty.
+    pub dublin_core: DublinCoreMeta,
 }
 
 /// A user-defined document property.

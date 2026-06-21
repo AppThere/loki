@@ -28,6 +28,8 @@ pub mod render_layout;
 pub mod renderer_state;
 pub mod scroll_driver;
 pub(crate) mod vello_init;
+#[cfg(any(not(target_os = "android"), android_gpu))]
+pub(crate) mod virtualize;
 
 pub use doc_page_source::DocPageSource;
 pub use document_view::{DocumentView, DocumentViewProps, RendererCursorPos, ViewMode};

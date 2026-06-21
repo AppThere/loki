@@ -53,6 +53,10 @@ pub(super) fn load_document(path: String) -> Result<Document, LoadError> {
     if new_document::is_untitled(&path) {
         return Ok(Document::new_blank());
     }
+    // Open-path timing: file read + format import, logged under `loki_text::open`
+    // so the read/import portion of open latency is measurable on-device. The
+    // dominant open cost is the layout pass that follows (see `state::seed_*`).
+    let started = std::time::Instant::now();
     let token = FileAccessToken::deserialize(&path)?;
     let format = detect_format(&token);
     let reader = token.open_read()?;
@@ -70,5 +74,10 @@ pub(super) fn load_document(path: String) -> Result<Document, LoadError> {
             return Err(LoadError::UnsupportedFormat(ext));
         }
     };
+    tracing::info!(
+        target: "loki_text::open",
+        elapsed_ms = started.elapsed().as_secs_f64() * 1000.0,
+        "load_document: file read + import complete",
+    );
     Ok(doc)
 }

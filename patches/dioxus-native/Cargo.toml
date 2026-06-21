@@ -1,6 +1,6 @@
 [package]
 name = "dioxus-native"
-version = "0.7.4"
+version = "0.7.9"
 edition = "2021"
 description = "Native renderer for Dioxus based on blitz"
 license = "MIT OR Apache-2.0"
@@ -12,7 +12,23 @@ name = "dioxus_native"
 path = "src/lib.rs"
 
 [features]
-default = ["accessibility", "hot-reload", "net", "html", "svg", "system-fonts", "clipboard", "file_dialog"]
+# PATCH(loki): `autofocus` added to the default set so an element carrying
+# `autofocus="true"` (the Loki editor canvas) actually receives focus when it
+# mounts. Upstream leaves this feature off by default and the `dioxus` meta
+# crate's `native` feature does not turn it on, so without this the editor
+# canvas never becomes the focused node — keyboard input needs a click first,
+# and the wheel cannot fall back to the focused scroll container on first paint.
+default = [
+    "accessibility",
+    "autofocus",
+    "hot-reload",
+    "net",
+    "html",
+    "svg",
+    "system-fonts",
+    "clipboard",
+    "file_dialog",
+]
 prelude = ["dep:dioxus-core-macro", "dep:dioxus-hooks", "dep:dioxus-signals", "dep:dioxus-stores", "dep:manganis"]
 svg = ["blitz-dom/svg", "blitz-paint/svg"]
 incremental = ["blitz-dom/incremental"]
@@ -37,22 +53,22 @@ blitz-net = { version = "0.2", optional = true }
 blitz-paint = { version = "0.2", optional = true }
 blitz-shell = { version = "0.2", default-features = false }
 blitz-traits = { version = "0.2" }
-dioxus-asset-resolver = { version = "0.7.4", features = ["native"] }
-dioxus-cli-config = { version = "0.7.4", optional = true }
-dioxus-core = { version = "0.7.4" }
-dioxus-core-macro = { version = "0.7.4", optional = true }
-dioxus-devtools = { version = "0.7.4", optional = true }
-dioxus-document = { version = "0.7.4", default-features = false }
-dioxus-history = { version = "0.7.4", default-features = false }
-dioxus-hooks = { version = "0.7.4", optional = true }
-dioxus-html = { version = "0.7.4", default-features = false }
-dioxus-native-dom = { version = "0.7.4" }
-dioxus-signals = { version = "0.7.4", optional = true }
-dioxus-stores = { version = "0.7.4", optional = true }
+dioxus-asset-resolver = { version = "0.7.9", features = ["native"] }
+dioxus-cli-config = { version = "0.7.9", optional = true }
+dioxus-core = { version = "0.7.9" }
+dioxus-core-macro = { version = "0.7.9", optional = true }
+dioxus-devtools = { version = "0.7.9", optional = true }
+dioxus-document = { version = "0.7.9", default-features = false }
+dioxus-history = { version = "0.7.9", default-features = false }
+dioxus-hooks = { version = "0.7.9", optional = true }
+dioxus-html = { version = "0.7.9", default-features = false }
+dioxus-native-dom = { version = "0.7.9" }
+dioxus-signals = { version = "0.7.9", optional = true }
+dioxus-stores = { version = "0.7.9", optional = true }
 futures-channel = { version = "0.3" }
 futures-util = { version = "0.3", default-features = false }
 keyboard-types = { version = "0.7", default-features = false }
-manganis = { version = "0.7.4", features = ["dioxus"], optional = true }
+manganis = { version = "0.7.9", features = ["dioxus"], optional = true }
 rustc-hash = { version = "2.1.1" }
 tokio = { version = "1.48", features = ["rt-multi-thread"], optional = true }
 tracing = { version = "0.1.41", optional = true }

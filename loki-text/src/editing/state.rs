@@ -13,7 +13,10 @@ use loki_doc_model::document::Document;
 use loki_doc_model::loro_bridge::IncrementalReader;
 use loki_layout::{
     ContinuousLayout, DocumentLayout, FontResources, LayoutMode, LayoutOptions, PaginatedLayout,
+    PaginatedReuse,
 };
+
+use super::relayout::{LaidOut, page_metrics, relayout_paginated};
 
 /// Shared document editing state.
 ///
@@ -47,6 +50,10 @@ pub struct DocumentState {
     /// mutation and reset (`None`) when a new document is loaded, so a keystroke
     /// re-derives only the changed block instead of the whole document.
     pub incremental: Option<IncrementalReader>,
+    /// Reuse metadata (clean-page-top checkpoints) for the current paginated
+    /// layout, enabling `loki_layout::relayout_paginated_incremental` to reuse
+    /// unchanged pages on the next edit. `None` until the first layout.
+    pub layout_reuse: Option<PaginatedReuse>,
 }
 
 impl DocumentState {
@@ -62,6 +69,7 @@ impl DocumentState {
             shared_font_resources: Arc::new(Mutex::new(FontResources::new())),
             reflow_cache: None,
             incremental: None,
+            layout_reuse: None,
         }
     }
 }
@@ -123,42 +131,68 @@ impl Default for DocumentState {
 ///
 /// [`make_mousedown_handler`]: crate::routes::editor::editor_pointer::make_mousedown_handler
 pub fn seed_layout_from_document(doc_state: &Arc<Mutex<DocumentState>>, doc: &Document) {
-    let layout = {
+    // Open-path timing under the `loki_text::open` target (measurable on-device
+    // via `RUST_LOG=loki_text::open=info`). This sync entry point is retained
+    // for tests/tools; the editor opens via the off-thread path instead.
+    let started = std::time::Instant::now();
+    let fr_arc = {
         let Ok(state) = doc_state.lock() else { return };
-        let fr_arc = state.shared_font_resources.clone();
-        drop(state);
-        let mut fr = fr_arc.lock().unwrap_or_else(|e| e.into_inner());
-        // New document: drop the previous document's memoised paragraph layouts
-        // so the shaping cache does not accumulate across loads.
-        fr.clear_paragraph_cache();
-        loki_layout::layout_document(
-            &mut fr,
-            doc,
-            LayoutMode::Paginated,
-            1.0,
-            &LayoutOptions {
-                preserve_for_editing: true,
-            },
-        )
+        state.shared_font_resources.clone()
     };
-    let (page_count, paginated_layout, page_width_px, page_height_px) = match &layout {
-        DocumentLayout::Paginated(pl) => {
-            let w = pl.page_size.width * (96.0 / 72.0);
-            let h = pl.page_size.height * (96.0 / 72.0);
-            (pl.pages.len(), Some(Arc::new(pl.clone())), w, h)
-        }
-        _ => (
-            0,
-            None,
-            appthere_ui::tokens::PAGE_WIDTH_PX,
-            appthere_ui::tokens::PAGE_HEIGHT_PX,
-        ),
-    };
+    let layout = compute_seed_layout(&fr_arc, doc);
+    let page_count = publish_seed_layout(doc_state, doc, layout);
+    tracing::info!(
+        target: "loki_text::open",
+        pages = page_count,
+        elapsed_ms = started.elapsed().as_secs_f64() * 1000.0,
+        "seed_layout_from_document: first paginated layout complete",
+    );
+}
+
+/// Computes the first paginated layout for `doc` using `font_resources`.
+///
+/// Only locks the font resources (not [`DocumentState`]), so it can run on a
+/// worker thread; publish the result on the main thread with
+/// [`publish_seed_layout`]. Both [`FontResources`] and the returned layout are
+/// `Send`, which is what makes the off-main-thread open path possible.
+pub(crate) fn compute_seed_layout(
+    font_resources: &Arc<Mutex<FontResources>>,
+    doc: &Document,
+) -> LaidOut {
+    // Open-path timing (the worker thread). Logged under `loki_text::open` so the
+    // CPU layout cost of opening a document is visible on-device:
+    //   RUST_LOG=loki_text::open=info cargo run -p loki-text --release
+    let started = std::time::Instant::now();
+    let mut fr = font_resources.lock().unwrap_or_else(|e| e.into_inner());
+    let lock_ms = started.elapsed().as_secs_f64() * 1000.0;
+    // New document: drop the previous document's memoised paragraph layouts so
+    // the shaping cache does not accumulate across loads.
+    fr.clear_paragraph_cache();
+    let out = relayout_paginated(&mut fr, doc, None);
+    tracing::info!(
+        target: "loki_text::open",
+        pages = out.layout.pages.len(),
+        font_lock_ms = lock_ms,
+        elapsed_ms = started.elapsed().as_secs_f64() * 1000.0,
+        "compute_seed_layout: worker paginated layout complete",
+    );
+    out
+}
+
+/// Publishes a pre-computed paginated layout into `doc_state`, returning the
+/// page count. Pairs with [`compute_seed_layout`] for the off-thread open path.
+pub(crate) fn publish_seed_layout(
+    doc_state: &Arc<Mutex<DocumentState>>,
+    doc: &Document,
+    laid_out: LaidOut,
+) -> usize {
+    let (page_count, page_width_px, page_height_px) = page_metrics(&laid_out.layout);
     let Ok(mut state) = doc_state.lock() else {
-        return;
+        return 0;
     };
     state.document = Some(Arc::new(doc.clone()));
-    state.paginated_layout = paginated_layout;
+    state.paginated_layout = Some(Arc::new(laid_out.layout));
+    state.layout_reuse = Some(laid_out.reuse);
     state.page_count = page_count;
     state.page_width_px = page_width_px;
     state.page_height_px = page_height_px;
@@ -166,6 +200,7 @@ pub fn seed_layout_from_document(doc_state: &Arc<Mutex<DocumentState>>, doc: &Do
     // the previous Loro document so it re-seeds against the new one.
     state.incremental = None;
     state.generation = state.generation.wrapping_add(1);
+    page_count
 }
 
 /// Re-derives the document from `loro_doc`, runs a full layout pass, and
@@ -206,45 +241,41 @@ pub fn apply_mutation_and_relayout(
             None => return false,
         };
         if let Some(orig) = &state.document {
+            // Styles and source are not stored in the CRDT, so carry them
+            // forward. Metadata *is* round-tripped through Loro (read back by
+            // `loro_to_document`), so it is intentionally not carried forward
+            // here — the Loro snapshot is the source of truth.
             doc.styles = orig.styles.clone();
             doc.source = orig.source.clone();
         }
         doc
     };
 
-    // Step 3: Full layout pass with editing data preserved.
-    let layout = {
+    // Step 3: Relayout — incrementally reusing unchanged pages from the previous
+    // layout when the edit is eligible, else a full pass. Capture the previous
+    // document/layout/reuse (cheap Arc clones) so the heavy layout runs without
+    // holding the state lock.
+    let (fr_arc, prev_doc, prev_layout, prev_reuse) = {
         let Ok(state) = doc_state.lock() else {
             tracing::warn!("apply_mutation_and_relayout: doc_state lock poisoned (font)");
             return false;
         };
-        let fr_arc = state.shared_font_resources.clone();
-        drop(state);
-        let mut fr = fr_arc.lock().unwrap_or_else(|e| e.into_inner());
-        loki_layout::layout_document(
-            &mut fr,
-            &doc,
-            LayoutMode::Paginated,
-            1.0,
-            &LayoutOptions {
-                preserve_for_editing: true,
-            },
+        (
+            state.shared_font_resources.clone(),
+            state.document.clone(),
+            state.paginated_layout.clone(),
+            state.layout_reuse.clone(),
         )
     };
-
-    let (page_count, paginated_layout, page_width_px, page_height_px) = match &layout {
-        DocumentLayout::Paginated(pl) => {
-            let w = pl.page_size.width * (96.0 / 72.0);
-            let h = pl.page_size.height * (96.0 / 72.0);
-            (pl.pages.len(), Some(Arc::new(pl.clone())), w, h)
-        }
-        _ => (
-            0,
-            None,
-            appthere_ui::tokens::PAGE_WIDTH_PX,
-            appthere_ui::tokens::PAGE_HEIGHT_PX,
-        ),
+    let laid_out = {
+        let mut fr = fr_arc.lock().unwrap_or_else(|e| e.into_inner());
+        let prev = match (&prev_doc, &prev_layout, &prev_reuse) {
+            (Some(d), Some(l), Some(r)) => Some((d.as_ref(), l.as_ref(), r)),
+            _ => None,
+        };
+        relayout_paginated(&mut fr, &doc, prev)
     };
+    let (page_count, page_width_px, page_height_px) = page_metrics(&laid_out.layout);
 
     // Step 4: Publish.
     let Ok(mut state) = doc_state.lock() else {
@@ -252,7 +283,8 @@ pub fn apply_mutation_and_relayout(
         return false;
     };
     state.document = Some(Arc::new(doc));
-    state.paginated_layout = paginated_layout;
+    state.paginated_layout = Some(Arc::new(laid_out.layout));
+    state.layout_reuse = Some(laid_out.reuse);
     state.page_count = page_count;
     state.page_width_px = page_width_px;
     state.page_height_px = page_height_px;

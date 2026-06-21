@@ -1,0 +1,28 @@
+[package]
+name = "loki-pdf"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "PDF / PDF-X export for the Loki document suite"
+repository = "https://github.com/appthere/loki"
+keywords = ["pdf", "pdfx", "export", "publishing", "loki"]
+categories = ["encoding", "text-processing"]
+
+[dependencies]
+loki-doc-model = { path = "../loki-doc-model" }
+loki-layout = { path = "../loki-layout" }
+loki-primitives = { path = "../loki-primitives" }
+thiserror = "2"
+pdf-writer = "0.15"
+ttf-parser = "0.25"
+base64 = "0.22"
+flate2 = "1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif"] }
+
+[dependencies.chrono]
+version = "0.4"
+default-features = false
+features = ["std", "clock"]
+
+[package.metadata.docs.rs]
+all-features = true

@@ -128,7 +128,7 @@ pub(super) fn vertical_scrollbar(
             div {
                 style: format!(
                     "flex-shrink: 0; width: 100%; height: {h}%; \
-                     background: {thumb}; border-radius: {r}px; cursor: grab;",
+                     background: {thumb}; border-radius: {r}px;",
                     h = thumb_frac * 100.0,
                     thumb = tokens::COLOR_SCROLLBAR_THUMB,
                     r = (TRACK_PX - 4.0) / 2.0,
@@ -175,7 +175,7 @@ pub(super) fn horizontal_scrollbar(
             div {
                 style: format!(
                     "flex-shrink: 0; height: 100%; width: {w}%; \
-                     background: {thumb}; border-radius: {r}px; cursor: grab;",
+                     background: {thumb}; border-radius: {r}px;",
                     w = thumb_frac * 100.0,
                     thumb = tokens::COLOR_SCROLLBAR_THUMB,
                     r = (TRACK_PX - 4.0) / 2.0,

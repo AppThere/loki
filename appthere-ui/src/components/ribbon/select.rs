@@ -101,7 +101,10 @@ pub fn AtRibbonSelect(props: AtRibbonSelectProps) -> Element {
                     fs = FONT_SIZE_LABEL,
                     fg = COLOR_TEXT_ON_CHROME_SECONDARY,
                 ),
-                if props.is_open { "▴" } else { "▾" }
+                // U+25B2/U+25BC (regular triangles) render on Windows; the
+                // U+25B4/U+25BE "small triangle" variants used before were absent
+                // from the bundled UI font and showed as tofu.
+                if props.is_open { "▲" } else { "▼" }
             }
         }
     }

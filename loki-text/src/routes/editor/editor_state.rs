@@ -100,6 +100,14 @@ pub(super) struct EditorState {
     /// and runs the save (or Save As for untitled documents) — the keydown
     /// handler has no access to the tab/recents context, so it signals instead.
     pub save_request: Signal<u32>,
+    /// Index of the active ribbon tab (0 = Home … Publish is the last).
+    pub active_ribbon_tab: Signal<usize>,
+    /// Whether the Publish-tab PDF/X export panel is open above the ribbon.
+    pub is_publish_panel_open: Signal<bool>,
+    /// Selected PDF/X conformance level for export.
+    pub pdf_level: Signal<super::editor_publish::PdfXLevelChoice>,
+    /// Metadata editor draft — `Some` when the Dublin Core panel is open.
+    pub editing_metadata: Signal<Option<super::editor_metadata::MetaDraft>>,
 }
 
 /// Initialises and returns all per-document editing signals.
@@ -154,5 +162,9 @@ pub(super) fn use_editor_state() -> EditorState {
         editing_style_draft: use_signal(|| None),
         save_message: use_signal(|| None),
         save_request: use_signal(|| 0_u32),
+        active_ribbon_tab: use_signal(|| 0_usize),
+        is_publish_panel_open: use_signal(|| false),
+        pdf_level: use_signal(super::editor_publish::PdfXLevelChoice::default),
+        editing_metadata: use_signal(|| None),
     }
 }

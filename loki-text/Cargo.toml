@@ -17,13 +17,17 @@ path = "src/main.rs"
 
 [dependencies]
 # Dioxus Native (Blitz renderer) with client-side router.
-dioxus          = { version = "0.7", features = ["native", "router"] }
+dioxus          = { version = "=0.7.9", features = ["native", "router"] }
 # Format-neutral document model — passed to WgpuSurface after import.
 loki-doc-model  = { path = "../loki-doc-model" }
 # DOCX/OOXML import — converts file bytes to loki_doc_model::Document.
 loki-ooxml      = { path = "../loki-ooxml" }
 # ODT/ODF import — converts OpenDocument Text files to loki_doc_model::Document.
 loki-odf        = { path = "../loki-odf" }
+# PDF / PDF-X export for the Publish ribbon tab.
+loki-pdf        = { path = "../loki-pdf" }
+# EPUB 3.3 export for the Publish ribbon tab.
+loki-epub       = { path = "../loki-epub" }
 # Layout engine — converts Document to DocumentLayout for scene painting.
 loki-layout     = { path = "../loki-layout" }
 # In-workspace Vello GPU rendering backend.
@@ -53,6 +57,8 @@ kurbo           = "0.12"
 # dlopen mode is in effect.
 fontique        = { version = "0.8", features = ["fontconfig-dlopen"] }
 loro = "1.11.1"
+# oneshot channel used to await the off-main-thread document-open layout.
+futures-channel = "0.3"
 # Unicode grapheme cluster segmentation for correct backspace/delete behaviour.
 unicode-segmentation = "1"
 # Platform-specific data/config directory paths for recent-documents persistence.

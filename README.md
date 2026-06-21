@@ -1,6 +1,6 @@
 # Loki
 
-Loki is a high-performance, open-source office suite designed for both desktop and mobile. It reads and writes OOXML (DOCX) and ODF (ODT) documents and renders them through a GPU-accelerated Vello/wgpu pipeline backed by the [Blitz](https://github.com/DioxusLabs/blitz) native renderer.
+Loki is a high-performance, open-source office suite designed for both desktop and mobile. It reads and writes OOXML (DOCX) and ODF (ODT) documents, publishes to **PDF/X** and **EPUB 3.3**, and renders everything through a GPU-accelerated Vello/wgpu pipeline backed by the [Blitz](https://github.com/DioxusLabs/blitz) native renderer.
 
 Written entirely in **Rust**, Loki targets desktop (Windows, macOS, Linux) and mobile (iOS, Android) from a single codebase.
 
@@ -8,11 +8,15 @@ Written entirely in **Rust**, Loki targets desktop (Windows, macOS, Linux) and m
 
 | Layer | Crate | Role |
 |-------|-------|------|
-| Document model | `loki-doc-model` | Format-neutral AST + Loro CRDT sync |
-| Import | `loki-ooxml`, `loki-odf` | DOCX / ODT → document model |
+| Document model | `loki-doc-model` | Format-neutral AST, metadata, + Loro CRDT sync |
+| Import | `loki-ooxml`, `loki-odf` | DOCX / XLSX / ODT / ODS → document model |
+| Export (office) | `loki-ooxml`, `loki-odf` | document model → DOCX / ODT / ODS |
+| Export (publish) | `loki-pdf`, `loki-epub` | PDF/X (X-1a/X-3/X-4) and EPUB 3.3 |
 | Layout | `loki-layout` | Parley text layout, page pagination |
-| Rendering | `loki-vello` | Vello scene builder (cursor, selection handles) |
+| Rendering | `loki-vello`, `loki-renderer` | Vello scene builder + tiered GPU page cache |
 | UI shell | `loki-text` | Dioxus Native app (editing, touch input, routing) |
+| Design system | `appthere-ui` | Shared tokens, theme, and shell components |
+| Fidelity testing | `loki-acid` | ACID rendering-fidelity harness (see `loki-acid/README.md`) |
 
 The renderer stack is **Blitz → wgpu 0.19 → Vulkan / Metal / DX12 / OpenGL ES**. There is no WebView — all rendering is GPU-native.
 
@@ -51,16 +55,21 @@ dx serve --package loki-text --platform native
 cargo run -p loki-text
 ```
 
-`dx` must be installed and must match the `dioxus` library version in use:
+`dx` must be installed and must match the `dioxus` library version in use.
+Loki pins dioxus to an exact version (`=0.7.9`) so the vendored
+`dioxus-native{,-dom}` patches apply — see
+[Workspace patches](#workspace-patches) and `docs/patches.md`. Install the
+matching `dx`:
 
 ```bash
-cargo install dioxus-cli --version "0.7.5"
-dx --version  # should print 0.7.5
+cargo install dioxus-cli --version "0.7.9"
+dx --version  # should print 0.7.9
 ```
 
-> **Version note:** `dx serve --platform android` will fail with a
-> `dioxus-desktop ^0.7.4` dependency error if the dx CLI version does not match
-> the dioxus library version. Always install the same patch version.
+> **Version note:** `dx serve` will fail with a dependency-mismatch error if the
+> dx CLI version does not match the dioxus library version. Always install the
+> same patch version, and bump both together (see "Upgrading Dioxus" in
+> `docs/patches.md`).
 
 ## Running on Android
 
@@ -169,8 +178,9 @@ Requires macOS with Xcode 15+.
 
 ## Workspace patches
 
-Loki vendors and patches three upstream crates to work around pre-1.0 gaps.
-See [`docs/patches.md`](docs/patches.md) for the full list and removal conditions.
+Loki vendors and patches six upstream crates to work around pre-1.0 gaps.
+See [`docs/patches.md`](docs/patches.md) for the full list, removal conditions,
+and the **Upgrading Dioxus** procedure (the dioxus patches are version-pinned).
 
 | Patch | Reason |
 |-------|--------|

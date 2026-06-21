@@ -36,15 +36,16 @@ use loro::LoroValue;
 
 use super::editor_canvas::render_canvas_area;
 use super::editor_load::load_document;
+use super::editor_metadata_panel::metadata_panel;
 use super::editor_path_sync::{
     PathSyncSignals, restore_session, stash_outgoing, sync_path_and_reset,
 };
+use super::editor_publish::{publish_panel, publish_tab_content};
 use super::editor_ribbon::home_tab_content;
 use super::editor_save::{export_document_to_token, save_document_to_path};
 use super::editor_state::{EditorState, use_editor_state};
 use super::editor_style::style_picker_panel;
 use super::editor_style_editor::style_editor_panel;
-use crate::editing::state::seed_layout_from_document;
 use crate::error::LoadError;
 use crate::new_document::is_untitled;
 use crate::recent_documents::RecentDocuments;
@@ -115,6 +116,10 @@ pub(super) fn EditorInner(path: String) -> Element {
         editing_style_draft,
         mut save_message,
         save_request,
+        mut active_ribbon_tab,
+        is_publish_panel_open,
+        pdf_level,
+        editing_metadata,
     } = use_editor_state();
 
     // ── Tab/recents context for Save As and the unsaved-changes indicator ────
@@ -237,6 +242,9 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_keydown = Arc::clone(&doc_state);
     let doc_state_pages = Arc::clone(&doc_state);
     let doc_state_ribbon = Arc::clone(&doc_state);
+    let doc_state_publish = Arc::clone(&doc_state);
+    let doc_state_publish_panel = Arc::clone(&doc_state);
+    let doc_state_meta = Arc::clone(&doc_state);
     let doc_state_style_picker = Arc::clone(&doc_state);
     let doc_state_style_editor = Arc::clone(&doc_state);
     let doc_state_seed = Arc::clone(&doc_state);
@@ -255,40 +263,106 @@ pub(super) fn EditorInner(path: String) -> Element {
     let navigator = use_navigator();
 
     // ── Loro bridge: initialise CRDT once the document is loaded ─────────────
+    //
+    // The first paginated layout is a CPU-heavy pass (tens of ms on a multi-page
+    // document, because the shared font caches start cold). Running it inline in
+    // this post-render effect blocks the frame, so the loading indicator never
+    // paints and the open appears to freeze.
+    //
+    // Instead, lay out on a worker thread (`compute_layout_off_main_thread`) and
+    // await the result: the main thread stays free to paint the loading
+    // indicator (the canvas shows it until `total_pages > 0`, set at the end of
+    // this task) and remains responsive. The guard `loro_doc().is_none()` is
+    // only cleared at the end of the task, and no signal this effect subscribes
+    // to changes while the worker runs, so the task is spawned once per open.
     use_effect(move || {
         if let Some((loaded_path, Ok(doc))) = &*document_load.value().read_unchecked()
             && loaded_path == &path_signal()
             && loro_doc().is_none()
         {
-            // Seed the layout so hit-testing works on the very first click,
-            // before any Loro mutation triggers apply_mutation_and_relayout.
-            seed_layout_from_document(&doc_state_seed, doc);
-            match document_to_loro(doc) {
-                Ok(l_doc) => {
-                    let um = loro::UndoManager::new(&l_doc);
-                    loro_doc.set(Some(l_doc));
-                    undo_manager.set(Some(um));
+            tracing::info!(
+                target: "loki_text::open",
+                "open: loro effect firing — cloning document + spawning layout task",
+            );
+            let loaded_path = loaded_path.clone();
+            let clone_start = std::time::Instant::now();
+            let doc = doc.clone();
+            tracing::info!(
+                target: "loki_text::open",
+                clone_ms = clone_start.elapsed().as_secs_f64() * 1000.0,
+                "open: document cloned",
+            );
+            let doc_state_seed = Arc::clone(&doc_state_seed);
+            spawn(async move {
+                let open_start = std::time::Instant::now();
+                tracing::info!(target: "loki_text::open", "open: layout task polled (start)");
+                // Lay out off the main thread; the await is a cross-thread yield.
+                let Some((doc, layout)) =
+                    super::editor_layout_task::compute_layout_off_main_thread(
+                        Arc::clone(&doc_state_seed),
+                        doc,
+                    )
+                    .await
+                else {
+                    return;
+                };
 
-                    // The freshly-loaded document matches the file on disk:
-                    // record the current generation as the clean baseline.
-                    baseline_gen.set(cursor_state.peek().document_generation);
-
-                    // Auto-place the cursor at the start of the document so the
-                    // user can type immediately without needing to click first.
-                    if cursor_state.read().focus.is_none() {
-                        use crate::editing::cursor::DocumentPosition;
-                        let start = DocumentPosition {
-                            page_index: 0,
-                            paragraph_index: 0,
-                            byte_offset: 0,
-                        };
-                        let mut cs = cursor_state.write();
-                        cs.anchor = Some(start.clone());
-                        cs.focus = Some(start);
-                    }
+                // The user may have switched tabs while the worker ran. If so,
+                // `path_signal` now points at a different document whose state
+                // was already reset/restored — publishing here would clobber it,
+                // so bail out and discard the stale layout.
+                if path_signal.peek().as_str() != loaded_path {
+                    return;
                 }
-                Err(e) => tracing::warn!("Failed to initialize Loro sync bridge: {}", e),
-            }
+
+                // Seed the layout so hit-testing works on the very first click,
+                // before any Loro mutation triggers apply_mutation_and_relayout.
+                let page_count =
+                    crate::editing::state::publish_seed_layout(&doc_state_seed, &doc, layout);
+
+                match document_to_loro(&doc) {
+                    Ok(l_doc) => {
+                        let um = loro::UndoManager::new(&l_doc);
+                        loro_doc.set(Some(l_doc));
+                        undo_manager.set(Some(um));
+
+                        // The freshly-loaded document matches the file on disk:
+                        // record the current generation as the clean baseline.
+                        baseline_gen.set(cursor_state.peek().document_generation);
+
+                        // Auto-place the cursor at the start of the document so
+                        // the user can type immediately without clicking first.
+                        if cursor_state.read().focus.is_none() {
+                            use crate::editing::cursor::DocumentPosition;
+                            let start = DocumentPosition {
+                                page_index: 0,
+                                paragraph_index: 0,
+                                byte_offset: 0,
+                            };
+                            let mut cs = cursor_state.write();
+                            cs.anchor = Some(start.clone());
+                            cs.focus = Some(start);
+                        }
+
+                        // Lifting the canvas's loading gate (total_pages > 0)
+                        // mounts the GPU DocumentView, whose first paint blocks
+                        // the main thread. Defer it one scheduler tick so the
+                        // loading indicator paints a frame first — that frame
+                        // then stays on screen through the GPU first-paint freeze
+                        // instead of a blank canvas.
+                        spawn(async move {
+                            total_pages.set(page_count as u32);
+                            tracing::info!(
+                                target: "loki_text::open",
+                                pages = page_count,
+                                elapsed_ms = open_start.elapsed().as_secs_f64() * 1000.0,
+                                "open: layout ready, DocumentView mounting (CPU done)",
+                            );
+                        });
+                    }
+                    Err(e) => tracing::warn!("Failed to initialize Loro sync bridge: {}", e),
+                }
+            });
         }
     });
 
@@ -748,6 +822,33 @@ pub(super) fn EditorInner(path: String) -> Element {
                 )}
             }
 
+            // ── Metadata editor panel (Dublin Core) ───────────────────────────
+            if editing_metadata.read().is_some() {
+                {metadata_panel(
+                    doc_state_meta,
+                    editing_metadata,
+                    save_message,
+                    super::editor_metadata_panel::MetaPanelSync {
+                        loro_doc,
+                        cursor_state,
+                        undo_manager,
+                        can_undo,
+                        can_redo,
+                    },
+                )}
+            }
+
+            // ── PDF/X export panel (conformance-level picker) ─────────────────
+            if is_publish_panel_open() {
+                {publish_panel(
+                    doc_state_publish_panel,
+                    path_signal,
+                    save_message,
+                    is_publish_panel_open,
+                    pdf_level,
+                )}
+            }
+
             // ── Save message banner ───────────────────────────────────────────
             if let Some(msg) = save_message.read().clone() {
                 div {
@@ -783,15 +884,16 @@ pub(super) fn EditorInner(path: String) -> Element {
             // ── Ribbon (formatting controls) ──────────────────────────────────
             AtRibbon {
                 tabs: vec![
-                    RibbonTabDesc { label: fl!("ribbon-tab-home"),   is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-insert"), is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-format"), is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-review"), is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-view"),   is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-home"),    is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-insert"),  is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-format"),  is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-review"),  is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-view"),    is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-publish"), is_contextual: false, aria_label: None },
                 ],
-                active_tab: 0,
-                on_tab_select: move |_idx| {
-                    // TODO(ribbon): Wire ribbon tab selection to per-document state.
+                active_tab: active_ribbon_tab(),
+                on_tab_select: move |idx| {
+                    active_ribbon_tab.set(idx);
                 },
                 collapsed: ribbon_collapsed(),
                 on_toggle_collapse: move |_| {
@@ -802,7 +904,15 @@ pub(super) fn EditorInner(path: String) -> Element {
                 } else {
                     fl!("ribbon-collapse-aria")
                 },
-                tab_content: home_tab_content(
+                tab_content: match active_ribbon_tab() {
+                    5 => publish_tab_content(
+                        &doc_state_publish,
+                        path_signal,
+                        save_message,
+                        is_publish_panel_open,
+                        editing_metadata,
+                    ),
+                    _ => home_tab_content(
                     &doc_state_ribbon,
                     loro_doc,
                     cursor_state,
@@ -823,6 +933,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     save_as,
                     baseline_gen,
                 ),
+                },
             }
 
             // ── Status bar ────────────────────────────────────────────────────

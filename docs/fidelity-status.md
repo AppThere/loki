@@ -141,3 +141,53 @@ numbers.
 | Persistent renderer shaping context | `loki-renderer` `DocPageSource` | One `FontResources` for the source's lifetime instead of one per generation: the ~20 MB system-font scan runs once, and the shaping cache persists across keystrokes on the render path. |
 | Incremental Loro→Document reconstruction (`IncrementalReader`) | `loki-doc-model` `loro_bridge` | A keystroke re-derives only the changed block instead of walking the whole CRDT, by diffing Loro versions and mapping changed containers to block indices. Structural/section/layout changes fall back to a full `loro_to_document`, so output is byte-identical. Keystroke on a ~1000-paragraph doc: full-rebuild ~17.7 ms → incremental ~14 ms (~166 ms → ~14 ms across both Tier-0 commits). |
 | Single canonical layout | `loki-renderer` `DocPageSource` / `DocumentView` | Paginated mode lays the document out once: the editor's `Arc<PaginatedLayout>` is handed to the renderer (`provide_paginated_layout`) and reused for painting instead of a second `layout_document` pass. Reflow mode still computes its own width-dependent layout. The editor (hit-testing) and renderer (painting) now share one layout object. Output unchanged. |
+| Lazy renderer font context | `loki-renderer` `DocPageSource` | `layout_resources` (the ~20 MB system-font scan) is now built lazily. In paginated mode the renderer reuses the editor's provided layout and never lays out, so it no longer pays a redundant per-open font scan (~7–25 ms saved at open). Only built when the renderer actually lays out (reflow, or paginated without a provided layout). |
+| Open → first-paint benchmark | `loki-acid` `examples/load_bench` | Times the open pipeline on a 19-page DOCX (release): font scan ≈ 7–25 ms, import ≈ 2 ms, `document_to_loro` ≈ 2 ms, first `layout_document` ≈ 30–73 ms (one-time glyph shaping dominates). The editor shows a blank-page **loading indicator** (`editor-document-loading`) immediately on tab open so the async read/import is masked. |
+
+---
+
+## 9. Publishing Export (PDF/X & EPUB 3.3)
+
+The **Publish** ribbon tab in Loki Text exports the open document to print-ready
+PDF/X and to reflowable EPUB 3.3, and edits Dublin Core metadata. PDF export
+(`loki-pdf`) reuses the shared `loki-layout` engine to reproduce the document's
+own paginated geometry, then serialises positioned glyph runs with `pdf-writer`.
+EPUB export (`loki-epub`) serialises the abstract content tree to XHTML inside an
+OCF (ZIP) container.
+
+| Feature | Source | Status | Notes |
+| :--- | :--- | :---: | :--- |
+| **PDF/X-1a / X-3 / X-4** | `loki-pdf` | Yes | Conformance level selectable per export. Drives PDF version (1.4 / 1.4 / 1.6), the `GTS_PDFXVersion` Info key, and the XMP `pdfx`/`pdfxid` claim. |
+| **Font embedding** | `loki-pdf` | Yes | Every face used by the layout is embedded as a `CIDFontType2` program (`Identity-H`), glyphs addressed by id. Full program embedded; **subsetting is deferred** (larger files). |
+| **CMYK colour + OutputIntent** | `loki-pdf` | Yes | All text/graphics emitted in DeviceCMYK with a PDF/X `OutputIntent`. Default printing condition is FOGRA39. An ICC `DestOutputProfile` is embedded only when supplied via `OutputIntent::icc_profile`; otherwise the registered condition identifier is referenced (supply a licensed profile for full certification). |
+| **XMP + Info + trailer ID + Trapped** | `loki-pdf` | Yes | XMP metadata packet, Document Info dictionary, trailer `/ID`, and `Trapped` flag all written (PDF/X requirements). |
+| **Text decorations / rules / borders / fills** | `loki-pdf` | Yes | Underline/strikethrough/overline, horizontal rules, table borders and cell fills emitted as CMYK fills. |
+| **Images in PDF** | `loki-pdf` | Yes | `data:` URI images are decoded, converted to **DeviceCMYK**, Flate-compressed, and embedded as image XObjects; transparency is preserved via a DeviceGray soft mask. CMYK conversion is the naive transform (no ICC); subsetting/recompression of already-CMYK sources is not yet optimised. |
+| **Clipping / rotation in PDF** | `loki-pdf` | Partial | `ClippedGroup` renders children without the clip mask; `RotatedGroup` renders at the group origin without rotation (over-paint preferred to omission). |
+| **EPUB 3.3 container** | `loki-epub` | Yes | OCF ZIP with `mimetype` stored first, `META-INF/container.xml`, package document, navigation document, one XHTML content document, a stylesheet, and packaged image resources. |
+| **EPUB package metadata** | `loki-epub` | Yes | Required `dc:identifier` (synthesised UUID when absent) / `dc:title` / `dc:language` / `dcterms:modified`, plus all available Dublin Core fields. |
+| **EPUB content** | `loki-epub` | Yes | Paragraphs, headings (with a derived TOC `nav`), lists, blockquotes, code, rules, definition lists, **tables** (`<thead>`/`<tbody>`/`<tfoot>` with `colspan`/`rowspan`), inline formatting, and **images** (`data:` URIs packaged as `EPUB/images/*` resources and listed in the manifest; external URLs referenced in place). Math, fields, and comments are dropped. |
+| **Dublin Core metadata editor** | `loki-text` | Yes | Publish-tab **Metadata** button edits the DCMES + DCMI Terms fields (`DocumentMeta` + `DublinCoreMeta`). Edits are persisted **through the Loro CRDT** (`loro_bridge::write_document_meta`, stored as a JSON snapshot under the metadata map), so they survive incremental rebuilds, participate in undo/redo, and round-trip through Loro import/export. Metadata is **not** yet written back to DOCX/ODT on export. |
+
+---
+
+## 10. ACID Fidelity Test Harness (`loki-acid`)
+
+The `loki-acid` crate operationalises the ACID rendering test plan
+([`loki-acid/TEST_PLAN.md`](file:///home/user/loki/loki-acid/TEST_PLAN.md)): a
+machine-readable catalog of 139 constructs (`TC-*`) that alternative office
+suites render differently from the canonical Microsoft 365 (OOXML) / LibreOffice
+(ODF) render, plus the harness to diff Loki against golden references.
+
+| Layer | Status | Notes |
+| :--- | :---: | :--- |
+| **Case catalog** | Yes | All 139 cases (DOCX 38, XLSX 30, PPTX 29, ODT 14, ODP 9, ODG 9, ODS 10) transcribed with severity + format. |
+| **Fixtures** | Yes | `acid_docx/odt/xlsx/ods/odp/odg` embedded via `include_bytes!`. PPTX fixture not yet supplied. |
+| **Page-count + glyph-coverage canaries** | Yes | Computed from the layout (no GPU). `cargo run -p loki-acid --example acid_report` imports every fixture and reports page/sheet counts and tofu (`.notdef`) pages. |
+| **SSIM / pixel diff** | Scaffolded | Pure, unit-tested SSIM + abs-diff metrics and golden discovery (`goldens/<stem>/page-NNN.png` ↔ `renders/<stem>/page-NNN.png`). The pixel test is a documented no-op until both trees are populated. |
+| **Loki headless raster** | Pending | Loki's renderer is GPU-backed; producing `renders/*` headlessly (GPU runner or a future `vello_cpu` path) is the one remaining wiring step. |
+| **ODF round-trip structural diff** | Pending | Tracked alongside the ODP/ODG importers and ODS/ODP/ODG export. |
+
+Importer coverage exercised by the harness today: DOCX + ODT (import → paginate →
+glyph coverage), XLSX + ODS (import → workbook). ODP/ODG have no importer yet and
+are catalogued as pending.

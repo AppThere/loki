@@ -26,6 +26,11 @@ use vello::{AaConfig, RenderParams, Scene};
 use crate::doc_page_source::DocPageSource;
 use crate::document_view::RendererSelection;
 
+/// Set once, when the first page tile is rendered, to attribute Vello's one-time
+/// pipeline warm-up to the open-path timing log (see the render path below).
+static FIRST_TILE_RENDERED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 // ── LokiPageSource ────────────────────────────────────────────────────────────
 
 pub(crate) struct LokiPageSource {
@@ -129,13 +134,14 @@ impl CustomPaintSource for LokiPageSource {
             return None;
         };
 
-        // Step 1: read current tier from cache (default Hot for first frame).
-        let current_tier = self
-            .cache
-            .lock()
-            .ok()
-            .and_then(|g| g.get(PageIndex(self.page_index as u32)).map(|p| p.tier))
-            .unwrap_or(CacheTier::Hot);
+        // Step 1: every mounted tile renders at full resolution.
+        //
+        // Tile virtualization (see DocumentView) only mounts pages within ~one
+        // screen of the viewport, so the resolution-tiering that downsampled
+        // far pages is now both redundant (memory is bounded by mounting) and
+        // wrong (it tiered off a scroll position the renderer never receives,
+        // downsampling the very page being viewed/edited). Always render Hot.
+        let current_tier = CacheTier::Hot;
 
         // Step 2: compute target physical texture dimensions.
         let scale_factor = current_tier.scale_factor();
@@ -228,6 +234,7 @@ impl CustomPaintSource for LokiPageSource {
             )
         });
 
+        let paint_start = std::time::Instant::now();
         let layout_guard = self.source.layout_for_generation(current_generation);
         let (_, layout) = layout_guard.as_ref()?;
         let mut scene = Scene::new();
@@ -241,6 +248,8 @@ impl CustomPaintSource for LokiPageSource {
             reflow_selection,
         );
         drop(layout_guard);
+        let scene_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
+        let render_start = std::time::Instant::now();
 
         // Step 8: render scene to texture.
         // AUDIT: Mutex poisoning on render — lock is held for the duration of
@@ -267,6 +276,19 @@ impl CustomPaintSource for LokiPageSource {
             return None;
         }
         drop(guard);
+
+        // Open-path timing: the first tile rendered carries Vello's one-time
+        // pipeline/shader compilation, so it dwarfs later tiles. Logged once so
+        // the GPU first-paint share of open latency is visible on-device.
+        if !FIRST_TILE_RENDERED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            tracing::info!(
+                target: "loki_text::open",
+                page = self.page_index,
+                scene_build_ms = scene_ms,
+                gpu_render_ms = render_start.elapsed().as_secs_f64() * 1000.0,
+                "first page tile rendered (includes Vello pipeline warm-up)",
+            );
+        }
 
         // Step 9: register with Blitz and cache the handle.
         let handle = ctx.register_texture(texture);

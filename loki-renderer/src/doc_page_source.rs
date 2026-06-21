@@ -66,7 +66,14 @@ pub struct DocPageSource {
     /// Holds the system-font scan (~20 MB, otherwise repeated on every
     /// generation) and the paragraph shaping cache, so a keystroke re-shapes
     /// only the changed paragraph instead of the whole document.
-    layout_resources: Mutex<FontResources>,
+    ///
+    /// Initialised lazily: in paginated mode the editor hands the renderer its
+    /// already-computed layout via [`Self::provide_paginated_layout`], so the
+    /// renderer never lays the document out and the costly system-font scan is
+    /// skipped entirely on open. It is only built when the renderer actually
+    /// has to lay out (reflow mode, or paginated mode without a provided
+    /// layout).
+    layout_resources: Mutex<Option<FontResources>>,
     /// Lazily-initialised Vello renderer for the `PageSource::render` path.
     pub(crate) renderer: Mutex<Option<vello::Renderer>>,
     /// Monotone generation counter.  Starts at 1 so that `LokiPageSource`
@@ -83,7 +90,7 @@ impl DocPageSource {
             layout_cache: Mutex::new(None),
             render_mode: Mutex::new(RenderMode::Paginated),
             font_cache: Mutex::new(FontDataCache::new()),
-            layout_resources: Mutex::new(FontResources::new()),
+            layout_resources: Mutex::new(None),
             renderer: Mutex::new(None),
             generation: Arc::new(AtomicU64::new(1)),
         }
@@ -215,11 +222,12 @@ impl DocPageSource {
         if needs_recompute {
             let doc = self.doc.lock().unwrap_or_else(|e| e.into_inner()).clone();
             let mode = *self.render_mode.lock().unwrap_or_else(|e| e.into_inner());
-            let mut resources = self
+            let mut resources_guard = self
                 .layout_resources
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
-            let resources = &mut *resources;
+            // Build the font/shaping context on first real layout only.
+            let resources = resources_guard.get_or_insert_with(FontResources::new);
             let layout = match mode {
                 RenderMode::Paginated => {
                     let options = LayoutOptions {

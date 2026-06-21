@@ -52,6 +52,44 @@ use crate::editing::state::DocumentState;
 use crate::editing::touch::TouchInteractionState;
 use crate::error::LoadError;
 use loki_doc_model::loro_bridge::derive_loro_cursor;
+use loki_i18n::fl;
+
+/// Blank page placeholder shown while a document is being opened.
+///
+/// Renders immediately when the editor tab mounts (before the async load
+/// resolves), so the user sees a page-shaped surface with an "opening" label
+/// instead of an empty canvas while the file is read, imported, and laid out.
+fn loading_view() -> Element {
+    rsx! {
+        div {
+            style: format!(
+                "display: flex; flex: 1; align-items: flex-start; \
+                 justify-content: center; width: 100%; padding-top: {gap}px;",
+                gap = tokens::SPACE_6,
+            ),
+            div {
+                style: format!(
+                    "width: {w}px; height: {h}px; flex-shrink: 0; background: {page}; \
+                     border: 1px solid {border}; border-radius: 2px; display: flex; \
+                     align-items: center; justify-content: center;",
+                    w = tokens::PAGE_WIDTH_PX,
+                    h = tokens::PAGE_HEIGHT_PX,
+                    page = tokens::CANVAS_PAGE_BG,
+                    border = tokens::COLOR_BORDER_CHROME,
+                ),
+                span {
+                    style: format!(
+                        "font-family: {ff}; font-size: {fs}px; color: {fg};",
+                        ff = tokens::FONT_FAMILY_UI,
+                        fs = tokens::FONT_SIZE_BODY,
+                        fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
+                    ),
+                    { fl!("editor-document-loading") }
+                }
+            }
+        }
+    }
+}
 
 /// Renders the scrollable canvas area for the document editor.
 ///
@@ -246,7 +284,14 @@ pub(super) fn render_canvas_area(
             ),
 
             match &*document_load.value().read_unchecked() {
-                Some((loaded_path, Ok(doc))) if loaded_path == &path_signal() => {
+                // Gate on `total_pages > 0`: the document has loaded *and* the
+                // first paginated layout is ready (published by the deferred
+                // Loro-bridge task in editor_inner). Until then the resource may
+                // be Ok but `paginated_layout` is still None, which would render
+                // a blank canvas — keep the loading indicator up instead.
+                Some((loaded_path, Ok(doc)))
+                    if loaded_path == &path_signal() && total_pages() > 0 =>
+                {
                     // Use the live post-mutation document from doc_state when
                     // available; fall back to the original resource doc before
                     // seed_layout_from_document has run. Read the matching
@@ -273,10 +318,18 @@ pub(super) fn render_canvas_area(
                         DocumentView {
                             doc: arc_doc,
                             paginated_layout,
-                            // TODO(loki): measure actual viewport height — affects
-                            // cache tier zones only, not visual correctness.
-                            // See diagnostic report, finding 1.
-                            viewport_height_px: 800.0,
+                            // Real measured viewport height (falls back to a
+                            // sensible default before the first measure). Drives
+                            // tile virtualization: only pages within ~one screen
+                            // of the viewport are GPU-rendered.
+                            viewport_height_px: {
+                                let h = scroll_metrics().client_height as f64;
+                                if h > 1.0 { h } else { 800.0 }
+                            },
+                            // Real scroll offset so the renderer can virtualize
+                            // tiles to the viewport (this scroll container is the
+                            // editor's, so the position must be passed in).
+                            viewport_top_px: scroll_offset() as f64,
                             cursor_pos,
                             selection_anchor,
                             view_mode: view_mode(),
@@ -346,7 +399,10 @@ pub(super) fn render_canvas_area(
                     rsx! { EditorErrorView { message: msg } }
                 },
 
-                _ => rsx! { div {} },
+                // Resource still pending (file being read / imported), or the
+                // resolved value is for a previous path during a tab switch:
+                // show the blank page placeholder with a loading label.
+                _ => loading_view(),
             }
         }
                 // Vertical scroll indicator + drag handle (right-edge gutter).

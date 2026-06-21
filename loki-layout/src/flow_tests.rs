@@ -65,7 +65,9 @@ fn flow_paginated(
         1.0,
         &LayoutOptions::default(),
     ) {
-        FlowOutput::Pages { pages, warnings } => (pages, warnings),
+        FlowOutput::Pages {
+            pages, warnings, ..
+        } => (pages, warnings),
         _ => panic!("expected Pages output"),
     }
 }

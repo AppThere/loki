@@ -53,13 +53,30 @@ fontique 0.6, or upstream aligns feature flags).
 
 ---
 
-### dioxus-native-dom — 0.7.4
+### dioxus-native-dom — 0.7.9
 
-**Source:** `patches/dioxus-native-dom/` (local), vendored from upstream
-commit `1eb00b5e0080ab4bd6a11ddd0a01c97f28493e04` in
+**Version pin:** the whole dioxus family is pinned to `=0.7.9` in the root
+`Cargo.toml` (and every crate that declares `dioxus`). This patch is
+version-specific; a loose `"0.7"` requirement lets Cargo prefer a newer 0.7.x
+from crates.io and **silently drop this patch** — see "Upgrading Dioxus" below.
+
+**Source:** `patches/dioxus-native-dom/` (local), originally vendored from
+upstream commit `1eb00b5e0080ab4bd6a11ddd0a01c97f28493e04` in
 [DioxusLabs/dioxus](https://github.com/DioxusLabs/dioxus)
 (`packages/native-dom/` path). The vendor copy carries local modifications
-(`dirty: true` in `.cargo_vcs_info.json`).
+(`dirty: true` in `.cargo_vcs_info.json`). **Re-vendored 0.7.4 → 0.7.9 on
+2026-06-19:** upstream `src/` was byte-identical between the two versions, so
+re-vendoring was a manifest version bump only (the loki source modifications
+already applied).
+
+**Scroll-event dispatch (PATCH(loki)).** `DioxusDocument::handle_scroll_changes`
+dispatches the DOM `scroll` event into the Dioxus `VirtualDom` for each node
+whose scroll offset changed (blitz-traits 0.2 has no scroll `DomEventData`
+variant), so `onscroll` handlers fire — this is what drives the editor's custom
+scrollbar thumb. `mounted.rs` additionally implements `MountedData::scroll`, the
+programmatic scroll the scrollbar thumb-drag uses. If this patch is dropped, the
+content still scrolls (blitz-shell handles the wheel) but the thumb freezes and
+drag is a no-op.
 
 **Fixes:** The upstream dioxus-native-dom 0.7.4 panics at runtime for any
 event type whose `HtmlEventConverter` implementation is a placeholder
@@ -145,13 +162,49 @@ tapping a ribbon `<button>` (focusable, but not a text target) lowers it. An
 `ime_active: bool` field debounces redundant winit calls.
 
 **Scroll re-sync on resize (PATCH(loki), 2026-06-12):** `resync_scroll_geometry`
-re-dispatches `onscroll` (via `collect_scroll_containers` + `handle_scroll_changes`)
-to every scroll container with its fresh client geometry. Called from the
-`Resized` handler and, through `View::resync_scroll_geometry` (now `pub`), from
-dioxus-native's `flush_mounted` when a scroll container mounts. This is what
-lets the editor's width-driven reflow / view-mode default react to a window
-resize, to the first real Android size, and to the canvas appearing after an
-async document load — without the user having to scroll first.
+calls `doc.resolve()` and then re-dispatches `onscroll` (via
+`collect_scroll_containers` + `handle_scroll_changes`) to every scroll container
+with its fresh client geometry. Called from the `Resized` handler and, through
+`View::resync_scroll_geometry` (now `pub`), from dioxus-native's `flush_mounted`
+whenever an element with an `onmounted` listener mounts. This is what lets the
+editor's width-driven reflow / view-mode default react to a window resize, to the
+first real Android size, and to the canvas appearing after an async document
+load — without the user having to scroll first.
+
+**Important:** `flush_mounted` only resyncs when an `onmounted` listener is
+*pending*, i.e. when a node carrying `onmounted` has just mounted. The editor's
+scroll container mounts once (with a one-page loading placeholder), so when the
+real multi-page document later mounts *inside* it, the container does not
+re-mount and its Taffy scroll overflow would stay stale — leaving the wheel
+unable to scroll (the container looks non-scrollable until a mouse-move forces a
+re-resolve) and the scrollbar thumb sized for one page. `loki-renderer`'s
+`DocumentView` therefore attaches an (empty) `onmounted` to its content root so
+this resync fires the moment the document content mounts. If you change the
+resync trigger, keep that contract in mind.
+
+**Wheel/touch scroll target the document, never the UI (PATCH(loki),
+2026-06-20):** the `MouseWheel` handler scrolls the hovered node first, then
+falls back to the *focused* node, and **never** the root viewport. Two parts:
+
+- *First-paint scroll.* The hover node is updated only on cursor-move events, so
+  immediately after navigating to a new view (e.g. opening a document) it is
+  either unset *or stale* — left pointing at a node from the previous view that
+  scrolls nothing. The original form (`hover.or_else(focused)`) only consulted
+  the focused node when hover was `None`, so a stale-but-present hover node
+  swallowed the gesture and the wheel did nothing until the user moved the mouse.
+  The handler now treats a hover node that consumed no scroll as "no target" and
+  falls through to the focused node. The editor canvas is a focusable scroll
+  container that is focused on mount (see the `autofocus` patch below), so the
+  wheel scrolls it immediately on first paint.
+
+- *No root-viewport scroll.* Both the wheel and touch-drag handlers now use
+  `scroll_node_within_collect` (blitz-dom), which is identical to
+  `scroll_node_by_collect` except that scrolling which bubbles past the root
+  element is dropped rather than nudging the viewport. The Loki shell is a fixed
+  full-window layout with no scrollable root, so a gesture that runs off the end
+  of the document — or starts over a non-scrolling element like the ribbon —
+  must do nothing instead of shifting the whole UI by the sub-pixel slack
+  between the root content and the window (a long-standing ~1px "UI jiggle").
 
 **Root cause:** Upstream has a `// Todo implement touch scrolling` comment at
 the touch arm — the feature is planned but not implemented. The IME call is a
@@ -206,11 +259,19 @@ uses rustls by default or provides a feature flag to disable native-tls.
 
 ---
 
-### dioxus-native — 0.7.4
+### dioxus-native — 0.7.9
 
-**Source:** `patches/dioxus-native/` (local), vendored from the crates.io
-release of `dioxus-native 0.7.4`. Only `src/dioxus_application.rs` is
-modified; all other files are unchanged.
+**Version pin:** pinned to `=0.7.9` (see the dioxus-native-dom entry above and
+"Upgrading Dioxus" below).
+
+**Source:** `patches/dioxus-native/` (local), originally vendored from the
+crates.io release of `dioxus-native 0.7.4`. `src/dioxus_application.rs`,
+`src/dioxus_renderer.rs`, and `src/lib.rs` carry loki modifications; the
+manifest also carries loki customisations (Android Mali `softbuffer` workaround,
+the `android_gpu` cfg lint, extra deps). **Re-vendored 0.7.4 → 0.7.9 on
+2026-06-19:** upstream `src/` was byte-identical between the two versions, so
+only the dioxus-family version requirements in the hand-maintained `Cargo.toml`
+were bumped (the loki manifest customisations preserved).
 
 **Fixes:** `document::Style {}` components send `CreateHeadElement` events via
 the winit event-loop proxy during `initial_build()`. These events are processed
@@ -250,6 +311,16 @@ events through the event-loop proxy. `flush_mounted` drains
 `DioxusDocument::take_pending_mounted` after each poll and dispatches the
 `mounted` event with a `MountedElement` backing, so `onmounted` fires. This is
 what enables the editor's draggable scrollbar thumb.
+
+**`autofocus` enabled by default (PATCH(loki), 2026-06-20).** `autofocus` is
+added to the `default` feature set in `patches/dioxus-native/Cargo.toml` (it
+forwards to `blitz-dom/autofocus`). Upstream ships this feature **off**, and the
+`dioxus` meta crate's `native` feature does not turn it on, so an element with
+`autofocus="true"` was never focused on mount. The Loki editor canvas declares
+`autofocus="true"` so the user can type — and scroll with the wheel — the moment
+a document opens, without clicking first; this re-enables that intended
+behaviour. When re-vendoring the manifest during a Dioxus upgrade, preserve this
+addition (it is a loki customisation, like the Android `softbuffer` deps).
 
 **Root cause:** Upstream assumed OS-level redraw events would cover the
 CSS-application step; this assumption holds on desktop but not on Android.
@@ -374,6 +445,15 @@ file picking additionally requires a Gradle build with `FilePickerActivity.kt`.
    the embedder re-receives `onscroll` with the new client size — letting the
    reflow view relayout to the window width without a user scroll.
 
+5. **Non-viewport-bubbling scroll (PATCH(loki), 2026-06-20).**
+   `scroll_node_within_collect` mirrors `scroll_node_by_collect` but drops any
+   scroll that bubbles past the root element instead of moving the viewport
+   (both delegate to a shared `scroll_node_by_collect_inner` taking a
+   `bubble_to_viewport` flag). blitz-shell's wheel and touch handlers use it so
+   the fixed full-window Loki shell never scrolls as a whole — a gesture that
+   overruns the document, or starts over the ribbon, does nothing rather than
+   jiggling the UI by the sub-pixel root/window slack.
+
 **Removal condition:** Upstream blitz-dom implements tabindex focus-on-click
 for non-input elements, dispatches scroll events to embedders, and exposes an
 absolute node-scroll API.
@@ -424,6 +504,96 @@ release with the Android `num_init_threads` default. Re-test with
 **Added:** 2026-06-10
 
 ---
+
+## Upgrading Dioxus
+
+Dioxus is pinned to an exact version (`=X.Y.Z`) in **every** crate that declares
+it, because two patches (`dioxus-native`, `dioxus-native-dom`) are vendored at
+that version. **Never just bump the version number** — Cargo will prefer the
+crates.io release over a stale-versioned patch and silently drop it
+(`warning: Patch ... was not used`), breaking scrolling, drag, `onmounted`,
+touch, and IME with no compile error. Re-vendor the two patches first.
+
+Let `OLD` be the current pin and `NEW` the target (e.g. `OLD=0.7.4`,
+`NEW=0.7.9`).
+
+1. **Fetch pristine upstream sources** for both versions of both patched crates,
+   so you can see exactly what upstream changed and what loki changed:
+
+   ```bash
+   tmp=$(mktemp -d)
+   for c in dioxus-native dioxus-native-dom; do
+     for v in "$OLD" "$NEW"; do
+       curl -fsSL "https://static.crates.io/crates/$c/$c-$v.crate" \
+         | tar xz -C "$tmp"        # extracts $tmp/$c-$v/
+     done
+   done
+   ```
+
+2. **Check how much upstream changed** between `OLD` and `NEW`:
+
+   ```bash
+   diff -rq "$tmp/dioxus-native-dom-$OLD/src" "$tmp/dioxus-native-dom-$NEW/src"
+   diff -rq "$tmp/dioxus-native-$OLD/src"     "$tmp/dioxus-native-$NEW/src"
+   ```
+
+   - **No source differences** (as for 0.7.4 → 0.7.9): the existing patched
+     `src/` already matches `NEW`; the re-vendor is a **manifest bump only**
+     (steps 4–5).
+   - **Source differences**: do a **3-way merge** per changed file — the loki
+     delta is `diff(pristine-OLD, patches/<crate>)`; re-apply it onto the
+     `pristine-NEW` file (the loki edits are marked `PATCH(loki)`). Replace the
+     patch `src/` with `pristine-NEW` + the re-applied loki edits, then continue.
+
+3. **Confirm what loki customised in each manifest** (so you preserve it):
+
+   ```bash
+   diff "$tmp/dioxus-native-dom-$OLD/Cargo.toml" patches/dioxus-native-dom/Cargo.toml
+   diff "$tmp/dioxus-native-$OLD/Cargo.toml"     patches/dioxus-native/Cargo.toml
+   ```
+
+4. **Update each patch manifest to `NEW`:**
+   - If loki did **not** customise it (e.g. `dioxus-native-dom`): copy the
+     pristine `NEW` manifest verbatim —
+     `cp "$tmp/dioxus-native-dom-$NEW/Cargo.toml" patches/dioxus-native-dom/Cargo.toml`.
+   - If loki **did** customise it (e.g. `dioxus-native`): bump the crate
+     `version` and the `dioxus-*` dependency requirements `OLD → NEW` **in
+     place**, preserving the loki customisations.
+   - Either way the patch crate's own `version` must equal `NEW` so it matches
+     what `dioxus = "=NEW"` pulls in.
+
+5. **Move the pin** in every crate that declares dioxus:
+
+   ```bash
+   for f in Cargo.toml loki-renderer/Cargo.toml appthere-canvas/Cargo.toml \
+            loki-text/Cargo.toml loki-presentation/Cargo.toml loki-spreadsheet/Cargo.toml; do
+     sed -i "s/version = \"=$OLD\"/version = \"=$NEW\"/" "$f"
+   done
+   ```
+
+   Also update the pin comment in the root `Cargo.toml` and the version in the
+   two patch section headers in this file.
+
+6. **Re-resolve the lockfile** for the whole dioxus family:
+
+   ```bash
+   PKGS=$(grep -oE 'name = "dioxus[a-z-]*"' Cargo.lock | sed 's/name = //;s/"//g' | sort -u | tr '\n' ' ')
+   cargo update $PKGS --precise "$NEW"
+   ```
+
+7. **Verify the patches actually apply** (this is the whole point):
+
+   ```bash
+   cargo check --workspace 2>&1 | grep -i "was not used"   # must print NOTHING
+   grep -A2 'name = "dioxus-native-dom"' Cargo.lock          # version = NEW, no `source` line (= local path)
+   ```
+
+   `cargo check --workspace`, `cargo fmt --all`, and
+   `cargo clippy --workspace -- -D warnings` must all pass. Finally, run the app
+   and confirm scroll-wheel moves the thumb and thumb-drag scrolls the page.
+
+8. **Update docs:** the two patch section headers and re-vendor dates here, and
+   the Dioxus pin note in `CLAUDE.md`.
 
 ## Removing a patch
 

@@ -36,5 +36,38 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 2. Use `detect_changes` for code review.
 3. Use `get_affected_flows` to understand impact.
 4. Use `query_graph` pattern="tests_for" to check coverage.
-5. **Documentation Sync**: When implementing or fixing any layout/rendering properties or import/export capabilities, update the living status registry at [docs/fidelity-status.md](file:///Users/kevin/project/loki/docs/fidelity-status.md).
+5. **Documentation Sync**: When implementing or fixing any layout/rendering properties or import/export capabilities, update the living status registry at [docs/fidelity-status.md](docs/fidelity-status.md).
+
+---
+
+## Project conventions (read `CLAUDE.md` first)
+
+[`CLAUDE.md`](CLAUDE.md) is the authoritative contributor guide (coding
+conventions, the 300-line file ceiling, error-handling and i18n rules, the
+workspace layout, and the Dioxus version pin). Follow it.
+
+### Fix the cause, not the symptom
+
+**Always implement the correct, root-cause fix rather than a quick patch.**
+Diagnose *why* a problem happens before changing anything; fix it at the layer
+where it belongs; do not paper over issues with sleeps, retries, magic numbers,
+broad `#[allow]`s, swallowed errors, or disabled tests. If a true fix is out of
+scope, implement the smallest honest stopgap, mark it `// TODO(<topic>):`, and
+record it as tech debt — never present a workaround as a fix. Remove any
+temporary debugging code before committing, and report partial/unverified work
+honestly. See the "Engineering principles" section in `CLAUDE.md` for the full
+expectation.
+
+### Dependency patches & Dioxus
+
+Local `[patch.crates-io]` crates are documented in
+[docs/patches.md](docs/patches.md). Dioxus is pinned to an exact version
+because the vendored `dioxus-native{,-dom}` patches are version-specific; to
+upgrade it, follow **"Upgrading Dioxus"** in `docs/patches.md` — do not loosen
+the pin or bump the version without re-vendoring the patches.
+
+### Before a commit is "complete"
+
+`cargo fmt --all` and `cargo clippy --workspace -- -D warnings` must both pass,
+and `cargo check --workspace` must be clean.
 
