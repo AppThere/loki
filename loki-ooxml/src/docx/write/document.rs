@@ -21,7 +21,7 @@ use loki_doc_model::style::catalog::StyleCatalog;
 use loki_doc_model::style::props::char_props::CharProps;
 
 use crate::docx::write::collector::ExportCollector;
-use crate::docx::write::styles::emit_char_props;
+use crate::docx::write::style_props::emit_char_props;
 use crate::docx::write::xml::{
     NS_A, NS_PIC, NS_R, NS_W, NS_WP, color_to_hex, pts_to_twips, write_decl, write_empty,
     write_end, write_start, wval,

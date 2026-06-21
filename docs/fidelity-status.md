@@ -54,6 +54,7 @@ This is the living source of truth documenting which document features, characte
 | **Borders** | Yes | Yes | Yes | Top, bottom, left, right borders supported. |
 | **Tab Stops** | Yes | Yes | Yes | Position-sorted tab stops supported. |
 | **Background Color** | Yes | Yes | Yes | Paragraph background shading supported. |
+| **Named / Custom Paragraph Styles** | Yes | Yes | Yes | The full style catalog round-trips through DOCX `styles.xml`: custom styles created in the style editor, plus edits to built-in `Normal`/`Heading1`–`6`, persist across save/reload. Font family, weight (→ bold), size, alignment, indentation (incl. first-line), spacing, line height, `basedOn`, `next`-style, outline level, and the custom flag are all written and read back. |
 | **border_between** | Yes | No | No | Rules between adjacent same-styled paragraphs ignored. |
 | **bidi / RTL** | Yes | No | No | RTL paragraphs ignored due to Parley API limitations. |
 

@@ -65,7 +65,7 @@ pub(crate) fn style_to_draft(style: &ParagraphStyle) -> StyleDraft {
             _ => String::new(),
         },
         line_height_str: match pp.line_height {
-            Some(LineHeight::Multiple(pct)) => format!("{:.2}", pct / 100.0),
+            Some(LineHeight::Multiple(ratio)) => format!("{ratio:.2}"),
             _ => String::new(),
         },
         indent_start_str: points_str(pp.indent_start),
@@ -90,13 +90,15 @@ pub(crate) fn draft_to_style(draft: &StyleDraft) -> ParagraphStyle {
         "Left" => Some(ParagraphAlignment::Left),
         _ => None,
     };
+    // `Multiple` is a ratio (1.5 = one-and-a-half spacing), matching the layout
+    // engine and OOXML mapper — NOT a percentage. See `resolve.rs` line_height.
     let line_height = draft
         .line_height_str
         .trim()
         .parse::<f32>()
         .ok()
         .filter(|&m| m > 0.0)
-        .map(|m| LineHeight::Multiple(m * 100.0));
+        .map(LineHeight::Multiple);
     ParagraphStyle {
         id: StyleId::new(&draft.id),
         display_name: if draft.name.is_empty() {

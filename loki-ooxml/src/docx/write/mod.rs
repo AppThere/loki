@@ -16,5 +16,6 @@ mod document;
 pub(super) mod footnotes;
 pub(super) mod media;
 mod numbering;
+mod style_props;
 mod styles;
 mod xml;
