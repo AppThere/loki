@@ -132,13 +132,20 @@ lines). The full list and a proposed split strategy live in
 offenders are below. This is a dedicated split-pass backlog, not a per-change
 blocker — but do not *grow* these files or add new ones over the ceiling.
 
-The split pass is **in progress** (`odt/mapper/props.rs` done 2026-06-21 →
-`odt/mapper/props/`). Established pattern: convert `foo.rs` → a `foo/` directory
-with section-cohesive submodules (each starting `use super::*;`), re-export the
-public entry points from `foo/mod.rs`, and move the inline test module to
-`foo/tests.rs` via `#[cfg(test)] #[path = "tests.rs"] mod tests;` (test files are
-exempt from the production count). See `loki-odf/src/odt/mapper/props/` for a
-worked example.
+The split pass is **in progress** — **10 of 43 files done** (≈33 remain). Two
+techniques:
+1. *Inline-test extraction* (safest, no production-code change): move a file's
+   `#[cfg(test)] mod tests { … }` into a sibling `<name>_tests.rs` referenced via
+   `#[cfg(test)] #[path = "<name>_tests.rs"] mod tests;`. Done 2026-06-21 for
+   `block.rs`, `docx/mapper/{paragraph,numbering,mod,table}.rs`, `odt/import.rs`,
+   `odt/mapper/lists.rs`, `layout/result.rs`, `renderer/render_layout.rs` — each
+   was over the ceiling only because of a large inline test module.
+2. *Directory split*: convert `foo.rs` → a `foo/` directory with section-cohesive
+   submodules (each starting `use super::*;`), re-export the public entry points
+   from `foo/mod.rs`, and move the tests via the same `#[path]` idiom. Done for
+   `odt/mapper/props.rs` → `odt/mapper/props/` (worked example).
+
+(Test files are exempt from the production-line count.)
 
 | File | Current lines | Priority |
 |---|---|---|
@@ -151,7 +158,7 @@ worked example.
 | `loki-ooxml/src/docx/reader/document.rs` | 1126 | High |
 | `loki-odf/src/odt/mapper/document.rs` | 1094 | High |
 | `loki-text/src/routes/editor/editor_inner.rs` | 968 | High |
-| … 33 more (300–925 lines) — see the audit (`props.rs` 925 now split) | | |
+| … 24 more (300–600 lines) — see the audit (10 files split 2026-06-21) | | |
 
 (`read.rs` was split into `read.rs` + `props_read.rs`; both are now under 300
 lines. `loro_bridge/inlines.rs` is now 219 lines, under the ceiling.

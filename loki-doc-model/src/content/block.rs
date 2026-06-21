@@ -283,37 +283,5 @@ pub enum Block {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn heading_level_one() {
-        let block = Block::Heading(1, NodeAttr::default(), vec![Inline::Str("Title".into())]);
-        assert!(matches!(block, Block::Heading(1, _, _)));
-    }
-
-    #[test]
-    fn styled_para_with_style_ref() {
-        let para = StyledParagraph {
-            style_id: Some(StyleId("Normal".into())),
-            direct_para_props: None,
-            direct_char_props: None,
-            inlines: vec![Inline::Str("Hello".into())],
-            attr: NodeAttr::default(),
-        };
-        let block = Block::StyledPara(para);
-        if let Block::StyledPara(p) = &block {
-            assert_eq!(p.style_id, Some(StyleId("Normal".into())));
-            assert_eq!(p.inlines.len(), 1);
-        } else {
-            panic!("expected StyledPara");
-        }
-    }
-
-    #[test]
-    fn ordered_list_attributes_default() {
-        let attrs = ListAttributes::default();
-        assert_eq!(attrs.start_number, 1);
-        assert_eq!(attrs.style, ListNumberStyle::Decimal);
-    }
-}
+#[path = "block_tests.rs"]
+mod tests;
