@@ -132,6 +132,14 @@ lines). The full list and a proposed split strategy live in
 offenders are below. This is a dedicated split-pass backlog, not a per-change
 blocker — but do not *grow* these files or add new ones over the ceiling.
 
+The split pass is **in progress** (`odt/mapper/props.rs` done 2026-06-21 →
+`odt/mapper/props/`). Established pattern: convert `foo.rs` → a `foo/` directory
+with section-cohesive submodules (each starting `use super::*;`), re-export the
+public entry points from `foo/mod.rs`, and move the inline test module to
+`foo/tests.rs` via `#[cfg(test)] #[path = "tests.rs"] mod tests;` (test files are
+exempt from the production count). See `loki-odf/src/odt/mapper/props/` for a
+worked example.
+
 | File | Current lines | Priority |
 |---|---|---|
 | `loki-layout/src/flow.rs` | 1612 | High |
@@ -143,7 +151,7 @@ blocker — but do not *grow* these files or add new ones over the ceiling.
 | `loki-ooxml/src/docx/reader/document.rs` | 1126 | High |
 | `loki-odf/src/odt/mapper/document.rs` | 1094 | High |
 | `loki-text/src/routes/editor/editor_inner.rs` | 968 | High |
-| … 34 more (300–925 lines) — see the audit | | |
+| … 33 more (300–925 lines) — see the audit (`props.rs` 925 now split) | | |
 
 (`read.rs` was split into `read.rs` + `props_read.rs`; both are now under 300
 lines. `loro_bridge/inlines.rs` is now 219 lines, under the ceiling.
