@@ -16,7 +16,7 @@ identified here are independent of that.
 | 3 | Inactive-tab sessions retain the full preserved layout (+ Loro + undo) | Medium | Recommended |
 | 4 | Paragraph shaping cache accumulated across documents; generous cap | Medium | **Fixed** |
 | 5 | Per-tile `FontDataCache` duplicates interned font bytes across tiles | Low | Recommended |
-| 6 | Loro oplog grows with edit history and never compacts | Low | Recommended |
+| 6 | Loro oplog grows with edit history and never compacts | **High** (now the dominant grower) | Instrumented 2026-06-21; fix proposed |
 
 ## Finding 1 — All pages render at Hot tier until you scroll (FIXED)
 
@@ -109,3 +109,45 @@ Android Studio's Memory Profiler) and watch:
 2. Scroll to the bottom and back → memory should stay bounded (tiers demote).
 3. Open several documents in tabs → only the active document should hold page
    textures; inactive tabs hold CPU state only.
+
+## 2026-06-21 update — Finding 6 is now the dominant grower
+
+With the resolution-tiering removed and page tiles virtualized (Findings 1–2 and
+the texture-unregister-on-unmount fix), texture memory is bounded by the
+viewport. A user then reported Loki Text still climbing to **>3 GB over a long
+editing session** — slower than the old texture leak, and unrelated to
+rendering. That profile matches **Finding 6**: every keystroke appends ops to the
+Loro oplog, and deleted characters leave tombstones in the rich-text CRDT tree;
+neither is ever compacted, so resident memory grows monotonically with edit
+*history* (not with document size). The `UndoManager` is **not** the cause — Loro
+defaults it to `max_undo_steps(100)`, so it is bounded.
+
+**Diagnosis aid (added):** `apply_mutation_and_relayout` now logs throttled
+counters under the `loki_text::mem` target:
+
+```text
+RUST_LOG=loki_text::mem=info <run loki-text>
+```
+
+`loro_ops` / `loro_changes` climbing without bound while `pages` / `blocks` stay
+flat confirms the history (not the layout or document) is what grows.
+
+**Proposed fix (compaction — needs on-device validation, not yet applied):**
+Loro can drop history before a frontier via
+`export(ExportMode::shallow_snapshot(&doc.oplog_frontiers()))` re-imported into a
+fresh `LoroDoc`. Doing this at a natural checkpoint (e.g. on **save**, or after
+the undo horizon of 100 steps is exceeded) caps the oplog. The cost: the swap
+invalidates the `UndoManager` (recreate it), the `IncrementalReader` version
+(reseed it), and every signal/`DocSession` holding the old `LoroDoc` (re-point
+them), and it truncates undo history at the compaction point. Because that
+touches the live editing/undo wiring and can't be validated headlessly, it is
+recorded here as the next step rather than applied blind.
+<!-- TODO(loro-compaction): compact oplog history at save/undo-horizon; see above. -->
+
+### Tech debt
+
+- **TODO(loro-compaction):** the Loro history (oplog + rich-text tombstones) is
+  never compacted, so a long single-document editing session grows resident
+  memory without bound (observed >3 GB). Compact via a shallow-snapshot swap at a
+  safe checkpoint; requires recreating the `UndoManager`/`IncrementalReader` and
+  re-pointing the `loro_doc` signal, plus on-device validation.
