@@ -90,7 +90,8 @@ pub fn App() -> Element {
     let active_tab: Signal<usize> = use_signal(|| 0usize); // 0 = Home tab
 
     // Recent-documents list — loaded once from disk at startup.
-    let recent_docs: Signal<RecentDocuments> = use_signal(RecentDocuments::load);
+    let recent_docs: Signal<RecentDocuments> =
+        use_signal(|| RecentDocuments::load(crate::recent_documents::RECENT_FILE));
 
     // Stashed editing sessions for inactive document tabs — unsaved edits
     // survive tab switches by round-tripping through this map.

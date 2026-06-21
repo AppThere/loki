@@ -32,6 +32,7 @@ loki-layout     = { path = "../loki-layout" }
 loki-vello      = { path = "../loki-vello" }
 # Shared AppThere design tokens and UI components.
 appthere-ui     = { path = "../appthere-ui" }
+loki-app-shell  = { path = "../loki-app-shell" }
 # Cross-platform file picker.
 loki-file-access.workspace = true
 # Typed error derivation.
