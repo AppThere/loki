@@ -13,12 +13,16 @@ use crate::font_cache::FontDataCache;
 /// Paint a single [`PositionedGlyphRun`] into a Vello scene.
 ///
 /// `scale` is the display scale factor (1.0 for 1× displays, 2.0 for HiDPI).
+/// `offset` is the layout-space `(dx, dy)` translation applied to the run's
+/// origin before scaling (the page/scroll offset), so callers do not need to
+/// clone and pre-translate the run just to shift it.
 /// Glyph runs with empty `font_data` or empty `glyphs` are silently skipped.
 pub fn paint_glyph_run(
     scene: &mut vello::Scene,
     run: &PositionedGlyphRun,
     font_cache: &mut FontDataCache,
     scale: f32,
+    offset: (f32, f32),
 ) {
     if run.glyphs.is_empty() {
         return;
@@ -31,9 +35,12 @@ pub fn paint_glyph_run(
         .get_or_insert(&run.font_data, run.font_index)
         .clone();
 
-    // Translate to the run's baseline origin in scaled (pixel) space.
-    let transform =
-        kurbo::Affine::translate(((run.origin.x * scale) as f64, (run.origin.y * scale) as f64));
+    // Translate to the run's baseline origin in scaled (pixel) space, applying
+    // the layout offset first: (origin + offset) * scale.
+    let transform = kurbo::Affine::translate((
+        ((run.origin.x + offset.0) * scale) as f64,
+        ((run.origin.y + offset.1) * scale) as f64,
+    ));
 
     let brush = crate::color::to_brush(&run.color);
 

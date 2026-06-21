@@ -487,66 +487,43 @@ pub(crate) fn paint_items(
     scale: f32,
 ) {
     for item in items {
-        let mut item = item.clone();
-        translate_item(&mut item, offset.0, offset.1);
-        match &item {
+        // Fast paths for the variants whose clone would allocate: a `GlyphRun`
+        // carries a `Vec<GlyphEntry>` and the groups carry a child `Vec`, so the
+        // old `item.clone()` copied the whole run / subtree just to shift its
+        // origin. Paint these with an explicit `offset` instead. The cheap,
+        // all-`Copy` leaf variants (rects, decorations, rules) still take the
+        // clone-and-translate path below — their clone is a stack copy.
+        match item {
             PositionedItem::GlyphRun(r) => {
                 // Link visual hint (gap #11): paint a translucent blue underlay
                 // behind runs that carry a hyperlink URL.
                 // TODO(link-click): interactive hit-testing deferred.
                 if r.link_url.is_some() {
-                    paint_link_hint(scene, r, scale);
+                    paint_link_hint(scene, r, scale, offset);
                 }
-                crate::glyph::paint_glyph_run(scene, r, font_cache, scale);
-            }
-            PositionedItem::FilledRect(r) => {
-                crate::rect::paint_filled_rect(scene, r, scale);
-            }
-            PositionedItem::BorderRect(r) => {
-                crate::rect::paint_border_rect(scene, r, scale);
-            }
-            PositionedItem::Image(img) => {
-                // Ignore image errors during layout rendering; a failed image
-                // leaves the scene unchanged.
-                let _ = crate::image::paint_image(scene, img, scale);
-            }
-            PositionedItem::Decoration(d) => {
-                crate::decor::paint_decoration(scene, d, scale);
-            }
-            PositionedItem::HorizontalRule(r) => {
-                // Render as a thin grey filled rectangle.
-                let rule = PositionedRect {
-                    rect: r.rect,
-                    color: LayoutColor {
-                        r: 0.7,
-                        g: 0.7,
-                        b: 0.7,
-                        a: 1.0,
-                    },
-                };
-                crate::rect::paint_filled_rect(scene, &rule, scale);
+                crate::glyph::paint_glyph_run(scene, r, font_cache, scale, offset);
+                continue;
             }
             PositionedItem::ClippedGroup { clip_rect, items } => {
                 // ADR 004 open question 1: verified Vello 0.6 push_layer signature:
                 //   fn push_layer(&mut self, blend: impl Into<BlendMode>, alpha: f32,
                 //                 transform: Affine, clip: &impl Shape)
-                // This matches the ADR §2 design exactly. clip_rect.origin is already
-                // translated by `translate_item` above, so no further offset is needed.
+                // The clip rect is offset inline ((coord + offset) * scale); child
+                // items inherit the same `offset` (no pre-translation / no clone).
                 scene.push_layer(
                     BlendMode::default(),
                     1.0,
                     Affine::IDENTITY,
                     &vello::kurbo::Rect::new(
-                        (clip_rect.x() * scale) as f64,
-                        (clip_rect.y() * scale) as f64,
-                        (clip_rect.max_x() * scale) as f64,
-                        (clip_rect.max_y() * scale) as f64,
+                        ((clip_rect.x() + offset.0) * scale) as f64,
+                        ((clip_rect.y() + offset.1) * scale) as f64,
+                        ((clip_rect.max_x() + offset.0) * scale) as f64,
+                        ((clip_rect.max_y() + offset.1) * scale) as f64,
                     ),
                 );
-                // Child items were already translated by `translate_item` above;
-                // pass offset (0, 0) so they are not translated a second time.
-                paint_items(scene, items, font_cache, (0.0, 0.0), scale);
+                paint_items(scene, items, font_cache, offset, scale);
                 scene.pop_layer();
+                continue;
             }
             PositionedItem::RotatedGroup {
                 origin,
@@ -555,12 +532,16 @@ pub(crate) fn paint_items(
                 content_height,
                 items,
             } => {
+                // Origin is offset inline; the rotated children are painted into a
+                // temporary scene with no offset and appended under the rotation.
+                let ox = origin.x + offset.0;
+                let oy = origin.y + offset.1;
                 let cx_local = content_width / 2.0;
                 let cy_local = content_height / 2.0;
 
                 let (cx_physical, cy_physical) = match *degrees as i32 {
-                    90 | 270 => (origin.x + cy_local, origin.y + cx_local),
-                    _ => (origin.x + cx_local, origin.y + cy_local),
+                    90 | 270 => (ox + cy_local, oy + cx_local),
+                    _ => (ox + cx_local, oy + cy_local),
                 };
 
                 let angle = (*degrees as f64).to_radians();
@@ -591,9 +572,47 @@ pub(crate) fn paint_items(
                 paint_items(&mut rotated_scene, items, font_cache, (0.0, 0.0), scale);
                 scene.append(&rotated_scene, Some(transform));
                 scene.pop_layer();
+                continue;
+            }
+            // Cheap leaf variants fall through to the clone-and-translate path.
+            _ => {}
+        }
+
+        // Leaf variants are small, all-`Copy` structs (or a rare image): cloning
+        // one is a stack copy, so translate a clone in place and paint it.
+        let mut item = item.clone();
+        translate_item(&mut item, offset.0, offset.1);
+        match &item {
+            PositionedItem::FilledRect(r) => {
+                crate::rect::paint_filled_rect(scene, r, scale);
+            }
+            PositionedItem::BorderRect(r) => {
+                crate::rect::paint_border_rect(scene, r, scale);
+            }
+            PositionedItem::Image(img) => {
+                // Ignore image errors during layout rendering; a failed image
+                // leaves the scene unchanged.
+                let _ = crate::image::paint_image(scene, img, scale);
+            }
+            PositionedItem::Decoration(d) => {
+                crate::decor::paint_decoration(scene, d, scale);
+            }
+            PositionedItem::HorizontalRule(r) => {
+                // Render as a thin grey filled rectangle.
+                let rule = PositionedRect {
+                    rect: r.rect,
+                    color: LayoutColor {
+                        r: 0.7,
+                        g: 0.7,
+                        b: 0.7,
+                        a: 1.0,
+                    },
+                };
+                crate::rect::paint_filled_rect(scene, &rule, scale);
             }
             _ => {
-                // `PositionedItem` is `#[non_exhaustive]`; ignore unknown variants.
+                // GlyphRun / groups handled above; `PositionedItem` is
+                // `#[non_exhaustive]`, so ignore any other variant.
             }
         }
     }
@@ -605,7 +624,12 @@ pub(crate) fn paint_items(
 /// `PositionedGlyphRun` does not carry font metrics directly; a fixed-height
 /// estimate based on font size is used (ascent ≈ 0.8 × font_size, descent ≈
 /// 0.2 × font_size). This is approximate but sufficient for the visual hint.
-fn paint_link_hint(scene: &mut vello::Scene, r: &PositionedGlyphRun, scale: f32) {
+fn paint_link_hint(
+    scene: &mut vello::Scene,
+    r: &PositionedGlyphRun,
+    scale: f32,
+    offset: (f32, f32),
+) {
     let ascent = r.font_size * 0.8;
     let descent = r.font_size * 0.2;
     // Sum advance of all glyphs for the run width.
@@ -614,7 +638,12 @@ fn paint_link_hint(scene: &mut vello::Scene, r: &PositionedGlyphRun, scale: f32)
         return;
     }
     let hint = PositionedRect {
-        rect: LayoutRect::new(r.origin.x, r.origin.y - ascent, width, ascent + descent),
+        rect: LayoutRect::new(
+            r.origin.x + offset.0,
+            r.origin.y - ascent + offset.1,
+            width,
+            ascent + descent,
+        ),
         color: LayoutColor {
             r: 0.0,
             g: 0.4,

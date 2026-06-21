@@ -126,13 +126,28 @@ When adding `#[allow]` to any file:
 These files existed before the ceiling convention was established and have not
 yet been split. Do not add new code to them without splitting first.
 
+A 2026-06-21 audit found **43 production files** over the ceiling (16 over 600
+lines). The full list and a proposed split strategy live in
+[docs/audit-2026-06.md](docs/audit-2026-06.md) (finding Q-1); the worst
+offenders are below. This is a dedicated split-pass backlog, not a per-change
+blocker — but do not *grow* these files or add new ones over the ceiling.
+
 | File | Current lines | Priority |
 |---|---|---|
-| `loki-text/src/components/document_source.rs` | 1117 | High |
-| `loki-text/src/routes/editor/editor_inner.rs` | ~945 | High |
-| `loki-doc-model/src/loro_bridge/inlines.rs` | ~280 | Low |
+| `loki-layout/src/flow.rs` | 1612 | High |
+| `loki-odf/src/odt/reader/styles.rs` | 1441 | High |
+| `loki-odf/src/odt/reader/document.rs` | 1428 | High |
+| `loki-layout/src/para.rs` | 1278 | High |
+| `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1241 | High |
+| `loki-ooxml/src/docx/write/document.rs` | 1169 | High |
+| `loki-ooxml/src/docx/reader/document.rs` | 1126 | High |
+| `loki-odf/src/odt/mapper/document.rs` | 1094 | High |
+| `loki-text/src/routes/editor/editor_inner.rs` | 968 | High |
+| … 34 more (300–925 lines) — see the audit | | |
 
-(`read.rs` was split into `read.rs` + `props_read.rs`; both are now under 300 lines.)
+(`read.rs` was split into `read.rs` + `props_read.rs`; both are now under 300
+lines. `loro_bridge/inlines.rs` is now 219 lines, under the ceiling.
+`loki-text/src/components/document_source.rs` no longer exists.)
 
 ## Known tech debt — Loro bridge round-trip gaps
 
