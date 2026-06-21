@@ -162,13 +162,25 @@ tapping a ribbon `<button>` (focusable, but not a text target) lowers it. An
 `ime_active: bool` field debounces redundant winit calls.
 
 **Scroll re-sync on resize (PATCH(loki), 2026-06-12):** `resync_scroll_geometry`
-re-dispatches `onscroll` (via `collect_scroll_containers` + `handle_scroll_changes`)
-to every scroll container with its fresh client geometry. Called from the
-`Resized` handler and, through `View::resync_scroll_geometry` (now `pub`), from
-dioxus-native's `flush_mounted` when a scroll container mounts. This is what
-lets the editor's width-driven reflow / view-mode default react to a window
-resize, to the first real Android size, and to the canvas appearing after an
-async document load — without the user having to scroll first.
+calls `doc.resolve()` and then re-dispatches `onscroll` (via
+`collect_scroll_containers` + `handle_scroll_changes`) to every scroll container
+with its fresh client geometry. Called from the `Resized` handler and, through
+`View::resync_scroll_geometry` (now `pub`), from dioxus-native's `flush_mounted`
+whenever an element with an `onmounted` listener mounts. This is what lets the
+editor's width-driven reflow / view-mode default react to a window resize, to the
+first real Android size, and to the canvas appearing after an async document
+load — without the user having to scroll first.
+
+**Important:** `flush_mounted` only resyncs when an `onmounted` listener is
+*pending*, i.e. when a node carrying `onmounted` has just mounted. The editor's
+scroll container mounts once (with a one-page loading placeholder), so when the
+real multi-page document later mounts *inside* it, the container does not
+re-mount and its Taffy scroll overflow would stay stale — leaving the wheel
+unable to scroll (the container looks non-scrollable until a mouse-move forces a
+re-resolve) and the scrollbar thumb sized for one page. `loki-renderer`'s
+`DocumentView` therefore attaches an (empty) `onmounted` to its content root so
+this resync fires the moment the document content mounts. If you change the
+resync trigger, keep that contract in mind.
 
 **Wheel/touch scroll target the document, never the UI (PATCH(loki),
 2026-06-20):** the `MouseWheel` handler scrolls the hovered node first, then

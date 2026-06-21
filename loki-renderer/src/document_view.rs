@@ -308,6 +308,21 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
             div {
                 style: "width: 100%; height: 100%;",
                 onscroll: onscroll,
+                // PATCH(loki): this root mounts when the document content first
+                // appears inside the editor's scroll container — typically after
+                // an async load, replacing a one-page loading placeholder. The
+                // scroll container itself does not re-mount, so without an
+                // `onmounted` somewhere in this freshly-mounted subtree the shell
+                // never re-runs `resync_scroll_geometry` (dioxus-native
+                // `flush_mounted` only resyncs when an `onmounted` listener is
+                // pending). That leaves the container's Taffy scroll overflow
+                // stale at the placeholder's ~one-page height: the wheel sees a
+                // non-scrollable container (does nothing until a mouse-move forces
+                // a re-resolve) and the scrollbar thumb is sized for one page.
+                // The handler is intentionally empty — its mere presence makes the
+                // shell resolve layout and re-dispatch `onscroll` with the true
+                // content height the moment the document mounts.
+                onmounted: move |_| {},
                 div {
                     style: format!(
                         "position: relative; width: 100%; padding-bottom: {pb}px;{bg}",
