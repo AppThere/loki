@@ -16,7 +16,8 @@ identified here are independent of that.
 | 3 | Inactive-tab sessions retain the full preserved layout (+ Loro + undo) | Medium | Recommended |
 | 4 | Paragraph shaping cache accumulated across documents; generous cap | Medium | **Fixed** |
 | 5 | Per-tile `FontDataCache` duplicates interned font bytes across tiles | Low | Recommended |
-| 6 | Loro oplog grows with edit history and never compacts | **High** (now the dominant grower) | Instrumented 2026-06-21; fix proposed |
+| 6 | Loro oplog grows with edit history and never compacts | Medium (edit-driven, not idle) | Instrumented 2026-06-21; compaction proposed |
+| 7 | Static `<canvas>` tiles force a continuous **idle** render loop (`is_animating`), churning per-frame GPU resources → >3 GB at idle | **Critical** | **Fixed 2026-06-21** |
 
 ## Finding 1 — All pages render at Hot tier until you scroll (FIXED)
 
@@ -110,17 +111,37 @@ Android Studio's Memory Profiler) and watch:
 3. Open several documents in tabs → only the active document should hold page
    textures; inactive tabs hold CPU state only.
 
-## 2026-06-21 update — Finding 6 is now the dominant grower
+## 2026-06-21 update — Finding 7: idle render loop is the >3 GB grower (FIXED)
 
-With the resolution-tiering removed and page tiles virtualized (Findings 1–2 and
-the texture-unregister-on-unmount fix), texture memory is bounded by the
-viewport. A user then reported Loki Text still climbing to **>3 GB over a long
-editing session** — slower than the old texture leak, and unrelated to
-rendering. That profile matches **Finding 6**: every keystroke appends ops to the
-Loro oplog, and deleted characters leave tombstones in the rich-text CRDT tree;
-neither is ever compacted, so resident memory grows monotonically with edit
-*history* (not with document size). The `UndoManager` is **not** the cause — Loro
-defaults it to `max_undo_steps(100)`, so it is bounded.
+The >3 GB growth was first attributed to Finding 6 (Loro history), but the user
+then clarified the app was **idle** — not being typed in — when it ballooned past
+3 GB. That rules out edit-driven history growth and points to a per-frame leak.
+
+**Root cause (Finding 7):** `blitz-dom::is_animating()` returns
+`has_canvas | has_active_animations`, and blitz-shell's `redraw()` re-requests a
+redraw **every frame** while it is true. Loki paints every document page as a
+`<canvas src>` custom-paint tile, so `has_canvas` is permanently true → the app
+ran a **continuous render loop at idle** (vsync-rate redraws of an unchanged
+scene). The page-texture reuse guard prevents re-registering textures, so this is
+not a Rust-side growing collection; it is the per-frame GPU/driver resource churn
+(command buffers, drawables) accumulating under sustained idle rendering, plus
+the obvious CPU/battery waste.
+
+**Fix:** added `BaseDocument::needs_animation_tick()` (only `has_active_animations`)
+and switched blitz-shell's `redraw()` re-arm to it, so a static canvas no longer
+forces per-frame redraws. Loki's canvas content always updates via a DOM mutation
+(the tile's `data-cursor`/generation attribute, scroll remounts, resize), each of
+which already schedules a redraw, so updates stay correct while idle frames stop.
+See `docs/patches.md` (blitz-dom item 6). Needs on-device confirmation: idle CPU
+drops to ~0 and RSS plateaus.
+
+## Finding 6 — Loro history still grows with *editing* (separate, lower)
+
+Finding 6 remains real but is **not** the idle grower: every keystroke appends
+ops to the Loro oplog, and deleted characters leave tombstones in the rich-text
+CRDT tree; neither is ever compacted, so resident memory grows with edit
+*history* during active editing. The `UndoManager` is bounded
+(`max_undo_steps(100)`).
 
 **Diagnosis aid (added):** `apply_mutation_and_relayout` now logs throttled
 counters under the `loki_text::mem` target:

@@ -415,13 +415,32 @@ file picking additionally requires a Gradle build with `FilePickerActivity.kt`.
    overruns the document, or starts over the ribbon, does nothing rather than
    jiggling the UI by the sub-pixel root/window slack.
 
-**Removal condition:** Upstream blitz-dom implements tabindex focus-on-click
-for non-input elements, dispatches scroll events to embedders, and exposes an
-absolute node-scroll API.
+6. **Static canvases don't force a per-frame redraw (PATCH(loki), 2026-06-21).**
+   `is_animating()` returns `has_canvas | has_active_animations`, and the shell's
+   redraw loop re-requests a redraw every frame while it is true. Loki paints
+   every document page as a `<canvas src>` custom-paint tile, so `has_canvas` is
+   permanently true — the app spun in a **continuous idle render loop**: high
+   CPU/battery, and per-frame GPU resource churn that grew RSS without bound even
+   with the app untouched (observed climbing past 3 GB at idle). A new
+   `BaseDocument::needs_animation_tick()` returns only `has_active_animations`
+   (genuine CSS animations/transitions), and blitz-shell's `redraw()` re-arms on
+   that instead of `is_animating()`. Loki's canvas tiles are static between
+   events — their content only changes via DOM mutations (the tile's
+   `data-cursor`/generation attribute, scroll remounts, viewport resize), each of
+   which already schedules a redraw — so dropping the canvas-forced loop leaves
+   updates correct while idle frames stop. (`is_animating()` is left intact for
+   any other consumer.)
 
-**Added:** 2026-05-18 (focus); extended 2026-06-10 (scroll events) and
-2026-06-11 (absolute scroll), together with matching changes in the blitz-shell
-and dioxus-native(-dom) patches.
+**Removal condition:** Upstream blitz-dom implements tabindex focus-on-click
+for non-input elements, dispatches scroll events to embedders, exposes an
+absolute node-scroll API, and stops treating a static canvas as perpetually
+animating (e.g. a per-source "needs animation" signal).
+
+**Added:** 2026-05-18 (focus); extended 2026-06-10 (scroll events),
+2026-06-11 (absolute scroll), and 2026-06-21 (`needs_animation_tick` — stop the
+idle canvas redraw loop, paired with the blitz-shell `redraw()` change),
+together with matching changes in the blitz-shell and dioxus-native(-dom)
+patches.
 
 ---
 

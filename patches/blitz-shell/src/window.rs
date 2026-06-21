@@ -327,7 +327,13 @@ impl<Rend: WindowRenderer> View<Rend> {
         self.renderer
             .render(|scene| paint_scene(scene, &self.doc, scale, width, height));
 
-        if self.is_visible && self.doc.is_animating() {
+        // PATCH(loki): re-arm a per-frame redraw only for genuine CSS
+        // animations/transitions — NOT for the mere presence of a `<canvas>`.
+        // Loki paints every page as a static custom-paint canvas tile, so
+        // `is_animating()` (which includes `has_canvas`) would spin a continuous
+        // idle render loop. Canvas content updates arrive via DOM mutations,
+        // which already schedule redraws. See `BaseDocument::needs_animation_tick`.
+        if self.is_visible && self.doc.needs_animation_tick() {
             self.request_redraw();
         }
     }
