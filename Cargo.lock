@@ -3919,6 +3919,7 @@ dependencies = [
  "criterion",
  "fontique 0.10.0",
  "loki-doc-model",
+ "loki-fonts",
  "loki-primitives",
  "loro",
  "parley 0.10.0",

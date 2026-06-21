@@ -22,6 +22,14 @@ fontique = { version = "0.10", features = ["fontconfig-dlopen"] }
 thiserror = "2"
 tracing = "0.1"
 
+# Android only: the bundled metric-compatible fallback fonts (Carlito/Caladea/
+# Arimo/Cousine/Tinos). On desktop these are discovered from the executable's
+# `assets/fonts/` directory, but that path does not resolve on Android, so the
+# bytes are registered directly in `FontResources::new`. Gated to the Android
+# target so desktop builds neither depend on loki-fonts nor embed the ~7 MB.
+[target.'cfg(target_os = "android")'.dependencies]
+loki-fonts.workspace = true
+
 [dev-dependencies]
 # Statistical benchmark harness (layout + edit-path scaling).
 criterion = "0.8"

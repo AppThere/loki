@@ -59,6 +59,20 @@ impl FontResources {
                 font_cx.collection.load_fonts_from_paths(vec![assets_fonts]);
             }
         }
+
+        // Android: the executable-relative `assets/fonts/` path above does not
+        // resolve, so register the bundled metric-compatible fallbacks
+        // (Carlito/Caladea/Arimo/Cousine/Tinos) directly from embedded bytes.
+        // Without this a document's Calibri/Arial/Times text — which
+        // `resolve_font_name` substitutes to those families — would not be found
+        // in the collection and would fall back to an Android system font with
+        // different glyph metrics (e.g. wider digit advances).
+        #[cfg(target_os = "android")]
+        for blob in loki_fonts::fallback_font_blobs() {
+            font_cx
+                .collection
+                .register_fonts(parley::fontique::Blob::from(blob.to_vec()), None);
+        }
         tracing::info!(
             target: "loki_text::open",
             elapsed_ms = started.elapsed().as_secs_f64() * 1000.0,

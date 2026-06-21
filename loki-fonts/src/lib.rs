@@ -92,6 +92,21 @@ pub fn face_css() -> &'static str {
     ""
 }
 
+/// Raw bytes of every bundled metric-compatible fallback face (Carlito, Caladea,
+/// Arimo, Cousine, Tinos), for direct registration into the document layout
+/// engine's font collection.
+///
+/// Android-only: on desktop the layout engine discovers these fonts from the
+/// executable-relative `assets/fonts/` directory, but that path does not resolve
+/// on Android, so the bytes must be registered directly (otherwise a document's
+/// Calibri/Arial/Times text falls back to an Android system font with different
+/// metrics — e.g. wider digit advances). Returns `&[]` would be the desktop
+/// shape, but the function is simply not compiled there.
+#[cfg(target_os = "android")]
+pub fn fallback_font_blobs() -> &'static [&'static [u8]] {
+    imp::fallback_font_blobs()
+}
+
 #[cfg(all(test, not(target_os = "android")))]
 mod tests {
     use super::*;
@@ -242,6 +257,15 @@ mod imp {
         FACE_CSS.get_or_init(build_css)
     }
 
+    /// Raw bytes of every bundled fallback face, for direct registration into a
+    /// font collection (e.g. Parley's). Used by the document layout engine on
+    /// Android, where the executable-relative asset path that loads these on
+    /// desktop is unavailable.
+    pub(super) fn fallback_font_blobs() -> &'static [&'static [u8]] {
+        static BLOBS: OnceLock<Vec<&'static [u8]>> = OnceLock::new();
+        BLOBS.get_or_init(|| FACES.iter().map(|f| f.bytes).collect())
+    }
+
     fn build_css() -> String {
         use std::fmt::Write as _;
 
@@ -249,11 +273,11 @@ mod imp {
         let mut css = String::with_capacity(total_bytes * 4 / 3 + FACES.len() * 256);
         for face in FACES {
             let b64 = crate::base64_encode(face.bytes);
-            write!(
+            writeln!(
                 css,
                 "@font-face{{font-family:'{family}';font-weight:{weight};\
                  font-style:{style};src:url('data:font/truetype;base64,{b64}')\
-                 format('truetype');}}\n",
+                 format('truetype');}}",
                 family = face.family,
                 weight = face.weight,
                 style = face.style,
