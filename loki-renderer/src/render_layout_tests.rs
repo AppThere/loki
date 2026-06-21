@@ -52,6 +52,7 @@ fn one_para_reflow(text: &str, origin: (f32, f32)) -> RenderLayout {
             font_name: None,
             font_size: 12.0,
             bold: false,
+            weight: 400,
             italic: false,
             color: LayoutColor::BLACK,
             underline: None,

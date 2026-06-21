@@ -38,6 +38,7 @@ fn para(text: &str, block_index: usize, origin: (f32, f32)) -> PageParagraphData
             font_name: None,
             font_size: 12.0,
             bold: false,
+            weight: 400,
             italic: false,
             color: LayoutColor::BLACK,
             underline: None,

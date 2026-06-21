@@ -374,11 +374,14 @@ fn char_props_to_style_span(props: &CharProps, range: Range<usize>) -> StyleSpan
         None
     };
 
+    let bold = props.bold.unwrap_or(false);
     StyleSpan {
         range,
         font_name: props.font_name.clone(),
         font_size: props.font_size.map(pts_to_f32).unwrap_or(12.0),
-        bold: props.bold.unwrap_or(false),
+        bold,
+        // Explicit numeric weight wins; otherwise derive from the bold flag.
+        weight: props.font_weight.unwrap_or(if bold { 700 } else { 400 }),
         italic: props.italic.unwrap_or(false),
         color: resolve_color(props.color.as_ref()),
         underline,

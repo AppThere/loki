@@ -19,6 +19,7 @@
 //! 3. All per-document state is reset synchronously when path changes so the
 //!    reset happens before `use_resource` evaluates.
 
+use std::rc::Rc;
 use std::sync::Arc;
 
 use appthere_ui::tokens;
@@ -45,6 +46,7 @@ use super::editor_ribbon::home_tab_content;
 use super::editor_save::{export_document_to_token, save_document_to_path};
 use super::editor_state::{EditorState, use_editor_state};
 use super::editor_style::style_picker_panel;
+use super::editor_style_catalog::available_font_families;
 use super::editor_style_editor::style_editor_panel;
 use crate::error::LoadError;
 use crate::new_document::is_untitled;
@@ -250,6 +252,15 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_seed = Arc::clone(&doc_state);
     let doc_state_render = Arc::clone(&doc_state);
     let doc_state_scroll = Arc::clone(&doc_state);
+
+    // Enumerate the available font families once per editor (system + bundled +
+    // document-embedded), memoised for the style editor's font picker. Scanning
+    // the Fontique collection on every render would be wasteful; the trade-off
+    // is that faces embedded after mount are not reflected until reopen.
+    let font_families: Rc<Vec<String>> = {
+        let ds = Arc::clone(&doc_state);
+        use_hook(move || Rc::new(available_font_families(&ds)))
+    };
 
     // ── Document load — reactive on path_signal ───────────────────────────────
     let document_load: Resource<(String, Result<Document, LoadError>)> = use_resource(move || {
@@ -819,6 +830,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     doc_state_style_editor,
                     loro_doc,
                     editing_style_draft,
+                    Rc::clone(&font_families),
                 )}
             }
 

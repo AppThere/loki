@@ -33,6 +33,7 @@ fn single_span(text: &str, font_size: f32) -> StyleSpan {
         font_name: None,
         font_size,
         bold: false,
+        weight: 400,
         italic: false,
         color: LayoutColor::BLACK,
         underline: None,
@@ -81,6 +82,7 @@ fn bold_span_produces_items() {
         StyleSpan {
             range: 6..10,
             bold: true,
+            weight: 700,
             ..single_span(text, 12.0)
         },
         StyleSpan {

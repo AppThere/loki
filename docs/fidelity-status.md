@@ -27,6 +27,7 @@ This is the living source of truth documenting which document features, characte
 | Property | Import | Layout/Render | Export | Notes |
 | :--- | :---: | :---: | :---: | :--- |
 | **Bold / Italic** | Yes | Yes | Yes | Fully supported. |
+| **Numeric Font Weight** | Partial | Yes | Partial | `CharProps.font_weight` (OpenType 1–1000) renders via Parley `FontWeight`, superseding boolean `bold` when set. Editable per-style in the style editor's weight selector (Thin…Black). Import: ODF `fo:font-weight` numeric; OOXML `w:b` is boolean only. Export: DOCX collapses to bold/not-bold (≥ 600 ⇒ bold). |
 | **Underline** | Yes | Yes | Yes | Style varieties (single, double, dotted, dash, wave, thick) mapped. |
 | **Strikethrough** | Yes | Yes | Yes | Single and double strikethrough variants mapped. |
 | **Font Family / Size** | Yes | Yes | Yes | Resolves against style catalog and font resources. |

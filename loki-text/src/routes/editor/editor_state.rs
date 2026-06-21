@@ -27,21 +27,56 @@ use crate::editing::touch::TouchInteractionState;
 /// `None` on the outer signal → editor closed.  `Some(draft)` → editor open,
 /// editing the catalog style identified by `draft.id`.  String fields use an
 /// empty string to represent `None` so they bind cleanly to text inputs.
-#[derive(Clone, PartialEq, Default)]
+///
+/// `font_weight` carries the numeric OpenType weight (1–1000; 400 = Regular,
+/// 700 = Bold) the selector edits; bold is derived from it on save. Numeric
+/// fields are stored as their string form so they bind directly to text
+/// inputs; an empty string represents "inherit / unset".
+#[derive(Clone, PartialEq)]
 pub(super) struct StyleDraft {
     pub id: String,
     pub name: String,
     pub parent: String,
     pub next: String,
     pub alignment: String,
+    pub font_name: String,
     pub font_size_str: String,
-    pub bold: bool,
+    pub font_weight: u16,
     pub italic: bool,
     pub underline: bool,
     pub space_before_str: String,
     pub space_after_str: String,
+    pub line_height_str: String,
+    pub indent_start_str: String,
+    pub indent_end_str: String,
     pub indent_first_str: String,
+    pub indent_hanging_str: String,
     pub is_custom: bool,
+}
+
+impl Default for StyleDraft {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            parent: String::new(),
+            next: String::new(),
+            alignment: String::new(),
+            font_name: String::new(),
+            font_size_str: String::new(),
+            font_weight: 400,
+            italic: false,
+            underline: false,
+            space_before_str: String::new(),
+            space_after_str: String::new(),
+            line_height_str: String::new(),
+            indent_start_str: String::new(),
+            indent_end_str: String::new(),
+            indent_first_str: String::new(),
+            indent_hanging_str: String::new(),
+            is_custom: false,
+        }
+    }
 }
 
 /// All per-document signals for the editor, grouped for ergonomic initialisation.

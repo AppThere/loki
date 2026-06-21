@@ -55,6 +55,21 @@ pub(super) fn get_catalog_style(
         .cloned()
 }
 
+/// Returns the font families available for layout (system + bundled +
+/// document-embedded), sorted, for the style editor's font picker.
+///
+/// Enumerates the editor's shared Fontique collection. Intended to be called
+/// once (memoised) per editor rather than per render.
+pub(super) fn available_font_families(doc_state: &Arc<Mutex<DocumentState>>) -> Vec<String> {
+    let Ok(state) = doc_state.lock() else {
+        return vec![];
+    };
+    let Ok(mut fr) = state.shared_font_resources.lock() else {
+        return vec![];
+    };
+    fr.available_font_families()
+}
+
 /// Returns `(style_id, display_name)` pairs for all catalog styles, sorted by display name.
 pub(super) fn catalog_style_list(doc_state: &Arc<Mutex<DocumentState>>) -> Vec<(String, String)> {
     let Ok(state) = doc_state.lock() else {

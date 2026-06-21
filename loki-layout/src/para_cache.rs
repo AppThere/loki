@@ -141,6 +141,7 @@ mod tests {
             font_name: None,
             font_size: 12.0,
             bold: false,
+            weight: 400,
             italic: false,
             color: LayoutColor::BLACK,
             underline: None,

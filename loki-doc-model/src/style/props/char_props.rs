@@ -122,6 +122,12 @@ pub struct CharProps {
     /// Bold. ODF `fo:font-weight bold`; OOXML `w:b`.
     pub bold: Option<bool>,
 
+    /// Numeric font weight in the CSS/OpenType 1–1000 range (400 = Regular,
+    /// 700 = Bold). `None` falls back to [`Self::bold`] (700 when bold, else
+    /// 400). ODF `fo:font-weight` (numeric); OOXML has no native numeric weight
+    /// (`w:b` is boolean), so a DOCX round-trip collapses this to bold/not-bold.
+    pub font_weight: Option<u16>,
+
     /// Italic. ODF `fo:font-style italic`; OOXML `w:i`.
     pub italic: Option<bool>,
 
@@ -219,6 +225,7 @@ impl CharProps {
         inherit!(font_size);
         inherit!(font_size_complex);
         inherit!(bold);
+        inherit!(font_weight);
         inherit!(italic);
         inherit!(underline);
         inherit!(strikethrough);

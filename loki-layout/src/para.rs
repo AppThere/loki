@@ -141,8 +141,13 @@ pub struct StyleSpan {
     pub font_name: Option<String>,
     /// Font size in points.
     pub font_size: f32,
-    /// Bold weight.
+    /// Bold weight (legacy boolean; retained for synthesis fallback). Prefer
+    /// [`Self::weight`] for the effective numeric weight.
     pub bold: bool,
+    /// Effective numeric font weight (1–1000; 400 = Regular, 700 = Bold). This
+    /// is the value pushed to Parley, so it supersedes `bold` when set from a
+    /// `font_weight` style.
+    pub weight: u16,
     /// Italic style.
     pub italic: bool,
     /// Text colour.
@@ -576,8 +581,14 @@ fn push_para_styles(
         };
         builder.push(StyleProperty::FontSize(effective_font_size), r.clone());
         builder.push(StyleProperty::Brush(span.color), r.clone());
-        if span.bold {
-            builder.push(StyleProperty::FontWeight(FontWeight::BOLD), r.clone());
+        // Push the effective numeric weight. `weight` already folds in `bold`
+        // (700 when bold, else 400) plus any explicit `font_weight` style, so a
+        // non-default weight is honoured even when the bold flag is unset.
+        if span.weight != 400 {
+            builder.push(
+                StyleProperty::FontWeight(FontWeight::new(span.weight as f32)),
+                r.clone(),
+            );
         }
         if span.italic {
             builder.push(StyleProperty::FontStyle(FontStyle::Italic), r.clone());

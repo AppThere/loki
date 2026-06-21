@@ -95,6 +95,24 @@ impl FontResources {
         self.para_cache.clear();
     }
 
+    /// Returns the names of every font family available for layout — the
+    /// scanned system fonts plus any bundled or document-embedded faces — sorted
+    /// alphabetically (case-insensitive) and de-duplicated.
+    ///
+    /// Used by the style editor's font picker. Requires `&mut self` because
+    /// Fontique populates its family index lazily.
+    pub fn available_font_families(&mut self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .font_cx
+            .collection
+            .family_names()
+            .map(|s| s.to_string())
+            .collect();
+        names.sort_by_key(|s| s.to_lowercase());
+        names.dedup();
+        names
+    }
+
     /// Registers additional font data (e.g. fonts embedded in the document).
     ///
     /// `data` must be valid font bytes (TTF / OTF / TTC). The font is added
