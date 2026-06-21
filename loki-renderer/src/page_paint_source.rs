@@ -115,9 +115,30 @@ impl CustomPaintSource for LokiPageSource {
     fn suspend(&mut self) {
         // Renderer intentionally not dropped on suspend — shared across all page
         // sources; dropped when RendererState is dropped.
+        //
+        // The texture handle is cleared here without unregistering it from the
+        // renderer because suspend() has no CustomPaintCtx. That is safe for the
+        // app-level suspend path (the window renderer is recreated on resume,
+        // dropping every registered texture). Per-source teardown — a tile
+        // scrolling out of the virtualization window — instead goes through
+        // `release` below, which DOES unregister the texture; otherwise each
+        // unmounted page would leak its full-resolution texture (~10+ MB) in the
+        // renderer's registry, growing RAM without bound as the user scrolls.
         self.device = None;
         self.wgpu_queue = None;
         self.texture_handle = None;
+        self.texture_tier = None;
+        self.texture_generation = 0;
+        self.texture_size = (0, 0);
+    }
+
+    fn release(&mut self, mut ctx: CustomPaintCtx<'_>) {
+        // The tile is being unregistered while the renderer is still live, so
+        // free the GPU texture this source registered. Without this the texture
+        // outlives the source in the renderer's registry (see suspend()).
+        if let Some(handle) = self.texture_handle.take() {
+            ctx.unregister_texture(handle);
+        }
         self.texture_tier = None;
         self.texture_generation = 0;
         self.texture_size = (0, 0);

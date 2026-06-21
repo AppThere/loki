@@ -464,6 +464,31 @@ release with the Android `num_init_threads` default. Re-test with
 
 **Added:** 2026-06-10
 
+**Additional fix (texture release on teardown):** `CustomPaintSource` gained a
+`fn release(&mut self, ctx: CustomPaintCtx)` method (default no-op), and
+`VelloWindowRenderer::unregister_custom_paint_source` now calls it (while the
+renderer is `Active`) before suspending and dropping the source.
+
+- *Root cause:* a texture handed to the renderer via
+  `CustomPaintCtx::register_texture` lives in the renderer's texture registry
+  until `unregister_texture` is called. The only teardown hook a source had was
+  `suspend()`, which takes no `CustomPaintCtx` and so cannot unregister. When a
+  paint source is unregistered (e.g. a virtualized page tile scrolling out of
+  view), its last-registered full-resolution texture (~10+ MB) leaked in the
+  registry. Scrolling a long document top→bottom→top grew RSS unboundedly
+  (observed ~500 MB → ~1.3 GB) and never recovered. App-level `suspend()` did
+  not leak because the whole renderer is recreated on resume; only per-source
+  unregister was affected.
+- *Loki consumer:* `loki-renderer/src/page_paint_source.rs` (`LokiPageSource`)
+  implements `release` to `unregister_texture` its page texture.
+- *Upstream status:* candidate upstream fix — the custom-paint API has no other
+  way to release per-source textures on teardown.
+- *Removal condition:* an anyrender_vello release whose custom-paint teardown
+  releases a source's registered textures (e.g. an equivalent `release`/`drop`
+  hook), at which point `LokiPageSource::release` can target the upstream API.
+
+**Updated:** 2026-06-21
+
 ---
 
 ## Upgrading Dioxus

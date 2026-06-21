@@ -15,7 +15,7 @@ use wgpu_context::{
     DeviceHandle, SurfaceRenderer, SurfaceRendererConfiguration, TextureConfiguration, WGPUContext,
 };
 
-use crate::{CustomPaintSource, DEFAULT_THREADS, VelloScenePainter};
+use crate::{CustomPaintCtx, CustomPaintSource, DEFAULT_THREADS, VelloScenePainter};
 
 static PAINT_SOURCE_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -119,6 +119,14 @@ impl VelloWindowRenderer {
 
     pub fn unregister_custom_paint_source(&mut self, id: u64) {
         if let Some(mut source) = self.custom_paint_sources.remove(&id) {
+            // Give the source a chance to release any textures it registered
+            // with the live renderer before it is dropped. The renderer retains
+            // registered textures until `unregister_texture`; `suspend` cannot
+            // call it (no ctx), so without this the source's last texture would
+            // leak in the renderer's registry until the renderer is recreated.
+            if let RenderState::Active(state) = &mut self.render_state {
+                source.release(CustomPaintCtx::new(&mut state.renderer));
+            }
             source.suspend();
             drop(source);
         }
@@ -258,5 +266,95 @@ impl WindowRenderer for VelloWindowRenderer {
 
         // Empty the Vello scene (memory optimisation)
         self.scene.reset();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{CustomPaintCtx, TextureHandle};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Records how many times each teardown hook fired, so a test can assert the
+    /// unregister path drives source teardown.
+    #[derive(Default)]
+    struct Calls {
+        suspend: AtomicUsize,
+        release: AtomicUsize,
+    }
+
+    struct SpySource(Arc<Calls>);
+
+    impl CustomPaintSource for SpySource {
+        fn resume(&mut self, _device_handle: &DeviceHandle) {}
+        fn suspend(&mut self) {
+            self.0.suspend.fetch_add(1, Ordering::SeqCst);
+        }
+        fn render(
+            &mut self,
+            _ctx: CustomPaintCtx<'_>,
+            _width: u32,
+            _height: u32,
+            _scale: f64,
+        ) -> Option<TextureHandle> {
+            None
+        }
+        fn release(&mut self, _ctx: CustomPaintCtx<'_>) {
+            self.0.release.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    // Constructing a `VelloWindowRenderer` only creates a wgpu `Instance` (no
+    // adapter/device), so these run headlessly. The renderer starts `Suspended`;
+    // the `release` (texture-unregister) path requires an `Active` renderer with
+    // a real GPU surface and is verified on-device by watching RSS plateau while
+    // scrolling a long document.
+
+    #[test]
+    fn unregister_tears_down_and_removes_the_source() {
+        let mut renderer = VelloWindowRenderer::new();
+        let calls = Arc::new(Calls::default());
+        let id = renderer.register_custom_paint_source(Box::new(SpySource(calls.clone())));
+        assert_eq!(renderer.custom_paint_sources.len(), 1);
+
+        renderer.unregister_custom_paint_source(id);
+
+        // The source is removed and suspended. (When suspended there is no live
+        // renderer to unregister textures from, so `release` is correctly skipped;
+        // the active-state release path is exercised on-device.)
+        assert!(renderer.custom_paint_sources.is_empty());
+        assert_eq!(calls.suspend.load(Ordering::SeqCst), 1, "suspend not called");
+        assert_eq!(calls.release.load(Ordering::SeqCst), 0, "release on suspended");
+    }
+
+    #[test]
+    fn unregister_unknown_id_is_a_noop() {
+        let mut renderer = VelloWindowRenderer::new();
+        renderer.unregister_custom_paint_source(123);
+        assert!(renderer.custom_paint_sources.is_empty());
+    }
+
+    #[test]
+    fn default_release_impl_is_a_noop() {
+        // A source that registers no textures uses the default `release`, which
+        // must compile and do nothing.
+        struct Bare;
+        impl CustomPaintSource for Bare {
+            fn resume(&mut self, _d: &DeviceHandle) {}
+            fn suspend(&mut self) {}
+            fn render(
+                &mut self,
+                _c: CustomPaintCtx<'_>,
+                _w: u32,
+                _h: u32,
+                _s: f64,
+            ) -> Option<TextureHandle> {
+                None
+            }
+        }
+        let mut renderer = VelloWindowRenderer::new();
+        let id = renderer.register_custom_paint_source(Box::new(Bare));
+        renderer.unregister_custom_paint_source(id); // must not panic
+        assert!(renderer.custom_paint_sources.is_empty());
     }
 }
