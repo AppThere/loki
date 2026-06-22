@@ -394,6 +394,8 @@ pub(crate) fn map_document(
         styles: catalog,
         sections,
         settings: doc_settings,
+        // Comment bodies are merged from word/comments.xml by the importer.
+        comments: Vec::new(),
         source: None,
     };
 

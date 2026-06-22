@@ -51,6 +51,10 @@ pub const REL_ENDNOTES: &str =
 pub const REL_SETTINGS: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings";
 
+/// OPC relationship type for the comments part (ECMA-376 §17.13.4).
+pub const REL_COMMENTS: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments";
+
 /// OPC relationship type for image parts (ECMA-376 §17.3.3.9).
 pub const REL_IMAGE: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";

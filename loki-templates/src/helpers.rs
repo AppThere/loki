@@ -177,6 +177,7 @@ pub(crate) fn assemble(
         styles: catalog,
         sections: vec![Section::with_layout_and_blocks(layout, blocks)],
         settings: None,
+        comments: Vec::new(),
         source: None,
     }
 }

@@ -114,6 +114,14 @@ pub(crate) fn parse_paragraph(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxPar
                         para.children
                             .push(DocxParaChild::BookmarkStart { id, name });
                     }
+                    b"commentRangeStart" => {
+                        let id = attr_val(e, b"id").unwrap_or_default();
+                        para.children.push(DocxParaChild::CommentRangeStart { id });
+                    }
+                    b"commentRangeEnd" => {
+                        let id = attr_val(e, b"id").unwrap_or_default();
+                        para.children.push(DocxParaChild::CommentRangeEnd { id });
+                    }
                     b"del" => {
                         depth -= 1;
                         let runs = parse_tracked_runs(reader, b"del")?;
@@ -147,6 +155,14 @@ pub(crate) fn parse_paragraph(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxPar
                 b"bookmarkEnd" => {
                     let id = attr_val(e, b"id").unwrap_or_default();
                     para.children.push(DocxParaChild::BookmarkEnd { id });
+                }
+                b"commentRangeStart" => {
+                    let id = attr_val(e, b"id").unwrap_or_default();
+                    para.children.push(DocxParaChild::CommentRangeStart { id });
+                }
+                b"commentRangeEnd" => {
+                    let id = attr_val(e, b"id").unwrap_or_default();
+                    para.children.push(DocxParaChild::CommentRangeEnd { id });
                 }
                 b"fldSimple" => {
                     // Self-closing simple field: instruction only, no cached result.

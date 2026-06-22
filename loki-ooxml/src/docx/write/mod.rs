@@ -12,6 +12,7 @@
 
 pub(super) mod assembly;
 pub(super) mod collector;
+mod comments;
 mod custom_props;
 mod document;
 mod fields;

@@ -494,6 +494,61 @@ fn extended_dublin_core_round_trips() {
 }
 
 #[test]
+fn comments_round_trip() {
+    use loki_doc_model::content::annotation::{Comment, CommentRef, CommentRefKind};
+
+    let para = Block::Para(vec![
+        Inline::Str("Hello ".into()),
+        Inline::Comment(CommentRef::new("c1", CommentRefKind::Start)),
+        Inline::Str("world".into()),
+        Inline::Comment(CommentRef::new("c1", CommentRefKind::End)),
+    ]);
+    let mut comment = Comment::new("c1");
+    comment.author = Some("Reviewer".into());
+    comment.body_raw = b"Please rephrase.".to_vec();
+
+    let mut doc = Document::new();
+    doc.sections[0].blocks = vec![para];
+    doc.comments = vec![comment];
+
+    let re = round_trip(&doc);
+
+    // Anchors survive in the content flow.
+    let kinds: Vec<CommentRefKind> = re
+        .sections
+        .iter()
+        .flat_map(|s| &s.blocks)
+        .flat_map(|b| match b {
+            Block::Para(i) | Block::Plain(i) => i.clone(),
+            Block::StyledPara(sp) => sp.inlines.clone(),
+            _ => Vec::new(),
+        })
+        .filter_map(|i| {
+            if let Inline::Comment(c) = i {
+                Some(c.kind)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert!(
+        kinds.contains(&CommentRefKind::Start),
+        "start anchor: {kinds:?}"
+    );
+    assert!(
+        kinds.contains(&CommentRefKind::End),
+        "end anchor: {kinds:?}"
+    );
+
+    // The comment body + author survive.
+    assert_eq!(re.comments.len(), 1, "one comment expected");
+    let c = &re.comments[0];
+    assert_eq!(c.id, "c1");
+    assert_eq!(c.author.as_deref(), Some("Reviewer"));
+    assert_eq!(String::from_utf8_lossy(&c.body_raw), "Please rephrase.");
+}
+
+#[test]
 fn multi_column_section_round_trips() {
     use loki_doc_model::layout::page::SectionColumns;
 

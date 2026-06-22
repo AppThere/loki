@@ -807,6 +807,7 @@ fn write_inline<W: std::io::Write>(
             write_text_run(w, s, props);
         }
         Inline::Field(field) => super::fields::write_field(w, field, props),
+        Inline::Comment(c) => super::comments::write_comment_ref(w, c),
         Inline::Image(_, inlines, target) => {
             if let Some(r_id) = collector.add_image(&target.url) {
                 // Default: 1 inch = 914400 EMU.

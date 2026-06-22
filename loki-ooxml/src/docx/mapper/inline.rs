@@ -7,6 +7,7 @@
 //! (`w:fldChar` / `w:instrText`) to assemble [`Inline::Field`] values
 //! and maps runs, hyperlinks, bookmarks, and drawings.
 
+use loki_doc_model::content::annotation::{CommentRef, CommentRefKind};
 use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::field::types::Field;
@@ -116,6 +117,18 @@ pub(crate) fn map_inlines(children: &[DocxParaChild], ctx: &mut MappingContext<'
                 for run in runs {
                     result.extend(process_run(run, &mut state, ctx));
                 }
+            }
+            DocxParaChild::CommentRangeStart { id } => {
+                result.push(Inline::Comment(CommentRef::new(
+                    id.clone(),
+                    CommentRefKind::Start,
+                )));
+            }
+            DocxParaChild::CommentRangeEnd { id } => {
+                result.push(Inline::Comment(CommentRef::new(
+                    id.clone(),
+                    CommentRefKind::End,
+                )));
             }
             DocxParaChild::SimpleField { instr, runs } => {
                 // `w:fldSimple` is a self-contained field: the `@w:instr`

@@ -26,8 +26,8 @@ use loki_doc_model::io::DocumentImport;
 use loki_opc::{Package, PartData, PartName};
 
 use crate::constants::{
-    REL_ENDNOTES, REL_FOOTER, REL_FOOTNOTES, REL_HEADER, REL_HYPERLINK, REL_IMAGE, REL_NUMBERING,
-    REL_OFFICE_DOCUMENT, REL_SETTINGS, REL_STYLES,
+    REL_COMMENTS, REL_ENDNOTES, REL_FOOTER, REL_FOOTNOTES, REL_HEADER, REL_HYPERLINK, REL_IMAGE,
+    REL_NUMBERING, REL_OFFICE_DOCUMENT, REL_SETTINGS, REL_STYLES,
 };
 use crate::docx::mapper::document::map_document;
 use crate::docx::model::paragraph::DocxParagraph;
@@ -218,6 +218,15 @@ pub(crate) fn parse_and_map_package(
         |bytes, _part| parse_settings(bytes),
     )?;
 
+    let comments = resolve_optional_part(
+        package,
+        doc_rels,
+        REL_COMMENTS,
+        doc_part_name.as_str(),
+        |bytes, _part| crate::docx::reader::comments::parse_comments(bytes),
+    )?
+    .unwrap_or_default();
+
     // ── Build hyperlinks and images maps ──────────────────────────────
     let mut hyperlinks: HashMap<String, String> = HashMap::new();
     let mut images: HashMap<String, PartData> = HashMap::new();
@@ -277,6 +286,10 @@ pub(crate) fn parse_and_map_package(
     // Extended Dublin Core from docProps/custom.xml (core.xml only covers the
     // core subset + dc:identifier).
     crate::docx::reader::custom_props::apply_extended_dc(package, &mut document.meta.dublin_core);
+
+    // Comment bodies parsed from word/comments.xml (anchors are already in the
+    // content flow as Inline::Comment).
+    document.comments = comments;
 
     Ok((document, warnings))
 }

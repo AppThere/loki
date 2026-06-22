@@ -41,6 +41,16 @@ pub enum DocxParaChild {
         /// The cached result content (child runs).
         runs: Vec<DocxRun>,
     },
+    /// A `w:commentRangeStart` element (ECMA-376 §17.13.4.4).
+    CommentRangeStart {
+        /// The `@w:id` identifying the comment.
+        id: String,
+    },
+    /// A `w:commentRangeEnd` element (ECMA-376 §17.13.4.3).
+    CommentRangeEnd {
+        /// The `@w:id` identifying the comment.
+        id: String,
+    },
 }
 
 /// Intermediate model for `w:pPr` (ECMA-376 §17.3.1.26).

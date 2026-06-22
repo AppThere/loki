@@ -50,6 +50,8 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
     let mut cx = Cx {
         auto: AutoStyles::new(),
         media: Media::with_prefix("himg"),
+        // Comments inside headers/footers are not modelled; use an empty lookup.
+        comments: std::collections::HashMap::new(),
     };
     let mut masters = String::new();
     let mut page_layouts = String::new();

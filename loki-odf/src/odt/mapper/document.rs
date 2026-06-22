@@ -18,6 +18,7 @@
 
 use std::collections::HashMap;
 
+use loki_doc_model::content::annotation::{Comment, CommentRef, CommentRefKind};
 use loki_doc_model::content::attr::{ExtensionBag, NodeAttr};
 use loki_doc_model::content::block::{
     Block, Caption, ListAttributes, ListDelimiter, ListNumberStyle, StyledParagraph,
@@ -86,6 +87,8 @@ pub(crate) struct OdfMappingContext<'a> {
     /// collected while mapping inline content. The caller flushes this after
     /// each paragraph or block.
     pub pending_figures: Vec<Block>,
+    /// Comment bodies collected from `office:annotation` start anchors.
+    pub comments: Vec<Comment>,
 }
 
 // ── Public entry point ─────────────────────────────────────────────────────────
@@ -146,7 +149,7 @@ pub(crate) fn map_document(
         .map(|m| m.name.as_str());
 
     // ── 4. Map body, detecting master page transitions → multiple sections ────
-    let (sections, warnings) = {
+    let (sections, warnings, comments) = {
         let mut ctx = OdfMappingContext {
             styles: &catalog,
             images,
@@ -155,6 +158,7 @@ pub(crate) fn map_document(
             cell_style_props: &cell_style_props,
             warnings: Vec::new(),
             pending_figures: Vec::new(),
+            comments: Vec::new(),
         };
 
         let mut current_master: Option<String> = initial_master.map(str::to_string);
@@ -195,7 +199,7 @@ pub(crate) fn map_document(
         let layout = resolve_page_layout_by_name(stylesheet, current_master.as_deref(), &mut ctx);
         sections.push(Section::with_layout_and_blocks(layout, current_blocks));
 
-        (sections, ctx.warnings)
+        (sections, ctx.warnings, ctx.comments)
     };
 
     // ── 5. Map metadata ───────────────────────────────────────────────────────
@@ -207,6 +211,7 @@ pub(crate) fn map_document(
         styles: catalog,
         sections,
         settings: None,
+        comments,
         source: None,
     };
 
@@ -318,6 +323,24 @@ fn map_inline(child: &OdfParagraphChild, ctx: &mut OdfMappingContext<'_>) -> Opt
             ))
         }
         OdfParagraphChild::LineBreak => Some(Inline::LineBreak),
+        OdfParagraphChild::Annotation {
+            name,
+            creator,
+            date,
+            body,
+        } => {
+            let id = name.clone().unwrap_or_default();
+            let mut comment = Comment::new(id.clone());
+            comment.author.clone_from(creator);
+            comment.date = date.as_deref().and_then(parse_datetime);
+            comment.body_raw = body.clone().into_bytes();
+            ctx.comments.push(comment);
+            Some(Inline::Comment(CommentRef::new(id, CommentRefKind::Start)))
+        }
+        OdfParagraphChild::AnnotationEnd { name } => Some(Inline::Comment(CommentRef::new(
+            name.clone().unwrap_or_default(),
+            CommentRefKind::End,
+        ))),
     }
 }
 

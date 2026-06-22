@@ -21,6 +21,7 @@ const HEADER: &str = concat!(
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
     "<office:document-content",
     " xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\"",
+    " xmlns:dc=\"http://purl.org/dc/elements/1.1/\"",
     " xmlns:style=\"urn:oasis:names:tc:opendocument:xmlns:style:1.0\"",
     " xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\"",
     " xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\"",
@@ -31,11 +32,14 @@ const HEADER: &str = concat!(
     " office:version=\"1.3\">",
 );
 
-/// Shared writer state threaded through the body: the automatic-style collector
-/// and the embedded-image collector.
+/// Shared writer state threaded through the body: the automatic-style collector,
+/// the embedded-image collector, and a comment lookup (id → body) for emitting
+/// `office:annotation` content at the comment's start anchor.
 pub(super) struct Cx {
     pub(super) auto: AutoStyles,
     pub(super) media: Media,
+    pub(super) comments:
+        std::collections::HashMap<String, loki_doc_model::content::annotation::Comment>,
 }
 
 /// Renders the whole `content.xml` for `doc`, collecting any embedded images.
@@ -44,6 +48,11 @@ pub(crate) fn content_xml(doc: &Document) -> Rendered {
     let mut cx = Cx {
         auto: AutoStyles::new(),
         media: Media::new(),
+        comments: doc
+            .comments
+            .iter()
+            .map(|c| (c.id.clone(), c.clone()))
+            .collect(),
     };
     let mut body = String::new();
     for (idx, section) in doc.sections.iter().enumerate() {

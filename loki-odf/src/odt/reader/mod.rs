@@ -8,6 +8,7 @@
 //! significant whitespace inside `text:span` and similar elements is
 //! preserved verbatim.
 
+pub(crate) mod annotations;
 pub(crate) mod columns;
 pub(crate) mod document;
 pub(crate) mod inlines;

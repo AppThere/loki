@@ -6,6 +6,7 @@
 //! All readers use `quick-xml` in event reader mode with `trim_text(false)`
 //! to preserve whitespace. See ADR-0002.
 
+pub mod comments;
 pub mod custom_props;
 pub mod document;
 pub mod footnotes;

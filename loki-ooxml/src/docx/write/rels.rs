@@ -98,6 +98,17 @@ pub(super) fn add_document_relationships(
         let r_id = collector.reserve_r_id();
         wire_settings(pkg, doc_part, r_id)?;
     }
+    if has.comments {
+        let r_id = collector.reserve_r_id();
+        add(
+            pkg,
+            doc_part,
+            &r_id,
+            crate::constants::REL_COMMENTS,
+            "comments.xml",
+            Internal,
+        )?;
+    }
     Ok(())
 }
 
@@ -112,4 +123,5 @@ pub(super) struct AuxParts {
     pub footnotes: bool,
     pub endnotes: bool,
     pub even_odd: bool,
+    pub comments: bool,
 }

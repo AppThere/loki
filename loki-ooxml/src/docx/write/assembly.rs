@@ -65,6 +65,8 @@ const MT_ENDNOTES: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml";
 const MT_HEADER: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml";
 const MT_FOOTER: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml";
+const MT_COMMENTS: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml";
 
 /// Assembles a complete `.docx` package from `doc` and writes it to `writer`.
 pub(crate) fn assemble_docx(doc: &Document, writer: impl Write + Seek) -> Result<(), OoxmlError> {
@@ -116,6 +118,10 @@ pub(crate) fn assemble_docx_kind(
         .iter()
         .any(|s| s.layout.header_even.is_some() || s.layout.footer_even.is_some());
 
+    let has_comments = !doc.comments.is_empty();
+    let comments_bytes =
+        has_comments.then(|| crate::docx::write::comments::write_comments_xml(&doc.comments));
+
     // ── Step 4: Assemble OPC package ─────────────────────────────────────
     let mut pkg = Package::new();
 
@@ -125,6 +131,7 @@ pub(crate) fn assemble_docx_kind(
     let numbering_part = PartName::new("/word/numbering.xml").map_err(OoxmlError::Opc)?;
     let footnotes_part = PartName::new("/word/footnotes.xml").map_err(OoxmlError::Opc)?;
     let endnotes_part = PartName::new("/word/endnotes.xml").map_err(OoxmlError::Opc)?;
+    let comments_part = PartName::new("/word/comments.xml").map_err(OoxmlError::Opc)?;
 
     // Insert parts.
     pkg.set_part(doc_part.clone(), PartData::new(document_bytes, MT_DOCUMENT));
@@ -137,6 +144,9 @@ pub(crate) fn assemble_docx_kind(
     }
     if let Some(eb) = endnotes_bytes {
         pkg.set_part(endnotes_part.clone(), PartData::new(eb, MT_ENDNOTES));
+    }
+    if let Some(cb) = comments_bytes {
+        pkg.set_part(comments_part.clone(), PartData::new(cb, MT_COMMENTS));
     }
 
     // Insert headers and footers.
@@ -182,6 +192,7 @@ pub(crate) fn assemble_docx_kind(
             footnotes: has_footnotes,
             endnotes: has_endnotes,
             even_odd: needs_even_odd,
+            comments: has_comments,
         },
     )?;
 
@@ -208,6 +219,9 @@ pub(crate) fn assemble_docx_kind(
     }
     if has_endnotes {
         ct.add_override(&endnotes_part, MT_ENDNOTES);
+    }
+    if has_comments {
+        ct.add_override(&comments_part, MT_COMMENTS);
     }
 
     // Header/footer content types.

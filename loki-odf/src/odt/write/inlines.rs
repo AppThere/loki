@@ -4,6 +4,7 @@
 //! Inline-run serialisation for `content.xml` (text spans, links, footnotes,
 //! bookmarks, fields, and embedded images).
 
+use loki_doc_model::content::annotation::{CommentRef, CommentRefKind};
 use loki_doc_model::content::field::types::{CrossRefFormat, Field, FieldKind};
 use loki_doc_model::content::inline::{BookmarkKind, Inline, NoteKind};
 use loki_doc_model::style::props::char_props::{
@@ -61,9 +62,45 @@ fn write_inline(out: &mut String, inl: &Inline, cx: &mut Cx) {
         Inline::Field(field) => write_field(out, field),
         Inline::Image(_, alt, target) => write_image(out, alt, &target.url, cx),
         Inline::Note(kind, blocks) => note(out, *kind, blocks, cx),
-        // Math, RawInline, Comment: no faithful ODF inline representation.
+        Inline::Comment(c) => write_comment(out, c, cx),
+        // Math, RawInline: no faithful ODF inline representation.
         _ => {}
     }
+}
+
+/// Writes a comment anchor: `office:annotation` (with body) at the start/point,
+/// `office:annotation-end` at the end. ODF 1.3 §14.1.
+fn write_comment(out: &mut String, c: &CommentRef, cx: &Cx) {
+    if matches!(c.kind, CommentRefKind::End) {
+        out.push_str("<office:annotation-end");
+        attr(out, "office:name", &c.id);
+        out.push_str("/>");
+        return;
+    }
+    out.push_str("<office:annotation");
+    attr(out, "office:name", &c.id);
+    out.push('>');
+    if let Some(comment) = cx.comments.get(&c.id) {
+        if let Some(author) = &comment.author {
+            out.push_str("<dc:creator>");
+            out.push_str(&escape(author));
+            out.push_str("</dc:creator>");
+        }
+        if let Some(date) = &comment.date {
+            out.push_str("<dc:date>");
+            out.push_str(&escape(
+                &date.to_rfc3339_opts(chrono::SecondsFormat::Secs, false),
+            ));
+            out.push_str("</dc:date>");
+        }
+        let body = String::from_utf8_lossy(&comment.body_raw);
+        for line in body.split('\n') {
+            out.push_str("<text:p>");
+            out.push_str(&escape(line));
+            out.push_str("</text:p>");
+        }
+    }
+    out.push_str("</office:annotation>");
 }
 
 /// Writes an ODF field element for `field`.
