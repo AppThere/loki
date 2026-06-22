@@ -4,8 +4,8 @@
 //! `word/document.xml` serializer.
 //!
 //! Converts a sequence of [`Section`]s into OOXML body content.  All
-//! Tier-3 block and inline variants are handled; Tier-4+ content (images,
-//! footnotes, complex fields) is silently omitted.
+//! Tier-3 block and inline variants are handled; images, footnotes, and
+//! complex fields are serialized via their sibling `write/` modules.
 //!
 //! ECMA-376 §17.2 (document structure) and §17.3 (block-level content).
 
@@ -785,7 +785,7 @@ fn write_table_cell<W: std::io::Write>(
 /// Accumulated run formatting inherited from inline wrappers.
 #[allow(clippy::struct_excessive_bools)] // Pre-existing pattern — structural refactor deferred
 #[derive(Default, Clone)]
-struct RunProps {
+pub(super) struct RunProps {
     bold: bool,
     italic: bool,
     underline: bool,
@@ -908,6 +908,7 @@ fn write_inline<W: std::io::Write>(
         Inline::Math(_, s) => {
             write_text_run(w, s, props);
         }
+        Inline::Field(field) => super::fields::write_field(w, field, props),
         Inline::Image(_, inlines, target) => {
             if let Some(r_id) = collector.add_image(&target.url) {
                 // Default: 1 inch = 914400 EMU.
@@ -968,7 +969,7 @@ fn write_styled_run<W: std::io::Write>(
 }
 
 /// Writes a single `<w:r>` element with text content.
-fn write_text_run<W: std::io::Write>(w: &mut Writer<W>, text: &str, props: &RunProps) {
+pub(super) fn write_text_run<W: std::io::Write>(w: &mut Writer<W>, text: &str, props: &RunProps) {
     if text.is_empty() {
         return;
     }

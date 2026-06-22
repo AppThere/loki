@@ -13,6 +13,7 @@
 pub(super) mod assembly;
 pub(super) mod collector;
 mod document;
+mod fields;
 pub(super) mod footnotes;
 pub(super) mod media;
 mod numbering;
