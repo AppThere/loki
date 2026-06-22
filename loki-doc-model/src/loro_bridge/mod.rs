@@ -9,6 +9,7 @@
 //! - `read`  — deserialization (Loro → Loki)
 //! - `inlines` — inline content helpers shared by both directions
 
+mod comments;
 mod decode;
 mod incremental;
 mod inlines;
@@ -20,6 +21,7 @@ mod read;
 mod styles;
 mod write;
 
+pub use comments::{read_document_comments, write_document_comments};
 pub use incremental::IncrementalReader;
 pub use meta::{read_document_meta, write_document_meta};
 pub use styles::{read_document_styles, write_document_styles};
@@ -171,6 +173,10 @@ pub fn document_to_loro(doc: &Document) -> Result<LoroDoc, BridgeError> {
         map_blocks_to_list(&section.blocks, &blocks_list)?;
     }
 
+    // Comments (annotation bodies) — JSON snapshot, like metadata.
+    let comments_map = loro_doc.get_map(KEY_COMMENTS);
+    comments::write_comments(&doc.comments, &comments_map)?;
+
     Ok(loro_doc)
 }
 
@@ -226,6 +232,10 @@ pub fn loro_to_document(loro: &LoroDoc) -> Result<Document, BridgeError> {
     if doc.sections.is_empty() {
         doc.sections.push(crate::layout::section::Section::new());
     }
+
+    // Comments (annotation bodies).
+    let comments_map: loro::LoroMap = loro.get_map(KEY_COMMENTS);
+    doc.comments = comments::read_comments(&comments_map);
 
     Ok(doc)
 }

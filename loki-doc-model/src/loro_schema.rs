@@ -35,6 +35,13 @@ pub const KEY_SECTIONS: &str = "sections";
 /// Key for the Document blocks movable list.
 pub const KEY_BLOCKS: &str = "blocks";
 
+/// Key for the Document comments map (annotation bodies).
+pub const KEY_COMMENTS: &str = "comments";
+
+/// Key for the comments JSON snapshot inside the comments map. Like metadata
+/// and the style catalog, comments are stored as a lossless `serde` snapshot.
+pub const KEY_COMMENTS_JSON: &str = "comments_json";
+
 /// Key for the Block type discriminator.
 pub const KEY_TYPE: &str = "type";
 
