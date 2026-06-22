@@ -187,8 +187,10 @@ The workspace is a set of focused crates (one responsibility each). Key groups:
 - **Formats (one crate per family):**
   - `loki-opc` — OPC/ZIP container shared by OOXML/ODF.
   - `loki-ooxml` — DOCX/XLSX import + DOCX export.
-  - `loki-odf` — ODT/ODS import + ODS export. (ODT **export** is not yet
-    implemented — `odt/export.rs` returns `OdfError::NotImplemented`.)
+  - `loki-odf` — ODT/ODS import + ODT/ODS export. ODT export (`odt/write/`)
+    writes `content.xml` / `styles.xml` / `meta.xml`: paragraphs, headings,
+    styled paragraphs, lists, tables, inline formatting, the named style
+    catalog, page geometry, and metadata.
   - `loki-pdf` — **PDF/X** export (X-1a/X-3/X-4) via `pdf-writer`; reuses
     `loki-layout` for positioning, embeds fonts + images (CMYK).
   - `loki-epub` — **EPUB 3.3** export (XHTML + OCF ZIP).
