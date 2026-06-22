@@ -155,10 +155,24 @@ pub(crate) struct OdfPageLayout {
     pub margin_right: Option<String>,
     /// `style:print-orientation` — `"portrait"` or `"landscape"`.
     pub print_orientation: Option<String>,
+    /// Multi-column layout from a `style:columns` child, if present.
+    pub columns: Option<OdfColumns>,
     /// Header area properties, if a `style:header-style` child is present.
     pub header_props: Option<OdfHeaderFooterProps>,
     /// Footer area properties, if a `style:footer-style` child is present.
     pub footer_props: Option<OdfHeaderFooterProps>,
+}
+
+/// Multi-column layout from `style:columns` inside `style:page-layout-properties`.
+/// ODF 1.3 §16.27.10.
+#[derive(Debug, Clone)]
+pub(crate) struct OdfColumns {
+    /// `fo:column-count` — the number of columns.
+    pub count: u32,
+    /// `fo:column-gap` — the gap between columns (an ODF length), if specified.
+    pub gap: Option<String>,
+    /// Whether a `style:column-sep` separator child is present.
+    pub separator: bool,
 }
 
 /// Properties for the header or footer area of a page layout.

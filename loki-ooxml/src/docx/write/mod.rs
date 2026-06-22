@@ -18,6 +18,7 @@ pub(super) mod footnotes;
 pub(super) mod media;
 mod numbering;
 mod rels;
+mod section;
 mod settings;
 mod style_props;
 mod styles;

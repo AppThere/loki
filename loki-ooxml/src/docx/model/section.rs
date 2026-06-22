@@ -19,6 +19,19 @@ pub struct DocxSectPr {
     pub footer_refs: Vec<DocxHdrFtrRef>,
     /// `<w:titlePg/>` — distinct first-page header/footer active (ECMA-376 §17.6.17).
     pub title_page: bool,
+    /// Multi-column layout from `w:cols` (ECMA-376 §17.6.4).
+    pub cols: Option<DocxCols>,
+}
+
+/// `w:cols` multi-column section layout (ECMA-376 §17.6.4).
+#[derive(Debug, Clone)]
+pub struct DocxCols {
+    /// `@w:num` — the number of equal-width columns.
+    pub num: i32,
+    /// `@w:space` — the spacing between columns, in twips.
+    pub space: i32,
+    /// `@w:sep` — whether a separator line is drawn between columns.
+    pub sep: bool,
 }
 
 /// `w:pgSz` page size (ECMA-376 §17.6.13).

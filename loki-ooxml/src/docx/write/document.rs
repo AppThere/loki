@@ -21,6 +21,7 @@ use loki_doc_model::style::catalog::StyleCatalog;
 use loki_doc_model::style::props::char_props::CharProps;
 
 use crate::docx::write::collector::ExportCollector;
+use crate::docx::write::section::write_sect_pr;
 use crate::docx::write::style_props::emit_char_props;
 use crate::docx::write::xml::{
     NS_A, NS_PIC, NS_R, NS_W, NS_WP, color_to_hex, pts_to_twips, write_decl, write_empty,
@@ -80,109 +81,6 @@ pub(super) fn write_document_xml(
     let _ = write_end(&mut w, "w:document");
     drop(w);
     out
-}
-
-// ── Section properties ───────────────────────────────────────────────────────
-
-fn write_sect_pr<W: std::io::Write>(
-    w: &mut Writer<W>,
-    layout: &PageLayout,
-    collector: &mut ExportCollector,
-) {
-    let _ = write_start(w, "w:sectPr", &[]);
-
-    if let Some(hf) = &layout.header {
-        let r_id = collector.add_header_footer(hf.blocks.clone(), true);
-        let _ = write_empty(
-            w,
-            "w:headerReference",
-            &[("w:type", "default"), ("r:id", &r_id)],
-        );
-    }
-    if let Some(hf) = &layout.header_first {
-        let r_id = collector.add_header_footer(hf.blocks.clone(), true);
-        let _ = write_empty(
-            w,
-            "w:headerReference",
-            &[("w:type", "first"), ("r:id", &r_id)],
-        );
-    }
-    if let Some(hf) = &layout.header_even {
-        let r_id = collector.add_header_footer(hf.blocks.clone(), true);
-        let _ = write_empty(
-            w,
-            "w:headerReference",
-            &[("w:type", "even"), ("r:id", &r_id)],
-        );
-    }
-
-    if let Some(hf) = &layout.footer {
-        let r_id = collector.add_header_footer(hf.blocks.clone(), false);
-        let _ = write_empty(
-            w,
-            "w:footerReference",
-            &[("w:type", "default"), ("r:id", &r_id)],
-        );
-    }
-    if let Some(hf) = &layout.footer_first {
-        let r_id = collector.add_header_footer(hf.blocks.clone(), false);
-        let _ = write_empty(
-            w,
-            "w:footerReference",
-            &[("w:type", "first"), ("r:id", &r_id)],
-        );
-    }
-    if let Some(hf) = &layout.footer_even {
-        let r_id = collector.add_header_footer(hf.blocks.clone(), false);
-        let _ = write_empty(
-            w,
-            "w:footerReference",
-            &[("w:type", "even"), ("r:id", &r_id)],
-        );
-    }
-
-    // `w:titlePg` enables the first-page header/footer for this section. It is
-    // NOT what enables even-page H/F — that is the document-level
-    // `w:evenAndOddHeaders` setting (written to settings.xml), so emit titlePg
-    // only when a first-page variant is present.
-    if layout.header_first.is_some() || layout.footer_first.is_some() {
-        let _ = write_empty(w, "w:titlePg", &[]);
-    }
-
-    let pw = pts_to_twips(layout.page_size.width.value()).to_string();
-    let ph = pts_to_twips(layout.page_size.height.value()).to_string();
-    let orient = match layout.orientation {
-        loki_doc_model::layout::page::PageOrientation::Landscape => "landscape",
-        loki_doc_model::layout::page::PageOrientation::Portrait => "portrait",
-    };
-    let _ = write_empty(
-        w,
-        "w:pgSz",
-        &[("w:w", &pw), ("w:h", &ph), ("w:orient", orient)],
-    );
-
-    let mt = pts_to_twips(layout.margins.top.value()).to_string();
-    let mb = pts_to_twips(layout.margins.bottom.value()).to_string();
-    let ml = pts_to_twips(layout.margins.left.value()).to_string();
-    let mr = pts_to_twips(layout.margins.right.value()).to_string();
-    let mh = pts_to_twips(layout.margins.header.value()).to_string();
-    let mf = pts_to_twips(layout.margins.footer.value()).to_string();
-    let mg = pts_to_twips(layout.margins.gutter.value()).to_string();
-    let _ = write_empty(
-        w,
-        "w:pgMar",
-        &[
-            ("w:top", &mt),
-            ("w:right", &mr),
-            ("w:bottom", &mb),
-            ("w:left", &ml),
-            ("w:header", &mh),
-            ("w:footer", &mf),
-            ("w:gutter", &mg),
-        ],
-    );
-
-    let _ = write_end(w, "w:sectPr");
 }
 
 /// Serializes header/footer blocks to `word/headerN.xml` or `word/footerN.xml`.

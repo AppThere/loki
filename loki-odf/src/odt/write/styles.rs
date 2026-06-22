@@ -7,7 +7,7 @@
 
 use loki_doc_model::document::Document;
 use loki_doc_model::layout::header_footer::HeaderFooter;
-use loki_doc_model::layout::page::{PageLayout, PageOrientation};
+use loki_doc_model::layout::page::{PageLayout, PageOrientation, SectionColumns};
 use loki_doc_model::style::para_style::ParagraphStyle;
 
 use super::auto::AutoStyles;
@@ -181,7 +181,15 @@ fn write_page_layout(out: &mut String, pl_name: &str, layout: &PageLayout) {
         PageOrientation::Portrait => "portrait",
     };
     attr(out, "style:print-orientation", orient);
-    out.push_str("/>");
+    // `style:columns` is a child of page-layout-properties, so the element can
+    // only self-close when there is no multi-column layout.
+    if let Some(cols) = &layout.columns {
+        out.push('>');
+        write_columns(out, cols);
+        out.push_str("</style:page-layout-properties>");
+    } else {
+        out.push_str("/>");
+    }
     // Declaring header/footer styles makes apps reserve the space and render the
     // master-page content; omit them when the document has none.
     if layout.header.is_some() || layout.header_first.is_some() || layout.header_even.is_some() {
@@ -191,6 +199,21 @@ fn write_page_layout(out: &mut String, pl_name: &str, layout: &PageLayout) {
         out.push_str("<style:footer-style/>");
     }
     out.push_str("</style:page-layout>");
+}
+
+/// Writes a `<style:columns>` element (ODF 1.3 §16.27.10): `fo:column-count`
+/// equal columns with a uniform `fo:column-gap`, and an optional separator line.
+fn write_columns(out: &mut String, cols: &SectionColumns) {
+    out.push_str("<style:columns");
+    attr(out, "fo:column-count", &cols.count.to_string());
+    attr(out, "fo:column-gap", &pt(cols.gap));
+    if cols.separator {
+        out.push('>');
+        out.push_str("<style:column-sep style:width=\"0.5pt\" style:color=\"#000000\"/>");
+        out.push_str("</style:columns>");
+    } else {
+        out.push_str("/>");
+    }
 }
 
 /// Renders `meta.xml` for `doc` (Dublin Core core properties).

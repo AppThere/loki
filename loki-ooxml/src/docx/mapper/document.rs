@@ -10,7 +10,9 @@ use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::document::Document;
 use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
-use loki_doc_model::layout::page::{PageLayout, PageMargins, PageOrientation, PageSize};
+use loki_doc_model::layout::page::{
+    PageLayout, PageMargins, PageOrientation, PageSize, SectionColumns,
+};
 use loki_doc_model::layout::section::Section;
 use loki_doc_model::meta::core::DocumentMeta;
 use loki_doc_model::settings::DocumentSettings;
@@ -101,6 +103,17 @@ fn map_page_layout(sect_pr: Option<&DocxSectPr>) -> PageLayout {
             footer: Points::new(f64::from(pg_mar.footer) / 20.0),
             gutter: Points::new(f64::from(pg_mar.gutter) / 20.0),
         };
+    }
+
+    // Multi-column layout: only meaningful for two or more columns.
+    if let Some(ref cols) = sp.cols
+        && cols.num >= 2
+    {
+        layout.columns = Some(SectionColumns {
+            count: u8::try_from(cols.num.clamp(2, i32::from(u8::MAX))).unwrap_or(2),
+            gap: Points::new(f64::from(cols.space) / 20.0),
+            separator: cols.sep,
+        });
     }
 
     layout
@@ -415,6 +428,7 @@ mod tests {
             header_refs: vec![],
             footer_refs: vec![],
             title_page: false,
+            cols: None,
         }
     }
 

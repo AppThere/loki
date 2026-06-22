@@ -30,7 +30,9 @@ use loki_doc_model::content::table::core::{Table, TableBody, TableCaption, Table
 use loki_doc_model::content::table::row::{Cell, Row};
 use loki_doc_model::document::Document;
 use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
-use loki_doc_model::layout::page::{PageLayout, PageMargins, PageOrientation, PageSize};
+use loki_doc_model::layout::page::{
+    PageLayout, PageMargins, PageOrientation, PageSize, SectionColumns,
+};
 use loki_doc_model::layout::section::Section;
 use loki_doc_model::meta::core::DocumentMeta;
 use loki_doc_model::style::catalog::{StyleCatalog, StyleId};
@@ -811,6 +813,21 @@ fn convert_page_layout(pl: &OdfPageLayout) -> PageLayout {
         _ => PageOrientation::Portrait,
     };
 
+    // Multi-column layout is only meaningful for two or more columns.
+    let columns = pl
+        .columns
+        .as_ref()
+        .filter(|c| c.count >= 2)
+        .map(|c| SectionColumns {
+            count: u8::try_from(c.count.clamp(2, u32::from(u8::MAX))).unwrap_or(2),
+            gap: c
+                .gap
+                .as_deref()
+                .and_then(parse_length)
+                .unwrap_or_else(|| Points::new(18.0)),
+            separator: c.separator,
+        });
+
     PageLayout {
         page_size: PageSize { width, height },
         margins: PageMargins {
@@ -823,6 +840,7 @@ fn convert_page_layout(pl: &OdfPageLayout) -> PageLayout {
             gutter: zero,
         },
         orientation,
+        columns,
         ..Default::default()
     }
 }

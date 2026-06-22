@@ -5,7 +5,7 @@
 //!
 //! Mirrors ECMA-376 §17.3.1 (paragraphs) and §17.3.2 (runs).
 
-pub use super::section::{DocxHdrFtrRef, DocxPgMar, DocxPgSz, DocxSectPr};
+pub use super::section::{DocxCols, DocxHdrFtrRef, DocxPgMar, DocxPgSz, DocxSectPr};
 
 /// Intermediate model for `w:p` (ECMA-376 §17.3.1.22).
 #[derive(Debug, Clone, Default)]

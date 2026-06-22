@@ -463,6 +463,48 @@ fn multi_section_page_geometry_round_trips() {
     assert!(all_text.contains("Second section"), "got: {all_text}");
 }
 
+#[test]
+fn multi_column_section_round_trips() {
+    use loki_doc_model::layout::page::SectionColumns;
+
+    let section = Section::with_layout_and_blocks(
+        PageLayout {
+            page_size: PageSize::a4(),
+            columns: Some(SectionColumns {
+                count: 3,
+                gap: Points::new(18.0),
+                separator: true,
+            }),
+            ..PageLayout::default()
+        },
+        vec![Block::Para(vec![Inline::Str("Three-column body.".into())])],
+    );
+    let mut doc = Document::new();
+    doc.sections = vec![section];
+
+    let re = round_trip(&doc);
+    let cols = re.sections[0]
+        .layout
+        .columns
+        .clone()
+        .expect("style:columns must survive the round-trip");
+
+    assert_eq!(cols.count, 3, "column count");
+    assert_eq!(cols.gap.value().round(), 18.0, "column gap (pt)");
+    assert!(cols.separator, "the column separator must survive");
+}
+
+#[test]
+fn no_columns_means_no_column_layout() {
+    // The default sample document is single-column; it must not gain a
+    // spurious multi-column layout on round-trip.
+    let doc = round_trip(&sample_doc());
+    assert!(
+        doc.sections[0].layout.columns.is_none(),
+        "single-column document must not produce a style:columns layout"
+    );
+}
+
 /// Extracts the concatenated plain text of a paragraph-like block.
 fn text_of_block(block: &Block) -> String {
     let inlines = match block {

@@ -21,6 +21,7 @@ use crate::odt::model::styles::{
     OdfCellProps, OdfDefaultStyle, OdfParaProps, OdfStyle, OdfStyleFamily, OdfStylesheet,
     OdfTabStop, OdfTextProps,
 };
+use crate::odt::reader::columns::parse_plp_columns;
 use crate::odt::reader::document::read_paragraph;
 use crate::xml_util::local_attr_val;
 
@@ -869,6 +870,7 @@ fn parse_page_layout(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfP
         margin_left: None,
         margin_right: None,
         print_orientation: None,
+        columns: None,
         header_props: None,
         footer_props: None,
     };
@@ -888,7 +890,8 @@ fn parse_page_layout(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfP
                         layout.margin_right = local_attr_val(e, b"margin-right");
                         layout.print_orientation = local_attr_val(e, b"print-orientation");
                         drop(e);
-                        skip_element(reader, b"page-layout-properties")?;
+                        // Scan children for `style:columns` rather than skipping.
+                        layout.columns = parse_plp_columns(reader)?;
                     }
                     b"header-style" => {
                         drop(e);

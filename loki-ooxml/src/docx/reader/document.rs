@@ -11,9 +11,9 @@ use quick_xml::events::Event;
 
 use crate::docx::model::document::{DocxBodyChild, DocxDocument};
 use crate::docx::model::paragraph::{
-    DocxBorderEdge, DocxDrawing, DocxHdrFtrRef, DocxHyperlink, DocxInd, DocxNumPr, DocxPBdr,
-    DocxPPr, DocxParaChild, DocxParagraph, DocxPgMar, DocxPgSz, DocxRFonts, DocxRPr, DocxRun,
-    DocxRunChild, DocxSectPr, DocxSpacing, DocxTab,
+    DocxBorderEdge, DocxCols, DocxDrawing, DocxHdrFtrRef, DocxHyperlink, DocxInd, DocxNumPr,
+    DocxPBdr, DocxPPr, DocxParaChild, DocxParagraph, DocxPgMar, DocxPgSz, DocxRFonts, DocxRPr,
+    DocxRun, DocxRunChild, DocxSectPr, DocxSpacing, DocxTab,
 };
 use crate::docx::model::styles::{
     DocxCellMargins, DocxTableCell, DocxTableModel, DocxTableRow, DocxTblPr, DocxTblWidth,
@@ -667,6 +667,18 @@ pub(crate) fn parse_sect_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxSectP
                         // Presence enables first-page variant; w:val="0" disables.
                         sect.title_page = attr_val(e, b"val")
                             .is_none_or(|v| !matches!(v.as_str(), "0" | "false" | "off"));
+                    }
+                    b"cols" => {
+                        sect.cols = Some(DocxCols {
+                            num: attr_val(e, b"num")
+                                .and_then(|v| v.parse().ok())
+                                .unwrap_or(1),
+                            space: attr_val(e, b"space")
+                                .and_then(|v| v.parse().ok())
+                                .unwrap_or(720),
+                            sep: attr_val(e, b"sep")
+                                .is_some_and(|v| !matches!(v.as_str(), "0" | "false" | "off")),
+                        });
                     }
                     _ => {}
                 }
