@@ -118,6 +118,10 @@ pub struct LayoutPage {
     pub header_items: Vec<PositionedItem>,
     /// Items in the footer area. Origins are page-local (top-left of page).
     pub footer_items: Vec<PositionedItem>,
+    /// Comment-panel items rendered in the gutter to the right of the page.
+    /// Origins are page-local; their x extends past `page_size.width`. Empty
+    /// when the page has no anchored comments.
+    pub comment_items: Vec<PositionedItem>,
     /// Rendered height of the header content in points (0.0 if no header).
     pub header_height: f32,
     /// Rendered height of the footer content in points (0.0 if no footer).

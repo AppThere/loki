@@ -237,6 +237,9 @@ pub fn paint_single_page(
     );
     paint_items(scene, &page.header_items, font_cache, page_origin, scale);
     paint_items(scene, &page.footer_items, font_cache, page_origin, scale);
+    // Comment-panel items are page-local but extend into the gutter to the
+    // right of the page.
+    paint_items(scene, &page.comment_items, font_cache, page_origin, scale);
 
     // Cursor and selection highlights — painted after content so they appear
     // on top of glyphs.
@@ -457,6 +460,7 @@ pub fn paint_paginated(
         );
         paint_items(scene, &page.header_items, font_cache, page_origin, scale);
         paint_items(scene, &page.footer_items, font_cache, page_origin, scale);
+        paint_items(scene, &page.comment_items, font_cache, page_origin, scale);
 
         y_cursor += page_height + PAGE_GAP_PT;
     }

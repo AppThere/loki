@@ -13,6 +13,8 @@
 
 #[path = "flow_columns.rs"]
 mod columns_impl;
+#[path = "flow_comments.rs"]
+mod comments_impl;
 #[path = "flow_para.rs"]
 mod para_impl;
 
@@ -177,6 +179,12 @@ pub(super) struct FlowState<'a> {
     /// Index into `current_paragraphs` at which the current column's editing
     /// data begins (parallel to `column_item_start`).
     pub(super) column_para_start: usize,
+    /// Document comments (annotation bodies), looked up by id when laying out
+    /// the comment panel. Empty in nested flows (headers/footers, cells).
+    pub(super) comments: &'a [loki_doc_model::content::annotation::Comment],
+    /// Comment anchors (`id`, content-local `y`) recorded on the current page,
+    /// consumed by [`finish_page`] to lay out the gutter comment panel.
+    pub(super) pending_comment_anchors: Vec<(String, f32)>,
 }
 
 impl FlowState<'_> {
@@ -226,6 +234,7 @@ fn new_flow_state<'a>(
     mode: &'a LayoutMode,
     display_scale: f32,
     options: &'a LayoutOptions,
+    comments: &'a [loki_doc_model::content::annotation::Comment],
 ) -> FlowState<'a> {
     let pl = &section.layout;
     let page_w = pts_to_f32(pl.page_size.width);
@@ -282,6 +291,8 @@ fn new_flow_state<'a>(
         col_index: 0,
         column_item_start: 0,
         column_para_start: 0,
+        comments,
+        pending_comment_anchors: Vec::new(),
     }
 }
 
@@ -349,7 +360,17 @@ pub(crate) fn flow_section_resume(
     resync: impl FnMut(usize, &FlowCheckpoint) -> bool,
 ) -> crate::incremental::ResumedFlow {
     let mode = LayoutMode::Paginated;
-    let mut state = new_flow_state(resources, section, catalog, &mode, display_scale, options);
+    // Incremental resume does not render comment panels on reused pages; the
+    // full relayout path does. Pass an empty comment set here.
+    let mut state = new_flow_state(
+        resources,
+        section,
+        catalog,
+        &mode,
+        display_scale,
+        options,
+        &[],
+    );
     state.page_number = seed.page_number;
     state.list_counters = seed.list_counters.clone();
     state.prev_list_id = seed.prev_list_id.clone();
@@ -389,8 +410,17 @@ pub fn flow_section(
     mode: &LayoutMode,
     display_scale: f32,
     options: &LayoutOptions,
+    comments: &[loki_doc_model::content::annotation::Comment],
 ) -> FlowOutput {
-    let mut state = new_flow_state(resources, section, catalog, mode, display_scale, options);
+    let mut state = new_flow_state(
+        resources,
+        section,
+        catalog,
+        mode,
+        display_scale,
+        options,
+        comments,
+    );
 
     if mode.is_paginated() {
         // Top-level paginated flow: record checkpoints, never resync.
@@ -535,6 +565,9 @@ pub(super) fn finish_page(state: &mut FlowState) {
     state.column_item_start = 0;
     state.column_para_start = 0;
 
+    // Lay out the gutter comment panel for any comments anchored on this page.
+    let comment_items = comments_impl::layout_comment_panel(state);
+
     let page = LayoutPage {
         page_number: state.page_number,
         page_size: state.page_size,
@@ -542,6 +575,7 @@ pub(super) fn finish_page(state: &mut FlowState) {
         content_items: std::mem::take(&mut state.current_items),
         header_items: vec![],
         footer_items: vec![],
+        comment_items,
         header_height: 0.0,
         footer_height: 0.0,
         editing_data: if state.options.preserve_for_editing {
@@ -596,6 +630,7 @@ fn layout_blocks_reflow(
         &mode,
         display_scale,
         &options,
+        &[],
     ) {
         FlowOutput::Canvas { items, height, .. } => (items, height),
         FlowOutput::Pages { .. } => unreachable!("Reflow mode always returns Canvas"),
@@ -1141,6 +1176,9 @@ fn measure_cell_height(
         col_index: 0,
         column_item_start: 0,
         column_para_start: 0,
+        // Cells never render the comment gutter panel.
+        comments: &[],
+        pending_comment_anchors: Vec::new(),
     };
 
     for block in &cell.blocks {
@@ -1264,6 +1302,9 @@ fn flow_cell_blocks(
         col_index: 0,
         column_item_start: 0,
         column_para_start: 0,
+        // Cells never render the comment gutter panel.
+        comments: &[],
+        pending_comment_anchors: Vec::new(),
     };
 
     for block in blocks {

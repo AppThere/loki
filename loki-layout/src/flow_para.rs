@@ -145,6 +145,10 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
         finish_page(state);
     }
 
+    // Record comment start anchors at the paragraph's top (on the final page,
+    // after any page break above) for the gutter comment panel.
+    super::comments_impl::record_comment_anchors(state, &effective_para.inlines);
+
     let mut para_layout = layout_paragraph(
         state.resources,
         &text,

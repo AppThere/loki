@@ -40,6 +40,7 @@ fn flow_pageless(
         &LayoutMode::Pageless,
         1.0,
         &LayoutOptions::default(),
+        &[],
     ) {
         FlowOutput::Canvas {
             items,
@@ -64,6 +65,7 @@ fn flow_paginated(
         &LayoutMode::Paginated,
         1.0,
         &LayoutOptions::default(),
+        &[],
     ) {
         FlowOutput::Pages {
             pages, warnings, ..
@@ -131,6 +133,66 @@ fn glyph_x_origins(page: &crate::result::LayoutPage) -> Vec<f32> {
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fn comment_panel_renders_in_gutter() {
+    use loki_doc_model::content::annotation::{Comment, CommentRef, CommentRefKind};
+    use loki_doc_model::content::block::Block;
+
+    let mut r = test_resources();
+    // A paragraph with a comment start anchor on it.
+    let para = Block::Para(vec![
+        Inline::Str("Commented text".into()),
+        Inline::Comment(CommentRef::new("c1", CommentRefKind::Start)),
+    ]);
+    let section = Section::with_layout_and_blocks(tiny_layout(), vec![para]);
+
+    let comments = vec![Comment::new("c1").with_plain_body("Fix this")];
+    let catalog = StyleCatalog::new();
+
+    let FlowOutput::Pages { pages, .. } = flow_section(
+        &mut r,
+        &section,
+        &catalog,
+        &LayoutMode::Paginated,
+        1.0,
+        &LayoutOptions::default(),
+        &comments,
+    ) else {
+        panic!("expected paginated pages");
+    };
+
+    // The first page must carry a comment card in the gutter (x ≥ page width).
+    let card = pages[0].comment_items.iter().find_map(|i| {
+        if let PositionedItem::FilledRect(rect) = i {
+            (rect.rect.origin.x >= 200.0).then_some(rect.rect)
+        } else {
+            None
+        }
+    });
+    assert!(
+        card.is_some(),
+        "expected a comment card past the page right edge; items: {}",
+        pages[0].comment_items.len()
+    );
+    // The card must contain rendered text (author + body glyph runs).
+    let has_glyphs = pages[0]
+        .comment_items
+        .iter()
+        .any(|i| matches!(i, PositionedItem::GlyphRun(_)));
+    assert!(has_glyphs, "comment card should contain rendered text");
+}
+
+#[test]
+fn no_comment_panel_without_anchors() {
+    let mut r = test_resources();
+    let section = section_of(vec![make_para("Plain")], tiny_layout());
+    let (pages, _) = flow_paginated(&mut r, &section);
+    assert!(
+        pages.iter().all(|p| p.comment_items.is_empty()),
+        "no comment anchors ⇒ no comment panel"
+    );
+}
 
 #[test]
 fn text_flows_down_columns_before_paging() {
@@ -850,6 +912,7 @@ fn flow_with_catalog(
         &LayoutMode::Pageless,
         1.0,
         &LayoutOptions::default(),
+        &[],
     ) {
         FlowOutput::Canvas {
             items,

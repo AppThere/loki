@@ -65,6 +65,12 @@ pub use result::{
 /// Minimum table row height in points.
 pub const MIN_ROW_HEIGHT: f32 = 0.0;
 
+/// Total width (points) reserved to the right of the page for the comment
+/// gutter panel (gap + card width). Hosts widen the scrollable/canvas area by
+/// this much when a paginated layout contains comment items, so the panel is
+/// reachable. See [`result::LayoutPage::comment_items`].
+pub const COMMENT_GUTTER_WIDTH: f32 = 192.0;
+
 /// Options that control the layout pipeline's memory / feature trade-offs.
 ///
 /// Pass to [`layout_document`] or [`flow_section`]. The default (all fields
@@ -133,6 +139,7 @@ pub fn layout_document(
                     &mode,
                     display_scale,
                     options,
+                    &doc.comments,
                 )
                 else {
                     unreachable!("flow_section in non-paginated mode always returns Canvas");
@@ -215,6 +222,7 @@ pub fn layout_paginated_full(
             &mode,
             display_scale,
             options,
+            &doc.comments,
         )
         else {
             unreachable!("flow_section in Paginated mode always returns Pages");
