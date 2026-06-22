@@ -239,4 +239,8 @@ pub(crate) struct OdfMeta {
     pub editing_cycles: Option<u32>,
     /// `meta:keyword` — keywords describing the document.
     pub keywords: Vec<String>,
+    /// `meta:user-defined` entries as `(meta:name, value)` pairs. Carries the
+    /// extended Dublin Core fields (under reserved `dcmi:` names) plus any other
+    /// user-defined metadata.
+    pub user_defined: Vec<(String, String)>,
 }

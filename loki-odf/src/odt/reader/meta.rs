@@ -27,6 +27,8 @@ pub(crate) fn read_meta(xml: &[u8]) -> OdfResult<OdfMeta> {
     // Local name of the element currently being collected, if any.
     let mut collecting: Option<Vec<u8>> = None;
     let mut collect_text = String::new();
+    // The `meta:name` of the `meta:user-defined` element currently open.
+    let mut user_name: Option<String> = None;
 
     loop {
         buf.clear();
@@ -36,6 +38,11 @@ pub(crate) fn read_meta(xml: &[u8]) -> OdfResult<OdfMeta> {
                 match local.as_slice() {
                     b"title" | b"creator" | b"description" | b"creation-date" | b"date"
                     | b"editing-cycles" | b"initial-creator" | b"subject" | b"keyword" => {
+                        collecting = Some(local);
+                        collect_text.clear();
+                    }
+                    b"user-defined" => {
+                        user_name = crate::xml_util::local_attr_val(e, b"name");
                         collecting = Some(local);
                         collect_text.clear();
                     }
@@ -64,6 +71,11 @@ pub(crate) fn read_meta(xml: &[u8]) -> OdfResult<OdfMeta> {
                         b"initial-creator" => meta.initial_creator = Some(text),
                         b"subject" => meta.subject = Some(text),
                         b"keyword" => meta.keywords.push(text),
+                        b"user-defined" => {
+                            if let Some(name) = user_name.take() {
+                                meta.user_defined.push((name, text));
+                            }
+                        }
                         _ => {}
                     }
                     collecting = None;

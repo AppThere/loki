@@ -259,7 +259,7 @@ pub(crate) fn parse_and_map_package(
     }
 
     // ── Map everything to the abstract model ──────────────────────────
-    let result = map_document(
+    let (mut document, warnings) = map_document(
         &raw_doc,
         &raw_styles,
         raw_numbering.as_ref(),
@@ -274,7 +274,11 @@ pub(crate) fn parse_and_map_package(
         options,
     );
 
-    Ok(result)
+    // Extended Dublin Core from docProps/custom.xml (core.xml only covers the
+    // core subset + dc:identifier).
+    crate::docx::reader::custom_props::apply_extended_dc(package, &mut document.meta.dublin_core);
+
+    Ok((document, warnings))
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

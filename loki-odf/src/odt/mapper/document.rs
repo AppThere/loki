@@ -864,6 +864,9 @@ fn map_meta(meta: &OdfMeta) -> DocumentMeta {
         created: meta.created.as_deref().and_then(parse_datetime),
         modified: meta.modified.as_deref().and_then(parse_datetime),
         revision: meta.editing_cycles,
+        dublin_core: loki_doc_model::meta::dublin_core::DublinCoreMeta::from_named_pairs(
+            &meta.user_defined,
+        ),
         ..Default::default()
     }
 }

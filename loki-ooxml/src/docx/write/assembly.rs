@@ -185,6 +185,12 @@ pub(crate) fn assemble_docx_kind(
         },
     )?;
 
+    // ── Document metadata ─────────────────────────────────────────────────
+    // Core properties (docProps/core.xml) are serialized by the OPC layer;
+    // the extended Dublin Core fields go to docProps/custom.xml.
+    crate::docx::write::metadata::populate_core_properties(&mut pkg, &doc.meta);
+    crate::docx::write::custom_props::add_custom_properties(&mut pkg, &doc.meta.dublin_core)?;
+
     // ── Content types ─────────────────────────────────────────────────────
     let ct = pkg.content_type_map_mut();
     ct.add_default(

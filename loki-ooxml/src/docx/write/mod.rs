@@ -12,10 +12,12 @@
 
 pub(super) mod assembly;
 pub(super) mod collector;
+mod custom_props;
 mod document;
 mod fields;
 pub(super) mod footnotes;
 pub(super) mod media;
+mod metadata;
 mod numbering;
 mod rels;
 mod section;

@@ -223,6 +223,10 @@ fn map_meta(core_props: Option<&loki_opc::CoreProperties>) -> DocumentMeta {
     let Some(cp) = core_props else {
         return DocumentMeta::default();
     };
+    let dublin_core = loki_doc_model::meta::dublin_core::DublinCoreMeta {
+        identifier: cp.identifier.clone(),
+        ..Default::default()
+    };
     DocumentMeta {
         title: cp.title.clone(),
         creator: cp.creator.clone(),
@@ -232,6 +236,12 @@ fn map_meta(core_props: Option<&loki_opc::CoreProperties>) -> DocumentMeta {
         last_modified_by: cp.last_modified_by.clone(),
         created: cp.created,
         modified: cp.modified,
+        language: cp
+            .language
+            .as_ref()
+            .map(|l| loki_doc_model::meta::language::LanguageTag::new(l.clone())),
+        revision: cp.revision.as_ref().and_then(|r| r.parse().ok()),
+        dublin_core,
         ..Default::default()
     }
 }

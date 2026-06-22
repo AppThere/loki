@@ -15,7 +15,9 @@ xlsx = []
 pptx = ["dep:loki-graphics", "dep:loki-presentation-model"]
 
 [dependencies]
-loki-opc       = { path = "../loki-opc" }
+# serde: enables the real core-properties (docProps/core.xml) reader/writer
+# in loki-opc (otherwise both are no-op stubs). Required for metadata import/export.
+loki-opc       = { path = "../loki-opc", features = ["serde"] }
 loki-doc-model = { path = "../loki-doc-model" }
 loki-sheet-model = { path = "../loki-sheet-model" }
 loki-primitives = { path = "../loki-primitives" }

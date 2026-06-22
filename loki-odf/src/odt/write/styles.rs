@@ -228,17 +228,29 @@ pub(crate) fn meta_xml(doc: &Document) -> String {
         " office:version=\"1.3\"><office:meta>",
     ));
     let m = &doc.meta;
-    let mut el = |tag: &str, val: &Option<String>| {
-        if let Some(v) = val {
-            out.push_str(&format!("<{tag}>{}</{tag}>", escape(v)));
-        }
-    };
-    el("dc:title", &m.title);
-    el("dc:creator", &m.creator);
-    el("meta:initial-creator", &m.creator);
-    el("dc:subject", &m.subject);
-    el("dc:description", &m.description);
-    el("meta:keyword", &m.keywords);
+    {
+        let mut el = |tag: &str, val: &Option<String>| {
+            if let Some(v) = val {
+                out.push_str(&format!("<{tag}>{}</{tag}>", escape(v)));
+            }
+        };
+        el("dc:title", &m.title);
+        el("dc:creator", &m.creator);
+        el("meta:initial-creator", &m.creator);
+        el("dc:subject", &m.subject);
+        el("dc:description", &m.description);
+        el("meta:keyword", &m.keywords);
+    }
+    // Extended Dublin Core has no native office:meta element; carry each field
+    // as a meta:user-defined entry under its reserved dcmi: name so it
+    // round-trips.
+    for (name, value) in m.dublin_core.to_named_pairs() {
+        out.push_str(&format!(
+            "<meta:user-defined meta:name=\"{}\">{}</meta:user-defined>",
+            escape(&name),
+            escape(&value),
+        ));
+    }
     out.push_str("</office:meta></office:document-meta>");
     out
 }

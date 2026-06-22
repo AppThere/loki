@@ -464,6 +464,36 @@ fn multi_section_page_geometry_round_trips() {
 }
 
 #[test]
+fn extended_dublin_core_round_trips() {
+    use loki_doc_model::meta::dublin_core::DublinCoreMeta;
+
+    let dc = DublinCoreMeta {
+        contributors: vec!["Editor One".into(), "Translator Two".into()],
+        publisher: Some("AppThere Press".into()),
+        rights: Some("© 2026 AppThere".into()),
+        license: Some("https://creativecommons.org/licenses/by/4.0/".into()),
+        identifier: Some("urn:uuid:1234".into()),
+        identifier_scheme: Some("UUID".into()),
+        dc_type: Some("Text".into()),
+        format: Some("application/vnd.oasis.opendocument.text".into()),
+        source: Some("Original".into()),
+        relation: Some("Companion".into()),
+        coverage: Some("2026".into()),
+        issued: Some("2026-06-22".into()),
+        bibliographic_citation: Some("AppThere (2026)".into()),
+    };
+    let mut doc = Document::new();
+    doc.meta.title = Some("DC Doc".into());
+    doc.meta.dublin_core = dc.clone();
+
+    let re = round_trip(&doc);
+    assert_eq!(
+        re.meta.dublin_core, dc,
+        "all extended Dublin Core fields must survive the ODT round-trip"
+    );
+}
+
+#[test]
 fn multi_column_section_round_trips() {
     use loki_doc_model::layout::page::SectionColumns;
 
