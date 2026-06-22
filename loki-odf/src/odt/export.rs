@@ -17,7 +17,7 @@ use crate::constants::{
     ENTRY_CONTENT, ENTRY_MANIFEST, ENTRY_META, ENTRY_MIMETYPE, ENTRY_STYLES, MIME_ODT,
 };
 use crate::error::{OdfError, OdfResult};
-use crate::odt::write::{content_xml, meta_xml, styles_xml};
+use crate::odt::write::{MediaPart, content_xml, meta_xml, styles_xml};
 
 /// Options controlling ODT export behaviour.
 ///
@@ -36,6 +36,8 @@ impl DocumentExport for OdtExport {
 
     /// Exports a [`Document`] as an ODT package. ODF 1.3 §3.
     fn export(doc: &Document, writer: impl Write + Seek, _options: Self::Options) -> OdfResult<()> {
+        let content = content_xml(doc);
+
         let mut zip = ZipWriter::new(writer);
 
         // 1. mimetype — first entry, stored (uncompressed), no trailing newline.
@@ -45,12 +47,13 @@ impl DocumentExport for OdtExport {
 
         let deflated = FileOptions::<()>::default().compression_method(CompressionMethod::Deflated);
 
-        // 2. manifest, then the three XML parts.
+        // 2. manifest (listing every part, including embedded images).
         zip.start_file(ENTRY_MANIFEST, deflated)?;
-        zip.write_all(MANIFEST.as_bytes())?;
+        zip.write_all(manifest(&content.media).as_bytes())?;
 
+        // 3. the three XML parts.
         zip.start_file(ENTRY_CONTENT, deflated)?;
-        zip.write_all(content_xml(doc).as_bytes())?;
+        zip.write_all(content.xml.as_bytes())?;
 
         zip.start_file(ENTRY_STYLES, deflated)?;
         zip.write_all(styles_xml(doc).as_bytes())?;
@@ -58,20 +61,36 @@ impl DocumentExport for OdtExport {
         zip.start_file(ENTRY_META, deflated)?;
         zip.write_all(meta_xml(doc).as_bytes())?;
 
+        // 4. embedded image parts (compressed images stay stored to avoid
+        //    double-compression overhead).
+        for part in &content.media {
+            zip.start_file(&part.path, stored)?;
+            zip.write_all(&part.bytes)?;
+        }
+
         zip.finish()?;
         Ok(())
     }
 }
 
-/// The ODT package manifest (fixed: the parts written are always the same).
-const MANIFEST: &str = concat!(
-    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
-    "<manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\"",
-    " manifest:version=\"1.3\">",
-    "<manifest:file-entry manifest:full-path=\"/\" manifest:version=\"1.3\"",
-    " manifest:media-type=\"application/vnd.oasis.opendocument.text\"/>",
-    "<manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/>",
-    "<manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/>",
-    "<manifest:file-entry manifest:full-path=\"meta.xml\" manifest:media-type=\"text/xml\"/>",
-    "</manifest:manifest>",
-);
+/// Builds `META-INF/manifest.xml`, listing the fixed parts plus every image.
+fn manifest(media: &[MediaPart]) -> String {
+    let mut m = String::from(concat!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+        "<manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\"",
+        " manifest:version=\"1.3\">",
+        "<manifest:file-entry manifest:full-path=\"/\" manifest:version=\"1.3\"",
+        " manifest:media-type=\"application/vnd.oasis.opendocument.text\"/>",
+        "<manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/>",
+        "<manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/>",
+        "<manifest:file-entry manifest:full-path=\"meta.xml\" manifest:media-type=\"text/xml\"/>",
+    ));
+    for part in media {
+        m.push_str(&format!(
+            "<manifest:file-entry manifest:full-path=\"{}\" manifest:media-type=\"{}\"/>",
+            part.path, part.media_type
+        ));
+    }
+    m.push_str("</manifest:manifest>");
+    m
+}

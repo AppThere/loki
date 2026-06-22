@@ -10,15 +10,16 @@ use std::collections::HashMap;
 use loki_doc_model::style::props::char_props::CharProps;
 use loki_doc_model::style::props::para_props::ParaProps;
 
-use super::props::{paragraph_properties_attrs, text_properties_attrs};
+use super::para_props::emit_paragraph_properties;
+use super::props::emit_text_properties;
 
 /// Deduplicates automatic text (`family="text"`) and paragraph
 /// (`family="paragraph"`) styles, assigning stable `T{n}` / `P{n}` names.
 #[derive(Default)]
 pub(super) struct AutoStyles {
-    /// text-properties attribute string → style name (`T{n}`).
+    /// text-properties element → style name (`T{n}`).
     text: HashMap<String, String>,
-    /// (parent, paragraph-attrs, text-attrs) → style name (`P{n}`).
+    /// (parent, paragraph-properties, text-properties) → style name (`P{n}`).
     para: HashMap<(String, String, String), String>,
     /// Rendered `<style:style>` elements, in creation order.
     rendered: Vec<String>,
@@ -32,19 +33,18 @@ impl AutoStyles {
     /// Returns the automatic text-style name for `cp`, or `None` when `cp`
     /// carries no formatting.
     pub(super) fn text_style(&mut self, cp: &CharProps) -> Option<String> {
-        let attrs = text_properties_attrs(cp);
-        if attrs.is_empty() {
+        let props = emit_text_properties(cp);
+        if props.is_empty() {
             return None;
         }
-        if let Some(name) = self.text.get(&attrs) {
+        if let Some(name) = self.text.get(&props) {
             return Some(name.clone());
         }
         let name = format!("T{}", self.rendered.len() + 1);
         self.rendered.push(format!(
-            "<style:style style:name=\"{name}\" style:family=\"text\">\
-             <style:text-properties{attrs}/></style:style>"
+            "<style:style style:name=\"{name}\" style:family=\"text\">{props}</style:style>"
         ));
-        self.text.insert(attrs, name.clone());
+        self.text.insert(props, name.clone());
         Some(name)
     }
 
@@ -56,15 +56,15 @@ impl AutoStyles {
         pp: &ParaProps,
         cp: &CharProps,
     ) -> Option<String> {
-        let p_attrs = paragraph_properties_attrs(pp);
-        let t_attrs = text_properties_attrs(cp);
-        if p_attrs.is_empty() && t_attrs.is_empty() && parent.is_none() {
+        let p_props = emit_paragraph_properties(pp);
+        let t_props = emit_text_properties(cp);
+        if p_props.is_empty() && t_props.is_empty() && parent.is_none() {
             return None;
         }
         let key = (
             parent.unwrap_or("").to_string(),
-            p_attrs.clone(),
-            t_attrs.clone(),
+            p_props.clone(),
+            t_props.clone(),
         );
         if let Some(name) = self.para.get(&key) {
             return Some(name.clone());
@@ -75,12 +75,8 @@ impl AutoStyles {
             el.push_str(&format!(" style:parent-style-name=\"{parent}\""));
         }
         el.push('>');
-        if !p_attrs.is_empty() {
-            el.push_str(&format!("<style:paragraph-properties{p_attrs}/>"));
-        }
-        if !t_attrs.is_empty() {
-            el.push_str(&format!("<style:text-properties{t_attrs}/>"));
-        }
+        el.push_str(&p_props);
+        el.push_str(&t_props);
         el.push_str("</style:style>");
         self.rendered.push(el);
         self.para.insert(key, name.clone());

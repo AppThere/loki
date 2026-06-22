@@ -8,7 +8,8 @@ use loki_doc_model::document::Document;
 use loki_doc_model::layout::page::{PageLayout, PageOrientation};
 use loki_doc_model::style::para_style::ParagraphStyle;
 
-use super::props::{paragraph_properties_attrs, text_properties_attrs};
+use super::para_props::emit_paragraph_properties;
+use super::props::emit_text_properties;
 use super::xml::{attr, escape, pt};
 
 const HEADER: &str = concat!(
@@ -43,10 +44,7 @@ pub(crate) fn styles_xml(doc: &Document) -> String {
             attr(&mut out, "style:parent-style-name", parent.as_str());
         }
         out.push('>');
-        let t = text_properties_attrs(&style.char_props);
-        if !t.is_empty() {
-            out.push_str(&format!("<style:text-properties{t}/>"));
-        }
+        out.push_str(&emit_text_properties(&style.char_props));
         out.push_str("</style:style>");
     }
     out.push_str("</office:styles>");
@@ -86,14 +84,8 @@ fn write_paragraph_style(out: &mut String, id: &str, style: &ParagraphStyle) {
         attr(out, "style:next-style-name", next);
     }
     out.push('>');
-    let p = paragraph_properties_attrs(&style.para_props);
-    if !p.is_empty() {
-        out.push_str(&format!("<style:paragraph-properties{p}/>"));
-    }
-    let t = text_properties_attrs(&style.char_props);
-    if !t.is_empty() {
-        out.push_str(&format!("<style:text-properties{t}/>"));
-    }
+    out.push_str(&emit_paragraph_properties(&style.para_props));
+    out.push_str(&emit_text_properties(&style.char_props));
     out.push_str("</style:style>");
 }
 
