@@ -333,7 +333,10 @@ fn map_inline(child: &OdfParagraphChild, ctx: &mut OdfMappingContext<'_>) -> Opt
             let mut comment = Comment::new(id.clone());
             comment.author.clone_from(creator);
             comment.date = date.as_deref().and_then(parse_datetime);
-            comment.body_raw = body.clone().into_bytes();
+            comment.body = body
+                .iter()
+                .map(|t| Block::Para(vec![Inline::Str(t.clone())]))
+                .collect();
             ctx.comments.push(comment);
             Some(Inline::Comment(CommentRef::new(id, CommentRefKind::Start)))
         }

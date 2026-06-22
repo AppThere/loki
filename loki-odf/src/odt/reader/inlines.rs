@@ -209,7 +209,7 @@ fn inline_from_empty(e: &BytesStart<'_>) -> OdfParagraphChild {
             name: local_attr_val(e, b"name"),
             creator: None,
             date: None,
-            body: String::new(),
+            body: Vec::new(),
         },
         _ => field_from_element(e, local),
     }

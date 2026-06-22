@@ -503,9 +503,8 @@ fn comments_round_trip() {
         Inline::Str("world".into()),
         Inline::Comment(CommentRef::new("c1", CommentRefKind::End)),
     ]);
-    let mut comment = Comment::new("c1");
+    let mut comment = Comment::new("c1").with_plain_body("Please rephrase.\nAnd shorten it.");
     comment.author = Some("Reviewer".into());
-    comment.body_raw = b"Please rephrase.".to_vec();
 
     let mut doc = Document::new();
     doc.sections[0].blocks = vec![para];
@@ -545,7 +544,24 @@ fn comments_round_trip() {
     let c = &re.comments[0];
     assert_eq!(c.id, "c1");
     assert_eq!(c.author.as_deref(), Some("Reviewer"));
-    assert_eq!(String::from_utf8_lossy(&c.body_raw), "Please rephrase.");
+    let texts: Vec<String> = c
+        .body
+        .iter()
+        .map(|b| match b {
+            Block::Para(i) | Block::Plain(i) => i
+                .iter()
+                .filter_map(|x| {
+                    if let Inline::Str(s) = x {
+                        Some(s.as_str())
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            _ => String::new(),
+        })
+        .collect();
+    assert_eq!(texts, vec!["Please rephrase.", "And shorten it."]);
 }
 
 #[test]

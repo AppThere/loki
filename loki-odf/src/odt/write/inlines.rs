@@ -5,6 +5,7 @@
 //! bookmarks, fields, and embedded images).
 
 use loki_doc_model::content::annotation::{CommentRef, CommentRefKind};
+use loki_doc_model::content::block::Block;
 use loki_doc_model::content::field::types::{CrossRefFormat, Field, FieldKind};
 use loki_doc_model::content::inline::{BookmarkKind, Inline, NoteKind};
 use loki_doc_model::style::props::char_props::{
@@ -93,14 +94,30 @@ fn write_comment(out: &mut String, c: &CommentRef, cx: &Cx) {
             ));
             out.push_str("</dc:date>");
         }
-        let body = String::from_utf8_lossy(&comment.body_raw);
-        for line in body.split('\n') {
+        for block in &comment.body {
             out.push_str("<text:p>");
-            out.push_str(&escape(line));
+            out.push_str(&escape(&block_plain_text(block)));
             out.push_str("</text:p>");
         }
     }
     out.push_str("</office:annotation>");
+}
+
+/// Concatenates the plain text of a paragraph-like [`Block`].
+fn block_plain_text(block: &Block) -> String {
+    let inlines = match block {
+        Block::Para(i) | Block::Plain(i) => i.as_slice(),
+        Block::StyledPara(sp) => sp.inlines.as_slice(),
+        _ => &[],
+    };
+    inlines
+        .iter()
+        .map(|i| match i {
+            Inline::Str(s) => s.as_str(),
+            Inline::Space => " ",
+            _ => "",
+        })
+        .collect()
 }
 
 /// Writes an ODF field element for `field`.

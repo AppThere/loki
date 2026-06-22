@@ -8,6 +8,8 @@
 use quick_xml::Writer;
 
 use loki_doc_model::content::annotation::{Comment, CommentRef, CommentRefKind};
+use loki_doc_model::content::block::Block;
+use loki_doc_model::content::inline::Inline;
 
 use super::xml::{NS_W, write_empty, write_end, write_start, wval};
 
@@ -42,8 +44,8 @@ fn write_reference_run<W: std::io::Write>(w: &mut Writer<W>, id: &str) {
 
 /// Serializes `word/comments.xml` from the document's comments.
 ///
-/// Each comment's plain-text body ([`Comment::body_raw`] as UTF-8, paragraphs
-/// separated by `\n`) is written back as `w:p`/`w:r`/`w:t` runs.
+/// Each body [`Block`] is written as a `w:p`; its plain text is concatenated
+/// into a single run (inline formatting inside comments is not preserved).
 #[must_use]
 pub(super) fn write_comments_xml(comments: &[Comment]) -> Vec<u8> {
     let mut out = String::from(concat!(
@@ -66,16 +68,36 @@ pub(super) fn write_comments_xml(comments: &[Comment]) -> Vec<u8> {
             );
         }
         out.push('>');
-        let body = String::from_utf8_lossy(&c.body_raw);
-        for line in body.split('\n') {
+        // Always emit at least one paragraph (a comment with no body is invalid).
+        if c.body.is_empty() {
+            out.push_str("<w:p/>");
+        }
+        for block in &c.body {
             out.push_str("<w:p><w:r><w:t xml:space=\"preserve\">");
-            out.push_str(&escape(line));
+            out.push_str(&escape(&block_text(block)));
             out.push_str("</w:t></w:r></w:p>");
         }
         out.push_str("</w:comment>");
     }
     out.push_str("</w:comments>");
     out.into_bytes()
+}
+
+/// Concatenates the plain text of a paragraph-like [`Block`].
+fn block_text(block: &Block) -> String {
+    let inlines = match block {
+        Block::Para(i) | Block::Plain(i) => i.as_slice(),
+        Block::StyledPara(sp) => sp.inlines.as_slice(),
+        _ => &[],
+    };
+    inlines
+        .iter()
+        .map(|i| match i {
+            Inline::Str(s) => s.as_str(),
+            Inline::Space => " ",
+            _ => "",
+        })
+        .collect()
 }
 
 /// Appends ` name="value"` (value escaped) to `out`.

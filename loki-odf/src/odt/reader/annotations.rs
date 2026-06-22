@@ -20,15 +20,15 @@ pub(crate) fn read_annotation(
     let name = local_attr_val(e, b"name");
     let mut creator = None;
     let mut date = None;
-    let mut body = String::new();
+    let mut body: Vec<String> = Vec::new();
 
     let mut buf = Vec::new();
     // Which metadata element's text we are collecting (`creator` / `date`), or
     // `None` while inside a body paragraph.
     let mut collecting: Option<&'static str> = None;
     let mut meta_text = String::new();
+    let mut para_text = String::new();
     let mut in_paragraph = false;
-    let mut first_paragraph = true;
 
     loop {
         buf.clear();
@@ -43,11 +43,8 @@ pub(crate) fn read_annotation(
                     meta_text.clear();
                 }
                 b"p" => {
-                    if !first_paragraph {
-                        body.push('\n');
-                    }
-                    first_paragraph = false;
                     in_paragraph = true;
+                    para_text.clear();
                 }
                 _ => {}
             },
@@ -56,7 +53,7 @@ pub(crate) fn read_annotation(
                 if collecting.is_some() {
                     meta_text.push_str(&s);
                 } else if in_paragraph {
-                    body.push_str(&s);
+                    para_text.push_str(&s);
                 }
             }
             Ok(Event::End(ref c)) => match c.local_name().into_inner() {
@@ -68,7 +65,10 @@ pub(crate) fn read_annotation(
                     date = Some(std::mem::take(&mut meta_text));
                     collecting = None;
                 }
-                b"p" => in_paragraph = false,
+                b"p" => {
+                    in_paragraph = false;
+                    body.push(std::mem::take(&mut para_text));
+                }
                 b"annotation" => break,
                 _ => {}
             },

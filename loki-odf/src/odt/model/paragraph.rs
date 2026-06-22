@@ -113,8 +113,8 @@ pub(crate) enum OdfParagraphChild {
         creator: Option<String>,
         /// `dc:date` — the comment timestamp (ISO-8601).
         date: Option<String>,
-        /// Plain-text comment body (paragraphs joined by `\n`).
-        body: String,
+        /// Plain text of each body paragraph (`text:p`), in order.
+        body: Vec<String>,
     },
 
     /// A comment end anchor (`office:annotation-end`). ODF 1.3 §14.1.

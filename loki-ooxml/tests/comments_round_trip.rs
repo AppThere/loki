@@ -25,10 +25,10 @@ fn doc_with_comment() -> Document {
         Inline::Str("!".to_string()),
     ]);
 
-    let mut comment = Comment::new("0");
+    // A two-paragraph comment body to exercise multi-paragraph round-trip.
+    let mut comment = Comment::new("0").with_plain_body("Please rephrase this.\nSecond paragraph.");
     comment.author = Some("Reviewer".to_string());
     comment.date = Some(chrono::Utc.with_ymd_and_hms(2026, 6, 22, 9, 30, 0).unwrap());
-    comment.body_raw = b"Please rephrase this.".to_vec();
 
     let mut doc = Document::new();
     doc.sections[0].blocks = vec![para];
@@ -83,11 +83,36 @@ fn comment_range_and_body_round_trip() {
     assert_eq!(c.id, "0");
     assert_eq!(c.author.as_deref(), Some("Reviewer"));
     assert_eq!(
-        String::from_utf8_lossy(&c.body_raw),
-        "Please rephrase this."
+        para_texts(&c.body),
+        vec!["Please rephrase this.", "Second paragraph."],
+        "both comment paragraphs must survive"
     );
     assert_eq!(
         c.date,
         Some(chrono::Utc.with_ymd_and_hms(2026, 6, 22, 9, 30, 0).unwrap())
     );
+}
+
+/// Plain text of each paragraph-like block.
+fn para_texts(blocks: &[Block]) -> Vec<String> {
+    blocks
+        .iter()
+        .map(|b| {
+            let inlines = match b {
+                Block::Para(i) | Block::Plain(i) => i.as_slice(),
+                Block::StyledPara(sp) => sp.inlines.as_slice(),
+                _ => &[],
+            };
+            inlines
+                .iter()
+                .filter_map(|i| {
+                    if let Inline::Str(s) = i {
+                        Some(s.as_str())
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        })
+        .collect()
 }
