@@ -12,7 +12,7 @@ use loki_doc_model::content::table::col::{ColAlignment, ColSpec, ColWidth};
 use loki_doc_model::content::table::core::{Table, TableBody, TableFoot, TableHead};
 use loki_doc_model::content::table::row::{Cell, CellProps, Row};
 use loki_doc_model::layout::Section;
-use loki_doc_model::layout::page::{PageLayout, PageMargins, PageSize};
+use loki_doc_model::layout::page::{PageLayout, PageMargins, PageSize, SectionColumns};
 use loki_doc_model::style::catalog::StyleCatalog;
 use loki_doc_model::style::list_style::{
     BulletChar, LabelAlignment, ListId, ListLevel, ListLevelKind, ListStyle, NumberingScheme,
@@ -116,7 +116,109 @@ fn tiny_layout() -> PageLayout {
     }
 }
 
+/// Collects the x-origins of every glyph run in a page's content items.
+fn glyph_x_origins(page: &crate::result::LayoutPage) -> Vec<f32> {
+    page.content_items
+        .iter()
+        .filter_map(|i| {
+            if let PositionedItem::GlyphRun(run) = i {
+                Some(run.origin.x)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 // ── tests ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fn text_flows_down_columns_before_paging() {
+    let mut r = test_resources();
+    // 12 short, left-aligned paragraphs: each line starts at the column's left
+    // edge, so a run's x-origin reveals which column it landed in.
+    let paras: Vec<_> = (0..12).map(|i| make_para(&format!("Line {i}"))).collect();
+
+    // tiny_layout: 200×100 pt, L/R margin 10 → content width 180, height 90.
+    // Two columns with an 18 pt gap ⇒ column width (180−18)/2 = 81, so the
+    // second column's left edge sits at x = 81 + 18 = 99 (content-local).
+    let two_col = PageLayout {
+        columns: Some(SectionColumns {
+            count: 2,
+            gap: Points::new(18.0),
+            separator: false,
+        }),
+        ..tiny_layout()
+    };
+    let (col_pages, _) = flow_paginated(&mut r, &section_of(paras.clone(), two_col));
+
+    // The same content single-column needs more pages (each column holds only
+    // ~90 pt; two columns roughly double per-page capacity).
+    let (plain_pages, _) = flow_paginated(&mut r, &section_of(paras, tiny_layout()));
+
+    assert!(
+        col_pages.len() < plain_pages.len(),
+        "two columns must fit more per page: {} cols vs {} plain",
+        col_pages.len(),
+        plain_pages.len()
+    );
+
+    // The first page must actually use the second column band (x ≥ 99) as well
+    // as the first (x near 0).
+    let xs = glyph_x_origins(&col_pages[0]);
+    assert!(
+        xs.iter().any(|&x| x < 50.0),
+        "first column (x≈0) must be used: {xs:?}"
+    );
+    assert!(
+        xs.iter().any(|&x| x >= 99.0),
+        "second column (x≥99) must be used: {xs:?}"
+    );
+}
+
+#[test]
+fn column_separator_line_is_drawn() {
+    let mut r = test_resources();
+    let paras: Vec<_> = (0..12).map(|i| make_para(&format!("Line {i}"))).collect();
+    let with_sep = PageLayout {
+        columns: Some(SectionColumns {
+            count: 2,
+            gap: Points::new(18.0),
+            separator: true,
+        }),
+        ..tiny_layout()
+    };
+    let (pages, _) = flow_paginated(&mut r, &section_of(paras, with_sep));
+
+    // A thin full-height FilledRect must sit in the gap centre (x ≈ 81 + 9 = 90).
+    let sep = pages[0].content_items.iter().find_map(|i| {
+        if let PositionedItem::FilledRect(r) = i {
+            let cx = r.rect.origin.x + r.rect.size.width / 2.0;
+            ((cx - 90.0).abs() < 1.0 && r.rect.size.height > 80.0).then_some(r.rect)
+        } else {
+            None
+        }
+    });
+    assert!(
+        sep.is_some(),
+        "expected a full-height separator near x=90; items: {:?}",
+        pages[0].content_items.len()
+    );
+}
+
+#[test]
+fn single_column_keeps_content_in_one_band() {
+    let mut r = test_resources();
+    let paras: Vec<_> = (0..12).map(|i| make_para(&format!("Line {i}"))).collect();
+    let (pages, _) = flow_paginated(&mut r, &section_of(paras, tiny_layout()));
+    // No column layout: every run starts near the left margin (x≈0); nothing is
+    // shifted into a second band.
+    for page in &pages {
+        for x in glyph_x_origins(page) {
+            assert!(x < 50.0, "single-column run unexpectedly shifted to x={x}");
+        }
+    }
+}
 
 #[test]
 fn continuous_cursor_advances() {
