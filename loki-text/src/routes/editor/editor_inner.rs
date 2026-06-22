@@ -43,7 +43,9 @@ use super::editor_path_sync::{
 };
 use super::editor_publish::{publish_panel, publish_tab_content};
 use super::editor_ribbon::home_tab_content;
-use super::editor_save::{export_document_to_token, save_document_to_path};
+use super::editor_save::{
+    export_document_to_token, export_template_to_token, save_document_to_path,
+};
 use super::editor_state::{EditorState, use_editor_state};
 use super::editor_style::style_picker_panel;
 use super::editor_style_catalog::available_font_families;
@@ -59,6 +61,9 @@ use loki_file_access::{FilePicker, SaveOptions};
 
 /// MIME type used when saving documents (DOCX is the only writable format).
 const DOCX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+/// MIME type used by the "Save as Template" flow (Word `.dotx`).
+const DOTX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.template";
 
 /// Viewport width (logical px) below which the editor defaults to the
 /// reflowable view: a US-Letter page (~816px) plus margins no longer fits, so
@@ -517,6 +522,38 @@ pub(super) fn EditorInner(path: String) -> Element {
         });
     });
 
+    // ── Save as Template (.dotx) ───────────────────────────────────────────────
+    //
+    // Exports the current document as a Word template to a picked destination.
+    // Unlike Save As this does not repoint the tab — the user keeps editing their
+    // document; the template is a separate artifact.
+    let doc_state_savetmpl = Arc::clone(&doc_state);
+    let save_as_template = use_callback(move |_: ()| {
+        let doc_state = Arc::clone(&doc_state_savetmpl);
+        let mut save_message = save_message;
+        let suggested = format!("{}.dotx", display_title_from_path(&path_signal.peek()));
+        spawn(async move {
+            let picker = FilePicker::new();
+            let opts = SaveOptions {
+                mime_type: Some(DOTX_MIME.to_string()),
+                suggested_name: Some(suggested),
+            };
+            match picker.pick_file_to_save(opts).await {
+                Ok(Some(token)) => {
+                    let msg = match export_template_to_token(&token, &doc_state) {
+                        Ok(()) => fl!("editor-save-template-success"),
+                        Err(e) => fl!("editor-save-error", reason = e.to_string()),
+                    };
+                    save_message.set(Some(msg));
+                }
+                Ok(None) => { /* user cancelled — no-op */ }
+                Err(e) => {
+                    save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
+                }
+            }
+        });
+    });
+
     // ── Ctrl+S handler ───────────────────────────────────────────────────────
     //
     // The keydown handler bumps `save_request`; perform the save here, where the
@@ -948,6 +985,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     save_message,
                     editing_style_draft,
                     save_as,
+                    save_as_template,
                     baseline_gen,
                 ),
                 },

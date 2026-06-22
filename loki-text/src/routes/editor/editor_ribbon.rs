@@ -10,8 +10,8 @@ use std::sync::{Arc, Mutex};
 
 use appthere_ui::{
     AtIcon, AtRibbonGroup, AtRibbonIconButton, AtRibbonSelect, LUCIDE_BOLD, LUCIDE_DOWNLOAD,
-    LUCIDE_ITALIC, LUCIDE_PILCROW, LUCIDE_REDO, LUCIDE_SAVE, LUCIDE_STRIKETHROUGH,
-    LUCIDE_SUBSCRIPT, LUCIDE_SUPERSCRIPT, LUCIDE_UNDERLINE, LUCIDE_UNDO,
+    LUCIDE_ITALIC, LUCIDE_LAYOUT_TEMPLATE, LUCIDE_PILCROW, LUCIDE_REDO, LUCIDE_SAVE,
+    LUCIDE_STRIKETHROUGH, LUCIDE_SUBSCRIPT, LUCIDE_SUPERSCRIPT, LUCIDE_UNDERLINE, LUCIDE_UNDO,
 };
 use dioxus::prelude::*;
 use loki_i18n::fl;
@@ -57,6 +57,7 @@ pub(super) fn home_tab_content(
     mut save_message: Signal<Option<String>>,
     mut editing_style_draft: Signal<Option<StyleDraft>>,
     save_as: Callback<()>,
+    save_as_template: Callback<()>,
     mut baseline_gen: Signal<u64>,
 ) -> Element {
     // One Arc clone per button — cheap reference-count increment.
@@ -111,6 +112,16 @@ pub(super) fn home_tab_content(
                     save_as.call(());
                 },
                 AtIcon { path_d: LUCIDE_DOWNLOAD.to_string() }
+            }
+
+            AtRibbonIconButton {
+                aria_label:  fl!("ribbon-save-as-template-aria"),
+                is_active:   false,
+                is_disabled: false,
+                on_click: move |_| {
+                    save_as_template.call(());
+                },
+                AtIcon { path_d: LUCIDE_LAYOUT_TEMPLATE.to_string() }
             }
         }
 

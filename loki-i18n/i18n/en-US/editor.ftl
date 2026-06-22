@@ -49,6 +49,7 @@ editor-font-dismiss = Dismiss
 
 # Save
 editor-save-success = Document saved
+editor-save-template-success = Template saved
 editor-save-error = Could not save: { $reason }
 editor-save-untitled-hint = Use File → Save As to save new documents
 editor-dismiss-aria = Dismiss

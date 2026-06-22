@@ -55,6 +55,30 @@ mod tests {
     use std::io::Cursor;
 
     #[test]
+    fn template_export_uses_template_content_type() {
+        let doc = Document::new();
+        let mut buf = Cursor::new(Vec::<u8>::new());
+        DocxTemplateExport::export(&doc, &mut buf, ()).expect("template export failed");
+        let mut zip = zip::ZipArchive::new(Cursor::new(buf.into_inner())).expect("valid zip");
+        let mut ct = String::new();
+        {
+            use std::io::Read;
+            zip.by_name("[Content_Types].xml")
+                .expect("content types part")
+                .read_to_string(&mut ct)
+                .unwrap();
+        }
+        assert!(
+            ct.contains("wordprocessingml.template.main+xml"),
+            "main part must use the template content type, got: {ct}"
+        );
+        assert!(
+            !ct.contains("wordprocessingml.document.main+xml"),
+            "template must not also declare the document content type"
+        );
+    }
+
+    #[test]
     fn export_empty_document_produces_zip() {
         let doc = Document::new();
         let mut buf = Cursor::new(Vec::<u8>::new());

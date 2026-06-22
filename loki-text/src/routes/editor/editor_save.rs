@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use loki_doc_model::document::Document;
 use loki_doc_model::io::DocumentExport;
 use loki_file_access::FileAccessToken;
-use loki_ooxml::DocxExport;
+use loki_ooxml::{DocxExport, DocxTemplateExport};
 
 use crate::editing::state::DocumentState;
 use crate::new_document::is_untitled;
@@ -84,23 +84,63 @@ pub(super) fn export_document_to_token(
         }
     }
 
-    let arc_doc: Arc<Document> = doc_state
+    let arc_doc = current_document(doc_state)?;
+    let mut buf = Cursor::new(Vec::<u8>::new());
+    DocxExport::export(&arc_doc, &mut buf, ()).map_err(|e| SaveError::Export(e.to_string()))?;
+    write_all_to_token(token, &buf.into_inner())
+}
+
+/// Exports the current document to `token` as a Word **template** (`.dotx`).
+///
+/// Used by the "Save as Template" flow. Identical to [`export_document_to_token`]
+/// except it writes the template content type, so Office treats the saved file
+/// as a template (new documents are created from it) rather than editing it in
+/// place. Rejects ODT (no OTT export yet) and unknown formats.
+pub(super) fn export_template_to_token(
+    token: &FileAccessToken,
+    doc_state: &Arc<Mutex<DocumentState>>,
+) -> Result<(), SaveError> {
+    use super::editor_load::{DocumentFormat, detect_format};
+
+    match detect_format(token) {
+        DocumentFormat::Docx => {}
+        DocumentFormat::Odt => {
+            return Err(SaveError::UnsupportedFormat(
+                "OTT template export is not yet supported".to_string(),
+            ));
+        }
+        DocumentFormat::Unsupported(ext) => {
+            return Err(SaveError::UnsupportedFormat(format!(
+                "unknown format: {ext}"
+            )));
+        }
+    }
+
+    let arc_doc = current_document(doc_state)?;
+    let mut buf = Cursor::new(Vec::<u8>::new());
+    DocxTemplateExport::export(&arc_doc, &mut buf, ())
+        .map_err(|e| SaveError::Export(e.to_string()))?;
+    write_all_to_token(token, &buf.into_inner())
+}
+
+/// Clones the currently-loaded document out of `doc_state`.
+fn current_document(doc_state: &Arc<Mutex<DocumentState>>) -> Result<Arc<Document>, SaveError> {
+    doc_state
         .lock()
         .map_err(|_| SaveError::NoDocument)?
         .document
         .clone()
-        .ok_or(SaveError::NoDocument)?;
+        .ok_or(SaveError::NoDocument)
+}
 
-    let mut buf = Cursor::new(Vec::<u8>::new());
-    DocxExport::export(&arc_doc, &mut buf, ()).map_err(|e| SaveError::Export(e.to_string()))?;
-
-    let bytes = buf.into_inner();
+/// Writes `bytes` to `token` in a single call (buffered upstream to avoid
+/// partial-write corruption).
+fn write_all_to_token(token: &FileAccessToken, bytes: &[u8]) -> Result<(), SaveError> {
     let mut writer = token
         .open_write()
         .map_err(|e| SaveError::Io(e.to_string()))?;
     writer
-        .write_all(&bytes)
+        .write_all(bytes)
         .map_err(|e| SaveError::Io(e.to_string()))?;
-
     Ok(())
 }
