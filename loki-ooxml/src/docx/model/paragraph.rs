@@ -33,6 +33,14 @@ pub enum DocxParaChild {
     TrackDel(Vec<DocxRun>),
     /// A `w:ins` tracked insertion (ECMA-376 §17.13.5.16).
     TrackIns(Vec<DocxRun>),
+    /// A `w:fldSimple` simple field (ECMA-376 §17.16.19): the `@w:instr`
+    /// instruction with the cached result carried as child runs.
+    SimpleField {
+        /// The field instruction string from `@w:instr`.
+        instr: String,
+        /// The cached result content (child runs).
+        runs: Vec<DocxRun>,
+    },
 }
 
 /// Intermediate model for `w:pPr` (ECMA-376 §17.3.1.26).

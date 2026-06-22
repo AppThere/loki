@@ -198,6 +198,7 @@ pub mod error;
 pub use error::MapperError;
 
 pub(crate) mod document;
+pub(crate) mod fields;
 pub(crate) mod images;
 pub(crate) mod inline;
 pub(crate) mod numbering;

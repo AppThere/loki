@@ -9,7 +9,7 @@
 
 use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::Block;
-use loki_doc_model::content::field::types::{CrossRefFormat, Field, FieldKind};
+use loki_doc_model::content::field::types::Field;
 use loki_doc_model::content::inline::{BookmarkKind, Inline, LinkTarget, NoteKind, StyledRun};
 use loki_doc_model::style::catalog::StyleId;
 use loki_doc_model::style::props::char_props::CharProps;
@@ -18,6 +18,7 @@ use crate::docx::model::paragraph::{DocxParaChild, DocxRun, DocxRunChild};
 use crate::error::{NoteKind as WarnNoteKind, OoxmlWarning};
 
 use super::document::MappingContext;
+use super::fields::{fld_simple_text, parse_field_instruction};
 use super::images::map_drawing;
 use super::props::map_rpr;
 
@@ -115,6 +116,20 @@ pub(crate) fn map_inlines(children: &[DocxParaChild], ctx: &mut MappingContext<'
                 for run in runs {
                     result.extend(process_run(run, &mut state, ctx));
                 }
+            }
+            DocxParaChild::SimpleField { instr, runs } => {
+                // `w:fldSimple` is a self-contained field: the `@w:instr`
+                // instruction plus the cached result as child runs. Map it the
+                // same way a complex field is, so both forms produce an
+                // identical `Inline::Field`.
+                let kind = parse_field_instruction(instr);
+                let snapshot = fld_simple_text(runs);
+                let mut field = Field::new(kind);
+                let trimmed = snapshot.trim();
+                if !trimmed.is_empty() {
+                    field.current_value = Some(trimmed.to_string());
+                }
+                result.push(Inline::Field(field));
             }
         }
     }
@@ -335,68 +350,6 @@ fn lookup_note(
     })
 }
 
-// ── Field instruction parser ───────────────────────────────────────────────────
-
-/// Parses an OOXML field instruction string into a [`FieldKind`].
-///
-/// The first word of the instruction (case-insensitive) identifies the field
-/// type. Unknown types are stored as [`FieldKind::Raw`] for round-trip
-/// fidelity. ADR-0005.
-fn parse_field_instruction(instruction: &str) -> FieldKind {
-    let trimmed = instruction.trim();
-    let first_word = trimmed.split_whitespace().next().unwrap_or("");
-
-    match first_word.to_ascii_uppercase().as_str() {
-        "PAGE" => FieldKind::PageNumber,
-        "NUMPAGES" => FieldKind::PageCount,
-        "DATE" => FieldKind::Date {
-            format: extract_switch(trimmed, "@"),
-        },
-        "TIME" => FieldKind::Time {
-            format: extract_switch(trimmed, "@"),
-        },
-        "TITLE" => FieldKind::Title,
-        "AUTHOR" => FieldKind::Author,
-        "SUBJECT" => FieldKind::Subject,
-        "FILENAME" => FieldKind::FileName,
-        "NUMWORDS" => FieldKind::WordCount,
-        "REF" => {
-            let target = trimmed.split_whitespace().nth(1).unwrap_or("").to_string();
-            FieldKind::CrossReference {
-                target,
-                format: CrossRefFormat::Number,
-            }
-        }
-        "PAGEREF" => {
-            let target = trimmed.split_whitespace().nth(1).unwrap_or("").to_string();
-            FieldKind::CrossReference {
-                target,
-                format: CrossRefFormat::Page,
-            }
-        }
-        _ => FieldKind::Raw {
-            instruction: trimmed.to_string(),
-        },
-    }
-}
-
-/// Extracts the value following a backslash-switch (e.g. `\@`) from a field
-/// instruction string.
-///
-/// Returns the content of the first quoted string after `\{sw}`, or `None`
-/// if the switch is not present.
-fn extract_switch(instruction: &str, sw: &str) -> Option<String> {
-    let needle = format!("\\{sw}");
-    let pos = instruction.find(&needle)?;
-    let rest = instruction[pos + needle.len()..].trim_start();
-    if let Some(inner) = rest.strip_prefix('"') {
-        let end = inner.find('"')?;
-        Some(inner[..end].to_string())
-    } else {
-        None
-    }
-}
-
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -405,6 +358,7 @@ mod tests {
     use crate::docx::import::DocxImportOptions;
     use crate::docx::model::paragraph::{DocxHyperlink, DocxRPr};
     use loki_doc_model::content::block::Block;
+    use loki_doc_model::content::field::types::FieldKind;
     use loki_doc_model::style::catalog::StyleCatalog;
     use std::collections::HashMap;
 
@@ -567,6 +521,48 @@ mod tests {
     }
 
     #[test]
+    fn simple_field_maps_to_field_inline() {
+        let (styles, fn_m, en_m, hl_m, img_m, opts) = default_ctx();
+        let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
+        let children = vec![DocxParaChild::SimpleField {
+            instr: " PAGE ".into(),
+            runs: vec![DocxRun {
+                rpr: None,
+                children: vec![DocxRunChild::Text {
+                    text: "7".into(),
+                    preserve: false,
+                }],
+            }],
+        }];
+        let inlines = map_inlines(&children, &mut ctx);
+        assert_eq!(inlines.len(), 1);
+        if let Inline::Field(f) = &inlines[0] {
+            assert_eq!(f.kind, FieldKind::PageNumber);
+            assert_eq!(f.current_value.as_deref(), Some("7"));
+        } else {
+            panic!("expected Field, got {:?}", inlines[0]);
+        }
+    }
+
+    #[test]
+    fn empty_simple_field_has_no_current_value() {
+        let (styles, fn_m, en_m, hl_m, img_m, opts) = default_ctx();
+        let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
+        let children = vec![DocxParaChild::SimpleField {
+            instr: " TITLE ".into(),
+            runs: vec![],
+        }];
+        let inlines = map_inlines(&children, &mut ctx);
+        assert_eq!(inlines.len(), 1);
+        if let Inline::Field(f) = &inlines[0] {
+            assert_eq!(f.kind, FieldKind::Title);
+            assert!(f.current_value.is_none());
+        } else {
+            panic!("expected Field");
+        }
+    }
+
+    #[test]
     fn field_without_separate_has_no_current_value() {
         let (styles, fn_m, en_m, hl_m, img_m, opts) = default_ctx();
         let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
@@ -706,28 +702,6 @@ mod tests {
         );
         assert!(
             matches!(&inlines[2], Inline::Bookmark(BookmarkKind::End, name) if name == "myBookmark")
-        );
-    }
-
-    #[test]
-    fn parse_date_field_with_format_switch() {
-        let kind = parse_field_instruction(r#" DATE \@ "MMMM d, yyyy" "#);
-        assert!(matches!(kind, FieldKind::Date { format: Some(ref s) } if s == "MMMM d, yyyy"));
-    }
-
-    #[test]
-    fn parse_ref_field() {
-        let kind = parse_field_instruction(" REF _MyBookmark ");
-        assert!(
-            matches!(kind, FieldKind::CrossReference { target, format: CrossRefFormat::Number } if target == "_MyBookmark")
-        );
-    }
-
-    #[test]
-    fn parse_unknown_field_is_raw() {
-        let kind = parse_field_instruction(" HYPERLINK \"https://example.com\" ");
-        assert!(
-            matches!(kind, FieldKind::Raw { instruction } if instruction.contains("HYPERLINK"))
         );
     }
 }

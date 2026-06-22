@@ -10,6 +10,7 @@ pub mod document;
 pub mod footnotes;
 pub mod header_footer;
 pub mod numbering;
+pub mod runs;
 pub mod settings;
 pub mod styles;
 pub mod util;
