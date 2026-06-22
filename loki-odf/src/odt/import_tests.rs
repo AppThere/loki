@@ -9,7 +9,7 @@ use zip::CompressionMethod;
 use zip::write::{FileOptions, ZipWriter};
 
 use super::*;
-use crate::constants::{ENTRY_CONTENT, ENTRY_MANIFEST, ENTRY_STYLES, MIME_ODT};
+use crate::constants::{ENTRY_CONTENT, ENTRY_MANIFEST, ENTRY_STYLES, MIME_ODT, MIME_OTT};
 
 fn build_odt_zip(version: Option<&str>) -> Vec<u8> {
     let ver_attr = match version {
@@ -35,6 +35,45 @@ fn build_odt_zip(version: Option<&str>) -> Vec<u8> {
 
     zip.finish().unwrap();
     buf
+}
+
+/// Builds a minimal package with an arbitrary `mimetype` string (for template
+/// variants), otherwise identical to [`build_odt_zip`].
+fn build_zip_with_mimetype(mimetype: &str) -> Vec<u8> {
+    let mut buf = Vec::new();
+    let mut zip = ZipWriter::new(Cursor::new(&mut buf));
+    let stored = FileOptions::<()>::default().compression_method(CompressionMethod::Stored);
+    zip.start_file("mimetype", stored).unwrap();
+    zip.write_all(mimetype.as_bytes()).unwrap();
+    let deflated = FileOptions::<()>::default().compression_method(CompressionMethod::Deflated);
+    zip.start_file(ENTRY_MANIFEST, deflated).unwrap();
+    zip.write_all(b"<manifest:manifest/>").unwrap();
+    zip.start_file(ENTRY_CONTENT, deflated).unwrap();
+    zip.write_all(br#"<?xml version="1.0"?><office:document-content/>"#)
+        .unwrap();
+    zip.start_file(ENTRY_STYLES, deflated).unwrap();
+    zip.write_all(b"<office:document-styles/>").unwrap();
+    zip.finish().unwrap();
+    buf
+}
+
+#[test]
+fn run_accepts_ott_template_mimetype() {
+    // An OTT (text template) is structurally an ODT; the importer must accept it
+    // so the editor can open it as a new document.
+    let zip = build_zip_with_mimetype(MIME_OTT);
+    let result = OdtImporter::new(OdtImportOptions::default()).run(Cursor::new(zip));
+    assert!(
+        result.is_ok(),
+        "OTT template mimetype must import: {result:?}"
+    );
+}
+
+#[test]
+fn run_rejects_unknown_mimetype() {
+    let zip = build_zip_with_mimetype("application/zip");
+    let result = OdtImporter::new(OdtImportOptions::default()).run(Cursor::new(zip));
+    assert!(result.is_err(), "non-ODF mimetype must still be rejected");
 }
 
 #[test]

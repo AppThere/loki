@@ -22,4 +22,6 @@ pub mod recent_documents;
 pub mod tabs;
 pub mod untitled;
 
-pub use untitled::{UNTITLED_SCHEME, is_untitled};
+pub use untitled::{
+    NewDocSource, UNTITLED_SCHEME, import_path, is_untitled, parse_new_doc_source, template_path,
+};

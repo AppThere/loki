@@ -14,7 +14,7 @@ use dioxus::prelude::*;
 use loki_file_access::{FileAccessToken, FilePicker, PickOptions, PickerError, SaveOptions};
 use loki_i18n::fl;
 
-use crate::new_document::new_blank_tab;
+use crate::new_document::{new_blank_tab, new_import_tab};
 use crate::recent_documents::RecentDocuments;
 use crate::routes::Route;
 use crate::tabs::OpenTab;
@@ -25,6 +25,10 @@ use crate::utils::display_title_from_path;
 const MIME_TYPES: &[&str] = &[
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.oasis.opendocument.text",
+    // Templates — opened as fresh, detached documents.
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.template", // .dotx
+    "application/vnd.ms-word.template.macroEnabled.12",                        // .dotm
+    "application/vnd.oasis.opendocument.text-template",                        // .ott
 ];
 
 // ── Template data ─────────────────────────────────────────────────────────────
@@ -93,6 +97,28 @@ fn close_tab_for_path(mut tabs: Signal<Vec<OpenTab>>, mut active_tab: Signal<usi
     }
 }
 
+/// True if `name` has a template extension (Word `.dotx`/`.dotm` or
+/// LibreOffice `.ott`/`.ots`). Templates open as fresh, detached documents.
+fn is_template_name(name: &str) -> bool {
+    name.rsplit('.')
+        .next()
+        .map(|e| e.to_ascii_lowercase())
+        .is_some_and(|e| matches!(e.as_str(), "dotx" | "dotm" | "ott" | "ots"))
+}
+
+/// Push `tab` as a new open tab (last position) and return its path so the
+/// caller can navigate to the editor.
+fn push_new_tab(
+    mut tabs: Signal<Vec<OpenTab>>,
+    mut active_tab: Signal<usize>,
+    tab: OpenTab,
+) -> String {
+    let path = tab.path.clone();
+    tabs.write().push(tab);
+    *active_tab.write() = tabs.read().len(); // new tab is last; +1 for Home
+    path
+}
+
 /// Build a "<stem> Copy.<ext>" filename from a token's display name.
 fn suggested_copy_name(token: &FileAccessToken) -> String {
     let name = token.display_name();
@@ -125,16 +151,10 @@ pub fn Home() -> Element {
     // All other indices are deferred (templates not yet implemented).
     let on_template_select = move |idx: usize| {
         if idx == 0 {
-            let tab = new_blank_tab();
-            let path = tab.path.clone();
-            let nav = navigator;
-            let mut t = tabs;
-            let mut a = active_tab;
-            t.write().push(tab);
-            *a.write() = t.read().len(); // new tab is last; +1 for Home
-            nav.push(Route::Editor { path });
+            let path = push_new_tab(tabs, active_tab, new_blank_tab());
+            navigator.push(Route::Editor { path });
         }
-        // TODO(templates): Apply the selected built-in template (idx > 0).
+        // TODO(templates): idx > 0 → push_new_tab(.., new_template_tab(id, name)).
     };
 
     // ── on_open_file ──────────────────────────────────────────────────────────
@@ -152,6 +172,15 @@ pub fn Home() -> Element {
                 multi: false,
             };
             match picker.pick_file_to_open(opts).await {
+                Ok(Some(token)) if is_template_name(token.display_name()) => {
+                    // A template (.dotx/.dotm/.ott/.ots): open it as a fresh,
+                    // detached document so saving prompts Save As rather than
+                    // overwriting the template, and it is not added to recents.
+                    let serialized = token.serialize();
+                    let title = display_title_from_path(&serialized);
+                    let path = push_new_tab(tabs, active_tab, new_import_tab(&serialized, title));
+                    nav.push(Route::Editor { path });
+                }
                 Ok(Some(token)) => {
                     let path = token.serialize();
                     let title = display_title_from_path(&path);

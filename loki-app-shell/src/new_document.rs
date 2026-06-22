@@ -42,3 +42,31 @@ pub fn new_blank_tab() -> OpenTab {
         is_discarded: false,
     }
 }
+
+/// Creates a new tab seeded from bundled template `template_id`.
+///
+/// Like a blank tab the document is untitled (its `untitled-N-tpl-…` path keeps
+/// it out of recents and forces Save As), but `load_document` reconstructs the
+/// template's content from the path. `title` is the template's display name.
+pub fn new_template_tab(template_id: &str, title: String) -> OpenTab {
+    let n = UNTITLED_COUNTER.fetch_add(1, Ordering::Relaxed);
+    OpenTab {
+        title,
+        path: crate::untitled::template_path(n, template_id),
+        is_dirty: true,
+        is_discarded: false,
+    }
+}
+
+/// Creates a new tab that imports external `token` as a fresh, detached document
+/// (the template-file open flow). Untitled, so saving prompts Save As rather
+/// than overwriting the source file. `title` is typically the file's stem.
+pub fn new_import_tab(token: &str, title: String) -> OpenTab {
+    let n = UNTITLED_COUNTER.fetch_add(1, Ordering::Relaxed);
+    OpenTab {
+        title,
+        path: crate::untitled::import_path(n, token),
+        is_dirty: true,
+        is_discarded: false,
+    }
+}

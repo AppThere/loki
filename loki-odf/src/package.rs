@@ -20,7 +20,7 @@ use zip::ZipArchive;
 
 use crate::constants::{
     ENTRY_CONTENT, ENTRY_MANIFEST, ENTRY_META, ENTRY_MIMETYPE, ENTRY_SETTINGS, ENTRY_STYLES,
-    MIME_ODS, MIME_ODT,
+    MIME_ODS, MIME_ODT, MIME_OTS, MIME_OTT,
 };
 use crate::error::{OdfError, OdfResult};
 use crate::limits::read_entry_capped;
@@ -246,13 +246,19 @@ fn validate_mimetype<R: Read + Seek>(
         reason: "mimetype entry contains invalid UTF-8".into(),
     })?;
 
-    if mimetype_str != MIME_ODT && mimetype_str != MIME_ODS {
+    // Accept document packages (ODT/ODS) and their template variants
+    // (OTT/OTS). A template is structurally identical to its document form; the
+    // editor opens it as a new untitled document.
+    if !matches!(
+        mimetype_str.as_str(),
+        MIME_ODT | MIME_ODS | MIME_OTT | MIME_OTS
+    ) {
         return Err(OdfError::MalformedElement {
             element: ENTRY_MIMETYPE.into(),
             part: ENTRY_MIMETYPE.into(),
             reason: format!(
-                "mimetype must contain either {MIME_ODT:?} or {MIME_ODS:?} with no trailing newline, \
-                 found {mimetype_str:?}"
+                "mimetype must contain one of {MIME_ODT:?}, {MIME_ODS:?}, {MIME_OTT:?}, or \
+                 {MIME_OTS:?} with no trailing newline, found {mimetype_str:?}"
             ),
         });
     }

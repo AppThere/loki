@@ -58,6 +58,18 @@ pub const MIME_ODT: &str = "application/vnd.oasis.opendocument.text";
 /// uncompressed, with no trailing newline. ODF 1.3 §3.3.
 pub const MIME_ODS: &str = "application/vnd.oasis.opendocument.spreadsheet";
 
+/// MIME type for an OTT (`OpenDocument` Text **Template**) package.
+///
+/// Structurally identical to an ODT; only the `mimetype` entry differs. ODF
+/// 1.3 §3.3. Opening one yields a new (untitled) document based on the template.
+pub const MIME_OTT: &str = "application/vnd.oasis.opendocument.text-template";
+
+/// MIME type for an OTS (`OpenDocument` Spreadsheet Template) package.
+///
+/// Structurally identical to an ODS; only the `mimetype` entry differs. ODF
+/// 1.3 §3.3.
+pub const MIME_OTS: &str = "application/vnd.oasis.opendocument.spreadsheet-template";
+
 // ── ODF version strings ────────────────────────────────────────────────────────
 
 /// Version string for ODF 1.1 (ISO/IEC 26300:2006/Amd 1:2012).
