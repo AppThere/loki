@@ -21,5 +21,6 @@ pub mod export;
 pub mod import;
 pub mod mapper;
 pub(crate) mod model;
+pub(crate) mod omml;
 pub(crate) mod reader;
 pub(crate) mod write;

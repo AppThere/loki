@@ -11,7 +11,9 @@ use loki_doc_model::content::annotation::{CommentRef, CommentRefKind};
 use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::field::types::Field;
-use loki_doc_model::content::inline::{BookmarkKind, Inline, LinkTarget, NoteKind, StyledRun};
+use loki_doc_model::content::inline::{
+    BookmarkKind, Inline, LinkTarget, MathType, NoteKind, StyledRun,
+};
 use loki_doc_model::style::catalog::StyleId;
 use loki_doc_model::style::props::char_props::CharProps;
 
@@ -129,6 +131,14 @@ pub(crate) fn map_inlines(children: &[DocxParaChild], ctx: &mut MappingContext<'
                     id.clone(),
                     CommentRefKind::End,
                 )));
+            }
+            DocxParaChild::Math { mathml, display } => {
+                let kind = if *display {
+                    MathType::DisplayMath
+                } else {
+                    MathType::InlineMath
+                };
+                result.push(Inline::Math(kind, mathml.clone()));
             }
             DocxParaChild::SimpleField { instr, runs } => {
                 // `w:fldSimple` is a self-contained field: the `@w:instr`

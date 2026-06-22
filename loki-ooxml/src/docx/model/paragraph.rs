@@ -51,6 +51,14 @@ pub enum DocxParaChild {
         /// The `@w:id` identifying the comment.
         id: String,
     },
+    /// An OMML math zone (`m:oMath` inline or `m:oMathPara` display), already
+    /// converted to a `MathML` string. ECMA-376 §22.1.
+    Math {
+        /// The math content as a `MathML` `<math>…</math>` string.
+        mathml: String,
+        /// `true` when the source was `m:oMathPara` (display/block math).
+        display: bool,
+    },
 }
 
 /// Intermediate model for `w:pPr` (ECMA-376 §17.3.1.26).

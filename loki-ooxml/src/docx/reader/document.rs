@@ -142,6 +142,12 @@ pub(crate) fn parse_paragraph(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxPar
                             .push(DocxParaChild::SimpleField { instr, runs });
                         continue;
                     }
+                    b"oMath" | b"oMathPara" => {
+                        depth -= 1; // read_math consumes the element's end tag
+                        let (mathml, display) = crate::docx::omml::read_math(reader, e)?;
+                        para.children.push(DocxParaChild::Math { mathml, display });
+                        continue;
+                    }
                     _ => {}
                 }
             }

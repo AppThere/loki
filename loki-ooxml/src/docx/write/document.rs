@@ -48,6 +48,7 @@ pub(super) fn write_document_xml(
             ("xmlns:wp", NS_WP),
             ("xmlns:a", NS_A),
             ("xmlns:pic", NS_PIC),
+            ("xmlns:m", crate::docx::omml::OMML_NS),
         ],
     );
     let _ = write_start(&mut w, "w:body", &[]);
@@ -103,6 +104,7 @@ pub(super) fn write_header_footer_xml(
             ("xmlns:wp", NS_WP),
             ("xmlns:a", NS_A),
             ("xmlns:pic", NS_PIC),
+            ("xmlns:m", crate::docx::omml::OMML_NS),
         ],
     );
 
@@ -803,8 +805,9 @@ fn write_inline<W: std::io::Write>(
         Inline::Bookmark(kind, name) => {
             write_bookmark(w, *kind, name, collector);
         }
-        Inline::Math(_, s) => {
-            write_text_run(w, s, props);
+        Inline::Math(kind, mathml) => {
+            use loki_doc_model::content::inline::MathType;
+            crate::docx::omml::write_omath(w, mathml, *kind == MathType::DisplayMath);
         }
         Inline::Field(field) => super::fields::write_field(w, field, props),
         Inline::Comment(c) => super::comments::write_comment_ref(w, c),
@@ -1046,7 +1049,8 @@ fn inlines_to_string(inlines: &[Inline]) -> String {
     let mut s = String::new();
     for inline in inlines {
         match inline {
-            Inline::Str(t) | Inline::Code(_, t) | Inline::Math(_, t) => s.push_str(t),
+            // Math carries MathML markup, not display text — excluded here.
+            Inline::Str(t) | Inline::Code(_, t) => s.push_str(t),
             Inline::Space | Inline::SoftBreak => s.push(' '),
             Inline::LineBreak => s.push('\n'),
             Inline::Strong(i)
