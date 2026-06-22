@@ -12,7 +12,7 @@ use loki_doc_model::style::catalog::StyleId;
 
 use super::auto::AutoStyles;
 use super::inlines::write_inlines;
-use super::media::{Media, MediaPart};
+use super::media::{Media, Rendered};
 use super::xml::{attr, escape};
 
 const HEADER: &str = concat!(
@@ -36,15 +36,9 @@ pub(super) struct Cx {
     pub(super) media: Media,
 }
 
-/// The rendered `content.xml` together with the image parts it references.
-pub(crate) struct Content {
-    pub(crate) xml: String,
-    pub(crate) media: Vec<MediaPart>,
-}
-
 /// Renders the whole `content.xml` for `doc`, collecting any embedded images.
 #[must_use]
-pub(crate) fn content_xml(doc: &Document) -> Content {
+pub(crate) fn content_xml(doc: &Document) -> Rendered {
     let mut cx = Cx {
         auto: AutoStyles::new(),
         media: Media::new(),
@@ -63,7 +57,7 @@ pub(crate) fn content_xml(doc: &Document) -> Content {
     out.push_str("<office:body><office:text>");
     out.push_str(&body);
     out.push_str("</office:text></office:body></office:document-content>");
-    Content {
+    Rendered {
         xml: out,
         media: cx.media.into_parts(),
     }

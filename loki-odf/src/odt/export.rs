@@ -37,6 +37,7 @@ impl DocumentExport for OdtExport {
     /// Exports a [`Document`] as an ODT package. ODF 1.3 §3.
     fn export(doc: &Document, writer: impl Write + Seek, _options: Self::Options) -> OdfResult<()> {
         let content = content_xml(doc);
+        let styles = styles_xml(doc);
 
         let mut zip = ZipWriter::new(writer);
 
@@ -47,23 +48,24 @@ impl DocumentExport for OdtExport {
 
         let deflated = FileOptions::<()>::default().compression_method(CompressionMethod::Deflated);
 
-        // 2. manifest (listing every part, including embedded images).
+        // 2. manifest (listing every part, including embedded images from both
+        //    the body and the master-page header/footer).
         zip.start_file(ENTRY_MANIFEST, deflated)?;
-        zip.write_all(manifest(&content.media).as_bytes())?;
+        zip.write_all(manifest(&content.media, &styles.media).as_bytes())?;
 
         // 3. the three XML parts.
         zip.start_file(ENTRY_CONTENT, deflated)?;
         zip.write_all(content.xml.as_bytes())?;
 
         zip.start_file(ENTRY_STYLES, deflated)?;
-        zip.write_all(styles_xml(doc).as_bytes())?;
+        zip.write_all(styles.xml.as_bytes())?;
 
         zip.start_file(ENTRY_META, deflated)?;
         zip.write_all(meta_xml(doc).as_bytes())?;
 
-        // 4. embedded image parts (compressed images stay stored to avoid
-        //    double-compression overhead).
-        for part in &content.media {
+        // 4. embedded image parts (already-compressed images stay stored to
+        //    avoid double-compression overhead).
+        for part in content.media.iter().chain(styles.media.iter()) {
             zip.start_file(&part.path, stored)?;
             zip.write_all(&part.bytes)?;
         }
@@ -73,8 +75,9 @@ impl DocumentExport for OdtExport {
     }
 }
 
-/// Builds `META-INF/manifest.xml`, listing the fixed parts plus every image.
-fn manifest(media: &[MediaPart]) -> String {
+/// Builds `META-INF/manifest.xml`, listing the fixed parts plus every image
+/// (from the body and the master-page header/footer).
+fn manifest(body_media: &[MediaPart], styles_media: &[MediaPart]) -> String {
     let mut m = String::from(concat!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
         "<manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\"",
@@ -85,7 +88,7 @@ fn manifest(media: &[MediaPart]) -> String {
         "<manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/>",
         "<manifest:file-entry manifest:full-path=\"meta.xml\" manifest:media-type=\"text/xml\"/>",
     ));
-    for part in media {
+    for part in body_media.iter().chain(styles_media.iter()) {
         m.push_str(&format!(
             "<manifest:file-entry manifest:full-path=\"{}\" manifest:media-type=\"{}\"/>",
             part.path, part.media_type

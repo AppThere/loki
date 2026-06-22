@@ -20,18 +20,36 @@ pub(crate) struct MediaPart {
     pub(crate) bytes: Vec<u8>,
 }
 
-/// Accumulates the embedded images referenced by the document body.
-#[derive(Default)]
+/// A rendered ODF part (XML) together with the image parts it references.
+pub(crate) struct Rendered {
+    pub(crate) xml: String,
+    pub(crate) media: Vec<MediaPart>,
+}
+
+/// Accumulates the embedded images referenced by a document part.
+///
+/// The `prefix` distinguishes images from different parts (the body vs. the
+/// master-page header/footer), so their `Pictures/` filenames never collide.
 pub(super) struct Media {
+    prefix: &'static str,
     parts: Vec<MediaPart>,
 }
 
 impl Media {
+    /// Collector for the document body (`Pictures/image…`).
     pub(super) fn new() -> Self {
-        Self::default()
+        Self::with_prefix("image")
     }
 
-    /// Resolves an image `url` to the `xlink:href` to use in `content.xml`.
+    /// Collector whose parts are named `Pictures/<prefix>…`.
+    pub(super) fn with_prefix(prefix: &'static str) -> Self {
+        Self {
+            prefix,
+            parts: Vec::new(),
+        }
+    }
+
+    /// Resolves an image `url` to the `xlink:href` to use in the XML.
     ///
     /// A `data:` URI is decoded and stored as a new `Pictures/` part (returning
     /// that path); any other non-empty URL is treated as an external link and
@@ -47,7 +65,8 @@ impl Media {
                 .decode(data.trim())
                 .ok()?;
             let path = format!(
-                "Pictures/image{}.{}",
+                "Pictures/{}{}.{}",
+                self.prefix,
                 self.parts.len() + 1,
                 ext_for(&media_type)
             );

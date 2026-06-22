@@ -344,6 +344,51 @@ fn inline_bookmark_field_and_image_round_trip() {
 }
 
 #[test]
+fn headers_and_footers_round_trip() {
+    use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
+
+    let hf = |kind, text: &str| HeaderFooter {
+        kind,
+        blocks: vec![Block::Para(vec![Inline::Str(text.into())])],
+    };
+
+    let mut doc = sample_doc();
+    let layout = &mut doc.sections[0].layout;
+    layout.header = Some(hf(HeaderFooterKind::Default, "Page header"));
+    layout.footer = Some(hf(HeaderFooterKind::Default, "Page footer"));
+    layout.header_first = Some(hf(HeaderFooterKind::First, "First-page header"));
+    layout.footer_even = Some(hf(HeaderFooterKind::Even, "Even-page footer"));
+
+    let out = round_trip(&doc);
+    let layout = &out.sections[0].layout;
+
+    let text_of = |hf: &Option<HeaderFooter>| -> String {
+        let Some(h) = hf else {
+            return String::new();
+        };
+        let Some(block) = h.blocks.first() else {
+            return String::new();
+        };
+        let inl: &[Inline] = match block {
+            Block::Para(i) | Block::Plain(i) => i,
+            Block::StyledPara(sp) => &sp.inlines,
+            _ => return String::new(),
+        };
+        inl.iter()
+            .filter_map(|i| match i {
+                Inline::Str(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .collect()
+    };
+
+    assert_eq!(text_of(&layout.header), "Page header");
+    assert_eq!(text_of(&layout.footer), "Page footer");
+    assert_eq!(text_of(&layout.header_first), "First-page header");
+    assert_eq!(text_of(&layout.footer_even), "Even-page footer");
+}
+
+#[test]
 fn metadata_and_heading_round_trip() {
     let doc = round_trip(&sample_doc());
     assert_eq!(doc.meta.title.as_deref(), Some("Round Trip ODT"));
