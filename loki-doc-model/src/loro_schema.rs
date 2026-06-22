@@ -21,6 +21,11 @@ pub const KEY_META_TITLE: &str = "title";
 /// Key for the Document style catalog map.
 pub const KEY_STYLE_CATALOG: &str = "style_catalog";
 
+/// Key (within the style-catalog map) for the JSON snapshot of the whole
+/// [`crate::style::catalog::StyleCatalog`]. A lossless serde snapshot, mirroring
+/// [`KEY_META_JSON`], rather than a field-by-field CRDT mapping.
+pub const KEY_STYLE_CATALOG_JSON: &str = "catalog_json";
+
 /// Key for the legacy document header/footer map (superseded by KEY_LAYOUT slots).
 pub const KEY_HEADER_FOOTER: &str = "header_footer";
 

@@ -14,8 +14,10 @@ use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_i18n::fl;
 
+use super::super::editor_keydown_ctrl::post_mutation_sync;
 use super::super::editor_state::StyleDraft;
-use super::super::editor_style_catalog::upsert_catalog_style;
+use super::super::editor_style_catalog::commit_style_to_loro;
+use super::StyleEditorSync;
 use super::draft::draft_to_style;
 use super::form_font::{font_picker, input_style, label_style, weight_selector};
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
@@ -134,10 +136,10 @@ fn alignment_buttons(
 /// Renders the right-column edit form for the active draft.
 pub(super) fn style_form(
     doc_state: Arc<Mutex<DocumentState>>,
-    loro_doc: Signal<Option<loro::LoroDoc>>,
     editing_style_draft: Signal<Option<StyleDraft>>,
     draft: StyleDraft,
     font_families: Rc<Vec<String>>,
+    sync: StyleEditorSync,
 ) -> Element {
     let ds_apply = Arc::clone(&doc_state);
     let align_cur = draft.alignment.clone();
@@ -209,14 +211,32 @@ pub(super) fn style_form(
                         fg = tokens::COLOR_TEXT_ON_CHROME,
                     ),
                     onclick: move |_| {
-                        let v = editing_style_draft.read().clone();
-                        if let Some(draft_val) = v {
-                            let style = draft_to_style(&draft_val);
-                            upsert_catalog_style(&ds_apply, style);
-                            let ldoc_guard = loro_doc.read();
-                            if let Some(ldoc) = ldoc_guard.as_ref() {
+                        let Some(draft_val) = editing_style_draft.read().clone() else {
+                            return;
+                        };
+                        let style = draft_to_style(&draft_val);
+                        // Persist through Loro then re-derive (which reads the
+                        // catalog back from the CRDT) so the edit is durable and
+                        // undoable. Drop the read guard before the undo refresh.
+                        let applied = {
+                            let guard = sync.loro_doc.read();
+                            if let Some(ldoc) = guard.as_ref() {
+                                commit_style_to_loro(ldoc, &ds_apply, style);
                                 apply_mutation_and_relayout(&ds_apply, ldoc);
+                                true
+                            } else {
+                                false
                             }
+                        };
+                        if applied {
+                            post_mutation_sync(
+                                &ds_apply,
+                                sync.loro_doc,
+                                sync.cursor_state,
+                                sync.undo_manager,
+                                sync.can_undo,
+                                sync.can_redo,
+                            );
                         }
                     },
                     { fl!("ribbon-style-apply-changes") }

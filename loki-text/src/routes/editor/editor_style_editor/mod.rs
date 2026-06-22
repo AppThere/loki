@@ -21,6 +21,7 @@ use loki_i18n::fl;
 
 use super::editor_state::StyleDraft;
 use super::editor_style_catalog::{catalog_style_list, get_catalog_style, new_custom_style_id};
+use crate::editing::cursor::CursorState;
 use crate::editing::state::DocumentState;
 
 pub(super) use draft::style_to_draft;
@@ -28,15 +29,32 @@ pub(super) use draft::style_to_draft;
 /// Height of the open style editor panel in CSS pixels.
 pub(super) const STYLE_EDITOR_HEIGHT_PX: f32 = 360.0;
 
+/// Signals the style editor needs to persist edits through Loro and refresh the
+/// undo/redo state. Grouped to keep the function signature manageable (mirrors
+/// `editor_metadata_panel::MetaPanelSync`).
+#[derive(Clone, Copy)]
+pub(super) struct StyleEditorSync {
+    /// The document's Loro CRDT handle.
+    pub loro_doc: Signal<Option<loro::LoroDoc>>,
+    /// Cursor state (mirrors the document generation for dirty tracking).
+    pub cursor_state: Signal<CursorState>,
+    /// Undo manager, refreshed after the style mutation.
+    pub undo_manager: Signal<Option<loro::UndoManager>>,
+    /// Whether undo is available.
+    pub can_undo: Signal<bool>,
+    /// Whether redo is available.
+    pub can_redo: Signal<bool>,
+}
+
 /// Renders the inline style catalog editor panel.
 ///
 /// Plain function — no hooks. `font_families` is enumerated once per editor
 /// (memoised by the caller) and threaded into the form's font picker.
 pub(super) fn style_editor_panel(
     doc_state: Arc<Mutex<DocumentState>>,
-    loro_doc: Signal<Option<loro::LoroDoc>>,
     mut editing_style_draft: Signal<Option<StyleDraft>>,
     font_families: Rc<Vec<String>>,
+    sync: StyleEditorSync,
 ) -> Element {
     let draft = match editing_style_draft.read().clone() {
         Some(d) => d,
@@ -164,7 +182,7 @@ pub(super) fn style_editor_panel(
                 }
 
                 // ── Right: edit form ───────────────────────────────────────────
-                { form::style_form(doc_state, loro_doc, editing_style_draft, draft, font_families) }
+                { form::style_form(doc_state, editing_style_draft, draft, font_families, sync) }
             }
         }
     }

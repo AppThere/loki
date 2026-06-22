@@ -241,11 +241,11 @@ pub fn apply_mutation_and_relayout(
             None => return false,
         };
         if let Some(orig) = &state.document {
-            // Styles and source are not stored in the CRDT, so carry them
-            // forward. Metadata *is* round-tripped through Loro (read back by
-            // `loro_to_document`), so it is intentionally not carried forward
-            // here — the Loro snapshot is the source of truth.
-            doc.styles = orig.styles.clone();
+            // `source` is not stored in the CRDT, so carry it forward. Metadata
+            // and the style catalog *are* round-tripped through Loro (read back
+            // by `loro_to_document`), so they are intentionally not carried
+            // forward here — the Loro snapshot is the source of truth, which is
+            // what makes style edits undoable.
             doc.source = orig.source.clone();
         }
         doc

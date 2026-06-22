@@ -17,10 +17,12 @@ mod meta;
 mod opaque;
 mod props_read;
 mod read;
+mod styles;
 mod write;
 
 pub use incremental::IncrementalReader;
 pub use meta::{read_document_meta, write_document_meta};
+pub use styles::{read_document_styles, write_document_styles};
 
 use crate::document::Document;
 use crate::layout::header_footer::HeaderFooter;
@@ -151,6 +153,11 @@ pub fn document_to_loro(doc: &Document) -> Result<LoroDoc, BridgeError> {
     let meta_map = loro_doc.get_map(KEY_METADATA);
     meta::write_meta(&doc.meta, &meta_map)?;
 
+    // Style catalog — lossless JSON snapshot, so style edits are durable and
+    // undoable rather than carried forward by cloning the previous document.
+    let styles_map = loro_doc.get_map(KEY_STYLE_CATALOG);
+    styles::write_styles(&doc.styles, &styles_map)?;
+
     // Sections
     let sections_list = loro_doc.get_list(KEY_SECTIONS);
     for (s_idx, section) in doc.sections.iter().enumerate() {
@@ -177,6 +184,10 @@ pub fn loro_to_document(loro: &LoroDoc) -> Result<Document, BridgeError> {
     // Metadata — full DocumentMeta (core + Dublin Core) from the snapshot.
     let meta_map: loro::LoroMap = loro.get_map(KEY_METADATA);
     doc.meta = meta::read_meta(&meta_map);
+
+    // Style catalog — from the JSON snapshot (empty when absent).
+    let styles_map: loro::LoroMap = loro.get_map(KEY_STYLE_CATALOG);
+    doc.styles = styles::read_styles(&styles_map);
 
     // Sections
     let sections_list = loro.get_list(KEY_SECTIONS);

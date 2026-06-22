@@ -828,9 +828,15 @@ pub(super) fn EditorInner(path: String) -> Element {
             if editing_style_draft.read().is_some() {
                 {style_editor_panel(
                     doc_state_style_editor,
-                    loro_doc,
                     editing_style_draft,
                     Rc::clone(&font_families),
+                    super::editor_style_editor::StyleEditorSync {
+                        loro_doc,
+                        cursor_state,
+                        undo_manager,
+                        can_undo,
+                        can_redo,
+                    },
                 )}
             }
 
