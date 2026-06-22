@@ -20,10 +20,8 @@ use crate::docx::write::collector::ExportCollector;
 use crate::docx::write::document::{write_document_xml, write_header_footer_xml};
 use crate::docx::write::footnotes::{write_endnotes_xml, write_footnotes_xml};
 use crate::docx::write::numbering::write_numbering_xml;
+use crate::docx::write::rels::{AuxParts, add_document_relationships};
 use crate::docx::write::styles::write_styles_xml;
-use crate::docx::write::xml::{
-    REL_ENDNOTES, REL_FOOTER, REL_FOOTNOTES, REL_HEADER, REL_IMAGE, REL_NUMBERING, REL_STYLES,
-};
 use crate::error::OoxmlError;
 
 // ── OPC relationship type URIs ───────────────────────────────────────────────
@@ -110,6 +108,14 @@ pub(crate) fn assemble_docx_kind(
         None
     };
 
+    // Even-page headers/footers only round-trip when the document declares
+    // `w:evenAndOddHeaders` in settings.xml. Write that part when any section
+    // carries an even-page variant.
+    let needs_even_odd = doc
+        .sections
+        .iter()
+        .any(|s| s.layout.header_even.is_some() || s.layout.footer_even.is_some());
+
     // ── Step 4: Assemble OPC package ─────────────────────────────────────
     let mut pkg = Package::new();
 
@@ -166,91 +172,18 @@ pub(crate) fn assemble_docx_kind(
         .map_err(OoxmlError::Opc)?;
 
     // ── Document-level relationships: word/_rels/document.xml.rels ───────
-    pkg.part_relationships_mut(&doc_part)
-        .add(Relationship {
-            id: "rId1".to_string(),
-            rel_type: REL_STYLES.to_string(),
-            target: "styles.xml".to_string(),
-            target_mode: TargetMode::Internal,
-        })
-        .map_err(OoxmlError::Opc)?;
-
-    // numbering
-    if has_numbering {
-        pkg.part_relationships_mut(&doc_part)
-            .add(Relationship {
-                id: "rId2".to_string(),
-                rel_type: REL_NUMBERING.to_string(),
-                target: "numbering.xml".to_string(),
-                target_mode: TargetMode::Internal,
-            })
-            .map_err(OoxmlError::Opc)?;
-    }
-
-    // footnotes
-    if has_footnotes {
-        pkg.part_relationships_mut(&doc_part)
-            .add(Relationship {
-                id: "rId3".to_string(), // TODO: Should we use collector to manage these IDs too?
-                rel_type: REL_FOOTNOTES.to_string(),
-                target: "footnotes.xml".to_string(),
-                target_mode: TargetMode::Internal,
-            })
-            .map_err(OoxmlError::Opc)?;
-    }
-
-    // endnotes
-    if has_endnotes {
-        pkg.part_relationships_mut(&doc_part)
-            .add(Relationship {
-                id: "rId4".to_string(),
-                rel_type: REL_ENDNOTES.to_string(),
-                target: "endnotes.xml".to_string(),
-                target_mode: TargetMode::Internal,
-            })
-            .map_err(OoxmlError::Opc)?;
-    }
-
-    // hyperlinks
-    for (r_id, url) in &collector.hyperlinks {
-        pkg.part_relationships_mut(&doc_part)
-            .add(Relationship {
-                id: r_id.clone(),
-                rel_type: crate::docx::write::xml::REL_HYPERLINK.to_string(),
-                target: url.clone(),
-                target_mode: TargetMode::External,
-            })
-            .map_err(OoxmlError::Opc)?;
-    }
-
-    // media
-    for m in &collector.media {
-        pkg.part_relationships_mut(&doc_part)
-            .add(Relationship {
-                id: m.r_id.clone(),
-                rel_type: REL_IMAGE.to_string(),
-                target: m.path.strip_prefix("word/").unwrap_or(&m.path).to_string(),
-                target_mode: TargetMode::Internal,
-            })
-            .map_err(OoxmlError::Opc)?;
-    }
-
-    // headers/footers
-    for hf in &headers_footers {
-        let rel_type = if hf.is_header { REL_HEADER } else { REL_FOOTER };
-        pkg.part_relationships_mut(&doc_part)
-            .add(Relationship {
-                id: hf.r_id.clone(),
-                rel_type: rel_type.to_string(),
-                target: hf
-                    .path
-                    .strip_prefix("word/")
-                    .unwrap_or(&hf.path)
-                    .to_string(),
-                target_mode: TargetMode::Internal,
-            })
-            .map_err(OoxmlError::Opc)?;
-    }
+    add_document_relationships(
+        &mut pkg,
+        &doc_part,
+        &mut collector,
+        &headers_footers,
+        AuxParts {
+            numbering: has_numbering,
+            footnotes: has_footnotes,
+            endnotes: has_endnotes,
+            even_odd: needs_even_odd,
+        },
+    )?;
 
     // ── Content types ─────────────────────────────────────────────────────
     let ct = pkg.content_type_map_mut();

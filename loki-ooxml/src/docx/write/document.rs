@@ -141,11 +141,11 @@ fn write_sect_pr<W: std::io::Write>(
         );
     }
 
-    if layout.header_first.is_some()
-        || layout.footer_first.is_some()
-        || layout.header_even.is_some()
-        || layout.footer_even.is_some()
-    {
+    // `w:titlePg` enables the first-page header/footer for this section. It is
+    // NOT what enables even-page H/F — that is the document-level
+    // `w:evenAndOddHeaders` setting (written to settings.xml), so emit titlePg
+    // only when a first-page variant is present.
+    if layout.header_first.is_some() || layout.footer_first.is_some() {
         let _ = write_empty(w, "w:titlePg", &[]);
     }
 

@@ -10,7 +10,7 @@ This is the living source of truth documenting which document features, characte
 | :--- | :---: | :---: | :---: | :--- |
 | **Page Size & Margins** | Yes | Yes | Yes | Page sizes (A4, Letter) and margins resolved and written. |
 | **Section Breaks** | Yes | Yes | Yes | Supports multiple sections with different page layouts. |
-| **Headers & Footers** | Yes | Yes | Partial | Dynamic assignment supported; export lacks full plumbing. |
+| **Headers & Footers** | Yes | Yes | Yes | DOCX export writes all three variants — default, first-page (`w:titlePg`), and even-page (`word/settings.xml` with `w:evenAndOddHeaders`) — as `w:hdr`/`w:ftr` parts with full block content; ODT export writes them into the master page. Round-trip tested (`even_page_headers_footers_round_trip`). |
 | **Footnotes & Endnotes** | Yes | Yes | Yes | Rendered at end of section with separator rules. |
 | **Dynamic Fields** | Yes | Partial | No | PAGE / NUMPAGES fields in headers & footers render real per-page values (per-page re-layout in `assign_headers_footers`). Body-text fields still render snapshots. Post-layout computation (ADR-0008) is proposed. |
 | **Line-boundary Splitting** | — | Yes | — | Paragraphs split cleanly across pages using `ClippedGroup` masks. |
