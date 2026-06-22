@@ -4129,6 +4129,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "loki-templates"
+version = "0.1.0"
+dependencies = [
+ "loki-doc-model",
+ "loki-ooxml",
+ "loki-primitives",
+]
+
+[[package]]
 name = "loki-text"
 version = "0.1.0"
 dependencies = [
@@ -4154,6 +4163,7 @@ dependencies = [
  "loki-ooxml",
  "loki-pdf",
  "loki-renderer",
+ "loki-templates",
  "loki-vello",
  "loro",
  "peniko",

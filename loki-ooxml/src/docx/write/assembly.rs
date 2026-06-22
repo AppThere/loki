@@ -35,6 +35,29 @@ const REL_OFFICE_DOCUMENT: &str =
 
 const MT_DOCUMENT: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml";
+/// Content type for the main part of a Word **template** (`.dotx`). Structurally
+/// identical to a `.docx`; only this override differs.
+const MT_TEMPLATE: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml";
+
+/// Whether to assemble a regular document (`.docx`) or a template (`.dotx`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DocxKind {
+    /// A normal document part (`document.main+xml`).
+    Document,
+    /// A template part (`template.main+xml`).
+    Template,
+}
+
+impl DocxKind {
+    /// The main-part content type for this kind.
+    fn main_content_type(self) -> &'static str {
+        match self {
+            DocxKind::Document => MT_DOCUMENT,
+            DocxKind::Template => MT_TEMPLATE,
+        }
+    }
+}
 const MT_STYLES: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml";
 const MT_NUMBERING: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml";
@@ -46,8 +69,17 @@ const MT_HEADER: &str = "application/vnd.openxmlformats-officedocument.wordproce
 const MT_FOOTER: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml";
 
 /// Assembles a complete `.docx` package from `doc` and writes it to `writer`.
-#[allow(clippy::too_many_lines)] // Pre-existing pattern — structural refactor deferred
 pub(crate) fn assemble_docx(doc: &Document, writer: impl Write + Seek) -> Result<(), OoxmlError> {
+    assemble_docx_kind(doc, writer, DocxKind::Document)
+}
+
+/// Assembles a `.docx` or `.dotx` package, depending on `kind`, and writes it.
+#[allow(clippy::too_many_lines)] // Pre-existing pattern — structural refactor deferred
+pub(crate) fn assemble_docx_kind(
+    doc: &Document,
+    writer: impl Write + Seek,
+    kind: DocxKind,
+) -> Result<(), OoxmlError> {
     // ── Step 1: Build styles.xml ─────────────────────────────────────────
     let styles_bytes = write_styles_xml(&doc.styles);
 
@@ -227,7 +259,7 @@ pub(crate) fn assemble_docx(doc: &Document, writer: impl Write + Seek) -> Result
         "application/vnd.openxmlformats-package.relationships+xml",
     );
     ct.add_default("xml", "application/xml");
-    ct.add_override(&doc_part, MT_DOCUMENT);
+    ct.add_override(&doc_part, kind.main_content_type());
     ct.add_override(&styles_part, MT_STYLES);
     if has_numbering {
         ct.add_override(&numbering_part, MT_NUMBERING);

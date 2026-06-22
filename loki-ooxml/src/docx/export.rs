@@ -11,7 +11,7 @@ use std::io::{Seek, Write};
 use loki_doc_model::document::Document;
 use loki_doc_model::io::DocumentExport;
 
-use crate::docx::write::assembly::assemble_docx;
+use crate::docx::write::assembly::{DocxKind, assemble_docx, assemble_docx_kind};
 use crate::error::OoxmlError;
 
 /// Unit struct that implements [`DocumentExport`] for DOCX.
@@ -27,6 +27,25 @@ impl DocumentExport for DocxExport {
         _options: Self::Options,
     ) -> Result<(), Self::Error> {
         assemble_docx(doc, writer)
+    }
+}
+
+/// Unit struct that implements [`DocumentExport`] for a Word **template**
+/// (`.dotx`). Identical to [`DocxExport`] except the main part carries the
+/// template content type, so Office opens it as a template (creating a new
+/// document based on it) rather than editing the file in place.
+pub struct DocxTemplateExport;
+
+impl DocumentExport for DocxTemplateExport {
+    type Error = OoxmlError;
+    type Options = ();
+
+    fn export(
+        doc: &Document,
+        writer: impl Write + Seek,
+        _options: Self::Options,
+    ) -> Result<(), Self::Error> {
+        assemble_docx_kind(doc, writer, DocxKind::Template)
     }
 }
 

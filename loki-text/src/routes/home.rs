@@ -14,7 +14,7 @@ use dioxus::prelude::*;
 use loki_file_access::{FileAccessToken, FilePicker, PickOptions, PickerError, SaveOptions};
 use loki_i18n::fl;
 
-use crate::new_document::{new_blank_tab, new_import_tab};
+use crate::new_document::{new_blank_tab, new_import_tab, new_template_tab};
 use crate::recent_documents::RecentDocuments;
 use crate::routes::Route;
 use crate::tabs::OpenTab;
@@ -33,7 +33,10 @@ const MIME_TYPES: &[&str] = &[
 
 // ── Template data ─────────────────────────────────────────────────────────────
 
+// Gallery card 0 is the plain Blank document; cards 1..=5 are the bundled
+// templates, in the same order as the `on_template_select` match below.
 fn make_templates() -> Vec<BuiltinTemplate> {
+    let dotx = || fl!("home-template-format-dotx");
     vec![
         BuiltinTemplate {
             name: fl!("home-template-blank"),
@@ -41,24 +44,29 @@ fn make_templates() -> Vec<BuiltinTemplate> {
             format_label: fl!("home-template-blank-format"),
         },
         BuiltinTemplate {
-            name: fl!("home-template-letter"),
-            description: fl!("home-template-letter-description"),
-            format_label: fl!("home-template-letter-format"),
+            name: fl!("home-template-markdown"),
+            description: fl!("home-template-markdown-description"),
+            format_label: dotx(),
         },
         BuiltinTemplate {
-            name: fl!("home-template-report"),
-            description: fl!("home-template-report-description"),
-            format_label: fl!("home-template-report-format"),
+            name: fl!("home-template-apa"),
+            description: fl!("home-template-apa-description"),
+            format_label: dotx(),
+        },
+        BuiltinTemplate {
+            name: fl!("home-template-mla"),
+            description: fl!("home-template-mla-description"),
+            format_label: dotx(),
+        },
+        BuiltinTemplate {
+            name: fl!("home-template-screenplay"),
+            description: fl!("home-template-screenplay-description"),
+            format_label: dotx(),
         },
         BuiltinTemplate {
             name: fl!("home-template-resume"),
             description: fl!("home-template-resume-description"),
-            format_label: fl!("home-template-resume-format"),
-        },
-        BuiltinTemplate {
-            name: fl!("home-template-invoice"),
-            description: fl!("home-template-invoice-description"),
-            format_label: fl!("home-template-invoice-format"),
+            format_label: dotx(),
         },
     ]
 }
@@ -150,11 +158,18 @@ pub fn Home() -> Element {
     // Index 0 = "Blank" — opens a new blank document.
     // All other indices are deferred (templates not yet implemented).
     let on_template_select = move |idx: usize| {
-        if idx == 0 {
-            let path = push_new_tab(tabs, active_tab, new_blank_tab());
-            navigator.push(Route::Editor { path });
-        }
-        // TODO(templates): idx > 0 → push_new_tab(.., new_template_tab(id, name)).
+        // Order must match `make_templates`: 0 = Blank, 1..=5 = bundled templates.
+        let tab = match idx {
+            0 => new_blank_tab(),
+            1 => new_template_tab("markdown", fl!("home-template-markdown")),
+            2 => new_template_tab("apa", fl!("home-template-apa")),
+            3 => new_template_tab("mla", fl!("home-template-mla")),
+            4 => new_template_tab("screenplay", fl!("home-template-screenplay")),
+            5 => new_template_tab("resume", fl!("home-template-resume")),
+            _ => return,
+        };
+        let path = push_new_tab(tabs, active_tab, tab);
+        navigator.push(Route::Editor { path });
     };
 
     // ── on_open_file ──────────────────────────────────────────────────────────

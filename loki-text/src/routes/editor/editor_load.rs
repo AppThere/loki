@@ -100,11 +100,10 @@ fn import_token(serialized: &str) -> Result<Document, LoadError> {
     Ok(doc)
 }
 
-/// Builds a bundled template document from its short `id`.
+/// Builds a bundled template document from its short `id` (see `loki-templates`).
 ///
-/// // TODO(templates): wire to the `loki-templates` crate (bundled `.dotx`/`.ott`
-/// assets). Until that lands, an unknown/any id yields a blank document so the
-/// gallery degrades gracefully rather than failing to open a tab.
-fn build_template(_id: &str) -> Result<Document, LoadError> {
-    Ok(Document::new_blank())
+/// An unknown id degrades to a blank document so a stale path never fails to
+/// open a tab.
+fn build_template(id: &str) -> Result<Document, LoadError> {
+    Ok(loki_templates::document(id).unwrap_or_else(Document::new_blank))
 }

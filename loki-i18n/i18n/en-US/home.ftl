@@ -8,18 +8,18 @@ home-recent-heading = Recent
 home-template-blank = Blank
 home-template-blank-description = Empty document
 home-template-blank-format = DOCX
-home-template-letter = Letter
-home-template-letter-description = Formal letter template
-home-template-letter-format = DOCX
-home-template-report = Report
-home-template-report-description = Multi-section report
-home-template-report-format = DOCX
+home-template-markdown = Markdown
+home-template-markdown-description = Clean styles inspired by Markdown
+home-template-apa = APA Paper
+home-template-apa-description = APA 7th edition format
+home-template-mla = MLA Paper
+home-template-mla-description = MLA 9th edition format
+home-template-screenplay = Screenplay
+home-template-screenplay-description = Hollywood screenplay format
 home-template-resume = Résumé
-home-template-resume-description = Single-page résumé
-home-template-resume-format = DOCX
-home-template-invoice = Invoice
-home-template-invoice-description = Simple invoice template
-home-template-invoice-format = DOCX
+home-template-resume-description = Basic single-page résumé
+# Shared format label for the bundled document templates.
+home-template-format-dotx = DOTX
 
 home-browse-templates = Browse templates…
 
