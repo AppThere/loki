@@ -254,14 +254,20 @@ pub(super) fn read_frame_kind(reader: &mut Reader<&[u8]>) -> OdfResult<OdfFrameK
                         let paragraphs = read_text_box_paragraphs(reader)?;
                         kind = OdfFrameKind::TextBox { paragraphs };
                     }
+                    b"object" => {
+                        let href = local_attr_val(e, b"href").unwrap_or_default();
+                        drop(e);
+                        skip_element(reader)?;
+                        kind = OdfFrameKind::Object { href };
+                    }
                     _ => {
                         drop(e);
                         skip_element(reader)?;
                     }
                 }
             }
-            Ok(Event::Empty(ref e)) => {
-                if e.local_name().into_inner() == b"image" {
+            Ok(Event::Empty(ref e)) => match e.local_name().into_inner() {
+                b"image" => {
                     let href = local_attr_val(e, b"href").unwrap_or_default();
                     let media_type = local_attr_val(e, b"type");
                     kind = OdfFrameKind::Image {
@@ -271,7 +277,12 @@ pub(super) fn read_frame_kind(reader: &mut Reader<&[u8]>) -> OdfResult<OdfFrameK
                         desc: None,
                     };
                 }
-            }
+                b"object" => {
+                    let href = local_attr_val(e, b"href").unwrap_or_default();
+                    kind = OdfFrameKind::Object { href };
+                }
+                _ => {}
+            },
             Ok(Event::End(_) | Event::Eof) => break,
             Err(e) => {
                 return Err(OdfError::Xml {

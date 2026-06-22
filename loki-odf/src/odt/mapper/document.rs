@@ -25,7 +25,9 @@ use loki_doc_model::content::block::{
     TableOfContentsBlock,
 };
 use loki_doc_model::content::field::types::{CrossRefFormat, Field, FieldKind};
-use loki_doc_model::content::inline::{BookmarkKind, Inline, LinkTarget, NoteKind, StyledRun};
+use loki_doc_model::content::inline::{
+    BookmarkKind, Inline, LinkTarget, MathType, NoteKind, StyledRun,
+};
 use loki_doc_model::content::table::col::{ColAlignment, ColSpec, ColWidth};
 use loki_doc_model::content::table::core::{Table, TableBody, TableCaption, TableFoot, TableHead};
 use loki_doc_model::content::table::row::{Cell, Row};
@@ -73,6 +75,9 @@ pub(crate) struct OdfMappingContext<'a> {
     /// Images extracted from the ODF package: ZIP-entry path →
     /// (media-type, raw bytes).
     pub images: &'a HashMap<String, (String, Vec<u8>)>,
+    /// Embedded object sub-documents (e.g. formulas): object directory →
+    /// raw `content.xml` bytes.
+    pub objects: &'a HashMap<String, Vec<u8>>,
     /// Import options controlling heading emission, image embedding, etc.
     pub options: &'a OdtImportOptions,
     /// Column widths from `style:table-column-properties`: style name → points.
@@ -106,6 +111,7 @@ pub(crate) fn map_document(
     stylesheet: &OdfStylesheet,
     meta: Option<&OdfMeta>,
     images: &HashMap<String, (String, Vec<u8>)>,
+    objects: &HashMap<String, Vec<u8>>,
     options: &OdtImportOptions,
 ) -> (Document, Vec<OdfWarning>) {
     // ── 1. Map stylesheet + list styles ──────────────────────────────────────
@@ -153,6 +159,7 @@ pub(crate) fn map_document(
         let mut ctx = OdfMappingContext {
             styles: &catalog,
             images,
+            objects,
             options,
             col_style_widths: &col_style_widths,
             cell_style_props: &cell_style_props,
@@ -483,6 +490,26 @@ fn map_frame(frame: &OdfFrame, ctx: &mut OdfMappingContext<'_>) -> Option<Inline
             ctx.pending_figures
                 .push(Block::Div(NodeAttr::default(), inner));
             None
+        }
+        OdfFrameKind::Object { href } => {
+            // Resolve the embedded sub-document; if it is a MathML formula, map
+            // it to inline math. ODF does not distinguish display from inline
+            // math, so an embedded formula always maps to `MathType::InlineMath`.
+            // Any other (or unresolvable) object — OLE, chart, … — is dropped
+            // with a warning rather than silently lost.
+            let key = href.trim_start_matches("./").trim_end_matches('/');
+            let mathml = ctx
+                .objects
+                .get(key)
+                .and_then(|bytes| crate::odt::math::extract_mathml(bytes));
+            if let Some(mathml) = mathml {
+                Some(Inline::Math(MathType::InlineMath, mathml))
+            } else {
+                ctx.warnings.push(OdfWarning::DroppedFrame {
+                    name: frame.name.clone(),
+                });
+                None
+            }
         }
         OdfFrameKind::Other => {
             ctx.warnings.push(OdfWarning::DroppedFrame {
@@ -952,8 +979,14 @@ mod tests {
     #[test]
     fn empty_document_produces_empty_section() {
         let doc = empty_doc(vec![]);
-        let (result, warnings) =
-            map_document(&doc, &empty_stylesheet(), None, &HashMap::new(), &options());
+        let (result, warnings) = map_document(
+            &doc,
+            &empty_stylesheet(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+            &options(),
+        );
         assert!(warnings.is_empty());
         assert_eq!(result.sections.len(), 1);
         assert!(result.sections[0].blocks.is_empty());
@@ -963,8 +996,14 @@ mod tests {
     fn heading_is_emitted_as_heading_block() {
         let para = text_paragraph("Title", true, Some(1));
         let doc = empty_doc(vec![OdfBodyChild::Heading(para)]);
-        let (result, _) =
-            map_document(&doc, &empty_stylesheet(), None, &HashMap::new(), &options());
+        let (result, _) = map_document(
+            &doc,
+            &empty_stylesheet(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+            &options(),
+        );
         let blocks = &result.sections[0].blocks;
         assert_eq!(blocks.len(), 1);
         assert!(
@@ -982,7 +1021,14 @@ mod tests {
             emit_heading_blocks: false,
             ..options()
         };
-        let (result, _) = map_document(&doc, &empty_stylesheet(), None, &HashMap::new(), &opts);
+        let (result, _) = map_document(
+            &doc,
+            &empty_stylesheet(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+            &opts,
+        );
         let blocks = &result.sections[0].blocks;
         assert_eq!(blocks.len(), 1);
         assert!(
@@ -996,8 +1042,14 @@ mod tests {
     fn paragraph_is_emitted_as_styled_para() {
         let para = text_paragraph("Hello", false, None);
         let doc = empty_doc(vec![OdfBodyChild::Paragraph(para)]);
-        let (result, _) =
-            map_document(&doc, &empty_stylesheet(), None, &HashMap::new(), &options());
+        let (result, _) = map_document(
+            &doc,
+            &empty_stylesheet(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+            &options(),
+        );
         let blocks = &result.sections[0].blocks;
         assert!(
             matches!(blocks[0], Block::StyledPara(_)),
@@ -1010,8 +1062,14 @@ mod tests {
     fn text_content_preserved_in_heading() {
         let para = text_paragraph("Introduction", true, Some(1));
         let doc = empty_doc(vec![OdfBodyChild::Heading(para)]);
-        let (result, _) =
-            map_document(&doc, &empty_stylesheet(), None, &HashMap::new(), &options());
+        let (result, _) = map_document(
+            &doc,
+            &empty_stylesheet(),
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+            &options(),
+        );
         if let Block::Heading(_, _, inlines) = &result.sections[0].blocks[0] {
             assert_eq!(inlines.len(), 1);
             assert!(matches!(&inlines[0], loki_doc_model::Inline::Str(s) if s == "Introduction"));
@@ -1035,6 +1093,7 @@ mod tests {
             &doc,
             &empty_stylesheet(),
             Some(&odf_meta),
+            &HashMap::new(),
             &HashMap::new(),
             &options(),
         );

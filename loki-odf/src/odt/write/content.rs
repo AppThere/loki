@@ -13,7 +13,7 @@ use loki_doc_model::style::props::para_props::ParaProps;
 
 use super::auto::AutoStyles;
 use super::inlines::write_inlines;
-use super::media::{Media, Rendered};
+use super::media::{MathPart, Media, Rendered};
 use super::tables::table;
 use super::xml::{attr, escape, master_page_name};
 
@@ -40,6 +40,8 @@ pub(super) struct Cx {
     pub(super) media: Media,
     pub(super) comments:
         std::collections::HashMap<String, loki_doc_model::content::annotation::Comment>,
+    /// Embedded formula objects collected from `Inline::Math` runs.
+    pub(super) objects: Vec<MathPart>,
 }
 
 /// Renders the whole `content.xml` for `doc`, collecting any embedded images.
@@ -53,6 +55,7 @@ pub(crate) fn content_xml(doc: &Document) -> Rendered {
             .iter()
             .map(|c| (c.id.clone(), c.clone()))
             .collect(),
+        objects: Vec::new(),
     };
     let mut body = String::new();
     for (idx, section) in doc.sections.iter().enumerate() {
@@ -95,6 +98,7 @@ pub(crate) fn content_xml(doc: &Document) -> Rendered {
     Rendered {
         xml: out,
         media: cx.media.into_parts(),
+        objects: cx.objects,
     }
 }
 

@@ -16,5 +16,5 @@ mod tables;
 mod xml;
 
 pub(crate) use content::content_xml;
-pub(crate) use media::MediaPart;
+pub(crate) use media::{MathPart, MediaPart};
 pub(crate) use styles::{meta_xml, styles_xml};

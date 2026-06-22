@@ -61,6 +61,13 @@ pub(crate) enum OdfFrameKind {
         paragraphs: Vec<OdfParagraph>,
     },
 
+    /// An embedded object (`draw:object`), e.g. a formula. ODF 1.3 §10.4.5.
+    Object {
+        /// `xlink:href` — path to the object sub-document directory within the
+        /// package (e.g. `"./Object 1"`).
+        href: String,
+    },
+
     /// Any other frame content not specifically modelled above.
     Other,
 }

@@ -64,9 +64,30 @@ fn write_inline(out: &mut String, inl: &Inline, cx: &mut Cx) {
         Inline::Image(_, alt, target) => write_image(out, alt, &target.url, cx),
         Inline::Note(kind, blocks) => note(out, *kind, blocks, cx),
         Inline::Comment(c) => write_comment(out, c, cx),
-        // Math, RawInline: no faithful ODF inline representation.
+        Inline::Math(_, mathml) => write_math(out, mathml, cx),
+        // RawInline: no faithful ODF inline representation.
         _ => {}
     }
+}
+
+/// Writes a `<draw:frame><draw:object/></draw:frame>` referencing an embedded
+/// formula object, registering its `MathML` `content.xml` with the collector.
+/// ODF stores math as a sub-document; see [`crate::odt::math`].
+fn write_math(out: &mut String, mathml: &str, cx: &mut Cx) {
+    let dir = format!("Object {}", cx.objects.len() + 1);
+    out.push_str("<draw:frame");
+    attr(out, "text:anchor-type", "as-char");
+    attr(out, "draw:name", &dir);
+    out.push_str("><draw:object");
+    attr(out, "xlink:href", &format!("./{dir}"));
+    attr(out, "xlink:type", "simple");
+    attr(out, "xlink:show", "embed");
+    attr(out, "xlink:actuate", "onLoad");
+    out.push_str("/></draw:frame>");
+    cx.objects.push(super::media::MathPart {
+        dir,
+        content_xml: crate::odt::math::object_content_xml(mathml),
+    });
 }
 
 /// Writes a comment anchor: `office:annotation` (with body) at the start/point,

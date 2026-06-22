@@ -20,10 +20,20 @@ pub(crate) struct MediaPart {
     pub(crate) bytes: Vec<u8>,
 }
 
-/// A rendered ODF part (XML) together with the image parts it references.
+/// One embedded object sub-document (e.g. a formula) destined for the package.
+pub(crate) struct MathPart {
+    /// Object directory path, e.g. `"Object 1"`.
+    pub(crate) dir: String,
+    /// The object's `content.xml` body (a `MathML` document).
+    pub(crate) content_xml: String,
+}
+
+/// A rendered ODF part (XML) together with the image parts and embedded object
+/// sub-documents it references.
 pub(crate) struct Rendered {
     pub(crate) xml: String,
     pub(crate) media: Vec<MediaPart>,
+    pub(crate) objects: Vec<MathPart>,
 }
 
 /// Accumulates the embedded images referenced by a document part.

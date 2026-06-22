@@ -17,7 +17,7 @@ use crate::constants::{
     ENTRY_CONTENT, ENTRY_MANIFEST, ENTRY_META, ENTRY_MIMETYPE, ENTRY_STYLES, MIME_ODT,
 };
 use crate::error::{OdfError, OdfResult};
-use crate::odt::write::{MediaPart, content_xml, meta_xml, styles_xml};
+use crate::odt::write::{MathPart, MediaPart, content_xml, meta_xml, styles_xml};
 
 /// Options controlling ODT export behaviour.
 ///
@@ -49,9 +49,10 @@ impl DocumentExport for OdtExport {
         let deflated = FileOptions::<()>::default().compression_method(CompressionMethod::Deflated);
 
         // 2. manifest (listing every part, including embedded images from both
-        //    the body and the master-page header/footer).
+        //    the body and the master-page header/footer, plus any embedded
+        //    formula objects).
         zip.start_file(ENTRY_MANIFEST, deflated)?;
-        zip.write_all(manifest(&content.media, &styles.media).as_bytes())?;
+        zip.write_all(manifest(&content.media, &styles.media, &content.objects).as_bytes())?;
 
         // 3. the three XML parts.
         zip.start_file(ENTRY_CONTENT, deflated)?;
@@ -70,14 +71,21 @@ impl DocumentExport for OdtExport {
             zip.write_all(&part.bytes)?;
         }
 
+        // 5. embedded formula objects: each `Object N/content.xml` sub-document.
+        for obj in &content.objects {
+            zip.start_file(format!("{}/content.xml", obj.dir), deflated)?;
+            zip.write_all(obj.content_xml.as_bytes())?;
+        }
+
         zip.finish()?;
         Ok(())
     }
 }
 
-/// Builds `META-INF/manifest.xml`, listing the fixed parts plus every image
-/// (from the body and the master-page header/footer).
-fn manifest(body_media: &[MediaPart], styles_media: &[MediaPart]) -> String {
+/// Builds `META-INF/manifest.xml`, listing the fixed parts, every image
+/// (from the body and the master-page header/footer), and every embedded
+/// formula object sub-document.
+fn manifest(body_media: &[MediaPart], styles_media: &[MediaPart], objects: &[MathPart]) -> String {
     let mut m = String::from(concat!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
         "<manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\"",
@@ -92,6 +100,17 @@ fn manifest(body_media: &[MediaPart], styles_media: &[MediaPart]) -> String {
         m.push_str(&format!(
             "<manifest:file-entry manifest:full-path=\"{}\" manifest:media-type=\"{}\"/>",
             part.path, part.media_type
+        ));
+    }
+    // Each formula object contributes a directory entry (with the formula
+    // media type) and its `content.xml` entry. ODF 1.3 §3.16.
+    for obj in objects {
+        m.push_str(&format!(
+            "<manifest:file-entry manifest:full-path=\"{0}/\" \
+             manifest:media-type=\"application/vnd.oasis.opendocument.formula\"/>\
+             <manifest:file-entry manifest:full-path=\"{0}/content.xml\" \
+             manifest:media-type=\"text/xml\"/>",
+            obj.dir
         ));
     }
     m.push_str("</manifest:manifest>");

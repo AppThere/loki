@@ -195,6 +195,7 @@ impl OdtImporter {
             &stylesheet,
             odf_meta.as_ref(),
             &package.images,
+            &package.objects,
             &self.options,
         );
         warnings.append(&mut mapper_warnings);

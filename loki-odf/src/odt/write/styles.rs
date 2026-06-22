@@ -52,6 +52,7 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
         media: Media::with_prefix("himg"),
         // Comments inside headers/footers are not modelled; use an empty lookup.
         comments: std::collections::HashMap::new(),
+        objects: Vec::new(),
     };
     let mut masters = String::new();
     let mut page_layouts = String::new();
@@ -100,6 +101,8 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
     Rendered {
         xml: out,
         media: cx.media.into_parts(),
+        // Master-page headers/footers do not carry embedded formula objects.
+        objects: Vec::new(),
     }
 }
 
