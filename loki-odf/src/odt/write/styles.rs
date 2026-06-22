@@ -15,7 +15,7 @@ use super::content::{Cx, write_block};
 use super::media::{Media, Rendered};
 use super::para_props::emit_paragraph_properties;
 use super::props::emit_text_properties;
-use super::xml::{attr, escape, pt};
+use super::xml::{attr, escape, master_page_name, page_layout_name, pt};
 
 const HEADER: &str = concat!(
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
@@ -35,12 +35,14 @@ const HEADER: &str = concat!(
 /// the master-page header/footer.
 #[must_use]
 pub(crate) fn styles_xml(doc: &Document) -> Rendered {
-    let layout = doc
-        .sections
-        .first()
-        .map(|s| &s.layout)
-        .cloned()
-        .unwrap_or_default();
+    // One page-layout + master-page per section so each section's geometry and
+    // header/footer round-trip. A document with no sections falls back to a
+    // single default master page.
+    let layouts: Vec<PageLayout> = if doc.sections.is_empty() {
+        vec![PageLayout::default()]
+    } else {
+        doc.sections.iter().map(|s| s.layout.clone()).collect()
+    };
 
     // Render the master-page header/footer content first so its automatic
     // styles (and images) are collected before the automatic-styles section is
@@ -49,7 +51,14 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
         auto: AutoStyles::new(),
         media: Media::with_prefix("himg"),
     };
-    let master = render_master_page(&layout, &mut cx);
+    let mut masters = String::new();
+    let mut page_layouts = String::new();
+    for (idx, layout) in layouts.iter().enumerate() {
+        let mp_name = master_page_name(idx);
+        let pl_name = page_layout_name(idx);
+        masters.push_str(&render_master_page(&mp_name, &pl_name, layout, &mut cx));
+        write_page_layout(&mut page_layouts, &pl_name, layout);
+    }
 
     let mut out = String::new();
     out.push_str(HEADER);
@@ -75,14 +84,14 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
     }
     out.push_str("</office:styles>");
 
-    // ── Automatic styles: page layout + header/footer styles ───────────────
+    // ── Automatic styles: page layouts + header/footer styles ──────────────
     out.push_str("<office:automatic-styles>");
-    write_page_layout(&mut out, &layout);
+    out.push_str(&page_layouts);
     out.push_str(&cx.auto.render());
     out.push_str("</office:automatic-styles>");
 
     out.push_str("<office:master-styles>");
-    out.push_str(&master);
+    out.push_str(&masters);
     out.push_str("</office:master-styles>");
     out.push_str("</office:document-styles>");
 
@@ -92,11 +101,14 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
     }
 }
 
-/// Builds the `<style:master-page>` element, rendering each present
-/// header/footer variant into ODF `<style:header…>` / `<style:footer…>`.
-fn render_master_page(layout: &PageLayout, cx: &mut Cx) -> String {
-    let mut m =
-        String::from("<style:master-page style:name=\"Standard\" style:page-layout-name=\"PL1\">");
+/// Builds one `<style:master-page>` element (named `mp_name`, referencing
+/// page-layout `pl_name`), rendering each present header/footer variant into
+/// ODF `<style:header…>` / `<style:footer…>`.
+fn render_master_page(mp_name: &str, pl_name: &str, layout: &PageLayout, cx: &mut Cx) -> String {
+    let mut m = String::from("<style:master-page");
+    attr(&mut m, "style:name", mp_name);
+    attr(&mut m, "style:page-layout-name", pl_name);
+    m.push('>');
     write_hf(&mut m, "style:header", layout.header.as_ref(), cx);
     write_hf(&mut m, "style:footer", layout.footer.as_ref(), cx);
     write_hf(
@@ -153,9 +165,11 @@ fn write_paragraph_style(out: &mut String, id: &str, style: &ParagraphStyle) {
     out.push_str("</style:style>");
 }
 
-/// Writes the `<style:page-layout style:name="PL1">` element from `layout`.
-fn write_page_layout(out: &mut String, layout: &PageLayout) {
-    out.push_str("<style:page-layout style:name=\"PL1\"><style:page-layout-properties");
+/// Writes the `<style:page-layout style:name="{pl_name}">` element from `layout`.
+fn write_page_layout(out: &mut String, pl_name: &str, layout: &PageLayout) {
+    out.push_str("<style:page-layout");
+    attr(out, "style:name", pl_name);
+    out.push_str("><style:page-layout-properties");
     attr(out, "fo:page-width", &pt(layout.page_size.width));
     attr(out, "fo:page-height", &pt(layout.page_size.height));
     attr(out, "fo:margin-top", &pt(layout.margins.top));

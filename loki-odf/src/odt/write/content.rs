@@ -6,14 +6,16 @@
 //! [`super::inlines`].
 
 use loki_doc_model::content::block::{Block, StyledParagraph};
-use loki_doc_model::content::table::{Row, Table};
 use loki_doc_model::document::Document;
 use loki_doc_model::style::catalog::StyleId;
+use loki_doc_model::style::props::char_props::CharProps;
+use loki_doc_model::style::props::para_props::ParaProps;
 
 use super::auto::AutoStyles;
 use super::inlines::write_inlines;
 use super::media::{Media, Rendered};
-use super::xml::{attr, escape};
+use super::tables::table;
+use super::xml::{attr, escape, master_page_name};
 
 const HEADER: &str = concat!(
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
@@ -44,9 +46,33 @@ pub(crate) fn content_xml(doc: &Document) -> Rendered {
         media: Media::new(),
     };
     let mut body = String::new();
-    for section in &doc.sections {
-        for block in &section.blocks {
-            write_block(&mut body, block, &mut cx);
+    for (idx, section) in doc.sections.iter().enumerate() {
+        // Sections after the first trigger a page-geometry change by attaching
+        // `style:master-page-name` to their first paragraph (ODF has no explicit
+        // section element). The first section uses the initial master page.
+        let master = (idx > 0).then(|| master_page_name(idx));
+        match (master.as_deref(), section.blocks.first()) {
+            (Some(mp), Some(first)) => {
+                write_block_with_master(&mut body, first, mp, &mut cx);
+                for block in &section.blocks[1..] {
+                    write_block(&mut body, block, &mut cx);
+                }
+            }
+            (Some(mp), None) => {
+                // Empty section: emit a carrier paragraph so the break survives.
+                let style = cx.auto.para_style_master(
+                    None,
+                    &ParaProps::default(),
+                    &CharProps::default(),
+                    mp,
+                );
+                body.push_str(&format!("<text:p text:style-name=\"{style}\"/>"));
+            }
+            _ => {
+                for block in &section.blocks {
+                    write_block(&mut body, block, &mut cx);
+                }
+            }
         }
     }
     let mut out = String::with_capacity(body.len() + 1024);
@@ -127,6 +153,56 @@ pub(super) fn write_block(out: &mut String, block: &Block, cx: &mut Cx) {
     }
 }
 
+/// Writes the first block of a section, attaching `style:master-page-name` so
+/// the page-geometry change round-trips. Paragraph-like blocks carry the
+/// reference directly; for any other block (table, list, …) a minimal carrier
+/// paragraph is injected before it, since only paragraphs hold the attribute.
+fn write_block_with_master(out: &mut String, block: &Block, master: &str, cx: &mut Cx) {
+    match block {
+        Block::Para(inl) | Block::Plain(inl) => {
+            let style = cx.auto.para_style_master(
+                None,
+                &ParaProps::default(),
+                &CharProps::default(),
+                master,
+            );
+            paragraph(out, Some(&style), inl, cx);
+        }
+        Block::StyledPara(sp) => {
+            let base = sp.style_id.as_ref().map(StyleId::as_str);
+            let pp = sp.direct_para_props.as_deref().cloned().unwrap_or_default();
+            let cp = sp.direct_char_props.as_deref().cloned().unwrap_or_default();
+            let style = cx.auto.para_style_master(base, &pp, &cp, master);
+            paragraph(out, Some(&style), &sp.inlines, cx);
+        }
+        Block::Heading(level, _, inl) => {
+            let lvl = (*level).clamp(1, 6);
+            let parent = format!("Heading{lvl}");
+            let style = cx.auto.para_style_master(
+                Some(&parent),
+                &ParaProps::default(),
+                &CharProps::default(),
+                master,
+            );
+            out.push_str(&format!(
+                "<text:h text:style-name=\"{style}\" text:outline-level=\"{lvl}\">"
+            ));
+            write_inlines(out, inl, cx);
+            out.push_str("</text:h>");
+        }
+        other => {
+            let style = cx.auto.para_style_master(
+                None,
+                &ParaProps::default(),
+                &CharProps::default(),
+                master,
+            );
+            out.push_str(&format!("<text:p text:style-name=\"{style}\"/>"));
+            write_block(out, other, cx);
+        }
+    }
+}
+
 /// Writes a `<text:p>` with optional automatic style and inline content.
 fn paragraph(
     out: &mut String,
@@ -172,55 +248,4 @@ fn list(out: &mut String, items: &[Vec<Block>], cx: &mut Cx) {
         out.push_str("</text:list-item>");
     }
     out.push_str("</text:list>");
-}
-
-/// Writes a `<table:table>` (header rows, then bodies, then footer).
-fn table(out: &mut String, t: &Table, cx: &mut Cx) {
-    out.push_str("<table:table>");
-    let cols = t.col_specs.len().max(1);
-    out.push_str(&format!(
-        "<table:table-column table:number-columns-repeated=\"{cols}\"/>"
-    ));
-    for row in &t.head.rows {
-        table_row(out, row, cx);
-    }
-    for body in &t.bodies {
-        for row in body.head_rows.iter().chain(body.body_rows.iter()) {
-            table_row(out, row, cx);
-        }
-    }
-    for row in &t.foot.rows {
-        table_row(out, row, cx);
-    }
-    out.push_str("</table:table>");
-}
-
-fn table_row(out: &mut String, row: &Row, cx: &mut Cx) {
-    out.push_str("<table:table-row>");
-    for cell in &row.cells {
-        out.push_str("<table:table-cell");
-        if cell.col_span > 1 {
-            attr(
-                out,
-                "table:number-columns-spanned",
-                &cell.col_span.to_string(),
-            );
-        }
-        if cell.row_span > 1 {
-            attr(out, "table:number-rows-spanned", &cell.row_span.to_string());
-        }
-        out.push('>');
-        if cell.blocks.is_empty() {
-            out.push_str("<text:p/>");
-        } else {
-            for b in &cell.blocks {
-                write_block(out, b, cx);
-            }
-        }
-        out.push_str("</table:table-cell>");
-        for _ in 1..cell.col_span {
-            out.push_str("<table:covered-table-cell/>");
-        }
-    }
-    out.push_str("</table:table-row>");
 }

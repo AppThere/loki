@@ -34,6 +34,27 @@ pub(super) fn pt(p: Points) -> String {
     }
 }
 
+/// The `style:master-page` name for the section at `idx`.
+///
+/// Section 0 uses the conventional `"Standard"` master (the importer's initial
+/// master); later sections use `"MP{idx}"`. `content.xml` references these names
+/// from the first paragraph of each section via `style:master-page-name`, and
+/// `styles.xml` defines them — the two must agree, so both call this.
+#[must_use]
+pub(super) fn master_page_name(idx: usize) -> String {
+    if idx == 0 {
+        "Standard".to_string()
+    } else {
+        format!("MP{idx}")
+    }
+}
+
+/// The `style:page-layout` name for the section at `idx` (`PL1`, `PL2`, …).
+#[must_use]
+pub(super) fn page_layout_name(idx: usize) -> String {
+    format!("PL{}", idx + 1)
+}
+
 /// Appends ` name="value"` to `out`, escaping the value.
 pub(super) fn attr(out: &mut String, name: &str, value: &str) {
     out.push(' ');

@@ -61,26 +61,59 @@ impl AutoStyles {
         if p_props.is_empty() && t_props.is_empty() && parent.is_none() {
             return None;
         }
+        Some(self.para_style_inner(parent, &p_props, &t_props, None))
+    }
+
+    /// Like [`Self::para_style`] but forces an automatic style carrying
+    /// `style:master-page-name` — used on the first paragraph of each section
+    /// to trigger the master-page (page-geometry) transition on re-import.
+    ///
+    /// Always returns a name, since the master-page reference must be emitted
+    /// even when the paragraph has no other direct formatting.
+    pub(super) fn para_style_master(
+        &mut self,
+        parent: Option<&str>,
+        pp: &ParaProps,
+        cp: &CharProps,
+        master_page: &str,
+    ) -> String {
+        let p_props = emit_paragraph_properties(pp);
+        let t_props = emit_text_properties(cp);
+        self.para_style_inner(parent, &p_props, &t_props, Some(master_page))
+    }
+
+    /// Builds (and deduplicates) a `family="paragraph"` automatic style from
+    /// pre-rendered property strings, with an optional master-page reference.
+    fn para_style_inner(
+        &mut self,
+        parent: Option<&str>,
+        p_props: &str,
+        t_props: &str,
+        master_page: Option<&str>,
+    ) -> String {
         let key = (
-            parent.unwrap_or("").to_string(),
-            p_props.clone(),
-            t_props.clone(),
+            format!("{}\u{1}{}", parent.unwrap_or(""), master_page.unwrap_or("")),
+            p_props.to_string(),
+            t_props.to_string(),
         );
         if let Some(name) = self.para.get(&key) {
-            return Some(name.clone());
+            return name.clone();
         }
         let name = format!("P{}", self.rendered.len() + 1);
         let mut el = format!("<style:style style:name=\"{name}\" style:family=\"paragraph\"");
         if let Some(parent) = parent {
             el.push_str(&format!(" style:parent-style-name=\"{parent}\""));
         }
+        if let Some(mp) = master_page {
+            el.push_str(&format!(" style:master-page-name=\"{mp}\""));
+        }
         el.push('>');
-        el.push_str(&p_props);
-        el.push_str(&t_props);
+        el.push_str(p_props);
+        el.push_str(t_props);
         el.push_str("</style:style>");
         self.rendered.push(el);
         self.para.insert(key, name.clone());
-        Some(name)
+        name
     }
 
     /// Renders all collected automatic styles as concatenated XML.

@@ -403,3 +403,82 @@ fn metadata_and_heading_round_trip() {
         "the level-1 heading must survive the round-trip"
     );
 }
+
+#[test]
+fn multi_section_page_geometry_round_trips() {
+    use loki_doc_model::layout::page::PageOrientation;
+
+    let body = |t: &str| vec![Block::Para(vec![Inline::Str(t.to_string())])];
+
+    let portrait = Section::with_layout_and_blocks(
+        PageLayout {
+            page_size: PageSize::a4(),
+            orientation: PageOrientation::Portrait,
+            ..PageLayout::default()
+        },
+        body("First section, portrait A4."),
+    );
+    let landscape = Section::with_layout_and_blocks(
+        PageLayout {
+            page_size: PageSize::letter(),
+            orientation: PageOrientation::Landscape,
+            ..PageLayout::default()
+        },
+        body("Second section, landscape Letter."),
+    );
+
+    let mut doc = Document::new();
+    doc.sections = vec![portrait, landscape];
+
+    let re = round_trip(&doc);
+
+    assert_eq!(
+        re.sections.len(),
+        2,
+        "both sections must survive the round-trip"
+    );
+
+    // Each section keeps its own page-layout. ODF records orientation as a
+    // flag without swapping the stored width/height, so dimensions round-trip
+    // verbatim alongside the orientation.
+    let s0 = &re.sections[0].layout;
+    assert_eq!(s0.orientation, PageOrientation::Portrait);
+    assert_eq!(s0.page_size.width.value().round(), 595.0); // A4
+    assert_eq!(s0.page_size.height.value().round(), 842.0);
+
+    let s1 = &re.sections[1].layout;
+    assert_eq!(s1.orientation, PageOrientation::Landscape);
+    assert_eq!(s1.page_size.width.value().round(), 612.0); // US Letter
+    assert_eq!(s1.page_size.height.value().round(), 792.0);
+
+    // The body text of both sections must be preserved.
+    let all_text: String = re
+        .sections
+        .iter()
+        .flat_map(|s| &s.blocks)
+        .map(text_of_block)
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(all_text.contains("First section"), "got: {all_text}");
+    assert!(all_text.contains("Second section"), "got: {all_text}");
+}
+
+/// Extracts the concatenated plain text of a paragraph-like block.
+fn text_of_block(block: &Block) -> String {
+    let inlines = match block {
+        Block::Para(i) | Block::Plain(i) => i.as_slice(),
+        Block::StyledPara(sp) => sp.inlines.as_slice(),
+        _ => &[],
+    };
+    inlines
+        .iter()
+        .filter_map(|i| {
+            if let Inline::Str(s) = i {
+                Some(s.clone())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}

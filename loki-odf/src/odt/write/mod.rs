@@ -12,6 +12,7 @@ mod media;
 mod para_props;
 mod props;
 mod styles;
+mod tables;
 mod xml;
 
 pub(crate) use content::content_xml;
