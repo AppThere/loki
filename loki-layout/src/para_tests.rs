@@ -691,6 +691,49 @@ fn editing_paragraph(text: &str) -> ParagraphLayout {
 }
 
 #[test]
+fn left_indent_included_in_cursor_and_hit_test() {
+    // Regression: paragraphs with a left indent (e.g. screenplay Character /
+    // parenthetical blocks) drew glyphs shifted right by `indent_start`, but the
+    // caret and hit-testing read un-indented Parley coordinates — so the cursor
+    // showed at the page's content-left instead of at the text.
+    let mut r = test_resources();
+    let text = "Hello";
+    let spans = [single_span(text, 12.0)];
+    let props = ResolvedParaProps {
+        indent_start: 100.0,
+        ..Default::default()
+    };
+    let layout = layout_paragraph(&mut r, text, &spans, &props, 400.0, 1.0, true);
+
+    // The caret at the start of the text sits at the indent, not at x = 0.
+    let c0 = layout.cursor_rect(0).expect("cursor at start");
+    assert!(
+        (c0.x - 100.0).abs() < 1.0,
+        "start caret x {} should be ~100 (the left indent)",
+        c0.x
+    );
+
+    // A click on the visible (indented) text maps to the right offset, not to
+    // the end of the line as it would if the indent were ignored.
+    let mid_y = c0.y + c0.height * 0.5;
+    let hit = layout
+        .hit_test_point(102.0, mid_y)
+        .expect("hit near indented start");
+    assert_eq!(
+        hit.byte_offset, 0,
+        "click just inside the indented text should map to offset 0"
+    );
+
+    // Caret / hit-test are mutually consistent under the indent.
+    let c3 = layout.cursor_rect(3).expect("cursor mid");
+    assert!(c3.x > 100.0, "mid caret should be right of the indent");
+    let hit3 = layout
+        .hit_test_point(c3.x, mid_y)
+        .expect("hit at mid caret");
+    assert_eq!(hit3.byte_offset, 3);
+}
+
+#[test]
 fn hit_test_read_only_mode_returns_none() {
     let mut r = test_resources();
     let text = "Hello, world!";

@@ -360,6 +360,15 @@ pub struct ParagraphLayout {
     pub orig_to_clean: Vec<usize>,
     /// Cleaned to original byte index mappings.
     pub clean_to_orig: Vec<usize>,
+    /// Paragraph start (left) indent in points, applied to drawn glyphs.
+    ///
+    /// Retained so cursor / hit-test / selection geometry can include the same
+    /// horizontal offset the glyph runs use (the Parley layout itself is built
+    /// in an un-indented coordinate space). See [`Self::line_indent`].
+    pub indent_start: f32,
+    /// Hanging indent in points (first line starts this far left of
+    /// `indent_start`). `0.0` = no hanging.
+    pub indent_hanging: f32,
 }
 
 impl std::fmt::Debug for ParagraphLayout {
@@ -389,7 +398,18 @@ impl ParagraphLayout {
     /// layout was produced with `preserve_for_editing: false` (read-only mode).
     pub fn hit_test_point(&self, x: f32, y: f32) -> Option<HitTestResult> {
         let layout = self.parley_layout.as_deref()?;
-        let cursor = Cursor::from_point(layout, x, y);
+        // Derive the line index from `line_boundaries`: find the first line
+        // whose `max_coord` is strictly above the hit y, or clamp to the last line.
+        let line_index = self
+            .line_boundaries
+            .iter()
+            .position(|&(_, max_y)| y < max_y)
+            .unwrap_or_else(|| self.line_boundaries.len().saturating_sub(1));
+        // Glyphs are drawn shifted right by the line's indent, but the Parley
+        // layout is un-indented — remove the indent before hit-testing so a
+        // click on the visible text maps to the right offset.
+        let local_x = x - self.line_indent(line_index);
+        let cursor = Cursor::from_point(layout, local_x, y);
         let byte_offset = cursor.index();
         let mapped_offset = self
             .clean_to_orig
@@ -400,13 +420,6 @@ impl ParagraphLayout {
             parley::Affinity::Upstream => Affinity::Upstream,
             parley::Affinity::Downstream => Affinity::Downstream,
         };
-        // Derive the line index from `line_boundaries`: find the first line
-        // whose `max_coord` is strictly above the hit y, or clamp to the last line.
-        let line_index = self
-            .line_boundaries
-            .iter()
-            .position(|&(_, max_y)| y < max_y)
-            .unwrap_or_else(|| self.line_boundaries.len().saturating_sub(1));
         Some(HitTestResult {
             byte_offset: mapped_offset,
             affinity,
@@ -484,8 +497,17 @@ impl ParagraphLayout {
         let bb = cursor.geometry(layout, 1.0);
         let y = bb.y0 as f32;
         let height = (bb.y1 - bb.y0) as f32;
+        // Add the line's indent so the caret sits with the drawn glyphs (the
+        // Parley layout is built in an un-indented coordinate space). The line is
+        // located from the caret's vertical centre, matching `hit_test_point`.
+        let probe_y = y + height * 0.5;
+        let line_index = self
+            .line_boundaries
+            .iter()
+            .position(|&(_, max_y)| probe_y < max_y)
+            .unwrap_or_else(|| self.line_boundaries.len().saturating_sub(1));
         Some(CursorRect {
-            x: bb.x0 as f32,
+            x: bb.x0 as f32 + self.line_indent(line_index),
             y,
             height,
         })
@@ -517,15 +539,28 @@ impl ParagraphLayout {
         Selection::new(anchor, focus)
             .geometry(layout)
             .into_iter()
-            .map(|(bb, _line)| {
+            .map(|(bb, line)| {
                 LayoutRect::new(
-                    bb.x0 as f32,
+                    bb.x0 as f32 + self.line_indent(line),
                     bb.y0 as f32,
                     (bb.x1 - bb.x0) as f32,
                     (bb.y1 - bb.y0) as f32,
                 )
             })
             .collect()
+    }
+
+    /// Horizontal indent (points) applied to the drawn glyphs of visual line
+    /// `line_index`, matching the `indent_x` used when emitting glyph runs: the
+    /// first line of a hanging-indent paragraph starts `indent_hanging` to the
+    /// left of `indent_start`. Editing geometry adds this so cursor, hit-test,
+    /// and selection coordinates line up with the rendered text.
+    fn line_indent(&self, line_index: usize) -> f32 {
+        if line_index == 0 && self.indent_hanging > 0.0 {
+            self.indent_start - self.indent_hanging
+        } else {
+            self.indent_start
+        }
     }
 }
 
@@ -837,6 +872,8 @@ fn layout_paragraph_uncached(
                 parley_layout: None,
                 orig_to_clean,
                 clean_to_orig,
+                indent_start: para_props.indent_start,
+                indent_hanging: para_props.indent_hanging,
             };
         }
         // Build a phantom single-space layout so cursor_rect can return a
@@ -866,6 +903,8 @@ fn layout_paragraph_uncached(
             parley_layout: Some(Arc::new(phantom)),
             orig_to_clean,
             clean_to_orig,
+            indent_start: para_props.indent_start,
+            indent_hanging: para_props.indent_hanging,
         };
     }
 
@@ -1191,6 +1230,8 @@ fn layout_paragraph_uncached(
         parley_layout,
         orig_to_clean,
         clean_to_orig,
+        indent_start: para_props.indent_start,
+        indent_hanging: para_props.indent_hanging,
     }
 }
 

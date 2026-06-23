@@ -410,6 +410,8 @@ fn build_chain_layouts<'s>(
                         parley_layout: None,
                         orig_to_clean: vec![0],
                         clean_to_orig: vec![0],
+                        indent_start: 0.0,
+                        indent_hanging: 0.0,
                     },
                 )
             }
