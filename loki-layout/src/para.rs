@@ -556,6 +556,12 @@ fn next_tab_stop(stops: &[ResolvedTabStop], x: f32, indent_hanging: f32) -> f32 
 /// Pushes one Parley inline box per typeset math placeholder, sized to the
 /// equation's intrinsic box so the surrounding text flows around it. Ids are
 /// offset by [`MATH_ID_BASE`] so the post-layout pass can recognise them.
+///
+/// The box height is the equation's **ascent** only: Parley aligns an inline
+/// box's bottom to the text baseline (counting its whole height as ascent), so
+/// reserving just the ascent lands the box top at `baseline − ascent`. Drawing
+/// the equation there puts its baseline on the text baseline; the descent then
+/// hangs below into the line's descent region, exactly like inline text.
 fn push_math_inline_boxes(
     builder: &mut RangedBuilder<'_, LayoutColor>,
     math_boxes: &[(usize, crate::math::MathRender)],
@@ -566,7 +572,7 @@ fn push_math_inline_boxes(
             kind: InlineBoxKind::InFlow,
             index: *index,
             width: render.width,
-            height: render.ascent + render.descent,
+            height: render.ascent,
         });
     }
 }
@@ -965,6 +971,11 @@ fn layout_paragraph_uncached(
 
     let mut items: Vec<PositionedItem> = Vec::new();
     let mut line_index: usize = 0;
+    // Track the lowest point reached by any inline equation. Its baseline is on
+    // the text baseline, so a deep denominator can hang below the line's own
+    // descent; we grow the paragraph height to cover it so the next block does
+    // not overlap it.
+    let mut content_bottom = total_height;
 
     for line in layout.lines() {
         // Hanging indent: the first line shifts left so the marker is visible to
@@ -986,6 +997,9 @@ fn layout_paragraph_uncached(
                             prim.translate(pib.x + indent_x, pib.y);
                             items.push(prim);
                         }
+                        // The box top is at `pib.y` and its baseline at
+                        // `pib.y + ascent`; the descent hangs below that.
+                        content_bottom = content_bottom.max(pib.y + render.ascent + render.descent);
                     }
                 }
                 continue;
@@ -1166,7 +1180,9 @@ fn layout_paragraph_uncached(
     };
 
     ParagraphLayout {
-        height: total_height,
+        // `content_bottom` ≥ `total_height`; it is larger only when an inline
+        // equation hangs below the last line (see above).
+        height: content_bottom,
         width: total_width,
         items,
         first_baseline,

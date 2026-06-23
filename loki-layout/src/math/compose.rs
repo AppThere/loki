@@ -10,7 +10,7 @@
 //! full TeX math engine).
 
 use super::MBox;
-use super::shape::shape_token;
+use super::shape;
 use crate::color::LayoutColor;
 use crate::font::FontResources;
 use crate::geometry::LayoutRect;
@@ -101,10 +101,10 @@ pub(super) fn scripts(base: MBox, sup: Option<MBox>, sub: Option<MBox>, font_siz
 
 /// Wraps `radicand` in a radical sign with an overbar (`<msqrt>`/`<mroot>`).
 ///
-/// The surd is the `√` glyph shaped at the base font size (it does not stretch
-/// to tall radicands — a documented approximation); the overbar is a rule drawn
-/// across the top of the radicand. An optional `index` (for `<mroot>`) is placed
-/// above the surd.
+/// The surd is the `√` glyph **stretched** (via uniform scaling) so it spans the
+/// radicand from the overbar down to the radicand's depth; the overbar is a rule
+/// drawn across the top of the radicand. An optional `index` (for `<mroot>`) is
+/// placed above the surd.
 pub(super) fn radical(
     resources: &mut FontResources,
     radicand: MBox,
@@ -115,36 +115,44 @@ pub(super) fn radical(
 ) -> MBox {
     let rule = (font_size * 0.055).max(0.6);
     let gap = font_size * 0.12;
-    let surd = shape_token(
+
+    // Overbar sits `gap` above the radicand's top edge; the surd is scaled to
+    // reach from there down to the radicand's foot.
+    let bar_y = -(radicand.ascent + gap) - rule;
+    let target = (radicand.ascent + radicand.descent + gap).max(font_size);
+    let mut surd = shape::stretchy_glyph(
         resources,
         "\u{221A}",
         font_size,
-        false,
+        target,
         color,
         display_scale,
     );
+    // Lower the surd so its top reaches the overbar line.
+    surd.shift_v(bar_y + surd.ascent);
 
-    // Overbar spans the radicand (and a little lead-in), sitting `gap` above the
-    // radicand's top edge.
-    let bar_y = -(radicand.ascent + gap) - rule;
     let mut items: Vec<PositionedItem> = Vec::new();
     let mut x = 0.0f32;
 
     // Optional degree index, raised and to the left of the surd.
     if let Some(mut idx) = index {
-        idx.translate(x, -(surd.ascent * 0.6));
+        idx.shift_v(bar_y * 0.6);
+        idx.translate(x, 0.0);
         x += idx.width;
         items.extend(idx.items);
     }
 
-    let mut surd = surd;
     surd.translate(x, 0.0);
     let surd_right = x + surd.width;
+    let surd_ascent = surd.ascent;
+    let surd_descent = surd.descent;
     items.extend(surd.items);
 
     let mut radicand = radicand;
     radicand.translate(surd_right, 0.0);
     let width = surd_right + radicand.width;
+    let rad_ascent = radicand.ascent;
+    let rad_descent = radicand.descent;
     items.extend(radicand.items);
 
     items.push(PositionedItem::FilledRect(PositionedRect {
@@ -152,12 +160,38 @@ pub(super) fn radical(
         color,
     }));
 
-    let ascent = (radicand.ascent + gap + rule).max(surd.ascent).max(-bar_y);
-    let descent = radicand.descent.max(surd.descent);
+    let ascent = (rad_ascent + gap + rule).max(surd_ascent).max(-bar_y);
+    let descent = rad_descent.max(surd_descent);
     MBox {
         width,
         ascent,
         descent,
         items,
     }
+}
+
+/// Wraps `content` in stretchy `open`/`close` delimiter glyphs, each scaled to
+/// the content height and vertically centred on the content's mid-line.
+pub(super) fn delimiters(
+    resources: &mut FontResources,
+    open: &str,
+    content: MBox,
+    close: &str,
+    font_size: f32,
+    color: LayoutColor,
+    display_scale: f32,
+) -> MBox {
+    let pad = font_size * 0.1;
+    let target = content.ascent + content.descent + pad;
+    // Content's vertical centre (y-down: negative is above the baseline).
+    let center = (content.descent - content.ascent) / 2.0;
+    let gap = font_size * 0.08;
+
+    let mut left = shape::stretchy_glyph(resources, open, font_size, target, color, display_scale);
+    let mut right =
+        shape::stretchy_glyph(resources, close, font_size, target, color, display_scale);
+    left.shift_v(center - (left.descent - left.ascent) / 2.0);
+    right.shift_v(center - (right.descent - right.ascent) / 2.0);
+
+    hbox(vec![(left, 0.0), (content, gap), (right, gap)])
 }

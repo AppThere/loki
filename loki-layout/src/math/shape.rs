@@ -106,3 +106,33 @@ pub(super) fn shape_token(
         items,
     }
 }
+
+/// Shapes `ch` scaled up so its visual height is at least `target_height`,
+/// producing a "stretched" delimiter or radical sign. Uniform glyph scaling is
+/// an approximation of a true extensible glyph — the sign also widens — but it
+/// keeps the symbol's shape and needs no special renderer support. The glyph is
+/// never shrunk below its natural size, and the scale is capped to avoid
+/// pathological growth.
+pub(super) fn stretchy_glyph(
+    resources: &mut FontResources,
+    ch: &str,
+    font_size: f32,
+    target_height: f32,
+    color: LayoutColor,
+    display_scale: f32,
+) -> MBox {
+    let base = shape_token(resources, ch, font_size, false, color, display_scale);
+    let natural = base.ascent + base.descent;
+    if natural <= 0.0 || target_height <= natural * 1.05 {
+        return base;
+    }
+    let factor = (target_height / natural).min(6.0);
+    shape_token(
+        resources,
+        ch,
+        font_size * factor,
+        false,
+        color,
+        display_scale,
+    )
+}

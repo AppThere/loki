@@ -12,11 +12,13 @@
 //! # Covered constructs
 //!
 //! Identifiers/numbers/operators (`mi`/`mn`/`mo`/`mtext`), rows (`mrow`),
-//! fractions (`mfrac`), scripts (`msup`/`msub`/`msubsup`), and radicals
-//! (`msqrt`/`mroot`) — the same set the OOXML/ODF importers produce. Unknown
-//! elements lay out their children as a row. This is a first-pass typesetter:
-//! it does not stretch radicals/delimiters, balance spacing per the full TeX
-//! `mathspacing` table, or handle matrices/n-ary operators.
+//! fractions (`mfrac`), scripts (`msup`/`msub`/`msubsup`), radicals
+//! (`msqrt`/`mroot`), and fenced expressions (`mfenced`, or a row wrapped in
+//! matching fence operators). Radical signs and delimiters **stretch** to their
+//! content via uniform glyph scaling (an approximation of true extensible
+//! glyphs — the sign also widens). Unknown elements lay out their children as a
+//! row. This is still a first-pass typesetter: it does not balance spacing per
+//! the full TeX `mathspacing` table, or handle matrices / n-ary operators.
 
 mod compose;
 mod parse;
@@ -100,6 +102,14 @@ impl MBox {
             item.translate(dx, dy);
         }
     }
+
+    /// Shifts the box vertically by `dy` (positive = down), keeping its
+    /// ascent/descent consistent with the new position relative to the baseline.
+    fn shift_v(&mut self, dy: f32) {
+        self.translate(0.0, dy);
+        self.ascent -= dy;
+        self.descent += dy;
+    }
 }
 
 /// Scale factor applied to script (super/sub/index) and nested content.
@@ -157,6 +167,13 @@ fn layout_node(
             let index = child(1).map(|c| layout_node(resources, c, small, color, scale));
             compose::radical(resources, radicand, index, font_size, color, scale)
         }
+        // A fenced expression: lay out the children, then wrap in stretchy
+        // delimiters. `<mfenced>` open/close attributes are not retained by the
+        // parser, so the default parentheses are used.
+        "mfenced" => {
+            let content = row(resources, &node.children, font_size, color, scale);
+            compose::delimiters(resources, "(", content, ")", font_size, color, scale)
+        }
         // math, mrow, mstyle, semantics, mpadded, and unknowns: lay out children
         // as a horizontal row.
         _ => row(resources, &node.children, font_size, color, scale),
@@ -186,6 +203,35 @@ fn row(
     color: LayoutColor,
     scale: f32,
 ) -> MBox {
+    // Stretchy delimiters: a row that opens and closes with matching fence
+    // operators is laid out as its inner content wrapped in delimiters scaled to
+    // that content's height.
+    if nodes.len() >= 2 {
+        let (first, last) = (&nodes[0], &nodes[nodes.len() - 1]);
+        if first.tag == "mo"
+            && last.tag == "mo"
+            && is_open_fence(&first.text)
+            && is_close_fence(&last.text)
+        {
+            let content = row(
+                resources,
+                &nodes[1..nodes.len() - 1],
+                font_size,
+                color,
+                scale,
+            );
+            return compose::delimiters(
+                resources,
+                &first.text,
+                content,
+                &last.text,
+                font_size,
+                color,
+                scale,
+            );
+        }
+    }
+
     let op_gap = font_size * 0.17;
     let mut boxes: Vec<(MBox, f32)> = Vec::new();
     let mut prev_mo = false;
@@ -211,6 +257,23 @@ fn row(
 fn is_italic_identifier(text: &str) -> bool {
     let mut chars = text.chars();
     matches!((chars.next(), chars.next()), (Some(c), None) if c.is_alphabetic())
+}
+
+/// Whether `s` is a single opening fence character (paren/bracket/brace/bar or
+/// the floor/ceiling/angle openers) that should stretch to its content.
+fn is_open_fence(s: &str) -> bool {
+    matches!(
+        s,
+        "(" | "[" | "{" | "|" | "\u{2016}" | "\u{230A}" | "\u{2308}" | "\u{27E8}" | "\u{2329}"
+    )
+}
+
+/// Whether `s` is a single closing fence character.
+fn is_close_fence(s: &str) -> bool {
+    matches!(
+        s,
+        ")" | "]" | "}" | "|" | "\u{2016}" | "\u{230B}" | "\u{2309}" | "\u{27E9}" | "\u{232A}"
+    )
 }
 
 #[cfg(test)]

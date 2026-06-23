@@ -116,6 +116,44 @@ fn inline_math_emits_typeset_items() {
 }
 
 #[test]
+fn inline_math_baseline_aligns_with_text() {
+    const NS: &str = "http://www.w3.org/1998/Math/MathML";
+    let mut r = test_resources();
+    let text = "x = ";
+    let mathml = format!("<math xmlns=\"{NS}\"><mi>y</mi></math>");
+    let spans = [single_span(text, 12.0), math_span(text.len(), &mathml)];
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+
+    // A lone identifier sits on the math baseline, which the inline box places
+    // on the text baseline — so every glyph run (the "x = " text and the math
+    // "y") shares one baseline `y`.
+    let baselines: Vec<f32> = result
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            PositionedItem::GlyphRun(g) => Some(g.origin.y),
+            _ => None,
+        })
+        .collect();
+    assert!(baselines.len() >= 2, "expected text + math glyph runs");
+    let first = baselines[0];
+    for b in &baselines {
+        assert!(
+            (b - first).abs() < 0.6,
+            "math baseline {b} should match text baseline {first}"
+        );
+    }
+}
+
+#[test]
 fn plain_paragraph_non_empty() {
     let mut r = test_resources();
     let text = "Hello, world!";

@@ -31,6 +31,18 @@ fn count_rects(items: &[PositionedItem]) -> usize {
         .count()
 }
 
+/// Largest font size used by any glyph run — a proxy for how much a delimiter or
+/// surd has been stretched (stretched glyphs are shaped at a larger size).
+fn max_glyph_font_size(items: &[PositionedItem]) -> f32 {
+    items
+        .iter()
+        .filter_map(|i| match i {
+            PositionedItem::GlyphRun(r) => Some(r.font_size),
+            _ => None,
+        })
+        .fold(0.0, f32::max)
+}
+
 #[test]
 fn empty_or_invalid_is_zero() {
     let r = render("not math at all");
@@ -93,6 +105,41 @@ fn nth_root_adds_an_index_glyph() {
     // The index contributes an extra glyph run and widens the box.
     assert!(count_glyph_runs(&root.items) > count_glyph_runs(&sqrt.items));
     assert!(root.width > sqrt.width);
+}
+
+#[test]
+fn radical_stretches_to_a_tall_radicand() {
+    let short = render(&format!(
+        "<math xmlns=\"{NS}\"><msqrt><mi>x</mi></msqrt></math>"
+    ));
+    let tall = render(&format!(
+        "<math xmlns=\"{NS}\"><msqrt><mfrac><mn>1</mn><mn>2</mn></mfrac></msqrt></math>"
+    ));
+    assert!(tall.ascent > short.ascent, "tall radicand → taller box");
+    // The surd over the fraction is scaled up noticeably more than the surd over
+    // a single glyph.
+    assert!(
+        max_glyph_font_size(&tall.items) > max_glyph_font_size(&short.items) + 2.0,
+        "surd should stretch further for a tall radicand ({} vs {})",
+        max_glyph_font_size(&tall.items),
+        max_glyph_font_size(&short.items),
+    );
+}
+
+#[test]
+fn delimiters_stretch_around_tall_content() {
+    let bare = render(&format!(
+        "<math xmlns=\"{NS}\"><mfrac><mn>1</mn><mn>2</mn></mfrac></math>"
+    ));
+    let fenced = render(&format!(
+        "<math xmlns=\"{NS}\"><mrow><mo>(</mo>\
+         <mfrac><mn>1</mn><mn>2</mn></mfrac><mo>)</mo></mrow></math>"
+    ));
+    assert!(fenced.width > bare.width, "delimiters add width");
+    assert!(
+        max_glyph_font_size(&fenced.items) > 12.5,
+        "parentheses should be stretched larger than the base size"
+    );
 }
 
 #[test]
