@@ -118,10 +118,8 @@ impl OdsImport {
                                 in_cell = true;
                             }
                         }
-                        b"p" => {
-                            if in_cell {
-                                in_p = true;
-                            }
+                        b"p" if in_cell => {
+                            in_p = true;
                         }
                         _ => {}
                     }
@@ -129,40 +127,38 @@ impl OdsImport {
                 Ok(Event::Empty(ref e)) => {
                     let local = local_name(e);
                     match local {
-                        b"table-cell" => {
-                            if in_row {
-                                let style_name = local_attr_val(e, b"style-name");
-                                let cols_repeated = local_attr_val(e, b"number-columns-repeated")
-                                    .and_then(|s| s.parse::<u32>().ok())
-                                    .unwrap_or(1)
-                                    .min(MAX_SHEET_COLS);
+                        b"table-cell" if in_row => {
+                            let style_name = local_attr_val(e, b"style-name");
+                            let cols_repeated = local_attr_val(e, b"number-columns-repeated")
+                                .and_then(|s| s.parse::<u32>().ok())
+                                .unwrap_or(1)
+                                .min(MAX_SHEET_COLS);
 
-                                let style = style_name.and_then(|name| styles.get(&name).cloned());
-                                if let Some(ref mut ws) = current_sheet {
-                                    if style.is_some() {
-                                        // Only materialize a bounded number of
-                                        // cells; the cursor still advances by the
-                                        // full clamped repeat count below.
-                                        let mat_rows =
-                                            current_row_repeated.min(MAX_MATERIALIZED_REPEAT);
-                                        let mat_cols = cols_repeated.min(MAX_MATERIALIZED_REPEAT);
-                                        fill_cells(
-                                            ws,
-                                            row_idx,
-                                            col_idx,
-                                            mat_rows,
-                                            mat_cols,
-                                            &mut materialized_cells,
-                                            &Cell {
-                                                value: String::new(),
-                                                formula: None,
-                                                style: style.clone(),
-                                            },
-                                        );
-                                    }
+                            let style = style_name.and_then(|name| styles.get(&name).cloned());
+                            if let Some(ref mut ws) = current_sheet {
+                                if style.is_some() {
+                                    // Only materialize a bounded number of
+                                    // cells; the cursor still advances by the
+                                    // full clamped repeat count below.
+                                    let mat_rows =
+                                        current_row_repeated.min(MAX_MATERIALIZED_REPEAT);
+                                    let mat_cols = cols_repeated.min(MAX_MATERIALIZED_REPEAT);
+                                    fill_cells(
+                                        ws,
+                                        row_idx,
+                                        col_idx,
+                                        mat_rows,
+                                        mat_cols,
+                                        &mut materialized_cells,
+                                        &Cell {
+                                            value: String::new(),
+                                            formula: None,
+                                            style: style.clone(),
+                                        },
+                                    );
                                 }
-                                col_idx = col_idx.saturating_add(cols_repeated);
                             }
+                            col_idx = col_idx.saturating_add(cols_repeated);
                         }
                         _ => {}
                     }
@@ -226,13 +222,11 @@ impl OdsImport {
                                 in_row = false;
                             }
                         }
-                        b"table" => {
-                            if in_table {
-                                if let Some(ws) = current_sheet.take() {
-                                    sheets.push(ws);
-                                }
-                                in_table = false;
+                        b"table" if in_table => {
+                            if let Some(ws) = current_sheet.take() {
+                                sheets.push(ws);
                             }
+                            in_table = false;
                         }
                         _ => {}
                     }

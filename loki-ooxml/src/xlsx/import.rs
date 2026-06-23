@@ -283,17 +283,15 @@ fn parse_styles(data: &[u8]) -> Result<Vec<CellStyle>, OoxmlError> {
                         cell_xfs.push(style);
                     }
                 }
-                b"alignment" => {
-                    if in_cell_xfs {
-                        if let Some(last_xf) = cell_xfs.last_mut() {
-                            if let Some(horiz) = local_attr_val(e, b"horizontal") {
-                                last_xf.align = match horiz.as_str() {
-                                    "center" => CellAlign::Center,
-                                    "right" => CellAlign::Right,
-                                    _ => CellAlign::Left,
-                                };
-                            }
-                        }
+                b"alignment" if in_cell_xfs => {
+                    if let Some(last_xf) = cell_xfs.last_mut()
+                        && let Some(horiz) = local_attr_val(e, b"horizontal")
+                    {
+                        last_xf.align = match horiz.as_str() {
+                            "center" => CellAlign::Center,
+                            "right" => CellAlign::Right,
+                            _ => CellAlign::Left,
+                        };
                     }
                 }
                 _ => {}
