@@ -12,14 +12,27 @@ categories = ["graphics", "text-processing"]
 loki-doc-model = { path = "../loki-doc-model" }
 loki-primitives = { path = "../loki-primitives" }
 appthere-color = "0.1.1"
-parley = "0.8"
-fontique = "0.8"
+parley = "0.10"
+# Force fontconfig-dlopen so fontique loads libfontconfig at runtime instead of
+# requiring static C symbols at link time. This must be enabled wherever fontique
+# is pulled (parley re-exports it) so crates that build without the blitz stack in
+# their graph (e.g. loki-vello) still link — blitz-dom otherwise enables
+# yeslogic-fontconfig-sys/dlopen globally, but it is not always present.
+fontique = { version = "0.10", features = ["fontconfig-dlopen"] }
 thiserror = "2"
 tracing = "0.1"
 
+# Android only: the bundled metric-compatible fallback fonts (Carlito/Caladea/
+# Arimo/Cousine/Tinos). On desktop these are discovered from the executable's
+# `assets/fonts/` directory, but that path does not resolve on Android, so the
+# bytes are registered directly in `FontResources::new`. Gated to the Android
+# target so desktop builds neither depend on loki-fonts nor embed the ~7 MB.
+[target.'cfg(target_os = "android")'.dependencies]
+loki-fonts.workspace = true
+
 [dev-dependencies]
 # Statistical benchmark harness (layout + edit-path scaling).
-criterion = "0.5"
+criterion = "0.8"
 # Drives real CRDT mutations through the edit-path benchmark / report.
 loro = "1.11.1"
 

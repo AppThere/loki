@@ -17,8 +17,6 @@ kurbo          = "0.12"
 thiserror      = "2"
 image          = "0.25"
 base64         = "0.22"
-read-fonts     = "0.37"
-skrifa         = "0.40"
 
 [dev-dependencies]
 wgpu           = "26"

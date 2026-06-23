@@ -11,6 +11,10 @@
 //! Paragraph placement, splitting, and keep-with-next chain logic live in
 //! the `para_impl` submodule (`flow_para.rs`).
 
+#[path = "flow_columns.rs"]
+mod columns_impl;
+#[path = "flow_comments.rs"]
+mod comments_impl;
 #[path = "flow_para.rs"]
 mod para_impl;
 
@@ -159,6 +163,28 @@ pub(super) struct FlowState<'a> {
     /// used by incremental relayout. Populated only by [`run_paginated_loop`];
     /// nested flows (tables, cells, headers) never call it, so it stays empty.
     pub(super) checkpoints: Vec<PageStart>,
+    /// Number of text columns for this section (`1` = single column). When
+    /// `> 1`, [`content_width`](Self::content_width) holds the *column* width and
+    /// content flows down each column before moving to the next, then the page.
+    pub(super) columns: u8,
+    /// Gap between adjacent columns in points (meaningful only when `columns > 1`).
+    pub(super) column_gap: f32,
+    /// Whether to draw a separator line between columns.
+    pub(super) column_separator: bool,
+    /// 0-based index of the column currently being filled.
+    pub(super) col_index: u8,
+    /// Index into `current_items` at which the current column's items begin, so
+    /// they can be shifted to the column's horizontal offset when it is finished.
+    pub(super) column_item_start: usize,
+    /// Index into `current_paragraphs` at which the current column's editing
+    /// data begins (parallel to `column_item_start`).
+    pub(super) column_para_start: usize,
+    /// Document comments (annotation bodies), looked up by id when laying out
+    /// the comment panel. Empty in nested flows (headers/footers, cells).
+    pub(super) comments: &'a [loki_doc_model::content::annotation::Comment],
+    /// Comment anchors (`id`, content-local `y`) recorded on the current page,
+    /// consumed by [`finish_page`] to lay out the gutter comment panel.
+    pub(super) pending_comment_anchors: Vec<(String, f32)>,
 }
 
 impl FlowState<'_> {
@@ -208,6 +234,7 @@ fn new_flow_state<'a>(
     mode: &'a LayoutMode,
     display_scale: f32,
     options: &'a LayoutOptions,
+    comments: &'a [loki_doc_model::content::annotation::Comment],
 ) -> FlowState<'a> {
     let pl = &section.layout;
     let page_w = pts_to_f32(pl.page_size.width);
@@ -218,9 +245,23 @@ fn new_flow_state<'a>(
         bottom: pts_to_f32(pl.margins.bottom),
         left: pts_to_f32(pl.margins.left),
     };
-    let content_width = match mode {
+    let full_content_width = match mode {
         LayoutMode::Reflow { available_width } => *available_width,
         _ => (page_w - margins.horizontal()).max(0.0),
+    };
+    // Multi-column layout is a paginated-print feature: divide the content area
+    // into `count` equal columns separated by `gap`. `content_width` then holds
+    // the per-column width and the flow fills each column top-to-bottom before
+    // advancing to the next (and finally the next page). Reflow/Pageless ignore
+    // columns (continuous scroll has no fixed page height to break columns at).
+    let (columns, column_gap, column_separator, content_width) = match &pl.columns {
+        Some(c) if c.count >= 2 && mode.is_paginated() => {
+            let n = f32::from(c.count);
+            let gap = pts_to_f32(c.gap);
+            let col_w = ((full_content_width - (n - 1.0) * gap) / n).max(0.0);
+            (c.count, gap, c.separator, col_w)
+        }
+        _ => (1, 0.0, false, full_content_width),
     };
     FlowState {
         resources,
@@ -244,6 +285,14 @@ fn new_flow_state<'a>(
         pending_footnotes: Vec::new(),
         current_paragraphs: Vec::new(),
         checkpoints: Vec::new(),
+        columns,
+        column_gap,
+        column_separator,
+        col_index: 0,
+        column_item_start: 0,
+        column_para_start: 0,
+        comments,
+        pending_comment_anchors: Vec::new(),
     }
 }
 
@@ -311,7 +360,17 @@ pub(crate) fn flow_section_resume(
     resync: impl FnMut(usize, &FlowCheckpoint) -> bool,
 ) -> crate::incremental::ResumedFlow {
     let mode = LayoutMode::Paginated;
-    let mut state = new_flow_state(resources, section, catalog, &mode, display_scale, options);
+    // Incremental resume does not render comment panels on reused pages; the
+    // full relayout path does. Pass an empty comment set here.
+    let mut state = new_flow_state(
+        resources,
+        section,
+        catalog,
+        &mode,
+        display_scale,
+        options,
+        &[],
+    );
     state.page_number = seed.page_number;
     state.list_counters = seed.list_counters.clone();
     state.prev_list_id = seed.prev_list_id.clone();
@@ -351,8 +410,17 @@ pub fn flow_section(
     mode: &LayoutMode,
     display_scale: f32,
     options: &LayoutOptions,
+    comments: &[loki_doc_model::content::annotation::Comment],
 ) -> FlowOutput {
-    let mut state = new_flow_state(resources, section, catalog, mode, display_scale, options);
+    let mut state = new_flow_state(
+        resources,
+        section,
+        catalog,
+        mode,
+        display_scale,
+        options,
+        comments,
+    );
 
     if mode.is_paginated() {
         // Top-level paginated flow: record checkpoints, never resync.
@@ -489,6 +557,17 @@ fn flow_block(state: &mut FlowState, block: &Block, idx: usize) {
 // ── Page management ───────────────────────────────────────────────────────────
 
 pub(super) fn finish_page(state: &mut FlowState) {
+    // Position the final column's content, draw separators for the columns that
+    // were used, then reset the column tracker so the next page starts at 0.
+    columns_impl::position_current_column(state);
+    columns_impl::emit_column_separators(state);
+    state.col_index = 0;
+    state.column_item_start = 0;
+    state.column_para_start = 0;
+
+    // Lay out the gutter comment panel for any comments anchored on this page.
+    let comment_items = comments_impl::layout_comment_panel(state);
+
     let page = LayoutPage {
         page_number: state.page_number,
         page_size: state.page_size,
@@ -496,6 +575,7 @@ pub(super) fn finish_page(state: &mut FlowState) {
         content_items: std::mem::take(&mut state.current_items),
         header_items: vec![],
         footer_items: vec![],
+        comment_items,
         header_height: 0.0,
         footer_height: 0.0,
         editing_data: if state.options.preserve_for_editing {
@@ -550,6 +630,7 @@ fn layout_blocks_reflow(
         &mode,
         display_scale,
         &options,
+        &[],
     ) {
         FlowOutput::Canvas { items, height, .. } => (items, height),
         FlowOutput::Pages { .. } => unreachable!("Reflow mode always returns Canvas"),
@@ -1088,6 +1169,16 @@ fn measure_cell_height(
         pending_footnotes: Vec::new(),
         current_paragraphs: Vec::new(),
         checkpoints: Vec::new(),
+        // Table cells are always laid out single-column.
+        columns: 1,
+        column_gap: 0.0,
+        column_separator: false,
+        col_index: 0,
+        column_item_start: 0,
+        column_para_start: 0,
+        // Cells never render the comment gutter panel.
+        comments: &[],
+        pending_comment_anchors: Vec::new(),
     };
 
     for block in &cell.blocks {
@@ -1204,6 +1295,16 @@ fn flow_cell_blocks(
         pending_footnotes: Vec::new(),
         current_paragraphs: Vec::new(),
         checkpoints: Vec::new(),
+        // Table cells are always laid out single-column.
+        columns: 1,
+        column_gap: 0.0,
+        column_separator: false,
+        col_index: 0,
+        column_item_start: 0,
+        column_para_start: 0,
+        // Cells never render the comment gutter panel.
+        comments: &[],
+        pending_comment_anchors: Vec::new(),
     };
 
     for block in blocks {
@@ -1299,7 +1400,9 @@ fn flow_table(
         if state.mode.is_paginated() {
             let remaining_h = state.page_content_height - state.cursor_y;
             if row_max_h > remaining_h && row_max_h <= state.page_content_height {
-                finish_page(state);
+                // A whole row that fits in a band but not the remaining space
+                // moves to the next column (or page).
+                columns_impl::break_column(state);
             }
         }
 

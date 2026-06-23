@@ -41,4 +41,9 @@ body { margin: 5%; line-height: 1.4; }\n\
 h1, h2, h3, h4, h5, h6 { font-family: sans-serif; line-height: 1.2; }\n\
 pre { white-space: pre-wrap; font-family: monospace; }\n\
 blockquote { margin-left: 1.5em; font-style: italic; }\n\
-.loki-table-placeholder { color: #666; font-style: italic; }\n";
+table { border-collapse: collapse; margin: 1em 0; }\n\
+th, td { border: 1px solid #999; padding: 0.3em 0.5em; }\n\
+caption { font-style: italic; margin-bottom: 0.3em; }\n\
+figure { margin: 1em 0; text-align: center; }\n\
+figcaption { font-size: 0.9em; color: #555; }\n\
+img { max-width: 100%; height: auto; }\n";

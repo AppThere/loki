@@ -38,17 +38,20 @@ pub fn find_content_types<R: std::io::Read + std::io::Seek>(
     #[allow(unused_variables)] warnings: &mut Vec<DeviationWarning>,
 ) -> Option<usize> {
     for i in 0..zip.len() {
-        if let Ok(zf) = zip.by_index(i) {
-            if zf.name() == "[Content_Types].xml" {
-                return Some(i);
-            }
-            #[cfg(not(feature = "strict"))]
-            if zf.name().eq_ignore_ascii_case("[content_types].xml") {
-                warnings.push(DeviationWarning::ContentTypesNotAtRoot {
-                    found_at: zf.name().to_string(),
-                });
-                return Some(i);
-            }
+        // `let … else` keeps a single level of nesting regardless of which
+        // feature set is active. Under `--features strict` the case-insensitive
+        // fallback below is compiled out, which would otherwise leave a sole
+        // inner `if` and trip `clippy::collapsible_if`.
+        let Ok(zf) = zip.by_index(i) else { continue };
+        if zf.name() == "[Content_Types].xml" {
+            return Some(i);
+        }
+        #[cfg(not(feature = "strict"))]
+        if zf.name().eq_ignore_ascii_case("[content_types].xml") {
+            warnings.push(DeviationWarning::ContentTypesNotAtRoot {
+                found_at: zf.name().to_string(),
+            });
+            return Some(i);
         }
     }
     None

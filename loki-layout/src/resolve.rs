@@ -228,13 +228,17 @@ pub fn flatten_paragraph(
         Some(direct) => direct.as_ref().clone().merged_with_parent(&base),
         None => base,
     };
+    // `walk_inlines` takes `&mut` and mutates this in place (restoring after each
+    // styled run) to avoid cloning `CharProps` per formatting span; `base` is a
+    // throwaway local, so the mutation is not observable outside this call.
+    let mut base = base;
     let mut buf = String::new();
     let mut spans: Vec<StyleSpan> = Vec::new();
     let mut images: Vec<CollectedImage> = Vec::new();
     let mut notes: Vec<CollectedNote> = Vec::new();
     walk_inlines(
         &block.inlines,
-        &base,
+        &mut base,
         catalog,
         &mut buf,
         &mut spans,
@@ -370,11 +374,14 @@ fn char_props_to_style_span(props: &CharProps, range: Range<usize>) -> StyleSpan
         None
     };
 
+    let bold = props.bold.unwrap_or(false);
     StyleSpan {
         range,
         font_name: props.font_name.clone(),
         font_size: props.font_size.map(pts_to_f32).unwrap_or(12.0),
-        bold: props.bold.unwrap_or(false),
+        bold,
+        // Explicit numeric weight wins; otherwise derive from the bold flag.
+        weight: props.font_weight.unwrap_or(if bold { 700 } else { 400 }),
         italic: props.italic.unwrap_or(false),
         color: resolve_color(props.color.as_ref()),
         underline,
@@ -387,6 +394,7 @@ fn char_props_to_style_span(props: &CharProps, range: Range<usize>) -> StyleSpan
         word_spacing: props.word_spacing.map(pts_to_f32), // gap #22
         shadow: props.shadow.unwrap_or(false),            // gap #24
         link_url: None, // set by walk_inlines when inside Inline::Link (gap #11)
+        math: None,     // set by walk_inlines for Inline::Math placeholders
     }
 }
 
@@ -463,7 +471,7 @@ fn push_text(
 #[allow(clippy::too_many_arguments)]
 fn walk_inlines(
     inlines: &[Inline],
-    effective: &CharProps,
+    effective: &mut CharProps,
     catalog: &StyleCatalog,
     buf: &mut String,
     spans: &mut Vec<StyleSpan>,
@@ -480,10 +488,10 @@ fn walk_inlines(
             Inline::LineBreak => push_text(buf, spans, "\n", effective, active_link_url),
             Inline::Code(_, s) => push_text(buf, spans, s, effective, active_link_url),
             Inline::StyledRun(run) => {
-                let p = effective_run_char_props(run, catalog, effective);
+                let mut p = effective_run_char_props(run, catalog, effective);
                 walk_inlines(
                     &run.content,
-                    &p,
+                    &mut p,
                     catalog,
                     buf,
                     spans,
@@ -494,11 +502,13 @@ fn walk_inlines(
                 );
             }
             Inline::Strong(ch) => {
-                let mut p = effective.clone();
-                p.bold = Some(true);
+                // Toggle the single flag in place and restore it after recursing,
+                // instead of cloning the whole CharProps (which heap-allocates its
+                // font-name Strings) for every formatting span.
+                let prev = effective.bold.replace(true);
                 walk_inlines(
                     ch,
-                    &p,
+                    effective,
                     catalog,
                     buf,
                     spans,
@@ -507,13 +517,13 @@ fn walk_inlines(
                     note_counter,
                     notes,
                 );
+                effective.bold = prev;
             }
             Inline::Emph(ch) => {
-                let mut p = effective.clone();
-                p.italic = Some(true);
+                let prev = effective.italic.replace(true);
                 walk_inlines(
                     ch,
-                    &p,
+                    effective,
                     catalog,
                     buf,
                     spans,
@@ -522,13 +532,13 @@ fn walk_inlines(
                     note_counter,
                     notes,
                 );
+                effective.italic = prev;
             }
             Inline::Underline(ch) => {
-                let mut p = effective.clone();
-                p.underline = Some(DocUnderlineStyle::Single);
+                let prev = effective.underline.replace(DocUnderlineStyle::Single);
                 walk_inlines(
                     ch,
-                    &p,
+                    effective,
                     catalog,
                     buf,
                     spans,
@@ -537,13 +547,15 @@ fn walk_inlines(
                     note_counter,
                     notes,
                 );
+                effective.underline = prev;
             }
             Inline::Strikeout(ch) => {
-                let mut p = effective.clone();
-                p.strikethrough = Some(DocStrikethroughStyle::Single);
+                let prev = effective
+                    .strikethrough
+                    .replace(DocStrikethroughStyle::Single);
                 walk_inlines(
                     ch,
-                    &p,
+                    effective,
                     catalog,
                     buf,
                     spans,
@@ -552,14 +564,16 @@ fn walk_inlines(
                     note_counter,
                     notes,
                 );
+                effective.strikethrough = prev;
             }
             // Superscript (gap #3): set vertical_align on the effective props.
             Inline::Superscript(ch) => {
-                let mut p = effective.clone();
-                p.vertical_align = Some(DocVerticalAlign::Superscript);
+                let prev = effective
+                    .vertical_align
+                    .replace(DocVerticalAlign::Superscript);
                 walk_inlines(
                     ch,
-                    &p,
+                    effective,
                     catalog,
                     buf,
                     spans,
@@ -568,14 +582,16 @@ fn walk_inlines(
                     note_counter,
                     notes,
                 );
+                effective.vertical_align = prev;
             }
             // Subscript (gap #3): set vertical_align on the effective props.
             Inline::Subscript(ch) => {
-                let mut p = effective.clone();
-                p.vertical_align = Some(DocVerticalAlign::Subscript);
+                let prev = effective
+                    .vertical_align
+                    .replace(DocVerticalAlign::Subscript);
                 walk_inlines(
                     ch,
-                    &p,
+                    effective,
                     catalog,
                     buf,
                     spans,
@@ -584,14 +600,14 @@ fn walk_inlines(
                     note_counter,
                     notes,
                 );
+                effective.vertical_align = prev;
             }
             // SmallCaps (gap #15): set small_caps so StyleSpan gets FontVariant::SmallCaps.
             Inline::SmallCaps(ch) => {
-                let mut p = effective.clone();
-                p.small_caps = Some(true);
+                let prev = effective.small_caps.replace(true);
                 walk_inlines(
                     ch,
-                    &p,
+                    effective,
                     catalog,
                     buf,
                     spans,
@@ -600,6 +616,7 @@ fn walk_inlines(
                     note_counter,
                     notes,
                 );
+                effective.small_caps = prev;
             }
             Inline::Quoted(_, ch) | Inline::Span(_, ch) => {
                 walk_inlines(
@@ -700,17 +717,28 @@ fn walk_inlines(
             Inline::Note(kind, blocks) => {
                 *note_counter += 1;
                 let mark = superscript_mark(*note_counter);
-                let mut mark_props = effective.clone();
-                mark_props.vertical_align = Some(DocVerticalAlign::Superscript);
-                push_text(buf, spans, &mark, &mark_props, active_link_url);
+                let prev = effective
+                    .vertical_align
+                    .replace(DocVerticalAlign::Superscript);
+                push_text(buf, spans, &mark, effective, active_link_url);
+                effective.vertical_align = prev;
                 notes.push(CollectedNote {
                     number: *note_counter,
                     kind: *kind,
                     blocks: blocks.clone(),
                 });
             }
-            // Math, RawInline, Comment, Bookmark, and any
-            // future #[non_exhaustive] variants are not text runs — skip.
+            // Math (gap): record an empty-range placeholder span carrying the
+            // MathML; `layout_paragraph` typesets it and places it inline via a
+            // Parley inline box. No text is emitted into `buf`.
+            Inline::Math(_, mathml) => {
+                let at = buf.len();
+                let mut span = char_props_to_style_span(effective, at..at);
+                span.math = Some(std::sync::Arc::from(mathml.as_str()));
+                spans.push(span);
+            }
+            // RawInline, Comment, Bookmark, and any future #[non_exhaustive]
+            // variants are not text runs — skip.
             _ => {}
         }
     }

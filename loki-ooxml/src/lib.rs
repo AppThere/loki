@@ -60,7 +60,7 @@ pub mod pptx;
 pub use error::{NoteKind, OoxmlError, OoxmlResult, OoxmlWarning};
 
 #[cfg(feature = "docx")]
-pub use docx::export::DocxExport;
+pub use docx::export::{DocxExport, DocxTemplateExport};
 #[cfg(feature = "docx")]
 pub use docx::import::{DocxImport, DocxImportOptions, DocxImportResult};
 #[cfg(feature = "docx")]

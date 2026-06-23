@@ -59,6 +59,7 @@ use crate::para::{ParagraphLayout, ResolvedParaProps, format_list_marker, layout
 use crate::resolve::{emu_to_pt, flatten_paragraph, pts_to_f32, resolve_para_props};
 use crate::result::PageParagraphData;
 
+use super::columns_impl::break_column;
 use super::{FlowState, LayoutWarning, finish_page};
 
 /// Maximum keep-with-next chain length before truncation (ADR 004 §4).
@@ -143,6 +144,10 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     if resolved.page_break_before && state.mode.is_paginated() {
         finish_page(state);
     }
+
+    // Record comment start anchors at the paragraph's top (on the final page,
+    // after any page break above) for the gutter comment panel.
+    super::comments_impl::record_comment_anchors(state, &effective_para.inlines);
 
     let mut para_layout = layout_paragraph(
         state.resources,
@@ -246,10 +251,10 @@ pub(super) fn place_paragraph_layout(
         } else {
             let available = state.page_content_height - state.cursor_y;
             if needed > available && state.cursor_y > 0.0 {
-                finish_page(state);
+                break_column(state);
                 state.cursor_y += resolved.space_before;
             }
-            // Fits on current (or freshly flushed) page.
+            // Fits on current (or freshly flushed) column/page.
             let dy = state.cursor_y;
             let dx = state.current_indent;
             if state.options.preserve_for_editing {
@@ -343,7 +348,7 @@ pub(super) fn flow_keep_with_next_chain(
 
     let available = state.page_content_height - state.cursor_y;
     if total_h > available && state.cursor_y > 0.0 {
-        finish_page(state);
+        break_column(state);
     }
 
     place_chain_blocks(state, chain, start);
@@ -405,6 +410,8 @@ fn build_chain_layouts<'s>(
                         parley_layout: None,
                         orig_to_clean: vec![0],
                         clean_to_orig: vec![0],
+                        indent_start: 0.0,
+                        indent_hanging: 0.0,
                     },
                 )
             }
@@ -465,7 +472,7 @@ fn place_chain_too_tall(
     );
 
     if state.cursor_y > 0.0 {
-        finish_page(state);
+        break_column(state);
     }
 
     let consumed = last_fits - start + 1;
@@ -560,9 +567,10 @@ fn split_and_place_loop(
 
         match split_k {
             None if state.cursor_y > 0.0 && !flushed_without_progress => {
-                // No lines of this fragment fit on the current page; flush and retry.
-                // Re-apply space_before on the fresh page (ADR 004 §3 retry).
-                finish_page(state);
+                // No lines of this fragment fit in the current column; advance to
+                // the next column (or page) and retry. Re-apply space_before on
+                // the fresh column (ADR 004 §3 retry).
+                break_column(state);
                 state.cursor_y += resolved.space_before;
                 flushed_without_progress = true;
             }
@@ -605,7 +613,7 @@ fn split_and_place_loop(
                     split_y,
                     dx,
                 );
-                finish_page(state);
+                break_column(state);
                 frag_start = split_y;
                 flushed_without_progress = false;
             }
@@ -621,7 +629,7 @@ fn split_and_place_loop(
                     split_y,
                     dx,
                 );
-                finish_page(state);
+                break_column(state);
                 frag_start = split_y;
                 flushed_without_progress = false;
                 // space_before is NOT re-applied between split fragments; only

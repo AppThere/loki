@@ -30,7 +30,7 @@ pub trait PageSource: Send + Sync {
     fn page_size_px(&self, index: Self::Key) -> (u32, u32);
 
     /// Renders the page at `scale × page_size_px` and returns the rasterised
-    /// texture. `scale` comes from [`crate::tier_policy::CacheTier::scale_factor`].
+    /// texture. `scale` is the caller's device-pixel scale factor.
     ///
     /// # Errors
     ///

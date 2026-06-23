@@ -11,7 +11,7 @@ use std::io::{Seek, Write};
 use loki_doc_model::document::Document;
 use loki_doc_model::io::DocumentExport;
 
-use crate::docx::write::assembly::assemble_docx;
+use crate::docx::write::assembly::{DocxKind, assemble_docx, assemble_docx_kind};
 use crate::error::OoxmlError;
 
 /// Unit struct that implements [`DocumentExport`] for DOCX.
@@ -30,10 +30,53 @@ impl DocumentExport for DocxExport {
     }
 }
 
+/// Unit struct that implements [`DocumentExport`] for a Word **template**
+/// (`.dotx`). Identical to [`DocxExport`] except the main part carries the
+/// template content type, so Office opens it as a template (creating a new
+/// document based on it) rather than editing the file in place.
+pub struct DocxTemplateExport;
+
+impl DocumentExport for DocxTemplateExport {
+    type Error = OoxmlError;
+    type Options = ();
+
+    fn export(
+        doc: &Document,
+        writer: impl Write + Seek,
+        _options: Self::Options,
+    ) -> Result<(), Self::Error> {
+        assemble_docx_kind(doc, writer, DocxKind::Template)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    #[test]
+    fn template_export_uses_template_content_type() {
+        let doc = Document::new();
+        let mut buf = Cursor::new(Vec::<u8>::new());
+        DocxTemplateExport::export(&doc, &mut buf, ()).expect("template export failed");
+        let mut zip = zip::ZipArchive::new(Cursor::new(buf.into_inner())).expect("valid zip");
+        let mut ct = String::new();
+        {
+            use std::io::Read;
+            zip.by_name("[Content_Types].xml")
+                .expect("content types part")
+                .read_to_string(&mut ct)
+                .unwrap();
+        }
+        assert!(
+            ct.contains("wordprocessingml.template.main+xml"),
+            "main part must use the template content type, got: {ct}"
+        );
+        assert!(
+            !ct.contains("wordprocessingml.document.main+xml"),
+            "template must not also declare the document content type"
+        );
+    }
 
     #[test]
     fn export_empty_document_produces_zip() {

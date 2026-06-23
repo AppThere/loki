@@ -1,0 +1,12 @@
+# Copyright 2026 AppThere Loki contributors
+[package]
+name = "loki-templates"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Bundled document templates (Markdown, APA, MLA, Screenplay, Resume) shipped as .dotx assets"
+
+[dependencies]
+loki-doc-model = { path = "../loki-doc-model" }
+loki-ooxml = { path = "../loki-ooxml" }
+loki-primitives = { path = "../loki-primitives" }

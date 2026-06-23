@@ -7,16 +7,12 @@ description = "Generic GPU canvas infrastructure for AppThere applications"
 
 [features]
 default    = []
-# The page cache, tier policy, scroll state, and GPU texture utilities are
-# provided by loki-render-cache (the canonical implementation); `gpu` forwards
-# to its wgpu-backed utilities.
+# The PageSource trait and GPU texture handle are provided by loki-render-cache
+# (the canonical implementation); `gpu` forwards to its wgpu-backed utilities.
 gpu        = ["loki-render-cache/gpu"]
-dioxus     = ["dep:dioxus", "dep:tokio"]
 font-cache = ["dep:peniko"]
 
 [dependencies]
 loki-render-cache = { path = "../loki-render-cache", default-features = false }
-dioxus    = { version = "=0.7.9", features = ["native"], optional = true }
-tokio     = { version = "1", features = ["time", "sync"], optional = true }
 peniko    = { version = "0.5", optional = true }
-read-fonts = "0.37"
+read-fonts = "0.40"

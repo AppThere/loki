@@ -20,10 +20,8 @@ use crate::docx::write::collector::ExportCollector;
 use crate::docx::write::document::{write_document_xml, write_header_footer_xml};
 use crate::docx::write::footnotes::{write_endnotes_xml, write_footnotes_xml};
 use crate::docx::write::numbering::write_numbering_xml;
+use crate::docx::write::rels::{AuxParts, add_document_relationships};
 use crate::docx::write::styles::write_styles_xml;
-use crate::docx::write::xml::{
-    REL_ENDNOTES, REL_FOOTER, REL_FOOTNOTES, REL_HEADER, REL_IMAGE, REL_NUMBERING, REL_STYLES,
-};
 use crate::error::OoxmlError;
 
 // ── OPC relationship type URIs ───────────────────────────────────────────────
@@ -35,6 +33,29 @@ const REL_OFFICE_DOCUMENT: &str =
 
 const MT_DOCUMENT: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml";
+/// Content type for the main part of a Word **template** (`.dotx`). Structurally
+/// identical to a `.docx`; only this override differs.
+const MT_TEMPLATE: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml";
+
+/// Whether to assemble a regular document (`.docx`) or a template (`.dotx`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DocxKind {
+    /// A normal document part (`document.main+xml`).
+    Document,
+    /// A template part (`template.main+xml`).
+    Template,
+}
+
+impl DocxKind {
+    /// The main-part content type for this kind.
+    fn main_content_type(self) -> &'static str {
+        match self {
+            DocxKind::Document => MT_DOCUMENT,
+            DocxKind::Template => MT_TEMPLATE,
+        }
+    }
+}
 const MT_STYLES: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml";
 const MT_NUMBERING: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml";
@@ -44,10 +65,21 @@ const MT_ENDNOTES: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml";
 const MT_HEADER: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml";
 const MT_FOOTER: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml";
+const MT_COMMENTS: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml";
 
 /// Assembles a complete `.docx` package from `doc` and writes it to `writer`.
-#[allow(clippy::too_many_lines)] // Pre-existing pattern — structural refactor deferred
 pub(crate) fn assemble_docx(doc: &Document, writer: impl Write + Seek) -> Result<(), OoxmlError> {
+    assemble_docx_kind(doc, writer, DocxKind::Document)
+}
+
+/// Assembles a `.docx` or `.dotx` package, depending on `kind`, and writes it.
+#[allow(clippy::too_many_lines)] // Pre-existing pattern — structural refactor deferred
+pub(crate) fn assemble_docx_kind(
+    doc: &Document,
+    writer: impl Write + Seek,
+    kind: DocxKind,
+) -> Result<(), OoxmlError> {
     // ── Step 1: Build styles.xml ─────────────────────────────────────────
     let styles_bytes = write_styles_xml(&doc.styles);
 
@@ -78,6 +110,18 @@ pub(crate) fn assemble_docx(doc: &Document, writer: impl Write + Seek) -> Result
         None
     };
 
+    // Even-page headers/footers only round-trip when the document declares
+    // `w:evenAndOddHeaders` in settings.xml. Write that part when any section
+    // carries an even-page variant.
+    let needs_even_odd = doc
+        .sections
+        .iter()
+        .any(|s| s.layout.header_even.is_some() || s.layout.footer_even.is_some());
+
+    let has_comments = !doc.comments.is_empty();
+    let comments_bytes =
+        has_comments.then(|| crate::docx::write::comments::write_comments_xml(&doc.comments));
+
     // ── Step 4: Assemble OPC package ─────────────────────────────────────
     let mut pkg = Package::new();
 
@@ -87,6 +131,7 @@ pub(crate) fn assemble_docx(doc: &Document, writer: impl Write + Seek) -> Result
     let numbering_part = PartName::new("/word/numbering.xml").map_err(OoxmlError::Opc)?;
     let footnotes_part = PartName::new("/word/footnotes.xml").map_err(OoxmlError::Opc)?;
     let endnotes_part = PartName::new("/word/endnotes.xml").map_err(OoxmlError::Opc)?;
+    let comments_part = PartName::new("/word/comments.xml").map_err(OoxmlError::Opc)?;
 
     // Insert parts.
     pkg.set_part(doc_part.clone(), PartData::new(document_bytes, MT_DOCUMENT));
@@ -99,6 +144,9 @@ pub(crate) fn assemble_docx(doc: &Document, writer: impl Write + Seek) -> Result
     }
     if let Some(eb) = endnotes_bytes {
         pkg.set_part(endnotes_part.clone(), PartData::new(eb, MT_ENDNOTES));
+    }
+    if let Some(cb) = comments_bytes {
+        pkg.set_part(comments_part.clone(), PartData::new(cb, MT_COMMENTS));
     }
 
     // Insert headers and footers.
@@ -134,91 +182,25 @@ pub(crate) fn assemble_docx(doc: &Document, writer: impl Write + Seek) -> Result
         .map_err(OoxmlError::Opc)?;
 
     // ── Document-level relationships: word/_rels/document.xml.rels ───────
-    pkg.part_relationships_mut(&doc_part)
-        .add(Relationship {
-            id: "rId1".to_string(),
-            rel_type: REL_STYLES.to_string(),
-            target: "styles.xml".to_string(),
-            target_mode: TargetMode::Internal,
-        })
-        .map_err(OoxmlError::Opc)?;
+    add_document_relationships(
+        &mut pkg,
+        &doc_part,
+        &mut collector,
+        &headers_footers,
+        AuxParts {
+            numbering: has_numbering,
+            footnotes: has_footnotes,
+            endnotes: has_endnotes,
+            even_odd: needs_even_odd,
+            comments: has_comments,
+        },
+    )?;
 
-    // numbering
-    if has_numbering {
-        pkg.part_relationships_mut(&doc_part)
-            .add(Relationship {
-                id: "rId2".to_string(),
-                rel_type: REL_NUMBERING.to_string(),
-                target: "numbering.xml".to_string(),
-                target_mode: TargetMode::Internal,
-            })
-            .map_err(OoxmlError::Opc)?;
-    }
-
-    // footnotes
-    if has_footnotes {
-        pkg.part_relationships_mut(&doc_part)
-            .add(Relationship {
-                id: "rId3".to_string(), // TODO: Should we use collector to manage these IDs too?
-                rel_type: REL_FOOTNOTES.to_string(),
-                target: "footnotes.xml".to_string(),
-                target_mode: TargetMode::Internal,
-            })
-            .map_err(OoxmlError::Opc)?;
-    }
-
-    // endnotes
-    if has_endnotes {
-        pkg.part_relationships_mut(&doc_part)
-            .add(Relationship {
-                id: "rId4".to_string(),
-                rel_type: REL_ENDNOTES.to_string(),
-                target: "endnotes.xml".to_string(),
-                target_mode: TargetMode::Internal,
-            })
-            .map_err(OoxmlError::Opc)?;
-    }
-
-    // hyperlinks
-    for (r_id, url) in &collector.hyperlinks {
-        pkg.part_relationships_mut(&doc_part)
-            .add(Relationship {
-                id: r_id.clone(),
-                rel_type: crate::docx::write::xml::REL_HYPERLINK.to_string(),
-                target: url.clone(),
-                target_mode: TargetMode::External,
-            })
-            .map_err(OoxmlError::Opc)?;
-    }
-
-    // media
-    for m in &collector.media {
-        pkg.part_relationships_mut(&doc_part)
-            .add(Relationship {
-                id: m.r_id.clone(),
-                rel_type: REL_IMAGE.to_string(),
-                target: m.path.strip_prefix("word/").unwrap_or(&m.path).to_string(),
-                target_mode: TargetMode::Internal,
-            })
-            .map_err(OoxmlError::Opc)?;
-    }
-
-    // headers/footers
-    for hf in &headers_footers {
-        let rel_type = if hf.is_header { REL_HEADER } else { REL_FOOTER };
-        pkg.part_relationships_mut(&doc_part)
-            .add(Relationship {
-                id: hf.r_id.clone(),
-                rel_type: rel_type.to_string(),
-                target: hf
-                    .path
-                    .strip_prefix("word/")
-                    .unwrap_or(&hf.path)
-                    .to_string(),
-                target_mode: TargetMode::Internal,
-            })
-            .map_err(OoxmlError::Opc)?;
-    }
+    // ── Document metadata ─────────────────────────────────────────────────
+    // Core properties (docProps/core.xml) are serialized by the OPC layer;
+    // the extended Dublin Core fields go to docProps/custom.xml.
+    crate::docx::write::metadata::populate_core_properties(&mut pkg, &doc.meta);
+    crate::docx::write::custom_props::add_custom_properties(&mut pkg, &doc.meta.dublin_core)?;
 
     // ── Content types ─────────────────────────────────────────────────────
     let ct = pkg.content_type_map_mut();
@@ -227,7 +209,7 @@ pub(crate) fn assemble_docx(doc: &Document, writer: impl Write + Seek) -> Result
         "application/vnd.openxmlformats-package.relationships+xml",
     );
     ct.add_default("xml", "application/xml");
-    ct.add_override(&doc_part, MT_DOCUMENT);
+    ct.add_override(&doc_part, kind.main_content_type());
     ct.add_override(&styles_part, MT_STYLES);
     if has_numbering {
         ct.add_override(&numbering_part, MT_NUMBERING);
@@ -237,6 +219,9 @@ pub(crate) fn assemble_docx(doc: &Document, writer: impl Write + Seek) -> Result
     }
     if has_endnotes {
         ct.add_override(&endnotes_part, MT_ENDNOTES);
+    }
+    if has_comments {
+        ct.add_override(&comments_part, MT_COMMENTS);
     }
 
     // Header/footer content types.

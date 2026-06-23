@@ -17,9 +17,11 @@
 //! - The package declares EPUB version 3.0 with the mandatory
 //!   `dc:identifier` / `dc:title` / `dc:language` / `dcterms:modified`
 //!   metadata (EPUB 3.3 §5.4).
-//! - A single reflowable content document is emitted. Tables and images are
-//!   currently rendered as placeholders / alt text (see the `TODO`s in
-//!   `content.rs`); fixed-layout and media overlays are out of scope.
+//! - A single reflowable content document is emitted. Tables render as real
+//!   `<table>`s (caption, `<colgroup>` widths, `colspan`/`rowspan`, resolved
+//!   cell alignment); embedded `data:` images are decoded, packaged as manifest
+//!   resources, and referenced with `<img>` (external URLs are referenced but
+//!   not packaged). Fixed-layout and media overlays are out of scope.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]

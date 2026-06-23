@@ -13,12 +13,14 @@
 //!   [`get_block_text`]
 //! - [`block`] — block-level mutations: [`split_block`], [`merge_block`]
 //!
-//! # Container Path
+//! # Block addressing
 //!
-//! Text for block N in section 0 lives at:
-//! ```text
-//! sections[0].blocks[N]["content"]  (LoroText)
-//! ```
+//! Block indices are **document-global**: section 0's blocks occupy the first
+//! `sections[0].blocks.len()` indices, section 1's the next, and so on — the same
+//! flat index space the layout assigns to paragraphs and the editor's cursor
+//! uses. [`resolve_section_blocks`] maps a global index to the containing
+//! section's blocks list and the block's local index, i.e.
+//! `sections[S].blocks[local]["content"]` (a `LoroText`).
 //!
 //! # Byte Offsets
 //!
@@ -35,7 +37,7 @@ pub use self::style::{
 };
 pub use self::text::{delete_text, get_block_text, get_mark_at, insert_text, mark_text};
 
-use loro::{LoroDoc, LoroMap, LoroMovableList, LoroText};
+use loro::{LoroDoc, LoroList, LoroMap, LoroMovableList, LoroText};
 
 use crate::loro_schema::{KEY_BLOCKS, KEY_CONTENT, KEY_SECTIONS};
 
@@ -57,6 +59,11 @@ pub enum MutationError {
     /// `merge_block` was called on block 0, which has no predecessor.
     #[error("Cannot merge: no block before block 0")]
     NoPreviousBlock,
+    /// `merge_block` would merge across a section break — the previous block
+    /// lives in an earlier section. Merging across a section boundary (which
+    /// would remove the break) is not supported.
+    #[error("Cannot merge across a section break")]
+    CrossSectionMerge,
 }
 
 impl From<loro::LoroError> for MutationError {
@@ -67,97 +74,79 @@ impl From<loro::LoroError> for MutationError {
 
 // ── Shared internal helpers ───────────────────────────────────────────────────
 
-/// Navigate to the `LoroText` container for `block_index` in section 0.
+/// Resolves section `s`'s blocks movable list, if present.
+fn section_blocks_list(sections: &LoroList, s: usize) -> Option<LoroMovableList> {
+    let section = sections.get(s)?.into_container().ok()?.into_map().ok()?;
+    section
+        .get(KEY_BLOCKS)?
+        .into_container()
+        .ok()?
+        .into_movable_list()
+        .ok()
+}
+
+/// Resolves a document-global `block_index` to its section's blocks list and the
+/// block's index *within that section*.
+///
+/// Editor block indices are global (document order across every section); each
+/// section consumes `blocks.len()` of that index space, in section order. This
+/// mirrors the index space the layout assigns to `PageParagraphData::block_index`,
+/// so a cursor/hit-test index resolves to the correct section. Returns
+/// [`MutationError::BlockIndexOutOfRange`] when `block_index` is past the last
+/// block of the last section.
+pub(crate) fn resolve_section_blocks(
+    loro: &LoroDoc,
+    block_index: usize,
+) -> Result<(LoroMovableList, usize), MutationError> {
+    let sections = loro.get_list(KEY_SECTIONS);
+    let mut base = 0usize;
+    for s in 0..sections.len() {
+        let Some(blocks_list) = section_blocks_list(&sections, s) else {
+            continue; // a malformed section contributes no addressable blocks
+        };
+        let len = blocks_list.len();
+        if block_index < base + len {
+            return Ok((blocks_list, block_index - base));
+        }
+        base += len;
+    }
+    Err(MutationError::BlockIndexOutOfRange(block_index))
+}
+
+/// Navigate to the `LoroText` content container for the global `block_index`.
 pub(crate) fn get_loro_text_for_block(
     loro: &LoroDoc,
     block_index: usize,
 ) -> Result<LoroText, MutationError> {
-    let sections_list = loro.get_list(KEY_SECTIONS);
-    let sec_val = sections_list
-        .get(0)
-        .ok_or(MutationError::BlockIndexOutOfRange(block_index))?;
-    let sec_map = sec_val
-        .into_container()
-        .ok()
+    let (blocks_list, local) = resolve_section_blocks(loro, block_index)?;
+    let block_map = blocks_list
+        .get(local)
+        .and_then(|v| v.into_container().ok())
         .and_then(|c| c.into_map().ok())
         .ok_or(MutationError::BlockIndexOutOfRange(block_index))?;
-
-    let blocks_val = sec_map
-        .get(KEY_BLOCKS)
-        .ok_or(MutationError::BlockIndexOutOfRange(block_index))?;
-    let blocks_list = blocks_val
-        .into_container()
-        .ok()
-        .and_then(|c| c.into_movable_list().ok())
-        .ok_or(MutationError::BlockIndexOutOfRange(block_index))?;
-
-    if block_index >= blocks_list.len() {
-        return Err(MutationError::BlockIndexOutOfRange(block_index));
-    }
-
-    let block_val = blocks_list
-        .get(block_index)
-        .ok_or(MutationError::BlockIndexOutOfRange(block_index))?;
-    let block_map = block_val
-        .into_container()
-        .ok()
-        .and_then(|c| c.into_map().ok())
-        .ok_or(MutationError::BlockIndexOutOfRange(block_index))?;
-
-    let content_val = block_map
+    block_map
         .get(KEY_CONTENT)
-        .ok_or(MutationError::TextNotFound(block_index))?;
-    let text = content_val
-        .into_container()
-        .ok()
+        .and_then(|v| v.into_container().ok())
         .and_then(|c| c.into_text().ok())
-        .ok_or(MutationError::TextNotFound(block_index))?;
-
-    Ok(text)
+        .ok_or(MutationError::TextNotFound(block_index))
 }
 
-/// Navigate to the `LoroMovableList` of blocks and the `LoroMap` for
-/// `block_index` in section 0.
+/// Navigate to the section's `LoroMovableList` of blocks and the `LoroMap` for
+/// the global `block_index`, plus the block's index *within that section*.
 ///
-/// Returns both so callers can insert/delete from the list after reading
-/// the block map.
+/// Returns the list and the local index so callers can insert/delete relative to
+/// the correct section, and the map so they can read/write block properties.
 pub(crate) fn get_block_map_and_list(
     loro: &LoroDoc,
     block_index: usize,
-) -> Result<(LoroMovableList, LoroMap), MutationError> {
-    let sections_list = loro.get_list(KEY_SECTIONS);
-    let sec_val = sections_list
-        .get(0)
-        .ok_or(MutationError::BlockIndexOutOfRange(block_index))?;
-    let sec_map = sec_val
-        .into_container()
-        .ok()
+) -> Result<(LoroMovableList, LoroMap, usize), MutationError> {
+    let (blocks_list, local) = resolve_section_blocks(loro, block_index)?;
+    let block_map = blocks_list
+        .get(local)
+        .and_then(|v| v.into_container().ok())
         .and_then(|c| c.into_map().ok())
         .ok_or(MutationError::BlockIndexOutOfRange(block_index))?;
-
-    let blocks_val = sec_map
-        .get(KEY_BLOCKS)
-        .ok_or(MutationError::BlockIndexOutOfRange(block_index))?;
-    let blocks_list = blocks_val
-        .into_container()
-        .ok()
-        .and_then(|c| c.into_movable_list().ok())
-        .ok_or(MutationError::BlockIndexOutOfRange(block_index))?;
-
-    if block_index >= blocks_list.len() {
-        return Err(MutationError::BlockIndexOutOfRange(block_index));
-    }
-
-    let block_val = blocks_list
-        .get(block_index)
-        .ok_or(MutationError::BlockIndexOutOfRange(block_index))?;
-    let block_map = block_val
-        .into_container()
-        .ok()
-        .and_then(|c| c.into_map().ok())
-        .ok_or(MutationError::BlockIndexOutOfRange(block_index))?;
-
-    Ok((blocks_list, block_map))
+    Ok((blocks_list, block_map, local))
 }
 
 /// Copies primitive (non-container) key-value pairs from `src` to `dst`.

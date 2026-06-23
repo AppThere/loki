@@ -44,6 +44,14 @@ pub const LUCIDE_SUBSCRIPT: &str = "M4 5l8 8M12 5l-8 8m14.5 6.5V19h-4l4-4.5";
 pub const LUCIDE_SAVE: &str =
     "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8";
 
+/// Lucide `download` — tray with a downward arrow. Used for "Save As" to
+/// visually distinguish it from the plain floppy-disk Save.
+pub const LUCIDE_DOWNLOAD: &str = "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3";
+
+/// Lucide `layout-template` — a wide bar above two smaller panes. Used for
+/// "Save as Template" to distinguish it from the plain Save / Save As actions.
+pub const LUCIDE_LAYOUT_TEMPLATE: &str = "M3 3h18v7H3zM3 14h9v7H3zM16 14h5v7h-5z";
+
 /// Lucide `align-left` — three lines, all left-aligned.
 pub const LUCIDE_ALIGN_LEFT: &str = "M15 12H3M17 6H3M13 18H3";
 

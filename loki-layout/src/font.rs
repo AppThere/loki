@@ -59,6 +59,20 @@ impl FontResources {
                 font_cx.collection.load_fonts_from_paths(vec![assets_fonts]);
             }
         }
+
+        // Android: the executable-relative `assets/fonts/` path above does not
+        // resolve, so register the bundled metric-compatible fallbacks
+        // (Carlito/Caladea/Arimo/Cousine/Tinos) directly from embedded bytes.
+        // Without this a document's Calibri/Arial/Times text — which
+        // `resolve_font_name` substitutes to those families — would not be found
+        // in the collection and would fall back to an Android system font with
+        // different glyph metrics (e.g. wider digit advances).
+        #[cfg(target_os = "android")]
+        for blob in loki_fonts::fallback_font_blobs() {
+            font_cx
+                .collection
+                .register_fonts(parley::fontique::Blob::from(blob.to_vec()), None);
+        }
         tracing::info!(
             target: "loki_text::open",
             elapsed_ms = started.elapsed().as_secs_f64() * 1000.0,
@@ -79,6 +93,24 @@ impl FontResources {
     /// does not retain the previous document's layouts.
     pub fn clear_paragraph_cache(&mut self) {
         self.para_cache.clear();
+    }
+
+    /// Returns the names of every font family available for layout — the
+    /// scanned system fonts plus any bundled or document-embedded faces — sorted
+    /// alphabetically (case-insensitive) and de-duplicated.
+    ///
+    /// Used by the style editor's font picker. Requires `&mut self` because
+    /// Fontique populates its family index lazily.
+    pub fn available_font_families(&mut self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .font_cx
+            .collection
+            .family_names()
+            .map(|s| s.to_string())
+            .collect();
+        names.sort_by_key(|s| s.to_lowercase());
+        names.dedup();
+        names
     }
 
     /// Registers additional font data (e.g. fonts embedded in the document).

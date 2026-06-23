@@ -189,7 +189,6 @@ and the **Upgrading Dioxus** procedure (the dioxus patches are version-pinned).
 | `patches/dioxus-native` | Calls `request_redraw()` after CSS head-element insertion (Android blank screen fix) |
 | `patches/blitz-net` | Switches reqwest from native-tls to rustls (Android has no `libssl.so`) |
 | `patches/blitz-dom` | Fixes tabindex focus-on-click for non-input elements |
-| `patches/fontique` | Fixes missing `fontconfig_sys` alias in the crates.io 0.8.0 publish |
 
 ## AI Coding Assistants
 

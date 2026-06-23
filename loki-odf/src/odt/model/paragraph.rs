@@ -104,6 +104,25 @@ pub(crate) enum OdfParagraphChild {
     /// A hard line break (`text:line-break`). ODF 1.3 §6.5.
     LineBreak,
 
+    /// A comment start anchor (`office:annotation`). ODF 1.3 §14.1. Carries the
+    /// comment body inline (creator, date, and plain-text body).
+    Annotation {
+        /// `office:name` — links the start to its `annotation-end`.
+        name: Option<String>,
+        /// `dc:creator` — the comment author.
+        creator: Option<String>,
+        /// `dc:date` — the comment timestamp (ISO-8601).
+        date: Option<String>,
+        /// Plain text of each body paragraph (`text:p`), in order.
+        body: Vec<String>,
+    },
+
+    /// A comment end anchor (`office:annotation-end`). ODF 1.3 §14.1.
+    AnnotationEnd {
+        /// `office:name` — matches the corresponding `Annotation`.
+        name: Option<String>,
+    },
+
     /// Any inline element not specifically modelled above.
     Other,
 }

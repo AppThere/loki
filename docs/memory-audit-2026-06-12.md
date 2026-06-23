@@ -16,7 +16,8 @@ identified here are independent of that.
 | 3 | Inactive-tab sessions retain the full preserved layout (+ Loro + undo) | Medium | Recommended |
 | 4 | Paragraph shaping cache accumulated across documents; generous cap | Medium | **Fixed** |
 | 5 | Per-tile `FontDataCache` duplicates interned font bytes across tiles | Low | Recommended |
-| 6 | Loro oplog grows with edit history and never compacts | Low | Recommended |
+| 6 | Loro oplog grows with edit history and never compacts | Medium (edit-driven, not idle) | Instrumented 2026-06-21; compaction proposed |
+| 7 | Static `<canvas>` tiles force a continuous **idle** render loop (`is_animating`), churning per-frame GPU resources → >3 GB at idle | **Critical** | **Fixed 2026-06-21** |
 
 ## Finding 1 — All pages render at Hot tier until you scroll (FIXED)
 
@@ -109,3 +110,65 @@ Android Studio's Memory Profiler) and watch:
 2. Scroll to the bottom and back → memory should stay bounded (tiers demote).
 3. Open several documents in tabs → only the active document should hold page
    textures; inactive tabs hold CPU state only.
+
+## 2026-06-21 update — Finding 7: idle render loop is the >3 GB grower (FIXED)
+
+The >3 GB growth was first attributed to Finding 6 (Loro history), but the user
+then clarified the app was **idle** — not being typed in — when it ballooned past
+3 GB. That rules out edit-driven history growth and points to a per-frame leak.
+
+**Root cause (Finding 7):** `blitz-dom::is_animating()` returns
+`has_canvas | has_active_animations`, and blitz-shell's `redraw()` re-requests a
+redraw **every frame** while it is true. Loki paints every document page as a
+`<canvas src>` custom-paint tile, so `has_canvas` is permanently true → the app
+ran a **continuous render loop at idle** (vsync-rate redraws of an unchanged
+scene). The page-texture reuse guard prevents re-registering textures, so this is
+not a Rust-side growing collection; it is the per-frame GPU/driver resource churn
+(command buffers, drawables) accumulating under sustained idle rendering, plus
+the obvious CPU/battery waste.
+
+**Fix:** added `BaseDocument::needs_animation_tick()` (only `has_active_animations`)
+and switched blitz-shell's `redraw()` re-arm to it, so a static canvas no longer
+forces per-frame redraws. Loki's canvas content always updates via a DOM mutation
+(the tile's `data-cursor`/generation attribute, scroll remounts, resize), each of
+which already schedules a redraw, so updates stay correct while idle frames stop.
+See `docs/patches.md` (blitz-dom item 6). Needs on-device confirmation: idle CPU
+drops to ~0 and RSS plateaus.
+
+## Finding 6 — Loro history still grows with *editing* (separate, lower)
+
+Finding 6 remains real but is **not** the idle grower: every keystroke appends
+ops to the Loro oplog, and deleted characters leave tombstones in the rich-text
+CRDT tree; neither is ever compacted, so resident memory grows with edit
+*history* during active editing. The `UndoManager` is bounded
+(`max_undo_steps(100)`).
+
+**Diagnosis aid (added):** `apply_mutation_and_relayout` now logs throttled
+counters under the `loki_text::mem` target:
+
+```text
+RUST_LOG=loki_text::mem=info <run loki-text>
+```
+
+`loro_ops` / `loro_changes` climbing without bound while `pages` / `blocks` stay
+flat confirms the history (not the layout or document) is what grows.
+
+**Proposed fix (compaction — needs on-device validation, not yet applied):**
+Loro can drop history before a frontier via
+`export(ExportMode::shallow_snapshot(&doc.oplog_frontiers()))` re-imported into a
+fresh `LoroDoc`. Doing this at a natural checkpoint (e.g. on **save**, or after
+the undo horizon of 100 steps is exceeded) caps the oplog. The cost: the swap
+invalidates the `UndoManager` (recreate it), the `IncrementalReader` version
+(reseed it), and every signal/`DocSession` holding the old `LoroDoc` (re-point
+them), and it truncates undo history at the compaction point. Because that
+touches the live editing/undo wiring and can't be validated headlessly, it is
+recorded here as the next step rather than applied blind.
+<!-- TODO(loro-compaction): compact oplog history at save/undo-horizon; see above. -->
+
+### Tech debt
+
+- **TODO(loro-compaction):** the Loro history (oplog + rich-text tombstones) is
+  never compacted, so a long single-document editing session grows resident
+  memory without bound (observed >3 GB). Compact via a shallow-snapshot swap at a
+  safe checkpoint; requires recreating the `UndoManager`/`IncrementalReader` and
+  re-pointing the `loro_doc` signal, plus on-device validation.

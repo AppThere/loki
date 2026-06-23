@@ -124,7 +124,9 @@ pub(super) fn extract_plain_text(inlines: &[Inline]) -> String {
             Inline::Str(s) => out.push_str(s),
             Inline::Space => out.push(' '),
             Inline::SoftBreak | Inline::LineBreak => out.push('\n'),
-            Inline::Code(_, s) | Inline::Math(_, s) => out.push_str(s),
+            Inline::Code(_, s) => out.push_str(s),
+            // Math holds MathML markup, not display text; a block containing it
+            // is preserved as an opaque snapshot rather than flat text.
             Inline::StyledRun(run) => out.push_str(&extract_plain_text(&run.content)),
             Inline::Emph(inner)
             | Inline::Strong(inner)

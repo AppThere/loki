@@ -1,0 +1,19 @@
+[package]
+name = "loki-app-shell"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Shared application-shell logic (tabs, blank documents, recent list) for the Loki suite binaries"
+repository = "https://github.com/appthere/loki"
+keywords = ["document", "shell", "loki"]
+categories = ["gui"]
+
+[dependencies]
+loki-i18n = { path = "../loki-i18n" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "6"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

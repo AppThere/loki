@@ -16,8 +16,8 @@ use loki_doc_model::style::list_style::{
     BulletChar, ListId, ListLevel, ListLevelKind, NumberingScheme,
 };
 use parley::{
-    Alignment, AlignmentOptions, Cursor, FontFamily, FontStyle, FontWeight, InlineBox, LineHeight,
-    PositionedLayoutItem, RangedBuilder, Selection, StyleProperty,
+    Alignment, AlignmentOptions, Cursor, FontFamily, FontStyle, FontWeight, InlineBox,
+    InlineBoxKind, LineHeight, PositionedLayoutItem, RangedBuilder, Selection, StyleProperty,
 };
 
 use crate::color::LayoutColor;
@@ -141,8 +141,13 @@ pub struct StyleSpan {
     pub font_name: Option<String>,
     /// Font size in points.
     pub font_size: f32,
-    /// Bold weight.
+    /// Bold weight (legacy boolean; retained for synthesis fallback). Prefer
+    /// [`Self::weight`] for the effective numeric weight.
     pub bold: bool,
+    /// Effective numeric font weight (1–1000; 400 = Regular, 700 = Bold). This
+    /// is the value pushed to Parley, so it supersedes `bold` when set from a
+    /// `font_weight` style.
+    pub weight: u16,
     /// Italic style.
     pub italic: bool,
     /// Text colour.
@@ -191,6 +196,12 @@ pub struct StyleSpan {
     /// children. Used to render a visual link hint and (eventually) hit-test
     /// regions. TODO(link-click): interactive hit-testing deferred.
     pub link_url: Option<String>,
+    /// MathML markup for an [`Inline::Math`][loki_doc_model::content::inline::Inline::Math]
+    /// placeholder. When `Some`, this span has an empty `range` marking the
+    /// insertion point of an equation; [`layout_paragraph`] typesets it (see
+    /// [`crate::math`]) and places it inline via a Parley inline box. All other
+    /// span fields supply the base font size / colour for the math.
+    pub math: Option<std::sync::Arc<str>>,
 }
 
 /// Resolved paragraph-level properties passed to [`layout_paragraph`].
@@ -349,6 +360,15 @@ pub struct ParagraphLayout {
     pub orig_to_clean: Vec<usize>,
     /// Cleaned to original byte index mappings.
     pub clean_to_orig: Vec<usize>,
+    /// Paragraph start (left) indent in points, applied to drawn glyphs.
+    ///
+    /// Retained so cursor / hit-test / selection geometry can include the same
+    /// horizontal offset the glyph runs use (the Parley layout itself is built
+    /// in an un-indented coordinate space). See [`Self::line_indent`].
+    pub indent_start: f32,
+    /// Hanging indent in points (first line starts this far left of
+    /// `indent_start`). `0.0` = no hanging.
+    pub indent_hanging: f32,
 }
 
 impl std::fmt::Debug for ParagraphLayout {
@@ -378,7 +398,18 @@ impl ParagraphLayout {
     /// layout was produced with `preserve_for_editing: false` (read-only mode).
     pub fn hit_test_point(&self, x: f32, y: f32) -> Option<HitTestResult> {
         let layout = self.parley_layout.as_deref()?;
-        let cursor = Cursor::from_point(layout, x, y);
+        // Derive the line index from `line_boundaries`: find the first line
+        // whose `max_coord` is strictly above the hit y, or clamp to the last line.
+        let line_index = self
+            .line_boundaries
+            .iter()
+            .position(|&(_, max_y)| y < max_y)
+            .unwrap_or_else(|| self.line_boundaries.len().saturating_sub(1));
+        // Glyphs are drawn shifted right by the line's indent, but the Parley
+        // layout is un-indented — remove the indent before hit-testing so a
+        // click on the visible text maps to the right offset.
+        let local_x = x - self.line_indent(line_index);
+        let cursor = Cursor::from_point(layout, local_x, y);
         let byte_offset = cursor.index();
         let mapped_offset = self
             .clean_to_orig
@@ -389,13 +420,6 @@ impl ParagraphLayout {
             parley::Affinity::Upstream => Affinity::Upstream,
             parley::Affinity::Downstream => Affinity::Downstream,
         };
-        // Derive the line index from `line_boundaries`: find the first line
-        // whose `max_coord` is strictly above the hit y, or clamp to the last line.
-        let line_index = self
-            .line_boundaries
-            .iter()
-            .position(|&(_, max_y)| y < max_y)
-            .unwrap_or_else(|| self.line_boundaries.len().saturating_sub(1));
         Some(HitTestResult {
             byte_offset: mapped_offset,
             affinity,
@@ -473,8 +497,17 @@ impl ParagraphLayout {
         let bb = cursor.geometry(layout, 1.0);
         let y = bb.y0 as f32;
         let height = (bb.y1 - bb.y0) as f32;
+        // Add the line's indent so the caret sits with the drawn glyphs (the
+        // Parley layout is built in an un-indented coordinate space). The line is
+        // located from the caret's vertical centre, matching `hit_test_point`.
+        let probe_y = y + height * 0.5;
+        let line_index = self
+            .line_boundaries
+            .iter()
+            .position(|&(_, max_y)| probe_y < max_y)
+            .unwrap_or_else(|| self.line_boundaries.len().saturating_sub(1));
         Some(CursorRect {
-            x: bb.x0 as f32,
+            x: bb.x0 as f32 + self.line_indent(line_index),
             y,
             height,
         })
@@ -506,15 +539,28 @@ impl ParagraphLayout {
         Selection::new(anchor, focus)
             .geometry(layout)
             .into_iter()
-            .map(|(bb, _line)| {
+            .map(|(bb, line)| {
                 LayoutRect::new(
-                    bb.x0 as f32,
+                    bb.x0 as f32 + self.line_indent(line),
                     bb.y0 as f32,
                     (bb.x1 - bb.x0) as f32,
                     (bb.y1 - bb.y0) as f32,
                 )
             })
             .collect()
+    }
+
+    /// Horizontal indent (points) applied to the drawn glyphs of visual line
+    /// `line_index`, matching the `indent_x` used when emitting glyph runs: the
+    /// first line of a hanging-indent paragraph starts `indent_hanging` to the
+    /// left of `indent_start`. Editing geometry adds this so cursor, hit-test,
+    /// and selection coordinates line up with the rendered text.
+    fn line_indent(&self, line_index: usize) -> f32 {
+        if line_index == 0 && self.indent_hanging > 0.0 {
+            self.indent_start - self.indent_hanging
+        } else {
+            self.indent_start
+        }
     }
 }
 
@@ -542,6 +588,30 @@ fn next_tab_stop(stops: &[ResolvedTabStop], x: f32, indent_hanging: f32) -> f32 
 
 /// Push paragraph-level defaults and per-span character styles onto `builder`.
 ///
+/// Pushes one Parley inline box per typeset math placeholder, sized to the
+/// equation's intrinsic box so the surrounding text flows around it. Ids are
+/// offset by [`MATH_ID_BASE`] so the post-layout pass can recognise them.
+///
+/// The box height is the equation's **ascent** only: Parley aligns an inline
+/// box's bottom to the text baseline (counting its whole height as ascent), so
+/// reserving just the ascent lands the box top at `baseline − ascent`. Drawing
+/// the equation there puts its baseline on the text baseline; the descent then
+/// hangs below into the line's descent region, exactly like inline text.
+fn push_math_inline_boxes(
+    builder: &mut RangedBuilder<'_, LayoutColor>,
+    math_boxes: &[(usize, crate::math::MathRender)],
+) {
+    for (i, (index, render)) in math_boxes.iter().enumerate() {
+        builder.push_inline_box(InlineBox {
+            id: MATH_ID_BASE + i as u64,
+            kind: InlineBoxKind::InFlow,
+            index: *index,
+            width: render.width,
+            height: render.ascent,
+        });
+    }
+}
+
 /// Extracted so the same styles can be applied in both the probe pass (pass 1)
 /// and the final pass (pass 2) of the two-pass tab stop expansion.
 fn push_para_styles(
@@ -566,6 +636,12 @@ fn push_para_styles(
     }
 
     for span in style_spans {
+        // Math placeholder spans have an empty range and no text — they are
+        // typeset separately and reserved via an inline box, so they push no
+        // text styles here.
+        if span.math.is_some() {
+            continue;
+        }
         let r = span.range.clone();
         // For super/subscript (gap #3), reduce font size to 58 %.
         // TODO(super-sub): Parley does not expose baseline-shift.
@@ -576,8 +652,14 @@ fn push_para_styles(
         };
         builder.push(StyleProperty::FontSize(effective_font_size), r.clone());
         builder.push(StyleProperty::Brush(span.color), r.clone());
-        if span.bold {
-            builder.push(StyleProperty::FontWeight(FontWeight::BOLD), r.clone());
+        // Push the effective numeric weight. `weight` already folds in `bold`
+        // (700 when bold, else 400) plus any explicit `font_weight` style, so a
+        // non-default weight is honoured even when the bold flag is unset.
+        if span.weight != 400 {
+            builder.push(
+                StyleProperty::FontWeight(FontWeight::new(span.weight as f32)),
+                r.clone(),
+            );
         }
         if span.italic {
             builder.push(StyleProperty::FontStyle(FontStyle::Italic), r.clone());
@@ -679,6 +761,10 @@ fn clean_text_and_spans(
     (clean_text, clean_spans, orig_to_clean, clean_to_orig)
 }
 
+/// Inline-box id base for math placeholders, kept clear of the tab-stop ids
+/// (which count up from 0) so the two can coexist in one paragraph.
+const MATH_ID_BASE: u64 = 1 << 40;
+
 /// Lay out a single paragraph using Parley.
 ///
 /// `text_content` is the flattened text from all inline runs. `style_spans`
@@ -740,13 +826,38 @@ fn layout_paragraph_uncached(
     display_scale: f32,
     preserve_for_editing: bool,
 ) -> ParagraphLayout {
-    let (clean_text, mut clean_spans, orig_to_clean, clean_to_orig) =
+    let (mut clean_text, mut clean_spans, orig_to_clean, clean_to_orig) =
         clean_text_and_spans(text_content, style_spans);
 
     for span in &mut clean_spans {
         if let Some(ref name) = span.font_name {
             span.font_name = Some(resources.resolve_font_name(name));
         }
+    }
+
+    // ── Inline math (gap) ─────────────────────────────────────────────────────
+    // Typeset each `Inline::Math` placeholder span (empty range, `math: Some`)
+    // into its own box. Done before the tab/final passes so its intrinsic size
+    // can size a Parley inline box, reserving inline space for the equation.
+    let mut math_boxes: Vec<(usize, crate::math::MathRender)> = Vec::new();
+    for span in &clean_spans {
+        if let Some(mathml) = &span.math {
+            let render = crate::math::layout_math(
+                resources,
+                mathml,
+                span.font_size,
+                span.color,
+                display_scale,
+            );
+            if render.width > 0.0 {
+                math_boxes.push((span.range.start, render));
+            }
+        }
+    }
+    // A paragraph that contains only math has empty text; give Parley a single
+    // space so it still produces a line to anchor the inline box(es).
+    if clean_text.is_empty() && !math_boxes.is_empty() {
+        clean_text = " ".to_string();
     }
 
     if clean_text.is_empty() {
@@ -761,6 +872,8 @@ fn layout_paragraph_uncached(
                 parley_layout: None,
                 orig_to_clean,
                 clean_to_orig,
+                indent_start: para_props.indent_start,
+                indent_hanging: para_props.indent_hanging,
             };
         }
         // Build a phantom single-space layout so cursor_rect can return a
@@ -790,6 +903,8 @@ fn layout_paragraph_uncached(
             parley_layout: Some(Arc::new(phantom)),
             orig_to_clean,
             clean_to_orig,
+            indent_start: para_props.indent_start,
+            indent_hanging: para_props.indent_hanging,
         };
     }
 
@@ -821,11 +936,13 @@ fn layout_paragraph_uncached(
         for (idx, &pos) in tab_char_positions.iter().enumerate() {
             probe.push_inline_box(InlineBox {
                 id: idx as u64,
+                kind: InlineBoxKind::InFlow,
                 index: pos,
                 width: 0.0,
                 height: 0.0,
             });
         }
+        push_math_inline_boxes(&mut probe, &math_boxes);
         let mut probe_layout = probe.build(&clean_text);
         probe_layout.break_all_lines(Some(line_w));
 
@@ -862,19 +979,17 @@ fn layout_paragraph_uncached(
         let width = tab_inline_widths.get(idx).copied().unwrap_or(0.0);
         builder.push_inline_box(InlineBox {
             id: idx as u64,
+            kind: InlineBoxKind::InFlow,
             index: pos,
             width,
             height: 0.0,
         });
     }
+    push_math_inline_boxes(&mut builder, &math_boxes);
 
     let mut layout = builder.build(&clean_text);
     layout.break_all_lines(Some(line_w));
-    layout.align(
-        Some(line_w),
-        para_props.alignment,
-        AlignmentOptions::default(),
-    );
+    layout.align(para_props.alignment, AlignmentOptions::default());
 
     let total_height = layout.height();
     let total_width = layout.width();
@@ -890,11 +1005,16 @@ fn layout_paragraph_uncached(
         .unwrap_or(0.0);
     let line_boundaries: Vec<(f32, f32)> = layout
         .lines()
-        .map(|l| (l.metrics().min_coord, l.metrics().max_coord))
+        .map(|l| (l.metrics().block_min_coord, l.metrics().block_max_coord))
         .collect();
 
     let mut items: Vec<PositionedItem> = Vec::new();
     let mut line_index: usize = 0;
+    // Track the lowest point reached by any inline equation. Its baseline is on
+    // the text baseline, so a deep denominator can hang below the line's own
+    // descent; we grow the paragraph height to cover it so the next block does
+    // not overlap it.
+    let mut content_bottom = total_height;
 
     for line in layout.lines() {
         // Hanging indent: the first line shifts left so the marker is visible to
@@ -905,6 +1025,24 @@ fn layout_paragraph_uncached(
             para_props.indent_start
         };
         for item in line.items() {
+            // Math inline box: emit the typeset equation's draw items, offset to
+            // the box's resolved position on the line.
+            if let PositionedLayoutItem::InlineBox(pib) = &item {
+                if pib.id >= MATH_ID_BASE {
+                    let mi = (pib.id - MATH_ID_BASE) as usize;
+                    if let Some((_, render)) = math_boxes.get(mi) {
+                        for prim in &render.items {
+                            let mut prim = prim.clone();
+                            prim.translate(pib.x + indent_x, pib.y);
+                            items.push(prim);
+                        }
+                        // The box top is at `pib.y` and its baseline at
+                        // `pib.y + ascent`; the descent hangs below that.
+                        content_bottom = content_bottom.max(pib.y + render.ascent + render.descent);
+                    }
+                }
+                continue;
+            }
             let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
                 continue;
             };
@@ -1081,7 +1219,9 @@ fn layout_paragraph_uncached(
     };
 
     ParagraphLayout {
-        height: total_height,
+        // `content_bottom` ≥ `total_height`; it is larger only when an inline
+        // equation hangs below the last line (see above).
+        height: content_bottom,
         width: total_width,
         items,
         first_baseline,
@@ -1090,6 +1230,8 @@ fn layout_paragraph_uncached(
         parley_layout,
         orig_to_clean,
         clean_to_orig,
+        indent_start: para_props.indent_start,
+        indent_hanging: para_props.indent_hanging,
     }
 }
 

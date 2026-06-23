@@ -75,6 +75,10 @@ pub(crate) fn read_inline_children(
                             children: link_children,
                         }));
                     }
+                    // Comment start (`office:annotation`) — ODF 1.3 §14.1
+                    b"annotation" => {
+                        children.push(super::annotations::read_annotation(reader, e)?);
+                    }
                     // All non-recursive inline elements are handled out of
                     // line so this recursive frame stays small.
                     _ => read_inline_start_other(reader, e, &local, &mut children)?,
@@ -197,6 +201,16 @@ fn inline_from_empty(e: &BytesStart<'_>) -> OdfParagraphChild {
             let name = local_attr_val(e, b"name").unwrap_or_default();
             OdfParagraphChild::BookmarkEnd { name }
         }
+        b"annotation-end" => OdfParagraphChild::AnnotationEnd {
+            name: local_attr_val(e, b"name"),
+        },
+        b"annotation" => OdfParagraphChild::Annotation {
+            // Self-closing annotation: a point comment with no body.
+            name: local_attr_val(e, b"name"),
+            creator: None,
+            date: None,
+            body: Vec::new(),
+        },
         _ => field_from_element(e, local),
     }
 }

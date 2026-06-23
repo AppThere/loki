@@ -26,6 +26,8 @@ pub struct FixtureReport {
     pub page_count: Option<usize>,
     /// Worksheet count (spreadsheets only).
     pub sheet_count: Option<usize>,
+    /// Slide count (presentations only).
+    pub slide_count: Option<usize>,
     /// Glyph coverage (word-processing documents only).
     pub glyph_coverage: Option<GlyphCoverage>,
     /// Number of catalogued acid cases targeting this format.
@@ -45,6 +47,7 @@ pub fn analyze_fixture(fixture: Fixture) -> FixtureReport {
         import_error: None,
         page_count: None,
         sheet_count: None,
+        slide_count: None,
         glyph_coverage: None,
         catalogued_cases: catalog::cases_for(format).len(),
     };
@@ -59,6 +62,10 @@ pub fn analyze_fixture(fixture: Fixture) -> FixtureReport {
         Ok(Imported::Workbook(wb)) => {
             report.import_ok = true;
             report.sheet_count = Some(wb.sheets.len());
+        }
+        Ok(Imported::Presentation(p)) => {
+            report.import_ok = true;
+            report.slide_count = Some(p.slide_count());
         }
         Err(e) => report.import_error = Some(e),
     }

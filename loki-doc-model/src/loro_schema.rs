@@ -21,6 +21,11 @@ pub const KEY_META_TITLE: &str = "title";
 /// Key for the Document style catalog map.
 pub const KEY_STYLE_CATALOG: &str = "style_catalog";
 
+/// Key (within the style-catalog map) for the JSON snapshot of the whole
+/// [`crate::style::catalog::StyleCatalog`]. A lossless serde snapshot, mirroring
+/// [`KEY_META_JSON`], rather than a field-by-field CRDT mapping.
+pub const KEY_STYLE_CATALOG_JSON: &str = "catalog_json";
+
 /// Key for the legacy document header/footer map (superseded by KEY_LAYOUT slots).
 pub const KEY_HEADER_FOOTER: &str = "header_footer";
 
@@ -29,6 +34,13 @@ pub const KEY_SECTIONS: &str = "sections";
 
 /// Key for the Document blocks movable list.
 pub const KEY_BLOCKS: &str = "blocks";
+
+/// Key for the Document comments map (annotation bodies).
+pub const KEY_COMMENTS: &str = "comments";
+
+/// Key for the comments JSON snapshot inside the comments map. Like metadata
+/// and the style catalog, comments are stored as a lossless `serde` snapshot.
+pub const KEY_COMMENTS_JSON: &str = "comments_json";
 
 /// Key for the Block type discriminator.
 pub const KEY_TYPE: &str = "type";

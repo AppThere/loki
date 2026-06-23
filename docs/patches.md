@@ -14,45 +14,6 @@ temporary and has a documented removal condition.
 
 ## Active patches
 
-### fontique — 0.8.0
-
-**Source:** `patches/fontique/` (local), vendored from upstream commit
-`8dbecc0545a0c97eb605937b928bc186d2d1295c` in
-[linebender/parley](https://github.com/linebender/parley) (`fontique/` path
-in that monorepo).
-
-**Fixes:** Two related issues with the crates.io publication of fontique 0.8.0:
-
-1. **Missing package alias.** The crates.io publication lost the
-   `fontconfig_sys = { package = "yeslogic-fontconfig-sys", ... }` alias
-   during Cargo normalization. The source in
-   `src/backend/fontconfig.rs` uses `use fontconfig_sys::…` and requires
-   this alias to compile.
-
-2. **Workspace feature-unification conflict.** `blitz-dom` depends on
-   fontique 0.6.0 and activates `yeslogic-fontconfig-sys/dlopen` for the
-   entire build graph. Without the patch, fontique 0.8.0 is built without
-   dlopen and fails on static-C imports because the two versions of the
-   yeslogic-fontconfig-sys feature cannot agree. The patch enables
-   `fontconfig-dlopen` on 0.8.0 so both versions use the same linkage mode.
-
-**Root cause:** Bug in the fontique 0.8.0 crates.io publish pipeline (package
-alias dropped during Cargo manifest normalisation). Compounded by Cargo
-feature-unification behaviour when two semver-incompatible versions of
-fontique coexist in the dependency graph.
-
-**Upstream status:** No upstream issue filed as of 2026-05-03. Upstream
-repository is [linebender/parley](https://github.com/linebender/parley).
-
-**Removal condition:** Remove when a post-0.8.0 fontique release on crates.io
-restores the `fontconfig_sys` package alias and the dlopen/static linkage
-conflict is resolved (either fontique 0.8 is no longer paired with blitz-dom's
-fontique 0.6, or upstream aligns feature flags).
-
-**Added:** 2026-04-13 (introduced in the loki-text scaffold commit).
-
----
-
 ### dioxus-native-dom — 0.7.9
 
 **Version pin:** the whole dioxus family is pinned to `=0.7.9` in the root
@@ -454,13 +415,32 @@ file picking additionally requires a Gradle build with `FilePickerActivity.kt`.
    overruns the document, or starts over the ribbon, does nothing rather than
    jiggling the UI by the sub-pixel root/window slack.
 
-**Removal condition:** Upstream blitz-dom implements tabindex focus-on-click
-for non-input elements, dispatches scroll events to embedders, and exposes an
-absolute node-scroll API.
+6. **Static canvases don't force a per-frame redraw (PATCH(loki), 2026-06-21).**
+   `is_animating()` returns `has_canvas | has_active_animations`, and the shell's
+   redraw loop re-requests a redraw every frame while it is true. Loki paints
+   every document page as a `<canvas src>` custom-paint tile, so `has_canvas` is
+   permanently true — the app spun in a **continuous idle render loop**: high
+   CPU/battery, and per-frame GPU resource churn that grew RSS without bound even
+   with the app untouched (observed climbing past 3 GB at idle). A new
+   `BaseDocument::needs_animation_tick()` returns only `has_active_animations`
+   (genuine CSS animations/transitions), and blitz-shell's `redraw()` re-arms on
+   that instead of `is_animating()`. Loki's canvas tiles are static between
+   events — their content only changes via DOM mutations (the tile's
+   `data-cursor`/generation attribute, scroll remounts, viewport resize), each of
+   which already schedules a redraw — so dropping the canvas-forced loop leaves
+   updates correct while idle frames stop. (`is_animating()` is left intact for
+   any other consumer.)
 
-**Added:** 2026-05-18 (focus); extended 2026-06-10 (scroll events) and
-2026-06-11 (absolute scroll), together with matching changes in the blitz-shell
-and dioxus-native(-dom) patches.
+**Removal condition:** Upstream blitz-dom implements tabindex focus-on-click
+for non-input elements, dispatches scroll events to embedders, exposes an
+absolute node-scroll API, and stops treating a static canvas as perpetually
+animating (e.g. a per-source "needs animation" signal).
+
+**Added:** 2026-05-18 (focus); extended 2026-06-10 (scroll events),
+2026-06-11 (absolute scroll), and 2026-06-21 (`needs_animation_tick` — stop the
+idle canvas redraw loop, paired with the blitz-shell `redraw()` change),
+together with matching changes in the blitz-shell and dioxus-native(-dom)
+patches.
 
 ---
 
@@ -502,6 +482,31 @@ release with the Android `num_init_threads` default. Re-test with
 `use_cpu: false` and MSAA16 before removing.
 
 **Added:** 2026-06-10
+
+**Additional fix (texture release on teardown):** `CustomPaintSource` gained a
+`fn release(&mut self, ctx: CustomPaintCtx)` method (default no-op), and
+`VelloWindowRenderer::unregister_custom_paint_source` now calls it (while the
+renderer is `Active`) before suspending and dropping the source.
+
+- *Root cause:* a texture handed to the renderer via
+  `CustomPaintCtx::register_texture` lives in the renderer's texture registry
+  until `unregister_texture` is called. The only teardown hook a source had was
+  `suspend()`, which takes no `CustomPaintCtx` and so cannot unregister. When a
+  paint source is unregistered (e.g. a virtualized page tile scrolling out of
+  view), its last-registered full-resolution texture (~10+ MB) leaked in the
+  registry. Scrolling a long document top→bottom→top grew RSS unboundedly
+  (observed ~500 MB → ~1.3 GB) and never recovered. App-level `suspend()` did
+  not leak because the whole renderer is recreated on resume; only per-source
+  unregister was affected.
+- *Loki consumer:* `loki-renderer/src/page_paint_source.rs` (`LokiPageSource`)
+  implements `release` to `unregister_texture` its page texture.
+- *Upstream status:* candidate upstream fix — the custom-paint API has no other
+  way to release per-source textures on teardown.
+- *Removal condition:* an anyrender_vello release whose custom-paint teardown
+  releases a source's registered textures (e.g. an equivalent `release`/`drop`
+  hook), at which point `LokiPageSource::release` can target the upstream API.
+
+**Updated:** 2026-06-21
 
 ---
 
@@ -604,3 +609,23 @@ Before removing a patch:
 3. Run `cargo check --workspace` and `cargo test --workspace`.
 4. Remove the patch source directory (`patches/<crate>/`).
 5. Update or remove the corresponding entry in this file.
+
+## Removed patches
+
+### fontique — removed 2026-06-21 (was 0.8.0)
+
+The `patches/fontique` patch (added 2026-04-13) worked around two issues with
+the crates.io publication of **fontique 0.8.0**: (1) a missing
+`fontconfig_sys = { package = "yeslogic-fontconfig-sys", … }` alias dropped
+during the publish pipeline, and (2) a dlopen/static feature-unification
+conflict with blitz-dom's fontique 0.6.
+
+Removed when Loki's own crates moved from fontique 0.8 to **fontique 0.10**
+(alongside the parley 0.8 → 0.10 upgrade). fontique 0.10 restores the
+`fontconfig_sys` alias, so issue (1) no longer applies. Issue (2) is now
+handled without a patch by enabling the `fontconfig-dlopen` feature directly on
+`loki-layout`'s fontique dependency (fontique is re-exported through parley, so
+this turns dlopen on wherever fontique appears — including crates such as
+`loki-vello` whose graph does not contain blitz-dom). blitz-dom's own fontique
+0.6 continues to enable `yeslogic-fontconfig-sys/dlopen`, so both fontique
+generations agree on linkage mode.

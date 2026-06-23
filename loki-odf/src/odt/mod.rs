@@ -13,8 +13,9 @@
 //! # Export
 //!
 //! Use [`export::OdtExport`] (via the [`loki_doc_model::io::DocumentExport`]
-//! trait). Export is not yet implemented; all calls return
-//! [`crate::error::OdfError::NotImplemented`].
+//! trait). It writes the `content.xml`, `styles.xml`, and `meta.xml` parts of
+//! an ODT package — paragraphs, headings, styled paragraphs, lists, tables,
+//! inline formatting, the named style catalog, page geometry, and metadata.
 //!
 //! # Version round-trip
 //!
@@ -25,5 +26,7 @@
 pub mod export;
 pub mod import;
 pub(crate) mod mapper;
+pub(crate) mod math;
 pub(crate) mod model;
 pub(crate) mod reader;
+pub(crate) mod write;

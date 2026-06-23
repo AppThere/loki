@@ -44,6 +44,7 @@ fn flow_pageless(r: &mut FontResources, section: &Section) -> (Vec<PositionedIte
         &LayoutMode::Pageless,
         1.0,
         &LayoutOptions::default(),
+        &[],
     ) {
         FlowOutput::Canvas { items, height, .. } => (items, height),
         _ => panic!("expected Canvas output"),

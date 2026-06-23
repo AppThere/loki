@@ -20,7 +20,8 @@ pub fn App() -> Element {
     let active_tab: Signal<usize> = use_signal(|| 0usize); // 0 = Home tab
 
     // Recent-documents list.
-    let recent_docs: Signal<RecentDocuments> = use_signal(RecentDocuments::load);
+    let recent_docs: Signal<RecentDocuments> =
+        use_signal(|| RecentDocuments::load(crate::recent_documents::RECENT_FILE));
 
     provide_context(tabs);
     provide_context(active_tab);
@@ -40,14 +41,11 @@ pub fn App() -> Element {
             "
         }
 
+        // UI font, embedded as a `data:` URI so it bundles into the binary and
+        // loads on every platform (see `loki_fonts::ui_face_css`).
         document::Style {
-            "@font-face {{
-                font-family: 'Atkinson Hyperlegible Next';
-                src: url('dioxus:///assets/fonts/AtkinsonHyperlegibleNext-VF.ttf')
-                     format('truetype');
-                font-weight: 100 900;
-                font-style: normal;
-            }}"
+            r#type: "text/css",
+            "{loki_fonts::ui_face_css()}"
         }
 
         div {

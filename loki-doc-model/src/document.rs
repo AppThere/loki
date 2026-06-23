@@ -52,6 +52,7 @@ use loki_primitives::units::Points;
 ///     styles: StyleCatalog::default(),
 ///     sections: vec![section],
 ///     settings: None,
+///     comments: Vec::new(),
 ///     source: None,
 /// };
 ///
@@ -79,6 +80,11 @@ pub struct Document {
     /// OOXML: `word/settings.xml`; ODF: `settings.xml`.
     pub settings: Option<DocumentSettings>,
 
+    /// Document comments (annotations), keyed by id. The content flow carries
+    /// only [`crate::content::annotation::CommentRef`] anchors; the comment
+    /// bodies live here. OOXML: `word/comments.xml`; ODF: `office:annotation`.
+    pub comments: Vec<crate::content::annotation::Comment>,
+
     /// Format and version provenance from the source file, if loaded from one.
     ///
     /// `None` for programmatically constructed documents.
@@ -94,6 +100,7 @@ impl Document {
             styles: StyleCatalog::default(),
             sections: vec![Section::new()],
             settings: None,
+            comments: Vec::new(),
             source: None,
         }
     }
@@ -150,6 +157,7 @@ impl Document {
             styles,
             sections: vec![section],
             settings: None,
+            comments: Vec::new(),
             source: None,
         }
     }

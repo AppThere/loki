@@ -9,10 +9,11 @@ publish = false
 
 [dependencies]
 loki-doc-model = { path = "../loki-doc-model" }
-loki-ooxml = { path = "../loki-ooxml", features = ["docx", "xlsx"] }
+loki-ooxml = { path = "../loki-ooxml", features = ["docx", "xlsx", "pptx"] }
 loki-odf = { path = "../loki-odf" }
 loki-layout = { path = "../loki-layout" }
 loki-sheet-model = { path = "../loki-sheet-model" }
+loki-presentation-model = { path = "../loki-presentation-model" }
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -20,3 +21,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 
 [dev-dependencies]
 loki-doc-model = { path = "../loki-doc-model" }
+# The `gen_acid_pptx` example builds the fixture from raw shapes.
+loki-graphics = { path = "../loki-graphics", features = ["serde"] }
+loki-presentation-model = { path = "../loki-presentation-model" }
+loki-primitives = { path = "../loki-primitives" }

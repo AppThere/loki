@@ -4,8 +4,8 @@
 //! `word/document.xml` serializer.
 //!
 //! Converts a sequence of [`Section`]s into OOXML body content.  All
-//! Tier-3 block and inline variants are handled; Tier-4+ content (images,
-//! footnotes, complex fields) is silently omitted.
+//! Tier-3 block and inline variants are handled; images, footnotes, and
+//! complex fields are serialized via their sibling `write/` modules.
 //!
 //! ECMA-376 §17.2 (document structure) and §17.3 (block-level content).
 
@@ -21,7 +21,8 @@ use loki_doc_model::style::catalog::StyleCatalog;
 use loki_doc_model::style::props::char_props::CharProps;
 
 use crate::docx::write::collector::ExportCollector;
-use crate::docx::write::styles::emit_char_props;
+use crate::docx::write::section::write_sect_pr;
+use crate::docx::write::style_props::emit_char_props;
 use crate::docx::write::xml::{
     NS_A, NS_PIC, NS_R, NS_W, NS_WP, color_to_hex, pts_to_twips, write_decl, write_empty,
     write_end, write_start, wval,
@@ -47,6 +48,7 @@ pub(super) fn write_document_xml(
             ("xmlns:wp", NS_WP),
             ("xmlns:a", NS_A),
             ("xmlns:pic", NS_PIC),
+            ("xmlns:m", crate::docx::omml::OMML_NS),
         ],
     );
     let _ = write_start(&mut w, "w:body", &[]);
@@ -82,109 +84,6 @@ pub(super) fn write_document_xml(
     out
 }
 
-// ── Section properties ───────────────────────────────────────────────────────
-
-fn write_sect_pr<W: std::io::Write>(
-    w: &mut Writer<W>,
-    layout: &PageLayout,
-    collector: &mut ExportCollector,
-) {
-    let _ = write_start(w, "w:sectPr", &[]);
-
-    if let Some(hf) = &layout.header {
-        let r_id = collector.add_header_footer(hf.blocks.clone(), true);
-        let _ = write_empty(
-            w,
-            "w:headerReference",
-            &[("w:type", "default"), ("r:id", &r_id)],
-        );
-    }
-    if let Some(hf) = &layout.header_first {
-        let r_id = collector.add_header_footer(hf.blocks.clone(), true);
-        let _ = write_empty(
-            w,
-            "w:headerReference",
-            &[("w:type", "first"), ("r:id", &r_id)],
-        );
-    }
-    if let Some(hf) = &layout.header_even {
-        let r_id = collector.add_header_footer(hf.blocks.clone(), true);
-        let _ = write_empty(
-            w,
-            "w:headerReference",
-            &[("w:type", "even"), ("r:id", &r_id)],
-        );
-    }
-
-    if let Some(hf) = &layout.footer {
-        let r_id = collector.add_header_footer(hf.blocks.clone(), false);
-        let _ = write_empty(
-            w,
-            "w:footerReference",
-            &[("w:type", "default"), ("r:id", &r_id)],
-        );
-    }
-    if let Some(hf) = &layout.footer_first {
-        let r_id = collector.add_header_footer(hf.blocks.clone(), false);
-        let _ = write_empty(
-            w,
-            "w:footerReference",
-            &[("w:type", "first"), ("r:id", &r_id)],
-        );
-    }
-    if let Some(hf) = &layout.footer_even {
-        let r_id = collector.add_header_footer(hf.blocks.clone(), false);
-        let _ = write_empty(
-            w,
-            "w:footerReference",
-            &[("w:type", "even"), ("r:id", &r_id)],
-        );
-    }
-
-    if layout.header_first.is_some()
-        || layout.footer_first.is_some()
-        || layout.header_even.is_some()
-        || layout.footer_even.is_some()
-    {
-        let _ = write_empty(w, "w:titlePg", &[]);
-    }
-
-    let pw = pts_to_twips(layout.page_size.width.value()).to_string();
-    let ph = pts_to_twips(layout.page_size.height.value()).to_string();
-    let orient = match layout.orientation {
-        loki_doc_model::layout::page::PageOrientation::Landscape => "landscape",
-        loki_doc_model::layout::page::PageOrientation::Portrait => "portrait",
-    };
-    let _ = write_empty(
-        w,
-        "w:pgSz",
-        &[("w:w", &pw), ("w:h", &ph), ("w:orient", orient)],
-    );
-
-    let mt = pts_to_twips(layout.margins.top.value()).to_string();
-    let mb = pts_to_twips(layout.margins.bottom.value()).to_string();
-    let ml = pts_to_twips(layout.margins.left.value()).to_string();
-    let mr = pts_to_twips(layout.margins.right.value()).to_string();
-    let mh = pts_to_twips(layout.margins.header.value()).to_string();
-    let mf = pts_to_twips(layout.margins.footer.value()).to_string();
-    let mg = pts_to_twips(layout.margins.gutter.value()).to_string();
-    let _ = write_empty(
-        w,
-        "w:pgMar",
-        &[
-            ("w:top", &mt),
-            ("w:right", &mr),
-            ("w:bottom", &mb),
-            ("w:left", &ml),
-            ("w:header", &mh),
-            ("w:footer", &mf),
-            ("w:gutter", &mg),
-        ],
-    );
-
-    let _ = write_end(w, "w:sectPr");
-}
-
 /// Serializes header/footer blocks to `word/headerN.xml` or `word/footerN.xml`.
 pub(super) fn write_header_footer_xml(
     blocks: &[Block],
@@ -205,6 +104,7 @@ pub(super) fn write_header_footer_xml(
             ("xmlns:wp", NS_WP),
             ("xmlns:a", NS_A),
             ("xmlns:pic", NS_PIC),
+            ("xmlns:m", crate::docx::omml::OMML_NS),
         ],
     );
 
@@ -785,7 +685,7 @@ fn write_table_cell<W: std::io::Write>(
 /// Accumulated run formatting inherited from inline wrappers.
 #[allow(clippy::struct_excessive_bools)] // Pre-existing pattern — structural refactor deferred
 #[derive(Default, Clone)]
-struct RunProps {
+pub(super) struct RunProps {
     bold: bool,
     italic: bool,
     underline: bool,
@@ -905,9 +805,12 @@ fn write_inline<W: std::io::Write>(
         Inline::Bookmark(kind, name) => {
             write_bookmark(w, *kind, name, collector);
         }
-        Inline::Math(_, s) => {
-            write_text_run(w, s, props);
+        Inline::Math(kind, mathml) => {
+            use loki_doc_model::content::inline::MathType;
+            crate::docx::omml::write_omath(w, mathml, *kind == MathType::DisplayMath);
         }
+        Inline::Field(field) => super::fields::write_field(w, field, props),
+        Inline::Comment(c) => super::comments::write_comment_ref(w, c),
         Inline::Image(_, inlines, target) => {
             if let Some(r_id) = collector.add_image(&target.url) {
                 // Default: 1 inch = 914400 EMU.
@@ -968,7 +871,7 @@ fn write_styled_run<W: std::io::Write>(
 }
 
 /// Writes a single `<w:r>` element with text content.
-fn write_text_run<W: std::io::Write>(w: &mut Writer<W>, text: &str, props: &RunProps) {
+pub(super) fn write_text_run<W: std::io::Write>(w: &mut Writer<W>, text: &str, props: &RunProps) {
     if text.is_empty() {
         return;
     }
@@ -1146,7 +1049,8 @@ fn inlines_to_string(inlines: &[Inline]) -> String {
     let mut s = String::new();
     for inline in inlines {
         match inline {
-            Inline::Str(t) | Inline::Code(_, t) | Inline::Math(_, t) => s.push_str(t),
+            // Math carries MathML markup, not display text — excluded here.
+            Inline::Str(t) | Inline::Code(_, t) => s.push_str(t),
             Inline::Space | Inline::SoftBreak => s.push(' '),
             Inline::LineBreak => s.push('\n'),
             Inline::Strong(i)

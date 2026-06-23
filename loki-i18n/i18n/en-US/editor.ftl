@@ -49,6 +49,7 @@ editor-font-dismiss = Dismiss
 
 # Save
 editor-save-success = Document saved
+editor-save-template-success = Template saved
 editor-save-error = Could not save: { $reason }
 editor-save-untitled-hint = Use File → Save As to save new documents
 editor-dismiss-aria = Dismiss
@@ -60,6 +61,31 @@ editor-style-editor-close-aria = Close style editor
 editor-style-based-on-label = Based on
 editor-style-next-style-label = Next style
 editor-style-align-label = Align
+editor-style-name-label = Name
+editor-style-new = + New
+editor-style-font-label = Font
+editor-style-size-label = Size (pt)
+editor-style-weight-label = Weight
+editor-style-weight-thin = Thin
+editor-style-weight-light = Light
+editor-style-weight-regular = Regular
+editor-style-weight-medium = Medium
+editor-style-weight-semibold = Semibold
+editor-style-weight-bold = Bold
+editor-style-weight-black = Black
+editor-style-align-left = Left
+editor-style-align-center = Center
+editor-style-align-right = Right
+editor-style-align-justify = Justify
+editor-style-indent-label = Indent
+editor-style-indent-left = Left
+editor-style-indent-right = Right
+editor-style-indent-first = First line
+editor-style-indent-hanging = Hanging
+editor-style-spacing-label = Spacing
+editor-style-spacing-before = Before
+editor-style-spacing-after = After
+editor-style-line-spacing = Line ×
 
 # View mode (paginated vs reflowed) toggle in the status bar
 editor-view-paginated = Paginated

@@ -72,13 +72,9 @@ pub struct Comment {
 
     /// The comment body as a sequence of block nodes.
     ///
-    /// Stored as raw bytes to avoid a circular dependency between the
-    /// annotation module and the block/inline modules. Consumers should
-    /// parse these blocks using the crate's Block type.
-    ///
-    /// In practice, comment bodies are plain paragraphs. The raw storage
-    /// avoids importing Block here, which would create a module cycle.
-    pub body_raw: Vec<u8>,
+    /// Comment bodies are usually one or more plain paragraphs, but may carry
+    /// full block content (multiple paragraphs, inline formatting, lists).
+    pub body: Vec<crate::content::block::Block>,
 }
 
 impl Comment {
@@ -89,8 +85,21 @@ impl Comment {
             id: id.into(),
             author: None,
             date: None,
-            body_raw: Vec::new(),
+            body: Vec::new(),
         }
+    }
+
+    /// Builder: set the comment body from a single plain-text string, splitting
+    /// on `\n` into paragraphs.
+    #[must_use]
+    pub fn with_plain_body(mut self, text: &str) -> Self {
+        use crate::content::block::Block;
+        use crate::content::inline::Inline;
+        self.body = text
+            .split('\n')
+            .map(|line| Block::Para(vec![Inline::Str(line.to_string())]))
+            .collect();
+        self
     }
 }
 

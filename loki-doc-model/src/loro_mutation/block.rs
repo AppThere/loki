@@ -11,6 +11,7 @@ use crate::loro_schema::{
 
 use super::{
     MutationError, copy_map_primitive_values, get_block_map_and_list, get_loro_text_for_block,
+    resolve_section_blocks,
 };
 
 /// Splits the block at `block_index` at `byte_offset`, inserting a new block
@@ -37,7 +38,7 @@ pub fn split_block(
     block_index: usize,
     byte_offset: usize,
 ) -> Result<(), MutationError> {
-    let (blocks_list, block_map) = get_block_map_and_list(loro, block_index)?;
+    let (blocks_list, block_map, local) = get_block_map_and_list(loro, block_index)?;
 
     // Get the LoroText for the source block.
     let text_container = block_map
@@ -62,8 +63,9 @@ pub fn split_block(
         text_container.delete_utf8(byte_offset, tail.len())?;
     }
 
-    // Insert a new LoroMap at block_index + 1 in the blocks list.
-    let new_map = blocks_list.insert_container(block_index + 1, LoroMap::new())?;
+    // Insert a new LoroMap right after the source block, within its section's
+    // blocks list (`local` is the source block's index in that section).
+    let new_map = blocks_list.insert_container(local + 1, LoroMap::new())?;
 
     // Copy KEY_TYPE (required; default to empty string if absent).
     let block_type = block_map
@@ -125,6 +127,9 @@ pub fn split_block(
 /// # Errors
 ///
 /// - [`MutationError::NoPreviousBlock`] — `block_index` is 0 (no predecessor).
+/// - [`MutationError::CrossSectionMerge`] — `block_index` is the first block of
+///   its section, so its predecessor lives in an earlier section. Merging across
+///   a section break (which would remove the break) is not supported.
 /// - [`MutationError::BlockIndexOutOfRange`] — either `block_index` or
 ///   `block_index - 1` is out of range (e.g. the document is empty).
 /// - [`MutationError::TextNotFound`] — one of the blocks has no `LoroText`.
@@ -135,11 +140,19 @@ pub fn merge_block(loro: &LoroDoc, block_index: usize) -> Result<usize, Mutation
     }
     let prev_index = block_index - 1;
 
+    // Resolve the current block to its section's list and its index within that
+    // section. A `local` of 0 means the previous block is the last block of an
+    // earlier section, so this would merge across a section break.
+    let (blocks_list, local) = resolve_section_blocks(loro, block_index)?;
+    if local == 0 {
+        return Err(MutationError::CrossSectionMerge);
+    }
+
     // Validate block_index and read its text before mutating.
     let curr_text_container = get_loro_text_for_block(loro, block_index)?;
     let tail = curr_text_container.to_string();
 
-    // Validate prev_index and get its LoroText.
+    // Validate prev_index (same section, `local - 1`) and get its LoroText.
     let prev_text = get_loro_text_for_block(loro, prev_index)?;
     let merged_offset = prev_text.len_utf8();
 
@@ -148,14 +161,11 @@ pub fn merge_block(loro: &LoroDoc, block_index: usize) -> Result<usize, Mutation
         prev_text.insert_utf8(merged_offset, &tail)?;
     }
 
-    // Remove block N. The blocks list is navigated fresh here; prev_index
-    // was already validated above so the section path is guaranteed to exist.
-    let (blocks_list, _) = get_block_map_and_list(loro, prev_index)?;
-    // Re-check block_index against the live list length.
-    if block_index >= blocks_list.len() {
+    // Remove block N from its section's list, by its index within that section.
+    if local >= blocks_list.len() {
         return Err(MutationError::BlockIndexOutOfRange(block_index));
     }
-    blocks_list.delete(block_index, 1)?;
+    blocks_list.delete(local, 1)?;
 
     Ok(merged_offset)
 }

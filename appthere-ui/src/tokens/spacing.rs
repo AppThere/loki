@@ -70,3 +70,42 @@ pub const ICON_SIZE_LG: f32 = 24.0;
 
 /// 32 px — extra-large icon (app icon, empty-state illustration).
 pub const ICON_SIZE_XL: f32 = 32.0;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn touch_target_meets_wcag_minimum() {
+        // WCAG 2.5.8 requires a 44×44 CSS-px minimum touch target.
+        assert_eq!(TOUCH_MIN, 44.0);
+    }
+
+    #[test]
+    fn spacing_scale_uses_a_4px_base_unit() {
+        // Each SPACE_<n> token is n × the 4 px base.
+        assert_eq!(SPACE_1, 4.0);
+        assert_eq!(SPACE_2, 2.0 * SPACE_1);
+        assert_eq!(SPACE_3, 3.0 * SPACE_1);
+        assert_eq!(SPACE_4, 4.0 * SPACE_1);
+        assert_eq!(SPACE_5, 5.0 * SPACE_1);
+        assert_eq!(SPACE_6, 6.0 * SPACE_1);
+        assert_eq!(SPACE_8, 8.0 * SPACE_1);
+        assert_eq!(SPACE_10, 10.0 * SPACE_1);
+    }
+
+    #[test]
+    fn radius_scale_is_strictly_increasing() {
+        assert!(RADIUS_SM < RADIUS_MD);
+        assert!(RADIUS_MD < RADIUS_LG);
+        assert!(RADIUS_LG < RADIUS_XL);
+        assert!(RADIUS_XL < RADIUS_FULL);
+    }
+
+    #[test]
+    fn icon_sizes_are_strictly_increasing() {
+        assert!(ICON_SIZE_SM < ICON_SIZE_MD);
+        assert!(ICON_SIZE_MD < ICON_SIZE_LG);
+        assert!(ICON_SIZE_LG < ICON_SIZE_XL);
+    }
+}

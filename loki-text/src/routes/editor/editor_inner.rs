@@ -19,6 +19,7 @@
 //! 3. All per-document state is reset synchronously when path changes so the
 //!    reset happens before `use_resource` evaluates.
 
+use std::rc::Rc;
 use std::sync::Arc;
 
 use appthere_ui::tokens;
@@ -42,9 +43,12 @@ use super::editor_path_sync::{
 };
 use super::editor_publish::{publish_panel, publish_tab_content};
 use super::editor_ribbon::home_tab_content;
-use super::editor_save::{export_document_to_token, save_document_to_path};
+use super::editor_save::{
+    export_document_to_token, export_template_to_token, save_document_to_path,
+};
 use super::editor_state::{EditorState, use_editor_state};
 use super::editor_style::style_picker_panel;
+use super::editor_style_catalog::available_font_families;
 use super::editor_style_editor::style_editor_panel;
 use crate::error::LoadError;
 use crate::new_document::is_untitled;
@@ -57,6 +61,9 @@ use loki_file_access::{FilePicker, SaveOptions};
 
 /// MIME type used when saving documents (DOCX is the only writable format).
 const DOCX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+/// MIME type used by the "Save as Template" flow (Word `.dotx`).
+const DOTX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.template";
 
 /// Viewport width (logical px) below which the editor defaults to the
 /// reflowable view: a US-Letter page (~816px) plus margins no longer fits, so
@@ -250,6 +257,15 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_seed = Arc::clone(&doc_state);
     let doc_state_render = Arc::clone(&doc_state);
     let doc_state_scroll = Arc::clone(&doc_state);
+
+    // Enumerate the available font families once per editor (system + bundled +
+    // document-embedded), memoised for the style editor's font picker. Scanning
+    // the Fontique collection on every render would be wasteful; the trade-off
+    // is that faces embedded after mount are not reflected until reopen.
+    let font_families: Rc<Vec<String>> = {
+        let ds = Arc::clone(&doc_state);
+        use_hook(move || Rc::new(available_font_families(&ds)))
+    };
 
     // ── Document load — reactive on path_signal ───────────────────────────────
     let document_load: Resource<(String, Result<Document, LoadError>)> = use_resource(move || {
@@ -498,6 +514,38 @@ pub(super) fn EditorInner(path: String) -> Element {
                         save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
                     }
                 },
+                Ok(None) => { /* user cancelled — no-op */ }
+                Err(e) => {
+                    save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
+                }
+            }
+        });
+    });
+
+    // ── Save as Template (.dotx) ───────────────────────────────────────────────
+    //
+    // Exports the current document as a Word template to a picked destination.
+    // Unlike Save As this does not repoint the tab — the user keeps editing their
+    // document; the template is a separate artifact.
+    let doc_state_savetmpl = Arc::clone(&doc_state);
+    let save_as_template = use_callback(move |_: ()| {
+        let doc_state = Arc::clone(&doc_state_savetmpl);
+        let mut save_message = save_message;
+        let suggested = format!("{}.dotx", display_title_from_path(&path_signal.peek()));
+        spawn(async move {
+            let picker = FilePicker::new();
+            let opts = SaveOptions {
+                mime_type: Some(DOTX_MIME.to_string()),
+                suggested_name: Some(suggested),
+            };
+            match picker.pick_file_to_save(opts).await {
+                Ok(Some(token)) => {
+                    let msg = match export_template_to_token(&token, &doc_state) {
+                        Ok(()) => fl!("editor-save-template-success"),
+                        Err(e) => fl!("editor-save-error", reason = e.to_string()),
+                    };
+                    save_message.set(Some(msg));
+                }
                 Ok(None) => { /* user cancelled — no-op */ }
                 Err(e) => {
                     save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
@@ -817,8 +865,15 @@ pub(super) fn EditorInner(path: String) -> Element {
             if editing_style_draft.read().is_some() {
                 {style_editor_panel(
                     doc_state_style_editor,
-                    loro_doc,
                     editing_style_draft,
+                    Rc::clone(&font_families),
+                    super::editor_style_editor::StyleEditorSync {
+                        loro_doc,
+                        cursor_state,
+                        undo_manager,
+                        can_undo,
+                        can_redo,
+                    },
                 )}
             }
 
@@ -883,12 +938,11 @@ pub(super) fn EditorInner(path: String) -> Element {
 
             // ── Ribbon (formatting controls) ──────────────────────────────────
             AtRibbon {
+                // Only Home and Publish have controls today; the former Insert/
+                // Format/Review/View tabs had no content of their own (they fell
+                // through to Home's controls) and are omitted until they do.
                 tabs: vec![
                     RibbonTabDesc { label: fl!("ribbon-tab-home"),    is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-insert"),  is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-format"),  is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-review"),  is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-view"),    is_contextual: false, aria_label: None },
                     RibbonTabDesc { label: fl!("ribbon-tab-publish"), is_contextual: false, aria_label: None },
                 ],
                 active_tab: active_ribbon_tab(),
@@ -905,7 +959,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     fl!("ribbon-collapse-aria")
                 },
                 tab_content: match active_ribbon_tab() {
-                    5 => publish_tab_content(
+                    1 => publish_tab_content(
                         &doc_state_publish,
                         path_signal,
                         save_message,
@@ -931,6 +985,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     save_message,
                     editing_style_draft,
                     save_as,
+                    save_as_template,
                     baseline_gen,
                 ),
                 },

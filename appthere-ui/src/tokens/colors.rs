@@ -132,3 +132,68 @@ pub const COLOR_STATUS_ERROR_TEXT: &str = "#C62828";
 
 /// Error banner border color.
 pub const COLOR_STATUS_ERROR_BORDER: &str = "#BB4433";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn is_hex6(s: &str) -> bool {
+        let Some(rest) = s.strip_prefix('#') else {
+            return false;
+        };
+        rest.len() == 6 && rest.bytes().all(|b| b.is_ascii_hexdigit())
+    }
+
+    #[test]
+    fn all_hex_color_tokens_are_well_formed() {
+        // Every solid-fill token is a `#RRGGBB` string (Flat Design: no
+        // gradients, no shorthand). A typo here ships an invalid CSS color.
+        let hex_tokens: &[(&str, &str)] = &[
+            ("COLOR_SURFACE_PAGE", COLOR_SURFACE_PAGE),
+            ("COLOR_SURFACE_BASE", COLOR_SURFACE_BASE),
+            ("COLOR_SURFACE_CHROME", COLOR_SURFACE_CHROME),
+            ("COLOR_SURFACE_1", COLOR_SURFACE_1),
+            ("COLOR_SURFACE_2", COLOR_SURFACE_2),
+            ("COLOR_SURFACE_3", COLOR_SURFACE_3),
+            ("COLOR_BORDER_DEFAULT", COLOR_BORDER_DEFAULT),
+            ("COLOR_BORDER_CHROME", COLOR_BORDER_CHROME),
+            ("COLOR_ACCENT_PRIMARY", COLOR_ACCENT_PRIMARY),
+            ("COLOR_ACCENT_PRIMARY_HOVER", COLOR_ACCENT_PRIMARY_HOVER),
+            ("COLOR_TEXT_PRIMARY", COLOR_TEXT_PRIMARY),
+            ("COLOR_TEXT_SECONDARY", COLOR_TEXT_SECONDARY),
+            ("COLOR_TEXT_ON_CHROME", COLOR_TEXT_ON_CHROME),
+            (
+                "COLOR_TEXT_ON_CHROME_SECONDARY",
+                COLOR_TEXT_ON_CHROME_SECONDARY,
+            ),
+            ("COLOR_TEXT_ACCENT", COLOR_TEXT_ACCENT),
+            ("COLOR_TAB_ACTIVE_BG", COLOR_TAB_ACTIVE_BG),
+            ("COLOR_TAB_ACTIVE_INDICATOR", COLOR_TAB_ACTIVE_INDICATOR),
+            ("COLOR_TAB_INACTIVE_HOVER", COLOR_TAB_INACTIVE_HOVER),
+            ("COLOR_CONTEXTUAL_TAB", COLOR_CONTEXTUAL_TAB),
+            ("COLOR_ICON_DISABLED", COLOR_ICON_DISABLED),
+            ("CANVAS_PAGE_BG", CANVAS_PAGE_BG),
+            ("CANVAS_MARGIN_BG", CANVAS_MARGIN_BG),
+            ("COLOR_STATUS_ERROR_BG", COLOR_STATUS_ERROR_BG),
+            ("COLOR_STATUS_ERROR_TEXT", COLOR_STATUS_ERROR_TEXT),
+            ("COLOR_STATUS_ERROR_BORDER", COLOR_STATUS_ERROR_BORDER),
+        ];
+        for (name, value) in hex_tokens {
+            assert!(is_hex6(value), "{name} = {value:?} is not a valid #RRGGBB");
+        }
+    }
+
+    #[test]
+    fn rgba_and_opacity_tokens_have_expected_form() {
+        for token in [
+            COLOR_SCROLLBAR_THUMB,
+            COLOR_SCROLLBAR_THUMB_HOVER,
+            COLOR_SCROLLBAR_TRACK,
+        ] {
+            assert!(token.starts_with("rgba(") && token.ends_with(')'));
+        }
+        // OPACITY_DISABLED is a bare CSS opacity number in [0, 1].
+        let opacity: f32 = OPACITY_DISABLED.parse().expect("opacity parses as f32");
+        assert!((0.0..=1.0).contains(&opacity));
+    }
+}

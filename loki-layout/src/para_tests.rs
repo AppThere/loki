@@ -33,6 +33,7 @@ fn single_span(text: &str, font_size: f32) -> StyleSpan {
         font_name: None,
         font_size,
         bold: false,
+        weight: 400,
         italic: false,
         color: LayoutColor::BLACK,
         underline: None,
@@ -45,10 +46,112 @@ fn single_span(text: &str, font_size: f32) -> StyleSpan {
         word_spacing: None,
         shadow: false,
         link_url: None,
+        math: None,
     }
 }
 
+/// A math placeholder span (empty range carrying MathML) at byte `at`.
+fn math_span(at: usize, mathml: &str) -> StyleSpan {
+    let mut s = single_span("", 12.0);
+    s.range = at..at;
+    s.math = Some(std::sync::Arc::from(mathml));
+    s
+}
+
 // ── tests ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fn inline_math_emits_typeset_items() {
+    const NS: &str = "http://www.w3.org/1998/Math/MathML";
+    let mut r = test_resources();
+    let text = "x = ";
+    let mathml = format!("<math xmlns=\"{NS}\"><mfrac><mn>1</mn><mn>2</mn></mfrac></math>");
+
+    // Baseline: same paragraph without the equation.
+    let plain = [single_span(text, 12.0)];
+    let plain_layout = layout_paragraph(
+        &mut r,
+        text,
+        &plain,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+
+    let spans = [single_span(text, 12.0), math_span(text.len(), &mathml)];
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+
+    // The fraction contributes a bar rule and at least the two numerator/
+    // denominator glyph runs on top of the paragraph's own text runs.
+    let rects = result
+        .items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::FilledRect(_)))
+        .count();
+    let glyph_runs = result
+        .items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::GlyphRun(_)))
+        .count();
+    let plain_runs = plain_layout
+        .items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::GlyphRun(_)))
+        .count();
+
+    assert_eq!(rects, 1, "fraction bar should be drawn");
+    assert!(
+        glyph_runs > plain_runs,
+        "math adds glyph runs beyond the plain text ({glyph_runs} vs {plain_runs})"
+    );
+}
+
+#[test]
+fn inline_math_baseline_aligns_with_text() {
+    const NS: &str = "http://www.w3.org/1998/Math/MathML";
+    let mut r = test_resources();
+    let text = "x = ";
+    let mathml = format!("<math xmlns=\"{NS}\"><mi>y</mi></math>");
+    let spans = [single_span(text, 12.0), math_span(text.len(), &mathml)];
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+
+    // A lone identifier sits on the math baseline, which the inline box places
+    // on the text baseline — so every glyph run (the "x = " text and the math
+    // "y") shares one baseline `y`.
+    let baselines: Vec<f32> = result
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            PositionedItem::GlyphRun(g) => Some(g.origin.y),
+            _ => None,
+        })
+        .collect();
+    assert!(baselines.len() >= 2, "expected text + math glyph runs");
+    let first = baselines[0];
+    for b in &baselines {
+        assert!(
+            (b - first).abs() < 0.6,
+            "math baseline {b} should match text baseline {first}"
+        );
+    }
+}
 
 #[test]
 fn plain_paragraph_non_empty() {
@@ -81,6 +184,7 @@ fn bold_span_produces_items() {
         StyleSpan {
             range: 6..10,
             bold: true,
+            weight: 700,
             ..single_span(text, 12.0)
         },
         StyleSpan {
@@ -584,6 +688,49 @@ fn editing_paragraph(text: &str) -> ParagraphLayout {
         1.0,
         true,
     )
+}
+
+#[test]
+fn left_indent_included_in_cursor_and_hit_test() {
+    // Regression: paragraphs with a left indent (e.g. screenplay Character /
+    // parenthetical blocks) drew glyphs shifted right by `indent_start`, but the
+    // caret and hit-testing read un-indented Parley coordinates — so the cursor
+    // showed at the page's content-left instead of at the text.
+    let mut r = test_resources();
+    let text = "Hello";
+    let spans = [single_span(text, 12.0)];
+    let props = ResolvedParaProps {
+        indent_start: 100.0,
+        ..Default::default()
+    };
+    let layout = layout_paragraph(&mut r, text, &spans, &props, 400.0, 1.0, true);
+
+    // The caret at the start of the text sits at the indent, not at x = 0.
+    let c0 = layout.cursor_rect(0).expect("cursor at start");
+    assert!(
+        (c0.x - 100.0).abs() < 1.0,
+        "start caret x {} should be ~100 (the left indent)",
+        c0.x
+    );
+
+    // A click on the visible (indented) text maps to the right offset, not to
+    // the end of the line as it would if the indent were ignored.
+    let mid_y = c0.y + c0.height * 0.5;
+    let hit = layout
+        .hit_test_point(102.0, mid_y)
+        .expect("hit near indented start");
+    assert_eq!(
+        hit.byte_offset, 0,
+        "click just inside the indented text should map to offset 0"
+    );
+
+    // Caret / hit-test are mutually consistent under the indent.
+    let c3 = layout.cursor_rect(3).expect("cursor mid");
+    assert!(c3.x > 100.0, "mid caret should be right of the indent");
+    let hit3 = layout
+        .hit_test_point(c3.x, mid_y)
+        .expect("hit at mid caret");
+    assert_eq!(hit3.byte_offset, 3);
 }
 
 #[test]

@@ -1054,6 +1054,31 @@ impl BaseDocument {
         self.has_canvas | self.has_active_animations
     }
 
+    /// Whether the shell should re-request a redraw *every frame* (a continuous
+    /// animation loop).
+    ///
+    /// PATCH(loki): this deliberately excludes `has_canvas`, unlike
+    /// [`Self::is_animating`]. The shell's redraw loop re-requests a redraw on
+    /// every frame while its predicate is true. Loki paints every document page
+    /// as a `<canvas src>` custom-paint tile, so `has_canvas` is permanently
+    /// true — using `is_animating()` there spins the app in a continuous idle
+    /// render loop (high CPU/battery, and per-frame GPU resource churn that grows
+    /// RSS without bound even when nothing is happening).
+    ///
+    /// Loki's canvas tiles are static between events: their content only changes
+    /// via DOM mutations (the tile's `data-cursor`/generation attribute,
+    /// scroll-driven remounts, viewport resize), each of which already schedules
+    /// a redraw through Blitz's normal dirty path, and the custom paint source's
+    /// reuse guard makes a redundant repaint a no-op. Only genuine CSS
+    /// animations/transitions need per-frame ticks.
+    ///
+    /// COMPAT(blitz): upstream treats any canvas as perpetually animating
+    /// (live/video canvases). Re-validate if a Loki surface ever needs to repaint
+    /// without an accompanying DOM mutation.
+    pub fn needs_animation_tick(&self) -> bool {
+        self.has_active_animations
+    }
+
     /// Update the device and reset the stylist to process the new size
     pub fn set_stylist_device(&mut self, device: Device) {
         let origins = {

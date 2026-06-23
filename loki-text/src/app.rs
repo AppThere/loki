@@ -90,7 +90,8 @@ pub fn App() -> Element {
     let active_tab: Signal<usize> = use_signal(|| 0usize); // 0 = Home tab
 
     // Recent-documents list — loaded once from disk at startup.
-    let recent_docs: Signal<RecentDocuments> = use_signal(RecentDocuments::load);
+    let recent_docs: Signal<RecentDocuments> =
+        use_signal(|| RecentDocuments::load(crate::recent_documents::RECENT_FILE));
 
     // Stashed editing sessions for inactive document tabs — unsaved edits
     // survive tab switches by round-tripping through this map.
@@ -119,37 +120,15 @@ pub fn App() -> Element {
             "
         }
 
-        // Register Atkinson Hyperlegible Next via CSS @font-face.
-        //
-        // Blitz processes @font-face rules and fetches the font URL through its
-        // net provider.  The `dioxus://` URL is resolved by
-        // `dioxus_asset_resolver::native::serve_asset`, which looks for the
-        // file relative to the running executable's directory:
-        //   debug builds: target/debug/assets/fonts/AtkinsonHyperlegibleNext-VF.ttf
-        //   (loki-text/build.rs creates a symlink from target/debug/assets →
-        //    loki-text/assets/ so the file is reachable without copying.)
-        //
-        // The variable font covers all weights (100–900) in a single file,
-        // so one @font-face rule covers all weight variants.
-        //
-        // // TODO(font): verify Atkinson Hyperlegible Next is rendering correctly
-        // in the running app — check that chrome text is NOT in system-ui.
-        // If the dioxus:// URL fails to resolve (e.g. symlink missing), the
-        // FONT_FAMILY_UI fallback chain ("Atkinson Hyperlegible, system-ui")
-        // applies automatically.
+        // Register Atkinson Hyperlegible Next as the UI font, embedded as a
+        // `data:` URI so it is bundled into the binary and decoded by blitz_net
+        // on every platform. The previous `dioxus:///assets/...` URL resolved
+        // relative to the executable and did not load on Android/ChromeOS (and
+        // silently relied on a system-installed copy on desktop). See
+        // `loki_fonts::ui_face_css`.
         document::Style {
-            // COMPAT(dioxus-native): CSS @font-face with dioxus:// URLs is
-            // confirmed supported — Blitz's net.rs fetch_font_face triggers
-            // parley FontContext.collection.register_fonts() on success.
-            // The dioxus:// scheme is handled by DioxusNativeNetProvider which
-            // delegates to dioxus_asset_resolver::native::serve_asset.
-            "@font-face {{
-                font-family: 'Atkinson Hyperlegible Next';
-                src: url('dioxus:///assets/fonts/AtkinsonHyperlegibleNext-VF.ttf')
-                     format('truetype');
-                font-weight: 100 900;
-                font-style: normal;
-            }}"
+            r#type: "text/css",
+            "{loki_fonts::ui_face_css()}"
         }
 
         // Bundled fallback fonts for the Android CPU renderer — Carlito (Calibri),

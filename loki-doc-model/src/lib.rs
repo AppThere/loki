@@ -130,6 +130,7 @@
 //!     styles,
 //!     sections: vec![section],
 //!     settings: None,
+//!     comments: Vec::new(),
 //!     source: None,
 //! };
 //!

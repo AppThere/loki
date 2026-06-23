@@ -2,13 +2,6 @@
 
 # Tab labels
 ribbon-tab-home = Home
-ribbon-tab-insert = Insert
-ribbon-tab-format = Format
-ribbon-tab-review = Review
-ribbon-tab-view = View
-
-# Placeholder content (shown while ribbon is not yet implemented)
-ribbon-coming-soon = Ribbon content coming soon
 
 # Inline formatting group (Home tab)
 ribbon-group-inline = Inline formatting
@@ -28,6 +21,7 @@ ribbon-redo-aria = Redo (Ctrl+Y)
 ribbon-group-document = Document
 ribbon-save-aria = Save (Ctrl+S)
 ribbon-save-as-aria = Save As…
+ribbon-save-as-template-aria = Save as Template…
 
 # Styles group (Home tab)
 ribbon-group-styles = Styles

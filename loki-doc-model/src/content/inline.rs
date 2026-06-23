@@ -184,6 +184,11 @@ pub enum Inline {
     LineBreak,
 
     /// Mathematical content. Corresponds to pandoc `Math`.
+    ///
+    /// The string holds a self-contained MathML `<math>…</math>` document —
+    /// the W3C interchange standard and ODF's native math representation.
+    /// OOXML import/export converts to and from OMML (`m:oMath`); ODF embeds
+    /// the MathML directly as a formula object.
     Math(MathType, String),
 
     /// Raw inline in a specific format. Corresponds to pandoc `RawInline`.

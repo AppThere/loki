@@ -115,6 +115,18 @@ impl ExportCollector {
         id
     }
 
+    /// Reserves the next free relationship ID without attaching it to a part.
+    ///
+    /// Used for document-level relationships (e.g. `settings.xml`) that are
+    /// wired up during package assembly rather than while serializing
+    /// `word/document.xml`. Reserving from the same counter guarantees the ID
+    /// does not collide with header/footer, media, or hyperlink relationships.
+    pub fn reserve_r_id(&mut self) -> String {
+        let r_id = format!("rId{}", self.next_r_id);
+        self.next_r_id += 1;
+        r_id
+    }
+
     /// Registers a header or footer and returns its assigned rId.
     pub fn add_header_footer(&mut self, blocks: Vec<Block>, is_header: bool) -> String {
         let n = self.headers_footers.len() + 1;

@@ -11,14 +11,15 @@ use quick_xml::events::Event;
 
 use crate::docx::model::document::{DocxBodyChild, DocxDocument};
 use crate::docx::model::paragraph::{
-    DocxBorderEdge, DocxDrawing, DocxHdrFtrRef, DocxHyperlink, DocxInd, DocxNumPr, DocxPBdr,
-    DocxPPr, DocxParaChild, DocxParagraph, DocxPgMar, DocxPgSz, DocxRFonts, DocxRPr, DocxRun,
-    DocxRunChild, DocxSectPr, DocxSpacing, DocxTab,
+    DocxBorderEdge, DocxCols, DocxDrawing, DocxHdrFtrRef, DocxHyperlink, DocxInd, DocxNumPr,
+    DocxPBdr, DocxPPr, DocxParaChild, DocxParagraph, DocxPgMar, DocxPgSz, DocxRFonts, DocxRPr,
+    DocxRun, DocxRunChild, DocxSectPr, DocxSpacing, DocxTab,
 };
 use crate::docx::model::styles::{
     DocxCellMargins, DocxTableCell, DocxTableModel, DocxTableRow, DocxTblPr, DocxTblWidth,
     DocxTcBorders, DocxTcPr, DocxTextDirection, DocxTrPr, DocxVAlign,
 };
+use crate::docx::reader::runs::{parse_fld_simple_runs, parse_hyperlink_runs, parse_tracked_runs};
 use crate::docx::reader::util::{attr_val, local_name, parse_emu, toggle_prop};
 use crate::error::{OoxmlError, OoxmlResult};
 
@@ -113,6 +114,14 @@ pub(crate) fn parse_paragraph(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxPar
                         para.children
                             .push(DocxParaChild::BookmarkStart { id, name });
                     }
+                    b"commentRangeStart" => {
+                        let id = attr_val(e, b"id").unwrap_or_default();
+                        para.children.push(DocxParaChild::CommentRangeStart { id });
+                    }
+                    b"commentRangeEnd" => {
+                        let id = attr_val(e, b"id").unwrap_or_default();
+                        para.children.push(DocxParaChild::CommentRangeEnd { id });
+                    }
                     b"del" => {
                         depth -= 1;
                         let runs = parse_tracked_runs(reader, b"del")?;
@@ -123,6 +132,20 @@ pub(crate) fn parse_paragraph(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxPar
                         depth -= 1;
                         let runs = parse_tracked_runs(reader, b"ins")?;
                         para.children.push(DocxParaChild::TrackIns(runs));
+                        continue;
+                    }
+                    b"fldSimple" => {
+                        depth -= 1;
+                        let instr = attr_val(e, b"instr").unwrap_or_default();
+                        let runs = parse_fld_simple_runs(reader)?;
+                        para.children
+                            .push(DocxParaChild::SimpleField { instr, runs });
+                        continue;
+                    }
+                    b"oMath" | b"oMathPara" => {
+                        depth -= 1; // read_math consumes the element's end tag
+                        let (mathml, display) = crate::docx::omml::read_math(reader, e)?;
+                        para.children.push(DocxParaChild::Math { mathml, display });
                         continue;
                     }
                     _ => {}
@@ -138,6 +161,22 @@ pub(crate) fn parse_paragraph(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxPar
                 b"bookmarkEnd" => {
                     let id = attr_val(e, b"id").unwrap_or_default();
                     para.children.push(DocxParaChild::BookmarkEnd { id });
+                }
+                b"commentRangeStart" => {
+                    let id = attr_val(e, b"id").unwrap_or_default();
+                    para.children.push(DocxParaChild::CommentRangeStart { id });
+                }
+                b"commentRangeEnd" => {
+                    let id = attr_val(e, b"id").unwrap_or_default();
+                    para.children.push(DocxParaChild::CommentRangeEnd { id });
+                }
+                b"fldSimple" => {
+                    // Self-closing simple field: instruction only, no cached result.
+                    let instr = attr_val(e, b"instr").unwrap_or_default();
+                    para.children.push(DocxParaChild::SimpleField {
+                        instr,
+                        runs: Vec::new(),
+                    });
                 }
                 _ => {}
             },
@@ -372,7 +411,7 @@ pub(crate) fn parse_rpr_element(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxR
 /// Parses a `w:r` element. Called after the Start("r") event is consumed.
 // Function body is a single large match over XML events; splitting would reduce readability.
 #[allow(clippy::too_many_lines)]
-fn parse_run(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxRun> {
+pub(crate) fn parse_run(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxRun> {
     let mut run = DocxRun::default();
     let mut buf = Vec::new();
 
@@ -476,58 +515,6 @@ fn parse_run(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxRun> {
         buf.clear();
     }
     Ok(run)
-}
-
-/// Parses the runs inside a `w:hyperlink` element.
-fn parse_hyperlink_runs(reader: &mut Reader<&[u8]>) -> OoxmlResult<Vec<DocxRun>> {
-    let mut runs = Vec::new();
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) if local_name(e.local_name().as_ref()) == b"r" => {
-                runs.push(parse_run(reader)?);
-            }
-            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"hyperlink" => {
-                break;
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OoxmlError::Xml {
-                    part: "word/document.xml".into(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-    Ok(runs)
-}
-
-/// Consumes runs inside a `w:del` or `w:ins` element.
-fn parse_tracked_runs(reader: &mut Reader<&[u8]>, end_tag: &[u8]) -> OoxmlResult<Vec<DocxRun>> {
-    let mut runs = Vec::new();
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) if local_name(e.local_name().as_ref()) == b"r" => {
-                runs.push(parse_run(reader)?);
-            }
-            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == end_tag => {
-                break;
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OoxmlError::Xml {
-                    part: "word/document.xml".into(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-    Ok(runs)
 }
 
 /// Parses a `w:pBdr` element. Called after Start("pBdr") is consumed.
@@ -667,6 +654,18 @@ pub(crate) fn parse_sect_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxSectP
                         // Presence enables first-page variant; w:val="0" disables.
                         sect.title_page = attr_val(e, b"val")
                             .is_none_or(|v| !matches!(v.as_str(), "0" | "false" | "off"));
+                    }
+                    b"cols" => {
+                        sect.cols = Some(DocxCols {
+                            num: attr_val(e, b"num")
+                                .and_then(|v| v.parse().ok())
+                                .unwrap_or(1),
+                            space: attr_val(e, b"space")
+                                .and_then(|v| v.parse().ok())
+                                .unwrap_or(720),
+                            sep: attr_val(e, b"sep")
+                                .is_some_and(|v| !matches!(v.as_str(), "0" | "false" | "off")),
+                        });
                     }
                     _ => {}
                 }

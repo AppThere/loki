@@ -115,7 +115,93 @@ impl DublinCoreMeta {
     pub fn dc_type_or_default(&self) -> &str {
         self.dc_type.as_deref().unwrap_or(DCMI_TYPE_TEXT)
     }
+
+    /// Flattens the set fields into `(name, value)` pairs under reserved
+    /// `dcmi:` names, in a stable order.
+    ///
+    /// This is the canonical flattening used by formats that have no native
+    /// element for these fields: OOXML carries them as `docProps/custom.xml`
+    /// custom properties, ODF as `meta:user-defined` entries. Repeatable
+    /// `contributors` become `dcmi:contributor.{i}`. The inverse is
+    /// [`Self::from_named_pairs`].
+    #[must_use]
+    pub fn to_named_pairs(&self) -> Vec<(String, String)> {
+        let mut pairs = Vec::new();
+        let mut push = |name: &str, value: &Option<String>| {
+            if let Some(v) = value {
+                pairs.push((name.to_string(), v.clone()));
+            }
+        };
+        push(DC_PUBLISHER, &self.publisher);
+        push(DC_RIGHTS, &self.rights);
+        push(DC_LICENSE, &self.license);
+        push(DC_IDENTIFIER, &self.identifier);
+        push(DC_IDENTIFIER_SCHEME, &self.identifier_scheme);
+        push(DC_TYPE, &self.dc_type);
+        push(DC_FORMAT, &self.format);
+        push(DC_SOURCE, &self.source);
+        push(DC_RELATION, &self.relation);
+        push(DC_COVERAGE, &self.coverage);
+        push(DC_ISSUED, &self.issued);
+        push(DC_BIBLIOGRAPHIC_CITATION, &self.bibliographic_citation);
+        for (i, c) in self.contributors.iter().enumerate() {
+            pairs.push((format!("{DC_CONTRIBUTOR_PREFIX}{i}"), c.clone()));
+        }
+        pairs
+    }
+
+    /// Rebuilds the fields from `(name, value)` pairs produced by
+    /// [`Self::to_named_pairs`]. Unknown names are ignored; `contributors`
+    /// are ordered by their numeric suffix.
+    #[must_use]
+    pub fn from_named_pairs(pairs: &[(String, String)]) -> Self {
+        let mut dc = Self::default();
+        let mut contributors: Vec<(usize, String)> = Vec::new();
+        for (name, value) in pairs {
+            let v = || Some(value.clone());
+            match name.as_str() {
+                DC_PUBLISHER => dc.publisher = v(),
+                DC_RIGHTS => dc.rights = v(),
+                DC_LICENSE => dc.license = v(),
+                DC_IDENTIFIER => dc.identifier = v(),
+                DC_IDENTIFIER_SCHEME => dc.identifier_scheme = v(),
+                DC_TYPE => dc.dc_type = v(),
+                DC_FORMAT => dc.format = v(),
+                DC_SOURCE => dc.source = v(),
+                DC_RELATION => dc.relation = v(),
+                DC_COVERAGE => dc.coverage = v(),
+                DC_ISSUED => dc.issued = v(),
+                DC_BIBLIOGRAPHIC_CITATION => dc.bibliographic_citation = v(),
+                other => {
+                    if let Some(idx) = other
+                        .strip_prefix(DC_CONTRIBUTOR_PREFIX)
+                        .and_then(|n| n.parse::<usize>().ok())
+                    {
+                        contributors.push((idx, value.clone()));
+                    }
+                }
+            }
+        }
+        contributors.sort_by_key(|(i, _)| *i);
+        dc.contributors = contributors.into_iter().map(|(_, c)| c).collect();
+        dc
+    }
 }
+
+// Reserved `dcmi:` property names shared by the OOXML and ODF metadata writers.
+const DC_PUBLISHER: &str = "dcmi:publisher";
+const DC_RIGHTS: &str = "dcmi:rights";
+const DC_LICENSE: &str = "dcmi:license";
+const DC_IDENTIFIER: &str = "dcmi:identifier";
+const DC_IDENTIFIER_SCHEME: &str = "dcmi:identifier-scheme";
+const DC_TYPE: &str = "dcmi:type";
+const DC_FORMAT: &str = "dcmi:format";
+const DC_SOURCE: &str = "dcmi:source";
+const DC_RELATION: &str = "dcmi:relation";
+const DC_COVERAGE: &str = "dcmi:coverage";
+const DC_ISSUED: &str = "dcmi:issued";
+const DC_BIBLIOGRAPHIC_CITATION: &str = "dcmi:bibliographic-citation";
+const DC_CONTRIBUTOR_PREFIX: &str = "dcmi:contributor.";
 
 #[cfg(test)]
 mod tests {

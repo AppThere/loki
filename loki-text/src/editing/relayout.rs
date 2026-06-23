@@ -51,8 +51,16 @@ pub(crate) fn relayout_paginated(
 }
 
 /// Page count and CSS-pixel page dimensions (points × 96/72) for a layout.
+///
+/// When any page carries comment-panel items, the width is widened by the
+/// comment gutter so the panel to the right of the page is reachable.
 pub(crate) fn page_metrics(layout: &PaginatedLayout) -> (usize, f32, f32) {
-    let w = layout.page_size.width * (96.0 / 72.0);
+    let has_comments = layout.pages.iter().any(|p| !p.comment_items.is_empty());
+    let mut width_pt = layout.page_size.width;
+    if has_comments {
+        width_pt += loki_layout::COMMENT_GUTTER_WIDTH;
+    }
+    let w = width_pt * (96.0 / 72.0);
     let h = layout.page_size.height * (96.0 / 72.0);
     (layout.pages.len(), w, h)
 }

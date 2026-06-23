@@ -9,16 +9,29 @@ use loki_doc_model::style::catalog::StyleId;
 
 use crate::editing::state::DocumentState;
 
-/// Inserts or replaces a style in the document's style catalog.
-pub(super) fn upsert_catalog_style(doc_state: &Arc<Mutex<DocumentState>>, style: ParagraphStyle) {
-    let Ok(mut state) = doc_state.lock() else {
-        return;
-    };
-    let Some(arc_doc) = state.document.as_mut() else {
-        return;
-    };
-    let doc = Arc::make_mut(arc_doc);
-    doc.styles.paragraph_styles.insert(style.id.clone(), style);
+/// Inserts or replaces a paragraph style in the catalog and persists the result
+/// through the Loro CRDT, committing it as a discrete, undoable transaction.
+///
+/// The catalog is the Loro snapshot's responsibility (see `loro_bridge::styles`),
+/// so the edit is written there rather than mutated in place on `state.document`
+/// — the subsequent `apply_mutation_and_relayout` re-derives the catalog from
+/// Loro. Starting from the current catalog preserves every other style. The
+/// caller refreshes undo bookkeeping via `post_mutation_sync`.
+pub(super) fn commit_style_to_loro(
+    loro: &loro::LoroDoc,
+    doc_state: &Arc<Mutex<DocumentState>>,
+    style: ParagraphStyle,
+) {
+    let mut catalog = doc_state
+        .lock()
+        .ok()
+        .and_then(|s| s.document.as_ref().map(|d| d.styles.clone()))
+        .unwrap_or_default();
+    catalog.paragraph_styles.insert(style.id.clone(), style);
+    if let Err(e) = loki_doc_model::loro_bridge::write_document_styles(loro, &catalog) {
+        tracing::warn!("failed to persist style catalog to Loro: {e}");
+    }
+    loro.commit();
 }
 
 /// Generates a unique id string for a new custom style.
@@ -53,6 +66,21 @@ pub(super) fn get_catalog_style(
         .paragraph_styles
         .get(&StyleId::new(style_id))
         .cloned()
+}
+
+/// Returns the font families available for layout (system + bundled +
+/// document-embedded), sorted, for the style editor's font picker.
+///
+/// Enumerates the editor's shared Fontique collection. Intended to be called
+/// once (memoised) per editor rather than per render.
+pub(super) fn available_font_families(doc_state: &Arc<Mutex<DocumentState>>) -> Vec<String> {
+    let Ok(state) = doc_state.lock() else {
+        return vec![];
+    };
+    let Ok(mut fr) = state.shared_font_resources.lock() else {
+        return vec![];
+    };
+    fr.available_font_families()
 }
 
 /// Returns `(style_id, display_name)` pairs for all catalog styles, sorted by display name.

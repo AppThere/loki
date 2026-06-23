@@ -6,12 +6,15 @@
 //! [`LokiPageSource`] implements [`CustomPaintSource`] so that Blitz's frame
 //! loop drives rendering.  On each frame it:
 //!
-//! 1. Reads the current [`CacheTier`] from the shared [`PageCache`].
-//! 2. Reuses the registered [`TextureHandle`] when tier, document generation,
-//!    and physical size are all unchanged (zero re-render cost).
-//! 3. Otherwise unregisters the old texture, re-renders at the new tier's
-//!    scale via Vello, and registers the fresh texture with Blitz.
-//! 4. Updates the cache to record the new tier assignment.
+//! 1. Reuses the registered [`TextureHandle`] when the document generation,
+//!    physical size, and cursor are all unchanged (zero re-render cost).
+//! 2. Otherwise unregisters the old texture, re-renders via Vello, and
+//!    registers the fresh texture with Blitz.
+//!
+//! Every mounted tile renders at full resolution. Tile virtualization (see
+//! `DocumentView`) only mounts pages within ~one screen of the viewport, so
+//! texture memory is bounded by mounting rather than by a resolution-tiering
+//! cache.
 
 use std::sync::{Arc, Mutex};
 
@@ -19,7 +22,6 @@ use anyrender_vello::wgpu::{
     Extent3d, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor,
 };
 use anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle};
-use appthere_canvas::{CacheTier, PageCache, PageIndex};
 use loki_vello::FontDataCache;
 use vello::{AaConfig, RenderParams, Scene};
 
@@ -34,8 +36,6 @@ static FIRST_TILE_RENDERED: std::sync::atomic::AtomicBool =
 // ── LokiPageSource ────────────────────────────────────────────────────────────
 
 pub(crate) struct LokiPageSource {
-    /// Shared tier-and-dirty metadata for all pages.
-    cache: Arc<Mutex<PageCache<PageIndex>>>,
     /// Document layout + page-size source.
     source: Arc<DocPageSource>,
     /// 0-based page index this source renders.
@@ -53,8 +53,6 @@ pub(crate) struct LokiPageSource {
     font_cache: FontDataCache,
     /// Currently registered Blitz texture handle.
     texture_handle: Option<TextureHandle>,
-    /// Tier at which `texture_handle` was rendered.
-    texture_tier: Option<CacheTier>,
     /// Document generation at which `texture_handle` was rendered.
     texture_generation: u64,
     /// Physical pixel dimensions `(w, h)` of `texture_handle`.
@@ -68,14 +66,12 @@ pub(crate) struct LokiPageSource {
 
 impl LokiPageSource {
     pub(crate) fn new(
-        cache: Arc<Mutex<PageCache<PageIndex>>>,
         source: Arc<DocPageSource>,
         page_index: usize,
         renderer: Arc<Mutex<Option<vello::Renderer>>>,
         cursor_holder: Arc<Mutex<Option<RendererSelection>>>,
     ) -> Self {
         Self {
-            cache,
             source,
             page_index,
             renderer,
@@ -83,7 +79,6 @@ impl LokiPageSource {
             wgpu_queue: None,
             font_cache: FontDataCache::new(),
             texture_handle: None,
-            texture_tier: None,
             texture_generation: 0,
             texture_size: (0, 0),
             cursor_holder,
@@ -115,10 +110,29 @@ impl CustomPaintSource for LokiPageSource {
     fn suspend(&mut self) {
         // Renderer intentionally not dropped on suspend — shared across all page
         // sources; dropped when RendererState is dropped.
+        //
+        // The texture handle is cleared here without unregistering it from the
+        // renderer because suspend() has no CustomPaintCtx. That is safe for the
+        // app-level suspend path (the window renderer is recreated on resume,
+        // dropping every registered texture). Per-source teardown — a tile
+        // scrolling out of the virtualization window — instead goes through
+        // `release` below, which DOES unregister the texture; otherwise each
+        // unmounted page would leak its full-resolution texture (~10+ MB) in the
+        // renderer's registry, growing RAM without bound as the user scrolls.
         self.device = None;
         self.wgpu_queue = None;
         self.texture_handle = None;
-        self.texture_tier = None;
+        self.texture_generation = 0;
+        self.texture_size = (0, 0);
+    }
+
+    fn release(&mut self, mut ctx: CustomPaintCtx<'_>) {
+        // The tile is being unregistered while the renderer is still live, so
+        // free the GPU texture this source registered. Without this the texture
+        // outlives the source in the renderer's registry (see suspend()).
+        if let Some(handle) = self.texture_handle.take() {
+            ctx.unregister_texture(handle);
+        }
         self.texture_generation = 0;
         self.texture_size = (0, 0);
     }
@@ -134,30 +148,22 @@ impl CustomPaintSource for LokiPageSource {
             return None;
         };
 
-        // Step 1: every mounted tile renders at full resolution.
-        //
-        // Tile virtualization (see DocumentView) only mounts pages within ~one
-        // screen of the viewport, so the resolution-tiering that downsampled
-        // far pages is now both redundant (memory is bounded by mounting) and
-        // wrong (it tiered off a scroll position the renderer never receives,
-        // downsampling the very page being viewed/edited). Always render Hot.
-        let current_tier = CacheTier::Hot;
+        // Step 1: target physical texture dimensions. Every mounted tile renders
+        // at full resolution — the canvas's own physical pixel size — so the
+        // texture is 1:1 with what Blitz composites; virtualization bounds memory
+        // by limiting which pages mount.
+        let w_phys = width.max(1);
+        let h_phys = height.max(1);
 
-        // Step 2: compute target physical texture dimensions.
-        let scale_factor = current_tier.scale_factor();
-        let w_phys = ((width as f32 * scale_factor).ceil() as u32).max(1);
-        let h_phys = ((height as f32 * scale_factor).ceil() as u32).max(1);
-
-        // Step 3: read current document generation.
+        // Step 2: read current document generation.
         let current_generation = self.source.current_generation();
 
         // Read the current caret + selection from the shared holder.
         let current_sel: Option<RendererSelection> =
             self.cursor_holder.lock().ok().and_then(|g| *g);
 
-        // Step 4: reuse guard — return existing handle when nothing changed.
+        // Step 3: reuse guard — return existing handle when nothing changed.
         if self.texture_handle.is_some()
-            && self.texture_tier == Some(current_tier)
             && self.texture_generation == current_generation
             && self.texture_size == (w_phys, h_phys)
             && self.cursor_at_render == current_sel
@@ -165,7 +171,7 @@ impl CustomPaintSource for LokiPageSource {
             return self.texture_handle.clone();
         }
 
-        // Step 5: unregister stale texture before reallocating.
+        // Step 4: unregister stale texture before reallocating.
         if let Some(old) = self.texture_handle.take() {
             ctx.unregister_texture(old);
         }
@@ -191,8 +197,8 @@ impl CustomPaintSource for LokiPageSource {
         });
         let view = texture.create_view(&TextureViewDescriptor::default());
 
-        // Step 7: build Vello scene for this page.
-        let render_scale = scale as f32 * scale_factor * (96.0 / 72.0);
+        // Step 6: build Vello scene for this page.
+        let render_scale = scale as f32 * (96.0 / 72.0);
 
         // Compute cursor paint data in a scoped block so the layout guard is
         // dropped before the second layout_for_generation call below.
@@ -269,7 +275,6 @@ impl CustomPaintSource for LokiPageSource {
         if let Err(e) = renderer.render_to_texture(device, queue, &scene, &view, &params) {
             tracing::error!(
                 page = self.page_index,
-                tier = ?current_tier,
                 error = %e,
                 "LokiPageSource: render_to_texture failed",
             );
@@ -290,24 +295,17 @@ impl CustomPaintSource for LokiPageSource {
             );
         }
 
-        // Step 9: register with Blitz and cache the handle.
+        // Step 7: register with Blitz and record the reuse-guard state.
         let handle = ctx.register_texture(texture);
         self.texture_handle = Some(handle.clone());
-        self.texture_tier = Some(current_tier);
         self.texture_generation = current_generation;
         self.texture_size = (w_phys, h_phys);
         self.cursor_at_render = current_sel;
 
-        // Step 10: update cache metadata.
-        if let Ok(mut g) = self.cache.lock() {
-            g.insert(PageIndex(self.page_index as u32), current_tier);
-        }
-
         tracing::debug!(
-            page  = self.page_index,
-            tier  = ?current_tier,
-            w     = w_phys,
-            h     = h_phys,
+            page = self.page_index,
+            w = w_phys,
+            h = h_phys,
             "LokiPageSource: rendered",
         );
 

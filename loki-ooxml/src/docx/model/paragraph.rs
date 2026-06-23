@@ -5,7 +5,7 @@
 //!
 //! Mirrors ECMA-376 §17.3.1 (paragraphs) and §17.3.2 (runs).
 
-pub use super::section::{DocxHdrFtrRef, DocxPgMar, DocxPgSz, DocxSectPr};
+pub use super::section::{DocxCols, DocxHdrFtrRef, DocxPgMar, DocxPgSz, DocxSectPr};
 
 /// Intermediate model for `w:p` (ECMA-376 §17.3.1.22).
 #[derive(Debug, Clone, Default)]
@@ -33,6 +33,32 @@ pub enum DocxParaChild {
     TrackDel(Vec<DocxRun>),
     /// A `w:ins` tracked insertion (ECMA-376 §17.13.5.16).
     TrackIns(Vec<DocxRun>),
+    /// A `w:fldSimple` simple field (ECMA-376 §17.16.19): the `@w:instr`
+    /// instruction with the cached result carried as child runs.
+    SimpleField {
+        /// The field instruction string from `@w:instr`.
+        instr: String,
+        /// The cached result content (child runs).
+        runs: Vec<DocxRun>,
+    },
+    /// A `w:commentRangeStart` element (ECMA-376 §17.13.4.4).
+    CommentRangeStart {
+        /// The `@w:id` identifying the comment.
+        id: String,
+    },
+    /// A `w:commentRangeEnd` element (ECMA-376 §17.13.4.3).
+    CommentRangeEnd {
+        /// The `@w:id` identifying the comment.
+        id: String,
+    },
+    /// An OMML math zone (`m:oMath` inline or `m:oMathPara` display), already
+    /// converted to a `MathML` string. ECMA-376 §22.1.
+    Math {
+        /// The math content as a `MathML` `<math>…</math>` string.
+        mathml: String,
+        /// `true` when the source was `m:oMathPara` (display/block math).
+        display: bool,
+    },
 }
 
 /// Intermediate model for `w:pPr` (ECMA-376 §17.3.1.26).

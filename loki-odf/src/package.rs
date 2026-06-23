@@ -20,7 +20,7 @@ use zip::ZipArchive;
 
 use crate::constants::{
     ENTRY_CONTENT, ENTRY_MANIFEST, ENTRY_META, ENTRY_MIMETYPE, ENTRY_SETTINGS, ENTRY_STYLES,
-    MIME_ODS, MIME_ODT,
+    MIME_ODS, MIME_ODT, MIME_OTS, MIME_OTT,
 };
 use crate::error::{OdfError, OdfResult};
 use crate::limits::read_entry_capped;
@@ -58,6 +58,12 @@ pub struct OdfPackage {
     /// The key is the full ZIP entry name (e.g. `"Pictures/image1.png"`).
     /// The media type is inferred from the file extension.
     pub images: HashMap<String, (String, Vec<u8>)>,
+
+    /// Embedded object sub-documents (e.g. formula objects): object directory
+    /// → raw `content.xml` bytes. The key is the directory path without a
+    /// trailing slash (e.g. `"Object 1"`), matching a `draw:object`'s
+    /// `xlink:href` once `"./"` is stripped. ODF 1.3 §3.16.
+    pub objects: HashMap<String, Vec<u8>>,
 
     /// `true` if the `office:version` attribute was absent in `content.xml`.
     ///
@@ -120,6 +126,9 @@ impl OdfPackage {
         // ── 6. Collect images from Pictures/ ─────────────────────────────
         let images = collect_images(&mut archive, &mut total_decompressed)?;
 
+        // ── 6b. Collect embedded object sub-documents (e.g. formulas) ─────
+        let objects = collect_objects(&mut archive, &mut total_decompressed)?;
+
         // ── 7. Detect version from content.xml ────────────────────────────
         let (version, version_was_absent) = Self::detect_version(&content)?;
 
@@ -131,6 +140,7 @@ impl OdfPackage {
             meta,
             settings,
             images,
+            objects,
             version_was_absent,
         })
     }
@@ -246,13 +256,19 @@ fn validate_mimetype<R: Read + Seek>(
         reason: "mimetype entry contains invalid UTF-8".into(),
     })?;
 
-    if mimetype_str != MIME_ODT && mimetype_str != MIME_ODS {
+    // Accept document packages (ODT/ODS) and their template variants
+    // (OTT/OTS). A template is structurally identical to its document form; the
+    // editor opens it as a new untitled document.
+    if !matches!(
+        mimetype_str.as_str(),
+        MIME_ODT | MIME_ODS | MIME_OTT | MIME_OTS
+    ) {
         return Err(OdfError::MalformedElement {
             element: ENTRY_MIMETYPE.into(),
             part: ENTRY_MIMETYPE.into(),
             reason: format!(
-                "mimetype must contain either {MIME_ODT:?} or {MIME_ODS:?} with no trailing newline, \
-                 found {mimetype_str:?}"
+                "mimetype must contain one of {MIME_ODT:?}, {MIME_ODS:?}, {MIME_OTT:?}, or \
+                 {MIME_OTS:?} with no trailing newline, found {mimetype_str:?}"
             ),
         });
     }
@@ -330,6 +346,36 @@ fn collect_images<R: Read + Seek>(
     }
 
     Ok(images)
+}
+
+/// Walk all ZIP entries, collecting embedded object sub-documents — any
+/// `<dir>/content.xml` other than the package root `content.xml`. The key is
+/// the directory path (no trailing slash). ODF 1.3 §3.16.
+fn collect_objects<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    total_decompressed: &mut u64,
+) -> OdfResult<HashMap<String, Vec<u8>>> {
+    let mut objects = HashMap::new();
+
+    let names: Vec<String> = (0..archive.len())
+        .filter_map(|i| archive.by_index(i).ok().map(|e| e.name().to_owned()))
+        .filter(|n| n.ends_with("/content.xml"))
+        .collect();
+
+    for name in names {
+        let Some(dir) = name.strip_suffix("/content.xml") else {
+            continue;
+        };
+        if dir.is_empty() {
+            continue;
+        }
+        if let Ok(mut entry) = archive.by_name(&name) {
+            let bytes = read_entry_capped(&mut entry, &name, total_decompressed)?;
+            objects.insert(dir.to_string(), bytes);
+        }
+    }
+
+    Ok(objects)
 }
 
 /// Infer a media type from a file extension (case-insensitive).

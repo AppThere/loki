@@ -15,7 +15,9 @@ xlsx = []
 pptx = ["dep:loki-graphics", "dep:loki-presentation-model"]
 
 [dependencies]
-loki-opc       = { path = "../loki-opc" }
+# serde: enables the real core-properties (docProps/core.xml) reader/writer
+# in loki-opc (otherwise both are no-op stubs). Required for metadata import/export.
+loki-opc       = { path = "../loki-opc", features = ["serde"] }
 loki-doc-model = { path = "../loki-doc-model" }
 loki-sheet-model = { path = "../loki-sheet-model" }
 loki-primitives = { path = "../loki-primitives" }
@@ -38,9 +40,13 @@ features = ["std"]
 loki-opc    = { path = "../loki-opc" }
 loki-layout = { path = "../loki-layout" }
 zip = { version = "2", default-features = false, features = ["deflate"] }
-parley = "0.8"
-read-fonts = "0.37.0"
+parley = "0.10"
+read-fonts = "0.40"
 quick-xml = { version = "0.36" }
+# The PPTX round-trip integration test (gated on the `pptx` feature) builds a
+# presentation from these crates directly.
+loki-presentation-model = { path = "../loki-presentation-model" }
+loki-graphics = { path = "../loki-graphics", features = ["serde"] }
 
 [package.metadata.docs.rs]
 all-features = true

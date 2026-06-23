@@ -20,5 +20,11 @@ version = "0.4"
 default-features = false
 features = ["std", "clock"]
 
+[dev-dependencies]
+# Integration tests re-open the exported OCF ZIP and assert that each XML part
+# is well-formed, so they need a ZIP reader and an XML parser of their own.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+quick-xml = "0.36"
+
 [package.metadata.docs.rs]
 all-features = true

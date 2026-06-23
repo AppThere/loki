@@ -126,13 +126,43 @@ When adding `#[allow]` to any file:
 These files existed before the ceiling convention was established and have not
 yet been split. Do not add new code to them without splitting first.
 
+A 2026-06-21 audit found **43 production files** over the ceiling (16 over 600
+lines). The full list and a proposed split strategy live in
+[docs/audit-2026-06.md](docs/audit-2026-06.md) (finding Q-1); the worst
+offenders are below. This is a dedicated split-pass backlog, not a per-change
+blocker — but do not *grow* these files or add new ones over the ceiling.
+
+The split pass is **in progress** — **10 of 43 files done** (≈33 remain). Two
+techniques:
+1. *Inline-test extraction* (safest, no production-code change): move a file's
+   `#[cfg(test)] mod tests { … }` into a sibling `<name>_tests.rs` referenced via
+   `#[cfg(test)] #[path = "<name>_tests.rs"] mod tests;`. Done 2026-06-21 for
+   `block.rs`, `docx/mapper/{paragraph,numbering,mod,table}.rs`, `odt/import.rs`,
+   `odt/mapper/lists.rs`, `layout/result.rs`, `renderer/render_layout.rs` — each
+   was over the ceiling only because of a large inline test module.
+2. *Directory split*: convert `foo.rs` → a `foo/` directory with section-cohesive
+   submodules (each starting `use super::*;`), re-export the public entry points
+   from `foo/mod.rs`, and move the tests via the same `#[path]` idiom. Done for
+   `odt/mapper/props.rs` → `odt/mapper/props/` (worked example).
+
+(Test files are exempt from the production-line count.)
+
 | File | Current lines | Priority |
 |---|---|---|
-| `loki-text/src/components/document_source.rs` | 1117 | High |
-| `loki-text/src/routes/editor/editor_inner.rs` | ~945 | High |
-| `loki-doc-model/src/loro_bridge/inlines.rs` | ~280 | Low |
+| `loki-layout/src/flow.rs` | 1612 | High |
+| `loki-odf/src/odt/reader/styles.rs` | 1441 | High |
+| `loki-odf/src/odt/reader/document.rs` | 1428 | High |
+| `loki-layout/src/para.rs` | 1278 | High |
+| `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1241 | High |
+| `loki-ooxml/src/docx/write/document.rs` | 1169 | High |
+| `loki-ooxml/src/docx/reader/document.rs` | 1126 | High |
+| `loki-odf/src/odt/mapper/document.rs` | 1094 | High |
+| `loki-text/src/routes/editor/editor_inner.rs` | 968 | High |
+| … 24 more (300–600 lines) — see the audit (10 files split 2026-06-21) | | |
 
-(`read.rs` was split into `read.rs` + `props_read.rs`; both are now under 300 lines.)
+(`read.rs` was split into `read.rs` + `props_read.rs`; both are now under 300
+lines. `loro_bridge/inlines.rs` is now 219 lines, under the ceiling.
+`loki-text/src/components/document_source.rs` no longer exists.)
 
 ## Known tech debt — Loro bridge round-trip gaps
 
@@ -157,12 +187,16 @@ The workspace is a set of focused crates (one responsibility each). Key groups:
 - **Formats (one crate per family):**
   - `loki-opc` — OPC/ZIP container shared by OOXML/ODF.
   - `loki-ooxml` — DOCX/XLSX import + DOCX export.
-  - `loki-odf` — ODT/ODS import + ODT/ODS export.
+  - `loki-odf` — ODT/ODS import + ODT/ODS export. ODT export (`odt/write/`)
+    writes `content.xml` / `styles.xml` / `meta.xml`: paragraphs, headings,
+    styled paragraphs, lists, tables, inline formatting, the named style
+    catalog, page geometry, and metadata.
   - `loki-pdf` — **PDF/X** export (X-1a/X-3/X-4) via `pdf-writer`; reuses
     `loki-layout` for positioning, embeds fonts + images (CMYK).
   - `loki-epub` — **EPUB 3.3** export (XHTML + OCF ZIP).
 - **Layout & rendering:** `loki-layout` (renderer-agnostic, Parley-based),
-  `loki-vello` / `loki-renderer` / `loki-render-cache` (GPU paint + tiering).
+  `loki-vello` / `loki-renderer` / `loki-render-cache` (GPU paint; per-page
+  tiles bounded by viewport virtualization).
 - **UI & apps:** `appthere-ui` (shared design system), `appthere-canvas`,
   `loki-i18n`, `loki-fonts`, and the binaries `loki-text` (word processor —
   the mature app), `loki-spreadsheet`, `loki-presentation`.
