@@ -394,6 +394,7 @@ fn char_props_to_style_span(props: &CharProps, range: Range<usize>) -> StyleSpan
         word_spacing: props.word_spacing.map(pts_to_f32), // gap #22
         shadow: props.shadow.unwrap_or(false),            // gap #24
         link_url: None, // set by walk_inlines when inside Inline::Link (gap #11)
+        math: None,     // set by walk_inlines for Inline::Math placeholders
     }
 }
 
@@ -727,8 +728,17 @@ fn walk_inlines(
                     blocks: blocks.clone(),
                 });
             }
-            // Math, RawInline, Comment, Bookmark, and any
-            // future #[non_exhaustive] variants are not text runs — skip.
+            // Math (gap): record an empty-range placeholder span carrying the
+            // MathML; `layout_paragraph` typesets it and places it inline via a
+            // Parley inline box. No text is emitted into `buf`.
+            Inline::Math(_, mathml) => {
+                let at = buf.len();
+                let mut span = char_props_to_style_span(effective, at..at);
+                span.math = Some(std::sync::Arc::from(mathml.as_str()));
+                spans.push(span);
+            }
+            // RawInline, Comment, Bookmark, and any future #[non_exhaustive]
+            // variants are not text runs — skip.
             _ => {}
         }
     }

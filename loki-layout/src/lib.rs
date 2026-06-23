@@ -30,6 +30,7 @@ pub mod font;
 pub mod geometry;
 pub mod incremental;
 pub mod items;
+mod math;
 pub mod mode;
 pub mod para;
 mod para_cache;

@@ -46,10 +46,74 @@ fn single_span(text: &str, font_size: f32) -> StyleSpan {
         word_spacing: None,
         shadow: false,
         link_url: None,
+        math: None,
     }
 }
 
+/// A math placeholder span (empty range carrying MathML) at byte `at`.
+fn math_span(at: usize, mathml: &str) -> StyleSpan {
+    let mut s = single_span("", 12.0);
+    s.range = at..at;
+    s.math = Some(std::sync::Arc::from(mathml));
+    s
+}
+
 // ── tests ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fn inline_math_emits_typeset_items() {
+    const NS: &str = "http://www.w3.org/1998/Math/MathML";
+    let mut r = test_resources();
+    let text = "x = ";
+    let mathml = format!("<math xmlns=\"{NS}\"><mfrac><mn>1</mn><mn>2</mn></mfrac></math>");
+
+    // Baseline: same paragraph without the equation.
+    let plain = [single_span(text, 12.0)];
+    let plain_layout = layout_paragraph(
+        &mut r,
+        text,
+        &plain,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+
+    let spans = [single_span(text, 12.0), math_span(text.len(), &mathml)];
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+
+    // The fraction contributes a bar rule and at least the two numerator/
+    // denominator glyph runs on top of the paragraph's own text runs.
+    let rects = result
+        .items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::FilledRect(_)))
+        .count();
+    let glyph_runs = result
+        .items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::GlyphRun(_)))
+        .count();
+    let plain_runs = plain_layout
+        .items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::GlyphRun(_)))
+        .count();
+
+    assert_eq!(rects, 1, "fraction bar should be drawn");
+    assert!(
+        glyph_runs > plain_runs,
+        "math adds glyph runs beyond the plain text ({glyph_runs} vs {plain_runs})"
+    );
+}
 
 #[test]
 fn plain_paragraph_non_empty() {

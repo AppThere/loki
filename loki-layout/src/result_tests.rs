@@ -51,6 +51,7 @@ fn para(text: &str, block_index: usize, origin: (f32, f32)) -> PageParagraphData
             word_spacing: None,
             shadow: false,
             link_url: None,
+            math: None,
         }],
         &ResolvedParaProps::default(),
         400.0,

@@ -343,6 +343,7 @@ mod tests {
                 word_spacing: None,
                 shadow: false,
                 link_url: None,
+                math: None,
             }],
             &ResolvedParaProps::default(),
             400.0,
@@ -370,6 +371,7 @@ mod tests {
             content_items: vec![],
             header_items: vec![],
             footer_items: vec![],
+            comment_items: vec![],
             header_height: 0.0,
             footer_height: 0.0,
             editing_data: Some(editing_data),
@@ -493,6 +495,7 @@ mod tests {
             word_spacing: None,
             shadow: false,
             link_url: None,
+            math: None,
         };
         let para0 = layout_paragraph(
             &mut resources,
@@ -541,6 +544,7 @@ mod tests {
             content_items: vec![],
             header_items: vec![],
             footer_items: vec![],
+            comment_items: vec![],
             header_height: 0.0,
             footer_height: 0.0,
             editing_data: Some(editing_data),

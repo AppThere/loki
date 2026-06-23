@@ -196,6 +196,12 @@ pub struct StyleSpan {
     /// children. Used to render a visual link hint and (eventually) hit-test
     /// regions. TODO(link-click): interactive hit-testing deferred.
     pub link_url: Option<String>,
+    /// MathML markup for an [`Inline::Math`][loki_doc_model::content::inline::Inline::Math]
+    /// placeholder. When `Some`, this span has an empty `range` marking the
+    /// insertion point of an equation; [`layout_paragraph`] typesets it (see
+    /// [`crate::math`]) and places it inline via a Parley inline box. All other
+    /// span fields supply the base font size / colour for the math.
+    pub math: Option<std::sync::Arc<str>>,
 }
 
 /// Resolved paragraph-level properties passed to [`layout_paragraph`].
@@ -547,6 +553,24 @@ fn next_tab_stop(stops: &[ResolvedTabStop], x: f32, indent_hanging: f32) -> f32 
 
 /// Push paragraph-level defaults and per-span character styles onto `builder`.
 ///
+/// Pushes one Parley inline box per typeset math placeholder, sized to the
+/// equation's intrinsic box so the surrounding text flows around it. Ids are
+/// offset by [`MATH_ID_BASE`] so the post-layout pass can recognise them.
+fn push_math_inline_boxes(
+    builder: &mut RangedBuilder<'_, LayoutColor>,
+    math_boxes: &[(usize, crate::math::MathRender)],
+) {
+    for (i, (index, render)) in math_boxes.iter().enumerate() {
+        builder.push_inline_box(InlineBox {
+            id: MATH_ID_BASE + i as u64,
+            kind: InlineBoxKind::InFlow,
+            index: *index,
+            width: render.width,
+            height: render.ascent + render.descent,
+        });
+    }
+}
+
 /// Extracted so the same styles can be applied in both the probe pass (pass 1)
 /// and the final pass (pass 2) of the two-pass tab stop expansion.
 fn push_para_styles(
@@ -571,6 +595,12 @@ fn push_para_styles(
     }
 
     for span in style_spans {
+        // Math placeholder spans have an empty range and no text — they are
+        // typeset separately and reserved via an inline box, so they push no
+        // text styles here.
+        if span.math.is_some() {
+            continue;
+        }
         let r = span.range.clone();
         // For super/subscript (gap #3), reduce font size to 58 %.
         // TODO(super-sub): Parley does not expose baseline-shift.
@@ -690,6 +720,10 @@ fn clean_text_and_spans(
     (clean_text, clean_spans, orig_to_clean, clean_to_orig)
 }
 
+/// Inline-box id base for math placeholders, kept clear of the tab-stop ids
+/// (which count up from 0) so the two can coexist in one paragraph.
+const MATH_ID_BASE: u64 = 1 << 40;
+
 /// Lay out a single paragraph using Parley.
 ///
 /// `text_content` is the flattened text from all inline runs. `style_spans`
@@ -751,13 +785,38 @@ fn layout_paragraph_uncached(
     display_scale: f32,
     preserve_for_editing: bool,
 ) -> ParagraphLayout {
-    let (clean_text, mut clean_spans, orig_to_clean, clean_to_orig) =
+    let (mut clean_text, mut clean_spans, orig_to_clean, clean_to_orig) =
         clean_text_and_spans(text_content, style_spans);
 
     for span in &mut clean_spans {
         if let Some(ref name) = span.font_name {
             span.font_name = Some(resources.resolve_font_name(name));
         }
+    }
+
+    // ── Inline math (gap) ─────────────────────────────────────────────────────
+    // Typeset each `Inline::Math` placeholder span (empty range, `math: Some`)
+    // into its own box. Done before the tab/final passes so its intrinsic size
+    // can size a Parley inline box, reserving inline space for the equation.
+    let mut math_boxes: Vec<(usize, crate::math::MathRender)> = Vec::new();
+    for span in &clean_spans {
+        if let Some(mathml) = &span.math {
+            let render = crate::math::layout_math(
+                resources,
+                mathml,
+                span.font_size,
+                span.color,
+                display_scale,
+            );
+            if render.width > 0.0 {
+                math_boxes.push((span.range.start, render));
+            }
+        }
+    }
+    // A paragraph that contains only math has empty text; give Parley a single
+    // space so it still produces a line to anchor the inline box(es).
+    if clean_text.is_empty() && !math_boxes.is_empty() {
+        clean_text = " ".to_string();
     }
 
     if clean_text.is_empty() {
@@ -838,6 +897,7 @@ fn layout_paragraph_uncached(
                 height: 0.0,
             });
         }
+        push_math_inline_boxes(&mut probe, &math_boxes);
         let mut probe_layout = probe.build(&clean_text);
         probe_layout.break_all_lines(Some(line_w));
 
@@ -880,6 +940,7 @@ fn layout_paragraph_uncached(
             height: 0.0,
         });
     }
+    push_math_inline_boxes(&mut builder, &math_boxes);
 
     let mut layout = builder.build(&clean_text);
     layout.break_all_lines(Some(line_w));
@@ -914,6 +975,21 @@ fn layout_paragraph_uncached(
             para_props.indent_start
         };
         for item in line.items() {
+            // Math inline box: emit the typeset equation's draw items, offset to
+            // the box's resolved position on the line.
+            if let PositionedLayoutItem::InlineBox(pib) = &item {
+                if pib.id >= MATH_ID_BASE {
+                    let mi = (pib.id - MATH_ID_BASE) as usize;
+                    if let Some((_, render)) = math_boxes.get(mi) {
+                        for prim in &render.items {
+                            let mut prim = prim.clone();
+                            prim.translate(pib.x + indent_x, pib.y);
+                            items.push(prim);
+                        }
+                    }
+                }
+                continue;
+            }
             let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
                 continue;
             };

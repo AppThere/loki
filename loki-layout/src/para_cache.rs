@@ -154,6 +154,7 @@ mod tests {
             word_spacing: None,
             shadow: false,
             link_url: None,
+            math: None,
         }
     }
 
