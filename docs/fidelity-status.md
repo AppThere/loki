@@ -113,6 +113,10 @@ When a document requests a font that is unavailable locally, Loki automatically 
 - **Calibri** &rarr; **Carlito**
 - **Cambria** &rarr; **Caladea**
 
+The substitute faces are **embedded in the layout engine and registered lazily** (`loki-layout` `FontResources::resolve_font_name`) the first time a substitute is requested but not already in the font collection. This guarantees the substitution works in headless contexts — **PDF/EPUB export, CI, the ACID harness, and fresh installs before the desktop installer places the fonts system-wide** — not just on a fully-installed desktop. Previously the bundled faces were registered only on Android, so on desktop/headless a requested "Calibri" resolved to itself, was not found, and Parley fell back to a wider font lacking some glyphs (digits rendered as `.notdef`, and list markers / Calibri text reflowed). Tested by `substituted_family_is_actually_available` and `fallback_font_blobs_embedded_on_all_targets` (`loki-layout` `font::tests`).
+
+**Known remaining gap:** a paragraph that requests *no* font inherits the document default (`w:docDefaults`) in Word, but `loki-ooxml` does not yet fold `docDefaults` into the resolved base `CharProps` — so default-font body text imports with `font_name = None` and uses the engine's default face rather than the document's Calibri. This is the residual driver of the ACID page-count drift (TC-DOCX-027) and is tracked separately from marker/substitution resolution.
+
 ### Font Substitution Alerts
 When any font substitutions or missing fonts (such as **Aptos**, which has no open-source metric-compatible fallback) are detected in a document, Loki:
 1. Flags the substitution/missing font status in the document's layout context.

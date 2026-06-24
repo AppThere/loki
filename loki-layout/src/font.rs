@@ -40,6 +40,10 @@ pub struct FontResources {
     /// did not change between layout passes (the common case on a keystroke,
     /// where only one paragraph differs). See [`ParaCache`].
     pub(crate) para_cache: ParaCache,
+    /// Whether the embedded metric-compatible fallback faces (Carlito/Caladea/
+    /// Arimo/Cousine/Tinos) have been registered. Done lazily, at most once, the
+    /// first time a substitute family is requested but found missing.
+    fallbacks_registered: bool,
 }
 
 impl FontResources {
@@ -60,19 +64,12 @@ impl FontResources {
             }
         }
 
-        // Android: the executable-relative `assets/fonts/` path above does not
-        // resolve, so register the bundled metric-compatible fallbacks
-        // (Carlito/Caladea/Arimo/Cousine/Tinos) directly from embedded bytes.
-        // Without this a document's Calibri/Arial/Times text — which
-        // `resolve_font_name` substitutes to those families — would not be found
-        // in the collection and would fall back to an Android system font with
-        // different glyph metrics (e.g. wider digit advances).
-        #[cfg(target_os = "android")]
-        for blob in loki_fonts::fallback_font_blobs() {
-            font_cx
-                .collection
-                .register_fonts(parley::fontique::Blob::from(blob.to_vec()), None);
-        }
+        // The bundled metric-compatible fallback faces (Carlito/Caladea/Arimo/
+        // Cousine/Tinos) are registered lazily by `resolve_font_name` only when a
+        // substitute family is requested but missing — so a properly-installed
+        // desktop (where they are found above, or system-wide) never pays the
+        // registration, while headless/CI/PDF-export and Android still resolve
+        // Calibri/Arial/Times correctly. See `ensure_fallback_fonts_registered`.
         tracing::info!(
             target: "loki_text::open",
             elapsed_ms = started.elapsed().as_secs_f64() * 1000.0,
@@ -85,6 +82,25 @@ impl FontResources {
             font_data_cache: HashMap::new(),
             substitutions: HashMap::new(),
             para_cache: ParaCache::default(),
+            fallbacks_registered: false,
+        }
+    }
+
+    /// Registers the embedded metric-compatible fallback faces into the Fontique
+    /// collection, at most once. Called lazily when a substitute family (e.g.
+    /// Carlito for Calibri) is requested but not already present, so that
+    /// substitution works even when the fonts are not installed system-wide
+    /// (headless export, CI, fresh desktop installs, Android).
+    fn ensure_fallback_fonts_registered(&mut self) {
+        if self.fallbacks_registered {
+            return;
+        }
+        self.fallbacks_registered = true;
+        for blob in loki_fonts::fallback_font_blobs() {
+            let bytes: Vec<u8> = blob.to_vec();
+            self.font_cx
+                .collection
+                .register_fonts(parley::fontique::Blob::from(bytes), None);
         }
     }
 
@@ -151,7 +167,12 @@ impl FontResources {
         };
 
         if let Some(sub_name) = substitute {
-            // Check if the substitute is available.
+            // If the substitute is not already in the collection (e.g. not
+            // installed system-wide), lazily register the embedded faces so the
+            // metric-compatible substitution still works.
+            if self.font_cx.collection.family_id(sub_name).is_none() {
+                self.ensure_fallback_fonts_registered();
+            }
             if self.font_cx.collection.family_id(sub_name).is_some() {
                 self.substitutions
                     .insert(name.to_string(), Some(sub_name.to_string()));
@@ -209,6 +230,34 @@ mod tests {
         } else {
             assert_eq!(resolved, "calibri");
             assert_eq!(r.substitutions.get("calibri"), Some(&None));
+        }
+    }
+
+    // Regression guard: the embedded metric-compatible faces must be available on
+    // every platform (not gated to Android), so headless/CI/PDF-export builds can
+    // register them. Re-gating to `target_os = "android"` would fail this here.
+    #[test]
+    fn fallback_font_blobs_embedded_on_all_targets() {
+        assert!(
+            !loki_fonts::fallback_font_blobs().is_empty(),
+            "metric-compatible fallback faces must be embedded on this target"
+        );
+    }
+
+    // Regression guard for the actual rendering bug: resolving a font with a known
+    // metric-compatible substitute must yield a family that is *actually present*
+    // in the collection. Before lazy fallback registration, "Calibri" resolved to
+    // itself but Carlito was absent on desktop → Parley fell back to a digit-less
+    // font, so list markers and Calibri text rendered `.notdef`.
+    #[test]
+    fn substituted_family_is_actually_available() {
+        let mut r = FontResources::new();
+        for requested in ["Calibri", "Arial", "Times New Roman", "Cambria"] {
+            let resolved = r.resolve_font_name(requested);
+            assert!(
+                r.font_cx.collection.family_id(resolved.as_str()).is_some(),
+                "{requested:?} resolved to {resolved:?}, which is not available in the collection",
+            );
         }
     }
 }

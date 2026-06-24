@@ -20,8 +20,11 @@
 //! document::Style { r#type: "text/css", "{loki_fonts::face_css()}" }
 //! ```
 //!
-//! [`face_css`] returns `""` on desktop and Android GPU builds (no-op).
-//! Font bytes are only embedded on `target_os = "android"`.
+//! The raw face bytes ([`fallback_font_blobs`]) are embedded on **all** platforms
+//! — the layout engine registers them lazily for metric-compatible substitution in
+//! headless/CI/PDF-export contexts as well as Android. Only the `@font-face` CSS
+//! generation ([`face_css`], used by the Android-CPU HTML fallback) is gated to
+//! that target and returns `""` elsewhere.
 
 #![forbid(unsafe_code)]
 
@@ -96,13 +99,12 @@ pub fn face_css() -> &'static str {
 /// Arimo, Cousine, Tinos), for direct registration into the document layout
 /// engine's font collection.
 ///
-/// Android-only: on desktop the layout engine discovers these fonts from the
-/// executable-relative `assets/fonts/` directory, but that path does not resolve
-/// on Android, so the bytes must be registered directly (otherwise a document's
-/// Calibri/Arial/Times text falls back to an Android system font with different
-/// metrics — e.g. wider digit advances). Returns `&[]` would be the desktop
-/// shape, but the function is simply not compiled there.
-#[cfg(target_os = "android")]
+/// Available on **all** platforms. The layout engine registers these lazily, only
+/// when a substitute family (e.g. Carlito for Calibri) is requested but not found
+/// in the collection — so a properly-installed desktop never pays for them, while
+/// headless export, CI, and Android (where the executable-relative `assets/fonts/`
+/// directory does not resolve) still resolve Calibri/Arial/Times to a
+/// metric-compatible face instead of a wider system fallback.
 pub fn fallback_font_blobs() -> &'static [&'static [u8]] {
     imp::fallback_font_blobs()
 }
@@ -120,14 +122,21 @@ mod tests {
     }
 }
 
-// ── Android-only implementation ───────────────────────────────────────────────
-// The entire font-data and CSS-generation block is compiled only on Android so
-// that desktop binaries do not embed ~7 MB of font bytes.
+// ── Bundled font-face implementation ──────────────────────────────────────────
+// The raw font bytes (`FACES` / `fallback_font_blobs`) are compiled on every
+// platform so the layout engine can register metric-compatible substitutes in
+// headless/CI/PDF-export contexts, not just Android. The ~7 MB embed is the cost
+// of guaranteed Word-fidelity substitution. The `@font-face` CSS generation
+// (`face_css_impl`/`build_css`) — used only by the Android-CPU HTML fallback —
+// remains gated to that target.
 
-#[cfg(target_os = "android")]
 mod imp {
+    #[cfg(all(target_os = "android", not(android_gpu)))]
     use std::sync::OnceLock;
 
+    // `family`/`weight`/`style` are read only by the Android CSS builder; on other
+    // targets only `bytes` is used (by `fallback_font_blobs`).
+    #[cfg_attr(not(all(target_os = "android", not(android_gpu))), allow(dead_code))]
     struct Face {
         family: &'static str,
         weight: &'static str, // "100 900" for variable fonts, "400"/"700" for static
@@ -251,21 +260,25 @@ mod imp {
         },
     ];
 
+    #[cfg(all(target_os = "android", not(android_gpu)))]
     static FACE_CSS: OnceLock<String> = OnceLock::new();
 
+    #[cfg(all(target_os = "android", not(android_gpu)))]
     pub(super) fn face_css_impl() -> &'static str {
         FACE_CSS.get_or_init(build_css)
     }
 
     /// Raw bytes of every bundled fallback face, for direct registration into a
-    /// font collection (e.g. Parley's). Used by the document layout engine on
-    /// Android, where the executable-relative asset path that loads these on
-    /// desktop is unavailable.
+    /// font collection (e.g. Parley's). Compiled on every platform; the layout
+    /// engine registers them lazily when a metric-compatible substitute is
+    /// requested but not already present in the collection.
     pub(super) fn fallback_font_blobs() -> &'static [&'static [u8]] {
+        use std::sync::OnceLock;
         static BLOBS: OnceLock<Vec<&'static [u8]>> = OnceLock::new();
         BLOBS.get_or_init(|| FACES.iter().map(|f| f.bytes).collect())
     }
 
+    #[cfg(all(target_os = "android", not(android_gpu)))]
     fn build_css() -> String {
         use std::fmt::Write as _;
 
