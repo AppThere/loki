@@ -348,6 +348,126 @@ fn test_table_non_uniform_columns() {
     );
 }
 
+/// Build an all-fixed-width table: one row, `widths.len()` columns, each a
+/// `ColWidth::Fixed`, with an explicit `TableWidth::Fixed(table_width)`.
+fn fixed_width_table(widths: &[f64], table_width: f32) -> Block {
+    use loki_doc_model::content::table::col::TableWidth;
+    let bg = Some(DocumentColor::Rgb(appthere_color::RgbColor::new(
+        1.0, 0.0, 0.0,
+    )));
+    let cells: Vec<Cell> = widths
+        .iter()
+        .map(|_| make_cell_tall(vec!["x"], bg.clone(), 1))
+        .collect();
+    let col_specs: Vec<ColSpec> = widths
+        .iter()
+        .map(|&w| ColSpec {
+            alignment: ColAlignment::Default,
+            width: ColWidth::Fixed(loki_primitives::units::Points::new(w)),
+        })
+        .collect();
+    Block::Table(Box::new(Table {
+        attr: loki_doc_model::content::attr::NodeAttr::default(),
+        caption: Default::default(),
+        width: Some(TableWidth::Fixed(table_width)),
+        col_specs,
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![Row::new(cells)])],
+        foot: TableFoot::empty(),
+    }))
+}
+
+fn cell_widths(items: &[PositionedItem]) -> Vec<f32> {
+    items
+        .iter()
+        .filter_map(|i| match i {
+            PositionedItem::FilledRect(rect) => Some(rect.rect.width()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// CHARACTERIZATION — locks Loki's *current* behaviour, which **diverges from
+/// Word**. When the sum of explicit fixed column widths exceeds the table
+/// width, Loki scales every column down proportionally to fit. Microsoft Word
+/// with `tblLayout w:type="fixed"` instead honours the fixed widths exactly and
+/// lets the table overflow the page (clipping/overflowing content).
+///
+/// This passes today; the `#[ignore]`d test below encodes the target Word
+/// behaviour and is unblocked once `w:tblLayout` is parsed and carried into the
+/// model. See `docs/fidelity-status.md` (Tables & Images) and the layout audit.
+#[test]
+fn fixed_columns_overflowing_table_width_are_scaled_down_current_behavior() {
+    let mut r = test_resources();
+    // 3 columns × 200pt = 600pt of fixed width, but the table declares 300pt.
+    let table = fixed_width_table(&[200.0, 200.0, 200.0], 300.0);
+    let section = Section {
+        layout: PageLayout::default(),
+        blocks: vec![table],
+        extensions: ExtensionBag::default(),
+    };
+    let (items, _) = flow_pageless(&mut r, &section);
+    let widths = cell_widths(&items);
+    assert_eq!(widths.len(), 3, "expected 3 cell rects");
+    for (i, w) in widths.iter().enumerate() {
+        assert!(
+            (w - 100.0).abs() < 1e-2,
+            "col {i}: current behaviour scales 200pt → 100pt (300/600); got {w}"
+        );
+    }
+}
+
+/// TARGET SPEC (Word fidelity) — fixed column widths must be honoured exactly;
+/// the table is allowed to exceed the declared/table width rather than being
+/// rescaled. Ignored until `w:tblLayout="fixed"` is parsed and threaded through
+/// `loki-ooxml` → `loki-doc-model` → `loki-layout`. Remove `#[ignore]` once the
+/// fixed-layout path exists.
+#[test]
+#[ignore = "needs w:tblLayout plumbing; see fidelity-status Tables & Images"]
+fn fixed_columns_should_be_honored_like_word() {
+    let mut r = test_resources();
+    let table = fixed_width_table(&[200.0, 200.0, 200.0], 300.0);
+    let section = Section {
+        layout: PageLayout::default(),
+        blocks: vec![table],
+        extensions: ExtensionBag::default(),
+    };
+    let (items, _) = flow_pageless(&mut r, &section);
+    let widths = cell_widths(&items);
+    assert_eq!(widths.len(), 3);
+    for (i, w) in widths.iter().enumerate() {
+        assert!(
+            (w - 200.0).abs() < 1e-2,
+            "col {i}: fixed 200pt must be honoured exactly (table overflows); got {w}"
+        );
+    }
+}
+
+/// CHARACTERIZATION — fixed widths that sum to *less* than the table width are
+/// also currently scaled (up) to fill the table. Word's behaviour depends on
+/// `tblLayout` (fixed: leave a gap; autofit: distribute), so this too is a
+/// known divergence pending the `tblLayout` feature.
+#[test]
+fn fixed_columns_underflowing_table_width_are_scaled_up_current_behavior() {
+    let mut r = test_resources();
+    // 2 columns × 50pt = 100pt fixed, table declares 300pt → scale ×3 → 150 each.
+    let table = fixed_width_table(&[50.0, 50.0], 300.0);
+    let section = Section {
+        layout: PageLayout::default(),
+        blocks: vec![table],
+        extensions: ExtensionBag::default(),
+    };
+    let (items, _) = flow_pageless(&mut r, &section);
+    let widths = cell_widths(&items);
+    assert_eq!(widths.len(), 2);
+    for (i, w) in widths.iter().enumerate() {
+        assert!(
+            (w - 150.0).abs() < 1e-2,
+            "col {i}: current behaviour scales 50pt → 150pt (300/100); got {w}"
+        );
+    }
+}
+
 #[test]
 fn test_table_cell_vertical_alignment() {
     use loki_doc_model::content::table::row::CellVerticalAlign;
