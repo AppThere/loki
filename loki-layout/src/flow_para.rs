@@ -149,8 +149,13 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     // stacked above the text.
     let float_plan = super::float_impl::plan_float(&images, state.content_width);
     if let Some((idx, placement)) = &float_plan {
-        resolved.indent_start += placement.indent_start_delta;
-        resolved.indent_end += placement.indent_end_delta;
+        // The banded layout path narrows the lines beside the float and reflows
+        // the rest at full width (one of the deltas is zero — left vs right).
+        resolved.wrap_band = Some(crate::para::WrapBand {
+            inset: placement.indent_start_delta + placement.indent_end_delta,
+            cover_height: placement.height,
+            shift_text: placement.indent_start_delta > 0.0,
+        });
         images.remove(*idx);
     }
 

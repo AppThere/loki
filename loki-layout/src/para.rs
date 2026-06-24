@@ -268,6 +268,26 @@ pub struct ResolvedParaProps {
     /// them. Imported from OOXML `w:framePr`/`w:dropCap` and ODF
     /// `style:drop-cap`.
     pub drop_cap: Option<loki_doc_model::style::props::drop_cap::DropCap>,
+    /// A leading side band the first lines of this paragraph must clear (a
+    /// floating image the text wraps around). Set by the flow engine; the
+    /// banded layout path narrows the lines beside it and reflows the rest at
+    /// full width. `None` for normal paragraphs.
+    pub wrap_band: Option<WrapBand>,
+}
+
+/// A side band (a floating object) the first lines of a paragraph wrap around.
+///
+/// Set on [`ResolvedParaProps::wrap_band`] by the flow engine; consumed by the
+/// banded layout path. Drop caps build their band internally instead.
+#[derive(Debug, Clone, Copy)]
+pub struct WrapBand {
+    /// Horizontal width (points) to clear, including the gap to the text.
+    pub inset: f32,
+    /// Vertical extent (points) the band covers from the paragraph top.
+    pub cover_height: f32,
+    /// `true` when the object is on the left (text shifts right); `false` when
+    /// on the right (text narrows but does not shift).
+    pub shift_text: bool,
 }
 
 impl Default for ResolvedParaProps {
@@ -295,6 +315,7 @@ impl Default for ResolvedParaProps {
             tab_stops: Vec::new(),
             break_long_words: false,
             drop_cap: None,
+            wrap_band: None,
         }
     }
 }
@@ -770,7 +791,7 @@ fn push_math_inline_boxes(
 
 /// Extracted so the same styles can be applied in both the probe pass (pass 1)
 /// and the final pass (pass 2) of the two-pass tab stop expansion.
-fn push_para_styles(
+pub(crate) fn push_para_styles(
     builder: &mut RangedBuilder<'_, LayoutColor>,
     para_props: &ResolvedParaProps,
     style_spans: &[StyleSpan],
@@ -982,6 +1003,43 @@ pub fn layout_paragraph(
     );
     resources.para_cache.put(key, result.clone());
     result
+}
+
+/// Prepends the paragraph's border and background-fill rects to `items` (so
+/// they render beneath the text). The box spans the full indented width and the
+/// paragraph height. Background is inserted last so it sits behind the border.
+fn prepend_para_box(
+    items: &mut Vec<PositionedItem>,
+    para_props: &ResolvedParaProps,
+    width: f32,
+    height: f32,
+) {
+    let bw = width + para_props.indent_start + para_props.indent_end;
+    let has_border = para_props.border_top.is_some()
+        || para_props.border_right.is_some()
+        || para_props.border_bottom.is_some()
+        || para_props.border_left.is_some();
+    if has_border {
+        items.insert(
+            0,
+            PositionedItem::BorderRect(PositionedBorderRect {
+                rect: LayoutRect::new(0.0, 0.0, bw, height),
+                top: para_props.border_top,
+                right: para_props.border_right,
+                bottom: para_props.border_bottom,
+                left: para_props.border_left,
+            }),
+        );
+    }
+    if let Some(bg) = para_props.background_color {
+        items.insert(
+            0,
+            PositionedItem::FilledRect(PositionedRect {
+                rect: LayoutRect::new(0.0, 0.0, bw, height),
+                color: bg,
+            }),
+        );
+    }
 }
 
 /// Lays out a single paragraph using Parley, without consulting or populating
@@ -1236,10 +1294,10 @@ fn layout_paragraph_uncached(
     push_math_inline_boxes(&mut builder, &math_boxes);
 
     let mut layout = builder.build(&clean_text);
-    // For a drop-cap paragraph, plan the cap from the body's first-line metrics,
-    // then re-break narrowing the first `n_lines` lines by the cap region.
+    // Plan the drop cap (its enlarged glyph + band geometry) from the body's
+    // first-line metrics. `drop_plan` keeps the line height for `cover_height`.
     let drop_plan = if let Some((dc, cap_text, base)) = &drop_state {
-        layout.break_all_lines(Some(line_w)); // Pass A: read body line metrics.
+        layout.break_all_lines(Some(line_w)); // metrics only
         let (lh, asc, bl) = layout
             .lines()
             .next()
@@ -1248,7 +1306,7 @@ fn layout_paragraph_uncached(
                 (m.line_height, m.ascent, m.baseline)
             })
             .unwrap_or((0.0, 0.0, 0.0));
-        let plan = crate::para_drop_cap::plan_drop_cap(
+        crate::para_drop_cap::plan_drop_cap(
             resources,
             cap_text,
             base,
@@ -1257,26 +1315,83 @@ fn layout_paragraph_uncached(
             bl,
             asc,
             display_scale,
-        );
-        if let Some(p) = &plan {
-            // Re-break the whole body at the narrowed width so every line clears
-            // the cap band. The first `n_lines` are then shifted right into the
-            // band during emission; later lines stay at the left margin.
-            //
-            // APPROX(drop-cap-width): Parley's public API exposes no per-line
-            // max-advance (the setter is on the private breaker state), so lines
-            // *below* the cap also wrap at the narrowed width and lose
-            // `body_inset` of measure — they ragged-right slightly early rather
-            // than reclaiming full width as Word does. Text still stays within
-            // the margins. A true per-line solution needs upstream Parley API.
-            let narrow = (line_w - p.body_inset).max(1.0);
-            layout.break_all_lines(Some(narrow));
-        }
-        plan
+        )
+        .map(|p| (p, lh))
     } else {
-        layout.break_all_lines(Some(line_w));
         None
     };
+
+    // Unified leading band: a drop cap (object on the left) or a float band set
+    // by the flow engine. The band's first lines are narrowed; lines below it
+    // reclaim full width (`para_band` lays the body out in two passes).
+    let band: Option<crate::para_band::Band> = if let Some((p, lh)) = &drop_plan {
+        Some(crate::para_band::Band {
+            inset: p.body_inset,
+            cover_height: p.n_lines as f32 * lh,
+            // In-text drop shifts the text right; margin drop has inset 0.
+            shift_text: p.body_inset > 0.0,
+        })
+    } else {
+        para_props.wrap_band.map(|w| crate::para_band::Band {
+            inset: w.inset,
+            cover_height: w.cover_height,
+            shift_text: w.shift_text,
+        })
+    };
+
+    // Precise per-line band split runs on the read-only paint path for plain
+    // text; the editor / tab / math paths fall back to a uniform narrow below.
+    let can_split = band.is_some()
+        && !preserve_for_editing
+        && tab_char_positions.is_empty()
+        && math_boxes.is_empty();
+
+    if can_split {
+        let body = crate::para_band::layout_band_body(
+            resources,
+            &clean_text,
+            &clean_spans,
+            para_props,
+            line_w,
+            display_scale,
+            band.expect("can_split implies band"),
+        );
+        let mut items = body.items;
+        let mut content_bottom = body.height;
+        if let Some((p, _)) = &drop_plan {
+            // Emit the enlarged initial at the paragraph's left edge.
+            for it in &p.items {
+                let mut it = it.clone();
+                it.translate(para_props.indent_start, 0.0);
+                items.push(it);
+            }
+            content_bottom = content_bottom.max(p.bottom);
+        }
+        prepend_para_box(&mut items, para_props, body.width, body.height);
+        return ParagraphLayout {
+            height: content_bottom,
+            width: body.width,
+            items,
+            first_baseline: body.first_baseline,
+            last_baseline: body.last_baseline,
+            line_boundaries: body.line_boundaries,
+            parley_layout: None,
+            orig_to_clean,
+            clean_to_orig,
+            indent_start: para_props.indent_start,
+            indent_hanging: para_props.indent_hanging,
+        };
+    }
+
+    // Fallback / normal path: break at the (possibly band-narrowed) width. A
+    // band here means the float could not be split (editor, tabs, or math) — it
+    // uniformly narrows every line (APPROX, as documented for `para_band`).
+    let band_inset = band.as_ref().map(|b| b.inset).unwrap_or(0.0);
+    let band_shift = band
+        .as_ref()
+        .map(|b| if b.shift_text { b.inset } else { 0.0 })
+        .unwrap_or(0.0);
+    layout.break_all_lines(Some((line_w - band_inset).max(1.0)));
     layout.align(para_props.alignment, AlignmentOptions::default());
 
     let total_height = layout.height();
@@ -1312,12 +1427,8 @@ fn layout_paragraph_uncached(
         } else {
             para_props.indent_start
         };
-        // Drop cap: the first `n_lines` body lines are inset to clear the cap.
-        if let Some(p) = &drop_plan
-            && line_index < p.n_lines
-        {
-            indent_x += p.body_inset;
-        }
+        // Float-wrap fallback (uniform narrow): every line clears the band.
+        indent_x += band_shift;
         let line_baseline = line.metrics().baseline;
         for item in line.items() {
             // Math inline box: emit the typeset equation's draw items, offset to
@@ -1364,48 +1475,9 @@ fn layout_paragraph_uncached(
         line_index += 1;
     }
 
-    // Drop cap: emit the enlarged initial, shifted to the paragraph's left edge
-    // (the same `indent_start` the body glyphs use). Grow the paragraph height
-    // if the cap hangs below a short body.
-    if let Some(p) = &drop_plan {
-        for it in &p.items {
-            let mut it = it.clone();
-            it.translate(para_props.indent_start, 0.0);
-            items.push(it);
-        }
-        content_bottom = content_bottom.max(p.bottom);
-    }
-
-    // Prepend border (below background so it renders on top).
-    let has_border = para_props.border_top.is_some()
-        || para_props.border_right.is_some()
-        || para_props.border_bottom.is_some()
-        || para_props.border_left.is_some();
-    if has_border {
-        let bw = total_width + para_props.indent_start + para_props.indent_end;
-        items.insert(
-            0,
-            PositionedItem::BorderRect(PositionedBorderRect {
-                rect: LayoutRect::new(0.0, 0.0, bw, total_height),
-                top: para_props.border_top,
-                right: para_props.border_right,
-                bottom: para_props.border_bottom,
-                left: para_props.border_left,
-            }),
-        );
-    }
-
-    // Prepend background fill.
-    if let Some(bg) = para_props.background_color {
-        let bw = total_width + para_props.indent_start + para_props.indent_end;
-        items.insert(
-            0,
-            PositionedItem::FilledRect(PositionedRect {
-                rect: LayoutRect::new(0.0, 0.0, bw, total_height),
-                color: bg,
-            }),
-        );
-    }
+    // `drop_plan` is always handled by the band-split path above (drop caps
+    // never reach this fallback), so only the box decorations remain here.
+    prepend_para_box(&mut items, para_props, total_width, total_height);
 
     let parley_layout = if preserve_for_editing {
         Some(Arc::new(layout))

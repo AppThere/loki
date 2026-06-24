@@ -9,9 +9,10 @@
 //! avoid (returned as left/right indent deltas), and produces the float's image
 //! item.
 //!
-//! **Scope (v1).** Wrapping is applied to the *anchoring paragraph* only, using
-//! a uniform indent (every line of that paragraph clears the float, matching the
-//! same Parley per-line-width limitation documented for drop caps). `Square`,
+//! **Scope (v1).** Wrapping is applied to the *anchoring paragraph* only. The
+//! band is passed to the layout as a [`crate::para::WrapBand`]; on the paint
+//! path the body is laid out in two passes (`para_band`) so lines beside the
+//! float are narrowed while lines below it reclaim the full column. `Square`,
 //! `Tight`, `Through`, and non-behind `None` modes wrap on one side (the tight
 //! contour is approximated by the bounding box; a margin-anchored `wrapNone`
 //! image reserves its space in Word, so text flows beside rather than under it).

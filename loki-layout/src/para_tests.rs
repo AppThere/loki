@@ -965,9 +965,11 @@ fn drop_cap_enlarges_initial_and_shifts_first_lines() {
         first_line_min_x > 10.0,
         "first body line must clear the cap band; min x = {first_line_min_x}"
     );
+    // Per-line precision: the line below the 3-line cap reclaims the full column
+    // (back to the paragraph's left edge, x ≈ indent_start = 0), not the cap band.
     assert!(
-        last_line_min_x < first_line_min_x - 5.0,
-        "a line below the cap must return toward the left margin; \
+        last_line_min_x < 2.0,
+        "a line below the cap must reclaim the full left margin; \
          first = {first_line_min_x}, last = {last_line_min_x}"
     );
 }

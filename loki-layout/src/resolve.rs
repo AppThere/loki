@@ -909,6 +909,8 @@ fn map_para_props(p: &ParaProps) -> ResolvedParaProps {
         // Dropped initial (rendered in the read-only/paint path); see
         // `layout_paragraph`. Forwarded straight from the imported model.
         drop_cap: p.drop_cap,
+        // Float wrap band is injected by the flow engine, not the model.
+        wrap_band: None,
     }
 }
 

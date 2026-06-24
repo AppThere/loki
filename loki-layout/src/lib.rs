@@ -33,6 +33,7 @@ pub mod items;
 mod math;
 pub mod mode;
 pub mod para;
+mod para_band;
 mod para_cache;
 mod para_drop_cap;
 mod para_emit;
