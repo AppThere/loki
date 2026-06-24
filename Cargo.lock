@@ -3819,6 +3819,7 @@ dependencies = [
  "loki-layout",
  "loki-odf",
  "loki-ooxml",
+ "loki-pdf",
  "loki-presentation-model",
  "loki-primitives",
  "loki-sheet-model",
