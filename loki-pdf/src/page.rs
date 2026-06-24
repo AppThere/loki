@@ -61,12 +61,23 @@ fn render_item(
         PositionedItem::Decoration(d) => render_decoration(d, page_h, ox, oy, content),
         PositionedItem::BorderRect(b) => render_border(b, page_h, ox, oy, content),
         PositionedItem::Image(img) => draw_image(img, page_h, ox, oy, banks.images, content),
-        PositionedItem::ClippedGroup { items, .. } => {
-            // TODO(pdf-clip): clipping is not yet emitted; render children so
-            // no content is dropped (over-paint is preferable to omission).
+        PositionedItem::ClippedGroup { clip_rect, items } => {
+            // Clip children to `clip_rect` (page-content-local coords). Used for
+            // page-fragment masks and table cell boxes so over-wide content does
+            // not bleed past its region — matching Word and the loki-vello
+            // on-screen renderer. PDF clips with `re W n`: define the rect, set
+            // it as the clip path, then end the path without painting it.
+            let x = ox + clip_rect.origin.x;
+            // PDF y-axis is bottom-up; flip the rect's top-left to bottom-left.
+            let y = page_h - (oy + clip_rect.origin.y + clip_rect.size.height);
+            content.save_state();
+            content.rect(x, y, clip_rect.size.width, clip_rect.size.height);
+            content.clip_nonzero();
+            content.end_path();
             for child in items {
                 render_item(child, page_h, ox, oy, banks, content);
             }
+            content.restore_state();
         }
         PositionedItem::RotatedGroup { origin, items, .. } => {
             // TODO(pdf-rotate): rotation transform is not yet emitted; render
@@ -240,6 +251,52 @@ mod tests {
         assert!(
             bank.is_empty(),
             "a .notdef-only run must not register a face"
+        );
+    }
+
+    // A ClippedGroup must emit the PDF clip operators (`re` rect, `W` clip,
+    // `n` end-path) wrapped in save/restore, so table cell content is masked to
+    // the cell box rather than over-painting neighbours.
+    #[test]
+    fn clipped_group_emits_clip_operators() {
+        use loki_layout::{LayoutRect, LayoutSize, PositionedRect};
+        let mut fonts = FontBank::new();
+        let mut images = ImageBank::new();
+        let mut banks = PageBanks {
+            fonts: &mut fonts,
+            images: &mut images,
+        };
+        let mut content = Content::new();
+        let child = PositionedItem::FilledRect(PositionedRect {
+            rect: LayoutRect {
+                origin: LayoutPoint { x: 10.0, y: 10.0 },
+                size: LayoutSize {
+                    width: 5.0,
+                    height: 5.0,
+                },
+            },
+            color: LayoutColor::new(0.0, 0.0, 0.0, 1.0),
+        });
+        let group = PositionedItem::ClippedGroup {
+            clip_rect: LayoutRect {
+                origin: LayoutPoint { x: 0.0, y: 0.0 },
+                size: LayoutSize {
+                    width: 20.0,
+                    height: 20.0,
+                },
+            },
+            items: vec![child],
+        };
+        render_item(&group, 100.0, 0.0, 0.0, &mut banks, &mut content);
+        let bytes = content.finish().to_vec();
+        let stream = String::from_utf8_lossy(&bytes);
+        // `re` (rect) + `W` (clip-nonzero) + `n` (end-path) define the clip path;
+        // `q`/`Q` bracket it so the clip is popped after the children paint.
+        assert!(stream.contains("re"), "clip rect operator `re` missing");
+        assert!(stream.contains('W'), "clip operator `W` missing");
+        assert!(
+            stream.contains('q') && stream.contains('Q'),
+            "save/restore (`q`/`Q`) missing"
         );
     }
 

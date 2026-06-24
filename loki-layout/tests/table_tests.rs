@@ -16,6 +16,20 @@ use loki_layout::{
     FlowOutput, FontResources, LayoutMode, LayoutOptions, PositionedItem, flow_section,
 };
 
+/// Flatten positioned items, descending into `ClippedGroup`/`RotatedGroup` so
+/// nested cell content is visible to assertions. Table cell content is wrapped
+/// in a per-cell `ClippedGroup` (cell-box clip), so a flat scan of the
+/// top-level items would otherwise miss every glyph run inside a cell.
+fn flatten<'a>(items: &'a [PositionedItem], out: &mut Vec<&'a PositionedItem>) {
+    for i in items {
+        match i {
+            PositionedItem::ClippedGroup { items, .. }
+            | PositionedItem::RotatedGroup { items, .. } => flatten(items, out),
+            other => out.push(other),
+        }
+    }
+}
+
 fn test_resources() -> FontResources {
     let mut r = FontResources::new();
     for p in ["/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"] {
@@ -454,6 +468,72 @@ fn fixed_columns_should_be_honored_like_word() {
     }
 }
 
+/// Cell content must be wrapped in a [`PositionedItem::ClippedGroup`] whose
+/// clip rect is the cell's box, so over-wide content cannot bleed into a
+/// neighbouring cell (Word clips cell content to the cell boundary). The cell
+/// background/border stay *outside* the clip (top-level), so they still paint
+/// fully.
+#[test]
+fn cell_content_is_clipped_to_cell_box() {
+    use loki_doc_model::content::table::col::TableWidth;
+    use loki_primitives::units::Points;
+    let mut r = test_resources();
+    let cell = make_cell_tall(vec!["Hello"], None, 1);
+    let table = Block::Table(Box::new(Table {
+        attr: loki_doc_model::content::attr::NodeAttr::default(),
+        caption: Default::default(),
+        width: Some(TableWidth::Fixed(120.0)),
+        col_specs: vec![ColSpec {
+            alignment: ColAlignment::Default,
+            width: ColWidth::Fixed(Points::new(120.0)),
+        }],
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![Row::new(vec![cell])])],
+        foot: TableFoot::empty(),
+    }));
+    let section = Section {
+        layout: PageLayout::default(),
+        blocks: vec![table],
+        extensions: ExtensionBag::default(),
+    };
+    let (items, _) = flow_pageless(&mut r, &section);
+
+    // Exactly one ClippedGroup wraps the cell's content, and it contains the
+    // glyph run(s) — no glyph run leaks to the top level.
+    let clip = items
+        .iter()
+        .find_map(|i| match i {
+            PositionedItem::ClippedGroup { clip_rect, items } => Some((clip_rect, items)),
+            _ => None,
+        })
+        .expect("cell content must be wrapped in a ClippedGroup");
+    assert!(
+        items
+            .iter()
+            .all(|i| !matches!(i, PositionedItem::GlyphRun(_))),
+        "no glyph run may sit at the top level outside the cell clip"
+    );
+    let (clip_rect, clipped) = clip;
+    assert!(
+        clipped
+            .iter()
+            .any(|i| matches!(i, PositionedItem::GlyphRun(_))),
+        "the cell's glyph run must be inside the ClippedGroup"
+    );
+    // The clip rect spans the 120pt column (width), positioned at the left
+    // margin (72pt) in pageless layout.
+    assert!(
+        (clip_rect.size.width - 120.0).abs() < 1.0,
+        "clip width should match the 120pt cell; got {}",
+        clip_rect.size.width
+    );
+    assert!(
+        clip_rect.size.height > 0.0,
+        "clip height must be the row height; got {}",
+        clip_rect.size.height
+    );
+}
+
 /// CHARACTERIZATION — fixed widths that sum to *less* than the table width are
 /// also currently scaled (up) to fill the table. Word's behaviour depends on
 /// `tblLayout` (fixed: leave a gap; autofit: distribute), so this too is a
@@ -594,11 +674,13 @@ fn long_word_wraps_within_narrow_cell() {
         extensions: ExtensionBag::default(),
     };
     let (items, height) = flow_pageless(&mut r, &section);
+    let mut flat = Vec::new();
+    flatten(&items, &mut flat);
 
     // Each wrapped line's width must fit the 60pt column (small tolerance), i.e.
     // no line overflows horizontally into a neighbouring cell. (Content sits at
     // the page's left-margin offset, so width — not absolute x — is the check.)
-    let max_line_width = items
+    let max_line_width = flat
         .iter()
         .filter_map(|i| match i {
             PositionedItem::GlyphRun(run) => {
@@ -618,7 +700,7 @@ fn long_word_wraps_within_narrow_cell() {
     );
     // Multiple glyph runs on distinct baselines confirm the word actually wrapped.
     let distinct_lines = {
-        let mut ys: Vec<f32> = items
+        let mut ys: Vec<f32> = flat
             .iter()
             .filter_map(|i| match i {
                 PositionedItem::GlyphRun(run) => Some((run.origin.y * 4.0).round()),
@@ -684,8 +766,10 @@ fn test_table_cell_vertical_alignment() {
     };
 
     let (items, _) = flow_pageless(&mut r, &section);
+    let mut flat = Vec::new();
+    flatten(&items, &mut flat);
 
-    let glyph_runs: Vec<_> = items
+    let glyph_runs: Vec<_> = flat
         .iter()
         .filter_map(|i| match i {
             PositionedItem::GlyphRun(run) => Some(run),

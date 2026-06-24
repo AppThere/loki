@@ -1587,6 +1587,39 @@ fn flow_table(
                             item.translate(0.0, y_offset);
                         }
                     }
+
+                    // Clip the cell's content to its box so over-wide content
+                    // (a wide image, or an unbreakable token exceeding the
+                    // column) cannot bleed into neighbouring cells — Word clips
+                    // cell content to the cell boundary. Char-wrapping already
+                    // keeps ordinary text inside the column; this is the safety
+                    // net for the rest. Only single-page cells are clipped here;
+                    // a cell that spilled onto a later page keeps its items
+                    // unwrapped (per-page clipping would need a rect per page —
+                    // see fidelity-status Tables & Images).
+                    if state.current_items.len() > cell_item_start {
+                        let cell_top_y = if state.page_number == original_row_page {
+                            original_row_y_start
+                        } else {
+                            0.0
+                        };
+                        let clip_rect = LayoutRect {
+                            origin: LayoutPoint {
+                                x: cell_x,
+                                y: cell_top_y,
+                            },
+                            size: LayoutSize {
+                                width: cell_w,
+                                height: cell_height,
+                            },
+                        };
+                        let inner: Vec<PositionedItem> =
+                            state.current_items.drain(cell_item_start..).collect();
+                        state.current_items.push(PositionedItem::ClippedGroup {
+                            clip_rect,
+                            items: inner,
+                        });
+                    }
                 }
 
                 Vec::new()

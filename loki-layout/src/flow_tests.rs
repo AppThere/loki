@@ -453,6 +453,19 @@ fn has_clipped_group(items: &[PositionedItem]) -> bool {
         .any(|i| matches!(i, PositionedItem::ClippedGroup { .. }))
 }
 
+/// Recursively checks for any glyph run, descending into clip/rotation groups.
+/// Table cell content is wrapped in a per-cell `ClippedGroup`, so a flat scan
+/// would miss it.
+fn any_glyph_run(items: &[PositionedItem]) -> bool {
+    items.iter().any(|i| match i {
+        PositionedItem::GlyphRun(_) => true,
+        PositionedItem::ClippedGroup { items, .. } | PositionedItem::RotatedGroup { items, .. } => {
+            any_glyph_run(items)
+        }
+        _ => false,
+    })
+}
+
 // ── Paragraph splitting tests ─────────────────────────────────────────────────
 
 #[test]
@@ -1080,10 +1093,7 @@ fn table_2x2_renders_on_one_page() {
         "2×2 table should fit on one page, got {}",
         pages.len()
     );
-    let has_runs = pages[0]
-        .content_items
-        .iter()
-        .any(|i| matches!(i, PositionedItem::GlyphRun(_)));
+    let has_runs = any_glyph_run(&pages[0].content_items);
     assert!(has_runs, "table cells must produce glyph runs");
 }
 
