@@ -10,7 +10,7 @@
 //! the embedded `Identity-H` fonts collected in the [`FontBank`].
 
 use loki_layout::{
-    DecorationKind, LayoutPage, LayoutRect, PositionedDecoration, PositionedGlyphRun,
+    DecorationKind, GlyphEntry, LayoutPage, LayoutRect, PositionedDecoration, PositionedGlyphRun,
     PositionedImage, PositionedItem,
 };
 use pdf_writer::{Content, Name, Str};
@@ -114,17 +114,23 @@ fn render_run(
     if run.glyphs.is_empty() {
         return;
     }
-    let resource = bank.use_face(
-        &run.font_data,
-        run.font_index,
-        run.glyphs.iter().map(|g| g.id),
-    );
+    // Glyph id 0 is the .notdef glyph (rendered as a tofu box by most fonts).
+    // Skip it so characters with no font coverage are invisible, matching Word
+    // and the on-screen `loki-vello` renderer (which filters id 0 identically).
+    // Notably this drops the `.notdef` glyph that Parley shapes for tab
+    // characters (`\t`); the tab's advance is already provided by the layout's
+    // tab-stop inline box, so only the spurious tofu ink is removed.
+    let drawn: Vec<&GlyphEntry> = run.glyphs.iter().filter(|g| g.id != 0).collect();
+    if drawn.is_empty() {
+        return;
+    }
+    let resource = bank.use_face(&run.font_data, run.font_index, drawn.iter().map(|g| g.id));
 
     let cmyk: Cmyk = layout_to_cmyk(run.color);
     content.set_fill_cmyk(cmyk.c, cmyk.m, cmyk.y, cmyk.k);
     content.begin_text();
     content.set_font(pdf_writer::Name(resource.as_bytes()), run.font_size);
-    for glyph in &run.glyphs {
+    for glyph in drawn {
         let x = ox + run.origin.x + glyph.x;
         let baseline = oy + run.origin.y + glyph.y;
         let y = page_h - baseline;
@@ -193,5 +199,67 @@ fn render_border(
             LayoutRect::new(x0 + w - right.width, y0, right.width, h),
             layout_to_cmyk(right.color),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use loki_layout::{GlyphSynthesis, LayoutColor, LayoutPoint};
+    use std::sync::Arc;
+
+    fn run_with(ids: &[u16]) -> PositionedGlyphRun {
+        PositionedGlyphRun {
+            origin: LayoutPoint { x: 0.0, y: 0.0 },
+            font_data: Arc::new(vec![0u8; 4]),
+            font_index: 0,
+            font_size: 12.0,
+            glyphs: ids
+                .iter()
+                .map(|&id| GlyphEntry {
+                    id,
+                    x: 0.0,
+                    y: 0.0,
+                    advance: 6.0,
+                })
+                .collect(),
+            color: LayoutColor::new(0.0, 0.0, 0.0, 1.0),
+            synthesis: GlyphSynthesis::default(),
+            link_url: None,
+        }
+    }
+
+    // A run made only of .notdef (id 0) glyphs — e.g. the glyph Parley shapes
+    // for a tab character — must not register a face or emit any glyph, matching
+    // the on-screen `loki-vello` renderer. Previously these rendered as tofu.
+    #[test]
+    fn notdef_only_run_emits_nothing() {
+        let mut bank = FontBank::new();
+        let mut content = Content::new();
+        render_run(&run_with(&[0, 0]), 100.0, 0.0, 0.0, &mut bank, &mut content);
+        assert!(
+            bank.is_empty(),
+            "a .notdef-only run must not register a face"
+        );
+    }
+
+    // A run mixing .notdef with real glyphs registers the face but excludes the
+    // .notdef id from the subset (and never draws it).
+    #[test]
+    fn notdef_is_filtered_from_real_run() {
+        let mut bank = FontBank::new();
+        let mut content = Content::new();
+        render_run(
+            &run_with(&[0, 5, 0, 7]),
+            100.0,
+            0.0,
+            0.0,
+            &mut bank,
+            &mut content,
+        );
+        assert_eq!(bank.faces().len(), 1);
+        let ids = bank.used_glyph_ids(0);
+        assert!(!ids.contains(&0), "the .notdef glyph must be filtered out");
+        assert!(ids.contains(&5) && ids.contains(&7), "real glyphs kept");
     }
 }

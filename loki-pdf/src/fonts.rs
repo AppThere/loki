@@ -92,6 +92,12 @@ impl FontBank {
         self.faces.is_empty()
     }
 
+    /// The glyph ids recorded as used for the face at `idx` (test introspection).
+    #[cfg(test)]
+    pub(crate) fn used_glyph_ids(&self, idx: usize) -> Vec<u16> {
+        self.faces[idx].used_glyphs.iter().copied().collect()
+    }
+
     /// Allocates the five indirect references each face needs, advancing
     /// `next`. Returns them aligned with [`Self::faces`].
     pub fn allocate_refs(&self, next: &mut i32) -> Vec<FaceRefs> {
