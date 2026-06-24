@@ -1255,9 +1255,19 @@ fn resolve_column_widths(
             }
         }
     } else if total_fixed_width > 0.0 {
-        let scale = table_width / total_fixed_width;
-        for w in &mut resolved_widths {
-            *w *= scale;
+        // Fixed-layout tables (`w:tblLayout="fixed"`) honour the grid widths
+        // exactly — the table overflows or underfills rather than rescaling.
+        // Autofit tables scale the fixed widths to fill the table width.
+        let fixed_layout = tbl
+            .attr
+            .classes
+            .iter()
+            .any(|c| c == loki_doc_model::content::table::core::TABLE_FIXED_LAYOUT_CLASS);
+        if !fixed_layout {
+            let scale = table_width / total_fixed_width;
+            for w in &mut resolved_widths {
+                *w *= scale;
+            }
         }
     } else {
         let uniform_w = table_width / col_count as f32;

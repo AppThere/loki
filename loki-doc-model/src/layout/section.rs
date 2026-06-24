@@ -90,10 +90,14 @@ mod tests {
 
     #[test]
     fn two_sections_with_different_page_sizes() {
-        let mut layout_a = PageLayout::default();
-        layout_a.page_size = PageSize::a4();
-        let mut layout_b = PageLayout::default();
-        layout_b.page_size = PageSize::letter();
+        let layout_a = PageLayout {
+            page_size: PageSize::a4(),
+            ..Default::default()
+        };
+        let layout_b = PageLayout {
+            page_size: PageSize::letter(),
+            ..Default::default()
+        };
 
         let s1 = Section::with_layout_and_blocks(layout_a, vec![]);
         let s2 = Section::with_layout_and_blocks(layout_b, vec![]);

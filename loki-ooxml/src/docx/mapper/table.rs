@@ -85,8 +85,20 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
 
     let width = map_tbl_width(t);
 
+    // OOXML `w:tblLayout w:type="fixed"` → honour grid column widths exactly
+    // (no autofit rescale). Mark the table so loki-layout skips its rescale.
+    let mut attr = NodeAttr::default();
+    if t.tbl_pr
+        .as_ref()
+        .and_then(|p| p.layout.as_deref())
+        .is_some_and(|l| l == "fixed")
+    {
+        attr.classes
+            .push(loki_doc_model::content::table::core::TABLE_FIXED_LAYOUT_CLASS.to_string());
+    }
+
     let table = Table {
-        attr: NodeAttr::default(),
+        attr,
         caption: TableCaption::default(),
         width,
         col_specs,

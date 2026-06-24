@@ -79,6 +79,8 @@ pub struct DocxTblPr {
     pub style_id: Option<String>,
     /// Table width from `w:tblW`.
     pub width: Option<DocxTblWidth>,
+    /// `w:tblLayout @w:type` — `"fixed"` or `"autofit"` (the default).
+    pub layout: Option<String>,
 }
 
 /// Table width specification from `w:tblW` (ECMA-376 §17.4.63).

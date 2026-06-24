@@ -429,10 +429,15 @@ fn fixed_columns_overflowing_table_width_are_scaled_down_current_behavior() {
 /// `loki-ooxml` → `loki-doc-model` → `loki-layout`. Remove `#[ignore]` once the
 /// fixed-layout path exists.
 #[test]
-#[ignore = "needs w:tblLayout plumbing; see fidelity-status Tables & Images"]
 fn fixed_columns_should_be_honored_like_word() {
     let mut r = test_resources();
-    let table = fixed_width_table(&[200.0, 200.0, 200.0], 300.0);
+    let mut table = fixed_width_table(&[200.0, 200.0, 200.0], 300.0);
+    // Mark the table as fixed-layout (OOXML `w:tblLayout w:type="fixed"`).
+    if let Block::Table(t) = &mut table {
+        t.attr
+            .classes
+            .push(loki_doc_model::content::table::core::TABLE_FIXED_LAYOUT_CLASS.to_string());
+    }
     let section = Section {
         layout: PageLayout::default(),
         blocks: vec![table],

@@ -844,6 +844,9 @@ fn parse_tbl_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTblPr> {
                 b"tblStyle" => {
                     pr.style_id = attr_val(e, b"val");
                 }
+                b"tblLayout" => {
+                    pr.layout = attr_val(e, b"type");
+                }
                 _ => {}
             },
             Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"tblPr" => {

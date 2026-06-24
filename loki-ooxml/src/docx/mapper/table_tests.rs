@@ -109,6 +109,84 @@ fn two_by_two_table() {
 }
 
 #[test]
+fn tbl_layout_fixed_marks_table_class() {
+    use crate::docx::model::styles::DocxTblPr;
+    use loki_doc_model::content::table::core::TABLE_FIXED_LAYOUT_CLASS;
+
+    let styles = StyleCatalog::default();
+    let (fn_m, en_m, hl_m, img_m) = (
+        HashMap::new(),
+        HashMap::new(),
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let opts = DocxImportOptions::default();
+    let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
+
+    let t = DocxTableModel {
+        tbl_pr: Some(DocxTblPr {
+            layout: Some("fixed".to_string()),
+            ..Default::default()
+        }),
+        col_widths: vec![1440, 1440],
+        rows: vec![simple_row(vec![simple_cell(
+            vec![DocxParagraph::default()],
+        )])],
+    };
+    let block = map_table(&t, &mut ctx);
+    if let Block::Table(tbl) = block {
+        assert!(
+            tbl.attr
+                .classes
+                .iter()
+                .any(|c| c == TABLE_FIXED_LAYOUT_CLASS),
+            "fixed tblLayout must add the fixed-layout class"
+        );
+    } else {
+        panic!("expected Table");
+    }
+}
+
+#[test]
+fn tbl_layout_autofit_has_no_fixed_class() {
+    use crate::docx::model::styles::DocxTblPr;
+    use loki_doc_model::content::table::core::TABLE_FIXED_LAYOUT_CLASS;
+
+    let styles = StyleCatalog::default();
+    let (fn_m, en_m, hl_m, img_m) = (
+        HashMap::new(),
+        HashMap::new(),
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let opts = DocxImportOptions::default();
+    let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
+
+    let t = DocxTableModel {
+        tbl_pr: Some(DocxTblPr {
+            layout: Some("autofit".to_string()),
+            ..Default::default()
+        }),
+        col_widths: vec![1440],
+        rows: vec![simple_row(vec![simple_cell(
+            vec![DocxParagraph::default()],
+        )])],
+    };
+    let block = map_table(&t, &mut ctx);
+    if let Block::Table(tbl) = block {
+        assert!(
+            !tbl.attr
+                .classes
+                .iter()
+                .any(|c| c == TABLE_FIXED_LAYOUT_CLASS),
+            "autofit tblLayout must NOT add the fixed-layout class"
+        );
+    } else {
+        panic!("expected Table");
+    }
+}
+
+#[test]
 fn header_row_goes_to_head() {
     let styles = StyleCatalog::default();
     let (fn_m, en_m, hl_m, img_m) = (
