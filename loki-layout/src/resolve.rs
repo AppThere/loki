@@ -888,6 +888,8 @@ fn map_para_props(p: &ParaProps) -> ResolvedParaProps {
                 .filter(|s| s.alignment != TabAlignment::Clear)
                 .map(|s| ResolvedTabStop {
                     position: pts_to_f32(s.position),
+                    alignment: s.alignment,
+                    leader: s.leader,
                 })
                 .collect();
             stops.sort_by(|a, b| {

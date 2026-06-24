@@ -15,6 +15,7 @@ use std::sync::Arc;
 use loki_doc_model::style::list_style::{
     BulletChar, ListId, ListLevel, ListLevelKind, NumberingScheme,
 };
+use loki_doc_model::style::props::tab_stop::{TabAlignment, TabLeader};
 use parley::{
     Alignment, AlignmentOptions, Cursor, FontFamily, FontStyle, FontWeight, InlineBox,
     InlineBoxKind, LineHeight, PositionedLayoutItem, RangedBuilder, Selection, StyleProperty,
@@ -112,6 +113,10 @@ pub struct ResolvedListMarker {
 pub struct ResolvedTabStop {
     /// Tab stop position from the content-area start edge, in points.
     pub position: f32,
+    /// How text following the tab is aligned relative to [`Self::position`].
+    pub alignment: TabAlignment,
+    /// Leader character drawn across the tab gap (dots/dashes/…), if any.
+    pub leader: TabLeader,
 }
 
 /// Resolved line-height specification for a paragraph.
@@ -571,19 +576,158 @@ impl ParagraphLayout {
 /// Default tab stop interval: 0.5 inch = 36 pt = 720 twips (Word default).
 const DEFAULT_TAB_INTERVAL: f32 = 36.0;
 
-/// Return the next tab stop position strictly greater than `x`.
-///
-/// Searches `stops` (sorted ascending) first; falls back to the default
-/// 36 pt grid when no explicit stop is defined beyond `x`.
-fn next_tab_stop(stops: &[ResolvedTabStop], x: f32, indent_hanging: f32) -> f32 {
+/// Return the tab stop a tab at pen position `x` advances to: the first
+/// explicit stop strictly greater than `x`, else a synthesized default-grid
+/// stop (36 pt, left-aligned, no leader). A hanging indent acts as an implicit
+/// first stop.
+fn next_tab_stop_resolved(
+    stops: &[ResolvedTabStop],
+    x: f32,
+    indent_hanging: f32,
+) -> ResolvedTabStop {
     if indent_hanging > 0.0 && x < indent_hanging - 0.5 {
-        return indent_hanging;
+        return ResolvedTabStop {
+            position: indent_hanging,
+            alignment: TabAlignment::Left,
+            leader: TabLeader::None,
+        };
     }
     if let Some(s) = stops.iter().find(|s| s.position > x + 0.5) {
-        s.position
+        *s
     } else {
-        ((x / DEFAULT_TAB_INTERVAL).floor() + 1.0) * DEFAULT_TAB_INTERVAL
+        ResolvedTabStop {
+            position: ((x / DEFAULT_TAB_INTERVAL).floor() + 1.0) * DEFAULT_TAB_INTERVAL,
+            alignment: TabAlignment::Left,
+            leader: TabLeader::None,
+        }
     }
+}
+
+/// Emit the leader fill for a tab gap `[x0, x1]` at `baseline`, as
+/// renderer-agnostic [`PositionedItem::FilledRect`]s. Dotted leaders are a row
+/// of small squares; dashed are short bars; underscore/heavy are a solid rule
+/// just below the baseline (like an underline). A `None` leader emits nothing.
+fn emit_tab_leader(
+    items: &mut Vec<PositionedItem>,
+    leader: TabLeader,
+    x0: f32,
+    x1: f32,
+    baseline: f32,
+) {
+    let width = x1 - x0;
+    if width < 1.0 || leader == TabLeader::None {
+        return;
+    }
+    let color = LayoutColor::BLACK;
+    let mut dots = |size: f32, pitch: f32, y: f32| {
+        let mut x = x0 + (pitch - size) * 0.5;
+        while x + size <= x1 {
+            items.push(PositionedItem::FilledRect(PositionedRect {
+                rect: LayoutRect::new(x, y, size, size),
+                color,
+            }));
+            x += pitch;
+        }
+    };
+    match leader {
+        TabLeader::Dot | TabLeader::MiddleDot => dots(0.9, 3.6, baseline - 1.6),
+        TabLeader::Dash => {
+            let (dash, pitch, th, y) = (2.4, 4.2, 0.8, baseline - 1.9);
+            let mut x = x0 + 1.0;
+            while x + dash <= x1 {
+                items.push(PositionedItem::FilledRect(PositionedRect {
+                    rect: LayoutRect::new(x, y, dash, th),
+                    color,
+                }));
+                x += pitch;
+            }
+        }
+        TabLeader::Underscore => items.push(PositionedItem::FilledRect(PositionedRect {
+            rect: LayoutRect::new(x0, baseline + 1.0, width, 0.8),
+            color,
+        })),
+        TabLeader::Heavy => items.push(PositionedItem::FilledRect(PositionedRect {
+            rect: LayoutRect::new(x0, baseline + 1.0, width, 1.4),
+            color,
+        })),
+        // `None` is handled by the early return; `_` covers the non-exhaustive
+        // enum's future variants.
+        _ => {}
+    }
+}
+
+/// The planned expansion of one tab character: the inline-box width to insert
+/// so the following text lands at its stop, plus the leader to draw across it.
+#[derive(Debug, Clone, Copy)]
+struct TabPlan {
+    /// Width of the inline box that advances the pen to the aligned position.
+    width: f32,
+    /// Leader to fill the gap (drawn across `[tab_x, tab_x + width]`).
+    leader: TabLeader,
+}
+
+/// Compute each tab's expansion width and leader from probe measurements.
+///
+/// Processes tabs left-to-right, accumulating the shift each expansion adds, so
+/// a later tab's stop is found relative to its *shifted* position. Alignment
+/// positions the content that follows the tab (up to the next tab / line end):
+/// Left advances to the stop; Right ends the content at the stop; Center
+/// centres it; Decimal places the first `.` at the stop. Content widths come
+/// from the zero-width probe boxes (natural, unshifted layout).
+#[allow(clippy::too_many_arguments)]
+fn compute_tab_plans(
+    stops: &[ResolvedTabStop],
+    indent_hanging: f32,
+    x_tab: &[f32],
+    line_tab: &[usize],
+    x_dec: &[f32],
+    x_end: f32,
+    line_end: usize,
+) -> Vec<TabPlan> {
+    let n = x_tab.len();
+    let mut plans = Vec::with_capacity(n);
+    let mut shift = 0.0f32;
+    for i in 0..n {
+        let final_tab_x = x_tab[i] + shift;
+        let stop = next_tab_stop_resolved(stops, final_tab_x, indent_hanging);
+
+        // Natural boundary of the content following this tab: the next tab, or
+        // the end-of-text sentinel for the last tab.
+        let (boundary_x, boundary_line) = if i + 1 < n {
+            (x_tab[i + 1], line_tab[i + 1])
+        } else {
+            (x_end, line_end)
+        };
+        // Content width is only meaningful when the boundary is on the same
+        // visual line; otherwise the content wrapped — fall back to left-align.
+        let content_w = if boundary_line == line_tab[i] && boundary_x >= x_tab[i] {
+            boundary_x - x_tab[i]
+        } else {
+            0.0
+        };
+
+        let offset = match stop.alignment {
+            TabAlignment::Right => content_w,
+            TabAlignment::Center => content_w / 2.0,
+            TabAlignment::Decimal => {
+                if x_dec[i].is_nan() {
+                    content_w // no decimal separator → behave like right-align
+                } else {
+                    (x_dec[i] - x_tab[i]).max(0.0)
+                }
+            }
+            // Left / Clear (filtered earlier) / non-exhaustive → advance to stop.
+            _ => 0.0,
+        };
+
+        let width = (stop.position - offset - final_tab_x).max(0.0);
+        plans.push(TabPlan {
+            width,
+            leader: stop.leader,
+        });
+        shift += width;
+    }
+    plans
 }
 
 /// Push paragraph-level defaults and per-span character styles onto `builder`.
@@ -765,6 +909,14 @@ fn clean_text_and_spans(
 /// (which count up from 0) so the two can coexist in one paragraph.
 const MATH_ID_BASE: u64 = 1 << 40;
 
+/// Probe-only inline-box id base for decimal-separator markers (one per tab),
+/// used to measure where the first `.` after a tab sits for decimal alignment.
+const DEC_ID_BASE: u64 = 1 << 20;
+
+/// Probe-only inline-box id for the end-of-text sentinel, used to measure the
+/// trailing edge of the content following the last tab.
+const END_ID: u64 = 1 << 30;
+
 /// Lay out a single paragraph using Parley.
 ///
 /// `text_content` is the flattened text from all inline runs. `style_spans`
@@ -925,7 +1077,24 @@ fn layout_paragraph_uncached(
         .map(|(i, _)| i)
         .collect();
 
-    let tab_inline_widths: Vec<f32> = if !tab_char_positions.is_empty() {
+    // Byte offset of the first decimal separator after each tab (before the
+    // next tab / end), for Decimal-aligned stops.
+    let decimal_positions: Vec<Option<usize>> = tab_char_positions
+        .iter()
+        .enumerate()
+        .map(|(i, &t)| {
+            let end = tab_char_positions
+                .get(i + 1)
+                .copied()
+                .unwrap_or(clean_text.len());
+            clean_text[t + 1..end].find('.').map(|rel| t + 1 + rel)
+        })
+        .collect();
+
+    let tab_plans: Vec<TabPlan> = if tab_char_positions.is_empty() {
+        vec![]
+    } else {
+        let n = tab_char_positions.len();
         let mut probe = resources.layout_cx.ranged_builder(
             &mut resources.font_cx,
             &clean_text,
@@ -941,30 +1110,60 @@ fn layout_paragraph_uncached(
                 width: 0.0,
                 height: 0.0,
             });
+            if let Some(dpos) = decimal_positions[idx] {
+                probe.push_inline_box(InlineBox {
+                    id: DEC_ID_BASE + idx as u64,
+                    kind: InlineBoxKind::InFlow,
+                    index: dpos,
+                    width: 0.0,
+                    height: 0.0,
+                });
+            }
         }
+        probe.push_inline_box(InlineBox {
+            id: END_ID,
+            kind: InlineBoxKind::InFlow,
+            index: clean_text.len(),
+            width: 0.0,
+            height: 0.0,
+        });
         push_math_inline_boxes(&mut probe, &math_boxes);
         let mut probe_layout = probe.build(&clean_text);
         probe_layout.break_all_lines(Some(line_w));
 
-        let mut x_positions = vec![0.0f32; tab_char_positions.len()];
-        for line in probe_layout.lines() {
+        let mut x_tab = vec![0.0f32; n];
+        let mut line_tab = vec![usize::MAX; n];
+        let mut x_dec = vec![f32::NAN; n];
+        let mut x_end = 0.0f32;
+        let mut line_end = usize::MAX;
+        for (li, line) in probe_layout.lines().enumerate() {
             for item in line.items() {
                 if let PositionedLayoutItem::InlineBox(pib) = item {
-                    let idx = pib.id as usize;
-                    if idx < x_positions.len() {
-                        x_positions[idx] = pib.x;
+                    let id = pib.id;
+                    if (id as usize) < n {
+                        x_tab[id as usize] = pib.x;
+                        line_tab[id as usize] = li;
+                    } else if (DEC_ID_BASE..END_ID).contains(&id) {
+                        let i = (id - DEC_ID_BASE) as usize;
+                        if i < n {
+                            x_dec[i] = pib.x;
+                        }
+                    } else if id == END_ID {
+                        x_end = pib.x;
+                        line_end = li;
                     }
                 }
             }
         }
-        x_positions
-            .iter()
-            .map(|&x| {
-                (next_tab_stop(&para_props.tab_stops, x, para_props.indent_hanging) - x).max(0.0)
-            })
-            .collect()
-    } else {
-        vec![]
+        compute_tab_plans(
+            &para_props.tab_stops,
+            para_props.indent_hanging,
+            &x_tab,
+            &line_tab,
+            &x_dec,
+            x_end,
+            line_end,
+        )
     };
 
     // ── Main (final) layout pass ──────────────────────────────────────────────
@@ -976,7 +1175,7 @@ fn layout_paragraph_uncached(
     );
     push_para_styles(&mut builder, para_props, &clean_spans);
     for (idx, &pos) in tab_char_positions.iter().enumerate() {
-        let width = tab_inline_widths.get(idx).copied().unwrap_or(0.0);
+        let width = tab_plans.get(idx).map(|p| p.width).unwrap_or(0.0);
         builder.push_inline_box(InlineBox {
             id: idx as u64,
             kind: InlineBoxKind::InFlow,
@@ -1024,6 +1223,7 @@ fn layout_paragraph_uncached(
         } else {
             para_props.indent_start
         };
+        let line_baseline = line.metrics().baseline;
         for item in line.items() {
             // Math inline box: emit the typeset equation's draw items, offset to
             // the box's resolved position on the line.
@@ -1039,6 +1239,18 @@ fn layout_paragraph_uncached(
                         // The box top is at `pib.y` and its baseline at
                         // `pib.y + ascent`; the descent hangs below that.
                         content_bottom = content_bottom.max(pib.y + render.ascent + render.descent);
+                    }
+                } else if (pib.id as usize) < tab_char_positions.len() {
+                    // Tab inline box: draw the stop's leader (if any) across the
+                    // gap the box opened.
+                    if let Some(plan) = tab_plans.get(pib.id as usize) {
+                        emit_tab_leader(
+                            &mut items,
+                            plan.leader,
+                            pib.x + indent_x,
+                            pib.x + indent_x + pib.width,
+                            line_baseline,
+                        );
                     }
                 }
                 continue;
