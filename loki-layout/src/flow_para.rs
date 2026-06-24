@@ -70,6 +70,9 @@ const CHAIN_LIMIT: usize = 5;
 /// Resolve, lay out, and place a single paragraph block.
 pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, block_index: usize) {
     let mut resolved = resolve_para_props(para, state.catalog);
+    // Inherit the cell-content word-breaking flag from the flow state so a long
+    // unbreakable word wraps to the column width instead of overflowing.
+    resolved.break_long_words = state.break_long_words;
 
     // ── List level indentation fallback ─────────────────────────────────────
     // OOXML defines indentation on both the paragraph and its numbering level.

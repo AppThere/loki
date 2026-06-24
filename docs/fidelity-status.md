@@ -71,7 +71,7 @@ This is the living source of truth documenting which document features, characte
 
 | Feature | Import | Layout/Render | Export | Notes |
 | :--- | :---: | :---: | :---: | :--- |
-| **Column Widths** | Yes | Yes | Yes | Mapped using `ColWidth` and `TableWidth` specs. |
+| **Column Widths** | Yes | Yes | Yes | Mapped using `ColWidth` and `TableWidth` specs. **Cell content that does not fit a column wraps within it** — an over-long unbreakable word breaks to the column width (CSS `overflow-wrap: anywhere`, set on cell paragraphs via `FlowState::break_long_words`), so the row grows tall like Word instead of the word overflowing horizontally into the next cell (TC-DOCX-006). Tested by `long_word_wraps_within_narrow_cell`. Known gap: `w:tblLayout` (fixed vs autofit) is still not parsed, so when explicit fixed widths sum to more/less than the table width Loki rescales them rather than honouring them exactly (characterised by `fixed_columns_*_current_behavior`); cell content is not yet clipped to the cell box (relies on wrapping to avoid overflow). |
 | **Row Heights** | Yes | Yes | Yes | Evaluated dynamically based on cell content. |
 | **Column Spanning** | Yes | Yes | Yes | Supports horizontal cell merging. |
 | **Row Spanning** | Yes | Yes | Yes | Spanning heights distributed across spanned rows (`w:vMerge`). |

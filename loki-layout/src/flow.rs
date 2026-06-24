@@ -185,6 +185,11 @@ pub(super) struct FlowState<'a> {
     /// Comment anchors (`id`, content-local `y`) recorded on the current page,
     /// consumed by [`finish_page`] to lay out the gutter comment panel.
     pub(super) pending_comment_anchors: Vec<(String, f32)>,
+    /// When `true`, paragraphs laid out in this state break over-long words to
+    /// the available width (CSS `overflow-wrap: anywhere`). Set while flowing
+    /// table-cell content so a long word wraps to the column width instead of
+    /// overflowing into the neighbouring cell.
+    pub(super) break_long_words: bool,
 }
 
 impl FlowState<'_> {
@@ -293,6 +298,7 @@ fn new_flow_state<'a>(
         column_para_start: 0,
         comments,
         pending_comment_anchors: Vec::new(),
+        break_long_words: false,
     }
 }
 
@@ -1179,6 +1185,8 @@ fn measure_cell_height(
         // Cells never render the comment gutter panel.
         comments: &[],
         pending_comment_anchors: Vec::new(),
+        // Cell content: break over-long words to the column width (Word).
+        break_long_words: true,
     };
 
     for block in &cell.blocks {
@@ -1305,6 +1313,8 @@ fn flow_cell_blocks(
         // Cells never render the comment gutter panel.
         comments: &[],
         pending_comment_anchors: Vec::new(),
+        // Cell content: break over-long words to the column width (Word).
+        break_long_words: true,
     };
 
     for block in blocks {
@@ -1503,10 +1513,14 @@ fn flow_table(
             } else {
                 state.current_indent = cell_x + pad_left;
                 state.content_width = cell_content_width;
+                // Cell content breaks over-long words to the column width (Word).
+                let old_break = state.break_long_words;
+                state.break_long_words = true;
 
                 for block in &cell.blocks {
                     flow_block(state, block, idx);
                 }
+                state.break_long_words = old_break;
 
                 // If it fits on a single page, apply vertical alignment
                 let cell_page_start = cell_starts[c_idx].0;

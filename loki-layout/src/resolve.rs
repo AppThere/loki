@@ -899,6 +899,8 @@ fn map_para_props(p: &ParaProps) -> ResolvedParaProps {
             });
             stops
         },
+        // Set by the flow engine for table-cell content; see ResolvedParaProps.
+        break_long_words: false,
     }
 }
 

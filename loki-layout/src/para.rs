@@ -18,7 +18,8 @@ use loki_doc_model::style::list_style::{
 use loki_doc_model::style::props::tab_stop::{TabAlignment, TabLeader};
 use parley::{
     Alignment, AlignmentOptions, Cursor, FontFamily, FontStyle, FontWeight, InlineBox,
-    InlineBoxKind, LineHeight, PositionedLayoutItem, RangedBuilder, Selection, StyleProperty,
+    InlineBoxKind, LineHeight, OverflowWrap, PositionedLayoutItem, RangedBuilder, Selection,
+    StyleProperty,
 };
 
 use crate::color::LayoutColor;
@@ -258,6 +259,12 @@ pub struct ResolvedParaProps {
     /// Explicit tab stops, sorted ascending by position. Empty = use the
     /// default 36 pt (0.5 inch) grid. Gap #7.
     pub tab_stops: Vec<ResolvedTabStop>,
+    /// Break an over-long word that does not fit the available width by
+    /// allowing a break at any character (CSS `overflow-wrap: anywhere`).
+    /// Set for table-cell content so a long unbreakable word wraps to the
+    /// fixed column width (matching Word) instead of overflowing into the
+    /// neighbouring cell. Normal body paragraphs leave this `false`.
+    pub break_long_words: bool,
 }
 
 impl Default for ResolvedParaProps {
@@ -283,6 +290,7 @@ impl Default for ResolvedParaProps {
             indent_hanging: 0.0,
             list_marker: None,
             tab_stops: Vec::new(),
+            break_long_words: false,
         }
     }
 }
@@ -765,6 +773,11 @@ fn push_para_styles(
 ) {
     builder.push_default(StyleProperty::Brush(LayoutColor::BLACK));
     builder.push_default(StyleProperty::FontSize(12.0));
+    // Table cells break over-long words to the column width (CSS
+    // `overflow-wrap: anywhere`); body paragraphs keep words intact.
+    if para_props.break_long_words {
+        builder.push_default(StyleProperty::OverflowWrap(OverflowWrap::Anywhere));
+    }
     match para_props.line_height {
         // MetricsRelative(1.0) is Parley's default — single-spacing from natural
         // font metrics. Correct for OOXML lineRule="auto" w:line="240".

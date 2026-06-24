@@ -468,6 +468,78 @@ fn fixed_columns_underflowing_table_width_are_scaled_up_current_behavior() {
     }
 }
 
+/// A long unbreakable word in a narrow fixed-width cell must wrap *within* the
+/// column (CSS `overflow-wrap: anywhere`, matching Word's fixed-layout
+/// behaviour) — making the row tall — instead of overflowing horizontally into
+/// the neighbouring cell. Pins the TC-DOCX-006 fix.
+#[test]
+fn long_word_wraps_within_narrow_cell() {
+    use loki_doc_model::content::table::col::TableWidth;
+    let mut r = test_resources();
+    let cell = make_cell_tall(
+        vec!["Narrowcolumnshouldnotgrowtofitthislongunbrokenword"],
+        None,
+        1,
+    );
+    let table = Block::Table(Box::new(Table {
+        attr: loki_doc_model::content::attr::NodeAttr::default(),
+        caption: Default::default(),
+        width: Some(TableWidth::Fixed(60.0)),
+        col_specs: vec![ColSpec {
+            alignment: ColAlignment::Default,
+            width: ColWidth::Fixed(loki_primitives::units::Points::new(60.0)),
+        }],
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![Row::new(vec![cell])])],
+        foot: TableFoot::empty(),
+    }));
+    let section = Section {
+        layout: PageLayout::default(),
+        blocks: vec![table],
+        extensions: ExtensionBag::default(),
+    };
+    let (items, height) = flow_pageless(&mut r, &section);
+
+    // Each wrapped line's width must fit the 60pt column (small tolerance), i.e.
+    // no line overflows horizontally into a neighbouring cell. (Content sits at
+    // the page's left-margin offset, so width — not absolute x — is the check.)
+    let max_line_width = items
+        .iter()
+        .filter_map(|i| match i {
+            PositionedItem::GlyphRun(run) => {
+                Some(run.glyphs.iter().map(|g| g.advance).sum::<f32>())
+            }
+            _ => None,
+        })
+        .fold(0.0_f32, f32::max);
+    assert!(
+        max_line_width < 62.0,
+        "each wrapped line must fit the 60pt column; widest line = {max_line_width}"
+    );
+    // The word wrapped across several lines, so the row is much taller than one.
+    assert!(
+        height > 40.0,
+        "the wrapped word must make the row tall; table height = {height}"
+    );
+    // Multiple glyph runs on distinct baselines confirm the word actually wrapped.
+    let distinct_lines = {
+        let mut ys: Vec<f32> = items
+            .iter()
+            .filter_map(|i| match i {
+                PositionedItem::GlyphRun(run) => Some((run.origin.y * 4.0).round()),
+                _ => None,
+            })
+            .collect();
+        ys.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        ys.dedup();
+        ys.len()
+    };
+    assert!(
+        distinct_lines >= 4,
+        "expected the long word to wrap to several lines; got {distinct_lines}"
+    );
+}
+
 #[test]
 fn test_table_cell_vertical_alignment() {
     use loki_doc_model::content::table::row::CellVerticalAlign;
