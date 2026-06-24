@@ -1324,6 +1324,42 @@ fn flow_cell_blocks(
     temp_state.current_items
 }
 
+/// Assign each cell its grid column span `(col_start, col_end)`, accounting for
+/// columns occupied by a `row_span` (vMerge) cell from an earlier row.
+///
+/// Walks rows top-to-bottom, left-to-right: each cell takes the next column not
+/// already covered by a vertical merge from above, then occupies `col_span`
+/// columns. A cell with `row_span > 1` marks its columns covered in the rows it
+/// spans, so cells there skip those columns. Mirrors the OOXML/HTML table grid.
+fn assign_cell_columns(
+    rows: &[&loki_doc_model::content::table::row::Row],
+    col_count: usize,
+) -> Vec<Vec<(usize, usize)>> {
+    let mut covered = vec![vec![false; col_count]; rows.len()];
+    let mut cell_cols: Vec<Vec<(usize, usize)>> = Vec::with_capacity(rows.len());
+    for (row_idx, row) in rows.iter().enumerate() {
+        let mut col = 0usize;
+        let mut row_cols = Vec::with_capacity(row.cells.len());
+        for cell in &row.cells {
+            while col < col_count && covered[row_idx][col] {
+                col += 1;
+            }
+            let col_start = col.min(col_count);
+            let col_end = (col_start + cell.col_span as usize).min(col_count);
+            row_cols.push((col_start, col_end));
+            if cell.row_span > 1 {
+                let last = (row_idx + cell.row_span as usize).min(rows.len());
+                for cov_row in covered.iter_mut().take(last).skip(row_idx + 1) {
+                    cov_row[col_start..col_end].fill(true);
+                }
+            }
+            col = col_end;
+        }
+        cell_cols.push(row_cols);
+    }
+    cell_cols
+}
+
 fn flow_table(
     state: &mut FlowState,
     tbl: &loki_doc_model::content::table::core::Table,
@@ -1341,13 +1377,19 @@ fn flow_table(
     }
     rows.extend(&tbl.foot.rows);
 
+    // Assign each cell its grid columns, accounting for columns covered by a
+    // `row_span` (vMerge) cell from an earlier row. `cell_cols[row][cell] =
+    // (col_start, col_end)`. Without this, a cell in a row whose leading
+    // column is occupied by a vertical merge above would be placed too far
+    // left (overlapping the merged cell) — the TC-DOCX-005 L-merge bug.
+    let cell_cols = assign_cell_columns(&rows, col_widths.len());
+
     let mut row_heights = vec![0.0f32; rows.len()];
 
     // Pass 1: Measure all cells with row_span == 1
     for (row_idx, row) in rows.iter().enumerate() {
-        let mut col_start = 0;
-        for cell in &row.cells {
-            let col_end = (col_start + cell.col_span as usize).min(col_widths.len());
+        for (c_idx, cell) in row.cells.iter().enumerate() {
+            let (col_start, col_end) = cell_cols[row_idx][c_idx];
             if cell.row_span == 1 {
                 let pad_left = cell.props.padding_left.map(pts_to_f32).unwrap_or(0.0);
                 let pad_right = cell.props.padding_right.map(pts_to_f32).unwrap_or(0.0);
@@ -1364,16 +1406,14 @@ fn flow_table(
                 );
                 row_heights[row_idx] = row_heights[row_idx].max(h);
             }
-            col_start = col_end;
         }
         row_heights[row_idx] = row_heights[row_idx].max(crate::MIN_ROW_HEIGHT);
     }
 
     // Pass 2: Distribute spanning cell heights across spanned rows
     for (row_idx, row) in rows.iter().enumerate() {
-        let mut col_start = 0;
-        for cell in &row.cells {
-            let col_end = (col_start + cell.col_span as usize).min(col_widths.len());
+        for (c_idx, cell) in row.cells.iter().enumerate() {
+            let (col_start, col_end) = cell_cols[row_idx][c_idx];
             if cell.row_span > 1 {
                 let span = cell.row_span as usize;
                 let spanned_height: f32 = row_heights
@@ -1399,7 +1439,6 @@ fn flow_table(
                     row_heights[last] += extra;
                 }
             }
-            col_start = col_end;
         }
     }
 
@@ -1425,9 +1464,8 @@ fn flow_table(
         let mut cell_starts = Vec::new();
 
         // Pass 3a: Flow cell content blocks
-        let mut col_start = 0;
         for (c_idx, cell) in row.cells.iter().enumerate() {
-            let col_end = (col_start + cell.col_span as usize).min(col_widths.len());
+            let (col_start, col_end) = cell_cols[row_idx][c_idx];
             let old_indent = state.current_indent;
             let old_width = state.content_width;
 
@@ -1550,7 +1588,6 @@ fn flow_table(
 
             state.current_indent = old_indent;
             state.content_width = old_width;
-            col_start = col_end;
         }
 
         let row_page_end = state.page_number;
@@ -1601,15 +1638,6 @@ fn flow_table(
 
         // Pass 3b: Emit background and border decorations for this row's cells
         for p in original_row_page..=row_page_end {
-            let mut col_start_map = Vec::new();
-            {
-                let mut curr_col = 0;
-                for cell in &row.cells {
-                    col_start_map.push(curr_col);
-                    curr_col = (curr_col + cell.col_span as usize).min(col_widths.len());
-                }
-            }
-
             for (c_idx, cell) in row.cells.iter().enumerate().rev() {
                 let cell_page_start = cell_starts[c_idx].0;
                 let cell_item_start = cell_starts[c_idx].1;
@@ -1633,8 +1661,7 @@ fn flow_table(
                 }
 
                 let y = get_cell_y_on_page(p);
-                let col_start = col_start_map[c_idx];
-                let col_end = (col_start + cell.col_span as usize).min(col_widths.len());
+                let (col_start, col_end) = cell_cols[row_idx][c_idx];
                 let cell_w: f32 = col_widths[col_start..col_end].iter().sum();
                 let cell_x = table_indent + col_widths[0..col_start].iter().sum::<f32>();
                 let cell_rect = LayoutRect {

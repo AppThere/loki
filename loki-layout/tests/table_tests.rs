@@ -193,10 +193,16 @@ fn test_table_row_span_distribution() {
         .iter()
         .find(|r| r.rect.x() > 100.0 && r.rect.y() < 1.0)
         .unwrap();
+    // c11 is in row 1, where column 0 is covered by c00's vertical span, so it
+    // must be placed in column 1 (x > 100) — not overlapping the merged cell.
     let rect_c11 = bg_rects
         .iter()
-        .find(|r| r.rect.x() < 100.0 && r.rect.y() > 1.0)
+        .find(|r| r.rect.x() > 100.0 && r.rect.y() > 1.0)
         .unwrap();
+    assert!(
+        (rect_c11.rect.x() - rect_c01.rect.x()).abs() < 1e-3,
+        "c11 must sit in the same column as c01 (column 1), not under the vMerge cell"
+    );
 
     let h_c00 = rect_c00.rect.height();
     let h_c01 = rect_c01.rect.height();
@@ -466,6 +472,90 @@ fn fixed_columns_underflowing_table_width_are_scaled_up_current_behavior() {
             "col {i}: current behaviour scales 50pt → 150pt (300/100); got {w}"
         );
     }
+}
+
+/// TC-DOCX-003/004/005 L-merge: row 1 has a `vMerge`-restart cell spanning two
+/// rows in column 0; the row below has a `gridSpan=2` cell that must land in
+/// columns 1–2 (the covered column 0 is skipped), and the merged cell must
+/// extend down beside it. Pins the covered-column grid fix.
+#[test]
+fn vmerge_gridspan_l_merge_places_cells_correctly() {
+    use loki_doc_model::content::table::col::TableWidth;
+    use loki_primitives::units::Points;
+    let mut r = test_resources();
+    let bg = Some(DocumentColor::Rgb(appthere_color::RgbColor::new(
+        0.5, 0.5, 0.5,
+    )));
+    let mut header = make_cell_tall(vec!["Header"], bg.clone(), 1);
+    header.col_span = 3;
+    let a = make_cell_tall(vec!["A"], bg.clone(), 2); // vMerge restart, spans 2 rows
+    let b2 = make_cell_tall(vec!["B2"], bg.clone(), 1);
+    let c2 = make_cell_tall(vec!["C2"], bg.clone(), 1);
+    let mut bc = make_cell_tall(vec!["B3C3"], bg.clone(), 1); // gridSpan=2; continue cell dropped on import
+    bc.col_span = 2;
+
+    let table = Block::Table(Box::new(Table {
+        attr: Default::default(),
+        caption: Default::default(),
+        width: Some(TableWidth::Fixed(300.0)),
+        col_specs: (0..3)
+            .map(|_| ColSpec {
+                alignment: ColAlignment::Default,
+                width: ColWidth::Fixed(Points::new(100.0)),
+            })
+            .collect(),
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![
+            Row::new(vec![header]),
+            Row::new(vec![a, b2, c2]),
+            Row::new(vec![bc]),
+        ])],
+        foot: TableFoot::empty(),
+    }));
+    let section = Section {
+        layout: PageLayout::default(),
+        blocks: vec![table],
+        extensions: ExtensionBag::default(),
+    };
+    let (items, _) = flow_pageless(&mut r, &section);
+    let rects: Vec<_> = items
+        .iter()
+        .filter_map(|i| match i {
+            PositionedItem::FilledRect(rect) => Some(rect.rect),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(rects.len(), 5, "5 cell backgrounds (continue cell dropped)");
+
+    let header = rects
+        .iter()
+        .max_by(|a, b| a.width().partial_cmp(&b.width()).unwrap())
+        .unwrap();
+    let b3c3 = rects
+        .iter()
+        .max_by(|a, b| a.y().partial_cmp(&b.y()).unwrap())
+        .unwrap();
+    // The gridSpan cell skips the vMerge-covered column 0 → starts at column 1.
+    assert!(
+        (b3c3.x() - header.x() - 100.0).abs() < 1.0,
+        "B3C3 must start at column 1 (header.x + 100); got x={} vs header.x={}",
+        b3c3.x(),
+        header.x()
+    );
+    assert!(
+        (b3c3.width() - 200.0).abs() < 1.0,
+        "B3C3 spans columns 1-2 (200pt); got {}",
+        b3c3.width()
+    );
+    // The merged cell (column 0, below the header) extends down beside B3C3.
+    let a = rects
+        .iter()
+        .find(|r| (r.x() - header.x()).abs() < 1.0 && r.y() > header.y() + 1.0)
+        .expect("merged cell A in column 0");
+    assert!(
+        (a.y() + a.height() - (b3c3.y() + b3c3.height())).abs() < 1.0,
+        "the vMerge cell must extend to the bottom of the spanned rows"
+    );
 }
 
 /// A long unbreakable word in a narrow fixed-width cell must wrap *within* the
