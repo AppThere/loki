@@ -145,6 +145,10 @@ pub struct CollectedImage {
     pub cx_emu: u64,
     /// Height in English Metric Units.
     pub cy_emu: u64,
+    /// Float wrap configuration when the drawing is anchored (floating), or
+    /// `None` for an inline drawing. Read from the image's `NodeAttr` (see
+    /// [`loki_doc_model::content::float::FloatWrap`]).
+    pub float: Option<loki_doc_model::content::float::FloatWrap>,
 }
 
 /// A footnote or endnote body collected during paragraph flattening.
@@ -690,6 +694,7 @@ fn walk_inlines(
                         alt,
                         cx_emu,
                         cy_emu,
+                        float: loki_doc_model::content::float::FloatWrap::read(attr),
                     });
                 }
             }

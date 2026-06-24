@@ -15,6 +15,8 @@
 mod columns_impl;
 #[path = "flow_comments.rs"]
 mod comments_impl;
+#[path = "flow_float.rs"]
+mod float_impl;
 #[path = "flow_para.rs"]
 mod para_impl;
 

@@ -138,9 +138,21 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     let effective_para: &StyledParagraph = owned_para.as_ref().unwrap_or(para);
     // ────────────────────────────────────────────────────────────────────────
 
-    let (text, spans, images, notes) =
+    let (text, spans, mut images, notes) =
         flatten_paragraph(effective_para, state.catalog, &mut state.note_counter);
     state.pending_footnotes.extend(notes);
+
+    // ── Floating image wrap (gap #12) ────────────────────────────────────────
+    // Reserve a side band so the paragraph's text wraps beside a square/tight/
+    // through float; the float image itself is emitted after text layout. The
+    // floated image is removed from the inline/block image set so it is not also
+    // stacked above the text.
+    let float_plan = super::float_impl::plan_float(&images, state.content_width);
+    if let Some((idx, placement)) = &float_plan {
+        resolved.indent_start += placement.indent_start_delta;
+        resolved.indent_end += placement.indent_end_delta;
+        images.remove(*idx);
+    }
 
     state.cursor_y += resolved.space_before;
 
@@ -194,6 +206,13 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
         // Prepend image items (they render before paragraph text).
         image_items.append(&mut para_layout.items);
         para_layout.items = image_items;
+    }
+
+    // Emit the floating image beside the wrapped text and reserve its height so
+    // the following paragraph clears it.
+    if let Some((_, placement)) = float_plan {
+        para_layout.items.push(placement.item);
+        para_layout.height = para_layout.height.max(placement.height);
     }
 
     place_paragraph_layout(state, &resolved, para_layout, block_index);
