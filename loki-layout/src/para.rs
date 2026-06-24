@@ -265,6 +265,12 @@ pub struct ResolvedParaProps {
     /// fixed column width (matching Word) instead of overflowing into the
     /// neighbouring cell. Normal body paragraphs leave this `false`.
     pub break_long_words: bool,
+    /// Dropped-initial specification, or `None`. When set (and the paragraph
+    /// qualifies — see [`layout_paragraph`]), the leading character(s) are
+    /// enlarged to span `lines` text rows with the body text flowing beside
+    /// them. Imported from OOXML `w:framePr`/`w:dropCap` and ODF
+    /// `style:drop-cap`.
+    pub drop_cap: Option<loki_doc_model::style::props::drop_cap::DropCap>,
 }
 
 impl Default for ResolvedParaProps {
@@ -291,6 +297,7 @@ impl Default for ResolvedParaProps {
             list_marker: None,
             tab_stops: Vec::new(),
             break_long_words: false,
+            drop_cap: None,
         }
     }
 }
@@ -1179,6 +1186,38 @@ fn layout_paragraph_uncached(
         )
     };
 
+    // ── Drop-cap preparation (read-only paint path only) ──────────────────────
+    // The dropped initial spans several lines, so it is removed from the body
+    // flow and rendered separately; the first `n_lines` body lines are narrowed
+    // and shifted to clear it. Gated to `!preserve_for_editing` because trimming
+    // the cap from the body text would desync editor hit-test indices; in the
+    // editor the initial keeps its inline form (follow-up). Tabs / inline math
+    // disqualify a paragraph (the cap's manual breaking is incompatible).
+    let drop_state: Option<(
+        loki_doc_model::style::props::drop_cap::DropCap,
+        String,
+        StyleSpan,
+    )> = para_props
+        .drop_cap
+        .filter(|_| !preserve_for_editing && tab_char_positions.is_empty() && math_boxes.is_empty())
+        .and_then(|dc| {
+            let k = crate::para_drop_cap::cap_byte_len(&clean_text, dc.length);
+            if k == 0 || k >= clean_text.len() {
+                return None; // no initial, or no body text would remain
+            }
+            let base = clean_spans
+                .iter()
+                .find(|s| s.range.start == 0 && s.range.end > 0)
+                .or_else(|| clean_spans.first())
+                .cloned()?;
+            let cap_text = clean_text[..k].to_string();
+            let (body, body_spans) =
+                crate::para_drop_cap::trim_leading(&clean_text, &clean_spans, k);
+            clean_text = body;
+            clean_spans = body_spans;
+            Some((dc, cap_text, base))
+        });
+
     // ── Main (final) layout pass ──────────────────────────────────────────────
     let mut builder = resources.layout_cx.ranged_builder(
         &mut resources.font_cx,
@@ -1200,7 +1239,47 @@ fn layout_paragraph_uncached(
     push_math_inline_boxes(&mut builder, &math_boxes);
 
     let mut layout = builder.build(&clean_text);
-    layout.break_all_lines(Some(line_w));
+    // For a drop-cap paragraph, plan the cap from the body's first-line metrics,
+    // then re-break narrowing the first `n_lines` lines by the cap region.
+    let drop_plan = if let Some((dc, cap_text, base)) = &drop_state {
+        layout.break_all_lines(Some(line_w)); // Pass A: read body line metrics.
+        let (lh, asc, bl) = layout
+            .lines()
+            .next()
+            .map(|l| {
+                let m = l.metrics();
+                (m.line_height, m.ascent, m.baseline)
+            })
+            .unwrap_or((0.0, 0.0, 0.0));
+        let plan = crate::para_drop_cap::plan_drop_cap(
+            resources,
+            cap_text,
+            base,
+            dc,
+            lh,
+            bl,
+            asc,
+            display_scale,
+        );
+        if let Some(p) = &plan {
+            // Re-break the whole body at the narrowed width so every line clears
+            // the cap band. The first `n_lines` are then shifted right into the
+            // band during emission; later lines stay at the left margin.
+            //
+            // APPROX(drop-cap-width): Parley's public API exposes no per-line
+            // max-advance (the setter is on the private breaker state), so lines
+            // *below* the cap also wrap at the narrowed width and lose
+            // `body_inset` of measure — they ragged-right slightly early rather
+            // than reclaiming full width as Word does. Text still stays within
+            // the margins. A true per-line solution needs upstream Parley API.
+            let narrow = (line_w - p.body_inset).max(1.0);
+            layout.break_all_lines(Some(narrow));
+        }
+        plan
+    } else {
+        layout.break_all_lines(Some(line_w));
+        None
+    };
     layout.align(para_props.alignment, AlignmentOptions::default());
 
     let total_height = layout.height();
@@ -1231,11 +1310,17 @@ fn layout_paragraph_uncached(
     for line in layout.lines() {
         // Hanging indent: the first line shifts left so the marker is visible to
         // the left of `indent_start`. Subsequent lines use the full `indent_start`.
-        let indent_x = if line_index == 0 && para_props.indent_hanging > 0.0 {
+        let mut indent_x = if line_index == 0 && para_props.indent_hanging > 0.0 {
             para_props.indent_start - para_props.indent_hanging
         } else {
             para_props.indent_start
         };
+        // Drop cap: the first `n_lines` body lines are inset to clear the cap.
+        if let Some(p) = &drop_plan
+            && line_index < p.n_lines
+        {
+            indent_x += p.body_inset;
+        }
         let line_baseline = line.metrics().baseline;
         for item in line.items() {
             // Math inline box: emit the typeset equation's draw items, offset to
@@ -1404,6 +1489,18 @@ fn layout_paragraph_uncached(
             }
         }
         line_index += 1;
+    }
+
+    // Drop cap: emit the enlarged initial, shifted to the paragraph's left edge
+    // (the same `indent_start` the body glyphs use). Grow the paragraph height
+    // if the cap hangs below a short body.
+    if let Some(p) = &drop_plan {
+        for it in &p.items {
+            let mut it = it.clone();
+            it.translate(para_props.indent_start, 0.0);
+            items.push(it);
+        }
+        content_bottom = content_bottom.max(p.bottom);
     }
 
     // Prepend border (below background so it renders on top).

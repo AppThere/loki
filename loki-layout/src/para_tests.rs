@@ -4,7 +4,7 @@
 //! Unit tests for [`crate::para`].
 
 use super::*;
-use crate::items::{BorderStyle, PositionedItem};
+use crate::items::{BorderStyle, PositionedGlyphRun, PositionedItem};
 use loki_doc_model::style::list_style::{
     BulletChar, LabelAlignment, ListLevel, ListLevelKind, NumberingScheme,
 };
@@ -893,6 +893,115 @@ fn line_end_offset_excludes_trailing_newline() {
     assert_eq!(
         end, 5,
         "trailing newline must be excluded from line end offset"
+    );
+}
+
+#[test]
+fn drop_cap_enlarges_initial_and_shifts_first_lines() {
+    use loki_doc_model::style::props::drop_cap::{DropCap, DropCapLength};
+
+    let mut r = test_resources();
+    let text = "Hello world this is a longer paragraph that wraps across several lines so \
+                we can exercise the dropped-initial rendering path with enough body text \
+                to produce a number of distinct wrapped lines below the cap band.";
+    let spans = [single_span(text, 12.0)];
+    let props = ResolvedParaProps {
+        drop_cap: Some(DropCap {
+            lines: 3,
+            length: DropCapLength::Chars(1),
+            distance: DocPoints::new(2.0),
+            margin: false,
+        }),
+        ..ResolvedParaProps::default()
+    };
+    // Read-only (paint) path: drop caps render dropped only when !preserve.
+    let result = layout_paragraph(&mut r, text, &spans, &props, 300.0, 1.0, false);
+
+    let runs: Vec<&PositionedGlyphRun> = result
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            PositionedItem::GlyphRun(g) => Some(g),
+            _ => None,
+        })
+        .collect();
+    assert!(!runs.is_empty(), "expected glyph runs");
+
+    // The cap is sized to span ~3 lines → far larger than the 12 pt body.
+    let max_size = runs.iter().map(|g| g.font_size).fold(0.0_f32, f32::max);
+    assert!(
+        max_size > 24.0,
+        "cap glyph should be enlarged to span 3 lines; max font_size = {max_size}"
+    );
+    // Body text is retained at the original 12 pt.
+    assert!(
+        runs.iter().any(|g| (g.font_size - 12.0).abs() < 0.5),
+        "body text should remain at 12 pt"
+    );
+
+    // Body (12 pt) runs only. The first body line (smallest y) must be shifted
+    // right to clear the cap; a later line must sit back at the left margin.
+    let mut body: Vec<&PositionedGlyphRun> = runs
+        .iter()
+        .copied()
+        .filter(|g| (g.font_size - 12.0).abs() < 0.5)
+        .collect();
+    body.sort_by(|a, b| a.origin.y.partial_cmp(&b.origin.y).unwrap());
+    let first_y = body.first().unwrap().origin.y;
+    let last_y = body.last().unwrap().origin.y;
+    assert!(last_y > first_y, "body must wrap to multiple lines");
+
+    let first_line_min_x = body
+        .iter()
+        .filter(|g| (g.origin.y - first_y).abs() < 0.5)
+        .map(|g| g.origin.x)
+        .fold(f32::INFINITY, f32::min);
+    let last_line_min_x = body
+        .iter()
+        .filter(|g| (g.origin.y - last_y).abs() < 0.5)
+        .map(|g| g.origin.x)
+        .fold(f32::INFINITY, f32::min);
+    assert!(
+        first_line_min_x > 10.0,
+        "first body line must clear the cap band; min x = {first_line_min_x}"
+    );
+    assert!(
+        last_line_min_x < first_line_min_x - 5.0,
+        "a line below the cap must return toward the left margin; \
+         first = {first_line_min_x}, last = {last_line_min_x}"
+    );
+}
+
+#[test]
+fn drop_cap_inline_when_preserving_for_editing() {
+    use loki_doc_model::style::props::drop_cap::{DropCap, DropCapLength};
+
+    let mut r = test_resources();
+    let text = "Hello world this is body text that should stay inline in the editor.";
+    let spans = [single_span(text, 12.0)];
+    let props = ResolvedParaProps {
+        drop_cap: Some(DropCap {
+            lines: 3,
+            length: DropCapLength::Chars(1),
+            distance: DocPoints::new(2.0),
+            margin: false,
+        }),
+        ..ResolvedParaProps::default()
+    };
+    // Editing path: the cap stays inline (no enlarged glyph) so hit-test
+    // indices remain aligned with the source text.
+    let result = layout_paragraph(&mut r, text, &spans, &props, 300.0, 1.0, true);
+    let max_size = result
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            PositionedItem::GlyphRun(g) => Some(g.font_size),
+            _ => None,
+        })
+        .fold(0.0_f32, f32::max);
+    assert!(
+        (max_size - 12.0).abs() < 0.5,
+        "editor path must keep the initial inline at body size; max = {max_size}"
     );
 }
 

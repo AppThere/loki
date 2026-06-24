@@ -350,7 +350,9 @@ pub(crate) fn map_document(
                     );
                     sections.push(Section {
                         layout,
-                        blocks: std::mem::take(&mut current_blocks),
+                        blocks: super::drop_cap_merge::merge_drop_cap_frames(std::mem::take(
+                            &mut current_blocks,
+                        )),
                         extensions: ExtensionBag::default(),
                     });
                 }
@@ -373,7 +375,7 @@ pub(crate) fn map_document(
     );
     sections.push(Section {
         layout: final_layout,
-        blocks: current_blocks,
+        blocks: super::drop_cap_merge::merge_drop_cap_frames(current_blocks),
         extensions: ExtensionBag::default(),
     });
 

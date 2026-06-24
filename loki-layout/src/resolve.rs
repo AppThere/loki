@@ -901,6 +901,9 @@ fn map_para_props(p: &ParaProps) -> ResolvedParaProps {
         },
         // Set by the flow engine for table-cell content; see ResolvedParaProps.
         break_long_words: false,
+        // Dropped initial (rendered in the read-only/paint path); see
+        // `layout_paragraph`. Forwarded straight from the imported model.
+        drop_cap: p.drop_cap,
     }
 }
 
