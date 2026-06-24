@@ -11,9 +11,9 @@ use quick_xml::events::Event;
 
 use crate::docx::model::document::{DocxBodyChild, DocxDocument};
 use crate::docx::model::paragraph::{
-    DocxBorderEdge, DocxCols, DocxDrawing, DocxHdrFtrRef, DocxHyperlink, DocxInd, DocxNumPr,
-    DocxPBdr, DocxPPr, DocxParaChild, DocxParagraph, DocxPgMar, DocxPgSz, DocxRFonts, DocxRPr,
-    DocxRun, DocxRunChild, DocxSectPr, DocxSpacing, DocxTab,
+    DocxBorderEdge, DocxCols, DocxDrawing, DocxFramePr, DocxHdrFtrRef, DocxHyperlink, DocxInd,
+    DocxNumPr, DocxPBdr, DocxPPr, DocxParaChild, DocxParagraph, DocxPgMar, DocxPgSz, DocxRFonts,
+    DocxRPr, DocxRun, DocxRunChild, DocxSectPr, DocxSpacing, DocxTab,
 };
 use crate::docx::model::styles::{
     DocxCellMargins, DocxTableCell, DocxTableModel, DocxTableRow, DocxTblPr, DocxTblWidth,
@@ -22,6 +22,7 @@ use crate::docx::model::styles::{
 use crate::docx::reader::runs::{parse_fld_simple_runs, parse_hyperlink_runs, parse_tracked_runs};
 use crate::docx::reader::util::{attr_val, local_name, parse_emu, toggle_prop};
 use crate::error::{OoxmlError, OoxmlResult};
+use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
 
 /// Parses `word/document.xml` bytes into a [`DocxDocument`].
 pub fn parse_document(xml: &[u8]) -> OoxmlResult<DocxDocument> {
@@ -321,6 +322,17 @@ fn apply_ppr_attr(name: &[u8], e: &quick_xml::events::BytesStart<'_>, ppr: &mut 
         b"bidi" => ppr.bidi = Some(toggle_prop(attr_val(e, b"val").as_deref())),
         b"widowControl" => ppr.widow_control = Some(toggle_prop(attr_val(e, b"val").as_deref())),
         b"shd" => ppr.shd_fill = attr_val(e, b"fill"),
+        b"framePr" => {
+            ppr.frame_pr = Some(DocxFramePr {
+                drop_cap: attr_val(e, b"dropCap"),
+                lines: attr_val(e, b"lines")
+                    .as_deref()
+                    .and_then(|v| v.parse().ok()),
+                h_space: attr_val(e, b"hSpace")
+                    .as_deref()
+                    .and_then(|v| v.parse().ok()),
+            });
+        }
         _ => {}
     }
 }
@@ -696,13 +708,22 @@ fn parse_drawing(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxDrawing> {
         descr: None,
         name: None,
         is_anchor: false,
+        wrap: None,
     };
+    // Wrap mode/side are carried on a `wp:wrap*` child; `behindDoc` lives on the
+    // `wp:anchor` element. Collect both, then assemble the `FloatWrap` at the end.
+    let mut wrap_mode: Option<TextWrap> = None;
+    let mut wrap_side = WrapSide::Both;
+    let mut behind_doc = false;
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
                 match local_name(e.local_name().as_ref()) {
-                    b"anchor" => drawing.is_anchor = true,
+                    b"anchor" => {
+                        drawing.is_anchor = true;
+                        behind_doc = attr_val(e, b"behindDoc").as_deref() == Some("1");
+                    }
                     b"extent" => {
                         drawing.cx = attr_val(e, b"cx").as_deref().and_then(parse_emu);
                         drawing.cy = attr_val(e, b"cy").as_deref().and_then(parse_emu);
@@ -714,6 +735,20 @@ fn parse_drawing(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxDrawing> {
                     b"blip" => {
                         drawing.rel_id = attr_val(e, b"embed");
                     }
+                    b"wrapSquare" => {
+                        wrap_mode = Some(TextWrap::Square);
+                        wrap_side = parse_wrap_text(e);
+                    }
+                    b"wrapTight" => {
+                        wrap_mode = Some(TextWrap::Tight);
+                        wrap_side = parse_wrap_text(e);
+                    }
+                    b"wrapThrough" => {
+                        wrap_mode = Some(TextWrap::Through);
+                        wrap_side = parse_wrap_text(e);
+                    }
+                    b"wrapTopAndBottom" => wrap_mode = Some(TextWrap::TopAndBottom),
+                    b"wrapNone" => wrap_mode = Some(TextWrap::None),
                     _ => {}
                 }
             }
@@ -731,7 +766,24 @@ fn parse_drawing(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxDrawing> {
         }
         buf.clear();
     }
+    if let Some(wrap) = wrap_mode {
+        drawing.wrap = Some(FloatWrap {
+            wrap,
+            side: wrap_side,
+            behind_text: behind_doc,
+        });
+    }
     Ok(drawing)
+}
+
+/// Reads the `wrapText` attribute of a `wp:wrap*` element into a [`WrapSide`].
+fn parse_wrap_text(e: &quick_xml::events::BytesStart<'_>) -> WrapSide {
+    match attr_val(e, b"wrapText").as_deref() {
+        Some("left") => WrapSide::Left,
+        Some("right") => WrapSide::Right,
+        Some("largest") => WrapSide::Largest,
+        _ => WrapSide::Both,
+    }
 }
 
 /// Parses a `w:tbl` element. Called after Start("tbl") is consumed.

@@ -63,6 +63,7 @@ This is the living source of truth documenting which document features, characte
 | **Named / Custom Paragraph Styles** | Yes | Yes | Yes | The full style catalog round-trips through DOCX `styles.xml`: custom styles created in the style editor, plus edits to built-in `Normal`/`Heading1`–`6`, persist across save/reload. Font family, weight (→ bold), size, alignment, indentation (incl. first-line), spacing, line height, `basedOn`, `next`-style, outline level, and the custom flag are all written and read back. In-session, the catalog round-trips through the Loro CRDT (`loro_bridge::styles`, a JSON snapshot like metadata), so style-editor edits are durable across rebuilds and **undoable** with Ctrl+Z/Ctrl+Y. |
 | **border_between** | Yes | No | No | Rules between adjacent same-styled paragraphs ignored. |
 | **bidi / RTL** | Yes | No | No | RTL paragraphs ignored due to Parley API limitations. |
+| **Drop Cap** | Yes | No | No | Imported into `ParaProps.drop_cap` (`DropCap`: lines spanned, length in chars or whole word, distance, in-margin vs in-text). DOCX `w:framePr` (`w:dropCap`/`w:lines`/`w:hSpace`) and ODF `style:drop-cap` (`style:lines`/`style:length`/`style:distance`) both map. **Not yet rendered** — the initial is still laid out inline at body size; multi-line spanning + wrap-around is the follow-up. Not yet re-exported, and not round-tripped through the Loro CRDT. Tested: `frame_pr_*` (DOCX mapper), `read_stylesheet_drop_cap` + `drop_cap_*` (ODT reader/mapper). ACID TC-DOCX-015 / TC-ODT-013. |
 
 ---
 
@@ -76,6 +77,7 @@ This is the living source of truth documenting which document features, characte
 | **Row Spanning** | Yes | Yes | Yes | Spanning heights distributed across spanned rows (`w:vMerge`). |
 | **Text Direction** | Yes | Yes | Yes | Mapped for vertical and rotated cell text. |
 | **Inline Images** | Yes | Yes | Yes | Positioned inline drawings rendered via data URIs. |
+| **Floating Images / Wrap Mode** | Yes | No | No | Anchored (floating) drawings are marked with the `floating` class and now carry their **text-wrap mode** (`FloatWrap`: square/tight/through/top-and-bottom/none, side both/left/right/largest, behind-text flag) on the image/figure `NodeAttr`. DOCX `wp:wrapSquare`/`wrapTight`/`wrapThrough`/`wrapTopAndBottom`/`wrapNone` (+ `wrapText` side, anchor `behindDoc`) and ODF `style:wrap` + `style:run-through` (on the frame's graphic style) both map. **Not yet laid out** — the flow engine has no exclusion zones, so text does not wrap around floats (gap #12); floating drawings are still not painted. Tested: `anchor_drawing_carries_wrap_mode` (DOCX), `read_stylesheet_graphic_wrap` (ODT). ACID TC-DOCX-023 / TC-ODT-007. |
 | **External Images** | Yes | No | No | Renders as gray placeholder rectangles. |
 
 ---

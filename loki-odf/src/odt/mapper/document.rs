@@ -25,6 +25,7 @@ use loki_doc_model::content::block::{
     TableOfContentsBlock,
 };
 use loki_doc_model::content::field::types::{CrossRefFormat, Field, FieldKind};
+use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
 use loki_doc_model::content::inline::{
     BookmarkKind, Inline, LinkTarget, MathType, NoteKind, StyledRun,
 };
@@ -56,7 +57,7 @@ use crate::odt::model::fields::OdfField;
 use crate::odt::model::frames::{OdfFrame, OdfFrameKind};
 use crate::odt::model::notes::{OdfNote, OdfNoteClass};
 use crate::odt::model::paragraph::{OdfHyperlink, OdfParagraph, OdfParagraphChild, OdfSpan};
-use crate::odt::model::styles::{OdfCellProps, OdfStyle, OdfStylesheet};
+use crate::odt::model::styles::{OdfCellProps, OdfGraphicWrap, OdfStyle, OdfStylesheet};
 use crate::odt::model::tables::OdfTable;
 use crate::xml_util::parse_length;
 
@@ -86,6 +87,9 @@ pub(crate) struct OdfMappingContext<'a> {
     /// Cell properties from `style:table-cell-properties`: style name → props.
     /// Pre-built from the ODF stylesheet before the mapping pass.
     pub cell_style_props: &'a HashMap<String, OdfCellProps>,
+    /// Frame text-wrap from `style:graphic-properties`: graphic-style name →
+    /// wrap config. Pre-built from the ODF stylesheet before the mapping pass.
+    pub frame_wraps: &'a HashMap<String, FloatWrap>,
     /// Non-fatal issues accumulated during mapping.
     pub warnings: Vec<OdfWarning>,
     /// Floating frames (images and text boxes that are not `as-char` anchored)
@@ -138,6 +142,14 @@ pub(crate) fn map_document(
         .filter_map(|s| Some((s.name.clone(), s.cell_props.clone()?)))
         .collect();
 
+    // ── 2c. Pre-build frame-wrap lookup from graphic styles ──────────────────
+    let frame_wraps: HashMap<String, FloatWrap> = stylesheet
+        .named_styles
+        .iter()
+        .chain(stylesheet.auto_styles.iter())
+        .filter_map(|s| Some((s.name.clone(), map_graphic_wrap(s.graphic_wrap.as_ref()?)?)))
+        .collect();
+
     // ── 3. Build style lookup for master page resolution ─────────────────────
     let all_styles: HashMap<&str, &OdfStyle> = stylesheet
         .named_styles
@@ -163,6 +175,7 @@ pub(crate) fn map_document(
             options,
             col_style_widths: &col_style_widths,
             cell_style_props: &cell_style_props,
+            frame_wraps: &frame_wraps,
             warnings: Vec::new(),
             pending_figures: Vec::new(),
             comments: Vec::new(),
@@ -433,6 +446,36 @@ fn map_field(odf: &OdfField) -> Field {
 
 // ── Frames ─────────────────────────────────────────────────────────────────────
 
+/// Convert an [`OdfGraphicWrap`] (raw `style:wrap`/`style:run-through`) to the
+/// neutral [`FloatWrap`]. Returns `None` when no `style:wrap` is specified.
+fn map_graphic_wrap(gw: &OdfGraphicWrap) -> Option<FloatWrap> {
+    let wrap_str = gw.wrap.as_deref()?;
+    let (wrap, side) = match wrap_str {
+        "none" => (TextWrap::TopAndBottom, WrapSide::Both),
+        "parallel" => (TextWrap::Square, WrapSide::Both),
+        "left" => (TextWrap::Square, WrapSide::Left),
+        "right" => (TextWrap::Square, WrapSide::Right),
+        "dynamic" | "biggest" => (TextWrap::Square, WrapSide::Largest),
+        "run-through" => (TextWrap::None, WrapSide::Both),
+        _ => return None,
+    };
+    let behind_text = gw.run_through.as_deref() == Some("background");
+    Some(FloatWrap {
+        wrap,
+        side,
+        behind_text,
+    })
+}
+
+/// Resolve the text-wrap for a frame from its graphic style (`draw:style-name`).
+fn frame_wrap(frame: &OdfFrame, ctx: &OdfMappingContext<'_>) -> Option<FloatWrap> {
+    frame
+        .style_name
+        .as_deref()
+        .and_then(|name| ctx.frame_wraps.get(name))
+        .copied()
+}
+
 /// Map an ODF drawing frame to an inline element.
 ///
 /// For `as-char`-anchored frames, the mapped element is returned directly.
@@ -469,8 +512,14 @@ fn map_frame(frame: &OdfFrame, ctx: &mut OdfMappingContext<'_>) -> Option<Inline
             if is_as_char {
                 Some(img)
             } else {
+                // Carry the frame's text-wrap (from its graphic style) on the
+                // figure so the layout engine can flow text around it later.
+                let mut fattr = NodeAttr::default();
+                if let Some(wrap) = frame_wrap(frame, ctx) {
+                    wrap.store(&mut fattr);
+                }
                 ctx.pending_figures.push(Block::Figure(
-                    NodeAttr::default(),
+                    fattr,
                     Caption::default(),
                     vec![Block::Para(vec![img])],
                 ));
@@ -1136,6 +1185,7 @@ mod tests {
             text_props: None,
             col_width: None,
             cell_props: None,
+            graphic_wrap: None,
             is_automatic: false,
             master_page_name: mpn.map(String::from),
         }

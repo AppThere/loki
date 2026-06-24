@@ -98,6 +98,22 @@ pub struct DocxPPr {
     /// Carries formatting that applies to the paragraph mark itself (e.g. a
     /// font override that affects the default spacing of an empty paragraph).
     pub ppr_rpr: Option<DocxRPr>,
+    /// Text-frame properties from `w:framePr` — carries drop-cap settings.
+    pub frame_pr: Option<DocxFramePr>,
+}
+
+/// `w:framePr` text-frame properties (ECMA-376 §17.3.1.11).
+///
+/// Only the drop-cap-relevant attributes are captured; the full text-frame
+/// positioning model is not yet imported.
+#[derive(Debug, Clone, Default)]
+pub struct DocxFramePr {
+    /// `@w:dropCap` — `"drop"`, `"margin"`, `"none"`, or `"default"`.
+    pub drop_cap: Option<String>,
+    /// `@w:lines` — number of lines the dropped cap spans.
+    pub lines: Option<u8>,
+    /// `@w:hSpace` — horizontal distance from the surrounding text, in twips.
+    pub h_space: Option<i32>,
 }
 
 /// `w:ind` indentation attributes (ECMA-376 §17.3.1.12).
@@ -295,4 +311,7 @@ pub struct DocxDrawing {
     pub name: Option<String>,
     /// Whether this is an anchor (floating) rather than inline drawing.
     pub is_anchor: bool,
+    /// Text-wrap configuration for a floating (anchored) drawing.
+    /// `None` for inline drawings or anchored drawings without a wrap element.
+    pub wrap: Option<loki_doc_model::content::float::FloatWrap>,
 }

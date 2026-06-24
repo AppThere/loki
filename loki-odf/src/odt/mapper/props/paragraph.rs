@@ -4,12 +4,13 @@
 //! Paragraph property mapping (`OdfParaProps` → `ParaProps`) and its border helper.
 
 use loki_doc_model::style::props::border::{Border, BorderStyle};
+use loki_doc_model::style::props::drop_cap::{DropCap, DropCapLength};
 use loki_doc_model::style::props::para_props::{LineHeight, ParaProps, Spacing};
 use loki_doc_model::style::props::tab_stop::TabStop;
 use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 
-use crate::odt::model::styles::OdfParaProps;
+use crate::odt::model::styles::{OdfDropCap, OdfParaProps};
 use crate::xml_util::parse_length;
 
 use super::cell::{map_tab_stop, map_text_align};
@@ -154,7 +155,42 @@ pub(crate) fn map_para_props(props: &OdfParaProps) -> ParaProps {
         }
     }
 
+    // ── Drop cap ───────────────────────────────────────────────────────────
+    if let Some(dc) = props.drop_cap.as_ref() {
+        out.drop_cap = Some(map_drop_cap(dc));
+    }
+
     out
+}
+
+/// Convert an ODF `style:drop-cap` to the neutral [`DropCap`]. ODF drop caps are
+/// always dropped within the text body (never in the margin).
+fn map_drop_cap(dc: &OdfDropCap) -> DropCap {
+    let lines = dc
+        .lines
+        .as_deref()
+        .and_then(|s| s.parse::<u8>().ok())
+        .unwrap_or(1)
+        .max(1);
+    let length = match dc.length.as_deref() {
+        Some("word") => DropCapLength::Word,
+        Some(n) => n
+            .parse::<u8>()
+            .ok()
+            .map_or(DropCapLength::Chars(1), |c| DropCapLength::Chars(c.max(1))),
+        None => DropCapLength::Chars(1),
+    };
+    let distance = dc
+        .distance
+        .as_deref()
+        .and_then(parse_length)
+        .unwrap_or(Points::new(0.0));
+    DropCap {
+        lines,
+        length,
+        distance,
+        margin: false,
+    }
 }
 
 /// Parse an ODF CSS-like border shorthand `"width style color"` into a
@@ -208,4 +244,48 @@ pub(super) fn parse_odf_border(s: &str) -> Option<Border> {
         color,
         spacing: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::odt::model::styles::OdfDropCap;
+
+    #[test]
+    fn drop_cap_maps_lines_length_distance() {
+        let props = OdfParaProps {
+            drop_cap: Some(OdfDropCap {
+                lines: Some("3".into()),
+                length: Some("2".into()),
+                distance: Some("0.2cm".into()),
+            }),
+            ..Default::default()
+        };
+        let dc = map_para_props(&props).drop_cap.expect("drop cap mapped");
+        assert_eq!(dc.lines, 3);
+        assert_eq!(dc.length, DropCapLength::Chars(2));
+        assert!(!dc.margin);
+        // 0.2cm ≈ 5.67pt.
+        assert!((dc.distance.value() - 5.669).abs() < 0.1);
+    }
+
+    #[test]
+    fn drop_cap_word_length() {
+        let props = OdfParaProps {
+            drop_cap: Some(OdfDropCap {
+                lines: Some("2".into()),
+                length: Some("word".into()),
+                distance: None,
+            }),
+            ..Default::default()
+        };
+        let dc = map_para_props(&props).drop_cap.expect("drop cap");
+        assert_eq!(dc.length, DropCapLength::Word);
+        assert_eq!(dc.lines, 2);
+    }
+
+    #[test]
+    fn no_drop_cap_when_absent() {
+        assert!(map_para_props(&OdfParaProps::default()).drop_cap.is_none());
+    }
 }

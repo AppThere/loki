@@ -138,6 +138,7 @@ mod tests {
             text_props: None,
             col_width: None,
             cell_props: None,
+            graphic_wrap: None,
             is_automatic: is_auto,
             master_page_name: None,
         }
@@ -157,6 +158,7 @@ mod tests {
             }),
             col_width: None,
             cell_props: None,
+            graphic_wrap: None,
             is_automatic: false,
             master_page_name: None,
         }
@@ -254,6 +256,7 @@ mod tests {
                 text_props: None,
                 col_width: None,
                 cell_props: None,
+                graphic_wrap: None,
                 is_automatic: false,
                 master_page_name: None,
             }],

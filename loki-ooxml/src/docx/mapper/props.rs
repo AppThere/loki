@@ -13,6 +13,7 @@ use loki_doc_model::style::props::border::{Border, BorderStyle};
 use loki_doc_model::style::props::char_props::{
     CharProps, HighlightColor, StrikethroughStyle, UnderlineStyle, VerticalAlign,
 };
+use loki_doc_model::style::props::drop_cap::{DropCap, DropCapLength};
 use loki_doc_model::style::props::para_props::{
     LineHeight, ParaProps, ParagraphAlignment, Spacing,
 };
@@ -20,10 +21,27 @@ use loki_doc_model::style::props::tab_stop::{TabAlignment, TabLeader, TabStop};
 use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 
-use crate::docx::model::paragraph::{DocxBorderEdge, DocxPPr, DocxRPr};
+use crate::docx::model::paragraph::{DocxBorderEdge, DocxFramePr, DocxPPr, DocxRPr};
 use crate::xml_util::hex_color;
 
 // ── Internal conversion helpers ───────────────────────────────────────────────
+
+/// Maps `w:framePr` to a [`DropCap`], or `None` when no drop cap is requested
+/// (`w:dropCap` absent, `"none"`, or `"default"`). OOXML carries no explicit
+/// character count, so the length defaults to a single character.
+fn map_frame_pr(fp: &DocxFramePr) -> Option<DropCap> {
+    let margin = match fp.drop_cap.as_deref()? {
+        "drop" => false,
+        "margin" => true,
+        _ => return None,
+    };
+    Some(DropCap {
+        lines: fp.lines.unwrap_or(1).max(1),
+        length: DropCapLength::Chars(1),
+        distance: twips_to_pt(fp.h_space.unwrap_or(0)),
+        margin,
+    })
+}
 
 /// Converts a twips integer to [`Points`] (1 pt = 20 twips).
 fn twips_to_pt(twips: i32) -> Points {
@@ -153,6 +171,11 @@ pub(crate) fn map_ppr(ppr: &DocxPPr) -> ParaProps {
     props.keep_with_next = ppr.keep_next;
     props.page_break_before = ppr.page_break_before;
     props.bidi = ppr.bidi;
+
+    // Drop cap (w:framePr w:dropCap). Only "drop"/"margin" produce a drop cap.
+    if let Some(ref fp) = ppr.frame_pr {
+        props.drop_cap = map_frame_pr(fp);
+    }
 
     // OOXML outline_lvl is 0-indexed; model is 1-indexed (None = body text).
     props.outline_level = ppr.outline_lvl.map(|l| l + 1);
@@ -335,6 +358,49 @@ mod tests {
             jc: Some(jc.into()),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn frame_pr_drop_maps_to_drop_cap() {
+        let ppr = DocxPPr {
+            frame_pr: Some(DocxFramePr {
+                drop_cap: Some("drop".into()),
+                lines: Some(3),
+                h_space: Some(40), // twips → 2pt
+            }),
+            ..Default::default()
+        };
+        let dc = map_ppr(&ppr).drop_cap.expect("drop cap present");
+        assert_eq!(dc.lines, 3);
+        assert!(!dc.margin);
+        assert_eq!(dc.distance.value(), 2.0);
+        assert_eq!(dc.length, DropCapLength::Chars(1));
+    }
+
+    #[test]
+    fn frame_pr_margin_is_in_margin() {
+        let ppr = DocxPPr {
+            frame_pr: Some(DocxFramePr {
+                drop_cap: Some("margin".into()),
+                lines: Some(2),
+                h_space: None,
+            }),
+            ..Default::default()
+        };
+        assert!(map_ppr(&ppr).drop_cap.expect("drop cap").margin);
+    }
+
+    #[test]
+    fn frame_pr_none_is_not_a_drop_cap() {
+        let ppr = DocxPPr {
+            frame_pr: Some(DocxFramePr {
+                drop_cap: Some("none".into()),
+                lines: None,
+                h_space: None,
+            }),
+            ..Default::default()
+        };
+        assert!(map_ppr(&ppr).drop_cap.is_none());
     }
 
     // ── map_ppr ──────────────────────────────────────────────────────────────

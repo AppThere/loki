@@ -10,6 +10,7 @@
 use crate::content::attr::ExtensionBag;
 use crate::style::list_style::ListId;
 use crate::style::props::border::Border;
+use crate::style::props::drop_cap::DropCap;
 use crate::style::props::tab_stop::TabStop;
 use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
@@ -194,6 +195,12 @@ pub struct ParaProps {
     /// ODF `style:writing-mode`; OOXML `w:bidi`.
     pub bidi: Option<bool>,
 
+    // ── Drop cap ──────────────────────────────────────────────────────────
+    /// Dropped/raised initial capital. ODF `style:drop-cap`; OOXML `w:framePr`
+    /// with `w:dropCap`. Captured at import; not yet rendered (the initial is
+    /// currently shown inline at body size).
+    pub drop_cap: Option<DropCap>,
+
     // ── Extensions ────────────────────────────────────────────────────────
     /// Format-specific properties not representable in the above fields.
     pub extensions: ExtensionBag,
@@ -242,6 +249,7 @@ impl ParaProps {
         inherit!(list_level);
         inherit!(outline_level);
         inherit!(bidi);
+        inherit!(drop_cap);
         self
     }
 }

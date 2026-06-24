@@ -4,6 +4,7 @@
 //! Image/drawing mapper: `w:drawing` → [`Inline::Image`].
 
 use loki_doc_model::content::attr::NodeAttr;
+use loki_doc_model::content::float::FLOATING_CLASS;
 use loki_doc_model::content::inline::{Inline, LinkTarget};
 
 use crate::docx::model::paragraph::DocxDrawing;
@@ -46,8 +47,11 @@ pub(crate) fn map_drawing(drawing: &DocxDrawing, ctx: &mut MappingContext<'_>) -
     if let Some(cy) = drawing.cy {
         attr.kv.push(("cy_emu".to_string(), cy.to_string()));
     }
-    if drawing.is_anchor {
-        attr.classes.push("floating".to_string());
+    if let Some(wrap) = drawing.wrap {
+        // Floating drawing with an explicit wrap mode: store wrap + floating class.
+        wrap.store(&mut attr);
+    } else if drawing.is_anchor {
+        attr.classes.push(FLOATING_CLASS.to_string());
     }
 
     let alt = match &drawing.descr {
@@ -108,6 +112,7 @@ mod tests {
             descr: None,
             name: None,
             is_anchor: false,
+            wrap: None,
         };
         let result = map_drawing(&drawing, &mut ctx);
         assert!(result.is_none());
@@ -135,6 +140,7 @@ mod tests {
             descr: None,
             name: None,
             is_anchor: false,
+            wrap: None,
         };
         let result = map_drawing(&drawing, &mut ctx);
         assert!(result.is_none());
@@ -166,6 +172,7 @@ mod tests {
             descr: Some("A test image".into()),
             name: Some("img1".into()),
             is_anchor: false,
+            wrap: None,
         };
         let result = map_drawing(&drawing, &mut ctx).unwrap();
         if let Inline::Image(attr, alt, target) = result {
@@ -202,10 +209,57 @@ mod tests {
             descr: None,
             name: None,
             is_anchor: true,
+            wrap: None,
         };
         let result = map_drawing(&drawing, &mut ctx).unwrap();
         if let Inline::Image(attr, _, _) = result {
             assert!(attr.classes.contains(&"floating".to_string()));
+        } else {
+            panic!("expected Image");
+        }
+    }
+
+    #[test]
+    fn anchor_drawing_carries_wrap_mode() {
+        use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
+
+        let mut images = HashMap::new();
+        images.insert("rId3".into(), PartData::new(vec![], "image/png"));
+
+        let catalog = StyleCatalog::default();
+        let fn_map = HashMap::new();
+        let en_map = HashMap::new();
+        let hl_map = HashMap::new();
+        let opts = DocxImportOptions {
+            embed_images: false,
+            ..Default::default()
+        };
+        let mut ctx = make_ctx(&images, &catalog, &fn_map, &en_map, &hl_map, &opts);
+
+        let drawing = DocxDrawing {
+            rel_id: Some("rId3".into()),
+            cx: None,
+            cy: None,
+            descr: None,
+            name: None,
+            is_anchor: true,
+            wrap: Some(FloatWrap {
+                wrap: TextWrap::Tight,
+                side: WrapSide::Left,
+                behind_text: false,
+            }),
+        };
+        let result = map_drawing(&drawing, &mut ctx).unwrap();
+        if let Inline::Image(attr, _, _) = result {
+            assert!(attr.classes.contains(&FLOATING_CLASS.to_string()));
+            assert_eq!(
+                FloatWrap::read(&attr),
+                Some(FloatWrap {
+                    wrap: TextWrap::Tight,
+                    side: WrapSide::Left,
+                    behind_text: false,
+                })
+            );
         } else {
             panic!("expected Image");
         }
