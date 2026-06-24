@@ -168,9 +168,8 @@ pub struct CollectedNote {
 /// 1. Named style chain via [`StyleCatalog::resolve_para`].
 /// 2. Direct paragraph formatting on the paragraph itself.
 pub fn resolve_para_props(block: &StyledParagraph, catalog: &StyleCatalog) -> ResolvedParaProps {
-    let mut base: ParaProps = block
-        .style_id
-        .as_ref()
+    let mut base: ParaProps = catalog
+        .effective_paragraph_style(block.style_id.as_ref())
         .and_then(|id| catalog.resolve_para(id))
         .unwrap_or_default();
     if let Some(direct) = &block.direct_para_props {
@@ -219,9 +218,8 @@ pub fn flatten_paragraph(
     Vec<CollectedImage>,
     Vec<CollectedNote>,
 ) {
-    let base: CharProps = block
-        .style_id
-        .as_ref()
+    let base: CharProps = catalog
+        .effective_paragraph_style(block.style_id.as_ref())
         .and_then(|id| catalog.resolve_char(id))
         .unwrap_or_default();
     let base = match &block.direct_char_props {

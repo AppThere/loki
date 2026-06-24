@@ -183,3 +183,23 @@ fn resolve_deep_legitimate_chain_still_inherits() {
     let resolved = catalog.resolve_char(&StyleId::new("S9")).unwrap();
     assert_eq!(resolved.italic, Some(true), "root value must inherit down");
 }
+
+#[test]
+fn effective_paragraph_style_falls_back_to_default() {
+    let mut catalog = StyleCatalog::new();
+    // No explicit style → None when no document default is set.
+    assert_eq!(catalog.effective_paragraph_style(None), None);
+
+    catalog.default_paragraph_style = Some(StyleId::new("Normal"));
+    // No explicit style → the document default.
+    assert_eq!(
+        catalog.effective_paragraph_style(None),
+        Some(&StyleId::new("Normal"))
+    );
+    // An explicit style always wins over the default.
+    let explicit = StyleId::new("Heading1");
+    assert_eq!(
+        catalog.effective_paragraph_style(Some(&explicit)),
+        Some(&explicit)
+    );
+}
