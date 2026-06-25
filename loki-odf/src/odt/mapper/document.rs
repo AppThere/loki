@@ -476,11 +476,39 @@ fn frame_wrap(frame: &OdfFrame, ctx: &OdfMappingContext<'_>) -> Option<FloatWrap
         .copied()
 }
 
+/// Builds the image's [`NodeAttr`], carrying the frame's pixel size as
+/// `cx_emu`/`cy_emu` (parsed from `svg:width`/`svg:height`).
+///
+/// Without these, the layout engine treats the image as zero-sized and skips
+/// it (and `plan_float` cannot reserve a wrap band). 1 pt = 12700 EMU.
+fn image_attr_with_size(frame: &OdfFrame) -> NodeAttr {
+    let mut attr = NodeAttr::default();
+    let to_emu = |s: &Option<String>| -> Option<u64> {
+        let pt = parse_length(s.as_deref()?)?.value();
+        // Guarded positive and finite; image dimensions are far within u64 range,
+        // so the round-and-cast cannot truncate or lose sign in practice.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        (pt > 0.0 && pt.is_finite()).then(|| (pt * 12700.0).round() as u64)
+    };
+    if let Some(cx) = to_emu(&frame.width) {
+        attr.kv.push(("cx_emu".to_string(), cx.to_string()));
+    }
+    if let Some(cy) = to_emu(&frame.height) {
+        attr.kv.push(("cy_emu".to_string(), cy.to_string()));
+    }
+    attr
+}
+
 /// Map an ODF drawing frame to an inline element.
 ///
-/// For `as-char`-anchored frames, the mapped element is returned directly.
-/// For floating frames, a [`Block::Figure`] or [`Block::Div`] is pushed to
-/// [`OdfMappingContext::pending_figures`] and `None` is returned.
+/// `as-char` frames map to an inline image directly. A non-`as-char` (floating)
+/// image frame that carries a text-wrap style is emitted as a **floating inline
+/// image** (the wrap mode + [`FLOATING_CLASS`] stored on its attr) so the layout
+/// engine flows text around it, exactly like the DOCX path. Floating frames
+/// without a wrap (and text boxes / objects) are pushed to
+/// [`OdfMappingContext::pending_figures`] as a block and `None` is returned.
+///
+/// [`FLOATING_CLASS`]: loki_doc_model::content::float::FLOATING_CLASS
 fn map_frame(frame: &OdfFrame, ctx: &mut OdfMappingContext<'_>) -> Option<Inline> {
     use base64::Engine as _;
     let is_as_char = frame.anchor_type.as_deref() == Some("as-char");
@@ -508,22 +536,28 @@ fn map_frame(frame: &OdfFrame, ctx: &mut OdfMappingContext<'_>) -> Option<Inline
                 .or(title.as_deref())
                 .map(|s| vec![Inline::Str(s.into())])
                 .unwrap_or_default();
-            let img = Inline::Image(NodeAttr::default(), alt, LinkTarget::new(data_uri));
-            if is_as_char {
-                Some(img)
-            } else {
-                // Carry the frame's text-wrap (from its graphic style) on the
-                // figure so the layout engine can flow text around it later.
-                let mut fattr = NodeAttr::default();
-                if let Some(wrap) = frame_wrap(frame, ctx) {
-                    wrap.store(&mut fattr);
+            let mut attr = image_attr_with_size(frame);
+
+            let wrap = (!is_as_char).then(|| frame_wrap(frame, ctx)).flatten();
+            match wrap {
+                // Floating image with a wrap: keep it inline (carrying the wrap)
+                // so the flow engine reserves a band and wraps text beside it.
+                Some(wrap) => {
+                    wrap.store(&mut attr);
+                    Some(Inline::Image(attr, alt, LinkTarget::new(data_uri)))
                 }
-                ctx.pending_figures.push(Block::Figure(
-                    fattr,
-                    Caption::default(),
-                    vec![Block::Para(vec![img])],
-                ));
-                None
+                // as-char image: a plain inline image.
+                None if is_as_char => Some(Inline::Image(attr, alt, LinkTarget::new(data_uri))),
+                // Floating frame without a wrap style: block-stacked figure.
+                None => {
+                    let img = Inline::Image(attr, alt, LinkTarget::new(data_uri));
+                    ctx.pending_figures.push(Block::Figure(
+                        NodeAttr::default(),
+                        Caption::default(),
+                        vec![Block::Para(vec![img])],
+                    ));
+                    None
+                }
             }
         }
         OdfFrameKind::TextBox { paragraphs } => {
@@ -1023,6 +1057,100 @@ mod tests {
             children: vec![OdfParagraphChild::Text(text.into())],
             list_context: None,
         }
+    }
+
+    /// A `style:family="graphic"` style carrying a `style:wrap` value.
+    fn graphic_style(name: &str, wrap: &str) -> OdfStyle {
+        OdfStyle {
+            name: name.into(),
+            display_name: None,
+            family: crate::odt::model::styles::OdfStyleFamily::Graphic,
+            parent_name: None,
+            list_style_name: None,
+            para_props: None,
+            text_props: None,
+            col_width: None,
+            cell_props: None,
+            graphic_wrap: Some(OdfGraphicWrap {
+                wrap: Some(wrap.into()),
+                run_through: None,
+            }),
+            is_automatic: true,
+            master_page_name: None,
+        }
+    }
+
+    #[test]
+    fn floating_image_frame_becomes_inline_float_with_size() {
+        use crate::odt::model::frames::{OdfFrame, OdfFrameKind};
+        use loki_doc_model::content::float::{FloatWrap, WrapSide};
+
+        // A paragraph anchoring a 1in × 1in floating image frame with a
+        // `style:wrap="right"` graphic style, followed by body text.
+        let frame = OdfFrame {
+            name: None,
+            style_name: Some("FrFloat".into()),
+            anchor_type: Some("paragraph".into()),
+            width: Some("1in".into()),
+            height: Some("1in".into()),
+            x: None,
+            y: None,
+            kind: OdfFrameKind::Image {
+                href: "Pictures/x.png".into(),
+                media_type: Some("image/png".into()),
+                title: None,
+                desc: None,
+            },
+        };
+        let para = OdfParagraph {
+            style_name: None,
+            outline_level: None,
+            is_heading: false,
+            children: vec![
+                OdfParagraphChild::Frame(frame),
+                OdfParagraphChild::Text("Body text beside the float.".into()),
+            ],
+            list_context: None,
+        };
+        let doc = empty_doc(vec![OdfBodyChild::Paragraph(para)]);
+
+        let mut sheet = empty_stylesheet();
+        sheet.auto_styles.push(graphic_style("FrFloat", "right"));
+        let mut images = HashMap::new();
+        images.insert(
+            "Pictures/x.png".to_string(),
+            ("image/png".to_string(), vec![0u8, 1, 2, 3]),
+        );
+
+        let (result, _) = map_document(&doc, &sheet, None, &images, &HashMap::new(), &options());
+
+        // The float stays inline in its anchoring paragraph (no separate Figure).
+        let blocks = &result.sections[0].blocks;
+        assert_eq!(blocks.len(), 1, "float must not spill into a Figure block");
+        let Block::StyledPara(p) = &blocks[0] else {
+            panic!("expected StyledPara, got {:?}", blocks[0]);
+        };
+        let img_attr = p
+            .inlines
+            .iter()
+            .find_map(|i| match i {
+                Inline::Image(attr, _, _) => Some(attr),
+                _ => None,
+            })
+            .expect("paragraph carries a floating image inline");
+
+        // Size is carried as EMU (1in = 72pt = 914400 EMU).
+        let cx = img_attr
+            .kv
+            .iter()
+            .find(|(k, _)| k == "cx_emu")
+            .map(|(_, v)| v.parse::<u64>().unwrap());
+        assert_eq!(cx, Some(914_400), "1in width → 914400 EMU");
+
+        // The wrap is readable and side=right (text on the right → float left).
+        let wrap = FloatWrap::read(img_attr).expect("float wrap stored on the image");
+        assert_eq!(wrap.side, WrapSide::Right);
+        assert!(!wrap.behind_text);
     }
 
     #[test]
