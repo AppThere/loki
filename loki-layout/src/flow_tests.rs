@@ -1300,4 +1300,91 @@ mod page_fields {
         let f2 = format!("{:?}", pages[1].footer_items);
         assert_eq!(f1, f2, "static footers should be identical on every page");
     }
+
+    /// A floating image taller than its short anchoring paragraph keeps wrapping
+    /// the *following* paragraph beside it (cross-paragraph wrap), and text below
+    /// the float reclaims the full column width.
+    #[test]
+    fn tall_float_wraps_following_paragraph() {
+        use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
+        use loki_doc_model::content::inline::LinkTarget;
+
+        fn floating_image(cx_emu: u64, cy_emu: u64) -> Inline {
+            let mut attr = NodeAttr::default();
+            attr.kv.push(("cx_emu".into(), cx_emu.to_string()));
+            attr.kv.push(("cy_emu".into(), cy_emu.to_string()));
+            // side = Right (text on the right) → float on the LEFT, text shifts right.
+            FloatWrap {
+                wrap: TextWrap::Square,
+                side: WrapSide::Right,
+                behind_text: false,
+            }
+            .store(&mut attr);
+            Inline::Image(attr, vec![], LinkTarget::new("data:image/png;base64,AAAA"))
+        }
+
+        let mut r = test_resources();
+        // 1 in × 1 in float (72 × 72 pt) anchored in a one-word paragraph.
+        let anchor = StyledParagraph {
+            style_id: None,
+            direct_para_props: None,
+            direct_char_props: None,
+            inlines: vec![floating_image(914_400, 914_400), Inline::Str("Hi.".into())],
+            attr: NodeAttr::default(),
+        };
+        // A long follower that wraps for many lines — past the float bottom.
+        let follower_text = "The quick brown fox jumps over the lazy dog. ".repeat(14);
+        let follower = make_para(&follower_text);
+        let section = section_of(vec![anchor, follower], PageLayout::default());
+
+        let (items, _h, _w) = flow_pageless(&mut r, &section);
+
+        // The float image is a tall item at the left edge.
+        let img = items
+            .iter()
+            .find_map(|i| match i {
+                PositionedItem::Image(im) => Some(im),
+                _ => None,
+            })
+            .expect("float image emitted");
+        // In Canvas/Pageless output, content x carries the left-margin offset, so
+        // a left float sits at ≈ the left margin rather than literal 0.
+        let left_edge = img.rect.origin.x;
+        assert!((img.rect.size.height - 72.0).abs() < 1.0, "1 in tall float");
+
+        // Glyph-run origins by y.
+        let glyphs: Vec<(f32, f32)> = items
+            .iter()
+            .filter_map(|i| match i {
+                PositionedItem::GlyphRun(g) => Some((g.origin.y, g.origin.x)),
+                _ => None,
+            })
+            .collect();
+
+        // The FOLLOWER's first lines (below the one-line anchor, still within the
+        // 72 pt float extent: y ∈ 20..60) are shifted right to clear the band.
+        let beside_min_x = glyphs
+            .iter()
+            .filter(|(y, _)| *y > 20.0 && *y < 60.0)
+            .map(|(_, x)| *x)
+            .fold(f32::INFINITY, f32::min);
+        assert!(
+            beside_min_x > left_edge + 70.0,
+            "follower lines beside the float must clear the band; \
+             min x = {beside_min_x}, float left = {left_edge}"
+        );
+
+        // Lines below the float (y > 90) reclaim the full column (back to the
+        // float's own left edge, i.e. the column start).
+        let below_min_x = glyphs
+            .iter()
+            .filter(|(y, _)| *y > 90.0)
+            .map(|(_, x)| *x)
+            .fold(f32::INFINITY, f32::min);
+        assert!(
+            below_min_x < left_edge + 5.0,
+            "text below the float must reclaim full width; \
+             min x = {below_min_x}, float left = {left_edge}"
+        );
+    }
 }

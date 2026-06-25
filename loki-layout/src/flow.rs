@@ -192,6 +192,11 @@ pub(super) struct FlowState<'a> {
     /// table-cell content so a long word wraps to the column width instead of
     /// overflowing into the neighbouring cell.
     pub(super) break_long_words: bool,
+    /// A float taller than its anchoring paragraph whose remaining vertical
+    /// extent the following paragraphs on this page keep wrapping beside. Set by
+    /// [`para_impl::flow_paragraph`]; reserved/cleared by
+    /// [`float_impl::reserve_active_float`] and on every page boundary.
+    pub(super) active_float: Option<float_impl::ActiveFloat>,
 }
 
 impl FlowState<'_> {
@@ -301,6 +306,7 @@ fn new_flow_state<'a>(
         comments,
         pending_comment_anchors: Vec::new(),
         break_long_words: false,
+        active_float: None,
     }
 }
 
@@ -345,6 +351,9 @@ fn run_paginated_loop(
         flow_block(state, block, i);
         i += 1;
     }
+    // Reserve any float left active by the final block so the section's height
+    // accounts for it.
+    float_impl::reserve_active_float(state);
     None
 }
 
@@ -437,6 +446,8 @@ pub fn flow_section(
         for (idx, block) in section.blocks.iter().enumerate() {
             flow_block(&mut state, block, idx);
         }
+        // Reserve any float left active by the final block (continuous mode).
+        float_impl::reserve_active_float(&mut state);
     }
 
     flow_footnotes(&mut state);
@@ -471,6 +482,15 @@ pub fn flow_section(
 // ── Block dispatch ────────────────────────────────────────────────────────────
 
 fn flow_block(state: &mut FlowState, block: &Block, idx: usize) {
+    // Only consecutive plain paragraphs continue a cross-paragraph float wrap;
+    // any other block clears the float (reserving its remaining height) so it
+    // does not overlap the image.
+    if !matches!(
+        block,
+        Block::StyledPara(_) | Block::Para(_) | Block::Plain(_) | Block::Heading(..)
+    ) {
+        float_impl::reserve_active_float(state);
+    }
     match block {
         Block::StyledPara(p) => flow_paragraph(state, p, idx),
         Block::Para(i) | Block::Plain(i) => {
@@ -598,6 +618,8 @@ pub(super) fn finish_page(state: &mut FlowState) {
     state.page_number += 1;
     state.current_paragraphs.clear();
     state.cursor_y = 0.0;
+    // Cross-paragraph float wrap does not continue onto the next page.
+    state.active_float = None;
 }
 
 // ── Header / footer layout helpers ───────────────────────────────────────────
@@ -1189,6 +1211,7 @@ fn measure_cell_height(
         pending_comment_anchors: Vec::new(),
         // Cell content: break over-long words to the column width (Word).
         break_long_words: true,
+        active_float: None,
     };
 
     for block in &cell.blocks {
@@ -1327,6 +1350,7 @@ fn flow_cell_blocks(
         pending_comment_anchors: Vec::new(),
         // Cell content: break over-long words to the column width (Word).
         break_long_words: true,
+        active_float: None,
     };
 
     for block in blocks {

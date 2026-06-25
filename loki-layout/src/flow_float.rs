@@ -9,23 +9,58 @@
 //! avoid (returned as left/right indent deltas), and produces the float's image
 //! item.
 //!
-//! **Scope (v1).** Wrapping is applied to the *anchoring paragraph* only. The
-//! band is passed to the layout as a [`crate::para::WrapBand`]; on the paint
-//! path the body is laid out in two passes (`para_band`) so lines beside the
-//! float are narrowed while lines below it reclaim the full column. `Square`,
-//! `Tight`, `Through`, and non-behind `None` modes wrap on one side (the tight
-//! contour is approximated by the bounding box; a margin-anchored `wrapNone`
-//! image reserves its space in Word, so text flows beside rather than under it).
-//! `TopAndBottom` and behind-text floats fall through to the block-stacked image
-//! path. A float taller than its paragraph reserves its full height so following
-//! paragraphs clear it, but they do not themselves wrap. OOXML `wp:anchor` wrap
-//! children; ODF `style:wrap`.
+//! **Scope.** The float is planned for the *anchoring paragraph*; the band is
+//! passed to the layout as a [`crate::para::WrapBand`] and, on the paint path,
+//! the body is laid out in two passes (`para_band`) so lines beside the float
+//! are narrowed while lines below it reclaim the full column. When the float is
+//! taller than its anchoring paragraph, the remaining extent is recorded as an
+//! [`ActiveFloat`] on the flow state so the *following* paragraphs continue to
+//! wrap beside it until the float bottom is cleared (cross-paragraph wrap).
+//! `Square`, `Tight`, `Through`, and non-behind `None` modes wrap on one side
+//! (the tight contour is approximated by the bounding box; a margin-anchored
+//! `wrapNone` image reserves its space in Word, so text flows beside rather than
+//! under it). `TopAndBottom` and behind-text floats fall through to the
+//! block-stacked image path. Cross-paragraph wrap is bounded to a single page
+//! and to consecutive plain paragraphs; a table/list/rule (or page break) below
+//! the float reserves its remaining height instead of wrapping. OOXML
+//! `wp:anchor` wrap children; ODF `style:wrap`.
 
 use loki_doc_model::content::float::{TextWrap, WrapSide};
 
 use crate::geometry::LayoutRect;
 use crate::items::{PositionedImage, PositionedItem};
 use crate::resolve::{CollectedImage, emu_to_pt};
+
+/// A float whose vertical extent reaches past its anchoring paragraph, so the
+/// paragraphs that follow on the same page keep wrapping beside it.
+///
+/// Tracked on [`super::FlowState::active_float`]. Coordinates are
+/// page-content-relative (the same space as [`super::FlowState::cursor_y`]).
+pub(crate) struct ActiveFloat {
+    /// Page-content-relative y of the float's bottom edge. Paragraphs starting
+    /// above this are narrowed to clear the band; the first one at/below it ends
+    /// the wrap.
+    pub bottom_y: f32,
+    /// Horizontal band width (points) following paragraphs must clear.
+    pub inset: f32,
+    /// `true` when the float is on the left (text shifts right); `false` when on
+    /// the right (text narrows but does not shift).
+    pub shift_text: bool,
+}
+
+/// Reserves any remaining vertical extent of an active float and clears it.
+///
+/// Called when the float can no longer be wrapped by following text — a
+/// non-paragraph block (table/list/rule), the end of the block list, or a page
+/// boundary. Advancing `cursor_y` to the float bottom keeps later content from
+/// overlapping the image.
+pub(crate) fn reserve_active_float(state: &mut super::FlowState) {
+    if let Some(af) = state.active_float.take()
+        && state.cursor_y < af.bottom_y
+    {
+        state.cursor_y = af.bottom_y;
+    }
+}
 
 /// Default gap between a float and the wrapped text, in points (~0.13").
 const FLOAT_WRAP_GAP: f32 = 9.0;
@@ -39,8 +74,9 @@ pub(crate) struct FloatPlacement {
     /// The float's image item in paragraph-content-local coordinates (x measured
     /// from the content-area left edge, y from the paragraph top).
     pub item: PositionedItem,
-    /// Float height in points; the paragraph reserves at least this much so the
-    /// following paragraph clears the float.
+    /// Float height in points. When it exceeds the anchoring paragraph's text,
+    /// the overhang becomes an [`ActiveFloat`] so following paragraphs wrap
+    /// beside it (and any unused tail is reserved before the next block).
     pub height: f32,
 }
 
