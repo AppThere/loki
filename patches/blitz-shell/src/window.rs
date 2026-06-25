@@ -455,13 +455,22 @@ impl<Rend: WindowRenderer> View<Rend> {
     }
 
     /// Sync the platform IME / soft keyboard to the current focus, calling into
-    /// winit (and thus `AndroidApp::show/hide_soft_input` on Android) only when
-    /// the desired state actually changes.
-    fn update_ime_for_focus(&mut self) {
+    /// winit (and thus `AndroidApp::show/hide_soft_input` on Android).
+    ///
+    /// A focus change toggles IME on/off. `force_show` additionally re-asserts
+    /// the keyboard on a fresh pointer tap **even when IME is already active**:
+    /// the user may have dismissed the soft keyboard (Android back / swipe-down),
+    /// which the OS never reports back to us, so without this a second tap to
+    /// reposition the caret in the same already-focused canvas would not bring
+    /// the keyboard back. winit forwards each `set_ime_allowed(true)` to
+    /// `AndroidApp::show_soft_input`, re-summoning it.
+    fn update_ime_for_focus(&mut self, force_show: bool) {
         let wants_ime = self.focused_node_wants_ime();
         if wants_ime != self.ime_active {
             self.ime_active = wants_ime;
             self.window.set_ime_allowed(wants_ime);
+        } else if force_show && wants_ime {
+            self.window.set_ime_allowed(true);
         }
     }
 
@@ -587,7 +596,7 @@ impl<Rend: WindowRenderer> View<Rend> {
 
                 self.doc.handle_ui_event(event);
                 // Tab / Shift-Tab can move focus between fields — keep IME in sync.
-                self.update_ime_for_focus();
+                self.update_ime_for_focus(false);
                 self.request_redraw();
             }
 
@@ -633,7 +642,9 @@ impl<Rend: WindowRenderer> View<Rend> {
                 };
                 self.doc.handle_ui_event(event);
                 // Focus is assigned on click (MouseUp); sync the soft keyboard.
-                self.update_ime_for_focus();
+                // A pointer release is a fresh tap: force-reassert so a dismissed
+                // keyboard reappears when the caret is repositioned.
+                self.update_ime_for_focus(matches!(state, ElementState::Released));
                 self.request_redraw();
             }
             WindowEvent::MouseWheel { delta, .. } => {
@@ -830,8 +841,9 @@ impl<Rend: WindowRenderer> View<Rend> {
                             }));
                             // A tap assigns focus (or clears it); raise or drop
                             // the Android soft keyboard accordingly.  Skipped for
-                            // scroll gestures, which never change focus.
-                            self.update_ime_for_focus();
+                            // scroll gestures, which never change focus.  `force`
+                            // re-summons a keyboard the user dismissed between taps.
+                            self.update_ime_for_focus(true);
                         }
                         self.request_redraw();
                     }

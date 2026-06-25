@@ -122,6 +122,16 @@ focusable `<div inputmode="text">`, so tapping it raises the keyboard while
 tapping a ribbon `<button>` (focusable, but not a text target) lowers it. An
 `ime_active: bool` field debounces redundant winit calls.
 
+**Soft-keyboard re-trigger on tap (PATCH(loki), 2026-06-25):** the OS never
+reports when the user dismisses the soft keyboard (Android back / swipe-down),
+so `ime_active` stays `true` and a second tap to reposition the caret in the
+already-focused canvas would never bring it back. `update_ime_for_focus` now
+takes a `force_show` flag: a focus change still toggles IME on/off, but a fresh
+pointer release (mouse-up / touch tap) on a text surface re-issues
+`set_ime_allowed(true)` even when IME is already active, re-summoning a
+dismissed keyboard. (If a future winit dedupes same-value `set_ime_allowed`
+calls, switch the force path to a `false`→`true` toggle.)
+
 **Scroll re-sync on resize (PATCH(loki), 2026-06-12):** `resync_scroll_geometry`
 calls `doc.resolve()` and then re-dispatches `onscroll` (via
 `collect_scroll_containers` + `handle_scroll_changes`) to every scroll container
