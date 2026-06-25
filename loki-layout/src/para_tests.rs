@@ -975,11 +975,11 @@ fn drop_cap_enlarges_initial_and_shifts_first_lines() {
 }
 
 #[test]
-fn drop_cap_inline_when_preserving_for_editing() {
+fn drop_cap_enlarged_and_hit_testable_in_editor() {
     use loki_doc_model::style::props::drop_cap::{DropCap, DropCapLength};
 
     let mut r = test_resources();
-    let text = "Hello world this is body text that should stay inline in the editor.";
+    let text = "Hello world this is body text that wraps beside the cap in the editor.";
     let spans = [single_span(text, 12.0)];
     let props = ResolvedParaProps {
         drop_cap: Some(DropCap {
@@ -990,9 +990,11 @@ fn drop_cap_inline_when_preserving_for_editing() {
         }),
         ..ResolvedParaProps::default()
     };
-    // Editing path: the cap stays inline (no enlarged glyph) so hit-test
-    // indices remain aligned with the source text.
+    // Editor path: the initial is enlarged (matching print) AND a hit-testable
+    // Parley layout is retained for the body.
     let result = layout_paragraph(&mut r, text, &spans, &props, 300.0, 1.0, true);
+
+    // The dropped initial is rendered enlarged (≈ 3 line-heights tall).
     let max_size = result
         .items
         .iter()
@@ -1002,8 +1004,38 @@ fn drop_cap_inline_when_preserving_for_editing() {
         })
         .fold(0.0_f32, f32::max);
     assert!(
-        (max_size - 12.0).abs() < 0.5,
-        "editor path must keep the initial inline at body size; max = {max_size}"
+        max_size > 24.0,
+        "editor must render the enlarged initial; max glyph size = {max_size}"
+    );
+
+    // Hit-testing is available (body layout retained).
+    let caret = result
+        .cursor_rect(1)
+        .expect("editor drop-cap paragraph must retain a hit-testable layout");
+    // The caret just after the cap (start of the body's first line) sits shifted
+    // right into the band, clearing the dropped initial.
+    assert!(
+        caret.x > 20.0,
+        "first body line caret must clear the cap band; x = {}",
+        caret.x
+    );
+
+    // A click in the body maps back to a sensible original offset past the cap.
+    let body_glyph = result
+        .items
+        .iter()
+        .find_map(|i| match i {
+            PositionedItem::GlyphRun(g) if g.font_size < 16.0 => Some(g.origin),
+            _ => None,
+        })
+        .expect("body glyphs present");
+    let hit = result
+        .hit_test_point(body_glyph.x + 2.0, body_glyph.y)
+        .expect("hit-test available in editor");
+    assert!(
+        hit.byte_offset >= 1,
+        "a click in the body must map past the cap byte; offset = {}",
+        hit.byte_offset
     );
 }
 

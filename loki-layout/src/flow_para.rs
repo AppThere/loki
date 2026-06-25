@@ -487,6 +487,8 @@ fn build_chain_layouts<'s>(
                         clean_to_orig: vec![0],
                         indent_start: 0.0,
                         indent_hanging: 0.0,
+                        drop_lines: 0,
+                        drop_shift: 0.0,
                     },
                 )
             }

@@ -407,6 +407,16 @@ pub struct ParagraphLayout {
     /// Hanging indent in points (first line starts this far left of
     /// `indent_start`). `0.0` = no hanging.
     pub indent_hanging: f32,
+    /// Number of leading lines shifted right by [`Self::drop_shift`] to clear a
+    /// dropped initial (or a float band in the editor fallback). `0` = none.
+    ///
+    /// Editing geometry ([`Self::line_indent`]) adds the shift to these lines so
+    /// the caret, hit-test, and selection coordinates line up with the rendered
+    /// glyphs (the Parley layout is built in an un-shifted coordinate space).
+    pub drop_lines: usize,
+    /// Horizontal shift in points applied to the first [`Self::drop_lines`]
+    /// lines. `0.0` = none.
+    pub drop_shift: f32,
 }
 
 impl std::fmt::Debug for ParagraphLayout {
@@ -594,10 +604,16 @@ impl ParagraphLayout {
     /// left of `indent_start`. Editing geometry adds this so cursor, hit-test,
     /// and selection coordinates line up with the rendered text.
     fn line_indent(&self, line_index: usize) -> f32 {
-        if line_index == 0 && self.indent_hanging > 0.0 {
+        let base = if line_index == 0 && self.indent_hanging > 0.0 {
             self.indent_start - self.indent_hanging
         } else {
             self.indent_start
+        };
+        // Leading lines beside a dropped initial / float band are shifted right.
+        if line_index < self.drop_lines {
+            base + self.drop_shift
+        } else {
+            base
         }
     }
 }
@@ -1053,7 +1069,7 @@ fn layout_paragraph_uncached(
     display_scale: f32,
     preserve_for_editing: bool,
 ) -> ParagraphLayout {
-    let (mut clean_text, mut clean_spans, orig_to_clean, clean_to_orig) =
+    let (mut clean_text, mut clean_spans, mut orig_to_clean, mut clean_to_orig) =
         clean_text_and_spans(text_content, style_spans);
 
     for span in &mut clean_spans {
@@ -1101,6 +1117,8 @@ fn layout_paragraph_uncached(
                 clean_to_orig,
                 indent_start: para_props.indent_start,
                 indent_hanging: para_props.indent_hanging,
+                drop_lines: 0,
+                drop_shift: 0.0,
             };
         }
         // Build a phantom single-space layout so cursor_rect can return a
@@ -1132,6 +1150,8 @@ fn layout_paragraph_uncached(
             clean_to_orig,
             indent_start: para_props.indent_start,
             indent_hanging: para_props.indent_hanging,
+            drop_lines: 0,
+            drop_shift: 0.0,
         };
     }
 
@@ -1241,12 +1261,15 @@ fn layout_paragraph_uncached(
         )
     };
 
-    // ── Drop-cap preparation (read-only paint path only) ──────────────────────
+    // ── Drop-cap preparation ──────────────────────────────────────────────────
     // The dropped initial spans several lines, so it is removed from the body
     // flow and rendered separately; the first `n_lines` body lines are narrowed
-    // and shifted to clear it. Gated to `!preserve_for_editing` because trimming
-    // the cap from the body text would desync editor hit-test indices; in the
-    // editor the initial keeps its inline form (follow-up). Tabs / inline math
+    // and shifted to clear it. The cap bytes are trimmed from `clean_text`, so
+    // the orig↔clean maps are rebased past them below to keep editor hit-testing
+    // aligned. Read-only paint uses the precise two-pass band split; the editor
+    // (`preserve_for_editing`) renders the same enlarged cap but lays the body
+    // out as a single uniform-narrow layout it can hit-test against (the lines
+    // below the cap are slightly narrow, as documented). Tabs / inline math
     // disqualify a paragraph (the cap's manual breaking is incompatible).
     let drop_state: Option<(
         loki_doc_model::style::props::drop_cap::DropCap,
@@ -1254,7 +1277,7 @@ fn layout_paragraph_uncached(
         StyleSpan,
     )> = para_props
         .drop_cap
-        .filter(|_| !preserve_for_editing && tab_char_positions.is_empty() && math_boxes.is_empty())
+        .filter(|_| tab_char_positions.is_empty() && math_boxes.is_empty())
         .and_then(|dc| {
             let k = crate::para_drop_cap::cap_byte_len(&clean_text, dc.length);
             if k == 0 || k >= clean_text.len() {
@@ -1272,6 +1295,22 @@ fn layout_paragraph_uncached(
             clean_spans = body_spans;
             Some((dc, cap_text, base))
         });
+
+    // Rebase the orig↔clean maps past the trimmed cap so the body layout's
+    // offsets (which start after the cap) map back to the right original bytes
+    // for editor hit-testing. The cap bytes [0, k) collapse to body offset 0;
+    // body byte j corresponds to clean byte j + k.
+    let drop_cap_bytes = drop_state
+        .as_ref()
+        .map(|(_, cap, _)| cap.len())
+        .unwrap_or(0);
+    if drop_cap_bytes > 0 {
+        for v in orig_to_clean.iter_mut() {
+            *v = v.saturating_sub(drop_cap_bytes);
+        }
+        let drain_to = drop_cap_bytes.min(clean_to_orig.len());
+        clean_to_orig.drain(0..drain_to);
+    }
 
     // ── Main (final) layout pass ──────────────────────────────────────────────
     let mut builder = resources.layout_cx.ranged_builder(
@@ -1380,19 +1419,32 @@ fn layout_paragraph_uncached(
             clean_to_orig,
             indent_start: para_props.indent_start,
             indent_hanging: para_props.indent_hanging,
+            drop_lines: 0,
+            drop_shift: 0.0,
         };
     }
 
     // Fallback / normal path: break at the (possibly band-narrowed) width. A
-    // band here means the float could not be split (editor, tabs, or math) — it
-    // uniformly narrows every line (APPROX, as documented for `para_band`).
+    // band here is a drop cap in the editor, or a float that could not be split
+    // (editor, tabs, or math). Every line wraps at the narrowed width (APPROX,
+    // as documented for `para_band`); only the leading lines beside the object
+    // are shifted right to clear it.
     let band_inset = band.as_ref().map(|b| b.inset).unwrap_or(0.0);
-    let band_shift = band
+    let drop_shift = band
         .as_ref()
         .map(|b| if b.shift_text { b.inset } else { 0.0 })
         .unwrap_or(0.0);
     layout.break_all_lines(Some((line_w - band_inset).max(1.0)));
     layout.align(para_props.alignment, AlignmentOptions::default());
+
+    // Leading lines whose top is within the band's vertical extent are shifted.
+    let drop_lines = match &band {
+        Some(b) => layout
+            .lines()
+            .take_while(|l| l.metrics().block_min_coord < b.cover_height)
+            .count(),
+        None => 0,
+    };
 
     let total_height = layout.height();
     let total_width = layout.width();
@@ -1427,8 +1479,11 @@ fn layout_paragraph_uncached(
         } else {
             para_props.indent_start
         };
-        // Float-wrap fallback (uniform narrow): every line clears the band.
-        indent_x += band_shift;
+        // Leading lines beside a drop cap / float band are shifted right to
+        // clear it; lines below it return to the paragraph's left edge.
+        if line_index < drop_lines {
+            indent_x += drop_shift;
+        }
         let line_baseline = line.metrics().baseline;
         for item in line.items() {
             // Math inline box: emit the typeset equation's draw items, offset to
@@ -1475,8 +1530,18 @@ fn layout_paragraph_uncached(
         line_index += 1;
     }
 
-    // `drop_plan` is always handled by the band-split path above (drop caps
-    // never reach this fallback), so only the box decorations remain here.
+    // A drop cap reaches this fallback only in the editor (`preserve_for_editing`),
+    // where the body is one hit-testable layout; emit its enlarged initial at the
+    // paragraph's left edge, above the shifted body lines.
+    if let Some((p, _)) = &drop_plan {
+        for it in &p.items {
+            let mut it = it.clone();
+            it.translate(para_props.indent_start, 0.0);
+            items.push(it);
+        }
+        content_bottom = content_bottom.max(p.bottom);
+    }
+
     prepend_para_box(&mut items, para_props, total_width, total_height);
 
     let parley_layout = if preserve_for_editing {
@@ -1499,6 +1564,8 @@ fn layout_paragraph_uncached(
         clean_to_orig,
         indent_start: para_props.indent_start,
         indent_hanging: para_props.indent_hanging,
+        drop_lines,
+        drop_shift,
     }
 }
 
