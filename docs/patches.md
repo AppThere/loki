@@ -192,6 +192,26 @@ touch variants.
 
 **Added:** 2026-05-08
 
+**Hover tooltip overlay (PATCH(loki), 2026-06-25):** Blitz/Stylo do not support
+`position: absolute`/`fixed`, so a hover tooltip cannot be a DOM element (see the
+COMPAT note in `appthere-ui/.../ribbon/button.rs`). Instead the shell paints the
+tooltip **into the Vello scene itself**, after `paint_scene`, entirely outside
+the DOM (`src/tooltip.rs` + `View::render_scene`). On `CursorMoved` the shell
+hit-tests the node under the cursor (`doc.hit`) and walks ancestors for a `title`
+attribute; a new titled element arms a delayed show (`HOVER_DELAY` = 500 ms) by
+spawning a one-shot thread that sends `BlitzShellEvent::Poll` at the deadline
+(the loop is `ControlFlow::Wait`, so a stationary cursor produces no other
+wake). `poll` flips the tooltip visible and requests a redraw; `render_scene`
+then shapes the label with a self-contained parley `FontContext` (`()` brush,
+generic sans-serif) and draws a shadow + rounded-rect + glyphs via
+`PaintScene::{draw_box_shadow, fill, draw_glyphs}`, mirroring `blitz-paint`'s
+glyph bridge so `run.font()` matches the `peniko::FontData` `draw_glyphs`
+expects (hence the pinned `parley 0.6` / `peniko 0.5` / `kurbo 0.12` deps).
+Click / scroll / keypress / touch clear it. The app side just adds a `title`
+attribute (the ribbon icon button reuses its `aria_label`). **Removal
+condition:** remove when Blitz supports `position: absolute`/`fixed` so tooltips
+can be real DOM nodes.
+
 ---
 
 ### blitz-net — 0.2.1

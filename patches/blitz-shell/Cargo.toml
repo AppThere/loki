@@ -73,6 +73,21 @@ version = "0.4"
 [dependencies.anyrender]
 version = "0.6"
 
+# PATCH(loki): tooltip overlay painting — shape the label (parley) and draw a
+# rounded-rect + glyphs (kurbo/peniko) directly into the Vello scene. Versions
+# match blitz-dom/blitz-paint (parley 0.6, peniko 0.5, kurbo 0.12) so the font
+# type from `run.font()` is the same `peniko::FontData` `draw_glyphs` expects.
+[dependencies.parley]
+version = "0.6.0"
+default-features = false
+features = ["std", "system"]
+
+[dependencies.kurbo]
+version = "0.12"
+
+[dependencies.peniko]
+version = "0.5.0"
+
 [dependencies.blitz-dom]
 version = "0.2.0"
 default-features = false

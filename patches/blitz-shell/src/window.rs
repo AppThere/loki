@@ -94,6 +94,11 @@ pub struct View<Rend: WindowRenderer> {
     /// `Some` while the finger is scrolling; `None` otherwise.
     pub touch_scroll_last_pos: Option<(f64, f64)>,
 
+    /// PATCH(loki): pending/visible hover tooltip (painted over the DOM scene).
+    pub tooltip: Option<crate::tooltip::Tooltip>,
+    /// PATCH(loki): persistent parley context for shaping tooltip labels.
+    pub tooltip_shaper: crate::tooltip::TooltipShaper,
+
     #[cfg(feature = "accessibility")]
     /// Accessibility adapter for `accesskit`.
     pub accessibility: AccessibilityState,
@@ -153,6 +158,8 @@ impl<Rend: WindowRenderer> View<Rend> {
             ime_active: false,
             touch_start: None,
             touch_scroll_last_pos: None,
+            tooltip: None,
+            tooltip_shaper: crate::tooltip::TooltipShaper::default(),
             #[cfg(feature = "accessibility")]
             accessibility: AccessibilityState::new(&winit_window, proxy.clone()),
         }
@@ -247,8 +254,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         };
 
         log::info!("[LOKI/resume] calling render");
-        self.renderer
-            .render(|scene| paint_scene(scene, &self.doc, scale, width, height));
+        self.render_scene(scale, width, height);
         log::info!("[LOKI/resume] render done");
 
         // Set waker
@@ -274,8 +280,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             return;
         }
         log::info!("[LOKI/activate] rendering initial frame");
-        self.renderer
-            .render(|scene| paint_scene(scene, &self.doc, scale, width, height));
+        self.render_scene(scale, width, height);
         // Request another redraw so any pending CSS/DOM changes (applied while
         // the renderer was inactive) are also painted.
         self.request_redraw();
@@ -302,6 +307,18 @@ impl<Rend: WindowRenderer> View<Rend> {
             }
         }
 
+        // PATCH(loki): reveal a pending tooltip whose hover delay has elapsed.
+        // A timer thread sends `Poll` at the deadline; the cursor may be idle,
+        // so this is the only chance to flip the tooltip visible and repaint.
+        if let Some(t) = self.tooltip.as_mut()
+            && !t.visible
+            && Instant::now() >= t.show_at
+        {
+            t.visible = true;
+            self.request_redraw();
+            return true;
+        }
+
         false
     }
 
@@ -324,8 +341,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         }
         let scale = self.doc.viewport().scale_f64();
         log::info!("[LOKI/redraw] viewport=({width},{height}) scale={scale}");
-        self.renderer
-            .render(|scene| paint_scene(scene, &self.doc, scale, width, height));
+        self.render_scene(scale, width, height);
 
         // PATCH(loki): re-arm a per-frame redraw only for genuine CSS
         // animations/transitions — NOT for the mere presence of a `<canvas>`.
@@ -474,6 +490,92 @@ impl<Rend: WindowRenderer> View<Rend> {
         }
     }
 
+    // ── PATCH(loki): hover tooltip overlay ─────────────────────────────────────
+
+    /// Refresh the hover tooltip from the element under the cursor. Walks
+    /// ancestors for a `title` attribute; arms a delayed show when a new titled
+    /// element is hovered, and clears the tooltip otherwise.
+    fn update_hover_tooltip(&mut self) {
+        let (mx, my) = self.mouse_pos;
+        let titled = self
+            .doc
+            .hit(mx, my)
+            .and_then(|hit| self.title_for_node(hit.node_id));
+        match titled {
+            Some((node_id, text)) => {
+                if self.tooltip.as_ref().map(|t| t.node_id) == Some(node_id) {
+                    // Same element — let a pending tooltip follow the cursor.
+                    if let Some(t) = self.tooltip.as_mut()
+                        && !t.visible
+                    {
+                        t.anchor = (mx, my);
+                    }
+                    return;
+                }
+                let was_visible = self.tooltip.as_ref().is_some_and(|t| t.visible);
+                self.tooltip = Some(crate::tooltip::Tooltip {
+                    node_id,
+                    text,
+                    anchor: (mx, my),
+                    show_at: Instant::now() + crate::tooltip::HOVER_DELAY,
+                    visible: false,
+                });
+                self.arm_tooltip_timer();
+                if was_visible {
+                    self.request_redraw(); // erase the previous tooltip
+                }
+            }
+            None => self.clear_tooltip(),
+        }
+    }
+
+    /// The first `title` attribute on `node_id` or an ancestor, with its owner.
+    fn title_for_node(&self, mut node_id: usize) -> Option<(usize, String)> {
+        loop {
+            let node = self.doc.get_node(node_id)?;
+            if let Some(el) = node.data.downcast_element()
+                && let Some(attr) = el.attrs.iter().find(|a| a.name.local.as_ref() == "title")
+            {
+                let v = attr.value.as_str();
+                if !v.is_empty() {
+                    return Some((node_id, v.to_string()));
+                }
+            }
+            node_id = node.parent?;
+        }
+    }
+
+    /// Drop any tooltip; redraw to erase it if it was visible.
+    fn clear_tooltip(&mut self) {
+        if self.tooltip.take().is_some_and(|t| t.visible) {
+            self.request_redraw();
+        }
+    }
+
+    /// Wake the (otherwise idle) event loop at the tooltip's show deadline so
+    /// `poll` can reveal it even while the cursor is stationary.
+    fn arm_tooltip_timer(&self) {
+        let proxy = self.event_loop_proxy.clone();
+        let window_id = self.window.id();
+        std::thread::spawn(move || {
+            std::thread::sleep(crate::tooltip::HOVER_DELAY);
+            let _ = proxy.send_event(BlitzShellEvent::Poll { window_id });
+        });
+    }
+
+    /// Render the DOM scene and composite the hover tooltip on top of it.
+    fn render_scene(&mut self, scale: f64, width: u32, height: u32) {
+        let tip = self.tooltip.as_ref().filter(|t| t.visible);
+        let shaper = &mut self.tooltip_shaper;
+        let doc = &self.doc;
+        self.renderer.render(|scene| {
+            paint_scene(scene, doc, scale, width, height);
+            if let Some(tip) = tip {
+                shaper.paint(scene, tip, scale, (width, height));
+            }
+        });
+    }
+
     pub fn handle_winit_event(&mut self, event: WindowEvent) {
         match event {
             // Window lifecycle events
@@ -549,6 +651,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 self.keyboard_modifiers = new_state;
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                self.clear_tooltip(); // typing dismisses the tooltip
                 let PhysicalKey::Code(key_code) = event.physical_key else {
                     return;
                 };
@@ -615,8 +718,13 @@ impl<Rend: WindowRenderer> View<Rend> {
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                 });
                 self.doc.handle_ui_event(event);
+                // PATCH(loki): refresh the hover tooltip from the node now under
+                // the cursor (arms a delayed show, or clears on leave).
+                self.update_hover_tooltip();
             }
             WindowEvent::MouseInput { button, state, .. } => {
+                // A click dismisses any tooltip.
+                self.clear_tooltip();
                 let button = match button {
                     MouseButton::Left => MouseEventButton::Main,
                     MouseButton::Right => MouseEventButton::Secondary,
@@ -648,6 +756,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 self.request_redraw();
             }
             WindowEvent::MouseWheel { delta, .. } => {
+                self.clear_tooltip(); // scrolling dismisses the tooltip
                 let (scroll_x, scroll_y)= match delta {
                     winit::event::MouseScrollDelta::LineDelta(x, y) => (x as f64 * 20.0, y as f64 * 20.0),
                     winit::event::MouseScrollDelta::PixelDelta(offsets) => (offsets.x, offsets.y)
@@ -719,6 +828,7 @@ impl<Rend: WindowRenderer> View<Rend> {
 
                 match touch.phase {
                     TouchPhase::Started => {
+                        self.clear_tooltip(); // touch input dismisses the tooltip
                         // Synthesise CursorMoved then MouseDown so that blitz-dom
                         // performs a fresh hit-test at the touch position before
                         // dispatching the press event.

@@ -842,7 +842,10 @@ dependencies = [
  "blitz-traits",
  "futures-util",
  "keyboard-types",
+ "kurbo 0.12.0",
  "log",
+ "parley 0.6.0",
+ "peniko",
  "rfd 0.17.2",
  "winit",
 ]
