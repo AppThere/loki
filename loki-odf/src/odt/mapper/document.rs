@@ -1319,7 +1319,7 @@ mod tests {
         }
     }
 
-    fn make_lookup<'a>(styles: &'a [OdfStyle]) -> HashMap<&'a str, &'a OdfStyle> {
+    fn make_lookup(styles: &[OdfStyle]) -> HashMap<&str, &OdfStyle> {
         styles.iter().map(|s| (s.name.as_str(), s)).collect()
     }
 

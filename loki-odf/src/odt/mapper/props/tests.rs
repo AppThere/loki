@@ -277,7 +277,12 @@ fn language_with_country() {
         ..Default::default()
     };
     let out = map_text_props(&props);
-    assert_eq!(out.language.as_ref().map(|t| t.as_str()), Some("en-US"));
+    assert_eq!(
+        out.language
+            .as_ref()
+            .map(loki_doc_model::meta::LanguageTag::as_str),
+        Some("en-US")
+    );
 }
 
 #[test]
@@ -287,7 +292,12 @@ fn language_without_country() {
         ..Default::default()
     };
     let out = map_text_props(&props);
-    assert_eq!(out.language.as_ref().map(|t| t.as_str()), Some("de"));
+    assert_eq!(
+        out.language
+            .as_ref()
+            .map(loki_doc_model::meta::LanguageTag::as_str),
+        Some("de")
+    );
 }
 
 #[test]
@@ -363,6 +373,8 @@ fn writing_mode_lr_shorthand_maps_to_lrtb() {
 
 #[test]
 fn parse_odf_border_solid_black() {
+    use loki_doc_model::style::props::border::BorderStyle;
+
     let b = parse_odf_border("0.06pt solid #000000").expect("should parse");
     // Width rounds to 0.06pt
     assert!(
@@ -370,7 +382,6 @@ fn parse_odf_border_solid_black() {
         "width should be ~0.06pt, got {}",
         b.width.value()
     );
-    use loki_doc_model::style::props::border::BorderStyle;
     assert_eq!(b.style, BorderStyle::Solid);
     assert!(b.color.is_some(), "color should be parsed");
 }
@@ -400,7 +411,7 @@ fn fo_padding_shorthand_applies_to_all_edges() {
         ("right", props.padding_right),
     ] {
         let pts = val
-            .expect(&format!("padding_{label} should be Some"))
+            .unwrap_or_else(|| panic!("padding_{label} should be Some"))
             .value();
         assert!(
             (pts - 5.669).abs() < 0.1,

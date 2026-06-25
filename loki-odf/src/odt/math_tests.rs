@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! Tests for the embedded-formula MathML (de)serialiser.
+//! Tests for the embedded-formula `MathML` (de)serialiser.
 
 use super::{extract_mathml, object_content_xml};
 

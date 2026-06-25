@@ -1155,10 +1155,10 @@ mod tests {
                 assert_eq!(link.children.len(), 1);
                 match &link.children[0] {
                     OdfParagraphChild::Text(s) => {
-                        assert_eq!(s, "Click here")
+                        assert_eq!(s, "Click here");
                     }
                     other => {
-                        panic!("expected Text in link, got {:?}", other)
+                        panic!("expected Text in link, got {other:?}");
                     }
                 }
             }

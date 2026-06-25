@@ -6,6 +6,13 @@
 //! [`build_odt_zip`] produces a valid ODF ZIP archive from raw XML byte
 //! slices. The helper XML constructors (`heading_and_paragraphs_content_xml`,
 //! etc.) produce well-formed `content.xml` / `styles.xml` fixtures.
+//!
+//! This module is included via `mod helpers;` by several separate integration
+//! test binaries (`round_trip*.rs`, `malformed_odt_test.rs`, …). Each binary
+//! compiles its own copy, so any helper a given binary does not call is flagged
+//! as dead there even though another binary uses it — `allow(dead_code)`
+//! silences that cross-binary false positive.
+#![allow(dead_code)]
 
 use std::io::{Cursor, Write};
 use zip::CompressionMethod;

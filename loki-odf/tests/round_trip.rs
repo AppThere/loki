@@ -90,8 +90,6 @@ fn gap4_page_size_from_page_layout() {
 /// stored in `Block::Heading`'s NodeAttr so the flow engine can find it.
 #[test]
 fn gap1_heading_style_name_preserved_in_node_attr() {
-    use loki_doc_model::content::attr::NodeAttr;
-
     let content = helpers::rich_content_xml_with_styles();
     let styles = helpers::rich_styles_xml();
     let zip = helpers::build_odt_zip(&content, &styles, None);
