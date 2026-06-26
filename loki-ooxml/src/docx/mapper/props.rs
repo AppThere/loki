@@ -343,6 +343,8 @@ pub(crate) fn map_rpr(rpr: &DocxRPr) -> CharProps {
             "subscript" => Some(VerticalAlign::Subscript),
             _ => None,
         }),
+        // w:position is a manual baseline rise in half-points (positive = up).
+        baseline_shift: rpr.position.map(|hp| Points::new(f64::from(hp) / 2.0)),
         outline: rpr.outline,
         ..Default::default()
     }
@@ -520,6 +522,22 @@ mod tests {
         };
         let props = map_rpr(&rpr);
         assert_eq!(props.font_size.unwrap().value(), 12.0);
+    }
+
+    #[test]
+    fn position_maps_to_baseline_shift_in_points() {
+        // w:position is in half-points; +12 = 6 pt up, -12 = 6 pt down.
+        let up = map_rpr(&DocxRPr {
+            position: Some(12),
+            ..Default::default()
+        });
+        assert_eq!(up.baseline_shift.unwrap().value(), 6.0);
+        let down = map_rpr(&DocxRPr {
+            position: Some(-12),
+            ..Default::default()
+        });
+        assert_eq!(down.baseline_shift.unwrap().value(), -6.0);
+        assert!(map_rpr(&DocxRPr::default()).baseline_shift.is_none());
     }
 
     #[test]

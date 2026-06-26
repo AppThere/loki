@@ -215,6 +215,18 @@ pub struct StyleSpan {
     /// width so they do not overlap, but a scaled run may extend past the right
     /// margin where Word would have wrapped earlier.
     pub scale: Option<f32>,
+
+    /// Manual baseline shift (text rise) in points; positive raises the glyphs
+    /// above the baseline, negative lowers them. `None` = on the baseline.
+    /// OOXML `w:position`; ODF `style:text-position`.
+    ///
+    /// Unlike [`vertical_align`] (super/subscript, which also shrinks the font),
+    /// this keeps the font size and is applied per glyph at emit time
+    /// ([`crate::para_emit::emit_glyph_run`]) — so it survives Parley coalescing
+    /// adjacent runs that differ only in their rise.
+    ///
+    /// [`vertical_align`]: Self::vertical_align
+    pub baseline_shift: Option<f32>,
 }
 
 /// Resolved paragraph-level properties passed to [`layout_paragraph`].
@@ -1586,7 +1598,9 @@ fn layout_paragraph_uncached(
             };
             let scale =
                 span_scale_for_range(&clean_spans, glyph_run.run().text_range()).unwrap_or(1.0);
-            crate::para_emit::emit_glyph_run(
+            // Reserve the extra width the run rendered (scaling, per-glyph or
+            // uniform) so later runs on the line do not overlap.
+            extra_x += crate::para_emit::emit_glyph_run(
                 &glyph_run,
                 indent_x + extra_x,
                 &clean_spans,
@@ -1596,8 +1610,6 @@ fn layout_paragraph_uncached(
                 // Highlights are emitted by the selection-geometry pass below.
                 false,
             );
-            // Reserve the width the scaling added so later runs do not overlap.
-            extra_x += (scale - 1.0) * glyph_run.advance();
         }
         if let Some(pts) = exact_line_pts {
             // Clip this line's items to its fixed-height box. The clip is wide
@@ -1810,6 +1822,15 @@ fn ordinal_suffix(n: u32) -> &'static str {
 
 /// Returns the highlight colour for the first span fully containing
 /// `text_range`, or `None` if no such span has a highlight.
+/// Returns the span whose byte range contains `offset`, or `None` if no span
+/// covers it. Empty (zero-width) spans never match. Used by per-glyph emission
+/// to resolve each glyph's scale / baseline shift.
+pub(crate) fn span_at_offset(spans: &[StyleSpan], offset: usize) -> Option<&StyleSpan> {
+    spans
+        .iter()
+        .find(|s| s.range.start <= offset && offset < s.range.end)
+}
+
 pub(crate) fn span_highlight_for_range(
     spans: &[StyleSpan],
     text_range: Range<usize>,

@@ -5,7 +5,9 @@
 
 use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::{Block, StyledParagraph};
+use loki_doc_model::content::inline::Inline;
 use loki_doc_model::style::catalog::StyleId;
+use loki_doc_model::style::props::para_props::ParagraphAlignment;
 
 use crate::docx::model::paragraph::{DocxParaChild, DocxParagraph, DocxRunChild};
 
@@ -58,6 +60,30 @@ pub(crate) fn map_paragraph(p: &DocxParagraph, ctx: &mut MappingContext<'_>) -> 
         .map(|s| StyleId::new(s.clone()));
 
     let inlines = map_inlines(&p.children, ctx);
+
+    // Word renders an equation that is the whole paragraph as *display* math:
+    // centered on its own line. This is true both for an explicit `m:oMathPara`
+    // (imported as `DisplayMath`) and for a bare paragraph-level `m:oMath` (no
+    // surrounding runs — imported as `InlineMath` since context is unknown at
+    // read time). So: when a paragraph's content is solely an equation (any math
+    // kind, ignoring whitespace) and no explicit alignment was set, center it.
+    let math_only_paragraph = {
+        let mut maths = 0usize;
+        let mut others = 0usize;
+        for i in &inlines {
+            match i {
+                Inline::Math(_, _) => maths += 1,
+                Inline::Str(s) if s.trim().is_empty() => {}
+                Inline::Space | Inline::SoftBreak | Inline::LineBreak => {}
+                _ => others += 1,
+            }
+        }
+        maths >= 1 && others == 0
+    };
+    if math_only_paragraph && para_props.as_ref().is_none_or(|pp| pp.alignment.is_none()) {
+        para_props.get_or_insert_with(Default::default).alignment =
+            Some(ParagraphAlignment::Center);
+    }
 
     // Determine outline level: direct props win; fall back to resolved style.
     let outline_level = para_props

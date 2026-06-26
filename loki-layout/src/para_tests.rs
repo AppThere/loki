@@ -48,6 +48,7 @@ fn single_span(text: &str, font_size: f32) -> StyleSpan {
         link_url: None,
         math: None,
         scale: None,
+        baseline_shift: None,
     }
 }
 
@@ -593,6 +594,69 @@ fn highlight_color_produces_filled_rect_before_glyph_run() {
     assert!(
         rect_pos < run_pos,
         "FilledRect (highlight) must precede its GlyphRun"
+    );
+}
+
+#[test]
+fn coalesced_scale_and_baseline_shift_apply_per_glyph() {
+    // Three runs with identical font/size/colour — Parley shapes them into ONE
+    // glyph run. The first is 150 %-scaled (w:w), the second raised and the third
+    // lowered (w:position). Per-glyph emission must still scale the first quarter
+    // and raise/lower the others, even though no per-run lookup could.
+    let mut r = test_resources();
+    let text = "AAAABBBBCCCC";
+    let mk = |range: std::ops::Range<usize>, scale: Option<f32>, rise: Option<f32>| StyleSpan {
+        range,
+        scale,
+        baseline_shift: rise,
+        ..single_span("A", 20.0)
+    };
+    let spans = [
+        mk(0..4, Some(1.5), None),
+        mk(4..8, None, Some(6.0)),   // raised 6 pt
+        mk(8..12, None, Some(-6.0)), // lowered 6 pt
+    ];
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        2000.0,
+        1.0,
+        false,
+    );
+
+    let glyphs = result
+        .items
+        .iter()
+        .find_map(|i| match i {
+            PositionedItem::GlyphRun(g) => Some(&g.glyphs),
+            _ => None,
+        })
+        .expect("a glyph run");
+    assert_eq!(glyphs.len(), 12, "all 12 glyphs in one coalesced run");
+
+    // First 4 (scaled 1.5×) advance wider than the unscaled middle 4.
+    let scaled_adv = glyphs[0].advance;
+    let plain_adv = glyphs[4].advance;
+    assert!(
+        scaled_adv > plain_adv * 1.4,
+        "scaled glyph advance {scaled_adv} should be ~1.5× the plain {plain_adv}"
+    );
+    // Raised glyphs sit higher (smaller y) than lowered glyphs.
+    let raised_y = glyphs[4].y;
+    let lowered_y = glyphs[8].y;
+    assert!(
+        lowered_y - raised_y > 10.0,
+        "lowered y ({lowered_y}) must be well below raised y ({raised_y})"
+    );
+    assert!(
+        raised_y < -3.0,
+        "raised glyph y ({raised_y}) should be above baseline"
+    );
+    assert!(
+        lowered_y > 3.0,
+        "lowered glyph y ({lowered_y}) should be below baseline"
     );
 }
 

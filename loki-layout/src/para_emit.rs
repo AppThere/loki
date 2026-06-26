@@ -22,8 +22,8 @@ use crate::items::{
     PositionedItem, PositionedRect,
 };
 use crate::para::{
-    StyleSpan, VerticalAlign, span_has_shadow, span_highlight_for_range, span_link_url_for_range,
-    span_vertical_align_for_range,
+    StyleSpan, VerticalAlign, span_at_offset, span_has_shadow, span_highlight_for_range,
+    span_link_url_for_range, span_vertical_align_for_range,
 };
 
 /// Emits one shaped glyph run at horizontal offset `indent_x`, appending the
@@ -53,7 +53,7 @@ pub(crate) fn emit_glyph_run(
     // adjacent runs that differ only in highlight colour — an attribute Parley
     // does not track.
     emit_highlight: bool,
-) {
+) -> f32 {
     let run = glyph_run.run();
     let style = glyph_run.style();
     let run_offset = glyph_run.offset();
@@ -70,19 +70,82 @@ pub(crate) fn emit_glyph_run(
         .or_insert_with(|| Arc::new(raw_bytes.to_vec()))
         .clone();
     let synthesis = run.synthesis();
-    // Horizontal scale (w:w) stretches each glyph's within-run x offset and its
-    // advance, anchored at the run's left edge (local x 0). y is untouched.
-    let glyphs: Vec<GlyphEntry> = glyph_run
-        .positioned_glyphs()
-        .map(|g| GlyphEntry {
-            id: g.id as u16,
-            x: (g.x - run_offset) * scale,
-            y: g.y - run_baseline,
-            advance: g.advance * scale,
+
+    // ── Per-glyph geometry: horizontal scale (w:w) + baseline shift (w:position)
+    // Both are post-shaping attributes Parley does not know about, so a run that
+    // mixes them with a same-font/colour neighbour is shaped into ONE glyph run.
+    // We therefore resolve each glyph's span via its cluster's source byte offset
+    // and apply scale / rise per glyph (anchored at the run's left edge), instead
+    // of a single per-run lookup that the whole coalesced run would miss.
+    //
+    // `glyph_text_offsets[i]` is the source byte offset of the i-th glyph of the
+    // PARENT run; it aligns 1:1 with `glyph_run.glyphs()` only when this glyph
+    // run covers the whole run (exactly the coalescing case we must fix). When it
+    // does not (Parley split the run on a real style change), we fall back to the
+    // caller's per-run `scale` and no extra rise — unchanged behaviour.
+    let glyph_text_offsets: Vec<usize> = run
+        .visual_clusters()
+        .flat_map(|c| {
+            let start = c.text_range().start;
+            c.glyphs().map(move |_| start)
         })
         .collect();
-    // Scaled width of the run, used for highlight and decoration extents.
-    let scaled_advance = glyph_run.advance() * scale;
+    let raw_glyphs: Vec<parley::Glyph> = glyph_run.glyphs().collect();
+    let aligned = glyph_text_offsets.len() == raw_glyphs.len();
+    // (scale, rise) per glyph.
+    let per_glyph: Vec<(f32, f32)> = raw_glyphs
+        .iter()
+        .enumerate()
+        .map(|(i, _)| {
+            if aligned {
+                let s = span_at_offset(spans, glyph_text_offsets[i]);
+                (
+                    s.and_then(|sp| sp.scale).unwrap_or(scale),
+                    s.and_then(|sp| sp.baseline_shift).unwrap_or(0.0),
+                )
+            } else {
+                (scale, 0.0)
+            }
+        })
+        .collect();
+    let uniform = per_glyph
+        .iter()
+        .all(|&(sc, rise)| (sc - scale).abs() < f32::EPSILON && rise == 0.0);
+
+    // Fast (uniform) path reproduces the previous geometry exactly; the per-glyph
+    // path accumulates scaled advances so a 150 %-scaled sub-run stretches while a
+    // raised/lowered neighbour in the SAME glyph run keeps its size and rises.
+    let (glyphs, scaled_advance): (Vec<GlyphEntry>, f32) = if uniform {
+        let glyphs = glyph_run
+            .positioned_glyphs()
+            .map(|g| GlyphEntry {
+                id: g.id as u16,
+                x: (g.x - run_offset) * scale,
+                y: g.y - run_baseline,
+                advance: g.advance * scale,
+            })
+            .collect();
+        (glyphs, glyph_run.advance() * scale)
+    } else {
+        let mut pen = 0.0f32;
+        let glyphs = raw_glyphs
+            .iter()
+            .enumerate()
+            .map(|(i, g)| {
+                let (sc, rise) = per_glyph[i];
+                let entry = GlyphEntry {
+                    id: g.id as u16,
+                    x: pen + g.x * sc,
+                    // `rise` raises the glyph (screen-y is down, so subtract).
+                    y: g.y - rise,
+                    advance: g.advance * sc,
+                };
+                pen += g.advance * sc;
+                entry
+            })
+            .collect();
+        (glyphs, pen)
+    };
 
     let text_range = run.text_range();
 
@@ -189,4 +252,10 @@ pub(crate) fn emit_glyph_run(
             color: deco.brush,
         }));
     }
+
+    // Extra horizontal width this run added beyond its natural (unscaled)
+    // advance, so the caller can shift later runs on the line by the same amount
+    // (covers both uniform `w:w` scaling and a coalesced run with a scaled
+    // sub-region).
+    scaled_advance - glyph_run.advance()
 }

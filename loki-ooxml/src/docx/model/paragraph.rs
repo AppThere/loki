@@ -250,6 +250,9 @@ pub struct DocxRPr {
     pub color: Option<String>,
     /// `w:highlight @w:val` — named highlight color.
     pub highlight: Option<String>,
+    /// `w:position @w:val` — manual baseline shift (text rise) in half-points;
+    /// positive raises, negative lowers.
+    pub position: Option<i32>,
     /// `w:sz @w:val` — font size in half-points.
     pub sz: Option<i32>,
     /// `w:szCs @w:val` — complex-script font size in half-points.

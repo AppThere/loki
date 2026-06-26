@@ -371,6 +371,9 @@ pub(crate) fn parse_rpr_element(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxR
                     }
                     b"color" => rpr.color = attr_val(e, b"val"),
                     b"highlight" => rpr.highlight = attr_val(e, b"val"),
+                    b"position" => {
+                        rpr.position = attr_val(e, b"val").as_deref().and_then(|v| v.parse().ok());
+                    }
                     b"sz" => {
                         rpr.sz = attr_val(e, b"val").as_deref().and_then(|v| v.parse().ok());
                     }

@@ -156,6 +156,7 @@ mod tests {
             link_url: None,
             math: None,
             scale: None,
+            baseline_shift: None,
         }
     }
 

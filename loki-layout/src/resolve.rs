@@ -402,6 +402,11 @@ fn char_props_to_style_span(props: &CharProps, range: Range<usize>) -> StyleSpan
         scale: props
             .scale
             .filter(|&s| s > 0.0 && (s - 1.0).abs() > f32::EPSILON),
+        // Manual baseline rise (gap: w:position): forward only a non-zero shift.
+        baseline_shift: props
+            .baseline_shift
+            .map(pts_to_f32)
+            .filter(|&s| s.abs() > f32::EPSILON),
     }
 }
 

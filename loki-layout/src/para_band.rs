@@ -211,7 +211,7 @@ fn emit_lines(
             if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
                 let scale = crate::para::span_scale_for_range(spans, glyph_run.run().text_range())
                     .unwrap_or(1.0);
-                emit_glyph_run(
+                extra_x += emit_glyph_run(
                     &glyph_run,
                     indent_x + extra_x,
                     spans,
@@ -221,7 +221,6 @@ fn emit_lines(
                     // Banded path keeps the per-run highlight underlay.
                     true,
                 );
-                extra_x += (scale - 1.0) * glyph_run.advance();
             }
         }
     }

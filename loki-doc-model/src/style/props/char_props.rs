@@ -154,6 +154,15 @@ pub struct CharProps {
     /// OOXML `w:vertAlign`.
     pub vertical_align: Option<VerticalAlign>,
 
+    /// Manual baseline shift (text rise) in points; positive raises the text
+    /// above the baseline, negative lowers it. Distinct from [`vertical_align`]
+    /// (super/subscript), which also reduces the font size — a baseline shift
+    /// keeps the original size. OOXML `w:position` (value in half-points);
+    /// ODF `style:text-position` (the vertical-position component).
+    ///
+    /// [`vertical_align`]: Self::vertical_align
+    pub baseline_shift: Option<Points>,
+
     // ── Color ─────────────────────────────────────────────────────────────
     /// Foreground (text) color. ODF `fo:color`; OOXML `w:color`.
     pub color: Option<DocumentColor>,
@@ -234,6 +243,7 @@ impl CharProps {
         inherit!(small_caps);
         inherit!(all_caps);
         inherit!(vertical_align);
+        inherit!(baseline_shift);
         inherit!(color);
         inherit!(background_color);
         inherit!(highlight_color);
