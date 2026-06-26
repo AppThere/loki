@@ -17,6 +17,7 @@ use loki_doc_model::layout::section::Section;
 use loki_doc_model::meta::core::DocumentMeta;
 use loki_doc_model::settings::DocumentSettings;
 use loki_doc_model::style::catalog::StyleCatalog;
+use loki_doc_model::style::list_style::NumberingScheme;
 use loki_opc::PartData;
 use loki_primitives::units::Points;
 
@@ -116,7 +117,25 @@ fn map_page_layout(sect_pr: Option<&DocxSectPr>) -> PageLayout {
         });
     }
 
+    // Page numbering: format (roman/alpha) and restart value from w:pgNumType.
+    layout.page_number_format = sp.pg_num_fmt.as_deref().map(map_page_num_fmt);
+    layout.page_number_start = sp.pg_num_start;
+
     layout
+}
+
+/// Maps an OOXML `w:pgNumType @w:fmt` token to a [`NumberingScheme`].
+///
+/// Unknown formats fall back to decimal (ECMA-376 §17.6.12 lists the same
+/// `w:numFmt` token set used for list numbering).
+fn map_page_num_fmt(fmt: &str) -> NumberingScheme {
+    match fmt {
+        "lowerRoman" => NumberingScheme::LowerRoman,
+        "upperRoman" => NumberingScheme::UpperRoman,
+        "lowerLetter" => NumberingScheme::LowerAlpha,
+        "upperLetter" => NumberingScheme::UpperAlpha,
+        _ => NumberingScheme::Decimal,
+    }
 }
 
 // ── Header / footer helpers ───────────────────────────────────────────────────

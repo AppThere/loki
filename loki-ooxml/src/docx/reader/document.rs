@@ -687,6 +687,12 @@ pub(crate) fn parse_sect_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxSectP
                                 .is_some_and(|v| !matches!(v.as_str(), "0" | "false" | "off")),
                         });
                     }
+                    b"pgNumType" => {
+                        // ECMA-376 §17.6.12: @w:fmt is the number format, @w:start
+                        // restarts numbering at the given value for this section.
+                        sect.pg_num_fmt = attr_val(e, b"fmt");
+                        sect.pg_num_start = attr_val(e, b"start").and_then(|v| v.parse().ok());
+                    }
                     _ => {}
                 }
             }

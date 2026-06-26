@@ -94,10 +94,14 @@ pub struct LayoutOptions {
 /// Resolved page numbering for field substitution during layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FieldContext {
-    /// 1-based page number of the page being laid out.
+    /// 1-based page number of the page being laid out (already offset by any
+    /// section restart value).
     pub page_number: u32,
     /// Total page count of the document.
     pub page_count: u32,
+    /// Display format for the PAGE field (OOXML `w:pgNumType @w:fmt`).
+    /// `None` = decimal.
+    pub number_format: Option<loki_doc_model::style::list_style::NumberingScheme>,
 }
 
 /// Lays out a full document into absolute positions.

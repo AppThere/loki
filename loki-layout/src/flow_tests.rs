@@ -1211,6 +1211,7 @@ mod page_fields {
             &FieldContext {
                 page_number: 7,
                 page_count: 12,
+                number_format: None,
             },
         );
         let Block::StyledPara(p) = &blocks[0] else {
@@ -1225,6 +1226,33 @@ mod page_fields {
             })
             .collect();
         assert_eq!(text, "Page 7 of 12");
+    }
+
+    #[test]
+    fn substitution_formats_page_number_as_lower_roman() {
+        let mut blocks = page_field_footer().blocks;
+        substitute_page_fields(
+            &mut blocks,
+            &FieldContext {
+                page_number: 7,
+                page_count: 12,
+                // w:pgNumType w:fmt="lowerRoman"
+                number_format: Some(loki_doc_model::style::list_style::NumberingScheme::LowerRoman),
+            },
+        );
+        let Block::StyledPara(p) = &blocks[0] else {
+            panic!("expected StyledPara");
+        };
+        let text: String = p
+            .inlines
+            .iter()
+            .map(|i| match i {
+                Inline::Str(s) => s.as_str(),
+                _ => "<non-text>",
+            })
+            .collect();
+        // Page number 7 → "vii"; NUMPAGES stays decimal.
+        assert_eq!(text, "Page vii of 12");
     }
 
     #[test]

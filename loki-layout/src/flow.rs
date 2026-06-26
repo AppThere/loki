@@ -805,7 +805,12 @@ fn substitute_page_fields(blocks: &mut [Block], ctx: &crate::FieldContext) {
             match inline {
                 Inline::Field(field) => {
                     let value = match field.kind {
-                        FieldKind::PageNumber => Some(ctx.page_number.to_string()),
+                        // The PAGE field honours the section's number format
+                        // (roman/alpha); NUMPAGES stays decimal.
+                        FieldKind::PageNumber => Some(match ctx.number_format {
+                            Some(scheme) => crate::para::format_counter(ctx.page_number, scheme),
+                            None => ctx.page_number.to_string(),
+                        }),
                         FieldKind::PageCount => Some(ctx.page_count.to_string()),
                         _ => None,
                     };
@@ -907,12 +912,24 @@ pub(crate) fn assign_headers_footers(
         }
     }
 
+    // First physical page of this section, used to offset the displayed number
+    // when the section restarts numbering (w:pgNumType @w:start).
+    let section_first_pn = pages.first().map(|p| p.page_number).unwrap_or(1);
+
     for page in pages.iter_mut() {
         let page_h = page.page_size.height;
         let pn = page.page_number;
+        // Apply the section restart: the section's first page shows `start`, and
+        // following pages increment from there. Absent a restart, use the
+        // document-global physical page number.
+        let display_pn = match layout.page_number_start {
+            Some(start) => start as usize + pn.saturating_sub(section_first_pn),
+            None => pn,
+        };
         let ctx = crate::FieldContext {
-            page_number: pn as u32,
+            page_number: display_pn as u32,
             page_count: total_page_count,
+            number_format: layout.page_number_format,
         };
 
         let hdr = select(

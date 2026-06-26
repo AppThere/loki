@@ -11,6 +11,7 @@
 
 use crate::content::attr::ExtensionBag;
 use crate::layout::header_footer::HeaderFooter;
+use crate::style::list_style::NumberingScheme;
 use loki_primitives::units::Points;
 
 /// Page orientation.
@@ -161,6 +162,12 @@ pub struct PageLayout {
     pub header_even: Option<HeaderFooter>,
     /// Even-page footer.
     pub footer_even: Option<HeaderFooter>,
+    /// Page-number display format for this section (OOXML `w:pgNumType @w:fmt`;
+    /// ODF `style:num-format` on the page's master style). `None` = decimal.
+    pub page_number_format: Option<NumberingScheme>,
+    /// Page-number restart value for this section (OOXML `w:pgNumType @w:start`).
+    /// `None` = continue numbering from the previous section.
+    pub page_number_start: Option<u32>,
     /// Format-specific extension data.
     pub extensions: ExtensionBag,
 }

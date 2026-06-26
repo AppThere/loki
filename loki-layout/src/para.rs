@@ -1481,7 +1481,19 @@ fn layout_paragraph_uncached(
     // not overlap it.
     let mut content_bottom = total_height;
 
+    // OOXML lineRule="exact" (ODF fixed line height): the line box is a fixed
+    // height and content taller than it is clipped — unlike "atLeast", which
+    // grows. Each line's items are wrapped in a clip layer sized to the exact
+    // line box so over-tall glyphs / inline objects are cut off as in Word.
+    let exact_line_pts = match para_props.line_height {
+        Some(ResolvedLineHeight::Exact(pts)) => Some(pts),
+        _ => None,
+    };
+
     for line in layout.lines() {
+        // Index into `items` where this line's emitted items begin (used to wrap
+        // them in a clip layer for exact line height).
+        let line_item_start = items.len();
         // Hanging indent: the first line shifts left so the marker is visible to
         // the left of `indent_start`. Subsequent lines use the full `indent_start`.
         let mut indent_x = if line_index == 0 && para_props.indent_hanging > 0.0 {
@@ -1545,6 +1557,22 @@ fn layout_paragraph_uncached(
             );
             // Reserve the width the scaling added so later runs do not overlap.
             extra_x += (scale - 1.0) * glyph_run.advance();
+        }
+        if let Some(pts) = exact_line_pts {
+            // Clip this line's items to its fixed-height box. The clip is wide
+            // horizontally (exact governs the vertical extent only; horizontal
+            // overflow is handled by margins/wrapping, as in Word) and exactly
+            // `pts` tall. Parley advances the baseline by the exact height and
+            // distributes half-leading around it, so the box top mirrors that
+            // placement; `block_min/max_coord` report the ink extent, which
+            // overflows the box when the content is taller than `pts`.
+            let lm = line.metrics();
+            let top = lm.baseline - (pts + lm.ascent - lm.descent) / 2.0;
+            let clipped: Vec<PositionedItem> = items.split_off(line_item_start);
+            items.push(PositionedItem::ClippedGroup {
+                clip_rect: LayoutRect::new(-line_w, top, line_w * 3.0, pts),
+                items: clipped,
+            });
         }
         line_index += 1;
     }
@@ -1657,7 +1685,10 @@ fn format_numbered_label(list_levels: &[ListLevel], format: &str, counters: &[u3
 }
 
 /// Format a single counter value according to its numbering scheme.
-fn format_counter(n: u32, scheme: NumberingScheme) -> String {
+///
+/// Shared by list-marker rendering and page-number fields (OOXML
+/// `w:pgNumType @w:fmt`).
+pub(crate) fn format_counter(n: u32, scheme: NumberingScheme) -> String {
     match scheme {
         NumberingScheme::Decimal => n.to_string(),
         NumberingScheme::LowerAlpha => alpha_label(n, false),

@@ -492,6 +492,56 @@ fn horizontal_scale_widens_glyph_advances() {
 }
 
 #[test]
+fn exact_line_height_clips_each_line() {
+    // lineRule="exact" must wrap each line's items in a ClippedGroup sized to
+    // the fixed line box; "auto"/default must not clip.
+    let mut r = test_resources();
+    let text = "clipped line";
+    let spans = [single_span(text, 12.0)];
+
+    let exact_props = ResolvedParaProps {
+        line_height: Some(ResolvedLineHeight::Exact(8.0)),
+        ..Default::default()
+    };
+    let exact = layout_paragraph(&mut r, text, &spans, &exact_props, 400.0, 1.0, false);
+    let clip = exact.items.iter().find_map(|i| match i {
+        PositionedItem::ClippedGroup { clip_rect, items } => Some((clip_rect, items)),
+        _ => None,
+    });
+    let (clip_rect, inner) = clip.expect("exact line height must emit a ClippedGroup per line");
+    // The clip box height is the fixed 8 pt line box (within rounding).
+    assert!(
+        (clip_rect.height() - 8.0).abs() < 0.5,
+        "clip height {} should equal the exact 8pt line box",
+        clip_rect.height()
+    );
+    assert!(
+        inner
+            .iter()
+            .any(|i| matches!(i, PositionedItem::GlyphRun(_))),
+        "clipped group must contain the line's glyph run"
+    );
+
+    // Default (metrics-relative) line height: no clipping.
+    let plain = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+    assert!(
+        !plain
+            .items
+            .iter()
+            .any(|i| matches!(i, PositionedItem::ClippedGroup { .. })),
+        "non-exact line height must not clip lines"
+    );
+}
+
+#[test]
 fn highlight_color_produces_filled_rect_before_glyph_run() {
     let mut r = test_resources();
     let text = "highlighted";

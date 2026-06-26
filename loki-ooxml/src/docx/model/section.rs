@@ -21,6 +21,11 @@ pub struct DocxSectPr {
     pub title_page: bool,
     /// Multi-column layout from `w:cols` (ECMA-376 §17.6.4).
     pub cols: Option<DocxCols>,
+    /// `w:pgNumType @w:fmt` — page-number format (e.g. `lowerRoman`,
+    /// `upperRoman`, `lowerLetter`). `None` = decimal (ECMA-376 §17.6.12).
+    pub pg_num_fmt: Option<String>,
+    /// `w:pgNumType @w:start` — page-number restart value for the section.
+    pub pg_num_start: Option<u32>,
 }
 
 /// `w:cols` multi-column section layout (ECMA-376 §17.6.4).
