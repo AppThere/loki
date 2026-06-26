@@ -899,6 +899,7 @@ fn parse_page_layout(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfP
         margin_left: None,
         margin_right: None,
         print_orientation: None,
+        num_format: None,
         columns: None,
         header_props: None,
         footer_props: None,
@@ -918,6 +919,7 @@ fn parse_page_layout(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfP
                         layout.margin_left = local_attr_val(e, b"margin-left");
                         layout.margin_right = local_attr_val(e, b"margin-right");
                         layout.print_orientation = local_attr_val(e, b"print-orientation");
+                        layout.num_format = local_attr_val(e, b"num-format");
                         drop(e);
                         // Scan children for `style:columns` rather than skipping.
                         layout.columns = parse_plp_columns(reader)?;
@@ -948,6 +950,7 @@ fn parse_page_layout(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfP
                     layout.margin_left = local_attr_val(e, b"margin-left");
                     layout.margin_right = local_attr_val(e, b"margin-right");
                     layout.print_orientation = local_attr_val(e, b"print-orientation");
+                    layout.num_format = local_attr_val(e, b"num-format");
                 }
             }
             Ok(Event::End(ref e)) => {
@@ -1326,6 +1329,31 @@ mod tests {
         let tp = s.text_props.as_ref().unwrap();
         assert_eq!(tp.font_size.as_deref(), Some("12pt"));
         assert_eq!(tp.font_weight.as_deref(), Some("bold"));
+    }
+
+    #[test]
+    fn read_stylesheet_page_layout_num_format() {
+        // `style:num-format` on `style:page-layout-properties` carries the
+        // page-number numbering scheme.
+        let xml = br#"<?xml version="1.0"?>
+<office:document-styles
+    xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+    xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+    xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0">
+  <office:automatic-styles>
+    <style:page-layout style:name="Mpm1">
+      <style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm"
+          style:num-format="i" style:print-orientation="portrait"/>
+    </style:page-layout>
+  </office:automatic-styles>
+</office:document-styles>"#;
+
+        let sheet = read_stylesheet(xml, false).unwrap();
+        assert_eq!(sheet.page_layouts.len(), 1);
+        let pl = &sheet.page_layouts[0];
+        assert_eq!(pl.name, "Mpm1");
+        assert_eq!(pl.num_format.as_deref(), Some("i"));
+        assert_eq!(pl.page_width.as_deref(), Some("21cm"));
     }
 
     #[test]

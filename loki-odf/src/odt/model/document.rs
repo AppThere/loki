@@ -155,6 +155,10 @@ pub(crate) struct OdfPageLayout {
     pub margin_right: Option<String>,
     /// `style:print-orientation` — `"portrait"` or `"landscape"`.
     pub print_orientation: Option<String>,
+    /// `style:num-format` — the page-number numbering scheme (`"1"`, `"i"`,
+    /// `"I"`, `"a"`, `"A"`). ODF 1.3 §20.396. Maps to
+    /// [`loki_doc_model::layout::page::PageLayout::page_number_format`].
+    pub num_format: Option<String>,
     /// Multi-column layout from a `style:columns` child, if present.
     pub columns: Option<OdfColumns>,
     /// Header area properties, if a `style:header-style` child is present.

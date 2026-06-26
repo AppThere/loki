@@ -9,7 +9,7 @@
 //! [`OdfTableCell::col_span`], [`OdfTableCell::row_span`], and
 //! [`OdfTableCell::is_covered`].
 
-use super::paragraph::OdfParagraph;
+use super::document::OdfBodyChild;
 
 /// An ODF table (`table:table`). ODF 1.3 §9.1.
 #[derive(Debug, Clone)]
@@ -60,6 +60,9 @@ pub(crate) struct OdfTableCell {
     pub is_covered: bool,
     /// `office:value-type` — e.g. `"string"`, `"float"`, `"date"`.
     pub value_type: Option<String>,
-    /// Text paragraphs inside this cell. ODF 1.3 §9.4.
-    pub paragraphs: Vec<OdfParagraph>,
+    /// Ordered block content inside this cell (paragraphs, headings, lists, and
+    /// **nested tables**), in document order. ODF 1.3 §9.4. A `table:table`
+    /// child is preserved as [`OdfBodyChild::Table`] so it survives mapping as a
+    /// nested `Block::Table`, interleaved with sibling paragraphs.
+    pub content: Vec<OdfBodyChild>,
 }

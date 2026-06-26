@@ -495,7 +495,7 @@ fn read_table_row(
                             row_span: 1,
                             style_name: None,
                             value_type: None,
-                            paragraphs: vec![],
+                            content: vec![],
                         });
                     }
                     _ => {
@@ -522,7 +522,7 @@ fn read_table_row(
                             row_span,
                             is_covered: false,
                             value_type,
-                            paragraphs: vec![],
+                            content: vec![],
                         });
                     }
                     b"covered-table-cell" => {
@@ -532,7 +532,7 @@ fn read_table_row(
                             row_span: 1,
                             style_name: None,
                             value_type: None,
-                            paragraphs: vec![],
+                            content: vec![],
                         });
                     }
                     _ => {}
@@ -565,7 +565,10 @@ fn read_table_cell(
         .and_then(|s| s.parse().ok())
         .unwrap_or(1);
     let value_type = local_attr_val(tag, b"value-type");
-    let mut paragraphs: Vec<OdfParagraph> = Vec::new();
+    // Ordered block content so paragraphs, lists, and nested `table:table`
+    // children keep their document order (ODF 1.3 §9.4). A nested table recurses
+    // through `read_table`, mirroring the body-level dispatch.
+    let mut content: Vec<OdfBodyChild> = Vec::new();
     let mut buf = Vec::new();
     loop {
         buf.clear();
@@ -573,13 +576,21 @@ fn read_table_cell(
             Ok(Event::Start(ref e)) => {
                 let local = e.local_name().into_inner().to_vec();
                 match local.as_slice() {
-                    b"p" | b"h" => {
+                    b"p" => {
                         let para = read_paragraph(reader, e)?;
-                        paragraphs.push(para);
+                        content.push(OdfBodyChild::Paragraph(para));
+                    }
+                    b"h" => {
+                        let para = read_paragraph(reader, e)?;
+                        content.push(OdfBodyChild::Heading(para));
                     }
                     b"list" => {
                         let list = read_list(reader, e, None, 0)?;
-                        collect_list_paragraphs(&list, &mut paragraphs);
+                        content.push(OdfBodyChild::List(list));
+                    }
+                    b"table" => {
+                        let table = read_table(reader, e)?;
+                        content.push(OdfBodyChild::Table(table));
                     }
                     _ => {
                         drop(e);
@@ -603,24 +614,8 @@ fn read_table_cell(
         row_span,
         is_covered,
         value_type,
-        paragraphs,
+        content,
     })
-}
-
-/// Recursively flatten all paragraphs out of a list into `out`.
-fn collect_list_paragraphs(list: &OdfList, out: &mut Vec<OdfParagraph>) {
-    for item in &list.items {
-        for child in &item.children {
-            match child {
-                OdfListItemChild::Paragraph(p) | OdfListItemChild::Heading(p) => {
-                    out.push(p.clone());
-                }
-                OdfListItemChild::List(nested) => {
-                    collect_list_paragraphs(nested, out);
-                }
-            }
-        }
-    }
 }
 
 // ── List ──────────────────────────────────────────────────────────────────────
@@ -1294,8 +1289,11 @@ mod tests {
         assert_eq!(row0.cells.len(), 2);
         assert!(!row0.cells[0].is_covered);
         assert_eq!(row0.cells[0].col_span, 1);
-        match &row0.cells[0].paragraphs[0].children[0] {
-            OdfParagraphChild::Text(s) => assert_eq!(s, "Cell A1"),
+        match &row0.cells[0].content[0] {
+            OdfBodyChild::Paragraph(p) => match &p.children[0] {
+                OdfParagraphChild::Text(s) => assert_eq!(s, "Cell A1"),
+                other => panic!("{:?}", other),
+            },
             other => panic!("{:?}", other),
         }
 
@@ -1303,6 +1301,63 @@ mod tests {
         assert_eq!(row1.cells.len(), 2);
         assert!(!row1.cells[0].is_covered);
         assert!(row1.cells[1].is_covered);
+    }
+
+    #[test]
+    fn nested_table_in_cell_is_parsed_into_cell_content() {
+        // A `table:table` nested inside a `table:table-cell`, after a leading
+        // paragraph. Both must survive in `content`, in document order.
+        let xml = br#"<?xml version="1.0"?>
+<root xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+      xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0">
+  <table:table table:name="Outer">
+    <table:table-column/>
+    <table:table-row>
+      <table:table-cell>
+        <text:p>Before</text:p>
+        <table:table table:name="Inner">
+          <table:table-column/>
+          <table:table-row>
+            <table:table-cell><text:p>Inner cell</text:p></table:table-cell>
+          </table:table-row>
+        </table:table>
+      </table:table-cell>
+    </table:table-row>
+  </table:table>
+</root>"#;
+        let mut reader = Reader::from_reader(xml.as_ref());
+        reader.config_mut().trim_text(false);
+        let mut buf = Vec::new();
+        let table = loop {
+            buf.clear();
+            match reader.read_event_into(&mut buf).unwrap() {
+                Event::Start(ref e) if e.local_name().into_inner() == b"table" => {
+                    break read_table(&mut reader, e).unwrap();
+                }
+                Event::Eof => panic!("no table found"),
+                _ => {}
+            }
+        };
+        assert_eq!(table.name.as_deref(), Some("Outer"));
+        let cell = &table.rows[0].cells[0];
+        assert_eq!(cell.content.len(), 2, "paragraph + nested table preserved");
+        assert!(matches!(cell.content[0], OdfBodyChild::Paragraph(_)));
+        let OdfBodyChild::Table(inner) = &cell.content[1] else {
+            panic!(
+                "second child must be the nested table: {:?}",
+                cell.content[1]
+            );
+        };
+        assert_eq!(inner.name.as_deref(), Some("Inner"));
+        assert_eq!(inner.rows.len(), 1);
+        // The inner cell's own paragraph round-trips.
+        match &inner.rows[0].cells[0].content[0] {
+            OdfBodyChild::Paragraph(p) => match &p.children[0] {
+                OdfParagraphChild::Text(s) => assert_eq!(s, "Inner cell"),
+                other => panic!("{:?}", other),
+            },
+            other => panic!("{:?}", other),
+        }
     }
 
     #[test]
