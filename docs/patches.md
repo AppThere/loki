@@ -132,6 +132,27 @@ pointer release (mouse-up / touch tap) on a text surface re-issues
 dismissed keyboard. (If a future winit dedupes same-value `set_ime_allowed`
 calls, switch the force path to a `false`→`true` toggle.)
 
+**Soft-keyboard safe-area re-sync (PATCH(loki), 2026-06-26):** the app runs in a
+stock `NativeActivity` with no `windowSoftInputMode`, so the GL surface is **not**
+resized when the soft keyboard appears — winit never fires `Resized` and the
+keyboard overlays the bottom of the app (ribbon / bottom-of-document content).
+winit / Blitz / Dioxus surface no IME-visibility or height events, but we already
+drive the keyboard ourselves via `set_ime_allowed`, so a visibility change is our
+cue to re-reserve the bottom safe area. When `update_ime_for_focus` shows, hides
+or force-re-shows the keyboard, it calls `arm_ime_settle`, which opens a bounded
+settle window (`IME_INSET_SETTLE`, 400 ms) and wakes the idle event loop at
+60/160/280/400 ms via `BlitzShellEvent::Poll`. While `ime_settle_until` is in the
+future, `poll` calls `resync_scroll_geometry`, which re-dispatches `onscroll`; the
+app's hidden `SafeAreaResizeSensor` catches that tick and re-queries
+`query_window_insets_dp` — whose mask now includes `WindowInsets.Type.ime()`, so
+the returned `bottom` grows to the keyboard height. The settle window exists
+because Android reports/animates the IME inset a frame or two after the
+visibility request (it is the real animation duration, not an arbitrary sleep).
+Limitation: a system-back / swipe-down dismissal is not reported by the OS, so
+the expanded bottom padding (harmless chrome, no content overlap) persists until
+the next focus change or tap re-syncs — the same OS gap the re-trigger note above
+documents. Android-only; on desktop `ime_settle_until` stays `None`.
+
 **Scroll re-sync on resize (PATCH(loki), 2026-06-12):** `resync_scroll_geometry`
 calls `doc.resolve()` and then re-dispatches `onscroll` (via
 `collect_scroll_containers` + `handle_scroll_changes`) to every scroll container
@@ -383,6 +404,17 @@ the **Activity** (passed in via `AndroidApp::activity_as_ptr()`), since
 (caller falls back to `query_insets_dp`) before the view is attached or on
 API < 30. loki-text re-queries it on resize via a hidden scroll-container
 sensor and pushes the result into `appthere_ui::update_safe_area_insets`.
+
+**Extends (PATCH(loki), 2026-06-26):** the mask now also includes
+`WindowInsets.Type.ime()`, i.e.
+`getInsets(systemBars | displayCutout | ime)`. Because `getInsets` returns the
+per-side union and `ime()` contributes only a bottom inset, top/left/right are
+unchanged while the keyboard is hidden, and `bottom` grows to the soft-keyboard
+height while it is visible. Combined with the blitz-shell IME-settle re-sync
+(see the blitz-shell section), this is what reserves a bottom safe area for the
+keyboard on a `NativeActivity` whose surface does not resize. `ime()` is API 30+
+— the same level as `getInsets(int)` — so the existing `None` fallback already
+covers older API levels.
 
 **Root cause:** loki-file-access 0.1.2 was designed for desktop and WASM; the
 Android implementation was scaffolded but never exercised on a real NativeActivity

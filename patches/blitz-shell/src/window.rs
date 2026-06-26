@@ -27,6 +27,20 @@ const TOUCH_SLOP_PX: f64 = 8.0;
 /// Duration after which a stationary touch is classified as a long press.
 const LONG_PRESS_DURATION: std::time::Duration = std::time::Duration::from_millis(500);
 
+/// PATCH(loki): how long to keep re-querying the safe-area insets after the
+/// soft keyboard is shown or hidden.
+///
+/// On a `NativeActivity` the surface is **not** resized for the IME, so winit
+/// never fires `Resized` when the keyboard appears. We drive the keyboard
+/// ourselves via `set_ime_allowed`, so a visibility change is our cue to
+/// re-query the platform insets — but Android reports the new
+/// `WindowInsets.Type.ime()` inset a frame or two later and animates it over
+/// ~250–300 ms. We re-sync across this bounded window so the app's bottom
+/// safe-area padding converges to the settled keyboard height. This is tied to
+/// the real IME animation duration, not an arbitrary sleep.
+#[cfg(target_os = "android")]
+const IME_INSET_SETTLE: std::time::Duration = std::time::Duration::from_millis(400);
+
 /// State tracked for an in-progress touch contact.
 #[derive(Debug, Clone)]
 pub struct TouchState {
@@ -87,6 +101,11 @@ pub struct View<Rend: WindowRenderer> {
     /// Mirrors the last value passed to `Window::set_ime_allowed` so we only
     /// call into the (JNI-backed, on Android) winit IME path on real changes.
     pub ime_active: bool,
+
+    /// PATCH(loki): deadline until which `poll` re-queries the safe-area insets
+    /// after an IME visibility change (see [`IME_INSET_SETTLE`]). `None` when not
+    /// settling. Only ever set on Android; always `None` on other platforms.
+    pub ime_settle_until: Option<Instant>,
 
     /// In-progress touch contact for tap/scroll/long-press classification.
     pub touch_start: Option<TouchState>,
@@ -156,6 +175,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             mouse_pos: Default::default(),
             is_visible: winit_window.is_visible().unwrap_or(true),
             ime_active: false,
+            ime_settle_until: None,
             touch_start: None,
             touch_scroll_last_pos: None,
             tooltip: None,
@@ -292,6 +312,20 @@ impl<Rend: WindowRenderer> View<Rend> {
     }
 
     pub fn poll(&mut self) -> bool {
+        // PATCH(loki): during the post-IME settle window, re-query the safe-area
+        // insets so the app's bottom padding follows the soft keyboard as the
+        // platform finishes reporting and animating the IME inset. The re-sync
+        // re-dispatches `onscroll`, which the app's safe-area sensor catches to
+        // refresh the inset query. Bounded by `ime_settle_until`.
+        #[cfg(target_os = "android")]
+        if let Some(until) = self.ime_settle_until {
+            if Instant::now() < until {
+                self.resync_scroll_geometry();
+            } else {
+                self.ime_settle_until = None;
+            }
+        }
+
         if let Some(waker) = &self.waker {
             let cx = std::task::Context::from_waker(waker);
             if self.doc.poll(Some(cx)) {
@@ -482,12 +516,44 @@ impl<Rend: WindowRenderer> View<Rend> {
     /// `AndroidApp::show_soft_input`, re-summoning it.
     fn update_ime_for_focus(&mut self, force_show: bool) {
         let wants_ime = self.focused_node_wants_ime();
-        if wants_ime != self.ime_active {
+        let changed = wants_ime != self.ime_active;
+        if changed {
             self.ime_active = wants_ime;
             self.window.set_ime_allowed(wants_ime);
         } else if force_show && wants_ime {
             self.window.set_ime_allowed(true);
         }
+        // PATCH(loki): showing or hiding the soft keyboard moves the bottom edge
+        // of the usable area. The platform reports the new IME inset slightly
+        // later and animates it, so re-sync the safe area across a short settle
+        // window (Android only — desktop has no soft keyboard inset).
+        #[cfg(target_os = "android")]
+        if changed || (force_show && wants_ime) {
+            self.arm_ime_settle();
+        }
+    }
+
+    /// PATCH(loki): open a bounded settle window during which [`poll`] re-queries
+    /// the safe-area insets, and wake the (otherwise idle) event loop several
+    /// times across the keyboard animation so the app's bottom padding converges
+    /// to the settled IME height. See [`IME_INSET_SETTLE`].
+    ///
+    /// [`poll`]: Self::poll
+    #[cfg(target_os = "android")]
+    fn arm_ime_settle(&mut self) {
+        self.ime_settle_until = Some(Instant::now() + IME_INSET_SETTLE);
+        let proxy = self.event_loop_proxy.clone();
+        let window_id = self.window.id();
+        std::thread::spawn(move || {
+            // Cumulative wake offsets 60/160/280/400 ms across the IME animation;
+            // each wake makes `poll` re-sync until the settle deadline elapses.
+            for step in [60u64, 100, 120, 120] {
+                std::thread::sleep(std::time::Duration::from_millis(step));
+                if proxy.send_event(BlitzShellEvent::Poll { window_id }).is_err() {
+                    break;
+                }
+            }
+        });
     }
 
     // ── PATCH(loki): hover tooltip overlay ─────────────────────────────────────
