@@ -1200,6 +1200,9 @@ pub(super) fn EditorInner(path: String) -> Element {
                         style: "background: none; border: none; color: #DCEAF6; cursor: pointer; \
                                 font-size: 14px; padding: 0 4px;",
                         aria_label: fl!("editor-dismiss-aria"),
+                        // Icon-only (×) control: expose a hover tooltip via the
+                        // blitz-shell overlay (reads `title`).
+                        title:      fl!("editor-dismiss-aria"),
                         onclick: move |_| { save_message.set(None); },
                         "\u{00D7}"
                     }

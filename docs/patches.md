@@ -402,8 +402,9 @@ per-side insets, so landscape — where the navigation bar / cutout move to a si
 the **Activity** (passed in via `AndroidApp::activity_as_ptr()`), since
 `ndk_context` holds the `Application`, which has no window. Returns `None`
 (caller falls back to `query_insets_dp`) before the view is attached or on
-API < 30. loki-text re-queries it on resize via a hidden scroll-container
-sensor and pushes the result into `appthere_ui::update_safe_area_insets`.
+API < 30. Each Loki app (loki-text, loki-spreadsheet, loki-presentation)
+re-queries it on resize via a hidden scroll-container sensor and pushes the
+result into `appthere_ui::update_safe_area_insets`.
 
 **Extends (PATCH(loki), 2026-06-26):** the mask now also includes
 `WindowInsets.Type.ime()`, i.e.
