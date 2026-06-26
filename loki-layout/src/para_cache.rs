@@ -155,6 +155,7 @@ mod tests {
             shadow: false,
             link_url: None,
             math: None,
+            scale: None,
         }
     }
 

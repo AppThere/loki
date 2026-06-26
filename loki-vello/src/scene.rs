@@ -12,8 +12,8 @@ use vello::kurbo::Affine;
 use vello::peniko::{BlendMode, Brush, Color, Fill};
 
 use loki_layout::{
-    ContinuousLayout, CursorRect, DocumentLayout, LayoutColor, LayoutRect, PaginatedLayout,
-    PositionedGlyphRun, PositionedItem, PositionedRect,
+    ContinuousLayout, CursorRect, DocumentLayout, LayoutColor, LayoutPage, LayoutRect,
+    PaginatedLayout, PositionedGlyphRun, PositionedItem, PositionedRect,
 };
 
 use crate::font_cache::FontDataCache;
@@ -108,6 +108,19 @@ const PAGE_BG_COLOR: LayoutColor = LayoutColor {
     a: 1.0,
 };
 
+/// Physical size used to paint a page's white background and drop shadow.
+///
+/// Always the page's *own* size — never the document-level `layout.page_size`
+/// default. The render tiles are textured at the per-page size
+/// ([`loki_renderer`'s `page_size_pts`]), so a section with a different size or
+/// orientation (A4, or landscape US Letter inside a portrait document) must
+/// have its chrome painted at that page's dimensions; using the document
+/// default leaves a mis-sized white rect and the canvas shows through as a gray
+/// streak.
+fn page_chrome_size(page: &LayoutPage) -> (f32, f32) {
+    (page.page_size.width, page.page_size.height)
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /// Paint a complete [`DocumentLayout`] into a Vello scene.
@@ -183,8 +196,8 @@ pub fn paint_single_page(
         return;
     };
 
-    let page_width = layout.page_size.width;
-    let page_height = layout.page_size.height;
+    // Per-page size (see `page_chrome_size`): never the document-level default.
+    let (page_width, page_height) = page_chrome_size(page);
 
     // L-shaped drop shadow: right strip and bottom strip, each PAGE_SHADOW_OFFSET
     // wide, placed flush with the page bg edges. Never extends past max_x of the
@@ -409,8 +422,10 @@ pub fn paint_paginated(
     let mut y_cursor = offset.1;
 
     for page in &layout.pages {
-        let page_width = layout.page_size.width;
-        let page_height = layout.page_size.height;
+        // Per-page size (see `page_chrome_size`): a mixed-size document paints
+        // each page's background/shadow at that page's own dimensions, else
+        // differently-sized pages leave a gray streak.
+        let (page_width, page_height) = page_chrome_size(page);
 
         // L-shaped drop shadow (right strip + bottom strip).
         crate::rect::paint_filled_rect(
@@ -718,6 +733,39 @@ mod tests {
 
     use super::*;
     use crate::font_cache::FontDataCache;
+
+    fn make_page(page_number: usize, w: f32, h: f32) -> LayoutPage {
+        use loki_layout::{LayoutInsets, LayoutSize};
+        LayoutPage {
+            page_number,
+            page_size: LayoutSize::new(w, h),
+            margins: LayoutInsets::uniform(72.0),
+            content_items: vec![],
+            header_items: vec![],
+            footer_items: vec![],
+            comment_items: vec![],
+            header_height: 0.0,
+            footer_height: 0.0,
+            editing_data: None,
+        }
+    }
+
+    // The page chrome (white background + drop shadow) must be sized from each
+    // page's own size, not the document-level default. Regression guard for the
+    // gray-streak bug on A4 / landscape pages whose size differs from page 1.
+    #[test]
+    fn page_chrome_uses_per_page_size() {
+        use loki_layout::LayoutSize;
+        let letter = make_page(1, 612.0, 792.0);
+        let a4_landscape = make_page(2, 842.0, 595.0);
+        assert_eq!(page_chrome_size(&letter), (612.0, 792.0));
+        // Even though a hypothetical document default differs, the second page
+        // reports its own (wider, shorter) landscape size.
+        assert_eq!(page_chrome_size(&a4_landscape), (842.0, 595.0));
+        // Sanity: helper reads page_size, not a constant.
+        let custom = make_page(3, LayoutSize::new(100.0, 200.0).width, 200.0);
+        assert_eq!(page_chrome_size(&custom), (100.0, 200.0));
+    }
 
     fn make_continuous_layout(items: Vec<PositionedItem>) -> DocumentLayout {
         DocumentLayout::Continuous(ContinuousLayout {

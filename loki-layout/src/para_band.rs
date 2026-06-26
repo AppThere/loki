@@ -204,9 +204,22 @@ fn emit_lines(
         if i < lo || i >= hi {
             continue;
         }
+        // Reserve width added by horizontally-scaled (w:w) runs so later runs on
+        // the line do not overlap (see the call site in `para`). Reset per line.
+        let mut extra_x = 0.0f32;
         for item in line.items() {
             if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
-                emit_glyph_run(&glyph_run, indent_x, spans, resources, items);
+                let scale = crate::para::span_scale_for_range(spans, glyph_run.run().text_range())
+                    .unwrap_or(1.0);
+                emit_glyph_run(
+                    &glyph_run,
+                    indent_x + extra_x,
+                    spans,
+                    scale,
+                    resources,
+                    items,
+                );
+                extra_x += (scale - 1.0) * glyph_run.advance();
             }
         }
     }

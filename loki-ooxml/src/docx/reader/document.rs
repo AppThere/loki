@@ -321,7 +321,11 @@ fn apply_ppr_attr(name: &[u8], e: &quick_xml::events::BytesStart<'_>, ppr: &mut 
         }
         b"bidi" => ppr.bidi = Some(toggle_prop(attr_val(e, b"val").as_deref())),
         b"widowControl" => ppr.widow_control = Some(toggle_prop(attr_val(e, b"val").as_deref())),
-        b"shd" => ppr.shd_fill = attr_val(e, b"fill"),
+        b"shd" => {
+            ppr.shd_fill = attr_val(e, b"fill");
+            ppr.shd_val = attr_val(e, b"val");
+            ppr.shd_color = attr_val(e, b"color");
+        }
         b"framePr" => {
             ppr.frame_pr = Some(DocxFramePr {
                 drop_cap: attr_val(e, b"dropCap"),
@@ -396,7 +400,11 @@ pub(crate) fn parse_rpr_element(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxR
                         rpr.lang_east_asian = attr_val(e, b"eastAsia");
                     }
                     b"vertAlign" => rpr.vert_align = attr_val(e, b"val"),
-                    b"shd" => rpr.shd_fill = attr_val(e, b"fill"),
+                    b"shd" => {
+                        rpr.shd_fill = attr_val(e, b"fill");
+                        rpr.shd_val = attr_val(e, b"val");
+                        rpr.shd_color = attr_val(e, b"color");
+                    }
                     b"outline" => {
                         rpr.outline = Some(toggle_prop(attr_val(e, b"val").as_deref()));
                     }
@@ -973,6 +981,8 @@ fn parse_tc_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTcPr> {
                     }
                     b"shd" => {
                         tc_pr.shd_fill = attr_val(e, b"fill");
+                        tc_pr.shd_val = attr_val(e, b"val");
+                        tc_pr.shd_color = attr_val(e, b"color");
                     }
                     b"tcBorders" => {
                         tc_pr.tc_borders = Some(parse_tc_borders(reader)?);

@@ -36,6 +36,7 @@ fn span(text: &str) -> StyleSpan {
         shadow: false,
         link_url: None,
         math: None,
+        scale: None,
     }
 }
 

@@ -102,10 +102,27 @@ pub fn App() -> Element {
         }
 
         div {
-            style: "margin: 0; \
-                    padding: {insets.top}px {insets.right}px {insets.bottom}px {insets.left}px; \
-                    width: 100vw; height: 100vh; \
-                    overflow: hidden; box-sizing: border-box;",
+            // Padding offsets the system status/navigation bars on Android
+            // edge-to-edge; the bottom inset grows to the soft-keyboard height
+            // so content lifts above it. On desktop all insets are 0 (no-op).
+            // background matches COLOR_SURFACE_CHROME so the padded system-bar
+            // areas are filled with the chrome color instead of default white,
+            // and each inset is rounded to an integer so the CSS pixel values
+            // match Shell's integer calc() subtraction (avoids hairline gaps on
+            // high-density displays). Kept identical to loki-text for suite
+            // consistency.
+            style: format!(
+                "margin: 0; \
+                 padding: {top}px {right}px {bottom}px {left}px; \
+                 width: 100vw; height: 100vh; \
+                 overflow: hidden; box-sizing: border-box; \
+                 background: {bg};",
+                top    = insets.top.round() as i32,
+                right  = insets.right.round() as i32,
+                bottom = insets.bottom.round() as i32,
+                left   = insets.left.round() as i32,
+                bg     = appthere_ui::tokens::COLOR_SURFACE_CHROME,
+            ),
 
             // Re-query safe-area insets on resize (orientation change) and while
             // the soft keyboard animates in/out (Android).

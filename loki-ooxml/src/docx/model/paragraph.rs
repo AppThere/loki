@@ -94,6 +94,10 @@ pub struct DocxPPr {
     pub widow_control: Option<bool>,
     /// Paragraph shading fill color from `w:shd @w:fill` (hex, no `#`).
     pub shd_fill: Option<String>,
+    /// Paragraph shading pattern from `w:shd @w:val` (e.g. `clear`, `pct25`).
+    pub shd_val: Option<String>,
+    /// Paragraph shading pattern foreground from `w:shd @w:color` (hex).
+    pub shd_color: Option<String>,
     /// Paragraph-mark run properties from `w:pPr/w:rPr`.
     /// Carries formatting that applies to the paragraph mark itself (e.g. a
     /// font override that affects the default spacing of an empty paragraph).
@@ -268,6 +272,10 @@ pub struct DocxRPr {
     pub vert_align: Option<String>,
     /// Run shading fill color from `w:shd @w:fill` (hex, no `#`).
     pub shd_fill: Option<String>,
+    /// Run shading pattern from `w:shd @w:val` (e.g. `clear`, `pct25`).
+    pub shd_val: Option<String>,
+    /// Run shading pattern foreground from `w:shd @w:color` (hex).
+    pub shd_color: Option<String>,
     /// `w:outline` toggle — hollow/outline text effect.
     pub outline: Option<bool>,
 }

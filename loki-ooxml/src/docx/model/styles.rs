@@ -154,6 +154,10 @@ pub struct DocxTcPr {
     pub v_merge: Option<DocxVMerge>,
     /// Cell shading fill color from `w:shd @w:fill` (hex, no `#`).
     pub shd_fill: Option<String>,
+    /// Cell shading pattern from `w:shd @w:val` (e.g. `clear`, `pct25`).
+    pub shd_val: Option<String>,
+    /// Cell shading pattern foreground from `w:shd @w:color` (hex).
+    pub shd_color: Option<String>,
     /// Cell borders from `w:tcBorders`.
     pub tc_borders: Option<DocxTcBorders>,
     /// Cell margins from `w:tcMar`. Values in twips; divide by 20 for points.

@@ -315,6 +315,7 @@ fn effective_run_char_props(
 //   strikethrough var  → StyleSpan.strikethrough Option (gap #18, P2)
 //   word_spacing       → StyleSpan.word_spacing         (gap #22, P3)
 //   shadow             → StyleSpan.shadow               (gap #24, P3)
+//   scale              → StyleSpan.scale                (gap #14, P2)
 //
 // Fields SILENTLY DROPPED (out of scope for Group 1):
 //   font_name_complex    — complex-script font (BiDi)
@@ -322,7 +323,6 @@ fn effective_run_char_props(
 //   font_size_complex    — complex-script font size
 //   background_color     — per-run background (distinct from highlight)
 //   outline              — hollow text effect
-//   scale                — horizontal text scale (gap #14, P2)
 //   kerning              — kerning flag (gap #23, P3)
 //   language / language_complex / language_east_asian — locale (gap #30, P3)
 //   hyperlink            — URL (gap #11, P1 — handled at Inline level)
@@ -397,6 +397,11 @@ fn char_props_to_style_span(props: &CharProps, range: Range<usize>) -> StyleSpan
         shadow: props.shadow.unwrap_or(false),            // gap #24
         link_url: None, // set by walk_inlines when inside Inline::Link (gap #11)
         math: None,     // set by walk_inlines for Inline::Math placeholders
+        // Horizontal text scale (gap #14): only forward a non-trivial, positive
+        // factor so the common 100 % case stays on the fast (unscaled) path.
+        scale: props
+            .scale
+            .filter(|&s| s > 0.0 && (s - 1.0).abs() > f32::EPSILON),
     }
 }
 

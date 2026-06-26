@@ -47,6 +47,7 @@ fn single_span(text: &str, font_size: f32) -> StyleSpan {
         shadow: false,
         link_url: None,
         math: None,
+        scale: None,
     }
 }
 
@@ -446,6 +447,47 @@ fn superscript_span_uses_smaller_font() {
     assert!(
         runs >= 1,
         "superscript span must produce at least one glyph run"
+    );
+}
+
+#[test]
+fn horizontal_scale_widens_glyph_advances() {
+    // A run with scale=1.5 (w:w=150) must emit glyph advances 1.5× the unscaled
+    // run, stretching the text horizontally.
+    fn total_advance(text: &str, spans: &[StyleSpan]) -> f32 {
+        let mut r = test_resources();
+        let result = layout_paragraph(
+            &mut r,
+            text,
+            spans,
+            &ResolvedParaProps::default(),
+            400.0,
+            1.0,
+            false,
+        );
+        result
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                PositionedItem::GlyphRun(g) => {
+                    Some(g.glyphs.iter().map(|gl| gl.advance).sum::<f32>())
+                }
+                _ => None,
+            })
+            .sum()
+    }
+    let text = "wide";
+    let plain = [single_span(text, 12.0)];
+    let scaled = [StyleSpan {
+        scale: Some(1.5),
+        ..single_span(text, 12.0)
+    }];
+    let plain_w = total_advance(text, &plain);
+    let scaled_w = total_advance(text, &scaled);
+    assert!(plain_w > 0.0, "plain run must have a positive advance");
+    assert!(
+        (scaled_w - plain_w * 1.5).abs() < 0.5,
+        "scaled advance {scaled_w} should be ~1.5× plain {plain_w}"
     );
 }
 

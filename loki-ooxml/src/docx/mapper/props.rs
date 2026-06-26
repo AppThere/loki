@@ -22,7 +22,7 @@ use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 
 use crate::docx::model::paragraph::{DocxBorderEdge, DocxFramePr, DocxPPr, DocxRPr};
-use crate::xml_util::hex_color;
+use crate::xml_util::{hex_color, resolve_shading};
 
 // ── Internal conversion helpers ───────────────────────────────────────────────
 
@@ -221,12 +221,13 @@ pub(crate) fn map_ppr(ppr: &DocxPPr) -> ParaProps {
             .map(|s| Points::new(f64::from(s)));
     }
 
-    // Paragraph background from `w:shd @w:fill`.
-    // "auto" means no fill; all other non-empty hex strings are mapped to an Rgb color.
-    if let Some(ref hex) = ppr.shd_fill
-        && hex != "auto"
-        && let Some(rgb) = hex_color(hex)
-    {
+    // Paragraph background from `w:shd`. Honours the pattern (`@w:val`): solid
+    // fills, `pctN` blends of `@w:color` over `@w:fill`, and `clear` (fill only).
+    if let Some(rgb) = resolve_shading(
+        ppr.shd_fill.as_deref(),
+        ppr.shd_val.as_deref(),
+        ppr.shd_color.as_deref(),
+    ) {
         props.background_color = Some(DocumentColor::Rgb(rgb));
     }
 
@@ -297,13 +298,14 @@ pub(crate) fn map_rpr(rpr: &DocxRPr) -> CharProps {
     // Precision loss acceptable: values represent document measurements
     let scale = rpr.scale.map(|s| s as f32 / 100.0);
 
-    // Run background from `w:shd @w:fill`. "auto" means no fill.
-    let background_color = rpr
-        .shd_fill
-        .as_deref()
-        .filter(|&h| h != "auto")
-        .and_then(hex_color)
-        .map(DocumentColor::Rgb);
+    // Run background from `w:shd`, honouring the pattern (`@w:val`): `pctN`
+    // blends `@w:color` over `@w:fill`; `solid`/`clear` map as expected.
+    let background_color = resolve_shading(
+        rpr.shd_fill.as_deref(),
+        rpr.shd_val.as_deref(),
+        rpr.shd_color.as_deref(),
+    )
+    .map(DocumentColor::Rgb);
 
     CharProps {
         bold: rpr.bold,

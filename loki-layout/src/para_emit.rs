@@ -31,10 +31,19 @@ use crate::para::{
 ///
 /// `spans` supplies per-range character styling (highlight, link, shadow,
 /// super/subscript) looked up by the run's text range.
+///
+/// `scale` is the horizontal text scale (OOXML `w:w` / ODF `style:text-scale`);
+/// `1.0` = no scaling. Glyph advances and within-run x positions are multiplied
+/// by `scale`, anchored at the run's left edge, and the highlight/decoration
+/// widths follow. The caller is responsible for shifting later runs on the line
+/// by the extra `(scale - 1) * advance` width (see the call site in
+/// [`crate::para`]). COMPAT(parley-0.6): Parley has no geometric horizontal
+/// scale, so the unscaled run width is what drove line-breaking.
 pub(crate) fn emit_glyph_run(
     glyph_run: &parley::GlyphRun<'_, LayoutColor>,
     indent_x: f32,
     spans: &[StyleSpan],
+    scale: f32,
     resources: &mut FontResources,
     items: &mut Vec<PositionedItem>,
 ) {
@@ -54,15 +63,19 @@ pub(crate) fn emit_glyph_run(
         .or_insert_with(|| Arc::new(raw_bytes.to_vec()))
         .clone();
     let synthesis = run.synthesis();
+    // Horizontal scale (w:w) stretches each glyph's within-run x offset and its
+    // advance, anchored at the run's left edge (local x 0). y is untouched.
     let glyphs: Vec<GlyphEntry> = glyph_run
         .positioned_glyphs()
         .map(|g| GlyphEntry {
             id: g.id as u16,
-            x: g.x - run_offset,
+            x: (g.x - run_offset) * scale,
             y: g.y - run_baseline,
-            advance: g.advance,
+            advance: g.advance * scale,
         })
         .collect();
+    // Scaled width of the run, used for highlight and decoration extents.
+    let scaled_advance = glyph_run.advance() * scale;
 
     let text_range = run.text_range();
 
@@ -90,7 +103,7 @@ pub(crate) fn emit_glyph_run(
             rect: LayoutRect::new(
                 run_offset + indent_x,
                 run_baseline - m.ascent + va_offset,
-                glyph_run.advance(),
+                scaled_advance,
                 m.ascent + m.descent,
             ),
             color: hl_color,
@@ -148,7 +161,7 @@ pub(crate) fn emit_glyph_run(
         items.push(PositionedItem::Decoration(PositionedDecoration {
             x: run_offset + indent_x,
             y: run_baseline - deco.offset.unwrap_or(m.underline_offset),
-            width: glyph_run.advance(),
+            width: scaled_advance,
             thickness: deco.size.unwrap_or(m.underline_size),
             kind: DecorationKind::Underline,
             color: deco.brush,
@@ -162,7 +175,7 @@ pub(crate) fn emit_glyph_run(
         items.push(PositionedItem::Decoration(PositionedDecoration {
             x: run_offset + indent_x,
             y: run_baseline - deco.offset.unwrap_or(m.strikethrough_offset),
-            width: glyph_run.advance(),
+            width: scaled_advance,
             thickness: deco.size.unwrap_or(m.strikethrough_size),
             kind: DecorationKind::Strikethrough,
             color: deco.brush,

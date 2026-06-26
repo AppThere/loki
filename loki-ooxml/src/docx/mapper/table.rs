@@ -161,10 +161,13 @@ fn map_cell(tc: &crate::docx::model::styles::DocxTableCell, ctx: &mut MappingCon
 
     let mut props = CellProps::default();
     if let Some(tc_pr) = tc.tc_pr.as_ref() {
-        // Cell background from `w:shd @w:fill`.
-        if let Some(ref hex) = tc_pr.shd_fill
-            && let Some(rgb) = crate::xml_util::hex_color(hex)
-        {
+        // Cell background from `w:shd`, honouring the pattern (`@w:val`):
+        // `pctN` blends `@w:color` over `@w:fill`; `solid`/`clear` as expected.
+        if let Some(rgb) = crate::xml_util::resolve_shading(
+            tc_pr.shd_fill.as_deref(),
+            tc_pr.shd_val.as_deref(),
+            tc_pr.shd_color.as_deref(),
+        ) {
             use loki_primitives::color::DocumentColor;
             props.background_color = Some(DocumentColor::Rgb(rgb));
         }

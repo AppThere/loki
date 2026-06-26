@@ -205,6 +205,16 @@ pub struct StyleSpan {
     /// [`crate::math`]) and places it inline via a Parley inline box. All other
     /// span fields supply the base font size / colour for the math.
     pub math: Option<std::sync::Arc<str>>,
+    /// Horizontal text scale as a fraction (`1.0` = 100 %; `1.5` = 150 % wide).
+    /// `None` = no scaling. ODF `style:text-scale`; OOXML `w:w`.
+    ///
+    /// Applied geometrically to glyph advances and positions at emit time
+    /// ([`crate::para_emit::emit_glyph_run`]). COMPAT(parley-0.6): Parley has no
+    /// geometric horizontal-scale style, so line-breaking still measures the
+    /// unscaled run; following runs on the same line are shifted by the extra
+    /// width so they do not overlap, but a scaled run may extend past the right
+    /// margin where Word would have wrapped earlier.
+    pub scale: Option<f32>,
 }
 
 /// Resolved paragraph-level properties passed to [`layout_paragraph`].
@@ -1485,6 +1495,10 @@ fn layout_paragraph_uncached(
             indent_x += drop_shift;
         }
         let line_baseline = line.metrics().baseline;
+        // Extra horizontal offset accumulated from horizontally-scaled (w:w)
+        // runs earlier on this line, so later items shift right by the width the
+        // scaling added instead of overlapping. Reset per line.
+        let mut extra_x = 0.0f32;
         for item in line.items() {
             // Math inline box: emit the typeset equation's draw items, offset to
             // the box's resolved position on the line.
@@ -1494,7 +1508,7 @@ fn layout_paragraph_uncached(
                     if let Some((_, render)) = math_boxes.get(mi) {
                         for prim in &render.items {
                             let mut prim = prim.clone();
-                            prim.translate(pib.x + indent_x, pib.y);
+                            prim.translate(pib.x + indent_x + extra_x, pib.y);
                             items.push(prim);
                         }
                         // The box top is at `pib.y` and its baseline at
@@ -1508,8 +1522,8 @@ fn layout_paragraph_uncached(
                         emit_tab_leader(
                             &mut items,
                             plan.leader,
-                            pib.x + indent_x,
-                            pib.x + indent_x + pib.width,
+                            pib.x + indent_x + extra_x,
+                            pib.x + indent_x + extra_x + pib.width,
                             line_baseline,
                         );
                     }
@@ -1519,13 +1533,18 @@ fn layout_paragraph_uncached(
             let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
                 continue;
             };
+            let scale =
+                span_scale_for_range(&clean_spans, glyph_run.run().text_range()).unwrap_or(1.0);
             crate::para_emit::emit_glyph_run(
                 &glyph_run,
-                indent_x,
+                indent_x + extra_x,
                 &clean_spans,
+                scale,
                 resources,
                 &mut items,
             );
+            // Reserve the width the scaling added so later runs do not overlap.
+            extra_x += (scale - 1.0) * glyph_run.advance();
         }
         line_index += 1;
     }
@@ -1721,6 +1740,15 @@ pub(crate) fn span_highlight_for_range(
         .iter()
         .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
         .and_then(|s| s.highlight_color)
+}
+
+/// Returns the horizontal text scale for the first span fully containing
+/// `text_range`, or `None` when the run is unscaled (100 %).
+pub(crate) fn span_scale_for_range(spans: &[StyleSpan], text_range: Range<usize>) -> Option<f32> {
+    spans
+        .iter()
+        .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
+        .and_then(|s| s.scale)
 }
 
 /// Returns the link URL for the first span fully containing `text_range`,
