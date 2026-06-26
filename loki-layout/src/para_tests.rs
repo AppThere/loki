@@ -521,6 +521,17 @@ fn exact_line_height_clips_each_line() {
             .any(|i| matches!(i, PositionedItem::GlyphRun(_))),
         "clipped group must contain the line's glyph run"
     );
+    // Word bottom-anchors the exact box: its bottom sits at baseline + descent,
+    // so the box bottom is *below* the baseline (descenders preserved, ascenders
+    // clipped). A symmetric/centered box would put the bottom at or above the
+    // baseline, clipping descenders too — which is not what Word does.
+    let box_bottom = clip_rect.y() + clip_rect.height();
+    assert!(
+        box_bottom > exact.first_baseline,
+        "exact clip box bottom ({box_bottom}) must sit below the baseline \
+         ({}) so descenders survive and only the top clips",
+        exact.first_baseline
+    );
 
     // Default (metrics-relative) line height: no clipping.
     let plain = layout_paragraph(
@@ -582,6 +593,49 @@ fn highlight_color_produces_filled_rect_before_glyph_run() {
     assert!(
         rect_pos < run_pos,
         "FilledRect (highlight) must precede its GlyphRun"
+    );
+}
+
+#[test]
+fn highlight_emits_even_when_runs_coalesce() {
+    // Regression: two adjacent spans with identical font/colour (so Parley shapes
+    // them into ONE glyph run) where only the first is highlighted. The per-run
+    // highlight lookup fails here (no single span covers the coalesced run), so
+    // the highlight must come from the selection-geometry pass instead.
+    let mut r = test_resources();
+    let text = "ab";
+    let spans = [
+        StyleSpan {
+            range: 0..1,
+            highlight_color: Some(LayoutColor::new(1.0, 1.0, 0.0, 1.0)),
+            ..single_span("a", 12.0)
+        },
+        StyleSpan {
+            range: 1..2,
+            ..single_span("b", 12.0)
+        },
+    ];
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+    let yellow = result.items.iter().any(|i| match i {
+        PositionedItem::FilledRect(rect) => {
+            rect.color.r > 0.9
+                && rect.color.g > 0.9
+                && rect.color.b < 0.1
+                && rect.rect.width() > 0.0
+        }
+        _ => false,
+    });
+    assert!(
+        yellow,
+        "highlight on the first of two coalesced runs must still emit a yellow FilledRect"
     );
 }
 

@@ -451,6 +451,17 @@ fn push_text(
     if text.is_empty() {
         return;
     }
+
+    // Small caps (gap #15): Parley exposes no `FontVariantCaps`, so synthesize
+    // it — every letter is uppercased and the letters that were *lowercase* in
+    // the source render at a reduced size, the classic small-caps look. This
+    // splits `text` into case-homogeneous segments (handled below). `all_caps`,
+    // if also set, takes precedence and uses the plain uppercasing path.
+    if props.small_caps == Some(true) && props.all_caps != Some(true) {
+        push_small_caps(buf, spans, text, props, active_link_url);
+        return;
+    }
+
     let start = buf.len();
     if props.all_caps == Some(true) {
         buf.push_str(&text.to_uppercase());
@@ -458,14 +469,58 @@ fn push_text(
         buf.push_str(text);
     }
     let mut span = char_props_to_style_span(props, start..buf.len());
+    apply_link(&mut span, active_link_url);
+    spans.push(span);
+}
+
+/// Fraction of the full cap size used for synthesized small capitals (letters
+/// that were lowercase in the source). Matches the common ~0.8 synthetic ratio
+/// applied when a font carries no real small-cap (`smcp`) glyphs.
+const SMALL_CAPS_RATIO: f32 = 0.8;
+
+/// Append `text` as synthesized small caps: uppercase every letter, splitting
+/// into runs where the source was lowercase (rendered at [`SMALL_CAPS_RATIO`] of
+/// the size) versus already-uppercase / non-letters (full size). Each run is its
+/// own [`StyleSpan`] so Parley shapes it at the right size.
+fn push_small_caps(
+    buf: &mut String,
+    spans: &mut Vec<StyleSpan>,
+    text: &str,
+    props: &CharProps,
+    active_link_url: Option<&str>,
+) {
+    let mut chars = text.chars().peekable();
+    while let Some(&first) = chars.peek() {
+        let lower = first.is_lowercase();
+        let start = buf.len();
+        while let Some(&c) = chars.peek() {
+            if c.is_lowercase() != lower {
+                break;
+            }
+            // Uppercase the character (may expand, e.g. ß → SS).
+            for u in c.to_uppercase() {
+                buf.push(u);
+            }
+            chars.next();
+        }
+        let mut span = char_props_to_style_span(props, start..buf.len());
+        if lower {
+            span.font_size *= SMALL_CAPS_RATIO;
+        }
+        apply_link(&mut span, active_link_url);
+        spans.push(span);
+    }
+}
+
+/// Apply an active hyperlink URL to `span`, auto-underlining undecorated link
+/// text (gap #11).
+fn apply_link(span: &mut StyleSpan, active_link_url: Option<&str>) {
     if let Some(url) = active_link_url {
         span.link_url = Some(url.to_string());
-        // Auto-underline link text that has no explicit underline decoration.
         if span.underline.is_none() {
             span.underline = Some(UnderlineStyle::Single);
         }
     }
-    spans.push(span);
 }
 
 /// Recursively collect text from an [`Inline`] tree, building `buf` + `spans`.

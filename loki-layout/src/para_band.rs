@@ -218,6 +218,8 @@ fn emit_lines(
                     scale,
                     resources,
                     items,
+                    // Banded path keeps the per-run highlight underlay.
+                    true,
                 );
                 extra_x += (scale - 1.0) * glyph_run.advance();
             }

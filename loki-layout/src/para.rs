@@ -178,13 +178,13 @@ pub struct StyleSpan {
     pub highlight_color: Option<LayoutColor>,
     /// Letter spacing (tracking) in points. `None` = font default.
     pub letter_spacing: Option<f32>,
-    /// Caps variant for this run.
+    /// Caps variant for this run, retained as metadata.
     ///
-    /// `SmallCaps`: OpenType `smcp` feature would be ideal; currently stored
-    /// only. TODO(small-caps): Parley does not expose StyleProperty::FontVariantCaps.
-    ///
-    /// `AllCaps`: text is uppercased during `flatten_paragraph` in resolve.rs;
-    /// this field is retained as metadata.
+    /// Both variants are synthesized during `flatten_paragraph` (resolve.rs),
+    /// since Parley exposes no `StyleProperty::FontVariantCaps`:
+    /// - `AllCaps`: the text is uppercased.
+    /// - `SmallCaps`: the text is uppercased and originally-lowercase letters are
+    ///   split into their own spans at a reduced font size (the small-cap look).
     pub font_variant: Option<FontVariant>,
     /// Word spacing in points. `None` = font default.
     pub word_spacing: Option<f32>,
@@ -1490,6 +1490,45 @@ fn layout_paragraph_uncached(
         _ => None,
     };
 
+    // ── Highlight / background underlay (gap #10) ─────────────────────────────
+    // Emit a filled rect for each highlighted span via Parley selection geometry.
+    // This is robust to Parley shaping adjacent runs of the same font/colour
+    // (which may differ only in highlight colour — an attribute Parley does not
+    // track) into a single glyph run: selection geometry resolves the exact
+    // per-line extent of any byte range. Emitted before the glyph runs so the
+    // fill sits behind the text; `span.highlight_color` already folds in the
+    // run-shading (`w:shd`/`fo:background-color`) fallback.
+    for span in &clean_spans {
+        let Some(hl) = span.highlight_color else {
+            continue;
+        };
+        if span.range.start >= span.range.end {
+            continue;
+        }
+        let anchor =
+            Cursor::from_byte_index(&layout, span.range.start, parley::Affinity::Downstream);
+        let focus = Cursor::from_byte_index(&layout, span.range.end, parley::Affinity::Downstream);
+        for (bb, line_idx) in Selection::new(anchor, focus).geometry(&layout) {
+            let mut indent = if line_idx == 0 && para_props.indent_hanging > 0.0 {
+                para_props.indent_start - para_props.indent_hanging
+            } else {
+                para_props.indent_start
+            };
+            if line_idx < drop_lines {
+                indent += drop_shift;
+            }
+            items.push(PositionedItem::FilledRect(PositionedRect {
+                rect: LayoutRect::new(
+                    bb.x0 as f32 + indent,
+                    bb.y0 as f32,
+                    (bb.x1 - bb.x0) as f32,
+                    (bb.y1 - bb.y0) as f32,
+                ),
+                color: hl,
+            }));
+        }
+    }
+
     for line in layout.lines() {
         // Index into `items` where this line's emitted items begin (used to wrap
         // them in a clip layer for exact line height).
@@ -1554,6 +1593,8 @@ fn layout_paragraph_uncached(
                 scale,
                 resources,
                 &mut items,
+                // Highlights are emitted by the selection-geometry pass below.
+                false,
             );
             // Reserve the width the scaling added so later runs do not overlap.
             extra_x += (scale - 1.0) * glyph_run.advance();
@@ -1562,12 +1603,18 @@ fn layout_paragraph_uncached(
             // Clip this line's items to its fixed-height box. The clip is wide
             // horizontally (exact governs the vertical extent only; horizontal
             // overflow is handled by margins/wrapping, as in Word) and exactly
-            // `pts` tall. Parley advances the baseline by the exact height and
-            // distributes half-leading around it, so the box top mirrors that
-            // placement; `block_min/max_coord` report the ink extent, which
-            // overflows the box when the content is taller than `pts`.
+            // `pts` tall.
+            //
+            // Word anchors the exact line box at the BOTTOM of the text: the box
+            // bottom sits at the baseline + descent and the top is `pts` above
+            // it, so when the font is taller than `pts` the ascenders (and a
+            // raised superscript) are clipped while descenders are preserved —
+            // the well-known "tops cut off" behaviour of small exact spacing.
+            // (A symmetric/centered box would instead clip descenders too, which
+            // does not match Word.) Consecutive boxes still tile exactly because
+            // Parley advances the baseline by `pts`.
             let lm = line.metrics();
-            let top = lm.baseline - (pts + lm.ascent - lm.descent) / 2.0;
+            let top = lm.baseline + lm.descent - pts;
             let clipped: Vec<PositionedItem> = items.split_off(line_item_start);
             items.push(PositionedItem::ClippedGroup {
                 clip_rect: LayoutRect::new(-line_w, top, line_w * 3.0, pts),

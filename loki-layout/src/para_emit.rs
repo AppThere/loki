@@ -46,6 +46,13 @@ pub(crate) fn emit_glyph_run(
     scale: f32,
     resources: &mut FontResources,
     items: &mut Vec<PositionedItem>,
+    // When `true`, emit the per-run highlight underlay (used by the banded
+    // drop-cap / float path). The main paragraph path passes `false` and emits
+    // highlights via a Parley selection-geometry pass instead (inline in
+    // [`crate::para::layout_paragraph`]), which is robust to Parley coalescing
+    // adjacent runs that differ only in highlight colour — an attribute Parley
+    // does not track.
+    emit_highlight: bool,
 ) {
     let run = glyph_run.run();
     let style = glyph_run.style();
@@ -96,8 +103,9 @@ pub(crate) fn emit_glyph_run(
 
     // ── Highlight colour (gap #10) ────────────────────────────────────────────
     // Emit a filled rect sized to the run's ink extent BEFORE the glyph run so
-    // the background renders below the text.
-    if let Some(hl_color) = span_highlight_for_range(spans, text_range.clone()) {
+    // the background renders below the text. Only on the banded path; the main
+    // path handles highlights via a selection-geometry pass (robust to coalescing).
+    if emit_highlight && let Some(hl_color) = span_highlight_for_range(spans, text_range.clone()) {
         let m = run.metrics();
         items.push(PositionedItem::FilledRect(PositionedRect {
             rect: LayoutRect::new(
