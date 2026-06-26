@@ -114,8 +114,10 @@ pub struct DocxTrPr {
 pub struct DocxTableCell {
     /// Cell properties from `w:tcPr`.
     pub tc_pr: Option<DocxTcPr>,
-    /// Content paragraphs and nested tables.
-    pub paragraphs: Vec<super::paragraph::DocxParagraph>,
+    /// Ordered block-level content: paragraphs and nested tables (`w:tbl`
+    /// inside `w:tc`, ECMA-376 §17.4.4). Reuses the body child enum so a cell
+    /// can interleave paragraphs and tables in document order.
+    pub children: Vec<super::document::DocxBodyChild>,
 }
 
 /// Cell margins from `w:tcMar` (ECMA-376 §17.4.68).

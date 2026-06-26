@@ -153,10 +153,17 @@ fn build_col_specs(t: &DocxTableModel) -> Vec<ColSpec> {
 /// Maps a `w:tc` table cell.
 fn map_cell(tc: &crate::docx::model::styles::DocxTableCell, ctx: &mut MappingContext<'_>) -> Cell {
     let col_span = tc.tc_pr.as_ref().and_then(|p| p.grid_span).unwrap_or(1);
+    // Map ordered cell content: paragraphs and nested tables (recursing through
+    // map_table) interleaved in document order.
+    use crate::docx::model::document::DocxBodyChild;
     let blocks: Vec<Block> = tc
-        .paragraphs
+        .children
         .iter()
-        .flat_map(|p| map_paragraph(p, ctx))
+        .flat_map(|child| match child {
+            DocxBodyChild::Paragraph(p) => map_paragraph(p, ctx),
+            DocxBodyChild::Table(t) => vec![map_table(t, ctx)],
+            DocxBodyChild::Sdt => Vec::new(),
+        })
         .collect();
 
     let mut props = CellProps::default();

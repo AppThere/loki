@@ -57,7 +57,7 @@
 // |                        |                             | Table | Numbering        |
 // | DocxTableModel         | model/styles.rs             | tbl_pr, col_widths, rows |
 // | DocxTableRow           | model/styles.rs             | tr_pr, cells             |
-// | DocxTableCell          | model/styles.rs             | tc_pr, paragraphs        |
+// | DocxTableCell          | model/styles.rs             | tc_pr, children          |
 // | DocxTrPr               | model/styles.rs             | is_header                |
 // | DocxTcPr               | model/styles.rs             | grid_span, v_merge       |
 // | DocxNumbering          | model/numbering.rs          | abstract_nums, nums      |

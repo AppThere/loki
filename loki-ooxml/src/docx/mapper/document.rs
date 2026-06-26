@@ -462,6 +462,8 @@ mod tests {
             footer_refs: vec![],
             title_page: false,
             cols: None,
+            pg_num_fmt: None,
+            pg_num_start: None,
         }
     }
 

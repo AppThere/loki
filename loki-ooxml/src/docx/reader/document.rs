@@ -944,7 +944,12 @@ fn parse_table_cell(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTableCell> {
                 }
                 b"p" => {
                     let para = parse_paragraph(reader)?;
-                    cell.paragraphs.push(para);
+                    cell.children.push(DocxBodyChild::Paragraph(para));
+                }
+                b"tbl" => {
+                    // Nested table inside this cell (ECMA-376 §17.4.4).
+                    let tbl = parse_table(reader)?;
+                    cell.children.push(DocxBodyChild::Table(tbl));
                 }
                 _ => {}
             },
