@@ -55,7 +55,9 @@ use loki_doc_model::style::list_style::ListLevelKind;
 
 use crate::geometry::LayoutRect;
 use crate::items::{PositionedImage, PositionedItem};
-use crate::para::{ParagraphLayout, ResolvedParaProps, format_list_marker, layout_paragraph};
+use crate::para::{
+    ParagraphLayout, ResolvedParaProps, format_list_marker, layout_paragraph_spelled,
+};
 use crate::resolve::{emu_to_pt, flatten_paragraph, pts_to_f32, resolve_para_props};
 use crate::result::PageParagraphData;
 
@@ -191,7 +193,7 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     // after any page break above) for the gutter comment panel.
     super::comments_impl::record_comment_anchors(state, &effective_para.inlines);
 
-    let mut para_layout = layout_paragraph(
+    let mut para_layout = layout_paragraph_spelled(
         state.resources,
         &text,
         &spans,
@@ -199,6 +201,7 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
         state.content_width,
         state.display_scale,
         state.options.preserve_for_editing,
+        state.options.spell.as_ref(),
     );
 
     // ── Inline image placement (gap #9) ──────────────────────────────────────
@@ -461,7 +464,7 @@ fn build_chain_layouts<'s>(
                 let mut temp_counter = state.note_counter;
                 let (text, spans, _images, _notes) =
                     flatten_paragraph(&para, state.catalog, &mut temp_counter);
-                let layout = layout_paragraph(
+                let layout = layout_paragraph_spelled(
                     state.resources,
                     &text,
                     &spans,
@@ -469,6 +472,7 @@ fn build_chain_layouts<'s>(
                     state.content_width,
                     state.display_scale,
                     state.options.preserve_for_editing,
+                    state.options.spell.as_ref(),
                 );
                 (resolved, layout)
             } else {

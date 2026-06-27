@@ -98,6 +98,7 @@ pub(crate) fn para_key(
     available_width: f32,
     display_scale: f32,
     preserve_for_editing: bool,
+    spell_generation: u64,
 ) -> u64 {
     use std::fmt::Write as _;
 
@@ -106,6 +107,9 @@ pub(crate) fn para_key(
     available_width.to_bits().hash(&mut hasher);
     display_scale.to_bits().hash(&mut hasher);
     preserve_for_editing.hash(&mut hasher);
+    // 0 = no spell checking; non-zero generations distinguish dictionary /
+    // personal-word-list states that the paragraph text alone cannot express.
+    spell_generation.hash(&mut hasher);
 
     // Debug-format the style structs so the key tracks struct evolution without
     // manual per-field maintenance.

@@ -3,6 +3,15 @@
 
 use super::SpellChecker;
 
+fn _assert_send_sync<T: Send + Sync>() {}
+
+#[test]
+fn checker_is_send_sync() {
+    // Required so an `Arc<SpellChecker>` can be shared with the layout engine
+    // and across the app's worker threads.
+    _assert_send_sync::<SpellChecker>();
+}
+
 /// A minimal in-memory Hunspell dictionary for tests (no affix rules).
 fn tiny_checker() -> SpellChecker {
     let aff = "SET UTF-8\n";

@@ -25,6 +25,7 @@ pub(crate) mod page_tile;
 pub(crate) mod reflow_view;
 pub mod render_layout;
 pub mod renderer_state;
+pub mod spell;
 pub(crate) mod vello_init;
 #[cfg(any(not(target_os = "android"), android_gpu))]
 pub(crate) mod virtualize;

@@ -89,6 +89,29 @@ pub struct LayoutOptions {
     /// Has a memory cost proportional to document size. Use `false` (the
     /// default) for read-only document viewing. Editing sessions pass `true`.
     pub preserve_for_editing: bool,
+
+    /// Optional spell checker. When `Some`, each paragraph's text is checked and
+    /// misspelled words emit a [`items::DecorationKind::Spelling`] squiggle
+    /// decoration (positioned via the same Parley selection-geometry mechanism
+    /// as the highlight underlay). `None` (the default) adds zero overhead.
+    pub spell: Option<SpellState>,
+}
+
+/// A spell checker plus a cache-invalidation generation, supplied via
+/// [`LayoutOptions::spell`].
+///
+/// The paragraph layout cache is content-addressed; the `generation` folds into
+/// the cache key so that changing the active dictionary or the user's
+/// personal/ignore words (which the checker reflects but the paragraph text does
+/// not) correctly invalidates cached squiggles. The host **must** bump
+/// `generation` whenever it swaps the checker or its word lists change; a fresh
+/// service starts at `1` (0 is reserved for "no spell checking").
+#[derive(Debug, Clone)]
+pub struct SpellState {
+    /// The shared, thread-safe checker queried during layout.
+    pub checker: std::sync::Arc<loki_spell::SpellChecker>,
+    /// Monotonic generation; bump on any change the text alone cannot express.
+    pub generation: u64,
 }
 
 /// Resolved page numbering for field substitution during layout.

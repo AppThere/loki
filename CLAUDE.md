@@ -205,9 +205,14 @@ The workspace is a set of focused crates (one responsibility each). Key groups:
   tiles bounded by viewport virtualization).
 - **Spell check:** `loki-spell` — Hunspell-compatible spell checking via the
   pure-Rust `spellbook` engine (no FFI). Tokenises text into checkable words,
-  returns misspelled byte ranges + ranked suggestions; the renderer paints
-  flagged ranges as `DecorationKind::Spelling` squiggles. See §11 of
-  `docs/fidelity-status.md` for what is wired vs. pending.
+  returns misspelled byte ranges + ranked suggestions; bundles a permissive
+  `en` dictionary and a license-gated download catalog for other languages.
+  `loki-layout` injects a checker via `LayoutOptions::spell` and emits
+  `DecorationKind::Spelling` squiggles (painted by `loki-vello`). The shared
+  runtime — `loki_app_shell::spell::SpellService` (locale detection, dictionary
+  cache, `reqwest` fetcher) — is provided into all three apps' context;
+  `loki-text` renders squiggles end-to-end via `loki_renderer::spell` ambient
+  state. See §11 of `docs/fidelity-status.md` for what is wired vs. pending.
 - **UI & apps:** `appthere-ui` (shared design system), `appthere-canvas`,
   `loki-i18n`, `loki-fonts`, and the binaries `loki-text` (word processor —
   the mature app), `loki-spreadsheet`, `loki-presentation`.

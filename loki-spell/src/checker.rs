@@ -21,6 +21,12 @@ use crate::tokenizer::tokenize;
 /// Construct one per language from the `.aff` (affix rules) and `.dic` (word
 /// list) contents of a Hunspell dictionary; such dictionaries ship with
 /// LibreOffice and Mozilla for essentially every locale.
+///
+/// A `SpellChecker` is read-only after construction (apart from `add_word` /
+/// `ignore_word`) and is `Send + Sync`, so it can be shared across threads
+/// behind an `Arc` — e.g. handed to the layout engine for squiggle emission
+/// while the UI thread queries suggestions.
+#[derive(Debug)]
 pub struct SpellChecker {
     dict: Dictionary,
     /// Words ignored for this session (lower-cased for case-insensitive match).

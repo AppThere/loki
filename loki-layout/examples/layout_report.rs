@@ -48,6 +48,7 @@ fn ms(d: Duration) -> f64 {
 fn main() {
     let options = LayoutOptions {
         preserve_for_editing: true,
+        spell: None,
     };
 
     // The font scan the renderer currently repeats per generation.

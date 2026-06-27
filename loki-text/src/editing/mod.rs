@@ -14,5 +14,6 @@ pub mod hit_test;
 pub mod navigation;
 pub mod reflow_nav;
 pub mod relayout;
+pub mod spell;
 pub mod state;
 pub mod touch;

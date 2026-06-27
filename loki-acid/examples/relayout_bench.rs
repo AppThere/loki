@@ -110,6 +110,7 @@ fn main() {
         .expect("import acid docx");
     let opts = LayoutOptions {
         preserve_for_editing: true,
+        spell: None,
     };
 
     eprintln!(

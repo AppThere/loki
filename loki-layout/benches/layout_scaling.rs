@@ -30,6 +30,7 @@ fn bench_layout(c: &mut Criterion) {
     let mut resources = FontResources::new();
     let options = LayoutOptions {
         preserve_for_editing: true,
+        spell: None,
     };
 
     let mut group = c.benchmark_group("layout_document");
