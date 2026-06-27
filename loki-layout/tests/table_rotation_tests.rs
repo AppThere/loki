@@ -85,6 +85,7 @@ fn test_table_cell_rotation() {
 
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![table],
         extensions: ExtensionBag::default(),
     };

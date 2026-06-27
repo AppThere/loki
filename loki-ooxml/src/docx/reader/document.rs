@@ -696,6 +696,11 @@ pub(crate) fn parse_sect_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxSectP
                         sect.pg_num_fmt = attr_val(e, b"fmt");
                         sect.pg_num_start = attr_val(e, b"start").and_then(|v| v.parse().ok());
                     }
+                    b"type" => {
+                        // ECMA-376 §17.6.22: how this section begins relative to
+                        // the previous one (continuous / nextPage / even / odd).
+                        sect.section_type = attr_val(e, b"val");
+                    }
                     _ => {}
                 }
             }

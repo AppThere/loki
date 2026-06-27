@@ -396,6 +396,7 @@ fn heading_block_does_not_panic() {
     let mut r = test_resources();
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![Block::Heading(
             1,
             NodeAttr::default(),
@@ -1083,6 +1084,7 @@ fn table_2x2_renders_on_one_page() {
     let mut r = test_resources();
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![make_table_2x2(None)],
         extensions: ExtensionBag::default(),
     };
@@ -1108,6 +1110,7 @@ fn table_cell_background_produces_filled_rect() {
     };
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![make_table_2x2(Some(props))],
         extensions: ExtensionBag::default(),
     };
@@ -1141,6 +1144,7 @@ fn table_cell_borders_produce_border_rect() {
     };
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![make_table_2x2(Some(props))],
         extensions: ExtensionBag::default(),
     };

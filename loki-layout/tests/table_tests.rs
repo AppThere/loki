@@ -121,6 +121,7 @@ fn test_table_row_height_uniformity() {
 
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![table],
         extensions: ExtensionBag::default(),
     };
@@ -184,6 +185,7 @@ fn test_table_row_span_distribution() {
 
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![table],
         extensions: ExtensionBag::default(),
     };
@@ -276,6 +278,7 @@ fn test_table_min_row_height() {
 
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![table],
         extensions: ExtensionBag::default(),
     };
@@ -332,6 +335,7 @@ fn test_table_non_uniform_columns() {
 
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![table],
         extensions: ExtensionBag::default(),
     };
@@ -423,6 +427,7 @@ fn fixed_columns_overflowing_table_width_are_scaled_down_current_behavior() {
     let table = fixed_width_table(&[200.0, 200.0, 200.0], 300.0);
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![table],
         extensions: ExtensionBag::default(),
     };
@@ -454,6 +459,7 @@ fn fixed_columns_should_be_honored_like_word() {
     }
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![table],
         extensions: ExtensionBag::default(),
     };
@@ -493,6 +499,7 @@ fn cell_content_is_clipped_to_cell_box() {
     }));
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![table],
         extensions: ExtensionBag::default(),
     };
@@ -545,6 +552,7 @@ fn fixed_columns_underflowing_table_width_are_scaled_up_current_behavior() {
     let table = fixed_width_table(&[50.0, 50.0], 300.0);
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![table],
         extensions: ExtensionBag::default(),
     };
@@ -599,6 +607,7 @@ fn vmerge_gridspan_l_merge_places_cells_correctly() {
     }));
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![table],
         extensions: ExtensionBag::default(),
     };
@@ -670,6 +679,7 @@ fn long_word_wraps_within_narrow_cell() {
     }));
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![table],
         extensions: ExtensionBag::default(),
     };
@@ -761,6 +771,7 @@ fn test_table_cell_vertical_alignment() {
 
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![table],
         extensions: ExtensionBag::default(),
     };

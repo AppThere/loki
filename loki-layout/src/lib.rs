@@ -206,11 +206,32 @@ pub fn layout_paginated_full(
     let mut first_page_size = None;
     let mut checkpoints: Vec<PageStart> = Vec::new();
 
-    // Pass 1: flow every section's body so the total page count is known before
+    // Partition sections into page-sharing GROUPS: a new group begins at the
+    // first section and at every section that does *not* start `continuous`. A
+    // `continuous` section continues on the previous group's last page (sharing
+    // its page geometry + headers/footers), only switching column layout.
+    let mut groups: Vec<Vec<&loki_doc_model::Section>> = Vec::new();
+    for section in &doc.sections {
+        if groups.is_empty() || section.start != loki_doc_model::layout::SectionStart::Continuous {
+            groups.push(vec![section]);
+        } else {
+            groups
+                .last_mut()
+                .expect("groups is non-empty here")
+                .push(section);
+        }
+    }
+
+    // Pass 1: flow every group's body so the total page count is known before
     // headers/footers are laid out (NUMPAGES fields need the document-wide total).
+    // Each group is laid out as one page sequence owned by its first section.
     let mut flowed: Vec<(&loki_doc_model::Section, Vec<LayoutPage>)> = Vec::new();
-    for (section_index, section) in doc.sections.iter().enumerate() {
-        let pl = &section.layout;
+    // Document-section index of the current group's first section (for checkpoint
+    // tagging / incremental).
+    let mut primary_section_index = 0usize;
+    for group in &groups {
+        let primary = group[0];
+        let pl = &primary.layout;
         let page_size = LayoutSize::new(
             pts_to_f32(pl.page_size.width),
             pts_to_f32(pl.page_size.height),
@@ -221,11 +242,11 @@ pub fn layout_paginated_full(
 
         let FlowOutput::Pages {
             mut pages,
-            checkpoints: section_checkpoints,
+            checkpoints: group_checkpoints,
             ..
-        } = flow_section(
+        } = flow::flow_section_group(
             resources,
-            section,
+            group,
             &doc.styles,
             &mode,
             display_scale,
@@ -233,34 +254,34 @@ pub fn layout_paginated_full(
             &doc.comments,
         )
         else {
-            unreachable!("flow_section in Paginated mode always returns Pages");
+            unreachable!("flow_section_group in Paginated mode always returns Pages");
         };
 
+        let group_blocks: usize = group.iter().map(|s| s.blocks.len()).sum();
+        let group_page_count = pages.len();
         // Renumber pages so select_header/select_footer receive the correct
         // absolute page number for first/even selection.
-        let section_page_count = pages.len();
         for page in &mut pages {
             page.page_number += global_page_count;
-            // Globalise editing block indices across sections so hit-test /
-            // cursor positions resolve to the right section's block.
+            // Globalise editing block indices across groups so hit-test / cursor
+            // positions resolve to the right block (group-local → document).
             if let Some(ed) = page.editing_data.as_mut() {
                 for para in &mut ed.paragraphs {
                     para.block_index += block_base;
                 }
             }
         }
-        // Lift the section-local checkpoints to document-global: tag the section
-        // and offset page_index by the running page count (page_number inside
-        // the checkpoint stays section-local — see the incremental driver).
-        for mut cp in section_checkpoints {
-            cp.section_index = section_index;
+        // Lift the group-local checkpoints to document-global.
+        for mut cp in group_checkpoints {
+            cp.section_index = primary_section_index;
             cp.page_index += global_page_count;
             checkpoints.push(cp);
         }
 
-        flowed.push((section, pages));
-        global_page_count += section_page_count;
-        block_base += section.blocks.len();
+        flowed.push((primary, pages));
+        global_page_count += group_page_count;
+        block_base += group_blocks;
+        primary_section_index += group.len();
     }
 
     // Pass 2: headers/footers, with the document-wide page total available for

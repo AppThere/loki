@@ -13,7 +13,7 @@ use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
 use loki_doc_model::layout::page::{
     PageLayout, PageMargins, PageOrientation, PageSize, SectionColumns,
 };
-use loki_doc_model::layout::section::Section;
+use loki_doc_model::layout::section::{Section, SectionStart};
 use loki_doc_model::meta::core::DocumentMeta;
 use loki_doc_model::settings::DocumentSettings;
 use loki_doc_model::style::catalog::StyleCatalog;
@@ -58,6 +58,17 @@ pub(crate) struct MappingContext<'a> {
 }
 
 // ── Page layout ───────────────────────────────────────────────────────────────
+
+/// Maps a `w:sectPr/w:type @w:val` token to a [`SectionStart`].
+fn map_section_start(section_type: Option<&str>) -> SectionStart {
+    match section_type {
+        Some("continuous") => SectionStart::Continuous,
+        Some("evenPage") => SectionStart::EvenPage,
+        Some("oddPage") => SectionStart::OddPage,
+        // "nextPage" or absent (the default).
+        _ => SectionStart::NewPage,
+    }
+}
 
 /// Converts a [`DocxSectPr`] to a [`PageLayout`].
 ///
@@ -372,6 +383,7 @@ pub(crate) fn map_document(
                         blocks: super::drop_cap_merge::merge_drop_cap_frames(std::mem::take(
                             &mut current_blocks,
                         )),
+                        start: map_section_start(sp.section_type.as_deref()),
                         extensions: ExtensionBag::default(),
                     });
                 }
@@ -395,6 +407,12 @@ pub(crate) fn map_document(
     sections.push(Section {
         layout: final_layout,
         blocks: super::drop_cap_merge::merge_drop_cap_frames(current_blocks),
+        start: map_section_start(
+            doc.body
+                .final_sect_pr
+                .as_ref()
+                .and_then(|sp| sp.section_type.as_deref()),
+        ),
         extensions: ExtensionBag::default(),
     });
 
@@ -442,6 +460,19 @@ mod tests {
         }
     }
 
+    #[test]
+    fn section_type_maps_to_section_start() {
+        assert_eq!(
+            map_section_start(Some("continuous")),
+            SectionStart::Continuous
+        );
+        assert_eq!(map_section_start(Some("evenPage")), SectionStart::EvenPage);
+        assert_eq!(map_section_start(Some("oddPage")), SectionStart::OddPage);
+        assert_eq!(map_section_start(Some("nextPage")), SectionStart::NewPage);
+        // Absent / unknown → the default (nextPage).
+        assert_eq!(map_section_start(None), SectionStart::NewPage);
+    }
+
     fn sect_pr_a4() -> DocxSectPr {
         DocxSectPr {
             pg_sz: Some(DocxPgSz {
@@ -464,6 +495,7 @@ mod tests {
             cols: None,
             pg_num_fmt: None,
             pg_num_start: None,
+            section_type: None,
         }
     }
 

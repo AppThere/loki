@@ -175,6 +175,11 @@ pub(super) struct FlowState<'a> {
     pub(super) column_separator: bool,
     /// 0-based index of the column currently being filled.
     pub(super) col_index: u8,
+    /// Content-area y at which the current column band begins. Normally `0`
+    /// (columns start at the page content top), but a `continuous` section break
+    /// can start a new column band *mid-page* (below the previous section), so
+    /// each column of that band starts here rather than at `0`.
+    pub(super) column_top_y: f32,
     /// Index into `current_items` at which the current column's items begin, so
     /// they can be shifted to the column's horizontal offset when it is finished.
     pub(super) column_item_start: usize,
@@ -238,6 +243,29 @@ impl<'a> FlowState<'a> {
 
 // ── Flow construction & paginated loop (shared with incremental relayout) ──────
 
+/// Resolves a section's [`SectionColumns`] into `(count, gap, separator,
+/// per-column width)` for a content area `full_content_width` wide.
+///
+/// Multi-column layout is a paginated-print feature: the content area is divided
+/// into `count` equal columns separated by `gap`, and the flow fills each column
+/// top-to-bottom before advancing to the next (then the page). Single-column and
+/// non-paginated (reflow/pageless) flows return the full width.
+fn column_layout_for(
+    columns: Option<&loki_doc_model::layout::page::SectionColumns>,
+    full_content_width: f32,
+    paginated: bool,
+) -> (u8, f32, bool, f32) {
+    match columns {
+        Some(c) if c.count >= 2 && paginated => {
+            let n = f32::from(c.count);
+            let gap = pts_to_f32(c.gap);
+            let col_w = ((full_content_width - (n - 1.0) * gap) / n).max(0.0);
+            (c.count, gap, c.separator, col_w)
+        }
+        _ => (1, 0.0, false, full_content_width),
+    }
+}
+
 /// Builds a fresh [`FlowState`] for `section` in `mode`.
 fn new_flow_state<'a>(
     resources: &'a mut FontResources,
@@ -261,20 +289,8 @@ fn new_flow_state<'a>(
         LayoutMode::Reflow { available_width } => *available_width,
         _ => (page_w - margins.horizontal()).max(0.0),
     };
-    // Multi-column layout is a paginated-print feature: divide the content area
-    // into `count` equal columns separated by `gap`. `content_width` then holds
-    // the per-column width and the flow fills each column top-to-bottom before
-    // advancing to the next (and finally the next page). Reflow/Pageless ignore
-    // columns (continuous scroll has no fixed page height to break columns at).
-    let (columns, column_gap, column_separator, content_width) = match &pl.columns {
-        Some(c) if c.count >= 2 && mode.is_paginated() => {
-            let n = f32::from(c.count);
-            let gap = pts_to_f32(c.gap);
-            let col_w = ((full_content_width - (n - 1.0) * gap) / n).max(0.0);
-            (c.count, gap, c.separator, col_w)
-        }
-        _ => (1, 0.0, false, full_content_width),
-    };
+    let (columns, column_gap, column_separator, content_width) =
+        column_layout_for(pl.columns.as_ref(), full_content_width, mode.is_paginated());
     FlowState {
         resources,
         catalog,
@@ -301,6 +317,7 @@ fn new_flow_state<'a>(
         column_gap,
         column_separator,
         col_index: 0,
+        column_top_y: 0.0,
         column_item_start: 0,
         column_para_start: 0,
         comments,
@@ -322,6 +339,7 @@ fn run_paginated_loop(
     state: &mut FlowState,
     blocks: &[Block],
     start: usize,
+    block_index_base: usize,
     mut resync: impl FnMut(usize, &FlowCheckpoint) -> bool,
 ) -> Option<usize> {
     let mut i = start;
@@ -336,7 +354,7 @@ fn run_paginated_loop(
                 // section_index is filled in by `layout_paginated_full`; the
                 // flow does not know its document-global section position.
                 section_index: 0,
-                block_index: i,
+                block_index: block_index_base + i,
                 checkpoint: cp,
             });
         }
@@ -344,11 +362,15 @@ fn run_paginated_loop(
         if let Block::StyledPara(para) = block
             && resolve_para_props(para, state.catalog).keep_with_next
         {
+            // NOTE: `i` is the slice index (chain scanning indexes `blocks`);
+            // editing block indices inside a keep-with-next chain are therefore
+            // not offset by `block_index_base`. This only matters for a
+            // continuous section carrying a kwn chain in the live editor (rare).
             let consumed = flow_keep_with_next_chain(state, blocks, i);
             i += consumed;
             continue;
         }
-        flow_block(state, block, i);
+        flow_block(state, block, block_index_base + i);
         i += 1;
     }
     // Reserve any float left active by the final block so the section's height
@@ -394,7 +416,9 @@ pub(crate) fn flow_section_resume(
     state.note_counter = seed.note_counter;
     state.current_indent = seed.current_indent;
 
-    let resynced_at = run_paginated_loop(&mut state, &section.blocks, start_block, resync);
+    // Incremental relayout is single-section, so block indices are section-local
+    // (base 0).
+    let resynced_at = run_paginated_loop(&mut state, &section.blocks, start_block, 0, resync);
     if resynced_at.is_none() {
         // Reached the end: flush trailing footnotes and the final partial page.
         // On a resync stop the current page is an empty clean page top, so it is
@@ -441,7 +465,7 @@ pub fn flow_section(
 
     if mode.is_paginated() {
         // Top-level paginated flow: record checkpoints, never resync.
-        run_paginated_loop(&mut state, &section.blocks, 0, |_, _| false);
+        run_paginated_loop(&mut state, &section.blocks, 0, 0, |_, _| false);
     } else {
         for (idx, block) in section.blocks.iter().enumerate() {
             flow_block(&mut state, block, idx);
@@ -476,6 +500,89 @@ pub fn flow_section(
             paragraphs: state.current_paragraphs,
             warnings: state.warnings,
         }
+    }
+}
+
+/// Transitions an in-progress paginated [`FlowState`] into a `continuous`
+/// section *on the same page*: it closes the current column band (if any) and
+/// opens a fresh column band — using `section`'s column layout but the **group's**
+/// page geometry (a continuous break cannot change the page size) — starting at
+/// the current `cursor_y` rather than the page top.
+fn begin_continuous_section(state: &mut FlowState, section: &Section) {
+    // Close the previous section's column band: position its final column and
+    // draw its separators. If it used more than one column the band filled the
+    // page height, so drop to the page bottom (the next band starts on a new
+    // page via the normal column/page break); otherwise continue just below it.
+    if state.columns > 1 {
+        columns_impl::position_current_column(state);
+        columns_impl::emit_column_separators(state);
+        if state.col_index > 0 {
+            state.cursor_y = state.page_content_height;
+        }
+    }
+
+    // Resolve the new section's columns against the group's (unchanged) content
+    // area width.
+    let full_content_width = (state.page_size.width - state.margins.horizontal()).max(0.0);
+    let (columns, column_gap, column_separator, content_width) =
+        column_layout_for(section.layout.columns.as_ref(), full_content_width, true);
+    state.columns = columns;
+    state.column_gap = column_gap;
+    state.column_separator = column_separator;
+    state.content_width = content_width;
+
+    // Open the new column band at the current y (mid-page).
+    state.col_index = 0;
+    state.column_top_y = state.cursor_y;
+    state.column_item_start = state.current_items.len();
+    state.column_para_start = state.current_paragraphs.len();
+}
+
+/// Flows a **group** of sections that share pages: the first section starts the
+/// page sequence, and every subsequent (`continuous`) member continues on the
+/// same page, switching column layout mid-page via [`begin_continuous_section`].
+/// Page geometry and headers/footers come from the group's first section.
+///
+/// Paginated mode only — the non-paginated (reflow/pageless) path flows each
+/// section independently (continuous-scroll has no pages to share). Editing
+/// block indices are group-local (0-based across the group's combined blocks);
+/// the caller globalises them like a single section.
+pub fn flow_section_group(
+    resources: &mut FontResources,
+    sections: &[&Section],
+    catalog: &StyleCatalog,
+    mode: &LayoutMode,
+    display_scale: f32,
+    options: &LayoutOptions,
+    comments: &[loki_doc_model::content::annotation::Comment],
+) -> FlowOutput {
+    debug_assert!(mode.is_paginated(), "flow_section_group is paginated-only");
+    let primary = sections[0];
+    let mut state = new_flow_state(
+        resources,
+        primary,
+        catalog,
+        mode,
+        display_scale,
+        options,
+        comments,
+    );
+
+    let mut block_base = 0usize;
+    for (i, section) in sections.iter().enumerate() {
+        if i > 0 {
+            begin_continuous_section(&mut state, section);
+        }
+        run_paginated_loop(&mut state, &section.blocks, 0, block_base, |_, _| false);
+        block_base += section.blocks.len();
+    }
+
+    flow_footnotes(&mut state);
+    finish_page(&mut state);
+    FlowOutput::Pages {
+        pages: state.pages,
+        checkpoints: state.checkpoints,
+        warnings: state.warnings,
     }
 }
 
@@ -590,6 +697,7 @@ pub(super) fn finish_page(state: &mut FlowState) {
     columns_impl::position_current_column(state);
     columns_impl::emit_column_separators(state);
     state.col_index = 0;
+    state.column_top_y = 0.0;
     state.column_item_start = 0;
     state.column_para_start = 0;
 
@@ -648,6 +756,7 @@ fn layout_blocks_reflow(
     let synthetic = Section {
         layout: PageLayout::default(),
         blocks,
+        start: loki_doc_model::layout::section::SectionStart::default(),
         extensions: ExtensionBag::default(),
     };
     let mode = LayoutMode::Reflow { available_width };
@@ -1221,6 +1330,7 @@ fn measure_cell_height(
         column_gap: 0.0,
         column_separator: false,
         col_index: 0,
+        column_top_y: 0.0,
         column_item_start: 0,
         column_para_start: 0,
         // Cells never render the comment gutter panel.
@@ -1360,6 +1470,7 @@ fn flow_cell_blocks(
         column_gap: 0.0,
         column_separator: false,
         col_index: 0,
+        column_top_y: 0.0,
         column_item_start: 0,
         column_para_start: 0,
         // Cells never render the comment gutter panel.

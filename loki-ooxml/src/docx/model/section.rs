@@ -26,6 +26,10 @@ pub struct DocxSectPr {
     pub pg_num_fmt: Option<String>,
     /// `w:pgNumType @w:start` — page-number restart value for the section.
     pub pg_num_start: Option<u32>,
+    /// `w:type @w:val` — how the section begins relative to the previous one
+    /// (`continuous`, `nextPage`, `evenPage`, `oddPage`). `None` = `nextPage`
+    /// (ECMA-376 §17.6.22).
+    pub section_type: Option<String>,
 }
 
 /// `w:cols` multi-column section layout (ECMA-376 §17.6.4).
