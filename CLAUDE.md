@@ -203,6 +203,11 @@ The workspace is a set of focused crates (one responsibility each). Key groups:
 - **Layout & rendering:** `loki-layout` (renderer-agnostic, Parley-based),
   `loki-vello` / `loki-renderer` / `loki-render-cache` (GPU paint; per-page
   tiles bounded by viewport virtualization).
+- **Spell check:** `loki-spell` — Hunspell-compatible spell checking via the
+  pure-Rust `spellbook` engine (no FFI). Tokenises text into checkable words,
+  returns misspelled byte ranges + ranked suggestions; the renderer paints
+  flagged ranges as `DecorationKind::Spelling` squiggles. See §11 of
+  `docs/fidelity-status.md` for what is wired vs. pending.
 - **UI & apps:** `appthere-ui` (shared design system), `appthere-canvas`,
   `loki-i18n`, `loki-fonts`, and the binaries `loki-text` (word processor —
   the mature app), `loki-spreadsheet`, `loki-presentation`.

@@ -244,3 +244,23 @@ suites render differently from the canonical Microsoft 365 (OOXML) / LibreOffice
 Importer coverage exercised by the harness today: DOCX + ODT (import → paginate →
 glyph coverage), XLSX + ODS (import → workbook). ODP/ODG have no importer yet and
 are catalogued as pending.
+
+---
+
+## 11. Spell Checking (`loki-spell`)
+
+Spell checking is provided by the `loki-spell` crate, which wraps the pure-Rust
+[`spellbook`](https://crates.io/crates/spellbook) engine (a Rust port of
+Nuspell) so the workspace keeps `#![forbid(unsafe_code)]` — no FFI to the C
+`libhunspell`. The engine reads standard Hunspell `.aff` + `.dic` dictionaries,
+which ship with LibreOffice / Mozilla for essentially every locale, aligning
+with the `loki-i18n` multi-locale plan.
+
+| Layer | Status | Notes |
+| :--- | :---: | :--- |
+| **Engine (`loki-spell`)** | Yes | `SpellChecker::new(aff, dic)` loads a Hunspell dictionary; `is_correct`, `suggest` (ranked corrections), `add_word` (in-memory personal entry via `spellbook`'s `add`), and `ignore_word` (case-insensitive session ignore list). Typed `SpellError` (thiserror). Unit-tested (17 tests). |
+| **Word segmentation** | Yes | `tokenizer` splits text into checkable words with byte ranges (Unicode alphanumeric runs; internal apostrophe/hyphen connectors; tokens containing digits skipped). `check_text` returns a `Misspelling { word, range }` per flagged word. |
+| **Squiggle render primitive** | Yes | `DecorationKind::Spelling` added to `loki-layout`; `loki-vello`'s `paint_decoration` draws it as a wavy underline (amplitude tied to thickness, so it scales with zoom). Not emitted by character styling and never round-trips to a document format. |
+| **Dictionary bundling / loading** | Pending | No `.aff`/`.dic` assets are bundled yet, and there is no per-locale loader wired to `loki-i18n`. Vet dictionary licenses before bundling (LibreOffice dictionaries vary: LGPL/MPL/MIT, some GPL). |
+| **Editor integration** | Pending | Live checking of visible paragraphs, mapping `Misspelling` byte ranges onto layout to emit `Spelling` decorations, and a right-click suggestions menu (no `oncontextmenu` precedent in the editor yet) are the remaining UI pass — they require runtime GUI verification. |
+| **Personal dictionary persistence** | Pending | `add_word` is in-memory only; persisting the user's personal word list and re-adding on load is not wired. |

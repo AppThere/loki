@@ -236,4 +236,11 @@ pub enum DecorationKind {
     Strikethrough,
     /// Line drawn above the text.
     Overline,
+    /// Wavy line drawn below the text to mark a spelling error.
+    ///
+    /// Carried by the layout like an underline (it sits in the same below-text
+    /// band), but the renderer paints it as a wave rather than a straight
+    /// stroke. Emitted from spell-check results, not from character styling, so
+    /// it never round-trips to a document format.
+    Spelling,
 }
