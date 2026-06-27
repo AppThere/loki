@@ -10,14 +10,24 @@
 //!
 //! # Pipeline
 //!
-//! 1. Load a [`SpellChecker`] per language from Hunspell `.aff` + `.dic` data
-//!    (such dictionaries ship with LibreOffice / Mozilla for every locale).
+//! 1. Load a [`SpellChecker`] — from the bundled `en` dictionary
+//!    ([`SpellChecker::bundled`]), an installed one ([`SpellChecker::from_store`]),
+//!    or raw Hunspell `.aff` + `.dic` data ([`SpellChecker::new`]).
 //! 2. Call [`SpellChecker::check_text`] on a run of text (e.g. a paragraph) to
 //!    get a [`Misspelling`] per flagged word, each carrying the word's byte
 //!    range so the renderer can position a squiggle decoration.
 //! 3. Offer [`SpellChecker::suggest`] corrections in a context menu, and let the
 //!    user [`SpellChecker::add_word`] (personal dictionary) or
 //!    [`SpellChecker::ignore_word`] (this session).
+//!
+//! # Dictionaries
+//!
+//! [`Catalog`] enumerates available languages with their licenses and download
+//! sources. A permissive `en` dictionary is bundled (see [`bundled`]); other
+//! languages are downloaded on demand and cached in a [`DictionaryStore`].
+//! Downloads run through [`fetch::install_dictionary`], which enforces a license
+//! [`Consent`] gate and SHA-256 integrity before installing. Use [`locale`] to
+//! resolve a host locale (e.g. `en-US`) to the best available entry.
 //!
 //! # Example
 //!
@@ -36,12 +46,22 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod bundled;
+pub mod catalog;
 pub mod checker;
 pub mod error;
+pub mod fetch;
+pub mod license;
+pub mod locale;
 pub mod misspelling;
+pub mod store;
 pub mod tokenizer;
 
+pub use catalog::{Catalog, DictionaryEntry, DictionarySource};
 pub use checker::SpellChecker;
 pub use error::{SpellError, SpellResult};
+pub use fetch::{install_dictionary, DictionaryFetcher};
+pub use license::{Consent, LicenseClass};
 pub use misspelling::Misspelling;
+pub use store::{DictionaryStore, InstalledMeta};
 pub use tokenizer::{tokenize, Word};

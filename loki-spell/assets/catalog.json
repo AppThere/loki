@@ -1,0 +1,70 @@
+{
+  "comment": "Available Hunspell dictionaries. Download URLs pin wooorm/dictionaries to an immutable commit; integrity is enforced by aff_sha256/dic_sha256. english_name/native_name are reference data, not UI chrome (the app localizes labels around them). Only permissive entries may have bundled=true.",
+  "source_commit": "8cfea406b505e4d7df52d5a19bce525df98c54ab",
+  "entries": [
+    {
+      "tag": "en",
+      "english_name": "English",
+      "native_name": "English",
+      "license_spdx": "(MIT AND BSD)",
+      "license_class": "permissive",
+      "bundled": true,
+      "source": {
+        "aff_url": "https://raw.githubusercontent.com/wooorm/dictionaries/8cfea406b505e4d7df52d5a19bce525df98c54ab/dictionaries/en/index.aff",
+        "aff_sha256": "8ae1f19d4840d957728ad90555d5a8dff6cc5c046279c95ff0c00fc0a0136c7b",
+        "aff_size": 3086,
+        "dic_url": "https://raw.githubusercontent.com/wooorm/dictionaries/8cfea406b505e4d7df52d5a19bce525df98c54ab/dictionaries/en/index.dic",
+        "dic_sha256": "f0b1a234bd178bdd01875b2a392a9647f888b8fe879f79c52aae62c2759b3647",
+        "dic_size": 551762
+      }
+    },
+    {
+      "tag": "fr",
+      "english_name": "French",
+      "native_name": "Français",
+      "license_spdx": "MPL-2.0",
+      "license_class": "lesser-copyleft",
+      "bundled": false,
+      "source": {
+        "aff_url": "https://raw.githubusercontent.com/wooorm/dictionaries/8cfea406b505e4d7df52d5a19bce525df98c54ab/dictionaries/fr/index.aff",
+        "aff_sha256": "05a735d34c912e4e381ff08ee7c747923ccf5cf9dca81d8467982fa1ca51c2b7",
+        "aff_size": 199870,
+        "dic_url": "https://raw.githubusercontent.com/wooorm/dictionaries/8cfea406b505e4d7df52d5a19bce525df98c54ab/dictionaries/fr/index.dic",
+        "dic_sha256": "984e933237bc1224a48f42828233be9b03228260ef67aa8e2bdddcd03a26230d",
+        "dic_size": 1229133
+      }
+    },
+    {
+      "tag": "es",
+      "english_name": "Spanish",
+      "native_name": "Español",
+      "license_spdx": "(GPL-3.0 OR LGPL-3.0 OR MPL-1.1)",
+      "license_class": "lesser-copyleft",
+      "bundled": false,
+      "source": {
+        "aff_url": "https://raw.githubusercontent.com/wooorm/dictionaries/8cfea406b505e4d7df52d5a19bce525df98c54ab/dictionaries/es/index.aff",
+        "aff_sha256": "892039d59db11d747061b81c3a92a52d48ba0e055b5835af1943cbd3c2fba85b",
+        "aff_size": 167135,
+        "dic_url": "https://raw.githubusercontent.com/wooorm/dictionaries/8cfea406b505e4d7df52d5a19bce525df98c54ab/dictionaries/es/index.dic",
+        "dic_sha256": "907f786a8ceb3456722b20ad91dd4dbe99c5c16e45015ea63155e36f26b06d2c",
+        "dic_size": 706202
+      }
+    },
+    {
+      "tag": "de",
+      "english_name": "German",
+      "native_name": "Deutsch",
+      "license_spdx": "(GPL-2.0 OR GPL-3.0)",
+      "license_class": "copyleft",
+      "bundled": false,
+      "source": {
+        "aff_url": "https://raw.githubusercontent.com/wooorm/dictionaries/8cfea406b505e4d7df52d5a19bce525df98c54ab/dictionaries/de/index.aff",
+        "aff_sha256": "57fdd1b16aac2131003c91e0cf2a488becb970382a402a9ce089307301cb3ef0",
+        "aff_size": 19199,
+        "dic_url": "https://raw.githubusercontent.com/wooorm/dictionaries/8cfea406b505e4d7df52d5a19bce525df98c54ab/dictionaries/de/index.dic",
+        "dic_sha256": "b5c781a0cf6f285fb6b9b8ab02fbea104b987104a1efdda8a835837e89e3ec77",
+        "dic_size": 1118194
+      }
+    }
+  ]
+}

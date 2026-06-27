@@ -43,6 +43,31 @@ impl SpellChecker {
         })
     }
 
+    /// Builds a checker from the dictionary bundled in the crate (`en`).
+    ///
+    /// Always available offline; used as the first-run default and the ultimate
+    /// fallback when the user's locale has no installed dictionary.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SpellError::DictionaryParse`] only if the embedded dictionary
+    /// is corrupt (a build-time bug).
+    pub fn bundled() -> SpellResult<Self> {
+        let (aff, dic) = crate::bundled::bundled_dictionary();
+        Self::new(aff, dic)
+    }
+
+    /// Builds a checker for an installed `tag` from a [`DictionaryStore`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SpellError::NotInstalled`] if the tag is absent, or a load /
+    /// parse error otherwise.
+    pub fn from_store(store: &crate::store::DictionaryStore, tag: &str) -> SpellResult<Self> {
+        let (aff, dic) = store.load(tag)?;
+        Self::new(&aff, &dic)
+    }
+
     /// Returns `true` if `word` is spelled correctly (or has been ignored/added).
     ///
     /// Empty input is treated as correct.

@@ -68,3 +68,15 @@ fn ignored_word_is_correct_case_insensitively() {
     assert!(c.is_correct("xyzzy"));
     assert!(c.is_correct("XYZZY"));
 }
+
+#[test]
+fn bundled_dictionary_loads_and_checks_real_words() {
+    let c = SpellChecker::bundled().expect("bundled en dictionary parses");
+    assert!(c.is_correct("hello"));
+    assert!(c.is_correct("dictionary"));
+    assert!(!c.is_correct("teh"));
+    assert!(
+        c.suggest("teh").iter().any(|s| s == "the"),
+        "expected 'the' as a suggestion for 'teh'"
+    );
+}
