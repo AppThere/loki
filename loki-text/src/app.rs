@@ -130,25 +130,13 @@ pub fn App() -> Element {
             "
         }
 
-        // Register Atkinson Hyperlegible Next as the UI font, embedded as a
-        // `data:` URI so it is bundled into the binary and decoded by blitz_net
-        // on every platform. The previous `dioxus:///assets/...` URL resolved
-        // relative to the executable and did not load on Android/ChromeOS (and
-        // silently relied on a system-installed copy on desktop). See
-        // `loki_fonts::ui_face_css`.
-        document::Style {
-            r#type: "text/css",
-            "{loki_fonts::ui_face_css()}"
-        }
-
-        // Bundled fallback fonts for the Android CPU renderer — Carlito (Calibri),
-        // Caladea (Cambria), Arimo (Arial), Cousine (Courier New), Tinos (Times NR).
-        // loki_fonts::face_css() returns "" on desktop and Android GPU paths, so
-        // this document::Style is a safe no-op on those targets.
-        document::Style {
-            r#type: "text/css",
-            "{loki_fonts::face_css()}"
-        }
+        // The UI typeface (Atkinson Hyperlegible Next) and the bundled
+        // metric-compatible fallback families (Carlito/Caladea/Arimo/Cousine/
+        // Tinos) are registered synchronously into the renderer's font collection
+        // at launch via `dioxus::native::Config::with_fonts(loki_fonts::ui_font_blobs())`
+        // (see `main.rs` / `android_main`). That replaces the previous
+        // `@font-face` `data:` URI injection, which relied on the asynchronous
+        // resource-fetch path and did not load reliably on Android.
 
         div {
             // Shell owns height: 100vh and the flex column layout.

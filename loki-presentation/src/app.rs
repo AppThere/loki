@@ -94,12 +94,11 @@ pub fn App() -> Element {
             "
         }
 
-        // UI font, embedded as a `data:` URI so it bundles into the binary and
-        // loads on every platform (see `loki_fonts::ui_face_css`).
-        document::Style {
-            r#type: "text/css",
-            "{loki_fonts::ui_face_css()}"
-        }
+        // The UI typeface and bundled fallback families are registered
+        // synchronously into the renderer's font collection at launch via
+        // `dioxus::native::Config::with_fonts(loki_fonts::ui_font_blobs())` (see
+        // `main.rs` / `android_main`), replacing the previous `@font-face`
+        // `data:` URI injection that did not load reliably on Android.
 
         div {
             // Padding offsets the system status/navigation bars on Android

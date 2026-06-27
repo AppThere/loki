@@ -120,6 +120,26 @@ The substitute faces are **embedded in the layout engine and registered lazily**
 
 **Default-style inheritance:** a paragraph with no explicit style (`w:pStyle`) now resolves through the document's **default paragraph style** (`StyleCatalog::default_paragraph_style`, set by the DOCX mapper to the `w:default="1"` paragraph style — typically `Normal`, rooted at `w:docDefaults`). Both the paragraph and character resolution paths (`loki-layout` `resolve_para_props` / `flatten_paragraph`) honour it via `effective_paragraph_style`. This means default-font body text inherits the document base font (e.g. Calibri → Carlito) instead of importing with `font_name = None` and rendering in the engine's default face. Tested by `default_paragraph_style_resolves_doc_default_font` / `explicit_default_paragraph_style_is_preferred` (`loki-ooxml`) and `effective_paragraph_style_falls_back_to_default` (`loki-doc-model`). (ODT's `style:default-style` is not yet wired into this field — a separate follow-up.)
 
+### UI / renderer font registration (synchronous, all platforms)
+
+The bundled fonts are registered into the **UI renderer's** font collection
+(Blitz/parley `FontContext`) **synchronously at launch**, separately from the
+document layout engine above. The apps pass `loki_fonts::ui_font_blobs()` — the
+*Atkinson Hyperlegible Next* UI typeface plus the five metric-compatible
+families — through `dioxus::native::Config::with_fonts(..)`, which threads them
+into `blitz-dom`'s `DocumentConfig.extra_fonts`; `BaseDocument::new` registers
+each blob on top of the system fonts and the default bullet font (see
+[patches.md](patches.md), blitz-dom item 7 / dioxus-native).
+
+This replaced the previous mechanism — a `document::Style` injecting an
+`@font-face` `data:` URI — which depended on the renderer's **asynchronous**
+network-provider resource fetch. That async path did not load the UI typeface on
+Android (the chrome fell back to a wide system font, so digits in the status
+bar / ruler rendered noticeably wide). Because the font bytes are known at
+compile time, synchronous registration is the correct layer and works uniformly
+on desktop, Android, and iOS. The blobs are validated non-empty by
+`ui_font_blobs_includes_ui_face_plus_fallbacks` (`loki-fonts`).
+
 ### Known gap — symbol-glyph fallback on macOS
 
 List bullet markers are inserted as plain text in the **body font** (the

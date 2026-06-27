@@ -26,4 +26,10 @@ pub struct DocumentConfig {
     pub html_parser_provider: Option<Arc<dyn HtmlParserProvider>>,
     /// Parley `FontContext`
     pub font_ctx: Option<FontContext>,
+    /// Extra font blobs (TTF/OTF/TTC bytes) to register into the font collection
+    /// at construction, on top of (not replacing) the system fonts and the
+    /// default bullet font. Lets an embedder bundle UI/app fonts that are then
+    /// available **synchronously** on every platform — without relying on the
+    /// asynchronous `@font-face` `data:` URI resource-fetch path.
+    pub extra_fonts: Vec<Vec<u8>>,
 }

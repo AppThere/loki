@@ -97,6 +97,10 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
     if let Some(window_attributes) = window_attributes {
         config.window_attributes = window_attributes;
     }
+    // Bundled app fonts to register synchronously into the document's font
+    // collection (see `Config::with_fonts`). Taken out of `config` here so it can
+    // be moved into the `DocumentConfig` below.
+    let font_blobs = std::mem::take(&mut config.font_blobs);
     let event_loop = create_default_event_loop::<BlitzShellEvent>();
 
     // Turn on the runtime and enter it
@@ -149,6 +153,7 @@ pub fn launch_cfg_with_props<P: Clone + 'static, M: 'static>(
             net_provider,
             html_parser_provider,
             navigation_provider,
+            extra_fonts: font_blobs,
             ..Default::default()
         },
     );

@@ -334,6 +334,18 @@ a document opens, without clicking first; this re-enables that intended
 behaviour. When re-vendoring the manifest during a Dioxus upgrade, preserve this
 addition (it is a loki customisation, like the Android `softbuffer` deps).
 
+**Bundled-font pre-registration (PATCH(loki), 2026-06-27).** `Config` gains a
+`font_blobs: Vec<Vec<u8>>` field and a `with_fonts(..)` builder; `launch_cfg_with_props`
+moves those blobs into `DocumentConfig.extra_fonts` (see the blitz-dom entry) so
+the renderer registers them into its parley `FontContext` synchronously at
+startup. The apps pass `loki_fonts::ui_font_blobs()` (the Atkinson Hyperlegible
+Next UI typeface plus the metric-compatible fallback families). This replaces the
+previous approach of injecting an `@font-face` `data:` URI via `document::Style`,
+which relied on the asynchronous network-provider resource fetch and did not load
+the UI typeface on Android (the chrome fell back to a wide system font). The
+bytes are known at compile time, so synchronous registration is the correct
+layer. Preserve this `Config`/launch customisation when re-vendoring.
+
 **Root cause:** Upstream assumed OS-level redraw events would cover the
 CSS-application step; this assumption holds on desktop but not on Android.
 Upstream also leaves `onmounted` / `MountedData` unimplemented for native.
@@ -494,16 +506,25 @@ file picking additionally requires a Gradle build with `FilePickerActivity.kt`.
    updates correct while idle frames stop. (`is_animating()` is left intact for
    any other consumer.)
 
+7. **Embedder-supplied font blobs (PATCH(loki), 2026-06-27).** `DocumentConfig`
+   gains `extra_fonts: Vec<Vec<u8>>`; `BaseDocument::new` registers each blob into
+   the parley `FontContext` (on top of the system fonts and the default bullet
+   font) at construction. This lets an app bundle its UI/fallback fonts and have
+   them resolve **synchronously** on every platform, instead of relying on the
+   asynchronous `@font-face` `data:` URI resource-fetch path (which did not load
+   the UI typeface on Android). `dioxus-native`'s `Config::with_fonts(..)` feeds
+   this field; the Loki apps pass `loki_fonts::ui_font_blobs()`.
+
 **Removal condition:** Upstream blitz-dom implements tabindex focus-on-click
 for non-input elements, dispatches scroll events to embedders, exposes an
 absolute node-scroll API, and stops treating a static canvas as perpetually
 animating (e.g. a per-source "needs animation" signal).
 
 **Added:** 2026-05-18 (focus); extended 2026-06-10 (scroll events),
-2026-06-11 (absolute scroll), and 2026-06-21 (`needs_animation_tick` — stop the
-idle canvas redraw loop, paired with the blitz-shell `redraw()` change),
-together with matching changes in the blitz-shell and dioxus-native(-dom)
-patches.
+2026-06-11 (absolute scroll), 2026-06-21 (`needs_animation_tick` — stop the
+idle canvas redraw loop, paired with the blitz-shell `redraw()` change), and
+2026-06-27 (`extra_fonts` — synchronous bundled-font registration), together
+with matching changes in the blitz-shell and dioxus-native(-dom) patches.
 
 ---
 

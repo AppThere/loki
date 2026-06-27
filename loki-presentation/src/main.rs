@@ -8,5 +8,15 @@
 
 fn main() {
     loki_i18n::init();
-    dioxus::launch(loki_presentation::app::App);
+    // Register the bundled UI + metric-compatible fonts directly into the
+    // renderer's font collection so they resolve synchronously on every platform,
+    // not via the asynchronous `@font-face` `data:` URI fetch (unreliable on
+    // Android). See `loki_fonts::ui_font_blobs`.
+    dioxus::native::launch_cfg(
+        loki_presentation::app::App,
+        vec![],
+        vec![Box::new(
+            dioxus::native::Config::new().with_fonts(loki_fonts::ui_font_blobs()),
+        )],
+    );
 }
