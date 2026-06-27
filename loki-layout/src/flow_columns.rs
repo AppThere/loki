@@ -54,7 +54,9 @@ pub(super) fn break_column(state: &mut FlowState) {
         state.col_index += 1;
         state.column_item_start = state.current_items.len();
         state.column_para_start = state.current_paragraphs.len();
-        state.cursor_y = 0.0;
+        // The next column starts at the band top (page content top, or mid-page
+        // for a continuous section that opened its band below earlier content).
+        state.cursor_y = state.column_top_y;
     } else {
         finish_page(state);
     }
@@ -69,14 +71,17 @@ pub(super) fn emit_column_separators(state: &mut FlowState) {
     }
     const SEP_WIDTH: f32 = 0.75;
     let col_w = state.content_width;
-    let height = state.page_content_height;
+    // Separators span the column band: from its top (mid-page for a continuous
+    // section) to the page content bottom.
+    let top = state.column_top_y;
+    let height = (state.page_content_height - top).max(0.0);
     for gap_idx in 0..state.col_index {
         let center =
             f32::from(gap_idx) * (col_w + state.column_gap) + col_w + state.column_gap / 2.0;
         state
             .current_items
             .push(PositionedItem::FilledRect(PositionedRect {
-                rect: LayoutRect::new(center - SEP_WIDTH / 2.0, 0.0, SEP_WIDTH, height),
+                rect: LayoutRect::new(center - SEP_WIDTH / 2.0, top, SEP_WIDTH, height),
                 color: LayoutColor::BLACK,
             }));
     }

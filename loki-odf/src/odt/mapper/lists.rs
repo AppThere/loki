@@ -117,7 +117,12 @@ fn map_bullet_char(s: &str) -> BulletChar {
 }
 
 /// Map an ODF `style:num-format` value to [`NumberingScheme`].
-fn map_numbering_scheme(s: &str) -> NumberingScheme {
+///
+/// Shared by list-level numbering and page-number formatting (`style:num-format`
+/// on `style:page-layout-properties`) — both use the same ODF token set
+/// (ODF 1.3 §20.396): `"1"` decimal, `"i"`/`"I"` lower/upper Roman,
+/// `"a"`/`"A"` lower/upper letter.
+pub(crate) fn map_numbering_scheme(s: &str) -> NumberingScheme {
     match s {
         "a" => NumberingScheme::LowerAlpha,
         "A" => NumberingScheme::UpperAlpha,

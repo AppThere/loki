@@ -89,6 +89,17 @@ pub struct StyleCatalog {
     /// Named list styles. ODF `text:list-style`;
     /// OOXML `w:abstractNum`.
     pub list_styles: IndexMap<crate::style::list_style::ListId, ListStyle>,
+    /// The id of the document's **default paragraph style** — the style a
+    /// paragraph with no explicit style reference inherits from. OOXML: the
+    /// paragraph style with `w:default="1"` (typically `Normal`, rooted at
+    /// `w:docDefaults`); ODF: the `style:default-style` for paragraphs. `None`
+    /// means "no document default" (a bare paragraph resolves to engine defaults).
+    ///
+    /// Without this, default-font body text (no `w:pStyle`) would bypass the
+    /// `docDefaults` chain and lose the document's base font, causing wrong-font
+    /// rendering and pagination drift.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub default_paragraph_style: Option<StyleId>,
 }
 
 impl StyleCatalog {
@@ -96,6 +107,19 @@ impl StyleCatalog {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Returns the style id to resolve for a paragraph, given its (possibly
+    /// absent) explicit style reference: the explicit id if present, otherwise
+    /// the document's [`default_paragraph_style`](Self::default_paragraph_style).
+    /// Mirrors OOXML/ODF semantics where a paragraph with no style still
+    /// inherits the default paragraph style (and through it, `docDefaults`).
+    #[must_use]
+    pub fn effective_paragraph_style<'a>(
+        &'a self,
+        explicit: Option<&'a StyleId>,
+    ) -> Option<&'a StyleId> {
+        explicit.or(self.default_paragraph_style.as_ref())
     }
 
     /// Resolves the paragraph properties for a style by walking the parent

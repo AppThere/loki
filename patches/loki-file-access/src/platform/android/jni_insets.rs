@@ -94,11 +94,18 @@ fn query_with_env(env: &mut JNIEnv<'_>) -> Option<(f32, f32)> {
 /// Query the actual per-side safe-area insets from the activity's window, in dp.
 ///
 /// Returns `(top, bottom, left, right)` from
-/// `decorView.getRootWindowInsets().getInsets(systemBars | displayCutout)` —
-/// the real, orientation-aware insets for an edge-to-edge window (e.g. in
+/// `decorView.getRootWindowInsets().getInsets(systemBars | displayCutout | ime)`
+/// — the real, orientation-aware insets for an edge-to-edge window (e.g. in
 /// landscape the navigation bar / cutout move to a side, so `left`/`right`
 /// become non-zero and `top` shrinks).  Unlike [`query_insets_dp`], this is not
 /// orientation-independent.
+///
+/// The mask also includes the soft-keyboard (IME) inset, so when the keyboard
+/// is visible the returned `bottom` grows to the keyboard height (the
+/// `getInsets` union takes the per-side max, and `ime()` only contributes a
+/// bottom inset).  Re-querying this after the keyboard is shown/hidden — see the
+/// IME-settle re-sync in `blitz-shell` — lets the app reserve a bottom safe
+/// area for the keyboard on a `NativeActivity` whose surface does not resize.
 ///
 /// `activity_ptr` is the activity `jobject` from
 /// `android_activity::AndroidApp::activity_as_ptr()` — the `ndk_context` context
@@ -159,7 +166,7 @@ fn window_insets_with_env(
     }
 
     // mask = WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout()
-    // (both static int methods, API 30+).
+    //        | WindowInsets.Type.ime()      (all static int methods, API 30+).
     let type_cls = env.find_class("android/view/WindowInsets$Type").ok()?;
     let system_bars = env
         .call_static_method(&type_cls, "systemBars", "()I", &[])
@@ -171,7 +178,18 @@ fn window_insets_with_env(
         .ok()?
         .i()
         .ok()?;
-    let mask = system_bars | cutout;
+    // Fold in the soft-keyboard (IME) inset so `bottom` reserves space for the
+    // keyboard when it is visible. `getInsets` returns the per-side union and
+    // `ime()` contributes only a bottom inset, so top/left/right are unaffected
+    // while the keyboard is hidden (its bottom inset is then 0). `ime()` is API
+    // 30+, the same level as `getInsets(int)`, so the existing `.ok()?`
+    // fallback to `query_insets_dp` already covers API < 30.
+    let ime = env
+        .call_static_method(&type_cls, "ime", "()I", &[])
+        .ok()?
+        .i()
+        .ok()?;
+    let mask = system_bars | cutout | ime;
 
     // insets = windowInsets.getInsets(mask) → android.graphics.Insets (API 30+)
     let insets = env

@@ -9,9 +9,15 @@
 //! extraction in [`crate::para`], but the run origin is placed on the box
 //! baseline (`y = 0`) so composition can stack and shift boxes freely.
 
+use std::borrow::Cow;
 use std::sync::Arc;
 
-use parley::{FontStyle, PositionedLayoutItem, StyleProperty};
+use parley::{FontFamily, FontStyle, PositionedLayoutItem, StyleProperty};
+
+/// Font stack for mathematics: a real math font when present (Word uses Cambria
+/// Math), falling back to the generic `serif` face. Math is conventionally set
+/// in a serif/math face, not the sans-serif body default.
+const MATH_FONT_STACK: &str = "Cambria Math, STIX Two Math, Latin Modern Math, serif";
 
 use super::MBox;
 use crate::color::LayoutColor;
@@ -39,6 +45,13 @@ pub(super) fn shape_token(
             .ranged_builder(&mut resources.font_cx, text, display_scale, true);
     builder.push_default(StyleProperty::Brush(color));
     builder.push_default(StyleProperty::FontSize(font_size));
+    // Math is conventionally set in a serif/math face (Word uses Cambria Math),
+    // not the sans-serif body default. Request the generic serif family so the
+    // platform's serif face is used (a real math font if it is the serif
+    // default); falls back cleanly cross-platform.
+    builder.push_default(StyleProperty::FontFamily(FontFamily::Source(
+        Cow::Borrowed(MATH_FONT_STACK),
+    )));
     if italic {
         builder.push_default(StyleProperty::FontStyle(FontStyle::Italic));
     }

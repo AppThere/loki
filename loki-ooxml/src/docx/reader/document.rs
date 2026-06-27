@@ -11,9 +11,9 @@ use quick_xml::events::Event;
 
 use crate::docx::model::document::{DocxBodyChild, DocxDocument};
 use crate::docx::model::paragraph::{
-    DocxBorderEdge, DocxCols, DocxDrawing, DocxHdrFtrRef, DocxHyperlink, DocxInd, DocxNumPr,
-    DocxPBdr, DocxPPr, DocxParaChild, DocxParagraph, DocxPgMar, DocxPgSz, DocxRFonts, DocxRPr,
-    DocxRun, DocxRunChild, DocxSectPr, DocxSpacing, DocxTab,
+    DocxBorderEdge, DocxCols, DocxDrawing, DocxFramePr, DocxHdrFtrRef, DocxHyperlink, DocxInd,
+    DocxNumPr, DocxPBdr, DocxPPr, DocxParaChild, DocxParagraph, DocxPgMar, DocxPgSz, DocxRFonts,
+    DocxRPr, DocxRun, DocxRunChild, DocxSectPr, DocxSpacing, DocxTab,
 };
 use crate::docx::model::styles::{
     DocxCellMargins, DocxTableCell, DocxTableModel, DocxTableRow, DocxTblPr, DocxTblWidth,
@@ -22,6 +22,7 @@ use crate::docx::model::styles::{
 use crate::docx::reader::runs::{parse_fld_simple_runs, parse_hyperlink_runs, parse_tracked_runs};
 use crate::docx::reader::util::{attr_val, local_name, parse_emu, toggle_prop};
 use crate::error::{OoxmlError, OoxmlResult};
+use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
 
 /// Parses `word/document.xml` bytes into a [`DocxDocument`].
 pub fn parse_document(xml: &[u8]) -> OoxmlResult<DocxDocument> {
@@ -320,7 +321,22 @@ fn apply_ppr_attr(name: &[u8], e: &quick_xml::events::BytesStart<'_>, ppr: &mut 
         }
         b"bidi" => ppr.bidi = Some(toggle_prop(attr_val(e, b"val").as_deref())),
         b"widowControl" => ppr.widow_control = Some(toggle_prop(attr_val(e, b"val").as_deref())),
-        b"shd" => ppr.shd_fill = attr_val(e, b"fill"),
+        b"shd" => {
+            ppr.shd_fill = attr_val(e, b"fill");
+            ppr.shd_val = attr_val(e, b"val");
+            ppr.shd_color = attr_val(e, b"color");
+        }
+        b"framePr" => {
+            ppr.frame_pr = Some(DocxFramePr {
+                drop_cap: attr_val(e, b"dropCap"),
+                lines: attr_val(e, b"lines")
+                    .as_deref()
+                    .and_then(|v| v.parse().ok()),
+                h_space: attr_val(e, b"hSpace")
+                    .as_deref()
+                    .and_then(|v| v.parse().ok()),
+            });
+        }
         _ => {}
     }
 }
@@ -355,6 +371,9 @@ pub(crate) fn parse_rpr_element(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxR
                     }
                     b"color" => rpr.color = attr_val(e, b"val"),
                     b"highlight" => rpr.highlight = attr_val(e, b"val"),
+                    b"position" => {
+                        rpr.position = attr_val(e, b"val").as_deref().and_then(|v| v.parse().ok());
+                    }
                     b"sz" => {
                         rpr.sz = attr_val(e, b"val").as_deref().and_then(|v| v.parse().ok());
                     }
@@ -384,7 +403,11 @@ pub(crate) fn parse_rpr_element(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxR
                         rpr.lang_east_asian = attr_val(e, b"eastAsia");
                     }
                     b"vertAlign" => rpr.vert_align = attr_val(e, b"val"),
-                    b"shd" => rpr.shd_fill = attr_val(e, b"fill"),
+                    b"shd" => {
+                        rpr.shd_fill = attr_val(e, b"fill");
+                        rpr.shd_val = attr_val(e, b"val");
+                        rpr.shd_color = attr_val(e, b"color");
+                    }
                     b"outline" => {
                         rpr.outline = Some(toggle_prop(attr_val(e, b"val").as_deref()));
                     }
@@ -667,6 +690,17 @@ pub(crate) fn parse_sect_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxSectP
                                 .is_some_and(|v| !matches!(v.as_str(), "0" | "false" | "off")),
                         });
                     }
+                    b"pgNumType" => {
+                        // ECMA-376 §17.6.12: @w:fmt is the number format, @w:start
+                        // restarts numbering at the given value for this section.
+                        sect.pg_num_fmt = attr_val(e, b"fmt");
+                        sect.pg_num_start = attr_val(e, b"start").and_then(|v| v.parse().ok());
+                    }
+                    b"type" => {
+                        // ECMA-376 §17.6.22: how this section begins relative to
+                        // the previous one (continuous / nextPage / even / odd).
+                        sect.section_type = attr_val(e, b"val");
+                    }
                     _ => {}
                 }
             }
@@ -696,13 +730,22 @@ fn parse_drawing(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxDrawing> {
         descr: None,
         name: None,
         is_anchor: false,
+        wrap: None,
     };
+    // Wrap mode/side are carried on a `wp:wrap*` child; `behindDoc` lives on the
+    // `wp:anchor` element. Collect both, then assemble the `FloatWrap` at the end.
+    let mut wrap_mode: Option<TextWrap> = None;
+    let mut wrap_side = WrapSide::Both;
+    let mut behind_doc = false;
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
                 match local_name(e.local_name().as_ref()) {
-                    b"anchor" => drawing.is_anchor = true,
+                    b"anchor" => {
+                        drawing.is_anchor = true;
+                        behind_doc = attr_val(e, b"behindDoc").as_deref() == Some("1");
+                    }
                     b"extent" => {
                         drawing.cx = attr_val(e, b"cx").as_deref().and_then(parse_emu);
                         drawing.cy = attr_val(e, b"cy").as_deref().and_then(parse_emu);
@@ -714,6 +757,20 @@ fn parse_drawing(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxDrawing> {
                     b"blip" => {
                         drawing.rel_id = attr_val(e, b"embed");
                     }
+                    b"wrapSquare" => {
+                        wrap_mode = Some(TextWrap::Square);
+                        wrap_side = parse_wrap_text(e);
+                    }
+                    b"wrapTight" => {
+                        wrap_mode = Some(TextWrap::Tight);
+                        wrap_side = parse_wrap_text(e);
+                    }
+                    b"wrapThrough" => {
+                        wrap_mode = Some(TextWrap::Through);
+                        wrap_side = parse_wrap_text(e);
+                    }
+                    b"wrapTopAndBottom" => wrap_mode = Some(TextWrap::TopAndBottom),
+                    b"wrapNone" => wrap_mode = Some(TextWrap::None),
                     _ => {}
                 }
             }
@@ -731,7 +788,24 @@ fn parse_drawing(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxDrawing> {
         }
         buf.clear();
     }
+    if let Some(wrap) = wrap_mode {
+        drawing.wrap = Some(FloatWrap {
+            wrap,
+            side: wrap_side,
+            behind_text: behind_doc,
+        });
+    }
     Ok(drawing)
+}
+
+/// Reads the `wrapText` attribute of a `wp:wrap*` element into a [`WrapSide`].
+fn parse_wrap_text(e: &quick_xml::events::BytesStart<'_>) -> WrapSide {
+    match attr_val(e, b"wrapText").as_deref() {
+        Some("left") => WrapSide::Left,
+        Some("right") => WrapSide::Right,
+        Some("largest") => WrapSide::Largest,
+        _ => WrapSide::Both,
+    }
 }
 
 /// Parses a `w:tbl` element. Called after Start("tbl") is consumed.
@@ -791,6 +865,9 @@ fn parse_tbl_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTblPr> {
                 }
                 b"tblStyle" => {
                     pr.style_id = attr_val(e, b"val");
+                }
+                b"tblLayout" => {
+                    pr.layout = attr_val(e, b"type");
                 }
                 _ => {}
             },
@@ -875,7 +952,12 @@ fn parse_table_cell(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTableCell> {
                 }
                 b"p" => {
                     let para = parse_paragraph(reader)?;
-                    cell.paragraphs.push(para);
+                    cell.children.push(DocxBodyChild::Paragraph(para));
+                }
+                b"tbl" => {
+                    // Nested table inside this cell (ECMA-376 §17.4.4).
+                    let tbl = parse_table(reader)?;
+                    cell.children.push(DocxBodyChild::Table(tbl));
                 }
                 _ => {}
             },
@@ -918,6 +1000,8 @@ fn parse_tc_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTcPr> {
                     }
                     b"shd" => {
                         tc_pr.shd_fill = attr_val(e, b"fill");
+                        tc_pr.shd_val = attr_val(e, b"val");
+                        tc_pr.shd_color = attr_val(e, b"color");
                     }
                     b"tcBorders" => {
                         tc_pr.tc_borders = Some(parse_tc_borders(reader)?);

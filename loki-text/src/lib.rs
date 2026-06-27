@@ -76,7 +76,18 @@ fn android_main(android_app: android_activity::AndroidApp) {
     log::info!("android_main: i18n init");
     loki_i18n::init();
     log::info!("android_main: launching dioxus");
-    dioxus::launch(app::App);
+    // Register the bundled UI + metric-compatible fonts directly into the
+    // renderer's font collection at startup, so they resolve synchronously on
+    // Android instead of relying on the asynchronous `@font-face` `data:` URI
+    // fetch (which does not reliably run before first paint on Android, leaving
+    // UI chrome digits in a wide system fallback). See `loki_fonts::ui_font_blobs`.
+    dioxus::native::launch_cfg(
+        app::App,
+        vec![],
+        vec![Box::new(
+            dioxus::native::Config::new().with_fonts(loki_fonts::ui_font_blobs()),
+        )],
+    );
     log::info!("android_main: dioxus exited");
     // Clear the running flag so a subsequent activity-recreation relaunch
     // (in the same process) is allowed to proceed.

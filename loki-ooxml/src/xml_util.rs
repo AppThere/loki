@@ -132,6 +132,57 @@ pub fn hex_color(s: &str) -> Option<RgbColor> {
     ))
 }
 
+/// Resolves an OOXML `w:shd` shading element to an effective solid fill colour.
+///
+/// `w:shd` (ECMA-376 §17.3.5) layers a pattern foreground (`@w:color`) over a
+/// background (`@w:fill`) at a coverage implied by `@w:val`:
+/// - `clear` / absent → the background `fill` shows through unchanged.
+/// - `solid` → the foreground `color` fully covers the cell.
+/// - `pctN` → `N`% of `color` blended over `fill` (e.g. `pct25` = 25 % color).
+/// - `nil` / `none` → no shading at all.
+///
+/// Texture patterns (`horzStripe`, `diagCross`, …) are approximated by their
+/// background `fill` — the dominant colour — until per-pixel pattern fills are
+/// supported. `auto` fill resolves to white and `auto` color to black, matching
+/// Word's automatic-colour resolution for body shading.
+///
+/// Returns `None` when the element contributes no visible fill (so the caller
+/// leaves `background_color` unset rather than painting white over the page).
+#[must_use]
+pub fn resolve_shading(
+    fill: Option<&str>,
+    val: Option<&str>,
+    color: Option<&str>,
+) -> Option<RgbColor> {
+    let fill_rgb = fill.and_then(hex_color);
+    let color_rgb = color.and_then(hex_color);
+    match val.unwrap_or("clear") {
+        "nil" | "none" => None,
+        "solid" => color_rgb.or(fill_rgb),
+        v if v.starts_with("pct") => {
+            let pct: f32 = v[3..].parse().ok()?;
+            let frac = (pct / 100.0).clamp(0.0, 1.0);
+            // `auto` fill → white background; `auto` color → black foreground.
+            let bg = fill_rgb.unwrap_or_else(|| RgbColor::new(1.0, 1.0, 1.0));
+            let fg = color_rgb.unwrap_or_else(|| RgbColor::new(0.0, 0.0, 0.0));
+            Some(blend_rgb(bg, fg, frac))
+        }
+        // `clear`, texture patterns, or unknown → background fill only.
+        _ => fill_rgb,
+    }
+}
+
+/// Linearly blends `fg` over `bg` at coverage `t` in `[0, 1]`.
+#[must_use]
+fn blend_rgb(bg: RgbColor, fg: RgbColor, t: f32) -> RgbColor {
+    let mix = |a: f32, b: f32| a * (1.0 - t) + b * t;
+    RgbColor::new(
+        mix(bg.red(), fg.red()),
+        mix(bg.green(), fg.green()),
+        mix(bg.blue(), fg.blue()),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,5 +314,50 @@ mod tests {
         assert!((c.red() - 1.0_f32).abs() < 1e-6);
         assert!((c.green() - 128.0_f32 / 255.0).abs() < 1e-4);
         assert!(c.blue() < 1e-6);
+    }
+
+    // ── resolve_shading ───────────────────────────────────────────────────────
+
+    #[test]
+    fn shading_clear_uses_fill() {
+        let c = resolve_shading(Some("CADCFC"), Some("clear"), None).unwrap();
+        assert!((c.red() - 0xCA as f32 / 255.0).abs() < 1e-4);
+        assert!((c.blue() - 0xFC as f32 / 255.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn shading_clear_auto_fill_is_none() {
+        // The common no-op shading `<w:shd val="clear" fill="auto"/>`.
+        assert!(resolve_shading(Some("auto"), Some("clear"), Some("auto")).is_none());
+    }
+
+    #[test]
+    fn shading_solid_uses_color() {
+        let c = resolve_shading(Some("FFFFFF"), Some("solid"), Some("1C7293")).unwrap();
+        assert!((c.red() - 0x1C as f32 / 255.0).abs() < 1e-4);
+        assert!((c.green() - 0x72 as f32 / 255.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn shading_pct25_blends_color_over_fill() {
+        // 25 % of teal (1C7293) over white (FFFFFF) → light teal.
+        let c = resolve_shading(Some("FFFFFF"), Some("pct25"), Some("1C7293")).unwrap();
+        let expect = |fg: f32| 1.0 * 0.75 + fg * 0.25;
+        assert!((c.red() - expect(0x1C as f32 / 255.0)).abs() < 1e-4);
+        assert!((c.green() - expect(0x72 as f32 / 255.0)).abs() < 1e-4);
+        assert!((c.blue() - expect(0x93 as f32 / 255.0)).abs() < 1e-4);
+        // The result must be lighter than the solid foreground (visible shade).
+        assert!(c.red() > 0x1C as f32 / 255.0);
+    }
+
+    #[test]
+    fn shading_nil_is_none() {
+        assert!(resolve_shading(Some("CADCFC"), Some("nil"), None).is_none());
+    }
+
+    #[test]
+    fn shading_unknown_texture_falls_back_to_fill() {
+        let c = resolve_shading(Some("97BC62"), Some("horzStripe"), Some("000000")).unwrap();
+        assert!((c.green() - 0xBC as f32 / 255.0).abs() < 1e-4);
     }
 }

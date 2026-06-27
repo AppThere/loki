@@ -13,6 +13,7 @@ use loki_doc_model::style::props::border::{Border, BorderStyle};
 use loki_doc_model::style::props::char_props::{
     CharProps, HighlightColor, StrikethroughStyle, UnderlineStyle, VerticalAlign,
 };
+use loki_doc_model::style::props::drop_cap::{DropCap, DropCapLength};
 use loki_doc_model::style::props::para_props::{
     LineHeight, ParaProps, ParagraphAlignment, Spacing,
 };
@@ -20,10 +21,27 @@ use loki_doc_model::style::props::tab_stop::{TabAlignment, TabLeader, TabStop};
 use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 
-use crate::docx::model::paragraph::{DocxBorderEdge, DocxPPr, DocxRPr};
-use crate::xml_util::hex_color;
+use crate::docx::model::paragraph::{DocxBorderEdge, DocxFramePr, DocxPPr, DocxRPr};
+use crate::xml_util::{hex_color, resolve_shading};
 
 // ── Internal conversion helpers ───────────────────────────────────────────────
+
+/// Maps `w:framePr` to a [`DropCap`], or `None` when no drop cap is requested
+/// (`w:dropCap` absent, `"none"`, or `"default"`). OOXML carries no explicit
+/// character count, so the length defaults to a single character.
+fn map_frame_pr(fp: &DocxFramePr) -> Option<DropCap> {
+    let margin = match fp.drop_cap.as_deref()? {
+        "drop" => false,
+        "margin" => true,
+        _ => return None,
+    };
+    Some(DropCap {
+        lines: fp.lines.unwrap_or(1).max(1),
+        length: DropCapLength::Chars(1),
+        distance: twips_to_pt(fp.h_space.unwrap_or(0)),
+        margin,
+    })
+}
 
 /// Converts a twips integer to [`Points`] (1 pt = 20 twips).
 fn twips_to_pt(twips: i32) -> Points {
@@ -154,6 +172,11 @@ pub(crate) fn map_ppr(ppr: &DocxPPr) -> ParaProps {
     props.page_break_before = ppr.page_break_before;
     props.bidi = ppr.bidi;
 
+    // Drop cap (w:framePr w:dropCap). Only "drop"/"margin" produce a drop cap.
+    if let Some(ref fp) = ppr.frame_pr {
+        props.drop_cap = map_frame_pr(fp);
+    }
+
     // OOXML outline_lvl is 0-indexed; model is 1-indexed (None = body text).
     props.outline_level = ppr.outline_lvl.map(|l| l + 1);
 
@@ -198,12 +221,13 @@ pub(crate) fn map_ppr(ppr: &DocxPPr) -> ParaProps {
             .map(|s| Points::new(f64::from(s)));
     }
 
-    // Paragraph background from `w:shd @w:fill`.
-    // "auto" means no fill; all other non-empty hex strings are mapped to an Rgb color.
-    if let Some(ref hex) = ppr.shd_fill
-        && hex != "auto"
-        && let Some(rgb) = hex_color(hex)
-    {
+    // Paragraph background from `w:shd`. Honours the pattern (`@w:val`): solid
+    // fills, `pctN` blends of `@w:color` over `@w:fill`, and `clear` (fill only).
+    if let Some(rgb) = resolve_shading(
+        ppr.shd_fill.as_deref(),
+        ppr.shd_val.as_deref(),
+        ppr.shd_color.as_deref(),
+    ) {
         props.background_color = Some(DocumentColor::Rgb(rgb));
     }
 
@@ -274,13 +298,14 @@ pub(crate) fn map_rpr(rpr: &DocxRPr) -> CharProps {
     // Precision loss acceptable: values represent document measurements
     let scale = rpr.scale.map(|s| s as f32 / 100.0);
 
-    // Run background from `w:shd @w:fill`. "auto" means no fill.
-    let background_color = rpr
-        .shd_fill
-        .as_deref()
-        .filter(|&h| h != "auto")
-        .and_then(hex_color)
-        .map(DocumentColor::Rgb);
+    // Run background from `w:shd`, honouring the pattern (`@w:val`): `pctN`
+    // blends `@w:color` over `@w:fill`; `solid`/`clear` map as expected.
+    let background_color = resolve_shading(
+        rpr.shd_fill.as_deref(),
+        rpr.shd_val.as_deref(),
+        rpr.shd_color.as_deref(),
+    )
+    .map(DocumentColor::Rgb);
 
     CharProps {
         bold: rpr.bold,
@@ -318,6 +343,8 @@ pub(crate) fn map_rpr(rpr: &DocxRPr) -> CharProps {
             "subscript" => Some(VerticalAlign::Subscript),
             _ => None,
         }),
+        // w:position is a manual baseline rise in half-points (positive = up).
+        baseline_shift: rpr.position.map(|hp| Points::new(f64::from(hp) / 2.0)),
         outline: rpr.outline,
         ..Default::default()
     }
@@ -335,6 +362,49 @@ mod tests {
             jc: Some(jc.into()),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn frame_pr_drop_maps_to_drop_cap() {
+        let ppr = DocxPPr {
+            frame_pr: Some(DocxFramePr {
+                drop_cap: Some("drop".into()),
+                lines: Some(3),
+                h_space: Some(40), // twips → 2pt
+            }),
+            ..Default::default()
+        };
+        let dc = map_ppr(&ppr).drop_cap.expect("drop cap present");
+        assert_eq!(dc.lines, 3);
+        assert!(!dc.margin);
+        assert_eq!(dc.distance.value(), 2.0);
+        assert_eq!(dc.length, DropCapLength::Chars(1));
+    }
+
+    #[test]
+    fn frame_pr_margin_is_in_margin() {
+        let ppr = DocxPPr {
+            frame_pr: Some(DocxFramePr {
+                drop_cap: Some("margin".into()),
+                lines: Some(2),
+                h_space: None,
+            }),
+            ..Default::default()
+        };
+        assert!(map_ppr(&ppr).drop_cap.expect("drop cap").margin);
+    }
+
+    #[test]
+    fn frame_pr_none_is_not_a_drop_cap() {
+        let ppr = DocxPPr {
+            frame_pr: Some(DocxFramePr {
+                drop_cap: Some("none".into()),
+                lines: None,
+                h_space: None,
+            }),
+            ..Default::default()
+        };
+        assert!(map_ppr(&ppr).drop_cap.is_none());
     }
 
     // ── map_ppr ──────────────────────────────────────────────────────────────
@@ -452,6 +522,22 @@ mod tests {
         };
         let props = map_rpr(&rpr);
         assert_eq!(props.font_size.unwrap().value(), 12.0);
+    }
+
+    #[test]
+    fn position_maps_to_baseline_shift_in_points() {
+        // w:position is in half-points; +12 = 6 pt up, -12 = 6 pt down.
+        let up = map_rpr(&DocxRPr {
+            position: Some(12),
+            ..Default::default()
+        });
+        assert_eq!(up.baseline_shift.unwrap().value(), 6.0);
+        let down = map_rpr(&DocxRPr {
+            position: Some(-12),
+            ..Default::default()
+        });
+        assert_eq!(down.baseline_shift.unwrap().value(), -6.0);
+        assert!(map_rpr(&DocxRPr::default()).baseline_shift.is_none());
     }
 
     #[test]

@@ -9,9 +9,11 @@
 //!
 //! The insets are **not** fixed for the lifetime of the app: on Android they
 //! change with orientation (in landscape the navigation bar / cutout move to a
-//! side). Call [`update_safe_area_insets`] from within the Dioxus runtime (e.g.
-//! a resize handler) to push new values — readers of [`use_safe_area`]
-//! re-render so the padding follows the current orientation.
+//! side) and with the soft keyboard (the bottom inset grows by the on-screen
+//! keyboard / IME height while it is visible, so content is pushed above it).
+//! Call [`update_safe_area_insets`] from within the Dioxus runtime (e.g. a
+//! resize handler, or the keyboard-driven re-sync) to push new values — readers
+//! of [`use_safe_area`] re-render so the padding follows the current state.
 //!
 //! On desktop platforms nothing ever updates the value, so [`use_safe_area`]
 //! returns all-zero insets and the root padding is effectively a no-op.

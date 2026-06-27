@@ -12,9 +12,11 @@ pub mod annotation;
 pub mod attr;
 pub mod block;
 pub mod field;
+pub mod float;
 pub mod inline;
 pub mod table;
 
 pub use attr::{ExtensionBag, ExtensionKey, NodeAttr};
 pub use block::Block;
+pub use float::{FloatWrap, TextWrap, WrapSide};
 pub use inline::{Inline, NoteKind};

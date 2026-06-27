@@ -12,6 +12,13 @@ use crate::content::inline::Inline;
 use crate::content::table::col::{ColSpec, TableWidth};
 use crate::content::table::row::Row;
 
+/// Class on a [`Table`]'s [`NodeAttr`] marking it as **fixed layout** — column
+/// widths come from the grid (`w:tblGrid`/gridCol) and are honoured exactly,
+/// even when they sum to more or less than the table width (the table then
+/// overflows or underfills). OOXML `w:tblLayout w:type="fixed"`. Absent ⇒
+/// autofit: columns are resized to fit the table width.
+pub const TABLE_FIXED_LAYOUT_CLASS: &str = "table-fixed-layout";
+
 /// The caption of a table.
 ///
 /// Modelled on pandoc's `Caption = (Maybe ShortCaption, [Block])`.

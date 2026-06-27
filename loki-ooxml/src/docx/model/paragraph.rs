@@ -94,10 +94,30 @@ pub struct DocxPPr {
     pub widow_control: Option<bool>,
     /// Paragraph shading fill color from `w:shd @w:fill` (hex, no `#`).
     pub shd_fill: Option<String>,
+    /// Paragraph shading pattern from `w:shd @w:val` (e.g. `clear`, `pct25`).
+    pub shd_val: Option<String>,
+    /// Paragraph shading pattern foreground from `w:shd @w:color` (hex).
+    pub shd_color: Option<String>,
     /// Paragraph-mark run properties from `w:pPr/w:rPr`.
     /// Carries formatting that applies to the paragraph mark itself (e.g. a
     /// font override that affects the default spacing of an empty paragraph).
     pub ppr_rpr: Option<DocxRPr>,
+    /// Text-frame properties from `w:framePr` — carries drop-cap settings.
+    pub frame_pr: Option<DocxFramePr>,
+}
+
+/// `w:framePr` text-frame properties (ECMA-376 §17.3.1.11).
+///
+/// Only the drop-cap-relevant attributes are captured; the full text-frame
+/// positioning model is not yet imported.
+#[derive(Debug, Clone, Default)]
+pub struct DocxFramePr {
+    /// `@w:dropCap` — `"drop"`, `"margin"`, `"none"`, or `"default"`.
+    pub drop_cap: Option<String>,
+    /// `@w:lines` — number of lines the dropped cap spans.
+    pub lines: Option<u8>,
+    /// `@w:hSpace` — horizontal distance from the surrounding text, in twips.
+    pub h_space: Option<i32>,
 }
 
 /// `w:ind` indentation attributes (ECMA-376 §17.3.1.12).
@@ -230,6 +250,9 @@ pub struct DocxRPr {
     pub color: Option<String>,
     /// `w:highlight @w:val` — named highlight color.
     pub highlight: Option<String>,
+    /// `w:position @w:val` — manual baseline shift (text rise) in half-points;
+    /// positive raises, negative lowers.
+    pub position: Option<i32>,
     /// `w:sz @w:val` — font size in half-points.
     pub sz: Option<i32>,
     /// `w:szCs @w:val` — complex-script font size in half-points.
@@ -252,6 +275,10 @@ pub struct DocxRPr {
     pub vert_align: Option<String>,
     /// Run shading fill color from `w:shd @w:fill` (hex, no `#`).
     pub shd_fill: Option<String>,
+    /// Run shading pattern from `w:shd @w:val` (e.g. `clear`, `pct25`).
+    pub shd_val: Option<String>,
+    /// Run shading pattern foreground from `w:shd @w:color` (hex).
+    pub shd_color: Option<String>,
     /// `w:outline` toggle — hollow/outline text effect.
     pub outline: Option<bool>,
 }
@@ -295,4 +322,7 @@ pub struct DocxDrawing {
     pub name: Option<String>,
     /// Whether this is an anchor (floating) rather than inline drawing.
     pub is_anchor: bool,
+    /// Text-wrap configuration for a floating (anchored) drawing.
+    /// `None` for inline drawings or anchored drawings without a wrap element.
+    pub wrap: Option<loki_doc_model::content::float::FloatWrap>,
 }

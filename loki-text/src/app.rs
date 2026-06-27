@@ -29,6 +29,12 @@ use crate::tabs::OpenTab;
 /// Query the current orientation-aware safe-area insets, falling back to the
 /// orientation-independent resource heights (status/navigation bar) before the
 /// window is laid out or on API levels without `getInsets(int)`.
+///
+/// The query folds in the soft-keyboard (IME) inset, so when the keyboard is
+/// visible the returned `bottom` grows to the keyboard height. Blitz drives the
+/// re-query as the keyboard animates (the IME-settle re-sync in `blitz-shell`),
+/// so the bottom padding tracks the keyboard and the ribbon / bottom-of-document
+/// content is never hidden behind it.
 #[cfg(target_os = "android")]
 fn current_safe_area() -> appthere_ui::SafeAreaInsets {
     let activity = blitz_shell::current_android_app().activity_as_ptr();
@@ -58,6 +64,10 @@ fn current_safe_area() -> appthere_ui::SafeAreaInsets {
 /// portrait padding (which over-condenses the usable area and pads the wrong
 /// edges when the navigation bar / cutout move to a side). On desktop it renders
 /// nothing.
+///
+/// The blitz shell also re-emits this tick while the soft keyboard is animating
+/// in or out (it has no surface resize to react to on a `NativeActivity`), so
+/// the same sensor refreshes the bottom inset to track the keyboard.
 #[component]
 fn SafeAreaResizeSensor() -> Element {
     #[cfg(target_os = "android")]
@@ -120,31 +130,21 @@ pub fn App() -> Element {
             "
         }
 
-        // Register Atkinson Hyperlegible Next as the UI font, embedded as a
-        // `data:` URI so it is bundled into the binary and decoded by blitz_net
-        // on every platform. The previous `dioxus:///assets/...` URL resolved
-        // relative to the executable and did not load on Android/ChromeOS (and
-        // silently relied on a system-installed copy on desktop). See
-        // `loki_fonts::ui_face_css`.
-        document::Style {
-            r#type: "text/css",
-            "{loki_fonts::ui_face_css()}"
-        }
-
-        // Bundled fallback fonts for the Android CPU renderer — Carlito (Calibri),
-        // Caladea (Cambria), Arimo (Arial), Cousine (Courier New), Tinos (Times NR).
-        // loki_fonts::face_css() returns "" on desktop and Android GPU paths, so
-        // this document::Style is a safe no-op on those targets.
-        document::Style {
-            r#type: "text/css",
-            "{loki_fonts::face_css()}"
-        }
+        // The UI typeface (Atkinson Hyperlegible Next) and the bundled
+        // metric-compatible fallback families (Carlito/Caladea/Arimo/Cousine/
+        // Tinos) are registered synchronously into the renderer's font collection
+        // at launch via `dioxus::native::Config::with_fonts(loki_fonts::ui_font_blobs())`
+        // (see `main.rs` / `android_main`). That replaces the previous
+        // `@font-face` `data:` URI injection, which relied on the asynchronous
+        // resource-fetch path and did not load reliably on Android.
 
         div {
             // Shell owns height: 100vh and the flex column layout.
             // Padding offsets the system status bar (top) and navigation bar
             // (bottom) so content is never obscured on Android edge-to-edge.
-            // On desktop both insets are 0, so this is a no-op there.
+            // When the soft keyboard is visible the bottom inset grows to the
+            // keyboard height, pushing the ribbon / bottom content above it.
+            // On desktop all insets are 0, so this is a no-op there.
             // background matches COLOR_SURFACE_CHROME so the padded system-bar
             // areas (notification bar at top, gesture strip at bottom) are filled
             // with the tab-bar chrome color instead of the default white.

@@ -147,8 +147,10 @@ mod tests {
 
     #[test]
     fn includes_required_elements() {
-        let mut meta = DocumentMeta::default();
-        meta.title = Some("Test".into());
+        let meta = DocumentMeta {
+            title: Some("Test".into()),
+            ..Default::default()
+        };
         let xml = build_metadata(&meta, "urn:uuid:abc", "2026-01-01T00:00:00Z");
         assert!(xml.contains("<dc:identifier id=\"pub-id\">urn:uuid:abc</dc:identifier>"));
         assert!(xml.contains("<dc:title>Test</dc:title>"));
@@ -159,9 +161,11 @@ mod tests {
 
     #[test]
     fn emits_publisher_and_keywords() {
-        let mut meta = DocumentMeta::default();
-        meta.title = Some("Book".into());
-        meta.keywords = Some("rust, pdf, epub".into());
+        let mut meta = DocumentMeta {
+            title: Some("Book".into()),
+            keywords: Some("rust, pdf, epub".into()),
+            ..Default::default()
+        };
         meta.dublin_core.publisher = Some("AppThere".into());
         let xml = build_metadata(&meta, "id", "2026-01-01T00:00:00Z");
         assert!(xml.contains("<dc:publisher>AppThere</dc:publisher>"));

@@ -27,6 +27,20 @@ const TOUCH_SLOP_PX: f64 = 8.0;
 /// Duration after which a stationary touch is classified as a long press.
 const LONG_PRESS_DURATION: std::time::Duration = std::time::Duration::from_millis(500);
 
+/// PATCH(loki): how long to keep re-querying the safe-area insets after the
+/// soft keyboard is shown or hidden.
+///
+/// On a `NativeActivity` the surface is **not** resized for the IME, so winit
+/// never fires `Resized` when the keyboard appears. We drive the keyboard
+/// ourselves via `set_ime_allowed`, so a visibility change is our cue to
+/// re-query the platform insets — but Android reports the new
+/// `WindowInsets.Type.ime()` inset a frame or two later and animates it over
+/// ~250–300 ms. We re-sync across this bounded window so the app's bottom
+/// safe-area padding converges to the settled keyboard height. This is tied to
+/// the real IME animation duration, not an arbitrary sleep.
+#[cfg(target_os = "android")]
+const IME_INSET_SETTLE: std::time::Duration = std::time::Duration::from_millis(400);
+
 /// State tracked for an in-progress touch contact.
 #[derive(Debug, Clone)]
 pub struct TouchState {
@@ -88,11 +102,21 @@ pub struct View<Rend: WindowRenderer> {
     /// call into the (JNI-backed, on Android) winit IME path on real changes.
     pub ime_active: bool,
 
+    /// PATCH(loki): deadline until which `poll` re-queries the safe-area insets
+    /// after an IME visibility change (see [`IME_INSET_SETTLE`]). `None` when not
+    /// settling. Only ever set on Android; always `None` on other platforms.
+    pub ime_settle_until: Option<Instant>,
+
     /// In-progress touch contact for tap/scroll/long-press classification.
     pub touch_start: Option<TouchState>,
     /// Last logical-pixel position during an active scroll gesture.
     /// `Some` while the finger is scrolling; `None` otherwise.
     pub touch_scroll_last_pos: Option<(f64, f64)>,
+
+    /// PATCH(loki): pending/visible hover tooltip (painted over the DOM scene).
+    pub tooltip: Option<crate::tooltip::Tooltip>,
+    /// PATCH(loki): persistent parley context for shaping tooltip labels.
+    pub tooltip_shaper: crate::tooltip::TooltipShaper,
 
     #[cfg(feature = "accessibility")]
     /// Accessibility adapter for `accesskit`.
@@ -151,8 +175,11 @@ impl<Rend: WindowRenderer> View<Rend> {
             mouse_pos: Default::default(),
             is_visible: winit_window.is_visible().unwrap_or(true),
             ime_active: false,
+            ime_settle_until: None,
             touch_start: None,
             touch_scroll_last_pos: None,
+            tooltip: None,
+            tooltip_shaper: crate::tooltip::TooltipShaper::default(),
             #[cfg(feature = "accessibility")]
             accessibility: AccessibilityState::new(&winit_window, proxy.clone()),
         }
@@ -247,8 +274,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         };
 
         log::info!("[LOKI/resume] calling render");
-        self.renderer
-            .render(|scene| paint_scene(scene, &self.doc, scale, width, height));
+        self.render_scene(scale, width, height);
         log::info!("[LOKI/resume] render done");
 
         // Set waker
@@ -274,8 +300,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             return;
         }
         log::info!("[LOKI/activate] rendering initial frame");
-        self.renderer
-            .render(|scene| paint_scene(scene, &self.doc, scale, width, height));
+        self.render_scene(scale, width, height);
         // Request another redraw so any pending CSS/DOM changes (applied while
         // the renderer was inactive) are also painted.
         self.request_redraw();
@@ -287,6 +312,20 @@ impl<Rend: WindowRenderer> View<Rend> {
     }
 
     pub fn poll(&mut self) -> bool {
+        // PATCH(loki): during the post-IME settle window, re-query the safe-area
+        // insets so the app's bottom padding follows the soft keyboard as the
+        // platform finishes reporting and animating the IME inset. The re-sync
+        // re-dispatches `onscroll`, which the app's safe-area sensor catches to
+        // refresh the inset query. Bounded by `ime_settle_until`.
+        #[cfg(target_os = "android")]
+        if let Some(until) = self.ime_settle_until {
+            if Instant::now() < until {
+                self.resync_scroll_geometry();
+            } else {
+                self.ime_settle_until = None;
+            }
+        }
+
         if let Some(waker) = &self.waker {
             let cx = std::task::Context::from_waker(waker);
             if self.doc.poll(Some(cx)) {
@@ -300,6 +339,18 @@ impl<Rend: WindowRenderer> View<Rend> {
                 self.request_redraw();
                 return true;
             }
+        }
+
+        // PATCH(loki): reveal a pending tooltip whose hover delay has elapsed.
+        // A timer thread sends `Poll` at the deadline; the cursor may be idle,
+        // so this is the only chance to flip the tooltip visible and repaint.
+        if let Some(t) = self.tooltip.as_mut()
+            && !t.visible
+            && Instant::now() >= t.show_at
+        {
+            t.visible = true;
+            self.request_redraw();
+            return true;
         }
 
         false
@@ -324,8 +375,7 @@ impl<Rend: WindowRenderer> View<Rend> {
         }
         let scale = self.doc.viewport().scale_f64();
         log::info!("[LOKI/redraw] viewport=({width},{height}) scale={scale}");
-        self.renderer
-            .render(|scene| paint_scene(scene, &self.doc, scale, width, height));
+        self.render_scene(scale, width, height);
 
         // PATCH(loki): re-arm a per-frame redraw only for genuine CSS
         // animations/transitions — NOT for the mere presence of a `<canvas>`.
@@ -455,14 +505,141 @@ impl<Rend: WindowRenderer> View<Rend> {
     }
 
     /// Sync the platform IME / soft keyboard to the current focus, calling into
-    /// winit (and thus `AndroidApp::show/hide_soft_input` on Android) only when
-    /// the desired state actually changes.
-    fn update_ime_for_focus(&mut self) {
+    /// winit (and thus `AndroidApp::show/hide_soft_input` on Android).
+    ///
+    /// A focus change toggles IME on/off. `force_show` additionally re-asserts
+    /// the keyboard on a fresh pointer tap **even when IME is already active**:
+    /// the user may have dismissed the soft keyboard (Android back / swipe-down),
+    /// which the OS never reports back to us, so without this a second tap to
+    /// reposition the caret in the same already-focused canvas would not bring
+    /// the keyboard back. winit forwards each `set_ime_allowed(true)` to
+    /// `AndroidApp::show_soft_input`, re-summoning it.
+    fn update_ime_for_focus(&mut self, force_show: bool) {
         let wants_ime = self.focused_node_wants_ime();
-        if wants_ime != self.ime_active {
+        let changed = wants_ime != self.ime_active;
+        if changed {
             self.ime_active = wants_ime;
             self.window.set_ime_allowed(wants_ime);
+        } else if force_show && wants_ime {
+            self.window.set_ime_allowed(true);
         }
+        // PATCH(loki): showing or hiding the soft keyboard moves the bottom edge
+        // of the usable area. The platform reports the new IME inset slightly
+        // later and animates it, so re-sync the safe area across a short settle
+        // window (Android only — desktop has no soft keyboard inset).
+        #[cfg(target_os = "android")]
+        if changed || (force_show && wants_ime) {
+            self.arm_ime_settle();
+        }
+    }
+
+    /// PATCH(loki): open a bounded settle window during which [`poll`] re-queries
+    /// the safe-area insets, and wake the (otherwise idle) event loop several
+    /// times across the keyboard animation so the app's bottom padding converges
+    /// to the settled IME height. See [`IME_INSET_SETTLE`].
+    ///
+    /// [`poll`]: Self::poll
+    #[cfg(target_os = "android")]
+    fn arm_ime_settle(&mut self) {
+        self.ime_settle_until = Some(Instant::now() + IME_INSET_SETTLE);
+        let proxy = self.event_loop_proxy.clone();
+        let window_id = self.window.id();
+        std::thread::spawn(move || {
+            // Cumulative wake offsets 60/160/280/400 ms across the IME animation;
+            // each wake makes `poll` re-sync until the settle deadline elapses.
+            for step in [60u64, 100, 120, 120] {
+                std::thread::sleep(std::time::Duration::from_millis(step));
+                if proxy.send_event(BlitzShellEvent::Poll { window_id }).is_err() {
+                    break;
+                }
+            }
+        });
+    }
+
+    // ── PATCH(loki): hover tooltip overlay ─────────────────────────────────────
+
+    /// Refresh the hover tooltip from the element under the cursor. Walks
+    /// ancestors for a `title` attribute; arms a delayed show when a new titled
+    /// element is hovered, and clears the tooltip otherwise.
+    fn update_hover_tooltip(&mut self) {
+        let (mx, my) = self.mouse_pos;
+        let titled = self
+            .doc
+            .hit(mx, my)
+            .and_then(|hit| self.title_for_node(hit.node_id));
+        match titled {
+            Some((node_id, text)) => {
+                if self.tooltip.as_ref().map(|t| t.node_id) == Some(node_id) {
+                    // Same element — let a pending tooltip follow the cursor.
+                    if let Some(t) = self.tooltip.as_mut()
+                        && !t.visible
+                    {
+                        t.anchor = (mx, my);
+                    }
+                    return;
+                }
+                let was_visible = self.tooltip.as_ref().is_some_and(|t| t.visible);
+                self.tooltip = Some(crate::tooltip::Tooltip {
+                    node_id,
+                    text,
+                    anchor: (mx, my),
+                    show_at: Instant::now() + crate::tooltip::HOVER_DELAY,
+                    visible: false,
+                });
+                self.arm_tooltip_timer();
+                if was_visible {
+                    self.request_redraw(); // erase the previous tooltip
+                }
+            }
+            None => self.clear_tooltip(),
+        }
+    }
+
+    /// The first `title` attribute on `node_id` or an ancestor, with its owner.
+    fn title_for_node(&self, mut node_id: usize) -> Option<(usize, String)> {
+        loop {
+            let node = self.doc.get_node(node_id)?;
+            if let Some(el) = node.data.downcast_element()
+                && let Some(attr) = el.attrs.iter().find(|a| a.name.local.as_ref() == "title")
+            {
+                let v = attr.value.as_str();
+                if !v.is_empty() {
+                    return Some((node_id, v.to_string()));
+                }
+            }
+            node_id = node.parent?;
+        }
+    }
+
+    /// Drop any tooltip; redraw to erase it if it was visible.
+    fn clear_tooltip(&mut self) {
+        if self.tooltip.take().is_some_and(|t| t.visible) {
+            self.request_redraw();
+        }
+    }
+
+    /// Wake the (otherwise idle) event loop at the tooltip's show deadline so
+    /// `poll` can reveal it even while the cursor is stationary.
+    fn arm_tooltip_timer(&self) {
+        let proxy = self.event_loop_proxy.clone();
+        let window_id = self.window.id();
+        std::thread::spawn(move || {
+            std::thread::sleep(crate::tooltip::HOVER_DELAY);
+            let _ = proxy.send_event(BlitzShellEvent::Poll { window_id });
+        });
+    }
+
+    /// Render the DOM scene and composite the hover tooltip on top of it.
+    fn render_scene(&mut self, scale: f64, width: u32, height: u32) {
+        let tip = self.tooltip.as_ref().filter(|t| t.visible);
+        let shaper = &mut self.tooltip_shaper;
+        let doc = &self.doc;
+        self.renderer.render(|scene| {
+            paint_scene(scene, doc, scale, width, height);
+            if let Some(tip) = tip {
+                shaper.paint(scene, tip, scale, (width, height));
+            }
+        });
     }
 
     pub fn handle_winit_event(&mut self, event: WindowEvent) {
@@ -540,6 +717,7 @@ impl<Rend: WindowRenderer> View<Rend> {
                 self.keyboard_modifiers = new_state;
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                self.clear_tooltip(); // typing dismisses the tooltip
                 let PhysicalKey::Code(key_code) = event.physical_key else {
                     return;
                 };
@@ -587,7 +765,7 @@ impl<Rend: WindowRenderer> View<Rend> {
 
                 self.doc.handle_ui_event(event);
                 // Tab / Shift-Tab can move focus between fields — keep IME in sync.
-                self.update_ime_for_focus();
+                self.update_ime_for_focus(false);
                 self.request_redraw();
             }
 
@@ -606,8 +784,13 @@ impl<Rend: WindowRenderer> View<Rend> {
                     mods: winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state()),
                 });
                 self.doc.handle_ui_event(event);
+                // PATCH(loki): refresh the hover tooltip from the node now under
+                // the cursor (arms a delayed show, or clears on leave).
+                self.update_hover_tooltip();
             }
             WindowEvent::MouseInput { button, state, .. } => {
+                // A click dismisses any tooltip.
+                self.clear_tooltip();
                 let button = match button {
                     MouseButton::Left => MouseEventButton::Main,
                     MouseButton::Right => MouseEventButton::Secondary,
@@ -633,10 +816,13 @@ impl<Rend: WindowRenderer> View<Rend> {
                 };
                 self.doc.handle_ui_event(event);
                 // Focus is assigned on click (MouseUp); sync the soft keyboard.
-                self.update_ime_for_focus();
+                // A pointer release is a fresh tap: force-reassert so a dismissed
+                // keyboard reappears when the caret is repositioned.
+                self.update_ime_for_focus(matches!(state, ElementState::Released));
                 self.request_redraw();
             }
             WindowEvent::MouseWheel { delta, .. } => {
+                self.clear_tooltip(); // scrolling dismisses the tooltip
                 let (scroll_x, scroll_y)= match delta {
                     winit::event::MouseScrollDelta::LineDelta(x, y) => (x as f64 * 20.0, y as f64 * 20.0),
                     winit::event::MouseScrollDelta::PixelDelta(offsets) => (offsets.x, offsets.y)
@@ -708,6 +894,7 @@ impl<Rend: WindowRenderer> View<Rend> {
 
                 match touch.phase {
                     TouchPhase::Started => {
+                        self.clear_tooltip(); // touch input dismisses the tooltip
                         // Synthesise CursorMoved then MouseDown so that blitz-dom
                         // performs a fresh hit-test at the touch position before
                         // dispatching the press event.
@@ -830,8 +1017,9 @@ impl<Rend: WindowRenderer> View<Rend> {
                             }));
                             // A tap assigns focus (or clears it); raise or drop
                             // the Android soft keyboard accordingly.  Skipped for
-                            // scroll gestures, which never change focus.
-                            self.update_ime_for_focus();
+                            // scroll gestures, which never change focus.  `force`
+                            // re-summons a keyboard the user dismissed between taps.
+                            self.update_ime_for_focus(true);
                         }
                         self.request_redraw();
                     }

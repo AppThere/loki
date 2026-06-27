@@ -240,4 +240,61 @@ mod tests {
                 .contains("<img src=\"images/img0.png\" alt=\"Alt\"/>")
         );
     }
+
+    #[test]
+    fn floating_image_emits_css_float() {
+        use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
+
+        let mut doc = Document::new();
+        let sec = doc.first_section_mut().unwrap();
+        sec.blocks.clear();
+        // A left-floating image (text on the right) anchored in a paragraph.
+        let mut attr = NodeAttr::default();
+        FloatWrap {
+            wrap: TextWrap::Square,
+            side: WrapSide::Right,
+            behind_text: false,
+        }
+        .store(&mut attr);
+        let target = loki_doc_model::content::inline::LinkTarget::new("data:image/png;base64,SGk=");
+        sec.blocks.push(Block::Para(vec![
+            Inline::Image(attr, vec![Inline::Str("Alt".into())], target),
+            Inline::Str("Body text wraps beside the float.".into()),
+        ]));
+        let rendered = render_content(&doc);
+        // Text on the right ⇒ the image floats left so the text wraps around it.
+        assert!(
+            rendered.body.contains("float:left"),
+            "expected a CSS float on the wrapped image; got: {}",
+            rendered.body
+        );
+        assert!(rendered.body.contains("Body text wraps beside the float."));
+    }
+
+    #[test]
+    fn behind_text_float_is_not_floated() {
+        use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
+
+        let mut doc = Document::new();
+        let sec = doc.first_section_mut().unwrap();
+        sec.blocks.clear();
+        let mut attr = NodeAttr::default();
+        FloatWrap {
+            wrap: TextWrap::Square,
+            side: WrapSide::Both,
+            behind_text: true,
+        }
+        .store(&mut attr);
+        let target = loki_doc_model::content::inline::LinkTarget::new("data:image/png;base64,SGk=");
+        sec.blocks.push(Block::Para(vec![Inline::Image(
+            attr,
+            vec![Inline::Str("Alt".into())],
+            target,
+        )]));
+        let rendered = render_content(&doc);
+        assert!(
+            !rendered.body.contains("float:"),
+            "behind-text float must stay block-level"
+        );
+    }
 }

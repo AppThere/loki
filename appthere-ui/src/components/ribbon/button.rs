@@ -80,6 +80,9 @@ pub fn AtRibbonIconButton(
                 fg     = icon_color,
             ),
             aria_label:   aria_label.clone(),
+            // The hover tooltip overlay (blitz-shell) reads `title`; reuse the
+            // accessible name so every icon button is self-describing on hover.
+            title:        aria_label.clone(),
             aria_pressed: if is_active { "true" } else { "false" },
             disabled:     is_disabled,
             onmouseenter: move |_| hovered.set(true),

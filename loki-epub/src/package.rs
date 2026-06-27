@@ -62,8 +62,10 @@ mod tests {
 
     #[test]
     fn package_has_manifest_and_spine() {
-        let mut meta = DocumentMeta::default();
-        meta.title = Some("Doc".into());
+        let meta = DocumentMeta {
+            title: Some("Doc".into()),
+            ..Default::default()
+        };
         let images = [EpubImage {
             id: "img0".into(),
             href: "images/img0.png".into(),

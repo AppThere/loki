@@ -18,8 +18,8 @@ use crate::odt::model::document::{OdfHeaderFooterProps, OdfMasterPage, OdfPageLa
 use crate::odt::model::list_styles::{OdfListLevel, OdfListLevelKind, OdfListStyle};
 use crate::odt::model::paragraph::OdfParagraph;
 use crate::odt::model::styles::{
-    OdfCellProps, OdfDefaultStyle, OdfParaProps, OdfStyle, OdfStyleFamily, OdfStylesheet,
-    OdfTabStop, OdfTextProps,
+    OdfCellProps, OdfDefaultStyle, OdfDropCap, OdfGraphicWrap, OdfParaProps, OdfStyle,
+    OdfStyleFamily, OdfStylesheet, OdfTabStop, OdfTextProps,
 };
 use crate::odt::reader::columns::parse_plp_columns;
 use crate::odt::reader::document::read_paragraph;
@@ -87,7 +87,7 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
                         let master_page_name = local_attr_val(e, b"master-page-name");
                         let auto = is_automatic || in_auto;
                         drop(e);
-                        let (para_props, text_props, col_width, cell_props) =
+                        let (para_props, text_props, col_width, cell_props, graphic_wrap) =
                             parse_style_props(&mut reader, b"style")?;
                         let style = OdfStyle {
                             name,
@@ -99,6 +99,7 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
                             text_props,
                             col_width,
                             cell_props,
+                            graphic_wrap,
                             is_automatic: auto,
                             master_page_name,
                         };
@@ -113,7 +114,7 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
                             local_attr_val(e, b"family").as_deref().unwrap_or(""),
                         );
                         drop(e);
-                        let (para_props, text_props, _col_width, _cell_props) =
+                        let (para_props, text_props, _col_width, _cell_props, _graphic_wrap) =
                             parse_style_props(&mut reader, b"default-style")?;
                         sheet.default_styles.push(OdfDefaultStyle {
                             family,
@@ -177,6 +178,7 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
                             text_props: None,
                             col_width: None,
                             cell_props: None,
+                            graphic_wrap: None,
                             is_automatic: auto,
                             master_page_name,
                         };
@@ -253,12 +255,14 @@ fn parse_style_props(
     Option<OdfTextProps>,
     Option<String>,
     Option<OdfCellProps>,
+    Option<OdfGraphicWrap>,
 )> {
     let mut buf = Vec::new();
     let mut para_props: Option<OdfParaProps> = None;
     let mut text_props: Option<OdfTextProps> = None;
     let mut col_width: Option<String> = None;
     let mut cell_props: Option<OdfCellProps> = None;
+    let mut graphic_wrap: Option<OdfGraphicWrap> = None;
 
     loop {
         buf.clear();
@@ -292,6 +296,11 @@ fn parse_style_props(
                         drop(e);
                         skip_element(reader, b"table-cell-properties")?;
                     }
+                    b"graphic-properties" => {
+                        graphic_wrap = Some(parse_graphic_wrap_element(e));
+                        drop(e);
+                        skip_element(reader, b"graphic-properties")?;
+                    }
                     _ => {
                         let local = local.clone();
                         drop(e);
@@ -314,6 +323,9 @@ fn parse_style_props(
                     b"table-cell-properties" => {
                         cell_props = Some(parse_cell_props_element(e));
                     }
+                    b"graphic-properties" => {
+                        graphic_wrap = Some(parse_graphic_wrap_element(e));
+                    }
                     _ => {}
                 }
             }
@@ -333,7 +345,15 @@ fn parse_style_props(
         }
     }
 
-    Ok((para_props, text_props, col_width, cell_props))
+    Ok((para_props, text_props, col_width, cell_props, graphic_wrap))
+}
+
+/// Build an [`OdfGraphicWrap`] from a `style:graphic-properties` element.
+fn parse_graphic_wrap_element(e: &quick_xml::events::BytesStart<'_>) -> OdfGraphicWrap {
+    OdfGraphicWrap {
+        wrap: local_attr_val(e, b"wrap"),
+        run_through: local_attr_val(e, b"run-through"),
+    }
 }
 
 /// Build an [`OdfCellProps`] from the attributes of a
@@ -419,6 +439,7 @@ fn parse_para_props_element(e: &quick_xml::events::BytesStart<'_>) -> OdfParaPro
         background_color: local_attr_val(e, b"background-color"),
         tab_stops: Vec::new(),
         writing_mode: local_attr_val(e, b"writing-mode"),
+        drop_cap: None,
     }
 }
 
@@ -443,8 +464,8 @@ fn parse_para_props_with_children(
                     skip_element(reader, &local)?;
                 }
             }
-            Ok(Event::Empty(ref e)) => {
-                if e.local_name().into_inner() == b"tab-stop" {
+            Ok(Event::Empty(ref e)) => match e.local_name().into_inner() {
+                b"tab-stop" => {
                     let position = local_attr_val(e, b"position").unwrap_or_default();
                     let tab_type = local_attr_val(e, b"type");
                     let leader_style = local_attr_val(e, b"leader-style");
@@ -454,7 +475,15 @@ fn parse_para_props_with_children(
                         leader_style,
                     });
                 }
-            }
+                b"drop-cap" => {
+                    pp.drop_cap = Some(OdfDropCap {
+                        lines: local_attr_val(e, b"lines"),
+                        length: local_attr_val(e, b"length"),
+                        distance: local_attr_val(e, b"distance"),
+                    });
+                }
+                _ => {}
+            },
             Ok(Event::End(ref e)) => {
                 if e.local_name().into_inner() == b"paragraph-properties" {
                     break;
@@ -870,6 +899,7 @@ fn parse_page_layout(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfP
         margin_left: None,
         margin_right: None,
         print_orientation: None,
+        num_format: None,
         columns: None,
         header_props: None,
         footer_props: None,
@@ -889,6 +919,7 @@ fn parse_page_layout(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfP
                         layout.margin_left = local_attr_val(e, b"margin-left");
                         layout.margin_right = local_attr_val(e, b"margin-right");
                         layout.print_orientation = local_attr_val(e, b"print-orientation");
+                        layout.num_format = local_attr_val(e, b"num-format");
                         drop(e);
                         // Scan children for `style:columns` rather than skipping.
                         layout.columns = parse_plp_columns(reader)?;
@@ -919,6 +950,7 @@ fn parse_page_layout(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfP
                     layout.margin_left = local_attr_val(e, b"margin-left");
                     layout.margin_right = local_attr_val(e, b"margin-right");
                     layout.print_orientation = local_attr_val(e, b"print-orientation");
+                    layout.num_format = local_attr_val(e, b"num-format");
                 }
             }
             Ok(Event::End(ref e)) => {
@@ -1150,7 +1182,7 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                         let list_style_name = local_attr_val(e, b"list-style-name");
                         let master_page_name = local_attr_val(e, b"master-page-name");
                         drop(e);
-                        let (para_props, text_props, col_width, cell_props) =
+                        let (para_props, text_props, col_width, cell_props, graphic_wrap) =
                             parse_style_props(&mut reader, b"style")?;
                         styles.push(OdfStyle {
                             name,
@@ -1162,6 +1194,7 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                             text_props,
                             col_width,
                             cell_props,
+                            graphic_wrap,
                             is_automatic: true,
                             master_page_name,
                         });
@@ -1188,6 +1221,7 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                         text_props: None,
                         col_width: None,
                         cell_props: None,
+                        graphic_wrap: None,
                         is_automatic: true,
                         master_page_name,
                     });
@@ -1295,6 +1329,82 @@ mod tests {
         let tp = s.text_props.as_ref().unwrap();
         assert_eq!(tp.font_size.as_deref(), Some("12pt"));
         assert_eq!(tp.font_weight.as_deref(), Some("bold"));
+    }
+
+    #[test]
+    fn read_stylesheet_page_layout_num_format() {
+        // `style:num-format` on `style:page-layout-properties` carries the
+        // page-number numbering scheme.
+        let xml = br#"<?xml version="1.0"?>
+<office:document-styles
+    xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+    xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+    xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0">
+  <office:automatic-styles>
+    <style:page-layout style:name="Mpm1">
+      <style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm"
+          style:num-format="i" style:print-orientation="portrait"/>
+    </style:page-layout>
+  </office:automatic-styles>
+</office:document-styles>"#;
+
+        let sheet = read_stylesheet(xml, false).unwrap();
+        assert_eq!(sheet.page_layouts.len(), 1);
+        let pl = &sheet.page_layouts[0];
+        assert_eq!(pl.name, "Mpm1");
+        assert_eq!(pl.num_format.as_deref(), Some("i"));
+        assert_eq!(pl.page_width.as_deref(), Some("21cm"));
+    }
+
+    #[test]
+    fn read_stylesheet_drop_cap() {
+        let xml = br#"<?xml version="1.0"?>
+<office:document-styles
+    xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+    xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+    xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0">
+  <office:styles>
+    <style:style style:name="Drop" style:family="paragraph">
+      <style:paragraph-properties>
+        <style:drop-cap style:lines="3" style:length="2" style:distance="0.2cm"/>
+      </style:paragraph-properties>
+    </style:style>
+  </office:styles>
+</office:document-styles>"#;
+
+        let sheet = read_stylesheet(xml, false).unwrap();
+        let dc = sheet.named_styles[0]
+            .para_props
+            .as_ref()
+            .unwrap()
+            .drop_cap
+            .as_ref()
+            .expect("drop cap parsed");
+        assert_eq!(dc.lines.as_deref(), Some("3"));
+        assert_eq!(dc.length.as_deref(), Some("2"));
+        assert_eq!(dc.distance.as_deref(), Some("0.2cm"));
+    }
+
+    #[test]
+    fn read_stylesheet_graphic_wrap() {
+        let xml = br#"<?xml version="1.0"?>
+<office:document-styles
+    xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+    xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0">
+  <office:automatic-styles>
+    <style:style style:name="fr1" style:family="graphic">
+      <style:graphic-properties style:wrap="left" style:run-through="foreground"/>
+    </style:style>
+  </office:automatic-styles>
+</office:document-styles>"#;
+
+        let sheet = read_stylesheet(xml, false).unwrap();
+        let gw = sheet.auto_styles[0]
+            .graphic_wrap
+            .as_ref()
+            .expect("graphic wrap parsed");
+        assert_eq!(gw.wrap.as_deref(), Some("left"));
+        assert_eq!(gw.run_through.as_deref(), Some("foreground"));
     }
 
     #[test]

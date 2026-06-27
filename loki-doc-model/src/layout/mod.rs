@@ -13,4 +13,4 @@ pub mod section;
 
 pub use header_footer::{HeaderFooter, HeaderFooterKind};
 pub use page::{PageLayout, PageMargins, PageOrientation, PageSize, SectionColumns};
-pub use section::Section;
+pub use section::{Section, SectionStart};

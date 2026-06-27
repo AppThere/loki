@@ -207,7 +207,7 @@ impl BaseDocument {
 
         let id = ID_GENERATOR.fetch_add(1, Ordering::SeqCst);
 
-        let font_ctx = config
+        let mut font_ctx = config
             .font_ctx
             // .map(|mut font_ctx| {
             //     font_ctx.collection.make_shared();
@@ -228,6 +228,15 @@ impl BaseDocument {
                     .register_fonts(Blob::new(Arc::new(crate::BULLET_FONT) as _), None);
                 font_ctx
             });
+        // Register any embedder-supplied font blobs on top of the system fonts
+        // and bullet font. This is the synchronous, platform-independent path
+        // for bundled UI/app fonts (the async `@font-face` `data:` URI fetch is
+        // unreliable on Android), so the families resolve before first paint.
+        for blob in config.extra_fonts {
+            font_ctx
+                .collection
+                .register_fonts(Blob::new(Arc::new(blob) as _), None);
+        }
         let font_ctx = Arc::new(Mutex::new(font_ctx));
 
         let viewport = config.viewport.unwrap_or_default();

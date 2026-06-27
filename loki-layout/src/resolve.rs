@@ -145,6 +145,10 @@ pub struct CollectedImage {
     pub cx_emu: u64,
     /// Height in English Metric Units.
     pub cy_emu: u64,
+    /// Float wrap configuration when the drawing is anchored (floating), or
+    /// `None` for an inline drawing. Read from the image's `NodeAttr` (see
+    /// [`loki_doc_model::content::float::FloatWrap`]).
+    pub float: Option<loki_doc_model::content::float::FloatWrap>,
 }
 
 /// A footnote or endnote body collected during paragraph flattening.
@@ -168,9 +172,8 @@ pub struct CollectedNote {
 /// 1. Named style chain via [`StyleCatalog::resolve_para`].
 /// 2. Direct paragraph formatting on the paragraph itself.
 pub fn resolve_para_props(block: &StyledParagraph, catalog: &StyleCatalog) -> ResolvedParaProps {
-    let mut base: ParaProps = block
-        .style_id
-        .as_ref()
+    let mut base: ParaProps = catalog
+        .effective_paragraph_style(block.style_id.as_ref())
         .and_then(|id| catalog.resolve_para(id))
         .unwrap_or_default();
     if let Some(direct) = &block.direct_para_props {
@@ -219,9 +222,8 @@ pub fn flatten_paragraph(
     Vec<CollectedImage>,
     Vec<CollectedNote>,
 ) {
-    let base: CharProps = block
-        .style_id
-        .as_ref()
+    let base: CharProps = catalog
+        .effective_paragraph_style(block.style_id.as_ref())
         .and_then(|id| catalog.resolve_char(id))
         .unwrap_or_default();
     let base = match &block.direct_char_props {
@@ -313,6 +315,7 @@ fn effective_run_char_props(
 //   strikethrough var  → StyleSpan.strikethrough Option (gap #18, P2)
 //   word_spacing       → StyleSpan.word_spacing         (gap #22, P3)
 //   shadow             → StyleSpan.shadow               (gap #24, P3)
+//   scale              → StyleSpan.scale                (gap #14, P2)
 //
 // Fields SILENTLY DROPPED (out of scope for Group 1):
 //   font_name_complex    — complex-script font (BiDi)
@@ -320,7 +323,6 @@ fn effective_run_char_props(
 //   font_size_complex    — complex-script font size
 //   background_color     — per-run background (distinct from highlight)
 //   outline              — hollow text effect
-//   scale                — horizontal text scale (gap #14, P2)
 //   kerning              — kerning flag (gap #23, P3)
 //   language / language_complex / language_east_asian — locale (gap #30, P3)
 //   hyperlink            — URL (gap #11, P1 — handled at Inline level)
@@ -395,6 +397,16 @@ fn char_props_to_style_span(props: &CharProps, range: Range<usize>) -> StyleSpan
         shadow: props.shadow.unwrap_or(false),            // gap #24
         link_url: None, // set by walk_inlines when inside Inline::Link (gap #11)
         math: None,     // set by walk_inlines for Inline::Math placeholders
+        // Horizontal text scale (gap #14): only forward a non-trivial, positive
+        // factor so the common 100 % case stays on the fast (unscaled) path.
+        scale: props
+            .scale
+            .filter(|&s| s > 0.0 && (s - 1.0).abs() > f32::EPSILON),
+        // Manual baseline rise (gap: w:position): forward only a non-zero shift.
+        baseline_shift: props
+            .baseline_shift
+            .map(pts_to_f32)
+            .filter(|&s| s.abs() > f32::EPSILON),
     }
 }
 
@@ -444,6 +456,17 @@ fn push_text(
     if text.is_empty() {
         return;
     }
+
+    // Small caps (gap #15): Parley exposes no `FontVariantCaps`, so synthesize
+    // it — every letter is uppercased and the letters that were *lowercase* in
+    // the source render at a reduced size, the classic small-caps look. This
+    // splits `text` into case-homogeneous segments (handled below). `all_caps`,
+    // if also set, takes precedence and uses the plain uppercasing path.
+    if props.small_caps == Some(true) && props.all_caps != Some(true) {
+        push_small_caps(buf, spans, text, props, active_link_url);
+        return;
+    }
+
     let start = buf.len();
     if props.all_caps == Some(true) {
         buf.push_str(&text.to_uppercase());
@@ -451,14 +474,58 @@ fn push_text(
         buf.push_str(text);
     }
     let mut span = char_props_to_style_span(props, start..buf.len());
+    apply_link(&mut span, active_link_url);
+    spans.push(span);
+}
+
+/// Fraction of the full cap size used for synthesized small capitals (letters
+/// that were lowercase in the source). Matches the common ~0.8 synthetic ratio
+/// applied when a font carries no real small-cap (`smcp`) glyphs.
+const SMALL_CAPS_RATIO: f32 = 0.8;
+
+/// Append `text` as synthesized small caps: uppercase every letter, splitting
+/// into runs where the source was lowercase (rendered at [`SMALL_CAPS_RATIO`] of
+/// the size) versus already-uppercase / non-letters (full size). Each run is its
+/// own [`StyleSpan`] so Parley shapes it at the right size.
+fn push_small_caps(
+    buf: &mut String,
+    spans: &mut Vec<StyleSpan>,
+    text: &str,
+    props: &CharProps,
+    active_link_url: Option<&str>,
+) {
+    let mut chars = text.chars().peekable();
+    while let Some(&first) = chars.peek() {
+        let lower = first.is_lowercase();
+        let start = buf.len();
+        while let Some(&c) = chars.peek() {
+            if c.is_lowercase() != lower {
+                break;
+            }
+            // Uppercase the character (may expand, e.g. ß → SS).
+            for u in c.to_uppercase() {
+                buf.push(u);
+            }
+            chars.next();
+        }
+        let mut span = char_props_to_style_span(props, start..buf.len());
+        if lower {
+            span.font_size *= SMALL_CAPS_RATIO;
+        }
+        apply_link(&mut span, active_link_url);
+        spans.push(span);
+    }
+}
+
+/// Apply an active hyperlink URL to `span`, auto-underlining undecorated link
+/// text (gap #11).
+fn apply_link(span: &mut StyleSpan, active_link_url: Option<&str>) {
     if let Some(url) = active_link_url {
         span.link_url = Some(url.to_string());
-        // Auto-underline link text that has no explicit underline decoration.
         if span.underline.is_none() {
             span.underline = Some(UnderlineStyle::Single);
         }
     }
-    spans.push(span);
 }
 
 /// Recursively collect text from an [`Inline`] tree, building `buf` + `spans`.
@@ -692,6 +759,7 @@ fn walk_inlines(
                         alt,
                         cx_emu,
                         cy_emu,
+                        float: loki_doc_model::content::float::FloatWrap::read(attr),
                     });
                 }
             }
@@ -890,6 +958,8 @@ fn map_para_props(p: &ParaProps) -> ResolvedParaProps {
                 .filter(|s| s.alignment != TabAlignment::Clear)
                 .map(|s| ResolvedTabStop {
                     position: pts_to_f32(s.position),
+                    alignment: s.alignment,
+                    leader: s.leader,
                 })
                 .collect();
             stops.sort_by(|a, b| {
@@ -899,6 +969,13 @@ fn map_para_props(p: &ParaProps) -> ResolvedParaProps {
             });
             stops
         },
+        // Set by the flow engine for table-cell content; see ResolvedParaProps.
+        break_long_words: false,
+        // Dropped initial (rendered in the read-only/paint path); see
+        // `layout_paragraph`. Forwarded straight from the imported model.
+        drop_cap: p.drop_cap,
+        // Float wrap band is injected by the flow engine, not the model.
+        wrap_band: None,
     }
 }
 

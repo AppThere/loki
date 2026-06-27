@@ -1,289 +1,137 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! Bundled metric-compatible fallback fonts for the Android CPU renderer.
+//! Bundled UI typeface and metric-compatible fallback fonts.
 //!
-//! | Bundled family | Covers           |
-//! |----------------|------------------|
-//! | Carlito        | Calibri          |
-//! | Caladea        | Cambria          |
-//! | Arimo          | Arial            |
-//! | Cousine        | Courier New      |
-//! | Tinos          | Times New Roman  |
+//! | Bundled family             | Covers                  |
+//! |----------------------------|-------------------------|
+//! | Atkinson Hyperlegible Next | UI chrome typeface      |
+//! | Carlito                    | Calibri                 |
+//! | Caladea                    | Cambria                 |
+//! | Arimo                      | Arial                   |
+//! | Cousine                    | Courier New             |
+//! | Tinos                      | Times New Roman         |
 //!
-//! All fonts are licensed under SIL OFL 1.1 from <https://github.com/google/fonts>.
+//! Atkinson Hyperlegible Next is licensed under SIL OFL 1.1 by the Braille
+//! Institute; the metric-compatible faces under SIL OFL 1.1 from
+//! <https://github.com/google/fonts>.
 //!
 //! # Usage
 //!
+//! The fonts are registered **synchronously** into the renderer's font
+//! collection at launch — there is no `@font-face` / `data:` URI step. The Dioxus
+//! Native apps pass the bytes through the launch config:
+//!
 //! ```ignore
-//! // In the Dioxus App component — safe to call on all platforms:
-//! document::Style { r#type: "text/css", "{loki_fonts::face_css()}" }
+//! dioxus::native::launch_cfg(
+//!     App,
+//!     vec![],
+//!     vec![Box::new(dioxus::native::Config::new().with_fonts(loki_fonts::ui_font_blobs()))],
+//! );
 //! ```
 //!
-//! [`face_css`] returns `""` on desktop and Android GPU builds (no-op).
-//! Font bytes are only embedded on `target_os = "android"`.
+//! This is the robust, platform-independent path: the family names resolve before
+//! first paint on every platform, including Android, where the previous approach
+//! (a `@font-face` `data:` URI decoded asynchronously by the renderer's network
+//! provider) did not load the UI typeface — the chrome fell back to a wide system
+//! font. Synchronous registration removes the dependency on that async path
+//! entirely, which is the correct layer to fix: the bytes are known at compile
+//! time, so there is no reason to fetch them at runtime.
+//!
+//! The raw face bytes are also exposed via [`fallback_font_blobs`] for the
+//! document layout engine, which registers them lazily for metric-compatible
+//! substitution in headless/CI/PDF-export contexts.
 
 #![forbid(unsafe_code)]
 
-use std::sync::OnceLock;
+/// The Atkinson Hyperlegible Next UI variable font, embedded on every platform.
+const ATKINSON_VF: &[u8] = include_bytes!("../fonts/AtkinsonHyperlegibleNext-VF.ttf");
 
-/// Returns a self-contained `@font-face` block for the **Atkinson Hyperlegible
-/// Next** UI variable font, embedded as a `data:font/truetype;base64,…` URI.
+/// Raw bytes of every bundled UI/fallback face, for **synchronous** registration
+/// into the renderer's Parley `FontContext` at launch.
 ///
-/// Embedded on **all** platforms (the single variable font is ~112 KB). Unlike
-/// the `dioxus:///assets/...` URL the apps previously used — which resolves
-/// relative to the executable and fails to load on Android/ChromeOS (and
-/// silently relies on a system-installed copy on desktop) — the `data:` URI is
-/// decoded by `blitz_net` on every platform, so the UI chrome renders in the
-/// intended face everywhere. Built once and cached for the process lifetime.
-pub fn ui_face_css() -> &'static str {
-    static UI_FACE_CSS: OnceLock<String> = OnceLock::new();
-    UI_FACE_CSS.get_or_init(|| {
-        const FONT: &[u8] = include_bytes!("../fonts/AtkinsonHyperlegibleNext-VF.ttf");
-        let b64 = base64_encode(FONT);
-        format!(
-            "@font-face{{font-family:'Atkinson Hyperlegible Next';\
-             font-weight:100 900;font-style:normal;\
-             src:url('data:font/truetype;base64,{b64}') format('truetype');}}"
-        )
-    })
-}
-
-/// Standard base64 encoder (no line wrapping), shared by [`ui_face_css`] and the
-/// Android fallback-font CSS. Dependency-free to keep this crate `include_bytes`
-/// only.
-pub(crate) fn base64_encode(input: &[u8]) -> String {
-    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
-    for chunk in input.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
-        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
-        let n = (b0 << 16) | (b1 << 8) | b2;
-        out.push(T[((n >> 18) & 63) as usize] as char);
-        out.push(T[((n >> 12) & 63) as usize] as char);
-        out.push(if chunk.len() > 1 {
-            T[((n >> 6) & 63) as usize] as char
-        } else {
-            '='
-        });
-        out.push(if chunk.len() > 2 {
-            T[(n & 63) as usize] as char
-        } else {
-            '='
-        });
-    }
-    out
-}
-
-/// Returns a complete `@font-face` CSS block for all bundled fonts, with each
-/// font embedded as a `data:font/truetype;base64,…` URI.
-///
-/// Built once on first call and cached for the process lifetime.
-/// Returns `""` on desktop and Android GPU builds.
-// On Android CPU the cfg-gated return is always taken, making the fallback ""
-// unreachable on that target.  The allow is intentional: "" IS reached on all
-// other targets (desktop, Android GPU).
-#[allow(unreachable_code)]
-pub fn face_css() -> &'static str {
-    #[cfg(all(target_os = "android", not(android_gpu)))]
-    return imp::face_css_impl();
-
-    ""
+/// Includes the Atkinson Hyperlegible Next UI variable font followed by the five
+/// metric-compatible fallback families (see [`fallback_font_blobs`]). Registering
+/// these at startup makes the family names ("Atkinson Hyperlegible Next",
+/// "Carlito", "Caladea", "Arimo", "Cousine", "Tinos") resolve immediately on
+/// every platform, without relying on the asynchronous `@font-face` `data:` URI
+/// fetch (which is unreliable on Android).
+pub fn ui_font_blobs() -> Vec<Vec<u8>> {
+    let mut blobs = Vec::with_capacity(1 + fallback_font_blobs().len());
+    blobs.push(ATKINSON_VF.to_vec());
+    blobs.extend(fallback_font_blobs().iter().map(|b| b.to_vec()));
+    blobs
 }
 
 /// Raw bytes of every bundled metric-compatible fallback face (Carlito, Caladea,
 /// Arimo, Cousine, Tinos), for direct registration into the document layout
 /// engine's font collection.
 ///
-/// Android-only: on desktop the layout engine discovers these fonts from the
-/// executable-relative `assets/fonts/` directory, but that path does not resolve
-/// on Android, so the bytes must be registered directly (otherwise a document's
-/// Calibri/Arial/Times text falls back to an Android system font with different
-/// metrics — e.g. wider digit advances). Returns `&[]` would be the desktop
-/// shape, but the function is simply not compiled there.
-#[cfg(target_os = "android")]
+/// Available on **all** platforms. The layout engine registers these lazily, only
+/// when a substitute family (e.g. Carlito for Calibri) is requested but not found
+/// in the collection — so a properly-installed desktop never pays for them, while
+/// headless export, CI, and Android (where the executable-relative `assets/fonts/`
+/// directory does not resolve) still resolve Calibri/Arial/Times to a
+/// metric-compatible face instead of a wider system fallback.
 pub fn fallback_font_blobs() -> &'static [&'static [u8]] {
-    imp::fallback_font_blobs()
+    /// The bundled metric-compatible faces. Each `include_bytes!` is coerced to
+    /// `&[u8]` so the array unifies despite differing lengths.
+    static FACES: &[&[u8]] = &[
+        // Arimo — metric-compatible Arial (variable font, covers all weights)
+        include_bytes!("../fonts/Arimo[wght].ttf"),
+        include_bytes!("../fonts/Arimo-Italic[wght].ttf"),
+        // Caladea — metric-compatible Cambria
+        include_bytes!("../fonts/Caladea-Regular.ttf"),
+        include_bytes!("../fonts/Caladea-Bold.ttf"),
+        include_bytes!("../fonts/Caladea-Italic.ttf"),
+        include_bytes!("../fonts/Caladea-BoldItalic.ttf"),
+        // Cousine — metric-compatible Courier New
+        include_bytes!("../fonts/Cousine-Regular.ttf"),
+        include_bytes!("../fonts/Cousine-Bold.ttf"),
+        include_bytes!("../fonts/Cousine-Italic.ttf"),
+        include_bytes!("../fonts/Cousine-BoldItalic.ttf"),
+        // Tinos — metric-compatible Times New Roman
+        include_bytes!("../fonts/Tinos-Regular.ttf"),
+        include_bytes!("../fonts/Tinos-Bold.ttf"),
+        include_bytes!("../fonts/Tinos-Italic.ttf"),
+        include_bytes!("../fonts/Tinos-BoldItalic.ttf"),
+        // Carlito — metric-compatible Calibri
+        include_bytes!("../fonts/Carlito-Regular.ttf"),
+        include_bytes!("../fonts/Carlito-Bold.ttf"),
+        include_bytes!("../fonts/Carlito-Italic.ttf"),
+        include_bytes!("../fonts/Carlito-BoldItalic.ttf"),
+    ];
+    FACES
 }
 
-#[cfg(all(test, not(target_os = "android")))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
+    // Regression guard: the embedded metric-compatible faces must be available on
+    // every platform (not gated to Android), so headless/CI/PDF-export builds can
+    // register them.
     #[test]
-    fn face_css_is_empty_on_non_android() {
-        // Desktop and Android-GPU builds must not embed any @font-face CSS
-        // (the ~7 MB of font bytes are android-cpu-only). This is the documented
-        // no-op contract relied on by the shared App component.
-        assert_eq!(face_css(), "");
-    }
-}
-
-// ── Android-only implementation ───────────────────────────────────────────────
-// The entire font-data and CSS-generation block is compiled only on Android so
-// that desktop binaries do not embed ~7 MB of font bytes.
-
-#[cfg(target_os = "android")]
-mod imp {
-    use std::sync::OnceLock;
-
-    struct Face {
-        family: &'static str,
-        weight: &'static str, // "100 900" for variable fonts, "400"/"700" for static
-        style: &'static str,  // "normal" | "italic"
-        bytes: &'static [u8],
+    fn fallback_font_blobs_embedded_on_all_targets() {
+        assert!(
+            !fallback_font_blobs().is_empty(),
+            "metric-compatible fallback faces must be embedded on this target"
+        );
     }
 
-    static FACES: &[Face] = &[
-        // Arimo — metric-compatible Arial (variable font, covers all weights)
-        Face {
-            family: "Arimo",
-            weight: "100 900",
-            style: "normal",
-            bytes: include_bytes!("../fonts/Arimo[wght].ttf"),
-        },
-        Face {
-            family: "Arimo",
-            weight: "100 900",
-            style: "italic",
-            bytes: include_bytes!("../fonts/Arimo-Italic[wght].ttf"),
-        },
-        // Caladea — metric-compatible Cambria
-        Face {
-            family: "Caladea",
-            weight: "400",
-            style: "normal",
-            bytes: include_bytes!("../fonts/Caladea-Regular.ttf"),
-        },
-        Face {
-            family: "Caladea",
-            weight: "700",
-            style: "normal",
-            bytes: include_bytes!("../fonts/Caladea-Bold.ttf"),
-        },
-        Face {
-            family: "Caladea",
-            weight: "400",
-            style: "italic",
-            bytes: include_bytes!("../fonts/Caladea-Italic.ttf"),
-        },
-        Face {
-            family: "Caladea",
-            weight: "700",
-            style: "italic",
-            bytes: include_bytes!("../fonts/Caladea-BoldItalic.ttf"),
-        },
-        // Cousine — metric-compatible Courier New
-        Face {
-            family: "Cousine",
-            weight: "400",
-            style: "normal",
-            bytes: include_bytes!("../fonts/Cousine-Regular.ttf"),
-        },
-        Face {
-            family: "Cousine",
-            weight: "700",
-            style: "normal",
-            bytes: include_bytes!("../fonts/Cousine-Bold.ttf"),
-        },
-        Face {
-            family: "Cousine",
-            weight: "400",
-            style: "italic",
-            bytes: include_bytes!("../fonts/Cousine-Italic.ttf"),
-        },
-        Face {
-            family: "Cousine",
-            weight: "700",
-            style: "italic",
-            bytes: include_bytes!("../fonts/Cousine-BoldItalic.ttf"),
-        },
-        // Tinos — metric-compatible Times New Roman
-        Face {
-            family: "Tinos",
-            weight: "400",
-            style: "normal",
-            bytes: include_bytes!("../fonts/Tinos-Regular.ttf"),
-        },
-        Face {
-            family: "Tinos",
-            weight: "700",
-            style: "normal",
-            bytes: include_bytes!("../fonts/Tinos-Bold.ttf"),
-        },
-        Face {
-            family: "Tinos",
-            weight: "400",
-            style: "italic",
-            bytes: include_bytes!("../fonts/Tinos-Italic.ttf"),
-        },
-        Face {
-            family: "Tinos",
-            weight: "700",
-            style: "italic",
-            bytes: include_bytes!("../fonts/Tinos-BoldItalic.ttf"),
-        },
-        // Carlito — metric-compatible Calibri
-        Face {
-            family: "Carlito",
-            weight: "400",
-            style: "normal",
-            bytes: include_bytes!("../fonts/Carlito-Regular.ttf"),
-        },
-        Face {
-            family: "Carlito",
-            weight: "700",
-            style: "normal",
-            bytes: include_bytes!("../fonts/Carlito-Bold.ttf"),
-        },
-        Face {
-            family: "Carlito",
-            weight: "400",
-            style: "italic",
-            bytes: include_bytes!("../fonts/Carlito-Italic.ttf"),
-        },
-        Face {
-            family: "Carlito",
-            weight: "700",
-            style: "italic",
-            bytes: include_bytes!("../fonts/Carlito-BoldItalic.ttf"),
-        },
-    ];
-
-    static FACE_CSS: OnceLock<String> = OnceLock::new();
-
-    pub(super) fn face_css_impl() -> &'static str {
-        FACE_CSS.get_or_init(build_css)
-    }
-
-    /// Raw bytes of every bundled fallback face, for direct registration into a
-    /// font collection (e.g. Parley's). Used by the document layout engine on
-    /// Android, where the executable-relative asset path that loads these on
-    /// desktop is unavailable.
-    pub(super) fn fallback_font_blobs() -> &'static [&'static [u8]] {
-        static BLOBS: OnceLock<Vec<&'static [u8]>> = OnceLock::new();
-        BLOBS.get_or_init(|| FACES.iter().map(|f| f.bytes).collect())
-    }
-
-    fn build_css() -> String {
-        use std::fmt::Write as _;
-
-        let total_bytes: usize = FACES.iter().map(|f| f.bytes.len()).sum();
-        let mut css = String::with_capacity(total_bytes * 4 / 3 + FACES.len() * 256);
-        for face in FACES {
-            let b64 = crate::base64_encode(face.bytes);
-            writeln!(
-                css,
-                "@font-face{{font-family:'{family}';font-weight:{weight};\
-                 font-style:{style};src:url('data:font/truetype;base64,{b64}')\
-                 format('truetype');}}",
-                family = face.family,
-                weight = face.weight,
-                style = face.style,
-            )
-            .unwrap();
-        }
-        css
+    // `ui_font_blobs` must carry the UI typeface plus every fallback face, and no
+    // blob may be empty (an empty blob would silently fail to register).
+    #[test]
+    fn ui_font_blobs_includes_ui_face_plus_fallbacks() {
+        let blobs = ui_font_blobs();
+        assert_eq!(
+            blobs.len(),
+            1 + fallback_font_blobs().len(),
+            "ui_font_blobs must be the UI face followed by every fallback face"
+        );
+        assert!(
+            blobs.iter().all(|b| !b.is_empty()),
+            "no bundled font blob may be empty"
+        );
     }
 }

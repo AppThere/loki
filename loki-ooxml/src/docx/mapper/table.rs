@@ -85,8 +85,20 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
 
     let width = map_tbl_width(t);
 
+    // OOXML `w:tblLayout w:type="fixed"` → honour grid column widths exactly
+    // (no autofit rescale). Mark the table so loki-layout skips its rescale.
+    let mut attr = NodeAttr::default();
+    if t.tbl_pr
+        .as_ref()
+        .and_then(|p| p.layout.as_deref())
+        .is_some_and(|l| l == "fixed")
+    {
+        attr.classes
+            .push(loki_doc_model::content::table::core::TABLE_FIXED_LAYOUT_CLASS.to_string());
+    }
+
     let table = Table {
-        attr: NodeAttr::default(),
+        attr,
         caption: TableCaption::default(),
         width,
         col_specs,
@@ -140,19 +152,29 @@ fn build_col_specs(t: &DocxTableModel) -> Vec<ColSpec> {
 
 /// Maps a `w:tc` table cell.
 fn map_cell(tc: &crate::docx::model::styles::DocxTableCell, ctx: &mut MappingContext<'_>) -> Cell {
+    use crate::docx::model::document::DocxBodyChild;
     let col_span = tc.tc_pr.as_ref().and_then(|p| p.grid_span).unwrap_or(1);
+    // Map ordered cell content: paragraphs and nested tables (recursing through
+    // map_table) interleaved in document order.
     let blocks: Vec<Block> = tc
-        .paragraphs
+        .children
         .iter()
-        .flat_map(|p| map_paragraph(p, ctx))
+        .flat_map(|child| match child {
+            DocxBodyChild::Paragraph(p) => map_paragraph(p, ctx),
+            DocxBodyChild::Table(t) => vec![map_table(t, ctx)],
+            DocxBodyChild::Sdt => Vec::new(),
+        })
         .collect();
 
     let mut props = CellProps::default();
     if let Some(tc_pr) = tc.tc_pr.as_ref() {
-        // Cell background from `w:shd @w:fill`.
-        if let Some(ref hex) = tc_pr.shd_fill
-            && let Some(rgb) = crate::xml_util::hex_color(hex)
-        {
+        // Cell background from `w:shd`, honouring the pattern (`@w:val`):
+        // `pctN` blends `@w:color` over `@w:fill`; `solid`/`clear` as expected.
+        if let Some(rgb) = crate::xml_util::resolve_shading(
+            tc_pr.shd_fill.as_deref(),
+            tc_pr.shd_val.as_deref(),
+            tc_pr.shd_color.as_deref(),
+        ) {
             use loki_primitives::color::DocumentColor;
             props.background_color = Some(DocumentColor::Rgb(rgb));
         }

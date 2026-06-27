@@ -271,6 +271,44 @@ fn flatten_all_caps_uppercases_text() {
 }
 
 #[test]
+fn flatten_small_caps_uppercases_and_shrinks_lowercase() {
+    // Small caps is synthesized: every letter is uppercased, and the letters that
+    // were lowercase in the source render at a reduced size. The run therefore
+    // splits at the case boundary into separate spans.
+    let catalog = StyleCatalog::new();
+    let run = StyledRun {
+        style_id: None,
+        direct_props: Some(Box::new(CharProps {
+            small_caps: Some(true),
+            ..Default::default()
+        })),
+        content: vec![Inline::Str("Hello".into())],
+        attr: NodeAttr::default(),
+    };
+    let para = empty_para(vec![Inline::StyledRun(run)]);
+    let (text, spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
+    assert_eq!(text, "HELLO", "small caps uppercases every letter");
+    assert!(
+        spans.len() >= 2,
+        "the H|ello case boundary must split into >= 2 spans, got {}",
+        spans.len()
+    );
+    // The leading 'H' (already uppercase) keeps the full 12 pt size.
+    assert!(
+        (spans[0].font_size - 12.0).abs() < 1e-3,
+        "uppercase-origin letter stays full size, got {}",
+        spans[0].font_size
+    );
+    // 'ello' (originally lowercase) shrinks to the small-cap ratio (0.8 × 12).
+    assert!(
+        spans
+            .iter()
+            .any(|s| (s.font_size - 12.0 * 0.8).abs() < 1e-3),
+        "lowercase-origin letters must render at the reduced small-cap size"
+    );
+}
+
+#[test]
 fn flatten_superscript_inline_sets_vertical_align() {
     let catalog = StyleCatalog::new();
     let para = empty_para(vec![Inline::Superscript(vec![Inline::Str("2".into())])]);

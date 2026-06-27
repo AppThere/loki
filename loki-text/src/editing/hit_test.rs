@@ -25,12 +25,44 @@
 //! The conversion from CSS logical pixels is applied once at entry:
 //! `pt = px × (72/96)`.
 
-use loki_layout::PaginatedLayout;
+use loki_layout::{ContinuousLayout, PaginatedLayout};
+use loki_renderer::render_layout::REFLOW_PADDING_PT;
 
 use super::cursor::DocumentPosition;
 
 /// CSS pixels → layout points scale factor (72 dpi / 96 dpi).
 const PX_TO_PT: f32 = 72.0 / 96.0;
+
+/// Translates a window-relative pointer position into a continuous-layout
+/// document position `(block_index, byte_offset)` for **reflow** mode.
+///
+/// The reflow canvas is one continuous vertical flow (no pages); the content is
+/// inset by [`REFLOW_PADDING_PT`] within each band tile, so that inset is
+/// removed here to match the layout's paragraph origins. `canvas_origin` and
+/// `scroll_offset` follow the same Strategy-C model as [`hit_test_document`]:
+/// the vertical origin (`TOOLBAR_HEIGHT_TOP + SPACE_6`) is exact, so the hit
+/// always lands on the correct line; the horizontal origin is approximate
+/// (Blitz exposes no element rect), affecting only which character within the
+/// line is chosen — and [`ContinuousLayout::hit_test`] clamps that.
+///
+/// `layout` must be the same width as the painted reflow layout (build it from
+/// `scroll_metrics().client_width`), or line breaks diverge from what is drawn.
+pub fn reflow_hit_test_window(
+    client_x: f32,
+    client_y: f32,
+    canvas_origin: (f32, f32),
+    scroll_offset: f32,
+    layout: &ContinuousLayout,
+) -> Option<(usize, usize)> {
+    let canvas_x_px = client_x - canvas_origin.0;
+    let canvas_y_px = client_y - canvas_origin.1 + scroll_offset;
+    if canvas_y_px < 0.0 {
+        return None;
+    }
+    let canvas_x = canvas_x_px * PX_TO_PT - REFLOW_PADDING_PT;
+    let canvas_y = canvas_y_px * PX_TO_PT;
+    layout.hit_test(canvas_x, canvas_y)
+}
 
 /// Translates a window-relative pointer position into a [`DocumentPosition`]
 /// using the paginated layout's editing data.
@@ -438,5 +470,88 @@ mod tests {
                 "without scroll_offset, click must not reach page 1"
             );
         }
+    }
+
+    // ── Reflow (continuous) hit-testing ───────────────────────────────────────
+
+    /// One reflow paragraph laid out at the given canvas origin.
+    fn reflow_para(text: &str, block_index: usize, origin: (f32, f32)) -> PageParagraphData {
+        let mut resources = FontResources::new();
+        let para = layout_paragraph(
+            &mut resources,
+            text,
+            &[StyleSpan {
+                range: 0..text.len(),
+                font_name: None,
+                font_size: 12.0,
+                bold: false,
+                weight: 400,
+                italic: false,
+                color: LayoutColor::BLACK,
+                underline: None,
+                strikethrough: None,
+                line_height: None,
+                vertical_align: None,
+                highlight_color: None,
+                letter_spacing: None,
+                font_variant: None,
+                word_spacing: None,
+                shadow: false,
+                link_url: None,
+                math: None,
+            }],
+            &ResolvedParaProps::default(),
+            400.0,
+            1.0,
+            true, // preserve_for_editing — retains the hit-test layout
+        );
+        PageParagraphData {
+            block_index,
+            layout: Arc::new(para),
+            origin,
+        }
+    }
+
+    fn two_para_continuous() -> loki_layout::ContinuousLayout {
+        let p0 = reflow_para("Hello world", 0, (0.0, 0.0));
+        let h0 = p0.layout.height;
+        let p1 = reflow_para("Second paragraph here", 1, (0.0, h0));
+        loki_layout::ContinuousLayout {
+            content_width: 400.0,
+            total_height: h0 + p1.layout.height,
+            items: vec![],
+            paragraphs: vec![p0, p1],
+        }
+    }
+
+    #[test]
+    fn reflow_tap_resolves_to_second_paragraph() {
+        let cl = two_para_continuous();
+        let h0 = cl.paragraphs[0].layout.height;
+        // A tap a couple points into the second paragraph (canvas origin (0,0),
+        // no scroll). client coords are CSS px, the band's content inset is
+        // REFLOW_PADDING_PT (removed inside the helper).
+        let client_y = pt_to_px(h0 + 2.0);
+        let client_x = pt_to_px(REFLOW_PADDING_PT + 5.0);
+        let (block, _byte) = reflow_hit_test_window(client_x, client_y, (0.0, 0.0), 0.0, &cl)
+            .expect("reflow hit lands a position");
+        assert_eq!(block, 1, "tap in the second paragraph resolves to block 1");
+    }
+
+    #[test]
+    fn reflow_tap_in_first_paragraph_resolves_to_block_0() {
+        let cl = two_para_continuous();
+        let client_y = pt_to_px(2.0); // near the top
+        let client_x = pt_to_px(REFLOW_PADDING_PT + 5.0);
+        let (block, _) =
+            reflow_hit_test_window(client_x, client_y, (0.0, 0.0), 0.0, &cl).expect("reflow hit");
+        assert_eq!(block, 0);
+    }
+
+    #[test]
+    fn reflow_tap_above_canvas_top_is_none() {
+        let cl = two_para_continuous();
+        // origin.y above the tap ⇒ canvas_y < 0 ⇒ no position.
+        assert!(reflow_hit_test_window(10.0, 10.0, (0.0, 100.0), 0.0, &cl).is_none());
     }
 }

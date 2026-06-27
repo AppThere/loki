@@ -122,6 +122,37 @@ focusable `<div inputmode="text">`, so tapping it raises the keyboard while
 tapping a ribbon `<button>` (focusable, but not a text target) lowers it. An
 `ime_active: bool` field debounces redundant winit calls.
 
+**Soft-keyboard re-trigger on tap (PATCH(loki), 2026-06-25):** the OS never
+reports when the user dismisses the soft keyboard (Android back / swipe-down),
+so `ime_active` stays `true` and a second tap to reposition the caret in the
+already-focused canvas would never bring it back. `update_ime_for_focus` now
+takes a `force_show` flag: a focus change still toggles IME on/off, but a fresh
+pointer release (mouse-up / touch tap) on a text surface re-issues
+`set_ime_allowed(true)` even when IME is already active, re-summoning a
+dismissed keyboard. (If a future winit dedupes same-value `set_ime_allowed`
+calls, switch the force path to a `false`→`true` toggle.)
+
+**Soft-keyboard safe-area re-sync (PATCH(loki), 2026-06-26):** the app runs in a
+stock `NativeActivity` with no `windowSoftInputMode`, so the GL surface is **not**
+resized when the soft keyboard appears — winit never fires `Resized` and the
+keyboard overlays the bottom of the app (ribbon / bottom-of-document content).
+winit / Blitz / Dioxus surface no IME-visibility or height events, but we already
+drive the keyboard ourselves via `set_ime_allowed`, so a visibility change is our
+cue to re-reserve the bottom safe area. When `update_ime_for_focus` shows, hides
+or force-re-shows the keyboard, it calls `arm_ime_settle`, which opens a bounded
+settle window (`IME_INSET_SETTLE`, 400 ms) and wakes the idle event loop at
+60/160/280/400 ms via `BlitzShellEvent::Poll`. While `ime_settle_until` is in the
+future, `poll` calls `resync_scroll_geometry`, which re-dispatches `onscroll`; the
+app's hidden `SafeAreaResizeSensor` catches that tick and re-queries
+`query_window_insets_dp` — whose mask now includes `WindowInsets.Type.ime()`, so
+the returned `bottom` grows to the keyboard height. The settle window exists
+because Android reports/animates the IME inset a frame or two after the
+visibility request (it is the real animation duration, not an arbitrary sleep).
+Limitation: a system-back / swipe-down dismissal is not reported by the OS, so
+the expanded bottom padding (harmless chrome, no content overlap) persists until
+the next focus change or tap re-syncs — the same OS gap the re-trigger note above
+documents. Android-only; on desktop `ime_settle_until` stays `None`.
+
 **Scroll re-sync on resize (PATCH(loki), 2026-06-12):** `resync_scroll_geometry`
 calls `doc.resolve()` and then re-dispatches `onscroll` (via
 `collect_scroll_containers` + `handle_scroll_changes`) to every scroll container
@@ -181,6 +212,26 @@ forwarding natively in a published release and blitz-traits adds `UiEvent`
 touch variants.
 
 **Added:** 2026-05-08
+
+**Hover tooltip overlay (PATCH(loki), 2026-06-25):** Blitz/Stylo do not support
+`position: absolute`/`fixed`, so a hover tooltip cannot be a DOM element (see the
+COMPAT note in `appthere-ui/.../ribbon/button.rs`). Instead the shell paints the
+tooltip **into the Vello scene itself**, after `paint_scene`, entirely outside
+the DOM (`src/tooltip.rs` + `View::render_scene`). On `CursorMoved` the shell
+hit-tests the node under the cursor (`doc.hit`) and walks ancestors for a `title`
+attribute; a new titled element arms a delayed show (`HOVER_DELAY` = 500 ms) by
+spawning a one-shot thread that sends `BlitzShellEvent::Poll` at the deadline
+(the loop is `ControlFlow::Wait`, so a stationary cursor produces no other
+wake). `poll` flips the tooltip visible and requests a redraw; `render_scene`
+then shapes the label with a self-contained parley `FontContext` (`()` brush,
+generic sans-serif) and draws a shadow + rounded-rect + glyphs via
+`PaintScene::{draw_box_shadow, fill, draw_glyphs}`, mirroring `blitz-paint`'s
+glyph bridge so `run.font()` matches the `peniko::FontData` `draw_glyphs`
+expects (hence the pinned `parley 0.6` / `peniko 0.5` / `kurbo 0.12` deps).
+Click / scroll / keypress / touch clear it. The app side just adds a `title`
+attribute (the ribbon icon button reuses its `aria_label`). **Removal
+condition:** remove when Blitz supports `position: absolute`/`fixed` so tooltips
+can be real DOM nodes.
 
 ---
 
@@ -283,6 +334,18 @@ a document opens, without clicking first; this re-enables that intended
 behaviour. When re-vendoring the manifest during a Dioxus upgrade, preserve this
 addition (it is a loki customisation, like the Android `softbuffer` deps).
 
+**Bundled-font pre-registration (PATCH(loki), 2026-06-27).** `Config` gains a
+`font_blobs: Vec<Vec<u8>>` field and a `with_fonts(..)` builder; `launch_cfg_with_props`
+moves those blobs into `DocumentConfig.extra_fonts` (see the blitz-dom entry) so
+the renderer registers them into its parley `FontContext` synchronously at
+startup. The apps pass `loki_fonts::ui_font_blobs()` (the Atkinson Hyperlegible
+Next UI typeface plus the metric-compatible fallback families). This replaces the
+previous approach of injecting an `@font-face` `data:` URI via `document::Style`,
+which relied on the asynchronous network-provider resource fetch and did not load
+the UI typeface on Android (the chrome fell back to a wide system font). The
+bytes are known at compile time, so synchronous registration is the correct
+layer. Preserve this `Config`/launch customisation when re-vendoring.
+
 **Root cause:** Upstream assumed OS-level redraw events would cover the
 CSS-application step; this assumption holds on desktop but not on Android.
 Upstream also leaves `onmounted` / `MountedData` unimplemented for native.
@@ -351,8 +414,20 @@ per-side insets, so landscape — where the navigation bar / cutout move to a si
 the **Activity** (passed in via `AndroidApp::activity_as_ptr()`), since
 `ndk_context` holds the `Application`, which has no window. Returns `None`
 (caller falls back to `query_insets_dp`) before the view is attached or on
-API < 30. loki-text re-queries it on resize via a hidden scroll-container
-sensor and pushes the result into `appthere_ui::update_safe_area_insets`.
+API < 30. Each Loki app (loki-text, loki-spreadsheet, loki-presentation)
+re-queries it on resize via a hidden scroll-container sensor and pushes the
+result into `appthere_ui::update_safe_area_insets`.
+
+**Extends (PATCH(loki), 2026-06-26):** the mask now also includes
+`WindowInsets.Type.ime()`, i.e.
+`getInsets(systemBars | displayCutout | ime)`. Because `getInsets` returns the
+per-side union and `ime()` contributes only a bottom inset, top/left/right are
+unchanged while the keyboard is hidden, and `bottom` grows to the soft-keyboard
+height while it is visible. Combined with the blitz-shell IME-settle re-sync
+(see the blitz-shell section), this is what reserves a bottom safe area for the
+keyboard on a `NativeActivity` whose surface does not resize. `ime()` is API 30+
+— the same level as `getInsets(int)` — so the existing `None` fallback already
+covers older API levels.
 
 **Root cause:** loki-file-access 0.1.2 was designed for desktop and WASM; the
 Android implementation was scaffolded but never exercised on a real NativeActivity
@@ -431,16 +506,25 @@ file picking additionally requires a Gradle build with `FilePickerActivity.kt`.
    updates correct while idle frames stop. (`is_animating()` is left intact for
    any other consumer.)
 
+7. **Embedder-supplied font blobs (PATCH(loki), 2026-06-27).** `DocumentConfig`
+   gains `extra_fonts: Vec<Vec<u8>>`; `BaseDocument::new` registers each blob into
+   the parley `FontContext` (on top of the system fonts and the default bullet
+   font) at construction. This lets an app bundle its UI/fallback fonts and have
+   them resolve **synchronously** on every platform, instead of relying on the
+   asynchronous `@font-face` `data:` URI resource-fetch path (which did not load
+   the UI typeface on Android). `dioxus-native`'s `Config::with_fonts(..)` feeds
+   this field; the Loki apps pass `loki_fonts::ui_font_blobs()`.
+
 **Removal condition:** Upstream blitz-dom implements tabindex focus-on-click
 for non-input elements, dispatches scroll events to embedders, exposes an
 absolute node-scroll API, and stops treating a static canvas as perpetually
 animating (e.g. a per-source "needs animation" signal).
 
 **Added:** 2026-05-18 (focus); extended 2026-06-10 (scroll events),
-2026-06-11 (absolute scroll), and 2026-06-21 (`needs_animation_tick` — stop the
-idle canvas redraw loop, paired with the blitz-shell `redraw()` change),
-together with matching changes in the blitz-shell and dioxus-native(-dom)
-patches.
+2026-06-11 (absolute scroll), 2026-06-21 (`needs_animation_tick` — stop the
+idle canvas redraw loop, paired with the blitz-shell `redraw()` change), and
+2026-06-27 (`extra_fonts` — synchronous bundled-font registration), together
+with matching changes in the blitz-shell and dioxus-native(-dom) patches.
 
 ---
 

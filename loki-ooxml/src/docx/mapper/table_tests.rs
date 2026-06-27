@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::docx::import::DocxImportOptions;
+use crate::docx::model::document::DocxBodyChild;
 use crate::docx::model::paragraph::DocxParagraph;
 use crate::docx::model::styles::{DocxTableCell, DocxTableRow, DocxTcPr, DocxTrPr};
 use loki_doc_model::content::block::Block;
@@ -35,7 +36,10 @@ fn make_ctx<'a>(
 fn simple_cell(paragraphs: Vec<DocxParagraph>) -> DocxTableCell {
     DocxTableCell {
         tc_pr: None,
-        paragraphs,
+        children: paragraphs
+            .into_iter()
+            .map(DocxBodyChild::Paragraph)
+            .collect(),
     }
 }
 
@@ -109,6 +113,132 @@ fn two_by_two_table() {
 }
 
 #[test]
+fn nested_table_in_cell_maps_to_table_block() {
+    let styles = StyleCatalog::default();
+    let (fn_m, en_m, hl_m, img_m) = (
+        HashMap::new(),
+        HashMap::new(),
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let opts = DocxImportOptions::default();
+    let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
+
+    // Inner 1×1 table nested inside the outer cell, after a paragraph.
+    let inner = DocxTableModel {
+        tbl_pr: None,
+        col_widths: vec![1440],
+        rows: vec![simple_row(vec![simple_cell(
+            vec![DocxParagraph::default()],
+        )])],
+    };
+    let outer_cell = DocxTableCell {
+        tc_pr: None,
+        children: vec![
+            DocxBodyChild::Paragraph(DocxParagraph::default()),
+            DocxBodyChild::Table(inner),
+        ],
+    };
+    let t = DocxTableModel {
+        tbl_pr: None,
+        col_widths: vec![1440],
+        rows: vec![simple_row(vec![outer_cell])],
+    };
+    let block = map_table(&t, &mut ctx);
+    let Block::Table(tbl) = block else {
+        panic!("expected outer Table");
+    };
+    let cell = &tbl.bodies[0].body_rows[0].cells[0];
+    // The cell preserves order: a paragraph then a nested Table block.
+    assert!(
+        cell.blocks.len() >= 2,
+        "cell should hold the paragraph and the nested table"
+    );
+    assert!(
+        cell.blocks.iter().any(|b| matches!(b, Block::Table(_))),
+        "nested w:tbl inside w:tc must map to a Block::Table in the cell"
+    );
+}
+
+#[test]
+fn tbl_layout_fixed_marks_table_class() {
+    use crate::docx::model::styles::DocxTblPr;
+    use loki_doc_model::content::table::core::TABLE_FIXED_LAYOUT_CLASS;
+
+    let styles = StyleCatalog::default();
+    let (fn_m, en_m, hl_m, img_m) = (
+        HashMap::new(),
+        HashMap::new(),
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let opts = DocxImportOptions::default();
+    let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
+
+    let t = DocxTableModel {
+        tbl_pr: Some(DocxTblPr {
+            layout: Some("fixed".to_string()),
+            ..Default::default()
+        }),
+        col_widths: vec![1440, 1440],
+        rows: vec![simple_row(vec![simple_cell(
+            vec![DocxParagraph::default()],
+        )])],
+    };
+    let block = map_table(&t, &mut ctx);
+    if let Block::Table(tbl) = block {
+        assert!(
+            tbl.attr
+                .classes
+                .iter()
+                .any(|c| c == TABLE_FIXED_LAYOUT_CLASS),
+            "fixed tblLayout must add the fixed-layout class"
+        );
+    } else {
+        panic!("expected Table");
+    }
+}
+
+#[test]
+fn tbl_layout_autofit_has_no_fixed_class() {
+    use crate::docx::model::styles::DocxTblPr;
+    use loki_doc_model::content::table::core::TABLE_FIXED_LAYOUT_CLASS;
+
+    let styles = StyleCatalog::default();
+    let (fn_m, en_m, hl_m, img_m) = (
+        HashMap::new(),
+        HashMap::new(),
+        HashMap::new(),
+        HashMap::new(),
+    );
+    let opts = DocxImportOptions::default();
+    let mut ctx = make_ctx(&styles, &fn_m, &en_m, &hl_m, &img_m, &opts);
+
+    let t = DocxTableModel {
+        tbl_pr: Some(DocxTblPr {
+            layout: Some("autofit".to_string()),
+            ..Default::default()
+        }),
+        col_widths: vec![1440],
+        rows: vec![simple_row(vec![simple_cell(
+            vec![DocxParagraph::default()],
+        )])],
+    };
+    let block = map_table(&t, &mut ctx);
+    if let Block::Table(tbl) = block {
+        assert!(
+            !tbl.attr
+                .classes
+                .iter()
+                .any(|c| c == TABLE_FIXED_LAYOUT_CLASS),
+            "autofit tblLayout must NOT add the fixed-layout class"
+        );
+    } else {
+        panic!("expected Table");
+    }
+}
+
+#[test]
 fn header_row_goes_to_head() {
     let styles = StyleCatalog::default();
     let (fn_m, en_m, hl_m, img_m) = (
@@ -157,7 +287,7 @@ fn cell_col_span_preserved() {
             v_merge: None,
             ..Default::default()
         }),
-        paragraphs: vec![],
+        children: vec![],
     };
     let t = DocxTableModel {
         tbl_pr: None,
@@ -180,7 +310,7 @@ fn merge_cell(v_merge: DocxVMerge) -> DocxTableCell {
             v_merge: Some(v_merge),
             ..Default::default()
         }),
-        paragraphs: vec![],
+        children: vec![],
     }
 }
 
@@ -191,7 +321,7 @@ fn merge_cell_with_col_span(v_merge: DocxVMerge, col_span: u32) -> DocxTableCell
             grid_span: Some(col_span),
             ..Default::default()
         }),
-        paragraphs: vec![],
+        children: vec![],
     }
 }
 
@@ -288,7 +418,7 @@ fn vmerge_multiple_independent_merges() {
 fn cell_with_props(tc_pr: DocxTcPr) -> DocxTableCell {
     DocxTableCell {
         tc_pr: Some(tc_pr),
-        paragraphs: vec![],
+        children: vec![],
     }
 }
 

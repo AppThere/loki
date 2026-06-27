@@ -15,18 +15,17 @@ use std::sync::Arc;
 use loki_doc_model::style::list_style::{
     BulletChar, ListId, ListLevel, ListLevelKind, NumberingScheme,
 };
+use loki_doc_model::style::props::tab_stop::{TabAlignment, TabLeader};
 use parley::{
     Alignment, AlignmentOptions, Cursor, FontFamily, FontStyle, FontWeight, InlineBox,
-    InlineBoxKind, LineHeight, PositionedLayoutItem, RangedBuilder, Selection, StyleProperty,
+    InlineBoxKind, LineHeight, OverflowWrap, PositionedLayoutItem, RangedBuilder, Selection,
+    StyleProperty,
 };
 
 use crate::color::LayoutColor;
 use crate::font::FontResources;
-use crate::geometry::{LayoutInsets, LayoutPoint, LayoutRect};
-use crate::items::{
-    BorderEdge, DecorationKind, GlyphEntry, GlyphSynthesis, PositionedBorderRect,
-    PositionedDecoration, PositionedGlyphRun, PositionedItem, PositionedRect,
-};
+use crate::geometry::{LayoutInsets, LayoutRect};
+use crate::items::{BorderEdge, PositionedBorderRect, PositionedItem, PositionedRect};
 
 /// Vertical text position for superscript / subscript runs.
 ///
@@ -112,6 +111,10 @@ pub struct ResolvedListMarker {
 pub struct ResolvedTabStop {
     /// Tab stop position from the content-area start edge, in points.
     pub position: f32,
+    /// How text following the tab is aligned relative to [`Self::position`].
+    pub alignment: TabAlignment,
+    /// Leader character drawn across the tab gap (dots/dashes/…), if any.
+    pub leader: TabLeader,
 }
 
 /// Resolved line-height specification for a paragraph.
@@ -175,13 +178,13 @@ pub struct StyleSpan {
     pub highlight_color: Option<LayoutColor>,
     /// Letter spacing (tracking) in points. `None` = font default.
     pub letter_spacing: Option<f32>,
-    /// Caps variant for this run.
+    /// Caps variant for this run, retained as metadata.
     ///
-    /// `SmallCaps`: OpenType `smcp` feature would be ideal; currently stored
-    /// only. TODO(small-caps): Parley does not expose StyleProperty::FontVariantCaps.
-    ///
-    /// `AllCaps`: text is uppercased during `flatten_paragraph` in resolve.rs;
-    /// this field is retained as metadata.
+    /// Both variants are synthesized during `flatten_paragraph` (resolve.rs),
+    /// since Parley exposes no `StyleProperty::FontVariantCaps`:
+    /// - `AllCaps`: the text is uppercased.
+    /// - `SmallCaps`: the text is uppercased and originally-lowercase letters are
+    ///   split into their own spans at a reduced font size (the small-cap look).
     pub font_variant: Option<FontVariant>,
     /// Word spacing in points. `None` = font default.
     pub word_spacing: Option<f32>,
@@ -202,6 +205,28 @@ pub struct StyleSpan {
     /// [`crate::math`]) and places it inline via a Parley inline box. All other
     /// span fields supply the base font size / colour for the math.
     pub math: Option<std::sync::Arc<str>>,
+    /// Horizontal text scale as a fraction (`1.0` = 100 %; `1.5` = 150 % wide).
+    /// `None` = no scaling. ODF `style:text-scale`; OOXML `w:w`.
+    ///
+    /// Applied geometrically to glyph advances and positions at emit time
+    /// ([`crate::para_emit::emit_glyph_run`]). COMPAT(parley-0.6): Parley has no
+    /// geometric horizontal-scale style, so line-breaking still measures the
+    /// unscaled run; following runs on the same line are shifted by the extra
+    /// width so they do not overlap, but a scaled run may extend past the right
+    /// margin where Word would have wrapped earlier.
+    pub scale: Option<f32>,
+
+    /// Manual baseline shift (text rise) in points; positive raises the glyphs
+    /// above the baseline, negative lowers them. `None` = on the baseline.
+    /// OOXML `w:position`; ODF `style:text-position`.
+    ///
+    /// Unlike [`vertical_align`] (super/subscript, which also shrinks the font),
+    /// this keeps the font size and is applied per glyph at emit time
+    /// ([`crate::para_emit::emit_glyph_run`]) — so it survives Parley coalescing
+    /// adjacent runs that differ only in their rise.
+    ///
+    /// [`vertical_align`]: Self::vertical_align
+    pub baseline_shift: Option<f32>,
 }
 
 /// Resolved paragraph-level properties passed to [`layout_paragraph`].
@@ -253,6 +278,38 @@ pub struct ResolvedParaProps {
     /// Explicit tab stops, sorted ascending by position. Empty = use the
     /// default 36 pt (0.5 inch) grid. Gap #7.
     pub tab_stops: Vec<ResolvedTabStop>,
+    /// Break an over-long word that does not fit the available width by
+    /// allowing a break at any character (CSS `overflow-wrap: anywhere`).
+    /// Set for table-cell content so a long unbreakable word wraps to the
+    /// fixed column width (matching Word) instead of overflowing into the
+    /// neighbouring cell. Normal body paragraphs leave this `false`.
+    pub break_long_words: bool,
+    /// Dropped-initial specification, or `None`. When set (and the paragraph
+    /// qualifies — see [`layout_paragraph`]), the leading character(s) are
+    /// enlarged to span `lines` text rows with the body text flowing beside
+    /// them. Imported from OOXML `w:framePr`/`w:dropCap` and ODF
+    /// `style:drop-cap`.
+    pub drop_cap: Option<loki_doc_model::style::props::drop_cap::DropCap>,
+    /// A leading side band the first lines of this paragraph must clear (a
+    /// floating image the text wraps around). Set by the flow engine; the
+    /// banded layout path narrows the lines beside it and reflows the rest at
+    /// full width. `None` for normal paragraphs.
+    pub wrap_band: Option<WrapBand>,
+}
+
+/// A side band (a floating object) the first lines of a paragraph wrap around.
+///
+/// Set on [`ResolvedParaProps::wrap_band`] by the flow engine; consumed by the
+/// banded layout path. Drop caps build their band internally instead.
+#[derive(Debug, Clone, Copy)]
+pub struct WrapBand {
+    /// Horizontal width (points) to clear, including the gap to the text.
+    pub inset: f32,
+    /// Vertical extent (points) the band covers from the paragraph top.
+    pub cover_height: f32,
+    /// `true` when the object is on the left (text shifts right); `false` when
+    /// on the right (text narrows but does not shift).
+    pub shift_text: bool,
 }
 
 impl Default for ResolvedParaProps {
@@ -278,6 +335,9 @@ impl Default for ResolvedParaProps {
             indent_hanging: 0.0,
             list_marker: None,
             tab_stops: Vec::new(),
+            break_long_words: false,
+            drop_cap: None,
+            wrap_band: None,
         }
     }
 }
@@ -369,6 +429,16 @@ pub struct ParagraphLayout {
     /// Hanging indent in points (first line starts this far left of
     /// `indent_start`). `0.0` = no hanging.
     pub indent_hanging: f32,
+    /// Number of leading lines shifted right by [`Self::drop_shift`] to clear a
+    /// dropped initial (or a float band in the editor fallback). `0` = none.
+    ///
+    /// Editing geometry ([`Self::line_indent`]) adds the shift to these lines so
+    /// the caret, hit-test, and selection coordinates line up with the rendered
+    /// glyphs (the Parley layout is built in an un-shifted coordinate space).
+    pub drop_lines: usize,
+    /// Horizontal shift in points applied to the first [`Self::drop_lines`]
+    /// lines. `0.0` = none.
+    pub drop_shift: f32,
 }
 
 impl std::fmt::Debug for ParagraphLayout {
@@ -556,10 +626,16 @@ impl ParagraphLayout {
     /// left of `indent_start`. Editing geometry adds this so cursor, hit-test,
     /// and selection coordinates line up with the rendered text.
     fn line_indent(&self, line_index: usize) -> f32 {
-        if line_index == 0 && self.indent_hanging > 0.0 {
+        let base = if line_index == 0 && self.indent_hanging > 0.0 {
             self.indent_start - self.indent_hanging
         } else {
             self.indent_start
+        };
+        // Leading lines beside a dropped initial / float band are shifted right.
+        if line_index < self.drop_lines {
+            base + self.drop_shift
+        } else {
+            base
         }
     }
 }
@@ -571,19 +647,158 @@ impl ParagraphLayout {
 /// Default tab stop interval: 0.5 inch = 36 pt = 720 twips (Word default).
 const DEFAULT_TAB_INTERVAL: f32 = 36.0;
 
-/// Return the next tab stop position strictly greater than `x`.
-///
-/// Searches `stops` (sorted ascending) first; falls back to the default
-/// 36 pt grid when no explicit stop is defined beyond `x`.
-fn next_tab_stop(stops: &[ResolvedTabStop], x: f32, indent_hanging: f32) -> f32 {
+/// Return the tab stop a tab at pen position `x` advances to: the first
+/// explicit stop strictly greater than `x`, else a synthesized default-grid
+/// stop (36 pt, left-aligned, no leader). A hanging indent acts as an implicit
+/// first stop.
+fn next_tab_stop_resolved(
+    stops: &[ResolvedTabStop],
+    x: f32,
+    indent_hanging: f32,
+) -> ResolvedTabStop {
     if indent_hanging > 0.0 && x < indent_hanging - 0.5 {
-        return indent_hanging;
+        return ResolvedTabStop {
+            position: indent_hanging,
+            alignment: TabAlignment::Left,
+            leader: TabLeader::None,
+        };
     }
     if let Some(s) = stops.iter().find(|s| s.position > x + 0.5) {
-        s.position
+        *s
     } else {
-        ((x / DEFAULT_TAB_INTERVAL).floor() + 1.0) * DEFAULT_TAB_INTERVAL
+        ResolvedTabStop {
+            position: ((x / DEFAULT_TAB_INTERVAL).floor() + 1.0) * DEFAULT_TAB_INTERVAL,
+            alignment: TabAlignment::Left,
+            leader: TabLeader::None,
+        }
     }
+}
+
+/// Emit the leader fill for a tab gap `[x0, x1]` at `baseline`, as
+/// renderer-agnostic [`PositionedItem::FilledRect`]s. Dotted leaders are a row
+/// of small squares; dashed are short bars; underscore/heavy are a solid rule
+/// just below the baseline (like an underline). A `None` leader emits nothing.
+fn emit_tab_leader(
+    items: &mut Vec<PositionedItem>,
+    leader: TabLeader,
+    x0: f32,
+    x1: f32,
+    baseline: f32,
+) {
+    let width = x1 - x0;
+    if width < 1.0 || leader == TabLeader::None {
+        return;
+    }
+    let color = LayoutColor::BLACK;
+    let mut dots = |size: f32, pitch: f32, y: f32| {
+        let mut x = x0 + (pitch - size) * 0.5;
+        while x + size <= x1 {
+            items.push(PositionedItem::FilledRect(PositionedRect {
+                rect: LayoutRect::new(x, y, size, size),
+                color,
+            }));
+            x += pitch;
+        }
+    };
+    match leader {
+        TabLeader::Dot | TabLeader::MiddleDot => dots(0.9, 3.6, baseline - 1.6),
+        TabLeader::Dash => {
+            let (dash, pitch, th, y) = (2.4, 4.2, 0.8, baseline - 1.9);
+            let mut x = x0 + 1.0;
+            while x + dash <= x1 {
+                items.push(PositionedItem::FilledRect(PositionedRect {
+                    rect: LayoutRect::new(x, y, dash, th),
+                    color,
+                }));
+                x += pitch;
+            }
+        }
+        TabLeader::Underscore => items.push(PositionedItem::FilledRect(PositionedRect {
+            rect: LayoutRect::new(x0, baseline + 1.0, width, 0.8),
+            color,
+        })),
+        TabLeader::Heavy => items.push(PositionedItem::FilledRect(PositionedRect {
+            rect: LayoutRect::new(x0, baseline + 1.0, width, 1.4),
+            color,
+        })),
+        // `None` is handled by the early return; `_` covers the non-exhaustive
+        // enum's future variants.
+        _ => {}
+    }
+}
+
+/// The planned expansion of one tab character: the inline-box width to insert
+/// so the following text lands at its stop, plus the leader to draw across it.
+#[derive(Debug, Clone, Copy)]
+struct TabPlan {
+    /// Width of the inline box that advances the pen to the aligned position.
+    width: f32,
+    /// Leader to fill the gap (drawn across `[tab_x, tab_x + width]`).
+    leader: TabLeader,
+}
+
+/// Compute each tab's expansion width and leader from probe measurements.
+///
+/// Processes tabs left-to-right, accumulating the shift each expansion adds, so
+/// a later tab's stop is found relative to its *shifted* position. Alignment
+/// positions the content that follows the tab (up to the next tab / line end):
+/// Left advances to the stop; Right ends the content at the stop; Center
+/// centres it; Decimal places the first `.` at the stop. Content widths come
+/// from the zero-width probe boxes (natural, unshifted layout).
+#[allow(clippy::too_many_arguments)]
+fn compute_tab_plans(
+    stops: &[ResolvedTabStop],
+    indent_hanging: f32,
+    x_tab: &[f32],
+    line_tab: &[usize],
+    x_dec: &[f32],
+    x_end: f32,
+    line_end: usize,
+) -> Vec<TabPlan> {
+    let n = x_tab.len();
+    let mut plans = Vec::with_capacity(n);
+    let mut shift = 0.0f32;
+    for i in 0..n {
+        let final_tab_x = x_tab[i] + shift;
+        let stop = next_tab_stop_resolved(stops, final_tab_x, indent_hanging);
+
+        // Natural boundary of the content following this tab: the next tab, or
+        // the end-of-text sentinel for the last tab.
+        let (boundary_x, boundary_line) = if i + 1 < n {
+            (x_tab[i + 1], line_tab[i + 1])
+        } else {
+            (x_end, line_end)
+        };
+        // Content width is only meaningful when the boundary is on the same
+        // visual line; otherwise the content wrapped — fall back to left-align.
+        let content_w = if boundary_line == line_tab[i] && boundary_x >= x_tab[i] {
+            boundary_x - x_tab[i]
+        } else {
+            0.0
+        };
+
+        let offset = match stop.alignment {
+            TabAlignment::Right => content_w,
+            TabAlignment::Center => content_w / 2.0,
+            TabAlignment::Decimal => {
+                if x_dec[i].is_nan() {
+                    content_w // no decimal separator → behave like right-align
+                } else {
+                    (x_dec[i] - x_tab[i]).max(0.0)
+                }
+            }
+            // Left / Clear (filtered earlier) / non-exhaustive → advance to stop.
+            _ => 0.0,
+        };
+
+        let width = (stop.position - offset - final_tab_x).max(0.0);
+        plans.push(TabPlan {
+            width,
+            leader: stop.leader,
+        });
+        shift += width;
+    }
+    plans
 }
 
 /// Push paragraph-level defaults and per-span character styles onto `builder`.
@@ -614,13 +829,18 @@ fn push_math_inline_boxes(
 
 /// Extracted so the same styles can be applied in both the probe pass (pass 1)
 /// and the final pass (pass 2) of the two-pass tab stop expansion.
-fn push_para_styles(
+pub(crate) fn push_para_styles(
     builder: &mut RangedBuilder<'_, LayoutColor>,
     para_props: &ResolvedParaProps,
     style_spans: &[StyleSpan],
 ) {
     builder.push_default(StyleProperty::Brush(LayoutColor::BLACK));
     builder.push_default(StyleProperty::FontSize(12.0));
+    // Table cells break over-long words to the column width (CSS
+    // `overflow-wrap: anywhere`); body paragraphs keep words intact.
+    if para_props.break_long_words {
+        builder.push_default(StyleProperty::OverflowWrap(OverflowWrap::Anywhere));
+    }
     match para_props.line_height {
         // MetricsRelative(1.0) is Parley's default — single-spacing from natural
         // font metrics. Correct for OOXML lineRule="auto" w:line="240".
@@ -765,6 +985,14 @@ fn clean_text_and_spans(
 /// (which count up from 0) so the two can coexist in one paragraph.
 const MATH_ID_BASE: u64 = 1 << 40;
 
+/// Probe-only inline-box id base for decimal-separator markers (one per tab),
+/// used to measure where the first `.` after a tab sits for decimal alignment.
+const DEC_ID_BASE: u64 = 1 << 20;
+
+/// Probe-only inline-box id for the end-of-text sentinel, used to measure the
+/// trailing edge of the content following the last tab.
+const END_ID: u64 = 1 << 30;
+
 /// Lay out a single paragraph using Parley.
 ///
 /// `text_content` is the flattened text from all inline runs. `style_spans`
@@ -815,6 +1043,43 @@ pub fn layout_paragraph(
     result
 }
 
+/// Prepends the paragraph's border and background-fill rects to `items` (so
+/// they render beneath the text). The box spans the full indented width and the
+/// paragraph height. Background is inserted last so it sits behind the border.
+fn prepend_para_box(
+    items: &mut Vec<PositionedItem>,
+    para_props: &ResolvedParaProps,
+    width: f32,
+    height: f32,
+) {
+    let bw = width + para_props.indent_start + para_props.indent_end;
+    let has_border = para_props.border_top.is_some()
+        || para_props.border_right.is_some()
+        || para_props.border_bottom.is_some()
+        || para_props.border_left.is_some();
+    if has_border {
+        items.insert(
+            0,
+            PositionedItem::BorderRect(PositionedBorderRect {
+                rect: LayoutRect::new(0.0, 0.0, bw, height),
+                top: para_props.border_top,
+                right: para_props.border_right,
+                bottom: para_props.border_bottom,
+                left: para_props.border_left,
+            }),
+        );
+    }
+    if let Some(bg) = para_props.background_color {
+        items.insert(
+            0,
+            PositionedItem::FilledRect(PositionedRect {
+                rect: LayoutRect::new(0.0, 0.0, bw, height),
+                color: bg,
+            }),
+        );
+    }
+}
+
 /// Lays out a single paragraph using Parley, without consulting or populating
 /// the shaping cache. [`layout_paragraph`] wraps this with memoisation.
 fn layout_paragraph_uncached(
@@ -826,7 +1091,7 @@ fn layout_paragraph_uncached(
     display_scale: f32,
     preserve_for_editing: bool,
 ) -> ParagraphLayout {
-    let (mut clean_text, mut clean_spans, orig_to_clean, clean_to_orig) =
+    let (mut clean_text, mut clean_spans, mut orig_to_clean, mut clean_to_orig) =
         clean_text_and_spans(text_content, style_spans);
 
     for span in &mut clean_spans {
@@ -874,6 +1139,8 @@ fn layout_paragraph_uncached(
                 clean_to_orig,
                 indent_start: para_props.indent_start,
                 indent_hanging: para_props.indent_hanging,
+                drop_lines: 0,
+                drop_shift: 0.0,
             };
         }
         // Build a phantom single-space layout so cursor_rect can return a
@@ -905,6 +1172,8 @@ fn layout_paragraph_uncached(
             clean_to_orig,
             indent_start: para_props.indent_start,
             indent_hanging: para_props.indent_hanging,
+            drop_lines: 0,
+            drop_shift: 0.0,
         };
     }
 
@@ -925,7 +1194,24 @@ fn layout_paragraph_uncached(
         .map(|(i, _)| i)
         .collect();
 
-    let tab_inline_widths: Vec<f32> = if !tab_char_positions.is_empty() {
+    // Byte offset of the first decimal separator after each tab (before the
+    // next tab / end), for Decimal-aligned stops.
+    let decimal_positions: Vec<Option<usize>> = tab_char_positions
+        .iter()
+        .enumerate()
+        .map(|(i, &t)| {
+            let end = tab_char_positions
+                .get(i + 1)
+                .copied()
+                .unwrap_or(clean_text.len());
+            clean_text[t + 1..end].find('.').map(|rel| t + 1 + rel)
+        })
+        .collect();
+
+    let tab_plans: Vec<TabPlan> = if tab_char_positions.is_empty() {
+        vec![]
+    } else {
+        let n = tab_char_positions.len();
         let mut probe = resources.layout_cx.ranged_builder(
             &mut resources.font_cx,
             &clean_text,
@@ -941,31 +1227,112 @@ fn layout_paragraph_uncached(
                 width: 0.0,
                 height: 0.0,
             });
+            if let Some(dpos) = decimal_positions[idx] {
+                probe.push_inline_box(InlineBox {
+                    id: DEC_ID_BASE + idx as u64,
+                    kind: InlineBoxKind::InFlow,
+                    index: dpos,
+                    width: 0.0,
+                    height: 0.0,
+                });
+            }
         }
+        probe.push_inline_box(InlineBox {
+            id: END_ID,
+            kind: InlineBoxKind::InFlow,
+            index: clean_text.len(),
+            width: 0.0,
+            height: 0.0,
+        });
         push_math_inline_boxes(&mut probe, &math_boxes);
         let mut probe_layout = probe.build(&clean_text);
         probe_layout.break_all_lines(Some(line_w));
 
-        let mut x_positions = vec![0.0f32; tab_char_positions.len()];
-        for line in probe_layout.lines() {
+        let mut x_tab = vec![0.0f32; n];
+        let mut line_tab = vec![usize::MAX; n];
+        let mut x_dec = vec![f32::NAN; n];
+        let mut x_end = 0.0f32;
+        let mut line_end = usize::MAX;
+        for (li, line) in probe_layout.lines().enumerate() {
             for item in line.items() {
                 if let PositionedLayoutItem::InlineBox(pib) = item {
-                    let idx = pib.id as usize;
-                    if idx < x_positions.len() {
-                        x_positions[idx] = pib.x;
+                    let id = pib.id;
+                    if (id as usize) < n {
+                        x_tab[id as usize] = pib.x;
+                        line_tab[id as usize] = li;
+                    } else if (DEC_ID_BASE..END_ID).contains(&id) {
+                        let i = (id - DEC_ID_BASE) as usize;
+                        if i < n {
+                            x_dec[i] = pib.x;
+                        }
+                    } else if id == END_ID {
+                        x_end = pib.x;
+                        line_end = li;
                     }
                 }
             }
         }
-        x_positions
-            .iter()
-            .map(|&x| {
-                (next_tab_stop(&para_props.tab_stops, x, para_props.indent_hanging) - x).max(0.0)
-            })
-            .collect()
-    } else {
-        vec![]
+        compute_tab_plans(
+            &para_props.tab_stops,
+            para_props.indent_hanging,
+            &x_tab,
+            &line_tab,
+            &x_dec,
+            x_end,
+            line_end,
+        )
     };
+
+    // ── Drop-cap preparation ──────────────────────────────────────────────────
+    // The dropped initial spans several lines, so it is removed from the body
+    // flow and rendered separately; the first `n_lines` body lines are narrowed
+    // and shifted to clear it. The cap bytes are trimmed from `clean_text`, so
+    // the orig↔clean maps are rebased past them below to keep editor hit-testing
+    // aligned. Read-only paint uses the precise two-pass band split; the editor
+    // (`preserve_for_editing`) renders the same enlarged cap but lays the body
+    // out as a single uniform-narrow layout it can hit-test against (the lines
+    // below the cap are slightly narrow, as documented). Tabs / inline math
+    // disqualify a paragraph (the cap's manual breaking is incompatible).
+    let drop_state: Option<(
+        loki_doc_model::style::props::drop_cap::DropCap,
+        String,
+        StyleSpan,
+    )> = para_props
+        .drop_cap
+        .filter(|_| tab_char_positions.is_empty() && math_boxes.is_empty())
+        .and_then(|dc| {
+            let k = crate::para_drop_cap::cap_byte_len(&clean_text, dc.length);
+            if k == 0 || k >= clean_text.len() {
+                return None; // no initial, or no body text would remain
+            }
+            let base = clean_spans
+                .iter()
+                .find(|s| s.range.start == 0 && s.range.end > 0)
+                .or_else(|| clean_spans.first())
+                .cloned()?;
+            let cap_text = clean_text[..k].to_string();
+            let (body, body_spans) =
+                crate::para_drop_cap::trim_leading(&clean_text, &clean_spans, k);
+            clean_text = body;
+            clean_spans = body_spans;
+            Some((dc, cap_text, base))
+        });
+
+    // Rebase the orig↔clean maps past the trimmed cap so the body layout's
+    // offsets (which start after the cap) map back to the right original bytes
+    // for editor hit-testing. The cap bytes [0, k) collapse to body offset 0;
+    // body byte j corresponds to clean byte j + k.
+    let drop_cap_bytes = drop_state
+        .as_ref()
+        .map(|(_, cap, _)| cap.len())
+        .unwrap_or(0);
+    if drop_cap_bytes > 0 {
+        for v in orig_to_clean.iter_mut() {
+            *v = v.saturating_sub(drop_cap_bytes);
+        }
+        let drain_to = drop_cap_bytes.min(clean_to_orig.len());
+        clean_to_orig.drain(0..drain_to);
+    }
 
     // ── Main (final) layout pass ──────────────────────────────────────────────
     let mut builder = resources.layout_cx.ranged_builder(
@@ -976,7 +1343,7 @@ fn layout_paragraph_uncached(
     );
     push_para_styles(&mut builder, para_props, &clean_spans);
     for (idx, &pos) in tab_char_positions.iter().enumerate() {
-        let width = tab_inline_widths.get(idx).copied().unwrap_or(0.0);
+        let width = tab_plans.get(idx).map(|p| p.width).unwrap_or(0.0);
         builder.push_inline_box(InlineBox {
             id: idx as u64,
             kind: InlineBoxKind::InFlow,
@@ -988,8 +1355,118 @@ fn layout_paragraph_uncached(
     push_math_inline_boxes(&mut builder, &math_boxes);
 
     let mut layout = builder.build(&clean_text);
-    layout.break_all_lines(Some(line_w));
+    // Plan the drop cap (its enlarged glyph + band geometry) from the body's
+    // first-line metrics. `drop_plan` keeps the line height for `cover_height`.
+    let drop_plan = if let Some((dc, cap_text, base)) = &drop_state {
+        layout.break_all_lines(Some(line_w)); // metrics only
+        let (lh, asc, bl) = layout
+            .lines()
+            .next()
+            .map(|l| {
+                let m = l.metrics();
+                (m.line_height, m.ascent, m.baseline)
+            })
+            .unwrap_or((0.0, 0.0, 0.0));
+        crate::para_drop_cap::plan_drop_cap(
+            resources,
+            cap_text,
+            base,
+            dc,
+            lh,
+            bl,
+            asc,
+            display_scale,
+        )
+        .map(|p| (p, lh))
+    } else {
+        None
+    };
+
+    // Unified leading band: a drop cap (object on the left) or a float band set
+    // by the flow engine. The band's first lines are narrowed; lines below it
+    // reclaim full width (`para_band` lays the body out in two passes).
+    let band: Option<crate::para_band::Band> = if let Some((p, lh)) = &drop_plan {
+        Some(crate::para_band::Band {
+            inset: p.body_inset,
+            cover_height: p.n_lines as f32 * lh,
+            // In-text drop shifts the text right; margin drop has inset 0.
+            shift_text: p.body_inset > 0.0,
+        })
+    } else {
+        para_props.wrap_band.map(|w| crate::para_band::Band {
+            inset: w.inset,
+            cover_height: w.cover_height,
+            shift_text: w.shift_text,
+        })
+    };
+
+    // Precise per-line band split runs on the read-only paint path for plain
+    // text; the editor / tab / math paths fall back to a uniform narrow below.
+    let can_split = band.is_some()
+        && !preserve_for_editing
+        && tab_char_positions.is_empty()
+        && math_boxes.is_empty();
+
+    if can_split {
+        let body = crate::para_band::layout_band_body(
+            resources,
+            &clean_text,
+            &clean_spans,
+            para_props,
+            line_w,
+            display_scale,
+            band.expect("can_split implies band"),
+        );
+        let mut items = body.items;
+        let mut content_bottom = body.height;
+        if let Some((p, _)) = &drop_plan {
+            // Emit the enlarged initial at the paragraph's left edge.
+            for it in &p.items {
+                let mut it = it.clone();
+                it.translate(para_props.indent_start, 0.0);
+                items.push(it);
+            }
+            content_bottom = content_bottom.max(p.bottom);
+        }
+        prepend_para_box(&mut items, para_props, body.width, body.height);
+        return ParagraphLayout {
+            height: content_bottom,
+            width: body.width,
+            items,
+            first_baseline: body.first_baseline,
+            last_baseline: body.last_baseline,
+            line_boundaries: body.line_boundaries,
+            parley_layout: None,
+            orig_to_clean,
+            clean_to_orig,
+            indent_start: para_props.indent_start,
+            indent_hanging: para_props.indent_hanging,
+            drop_lines: 0,
+            drop_shift: 0.0,
+        };
+    }
+
+    // Fallback / normal path: break at the (possibly band-narrowed) width. A
+    // band here is a drop cap in the editor, or a float that could not be split
+    // (editor, tabs, or math). Every line wraps at the narrowed width (APPROX,
+    // as documented for `para_band`); only the leading lines beside the object
+    // are shifted right to clear it.
+    let band_inset = band.as_ref().map(|b| b.inset).unwrap_or(0.0);
+    let drop_shift = band
+        .as_ref()
+        .map(|b| if b.shift_text { b.inset } else { 0.0 })
+        .unwrap_or(0.0);
+    layout.break_all_lines(Some((line_w - band_inset).max(1.0)));
     layout.align(para_props.alignment, AlignmentOptions::default());
+
+    // Leading lines whose top is within the band's vertical extent are shifted.
+    let drop_lines = match &band {
+        Some(b) => layout
+            .lines()
+            .take_while(|l| l.metrics().block_min_coord < b.cover_height)
+            .count(),
+        None => 0,
+    };
 
     let total_height = layout.height();
     let total_width = layout.width();
@@ -1016,14 +1493,75 @@ fn layout_paragraph_uncached(
     // not overlap it.
     let mut content_bottom = total_height;
 
+    // OOXML lineRule="exact" (ODF fixed line height): the line box is a fixed
+    // height and content taller than it is clipped — unlike "atLeast", which
+    // grows. Each line's items are wrapped in a clip layer sized to the exact
+    // line box so over-tall glyphs / inline objects are cut off as in Word.
+    let exact_line_pts = match para_props.line_height {
+        Some(ResolvedLineHeight::Exact(pts)) => Some(pts),
+        _ => None,
+    };
+
+    // ── Highlight / background underlay (gap #10) ─────────────────────────────
+    // Emit a filled rect for each highlighted span via Parley selection geometry.
+    // This is robust to Parley shaping adjacent runs of the same font/colour
+    // (which may differ only in highlight colour — an attribute Parley does not
+    // track) into a single glyph run: selection geometry resolves the exact
+    // per-line extent of any byte range. Emitted before the glyph runs so the
+    // fill sits behind the text; `span.highlight_color` already folds in the
+    // run-shading (`w:shd`/`fo:background-color`) fallback.
+    for span in &clean_spans {
+        let Some(hl) = span.highlight_color else {
+            continue;
+        };
+        if span.range.start >= span.range.end {
+            continue;
+        }
+        let anchor =
+            Cursor::from_byte_index(&layout, span.range.start, parley::Affinity::Downstream);
+        let focus = Cursor::from_byte_index(&layout, span.range.end, parley::Affinity::Downstream);
+        for (bb, line_idx) in Selection::new(anchor, focus).geometry(&layout) {
+            let mut indent = if line_idx == 0 && para_props.indent_hanging > 0.0 {
+                para_props.indent_start - para_props.indent_hanging
+            } else {
+                para_props.indent_start
+            };
+            if line_idx < drop_lines {
+                indent += drop_shift;
+            }
+            items.push(PositionedItem::FilledRect(PositionedRect {
+                rect: LayoutRect::new(
+                    bb.x0 as f32 + indent,
+                    bb.y0 as f32,
+                    (bb.x1 - bb.x0) as f32,
+                    (bb.y1 - bb.y0) as f32,
+                ),
+                color: hl,
+            }));
+        }
+    }
+
     for line in layout.lines() {
+        // Index into `items` where this line's emitted items begin (used to wrap
+        // them in a clip layer for exact line height).
+        let line_item_start = items.len();
         // Hanging indent: the first line shifts left so the marker is visible to
         // the left of `indent_start`. Subsequent lines use the full `indent_start`.
-        let indent_x = if line_index == 0 && para_props.indent_hanging > 0.0 {
+        let mut indent_x = if line_index == 0 && para_props.indent_hanging > 0.0 {
             para_props.indent_start - para_props.indent_hanging
         } else {
             para_props.indent_start
         };
+        // Leading lines beside a drop cap / float band are shifted right to
+        // clear it; lines below it return to the paragraph's left edge.
+        if line_index < drop_lines {
+            indent_x += drop_shift;
+        }
+        let line_baseline = line.metrics().baseline;
+        // Extra horizontal offset accumulated from horizontally-scaled (w:w)
+        // runs earlier on this line, so later items shift right by the width the
+        // scaling added instead of overlapping. Reset per line.
+        let mut extra_x = 0.0f32;
         for item in line.items() {
             // Math inline box: emit the typeset equation's draw items, offset to
             // the box's resolved position on the line.
@@ -1033,12 +1571,24 @@ fn layout_paragraph_uncached(
                     if let Some((_, render)) = math_boxes.get(mi) {
                         for prim in &render.items {
                             let mut prim = prim.clone();
-                            prim.translate(pib.x + indent_x, pib.y);
+                            prim.translate(pib.x + indent_x + extra_x, pib.y);
                             items.push(prim);
                         }
                         // The box top is at `pib.y` and its baseline at
                         // `pib.y + ascent`; the descent hangs below that.
                         content_bottom = content_bottom.max(pib.y + render.ascent + render.descent);
+                    }
+                } else if (pib.id as usize) < tab_char_positions.len() {
+                    // Tab inline box: draw the stop's leader (if any) across the
+                    // gap the box opened.
+                    if let Some(plan) = tab_plans.get(pib.id as usize) {
+                        emit_tab_leader(
+                            &mut items,
+                            plan.leader,
+                            pib.x + indent_x + extra_x,
+                            pib.x + indent_x + extra_x + pib.width,
+                            line_baseline,
+                        );
                     }
                 }
                 continue;
@@ -1046,171 +1596,59 @@ fn layout_paragraph_uncached(
             let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
                 continue;
             };
-            let run = glyph_run.run();
-            let style = glyph_run.style();
-            let run_offset = glyph_run.offset();
-            let run_baseline = glyph_run.baseline();
-
-            // Intern the font data bytes by pointer identity so all glyph
-            // runs using the same Parley-internal font share the same Arc.
-            // Without this, every run would clone the full font file bytes
-            // (potentially hundreds of KB) producing unique Arc pointers that
-            // defeat the FontDataCache in loki-vello.
-            let raw_bytes: &[u8] = run.font().data.data();
-            let font_data = resources
-                .font_data_cache
-                .entry(raw_bytes.as_ptr() as u64)
-                .or_insert_with(|| Arc::new(raw_bytes.to_vec()))
-                .clone();
-            let synthesis = run.synthesis();
-            let glyphs: Vec<GlyphEntry> = glyph_run
-                .positioned_glyphs()
-                .map(|g| GlyphEntry {
-                    id: g.id as u16,
-                    x: g.x - run_offset,
-                    y: g.y - run_baseline,
-                    advance: g.advance,
-                })
-                .collect();
-
-            let text_range = run.text_range();
-
-            let link_url = span_link_url_for_range(&clean_spans, text_range.clone());
-
-            // ── Vertical offset for super/subscript (gap #3) ───────────────────
-            // Parley does not expose baseline-shift, so font size is reduced to
-            // 58 % in push_para_styles. We manually shift the run origin here so
-            // the text actually appears above/below the baseline.
-            // Superscript: raise by 35 % of the original (pre-reduction) font size.
-            // Subscript:   lower by 20 % of the original font size.
-            let va_offset = span_vertical_align_for_range(&clean_spans, text_range.clone())
-                .map(|(va, orig_size)| match va {
-                    VerticalAlign::Superscript => -orig_size * 0.35,
-                    VerticalAlign::Subscript => orig_size * 0.20,
-                })
-                .unwrap_or(0.0);
-
-            // ── Highlight colour (gap #10) ──────────────────────────────────────
-            // Emit a filled rect sized to the run's ink extent BEFORE the glyph
-            // run so the background renders below the text.
-            if let Some(hl_color) = span_highlight_for_range(&clean_spans, text_range.clone()) {
-                let m = run.metrics();
-                items.push(PositionedItem::FilledRect(PositionedRect {
-                    rect: LayoutRect::new(
-                        run_offset + indent_x,
-                        run_baseline - m.ascent + va_offset,
-                        glyph_run.advance(),
-                        m.ascent + m.descent,
-                    ),
-                    color: hl_color,
-                }));
-            }
-
-            // ── Shadow copy (gap #24) ───────────────────────────────────────────
-            // Emit a dark-grey copy of the run offset by (0.5 pt, 0.5 pt) so
-            // it appears as a hard shadow behind the main run.
-            // TODO(shadow): replace with Vello blur filter for soft shadow once
-            // scene.rs blur pipeline is verified stable (see TODO in scene.rs).
-            if span_has_shadow(&clean_spans, text_range.clone()) {
-                items.push(PositionedItem::GlyphRun(PositionedGlyphRun {
-                    origin: LayoutPoint {
-                        x: run_offset + indent_x + 0.5,
-                        y: run_baseline + va_offset + 0.5,
-                    },
-                    font_data: font_data.clone(),
-                    font_index: run.font().index,
-                    font_size: run.font_size(),
-                    glyphs: glyphs.clone(),
-                    color: LayoutColor::new(0.4, 0.4, 0.4, 1.0),
-                    synthesis: GlyphSynthesis {
-                        bold: synthesis.embolden(),
-                        italic: synthesis.skew().is_some(),
-                    },
-                    link_url: None, // shadows don't carry link metadata
-                }));
-            }
-
-            // ── Main glyph run ──────────────────────────────────────────────────
-            items.push(PositionedItem::GlyphRun(PositionedGlyphRun {
-                origin: LayoutPoint {
-                    x: run_offset + indent_x,
-                    y: run_baseline + va_offset,
-                },
-                font_data,
-                font_index: run.font().index,
-                font_size: run.font_size(),
-                glyphs,
-                color: style.brush,
-                synthesis: GlyphSynthesis {
-                    bold: synthesis.embolden(),
-                    italic: synthesis.skew().is_some(),
-                },
-                link_url,
-            }));
-
-            // Underline decoration.
-            if let Some(deco) = &style.underline {
-                let m = run.metrics();
-                // COMPAT(parley-0.6): RunMetrics offsets follow OpenType / skrifa
-                // Y-up convention (negative = below baseline). Negate to convert
-                // to screen Y-down (positive = below baseline).
-                items.push(PositionedItem::Decoration(PositionedDecoration {
-                    x: run_offset + indent_x,
-                    y: run_baseline - deco.offset.unwrap_or(m.underline_offset),
-                    width: glyph_run.advance(),
-                    thickness: deco.size.unwrap_or(m.underline_size),
-                    kind: DecorationKind::Underline,
-                    color: deco.brush,
-                }));
-            }
-
-            // Strikethrough decoration.
-            if let Some(deco) = &style.strikethrough {
-                let m = run.metrics();
-                // COMPAT(parley-0.6): same Y-up → Y-down negation as underline.
-                items.push(PositionedItem::Decoration(PositionedDecoration {
-                    x: run_offset + indent_x,
-                    y: run_baseline - deco.offset.unwrap_or(m.strikethrough_offset),
-                    width: glyph_run.advance(),
-                    thickness: deco.size.unwrap_or(m.strikethrough_size),
-                    kind: DecorationKind::Strikethrough,
-                    color: deco.brush,
-                }));
-            }
+            let scale =
+                span_scale_for_range(&clean_spans, glyph_run.run().text_range()).unwrap_or(1.0);
+            // Reserve the extra width the run rendered (scaling, per-glyph or
+            // uniform) so later runs on the line do not overlap.
+            extra_x += crate::para_emit::emit_glyph_run(
+                &glyph_run,
+                indent_x + extra_x,
+                &clean_spans,
+                scale,
+                resources,
+                &mut items,
+                // Highlights are emitted by the selection-geometry pass below.
+                false,
+            );
+        }
+        if let Some(pts) = exact_line_pts {
+            // Clip this line's items to its fixed-height box. The clip is wide
+            // horizontally (exact governs the vertical extent only; horizontal
+            // overflow is handled by margins/wrapping, as in Word) and exactly
+            // `pts` tall.
+            //
+            // Word anchors the exact line box at the BOTTOM of the text: the box
+            // bottom sits at the baseline + descent and the top is `pts` above
+            // it, so when the font is taller than `pts` the ascenders (and a
+            // raised superscript) are clipped while descenders are preserved —
+            // the well-known "tops cut off" behaviour of small exact spacing.
+            // (A symmetric/centered box would instead clip descenders too, which
+            // does not match Word.) Consecutive boxes still tile exactly because
+            // Parley advances the baseline by `pts`.
+            let lm = line.metrics();
+            let top = lm.baseline + lm.descent - pts;
+            let clipped: Vec<PositionedItem> = items.split_off(line_item_start);
+            items.push(PositionedItem::ClippedGroup {
+                clip_rect: LayoutRect::new(-line_w, top, line_w * 3.0, pts),
+                items: clipped,
+            });
         }
         line_index += 1;
     }
 
-    // Prepend border (below background so it renders on top).
-    let has_border = para_props.border_top.is_some()
-        || para_props.border_right.is_some()
-        || para_props.border_bottom.is_some()
-        || para_props.border_left.is_some();
-    if has_border {
-        let bw = total_width + para_props.indent_start + para_props.indent_end;
-        items.insert(
-            0,
-            PositionedItem::BorderRect(PositionedBorderRect {
-                rect: LayoutRect::new(0.0, 0.0, bw, total_height),
-                top: para_props.border_top,
-                right: para_props.border_right,
-                bottom: para_props.border_bottom,
-                left: para_props.border_left,
-            }),
-        );
+    // A drop cap reaches this fallback only in the editor (`preserve_for_editing`),
+    // where the body is one hit-testable layout; emit its enlarged initial at the
+    // paragraph's left edge, above the shifted body lines.
+    if let Some((p, _)) = &drop_plan {
+        for it in &p.items {
+            let mut it = it.clone();
+            it.translate(para_props.indent_start, 0.0);
+            items.push(it);
+        }
+        content_bottom = content_bottom.max(p.bottom);
     }
 
-    // Prepend background fill.
-    if let Some(bg) = para_props.background_color {
-        let bw = total_width + para_props.indent_start + para_props.indent_end;
-        items.insert(
-            0,
-            PositionedItem::FilledRect(PositionedRect {
-                rect: LayoutRect::new(0.0, 0.0, bw, total_height),
-                color: bg,
-            }),
-        );
-    }
+    prepend_para_box(&mut items, para_props, total_width, total_height);
 
     let parley_layout = if preserve_for_editing {
         Some(Arc::new(layout))
@@ -1232,6 +1670,8 @@ fn layout_paragraph_uncached(
         clean_to_orig,
         indent_start: para_props.indent_start,
         indent_hanging: para_props.indent_hanging,
+        drop_lines,
+        drop_shift,
     }
 }
 
@@ -1304,7 +1744,10 @@ fn format_numbered_label(list_levels: &[ListLevel], format: &str, counters: &[u3
 }
 
 /// Format a single counter value according to its numbering scheme.
-fn format_counter(n: u32, scheme: NumberingScheme) -> String {
+///
+/// Shared by list-marker rendering and page-number fields (OOXML
+/// `w:pgNumType @w:fmt`).
+pub(crate) fn format_counter(n: u32, scheme: NumberingScheme) -> String {
     match scheme {
         NumberingScheme::Decimal => n.to_string(),
         NumberingScheme::LowerAlpha => alpha_label(n, false),
@@ -1379,16 +1822,40 @@ fn ordinal_suffix(n: u32) -> &'static str {
 
 /// Returns the highlight colour for the first span fully containing
 /// `text_range`, or `None` if no such span has a highlight.
-fn span_highlight_for_range(spans: &[StyleSpan], text_range: Range<usize>) -> Option<LayoutColor> {
+/// Returns the span whose byte range contains `offset`, or `None` if no span
+/// covers it. Empty (zero-width) spans never match. Used by per-glyph emission
+/// to resolve each glyph's scale / baseline shift.
+pub(crate) fn span_at_offset(spans: &[StyleSpan], offset: usize) -> Option<&StyleSpan> {
+    spans
+        .iter()
+        .find(|s| s.range.start <= offset && offset < s.range.end)
+}
+
+pub(crate) fn span_highlight_for_range(
+    spans: &[StyleSpan],
+    text_range: Range<usize>,
+) -> Option<LayoutColor> {
     spans
         .iter()
         .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
         .and_then(|s| s.highlight_color)
 }
 
+/// Returns the horizontal text scale for the first span fully containing
+/// `text_range`, or `None` when the run is unscaled (100 %).
+pub(crate) fn span_scale_for_range(spans: &[StyleSpan], text_range: Range<usize>) -> Option<f32> {
+    spans
+        .iter()
+        .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
+        .and_then(|s| s.scale)
+}
+
 /// Returns the link URL for the first span fully containing `text_range`,
 /// or `None` if no span in that range carries a link URL.
-fn span_link_url_for_range(spans: &[StyleSpan], text_range: Range<usize>) -> Option<String> {
+pub(crate) fn span_link_url_for_range(
+    spans: &[StyleSpan],
+    text_range: Range<usize>,
+) -> Option<String> {
     spans
         .iter()
         .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
@@ -1397,7 +1864,7 @@ fn span_link_url_for_range(spans: &[StyleSpan], text_range: Range<usize>) -> Opt
 
 /// Returns `true` if the first span fully containing `text_range` has
 /// `shadow = true`.
-fn span_has_shadow(spans: &[StyleSpan], text_range: Range<usize>) -> bool {
+pub(crate) fn span_has_shadow(spans: &[StyleSpan], text_range: Range<usize>) -> bool {
     spans
         .iter()
         .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
@@ -1407,7 +1874,7 @@ fn span_has_shadow(spans: &[StyleSpan], text_range: Range<usize>) -> bool {
 /// Returns the vertical alignment and original (pre-reduction) font size for
 /// the first span fully containing `text_range`, or `None` if no vertical
 /// alignment is set on that span.
-fn span_vertical_align_for_range(
+pub(crate) fn span_vertical_align_for_range(
     spans: &[StyleSpan],
     text_range: Range<usize>,
 ) -> Option<(VerticalAlign, f32)> {

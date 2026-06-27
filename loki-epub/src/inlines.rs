@@ -3,11 +3,28 @@
 
 //! Inline-level XHTML rendering for the EPUB content document.
 
+use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
 use loki_doc_model::content::inline::{Inline, QuoteType};
 use loki_doc_model::style::props::char_props::{CharProps, VerticalAlign};
 
 use crate::content::RenderCtx;
 use crate::xml::{escape_attr, escape_text};
+
+/// Maps a floating image's [`FloatWrap`] to an inline CSS `float` declaration so
+/// the reflowable EPUB flows text around it (the reflow-target equivalent of the
+/// paginated wrap band). Side-wrapping floats only; `TopAndBottom`/behind-text
+/// floats stay block-level (`None`). `WrapSide` names the side **text** occupies,
+/// so the float sits opposite (mirrors `loki-layout`'s `plan_float`).
+pub(crate) fn float_css(wrap: &FloatWrap) -> Option<&'static str> {
+    if wrap.behind_text || matches!(wrap.wrap, TextWrap::TopAndBottom) {
+        return None;
+    }
+    Some(match wrap.side {
+        // Text on the left → image floats right; otherwise image floats left.
+        WrapSide::Left => "float:right; margin:0 0 0.4em 0.8em; max-width:45%; height:auto;",
+        _ => "float:left; margin:0 0.8em 0.4em 0; max-width:45%; height:auto;",
+    })
+}
 
 impl RenderCtx {
     /// Renders a sequence of inlines.
@@ -48,9 +65,11 @@ impl RenderCtx {
                 self.render_inlines(c, out);
                 out.push_str("</a>");
             }
-            Inline::Image(_attr, alt, target) => {
+            Inline::Image(attr, alt, target) => {
                 let alt_text = plain_text(alt);
-                self.render_image(&target.url, &alt_text, out);
+                // A floating image becomes a CSS `float` so text wraps around it.
+                let style = FloatWrap::read(attr).as_ref().and_then(float_css);
+                self.render_image(&target.url, &alt_text, style, out);
             }
             Inline::StyledRun(run) => {
                 self.render_styled_run(run.direct_props.as_deref(), &run.content, out)

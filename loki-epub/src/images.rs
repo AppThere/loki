@@ -29,15 +29,28 @@ pub struct EpubImage {
 impl RenderCtx {
     /// Renders an inline image, packaging a `data:` URI as a resource or
     /// referencing an external URL directly.
-    pub(crate) fn render_image(&mut self, url: &str, alt: &str, out: &mut String) {
+    ///
+    /// `style` is an optional inline CSS declaration (e.g. a `float` for a
+    /// wrapped floating image); `None` emits a plain `<img>`.
+    pub(crate) fn render_image(
+        &mut self,
+        url: &str,
+        alt: &str,
+        style: Option<&str>,
+        out: &mut String,
+    ) {
         let alt_attr = escape_attr(alt);
+        let style_attr = match style {
+            Some(s) => format!(" style=\"{}\"", escape_attr(s)),
+            None => String::new(),
+        };
         if let Some((media_type, bytes)) = decode_data_uri(url) {
             let ext = extension_for(&media_type);
             let id = format!("img{}", self.image_seq);
             let href = format!("images/{id}.{ext}");
             self.image_seq += 1;
             out.push_str(&format!(
-                "<img src=\"{href}\" alt=\"{alt_attr}\"/>",
+                "<img src=\"{href}\" alt=\"{alt_attr}\"{style_attr}/>",
                 href = escape_attr(&href),
             ));
             self.images.push(EpubImage {
@@ -49,7 +62,7 @@ impl RenderCtx {
         } else if !url.is_empty() {
             // External URL — referenced but not packaged.
             out.push_str(&format!(
-                "<img src=\"{src}\" alt=\"{alt_attr}\"/>",
+                "<img src=\"{src}\" alt=\"{alt_attr}\"{style_attr}/>",
                 src = escape_attr(url),
             ));
         } else {

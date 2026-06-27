@@ -13,10 +13,11 @@ use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
 use loki_doc_model::layout::page::{
     PageLayout, PageMargins, PageOrientation, PageSize, SectionColumns,
 };
-use loki_doc_model::layout::section::Section;
+use loki_doc_model::layout::section::{Section, SectionStart};
 use loki_doc_model::meta::core::DocumentMeta;
 use loki_doc_model::settings::DocumentSettings;
 use loki_doc_model::style::catalog::StyleCatalog;
+use loki_doc_model::style::list_style::NumberingScheme;
 use loki_opc::PartData;
 use loki_primitives::units::Points;
 
@@ -57,6 +58,17 @@ pub(crate) struct MappingContext<'a> {
 }
 
 // ── Page layout ───────────────────────────────────────────────────────────────
+
+/// Maps a `w:sectPr/w:type @w:val` token to a [`SectionStart`].
+fn map_section_start(section_type: Option<&str>) -> SectionStart {
+    match section_type {
+        Some("continuous") => SectionStart::Continuous,
+        Some("evenPage") => SectionStart::EvenPage,
+        Some("oddPage") => SectionStart::OddPage,
+        // "nextPage" or absent (the default).
+        _ => SectionStart::NewPage,
+    }
+}
 
 /// Converts a [`DocxSectPr`] to a [`PageLayout`].
 ///
@@ -116,7 +128,25 @@ fn map_page_layout(sect_pr: Option<&DocxSectPr>) -> PageLayout {
         });
     }
 
+    // Page numbering: format (roman/alpha) and restart value from w:pgNumType.
+    layout.page_number_format = sp.pg_num_fmt.as_deref().map(map_page_num_fmt);
+    layout.page_number_start = sp.pg_num_start;
+
     layout
+}
+
+/// Maps an OOXML `w:pgNumType @w:fmt` token to a [`NumberingScheme`].
+///
+/// Unknown formats fall back to decimal (ECMA-376 §17.6.12 lists the same
+/// `w:numFmt` token set used for list numbering).
+fn map_page_num_fmt(fmt: &str) -> NumberingScheme {
+    match fmt {
+        "lowerRoman" => NumberingScheme::LowerRoman,
+        "upperRoman" => NumberingScheme::UpperRoman,
+        "lowerLetter" => NumberingScheme::LowerAlpha,
+        "upperLetter" => NumberingScheme::UpperAlpha,
+        _ => NumberingScheme::Decimal,
+    }
 }
 
 // ── Header / footer helpers ───────────────────────────────────────────────────
@@ -350,7 +380,10 @@ pub(crate) fn map_document(
                     );
                     sections.push(Section {
                         layout,
-                        blocks: std::mem::take(&mut current_blocks),
+                        blocks: super::drop_cap_merge::merge_drop_cap_frames(std::mem::take(
+                            &mut current_blocks,
+                        )),
+                        start: map_section_start(sp.section_type.as_deref()),
                         extensions: ExtensionBag::default(),
                     });
                 }
@@ -373,7 +406,13 @@ pub(crate) fn map_document(
     );
     sections.push(Section {
         layout: final_layout,
-        blocks: current_blocks,
+        blocks: super::drop_cap_merge::merge_drop_cap_frames(current_blocks),
+        start: map_section_start(
+            doc.body
+                .final_sect_pr
+                .as_ref()
+                .and_then(|sp| sp.section_type.as_deref()),
+        ),
         extensions: ExtensionBag::default(),
     });
 
@@ -421,6 +460,19 @@ mod tests {
         }
     }
 
+    #[test]
+    fn section_type_maps_to_section_start() {
+        assert_eq!(
+            map_section_start(Some("continuous")),
+            SectionStart::Continuous
+        );
+        assert_eq!(map_section_start(Some("evenPage")), SectionStart::EvenPage);
+        assert_eq!(map_section_start(Some("oddPage")), SectionStart::OddPage);
+        assert_eq!(map_section_start(Some("nextPage")), SectionStart::NewPage);
+        // Absent / unknown → the default (nextPage).
+        assert_eq!(map_section_start(None), SectionStart::NewPage);
+    }
+
     fn sect_pr_a4() -> DocxSectPr {
         DocxSectPr {
             pg_sz: Some(DocxPgSz {
@@ -441,6 +493,9 @@ mod tests {
             footer_refs: vec![],
             title_page: false,
             cols: None,
+            pg_num_fmt: None,
+            pg_num_start: None,
+            section_type: None,
         }
     }
 

@@ -114,6 +114,63 @@ fn doc_defaults_create_synthetic_root() {
 }
 
 #[test]
+fn default_paragraph_style_resolves_doc_default_font() {
+    use crate::docx::model::paragraph::{DocxRFonts, DocxRPr};
+    // docDefaults font Calibri, no explicit pStyle → Normal synthesized.
+    let styles = DocxStyles {
+        default_rpr: Some(DocxRPr {
+            fonts: Some(DocxRFonts {
+                ascii: Some("Calibri".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+        default_ppr: None,
+        styles: vec![],
+    };
+    let catalog = map_styles(&styles);
+
+    // A bare paragraph (no w:pStyle) must resolve through the recorded default
+    // paragraph style, which inherits the docDefaults font.
+    let def = catalog
+        .default_paragraph_style
+        .clone()
+        .expect("default paragraph style recorded");
+    assert_eq!(def, StyleId::new("Normal"));
+    let resolved = catalog
+        .effective_paragraph_style(None)
+        .and_then(|id| catalog.resolve_char(id))
+        .expect("bare paragraph resolves the default style");
+    assert_eq!(resolved.font_name.as_deref(), Some("Calibri"));
+}
+
+#[test]
+fn explicit_default_paragraph_style_is_preferred() {
+    // A paragraph style flagged w:default="1" wins over the synthesized Normal.
+    let styles = DocxStyles {
+        default_rpr: None,
+        default_ppr: None,
+        styles: vec![DocxStyle {
+            style_type: DocxStyleType::Paragraph,
+            style_id: "MyBody".into(),
+            is_default: true,
+            is_custom: false,
+            name: Some("My Body".into()),
+            based_on: None,
+            next: None,
+            link: None,
+            ppr: None,
+            rpr: None,
+        }],
+    };
+    let catalog = map_styles(&styles);
+    assert_eq!(
+        catalog.default_paragraph_style,
+        Some(StyleId::new("MyBody"))
+    );
+}
+
+#[test]
 fn duplicate_style_ids_last_definition_wins() {
     use crate::docx::model::paragraph::DocxRPr;
     use loki_primitives::units::Points;

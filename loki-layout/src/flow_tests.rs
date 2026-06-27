@@ -396,6 +396,7 @@ fn heading_block_does_not_panic() {
     let mut r = test_resources();
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![Block::Heading(
             1,
             NodeAttr::default(),
@@ -451,6 +452,19 @@ fn has_clipped_group(items: &[PositionedItem]) -> bool {
     items
         .iter()
         .any(|i| matches!(i, PositionedItem::ClippedGroup { .. }))
+}
+
+/// Recursively checks for any glyph run, descending into clip/rotation groups.
+/// Table cell content is wrapped in a per-cell `ClippedGroup`, so a flat scan
+/// would miss it.
+fn any_glyph_run(items: &[PositionedItem]) -> bool {
+    items.iter().any(|i| match i {
+        PositionedItem::GlyphRun(_) => true,
+        PositionedItem::ClippedGroup { items, .. } | PositionedItem::RotatedGroup { items, .. } => {
+            any_glyph_run(items)
+        }
+        _ => false,
+    })
 }
 
 // ── Paragraph splitting tests ─────────────────────────────────────────────────
@@ -1070,6 +1084,7 @@ fn table_2x2_renders_on_one_page() {
     let mut r = test_resources();
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![make_table_2x2(None)],
         extensions: ExtensionBag::default(),
     };
@@ -1080,10 +1095,7 @@ fn table_2x2_renders_on_one_page() {
         "2×2 table should fit on one page, got {}",
         pages.len()
     );
-    let has_runs = pages[0]
-        .content_items
-        .iter()
-        .any(|i| matches!(i, PositionedItem::GlyphRun(_)));
+    let has_runs = any_glyph_run(&pages[0].content_items);
     assert!(has_runs, "table cells must produce glyph runs");
 }
 
@@ -1098,6 +1110,7 @@ fn table_cell_background_produces_filled_rect() {
     };
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![make_table_2x2(Some(props))],
         extensions: ExtensionBag::default(),
     };
@@ -1131,6 +1144,7 @@ fn table_cell_borders_produce_border_rect() {
     };
     let section = Section {
         layout: PageLayout::default(),
+        start: Default::default(),
         blocks: vec![make_table_2x2(Some(props))],
         extensions: ExtensionBag::default(),
     };
@@ -1201,6 +1215,7 @@ mod page_fields {
             &FieldContext {
                 page_number: 7,
                 page_count: 12,
+                number_format: None,
             },
         );
         let Block::StyledPara(p) = &blocks[0] else {
@@ -1215,6 +1230,33 @@ mod page_fields {
             })
             .collect();
         assert_eq!(text, "Page 7 of 12");
+    }
+
+    #[test]
+    fn substitution_formats_page_number_as_lower_roman() {
+        let mut blocks = page_field_footer().blocks;
+        substitute_page_fields(
+            &mut blocks,
+            &FieldContext {
+                page_number: 7,
+                page_count: 12,
+                // w:pgNumType w:fmt="lowerRoman"
+                number_format: Some(loki_doc_model::style::list_style::NumberingScheme::LowerRoman),
+            },
+        );
+        let Block::StyledPara(p) = &blocks[0] else {
+            panic!("expected StyledPara");
+        };
+        let text: String = p
+            .inlines
+            .iter()
+            .map(|i| match i {
+                Inline::Str(s) => s.as_str(),
+                _ => "<non-text>",
+            })
+            .collect();
+        // Page number 7 → "vii"; NUMPAGES stays decimal.
+        assert_eq!(text, "Page vii of 12");
     }
 
     #[test]
@@ -1289,5 +1331,92 @@ mod page_fields {
         let f1 = format!("{:?}", pages[0].footer_items);
         let f2 = format!("{:?}", pages[1].footer_items);
         assert_eq!(f1, f2, "static footers should be identical on every page");
+    }
+
+    /// A floating image taller than its short anchoring paragraph keeps wrapping
+    /// the *following* paragraph beside it (cross-paragraph wrap), and text below
+    /// the float reclaims the full column width.
+    #[test]
+    fn tall_float_wraps_following_paragraph() {
+        use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
+        use loki_doc_model::content::inline::LinkTarget;
+
+        fn floating_image(cx_emu: u64, cy_emu: u64) -> Inline {
+            let mut attr = NodeAttr::default();
+            attr.kv.push(("cx_emu".into(), cx_emu.to_string()));
+            attr.kv.push(("cy_emu".into(), cy_emu.to_string()));
+            // side = Right (text on the right) → float on the LEFT, text shifts right.
+            FloatWrap {
+                wrap: TextWrap::Square,
+                side: WrapSide::Right,
+                behind_text: false,
+            }
+            .store(&mut attr);
+            Inline::Image(attr, vec![], LinkTarget::new("data:image/png;base64,AAAA"))
+        }
+
+        let mut r = test_resources();
+        // 1 in × 1 in float (72 × 72 pt) anchored in a one-word paragraph.
+        let anchor = StyledParagraph {
+            style_id: None,
+            direct_para_props: None,
+            direct_char_props: None,
+            inlines: vec![floating_image(914_400, 914_400), Inline::Str("Hi.".into())],
+            attr: NodeAttr::default(),
+        };
+        // A long follower that wraps for many lines — past the float bottom.
+        let follower_text = "The quick brown fox jumps over the lazy dog. ".repeat(14);
+        let follower = make_para(&follower_text);
+        let section = section_of(vec![anchor, follower], PageLayout::default());
+
+        let (items, _h, _w) = flow_pageless(&mut r, &section);
+
+        // The float image is a tall item at the left edge.
+        let img = items
+            .iter()
+            .find_map(|i| match i {
+                PositionedItem::Image(im) => Some(im),
+                _ => None,
+            })
+            .expect("float image emitted");
+        // In Canvas/Pageless output, content x carries the left-margin offset, so
+        // a left float sits at ≈ the left margin rather than literal 0.
+        let left_edge = img.rect.origin.x;
+        assert!((img.rect.size.height - 72.0).abs() < 1.0, "1 in tall float");
+
+        // Glyph-run origins by y.
+        let glyphs: Vec<(f32, f32)> = items
+            .iter()
+            .filter_map(|i| match i {
+                PositionedItem::GlyphRun(g) => Some((g.origin.y, g.origin.x)),
+                _ => None,
+            })
+            .collect();
+
+        // The FOLLOWER's first lines (below the one-line anchor, still within the
+        // 72 pt float extent: y ∈ 20..60) are shifted right to clear the band.
+        let beside_min_x = glyphs
+            .iter()
+            .filter(|(y, _)| *y > 20.0 && *y < 60.0)
+            .map(|(_, x)| *x)
+            .fold(f32::INFINITY, f32::min);
+        assert!(
+            beside_min_x > left_edge + 70.0,
+            "follower lines beside the float must clear the band; \
+             min x = {beside_min_x}, float left = {left_edge}"
+        );
+
+        // Lines below the float (y > 90) reclaim the full column (back to the
+        // float's own left edge, i.e. the column start).
+        let below_min_x = glyphs
+            .iter()
+            .filter(|(y, _)| *y > 90.0)
+            .map(|(_, x)| *x)
+            .fold(f32::INFINITY, f32::min);
+        assert!(
+            below_min_x < left_edge + 5.0,
+            "text below the float must reclaim full width; \
+             min x = {below_min_x}, float left = {left_edge}"
+        );
     }
 }

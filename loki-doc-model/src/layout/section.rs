@@ -14,6 +14,28 @@ use crate::content::attr::ExtensionBag;
 use crate::content::block::Block;
 use crate::layout::page::PageLayout;
 
+/// How a section begins relative to the preceding one.
+///
+/// OOXML `w:sectPr/w:type w:val` (ECMA-376 §17.6.22). The first section's value
+/// is immaterial (it starts the document). ODF has no direct equivalent —
+/// master-page transitions are always page breaks — so ODF import always yields
+/// [`SectionStart::NewPage`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum SectionStart {
+    /// `continuous` — the section continues on the **same page** as the previous
+    /// one (no page break), typically only changing the column layout.
+    Continuous,
+    /// `nextPage` (the default) — the section starts on a new page.
+    #[default]
+    NewPage,
+    /// `evenPage` — the section starts on the next even-numbered page.
+    EvenPage,
+    /// `oddPage` — the section starts on the next odd-numbered page.
+    OddPage,
+}
+
 /// A document section — a contiguous sequence of blocks sharing a
 /// common page layout.
 ///
@@ -30,6 +52,8 @@ pub struct Section {
     pub layout: PageLayout,
     /// The block-level content of this section.
     pub blocks: Vec<Block>,
+    /// How this section begins relative to the previous one (`w:sectPr/w:type`).
+    pub start: SectionStart,
     /// Format-specific extension data.
     pub extensions: ExtensionBag,
 }
@@ -41,6 +65,7 @@ impl Section {
         Self {
             layout: PageLayout::default(),
             blocks: Vec::new(),
+            start: SectionStart::default(),
             extensions: ExtensionBag::default(),
         }
     }
@@ -51,6 +76,7 @@ impl Section {
         Self {
             layout,
             blocks,
+            start: SectionStart::default(),
             extensions: ExtensionBag::default(),
         }
     }
@@ -90,10 +116,14 @@ mod tests {
 
     #[test]
     fn two_sections_with_different_page_sizes() {
-        let mut layout_a = PageLayout::default();
-        layout_a.page_size = PageSize::a4();
-        let mut layout_b = PageLayout::default();
-        layout_b.page_size = PageSize::letter();
+        let layout_a = PageLayout {
+            page_size: PageSize::a4(),
+            ..Default::default()
+        };
+        let layout_b = PageLayout {
+            page_size: PageSize::letter(),
+            ..Default::default()
+        };
 
         let s1 = Section::with_layout_and_blocks(layout_a, vec![]);
         let s2 = Section::with_layout_and_blocks(layout_b, vec![]);

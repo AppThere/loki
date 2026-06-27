@@ -132,7 +132,7 @@ lines). The full list and a proposed split strategy live in
 offenders are below. This is a dedicated split-pass backlog, not a per-change
 blocker — but do not *grow* these files or add new ones over the ceiling.
 
-The split pass is **in progress** — **10 of 43 files done** (≈33 remain). Two
+The split pass is **in progress** — **11 of 43 files done** (≈32 remain). Two
 techniques:
 1. *Inline-test extraction* (safest, no production-code change): move a file's
    `#[cfg(test)] mod tests { … }` into a sibling `<name>_tests.rs` referenced via
@@ -141,9 +141,13 @@ techniques:
    `odt/mapper/lists.rs`, `layout/result.rs`, `renderer/render_layout.rs` — each
    was over the ceiling only because of a large inline test module.
 2. *Directory split*: convert `foo.rs` → a `foo/` directory with section-cohesive
-   submodules (each starting `use super::*;`), re-export the public entry points
-   from `foo/mod.rs`, and move the tests via the same `#[path]` idiom. Done for
-   `odt/mapper/props.rs` → `odt/mapper/props/` (worked example).
+   submodules, re-export the public entry points from `foo/mod.rs`, and move the
+   tests via the same `#[path]` idiom. Give each submodule its **own explicit
+   `use` list** (importing siblings via `use super::sibling::fn`) — `use super::*`
+   trips `clippy::wildcard_imports`. Done for `odt/mapper/props.rs` →
+   `odt/mapper/props/` and `odt/mapper/document.rs` →
+   `odt/mapper/document/` (`mod`/`inlines`/`frames`/`blocks`/`page`/`meta`; worked
+   examples).
 
 (Test files are exempt from the production-line count.)
 
@@ -156,9 +160,11 @@ techniques:
 | `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1241 | High |
 | `loki-ooxml/src/docx/write/document.rs` | 1169 | High |
 | `loki-ooxml/src/docx/reader/document.rs` | 1126 | High |
-| `loki-odf/src/odt/mapper/document.rs` | 1094 | High |
 | `loki-text/src/routes/editor/editor_inner.rs` | 968 | High |
 | … 24 more (300–600 lines) — see the audit (10 files split 2026-06-21) | | |
+
+(`odt/mapper/document.rs` (1094 lines) was split into the `odt/mapper/document/`
+directory on 2026-06-26 — each module is now under the ceiling.)
 
 (`read.rs` was split into `read.rs` + `props_read.rs`; both are now under 300
 lines. `loro_bridge/inlines.rs` is now 219 lines, under the ceiling.

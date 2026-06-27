@@ -256,6 +256,8 @@ pub(super) fn render_canvas_area(
                 loro_doc,
                 cursor_state,
                 page_gap_px,
+                view_mode,
+                scroll_metrics,
             ),
 
             ontouchend: make_touchend_handler(
@@ -266,6 +268,8 @@ pub(super) fn render_canvas_area(
                 loro_doc,
                 cursor_state,
                 page_gap_px,
+                view_mode,
+                scroll_metrics,
             ),
 
             onkeydown: make_keydown_handler(

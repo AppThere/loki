@@ -79,6 +79,8 @@ pub struct DocxTblPr {
     pub style_id: Option<String>,
     /// Table width from `w:tblW`.
     pub width: Option<DocxTblWidth>,
+    /// `w:tblLayout @w:type` — `"fixed"` or `"autofit"` (the default).
+    pub layout: Option<String>,
 }
 
 /// Table width specification from `w:tblW` (ECMA-376 §17.4.63).
@@ -112,8 +114,10 @@ pub struct DocxTrPr {
 pub struct DocxTableCell {
     /// Cell properties from `w:tcPr`.
     pub tc_pr: Option<DocxTcPr>,
-    /// Content paragraphs and nested tables.
-    pub paragraphs: Vec<super::paragraph::DocxParagraph>,
+    /// Ordered block-level content: paragraphs and nested tables (`w:tbl`
+    /// inside `w:tc`, ECMA-376 §17.4.4). Reuses the body child enum so a cell
+    /// can interleave paragraphs and tables in document order.
+    pub children: Vec<super::document::DocxBodyChild>,
 }
 
 /// Cell margins from `w:tcMar` (ECMA-376 §17.4.68).
@@ -152,6 +156,10 @@ pub struct DocxTcPr {
     pub v_merge: Option<DocxVMerge>,
     /// Cell shading fill color from `w:shd @w:fill` (hex, no `#`).
     pub shd_fill: Option<String>,
+    /// Cell shading pattern from `w:shd @w:val` (e.g. `clear`, `pct25`).
+    pub shd_val: Option<String>,
+    /// Cell shading pattern foreground from `w:shd @w:color` (hex).
+    pub shd_color: Option<String>,
     /// Cell borders from `w:tcBorders`.
     pub tc_borders: Option<DocxTcBorders>,
     /// Cell margins from `w:tcMar`. Values in twips; divide by 20 for points.

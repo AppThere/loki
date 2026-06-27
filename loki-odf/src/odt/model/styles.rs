@@ -75,6 +75,9 @@ pub(crate) struct OdfStyle {
     pub col_width: Option<String>,
     /// Properties for `style:family="table-cell"` styles.
     pub cell_props: Option<OdfCellProps>,
+    /// `style:wrap` / `style:run-through` from `style:graphic-properties`, if
+    /// present. Only set for `style:family="graphic"` styles applied to frames.
+    pub graphic_wrap: Option<OdfGraphicWrap>,
     /// `true` for styles from `office:automatic-styles`.
     pub is_automatic: bool,
     /// `style:master-page-name` — for paragraph styles, the master page this
@@ -85,6 +88,16 @@ pub(crate) struct OdfStyle {
     // margins, headers/footers) applies from that paragraph onward until
     // the next transition or end of document. ODF 1.3 §16.9.
     pub master_page_name: Option<String>,
+}
+
+/// `style:graphic-properties` wrap attributes (ODF 1.3 §20.x). Raw strings.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct OdfGraphicWrap {
+    /// `style:wrap` — `"none"`, `"parallel"`, `"run-through"`, `"left"`,
+    /// `"right"`, `"dynamic"`, `"biggest"`.
+    pub wrap: Option<String>,
+    /// `style:run-through` — `"foreground"` or `"background"` (behind text).
+    pub run_through: Option<String>,
 }
 
 /// The family of ODF elements a style applies to.
@@ -176,6 +189,19 @@ pub(crate) struct OdfParaProps {
     pub tab_stops: Vec<OdfTabStop>,
     /// `style:writing-mode` — text direction, e.g. `"lr-tb"`, `"rl-tb"`.
     pub writing_mode: Option<String>,
+    /// `style:drop-cap` child element, if present. ODF 1.3 §20.342.
+    pub drop_cap: Option<OdfDropCap>,
+}
+
+/// `style:drop-cap` element (ODF 1.3 §20.342). Raw attribute strings.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct OdfDropCap {
+    /// `style:lines` — number of lines the cap spans.
+    pub lines: Option<String>,
+    /// `style:length` — `"word"` or an integer character count.
+    pub length: Option<String>,
+    /// `style:distance` — gap between cap and body text (length).
+    pub distance: Option<String>,
 }
 
 /// A single tab stop within a paragraph style.

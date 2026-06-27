@@ -134,6 +134,23 @@ pub(crate) fn map_styles(styles: &DocxStyles) -> StyleCatalog {
             .insert(StyleId::new("Normal"), normal_style);
     }
 
+    // Record the document's default paragraph style — the one a bare paragraph
+    // (no `w:pStyle`) inherits from. Prefer the explicit `w:default="1"`
+    // paragraph style; fall back to the canonical/synthesized `Normal`. Through
+    // its parent chain this reaches `__DocDefault` (w:docDefaults), so default-
+    // font body text picks up the document base font instead of engine defaults.
+    catalog.default_paragraph_style = styles
+        .styles
+        .iter()
+        .find(|s| matches!(s.style_type, DocxStyleType::Paragraph) && s.is_default)
+        .map(|s| StyleId::new(&s.style_id))
+        .or_else(|| {
+            catalog
+                .paragraph_styles
+                .contains_key(&StyleId::new("Normal"))
+                .then(|| StyleId::new("Normal"))
+        });
+
     catalog
 }
 

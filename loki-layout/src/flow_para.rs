@@ -70,6 +70,9 @@ const CHAIN_LIMIT: usize = 5;
 /// Resolve, lay out, and place a single paragraph block.
 pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, block_index: usize) {
     let mut resolved = resolve_para_props(para, state.catalog);
+    // Inherit the cell-content word-breaking flag from the flow state so a long
+    // unbreakable word wraps to the column width instead of overflowing.
+    resolved.break_long_words = state.break_long_words;
 
     // ── List level indentation fallback ─────────────────────────────────────
     // OOXML defines indentation on both the paragraph and its numbering level.
@@ -135,14 +138,53 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     let effective_para: &StyledParagraph = owned_para.as_ref().unwrap_or(para);
     // ────────────────────────────────────────────────────────────────────────
 
-    let (text, spans, images, notes) =
+    let (text, spans, mut images, notes) =
         flatten_paragraph(effective_para, state.catalog, &mut state.note_counter);
     state.pending_footnotes.extend(notes);
+
+    // ── Floating image wrap (gap #12) ────────────────────────────────────────
+    // Reserve a side band so the paragraph's text wraps beside a square/tight/
+    // through float; the float image itself is emitted after text layout. The
+    // floated image is removed from the inline/block image set so it is not also
+    // stacked above the text.
+    let float_plan = super::float_impl::plan_float(&images, state.content_width);
+    // Band geometry shared by this paragraph's own float (below) and the
+    // `ActiveFloat` it may leave for following paragraphs.
+    let own_float: Option<(f32, f32, bool)> = float_plan.as_ref().map(|(_, p)| {
+        let inset = p.indent_start_delta + p.indent_end_delta;
+        (inset, p.height, p.indent_start_delta > 0.0)
+    });
+    if let Some((idx, _)) = &float_plan
+        && let Some((inset, height, shift_text)) = own_float
+    {
+        // The banded layout path narrows the lines beside the float and reflows
+        // the rest at full width (one of the deltas is zero — left vs right).
+        resolved.wrap_band = Some(crate::para::WrapBand {
+            inset,
+            cover_height: height,
+            shift_text,
+        });
+        images.remove(*idx);
+    }
 
     state.cursor_y += resolved.space_before;
 
     if resolved.page_break_before && state.mode.is_paginated() {
         finish_page(state);
+    }
+
+    // Cross-paragraph wrap: when this paragraph has no float of its own but an
+    // earlier float still extends below the cursor, narrow it to clear the
+    // remaining band (the part of the float still above the paragraph top).
+    if own_float.is_none()
+        && let Some(af) = &state.active_float
+        && state.cursor_y < af.bottom_y - 0.5
+    {
+        resolved.wrap_band = Some(crate::para::WrapBand {
+            inset: af.inset,
+            cover_height: af.bottom_y - state.cursor_y,
+            shift_text: af.shift_text,
+        });
     }
 
     // Record comment start anchors at the paragraph's top (on the final page,
@@ -193,7 +235,40 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
         para_layout.items = image_items;
     }
 
+    // Emit the floating image beside the wrapped text. Its height is NOT forced
+    // onto the paragraph: a float taller than its text becomes an `ActiveFloat`
+    // (below) so the *following* paragraphs wrap beside its remaining extent
+    // rather than starting below it.
+    if let Some((_, placement)) = float_plan {
+        para_layout.items.push(placement.item);
+    }
+
+    // The paragraph's content top in page coordinates (where the float image's
+    // own top sits), captured before placement may advance/split the cursor.
+    let para_top = state.cursor_y;
+    let page_before = state.page_number;
+
     place_paragraph_layout(state, &resolved, para_layout, block_index);
+
+    // Maintain the cross-paragraph float band.
+    if state.page_number != page_before {
+        // The paragraph crossed a page; wrap does not span pages.
+        state.active_float = None;
+    } else if let Some((inset, height, shift_text)) = own_float {
+        // A float taller than its anchoring paragraph keeps wrapping below.
+        let bottom_y = para_top + height;
+        state.active_float =
+            (bottom_y > state.cursor_y + 0.5).then_some(super::float_impl::ActiveFloat {
+                bottom_y,
+                inset,
+                shift_text,
+            });
+    } else if let Some(af) = &state.active_float {
+        // Inherited float: drop it once this paragraph reaches its bottom.
+        if state.cursor_y >= af.bottom_y - 0.5 {
+            state.active_float = None;
+        }
+    }
 
     if resolved.page_break_after && state.mode.is_paginated() {
         finish_page(state);
@@ -412,6 +487,8 @@ fn build_chain_layouts<'s>(
                         clean_to_orig: vec![0],
                         indent_start: 0.0,
                         indent_hanging: 0.0,
+                        drop_lines: 0,
+                        drop_shift: 0.0,
                     },
                 )
             }

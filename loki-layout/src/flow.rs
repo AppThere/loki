@@ -15,6 +15,8 @@
 mod columns_impl;
 #[path = "flow_comments.rs"]
 mod comments_impl;
+#[path = "flow_float.rs"]
+mod float_impl;
 #[path = "flow_para.rs"]
 mod para_impl;
 
@@ -173,6 +175,11 @@ pub(super) struct FlowState<'a> {
     pub(super) column_separator: bool,
     /// 0-based index of the column currently being filled.
     pub(super) col_index: u8,
+    /// Content-area y at which the current column band begins. Normally `0`
+    /// (columns start at the page content top), but a `continuous` section break
+    /// can start a new column band *mid-page* (below the previous section), so
+    /// each column of that band starts here rather than at `0`.
+    pub(super) column_top_y: f32,
     /// Index into `current_items` at which the current column's items begin, so
     /// they can be shifted to the column's horizontal offset when it is finished.
     pub(super) column_item_start: usize,
@@ -185,6 +192,16 @@ pub(super) struct FlowState<'a> {
     /// Comment anchors (`id`, content-local `y`) recorded on the current page,
     /// consumed by [`finish_page`] to lay out the gutter comment panel.
     pub(super) pending_comment_anchors: Vec<(String, f32)>,
+    /// When `true`, paragraphs laid out in this state break over-long words to
+    /// the available width (CSS `overflow-wrap: anywhere`). Set while flowing
+    /// table-cell content so a long word wraps to the column width instead of
+    /// overflowing into the neighbouring cell.
+    pub(super) break_long_words: bool,
+    /// A float taller than its anchoring paragraph whose remaining vertical
+    /// extent the following paragraphs on this page keep wrapping beside. Set by
+    /// [`para_impl::flow_paragraph`]; reserved/cleared by
+    /// [`float_impl::reserve_active_float`] and on every page boundary.
+    pub(super) active_float: Option<float_impl::ActiveFloat>,
 }
 
 impl FlowState<'_> {
@@ -226,6 +243,29 @@ impl<'a> FlowState<'a> {
 
 // ── Flow construction & paginated loop (shared with incremental relayout) ──────
 
+/// Resolves a section's [`SectionColumns`] into `(count, gap, separator,
+/// per-column width)` for a content area `full_content_width` wide.
+///
+/// Multi-column layout is a paginated-print feature: the content area is divided
+/// into `count` equal columns separated by `gap`, and the flow fills each column
+/// top-to-bottom before advancing to the next (then the page). Single-column and
+/// non-paginated (reflow/pageless) flows return the full width.
+fn column_layout_for(
+    columns: Option<&loki_doc_model::layout::page::SectionColumns>,
+    full_content_width: f32,
+    paginated: bool,
+) -> (u8, f32, bool, f32) {
+    match columns {
+        Some(c) if c.count >= 2 && paginated => {
+            let n = f32::from(c.count);
+            let gap = pts_to_f32(c.gap);
+            let col_w = ((full_content_width - (n - 1.0) * gap) / n).max(0.0);
+            (c.count, gap, c.separator, col_w)
+        }
+        _ => (1, 0.0, false, full_content_width),
+    }
+}
+
 /// Builds a fresh [`FlowState`] for `section` in `mode`.
 fn new_flow_state<'a>(
     resources: &'a mut FontResources,
@@ -249,20 +289,8 @@ fn new_flow_state<'a>(
         LayoutMode::Reflow { available_width } => *available_width,
         _ => (page_w - margins.horizontal()).max(0.0),
     };
-    // Multi-column layout is a paginated-print feature: divide the content area
-    // into `count` equal columns separated by `gap`. `content_width` then holds
-    // the per-column width and the flow fills each column top-to-bottom before
-    // advancing to the next (and finally the next page). Reflow/Pageless ignore
-    // columns (continuous scroll has no fixed page height to break columns at).
-    let (columns, column_gap, column_separator, content_width) = match &pl.columns {
-        Some(c) if c.count >= 2 && mode.is_paginated() => {
-            let n = f32::from(c.count);
-            let gap = pts_to_f32(c.gap);
-            let col_w = ((full_content_width - (n - 1.0) * gap) / n).max(0.0);
-            (c.count, gap, c.separator, col_w)
-        }
-        _ => (1, 0.0, false, full_content_width),
-    };
+    let (columns, column_gap, column_separator, content_width) =
+        column_layout_for(pl.columns.as_ref(), full_content_width, mode.is_paginated());
     FlowState {
         resources,
         catalog,
@@ -289,10 +317,13 @@ fn new_flow_state<'a>(
         column_gap,
         column_separator,
         col_index: 0,
+        column_top_y: 0.0,
         column_item_start: 0,
         column_para_start: 0,
         comments,
         pending_comment_anchors: Vec::new(),
+        break_long_words: false,
+        active_float: None,
     }
 }
 
@@ -308,6 +339,7 @@ fn run_paginated_loop(
     state: &mut FlowState,
     blocks: &[Block],
     start: usize,
+    block_index_base: usize,
     mut resync: impl FnMut(usize, &FlowCheckpoint) -> bool,
 ) -> Option<usize> {
     let mut i = start;
@@ -322,7 +354,7 @@ fn run_paginated_loop(
                 // section_index is filled in by `layout_paginated_full`; the
                 // flow does not know its document-global section position.
                 section_index: 0,
-                block_index: i,
+                block_index: block_index_base + i,
                 checkpoint: cp,
             });
         }
@@ -330,13 +362,20 @@ fn run_paginated_loop(
         if let Block::StyledPara(para) = block
             && resolve_para_props(para, state.catalog).keep_with_next
         {
+            // NOTE: `i` is the slice index (chain scanning indexes `blocks`);
+            // editing block indices inside a keep-with-next chain are therefore
+            // not offset by `block_index_base`. This only matters for a
+            // continuous section carrying a kwn chain in the live editor (rare).
             let consumed = flow_keep_with_next_chain(state, blocks, i);
             i += consumed;
             continue;
         }
-        flow_block(state, block, i);
+        flow_block(state, block, block_index_base + i);
         i += 1;
     }
+    // Reserve any float left active by the final block so the section's height
+    // accounts for it.
+    float_impl::reserve_active_float(state);
     None
 }
 
@@ -377,7 +416,9 @@ pub(crate) fn flow_section_resume(
     state.note_counter = seed.note_counter;
     state.current_indent = seed.current_indent;
 
-    let resynced_at = run_paginated_loop(&mut state, &section.blocks, start_block, resync);
+    // Incremental relayout is single-section, so block indices are section-local
+    // (base 0).
+    let resynced_at = run_paginated_loop(&mut state, &section.blocks, start_block, 0, resync);
     if resynced_at.is_none() {
         // Reached the end: flush trailing footnotes and the final partial page.
         // On a resync stop the current page is an empty clean page top, so it is
@@ -424,11 +465,13 @@ pub fn flow_section(
 
     if mode.is_paginated() {
         // Top-level paginated flow: record checkpoints, never resync.
-        run_paginated_loop(&mut state, &section.blocks, 0, |_, _| false);
+        run_paginated_loop(&mut state, &section.blocks, 0, 0, |_, _| false);
     } else {
         for (idx, block) in section.blocks.iter().enumerate() {
             flow_block(&mut state, block, idx);
         }
+        // Reserve any float left active by the final block (continuous mode).
+        float_impl::reserve_active_float(&mut state);
     }
 
     flow_footnotes(&mut state);
@@ -460,9 +503,101 @@ pub fn flow_section(
     }
 }
 
+/// Transitions an in-progress paginated [`FlowState`] into a `continuous`
+/// section *on the same page*: it closes the current column band (if any) and
+/// opens a fresh column band — using `section`'s column layout but the **group's**
+/// page geometry (a continuous break cannot change the page size) — starting at
+/// the current `cursor_y` rather than the page top.
+fn begin_continuous_section(state: &mut FlowState, section: &Section) {
+    // Close the previous section's column band: position its final column and
+    // draw its separators. If it used more than one column the band filled the
+    // page height, so drop to the page bottom (the next band starts on a new
+    // page via the normal column/page break); otherwise continue just below it.
+    if state.columns > 1 {
+        columns_impl::position_current_column(state);
+        columns_impl::emit_column_separators(state);
+        if state.col_index > 0 {
+            state.cursor_y = state.page_content_height;
+        }
+    }
+
+    // Resolve the new section's columns against the group's (unchanged) content
+    // area width.
+    let full_content_width = (state.page_size.width - state.margins.horizontal()).max(0.0);
+    let (columns, column_gap, column_separator, content_width) =
+        column_layout_for(section.layout.columns.as_ref(), full_content_width, true);
+    state.columns = columns;
+    state.column_gap = column_gap;
+    state.column_separator = column_separator;
+    state.content_width = content_width;
+
+    // Open the new column band at the current y (mid-page).
+    state.col_index = 0;
+    state.column_top_y = state.cursor_y;
+    state.column_item_start = state.current_items.len();
+    state.column_para_start = state.current_paragraphs.len();
+}
+
+/// Flows a **group** of sections that share pages: the first section starts the
+/// page sequence, and every subsequent (`continuous`) member continues on the
+/// same page, switching column layout mid-page via [`begin_continuous_section`].
+/// Page geometry and headers/footers come from the group's first section.
+///
+/// Paginated mode only — the non-paginated (reflow/pageless) path flows each
+/// section independently (continuous-scroll has no pages to share). Editing
+/// block indices are group-local (0-based across the group's combined blocks);
+/// the caller globalises them like a single section.
+pub fn flow_section_group(
+    resources: &mut FontResources,
+    sections: &[&Section],
+    catalog: &StyleCatalog,
+    mode: &LayoutMode,
+    display_scale: f32,
+    options: &LayoutOptions,
+    comments: &[loki_doc_model::content::annotation::Comment],
+) -> FlowOutput {
+    debug_assert!(mode.is_paginated(), "flow_section_group is paginated-only");
+    let primary = sections[0];
+    let mut state = new_flow_state(
+        resources,
+        primary,
+        catalog,
+        mode,
+        display_scale,
+        options,
+        comments,
+    );
+
+    let mut block_base = 0usize;
+    for (i, section) in sections.iter().enumerate() {
+        if i > 0 {
+            begin_continuous_section(&mut state, section);
+        }
+        run_paginated_loop(&mut state, &section.blocks, 0, block_base, |_, _| false);
+        block_base += section.blocks.len();
+    }
+
+    flow_footnotes(&mut state);
+    finish_page(&mut state);
+    FlowOutput::Pages {
+        pages: state.pages,
+        checkpoints: state.checkpoints,
+        warnings: state.warnings,
+    }
+}
+
 // ── Block dispatch ────────────────────────────────────────────────────────────
 
 fn flow_block(state: &mut FlowState, block: &Block, idx: usize) {
+    // Only consecutive plain paragraphs continue a cross-paragraph float wrap;
+    // any other block clears the float (reserving its remaining height) so it
+    // does not overlap the image.
+    if !matches!(
+        block,
+        Block::StyledPara(_) | Block::Para(_) | Block::Plain(_) | Block::Heading(..)
+    ) {
+        float_impl::reserve_active_float(state);
+    }
     match block {
         Block::StyledPara(p) => flow_paragraph(state, p, idx),
         Block::Para(i) | Block::Plain(i) => {
@@ -562,6 +697,7 @@ pub(super) fn finish_page(state: &mut FlowState) {
     columns_impl::position_current_column(state);
     columns_impl::emit_column_separators(state);
     state.col_index = 0;
+    state.column_top_y = 0.0;
     state.column_item_start = 0;
     state.column_para_start = 0;
 
@@ -590,6 +726,8 @@ pub(super) fn finish_page(state: &mut FlowState) {
     state.page_number += 1;
     state.current_paragraphs.clear();
     state.cursor_y = 0.0;
+    // Cross-paragraph float wrap does not continue onto the next page.
+    state.active_float = None;
 }
 
 // ── Header / footer layout helpers ───────────────────────────────────────────
@@ -618,6 +756,7 @@ fn layout_blocks_reflow(
     let synthetic = Section {
         layout: PageLayout::default(),
         blocks,
+        start: loki_doc_model::layout::section::SectionStart::default(),
         extensions: ExtensionBag::default(),
     };
     let mode = LayoutMode::Reflow { available_width };
@@ -775,7 +914,12 @@ fn substitute_page_fields(blocks: &mut [Block], ctx: &crate::FieldContext) {
             match inline {
                 Inline::Field(field) => {
                     let value = match field.kind {
-                        FieldKind::PageNumber => Some(ctx.page_number.to_string()),
+                        // The PAGE field honours the section's number format
+                        // (roman/alpha); NUMPAGES stays decimal.
+                        FieldKind::PageNumber => Some(match ctx.number_format {
+                            Some(scheme) => crate::para::format_counter(ctx.page_number, scheme),
+                            None => ctx.page_number.to_string(),
+                        }),
                         FieldKind::PageCount => Some(ctx.page_count.to_string()),
                         _ => None,
                     };
@@ -877,12 +1021,24 @@ pub(crate) fn assign_headers_footers(
         }
     }
 
+    // First physical page of this section, used to offset the displayed number
+    // when the section restarts numbering (w:pgNumType @w:start).
+    let section_first_pn = pages.first().map(|p| p.page_number).unwrap_or(1);
+
     for page in pages.iter_mut() {
         let page_h = page.page_size.height;
         let pn = page.page_number;
+        // Apply the section restart: the section's first page shows `start`, and
+        // following pages increment from there. Absent a restart, use the
+        // document-global physical page number.
+        let display_pn = match layout.page_number_start {
+            Some(start) => start as usize + pn.saturating_sub(section_first_pn),
+            None => pn,
+        };
         let ctx = crate::FieldContext {
-            page_number: pn as u32,
+            page_number: display_pn as u32,
             page_count: total_page_count,
+            number_format: layout.page_number_format,
         };
 
         let hdr = select(
@@ -1174,11 +1330,15 @@ fn measure_cell_height(
         column_gap: 0.0,
         column_separator: false,
         col_index: 0,
+        column_top_y: 0.0,
         column_item_start: 0,
         column_para_start: 0,
         // Cells never render the comment gutter panel.
         comments: &[],
         pending_comment_anchors: Vec::new(),
+        // Cell content: break over-long words to the column width (Word).
+        break_long_words: true,
+        active_float: None,
     };
 
     for block in &cell.blocks {
@@ -1247,9 +1407,19 @@ fn resolve_column_widths(
             }
         }
     } else if total_fixed_width > 0.0 {
-        let scale = table_width / total_fixed_width;
-        for w in &mut resolved_widths {
-            *w *= scale;
+        // Fixed-layout tables (`w:tblLayout="fixed"`) honour the grid widths
+        // exactly — the table overflows or underfills rather than rescaling.
+        // Autofit tables scale the fixed widths to fill the table width.
+        let fixed_layout = tbl
+            .attr
+            .classes
+            .iter()
+            .any(|c| c == loki_doc_model::content::table::core::TABLE_FIXED_LAYOUT_CLASS);
+        if !fixed_layout {
+            let scale = table_width / total_fixed_width;
+            for w in &mut resolved_widths {
+                *w *= scale;
+            }
         }
     } else {
         let uniform_w = table_width / col_count as f32;
@@ -1300,11 +1470,15 @@ fn flow_cell_blocks(
         column_gap: 0.0,
         column_separator: false,
         col_index: 0,
+        column_top_y: 0.0,
         column_item_start: 0,
         column_para_start: 0,
         // Cells never render the comment gutter panel.
         comments: &[],
         pending_comment_anchors: Vec::new(),
+        // Cell content: break over-long words to the column width (Word).
+        break_long_words: true,
+        active_float: None,
     };
 
     for block in blocks {
@@ -1312,6 +1486,42 @@ fn flow_cell_blocks(
     }
 
     temp_state.current_items
+}
+
+/// Assign each cell its grid column span `(col_start, col_end)`, accounting for
+/// columns occupied by a `row_span` (vMerge) cell from an earlier row.
+///
+/// Walks rows top-to-bottom, left-to-right: each cell takes the next column not
+/// already covered by a vertical merge from above, then occupies `col_span`
+/// columns. A cell with `row_span > 1` marks its columns covered in the rows it
+/// spans, so cells there skip those columns. Mirrors the OOXML/HTML table grid.
+fn assign_cell_columns(
+    rows: &[&loki_doc_model::content::table::row::Row],
+    col_count: usize,
+) -> Vec<Vec<(usize, usize)>> {
+    let mut covered = vec![vec![false; col_count]; rows.len()];
+    let mut cell_cols: Vec<Vec<(usize, usize)>> = Vec::with_capacity(rows.len());
+    for (row_idx, row) in rows.iter().enumerate() {
+        let mut col = 0usize;
+        let mut row_cols = Vec::with_capacity(row.cells.len());
+        for cell in &row.cells {
+            while col < col_count && covered[row_idx][col] {
+                col += 1;
+            }
+            let col_start = col.min(col_count);
+            let col_end = (col_start + cell.col_span as usize).min(col_count);
+            row_cols.push((col_start, col_end));
+            if cell.row_span > 1 {
+                let last = (row_idx + cell.row_span as usize).min(rows.len());
+                for cov_row in covered.iter_mut().take(last).skip(row_idx + 1) {
+                    cov_row[col_start..col_end].fill(true);
+                }
+            }
+            col = col_end;
+        }
+        cell_cols.push(row_cols);
+    }
+    cell_cols
 }
 
 fn flow_table(
@@ -1331,13 +1541,19 @@ fn flow_table(
     }
     rows.extend(&tbl.foot.rows);
 
+    // Assign each cell its grid columns, accounting for columns covered by a
+    // `row_span` (vMerge) cell from an earlier row. `cell_cols[row][cell] =
+    // (col_start, col_end)`. Without this, a cell in a row whose leading
+    // column is occupied by a vertical merge above would be placed too far
+    // left (overlapping the merged cell) — the TC-DOCX-005 L-merge bug.
+    let cell_cols = assign_cell_columns(&rows, col_widths.len());
+
     let mut row_heights = vec![0.0f32; rows.len()];
 
     // Pass 1: Measure all cells with row_span == 1
     for (row_idx, row) in rows.iter().enumerate() {
-        let mut col_start = 0;
-        for cell in &row.cells {
-            let col_end = (col_start + cell.col_span as usize).min(col_widths.len());
+        for (c_idx, cell) in row.cells.iter().enumerate() {
+            let (col_start, col_end) = cell_cols[row_idx][c_idx];
             if cell.row_span == 1 {
                 let pad_left = cell.props.padding_left.map(pts_to_f32).unwrap_or(0.0);
                 let pad_right = cell.props.padding_right.map(pts_to_f32).unwrap_or(0.0);
@@ -1354,16 +1570,14 @@ fn flow_table(
                 );
                 row_heights[row_idx] = row_heights[row_idx].max(h);
             }
-            col_start = col_end;
         }
         row_heights[row_idx] = row_heights[row_idx].max(crate::MIN_ROW_HEIGHT);
     }
 
     // Pass 2: Distribute spanning cell heights across spanned rows
     for (row_idx, row) in rows.iter().enumerate() {
-        let mut col_start = 0;
-        for cell in &row.cells {
-            let col_end = (col_start + cell.col_span as usize).min(col_widths.len());
+        for (c_idx, cell) in row.cells.iter().enumerate() {
+            let (col_start, col_end) = cell_cols[row_idx][c_idx];
             if cell.row_span > 1 {
                 let span = cell.row_span as usize;
                 let spanned_height: f32 = row_heights
@@ -1389,7 +1603,6 @@ fn flow_table(
                     row_heights[last] += extra;
                 }
             }
-            col_start = col_end;
         }
     }
 
@@ -1415,9 +1628,8 @@ fn flow_table(
         let mut cell_starts = Vec::new();
 
         // Pass 3a: Flow cell content blocks
-        let mut col_start = 0;
         for (c_idx, cell) in row.cells.iter().enumerate() {
-            let col_end = (col_start + cell.col_span as usize).min(col_widths.len());
+            let (col_start, col_end) = cell_cols[row_idx][c_idx];
             let old_indent = state.current_indent;
             let old_width = state.content_width;
 
@@ -1503,10 +1715,14 @@ fn flow_table(
             } else {
                 state.current_indent = cell_x + pad_left;
                 state.content_width = cell_content_width;
+                // Cell content breaks over-long words to the column width (Word).
+                let old_break = state.break_long_words;
+                state.break_long_words = true;
 
                 for block in &cell.blocks {
                     flow_block(state, block, idx);
                 }
+                state.break_long_words = old_break;
 
                 // If it fits on a single page, apply vertical alignment
                 let cell_page_start = cell_starts[c_idx].0;
@@ -1525,6 +1741,39 @@ fn flow_table(
                             item.translate(0.0, y_offset);
                         }
                     }
+
+                    // Clip the cell's content to its box so over-wide content
+                    // (a wide image, or an unbreakable token exceeding the
+                    // column) cannot bleed into neighbouring cells — Word clips
+                    // cell content to the cell boundary. Char-wrapping already
+                    // keeps ordinary text inside the column; this is the safety
+                    // net for the rest. Only single-page cells are clipped here;
+                    // a cell that spilled onto a later page keeps its items
+                    // unwrapped (per-page clipping would need a rect per page —
+                    // see fidelity-status Tables & Images).
+                    if state.current_items.len() > cell_item_start {
+                        let cell_top_y = if state.page_number == original_row_page {
+                            original_row_y_start
+                        } else {
+                            0.0
+                        };
+                        let clip_rect = LayoutRect {
+                            origin: LayoutPoint {
+                                x: cell_x,
+                                y: cell_top_y,
+                            },
+                            size: LayoutSize {
+                                width: cell_w,
+                                height: cell_height,
+                            },
+                        };
+                        let inner: Vec<PositionedItem> =
+                            state.current_items.drain(cell_item_start..).collect();
+                        state.current_items.push(PositionedItem::ClippedGroup {
+                            clip_rect,
+                            items: inner,
+                        });
+                    }
                 }
 
                 Vec::new()
@@ -1536,7 +1785,6 @@ fn flow_table(
 
             state.current_indent = old_indent;
             state.content_width = old_width;
-            col_start = col_end;
         }
 
         let row_page_end = state.page_number;
@@ -1587,15 +1835,6 @@ fn flow_table(
 
         // Pass 3b: Emit background and border decorations for this row's cells
         for p in original_row_page..=row_page_end {
-            let mut col_start_map = Vec::new();
-            {
-                let mut curr_col = 0;
-                for cell in &row.cells {
-                    col_start_map.push(curr_col);
-                    curr_col = (curr_col + cell.col_span as usize).min(col_widths.len());
-                }
-            }
-
             for (c_idx, cell) in row.cells.iter().enumerate().rev() {
                 let cell_page_start = cell_starts[c_idx].0;
                 let cell_item_start = cell_starts[c_idx].1;
@@ -1619,8 +1858,7 @@ fn flow_table(
                 }
 
                 let y = get_cell_y_on_page(p);
-                let col_start = col_start_map[c_idx];
-                let col_end = (col_start + cell.col_span as usize).min(col_widths.len());
+                let (col_start, col_end) = cell_cols[row_idx][c_idx];
                 let cell_w: f32 = col_widths[col_start..col_end].iter().sum();
                 let cell_x = table_indent + col_widths[0..col_start].iter().sum::<f32>();
                 let cell_rect = LayoutRect {

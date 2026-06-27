@@ -138,6 +138,7 @@ mod tests {
             text_props: None,
             col_width: None,
             cell_props: None,
+            graphic_wrap: None,
             is_automatic: is_auto,
             master_page_name: None,
         }
@@ -157,6 +158,7 @@ mod tests {
             }),
             col_width: None,
             cell_props: None,
+            graphic_wrap: None,
             is_automatic: false,
             master_page_name: None,
         }
@@ -220,6 +222,7 @@ mod tests {
 
     #[test]
     fn default_style_inserted_as_default() {
+        use loki_doc_model::style::props::para_props::ParagraphAlignment;
         let sheet = OdfStylesheet {
             default_styles: vec![OdfDefaultStyle {
                 family: OdfStyleFamily::Paragraph,
@@ -237,7 +240,6 @@ mod tests {
             .get(&StyleId::new("__Default"))
             .unwrap();
         assert!(def.is_default);
-        use loki_doc_model::style::props::para_props::ParagraphAlignment;
         assert_eq!(def.para_props.alignment, Some(ParagraphAlignment::Justify));
     }
 
@@ -254,6 +256,7 @@ mod tests {
                 text_props: None,
                 col_width: None,
                 cell_props: None,
+                graphic_wrap: None,
                 is_automatic: false,
                 master_page_name: None,
             }],
