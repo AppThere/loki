@@ -112,6 +112,10 @@ pub struct View<Rend: WindowRenderer> {
     /// Last logical-pixel position during an active scroll gesture.
     /// `Some` while the finger is scrolling; `None` otherwise.
     pub touch_scroll_last_pos: Option<(f64, f64)>,
+    /// PATCH(loki): set once a long-press has synthesised a secondary
+    /// (context-menu) click for the current contact, so the matching touch-end
+    /// skips the normal primary-button release (which was already done early).
+    pub touch_context_fired: bool,
 
     /// PATCH(loki): pending/visible hover tooltip (painted over the DOM scene).
     pub tooltip: Option<crate::tooltip::Tooltip>,
@@ -178,6 +182,7 @@ impl<Rend: WindowRenderer> View<Rend> {
             ime_settle_until: None,
             touch_start: None,
             touch_scroll_last_pos: None,
+            touch_context_fired: false,
             tooltip: None,
             tooltip_shaper: crate::tooltip::TooltipShaper::default(),
             #[cfg(feature = "accessibility")]
@@ -339,6 +344,14 @@ impl<Rend: WindowRenderer> View<Rend> {
                 self.request_redraw();
                 return true;
             }
+        }
+
+        // PATCH(loki): fire a long-press → secondary (context-menu) click when a
+        // held touch contact has passed the threshold. Driven by the armed
+        // long-press timer (`arm_long_press_timer`) so it works for a stationary
+        // finger that emits no touchmove events.
+        if self.try_fire_long_press() {
+            return true;
         }
 
         // PATCH(loki): reveal a pending tooltip whose hover delay has elapsed.
@@ -627,6 +640,91 @@ impl<Rend: WindowRenderer> View<Rend> {
             std::thread::sleep(crate::tooltip::HOVER_DELAY);
             let _ = proxy.send_event(BlitzShellEvent::Poll { window_id });
         });
+    }
+
+    /// PATCH(loki): wake the idle event loop at the long-press deadline so
+    /// [`try_fire_long_press`](Self::try_fire_long_press) can synthesise the
+    /// secondary (context-menu) click even when a held finger emits no
+    /// `touchmove` events. Mirrors [`arm_tooltip_timer`](Self::arm_tooltip_timer).
+    fn arm_long_press_timer(&self) {
+        let proxy = self.event_loop_proxy.clone();
+        let window_id = self.window.id();
+        std::thread::spawn(move || {
+            std::thread::sleep(LONG_PRESS_DURATION);
+            let _ = proxy.send_event(BlitzShellEvent::Poll { window_id });
+        });
+    }
+
+    /// PATCH(loki): if a touch contact has been held in place past the long-press
+    /// threshold, synthesise a secondary (right-click) mouse click at the press
+    /// point. This is the touch equivalent of a right-click — Dioxus handlers
+    /// gated on the secondary button (e.g. the spelling suggestions menu) then
+    /// fire. winit on Android never delivers a real secondary mouse button, and a
+    /// stationary finger produces no `touchmove` events, so this is driven by the
+    /// armed timer via `poll()` rather than from the move handler. Returns whether
+    /// it fired.
+    fn try_fire_long_press(&mut self) -> bool {
+        // Only when a contact is still active, has not become a scroll, has not
+        // already fired, and has been held long enough. Extract the press point
+        // and end the borrow before mutating `self` for the synthesis.
+        let (sx, sy) = match &self.touch_start {
+            Some(ts)
+                if !self.touch_context_fired
+                    && self.touch_scroll_last_pos.is_none()
+                    && ts.start_time.elapsed() >= LONG_PRESS_DURATION =>
+            {
+                (ts.start_pos.0 as f32, ts.start_pos.1 as f32)
+            }
+            _ => return false,
+        };
+        let mods = winit_modifiers_to_kbt_modifiers(self.keyboard_modifiers.state());
+        self.touch_start = None;
+        // Re-hit-test at the press point so the secondary click targets the node
+        // under the finger (a stationary hold sends no MouseMove to update hover).
+        self.doc.handle_ui_event(UiEvent::MouseMove(BlitzMouseButtonEvent {
+            x: sx,
+            y: sy,
+            button: MouseEventButton::Main,
+            buttons: self.buttons,
+            mods,
+        }));
+        // Release the synthetic primary press from TouchPhase::Started first so it
+        // does not linger as a drag while the secondary click is delivered.
+        self.buttons ^= MouseEventButton::Main.into();
+        self.doc.handle_ui_event(UiEvent::MouseUp(BlitzMouseButtonEvent {
+            x: sx,
+            y: sy,
+            button: MouseEventButton::Main,
+            buttons: self.buttons,
+            mods,
+        }));
+        // Secondary down + up at the press point.
+        self.buttons |= MouseEventButton::Secondary.into();
+        self.doc.handle_ui_event(UiEvent::MouseDown(BlitzMouseButtonEvent {
+            x: sx,
+            y: sy,
+            button: MouseEventButton::Secondary,
+            buttons: self.buttons,
+            mods,
+        }));
+        self.buttons ^= MouseEventButton::Secondary.into();
+        self.doc.handle_ui_event(UiEvent::MouseUp(BlitzMouseButtonEvent {
+            x: sx,
+            y: sy,
+            button: MouseEventButton::Secondary,
+            buttons: self.buttons,
+            mods,
+        }));
+        self.touch_context_fired = true;
+        self.request_redraw();
+        // The DOM events dispatched above are drained (and their Dioxus handlers
+        // run) on the next `poll`. `window_event` queues a `Poll` after every
+        // winit event for exactly this reason; replicate it here since this
+        // synthesis originates from a timer `Poll`, which has no such follow-up.
+        let _ = self
+            .event_loop_proxy
+            .send_event(BlitzShellEvent::Poll { window_id: self.window.id() });
+        true
     }
 
     /// Render the DOM scene and composite the hover tooltip on top of it.
@@ -924,23 +1022,26 @@ impl<Rend: WindowRenderer> View<Rend> {
                             start_time: Instant::now(),
                         });
                         self.touch_scroll_last_pos = None;
+                        self.touch_context_fired = false;
+                        // Wake the loop at the long-press deadline so the secondary
+                        // (context-menu) click fires even if the finger stays put.
+                        self.arm_long_press_timer();
                         self.request_redraw();
                     }
                     TouchPhase::Moved => {
                         self.mouse_pos = (lx, ly);
 
-                        // Classify the gesture once it moves beyond the slop
-                        // threshold or exceeds the long-press hold time.
+                        // Classify as a scroll once the finger moves beyond the
+                        // slop threshold. The long-press (finger held in place) is
+                        // detected by the armed timer in `poll()` via
+                        // `try_fire_long_press`, so it fires reliably even when no
+                        // touchmove events arrive during a still hold.
                         if let Some(ref ts) = self.touch_start {
                             let dx = logical.x - ts.start_pos.0;
                             let dy = logical.y - ts.start_pos.1;
                             if dx.hypot(dy) > TOUCH_SLOP_PX {
-                                // Finger moved — it's a scroll gesture.
                                 self.touch_start = None;
                                 self.touch_scroll_last_pos = Some((logical.x, logical.y));
-                            } else if ts.start_time.elapsed() >= LONG_PRESS_DURATION {
-                                // Held in place — long-press, not a scroll.
-                                self.touch_start = None;
                             }
                         }
 
@@ -996,6 +1097,15 @@ impl<Rend: WindowRenderer> View<Rend> {
                         self.request_redraw();
                     }
                     TouchPhase::Ended | TouchPhase::Cancelled => {
+                        // A long-press already released the primary button and
+                        // delivered a balanced secondary click — just clear state.
+                        if self.touch_context_fired {
+                            self.touch_context_fired = false;
+                            self.touch_scroll_last_pos = None;
+                            self.touch_start = None;
+                            self.request_redraw();
+                            return;
+                        }
                         // Check before clearing: was this a scroll gesture?
                         let was_scroll = self.touch_scroll_last_pos.is_some();
                         self.touch_scroll_last_pos = None;
