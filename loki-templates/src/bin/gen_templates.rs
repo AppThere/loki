@@ -6,6 +6,10 @@
 //! Run with `cargo run -p loki-templates --bin gen_templates`. Writes one
 //! `assets/<id>.dotx` per entry in `loki_templates::TEMPLATES`.
 
+// Offline codegen tool, not library runtime: a panic aborts the regeneration
+// run (and is the desired failure mode), so unwrap/expect are fine here.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::io::Cursor;
 use std::path::Path;
 

@@ -69,7 +69,7 @@ fn left_band_shifts_first_lines_and_tail_reclaims_full_width() {
         cover_height: 30.0,
         shift_text: true,
     };
-    let body = layout_band_body(&mut r, text, &spans, &props, 360.0, 1.0, band);
+    let body = layout_band_body(&mut r, text, &spans, &props, 360.0, 1.0, &band);
 
     let origins = run_origins(&body);
     assert!(origins.len() >= 4, "expected several wrapped lines");
@@ -112,7 +112,7 @@ fn right_band_narrows_without_shifting() {
         cover_height: 30.0,
         shift_text: false,
     };
-    let body = layout_band_body(&mut r, text, &spans, &props, 360.0, 1.0, band);
+    let body = layout_band_body(&mut r, text, &spans, &props, 360.0, 1.0, &band);
     let origins = run_origins(&body);
     // All lines start at the left edge (x ≈ 0) regardless of the band.
     for (_, x) in &origins {
@@ -131,7 +131,7 @@ fn short_body_within_band_stays_single_segment() {
         cover_height: 200.0, // taller than the single line
         shift_text: true,
     };
-    let body = layout_band_body(&mut r, text, &spans, &props, 360.0, 1.0, band);
+    let body = layout_band_body(&mut r, text, &spans, &props, 360.0, 1.0, &band);
     let origins = run_origins(&body);
     assert!(!origins.is_empty());
     // The single line is in the band → shifted right by the inset.

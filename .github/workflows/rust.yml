@@ -34,10 +34,16 @@ jobs:
     - name: File-ceiling gate (300-line ratchet)
       # Spec 01 audit A-2. New files <= 300 lines; baselined debt may not grow.
       run: python3 scripts/check-file-ceiling.py
+    - name: TODO-format gate (TODO(<topic>) tags)
+      # Spec 01 audit A-11. No bare TODO / FIXME / HACK / XXX in production code.
+      run: python3 scripts/check-todo-format.py
     - name: Format check
       run: cargo fmt --all --check
     - name: Clippy (workspace, all features, warnings denied)
-      run: cargo clippy --workspace --all-features -- -D warnings
+      # `unwrap_used`/`expect_used` keep panicking calls out of library runtime
+      # code (audit A-5); clippy.toml exempts test code. Tooling (build.rs, the
+      # gen_templates bin) carries a scoped file-level allow.
+      run: cargo clippy --workspace --all-features -- -D warnings -D clippy::unwrap_used -D clippy::expect_used
 
   build-and-test:
     runs-on: ubuntu-latest

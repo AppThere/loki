@@ -235,13 +235,11 @@ pub fn layout_paginated_full(
     // its page geometry + headers/footers), only switching column layout.
     let mut groups: Vec<Vec<&loki_doc_model::Section>> = Vec::new();
     for section in &doc.sections {
-        if groups.is_empty() || section.start != loki_doc_model::layout::SectionStart::Continuous {
-            groups.push(vec![section]);
-        } else {
-            groups
-                .last_mut()
-                .expect("groups is non-empty here")
-                .push(section);
+        match groups.last_mut() {
+            Some(last) if section.start == loki_doc_model::layout::SectionStart::Continuous => {
+                last.push(section);
+            }
+            _ => groups.push(vec![section]),
         }
     }
 

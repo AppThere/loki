@@ -45,9 +45,10 @@ silently. The headline findings:
   diverge** and click-to-caret mapping drifts. This is exactly the
   "temporary-decision-became-permanent" bug the spec names.
 - **Error handling is already disciplined.** Genuine library-runtime
-  `unwrap()`/`expect()`/`panic!` is in the *single digits* (A-5), all
-  safe-by-construction; ad-hoc `Box<dyn Error>`/`String` errors are effectively
-  absent (A-10). `thiserror` is the norm.
+  `unwrap()`/`expect()` was only **11 sites** (A-5), all safe-by-construction —
+  now all rewritten and locked by `clippy::unwrap_used`/`expect_used` in CI;
+  `panic!` in lib code is 0 (A-6); ad-hoc `Box<dyn Error>`/`String` errors are
+  effectively absent (A-10). `thiserror` is the norm.
 - **One real layering violation (A-8):** `loki-renderer` (render layer) imports
   `appthere_ui` (ui layer) — a single uphill edge, for design tokens. The UDOM
   waist otherwise holds: no format crate (`loki-odf`/`loki-ooxml`) leaks into
@@ -58,10 +59,11 @@ silently. The headline findings:
   stray root files (`scratch.rs` + 10 debug dumps, A-4, now removed); 38
   production files exceed the 300-line ceiling (A-2, already tracked in
   `docs/audit-2026-06.md`).
-- **Enforcement is the actual deliverable.** CI today runs only `cargo fmt
-  --check` + default `clippy -D warnings` + build/test. There is **no**
-  `clippy.toml`, no `disallowed-methods`, no file-ceiling gate, no SPDX gate, no
-  dependency-direction gate, and no dylint (A-13). Every convention in §6 of the
+- **Enforcement is the actual deliverable.** *At audit time*, CI ran only `cargo
+  fmt --check` + default `clippy -D warnings` + build/test. **Since then** the
+  license-header, panic-guard, unsafe-policy, file-ceiling, TODO-format, and
+  `unwrap_used`/`expect_used` gates have landed (see §4); still outstanding is the
+  dependency-direction gate / dylint (A-13). Every convention in §6 of the
   spec is currently unenforced.
 
 Net: this is a **gates-first** job, not a sweep. The smells are few and mostly
@@ -137,11 +139,12 @@ dylint (§6.2) must point authors toward.
 
 ### 3.1 Hardcoded dimensions / magic numbers — see §2 (A-1).
 
-### 3.2 Leaked `unwrap()` / `expect()` / `panic!` (A-5)
+### 3.2 Leaked `unwrap()` / `expect()` / `panic!` (A-5) — ✅ resolved
 
 Raw production counts (after stripping `#[cfg(test)]` modules): **20 `unwrap()`,
 21 `expect()`, 3 `panic!`**. But categorising each by *where it actually lives*
-deflates the genuine risk sharply:
+deflates the genuine risk sharply (and the `panic!` row is A-6, resolved
+separately):
 
 | Bucket | Count | Verdict |
 |---|---|---|
@@ -163,14 +166,36 @@ reachable from untrusted input:
   ensured insert.
 - `loki-ooxml/src/xlsx/export.rs:371` — `rows.remove(&r).unwrap()` on a key just
   proven present.
-- `loki-doc-model/src/loro_bridge/comments.rs:94` — `write_document_comments(…).unwrap()`.
 
-The `expect()` set is similar (e.g. `loki-spreadsheet` ×7, `loki-templates` ×4,
-mostly `OnceLock`/regex-compile-once patterns). **None are reachable from a
-public API with attacker-controlled input.** Recommendation: convert each to `?`
-+ typed error or a documented `// invariant:`/`expect("…")` justification, then
-let the `clippy.toml` `disallowed-methods` gate (§6.1) hold the line — with
-target-level exemptions for `build.rs`, `benches/`, doctests, and `#[cfg(test)]`.
+(The original draft also listed `loki-doc-model/src/loro_bridge/comments.rs:94`
+and two `loro_bridge` `expect`s, plus `loki-spreadsheet`/`loki-templates`
+`expect`s; the precise clippy re-scan in the Resolution below showed those are
+`#[cfg(test)]` code, a custom parser `expect()` method, or a `src/bin`/`build.rs`
+tool — not library runtime. The two `loki-layout` and two `loki-i18n` sites it
+*did* confirm are folded into the 11 below.)
+
+**Resolution (✅ A-5).** A precise re-scan with clippy's own
+`clippy::unwrap_used` / `clippy::expect_used` (which target `Option`/`Result`
+exactly — no false positives on the `loki-spreadsheet` parser's custom `expect()`
+method) found **exactly 11 genuine first-party library sites**; the earlier
+`loro_bridge` "hits" were `#[cfg(test)]` code. **All 11 were eliminated by
+rewriting** — no library `#[allow]` was needed:
+
+- `loki-opc` (×6): `core_properties_mut` → `get_or_insert_with`; the
+  `strip_suffix(".rels")` pair → `unwrap_or` (+ a redundant `if/else` collapsed);
+  and `PartName::new_unchecked` made **infallible** (`-> Self`; it was
+  `Ok(Self(s))` — a vestigial `Result`), removing all three `.unwrap()`s.
+- `loki-ooxml/src/xlsx/export.rs` → `let … else { continue }`.
+- `loki-layout/src/lib.rs` → a `match groups.last_mut()`; `para.rs` → bind the
+  band via `band.as_ref().filter(…)` (the band type isn't `Clone`, so
+  `layout_band_body` now borrows it).
+- `loki-i18n` (×2) → a compile-time `langid!("en-US")` helper (no runtime parse).
+
+Enforcement: `clippy::unwrap_used` + `clippy::expect_used` are now denied in CI
+(`rust.yml`); `clippy.toml` exempts `#[cfg(test)]`/`#[test]` code
+(`allow-unwrap-in-tests`/`allow-expect-in-tests`). Build scripts and the
+`gen_templates` codegen bin carry a justified file-level `#![allow(…)]` (a panic
+there aborts the build/tool, not runtime). Baseline is **green**.
 
 ### 3.3 `unsafe` blocks (A-7) — ✅ resolved
 
@@ -312,17 +337,19 @@ Mechanised enforcement rides with the deferred clippy `disallowed-types` gate
   but the **Android target build is unverified here** — the maintainer should run
   `scripts/build-aab.sh` before relying on it.
 
-### 3.9 `HACK` / `TODO` / `FIXME` / `XXX` debt (A-11)
+### 3.9 `HACK` / `TODO` / `FIXME` / `XXX` debt (A-11) — ✅ inventoried + gated
 
-Production (non-test, non-patch): **49 `// TODO`**, **59 `// COMPAT`**, **0
-`HACK`/`FIXME`/`XXX`**. The `COMPAT(dioxus-native)` annotations are *sanctioned*
-by CLAUDE.md (they mark Blitz/Dioxus-Native limitations) and are not debt to
-remove — but they *should* be inventoried so each can be re-validated as the
-pinned Dioxus `=0.7.9` moves. The 49 `TODO`s should each become a tracked
-decision or a `TODO(<topic>)` with an owner. The absence of `HACK`/`FIXME`/`XXX`
-is a good sign of discipline.
+Production (non-test, non-patch): **47 `// TODO`**, **57 `// COMPAT`**, **0
+`HACK`/`FIXME`/`XXX`**. **All 47 TODOs already carry a `TODO(<topic>)` tag** (0
+bare) — the discipline is already there. **Resolution:** catalogued in
+[`spec-01-todo-compat-inventory.md`](spec-01-todo-compat-inventory.md) (TODOs
+grouped by topic; the 57 `COMPAT`s grouped by target — 32 are
+`COMPAT(dioxus-native)`, the set to re-validate when the Dioxus `=0.7.9` pin
+moves). `scripts/check-todo-format.py` (CI) now fails on any bare `// TODO` or any
+`FIXME`/`HACK`/`XXX`, so the tagging can't decay. `COMPAT` markers are sanctioned
+and not removed.
 
-### 3.10 Naming inconsistency (A-12)
+### 3.10 Naming inconsistency (A-12) — ✅ decided (no rename)
 
 Mostly consistent: import/export config is uniformly `*Options`
 (`OdtImportOptions`, `XlsxImportOptions`, `LayoutOptions`, `PdfXOptions`,
@@ -331,9 +358,13 @@ Mostly consistent: import/export config is uniformly `*Options`
 - **`*Props` is overloaded.** It means both Dioxus *component* props
   (`AtTitleBarProps`, `DocumentViewProps`, …) **and** document-model *formatting
   property bags* (`ParaProps`, `CharProps`, `RunProps`, `CellProps`,
-  `TableProps`, `ShapeProps`). Two unrelated concepts share a suffix across the
-  model↔ui boundary. Low priority, but a candidate to rename the model bags to
-  `*Format`/`*Attrs` to disambiguate.
+  `TableProps`, `ShapeProps`). **Decision (✅, [`0011`](0011-props-naming-convention.md)):
+  keep both — do not rename.** They live in disjoint crates/module paths
+  (`loki_doc_model::style::props::*` vs. the UI components), never collide, and
+  the model bags mirror OOXML's `pPr`/`rPr` vocabulary. The proposed rename is
+  **350+ references across 66+ files** touching the CRDT bridge and every format
+  mapper — disproportionate to a low-priority, namespace-disambiguated cosmetic
+  concern. The rename remains available as its own reviewed PR on request.
 - Minor: `DocxSettings` / `DocumentSettings` use `*Settings` where `*Options`
   is the norm — but `DocxSettings` maps to the OOXML `settings.xml` part, so the
   name is domain-justified. Leave as-is.
@@ -368,7 +399,8 @@ No `model → render/layout/ui` edges exist; foundation crates remain leaves;
 | `clippy -D warnings` (default lints) | ✅ CI |
 | `clippy::pedantic` + curated allow-list | ❌ no `[workspace.lints]` |
 | No `panic!`/`todo!`/`unimplemented!` in lib code | ✅ CI (`scripts/check-no-panics.py`, A-6) |
-| No `unwrap`/`expect` in lib code | ❌ no `clippy.toml` `disallowed-methods` (A-5, deferred) |
+| No `unwrap`/`expect` in lib code | ✅ CI (`clippy::unwrap_used`/`expect_used` + `clippy.toml` test exemption, A-5) |
+| `TODO(<topic>)` tags, no FIXME/HACK/XXX | ✅ CI (`scripts/check-todo-format.py`, A-11) |
 | 300-line file ceiling | ✅ CI (`scripts/check-file-ceiling.py` ratchet + baseline, A-2) |
 | SPDX header on line 1 (per-crate license) | ✅ CI (`scripts/check-license-headers.py`, ADR-0010) |
 | `forbid(unsafe_code)` + enumerated exceptions | ✅ CI (`scripts/check-unsafe-policy.py` + allow-list, A-7) |
@@ -388,14 +420,14 @@ This table is the M3 work-list.
 | A-2 | File-ceiling >300 | 38 production files (`para.rs` 1982 … `scene.rs` 948) | 38 | **Large but mechanical** | ✅ **Gated + down-payment** — ratchet gate (`check-file-ceiling.py` + baseline); 3 split via inline-test extraction (38→35); 35 frozen, can't grow | **Partial** |
 | A-3 | SPDX line-1 / per-crate license | `loki-opc` (MIT) SPDX on line 2 ×27 + `tests/package_tests.rs` missing | 28 | **Small** | ✅ **Done** — reorder to SPDX-line-1, add missing header, MIT `LICENSE`, license-aware CI gate (ADR-0010) | **Resolved** |
 | A-4 | Dead/stray file | `scratch.rs` (+ 10 root debug dumps) | 11 | **Small** | ✅ **Done** — `git rm` all 11; `.gitignore` entries added to prevent recurrence | **Resolved** |
-| A-5 | Library `unwrap`/`expect` | `loki-opc` ×~6, `loki-ooxml/xlsx/export.rs:371`, `loki-doc-model/.../comments.rs:94`, `loki-spreadsheet`/`loki-templates` `expect` | ~7 genuine | **Small** | `?` + typed error or justify; `disallowed-methods` gate w/ target exemptions | |
+| A-5 | Library `unwrap`/`expect` | 11 genuine (loki-opc ×6, loki-ooxml ×1, loki-layout ×2, loki-i18n ×2) | 11 | **Small** | ✅ **Done** — all 11 rewritten (0 library `#[allow]`); `clippy::unwrap_used`/`expect_used` denied in CI + `clippy.toml` test exemption | **Resolved** |
 | A-6 | `panic!` in production | 0 in lib src (3 in `benches/`); 7 documented `unreachable!` | 0 | n/a | ✅ **Done** — `scripts/check-no-panics.py` gate (forbids `panic!`/`todo!`/`unimplemented!` in lib src; allows messaged `unreachable!`), wired into CI | **Resolved** |
 | A-7 | `forbid(unsafe_code)` absent | `loki-text`, `loki-presentation`, `loki-spreadsheet` `lib.rs` | 3 (expected) | **Small** | ✅ **Done** — `#![deny(unsafe_code)]` + macro-emitted scoped `#[allow]`; `unsafe-policy-allowlist.txt` + `check-unsafe-policy.py` CI gate | **Resolved** |
 | A-8 | Layering: render→ui (uphill) | `loki-renderer/src/document_view.rs:9` | 1 edge | **Small–Medium** | Move consumed `appthere_ui::tokens` to a foundation crate or inject via render ctx | |
 | A-9 | Layering classification | `loki-pdf` → `loki-layout` | 1 | **None (doc)** | ✅ **Done** — L3b exporter-above-layout tier documented in [`0009`](0009-target-architecture.md) (refinement #1); `loki-epub` stays L2, `loki-pdf` L3b | **Resolved** |
 | A-10 | Inconsistent error handling | core libs clean; 3 `Result<_,String>` holdouts (2 test-harness, 1 UI-facing app glue) | 3 | **None** | ✅ **Verified** — no core-lib remediation needed; residuals noted (§3.6); enforcement rides with the deferred clippy `disallowed-types` gate (A-13) | **Resolved** |
-| A-11 | TODO/COMPAT debt | 49 TODO / 59 COMPAT (prod) | 108 | **Medium (process)** | Inventory; convert TODO→tracked; re-validate COMPAT vs Dioxus pin | |
-| A-12 | Naming: `*Props` overloaded | model bags vs Dioxus props | ~6 model bags | **Medium (rename)** | Optionally rename model `*Props`→`*Format`/`*Attrs` | |
+| A-11 | TODO/COMPAT debt | 47 TODO (all tagged) / 57 COMPAT (prod) | 104 | **Medium (process)** | ✅ **Done** — inventory doc; `check-todo-format.py` gate (CI); COMPATs grouped for Dioxus-pin re-validation | **Resolved** |
+| A-12 | Naming: `*Props` overloaded | model bags vs Dioxus props | ~6 model bags | **Medium (rename)** | ✅ **Decided ([0011](0011-props-naming-convention.md))** — keep `*Props`; rename (350+ refs) disproportionate, available on request | **Resolved** |
 | A-13 | Enforcement gap | `clippy.toml`, ceiling/SPDX/dep-direction gates, dylint all absent | — | **Foundational** | Implement §6 gates (M3) before bulk fixes (D2) | |
 | A-14 | Duplication | centring math (A-1); `android_main` ×3 | 2 clusters | **Small–Medium** | ✅ **android_main done** — `loki_app_shell::android_main!` macro (Android build unverified in-env); centring math deferred to A-1 | **Partial** |
 

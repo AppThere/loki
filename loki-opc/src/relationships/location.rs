@@ -14,10 +14,10 @@ pub fn relationships_part_for(part: &PartName) -> PartName {
         None => ("", name_str),
     };
     // Format: directory/_rels/filename.rels
-    PartName::new_unchecked(format!("{}/_rels/{}.rels", dir, filename)).unwrap()
+    PartName::new_unchecked(format!("{}/_rels/{}.rels", dir, filename))
 }
 
 /// Returns the package-level relationships part name (`/_rels/.rels`).
 pub fn package_relationships_part() -> PartName {
-    PartName::new_unchecked("/_rels/.rels".to_string()).unwrap()
+    PartName::new_unchecked("/_rels/.rels".to_string())
 }

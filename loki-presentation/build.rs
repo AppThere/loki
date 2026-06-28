@@ -4,6 +4,10 @@
 //!
 //! Creates a symlink or copies `assets/` to target build profile directory.
 
+// Build script, not library runtime: a panic fails the build, which is the
+// intended behaviour for a missing `OUT_DIR`/`CARGO_MANIFEST_DIR`.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::env;
 #[cfg(not(unix))]
 use std::fs;

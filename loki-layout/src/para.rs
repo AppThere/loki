@@ -1452,12 +1452,9 @@ fn layout_paragraph_uncached(
 
     // Precise per-line band split runs on the read-only paint path for plain
     // text; the editor / tab / math paths fall back to a uniform narrow below.
-    let can_split = band.is_some()
-        && !preserve_for_editing
-        && tab_char_positions.is_empty()
-        && math_boxes.is_empty();
+    let can_split = !preserve_for_editing && tab_char_positions.is_empty() && math_boxes.is_empty();
 
-    if can_split {
+    if let Some(band) = band.as_ref().filter(|_| can_split) {
         let body = crate::para_band::layout_band_body(
             resources,
             &clean_text,
@@ -1465,7 +1462,7 @@ fn layout_paragraph_uncached(
             para_props,
             line_w,
             display_scale,
-            band.expect("can_split implies band"),
+            band,
         );
         let mut items = body.items;
         let mut content_bottom = body.height;

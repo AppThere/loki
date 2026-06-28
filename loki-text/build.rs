@@ -25,6 +25,10 @@
 //! expected to copy `loki-text/assets/` into the bundle's asset directory.
 //! The symlink is not needed in that case.
 
+// Build script, not library runtime: a panic fails the build, which is the
+// intended behaviour for a missing `OUT_DIR`/`CARGO_MANIFEST_DIR`.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::env;
 #[cfg(not(unix))]
 use std::fs;

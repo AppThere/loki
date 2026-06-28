@@ -368,7 +368,10 @@ fn generate_sheet_xml(
     row_indices.sort_unstable();
 
     for r in row_indices {
-        let mut cols = rows.remove(&r).unwrap();
+        // `row_indices` are exactly `rows`' keys, so `remove` is always `Some`.
+        let Some(mut cols) = rows.remove(&r) else {
+            continue;
+        };
         cols.sort_unstable_by_key(|&(c, _)| c);
 
         xml.push_str(&format!("    <row r=\"{}\">\n", r + 1));

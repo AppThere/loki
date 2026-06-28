@@ -168,10 +168,8 @@ impl Package {
 
     /// Mutable core properties. Creates the part and relationship if absent.
     pub fn core_properties_mut(&mut self) -> &mut CoreProperties {
-        if self.core_properties.is_none() {
-            self.core_properties = Some(CoreProperties::default());
-        }
-        self.core_properties.as_mut().unwrap()
+        self.core_properties
+            .get_or_insert_with(CoreProperties::default)
     }
 
     // --- Thumbnails ---
