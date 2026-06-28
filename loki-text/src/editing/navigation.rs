@@ -344,6 +344,8 @@ mod tests {
                 shadow: false,
                 link_url: None,
                 math: None,
+                scale: None,
+                baseline_shift: None,
             }],
             &ResolvedParaProps::default(),
             400.0,
@@ -496,6 +498,8 @@ mod tests {
             shadow: false,
             link_url: None,
             math: None,
+            scale: None,
+            baseline_shift: None,
         };
         let para0 = layout_paragraph(
             &mut resources,
