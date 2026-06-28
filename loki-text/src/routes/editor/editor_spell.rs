@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 use loki_app_shell::spell::{Consent, ReqwestFetcher, SpellService};
-use loki_doc_model::loro_mutation::{delete_text, get_block_text, insert_text};
+use loki_doc_model::loro_mutation::{get_block_text, replace_text};
 
 use crate::editing::cursor::CursorState;
 use crate::editing::relayout::{page_metrics, relayout_paginated};
@@ -92,8 +92,15 @@ pub(super) fn replace_word(
         let guard = sync.loro_doc.read();
         if let Some(ldoc) = guard.as_ref() {
             let len = menu.byte_end - menu.byte_start;
-            let _ = delete_text(ldoc, menu.paragraph_index, menu.byte_start, len);
-            let _ = insert_text(ldoc, menu.paragraph_index, menu.byte_start, replacement);
+            // `replace_text` preserves the replaced word's character formatting
+            // (a plain delete+insert would let an adjacent run's colour bleed in).
+            let _ = replace_text(
+                ldoc,
+                menu.paragraph_index,
+                menu.byte_start,
+                len,
+                replacement,
+            );
             apply_mutation_and_relayout(doc_state, ldoc);
         }
     }
@@ -212,10 +219,17 @@ fn force_full_relayout(
         relayout_paginated(&mut fr, &doc, None)
     };
     let (page_count, width_px, height_px) = page_metrics(&laid_out.layout);
+    // Publish a *fresh* document `Arc` (same content). The renderer's
+    // `DocPageSource::update_doc` compares by `Arc` pointer and only recomputes
+    // the painted layout when the pointer changes — and a dictionary change does
+    // not touch the document — so without a new `Arc` the squiggles would not
+    // repaint. Dictionary/language changes are rare, so the clone is cheap enough.
+    let fresh_doc = Arc::new((*doc).clone());
     let generation = {
         let Ok(mut state) = doc_state.lock() else {
             return;
         };
+        state.document = Some(fresh_doc);
         state.paginated_layout = Some(Arc::new(laid_out.layout));
         state.layout_reuse = Some(laid_out.reuse);
         state.page_count = page_count;

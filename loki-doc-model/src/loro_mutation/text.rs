@@ -3,9 +3,12 @@
 
 //! Character-level text mutations for individual blocks.
 
-use loro::{LoroDoc, LoroValue, TextDelta};
+use std::collections::HashMap;
+
+use loro::{LoroDoc, LoroText, LoroValue, TextDelta};
 
 use super::{MutationError, get_loro_text_for_block};
+use crate::loro_schema::CHAR_MARK_KEYS;
 
 /// Inserts `text` at UTF-8 `byte_offset` into the `LoroText` for the block
 /// at `block_index` (in section 0).
@@ -49,6 +52,75 @@ pub fn delete_text(
     let loro_text = get_loro_text_for_block(loro, block_index)?;
     loro_text.delete_utf8(byte_offset, len)?;
     Ok(())
+}
+
+/// Replaces `len` UTF-8 bytes at `byte_offset` with `replacement`, **preserving
+/// the replaced text's character formatting**.
+///
+/// A plain delete-then-insert loses formatting here: every mark is configured
+/// with `expand: After` (see `document_to_loro`), so inserting at a position
+/// that coincides with the end of a preceding run makes that run's marks
+/// "swallow" the inserted text (e.g. replacing a black word right after a red
+/// run turns the new word red). This captures the formatting at `byte_offset`
+/// before the edit and re-applies it to the inserted range afterwards — clearing
+/// any mark that leaked in and setting the ones the original text carried — so
+/// the replacement matches the text it replaced and neighbours are untouched.
+///
+/// Intended for word-level replacements (e.g. a spelling suggestion), where the
+/// replaced range has uniform formatting.
+///
+/// # Errors
+///
+/// As for [`insert_text`] / [`delete_text`], plus [`MutationError::Loro`] from
+/// the mark operations.
+pub fn replace_text(
+    loro: &LoroDoc,
+    block_index: usize,
+    byte_offset: usize,
+    len: usize,
+    replacement: &str,
+) -> Result<(), MutationError> {
+    let text = get_loro_text_for_block(loro, block_index)?;
+    // Capture the formatting of the range being replaced (read at its start; a
+    // word has uniform formatting).
+    let original_attrs = attrs_at(&text, byte_offset);
+    if len > 0 {
+        text.delete_utf8(byte_offset, len)?;
+    }
+    if replacement.is_empty() {
+        return Ok(());
+    }
+    text.insert_utf8(byte_offset, replacement)?;
+    let end = byte_offset + replacement.len();
+
+    // Reset the inserted range to *exactly* the replaced text's formatting. We
+    // cannot detect what leaked in by reading back — `expand` is applied at
+    // delta/export time, so a mark that swallowed the insert is not yet visible
+    // — so set every known mark key unconditionally: to the captured value, or
+    // `Null` to clear it. This overrides any expansion from a neighbouring run
+    // without touching the surrounding text.
+    for &key in CHAR_MARK_KEYS {
+        let value = original_attrs.get(key).cloned().unwrap_or(LoroValue::Null);
+        text.mark_utf8(byte_offset..end, key, value)?;
+    }
+    Ok(())
+}
+
+/// Returns the mark attributes active on the character at `byte_offset`.
+fn attrs_at(text: &LoroText, byte_offset: usize) -> HashMap<String, LoroValue> {
+    let mut byte_pos = 0usize;
+    for delta in text.to_delta() {
+        if let TextDelta::Insert { insert, attributes } = delta {
+            let span_bytes = insert.len();
+            if byte_offset < byte_pos + span_bytes {
+                return attributes
+                    .map(|a| a.into_iter().collect())
+                    .unwrap_or_default();
+            }
+            byte_pos += span_bytes;
+        }
+    }
+    HashMap::new()
 }
 
 /// Returns the current plain-text content of the block at `block_index`
@@ -124,3 +196,7 @@ pub fn get_mark_at(
     }
     Ok(None)
 }
+
+#[cfg(test)]
+#[path = "text_tests.rs"]
+mod tests;

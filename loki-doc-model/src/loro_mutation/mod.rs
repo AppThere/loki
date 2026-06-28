@@ -35,7 +35,9 @@ pub use self::style::{
     get_block_alignment, get_block_style_name, set_block_alignment, set_block_style,
     set_block_type_heading, set_block_type_para,
 };
-pub use self::text::{delete_text, get_block_text, get_mark_at, insert_text, mark_text};
+pub use self::text::{
+    delete_text, get_block_text, get_mark_at, insert_text, mark_text, replace_text,
+};
 
 use loro::{LoroDoc, LoroList, LoroMap, LoroMovableList, LoroText};
 

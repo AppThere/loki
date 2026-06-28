@@ -30,9 +30,10 @@ const EDGE_MARGIN_PX: f32 = 8.0;
 
 /// Renders the floating suggestions menu when `spell_menu` is `Some`.
 ///
-/// `spell_hover` holds the key of the menu row currently under the pointer
-/// (Blitz has no CSS `:hover`, so hover is tracked via `onmouseenter`/
-/// `onmouseleave` and applied as an inline background — the codebase pattern).
+/// `spell_hover` holds the key of the menu row currently under the pointer.
+/// Blitz dispatches no `mouseenter`/`mouseleave` (and no CSS `:hover`), so hover
+/// is tracked from `onmousemove` on each row — entering a row sets its key,
+/// moving over the backdrop clears it — and applied as an inline background.
 pub(super) fn spelling_panel(
     doc_state: Arc<Mutex<DocumentState>>,
     sync: SpellSync,
@@ -53,9 +54,19 @@ pub(super) fn spelling_panel(
 
     rsx! {
         // Backdrop: a transparent full-area layer that dismisses on click.
+        // Moving over it (i.e. off any row) clears the hover highlight, since
+        // Blitz delivers no `mouseleave`.
         div {
             style: "position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000;",
             onclick: move |_| { spell_menu.set(None); },
+            onmousemove: {
+                let mut spell_hover = spell_hover;
+                move |_| {
+                    if spell_hover.peek().is_some() {
+                        spell_hover.set(None);
+                    }
+                }
+            },
         }
 
         // The menu itself, anchored at the cursor.
@@ -107,18 +118,12 @@ pub(super) fn spelling_panel(
                         let doc_state = Arc::clone(&doc_state);
                         let menu = menu.clone();
                         let label = suggestion.clone();
-                        let mut spell_hover = spell_hover;
                         let key = format!("sug-{i}");
-                        let leave_key = key.clone();
+                        let hovered = is_hovered(spell_hover, &key);
                         rsx! {
                             button {
-                                style: menu_item_style(is_hovered(spell_hover, &key)),
-                                onmouseenter: move |_| { spell_hover.set(Some(key.clone())); },
-                                onmouseleave: move |_| {
-                                    if spell_hover.read().as_deref() == Some(leave_key.as_str()) {
-                                        spell_hover.set(None);
-                                    }
-                                },
+                                style: menu_item_style(hovered),
+                                onmousemove: hover_setter(spell_hover, key),
                                 onclick: move |_| {
                                     replace_word(&doc_state, sync, &menu, &suggestion);
                                     spell_menu.set(None);
@@ -151,16 +156,10 @@ pub(super) fn spelling_panel(
                     let service = service.clone();
                     let word = menu.word.clone();
                     let cursor_state = sync.cursor_state;
-                    let mut spell_hover = spell_hover;
                     rsx! {
                         button {
                             style: menu_item_style(is_hovered(spell_hover, "add")),
-                            onmouseenter: move |_| { spell_hover.set(Some("add".to_string())); },
-                            onmouseleave: move |_| {
-                                if spell_hover.read().as_deref() == Some("add") {
-                                    spell_hover.set(None);
-                                }
-                            },
+                            onmousemove: hover_setter(spell_hover, "add".to_string()),
                             onclick: move |_| {
                                 add_to_dictionary(&doc_state, cursor_state, &service, &word);
                                 spell_menu.set(None);
@@ -174,16 +173,10 @@ pub(super) fn spelling_panel(
                     let service = service.clone();
                     let word = menu.word.clone();
                     let cursor_state = sync.cursor_state;
-                    let mut spell_hover = spell_hover;
                     rsx! {
                         button {
                             style: menu_item_style(is_hovered(spell_hover, "ignore")),
-                            onmouseenter: move |_| { spell_hover.set(Some("ignore".to_string())); },
-                            onmouseleave: move |_| {
-                                if spell_hover.read().as_deref() == Some("ignore") {
-                                    spell_hover.set(None);
-                                }
-                            },
+                            onmousemove: hover_setter(spell_hover, "ignore".to_string()),
                             onclick: move |_| {
                                 ignore_word(&doc_state, cursor_state, &service, &word);
                                 spell_menu.set(None);
@@ -193,24 +186,14 @@ pub(super) fn spelling_panel(
                     }
                 }
             }
-            {
-                let mut spell_hover = spell_hover;
-                rsx! {
-                    button {
-                        style: menu_item_style(is_hovered(spell_hover, "lang")),
-                        onmouseenter: move |_| { spell_hover.set(Some("lang".to_string())); },
-                        onmouseleave: move |_| {
-                            if spell_hover.read().as_deref() == Some("lang") {
-                                spell_hover.set(None);
-                            }
-                        },
-                        onclick: move |_| {
-                            spell_menu.set(None);
-                            is_language_panel_open.set(true);
-                        },
-                        {fl!("editor-spelling-language")}
-                    }
-                }
+            button {
+                style: menu_item_style(is_hovered(spell_hover, "lang")),
+                onmousemove: hover_setter(spell_hover, "lang".to_string()),
+                onclick: move |_| {
+                    spell_menu.set(None);
+                    is_language_panel_open.set(true);
+                },
+                {fl!("editor-spelling-language")}
             }
         }
     }
@@ -240,6 +223,20 @@ fn menu_item_style(hovered: bool) -> String {
 /// Whether the row with `key` is currently hovered.
 fn is_hovered(spell_hover: Signal<Option<String>>, key: &str) -> bool {
     spell_hover.read().as_deref() == Some(key)
+}
+
+/// Builds an `onmousemove` handler that marks `key` as the hovered row. Guards
+/// with `peek()` so a move *within* the same row does not trigger a redundant
+/// signal write (and re-render); only crossing into a new row updates state.
+fn hover_setter(
+    mut spell_hover: Signal<Option<String>>,
+    key: String,
+) -> impl FnMut(Event<MouseData>) {
+    move |_| {
+        if spell_hover.peek().as_deref() != Some(key.as_str()) {
+            spell_hover.set(Some(key.clone()));
+        }
+    }
 }
 
 fn muted_text_style() -> String {
