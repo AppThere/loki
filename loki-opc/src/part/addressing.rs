@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
 
 //! Resolves relationship target references against a base part name (§8.3).
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
+
 use loki_opc::Package;
 use loki_opc::PartData;
 use loki_opc::PartName;

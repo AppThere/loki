@@ -1,0 +1,9 @@
+# Reviewed exceptions to the license-header gate (scripts/check-license-headers.py).
+#
+# One repo-relative path per line. `#` starts a comment. A path here is skipped
+# by the gate and MUST carry a justification comment above it.
+#
+# The vendored `patches/*` tree is excluded by the gate itself (upstream code
+# keeps its own "MIT OR Apache-2.0" headers), so it does not belong here.
+#
+# (no exceptions currently)

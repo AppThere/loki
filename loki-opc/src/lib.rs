@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
 
 //! Open Packaging Conventions (ISO/IEC 29500-2:2021) container support.
 //!

@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
 
 //! Well-known OPC namespace URIs, relationship types, and media types
 //! (ISO/IEC 29500-2:2021).

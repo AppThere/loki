@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
 
 //! Part-name compatibility shims: re-canonicalise non-standard percent encoding
 //! and resolve case-insensitive duplicate part names ([MS-OI29500] /

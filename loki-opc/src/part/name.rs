@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
 
 //! Validated OPC part names: parsing and the grammar rules from §6.2.2.
 

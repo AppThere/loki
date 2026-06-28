@@ -21,6 +21,10 @@ jobs:
       with:
         components: rustfmt, clippy
     - uses: Swatinem/rust-cache@v2
+    - name: License-header gate (per-crate SPDX on line 1)
+      # loki-opc is MIT (released standalone); the rest of the suite is
+      # Apache-2.0. See docs/adr/0010-per-crate-licensing.md.
+      run: python3 scripts/check-license-headers.py
     - name: Format check
       run: cargo fmt --all --check
     - name: Clippy (workspace, all features, warnings denied)

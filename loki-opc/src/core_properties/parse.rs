@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
 
 //! Deserialises the core-properties XML part via serde-derived structs.olating bounds dynamically loading properties efficiently.
 

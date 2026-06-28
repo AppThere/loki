@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
 
 //! Serialises [`CoreProperties`] to the `/docProps/core.xml` part, emitting the
 //! `cp`/`dc`/`dcterms`/`dcmitype`/`xsi` namespaces and W3CDTF-typed date

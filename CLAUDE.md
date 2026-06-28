@@ -84,8 +84,13 @@ These conventions apply to all crates in the workspace.
   outside of `#[cfg(test)]` blocks.
 - **Unsafe:** `#![forbid(unsafe_code)]` must be present in `lib.rs` for all
   `appthere-ui` and future library crates.
-- **License header:** Every `.rs` file must begin with:
-  `// SPDX-License-Identifier: Apache-2.0`
+- **License header:** Line 1 of every `.rs` file must be the SPDX identifier
+  matching that crate's `Cargo.toml` `license` field, line 2 the copyright.
+  The suite is Apache-2.0 (`// SPDX-License-Identifier: Apache-2.0`), **except
+  `loki-opc`, which is MIT** (`// SPDX-License-Identifier: MIT`) because it is
+  released as a standalone crate — see
+  [docs/adr/0010-per-crate-licensing.md](docs/adr/0010-per-crate-licensing.md).
+  Enforced in CI by `scripts/check-license-headers.py`.
 - **Annotations:**
   - `// COMPAT(dioxus-native): <explanation>` — marks any workaround for a
     Dioxus Native / Blitz CSS or API limitation, including unconfirmed CSS

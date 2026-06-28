@@ -52,8 +52,10 @@ silently. The headline findings:
   `appthere_ui` (ui layer) — a single uphill edge, for design tokens. The UDOM
   waist otherwise holds: no format crate (`loki-odf`/`loki-ooxml`) leaks into
   layout or render.
-- **Two clean, mechanical hygiene gaps:** the entire `loki-opc` crate (26 files)
-  plus a stray root `scratch.rs` are **missing SPDX headers** (A-3/A-4); 38
+- **Two clean, mechanical hygiene gaps:** `loki-opc`'s SPDX headers are present
+  but on line 2 with one test file missing a header (A-3 — see the **correction
+  note** in §3.5; the original "26 files missing" was a false positive), and a
+  stray root `scratch.rs` (A-4); 38
   production files exceed the 300-line ceiling (A-2, already tracked in
   `docs/audit-2026-06.md`).
 - **Enforcement is the actual deliverable.** CI today runs only `cargo fmt
@@ -208,16 +210,28 @@ from new violations).
 
 ### 3.5 SPDX header issues (A-3, A-4)
 
-**27 production files lack the Apache-2.0 SPDX header entirely:**
+> **Correction (2026-06-28).** The original finding here — "27 production files
+> lack the Apache-2.0 SPDX header entirely," all of `loki-opc/src/` — was a
+> **false positive**. The audit script matched only the literal string
+> `Apache-2.0`; `loki-opc` is **MIT-licensed** (it will be released standalone —
+> see [`0010-per-crate-licensing.md`](0010-per-crate-licensing.md)) and its files
+> **do** carry `// SPDX-License-Identifier: MIT`. The real, narrower issues were:
+> (1) `loki-opc` placed the SPDX id on **line 2** (copyright on line 1),
+> violating the SPDX-on-line-1 convention and the ordering every Apache crate
+> uses; and (2) `loki-opc/tests/package_tests.rs` genuinely had **no** header.
+> Both are now **resolved**: the 27 files were reordered to SPDX-on-line-1, the
+> test file got its header, and a license-aware gate
+> (`scripts/check-license-headers.py`, wired into CI) checks each file's line-1
+> SPDX id against its crate's `Cargo.toml` `license`. The corrected finding is
+> recorded below.
 
-- **All 26 files of `loki-opc/src/`** (`lib.rs`, `package.rs`, `error.rs`,
-  `compat/*`, `content_types/*`, `core_properties/*`, `part/*`,
-  `relationships/*`, `zip/*`, `constants.rs`). The crate predates the convention
-  and was never back-filled.
-- **`scratch.rs`** at the repository root — a stray scratch file (see A-4).
-
-**Zero files** have the header present-but-not-on-line-1. So the fix is pure
-insertion (line 1), and the `spdx_header_line_one` dylint (§6.2) will hold it.
+**Actual A-3:** `loki-opc` (MIT) had its SPDX id on line 2 in 27 files and one
+test file (`tests/package_tests.rs`) had no header. Every other first-party crate
+(Apache-2.0) already carries `// SPDX-License-Identifier: Apache-2.0` on line 1.
+**Zero files** anywhere had a *wrong-license* header. The fix was a comment-only
+reorder + one insertion; the `spdx_header_line_one` gate (§6.2) is generalised to
+*the crate's* license (not a blanket Apache-2.0) so the MIT/Apache split is
+enforced, not just the presence of a header.
 
 ### 3.6 Inconsistent error handling (A-10)
 
@@ -309,7 +323,7 @@ No `model → render/layout/ui` edges exist; foundation crates remain leaves;
 | `clippy::pedantic` + curated allow-list | ❌ no `[workspace.lints]` |
 | No `unwrap`/`expect`/`panic!` in lib code | ❌ no `clippy.toml` `disallowed-methods` |
 | 300-line file ceiling | ❌ no script gate |
-| SPDX header on line 1 | ❌ no gate / dylint |
+| SPDX header on line 1 (per-crate license) | ✅ CI (`scripts/check-license-headers.py`, ADR-0010) |
 | `forbid(unsafe_code)` + enumerated exceptions | ❌ no gate / allow-list |
 | Acyclic downhill-only deps | ❌ no `cargo metadata` gate |
 | `no_hardcoded_layout_dims` (1280 class) | ❌ no dylint |
@@ -325,7 +339,7 @@ This table is the M3 work-list.
 |----|----------|-------------|-------|--------------|--------------|----------|
 | A-1 | Hardcoded viewport dim (1280 class) | `editor_state.rs:177`; `editor_pointer.rs` ×4; `hit_test.rs`; `editor_spell_panel.rs` | 1 source + 6 derived | **Medium** — `loki-text` input/hit-test; behaviour-affecting | Introduce `Viewport`/`LayoutContext` (measured width + page geom + zoom + DPI); feed hit-test from `scroll_metrics.client_width`; single `canvas_origin_x()` helper (D4) | |
 | A-2 | File-ceiling >300 | 38 production files (`para.rs` 1982 … `scene.rs` 948) | 38 | **Large but mechanical** | Continue split-pass (`docs/audit-2026-06.md` Q-1); seed ceiling-gate exceptions file | |
-| A-3 | SPDX missing | all 26 `loki-opc/src/*` | 26 | **Small** | Insert header on line 1; `spdx_header_line_one` dylint | |
+| A-3 | SPDX line-1 / per-crate license | `loki-opc` (MIT) SPDX on line 2 ×27 + `tests/package_tests.rs` missing | 28 | **Small** | ✅ **Done** — reorder to SPDX-line-1, add missing header, MIT `LICENSE`, license-aware CI gate (ADR-0010) | **Resolved** |
 | A-4 | Dead/stray file | `scratch.rs` (+ root debug dumps) | 1 (+~8) | **Small** | Delete `scratch.rs`; maintainer triages root artifacts | |
 | A-5 | Library `unwrap`/`expect` | `loki-opc` ×~6, `loki-ooxml/xlsx/export.rs:371`, `loki-doc-model/.../comments.rs:94`, `loki-spreadsheet`/`loki-templates` `expect` | ~7 genuine | **Small** | `?` + typed error or justify; `disallowed-methods` gate w/ target exemptions | |
 | A-6 | `panic!` in production | none in lib (3 in `benches/`) | 0 | n/a | No action; gate exempts benches | |
