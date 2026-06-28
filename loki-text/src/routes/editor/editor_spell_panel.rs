@@ -40,15 +40,16 @@ pub(super) fn spelling_panel(
     service: SpellService,
     mut spell_menu: Signal<Option<SpellMenu>>,
     mut is_language_panel_open: Signal<bool>,
-    window_width: f32,
+    viewport_width: f32,
     spell_hover: Signal<Option<String>>,
 ) -> Element {
     let Some(menu) = spell_menu.read().clone() else {
         return rsx! {};
     };
 
-    // Clamp horizontally so the menu never spills off the right edge.
-    let max_left = (window_width - MENU_WIDTH_PX - EDGE_MARGIN_PX).max(0.0);
+    // Clamp horizontally so the menu never spills off the measured viewport's
+    // right edge.
+    let max_left = (viewport_width - MENU_WIDTH_PX - EDGE_MARGIN_PX).max(0.0);
     let left = menu.anchor_x.clamp(0.0, max_left);
     let top = menu.anchor_y.max(0.0);
 

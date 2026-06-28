@@ -36,14 +36,14 @@ implies**. Most of Loki's stated conventions already largely hold; the problem
 is that *almost none of them are mechanically enforced* (§13), so they regress
 silently. The headline findings:
 
-- **The 1280px class is real and load-bearing (A-1).** `window_width` is a
-  `Signal<f32>` initialised to `1280.0` in `editor_state.rs` and **never written
-  again**. Meanwhile the *actually measured* viewport width lives in a *separate*
-  value (`scroll_metrics.client_width`, sourced from `get_client_rect()`) used
-  for reflow. Hit-testing and pointer math read the stale 1280 default; reflow
-  reads the real width. **On any window that is not 1280 px wide, the two
-  diverge** and click-to-caret mapping drifts. This is exactly the
-  "temporary-decision-became-permanent" bug the spec names.
+- **The 1280px class was real and load-bearing (A-1) — now fixed.**
+  `window_width` was a `Signal<f32>` initialised to `1280.0` in `editor_state.rs`
+  and **never written again**, while the *actually measured* viewport width lived
+  in a *separate* value (`scroll_metrics.client_width`, from `get_client_rect()`)
+  used for reflow. Hit-testing read the stale 1280; rendering read the real width
+  — so they diverged on any non-1280 window, drifting click-to-caret mapping. The
+  signal is deleted and both paths now derive from the measured width via a single
+  `Viewport` (§2 Resolution); the 1280 literal is gone from `loki-text`.
 - **Error handling is already disciplined.** Genuine library-runtime
   `unwrap()`/`expect()` was only **11 sites** (A-5), all safe-by-construction —
   now all rewritten and locked by `clippy::unwrap_used`/`expect_used` in CI;
@@ -71,7 +71,7 @@ mechanical; the value is in making them un-reintroducible (M3).
 
 ---
 
-## 2. The 1280px class — dedicated trace (§4.2)
+## 2. The 1280px class — dedicated trace (§4.2) — ✅ resolved
 
 ### 2.1 Every hardcoded viewport/page/window dimension
 
@@ -132,6 +132,18 @@ single `canvas_origin_x()` helper replacing the six duplicated centring
 expressions. This is **D4** of the spec and the precondition for Spec 03
 (Responsive). It is also the sanctioned alternative the `no_hardcoded_layout_dims`
 dylint (§6.2) must point authors toward.
+
+> **Resolution (✅ A-1 / A-14, 2026-06-28).** The `window_width` signal (and its
+> 1280 default) is **deleted**. A new `loki-text/src/editing/viewport.rs`
+> introduces `Viewport { inner_width_px }` with `centred_origin_x(content_width)`,
+> built from the *measured* `scroll_metrics.client_width` at each use. The page
+> (paginated) and the reflow tile now centre on the **real** measured width — so
+> hit-testing and rendering use the same value and can no longer diverge — and
+> the six copied centring expressions collapse to one helper (closing A-14's
+> remaining half). Verified by `cargo test -p loki-text` (incl. 4 new
+> `Viewport` unit tests). Page geometry stays in `DocumentState`; zoom/DPI can
+> join `Viewport` when Spec 03 needs them. The `no_hardcoded_layout_dims` dylint
+> (§6.2, A-13) remains the future backstop against re-introducing such a literal.
 
 ---
 
@@ -315,12 +327,11 @@ Mechanised enforcement rides with the deferred clippy `disallowed-types` gate
   `warnings(dead_code)` over an `--all-features` build and is **deferred** to a
   fix-pass with the gate live (honest scope note: not exhaustively done here).
 
-### 3.8 Duplication (A-14) — ✅ android_main resolved; centring deferred to A-1
+### 3.8 Duplication (A-14) — ✅ resolved (both clusters)
 
 - **The centring formula** (§2.1) — six near-identical copies of `(window_width −
-  …)/2.0`. Folds into the `Viewport::canvas_origin_x()` helper. **Deferred — it
-  belongs with the A-1 `Viewport` refactor** (premature to dedup before that type
-  exists). Tracked under A-1, not closed here.
+  …)/2.0` — now collapse to the single `Viewport::centred_origin_x()` helper,
+  resolved jointly with A-1 (see §2 Resolution).
 - **Android `android_main` entry point** — was ~55 lines duplicated near-verbatim
   across all three app crates (only the logcat tag and the `init_android`
   argument differed). **Resolved:** extracted into a `loki_app_shell::android_main!`
@@ -416,7 +427,7 @@ This table is the M3 work-list.
 
 | ID | Category | Location(s) | Count | Blast radius | Proposed fix | Priority |
 |----|----------|-------------|-------|--------------|--------------|----------|
-| A-1 | Hardcoded viewport dim (1280 class) | `editor_state.rs:177`; `editor_pointer.rs` ×4; `hit_test.rs`; `editor_spell_panel.rs` | 1 source + 6 derived | **Medium** — `loki-text` input/hit-test; behaviour-affecting | Introduce `Viewport`/`LayoutContext` (measured width + page geom + zoom + DPI); feed hit-test from `scroll_metrics.client_width`; single `canvas_origin_x()` helper (D4) | |
+| A-1 | Hardcoded viewport dim (1280 class) | `editor_state.rs:177`; `editor_pointer.rs` ×4; `hit_test.rs`; `editor_spell_panel.rs` | 1 source + 6 derived | **Medium** — `loki-text` input/hit-test; behaviour-affecting | ✅ **Done** — `window_width`/1280 deleted; new `editing::viewport::Viewport` (measured `scroll_metrics.client_width`) + `centred_origin_x()`; hit-test & render now share the measured width (D4) | **Resolved** |
 | A-2 | File-ceiling >300 | 38 production files (`para.rs` 1982 … `scene.rs` 948) | 38 | **Large but mechanical** | ✅ **Gated + down-payment** — ratchet gate (`check-file-ceiling.py` + baseline); 3 split via inline-test extraction (38→35); 35 frozen, can't grow | **Partial** |
 | A-3 | SPDX line-1 / per-crate license | `loki-opc` (MIT) SPDX on line 2 ×27 + `tests/package_tests.rs` missing | 28 | **Small** | ✅ **Done** — reorder to SPDX-line-1, add missing header, MIT `LICENSE`, license-aware CI gate (ADR-0010) | **Resolved** |
 | A-4 | Dead/stray file | `scratch.rs` (+ 10 root debug dumps) | 11 | **Small** | ✅ **Done** — `git rm` all 11; `.gitignore` entries added to prevent recurrence | **Resolved** |
@@ -429,7 +440,7 @@ This table is the M3 work-list.
 | A-11 | TODO/COMPAT debt | 47 TODO (all tagged) / 57 COMPAT (prod) | 104 | **Medium (process)** | ✅ **Done** — inventory doc; `check-todo-format.py` gate (CI); COMPATs grouped for Dioxus-pin re-validation | **Resolved** |
 | A-12 | Naming: `*Props` overloaded | model bags vs Dioxus props | ~6 model bags | **Medium (rename)** | ✅ **Decided ([0011](0011-props-naming-convention.md))** — keep `*Props`; rename (350+ refs) disproportionate, available on request | **Resolved** |
 | A-13 | Enforcement gap | `clippy.toml`, ceiling/SPDX/dep-direction gates, dylint all absent | — | **Foundational** | Implement §6 gates (M3) before bulk fixes (D2) | |
-| A-14 | Duplication | centring math (A-1); `android_main` ×3 | 2 clusters | **Small–Medium** | ✅ **android_main done** — `loki_app_shell::android_main!` macro (Android build unverified in-env); centring math deferred to A-1 | **Partial** |
+| A-14 | Duplication | centring math (A-1); `android_main` ×3 | 2 clusters | **Small–Medium** | ✅ **Done** — `android_main` → `loki_app_shell::android_main!` macro; centring math → `Viewport::centred_origin_x()` (with A-1) | **Resolved** |
 
 ---
 

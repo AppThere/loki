@@ -151,7 +151,6 @@ pub(super) fn render_canvas_area(
     mut is_dragging: Signal<bool>,
     mut drag_origin: Signal<Option<(f32, f32)>>,
     touch_state: Signal<Option<TouchInteractionState>>,
-    window_width: Signal<f32>,
     mut scroll_offset: Signal<f32>,
     mut scroll_metrics: Signal<ScrollMetrics>,
     mut canvas_mounted: CanvasMounted,
@@ -281,7 +280,7 @@ pub(super) fn render_canvas_area(
                 doc_state_mousemove,
                 is_dragging,
                 drag_origin,
-                window_width,
+                scroll_metrics,
                 scroll_offset,
                 cursor_state,
                 page_gap_px,
@@ -306,7 +305,6 @@ pub(super) fn render_canvas_area(
             ontouchmove: make_touchmove_handler(
                 doc_state_touch,
                 touch_state,
-                window_width,
                 scroll_offset,
                 loro_doc,
                 cursor_state,
@@ -318,7 +316,6 @@ pub(super) fn render_canvas_area(
             ontouchend: make_touchend_handler(
                 doc_state_touchend,
                 touch_state,
-                window_width,
                 scroll_offset,
                 loro_doc,
                 cursor_state,

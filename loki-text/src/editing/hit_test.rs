@@ -13,9 +13,12 @@
 //! `ClientPoint` (window-relative logical pixels). The canvas origin
 //! is therefore computed from:
 //!
-//! - `canvas_origin.x` = `(window_inner_width_px − page_width_px) / 2.0`
-//!   (pages are flex-centered; `window_inner_width_px` defaults to 1280 px
-//!   and must be updated when a window-size API becomes available in Blitz).
+//! - `canvas_origin.x` = `(viewport_width_px − page_width_px) / 2.0` (pages are
+//!   flex-centered). `viewport_width_px` is the **measured** scroll-container
+//!   width (`scroll_metrics.client_width`), wrapped in
+//!   [`crate::editing::viewport::Viewport`] which owns this centring math — see
+//!   `Viewport::centred_origin_x`. (Previously a hardcoded 1280 px default;
+//!   Spec 01 audit A-1.)
 //! - `canvas_origin.y` = `TOOLBAR_HEIGHT_TOP + SPACE_6` (exact from tokens).
 //!
 //! - `scroll_offset` = 0.0 (Blitz does not expose `node.scroll_offset` to

@@ -105,7 +105,6 @@ pub(super) fn EditorInner(path: String) -> Element {
         is_dragging,
         drag_origin,
         touch_state,
-        window_width,
         scroll_offset,
         scroll_metrics,
         canvas_mounted,
@@ -754,7 +753,6 @@ pub(super) fn EditorInner(path: String) -> Element {
                 is_dragging,
                 drag_origin,
                 touch_state,
-                window_width,
                 scroll_offset,
                 scroll_metrics,
                 canvas_mounted,
@@ -913,7 +911,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     spell_service.clone(),
                     spell_menu,
                     is_language_panel_open,
-                    window_width(),
+                    scroll_metrics().client_width,
                     spell_hover,
                 )}
             }
