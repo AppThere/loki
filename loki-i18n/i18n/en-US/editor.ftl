@@ -91,3 +91,20 @@ editor-style-line-spacing = Line ×
 editor-view-paginated = Paginated
 editor-view-reflowed = Reflowed
 editor-view-toggle-aria = Toggle between paginated and reflowed view
+
+# Spelling suggestions panel (right-click on a word) and language picker
+editor-spelling-heading = Spelling: { $word }
+editor-spelling-correct = { $word } — correctly spelled
+editor-spelling-no-suggestions = No suggestions
+editor-spelling-add-dictionary = Add to Dictionary
+editor-spelling-ignore = Ignore
+editor-spelling-language = Spelling Language…
+editor-spelling-language-title = Spelling Language
+editor-spelling-license = License: { $license }
+editor-spelling-active = Active
+editor-spelling-use = Use
+editor-spelling-download = Download
+editor-spelling-downloading = Downloading…
+editor-spelling-download-ok = Downloaded and activated
+editor-spelling-download-failed = Download failed
+editor-spelling-load-failed = Could not load dictionary

@@ -25,7 +25,10 @@ use parley::{
 use crate::color::LayoutColor;
 use crate::font::FontResources;
 use crate::geometry::{LayoutInsets, LayoutRect};
-use crate::items::{BorderEdge, PositionedBorderRect, PositionedItem, PositionedRect};
+use crate::items::{
+    BorderEdge, DecorationKind, PositionedBorderRect, PositionedDecoration, PositionedItem,
+    PositionedRect,
+};
 
 /// Vertical text position for superscript / subscript runs.
 ///
@@ -1019,6 +1022,47 @@ pub fn layout_paragraph(
     display_scale: f32,
     preserve_for_editing: bool,
 ) -> ParagraphLayout {
+    layout_paragraph_spelled(
+        resources,
+        text_content,
+        style_spans,
+        para_props,
+        available_width,
+        display_scale,
+        preserve_for_editing,
+        None,
+    )
+}
+
+/// Colour of the spelling squiggle (opaque red), matching the convention used
+/// by desktop word processors for misspelled words.
+const SPELL_SQUIGGLE_COLOR: LayoutColor = LayoutColor {
+    r: 0.84,
+    g: 0.0,
+    b: 0.0,
+    a: 1.0,
+};
+
+/// [`layout_paragraph`] with an optional spell checker.
+///
+/// When `spell` is `Some`, misspelled words emit [`DecorationKind::Spelling`]
+/// squiggles. The checker's `generation` folds into the cache key so cached
+/// layouts are reused only while the dictionary/word-lists are unchanged.
+// The sibling `layout_paragraph` already sits at the 7-arg limit; the optional
+// spell checker is one more positional input on the same hot path. Bundling
+// them into a struct would obscure the call sites for no benefit.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn layout_paragraph_spelled(
+    resources: &mut FontResources,
+    text_content: &str,
+    style_spans: &[StyleSpan],
+    para_props: &ResolvedParaProps,
+    available_width: f32,
+    display_scale: f32,
+    preserve_for_editing: bool,
+    spell: Option<&crate::SpellState>,
+) -> ParagraphLayout {
+    let spell_generation = spell.map_or(0, |s| s.generation);
     let key = crate::para_cache::para_key(
         text_content,
         style_spans,
@@ -1026,6 +1070,7 @@ pub fn layout_paragraph(
         available_width,
         display_scale,
         preserve_for_editing,
+        spell_generation,
     );
     if let Some(hit) = resources.para_cache.get(key) {
         return hit;
@@ -1038,6 +1083,7 @@ pub fn layout_paragraph(
         available_width,
         display_scale,
         preserve_for_editing,
+        spell,
     );
     resources.para_cache.put(key, result.clone());
     result
@@ -1082,6 +1128,9 @@ fn prepend_para_box(
 
 /// Lays out a single paragraph using Parley, without consulting or populating
 /// the shaping cache. [`layout_paragraph`] wraps this with memoisation.
+// One more argument than the 7-arg limit: the optional spell checker threads
+// alongside the existing shaping inputs (see `layout_paragraph_spelled`).
+#[allow(clippy::too_many_arguments)]
 fn layout_paragraph_uncached(
     resources: &mut FontResources,
     text_content: &str,
@@ -1090,6 +1139,7 @@ fn layout_paragraph_uncached(
     available_width: f32,
     display_scale: f32,
     preserve_for_editing: bool,
+    spell: Option<&crate::SpellState>,
 ) -> ParagraphLayout {
     let (mut clean_text, mut clean_spans, mut orig_to_clean, mut clean_to_orig) =
         clean_text_and_spans(text_content, style_spans);
@@ -1538,6 +1588,49 @@ fn layout_paragraph_uncached(
                 ),
                 color: hl,
             }));
+        }
+    }
+
+    // ── Spelling squiggles ────────────────────────────────────────────────────
+    // When a checker is supplied, flag misspelled words with a wavy underline.
+    // Word byte ranges are resolved to per-line extents with the same Parley
+    // selection-geometry pass as the highlight underlay (so the squiggle tracks
+    // wrapping and coalesced runs), then emitted as `DecorationKind::Spelling`
+    // decorations the renderer paints as a wave.
+    if let Some(spell) = spell {
+        for miss in spell.checker.check_text(&clean_text) {
+            if miss.range.start >= miss.range.end {
+                continue;
+            }
+            let anchor =
+                Cursor::from_byte_index(&layout, miss.range.start, parley::Affinity::Downstream);
+            let focus =
+                Cursor::from_byte_index(&layout, miss.range.end, parley::Affinity::Downstream);
+            for (bb, line_idx) in Selection::new(anchor, focus).geometry(&layout) {
+                let mut indent = if line_idx == 0 && para_props.indent_hanging > 0.0 {
+                    para_props.indent_start - para_props.indent_hanging
+                } else {
+                    para_props.indent_start
+                };
+                if line_idx < drop_lines {
+                    indent += drop_shift;
+                }
+                // Thickness scales with line height; the wave is anchored near the
+                // line-box bottom (just below the glyphs). The exact baseline
+                // offset is approximate — selection geometry yields the line box,
+                // not per-run metrics — but reads correctly as an under-word
+                // squiggle. TODO(spell-baseline): tighten to the run underline
+                // offset once verified against the GPU renderer at multiple zooms.
+                let thickness = (((bb.y1 - bb.y0) as f32) * 0.06).clamp(0.7, 1.5);
+                items.push(PositionedItem::Decoration(PositionedDecoration {
+                    x: bb.x0 as f32 + indent,
+                    y: bb.y1 as f32 - thickness * 2.5,
+                    width: (bb.x1 - bb.x0) as f32,
+                    thickness,
+                    kind: DecorationKind::Spelling,
+                    color: SPELL_SQUIGGLE_COLOR,
+                }));
+            }
         }
     }
 

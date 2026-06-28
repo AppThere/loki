@@ -68,6 +68,14 @@ pub fn App() -> Element {
     // Inject the theme context before any shell component renders.
     provide_context(AtThemeContext::default());
 
+    // Spell-check service (bundled English; dictionary cache shared across the
+    // suite). Provided into context so this app's editor can query spelling and
+    // offer corrections. Visible in-cell squiggles are a follow-up in the
+    // spreadsheet's own cell renderer.
+    if let Ok(service) = loki_app_shell::spell::SpellService::bootstrap() {
+        provide_context(service);
+    }
+
     // Open-document tab list. Index 0 of the Vec = document tab 1
     let tabs: Signal<Vec<OpenTab>> = use_signal(Vec::new);
     let active_tab: Signal<usize> = use_signal(|| 0usize); // 0 = Home tab

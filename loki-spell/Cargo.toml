@@ -1,0 +1,15 @@
+[package]
+name = "loki-spell"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Hunspell-compatible spell checking for the Loki suite."
+
+[dependencies]
+spellbook = "0.4"
+thiserror = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[dev-dependencies]

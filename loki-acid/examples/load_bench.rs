@@ -74,6 +74,7 @@ fn main() {
         DocxImport::import(Cursor::new(&bytes), DocxImportOptions::default()).expect("import docx");
     let opts = LayoutOptions {
         preserve_for_editing: true,
+        spell: None,
     };
     let pages = {
         let mut fonts = FontResources::new();

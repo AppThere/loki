@@ -14,6 +14,18 @@
 #
 # Usage:
 #   ./scripts/build-android.sh [--release] [--install] [--skip-cargo-apk]
+#                              [--abi auto|arm64|x64|all]
+#
+#   --abi auto   (default) On --install, detect the connected device's ABI and
+#                build only that target (fast).  Otherwise build all ABIs.
+#   --abi arm64  Build only aarch64-linux-android (arm64-v8a).
+#   --abi x64    Build only x86_64-linux-android   (x86_64; Chromebooks/ARC).
+#   --abi all    Build a universal multi-ABI APK (both targets from Cargo.toml's
+#                build_targets) — useful for distributing one sideloadable APK.
+#
+#   --gpu        Enable the real Vello GPU renderer (RUSTFLAGS='--cfg android_gpu').
+#                Requires a Vulkan-capable device; omit for the SwiftShader
+#                emulator, which lacks the compute-shader support Vello needs.
 #
 # Environment variables (auto-detected if not set):
 #   ANDROID_HOME / ANDROID_SDK_ROOT   Android SDK root
@@ -27,15 +39,56 @@ set -euo pipefail
 RELEASE=0
 INSTALL=0
 SKIP_CARGO_APK=0
+GPU=0
+ABI="auto"   # auto | arm64 | x64 | all
 
-for arg in "$@"; do
-    case "$arg" in
+while [[ $# -gt 0 ]]; do
+    case "$1" in
         --release)        RELEASE=1 ;;
         --install)        INSTALL=1 ;;
         --skip-cargo-apk) SKIP_CARGO_APK=1 ;;
-        *) echo "Unknown argument: $arg" >&2; exit 1 ;;
+        --gpu)            GPU=1 ;;
+        --abi)            ABI="${2:-}"; shift ;;
+        --abi=*)          ABI="${1#*=}" ;;
+        *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
+    shift
 done
+
+# ── Resolve the cargo --target from --abi ────────────────────────────────────
+# Empty CARGO_TARGET => build all ABIs listed in Cargo.toml build_targets
+# (universal APK).  A non-empty value passes a single `--target` to cargo apk.
+
+detect_device_abi() {
+    # Map the connected device's reported ABI to a Rust target triple.
+    local abi
+    abi="$(adb shell getprop ro.product.cpu.abi 2>/dev/null | tr -d '\r')"
+    case "$abi" in
+        arm64-v8a)   echo "aarch64-linux-android" ;;
+        x86_64)      echo "x86_64-linux-android" ;;
+        armeabi*)    echo "armv7-linux-androideabi" ;;
+        x86)         echo "i686-linux-android" ;;
+        *)           echo "" ;;
+    esac
+}
+
+CARGO_TARGET=""
+case "$ABI" in
+    arm64) CARGO_TARGET="aarch64-linux-android" ;;
+    x64)   CARGO_TARGET="x86_64-linux-android" ;;
+    all)   CARGO_TARGET="" ;;
+    auto)
+        if [[ "$INSTALL" -eq 1 ]]; then
+            CARGO_TARGET="$(detect_device_abi)"
+            if [[ -n "$CARGO_TARGET" ]]; then
+                echo "==> Auto-detected device ABI -> $CARGO_TARGET"
+            else
+                echo "==> No device ABI detected; building all ABIs (universal APK)"
+            fi
+        fi
+        ;;
+    *) echo "Unknown --abi: '$ABI' (use auto|arm64|x64|all)" >&2; exit 1 ;;
+esac
 
 # ── Change to repo root ───────────────────────────────────────────────────────
 
@@ -179,9 +232,17 @@ echo "    DEX: $DEX_PATH"
 
 if [[ "$SKIP_CARGO_APK" -eq 0 ]]; then
     echo ""
-    echo "==> cargo apk build ($PROFILE)..."
+    GPU_LABEL=""; [[ "$GPU" -eq 1 ]] && GPU_LABEL=", gpu"
+    echo "==> cargo apk build ($PROFILE${CARGO_TARGET:+, $CARGO_TARGET}${GPU_LABEL})..."
+    # Enable the Vello GPU renderer by adding the android_gpu cfg, preserving any
+    # RUSTFLAGS the caller already set.
+    if [[ "$GPU" -eq 1 && " ${RUSTFLAGS:-} " != *" --cfg android_gpu "* ]]; then
+        export RUSTFLAGS="${RUSTFLAGS:-} --cfg android_gpu"
+        echo "    GPU renderer enabled (RUSTFLAGS:${RUSTFLAGS})"
+    fi
     BUILD_ARGS=(apk build --package loki-text)
     [[ "$RELEASE" -eq 1 ]] && BUILD_ARGS+=(--release)
+    [[ -n "$CARGO_TARGET" ]] && BUILD_ARGS+=(--target "$CARGO_TARGET")
     # cargo-apk may exit non-zero due to a Bin/Cdylib artifact-check panic even
     # when the APK was built successfully — check for the file directly.
     cargo "${BUILD_ARGS[@]}" || true
@@ -253,6 +314,13 @@ echo "==> APK ready: $APK_ALIGNED"
 if [[ "$INSTALL" -eq 1 ]]; then
     echo ""
     echo "==> Installing on device..."
-    adb install -r "$APK_ALIGNED"
+    # -r: replace existing; -d: allow version-code downgrade (dev builds use 0).
+    # A debug-signed rebuild can clash with a differently-signed prior install
+    # (INSTALL_FAILED_UPDATE_INCOMPATIBLE) — fall back to uninstall + install.
+    if ! adb install -r -d "$APK_ALIGNED"; then
+        echo "==> Replace install failed; uninstalling com.appthere.loki and retrying..."
+        adb uninstall com.appthere.loki || true
+        adb install "$APK_ALIGNED"
+    fi
     echo "==> Installed successfully!"
 fi

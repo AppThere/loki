@@ -32,6 +32,7 @@ fn bench_keystroke(c: &mut Criterion) {
     let mut resources = FontResources::new();
     let options = LayoutOptions {
         preserve_for_editing: true,
+        spell: None,
     };
 
     let mut group = c.benchmark_group("edit_path_keystroke");
@@ -79,6 +80,7 @@ fn bench_keystroke_incremental(c: &mut Criterion) {
     let mut resources = FontResources::new();
     let options = LayoutOptions {
         preserve_for_editing: true,
+        spell: None,
     };
 
     let mut group = c.benchmark_group("edit_path_incremental");

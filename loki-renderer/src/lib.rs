@@ -25,11 +25,14 @@ pub(crate) mod page_tile;
 pub(crate) mod reflow_view;
 pub mod render_layout;
 pub mod renderer_state;
+pub mod spell;
 pub(crate) mod vello_init;
 #[cfg(any(not(target_os = "android"), android_gpu))]
 pub(crate) mod virtualize;
 
 pub use doc_page_source::DocPageSource;
-pub use document_view::{DocumentView, DocumentViewProps, RendererCursorPos, ViewMode};
+pub use document_view::{
+    DocumentView, DocumentViewProps, RendererCursorPos, TileContext, ViewMode,
+};
 pub use render_layout::{RenderLayout, RenderMode};
 pub use renderer_state::RendererState;

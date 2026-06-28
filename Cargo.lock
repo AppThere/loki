@@ -2622,6 +2622,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07bbe89c50d7a535e539b8c17bc0b49bdb77747034daa8087407d655f3f7cc1d"
 dependencies = [
  "futures-core",
+ "futures-sink",
 ]
 
 [[package]]
@@ -3837,8 +3838,11 @@ version = "0.1.0"
 dependencies = [
  "dirs",
  "loki-i18n",
+ "loki-spell",
+ "reqwest",
  "serde",
  "serde_json",
+ "sys-locale",
 ]
 
 [[package]]
@@ -3925,6 +3929,7 @@ dependencies = [
  "loki-doc-model",
  "loki-fonts",
  "loki-primitives",
+ "loki-spell",
  "loro",
  "parley 0.10.0",
  "thiserror 2.0.18",
@@ -4093,6 +4098,17 @@ dependencies = [
  "loro",
  "serde",
  "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "loki-spell"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "spellbook",
  "thiserror 2.0.18",
 ]
 
@@ -6111,7 +6127,9 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64",
  "bytes",
+ "futures-channel",
  "futures-core",
+ "futures-util",
  "http",
  "http-body",
  "http-body-util",
@@ -6835,6 +6853,16 @@ dependencies = [
  "anyrender",
  "debug_timer",
  "softbuffer",
+]
+
+[[package]]
+name = "spellbook"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d204abcbdf8e88729306a8d0ca01a79d8a49969fe1f84696909d6dbc4321c1a"
+dependencies = [
+ "foldhash 0.2.0",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]

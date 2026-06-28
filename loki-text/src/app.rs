@@ -94,6 +94,23 @@ pub fn App() -> Element {
     // Inject the theme context before any shell component renders.
     provide_context(AtThemeContext::default());
 
+    // Spell-check service — starts on the bundled English dictionary so checking
+    // works offline. Provided into context for any component (e.g. a future
+    // language picker), and installed into the editor's ambient layout state so
+    // the layout engine paints squiggles under misspelled words.
+    match loki_app_shell::spell::SpellService::bootstrap() {
+        Ok(service) => {
+            crate::editing::spell::set_active(service.snapshot().map(|snap| {
+                loki_layout::SpellState {
+                    checker: snap.checker,
+                    generation: snap.generation,
+                }
+            }));
+            provide_context(service);
+        }
+        Err(err) => tracing::warn!("spell check unavailable: {err}"),
+    }
+
     // Open-document tab list. Index 0 of the Vec = document tab 1 (tab bar
     // index 1, because index 0 is the always-present Home tab).
     let tabs: Signal<Vec<OpenTab>> = use_signal(Vec::new);

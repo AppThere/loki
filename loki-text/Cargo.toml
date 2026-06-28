@@ -78,7 +78,12 @@ loki-fonts.workspace = true
 
 [package.metadata.android]
 package = "com.appthere.loki"
-build_targets = ["aarch64-linux-android"]
+# Default to a universal (multi-ABI) build covering 64-bit ARM phones/tablets
+# and x86_64 (Chromebooks/ARC, emulators, some Intel devices).  A plain
+# `cargo apk build` / `dx` build therefore produces one APK that runs on both.
+# scripts/build-android.sh --abi <arm64|x64> overrides this with a single
+# `--target` for fast single-device deploys.
+build_targets = ["aarch64-linux-android", "x86_64-linux-android"]
 
 [package.metadata.android.sdk]
 min_sdk_version = 26          # wgpu requires Vulkan, available from API 26

@@ -23,6 +23,7 @@ use crate::{FontResources, LayoutOptions, PaginatedLayout, layout_paginated_full
 fn opts() -> LayoutOptions {
     LayoutOptions {
         preserve_for_editing: true,
+        spell: None,
     }
 }
 

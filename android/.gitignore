@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# Build outputs
+.gradle/
+build/
+app/build/
+
+# Staged by scripts/build-aab.sh from the canonical sources — not committed:
+#   * native libraries built by cargo
+#   * FilePickerActivity.java copied from patches/loki-file-access/android/
+app/src/main/jniLibs/
+app/src/main/java/
+
+# Local signing config
+keystore.properties
+*.keystore
+!/*.placeholder

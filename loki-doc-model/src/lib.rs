@@ -150,8 +150,8 @@ pub use loro_bridge::{BridgeError, IncrementalReader, document_to_loro, loro_to_
 pub mod loro_mutation;
 pub use loro_mutation::{
     MutationError, delete_text, get_block_alignment, get_block_style_name, get_block_text,
-    get_mark_at, insert_text, mark_text, merge_block, set_block_alignment, set_block_style,
-    set_block_type_heading, set_block_type_para, split_block,
+    get_mark_at, insert_text, mark_text, merge_block, replace_text, set_block_alignment,
+    set_block_style, set_block_type_heading, set_block_type_para, split_block,
 };
 pub mod error;
 pub mod io;

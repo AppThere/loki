@@ -232,6 +232,7 @@ impl DocPageSource {
                 RenderMode::Paginated => {
                     let options = LayoutOptions {
                         preserve_for_editing: true,
+                        spell: crate::spell::active(),
                     };
                     match loki_layout::layout_document(
                         resources,
@@ -251,6 +252,7 @@ impl DocPageSource {
                     // hit-test clicks and place/paint the caret.
                     let options = LayoutOptions {
                         preserve_for_editing: true,
+                        spell: crate::spell::active(),
                     };
                     let content_width =
                         (available_width_pt - 2.0 * REFLOW_PADDING_PT).max(MIN_REFLOW_CONTENT_PT);

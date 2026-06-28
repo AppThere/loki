@@ -14,10 +14,14 @@ use loki_layout::{
     relayout_paginated_incremental,
 };
 
-/// Layout options for the editor: retain Parley layouts for hit-testing/cursor.
-const EDIT_OPTS: LayoutOptions = LayoutOptions {
-    preserve_for_editing: true,
-};
+/// Layout options for the editor: retain Parley layouts for hit-testing/cursor,
+/// plus the active spell checker (if any) so misspelled words get squiggles.
+fn edit_opts() -> LayoutOptions {
+    LayoutOptions {
+        preserve_for_editing: true,
+        spell: crate::editing::spell::active(),
+    }
+}
 
 /// A freshly computed paginated layout plus the reuse metadata to store.
 pub(crate) struct LaidOut {
@@ -33,20 +37,14 @@ pub(crate) fn relayout_paginated(
     doc: &Document,
     prev: Option<(&Document, &PaginatedLayout, &PaginatedReuse)>,
 ) -> LaidOut {
+    let opts = edit_opts();
     if let Some((prev_doc, prev_layout, prev_reuse)) = prev
-        && let Some((layout, reuse)) = relayout_paginated_incremental(
-            fr,
-            doc,
-            prev_doc,
-            prev_layout,
-            prev_reuse,
-            1.0,
-            &EDIT_OPTS,
-        )
+        && let Some((layout, reuse)) =
+            relayout_paginated_incremental(fr, doc, prev_doc, prev_layout, prev_reuse, 1.0, &opts)
     {
         return LaidOut { layout, reuse };
     }
-    let (layout, reuse) = layout_paginated_full(fr, doc, 1.0, &EDIT_OPTS);
+    let (layout, reuse) = layout_paginated_full(fr, doc, 1.0, &opts);
     LaidOut { layout, reuse }
 }
 

@@ -33,7 +33,7 @@ use std::sync::Arc;
 use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
-use loki_renderer::{DocumentView, RendererCursorPos, ViewMode};
+use loki_renderer::{DocumentView, RendererCursorPos, TileContext, ViewMode};
 
 use super::editor_error_view::EditorErrorView;
 use super::editor_keydown::make_keydown_handler;
@@ -47,6 +47,10 @@ use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::hit_test::hit_test_page;
 use crate::editing::state::DocumentState;
 use crate::editing::touch::TouchInteractionState;
+use dioxus::html::input_data::MouseButton;
+use loki_app_shell::spell::SpellService;
+
+use super::editor_spell::{SpellMenu, resolve_spell_menu};
 use crate::error::LoadError;
 use loki_doc_model::loro_bridge::derive_loro_cursor;
 use loki_i18n::fl;
@@ -88,6 +92,49 @@ fn loading_view() -> Element {
     }
 }
 
+/// Right-click handler body: resolves the word under the tile-local coordinates
+/// in `ctx` (accurate, via `element_coordinates` — no window-centring math),
+/// selects it, and opens the spelling menu anchored at the cursor. A no-op when
+/// there is no word at the point.
+fn open_spell_panel_at(
+    ctx: TileContext,
+    doc_state: &Arc<std::sync::Mutex<DocumentState>>,
+    loro_doc: Signal<Option<loro::LoroDoc>>,
+    service: &SpellService,
+    mut cursor_state: Signal<CursorState>,
+    mut spell_menu: Signal<Option<SpellMenu>>,
+) {
+    let layout_opt = {
+        let Ok(s) = doc_state.lock() else { return };
+        s.paginated_layout.clone()
+    };
+    let Some(layout) = layout_opt else { return };
+    let Some(pos) = hit_test_page(ctx.page_index, ctx.x_pt, ctx.y_pt, &layout) else {
+        return;
+    };
+    match resolve_spell_menu(loro_doc, service, pos.paragraph_index, pos.byte_offset) {
+        Some(mut menu) => {
+            // Anchor the floating menu at the cursor (window-relative coords).
+            menu.anchor_x = ctx.client_x;
+            menu.anchor_y = ctx.client_y;
+            // Select the whole word so the user sees what the suggestions apply to.
+            let word_pos = |byte_offset| DocumentPosition {
+                page_index: pos.page_index,
+                paragraph_index: menu.paragraph_index,
+                byte_offset,
+            };
+            cursor_state.write().anchor = Some(word_pos(menu.byte_start));
+            cursor_state.write().focus = Some(word_pos(menu.byte_end));
+            spell_menu.set(Some(menu));
+        }
+        // No word at the point — just place the caret.
+        None => {
+            cursor_state.write().anchor = Some(pos.clone());
+            cursor_state.write().focus = Some(pos);
+        }
+    }
+}
+
 /// Renders the scrollable canvas area for the document editor.
 ///
 /// Plain function — no hooks allowed.  All reactive state is passed in as
@@ -123,6 +170,9 @@ pub(super) fn render_canvas_area(
     document_load: Resource<(String, Result<Document, LoadError>)>,
     mut canvas_hovered: Signal<bool>,
     page_gap_px: f32,
+    service: SpellService,
+    spell_menu: Signal<Option<SpellMenu>>,
+    doc_state_context: Arc<std::sync::Mutex<DocumentState>>,
 ) -> Element {
     rsx! {
         // Outer wrapper occupies the editor column's flex:1 slot and lays out
@@ -215,9 +265,14 @@ pub(super) fn render_canvas_area(
                 }
             },
 
-            // Outer div records drag origin; cursor placement happens in
-            // on_tile_click on the per-page div (element_coordinates, no origin math).
+            // Outer div records drag origin for the LEFT button only. Right-click
+            // is handled per-tile (`on_tile_context` on `DocumentView`), which has
+            // accurate `element_coordinates`; ignore it here so it does not start a
+            // spurious drag.
             onmousedown: move |evt: MouseEvent| {
+                if evt.trigger_button() == Some(MouseButton::Secondary) {
+                    return;
+                }
                 let c = evt.client_coordinates();
                 drag_origin.set(Some((c.x as f32, c.y as f32)));
             },
@@ -390,6 +445,21 @@ pub(super) fn render_canvas_area(
                                     paragraph_index: para,
                                     byte_offset: byte,
                                 });
+                            },
+                            // Right-click → spelling menu (paginated only). Uses
+                            // accurate tile-local coordinates from the tile event.
+                            on_tile_context: move |ctx: TileContext| {
+                                if view_mode() == ViewMode::Reflow {
+                                    return;
+                                }
+                                open_spell_panel_at(
+                                    ctx,
+                                    &doc_state_context,
+                                    loro_doc,
+                                    &service,
+                                    cursor_state,
+                                    spell_menu,
+                                );
                             },
                         }
                     }

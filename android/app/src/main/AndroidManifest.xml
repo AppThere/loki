@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AndroidManifest.xml — loki-text Gradle AAB wrapper.
+
+  Mirrors loki-text/AndroidManifest.xml (the manifest the cargo-apk pipeline
+  injects).  The package id / min / target SDK come from app/build.gradle.kts
+  (AGP namespace + defaultConfig), so they are intentionally absent here.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      android:hasCode="true" — FilePickerActivity is real Java/DEX code.
+      Gradle compiles and dexes it automatically (no manual javac/d8 step).
+    -->
+    <application
+        android:label="Loki"
+        android:hasCode="true"
+        android:allowBackup="true">
+
+        <!-- Main app entry point: the Rust cdylib libloki_text.so. -->
+        <activity
+            android:name="android.app.NativeActivity"
+            android:label="Loki"
+            android:exported="true"
+            android:configChanges="orientation|keyboardHidden|screenSize">
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="loki_text" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          FilePickerActivity — transparent Java trampoline for SAF file picking.
+          NativeActivity has no onActivityResult; this Activity receives the SAF
+          result and delivers it to Rust via JNI.  Started only from within the
+          app, so exported="false".
+        -->
+        <activity
+            android:name="io.github.appthere.lokifileaccess.FilePickerActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:exported="false" />
+
+    </application>
+
+</manifest>

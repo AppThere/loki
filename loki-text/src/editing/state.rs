@@ -100,6 +100,7 @@ pub fn ensure_reflow_layout(
             .unwrap_or_else(|e| e.into_inner());
         let options = LayoutOptions {
             preserve_for_editing: true,
+            spell: crate::editing::spell::active(),
         };
         match loki_layout::layout_document(
             &mut resources,

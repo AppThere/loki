@@ -36,6 +36,7 @@ use loki_renderer::ViewMode;
 use loro::LoroValue;
 
 use super::editor_canvas::render_canvas_area;
+use super::editor_language_panel::language_panel;
 use super::editor_load::load_document;
 use super::editor_metadata_panel::metadata_panel;
 use super::editor_path_sync::{
@@ -46,6 +47,9 @@ use super::editor_ribbon::home_tab_content;
 use super::editor_save::{
     export_document_to_token, export_template_to_token, save_document_to_path,
 };
+use super::editor_save_banner::save_banner;
+use super::editor_spell::{SpellMenu, SpellSync};
+use super::editor_spell_panel::spelling_panel;
 use super::editor_state::{EditorState, use_editor_state};
 use super::editor_style::style_picker_panel;
 use super::editor_style_catalog::available_font_families;
@@ -57,6 +61,7 @@ use crate::routes::Route;
 use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
 use crate::utils::display_title_from_path;
+use loki_app_shell::spell::SpellService;
 use loki_file_access::{FilePicker, SaveOptions};
 
 /// MIME type used when saving documents (DOCX is the only writable format).
@@ -132,6 +137,14 @@ pub(super) fn EditorInner(path: String) -> Element {
     // ── Tab/recents context for Save As and the unsaved-changes indicator ────
     let mut tabs = use_context::<Signal<Vec<OpenTab>>>();
     let recent_docs = use_context::<Signal<RecentDocuments>>();
+    // Spell-check service (provided at the app root). Drives the right-click
+    // suggestions panel and the language picker.
+    let spell_service = use_context::<SpellService>();
+    let spell_menu = use_signal(|| Option::<SpellMenu>::None);
+    let is_language_panel_open = use_signal(|| false);
+    let language_status = use_signal(|| Option::<String>::None);
+    // Key of the spelling-menu row currently hovered (Blitz has no CSS :hover).
+    let spell_hover = use_signal(|| Option::<String>::None);
     // Stashed sessions for inactive tabs — unsaved edits survive tab switches.
     let doc_sessions = use_context::<Signal<DocSessions>>();
     // Document generation considered "clean" (matches the on-disk file).
@@ -254,6 +267,9 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_meta = Arc::clone(&doc_state);
     let doc_state_style_picker = Arc::clone(&doc_state);
     let doc_state_style_editor = Arc::clone(&doc_state);
+    let doc_state_spell_ctx = Arc::clone(&doc_state);
+    let doc_state_spell_panel = Arc::clone(&doc_state);
+    let doc_state_lang_panel = Arc::clone(&doc_state);
     let doc_state_seed = Arc::clone(&doc_state);
     let doc_state_render = Arc::clone(&doc_state);
     let doc_state_scroll = Arc::clone(&doc_state);
@@ -718,7 +734,9 @@ pub(super) fn EditorInner(path: String) -> Element {
     rsx! {
         div {
             style: format!(
-                "display: flex; flex-direction: column; flex: 1; \
+                // `position: relative` establishes the containing block for the
+                // floating spelling menu (an absolutely-positioned child).
+                "display: flex; flex-direction: column; flex: 1; position: relative; \
                  overflow: hidden; background: {bg}; font-family: {ff};",
                 bg = tokens::COLOR_SURFACE_BASE,
                 ff = tokens::FONT_FAMILY_UI,
@@ -755,6 +773,9 @@ pub(super) fn EditorInner(path: String) -> Element {
                 document_load,
                 canvas_hovered,
                 page_gap_px,
+                spell_service.clone(),
+                spell_menu,
+                doc_state_spell_ctx,
             )}
 
             // ── Font Warning Banner ──────────────────────────────────────────
@@ -877,6 +898,37 @@ pub(super) fn EditorInner(path: String) -> Element {
                 )}
             }
 
+            // ── Spelling suggestions panel (right-click) ──────────────────────
+            // Docked above the ribbon (no position: absolute in Blitz).
+            if spell_menu.read().is_some() {
+                {spelling_panel(
+                    doc_state_spell_panel,
+                    SpellSync {
+                        loro_doc,
+                        cursor_state,
+                        undo_manager,
+                        can_undo,
+                        can_redo,
+                    },
+                    spell_service.clone(),
+                    spell_menu,
+                    is_language_panel_open,
+                    window_width(),
+                    spell_hover,
+                )}
+            }
+
+            // ── Spelling language picker ──────────────────────────────────────
+            if is_language_panel_open() {
+                {language_panel(
+                    doc_state_lang_panel,
+                    cursor_state,
+                    spell_service.clone(),
+                    is_language_panel_open,
+                    language_status,
+                )}
+            }
+
             // ── Metadata editor panel (Dublin Core) ───────────────────────────
             if editing_metadata.read().is_some() {
                 {metadata_panel(
@@ -905,36 +957,7 @@ pub(super) fn EditorInner(path: String) -> Element {
             }
 
             // ── Save message banner ───────────────────────────────────────────
-            if let Some(msg) = save_message.read().clone() {
-                div {
-                    style: format!(
-                        "display: flex; flex-direction: row; align-items: center; \
-                         justify-content: space-between; padding: {p}px {p2}px; \
-                         background: {bg}; border-top: 1px solid {border}; \
-                         font-family: {ff}; font-size: {size}px; \
-                         color: {fg}; flex-shrink: 0;",
-                        p      = tokens::SPACE_2,
-                        p2     = tokens::SPACE_4,
-                        bg     = tokens::COLOR_SURFACE_2,
-                        border = tokens::COLOR_BORDER_CHROME,
-                        ff     = tokens::FONT_FAMILY_UI,
-                        size   = tokens::FONT_SIZE_LABEL,
-                        fg     = tokens::COLOR_TEXT_ON_CHROME,
-                    ),
-                    span { "{msg}" }
-                    button {
-                        style: format!(
-                            "background: transparent; border: none; font-size: {fs}px; \
-                             color: {fg}; cursor: pointer; padding: {p}px;",
-                            fs = tokens::FONT_SIZE_LABEL,
-                            fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
-                            p  = tokens::SPACE_1,
-                        ),
-                        onclick: move |_| { save_message.set(None); },
-                        "\u{2715}"
-                    }
-                }
-            }
+            {save_banner(save_message)}
 
             // ── Ribbon (formatting controls) ──────────────────────────────────
             AtRibbon {

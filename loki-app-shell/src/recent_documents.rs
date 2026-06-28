@@ -32,6 +32,13 @@ pub fn set_android_data_dir(path: PathBuf) {
     let _ = ANDROID_DATA_DIR.set(path);
 }
 
+/// Returns the Android internal data path set via [`set_android_data_dir`], if
+/// any. Shared with the spell module so dictionaries cache to the same root.
+#[cfg(target_os = "android")]
+pub(crate) fn android_data_dir() -> Option<PathBuf> {
+    ANDROID_DATA_DIR.get().cloned()
+}
+
 /// Maximum number of entries retained in the recent-documents list.
 const MAX_RECENT: usize = 20;
 
@@ -211,8 +218,10 @@ mod tests {
 
     #[test]
     fn remove_drops_matching_entry() {
-        let mut docs = RecentDocuments::default();
-        docs.entries = vec![entry("a"), entry("b"), entry("c")];
+        let mut docs = RecentDocuments {
+            entries: vec![entry("a"), entry("b"), entry("c")],
+            ..Default::default()
+        };
         docs.remove("b");
         let paths: Vec<&str> = docs.entries.iter().map(|e| e.path.as_str()).collect();
         assert_eq!(paths, ["a", "c"]);

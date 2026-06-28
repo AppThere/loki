@@ -11,6 +11,10 @@ categories = ["graphics", "text-processing"]
 [dependencies]
 loki-doc-model = { path = "../loki-doc-model" }
 loki-primitives = { path = "../loki-primitives" }
+# Optional spell checking: when a checker is supplied via `LayoutOptions::spell`,
+# layout emits `DecorationKind::Spelling` squiggles for misspelled words. Pure
+# Rust, no display dependency — keeps the crate fully testable headless.
+loki-spell = { path = "../loki-spell" }
 appthere-color = "0.1.1"
 parley = "0.10"
 # Force fontconfig-dlopen so fontique loads libfontconfig at runtime instead of

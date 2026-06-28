@@ -119,6 +119,36 @@ pub const MARK_KERNING: &str = "kerning";
 pub const MARK_CHAR_STYLE_ID: &str = "char_style_id";
 pub const MARK_OUTLINE: &str = "outline";
 
+/// Every character-level mark key (formatting that lives on a text range).
+///
+/// Single source of truth shared by `document_to_loro` (which registers each
+/// key's `expand` behaviour) and `replace_text` (which resets an inserted
+/// range's full formatting). Keep this in sync with the read/write paths.
+pub const CHAR_MARK_KEYS: &[&str] = &[
+    MARK_BOLD,
+    MARK_ITALIC,
+    MARK_UNDERLINE,
+    MARK_STRIKETHROUGH,
+    MARK_COLOR,
+    MARK_HIGHLIGHT_COLOR,
+    MARK_FONT_FAMILY,
+    MARK_FONT_SIZE_PT,
+    MARK_VERTICAL_ALIGN,
+    MARK_LINK_URL,
+    MARK_LANGUAGE,
+    MARK_LANGUAGE_COMPLEX,
+    MARK_LANGUAGE_EAST_ASIAN,
+    MARK_LETTER_SPACING,
+    MARK_WORD_SPACING,
+    MARK_SCALE,
+    MARK_SMALL_CAPS,
+    MARK_ALL_CAPS,
+    MARK_SHADOW,
+    MARK_KERNING,
+    MARK_OUTLINE,
+    MARK_CHAR_STYLE_ID,
+];
+
 // -----------------------------------------------------------------------------
 // ParaProps Keys
 // -----------------------------------------------------------------------------

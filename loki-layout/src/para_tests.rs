@@ -554,6 +554,66 @@ fn exact_line_height_clips_each_line() {
 }
 
 #[test]
+fn misspelled_word_emits_spelling_squiggle() {
+    let mut r = test_resources();
+    let checker =
+        std::sync::Arc::new(loki_spell::SpellChecker::bundled().expect("bundled dictionary loads"));
+    let spell = crate::SpellState {
+        checker,
+        generation: 1,
+    };
+    let text = "hello teh world";
+    let spans = [single_span(text, 12.0)];
+    let result = layout_paragraph_spelled(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+        Some(&spell),
+    );
+
+    let squiggles: Vec<_> = result
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            PositionedItem::Decoration(d) if d.kind == DecorationKind::Spelling => Some(d),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(squiggles.len(), 1, "only 'teh' is misspelled");
+    let sq = squiggles[0];
+    assert!(sq.width > 0.0, "squiggle has positive width");
+    // 'teh' starts after 'hello ', so the squiggle is offset from the left edge.
+    assert!(sq.x > 0.0, "squiggle starts past the first word");
+}
+
+#[test]
+fn no_squiggles_when_spelling_disabled() {
+    let mut r = test_resources();
+    let text = "hello teh world";
+    let spans = [single_span(text, 12.0)];
+    // Default `layout_paragraph` passes no checker — no Spelling decorations.
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+    assert!(
+        !result.items.iter().any(
+            |i| matches!(i, PositionedItem::Decoration(d) if d.kind == DecorationKind::Spelling)
+        ),
+        "no checker supplied, so no squiggles"
+    );
+}
+
+#[test]
 fn highlight_color_produces_filled_rect_before_glyph_run() {
     let mut r = test_resources();
     let text = "highlighted";

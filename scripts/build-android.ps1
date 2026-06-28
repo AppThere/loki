@@ -46,7 +46,15 @@ param(
     # Pass -Gpu to enable the real Vello GPU renderer (VelloWindowRenderer / use_wgpu).
     # Requires a Vulkan-capable physical device; omit for the Android emulator
     # (which uses SwiftShader and lacks the compute shader support Vello needs).
-    [switch]$Gpu
+    [switch]$Gpu,
+    # Which ABI(s) to build:
+    #   auto  (default) On -Install, detect the connected device's ABI and build
+    #         only that target; otherwise build all ABIs (universal APK).
+    #   arm64 Build only aarch64-linux-android (arm64-v8a).
+    #   x64   Build only x86_64-linux-android   (x86_64; Chromebooks/ARC).
+    #   all   Universal multi-ABI APK (both targets from Cargo.toml build_targets).
+    [ValidateSet("auto", "arm64", "x64", "all")]
+    [string]$Abi = "auto"
 )
 
 $ErrorActionPreference = "Stop"
@@ -164,8 +172,30 @@ if ($includeDex) {
 
 if (-not $SkipCargoApk) {
     Write-Host "`n==> cargo apk build ($profile, app=$App)..."
+    # Resolve the cargo --target from -Abi.  Empty => build all ABIs from
+    # Cargo.toml build_targets (universal APK); non-empty => single --target.
+    $cargoTarget = ""
+    switch ($Abi) {
+        "arm64" { $cargoTarget = "aarch64-linux-android" }
+        "x64"   { $cargoTarget = "x86_64-linux-android" }
+        "all"   { $cargoTarget = "" }
+        "auto"  {
+            if ($Install) {
+                $devAbi = (& adb shell getprop ro.product.cpu.abi).Trim()
+                switch -Wildcard ($devAbi) {
+                    "arm64-v8a" { $cargoTarget = "aarch64-linux-android" }
+                    "x86_64"    { $cargoTarget = "x86_64-linux-android" }
+                    "armeabi*"  { $cargoTarget = "armv7-linux-androideabi" }
+                    "x86"       { $cargoTarget = "i686-linux-android" }
+                }
+                if ($cargoTarget) { Write-Host "    Auto-detected device ABI -> $cargoTarget" }
+                else { Write-Host "    No device ABI detected; building all ABIs (universal APK)" }
+            }
+        }
+    }
     $buildArgs = @("apk", "build", "--package", $cargoPackage)
     if ($Release) { $buildArgs += "--release" }
+    if ($cargoTarget) { $buildArgs += @("--target", $cargoTarget) }
     # On a physical Vulkan device, -Gpu enables the full Vello GPU renderer.
     # The android_gpu cfg flag is checked throughout dioxus-native and loki-renderer.
     if ($Gpu -and ($env:RUSTFLAGS -notlike "*--cfg android_gpu*")) {

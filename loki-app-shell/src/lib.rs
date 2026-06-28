@@ -19,6 +19,7 @@
 
 pub mod new_document;
 pub mod recent_documents;
+pub mod spell;
 pub mod tabs;
 pub mod untitled;
 

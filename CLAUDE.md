@@ -160,7 +160,7 @@ techniques:
 | `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1241 | High |
 | `loki-ooxml/src/docx/write/document.rs` | 1169 | High |
 | `loki-ooxml/src/docx/reader/document.rs` | 1126 | High |
-| `loki-text/src/routes/editor/editor_inner.rs` | 968 | High |
+| `loki-text/src/routes/editor/editor_inner.rs` | 1040 | High |
 | … 24 more (300–600 lines) — see the audit (10 files split 2026-06-21) | | |
 
 (`odt/mapper/document.rs` (1094 lines) was split into the `odt/mapper/document/`
@@ -203,6 +203,16 @@ The workspace is a set of focused crates (one responsibility each). Key groups:
 - **Layout & rendering:** `loki-layout` (renderer-agnostic, Parley-based),
   `loki-vello` / `loki-renderer` / `loki-render-cache` (GPU paint; per-page
   tiles bounded by viewport virtualization).
+- **Spell check:** `loki-spell` — Hunspell-compatible spell checking via the
+  pure-Rust `spellbook` engine (no FFI). Tokenises text into checkable words,
+  returns misspelled byte ranges + ranked suggestions; bundles a permissive
+  `en` dictionary and a license-gated download catalog for other languages.
+  `loki-layout` injects a checker via `LayoutOptions::spell` and emits
+  `DecorationKind::Spelling` squiggles (painted by `loki-vello`). The shared
+  runtime — `loki_app_shell::spell::SpellService` (locale detection, dictionary
+  cache, `reqwest` fetcher) — is provided into all three apps' context;
+  `loki-text` renders squiggles end-to-end via `loki_renderer::spell` ambient
+  state. See §11 of `docs/fidelity-status.md` for what is wired vs. pending.
 - **UI & apps:** `appthere-ui` (shared design system), `appthere-canvas`,
   `loki-i18n`, `loki-fonts`, and the binaries `loki-text` (word processor —
   the mature app), `loki-spreadsheet`, `loki-presentation`.
@@ -277,6 +287,20 @@ These work in production code:
 - `overflow-x: auto`, `overflow-y: auto`
 - `border-radius: Npx`
 - `position: relative`, `z-index: N`
+- `position: absolute` (block-level) — **confirmed working** (2026-06-28). A
+  block element with `position: absolute` + `top/left/right/bottom` insets,
+  child of a `position: relative` parent, lays out out-of-flow at the resolved
+  position, paints above in-flow siblings (and above the wgpu canvas), and
+  hit-tests correctly. Verified with a runtime probe (red top/left box + green
+  bottom/right box both anchored correctly; in-flow sibling not displaced). The
+  floating spelling context menu (`editor_spell_panel`) relies on this. The
+  earlier "unsupported" claim predated the Stylo + stylo_taffy 0.2 + Taffy 0.9
+  stack and was stale. **Caveats (still unverified / known-incomplete):**
+  absolute inside an *inline* formatting context (`blitz-dom`
+  `layout/inline.rs` has a `TODO: Implement absolute positioning`); the
+  containing block is the *immediate* positioned parent only (blitz-dom does
+  not walk up to a non-immediate positioned ancestor); and `overflow: hidden`
+  on the containing block clips the out-of-flow child.
 - `height: calc(100vh - Npx)`, `width: 100vw`, `height: 100vh`
 - `border-bottom/top: Npx solid COLOR`
 - `box-sizing: border-box`
@@ -288,9 +312,8 @@ These work in production code:
 - `text-overflow: ellipsis` (needed for tab label truncation)
 - `overflow-x: scroll` (explicit scroll vs. auto)
 - `scrollbar-width: none` (needed for invisible scroll containers)
-- `position: absolute` — **confirmed unsupported** in current Blitz.
-  Tooltip components are deferred until this is resolved.
-- `position: fixed` — **confirmed unsupported** (documented in toolbar.rs).
+- `position: fixed` — collapses to `absolute` in `stylo_taffy` (not truly
+  viewport-fixed); use `position: absolute` in a positioned ancestor instead.
 
 ### Token usage
 

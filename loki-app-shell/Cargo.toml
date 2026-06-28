@@ -10,9 +10,19 @@ categories = ["gui"]
 
 [dependencies]
 loki-i18n = { path = "../loki-i18n" }
+loki-spell = { path = "../loki-spell" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dirs = "6"
+# OS locale detection for picking the user's initial dictionary.
+sys-locale = "0.3"
+# Dictionary download transport. rustls (pure Rust) to match the blitz-net patch
+# — `native-tls` would pull libssl.so, which is absent on Android. `blocking`
+# because the fetcher runs on a dedicated worker thread, never the UI loop.
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls-webpki-roots",
+    "blocking",
+] }
 
 [package.metadata.docs.rs]
 all-features = true
