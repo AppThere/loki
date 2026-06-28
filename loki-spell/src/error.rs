@@ -17,10 +17,6 @@ pub enum SpellError {
     #[error("failed to parse dictionary: {0}")]
     DictionaryParse(String),
 
-    /// A word could not be added to the in-memory dictionary (invalid flags).
-    #[error("failed to add word to dictionary: {0}")]
-    WordAdd(String),
-
     /// The embedded or supplied dictionary catalog could not be parsed.
     #[error("failed to parse dictionary catalog: {0}")]
     CatalogParse(String),

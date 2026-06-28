@@ -43,6 +43,23 @@ fn catalog_resolution_and_offline_availability() {
 }
 
 #[test]
+fn add_and_ignore_word_take_effect_and_bump_generation() {
+    let svc = SpellService::bootstrap().unwrap();
+    let gen0 = svc.snapshot().unwrap().generation;
+
+    assert!(!svc.is_correct("zzqq"));
+    svc.add_word("zzqq");
+    assert!(svc.is_correct("zzqq"));
+    let gen1 = svc.snapshot().unwrap().generation;
+    assert!(gen1 > gen0, "add_word bumps generation");
+
+    assert!(!svc.is_correct("wuux"));
+    svc.ignore_word("WUUX");
+    assert!(svc.is_correct("wuux"), "ignore is case-insensitive");
+    assert!(svc.snapshot().unwrap().generation > gen1);
+}
+
+#[test]
 fn activating_missing_language_errors() {
     let svc = SpellService::bootstrap().unwrap();
     assert!(svc.activate_language("fr").is_err(), "fr not installed");

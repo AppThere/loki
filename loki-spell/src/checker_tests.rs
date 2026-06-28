@@ -63,15 +63,19 @@ fn suggest_offers_near_miss() {
 
 #[test]
 fn added_word_becomes_correct() {
-    let mut c = tiny_checker();
+    let c = tiny_checker();
     assert!(!c.is_correct("loki"));
-    c.add_word("loki").expect("add succeeds");
+    c.add_word("loki");
     assert!(c.is_correct("loki"));
+    // Case-insensitive, and through a shared reference (as the layout engine
+    // holds it).
+    let shared = std::sync::Arc::new(c);
+    assert!(shared.is_correct("LOKI"));
 }
 
 #[test]
 fn ignored_word_is_correct_case_insensitively() {
-    let mut c = tiny_checker();
+    let c = tiny_checker();
     assert!(!c.is_correct("xyzzy"));
     c.ignore_word("Xyzzy");
     assert!(c.is_correct("xyzzy"));

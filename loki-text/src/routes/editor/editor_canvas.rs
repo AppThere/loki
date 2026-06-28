@@ -44,9 +44,12 @@ use super::editor_scrollbar::{
     CanvasMounted, ScrollMetrics, ThumbDrag, horizontal_scrollbar, vertical_scrollbar,
 };
 use crate::editing::cursor::{CursorState, DocumentPosition};
-use crate::editing::hit_test::hit_test_page;
+use crate::editing::hit_test::{hit_test_document, hit_test_page};
 use crate::editing::state::DocumentState;
 use crate::editing::touch::TouchInteractionState;
+use loki_app_shell::spell::SpellService;
+
+use super::editor_spell::{SpellMenu, resolve_spell_menu};
 use crate::error::LoadError;
 use loki_doc_model::loro_bridge::derive_loro_cursor;
 use loki_i18n::fl;
@@ -123,6 +126,9 @@ pub(super) fn render_canvas_area(
     document_load: Resource<(String, Result<Document, LoadError>)>,
     mut canvas_hovered: Signal<bool>,
     page_gap_px: f32,
+    service: SpellService,
+    mut spell_menu: Signal<Option<SpellMenu>>,
+    doc_state_context: Arc<std::sync::Mutex<DocumentState>>,
 ) -> Element {
     rsx! {
         // Outer wrapper occupies the editor column's flex:1 slot and lays out
@@ -220,6 +226,37 @@ pub(super) fn render_canvas_area(
             onmousedown: move |evt: MouseEvent| {
                 let c = evt.client_coordinates();
                 drag_origin.set(Some((c.x as f32, c.y as f32)));
+            },
+
+            // Right-click: open the spelling suggestions panel for the word under
+            // the pointer (paginated mode). Resolves the click to a document
+            // position via the same hit-test as drag-select, then builds a
+            // SpellMenu. COMPAT(dioxus-native): relies on oncontextmenu +
+            // prevent_default being honoured by the Blitz shell.
+            oncontextmenu: move |evt: MouseEvent| {
+                evt.prevent_default();
+                if view_mode() == ViewMode::Reflow {
+                    return;
+                }
+                let c = evt.client_coordinates();
+                let (layout_opt, pw, ph) = {
+                    let Ok(s) = doc_state_context.lock() else { return };
+                    (s.paginated_layout.clone(), s.page_width_px, s.page_height_px)
+                };
+                let Some(layout) = layout_opt else { return };
+                let x_off = (window_width() - pw).max(0.0) / 2.0;
+                let origin = (x_off, tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6);
+                if let Some(pos) = hit_test_document(
+                    c.x as f32, c.y as f32, origin, scroll_offset(), &layout, pw, ph, page_gap_px,
+                ) {
+                    cursor_state.write().focus = Some(pos.clone());
+                    cursor_state.write().anchor = Some(pos.clone());
+                    if let Some(menu) =
+                        resolve_spell_menu(loro_doc, &service, pos.paragraph_index, pos.byte_offset)
+                    {
+                        spell_menu.set(Some(menu));
+                    }
+                }
             },
 
             onmousemove: make_mousemove_handler(

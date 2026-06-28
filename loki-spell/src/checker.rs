@@ -4,12 +4,29 @@
 //! The [`SpellChecker`]: a dictionary plus a session ignore list.
 
 use std::collections::HashSet;
+use std::sync::{PoisonError, RwLock};
 
 use spellbook::Dictionary;
 
 use crate::error::{SpellError, SpellResult};
 use crate::misspelling::Misspelling;
 use crate::tokenizer::tokenize;
+
+/// User-supplied overrides layered on top of the dictionary.
+///
+/// Held behind a lock so they can be updated through a shared `&self` (the
+/// checker is shared as `Arc<SpellChecker>` with the layout engine), making
+/// "Add to dictionary" / "Ignore" take effect for live squiggles without
+/// rebuilding the dictionary. Both sets are lower-cased for case-insensitive
+/// matching.
+#[derive(Debug, Default)]
+struct Overrides {
+    /// Words ignored for this session.
+    ignored: HashSet<String>,
+    /// Personal-dictionary words added by the user (process-lifetime; the host
+    /// persists and re-adds them across sessions).
+    personal: HashSet<String>,
+}
 
 /// A loaded spell checker for a single language.
 ///
@@ -29,8 +46,8 @@ use crate::tokenizer::tokenize;
 #[derive(Debug)]
 pub struct SpellChecker {
     dict: Dictionary,
-    /// Words ignored for this session (lower-cased for case-insensitive match).
-    ignored: HashSet<String>,
+    /// User overrides (ignore list + personal words), updatable through `&self`.
+    overrides: RwLock<Overrides>,
 }
 
 impl SpellChecker {
@@ -45,7 +62,7 @@ impl SpellChecker {
             Dictionary::new(aff, dic).map_err(|e| SpellError::DictionaryParse(e.to_string()))?;
         Ok(Self {
             dict,
-            ignored: HashSet::new(),
+            overrides: RwLock::new(Overrides::default()),
         })
     }
 
@@ -81,10 +98,15 @@ impl SpellChecker {
         if word.is_empty() {
             return true;
         }
-        if self.ignored.contains(&word.to_lowercase()) {
+        if self.dict.check(word) {
             return true;
         }
-        self.dict.check(word)
+        let lower = word.to_lowercase();
+        let overrides = self
+            .overrides
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
+        overrides.personal.contains(&lower) || overrides.ignored.contains(&lower)
     }
 
     /// Returns ranked correction suggestions for `word`, best first.
@@ -96,24 +118,30 @@ impl SpellChecker {
         out
     }
 
-    /// Adds `word` to the in-memory dictionary (a persistent personal entry).
+    /// Adds `word` to the user's personal dictionary (case-insensitive).
     ///
-    /// The caller is responsible for persisting the user's personal word list
-    /// and re-adding the words on the next load.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`SpellError::WordAdd`] if `word` cannot be parsed as a dictionary
-    /// entry.
-    pub fn add_word(&mut self, word: &str) -> SpellResult<()> {
-        self.dict
-            .add(word)
-            .map_err(|e| SpellError::WordAdd(e.to_string()))
+    /// Takes `&self` (interior mutability) so it works through the shared
+    /// `Arc<SpellChecker>` held by the layout engine. Matching is exact /
+    /// case-insensitive — affix expansion is not applied to personal words. The
+    /// host is responsible for persisting the personal list and re-adding it on
+    /// the next load.
+    pub fn add_word(&self, word: &str) {
+        self.overrides
+            .write()
+            .unwrap_or_else(PoisonError::into_inner)
+            .personal
+            .insert(word.to_lowercase());
     }
 
     /// Ignores `word` (case-insensitively) for the remainder of the session.
-    pub fn ignore_word(&mut self, word: &str) {
-        self.ignored.insert(word.to_lowercase());
+    ///
+    /// Takes `&self` for the same shared-`Arc` reason as [`Self::add_word`].
+    pub fn ignore_word(&self, word: &str) {
+        self.overrides
+            .write()
+            .unwrap_or_else(PoisonError::into_inner)
+            .ignored
+            .insert(word.to_lowercase());
     }
 
     /// Tokenizes `text` and returns every misspelled word with its byte range.

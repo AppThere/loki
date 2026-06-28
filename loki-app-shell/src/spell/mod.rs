@@ -19,6 +19,10 @@ mod service;
 pub use fetcher::ReqwestFetcher;
 pub use service::{SpellService, SpellSnapshot};
 
+// Re-export the `loki-spell` types that appear in the service's public API, so
+// apps depend on this facade rather than on `loki-spell` directly.
+pub use loki_spell::{Consent, DictionaryEntry, InstalledMeta, LicenseClass};
+
 use std::path::PathBuf;
 
 /// Suite-wide directory caching downloaded dictionaries (shared by all apps so a

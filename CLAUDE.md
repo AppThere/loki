@@ -160,7 +160,7 @@ techniques:
 | `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1241 | High |
 | `loki-ooxml/src/docx/write/document.rs` | 1169 | High |
 | `loki-ooxml/src/docx/reader/document.rs` | 1126 | High |
-| `loki-text/src/routes/editor/editor_inner.rs` | 968 | High |
+| `loki-text/src/routes/editor/editor_inner.rs` | 1040 | High |
 | … 24 more (300–600 lines) — see the audit (10 files split 2026-06-21) | | |
 
 (`odt/mapper/document.rs` (1094 lines) was split into the `odt/mapper/document/`

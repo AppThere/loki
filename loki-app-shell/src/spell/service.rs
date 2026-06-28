@@ -115,6 +115,26 @@ impl SpellService {
         self.write().enabled = enabled;
     }
 
+    /// Adds `word` to the personal dictionary and bumps the generation.
+    ///
+    /// The change is visible immediately through the shared checker; the
+    /// generation bump invalidates the layout's paragraph cache so the squiggle
+    /// on that word clears on the next relayout. After calling this, refresh the
+    /// host's layout-spell state from [`Self::snapshot`] and request a relayout.
+    pub fn add_word(&self, word: &str) {
+        let mut inner = self.write();
+        inner.checker.add_word(word);
+        inner.generation += 1;
+    }
+
+    /// Ignores `word` for this session and bumps the generation (see
+    /// [`Self::add_word`] for the relayout note).
+    pub fn ignore_word(&self, word: &str) {
+        let mut inner = self.write();
+        inner.checker.ignore_word(word);
+        inner.generation += 1;
+    }
+
     // ── Catalog / store ───────────────────────────────────────────────────────
 
     /// All catalog entries (for a language picker).
