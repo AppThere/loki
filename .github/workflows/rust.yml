@@ -28,6 +28,9 @@ jobs:
     - name: Panic-guard gate (no panic!/todo!/unimplemented! in lib src)
       # Spec 01 audit A-6. unreachable! with a message is permitted.
       run: python3 scripts/check-no-panics.py
+    - name: Unsafe-policy gate (forbid, or deny + allow-list)
+      # Spec 01 audit A-7. Only the 3 Android cdylib crates may use deny+allow.
+      run: python3 scripts/check-unsafe-policy.py
     - name: Format check
       run: cargo fmt --all --check
     - name: Clippy (workspace, all features, warnings denied)

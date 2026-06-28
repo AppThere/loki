@@ -82,8 +82,14 @@ These conventions apply to all crates in the workspace.
 - **Error handling:** Use typed error enums with `thiserror`. Do not use `anyhow`
   in library crates. Do not use `.unwrap()` or `.expect()` in library code
   outside of `#[cfg(test)]` blocks.
-- **Unsafe:** `#![forbid(unsafe_code)]` must be present in `lib.rs` for all
-  `appthere-ui` and future library crates.
+- **Unsafe:** every crate root must carry `#![forbid(unsafe_code)]`. The sole
+  exception is the three Android `cdylib` binaries (`loki-text`,
+  `loki-presentation`, `loki-spreadsheet`): their `#[unsafe(no_mangle)]`
+  `android_main` FFI entry point makes `forbid` impossible, so they use
+  `#![deny(unsafe_code)]` + a scoped `#[allow(unsafe_code)]` (emitted by
+  `loki_app_shell::android_main!`) and are enumerated in
+  `scripts/unsafe-policy-allowlist.txt`. Enforced in CI by
+  `scripts/check-unsafe-policy.py` (Spec 01 audit A-7). New crates must `forbid`.
 - **License header:** Line 1 of every `.rs` file must be the SPDX identifier
   matching that crate's `Cargo.toml` `license` field, line 2 the copyright.
   The suite is Apache-2.0 (`// SPDX-License-Identifier: Apache-2.0`), **except

@@ -172,16 +172,22 @@ public API with attacker-controlled input.** Recommendation: convert each to `?`
 let the `clippy.toml` `disallowed-methods` gate (§6.1) hold the line — with
 target-level exemptions for `build.rs`, `benches/`, doctests, and `#[cfg(test)]`.
 
-### 3.3 `unsafe` blocks (A-7)
+### 3.3 `unsafe` blocks (A-7) — ✅ resolved
 
-Exactly the three documented Android `NativeActivity` crates contain `unsafe`:
-`loki-text`, `loki-presentation`, `loki-spreadsheet` (`src/lib.rs`). Each call
-site carries a `// SAFETY:` justification (e.g. `loki-text/src/lib.rs:4`,
-`loki-presentation/src/lib.rs:45`, `loki-spreadsheet/src/lib.rs:51`). **No
-undocumented `unsafe` exists** in production crates. The gap is structural, not
-local — see A-7: those three crates simply *omit* `#![forbid(unsafe_code)]`
-rather than `#![deny]` + a scoped `#[allow(unsafe_code)]` on the FFI item, and
-there is no checked-in allow-list enumerating them.
+Exactly the three documented Android `NativeActivity` crates contained `unsafe`:
+`loki-text`, `loki-presentation`, `loki-spreadsheet` (`src/lib.rs`), all in the
+`android_main` FFI entry point. **No undocumented `unsafe` existed** in
+production crates. The gap was structural: those three crates *omitted*
+`#![forbid(unsafe_code)]` entirely (because `#[unsafe(no_mangle)]` on
+`android_main`, Rust 2024, makes `forbid` impossible) rather than scoping the
+exception.
+
+**Resolved** (jointly with A-14): each crate root is now `#![deny(unsafe_code)]`,
+and the single unsafe item — the macro-generated `android_main` — carries a
+scoped `#[allow(unsafe_code)]` (emitted by `loki_app_shell::android_main!`). The
+three crates are enumerated in `scripts/unsafe-policy-allowlist.txt`, and
+`scripts/check-unsafe-policy.py` (CI) verifies every crate root is `forbid`, or
+`deny` + allow-listed — so a fourth unsafe crate cannot appear silently.
 
 ### 3.4 File-ceiling violations (A-2)
 
@@ -274,17 +280,27 @@ Mechanised enforcement rides with the deferred clippy `disallowed-types` gate
   `warnings(dead_code)` over an `--all-features` build and is **deferred** to a
   fix-pass with the gate live (honest scope note: not exhaustively done here).
 
-### 3.8 Duplication (A-14)
+### 3.8 Duplication (A-14) — ✅ android_main resolved; centring deferred to A-1
 
 - **The centring formula** (§2.1) — six near-identical copies of `(window_width −
-  …)/2.0`. Folds into the `Viewport::canvas_origin_x()` helper. (Counted under
-  A-1.)
-- **Android `android_main` entry point** — `loki-presentation/src/lib.rs` and
-  `loki-spreadsheet/src/lib.rs` are near-identical (logger tag + a
-  `recent_documents` wiring line differ); `loki-text` is a third near-copy. The
-  shared body (`AndroidLogger` setup, `set_android_app`, `loki_i18n::init`,
-  `init_android` FFI) belongs in a `loki-app-shell` helper, leaving each crate a
-  thin per-app shim. Real, low-risk consolidation.
+  …)/2.0`. Folds into the `Viewport::canvas_origin_x()` helper. **Deferred — it
+  belongs with the A-1 `Viewport` refactor** (premature to dedup before that type
+  exists). Tracked under A-1, not closed here.
+- **Android `android_main` entry point** — was ~55 lines duplicated near-verbatim
+  across all three app crates (only the logcat tag and the `init_android`
+  argument differed). **Resolved:** extracted into a `loki_app_shell::android_main!`
+  macro (`loki-app-shell/src/android.rs`); each crate now invokes it in one line.
+  A *macro* (not a function) keeps the `dioxus`/`blitz_shell`/`android_activity`
+  deps in the binaries — `loki-app-shell` gains no deps and stays
+  `#![forbid(unsafe_code)]` (the emitted `unsafe` lands in the caller, where A-7's
+  scoped allow lives). The three near-divergent copies were unified to one
+  canonical body (presentation/spreadsheet gain one extra insets-log line —
+  benign). **Verification note:** the `android_main` body is entirely
+  `#[cfg(target_os = "android")]`, so it cannot be compiled in this GPU-less Linux
+  CI/agent environment; the non-Android build (`cargo check` of all three crates
+  + app-shell) passes and the macro expansion/cfg-stripping is validated there,
+  but the **Android target build is unverified here** — the maintainer should run
+  `scripts/build-aab.sh` before relying on it.
 
 ### 3.9 `HACK` / `TODO` / `FIXME` / `XXX` debt (A-11)
 
@@ -345,7 +361,7 @@ No `model → render/layout/ui` edges exist; foundation crates remain leaves;
 | No `unwrap`/`expect` in lib code | ❌ no `clippy.toml` `disallowed-methods` (A-5, deferred) |
 | 300-line file ceiling | ❌ no script gate |
 | SPDX header on line 1 (per-crate license) | ✅ CI (`scripts/check-license-headers.py`, ADR-0010) |
-| `forbid(unsafe_code)` + enumerated exceptions | ❌ no gate / allow-list |
+| `forbid(unsafe_code)` + enumerated exceptions | ✅ CI (`scripts/check-unsafe-policy.py` + allow-list, A-7) |
 | Acyclic downhill-only deps | ❌ no `cargo metadata` gate |
 | `no_hardcoded_layout_dims` (1280 class) | ❌ no dylint |
 
@@ -364,14 +380,14 @@ This table is the M3 work-list.
 | A-4 | Dead/stray file | `scratch.rs` (+ 10 root debug dumps) | 11 | **Small** | ✅ **Done** — `git rm` all 11; `.gitignore` entries added to prevent recurrence | **Resolved** |
 | A-5 | Library `unwrap`/`expect` | `loki-opc` ×~6, `loki-ooxml/xlsx/export.rs:371`, `loki-doc-model/.../comments.rs:94`, `loki-spreadsheet`/`loki-templates` `expect` | ~7 genuine | **Small** | `?` + typed error or justify; `disallowed-methods` gate w/ target exemptions | |
 | A-6 | `panic!` in production | 0 in lib src (3 in `benches/`); 7 documented `unreachable!` | 0 | n/a | ✅ **Done** — `scripts/check-no-panics.py` gate (forbids `panic!`/`todo!`/`unimplemented!` in lib src; allows messaged `unreachable!`), wired into CI | **Resolved** |
-| A-7 | `forbid(unsafe_code)` absent | `loki-text`, `loki-presentation`, `loki-spreadsheet` `lib.rs` | 3 (expected) | **Small** | `#![deny(unsafe_code)]` + scoped `#[allow]` on FFI item; checked-in allow-list | |
+| A-7 | `forbid(unsafe_code)` absent | `loki-text`, `loki-presentation`, `loki-spreadsheet` `lib.rs` | 3 (expected) | **Small** | ✅ **Done** — `#![deny(unsafe_code)]` + macro-emitted scoped `#[allow]`; `unsafe-policy-allowlist.txt` + `check-unsafe-policy.py` CI gate | **Resolved** |
 | A-8 | Layering: render→ui (uphill) | `loki-renderer/src/document_view.rs:9` | 1 edge | **Small–Medium** | Move consumed `appthere_ui::tokens` to a foundation crate or inject via render ctx | |
 | A-9 | Layering classification | `loki-pdf` → `loki-layout` | 1 | **None (doc)** | ✅ **Done** — L3b exporter-above-layout tier documented in [`0009`](0009-target-architecture.md) (refinement #1); `loki-epub` stays L2, `loki-pdf` L3b | **Resolved** |
 | A-10 | Inconsistent error handling | core libs clean; 3 `Result<_,String>` holdouts (2 test-harness, 1 UI-facing app glue) | 3 | **None** | ✅ **Verified** — no core-lib remediation needed; residuals noted (§3.6); enforcement rides with the deferred clippy `disallowed-types` gate (A-13) | **Resolved** |
 | A-11 | TODO/COMPAT debt | 49 TODO / 59 COMPAT (prod) | 108 | **Medium (process)** | Inventory; convert TODO→tracked; re-validate COMPAT vs Dioxus pin | |
 | A-12 | Naming: `*Props` overloaded | model bags vs Dioxus props | ~6 model bags | **Medium (rename)** | Optionally rename model `*Props`→`*Format`/`*Attrs` | |
 | A-13 | Enforcement gap | `clippy.toml`, ceiling/SPDX/dep-direction gates, dylint all absent | — | **Foundational** | Implement §6 gates (M3) before bulk fixes (D2) | |
-| A-14 | Duplication | centring math (A-1); `android_main` ×3 | 2 clusters | **Small–Medium** | `Viewport` helper; shared `loki-app-shell::android_main` | |
+| A-14 | Duplication | centring math (A-1); `android_main` ×3 | 2 clusters | **Small–Medium** | ✅ **android_main done** — `loki_app_shell::android_main!` macro (Android build unverified in-env); centring math deferred to A-1 | **Partial** |
 
 ---
 
