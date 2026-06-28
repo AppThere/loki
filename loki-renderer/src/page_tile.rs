@@ -7,11 +7,12 @@
 
 use std::sync::{Arc, Mutex};
 
+use dioxus::html::input_data::MouseButton;
 use dioxus::native::use_wgpu;
 use dioxus::prelude::*;
 
 use crate::doc_page_source::DocPageSource;
-use crate::document_view::RendererSelection;
+use crate::document_view::{RendererSelection, TileContext};
 use crate::page_paint_source::LokiPageSource;
 
 #[derive(Clone, Props)]
@@ -35,6 +36,9 @@ pub(crate) struct PageTileProps {
     /// held (drag-select). No-op for the paginated path (handled at the
     /// container level).
     pub(crate) on_tile_drag: EventHandler<(usize, f32, f32)>,
+    /// Called on right-click (secondary button), carrying tile-local + client
+    /// coordinates. Drives the spelling context menu.
+    pub(crate) on_tile_context: EventHandler<TileContext>,
 }
 
 impl PartialEq for PageTileProps {
@@ -62,6 +66,7 @@ pub(crate) fn PageTile(props: PageTileProps) -> Element {
     let cursor_holder_wgpu = props.cursor_holder.clone();
     let on_tile_click = props.on_tile_click;
     let on_tile_drag = props.on_tile_drag;
+    let on_tile_context = props.on_tile_context;
 
     // Write the current selection to the shared holder on every render so
     // LokiPageSource can read it during the GPU paint call.
@@ -113,7 +118,20 @@ pub(crate) fn PageTile(props: PageTileProps) -> Element {
                 let e = evt.element_coordinates();
                 let x_pt = e.x as f32 * (72.0 / 96.0);
                 let y_pt = e.y as f32 * (72.0 / 96.0);
-                on_tile_click.call((page_index, x_pt, y_pt));
+                // Right-click → context menu (carry client coords to anchor it);
+                // any other button → cursor placement / drag origin.
+                if evt.trigger_button() == Some(MouseButton::Secondary) {
+                    let c = evt.client_coordinates();
+                    on_tile_context.call(TileContext {
+                        page_index,
+                        x_pt,
+                        y_pt,
+                        client_x: c.x as f32,
+                        client_y: c.y as f32,
+                    });
+                } else {
+                    on_tile_click.call((page_index, x_pt, y_pt));
+                }
             },
             // Drag-select: while a button is held, extend the selection to the
             // pointer. Tile-local coordinates again avoid origin math.

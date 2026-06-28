@@ -33,7 +33,7 @@ use std::sync::Arc;
 use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
-use loki_renderer::{DocumentView, RendererCursorPos, ViewMode};
+use loki_renderer::{DocumentView, RendererCursorPos, TileContext, ViewMode};
 
 use super::editor_error_view::EditorErrorView;
 use super::editor_keydown::make_keydown_handler;
@@ -44,7 +44,7 @@ use super::editor_scrollbar::{
     CanvasMounted, ScrollMetrics, ThumbDrag, horizontal_scrollbar, vertical_scrollbar,
 };
 use crate::editing::cursor::{CursorState, DocumentPosition};
-use crate::editing::hit_test::{hit_test_document, hit_test_page};
+use crate::editing::hit_test::hit_test_page;
 use crate::editing::state::DocumentState;
 use crate::editing::touch::TouchInteractionState;
 use dioxus::html::input_data::MouseButton;
@@ -92,54 +92,31 @@ fn loading_view() -> Element {
     }
 }
 
-/// Right-click handler body: resolves the word under `(client_x, client_y)` in
-/// paginated mode, places the cursor there, and opens the spelling suggestions
-/// panel for it. A no-op in reflow mode or when there is no word at the point.
-#[allow(clippy::too_many_arguments)]
+/// Right-click handler body: resolves the word under the tile-local coordinates
+/// in `ctx` (accurate, via `element_coordinates` — no window-centring math),
+/// selects it, and opens the spelling menu anchored at the cursor. A no-op when
+/// there is no word at the point.
 fn open_spell_panel_at(
-    client_x: f32,
-    client_y: f32,
+    ctx: TileContext,
     doc_state: &Arc<std::sync::Mutex<DocumentState>>,
-    window_width: f32,
-    scroll_offset: f32,
-    page_gap_px: f32,
-    view_mode: ViewMode,
     loro_doc: Signal<Option<loro::LoroDoc>>,
     service: &SpellService,
     mut cursor_state: Signal<CursorState>,
     mut spell_menu: Signal<Option<SpellMenu>>,
 ) {
-    if view_mode == ViewMode::Reflow {
-        return;
-    }
-    let (layout_opt, pw, ph) = {
+    let layout_opt = {
         let Ok(s) = doc_state.lock() else { return };
-        (
-            s.paginated_layout.clone(),
-            s.page_width_px,
-            s.page_height_px,
-        )
+        s.paginated_layout.clone()
     };
     let Some(layout) = layout_opt else { return };
-    let x_off = (window_width - pw).max(0.0) / 2.0;
-    let origin = (x_off, tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6);
-    let Some(pos) = hit_test_document(
-        client_x,
-        client_y,
-        origin,
-        scroll_offset,
-        &layout,
-        pw,
-        ph,
-        page_gap_px,
-    ) else {
+    let Some(pos) = hit_test_page(ctx.page_index, ctx.x_pt, ctx.y_pt, &layout) else {
         return;
     };
     match resolve_spell_menu(loro_doc, service, pos.paragraph_index, pos.byte_offset) {
         Some(mut menu) => {
             // Anchor the floating menu at the cursor (window-relative coords).
-            menu.anchor_x = client_x;
-            menu.anchor_y = client_y;
+            menu.anchor_x = ctx.client_x;
+            menu.anchor_y = ctx.client_y;
             // Select the whole word so the user sees what the suggestions apply to.
             let word_pos = |byte_offset| DocumentPosition {
                 page_index: pos.page_index,
@@ -288,32 +265,15 @@ pub(super) fn render_canvas_area(
                 }
             },
 
-            // Outer div records drag origin (left button); right-click (the
-            // secondary button) opens the spelling suggestions panel for the
-            // word under the pointer.
-            //
-            // The patched Blitz shell does NOT deliver `oncontextmenu`, but it
-            // DOES forward `mousedown` for every button with the button preserved
-            // (`trigger_button()` → Secondary for right-click), so the
-            // right-click trigger lives here rather than in a contextmenu handler.
+            // Outer div records drag origin for the LEFT button only. Right-click
+            // is handled per-tile (`on_tile_context` on `DocumentView`), which has
+            // accurate `element_coordinates`; ignore it here so it does not start a
+            // spurious drag.
             onmousedown: move |evt: MouseEvent| {
-                let c = evt.client_coordinates();
                 if evt.trigger_button() == Some(MouseButton::Secondary) {
-                    open_spell_panel_at(
-                        c.x as f32,
-                        c.y as f32,
-                        &doc_state_context,
-                        window_width(),
-                        scroll_offset(),
-                        page_gap_px,
-                        view_mode(),
-                        loro_doc,
-                        &service,
-                        cursor_state,
-                        spell_menu,
-                    );
                     return;
                 }
+                let c = evt.client_coordinates();
                 drag_origin.set(Some((c.x as f32, c.y as f32)));
             },
 
@@ -485,6 +445,21 @@ pub(super) fn render_canvas_area(
                                     paragraph_index: para,
                                     byte_offset: byte,
                                 });
+                            },
+                            // Right-click → spelling menu (paginated only). Uses
+                            // accurate tile-local coordinates from the tile event.
+                            on_tile_context: move |ctx: TileContext| {
+                                if view_mode() == ViewMode::Reflow {
+                                    return;
+                                }
+                                open_spell_panel_at(
+                                    ctx,
+                                    &doc_state_context,
+                                    loro_doc,
+                                    &service,
+                                    cursor_state,
+                                    spell_menu,
+                                );
                             },
                         }
                     }

@@ -143,6 +143,8 @@ pub(super) fn EditorInner(path: String) -> Element {
     let spell_menu = use_signal(|| Option::<SpellMenu>::None);
     let is_language_panel_open = use_signal(|| false);
     let language_status = use_signal(|| Option::<String>::None);
+    // Key of the spelling-menu row currently hovered (Blitz has no CSS :hover).
+    let spell_hover = use_signal(|| Option::<String>::None);
     // Stashed sessions for inactive tabs — unsaved edits survive tab switches.
     let doc_sessions = use_context::<Signal<DocSessions>>();
     // Document generation considered "clean" (matches the on-disk file).
@@ -912,6 +914,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     spell_menu,
                     is_language_panel_open,
                     window_width(),
+                    spell_hover,
                 )}
             }
 

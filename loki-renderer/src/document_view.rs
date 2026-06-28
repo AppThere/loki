@@ -67,6 +67,23 @@ impl RendererSelection {
     }
 }
 
+/// A right-click on a page tile, carrying both the tile-local layout-point
+/// coordinates (for an accurate hit test) and the window-relative client
+/// coordinates (to anchor a floating menu at the cursor).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TileContext {
+    /// Index of the page tile that was right-clicked.
+    pub page_index: usize,
+    /// X within the tile, in layout points (from `element_coordinates`).
+    pub x_pt: f32,
+    /// Y within the tile, in layout points.
+    pub y_pt: f32,
+    /// Window-relative X of the cursor, in CSS pixels.
+    pub client_x: f32,
+    /// Window-relative Y of the cursor, in CSS pixels.
+    pub client_y: f32,
+}
+
 // ── DocumentViewProps ─────────────────────────────────────────────────────────
 
 /// Props for the DocumentView component.
@@ -110,6 +127,9 @@ pub struct DocumentViewProps {
     /// **reflow** mode (mouse moved with a button held). The caller extends the
     /// selection focus to this position.
     pub on_reflow_drag: EventHandler<(usize, usize)>,
+    /// Called when a page tile is right-clicked (paginated mode), carrying the
+    /// accurate tile-local + client coordinates. Drives the spelling context menu.
+    pub on_tile_context: EventHandler<TileContext>,
 }
 
 impl PartialEq for DocumentViewProps {
@@ -241,6 +261,7 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         let on_tile_click = props.on_tile_click;
         let on_reflow_click = props.on_reflow_click;
         let on_reflow_drag = props.on_reflow_drag;
+        let on_tile_context = props.on_tile_context;
 
         // White backdrop behind reflow tiles so any hairline seam where two
         // zero-gap bands meet shows white (matching the page) rather than the
@@ -329,6 +350,8 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                                         }
                                     }
                                 },
+                                // Right-click → spelling context menu (paginated).
+                                on_tile_context,
                                 // Drag-select: reflow only (paginated drag is handled
                                 // at the scroll-container level by the editor).
                                 on_tile_drag: {

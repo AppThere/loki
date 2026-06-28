@@ -31,6 +31,8 @@ pub(crate) mod vello_init;
 pub(crate) mod virtualize;
 
 pub use doc_page_source::DocPageSource;
-pub use document_view::{DocumentView, DocumentViewProps, RendererCursorPos, ViewMode};
+pub use document_view::{
+    DocumentView, DocumentViewProps, RendererCursorPos, TileContext, ViewMode,
+};
 pub use render_layout::{RenderLayout, RenderMode};
 pub use renderer_state::RendererState;
