@@ -189,9 +189,9 @@ three crates are enumerated in `scripts/unsafe-policy-allowlist.txt`, and
 `scripts/check-unsafe-policy.py` (CI) verifies every crate root is `forbid`, or
 `deny` + allow-listed — so a fourth unsafe crate cannot appear silently.
 
-### 3.4 File-ceiling violations (A-2)
+### 3.4 File-ceiling violations (A-2) — ✅ gated; 3 split, 35 baselined
 
-**38 production `.rs` files** exceed 300 lines (excluding `tests/`, `*_tests.rs`,
+**38 production `.rs` files** exceeded 300 lines (excluding `tests/`, `*_tests.rs`,
 and `patches/`; one further 300+ file — `odt/mapper/props/tests.rs` — is a test
 file and exempt). Worst offenders:
 
@@ -209,10 +209,20 @@ file and exempt). Worst offenders:
 | 948 | `loki-vello/src/scene.rs` |
 
 This overlaps the existing split-pass backlog in `docs/audit-2026-06.md`
-(finding Q-1) and the CLAUDE.md tech-debt table. **No new finding beyond
-confirming the count and feeding it to the §6.3 ceiling gate** (which needs a
-reviewed exceptions file seeded from this list so CI distinguishes known debt
-from new violations).
+(finding Q-1) and the CLAUDE.md tech-debt table.
+
+**Resolution.** The enforcement is now live: `scripts/check-file-ceiling.py`
+(CI) is a **ratchet** against `scripts/file-ceiling-baseline.txt` — a new file
+must be ≤300 lines, a baselined file may not *grow*, and a baselined file that
+drops to ≤300 must leave the list (so the backlog can only shrink). As an
+immediate down-payment, the **3 files that were over-ceiling solely because of a
+large inline `#[cfg(test)]` module** were split via the safe inline-test
+extraction idiom (`#[path]` sibling, zero production-code change):
+`loki-text/src/editing/hit_test.rs` (561→197), `loki-ooxml/src/xml_util.rs`
+(363→188), `loki-pdf/src/page.rs` (322→218) — all verified by `cargo test`. The
+baseline now holds the remaining **35**; the genuinely large files (e.g.
+`para.rs` 1982, `flow.rs` 1953) remain the maintainer's directory-split backlog,
+but they can no longer grow.
 
 ### 3.5 SPDX header issues (A-3, A-4)
 
@@ -359,7 +369,7 @@ No `model → render/layout/ui` edges exist; foundation crates remain leaves;
 | `clippy::pedantic` + curated allow-list | ❌ no `[workspace.lints]` |
 | No `panic!`/`todo!`/`unimplemented!` in lib code | ✅ CI (`scripts/check-no-panics.py`, A-6) |
 | No `unwrap`/`expect` in lib code | ❌ no `clippy.toml` `disallowed-methods` (A-5, deferred) |
-| 300-line file ceiling | ❌ no script gate |
+| 300-line file ceiling | ✅ CI (`scripts/check-file-ceiling.py` ratchet + baseline, A-2) |
 | SPDX header on line 1 (per-crate license) | ✅ CI (`scripts/check-license-headers.py`, ADR-0010) |
 | `forbid(unsafe_code)` + enumerated exceptions | ✅ CI (`scripts/check-unsafe-policy.py` + allow-list, A-7) |
 | Acyclic downhill-only deps | ❌ no `cargo metadata` gate |
@@ -375,7 +385,7 @@ This table is the M3 work-list.
 | ID | Category | Location(s) | Count | Blast radius | Proposed fix | Priority |
 |----|----------|-------------|-------|--------------|--------------|----------|
 | A-1 | Hardcoded viewport dim (1280 class) | `editor_state.rs:177`; `editor_pointer.rs` ×4; `hit_test.rs`; `editor_spell_panel.rs` | 1 source + 6 derived | **Medium** — `loki-text` input/hit-test; behaviour-affecting | Introduce `Viewport`/`LayoutContext` (measured width + page geom + zoom + DPI); feed hit-test from `scroll_metrics.client_width`; single `canvas_origin_x()` helper (D4) | |
-| A-2 | File-ceiling >300 | 38 production files (`para.rs` 1982 … `scene.rs` 948) | 38 | **Large but mechanical** | Continue split-pass (`docs/audit-2026-06.md` Q-1); seed ceiling-gate exceptions file | |
+| A-2 | File-ceiling >300 | 38 production files (`para.rs` 1982 … `scene.rs` 948) | 38 | **Large but mechanical** | ✅ **Gated + down-payment** — ratchet gate (`check-file-ceiling.py` + baseline); 3 split via inline-test extraction (38→35); 35 frozen, can't grow | **Partial** |
 | A-3 | SPDX line-1 / per-crate license | `loki-opc` (MIT) SPDX on line 2 ×27 + `tests/package_tests.rs` missing | 28 | **Small** | ✅ **Done** — reorder to SPDX-line-1, add missing header, MIT `LICENSE`, license-aware CI gate (ADR-0010) | **Resolved** |
 | A-4 | Dead/stray file | `scratch.rs` (+ 10 root debug dumps) | 11 | **Small** | ✅ **Done** — `git rm` all 11; `.gitignore` entries added to prevent recurrence | **Resolved** |
 | A-5 | Library `unwrap`/`expect` | `loki-opc` ×~6, `loki-ooxml/xlsx/export.rs:371`, `loki-doc-model/.../comments.rs:94`, `loki-spreadsheet`/`loki-templates` `expect` | ~7 genuine | **Small** | `?` + typed error or justify; `disallowed-methods` gate w/ target exemptions | |

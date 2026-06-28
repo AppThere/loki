@@ -143,13 +143,21 @@ lines). The full list and a proposed split strategy live in
 offenders are below. This is a dedicated split-pass backlog, not a per-change
 blocker — but do not *grow* these files or add new ones over the ceiling.
 
-The split pass is **in progress** — **11 of 43 files done** (≈32 remain). Two
-techniques:
+**The ceiling is now mechanically enforced** (Spec 01 audit A-2):
+`scripts/check-file-ceiling.py` (CI) ratchets against
+`scripts/file-ceiling-baseline.txt` — new files must be ≤300, baselined files
+may not grow, and a file split to ≤300 must be removed from the baseline. So the
+backlog can only shrink. When you split a file below the ceiling, drop its line
+with `scripts/check-file-ceiling.py --update` (review the diff).
+
+The split pass is **in progress** — current backlog is the **35** entries in the
+baseline file. Two techniques:
 1. *Inline-test extraction* (safest, no production-code change): move a file's
    `#[cfg(test)] mod tests { … }` into a sibling `<name>_tests.rs` referenced via
    `#[cfg(test)] #[path = "<name>_tests.rs"] mod tests;`. Done 2026-06-21 for
    `block.rs`, `docx/mapper/{paragraph,numbering,mod,table}.rs`, `odt/import.rs`,
-   `odt/mapper/lists.rs`, `layout/result.rs`, `renderer/render_layout.rs` — each
+   `odt/mapper/lists.rs`, `layout/result.rs`, `renderer/render_layout.rs`, and
+   2026-06-28 for `editing/hit_test.rs`, `xml_util.rs`, `pdf/src/page.rs` — each
    was over the ceiling only because of a large inline test module.
 2. *Directory split*: convert `foo.rs` → a `foo/` directory with section-cohesive
    submodules, re-export the public entry points from `foo/mod.rs`, and move the

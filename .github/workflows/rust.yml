@@ -31,6 +31,9 @@ jobs:
     - name: Unsafe-policy gate (forbid, or deny + allow-list)
       # Spec 01 audit A-7. Only the 3 Android cdylib crates may use deny+allow.
       run: python3 scripts/check-unsafe-policy.py
+    - name: File-ceiling gate (300-line ratchet)
+      # Spec 01 audit A-2. New files <= 300 lines; baselined debt may not grow.
+      run: python3 scripts/check-file-ceiling.py
     - name: Format check
       run: cargo fmt --all --check
     - name: Clippy (workspace, all features, warnings denied)
