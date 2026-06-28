@@ -54,8 +54,8 @@ silently. The headline findings:
   layout or render.
 - **Two clean, mechanical hygiene gaps:** `loki-opc`'s SPDX headers are present
   but on line 2 with one test file missing a header (A-3 — see the **correction
-  note** in §3.5; the original "26 files missing" was a false positive), and a
-  stray root `scratch.rs` (A-4); 38
+  note** in §3.5; the original "26 files missing" was a false positive), and 11
+  stray root files (`scratch.rs` + 10 debug dumps, A-4, now removed); 38
   production files exceed the 300-line ceiling (A-2, already tracked in
   `docs/audit-2026-06.md`).
 - **Enforcement is the actual deliverable.** CI today runs only `cargo fmt
@@ -233,23 +233,43 @@ reorder + one insertion; the `spdx_header_line_one` gate (§6.2) is generalised 
 *the crate's* license (not a blanket Apache-2.0) so the MIT/Apache split is
 enforced, not just the presence of a header.
 
-### 3.6 Inconsistent error handling (A-10)
+### 3.6 Inconsistent error handling (A-10) — ✅ verified
 
-**Effectively none.** The only `Box<dyn …>` matches are a `Box<dyn Iterator>`
-(`loki-layout/src/result.rs:55`, not an error type) and a `Box<dyn
-std::error::Error>` inside a doc example (`docx/mapper/mod.rs:259`). No `String`-
-typed library errors surfaced. Loki already uses `thiserror` enums per crate.
-**This category is essentially clean** — the gate's job is to keep it that way,
-not to remediate.
+The **core library crates are `thiserror`-clean** (19 of 25 crates declare
+`thiserror`; format/model/layout all use typed enums). The only `Box<dyn …>`
+matches are a `Box<dyn Iterator>` (`loki-layout/src/result.rs:55`, not an error
+type) and a `Box<dyn std::error::Error>` inside a doc example
+(`docx/mapper/mod.rs:259`).
 
-### 3.7 Dead / unreachable code (A-4)
+A closer follow-up scan (test-module-stripped) found **three** `Result<_,
+String>` holdouts — all *outside* the core libraries, so the original "essentially
+clean" claim for the libraries holds:
 
-- **`scratch.rs`** (root, 206 bytes, also SPDX-less) — a stray file, not a
-  workspace member, almost certainly dead. Candidate for deletion.
-- Root-level stray artifacts (not `.rs`, but worth a maintainer glance):
-  `diff_flow.txt`, `scratch.rs`, `iris*.png/log`, `output.png`,
-  `test_output*.{png,txt}`, `test_log*.txt` — committed debug/output dumps that
-  bloat the tree. Flagged for triage, not auto-removed.
+- `loki-acid/src/fixtures.rs:120`, `golden.rs:72` — the **ACID test/dev harness**,
+  where `String` diagnostics are an accepted bar (test code is exempt from the
+  typed-error convention).
+- `loki-presentation/src/routes/editor/editor_save.rs:20` —
+  `export_to_token() -> Result<(), String>`, **deliberately UI-facing** (its doc
+  says "Returns a human-readable error string"); its two callers display the
+  string in the editor.
+
+**Disposition:** verified — no remediation in the core libraries is needed. The
+one product-crate holdout (`editor_save`) is a candidate to convert to a typed
+`SaveError` (Display-preserving, two callers) in a Presentation-app pass; left as
+a noted residual rather than refactoring app error handling on this branch.
+Mechanised enforcement rides with the deferred clippy `disallowed-types` gate
+(A-13), scoped to library crates.
+
+### 3.7 Dead / unreachable code (A-4) — ✅ resolved
+
+- **`scratch.rs`** (root, a throwaway Dioxus API probe, not a workspace member)
+  — **removed**.
+- Root-level stray artifacts — `diff_flow.txt`, `iris.png`, `iris_output.png`,
+  `iris_stderr.log`, `output.png`, `test_output.{png,txt}`, `test_output_utf8.txt`,
+  `test_log.txt`, `test_log_utf8.txt` (committed debug/render dumps; the
+  `render_to_png` example writes `./output.png`) — **removed** after confirming
+  no tracked code/README references them, and **`.gitignore` entries added** so
+  they can't drift back in.
 - A deeper dead-`pub` / orphaned-module sweep needs `cargo +nightly udeps` /
   `warnings(dead_code)` over an `--all-features` build and is **deferred** to a
   fix-pass with the gate live (honest scope note: not exhaustively done here).
@@ -321,7 +341,8 @@ No `model → render/layout/ui` edges exist; foundation crates remain leaves;
 | `cargo fmt` | ✅ CI (`rust.yml` `fmt --check`) |
 | `clippy -D warnings` (default lints) | ✅ CI |
 | `clippy::pedantic` + curated allow-list | ❌ no `[workspace.lints]` |
-| No `unwrap`/`expect`/`panic!` in lib code | ❌ no `clippy.toml` `disallowed-methods` |
+| No `panic!`/`todo!`/`unimplemented!` in lib code | ✅ CI (`scripts/check-no-panics.py`, A-6) |
+| No `unwrap`/`expect` in lib code | ❌ no `clippy.toml` `disallowed-methods` (A-5, deferred) |
 | 300-line file ceiling | ❌ no script gate |
 | SPDX header on line 1 (per-crate license) | ✅ CI (`scripts/check-license-headers.py`, ADR-0010) |
 | `forbid(unsafe_code)` + enumerated exceptions | ❌ no gate / allow-list |
@@ -340,13 +361,13 @@ This table is the M3 work-list.
 | A-1 | Hardcoded viewport dim (1280 class) | `editor_state.rs:177`; `editor_pointer.rs` ×4; `hit_test.rs`; `editor_spell_panel.rs` | 1 source + 6 derived | **Medium** — `loki-text` input/hit-test; behaviour-affecting | Introduce `Viewport`/`LayoutContext` (measured width + page geom + zoom + DPI); feed hit-test from `scroll_metrics.client_width`; single `canvas_origin_x()` helper (D4) | |
 | A-2 | File-ceiling >300 | 38 production files (`para.rs` 1982 … `scene.rs` 948) | 38 | **Large but mechanical** | Continue split-pass (`docs/audit-2026-06.md` Q-1); seed ceiling-gate exceptions file | |
 | A-3 | SPDX line-1 / per-crate license | `loki-opc` (MIT) SPDX on line 2 ×27 + `tests/package_tests.rs` missing | 28 | **Small** | ✅ **Done** — reorder to SPDX-line-1, add missing header, MIT `LICENSE`, license-aware CI gate (ADR-0010) | **Resolved** |
-| A-4 | Dead/stray file | `scratch.rs` (+ root debug dumps) | 1 (+~8) | **Small** | Delete `scratch.rs`; maintainer triages root artifacts | |
+| A-4 | Dead/stray file | `scratch.rs` (+ 10 root debug dumps) | 11 | **Small** | ✅ **Done** — `git rm` all 11; `.gitignore` entries added to prevent recurrence | **Resolved** |
 | A-5 | Library `unwrap`/`expect` | `loki-opc` ×~6, `loki-ooxml/xlsx/export.rs:371`, `loki-doc-model/.../comments.rs:94`, `loki-spreadsheet`/`loki-templates` `expect` | ~7 genuine | **Small** | `?` + typed error or justify; `disallowed-methods` gate w/ target exemptions | |
-| A-6 | `panic!` in production | none in lib (3 in `benches/`) | 0 | n/a | No action; gate exempts benches | |
+| A-6 | `panic!` in production | 0 in lib src (3 in `benches/`); 7 documented `unreachable!` | 0 | n/a | ✅ **Done** — `scripts/check-no-panics.py` gate (forbids `panic!`/`todo!`/`unimplemented!` in lib src; allows messaged `unreachable!`), wired into CI | **Resolved** |
 | A-7 | `forbid(unsafe_code)` absent | `loki-text`, `loki-presentation`, `loki-spreadsheet` `lib.rs` | 3 (expected) | **Small** | `#![deny(unsafe_code)]` + scoped `#[allow]` on FFI item; checked-in allow-list | |
 | A-8 | Layering: render→ui (uphill) | `loki-renderer/src/document_view.rs:9` | 1 edge | **Small–Medium** | Move consumed `appthere_ui::tokens` to a foundation crate or inject via render ctx | |
-| A-9 | Layering classification | `loki-pdf` → `loki-layout` | 1 | **None (doc)** | Refine layers in ADR; exporter-above-layout tier | |
-| A-10 | Inconsistent error handling | — | ~0 | **None** | Keep `thiserror` norm; gate locks it | |
+| A-9 | Layering classification | `loki-pdf` → `loki-layout` | 1 | **None (doc)** | ✅ **Done** — L3b exporter-above-layout tier documented in [`0009`](0009-target-architecture.md) (refinement #1); `loki-epub` stays L2, `loki-pdf` L3b | **Resolved** |
+| A-10 | Inconsistent error handling | core libs clean; 3 `Result<_,String>` holdouts (2 test-harness, 1 UI-facing app glue) | 3 | **None** | ✅ **Verified** — no core-lib remediation needed; residuals noted (§3.6); enforcement rides with the deferred clippy `disallowed-types` gate (A-13) | **Resolved** |
 | A-11 | TODO/COMPAT debt | 49 TODO / 59 COMPAT (prod) | 108 | **Medium (process)** | Inventory; convert TODO→tracked; re-validate COMPAT vs Dioxus pin | |
 | A-12 | Naming: `*Props` overloaded | model bags vs Dioxus props | ~6 model bags | **Medium (rename)** | Optionally rename model `*Props`→`*Format`/`*Attrs` | |
 | A-13 | Enforcement gap | `clippy.toml`, ceiling/SPDX/dep-direction gates, dylint all absent | — | **Foundational** | Implement §6 gates (M3) before bulk fixes (D2) | |

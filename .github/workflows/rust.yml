@@ -25,6 +25,9 @@ jobs:
       # loki-opc is MIT (released standalone); the rest of the suite is
       # Apache-2.0. See docs/adr/0010-per-crate-licensing.md.
       run: python3 scripts/check-license-headers.py
+    - name: Panic-guard gate (no panic!/todo!/unimplemented! in lib src)
+      # Spec 01 audit A-6. unreachable! with a message is permitted.
+      run: python3 scripts/check-no-panics.py
     - name: Format check
       run: cargo fmt --all --check
     - name: Clippy (workspace, all features, warnings denied)
