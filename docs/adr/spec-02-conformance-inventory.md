@@ -6,19 +6,32 @@ SPDX-License-Identifier: Apache-2.0
 
 | | |
 |---|---|
-| **Status** | Draft — inventory complete, awaiting maintainer triage |
+| **Status** | Draft — inventory complete; **B-1 + B-10 resolved by maintainer** (see banner) |
 | **Companion to** | [`spec-02-conformance-testing.md`](spec-02-conformance-testing.md) |
 | **Method** | Read-only audit pass (§3.1). **No code changed.** |
 | **Snapshot** | branch `claude/adr-docs-setup-ogwz5a`, 2026-06-28 |
 | **Depends on** | Spec 01 ([`spec-01-audit-report.md`](spec-01-audit-report.md), [`0009-target-architecture.md`](0009-target-architecture.md)) |
 
+> **Resolution update (2026-06-28).** After this inventory was filed, the maintainer
+> resolved the two findings that needed a decision, and the spec was revised
+> ([`spec-02-conformance-testing.md`](spec-02-conformance-testing.md), D2 / §7.3):
+> - **B-1 — CPU rasterizer:** resolved in favour of an **in-process `vello_cpu`
+>   software rasterizer** (a new conformance-only render path). The llvmpipe-backed
+>   wgpu alternative was rejected. No longer an open blocker.
+> - **B-10 — Gelasio (≈Georgia):** resolved — **Gelasio is to be bundled** under
+>   Spec 02, completing the metric-compatible font set.
+>
+> The original findings are preserved below as the audit-first snapshot; each is
+> annotated inline with its resolution. All other findings (B-2…B-9, B-11) remain
+> open for triage — the **Priority** column is still the maintainer's.
+
 Spec 02 §1/§3 mandate **audit-first**: "inspect the existing ACID cases, the
 import/export crates, and the render path before building." This document is that
 inventory — it maps the existing corpus to the three axes, assesses what
-machinery already exists vs. must be built, and surfaces the blocking decisions
-(chiefly the CPU-rasterizer gap) so the maintainer can triage before any of
-M1–M6 is implemented. Mirrors the Spec 01 deliverable shape; **no crate or gate
-is built in this pass.**
+machinery already exists vs. must be built, and surfaced the blocking decisions
+(chiefly the CPU-rasterizer gap, now resolved per the banner) so the maintainer
+could triage before any of M1–M6 is implemented. Mirrors the Spec 01 deliverable
+shape; **no crate or gate is built in this pass.**
 
 ---
 
@@ -37,13 +50,15 @@ Axis-by-axis readiness:
 |---|---|---|
 | **1 — Schema** | nothing; **0 vendored schemas** | Whole axis. *But* `xmllint` **is installed** here, so D6 is feasible immediately. |
 | **2 — Round-trip** | **25 ad-hoc round-trip test files** across `loki-odf`/`loki-ooxml`/etc. | No *normalized-model* differ, no first-divergence path reporting, no unified 3-shape harness. |
-| **3 — Visual goldens** | SSIM differ + golden discovery + a `golden_pixel` test | **0 goldens committed**; **no in-process CPU rasterizer**; threshold is a **guessed `0.98`** (violates D5); SSIM-only (no ΔE, no worst-region). |
+| **3 — Visual goldens** | SSIM differ + golden discovery + a `golden_pixel` test | **0 goldens committed**; no in-process CPU rasterizer (**B-1 resolved → build `vello_cpu`**); threshold is a **guessed `0.98`** (violates D5); SSIM-only (no ΔE, no worst-region). |
 
-**The single blocking finding (B-1):** Loki renders through `vello = "0.6"` on
-**wgpu (GPU)**. There is **no `vello_cpu` dependency** and **no software adapter
-visible** in this environment. D2's "Vello CPU rasterizer path" is therefore
-unbuilt and is the critical-path decision for the entire visual axis. Everything
-else is reachable; this one needs a maintainer call.
+**The single blocking finding (B-1) — now resolved.** Loki renders through `vello
+= "0.6"` on **wgpu (GPU)**; there is **no `vello_cpu` dependency** and **no
+software adapter visible** in this environment, so D2's CPU-rasterizer path was
+unbuilt and was the critical-path decision for the visual axis. **Maintainer
+resolution: adopt an in-process `vello_cpu` software rasterizer** (revised spec
+D2). The finding is now an implementation task (M5), not an open question;
+everything else was already reachable.
 
 Good news that de-risks the rest: **`xmllint` and `soffice`/`libreoffice` are
 both present**, and the full metric-compatible font set (Carlito, Caladea, Tinos,
@@ -144,17 +159,18 @@ Fold the 25 existing tests into it rather than discard.
 
 ### 5.2 Gaps (each a triage item)
 
-- **B-1 — No CPU rasterizer (blocking, D2).** Render path is `vello = "0.6"` on
-  `wgpu = "26"`. `loki-renderer/src/vello_init.rs` sets `use_cpu: true`, but that
-  is wgpu's CPU *compute* fallback — it still requires a wgpu adapter (the
-  `render_to_png` example aborts with "a software rasterizer e.g. llvmpipe is
-  required"), and no software adapter is visible in this environment. There is
-  **no `vello_cpu` crate** in the tree. The golden harness consumes pre-rendered
-  PNGs from `renders/` — i.e. rendering is **external today**, exactly the
-  non-reproducibility D2 wants to eliminate. **Decision needed:** adopt
-  `vello_cpu` (the Vello project's CPU rasterizer) as a conformance-only render
-  backend, vs. depend on an llvmpipe-backed wgpu in CI. This gates M5 and is the
-  single most important call in Spec 02.
+- **B-1 — No CPU rasterizer (was blocking, D2). ✅ RESOLVED → `vello_cpu`.**
+  Render path is `vello = "0.6"` on `wgpu = "26"`. `loki-renderer/src/vello_init.rs`
+  sets `use_cpu: true`, but that is wgpu's CPU *compute* fallback — it still
+  requires a wgpu adapter (the `render_to_png` example aborts with "a software
+  rasterizer e.g. llvmpipe is required"), and no software adapter is visible in
+  this environment. There is **no `vello_cpu` crate** in the tree. The golden
+  harness consumes pre-rendered PNGs from `renders/` — i.e. rendering is
+  **external today**, exactly the non-reproducibility D2 wants to eliminate.
+  **Maintainer decision:** adopt **`vello_cpu`** (the Vello project's CPU
+  rasterizer) as a conformance-only render backend; llvmpipe-backed wgpu rejected
+  (revised spec D2 / §12). Now an M5 implementation task — add the `vello_cpu`
+  candidate entry point alongside the GPU path.
 - **B-2 — Zero goldens committed.** `loki-acid/goldens/` holds only `README.md`;
   `renders/` is empty; `find … -name '*.png'` = 0. The visual axis has **no
   reference data**. M4 (generation) must run before M5 means anything. `soffice`
@@ -185,9 +201,10 @@ AtkinsonHyperlegibleNext. `loki-fonts/src/lib.rs` maps the proprietary names
 - **Fidelity fixtures** (reference the bundled names directly) — ready.
 - **Substitution suite** (reference Calibri/Times New Roman, assert mapping +
   warning) — the engine exists (`lib.rs` mappings); the dedicated suite does not.
-- **Caveat:** the spec's "third bundled C-font equivalent" (Gelasio ≈ Georgia) is
-  **not present** — only Carlito + Caladea of that family. Flag for the corpus
-  owner if a Georgia-class fixture is wanted.
+- **Caveat (B-10) — ✅ RESOLVED.** The spec's "third bundled C-font equivalent"
+  (Gelasio ≈ Georgia) was **not present** — only Carlito + Caladea of that family.
+  **Maintainer decision: bundle Gelasio** under Spec 02 (revised spec §7.3), so the
+  corpus can exercise a Georgia-family fixture. Now an asset-add task.
 - **Reference machines must install these fonts** for golden generation to be
   meaningful (operator note for §7.2).
 
@@ -200,13 +217,13 @@ AtkinsonHyperlegibleNext. `loki-fonts/src/lib.rs` maps the proprietary names
 | `xmllint` (libxml2) | Axis 1, M2 | ✅ `/usr/bin/xmllint` |
 | `soffice` / `libreoffice` headless | M4 ODF goldens | ✅ `/usr/bin/soffice` |
 | MS Office / Word COM | M4 OOXML goldens | ❌ Windows-only (Kevin's box; manual) |
-| wgpu software adapter (llvmpipe) | GPU render / CPU-compute fallback | ❌ none visible — reinforces B-1 |
-| `vello_cpu` rasterizer | D2 candidate render | ❌ not a dependency |
-| Metric-compatible fonts | D4 | ✅ bundled in `loki-fonts` |
+| wgpu software adapter (llvmpipe) | GPU render / CPU-compute fallback | ❌ none visible — rejected alternative (see B-1) |
+| `vello_cpu` rasterizer | D2 candidate render | ❌ not yet a dependency — **to be added (B-1 resolved)** |
+| Metric-compatible fonts | D4 | ✅ bundled in `loki-fonts` (Gelasio to be added, B-10) |
 
 The agent/CI environment is **GPU-free**, exactly the condition §4/§7.1 target —
-which is *why* B-1 (a true CPU rasterizer) is non-negotiable for the visual axis
-to run here at all.
+which is *why* the resolved B-1 choice (an in-process `vello_cpu` rasterizer,
+needing no graphics adapter) is what lets the visual axis run here at all.
 
 ---
 
@@ -214,7 +231,7 @@ to run here at all.
 
 | ID | Axis/Area | Finding | Blast radius | Proposed action | Priority |
 |----|-----------|---------|--------------|-----------------|----------|
-| B-1 | Visual / D2 | No CPU rasterizer; render is GPU-only, external PNGs | **Foundational** | Decide `vello_cpu` vs llvmpipe-wgpu; build conformance-only CPU render entry point | |
+| B-1 | Visual / D2 | No CPU rasterizer; render is GPU-only, external PNGs | **Foundational** | ✅ **Resolved → `vello_cpu`** (llvmpipe-wgpu rejected); build conformance-only `vello_cpu` render entry point (M5) | **Resolved** |
 | B-2 | Visual / M4 | 0 goldens committed | **Large** | Stand up generation; LO-headless ODF set first (runnable here), OOXML manual | |
 | B-3 | Visual / D5 | Threshold hardcoded `0.98`, uncalibrated | **Small (now), gating (later)** | Calibration pass + committed record; replace constant | |
 | B-4 | Visual / §7.4 | SSIM-only, averaged; no ΔE/worst-region/heatmap/override | **Medium** | Extend `diff.rs`: CIEDE2000, regional worst-region, heatmap, per-test override | |
@@ -223,7 +240,7 @@ to run here at all.
 | B-7 | Round-trip / M3 | 25 ad-hoc tests, no normalized differ / path reporting | **Medium** | Build normalized-model differ (first-divergence path); fold existing tests; cover bookmark-id class | |
 | B-8 | Shared crate / M1 | `appthere-conformance` absent; `loki-acid` is Text-coupled | **Large** | Create crate; extract `Fixture`/`Consumer` traits; promote `loki-acid` modules | |
 | B-9 | Corpus / §9 | 141 TC cases flat; not organised feature×format×axis; ODP/ODG/PPTX importers absent | **Medium** | Reorganise on disk; record axes+ref-app+overrides per fixture (PPTX gap = Presentation scope) | |
-| B-10 | Fonts / D4 | Gelasio (≈Georgia) not bundled; substitution suite absent | **Small** | Confirm font-family scope; author substitution suite | |
+| B-10 | Fonts / D4 | Gelasio (≈Georgia) not bundled; substitution suite absent | **Small** | ✅ **Resolved → bundle Gelasio**; still author the substitution suite | **Resolved** |
 | B-11 | CI / §11 M6 | Depends on Spec 01 pipeline (not yet built) | **Sequencing** | Land schema+round-trip as hard gates, visual post-calibration, into Spec 01's reserved slot | |
 
 ---
@@ -240,7 +257,7 @@ independent of B-1:
 
 1. **B-8 + B-6** — crate skeleton + schema axis (no GPU, `xmllint` ready). = M1+M2.
 2. **B-7** — normalized round-trip differ, folding the 25 existing tests. = M3.
-3. **B-1 decision → B-2/B-5** — CPU rasterizer + ODF golden generation. = M4.
+3. **B-1 (resolved → `vello_cpu`) + B-2/B-5** — CPU rasterizer + ODF golden generation. = M4.
 4. **B-4 + B-3** — extended differ + calibration record. = M5.
 5. **B-11** — wire gates once Spec 01 M3 exists. = M6.
 
@@ -262,5 +279,5 @@ independent of B-1:
 **Honest scope note:** this is the read-only inventory only. Building
 `appthere-conformance`, vendoring schemas, the CPU render backend, golden
 generation, and calibration (M1–M6) are deferred pending maintainer triage of the
-table above and the B-1 decision — and several (M6) are gated on Spec 01
-implementation that does not yet exist.
+table above (B-1 and B-10 now resolved; B-2…B-9 and B-11 still open) — and
+several (M6) are gated on Spec 01 implementation that does not yet exist.
