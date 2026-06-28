@@ -136,7 +136,10 @@ fn open_spell_panel_at(
         return;
     };
     match resolve_spell_menu(loro_doc, service, pos.paragraph_index, pos.byte_offset) {
-        Some(menu) => {
+        Some(mut menu) => {
+            // Anchor the floating menu at the cursor (window-relative coords).
+            menu.anchor_x = client_x;
+            menu.anchor_y = client_y;
             // Select the whole word so the user sees what the suggestions apply to.
             let word_pos = |byte_offset| DocumentPosition {
                 page_index: pos.page_index,

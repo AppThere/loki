@@ -185,58 +185,10 @@ pub fn App() -> Element {
                 bg     = tokens::COLOR_SURFACE_CHROME,
             ),
 
-            // PROBE(position-absolute): TEMPORARY — remove after verification.
-            {position_absolute_probe()}
-
             // Re-query safe-area insets on resize (Android orientation change).
             SafeAreaResizeSensor {}
 
             Router::<Route> {}
-        }
-    }
-}
-
-/// PROBE(position-absolute): TEMPORARY visual test for whether the current Blitz
-/// stack (Stylo + stylo_taffy + Taffy 0.9) honours block-level `position:
-/// absolute`. Mounted at the top of the app window. **Remove this function and
-/// its call in `App` once the result is recorded.**
-///
-/// Renders a 360×220 dark box (blue border) that is a `position: relative`
-/// containing block, with three children:
-///   • an in-flow grey label,
-///   • a RED `position: absolute` box at `top: 40px; left: 40px`,
-///   • a GREEN `position: absolute` box at `bottom: 8px; right: 8px`.
-///
-/// **If absolute positioning WORKS:** the red box sits 40px in from the
-/// container's top-left (overlapping the label), the green box hugs the
-/// bottom-right corner, and the grey label stays put (not pushed down).
-///
-/// **If absolute is IGNORED (laid out in normal flow):** the red and green
-/// boxes stack vertically below the label at the left edge and never reach the
-/// corners — and the label is pushed down by them.
-fn position_absolute_probe() -> Element {
-    rsx! {
-        div {
-            style: "position: relative; width: 360px; height: 220px; margin: 12px; \
-                    background: #202028; border: 2px solid #3399ff; box-sizing: border-box;",
-            span {
-                style: "color: #9aa0a6; font-family: sans-serif; font-size: 13px;",
-                "in-flow label (should stay top-left)"
-            }
-            div {
-                style: "position: absolute; top: 40px; left: 40px; width: 150px; height: 70px; \
-                        background: #e11d2b; color: #fff; z-index: 10; border: 2px solid #fff; \
-                        font-family: sans-serif; font-size: 12px; display: flex; \
-                        align-items: center; justify-content: center;",
-                "ABS top:40 left:40"
-            }
-            div {
-                style: "position: absolute; bottom: 8px; right: 8px; width: 150px; height: 50px; \
-                        background: #1a8a3a; color: #fff; z-index: 10; border: 2px solid #fff; \
-                        font-family: sans-serif; font-size: 12px; display: flex; \
-                        align-items: center; justify-content: center;",
-                "ABS bottom:8 right:8"
-            }
         }
     }
 }

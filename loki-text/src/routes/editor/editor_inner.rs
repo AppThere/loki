@@ -732,7 +732,9 @@ pub(super) fn EditorInner(path: String) -> Element {
     rsx! {
         div {
             style: format!(
-                "display: flex; flex-direction: column; flex: 1; \
+                // `position: relative` establishes the containing block for the
+                // floating spelling menu (an absolutely-positioned child).
+                "display: flex; flex-direction: column; flex: 1; position: relative; \
                  overflow: hidden; background: {bg}; font-family: {ff};",
                 bg = tokens::COLOR_SURFACE_BASE,
                 ff = tokens::FONT_FAMILY_UI,
@@ -909,6 +911,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     spell_service.clone(),
                     spell_menu,
                     is_language_panel_open,
+                    window_width(),
                 )}
             }
 

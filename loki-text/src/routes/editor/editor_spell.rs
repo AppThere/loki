@@ -29,6 +29,10 @@ pub(super) struct SpellMenu {
     pub word: String,
     pub misspelled: bool,
     pub suggestions: Vec<String>,
+    /// Client (window-relative) coordinates of the right-click, used to anchor
+    /// the floating menu at the cursor.
+    pub anchor_x: f32,
+    pub anchor_y: f32,
 }
 
 /// Editor signal handles needed to apply a spelling mutation, bundled to keep
@@ -71,6 +75,9 @@ pub(super) fn resolve_spell_menu(
         word,
         misspelled,
         suggestions,
+        // The caller fills these from the click position.
+        anchor_x: 0.0,
+        anchor_y: 0.0,
     })
 }
 
