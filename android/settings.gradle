@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Committed Gradle wrapper for producing a Play-Store Android App Bundle (.aab)
+// of Loki Text.  Unlike `dx bundle aab` (which generates its own webview/wry
+// MainActivity and omits FilePickerActivity), this project reproduces the exact
+// manifest/native-entry configuration proven to work via cargo-apk:
+//   * NativeActivity with android.app.lib_name = "loki_text"
+//   * io.github.appthere.lokifileaccess.FilePickerActivity (SAF trampoline)
+//   * minSdk 26 (Vulkan floor for the Blitz/wgpu renderer)
+//
+// The native .so files and FilePickerActivity.java are staged into app/src/main
+// by scripts/build-aab.sh before `./gradlew bundleRelease` runs.
+rootProject.name = "loki-text-android"
+include(":app")
