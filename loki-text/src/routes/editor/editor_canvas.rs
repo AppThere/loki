@@ -47,6 +47,7 @@ use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::hit_test::{hit_test_document, hit_test_page};
 use crate::editing::state::DocumentState;
 use crate::editing::touch::TouchInteractionState;
+use dioxus::html::input_data::MouseButton;
 use loki_app_shell::spell::SpellService;
 
 use super::editor_spell::{SpellMenu, resolve_spell_menu};
@@ -91,6 +92,69 @@ fn loading_view() -> Element {
     }
 }
 
+/// Right-click handler body: resolves the word under `(client_x, client_y)` in
+/// paginated mode, places the cursor there, and opens the spelling suggestions
+/// panel for it. A no-op in reflow mode or when there is no word at the point.
+#[allow(clippy::too_many_arguments)]
+fn open_spell_panel_at(
+    client_x: f32,
+    client_y: f32,
+    doc_state: &Arc<std::sync::Mutex<DocumentState>>,
+    window_width: f32,
+    scroll_offset: f32,
+    page_gap_px: f32,
+    view_mode: ViewMode,
+    loro_doc: Signal<Option<loro::LoroDoc>>,
+    service: &SpellService,
+    mut cursor_state: Signal<CursorState>,
+    mut spell_menu: Signal<Option<SpellMenu>>,
+) {
+    if view_mode == ViewMode::Reflow {
+        return;
+    }
+    let (layout_opt, pw, ph) = {
+        let Ok(s) = doc_state.lock() else { return };
+        (
+            s.paginated_layout.clone(),
+            s.page_width_px,
+            s.page_height_px,
+        )
+    };
+    let Some(layout) = layout_opt else { return };
+    let x_off = (window_width - pw).max(0.0) / 2.0;
+    let origin = (x_off, tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6);
+    let Some(pos) = hit_test_document(
+        client_x,
+        client_y,
+        origin,
+        scroll_offset,
+        &layout,
+        pw,
+        ph,
+        page_gap_px,
+    ) else {
+        return;
+    };
+    match resolve_spell_menu(loro_doc, service, pos.paragraph_index, pos.byte_offset) {
+        Some(menu) => {
+            // Select the whole word so the user sees what the suggestions apply to.
+            let word_pos = |byte_offset| DocumentPosition {
+                page_index: pos.page_index,
+                paragraph_index: menu.paragraph_index,
+                byte_offset,
+            };
+            cursor_state.write().anchor = Some(word_pos(menu.byte_start));
+            cursor_state.write().focus = Some(word_pos(menu.byte_end));
+            spell_menu.set(Some(menu));
+        }
+        // No word at the point — just place the caret.
+        None => {
+            cursor_state.write().anchor = Some(pos.clone());
+            cursor_state.write().focus = Some(pos);
+        }
+    }
+}
+
 /// Renders the scrollable canvas area for the document editor.
 ///
 /// Plain function — no hooks allowed.  All reactive state is passed in as
@@ -127,7 +191,7 @@ pub(super) fn render_canvas_area(
     mut canvas_hovered: Signal<bool>,
     page_gap_px: f32,
     service: SpellService,
-    mut spell_menu: Signal<Option<SpellMenu>>,
+    spell_menu: Signal<Option<SpellMenu>>,
     doc_state_context: Arc<std::sync::Mutex<DocumentState>>,
 ) -> Element {
     rsx! {
@@ -221,42 +285,33 @@ pub(super) fn render_canvas_area(
                 }
             },
 
-            // Outer div records drag origin; cursor placement happens in
-            // on_tile_click on the per-page div (element_coordinates, no origin math).
+            // Outer div records drag origin (left button); right-click (the
+            // secondary button) opens the spelling suggestions panel for the
+            // word under the pointer.
+            //
+            // The patched Blitz shell does NOT deliver `oncontextmenu`, but it
+            // DOES forward `mousedown` for every button with the button preserved
+            // (`trigger_button()` → Secondary for right-click), so the
+            // right-click trigger lives here rather than in a contextmenu handler.
             onmousedown: move |evt: MouseEvent| {
                 let c = evt.client_coordinates();
-                drag_origin.set(Some((c.x as f32, c.y as f32)));
-            },
-
-            // Right-click: open the spelling suggestions panel for the word under
-            // the pointer (paginated mode). Resolves the click to a document
-            // position via the same hit-test as drag-select, then builds a
-            // SpellMenu. COMPAT(dioxus-native): relies on oncontextmenu +
-            // prevent_default being honoured by the Blitz shell.
-            oncontextmenu: move |evt: MouseEvent| {
-                evt.prevent_default();
-                if view_mode() == ViewMode::Reflow {
+                if evt.trigger_button() == Some(MouseButton::Secondary) {
+                    open_spell_panel_at(
+                        c.x as f32,
+                        c.y as f32,
+                        &doc_state_context,
+                        window_width(),
+                        scroll_offset(),
+                        page_gap_px,
+                        view_mode(),
+                        loro_doc,
+                        &service,
+                        cursor_state,
+                        spell_menu,
+                    );
                     return;
                 }
-                let c = evt.client_coordinates();
-                let (layout_opt, pw, ph) = {
-                    let Ok(s) = doc_state_context.lock() else { return };
-                    (s.paginated_layout.clone(), s.page_width_px, s.page_height_px)
-                };
-                let Some(layout) = layout_opt else { return };
-                let x_off = (window_width() - pw).max(0.0) / 2.0;
-                let origin = (x_off, tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6);
-                if let Some(pos) = hit_test_document(
-                    c.x as f32, c.y as f32, origin, scroll_offset(), &layout, pw, ph, page_gap_px,
-                ) {
-                    cursor_state.write().focus = Some(pos.clone());
-                    cursor_state.write().anchor = Some(pos.clone());
-                    if let Some(menu) =
-                        resolve_spell_menu(loro_doc, &service, pos.paragraph_index, pos.byte_offset)
-                    {
-                        spell_menu.set(Some(menu));
-                    }
-                }
+                drag_origin.set(Some((c.x as f32, c.y as f32)));
             },
 
             onmousemove: make_mousemove_handler(
