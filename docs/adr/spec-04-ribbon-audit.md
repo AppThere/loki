@@ -201,8 +201,41 @@ rejected, discrete-image insertion, no-cursor no-op) and
 Refactor folded in (ceiling): the self-contained **Save as Template** callback
 moved to `editor_save_callbacks`, keeping `editor_inner` under 878 (now 855).
 
-**Next increments:** Table / Footnote once the mutation layer can address
-content nested inside cells / note bodies (the deferred nested-addressing work).
+### 5d. Nested-addressing mutation extension — foundation shipped
+
+The mutation layer can now address content **inside table cells**, not just
+top-level section blocks. New `loro_mutation::nested`:
+
+- **`BlockPath`** (`root` global block index + `CellStep` descents) names a
+  block either at the top level or nested inside a table cell (recursively, in
+  the bridge's flat head → bodies → foot cell order). `BlockPath::block(i)`
+  resolves exactly like the flat API; `BlockPath::in_cell(root, cell, block)`
+  reaches a cell's paragraph.
+- Path-based text primitives `insert_text_at` / `delete_text_at` /
+  `mark_text_at` / `get_block_text_at` / `get_mark_at_path` resolve the target
+  `LoroText` through `KEY_TABLE_CELLS` and mutate it. Because the bridge rebuilds
+  each cell from those same live containers, edits **round-trip** through
+  `loro_to_document`. (`MutationError::InvalidBlockPath` added.)
+- Tests (`loro_mutation_nested_tests`, 7 cases): read/insert/delete/mark inside
+  a cell with round-trip, flat-path parity, and the two invalid-path errors
+  (descend into a non-table block; out-of-range cell).
+
+**Honest scope — what this does and does not unblock:**
+
+- ✅ **Table cell text** is now reachable and editable at the CRDT layer (cells
+  were already live containers from the table native mapping).
+- ❌ **Footnote/endnote bodies** are *not* yet addressable: a note body is stored
+  as a `serde`-JSON snapshot inside the `MARK_NOTE` mark, not a live container.
+  Making note bodies editable needs a **bridge representation change** (store the
+  body as a nested block container, like table cells) — a separate increment.
+- This is the *mutation-layer* foundation only. Driving it from the UI still
+  needs (a) layout to assign positions to cell paragraphs, (b) hit-test/cursor
+  to produce a nested position, and (c) `CursorState` to carry a `BlockPath`.
+  And the **Table Insert control** additionally needs a block-insert primitive
+  (insert a new `Block::Table` into a section).
+
+**Next increments:** note-body live container (bridge) → cursor/hit-test nested
+positions (layout) → then the Table/Footnote Insert controls.
 
 ---
 

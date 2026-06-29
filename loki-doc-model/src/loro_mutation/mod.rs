@@ -27,10 +27,15 @@
 //! All `byte_offset` and `len` parameters are **UTF-8 byte positions**.
 
 mod block;
+mod nested;
 mod style;
 mod text;
 
 pub use self::block::{merge_block, split_block};
+pub use self::nested::{
+    BlockPath, CellStep, delete_text_at, get_block_text_at, get_mark_at_path, insert_text_at,
+    mark_text_at,
+};
 pub use self::style::{
     get_block_alignment, get_block_style_name, set_block_alignment, set_block_style,
     set_block_type_heading, set_block_type_para,
@@ -72,6 +77,11 @@ pub enum MutationError {
     /// would remove the break) is not supported.
     #[error("Cannot merge across a section break")]
     CrossSectionMerge,
+    /// A [`nested::BlockPath`] could not be resolved — e.g. a descent step
+    /// addressed a non-table block, or a cell / nested-block index was out of
+    /// range.
+    #[error("Invalid block path: {0}")]
+    InvalidBlockPath(String),
 }
 
 impl From<loro::LoroError> for MutationError {
