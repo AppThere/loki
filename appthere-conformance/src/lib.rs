@@ -39,6 +39,8 @@ pub mod golden;
 pub mod model;
 pub mod roundtrip;
 pub mod schema;
+#[cfg(feature = "sheet-model")]
+pub mod sheet;
 
 pub use roundtrip::{CanonicalEntry, Divergence, NormalizedModel, first_divergence};
 pub use schema::xmllint::XmllintValidator;

@@ -13,6 +13,9 @@ default = []
 # Adds the `model` adapter: `NormalizedModel` for the suite's format-neutral
 # `loki_doc_model::Document`, so the round-trip axis works on real documents.
 doc-model = ["dep:loki-doc-model"]
+# Adds the `sheet` adapter: `NormalizedModel` for `loki_sheet_model::Workbook`,
+# so the round-trip axis works on spreadsheets (XLSX / ODS).
+sheet-model = ["dep:loki-sheet-model"]
 
 [dependencies]
 thiserror = { workspace = true }
@@ -20,6 +23,8 @@ thiserror = { workspace = true }
 tempfile = "3"
 # Optional: the format-neutral document model, for the round-trip canonicalizer.
 loki-doc-model = { path = "../loki-doc-model", optional = true }
+# Optional: the spreadsheet model, for the workbook round-trip canonicalizer.
+loki-sheet-model = { path = "../loki-sheet-model", optional = true }
 
 [package.metadata.docs.rs]
 all-features = true
