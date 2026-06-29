@@ -135,11 +135,12 @@ pub fn navigate_left(
     // Verify the previous block is actually on this page before crossing.
     find_para_data(layout, focus.page_index, prev_index)?;
     let prev_text = get_text(prev_index);
-    Some(DocumentPosition {
-        page_index: focus.page_index,
-        paragraph_index: prev_index,
-        byte_offset: prev_text.len(),
-    })
+    // TODO(nested-nav): a sibling inside a cell/note body must carry its path.
+    Some(DocumentPosition::top_level(
+        focus.page_index,
+        prev_index,
+        prev_text.len(),
+    ))
 }
 
 /// Move one grapheme cluster to the right.
@@ -170,11 +171,8 @@ pub fn navigate_right(
     // Verify the next block is actually on this page.
     find_para_data(layout, focus.page_index, next_index)?;
     // TODO(3b-3): cross-page rightward navigation
-    Some(DocumentPosition {
-        page_index: focus.page_index,
-        paragraph_index: next_index,
-        byte_offset: 0,
-    })
+    // TODO(nested-nav): see navigate_left.
+    Some(DocumentPosition::top_level(focus.page_index, next_index, 0))
 }
 
 /// Move the cursor one line up, preserving the horizontal screen position.
@@ -355,6 +353,7 @@ mod tests {
         let editing_data = PageEditingData {
             paragraphs: vec![PageParagraphData {
                 block_index: 0,
+                path: Vec::new(),
                 layout: Arc::new(para),
                 origin: (0.0, 0.0),
             }],
@@ -385,11 +384,7 @@ mod tests {
     }
 
     fn focus_at(byte_offset: usize) -> DocumentPosition {
-        DocumentPosition {
-            page_index: 0,
-            paragraph_index: 0,
-            byte_offset,
-        }
+        DocumentPosition::top_level(0, 0, byte_offset)
     }
 
     #[test]
@@ -524,11 +519,13 @@ mod tests {
             paragraphs: vec![
                 PageParagraphData {
                     block_index: 0,
+                    path: Vec::new(),
                     layout: Arc::new(para0),
                     origin: (0.0, 0.0),
                 },
                 PageParagraphData {
                     block_index: 1,
+                    path: Vec::new(),
                     layout: Arc::new(para1),
                     origin: (0.0, h0),
                 },

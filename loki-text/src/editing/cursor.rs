@@ -3,15 +3,18 @@
 
 //! Cursor and selection state for the Loki document editor.
 
+use loki_doc_model::{BlockPath, PathStep};
 use unicode_segmentation::UnicodeSegmentation;
 
 /// A document position identified by page index, paragraph index within the
 /// page, and byte offset within the paragraph.
 ///
-/// All three fields are zero-based.  `paragraph_index` is an index into
-/// [`loki_layout::PageEditingData::paragraph_layouts`] for the given page.
-/// `byte_offset` is a byte offset into the paragraph's flattened text content.
-#[derive(Debug, Clone, PartialEq)]
+/// All three index fields are zero-based.  `paragraph_index` is an index into
+/// [`loki_layout::PageEditingData::paragraph_layouts`] for the given page (which
+/// is the document-global block index of the paragraph, or its **root** block
+/// when nested).  `byte_offset` is a byte offset into the paragraph's flattened
+/// text content.
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct DocumentPosition {
     /// Zero-based index of the page that contains this position.
     pub page_index: usize,
@@ -20,6 +23,32 @@ pub struct DocumentPosition {
     pub paragraph_index: usize,
     /// Byte offset into the paragraph's flattened text content.
     pub byte_offset: usize,
+    /// Descent into a nested container (table cell / note body). Empty for an
+    /// ordinary top-level paragraph. With `paragraph_index` as the root this
+    /// forms the [`BlockPath`] the editor uses to address the paragraph.
+    pub path: Vec<PathStep>,
+}
+
+impl DocumentPosition {
+    /// A top-level position (no nesting) — the common case.
+    #[must_use]
+    pub fn top_level(page_index: usize, paragraph_index: usize, byte_offset: usize) -> Self {
+        Self {
+            page_index,
+            paragraph_index,
+            byte_offset,
+            path: Vec::new(),
+        }
+    }
+
+    /// The [`BlockPath`] addressing this position's paragraph for mutation.
+    #[must_use]
+    pub fn block_path(&self) -> BlockPath {
+        BlockPath {
+            root: self.paragraph_index,
+            steps: self.path.clone(),
+        }
+    }
 }
 
 /// The current cursor and selection state for the editor.
@@ -77,6 +106,14 @@ impl CursorState {
     /// Returns `true` when a range selection exists (anchor differs from focus).
     pub fn has_selection(&self) -> bool {
         self.anchor.is_some() && self.focus.is_some() && self.anchor != self.focus
+    }
+
+    /// The [`BlockPath`] of the focus position, if a cursor is placed.
+    ///
+    /// `BlockPath::block(i)` for a top-level cursor; a nested path when the
+    /// focus is inside a table cell / note body.
+    pub fn block_path(&self) -> Option<BlockPath> {
+        self.focus.as_ref().map(DocumentPosition::block_path)
     }
 }
 
@@ -173,5 +210,36 @@ mod tests {
         // next boundary after offset 1 should be 5 (end of emoji / start of 'b').
         let s = "a\u{1F600}b";
         assert_eq!(next_grapheme_boundary(s, 1), 5);
+    }
+
+    #[test]
+    fn top_level_position_block_path_is_flat() {
+        let pos = DocumentPosition::top_level(0, 3, 7);
+        assert_eq!(pos.block_path(), BlockPath::block(3));
+        assert!(pos.path.is_empty());
+    }
+
+    #[test]
+    fn nested_position_block_path_carries_steps() {
+        let pos = DocumentPosition {
+            page_index: 0,
+            paragraph_index: 2,
+            byte_offset: 0,
+            path: vec![PathStep::Cell { cell: 1, block: 0 }],
+        };
+        assert_eq!(pos.block_path(), BlockPath::in_cell(2, 1, 0));
+    }
+
+    #[test]
+    fn cursor_block_path_follows_focus() {
+        let mut cs = CursorState::new();
+        assert_eq!(cs.block_path(), None);
+        cs.focus = Some(DocumentPosition {
+            page_index: 0,
+            paragraph_index: 5,
+            byte_offset: 0,
+            path: vec![PathStep::Note { note: 0, block: 0 }],
+        });
+        assert_eq!(cs.block_path(), Some(BlockPath::in_note(5, 0, 0)));
     }
 }

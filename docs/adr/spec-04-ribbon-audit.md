@@ -303,9 +303,13 @@ the editor mutates `paragraph_index` as a flat global block index.
 1. **Producer seam (this increment):** `PageParagraphData.path: Vec<PathStep>`
    (empty for top-level). All existing emitters set it empty via a new
    `push_editing_para` helper. No behaviour change.
-2. **Position seam:** add `path: Vec<PathStep>` to `DocumentPosition` (empty =
-   flat); `hit_test` carries `para_data.path`; `CursorState::block_path()` yields
-   a `BlockPath`. (~29 construction sites — mechanical, top-level unchanged.)
+2. ✅ **Position seam (shipped):** `DocumentPosition` gains `path: Vec<PathStep>`
+   (empty = flat) + a `top_level(..)` constructor and `block_path()`; `hit_test`
+   carries `para_data.path`; `CursorState::block_path()` yields a `BlockPath`.
+   All ~15 production + test construction sites migrated; same-paragraph
+   navigation preserves the path, cross-paragraph (top-level) clears it
+   (`TODO(nested-nav)` for in-container sibling navigation). Unit tests cover
+   flat vs. nested `block_path()`. Top-level editing unchanged.
 3. **Layout emission:** emit `PageParagraphData` for table-cell paragraphs (real
    flow, page-relative origins, `[Cell]` path) and fix footnote bodies to carry
    `[Note]` + the owning block index.
@@ -316,7 +320,10 @@ the editor mutates `paragraph_index` as a flat global block index.
 
 Increment 1 shipped: `PageParagraphData.path` + the `push_editing_para` helper
 (which also DRY-collapsed the six placement sites, keeping `flow_para.rs` under
-its baselined ceiling). `loki-layout` tests green; top-level editing unchanged.
+its baselined ceiling). Increment 2 shipped: the `DocumentPosition`/`CursorState`
+position seam (above). Both keep top-level editing unchanged; the **next
+keystone is increment 3 — layout emission** for table-cell and note-body
+paragraphs (the substantive `flow.rs`/`flow_table` work).
 
 ---
 

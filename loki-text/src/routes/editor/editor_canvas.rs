@@ -125,10 +125,8 @@ fn open_spell_panel_at(
             menu.anchor_x = ctx.client_x;
             menu.anchor_y = ctx.client_y;
             // Select the whole word so the user sees what the suggestions apply to.
-            let word_pos = |byte_offset| DocumentPosition {
-                page_index: pos.page_index,
-                paragraph_index: menu.paragraph_index,
-                byte_offset,
+            let word_pos = |byte_offset| {
+                DocumentPosition::top_level(pos.page_index, menu.paragraph_index, byte_offset)
             };
             cursor_state.write().anchor = Some(word_pos(menu.byte_start));
             cursor_state.write().focus = Some(word_pos(menu.byte_end));
@@ -427,14 +425,10 @@ pub(super) fn render_canvas_area(
                                 let loro_cursor = loro_doc.read().as_ref().and_then(|ldoc| {
                                     derive_loro_cursor(ldoc, para, byte)
                                 });
-                                let pos = DocumentPosition {
-                                    // page_index is meaningless in reflow; 0 is a
-                                    // safe placeholder (the caret is painted from
-                                    // paragraph/byte, not page, in reflow mode).
-                                    page_index: 0,
-                                    paragraph_index: para,
-                                    byte_offset: byte,
-                                };
+                                // page_index is meaningless in reflow; 0 is a safe
+                                // placeholder (the caret is painted from paragraph/
+                                // byte, not page, in reflow mode).
+                                let pos = DocumentPosition::top_level(0, para, byte);
                                 let mut cs = cursor_state.write();
                                 cs.loro_cursor = loro_cursor;
                                 cs.anchor = Some(pos.clone());
@@ -448,11 +442,7 @@ pub(super) fn render_canvas_area(
                                 });
                                 let mut cs = cursor_state.write();
                                 cs.loro_cursor = loro_cursor;
-                                cs.focus = Some(DocumentPosition {
-                                    page_index: 0,
-                                    paragraph_index: para,
-                                    byte_offset: byte,
-                                });
+                                cs.focus = Some(DocumentPosition::top_level(0, para, byte));
                             },
                             // Right-click → spelling menu (paginated only). Uses
                             // accurate tile-local coordinates from the tile event.

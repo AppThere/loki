@@ -47,6 +47,7 @@ fn make_test_layout() -> PaginatedLayout {
     let editing_data = PageEditingData {
         paragraphs: vec![PageParagraphData {
             block_index: 0,
+            path: Vec::new(),
             layout: Arc::new(para),
             origin: (0.0, 0.0),
         }],
@@ -318,6 +319,7 @@ fn reflow_para(text: &str, block_index: usize, origin: (f32, f32)) -> PageParagr
     );
     PageParagraphData {
         block_index,
+        path: Vec::new(),
         layout: Arc::new(para),
         origin,
     }

@@ -130,11 +130,7 @@ mod tests {
     }
 
     fn pos(byte_offset: usize) -> DocumentPosition {
-        DocumentPosition {
-            page_index: 0,
-            paragraph_index: 0,
-            byte_offset,
-        }
+        DocumentPosition::top_level(0, 0, byte_offset)
     }
 
     fn selection(start: usize, end: usize) -> CursorState {

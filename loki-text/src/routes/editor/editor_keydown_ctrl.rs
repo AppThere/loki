@@ -43,11 +43,7 @@ pub(super) fn handle_ctrl_keys(
                 state.paginated_layout.clone()
             };
             if let Some(layout) = layout_opt {
-                let first = DocumentPosition {
-                    page_index: 0,
-                    paragraph_index: 0,
-                    byte_offset: 0,
-                };
+                let first = DocumentPosition::top_level(0, 0, 0);
                 let last_opt = layout
                     .pages
                     .iter()
@@ -67,11 +63,7 @@ pub(super) fn handle_ctrl_keys(
                         .as_ref()
                         .map(|l| get_block_text(l, last_block).len())
                         .unwrap_or(0);
-                    let last = DocumentPosition {
-                        page_index: last_page,
-                        paragraph_index: last_block,
-                        byte_offset: end_offset,
-                    };
+                    let last = DocumentPosition::top_level(last_page, last_block, end_offset);
                     let mut cs = cursor_state.write();
                     cs.anchor = Some(first);
                     cs.focus = Some(last);
@@ -240,6 +232,8 @@ pub(super) fn handle_enter_key(
         page_index: focus.page_index,
         paragraph_index: focus.paragraph_index + 1,
         byte_offset: 0,
+        // Same container as the split-from paragraph.
+        path: focus.path.clone(),
     };
     let mut cs = cursor_state.write();
     cs.focus = Some(new_pos.clone());

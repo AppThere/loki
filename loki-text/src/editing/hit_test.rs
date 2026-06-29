@@ -190,6 +190,9 @@ pub fn hit_test_page(
         page_index,
         paragraph_index: para_data.block_index,
         byte_offset,
+        // Carry the nesting descent so a click inside a table cell / note body
+        // resolves to the right nested paragraph (empty for top-level).
+        path: para_data.path.clone(),
     })
 }
 

@@ -355,11 +355,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                         // the user can type immediately without clicking first.
                         if cursor_state.read().focus.is_none() {
                             use crate::editing::cursor::DocumentPosition;
-                            let start = DocumentPosition {
-                                page_index: 0,
-                                paragraph_index: 0,
-                                byte_offset: 0,
-                            };
+                            let start = DocumentPosition::top_level(0, 0, 0);
                             let mut cs = cursor_state.write();
                             cs.anchor = Some(start.clone());
                             cs.focus = Some(start);

@@ -144,6 +144,8 @@ pub(super) fn make_keydown_handler(
                         page_index: focus.page_index,
                         paragraph_index: focus.paragraph_index - 1,
                         byte_offset: merged_offset,
+                        // Same container as the merged-from paragraph.
+                        path: focus.path.clone(),
                     };
                     let mut cs = cursor_state.write();
                     cs.focus = Some(new_pos.clone());

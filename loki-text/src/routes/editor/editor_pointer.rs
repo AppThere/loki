@@ -184,16 +184,8 @@ pub(super) fn make_touchmove_handler(
                     let text = get_block_text(ldoc, para);
                     if let Some((ws, we)) = word_boundaries_at(&text, byte) {
                         let mut cs = cursor_state.write();
-                        cs.anchor = Some(DocumentPosition {
-                            page_index: page,
-                            paragraph_index: para,
-                            byte_offset: ws,
-                        });
-                        cs.focus = Some(DocumentPosition {
-                            page_index: page,
-                            paragraph_index: para,
-                            byte_offset: we,
-                        });
+                        cs.anchor = Some(DocumentPosition::top_level(page, para, ws));
+                        cs.focus = Some(DocumentPosition::top_level(page, para, we));
                     }
                 }
             }
@@ -229,11 +221,7 @@ pub(super) fn make_touchend_handler(
                         .read()
                         .as_ref()
                         .and_then(|ldoc| derive_loro_cursor(ldoc, para, byte));
-                    let pos = DocumentPosition {
-                        page_index: 0,
-                        paragraph_index: para,
-                        byte_offset: byte,
-                    };
+                    let pos = DocumentPosition::top_level(0, para, byte);
                     let mut cs = cursor_state.write();
                     cs.loro_cursor = loro_cursor;
                     cs.anchor = Some(pos.clone());
