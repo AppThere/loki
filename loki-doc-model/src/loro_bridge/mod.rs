@@ -149,6 +149,14 @@ pub fn document_to_loro(doc: &Document) -> Result<LoroDoc, BridgeError> {
             },
         );
     }
+    // Inline-object anchor marks must not expand onto adjacent text — they
+    // describe a single placeholder position, not a formatting span.
+    style_config.insert(
+        loro::InternalString::from(MARK_IMAGE),
+        StyleConfig {
+            expand: ExpandType::None,
+        },
+    );
     loro_doc.config_text_style(style_config);
 
     // Metadata — full DocumentMeta (core + Dublin Core) as a lossless snapshot.

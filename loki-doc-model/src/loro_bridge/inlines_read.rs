@@ -37,6 +37,13 @@ pub(super) fn reconstruct_inlines(map: &loro::LoroMap) -> Result<Vec<Inline>, Br
             match attributes {
                 None => inlines.push(Inline::Str(insert.to_string())),
                 Some(attrs) => {
+                    // An inline object (anchored by a placeholder char) carries
+                    // its structured data in a mark: reconstruct the object and
+                    // discard the placeholder character itself.
+                    if let Some(object) = decode_inline_object(&attrs) {
+                        inlines.push(object);
+                        continue;
+                    }
                     let props = read_char_props_from_marks(&attrs);
                     let style_id = read_style_id_from_marks(&attrs);
                     if props.is_some() || style_id.is_some() {
@@ -55,6 +62,28 @@ pub(super) fn reconstruct_inlines(map: &loro::LoroMap) -> Result<Vec<Inline>, Br
         }
     }
     Ok(inlines)
+}
+
+/// Reconstructs an inline object from an anchor span's marks, if present.
+///
+/// Currently handles [`MARK_IMAGE`] (a `serde`-JSON `Inline::Image` snapshot).
+/// Returns `None` for ordinary formatted text so the caller falls through to
+/// the char-props / style path.
+#[cfg(feature = "serde")]
+fn decode_inline_object(attrs: &rustc_hash::FxHashMap<String, LoroValue>) -> Option<Inline> {
+    if let Some(LoroValue::String(json)) = attrs.get(MARK_IMAGE) {
+        match serde_json::from_str::<Inline>(json) {
+            Ok(inline @ Inline::Image(..)) => return Some(inline),
+            Ok(_) => tracing::warn!("loro bridge: MARK_IMAGE snapshot was not an Image"),
+            Err(err) => tracing::warn!("loro bridge: failed to decode inline image: {err}"),
+        }
+    }
+    None
+}
+
+#[cfg(not(feature = "serde"))]
+fn decode_inline_object(_attrs: &rustc_hash::FxHashMap<String, LoroValue>) -> Option<Inline> {
+    None
 }
 
 /// Reads the named character style carried by [`MARK_CHAR_STYLE_ID`].

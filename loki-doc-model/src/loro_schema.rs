@@ -119,6 +119,25 @@ pub const MARK_KERNING: &str = "kerning";
 pub const MARK_CHAR_STYLE_ID: &str = "char_style_id";
 pub const MARK_OUTLINE: &str = "outline";
 
+// -----------------------------------------------------------------------------
+// Inline objects (anchored by a placeholder char + a data-bearing mark)
+// -----------------------------------------------------------------------------
+
+/// Object-replacement character (U+FFFC) — the in-text anchor for an inline
+/// object whose structured data is carried by a mark over the single anchor
+/// position. The anchor occupies one Unicode scalar so the object is a
+/// discrete, positioned, deletable element in the flat text stream.
+pub const OBJECT_REPLACEMENT_CHAR: char = '\u{FFFC}';
+
+/// String form of [`OBJECT_REPLACEMENT_CHAR`] for `LoroText::insert`.
+pub const OBJECT_REPLACEMENT_STR: &str = "\u{FFFC}";
+
+/// Inline image data: a `serde`-JSON snapshot of the `Inline::Image`, carried
+/// as a mark over a single [`OBJECT_REPLACEMENT_CHAR`] anchor so that
+/// image-bearing paragraphs round-trip *natively* (the image is a live,
+/// positioned inline object) instead of as opaque block snapshots.
+pub const MARK_IMAGE: &str = "image";
+
 /// Every character-level mark key (formatting that lives on a text range).
 ///
 /// Single source of truth shared by `document_to_loro` (which registers each

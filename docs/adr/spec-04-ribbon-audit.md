@@ -99,6 +99,29 @@ No new model-construction is needed for the Create-ready set — the constructor
 - **Footnote/Endnote:** `Inline::Note(kind, blocks)` at the cursor; auto-numbered by `flow_footnotes`.
 - Mutation layers: `loki-doc-model/src/loro_mutation/{text,block,style}.rs`.
 
+### 5a. Live-model gap & the Loro-bridge extension (M4 prerequisite)
+
+The §4 capability table rates render/construct readiness, but M4 scoping surfaced
+a deeper constraint: the **live Loro CRDT** flattens or *opaquely* snapshots most
+structured inlines (`Inline::Image`/`Note`/`Field`) and blocks (`Table`,
+footnote bodies). An opaque block round-trips losslessly and renders, but is
+**not live-editable** — so an Insert control over it would produce a non-editable
+object, which Spec 04 forbids (no dead/inert UI). Only **Hyperlink**
+(a `MARK_LINK_URL` text mark) was genuinely create-ready in the live model.
+
+Per maintainer direction (*"do the Loro-bridge extension first"*), structured
+inlines are being migrated to native CRDT mappings before the Insert tab ships,
+one tested increment per turn:
+
+- **✅ Inline image (top-level)** — native: an `OBJECT_REPLACEMENT_CHAR` anchor
+  carries the image as a `MARK_IMAGE` mark (`loro_bridge::inlines`/`inlines_read`;
+  `opaque.rs` un-gates top-level images). The image is now a live, positioned,
+  deletable inline; image-bearing paragraphs are no longer opaque. Tests:
+  `loro_bridge_opaque_tests::{inline_image_stored_natively_not_opaque,
+  nested_inline_image_stays_opaque_but_survives}`. *(An image nested inside a
+  wrapper/run is still flattened → block stays opaque.)*
+- **⏳ Footnote, table** — pending native mappings (next increments).
+
 ---
 
 ## 6. Blitz layout surface for the collapse engine (Spec 04 §4.3)
