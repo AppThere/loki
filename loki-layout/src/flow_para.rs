@@ -59,30 +59,13 @@ use crate::para::{
     ParagraphLayout, ResolvedParaProps, format_list_marker, layout_paragraph_spelled,
 };
 use crate::resolve::{emu_to_pt, flatten_paragraph, pts_to_f32, resolve_para_props};
-use crate::result::PageParagraphData;
 
 use super::columns_impl::break_column;
+use super::editing::push_editing_para;
 use super::{FlowState, LayoutWarning, finish_page};
 
 /// Maximum keep-with-next chain length before truncation (ADR 004 §4).
 const CHAIN_LIMIT: usize = 5;
-
-/// Records a top-level paragraph's editing data. Centralises the
-/// [`PageParagraphData`] construction (and the empty `path` default) so the six
-/// placement call sites stay one line each; nested emitters set `path` directly.
-fn push_editing_para(
-    state: &mut FlowState,
-    block_index: usize,
-    layout: Arc<ParagraphLayout>,
-    origin: (f32, f32),
-) {
-    state.current_paragraphs.push(PageParagraphData {
-        block_index,
-        path: Vec::new(),
-        layout,
-        origin,
-    });
-}
 
 // ── Public(super) API ─────────────────────────────────────────────────────────
 
@@ -157,8 +140,13 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     let effective_para: &StyledParagraph = owned_para.as_ref().unwrap_or(para);
     // ────────────────────────────────────────────────────────────────────────
 
-    let (text, spans, mut images, notes) =
+    let (text, spans, mut images, mut notes) =
         flatten_paragraph(effective_para, state.catalog, &mut state.note_counter);
+    // Tag each note with its owning block + per-block order (see flow_footnotes).
+    for (i, note) in notes.iter_mut().enumerate() {
+        note.owner_block_index = block_index;
+        note.note_in_block = i;
+    }
     state.pending_footnotes.extend(notes);
 
     // ── Floating image wrap (gap #12) ────────────────────────────────────────
@@ -312,8 +300,7 @@ pub(super) fn place_paragraph_layout(
         let dy = state.cursor_y;
         let dx = state.current_indent;
         if state.options.preserve_for_editing {
-            // origin (dx, dy) matches the item translation below (lists indent dx)
-            // so hit-testing and cursor geometry line up with rendered glyphs.
+            // origin (dx, dy) matches the item translation below (lists indent dx).
             push_editing_para(state, block_index, Arc::new(para_layout.clone()), (dx, dy));
         }
         for mut item in para_layout.items {

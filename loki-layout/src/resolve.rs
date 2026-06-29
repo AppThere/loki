@@ -10,31 +10,13 @@
 //!
 //! # Session 4 pre-audit findings (2026-04-20)
 //!
-//! ## Q1 — Inline::Image data resolution
+//! ## Q1 — Inline::Image data resolution (implemented)
 //!
-//! `Inline::Image` is defined as `Image(NodeAttr, Vec<Inline>, LinkTarget)`
-//! where `LinkTarget.url` carries either:
-//! - A **data URI** (`"data:image/png;base64,…"`) when
-//!   `DocxImportOptions::embed_images == true` (the default). The OOXML mapper
-//!   (`loki-ooxml/src/docx/mapper/images.rs:38–44`) resolves the `a:blip
-//!   r:embed` relationship ID against the OPC package, base64-encodes the raw
-//!   bytes, and stores the data URI in `LinkTarget.url`.
-//! - An **unresolved relationship ID** (e.g. `"rId1"`) when
-//!   `embed_images == false`.
-//!   Width and height in EMUs are stored in `NodeAttr.kv` as `("cx_emu", val)`
-//!   and `("cy_emu", val)`. Alt text is the `Vec<Inline>` second field.
-//!   `loki-vello` (`loki-vello/src/image.rs:34`) only renders data URIs; external
-//!   URLs produce a grey placeholder rectangle. **With `embed_images` on (the
-//!   default), image data is available at layout time — Session 4 is a one-session
-//!   wire-up.**
-//!
-//! `walk_inlines` currently treats `Inline::Image` like `Inline::Link` — it
-//! recurses into the alt-text child inlines and silently discards the `src` and
-//! dimensions (`resolve.rs:351`). The fix is to extract `LinkTarget.url`,
-//! `cx_emu`/`cy_emu`, and emit a `PositionedImage` into the paragraph's item
-//! list. `PositionedItem::Image(PositionedImage)` already exists in
-//! `loki-layout/src/items.rs:30` with fields `rect: LayoutRect`, `src: String`,
-//! `alt: Option<String>`.
+//! `Image(NodeAttr, Vec<Inline>, LinkTarget)` carries the src in `LinkTarget.url`
+//! (a `data:` URI when `embed_images`, else an unresolved rel ID) and
+//! `cx_emu`/`cy_emu` in `NodeAttr.kv`; alt text is the `Vec<Inline>`. `loki-vello`
+//! renders only data URIs (external URLs → grey placeholder). `walk_inlines`
+//! emits a `CollectedImage`, placed post-Parley as a `PositionedImage`.
 //!
 //! ## Q2 — Inline::Link current behaviour
 //!
@@ -164,6 +146,11 @@ pub struct CollectedNote {
     pub kind: NoteKind,
     /// The note body blocks.
     pub blocks: Vec<Block>,
+    /// Owning paragraph's global block index; set by `flow_paragraph` (0 until then).
+    pub owner_block_index: usize,
+    /// This note's index among its block's notes (the bridge `KEY_NOTES` index),
+    /// so the editor can address the body via a `PathStep::Note`.
+    pub note_in_block: usize,
 }
 
 /// Resolve the effective [`ResolvedParaProps`] for a [`StyledParagraph`].
@@ -794,6 +781,9 @@ fn walk_inlines(
                     number: *note_counter,
                     kind: *kind,
                     blocks: blocks.clone(),
+                    // Set by `flow_paragraph` after collection.
+                    owner_block_index: 0,
+                    note_in_block: 0,
                 });
             }
             // Math (gap): record an empty-range placeholder span carrying the

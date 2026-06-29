@@ -15,6 +15,8 @@
 mod columns_impl;
 #[path = "flow_comments.rs"]
 mod comments_impl;
+#[path = "flow_editing.rs"]
+mod editing;
 #[path = "flow_float.rs"]
 mod float_impl;
 #[path = "flow_para.rs"]
@@ -128,15 +130,12 @@ pub(super) struct FlowState<'a> {
     pub(super) options: &'a LayoutOptions,
     /// Current y within the current page content area (or canvas).
     pub(super) cursor_y: f32,
-    /// Available width for content.
     pub(super) content_width: f32,
     /// Items accumulating in the current page (or entire canvas for continuous).
     pub(super) current_items: Vec<PositionedItem>,
     /// Completed pages (paginated mode only).
     pub(super) pages: Vec<LayoutPage>,
-    /// Physical page dimensions in points.
     pub(super) page_size: LayoutSize,
-    /// Content-area margins derived from the section's `PageLayout`.
     pub(super) margins: LayoutInsets,
     /// Height of the content area within a page (page_height − v_margins).
     pub(super) page_content_height: f32,
@@ -146,28 +145,22 @@ pub(super) struct FlowState<'a> {
     pub(super) warnings: Vec<LayoutWarning>,
     /// Accumulated horizontal indentation in points.
     pub(super) current_indent: f32,
-    /// Per-list counter arrays. Each entry maps a `ListId` to a 9-element
-    /// array where index = level (0-based) and value = current counter (1-based
-    /// after first advance, 0 = not yet initialised).
+    /// Per-list counters: `ListId` → 9-element array (index = level, value =
+    /// current counter; `0` = not yet initialised).
     pub(super) list_counters: HashMap<ListId, [u32; 9]>,
-    /// The `ListId` of the most recently placed list item, used to detect
-    /// list-id changes and reset counters for the new list.
+    /// `ListId` of the most recently placed list item (to detect list changes).
     pub(super) prev_list_id: Option<ListId>,
-    /// Monotonically-increasing counter for footnotes and endnotes within
-    /// the current section. Incremented by `walk_inlines` when a `Note` is met.
+    /// Footnote/endnote counter for the current section (bumped by `walk_inlines`).
     pub(super) note_counter: u32,
-    /// Footnotes and endnotes collected while flowing the current section.
-    /// Rendered at the end of the section by `flow_footnotes`.
+    /// Footnotes/endnotes collected this section, rendered by `flow_footnotes`.
     pub(super) pending_footnotes: Vec<CollectedNote>,
     /// Paragraph metadata for the current page (block index, layout, origin).
     pub(super) current_paragraphs: Vec<PageParagraphData>,
-    /// Clean-page-top checkpoints recorded during a top-level paginated flow,
-    /// used by incremental relayout. Populated only by [`run_paginated_loop`];
-    /// nested flows (tables, cells, headers) never call it, so it stays empty.
+    /// Clean-page-top checkpoints for incremental relayout; populated only by the
+    /// top-level paginated loop (empty in nested flows).
     pub(super) checkpoints: Vec<PageStart>,
-    /// Number of text columns for this section (`1` = single column). When
-    /// `> 1`, [`content_width`](Self::content_width) holds the *column* width and
-    /// content flows down each column before moving to the next, then the page.
+    /// Number of text columns (`1` = single); when `> 1`,
+    /// [`content_width`](Self::content_width) is the *column* width.
     pub(super) columns: u8,
     /// Gap between adjacent columns in points (meaningful only when `columns > 1`).
     pub(super) column_gap: f32,
@@ -175,33 +168,29 @@ pub(super) struct FlowState<'a> {
     pub(super) column_separator: bool,
     /// 0-based index of the column currently being filled.
     pub(super) col_index: u8,
-    /// Content-area y at which the current column band begins. Normally `0`
-    /// (columns start at the page content top), but a `continuous` section break
-    /// can start a new column band *mid-page* (below the previous section), so
-    /// each column of that band starts here rather than at `0`.
+    /// Content-area y where the current column band begins (`0` normally; mid-page
+    /// for a `continuous` section break that starts a band below the previous one).
     pub(super) column_top_y: f32,
-    /// Index into `current_items` at which the current column's items begin, so
-    /// they can be shifted to the column's horizontal offset when it is finished.
+    /// First `current_items` index of the current column (shifted to its x offset
+    /// when the column finishes).
     pub(super) column_item_start: usize,
-    /// Index into `current_paragraphs` at which the current column's editing
-    /// data begins (parallel to `column_item_start`).
+    /// First `current_paragraphs` index of the current column (parallel to
+    /// `column_item_start`).
     pub(super) column_para_start: usize,
-    /// Document comments (annotation bodies), looked up by id when laying out
-    /// the comment panel. Empty in nested flows (headers/footers, cells).
+    /// Document comments, looked up by id for the gutter panel; empty in nested flows.
     pub(super) comments: &'a [loki_doc_model::content::annotation::Comment],
-    /// Comment anchors (`id`, content-local `y`) recorded on the current page,
-    /// consumed by [`finish_page`] to lay out the gutter comment panel.
+    /// Comment anchors (`id`, content-local `y`) on the current page, consumed by
+    /// [`finish_page`] for the gutter comment panel.
     pub(super) pending_comment_anchors: Vec<(String, f32)>,
-    /// When `true`, paragraphs laid out in this state break over-long words to
-    /// the available width (CSS `overflow-wrap: anywhere`). Set while flowing
-    /// table-cell content so a long word wraps to the column width instead of
-    /// overflowing into the neighbouring cell.
+    /// Break over-long words to the available width (CSS `overflow-wrap: anywhere`);
+    /// set while flowing table-cell content so words wrap to the column width.
     pub(super) break_long_words: bool,
-    /// A float taller than its anchoring paragraph whose remaining vertical
-    /// extent the following paragraphs on this page keep wrapping beside. Set by
-    /// [`para_impl::flow_paragraph`]; reserved/cleared by
-    /// [`float_impl::reserve_active_float`] and on every page boundary.
+    /// A float taller than its anchoring paragraph whose remaining extent the
+    /// following paragraphs keep wrapping beside. Set by `para_impl::flow_paragraph`;
+    /// cleared by `float_impl::reserve_active_float` and on every page boundary.
     pub(super) active_float: Option<float_impl::ActiveFloat>,
+    /// Editing-path context for nested content (see [`editing::NestedEditing`]).
+    pub(super) nested_editing: Option<editing::NestedEditing>,
 }
 
 impl FlowState<'_> {
@@ -324,6 +313,7 @@ fn new_flow_state<'a>(
         pending_comment_anchors: Vec::new(),
         break_long_words: false,
         active_float: None,
+        nested_editing: None,
     }
 }
 
@@ -1145,7 +1135,14 @@ fn flow_footnotes(state: &mut FlowState) {
     for note in notes {
         let mark = format!("{} ", &footnote_mark(note.number));
         let mut first = true;
-        for block in &note.blocks {
+        for (body_block, block) in note.blocks.iter().enumerate() {
+            // Tag body paragraph(s) so a click into the footnote resolves to the
+            // live note-body container.
+            state.nested_editing = Some(editing::NestedEditing::note(
+                note.owner_block_index,
+                note.note_in_block,
+                body_block,
+            ));
             if first {
                 first = false;
                 if let Block::StyledPara(p) = block {
@@ -1158,6 +1155,7 @@ fn flow_footnotes(state: &mut FlowState) {
             flow_block(state, block, 0);
         }
     }
+    state.nested_editing = None;
 }
 
 /// Return the Unicode superscript mark for note number `n`.
@@ -1339,6 +1337,7 @@ fn measure_cell_height(
         // Cell content: break over-long words to the column width (Word).
         break_long_words: true,
         active_float: None,
+        nested_editing: None,
     };
 
     for block in &cell.blocks {
@@ -1479,6 +1478,7 @@ fn flow_cell_blocks(
         // Cell content: break over-long words to the column width (Word).
         break_long_words: true,
         active_float: None,
+        nested_editing: None,
     };
 
     for block in blocks {

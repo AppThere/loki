@@ -313,6 +313,17 @@ the editor mutates `paragraph_index` as a flat global block index.
 3. **Layout emission:** emit `PageParagraphData` for table-cell paragraphs (real
    flow, page-relative origins, `[Cell]` path) and fix footnote bodies to carry
    `[Note]` + the owning block index.
+   - ✅ **Footnote bodies (shipped):** `CollectedNote` now records its
+     `owner_block_index` + `note_in_block` (set in `flow_paragraph`); a
+     `FlowState.nested_editing` context (in the new `flow_editing` module, with
+     `push_editing_para`) makes `flow_footnotes` tag each body paragraph with the
+     owner block + a `PathStep::Note`. This **fixes the latent `block_index = 0`
+     bug**. Test: `footnote_editing_tests`. *(Multi-paragraph note bodies are
+     addressed per body block; a note body containing a table is a known edge —
+     the inner cell paragraphs inherit the note context.)*
+   - ⏳ **Table cells (next):** the substantive part — cells are measured in a
+     throwaway `temp_state`, so emitting their editing data with page-relative
+     origins and a `[Cell]` path is the core remaining work.
 4. **Routing:** the typing/formatting/insert paths build a `BlockPath` from the
    cursor and call the `*_at` primitives when nested (flat path → unchanged).
 5. **Caret rendering** for nested paragraphs, then the **Table/Footnote Insert
