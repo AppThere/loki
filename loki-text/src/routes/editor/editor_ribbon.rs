@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Home tab ribbon content for the document editor.
+//! Write tab ribbon content for the document editor (was "Home", Spec 04 D1).
 //!
-//! [`home_tab_content`] returns the `Element` passed to [`AtRibbon::tab_content`].
+//! [`write_tab_content`] returns the `Element` passed to [`AtRibbon::tab_content`].
 //! Separating it here keeps `editor_inner.rs` under the 300-line ceiling and
 //! makes ribbon content easy to extend independently.
 
@@ -28,7 +28,7 @@ use super::editor_state::StyleDraft;
 use super::editor_style_catalog::get_catalog_style;
 use super::editor_style_editor::style_to_draft;
 
-/// Builds the Home tab ribbon content element.
+/// Builds the Write tab ribbon content element.
 ///
 /// Called once per render cycle from `EditorInner`.  The six formatting
 /// signals drive the `is_active` state of each button.  Each button's
@@ -38,7 +38,7 @@ use super::editor_style_editor::style_to_draft;
 /// Because [`Signal<T>`] is `Copy`, all signal parameters are copied freely
 /// into closures.  One `Arc::clone` is made per button for `doc_state`.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn home_tab_content(
+pub(super) fn write_tab_content(
     doc_state: &Arc<Mutex<DocumentState>>,
     loro_doc: Signal<Option<LoroDoc>>,
     cursor_state: Signal<CursorState>,
@@ -76,7 +76,7 @@ pub(super) fn home_tab_content(
     rsx! {
         // ── Document group ────────────────────────────────────────────────────
         AtRibbonGroup {
-            label:      None,
+            label:      Some(fl!("ribbon-group-document")),
             aria_label: fl!("ribbon-group-document"),
 
             AtRibbonIconButton {
@@ -127,7 +127,7 @@ pub(super) fn home_tab_content(
 
         // ── History group ─────────────────────────────────────────────────────
         AtRibbonGroup {
-            label:      None,
+            label:      Some(fl!("ribbon-group-history")),
             aria_label: fl!("ribbon-group-history"),
 
             AtRibbonIconButton {
@@ -173,7 +173,7 @@ pub(super) fn home_tab_content(
 
         // ── Styles group ──────────────────────────────────────────────────────
         AtRibbonGroup {
-            label:      None,
+            label:      Some(fl!("ribbon-group-styles")),
             aria_label: fl!("ribbon-group-styles"),
 
             AtRibbonSelect {
@@ -189,7 +189,7 @@ pub(super) fn home_tab_content(
 
         // ── Paragraph group ───────────────────────────────────────────────────
         AtRibbonGroup {
-            label:      None,
+            label:      Some(fl!("ribbon-group-paragraph")),
             aria_label: fl!("ribbon-group-paragraph"),
 
             AtRibbonIconButton {
@@ -217,7 +217,7 @@ pub(super) fn home_tab_content(
 
         // ── Inline formatting group ───────────────────────────────────────────
         AtRibbonGroup {
-            label:      None,
+            label:      Some(fl!("ribbon-group-inline")),
             aria_label: fl!("ribbon-group-inline"),
 
             AtRibbonIconButton {

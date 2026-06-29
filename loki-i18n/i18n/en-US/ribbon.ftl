@@ -1,9 +1,11 @@
 # Ribbon tabs and controls.
 
 # Tab labels
-ribbon-tab-home = Home
+# The ribbon's primary tab is "Write" (renamed from "Home" — Spec 04 D1 — to
+# resolve the collision with the application Home *screen*).
+ribbon-tab-write = Write
 
-# Inline formatting group (Home tab)
+# Inline formatting group (Write tab)
 ribbon-group-inline = Inline formatting
 ribbon-bold-aria = Bold (Ctrl+B)
 ribbon-italic-aria = Italic (Ctrl+I)

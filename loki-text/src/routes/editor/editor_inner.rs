@@ -43,7 +43,7 @@ use super::editor_path_sync::{
     PathSyncSignals, restore_session, stash_outgoing, sync_path_and_reset,
 };
 use super::editor_publish::{publish_panel, publish_tab_content};
-use super::editor_ribbon::home_tab_content;
+use super::editor_ribbon::write_tab_content;
 use super::editor_save::{
     export_document_to_token, export_template_to_token, save_document_to_path,
 };
@@ -787,9 +787,9 @@ pub(super) fn EditorInner(path: String) -> Element {
             AtRibbon {
                 // Only Home and Publish have controls today; the former Insert/
                 // Format/Review/View tabs had no content of their own (they fell
-                // through to Home's controls) and are omitted until they do.
+                // through to Write's controls) and are omitted until they do.
                 tabs: vec![
-                    RibbonTabDesc { label: fl!("ribbon-tab-home"),    is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-write"),   is_contextual: false, aria_label: None },
                     RibbonTabDesc { label: fl!("ribbon-tab-publish"), is_contextual: false, aria_label: None },
                 ],
                 active_tab: active_ribbon_tab(),
@@ -813,7 +813,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                         is_publish_panel_open,
                         editing_metadata,
                     ),
-                    _ => home_tab_content(
+                    _ => write_tab_content(
                     &doc_state_ribbon,
                     loro_doc,
                     cursor_state,

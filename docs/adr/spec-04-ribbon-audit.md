@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 
 | | |
 |---|---|
-| **Status** | Audit complete — **pending maintainer triage** (no implementation yet) |
+| **Status** | Audit complete; triaged → **M1 (framework + rename) + M2 (labeled-group standardization) implemented**. M4 → M3 → M5/M6 next (triaged sequence). Q2 features (cut/copy/paste + find/replace) are real editor features with no existing backing — building them with their backing is the next focused step (no dead buttons). |
 | **Method** | Audit-first per Spec 04 §4: inventory the ribbon, run the render-capability audit (§10 — the committed capability table), and confirm the Blitz layout surface for the collapse engine. |
 | **Companion** | [spec-04-ribbon-ui-refinement.md](spec-04-ribbon-ui-refinement.md) (the design spec) |
 | **Precedent** | Same audit-then-triage flow as [spec-01](spec-01-audit-report.md) / [spec-02](spec-02-conformance-inventory.md) / [spec-03](spec-03-responsive-audit.md). |
@@ -126,8 +126,8 @@ No new model-construction is needed for the Create-ready set — the constructor
 
 | Milestone | Prereqs present? | First step / blocker |
 |---|---|---|
-| **M1 — Framework + rename** | ✅ framework, contextual mechanism, i18n | Rename `ribbon-tab-home`→`ribbon-tab-write` (+ keep the Home *screen* key distinct); verify the framework renders sanely at Expanded-by-default (no context). Low-risk. |
-| **M2 — Labeled groups everywhere** | ✅ `AtRibbonGroup.label`, `label_node` | Pass `Some(label)` + text buttons in the Write tab (`editor_ribbon.rs`); retire `label: None`/icon-only. Content change. |
+| **M1 — Framework + rename** | ✅ **Implemented** | `ribbon-tab-home`→`ribbon-tab-write` ("Write"); `home_tab_content`→`write_tab_content`; the Home *screen* key is untouched (collision resolved, RB-6). The framework (tab strip, labeled-group container, contextual mechanism, scroll overflow) already renders sanely at Expanded-by-default. |
+| **M2 — Labeled groups everywhere** | ✅ **Implemented** | All five Write-tab groups now pass `label: Some(fl!("ribbon-group-…"))` (Document/History/Styles/Paragraph/Inline) — the icon-only `label: None` style is retired; the Write tab now matches Publish's labeled-section standard. Compact toggles (B/I/U) keep icon buttons under labeled sections (the Word convention). |
 | **M3 — Collapse cascade** | ⚠️ needs new engine | Build the width-driven engine: per-group priority + condensed/overflow reps + overflow menu (`position: absolute`) + hysteresis (mirror `page_fit`). **The substantive build.** R-13e select-width handled in *condensed*. |
 | **M4 — Render-gate + Insert tab** | ✅ capability table (§4) + create paths (§5) | Add the **Insert** tab with controls for the 5 Create-ready objects only; commit the §4 table. No math/shape controls. |
 | **M5 — Remaining tabs + contextual** | ⚠️ needs selection signal (RB-5) | Add Layout/References/Review from existing features; add a `selected_object: Signal<Option<…>>` in `EditorState`, set it from pointer hit-tests, drive Table/Picture contextual tabs via `is_contextual`. |
@@ -144,7 +144,7 @@ No new model-construction is needed for the Create-ready set — the constructor
 | RB-3 | Info | R-13e confirmed: `AtRibbonSelect` hardcodes `width: 180px` (`select.rs:73`) — condensed state must size it | §2 |
 | RB-4 | Info | R-14 confirmed: tab strip `36px` (`RIBBON_TAB_STRIP_HEIGHT`) < 44 px touch min | §2 |
 | RB-5 | Med | No selection-state signal exists; contextual Table/Picture tabs need a new `EditorState` signal fed by hit-tests | §2, §8 |
-| RB-6 | Info | Two-Homes collision confirmed: `ribbon-tab-home = Home` (`ribbon.ftl:4`) vs the `Home()` screen (`home.rs:146`) | §3 |
+| RB-6 | ~~Info~~ **Resolved (M1)** | Two-Homes collision fixed: ribbon tab renamed `ribbon-tab-write = Write`; the `Home()` screen keeps its name. | §3 |
 | RB-7 | Info | **Footnotes upgraded** to Create-ready (complete render, simple create) — not render-only | §4 |
 | RB-8 | Info | Math is **Render-only** (renders partial; no create path) — equation editor = future spec | §4 |
 | RB-9 | Info | Shapes are **Unsupported** (no shape-geometry render) — future renderer spec | §4 |
