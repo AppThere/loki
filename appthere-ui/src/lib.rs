@@ -26,6 +26,7 @@
 #![warn(missing_docs)]
 
 pub mod components;
+pub mod responsive;
 pub mod safe_area;
 pub mod theme;
 pub mod tokens;
@@ -43,6 +44,10 @@ pub use components::{
     AtDocumentTab, AtDocumentTabData, AtDocumentTabProps, AtHomeTab, AtHomeTabProps, AtStatusBar,
     AtStatusBarProps, AtTabBar, AtTabBarProps, AtTitleBar, AtTitleBarProps, BuiltinTemplate,
     Platform, RecentDocument,
+};
+pub use responsive::{
+    use_breakpoint, use_provide_responsive, use_responsive, use_viewport, AtResponsiveContext,
+    Breakpoint, Viewport, DEFAULT_DPI,
 };
 pub use safe_area::{set_safe_area_insets, update_safe_area_insets, use_safe_area, SafeAreaInsets};
 pub use theme::{use_theme, AtThemeContext, ThemeVariant};

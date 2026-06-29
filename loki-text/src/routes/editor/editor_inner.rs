@@ -70,12 +70,6 @@ const DOCX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordproce
 /// MIME type used by the "Save as Template" flow (Word `.dotx`).
 const DOTX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.template";
 
-/// Viewport width (logical px) below which the editor defaults to the
-/// reflowable view: a US-Letter page (~816px) plus margins no longer fits, so
-/// paginated view would otherwise force horizontal scrolling. The user can
-/// still toggle back to paginated.
-const REFLOW_BREAKPOINT_PX: f32 = 900.0;
-
 // EditorMode removed — the editor is always in edit mode when a document is
 // open. Distraction-free reading is handled by the View ribbon tab (future
 // pass), not by a separate mode.
@@ -594,53 +588,17 @@ pub(super) fn EditorInner(path: String) -> Element {
         save_message.set(Some(msg));
     });
 
-    // ── Measure the canvas at mount ──────────────────────────────────────────
+    // ── Viewport-driven effects (Spec 03 M1) ─────────────────────────────────
     //
-    // Scroll metrics are otherwise only populated by the first DOM scroll
-    // event, which would leave the view-mode default and the reflow layout
-    // width unknown until the user scrolls. Query the mounted scroll
-    // container's client rect once (backed by the dioxus-native MountedData
-    // patch) and seed the metrics.
-    use_effect(move || {
-        let Some(evt) = canvas_mounted() else { return };
-        if scroll_metrics.peek().client_width > 0.0 {
-            return;
-        }
-        let mut metrics = scroll_metrics;
-        spawn(async move {
-            if let Ok(rect) = evt.get_client_rect().await {
-                let mut m = metrics.write();
-                if m.client_width <= 0.0 {
-                    m.client_width = rect.size.width as f32;
-                    m.client_height = rect.size.height as f32;
-                }
-            }
-        });
-    });
-
-    // ── Default view mode by viewport width ──────────────────────────────────
-    //
-    // Paginated on wide viewports, reflowed on narrow ones — until the user
-    // picks a mode explicitly (which sets `view_mode_user_set` and freezes this
-    // default). The viewport width becomes known from the scroll container's
-    // `client_width`, reported on the first DOM scroll event.
-    use_effect(move || {
-        if *view_mode_user_set.read() {
-            return;
-        }
-        let width = scroll_metrics.read().client_width;
-        if width <= 0.0 {
-            return;
-        }
-        let desired = if width < REFLOW_BREAKPOINT_PX {
-            ViewMode::Reflow
-        } else {
-            ViewMode::Paginated
-        };
-        if *view_mode.peek() != desired {
-            view_mode.set(desired);
-        }
-    });
+    // Seed the metrics at mount, default the view mode by width, and publish the
+    // one measured width into the shared responsive context. See
+    // `editor_responsive`.
+    super::editor_responsive::use_viewport_effects(
+        canvas_mounted,
+        scroll_metrics,
+        view_mode,
+        view_mode_user_set,
+    );
 
     let canvas_hovered = use_signal(|| false);
     let page_gap_px = tokens::PAGE_GAP_PX;
