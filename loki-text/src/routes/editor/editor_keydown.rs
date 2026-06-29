@@ -6,7 +6,9 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 use keyboard_types::Modifiers;
-use loki_doc_model::loro_mutation::{delete_text, get_block_text, insert_text};
+use loki_doc_model::loro_mutation::{
+    delete_text_at, get_block_text, get_block_text_at, insert_text_at,
+};
 use loki_doc_model::merge_block;
 
 use loki_renderer::ViewMode;
@@ -88,7 +90,7 @@ pub(super) fn make_keydown_handler(
                     let Some(ldoc) = ldoc_guard.as_ref() else {
                         return;
                     };
-                    if insert_text(ldoc, focus.paragraph_index, focus.byte_offset, &ch).is_err() {
+                    if insert_text_at(ldoc, &focus.block_path(), focus.byte_offset, &ch).is_err() {
                         return;
                     }
                 }
@@ -120,7 +122,9 @@ pub(super) fn make_keydown_handler(
             // ── Backspace ─────────────────────────────────────────────────────
             Key::Backspace => {
                 if focus.byte_offset == 0 {
-                    if focus.paragraph_index == 0 {
+                    // Backspace-at-start merges blocks, which only the top-level
+                    // block list supports; inside a cell/note body it is a no-op.
+                    if focus.paragraph_index == 0 || !focus.path.is_empty() {
                         return;
                     }
                     let ldoc_guard = loro_doc.read();
@@ -156,7 +160,7 @@ pub(super) fn make_keydown_handler(
                     let ldoc_guard = loro_doc.read();
                     ldoc_guard
                         .as_ref()
-                        .map(|l| get_block_text(l, focus.paragraph_index))
+                        .map(|l| get_block_text_at(l, &focus.block_path()))
                         .unwrap_or_default()
                 };
                 let prev = prev_grapheme_boundary(&text, focus.byte_offset);
@@ -166,7 +170,7 @@ pub(super) fn make_keydown_handler(
                     let Some(ldoc) = ldoc_guard.as_ref() else {
                         return;
                     };
-                    if delete_text(ldoc, focus.paragraph_index, prev, len).is_err() {
+                    if delete_text_at(ldoc, &focus.block_path(), prev, len).is_err() {
                         return;
                     }
                 }

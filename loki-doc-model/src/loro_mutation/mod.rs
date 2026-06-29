@@ -32,6 +32,8 @@ mod style;
 mod text;
 
 pub use self::block::{merge_block, split_block};
+#[cfg(feature = "serde")]
+pub use self::nested::insert_inline_image_at;
 pub use self::nested::{
     BlockPath, PathStep, delete_text_at, get_block_text_at, get_mark_at_path, insert_text_at,
     mark_text_at,

@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 use keyboard_types::{Key, Modifiers};
-use loki_doc_model::loro_mutation::{delete_text, get_block_text};
+use loki_doc_model::loro_mutation::{delete_text_at, get_block_text, get_block_text_at};
 use loki_doc_model::{StyleId, get_block_style_name, set_block_style, split_block};
 
 use super::editor_formatting;
@@ -145,7 +145,7 @@ pub(super) fn handle_delete_key(
         let ldoc_guard = loro_doc.read();
         ldoc_guard
             .as_ref()
-            .map(|l| get_block_text(l, focus.paragraph_index))
+            .map(|l| get_block_text_at(l, &focus.block_path()))
             .unwrap_or_default()
     };
     if focus.byte_offset >= text.len() {
@@ -158,7 +158,7 @@ pub(super) fn handle_delete_key(
         let Some(ldoc) = ldoc_guard.as_ref() else {
             return;
         };
-        if delete_text(ldoc, focus.paragraph_index, focus.byte_offset, len).is_err() {
+        if delete_text_at(ldoc, &focus.block_path(), focus.byte_offset, len).is_err() {
             return;
         }
     }
@@ -190,6 +190,13 @@ pub(super) fn handle_enter_key(
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
 ) {
+    // Splitting a paragraph is a top-level block-list operation; inside a table
+    // cell / note body it would split the wrong (root) block, so Enter is a
+    // no-op there for now. TODO(nested-split): path-aware block split.
+    if !focus.path.is_empty() {
+        return;
+    }
+
     let ldoc_guard = loro_doc.read();
     let Some(ldoc) = ldoc_guard.as_ref() else {
         return;

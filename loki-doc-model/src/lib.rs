@@ -148,8 +148,6 @@ pub use loro_schema::*;
 pub mod loro_bridge;
 pub use loro_bridge::{BridgeError, IncrementalReader, document_to_loro, loro_to_document};
 pub mod loro_mutation;
-#[cfg(feature = "serde")]
-pub use loro_mutation::insert_inline_image;
 pub use loro_mutation::{
     BlockPath, PathStep, delete_text_at, get_block_text_at, get_mark_at_path, insert_text_at,
     mark_text_at,
@@ -159,6 +157,8 @@ pub use loro_mutation::{
     get_mark_at, insert_text, mark_text, merge_block, replace_text, set_block_alignment,
     set_block_style, set_block_type_heading, set_block_type_para, split_block,
 };
+#[cfg(feature = "serde")]
+pub use loro_mutation::{insert_inline_image, insert_inline_image_at};
 pub mod error;
 pub mod io;
 pub mod layout;

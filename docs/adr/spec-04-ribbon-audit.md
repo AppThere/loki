@@ -333,9 +333,19 @@ the editor mutates `paragraph_index` as a flat global block index.
 
    Increment 3 is **complete** for the common cases — clicks into top-aligned
    table cells and footnote bodies resolve to the correct `BlockPath`.
-4. **Routing:** the typing/formatting/insert paths build a `BlockPath` from the
-   cursor and call the `*_at` primitives when nested (flat path → unchanged).
-5. **Caret rendering** for nested paragraphs, then the **Table/Footnote Insert
+4. ✅ **Routing (shipped):** the editor's text mutations now build a `BlockPath`
+   from the cursor and call the `*_at` primitives — identical for a top-level
+   cursor, reaching the right container when nested. `resolve_format_range`
+   returns a `BlockPath`; the formatting toggles, hyperlink, image-insert
+   (new `insert_inline_image_at`, with the flat version delegating to it),
+   typing (`insert_text_at`), and within-paragraph delete (`delete_text_at`)
+   all route through it. The **structural** ops are guarded: backspace-at-start
+   (`merge_block`) and Enter (`split_block`) are no-ops inside a cell/note for
+   now — `TODO(nested-split)`, they only address the top-level block list.
+   Tests (`editor_insert_tests`): a nested cursor links and inserts an image
+   *into a table cell*. Top-level editing unchanged.
+5. **Caret rendering** refinements for nested paragraphs (v-align caret-y;
+   rotated cells) + path-aware split/merge, then the **Table/Footnote Insert
    controls** (Table also needs a block-insert primitive).
 
 Increment 1 shipped: `PageParagraphData.path` + the `push_editing_para` helper

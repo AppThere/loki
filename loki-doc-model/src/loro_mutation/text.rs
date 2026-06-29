@@ -11,8 +11,6 @@ use super::{MutationError, get_loro_text_for_block};
 #[cfg(feature = "serde")]
 use crate::content::inline::Inline;
 use crate::loro_schema::CHAR_MARK_KEYS;
-#[cfg(feature = "serde")]
-use crate::loro_schema::{MARK_IMAGE, OBJECT_REPLACEMENT_STR};
 
 /// Inserts `text` at UTF-8 `byte_offset` into the `LoroText` for the block
 /// at `block_index` (in section 0).
@@ -168,21 +166,9 @@ pub fn mark_text(
         .map_err(MutationError::from)
 }
 
-/// Inserts an inline image at UTF-8 `byte_offset` in block `block_index`.
-///
-/// Writes a single [`OBJECT_REPLACEMENT_CHAR`][crate::loro_schema::OBJECT_REPLACEMENT_CHAR]
-/// anchor and marks it with the image's `serde`-JSON snapshot under
-/// [`MARK_IMAGE`] — the exact native encoding the bridge round-trips (see
-/// `loro_bridge::inlines`). The image therefore becomes a discrete, positioned,
-/// deletable inline whose data survives a re-derive.
-///
-/// `image` must be an [`Inline::Image`]; any other variant returns
-/// [`MutationError::Encode`].
-///
-/// # Errors
-///
-/// [`MutationError::Encode`] when `image` is not an image or cannot be
-/// serialized, plus the errors of [`insert_text`] / [`mark_text`].
+/// Inserts an inline image at UTF-8 `byte_offset` in top-level block
+/// `block_index` — a thin wrapper over [`super::insert_inline_image_at`] with a
+/// flat [`super::BlockPath`]. See that function for the encoding and errors.
 #[cfg(feature = "serde")]
 pub fn insert_inline_image(
     loro: &LoroDoc,
@@ -190,21 +176,12 @@ pub fn insert_inline_image(
     byte_offset: usize,
     image: &Inline,
 ) -> Result<(), MutationError> {
-    if !matches!(image, Inline::Image(..)) {
-        return Err(MutationError::Encode("not an Inline::Image".to_string()));
-    }
-    let json = serde_json::to_string(image).map_err(|e| MutationError::Encode(e.to_string()))?;
-    insert_text(loro, block_index, byte_offset, OBJECT_REPLACEMENT_STR)?;
-    let end = byte_offset + OBJECT_REPLACEMENT_STR.len();
-    mark_text(
+    super::insert_inline_image_at(
         loro,
-        block_index,
+        &super::BlockPath::block(block_index),
         byte_offset,
-        end,
-        MARK_IMAGE,
-        LoroValue::from(json),
-    )?;
-    Ok(())
+        image,
+    )
 }
 
 /// Returns the value of a named mark at a UTF-8 byte offset within a block,

@@ -23,7 +23,7 @@ use image::ImageFormat;
 use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::inline::{Inline, LinkTarget};
 use loki_doc_model::loro_schema::MARK_LINK_URL;
-use loki_doc_model::{MutationError, insert_inline_image, mark_text};
+use loki_doc_model::{MutationError, insert_inline_image_at, mark_text_at};
 use loro::{LoroDoc, LoroValue};
 
 use super::editor_formatting::resolve_format_range;
@@ -44,7 +44,7 @@ pub fn set_hyperlink(
     cursor: &CursorState,
     url: &str,
 ) -> Result<bool, MutationError> {
-    let Some((block_index, byte_start, byte_end)) = resolve_format_range(loro, cursor) else {
+    let Some((path, byte_start, byte_end)) = resolve_format_range(loro, cursor) else {
         return Ok(false);
     };
     let trimmed = url.trim();
@@ -53,14 +53,7 @@ pub fn set_hyperlink(
     } else {
         LoroValue::from(trimmed.to_string())
     };
-    mark_text(
-        loro,
-        block_index,
-        byte_start,
-        byte_end,
-        MARK_LINK_URL,
-        value,
-    )?;
+    mark_text_at(loro, &path, byte_start, byte_end, MARK_LINK_URL, value)?;
     Ok(!trimmed.is_empty())
 }
 
@@ -110,136 +103,10 @@ pub fn insert_image_at_cursor(
     let Some(focus) = cursor.focus.as_ref() else {
         return Ok(false);
     };
-    insert_inline_image(loro, focus.paragraph_index, focus.byte_offset, image)?;
+    insert_inline_image_at(loro, &focus.block_path(), focus.byte_offset, image)?;
     Ok(true)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::editing::cursor::DocumentPosition;
-    use loki_doc_model::content::block::Block;
-    use loki_doc_model::content::inline::Inline;
-    use loki_doc_model::document::Document;
-    use loki_doc_model::{document_to_loro, get_mark_at};
-
-    fn doc_with_text(text: &str) -> LoroDoc {
-        let mut doc = Document::new();
-        doc.sections[0].blocks = vec![Block::Para(vec![Inline::Str(text.into())])];
-        document_to_loro(&doc).expect("document_to_loro")
-    }
-
-    fn pos(byte_offset: usize) -> DocumentPosition {
-        DocumentPosition::top_level(0, 0, byte_offset)
-    }
-
-    fn selection(start: usize, end: usize) -> CursorState {
-        CursorState {
-            loro_cursor: None,
-            anchor: Some(pos(start)),
-            focus: Some(pos(end)),
-            document_generation: 0,
-        }
-    }
-
-    fn link_at(loro: &LoroDoc, byte: usize) -> Option<String> {
-        match get_mark_at(loro, 0, byte, MARK_LINK_URL).expect("get_mark_at") {
-            Some(LoroValue::String(s)) => Some(s.to_string()),
-            _ => None,
-        }
-    }
-
-    #[test]
-    fn applies_link_over_selection() {
-        let loro = doc_with_text("hello world");
-        let applied = set_hyperlink(&loro, &selection(0, 5), "https://example.com").unwrap();
-        assert!(applied);
-        assert_eq!(link_at(&loro, 0).as_deref(), Some("https://example.com"));
-        // Outside the selection there is no link.
-        assert_eq!(link_at(&loro, 7), None);
-    }
-
-    #[test]
-    fn point_cursor_links_word_at_cursor() {
-        let loro = doc_with_text("hello world");
-        // A point cursor inside "world" links the whole word.
-        let applied = set_hyperlink(&loro, &selection(8, 8), "https://w.example").unwrap();
-        assert!(applied);
-        assert_eq!(link_at(&loro, 8).as_deref(), Some("https://w.example"));
-        assert_eq!(link_at(&loro, 0), None);
-    }
-
-    #[test]
-    fn empty_url_clears_link_and_reports_false() {
-        let loro = doc_with_text("hello world");
-        assert!(set_hyperlink(&loro, &selection(0, 5), "https://example.com").unwrap());
-        let applied = set_hyperlink(&loro, &selection(0, 5), "   ").unwrap();
-        assert!(!applied, "blank url clears the link");
-        assert_eq!(link_at(&loro, 0), None);
-    }
-
-    #[test]
-    fn url_is_trimmed() {
-        let loro = doc_with_text("hello world");
-        set_hyperlink(&loro, &selection(0, 5), "  https://trim.example  ").unwrap();
-        assert_eq!(link_at(&loro, 0).as_deref(), Some("https://trim.example"));
-    }
-
-    /// Encodes a `w`×`h` RGBA PNG into bytes for the image-insert tests.
-    fn png_bytes(w: u32, h: u32) -> Vec<u8> {
-        let img = image::RgbaImage::new(w, h);
-        let mut bytes = Vec::new();
-        image::DynamicImage::ImageRgba8(img)
-            .write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)
-            .expect("encode png");
-        bytes
-    }
-
-    #[test]
-    fn image_inline_carries_data_uri_and_intrinsic_size() {
-        let inline = image_inline_from_bytes(&png_bytes(2, 3)).expect("png is supported");
-        let Inline::Image(attr, _alt, target) = inline else {
-            panic!("expected an image");
-        };
-        assert!(target.url.starts_with("data:image/png;base64,"));
-        let cx = attr
-            .kv
-            .iter()
-            .find(|(k, _)| k == "cx_emu")
-            .map(|(_, v)| v.as_str());
-        let cy = attr
-            .kv
-            .iter()
-            .find(|(k, _)| k == "cy_emu")
-            .map(|(_, v)| v.as_str());
-        assert_eq!(cx, Some((2 * EMU_PER_PX_96).to_string().as_str()));
-        assert_eq!(cy, Some((3 * EMU_PER_PX_96).to_string().as_str()));
-    }
-
-    #[test]
-    fn non_image_bytes_are_rejected() {
-        assert!(image_inline_from_bytes(b"not an image at all").is_none());
-    }
-
-    #[test]
-    fn insert_image_at_cursor_places_a_discrete_image() {
-        let loro = doc_with_text("ab");
-        let image = image_inline_from_bytes(&png_bytes(4, 4)).unwrap();
-        let applied = insert_image_at_cursor(&loro, &selection(1, 1), &image).unwrap();
-        assert!(applied);
-        let doc = loki_doc_model::loro_to_document(&loro).unwrap();
-        let Block::Para(inlines) = &doc.sections[0].blocks[0] else {
-            panic!("para");
-        };
-        assert_eq!(inlines.len(), 3, "Str, Image, Str: {inlines:?}");
-        assert!(matches!(inlines[1], Inline::Image(..)));
-    }
-
-    #[test]
-    fn insert_image_without_cursor_is_a_noop() {
-        let loro = doc_with_text("ab");
-        let image = image_inline_from_bytes(&png_bytes(4, 4)).unwrap();
-        let no_cursor = CursorState::new();
-        assert!(!insert_image_at_cursor(&loro, &no_cursor, &image).unwrap());
-    }
-}
+#[path = "editor_insert_tests.rs"]
+mod tests;
