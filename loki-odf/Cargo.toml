@@ -26,6 +26,9 @@ features = ["std"]
 
 [dev-dependencies]
 loki-layout = { path = "../loki-layout" }
+# Spec 02 round-trip axis: the normalized-model differ + Document canonicalizer.
+appthere-conformance = { path = "../appthere-conformance", features = ["doc-model"] }
+loki-primitives = { path = "../loki-primitives" }
 
 [package.metadata.docs.rs]
 all-features = true
