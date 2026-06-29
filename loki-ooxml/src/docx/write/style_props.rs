@@ -1,19 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! `<w:pPr>` / `<w:rPr>` property serializers shared by the styles writer and
-//! the document-body writer.
+//! `<w:pPr>` paragraph-property serializers shared by the styles writer and the
+//! document-body writer. Run (`<w:rPr>`) properties live in the sibling
+//! [`run_props`](super::run_props) module.
 //!
 //! ECMA-376 §17.3 (Paragraph and run properties).
 
 use quick_xml::Writer;
 
-use loki_doc_model::style::props::char_props::CharProps;
 use loki_doc_model::style::props::para_props::{LineHeight, ParaProps, Spacing};
 
-use crate::docx::write::xml::{
-    hex_color_val, pts_to_half_pts, pts_to_twips, write_empty, write_end, write_start, wval,
-};
+use crate::docx::write::xml::{pts_to_twips, write_empty, write_end, write_start, wval};
 
 /// Writes a `<w:pPr>` element from [`ParaProps`] (nothing if no field is set).
 pub(super) fn write_para_props_elem<W: std::io::Write>(w: &mut Writer<W>, pp: &ParaProps) {
@@ -129,89 +127,5 @@ fn spacing_twips(s: Spacing) -> i32 {
     match s {
         Spacing::Exact(pt) => pts_to_twips(pt.value()),
         _ => 0,
-    }
-}
-
-/// Writes a `<w:rPr>` element from [`CharProps`] (nothing if no field is set).
-pub(super) fn write_char_props_elem<W: std::io::Write>(w: &mut Writer<W>, cp: &CharProps) {
-    let has_content = cp.bold.is_some()
-        || cp.italic.is_some()
-        || cp.underline.is_some()
-        || cp.strikethrough.is_some()
-        || cp.font_size.is_some()
-        || cp.font_name.is_some()
-        || cp.color.is_some()
-        || cp.background_color.is_some()
-        || cp.small_caps.is_some()
-        || cp.vertical_align.is_some();
-    if !has_content {
-        return;
-    }
-    let _ = write_start(w, "w:rPr", &[]);
-    emit_char_props(w, cp);
-    let _ = write_end(w, "w:rPr");
-}
-
-/// Emits `<w:rPr>` child elements for the given [`CharProps`] without the
-/// wrapping `<w:rPr>` tags (so callers can embed additional children).
-pub(crate) fn emit_char_props<W: std::io::Write>(w: &mut Writer<W>, cp: &CharProps) {
-    if let Some(ref font) = cp.font_name {
-        let _ = write_empty(
-            w,
-            "w:rFonts",
-            &[("w:ascii", font.as_str()), ("w:hAnsi", font.as_str())],
-        );
-    }
-    if cp.bold == Some(true) {
-        let _ = write_empty(w, "w:b", &[]);
-    }
-    if cp.italic == Some(true) {
-        let _ = write_empty(w, "w:i", &[]);
-    }
-    if cp.small_caps == Some(true) {
-        let _ = write_empty(w, "w:smallCaps", &[]);
-    }
-    if let Some(ref ul) = cp.underline {
-        use loki_doc_model::style::props::char_props::UnderlineStyle;
-        let v = match ul {
-            UnderlineStyle::Double => "double",
-            UnderlineStyle::Dotted => "dotted",
-            UnderlineStyle::Dash => "dash",
-            UnderlineStyle::Wave => "wave",
-            UnderlineStyle::Thick => "thick",
-            _ => "single",
-        };
-        let _ = write_empty(w, "w:u", &wval(v));
-    }
-    if let Some(ref st) = cp.strikethrough {
-        use loki_doc_model::style::props::char_props::StrikethroughStyle;
-        match st {
-            StrikethroughStyle::Double => {
-                let _ = write_empty(w, "w:dstrike", &[]);
-            }
-            _ => {
-                let _ = write_empty(w, "w:strike", &[]);
-            }
-        }
-    }
-    if let Some(ref va) = cp.vertical_align {
-        use loki_doc_model::style::props::char_props::VerticalAlign;
-        let v = match va {
-            VerticalAlign::Superscript => "superscript",
-            VerticalAlign::Subscript => "subscript",
-            _ => "baseline",
-        };
-        let _ = write_empty(w, "w:vertAlign", &wval(v));
-    }
-    if let Some(ref color) = cp.color
-        && let Some(hex) = color.to_hex()
-    {
-        let hex_val = hex_color_val(&hex);
-        let _ = write_empty(w, "w:color", &wval(&hex_val));
-    }
-    if let Some(pt) = cp.font_size {
-        let half = pts_to_half_pts(pt.value()).to_string();
-        let _ = write_empty(w, "w:sz", &wval(&half));
-        let _ = write_empty(w, "w:szCs", &wval(&half));
     }
 }

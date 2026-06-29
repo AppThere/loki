@@ -19,9 +19,10 @@ use loki_doc_model::content::inline::{BookmarkKind, Inline, StyledRun};
 use loki_doc_model::document::Document;
 use loki_doc_model::io::{DocumentExport, DocumentImport};
 use loki_doc_model::layout::section::Section;
-use loki_doc_model::style::props::char_props::CharProps;
+use loki_doc_model::style::props::char_props::{CharProps, HighlightColor};
 use loki_ooxml::docx::export::DocxExport;
 use loki_ooxml::docx::import::{DocxImport, DocxImportOptions};
+use loki_primitives::units::Points;
 
 fn import(bytes: Vec<u8>) -> Document {
     DocxImport::import(Cursor::new(bytes), DocxImportOptions::default())
@@ -53,16 +54,23 @@ fn doc(blocks: Vec<Block>) -> Document {
     d
 }
 
-fn bold_run(text: &str) -> Inline {
+fn styled_run(text: &str, props: CharProps) -> Inline {
     Inline::StyledRun(StyledRun {
         style_id: None,
-        direct_props: Some(Box::new(CharProps {
-            bold: Some(true),
-            ..Default::default()
-        })),
+        direct_props: Some(Box::new(props)),
         content: vec![Inline::Str(text.to_string())],
         attr: NodeAttr::default(),
     })
+}
+
+fn bold_run(text: &str) -> Inline {
+    styled_run(
+        text,
+        CharProps {
+            bold: Some(true),
+            ..Default::default()
+        },
+    )
 }
 
 /// Core word-processing content — plain paragraphs, a bold run, a heading, and a
@@ -96,14 +104,59 @@ fn docx_round_trip_preserves_core_content() {
     }
 }
 
+/// Regression for the export gap surfaced by the conformance harness: runs whose
+/// *only* direct formatting was highlight, letter-spacing, all-caps, or scale
+/// used to export with an empty `<w:rPr>`, collapse to plain runs, and merge with
+/// their neighbours — silently dropping the `StyledRun` wrapper (and, via run
+/// merging, adjacent text). Each must now survive import-export-import intact.
+#[test]
+fn docx_round_trip_preserves_secondary_run_formatting() {
+    let highlighted = CharProps {
+        highlight_color: Some(HighlightColor::Yellow),
+        ..Default::default()
+    };
+    let letter_spaced = CharProps {
+        letter_spacing: Some(Points::new(2.0)),
+        ..Default::default()
+    };
+    let all_caps = CharProps {
+        all_caps: Some(true),
+        ..Default::default()
+    };
+
+    let seed = doc(vec![
+        Block::Para(vec![
+            styled_run("highlighted", highlighted),
+            Inline::Str(" and ".to_string()),
+            styled_run("letter-spaced", letter_spaced),
+        ]),
+        Block::Para(vec![
+            styled_run("ALL CAPS", all_caps),
+            Inline::Str(" plain tail.".to_string()),
+        ]),
+    ]);
+
+    if let Some(d) = round_trip_divergence(&seed) {
+        panic!(
+            "secondary run formatting diverged at `{}`:\n  first import: {:?}\n  re-import:    {:?}",
+            d.path, d.left, d.right
+        );
+    }
+}
+
 /// The comprehensive reference fixture (headers, footnotes, hyperlinks, images,
 /// …) under the same import-export-import comparison.
 ///
-/// **Currently surfaces a real export→reimport gap** (a nested-inline `Str` is
-/// dropped) — the conformance axis doing its job. Ignored so CI stays green;
-/// run `cargo test -p loki-ooxml --test conformance_round_trip -- --ignored` to
-/// see the first divergence. Un-ignore once the export gaps are closed (or an
-/// expected-divergence tolerance is added per Spec 02 §6).
+/// **Still surfaces a real export→reimport gap** — the conformance axis doing its
+/// job. The earlier content-loss gap (highlight / letter-spacing runs collapsing
+/// and dropping text at `blk0005`) is now fixed; the first remaining divergence
+/// is at `blk0026/i0001/props`: the footnote-reference export hard-codes
+/// `<w:vertAlign w:val="superscript"/>` where the style-driven fixture left it
+/// implicit, so re-import gains an explicit `valign=Superscript`. Ignored so CI
+/// stays green; run `cargo test -p loki-ooxml --test conformance_round_trip --
+/// --ignored` to see the current first divergence. Un-ignore once the remaining
+/// export gaps are closed (or an expected-divergence tolerance is added per
+/// Spec 02 §6).
 #[test]
 #[ignore = "surfaces real DOCX round-trip gaps in the full reference fixture — tracked, not yet fixed"]
 fn docx_reference_round_trip_surfaces_gaps() {

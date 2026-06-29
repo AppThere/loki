@@ -16,7 +16,8 @@ use quick_xml::Writer;
 use loki_doc_model::style::catalog::{StyleCatalog, StyleId};
 use loki_doc_model::style::para_style::ParagraphStyle;
 
-use crate::docx::write::style_props::{write_char_props_elem, write_para_props_elem};
+use crate::docx::write::run_props::write_char_props_elem;
+use crate::docx::write::style_props::write_para_props_elem;
 use crate::docx::write::xml::{NS_W, write_decl, write_empty, write_end, write_start, wval};
 
 /// Built-in heading definitions: (styleId, display name, font size half-pts, bold, outline level).
