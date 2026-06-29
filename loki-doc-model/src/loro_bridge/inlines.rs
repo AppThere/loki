@@ -10,7 +10,7 @@ use super::BridgeError;
 use crate::content::inline::Inline;
 use crate::loro_schema::*;
 use crate::style::props::char_props::CharProps;
-use loro::LoroText;
+use loro::{LoroMap, LoroText};
 
 // ── Serialization ─────────────────────────────────────────────────────────────
 
@@ -25,7 +25,15 @@ fn insert_inline_text(text: &LoroText, inlines: &[Inline]) -> Result<(usize, usi
     Ok((start, text.len_unicode()))
 }
 
-pub(super) fn map_inlines(inlines: &[Inline], text: &LoroText) -> Result<(), BridgeError> {
+/// Serializes `inlines` into `text`. `block_map` is the owning block's map, used
+/// to store live side-containers (currently footnote/endnote bodies under
+/// [`KEY_NOTES`]).
+pub(super) fn map_inlines(
+    inlines: &[Inline],
+    text: &LoroText,
+    block_map: &LoroMap,
+) -> Result<(), BridgeError> {
+    let _ = block_map; // used only by the serde-gated Note arm below
     for inline in inlines {
         let start = text.len_unicode();
         match inline {
@@ -104,11 +112,11 @@ pub(super) fn map_inlines(inlines: &[Inline], text: &LoroText) -> Result<(), Bri
             // catch-all and their block is preserved opaquely instead.
             #[cfg(feature = "serde")]
             Inline::Image(..) => {
-                write_inline_object(inline, text, MARK_IMAGE)?;
+                super::inline_objects::write_inline_object(inline, text, MARK_IMAGE)?;
             }
             #[cfg(feature = "serde")]
-            Inline::Note(..) => {
-                write_inline_object(inline, text, MARK_NOTE)?;
+            Inline::Note(kind, body) => {
+                super::inline_objects::write_note(kind, body, text, block_map)?;
             }
             // Text-bearing wrappers without a dedicated mark: keep the text.
             // Quote type / span attrs / citation metadata are not yet carried
@@ -119,37 +127,6 @@ pub(super) fn map_inlines(inlines: &[Inline], text: &LoroText) -> Result<(), Bri
                     text.insert(start, &text_str)?;
                 }
             }
-        }
-    }
-    Ok(())
-}
-
-/// Writes a structured inline object (`Inline::Image`, `Inline::Note`, …) as an
-/// [`OBJECT_REPLACEMENT_CHAR`] anchor carrying the object's `serde`-JSON
-/// snapshot in `mark_key`.
-///
-/// The anchor is a single Unicode scalar, so the object becomes a discrete,
-/// positioned, deletable inline rather than collapsing the whole paragraph to
-/// an opaque snapshot. The object's payload (an image's geometry, a footnote's
-/// body) rides along in the mark and round-trips losslessly. Reconstructed by
-/// `inlines_read::reconstruct_inlines`.
-#[cfg(feature = "serde")]
-fn write_inline_object(
-    inline: &Inline,
-    text: &LoroText,
-    mark_key: &str,
-) -> Result<(), BridgeError> {
-    match serde_json::to_string(inline) {
-        Ok(json) => {
-            let start = text.len_unicode();
-            text.insert(start, OBJECT_REPLACEMENT_STR)?;
-            let end = text.len_unicode();
-            text.mark(start..end, mark_key, json)?;
-        }
-        Err(err) => {
-            // Unreachable in practice: `Inline` derives Serialize. Drop the
-            // object rather than leave a bare anchor with no backing data.
-            tracing::warn!("loro bridge: failed to encode inline object ({mark_key}): {err}");
         }
     }
     Ok(())

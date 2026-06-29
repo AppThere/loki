@@ -32,16 +32,27 @@ pub(super) fn reconstruct_inlines(map: &loro::LoroMap) -> Result<Vec<Inline>, Br
         return Ok(inlines);
     };
 
+    // Live footnote/endnote bodies live in a side-container on the block map.
+    let notes_list = map
+        .get(KEY_NOTES)
+        .and_then(|v| v.into_container().ok())
+        .and_then(|c| c.into_movable_list().ok());
+
     for span in text_container.to_delta() {
         if let loro::TextDelta::Insert { insert, attributes } = span {
             match attributes {
                 None => inlines.push(Inline::Str(insert.to_string())),
                 Some(attrs) => {
                     // An inline object (anchored by a placeholder char) carries
-                    // its structured data in a mark: reconstruct the object and
-                    // discard the placeholder character itself.
-                    if let Some(object) = decode_inline_object(&attrs) {
-                        inlines.push(object);
+                    // its data in a mark — reconstruct it and discard the
+                    // placeholder character itself. Image data rides in the
+                    // mark; a note's body is fetched from the notes container.
+                    if let Some(image) = decode_image(&attrs) {
+                        inlines.push(image);
+                        continue;
+                    }
+                    if let Some(note) = decode_note(&attrs, notes_list.as_ref()) {
+                        inlines.push(note);
                         continue;
                     }
                     let props = read_char_props_from_marks(&attrs);
@@ -64,43 +75,57 @@ pub(super) fn reconstruct_inlines(map: &loro::LoroMap) -> Result<Vec<Inline>, Br
     Ok(inlines)
 }
 
-/// Reconstructs an inline object from an anchor span's marks, if present.
-///
-/// Handles [`MARK_IMAGE`] (`Inline::Image`) and [`MARK_NOTE`] (`Inline::Note`),
-/// each a `serde`-JSON snapshot. Returns `None` for ordinary formatted text so
-/// the caller falls through to the char-props / style path.
+/// Reconstructs an [`Inline::Image`] from a [`MARK_IMAGE`] anchor's `serde`-JSON
+/// snapshot, if present. Returns `None` for ordinary formatted text.
 #[cfg(feature = "serde")]
-fn decode_inline_object(attrs: &rustc_hash::FxHashMap<String, LoroValue>) -> Option<Inline> {
-    decode_object_mark(attrs, MARK_IMAGE, |i| matches!(i, Inline::Image(..)))
-        .or_else(|| decode_object_mark(attrs, MARK_NOTE, |i| matches!(i, Inline::Note(..))))
-}
-
-/// Decodes the `serde`-JSON `Inline` snapshot stored under `key`, accepting it
-/// only when `is_expected` confirms the variant matches the mark.
-#[cfg(feature = "serde")]
-fn decode_object_mark(
-    attrs: &rustc_hash::FxHashMap<String, LoroValue>,
-    key: &str,
-    is_expected: impl Fn(&Inline) -> bool,
-) -> Option<Inline> {
-    let Some(LoroValue::String(json)) = attrs.get(key) else {
+fn decode_image(attrs: &rustc_hash::FxHashMap<String, LoroValue>) -> Option<Inline> {
+    let Some(LoroValue::String(json)) = attrs.get(MARK_IMAGE) else {
         return None;
     };
     match serde_json::from_str::<Inline>(json) {
-        Ok(inline) if is_expected(&inline) => Some(inline),
+        Ok(inline @ Inline::Image(..)) => Some(inline),
         Ok(_) => {
-            tracing::warn!("loro bridge: {key} snapshot had an unexpected inline variant");
+            tracing::warn!("loro bridge: MARK_IMAGE snapshot was not an image");
             None
         }
         Err(err) => {
-            tracing::warn!("loro bridge: failed to decode inline object ({key}): {err}");
+            tracing::warn!("loro bridge: failed to decode inline image: {err}");
             None
         }
     }
 }
 
+/// Reconstructs an [`Inline::Note`] from a [`MARK_NOTE`] anchor: its `(kind,
+/// idx)` mark plus the body fetched from `notes` at `idx` (a live container).
+#[cfg(feature = "serde")]
+fn decode_note(
+    attrs: &rustc_hash::FxHashMap<String, LoroValue>,
+    notes: Option<&loro::LoroMovableList>,
+) -> Option<Inline> {
+    use crate::content::inline::NoteKind;
+    let Some(LoroValue::String(meta)) = attrs.get(MARK_NOTE) else {
+        return None;
+    };
+    let (kind, idx): (NoteKind, usize) = serde_json::from_str(meta).ok()?;
+    let body = notes
+        .and_then(|l| l.get(idx))
+        .and_then(|v| v.into_container().ok())
+        .and_then(|c| c.into_movable_list().ok())
+        .map(|l| super::read::reconstruct_blocks_from_list(&l))
+        .unwrap_or_default();
+    Some(Inline::Note(kind, body))
+}
+
 #[cfg(not(feature = "serde"))]
-fn decode_inline_object(_attrs: &rustc_hash::FxHashMap<String, LoroValue>) -> Option<Inline> {
+fn decode_image(_attrs: &rustc_hash::FxHashMap<String, LoroValue>) -> Option<Inline> {
+    None
+}
+
+#[cfg(not(feature = "serde"))]
+fn decode_note(
+    _attrs: &rustc_hash::FxHashMap<String, LoroValue>,
+    _notes: Option<&loro::LoroMovableList>,
+) -> Option<Inline> {
     None
 }
 

@@ -154,12 +154,21 @@ pub const OBJECT_REPLACEMENT_STR: &str = "\u{FFFC}";
 /// positioned inline object) instead of as opaque block snapshots.
 pub const MARK_IMAGE: &str = "image";
 
-/// Inline footnote/endnote data: a `serde`-JSON snapshot of the `Inline::Note`
-/// (its [`NoteKind`][crate::content::inline::NoteKind] and block body), carried
-/// as a mark over a single [`OBJECT_REPLACEMENT_CHAR`] anchor so the note
-/// reference is a live, positioned, deletable inline. The body rides along in
-/// the mark and round-trips losslessly (it is not yet a live CRDT subtree).
+/// Inline footnote/endnote reference: carried as a mark over a single
+/// [`OBJECT_REPLACEMENT_CHAR`] anchor. The value is a `serde`-JSON
+/// `(NoteKind, usize)` pair — the note's kind and the index of its **body** in
+/// the block's [`KEY_NOTES`] container. The `usize` index also makes each note's
+/// mark unique, so adjacent notes do not merge into one rich-text delta span.
+///
+/// The body itself is a **live CRDT container** (not a JSON blob in the mark),
+/// so footnote text is editable and mergeable like a table cell's.
 pub const MARK_NOTE: &str = "note";
+
+/// Key (within a paragraph-like block's map) for the block's note bodies — a
+/// movable list with one entry per [`MARK_NOTE`] anchor in the block, each a
+/// movable list of the note body's blocks (written via the shared block path).
+/// Indexed by the `usize` carried in each anchor's [`MARK_NOTE`] mark.
+pub const KEY_NOTES: &str = "notes";
 
 /// Every inline-object anchor mark key (carried over a single
 /// [`OBJECT_REPLACEMENT_CHAR`]). Registered with non-expanding behaviour and

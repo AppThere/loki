@@ -33,7 +33,7 @@ pub(super) fn map_block(block: &Block, map: &LoroMap) -> Result<(), BridgeError>
         Block::Para(inlines) => {
             map.insert(KEY_TYPE, BLOCK_TYPE_PARA)?;
             let content = map.insert_container(KEY_CONTENT, LoroText::new())?;
-            map_inlines(inlines, &content)?;
+            map_inlines(inlines, &content, map)?;
         }
         Block::StyledPara(para) => {
             map.insert(KEY_TYPE, BLOCK_TYPE_STYLED_PARA)?;
@@ -49,7 +49,7 @@ pub(super) fn map_block(block: &Block, map: &LoroMap) -> Result<(), BridgeError>
                 map_char_props_to_map(char_props, &props_map)?;
             }
             let content = map.insert_container(KEY_CONTENT, LoroText::new())?;
-            map_inlines(&para.inlines, &content)?;
+            map_inlines(&para.inlines, &content, map)?;
         }
         Block::Heading(level, attr, inlines) => {
             map.insert(KEY_TYPE, BLOCK_TYPE_HEADING)?;
@@ -63,7 +63,7 @@ pub(super) fn map_block(block: &Block, map: &LoroMap) -> Result<(), BridgeError>
                 map.insert(KEY_HEADING_STYLE, style.as_str())?;
             }
             let content = map.insert_container(KEY_CONTENT, LoroText::new())?;
-            map_inlines(inlines, &content)?;
+            map_inlines(inlines, &content, map)?;
         }
         Block::CodeBlock(_, content_str) => {
             map.insert(KEY_TYPE, BLOCK_TYPE_CODE_BLOCK)?;
@@ -76,7 +76,7 @@ pub(super) fn map_block(block: &Block, map: &LoroMap) -> Result<(), BridgeError>
         Block::Plain(inlines) => {
             map.insert(KEY_TYPE, BLOCK_TYPE_PARA)?;
             let content = map.insert_container(KEY_CONTENT, LoroText::new())?;
-            map_inlines(inlines, &content)?;
+            map_inlines(inlines, &content, map)?;
         }
         // All structurally unsupported variants (lists, tables, figures,
         // blockquotes, …) take the opaque-snapshot early return above; this

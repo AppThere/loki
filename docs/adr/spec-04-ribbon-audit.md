@@ -224,18 +224,41 @@ top-level section blocks. New `loro_mutation::nested`:
 
 - ✅ **Table cell text** is now reachable and editable at the CRDT layer (cells
   were already live containers from the table native mapping).
-- ❌ **Footnote/endnote bodies** are *not* yet addressable: a note body is stored
-  as a `serde`-JSON snapshot inside the `MARK_NOTE` mark, not a live container.
-  Making note bodies editable needs a **bridge representation change** (store the
-  body as a nested block container, like table cells) — a separate increment.
+- ⏳ **Footnote/endnote bodies** — addressing pending, but the **representation
+  change landed** (see §5e): note bodies are now live containers, so a
+  `BlockPath` note-descent is a small follow-on.
 - This is the *mutation-layer* foundation only. Driving it from the UI still
   needs (a) layout to assign positions to cell paragraphs, (b) hit-test/cursor
   to produce a nested position, and (c) `CursorState` to carry a `BlockPath`.
   And the **Table Insert control** additionally needs a block-insert primitive
   (insert a new `Block::Table` into a section).
 
-**Next increments:** note-body live container (bridge) → cursor/hit-test nested
-positions (layout) → then the Table/Footnote Insert controls.
+### 5e. Footnote/endnote body — live container (bridge) shipped
+
+Note bodies were previously a `serde`-JSON snapshot inside the `MARK_NOTE` mark
+(rendered but inert). They are now **live CRDT containers**, mirroring table
+cells:
+
+- The anchor's `MARK_NOTE` mark now carries a `(NoteKind, idx)` pair; the body
+  lives as a movable list of blocks under the block's new `KEY_NOTES` container
+  at `idx` (written via the shared block path, so nested formatting/objects
+  compose). Read back by walking `KEY_NOTES` (`loro_bridge::inline_objects` +
+  `inlines_read`).
+- The `idx` also **fixes a latent merge bug**: two adjacent footnotes used to
+  share an identical mark and collapse into one rich-text delta span; the
+  distinct `idx` keeps their anchors separate.
+- Footnote text is therefore editable/mergeable CRDT state, not a blob — the
+  representation half of "editable footnotes".
+
+Tests: `loro_bridge_note_tests` (4 cases) — body is a live container (not a
+blob), two adjacent footnotes keep distinct bodies, mixed footnote/endnote
+kind+order, and no notes container when there are no notes — plus the existing
+note round-trip tests still green. Refactor (ceiling): the inline-object write
+helpers moved to `loro_bridge::inline_objects`, keeping `inlines.rs` ≤ 300.
+
+**Next increments:** `BlockPath` note-descent (small — note bodies are now live)
+→ cursor/hit-test nested positions (layout) → then the Table/Footnote Insert
+controls.
 
 ---
 

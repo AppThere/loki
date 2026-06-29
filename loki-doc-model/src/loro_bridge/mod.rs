@@ -12,6 +12,8 @@
 mod comments;
 mod decode;
 mod incremental;
+#[cfg(feature = "serde")]
+mod inline_objects;
 mod inlines;
 mod inlines_read;
 mod meta;
