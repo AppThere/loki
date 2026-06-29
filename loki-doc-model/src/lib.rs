@@ -148,6 +148,8 @@ pub use loro_schema::*;
 pub mod loro_bridge;
 pub use loro_bridge::{BridgeError, IncrementalReader, document_to_loro, loro_to_document};
 pub mod loro_mutation;
+#[cfg(feature = "serde")]
+pub use loro_mutation::insert_inline_image;
 pub use loro_mutation::{
     MutationError, delete_text, get_block_alignment, get_block_style_name, get_block_text,
     get_mark_at, insert_text, mark_text, merge_block, replace_text, set_block_alignment,

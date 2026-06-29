@@ -172,8 +172,37 @@ Refactor folded in: the spelling, language, and link panels were bundled into
 `editor_docked_panels::docked_panels` to keep `editor_inner` within its
 baselined 878-line ceiling rather than growing it.
 
-**Next increments:** Image (file picker + media embedding) → then Table /
-Footnote once the mutation layer can address nested cell/note content.
+### 5c. M4 Insert tab — increment 2 (Image) shipped
+
+The Insert tab now has a **Media → Image** control alongside Links → Link.
+
+Key finding: the renderer decodes image bytes straight from a **`data:` URI** in
+the image's URL (`loki-vello::image::decode_data_uri` → `image::load_from_memory`,
+guessing the format from magic bytes) — there is **no separate media store**. So
+runtime insertion is fully native with existing primitives:
+
+- **Model**: new `loro_mutation::insert_inline_image` writes an
+  `OBJECT_REPLACEMENT_CHAR` anchor + a `MARK_IMAGE` JSON snapshot — the exact
+  bridge encoding from the Loro-extension work — so the image is a discrete,
+  deletable inline that round-trips. (`MutationError::Encode` added.)
+- **Editor**: `editor_insert::image_inline_from_bytes` detects the format from
+  bytes (PNG/JPEG/GIF/WebP/BMP), embeds them as a base64 `data:` URI, and sizes
+  the image from its intrinsic pixels (`cx_emu`/`cy_emu` at 96 DPI so layout
+  gives it a box). `insert_image_at_cursor` places it at the cursor focus.
+- **UI**: the Image button spawns the platform file picker
+  (`pick_file_to_open` → `token.open_read()`), builds the inline, inserts, and
+  reports via the status banner (success / unsupported-format / no-cursor /
+  error). `LUCIDE_IMAGE` icon added; `image` + `base64` deps added to `loki-text`.
+
+Tests: `editor_insert` unit tests (data-URI + intrinsic size, non-image
+rejected, discrete-image insertion, no-cursor no-op) and
+`loro_mutation::insert_inline_image` (round-trips, rejects non-image).
+
+Refactor folded in (ceiling): the self-contained **Save as Template** callback
+moved to `editor_save_callbacks`, keeping `editor_inner` under 878 (now 855).
+
+**Next increments:** Table / Footnote once the mutation layer can address
+content nested inside cells / note bodies (the deferred nested-addressing work).
 
 ---
 

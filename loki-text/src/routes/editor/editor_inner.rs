@@ -45,9 +45,7 @@ use super::editor_path_sync::{
 use super::editor_publish::{publish_panel, publish_tab_content};
 use super::editor_ribbon::write_tab_content;
 use super::editor_ribbon_insert::insert_tab_content;
-use super::editor_save::{
-    export_document_to_token, export_template_to_token, save_document_to_path,
-};
+use super::editor_save::{export_document_to_token, save_document_to_path};
 use super::editor_save_banner::save_banner;
 use super::editor_spell::SpellMenu;
 use super::editor_state::{EditorState, use_editor_state};
@@ -66,9 +64,6 @@ use loki_file_access::{FilePicker, SaveOptions};
 
 /// MIME type used when saving documents (DOCX is the only writable format).
 const DOCX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-
-/// MIME type used by the "Save as Template" flow (Word `.dotx`).
-const DOTX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.template";
 
 // EditorMode removed — the editor is always in edit mode when a document is
 // open. Distraction-free reading is handled by the View ribbon tab (future
@@ -533,36 +528,23 @@ pub(super) fn EditorInner(path: String) -> Element {
     });
 
     // ── Save as Template (.dotx) ───────────────────────────────────────────────
-    //
-    // Exports the current document as a Word template to a picked destination.
-    // Unlike Save As this does not repoint the tab — the user keeps editing their
-    // document; the template is a separate artifact.
-    let doc_state_savetmpl = Arc::clone(&doc_state);
-    let save_as_template = use_callback(move |_: ()| {
-        let doc_state = Arc::clone(&doc_state_savetmpl);
-        let mut save_message = save_message;
-        let suggested = format!("{}.dotx", display_title_from_path(&path_signal.peek()));
-        spawn(async move {
-            let picker = FilePicker::new();
-            let opts = SaveOptions {
-                mime_type: Some(DOTX_MIME.to_string()),
-                suggested_name: Some(suggested),
-            };
-            match picker.pick_file_to_save(opts).await {
-                Ok(Some(token)) => {
-                    let msg = match export_template_to_token(&token, &doc_state) {
-                        Ok(()) => fl!("editor-save-template-success"),
-                        Err(e) => fl!("editor-save-error", reason = e.to_string()),
-                    };
-                    save_message.set(Some(msg));
-                }
-                Ok(None) => { /* user cancelled — no-op */ }
-                Err(e) => {
-                    save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
-                }
-            }
-        });
-    });
+    // Self-contained save flow — extracted to keep this file under its ceiling.
+    let save_as_template = super::editor_save_callbacks::use_save_as_template_callback(
+        Arc::clone(&doc_state),
+        save_message,
+        path_signal,
+    );
+
+    // ── Insert tab handles (image insertion at the cursor) ────────────────────
+    let insert_ctx = super::editor_ribbon_insert::InsertCtx {
+        doc_state: Arc::clone(&doc_state),
+        loro_doc,
+        cursor_state,
+        undo_manager,
+        can_undo,
+        can_redo,
+        save_message,
+    };
 
     // ── Ctrl+S handler ───────────────────────────────────────────────────────
     //
@@ -798,7 +780,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     fl!("ribbon-collapse-aria")
                 },
                 tab_content: match active_ribbon_tab() {
-                    1 => insert_tab_content(link_draft),
+                    1 => insert_tab_content(link_draft, insert_ctx.clone()),
                     2 => publish_tab_content(
                         &doc_state_publish,
                         path_signal,

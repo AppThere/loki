@@ -123,3 +123,9 @@ editor-spelling-downloading = Downloading…
 editor-spelling-download-ok = Downloaded and activated
 editor-spelling-download-failed = Download failed
 editor-spelling-load-failed = Could not load dictionary
+
+# Insert → Image (Spec 04 M4) — status banner messages
+editor-insert-image-success = Image inserted
+editor-insert-image-unsupported = Unsupported image format
+editor-insert-image-no-cursor = Place the cursor in the text, then insert the image
+editor-insert-image-error = Could not insert image: { $reason }

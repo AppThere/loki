@@ -35,6 +35,8 @@ pub use self::style::{
     get_block_alignment, get_block_style_name, set_block_alignment, set_block_style,
     set_block_type_heading, set_block_type_para,
 };
+#[cfg(feature = "serde")]
+pub use self::text::insert_inline_image;
 pub use self::text::{
     delete_text, get_block_text, get_mark_at, insert_text, mark_text, replace_text,
 };
@@ -55,6 +57,10 @@ pub enum MutationError {
     /// An error returned by the underlying Loro library.
     #[error("Loro error: {0}")]
     Loro(String),
+    /// Failed to serialize structured inline content (e.g. an image) to the
+    /// JSON snapshot carried by an inline-object mark.
+    #[error("Encoding error: {0}")]
+    Encode(String),
     /// `byte_offset` is out of range or not on a UTF-8 character boundary.
     #[error("Invalid byte offset {offset} for block split")]
     InvalidByteOffset { offset: usize },

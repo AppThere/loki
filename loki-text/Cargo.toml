@@ -69,6 +69,10 @@ dirs = "6"
 # JSON serialisation for recent-documents file.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Image decoding for Insert → Image (intrinsic pixel dimensions).
+image = "0.25"
+# Base64 encoding for embedding inserted images as data URIs.
+base64 = "0.22"
 # Fluent-based internationalisation for all user-visible strings.
 loki-i18n = { path = "../loki-i18n" }
 # Tiered-cache page renderer with DocumentView component.

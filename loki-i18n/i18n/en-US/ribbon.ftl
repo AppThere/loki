@@ -48,7 +48,8 @@ ribbon-style-apply-changes = Apply Changes
 
 # Insert tab (Spec 04 M4)
 ribbon-tab-insert = Insert
-ribbon-group-insert = Links
+ribbon-group-media = Media
+ribbon-group-links = Links
 ribbon-insert-link-aria = Insert link
 ribbon-insert-link-title = Insert Link
 ribbon-insert-link-placeholder = https://example.com
@@ -56,6 +57,8 @@ ribbon-insert-link-url-aria = Link URL
 ribbon-insert-link-apply = Apply
 ribbon-insert-link-cancel = Cancel
 ribbon-insert-link-remove = Remove
+ribbon-insert-image-aria = Insert image
+ribbon-insert-image-filter = Images
 
 # Ribbon collapse toggle
 ribbon-collapse-aria = Collapse ribbon

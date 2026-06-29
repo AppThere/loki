@@ -32,6 +32,7 @@ mod editor_ribbon;
 mod editor_ribbon_insert;
 mod editor_save;
 mod editor_save_banner;
+mod editor_save_callbacks;
 mod editor_scrollbar;
 mod editor_spell;
 mod editor_spell_panel;
