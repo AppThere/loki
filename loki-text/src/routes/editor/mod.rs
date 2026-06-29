@@ -11,6 +11,7 @@
 
 mod editor_canvas;
 mod editor_error_view;
+mod editor_font_warning;
 mod editor_formatting;
 mod editor_inner;
 mod editor_keydown;

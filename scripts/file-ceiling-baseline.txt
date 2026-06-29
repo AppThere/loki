@@ -10,9 +10,9 @@
 1244 loki-spreadsheet/src/routes/editor/editor_inner.rs
 1209 loki-ooxml/src/docx/reader/document.rs
 1073 loki-ooxml/src/docx/write/document.rs
-1002 loki-text/src/routes/editor/editor_inner.rs
 984 loki-layout/src/resolve.rs
 948 loki-vello/src/scene.rs
+878 loki-text/src/routes/editor/editor_inner.rs
 761 loki-layout/src/flow_para.rs
 730 loki-ooxml/src/docx/mapper/inline.rs
 651 loki-odf/src/package.rs

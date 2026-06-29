@@ -8,8 +8,8 @@
 use dioxus::prelude::*;
 
 use crate::tokens::colors::{
-    COLOR_BORDER_CHROME, COLOR_SURFACE_3, COLOR_SURFACE_CHROME, COLOR_TEXT_ACCENT,
-    COLOR_TEXT_ON_CHROME_SECONDARY,
+    COLOR_BORDER_CHROME, COLOR_CONTEXTUAL_TAB, COLOR_SURFACE_3, COLOR_SURFACE_CHROME,
+    COLOR_TEXT_ACCENT, COLOR_TEXT_ON_CHROME_SECONDARY,
 };
 use crate::tokens::layout::STATUS_BAR_HEIGHT;
 use crate::tokens::spacing::{RADIUS_SM, SPACE_1, SPACE_2, SPACE_4};
@@ -40,7 +40,14 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
     } else {
         COLOR_SURFACE_3
     };
+    let mut notice_hovered = use_signal(|| false);
+    let notice_bg = if notice_hovered() {
+        "#444444"
+    } else {
+        COLOR_SURFACE_3
+    };
     let show_view_toggle = !props.view_mode_label.is_empty();
+    let show_notice = !props.notice_label.is_empty();
 
     rsx! {
         div {
@@ -84,6 +91,31 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                         fg   = COLOR_TEXT_ON_CHROME_SECONDARY,
                     ),
                     "{props.word_count_label}"
+                }
+            }
+
+            // Optional status notice chip (e.g. recover a dismissed warning).
+            // Border + background only — no box-shadow (Blitz constraint).
+            if show_notice {
+                button {
+                    "aria-label": props.notice_aria_label.clone(),
+                    style: format!(
+                        "background: {bg}; border: 1px solid {border}; border-radius: {r}px; \
+                         color: {fg}; font-size: {size}px; font-weight: {weight}; \
+                         cursor: pointer; padding: {pv}px {ph}px; flex-shrink: 0;",
+                        bg     = notice_bg,
+                        border = COLOR_CONTEXTUAL_TAB,
+                        r      = RADIUS_SM,
+                        fg     = COLOR_TEXT_ON_CHROME_SECONDARY,
+                        size   = FONT_SIZE_XS,
+                        weight = FONT_WEIGHT_MEDIUM,
+                        pv     = SPACE_1,
+                        ph     = SPACE_2,
+                    ),
+                    onmouseenter: move |_| { notice_hovered.set(true); },
+                    onmouseleave: move |_| { notice_hovered.set(false); },
+                    onclick: move |_| { props.on_notice_click.call(()); },
+                    "⚠ {props.notice_label}"
                 }
             }
 
@@ -210,4 +242,23 @@ pub struct AtStatusBarProps {
     /// no-op when not provided.
     #[props(default)]
     pub on_view_mode_click: Callback<()>,
+
+    /// Optional status-notice chip rendered on the left (e.g. the recovery
+    /// affordance for a dismissed font-substitution warning). Empty (the
+    /// default) hides it, so apps that do not use it are unaffected. Generic by
+    /// design — not font-specific.
+    ///
+    /// **Min interactive size: 44×44 logical px (WCAG 2.5.8).** TODO(a11y):
+    /// expand the invisible touch target to `TOUCH_MIN` (shared with the zoom /
+    /// view-mode badges, which carry the same status-bar-height constraint).
+    #[props(default)]
+    pub notice_label: String,
+
+    /// Aria label for the notice chip.
+    #[props(default)]
+    pub notice_aria_label: String,
+
+    /// Callback invoked when the notice chip is clicked.
+    #[props(default)]
+    pub on_notice_click: Callback<()>,
 }

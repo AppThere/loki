@@ -616,77 +616,20 @@ pub(super) fn EditorInner(path: String) -> Element {
         )
     };
 
-    let font_substitutions = {
-        if let Ok(state) = doc_state.lock() {
-            if let Ok(fr) = state.shared_font_resources.lock() {
-                fr.substitutions.clone()
-            } else {
-                std::collections::HashMap::new()
-            }
-        } else {
-            std::collections::HashMap::new()
-        }
-    };
-
-    let mut substituted_items = Vec::new();
-    let mut missing_items = Vec::new();
-    let mut download_links = Vec::new();
-
-    for (requested, sub) in &font_substitutions {
-        if let Some(sub_name) = sub {
-            substituted_items.push(format!("{} → {}", requested, sub_name));
-        } else {
-            missing_items.push(requested.clone());
-        }
-
-        let link = match requested.to_lowercase().as_str() {
-            "aptos" => Some((
-                "Aptos",
-                "https://www.microsoft.com/en-us/download/details.aspx?id=106037",
-            )),
-            "calibri" => Some((
-                "Calibri",
-                "https://learn.microsoft.com/en-us/typography/font-list/calibri",
-            )),
-            "cambria" => Some((
-                "Cambria",
-                "https://learn.microsoft.com/en-us/typography/font-list/cambria",
-            )),
-            "arial" => Some((
-                "Arial",
-                "https://learn.microsoft.com/en-us/typography/font-list/arial",
-            )),
-            "courier new" => Some((
-                "Courier New",
-                "https://learn.microsoft.com/en-us/typography/font-list/courier-new",
-            )),
-            "times new roman" => Some((
-                "Times New Roman",
-                "https://learn.microsoft.com/en-us/typography/font-list/times-new-roman",
-            )),
-            _ => None,
-        };
-        if let Some((label, url)) = link {
-            download_links.push((label, url));
-        }
-    }
-
-    download_links.sort_by_key(|(lbl, _)| *lbl);
-    download_links.dedup_by_key(|(lbl, _)| *lbl);
-
-    let sub_text = if !substituted_items.is_empty() {
-        format!("Substituted: {}. ", substituted_items.join(", "))
-    } else {
-        String::new()
-    };
-
-    let miss_text = if !missing_items.is_empty() {
-        format!("Missing: {}. ", missing_items.join(", "))
-    } else {
-        String::new()
-    };
-
-    let font_warning_details = format!("{}{}", sub_text, miss_text);
+    // Font substitutions reported by the layout engine (requested → substitute).
+    // The redesigned warning UI lives in `editor_font_warning`; recovery (after
+    // dismiss) is the status-bar notice chip below.
+    let font_substitutions = doc_state
+        .lock()
+        .ok()
+        .and_then(|s| {
+            s.shared_font_resources
+                .lock()
+                .ok()
+                .map(|fr| fr.substitutions.clone())
+        })
+        .unwrap_or_default();
+    let font_sub_count = font_substitutions.len() as i64;
 
     rsx! {
         div {
@@ -734,88 +677,13 @@ pub(super) fn EditorInner(path: String) -> Element {
                 doc_state_spell_ctx,
             )}
 
-            // ── Font Warning Banner ──────────────────────────────────────────
-            if !font_substitutions.is_empty() && !dismiss_font_warning() {
-                div {
-                    style: format!(
-                        "display: flex; flex-direction: row; align-items: center; justify-content: space-between; \
-                         padding: {p}px {p2}px; background: {bg}; border-top: 1px solid {border}; \
-                         border-bottom: 1px solid {border}; font-family: {ff}; font-size: {size}px; \
-                         color: {fg}; flex-shrink: 0;",
-                        p      = tokens::SPACE_2,
-                        p2     = tokens::SPACE_4,
-                        bg     = tokens::COLOR_SURFACE_2,
-                        border = tokens::COLOR_CONTEXTUAL_TAB,
-                        ff     = tokens::FONT_FAMILY_UI,
-                        size   = tokens::FONT_SIZE_BODY - 1.0,
-                        fg     = tokens::COLOR_TEXT_ON_CHROME,
-                    ),
-                    div {
-                        style: "display: flex; flex-direction: column; gap: 4px; flex: 1;",
-                        div {
-                            style: "display: flex; flex-direction: row; align-items: center; gap: 8px;",
-                            span {
-                                style: format!("color: {}; font-weight: bold;", tokens::COLOR_CONTEXTUAL_TAB),
-                                "⚠️ {fl!(\"editor-font-substitution-title\")}:"
-                            }
-                            span { {fl!("editor-font-substitution-message")} }
-                        }
-                        span {
-                            style: format!("font-size: {size}px; color: {fg_sec};",
-                                size   = tokens::FONT_SIZE_LABEL,
-                                fg_sec = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
-                            ),
-                            "{font_warning_details}"
-                        }
-                    }
-                    div {
-                        style: "display: flex; flex-direction: row; align-items: center; gap: 16px; margin-left: 16px;",
-                        if !download_links.is_empty() {
-                            div {
-                                style: "display: flex; flex-direction: row; align-items: center; gap: 8px;",
-                                span {
-                                    style: format!("font-size: {size}px; color: {fg_sec};",
-                                        size   = tokens::FONT_SIZE_LABEL,
-                                        fg_sec = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
-                                    ),
-                                    {fl!("editor-font-substitution-download")}
-                                }
-                                {
-                                    download_links.iter().map(|(label, url)| rsx! {
-                                        a {
-                                            key: "{label}",
-                                            style: format!(
-                                                "color: {accent}; text-decoration: underline; font-size: {size}px; cursor: pointer;",
-                                                accent = tokens::COLOR_TAB_ACTIVE_INDICATOR,
-                                                size   = tokens::FONT_SIZE_LABEL,
-                                            ),
-                                            href: "{url}",
-                                            target: "_blank",
-                                            "{label}"
-                                        }
-                                    })
-                                }
-                            }
-                        }
-                        button {
-                            style: format!(
-                                "padding: {p}px {p2}px; background: {bg}; border: 1px solid {border}; \
-                                 border-radius: 4px; color: {fg}; font-size: {size}px; cursor: pointer; \
-                                 margin-left: 8px;",
-                                p      = tokens::SPACE_1,
-                                p2     = tokens::SPACE_2,
-                                bg     = tokens::COLOR_SURFACE_3,
-                                border = tokens::COLOR_BORDER_CHROME,
-                                fg     = tokens::COLOR_TEXT_ON_CHROME,
-                                size   = tokens::FONT_SIZE_LABEL,
-                            ),
-                            onclick: move |_| {
-                                dismiss_font_warning.set(true);
-                            },
-                            {fl!("editor-font-dismiss")}
-                        }
-                    }
-                }
+            // ── Font-substitution warning (Spec 03 M3) ────────────────────────
+            // Compact-by-default, expand-on-demand, breakpoint-aware (table vs.
+            // card stack). Renders nothing when empty or dismissed; recovery is
+            // the status-bar notice chip below.
+            super::editor_font_warning::FontWarning {
+                substitutions: font_substitutions.clone(),
+                dismiss: dismiss_font_warning,
             }
 
             // ── Paragraph style picker panel (inline, above ribbon) ───────────
@@ -996,6 +864,14 @@ pub(super) fn EditorInner(path: String) -> Element {
                     };
                     view_mode.set(next);
                 },
+                // Recover a dismissed font-substitution warning (Spec 03 M3).
+                notice_label: if dismiss_font_warning() && font_sub_count > 0 {
+                    fl!("editor-font-substitution-chip", count = font_sub_count)
+                } else {
+                    String::new()
+                },
+                notice_aria_label: fl!("editor-font-substitution-title"),
+                on_notice_click:    move |_| { dismiss_font_warning.set(false); },
             }
         }
     }

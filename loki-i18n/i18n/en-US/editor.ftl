@@ -46,6 +46,21 @@ editor-font-substitution-title = Font Substitution
 editor-font-substitution-message = Some fonts in this document are not available and were substituted. Layout and formatting might differ from Office 365.
 editor-font-substitution-download = Download original fonts:
 editor-font-dismiss = Dismiss
+# Compact chip + recovery indicator (one concise line)
+editor-font-substitution-chip = { $count ->
+    [one] 1 font substituted
+   *[other] { $count } fonts substituted
+}
+editor-font-substitution-details = Details
+editor-font-substitution-collapse = Hide
+# Per-substitution card / row
+editor-font-substitution-requested = Requested
+editor-font-substitution-substitute = Substitute
+editor-font-substitution-missing = Missing — no substitute
+# Severity
+editor-font-substitution-compatible = Metric-compatible
+editor-font-substitution-approx = Layout may shift
+editor-font-download-original = Download original
 
 # Save
 editor-save-success = Document saved
