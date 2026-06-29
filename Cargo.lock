@@ -335,6 +335,7 @@ name = "appthere-conformance"
 version = "0.1.0"
 dependencies = [
  "loki-doc-model",
+ "loki-sheet-model",
  "tempfile",
  "thiserror 2.0.18",
 ]
@@ -3950,6 +3951,7 @@ name = "loki-odf"
 version = "0.1.0"
 dependencies = [
  "appthere-color",
+ "appthere-conformance",
  "base64",
  "chrono",
  "indexmap",
