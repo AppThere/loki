@@ -62,6 +62,7 @@ fn para(text: &str, block_index: usize, origin: (f32, f32)) -> PageParagraphData
     );
     PageParagraphData {
         block_index,
+        path: Vec::new(),
         layout: Arc::new(layout),
         origin,
     }

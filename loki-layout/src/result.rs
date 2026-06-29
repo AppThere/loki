@@ -26,8 +26,14 @@ pub struct PageEditingData {
 /// Metadata for a single paragraph fragment on a page.
 #[derive(Debug, Clone)]
 pub struct PageParagraphData {
-    /// Global index of the paragraph block in the document.
+    /// Global index of the paragraph block in the document — the **root** block
+    /// for nested paragraphs (the table or note-bearing block).
     pub block_index: usize,
+    /// Descent from `block_index` into a nested container (a table cell or note
+    /// body). Empty for ordinary top-level paragraphs. Together with
+    /// `block_index` this forms the `loki_doc_model::BlockPath` the editor uses
+    /// to address the paragraph for mutation.
+    pub path: Vec<loki_doc_model::PathStep>,
     /// The preserved layout data for hit-testing and cursor positioning.
     pub layout: Arc<ParagraphLayout>,
     /// Page-local `(x, y)` origin of the paragraph in points, relative to

@@ -278,6 +278,46 @@ and `CursorState` must carry a `BlockPath`, and layout must assign positions to
 cell / note paragraphs — then the Table/Footnote Insert controls (Table also
 needs a block-insert primitive) can offer in-place editing.
 
+### 5g. Nested-editing UI wiring — architecture + staged plan
+
+Investigation of the editing pipeline (this is a large vertical; staging it to
+avoid risky half-built changes to the 1953-line `flow.rs`):
+
+**How editing addressing works today (all flat):** layout emits one
+`PageParagraphData { block_index, path, layout, origin }` per laid-out paragraph
+into `PageEditingData`; `hit_test` maps a click to that paragraph and returns a
+`DocumentPosition { page_index, paragraph_index = block_index, byte_offset }`;
+the editor mutates `paragraph_index` as a flat global block index.
+
+**Two findings that shape the work:**
+- **Table cells are laid out in a throwaway `temp_state`** (`flow::measure_cell_height`)
+  used only to measure height — cell paragraphs never reach the main flow's
+  editable `current_paragraphs`. Emitting their editing data (with a `[Cell]`
+  path and page-relative origins) is the substantive part.
+- **Footnote bodies *do* flow into `current_paragraphs`, but with `block_index =
+  0`** (`flow_footnotes` passes `0`). That is a *latent hit-test bug*: clicking a
+  footnote body today targets block 0. Giving them the correct root + `[Note]`
+  path fixes it.
+
+**Staged plan:**
+1. **Producer seam (this increment):** `PageParagraphData.path: Vec<PathStep>`
+   (empty for top-level). All existing emitters set it empty via a new
+   `push_editing_para` helper. No behaviour change.
+2. **Position seam:** add `path: Vec<PathStep>` to `DocumentPosition` (empty =
+   flat); `hit_test` carries `para_data.path`; `CursorState::block_path()` yields
+   a `BlockPath`. (~29 construction sites — mechanical, top-level unchanged.)
+3. **Layout emission:** emit `PageParagraphData` for table-cell paragraphs (real
+   flow, page-relative origins, `[Cell]` path) and fix footnote bodies to carry
+   `[Note]` + the owning block index.
+4. **Routing:** the typing/formatting/insert paths build a `BlockPath` from the
+   cursor and call the `*_at` primitives when nested (flat path → unchanged).
+5. **Caret rendering** for nested paragraphs, then the **Table/Footnote Insert
+   controls** (Table also needs a block-insert primitive).
+
+Increment 1 shipped: `PageParagraphData.path` + the `push_editing_para` helper
+(which also DRY-collapsed the six placement sites, keeping `flow_para.rs` under
+its baselined ceiling). `loki-layout` tests green; top-level editing unchanged.
+
 ---
 
 ## 6. Blitz layout surface for the collapse engine (Spec 04 §4.3)
