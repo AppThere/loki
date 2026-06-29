@@ -66,19 +66,37 @@ pub(super) fn reconstruct_inlines(map: &loro::LoroMap) -> Result<Vec<Inline>, Br
 
 /// Reconstructs an inline object from an anchor span's marks, if present.
 ///
-/// Currently handles [`MARK_IMAGE`] (a `serde`-JSON `Inline::Image` snapshot).
-/// Returns `None` for ordinary formatted text so the caller falls through to
-/// the char-props / style path.
+/// Handles [`MARK_IMAGE`] (`Inline::Image`) and [`MARK_NOTE`] (`Inline::Note`),
+/// each a `serde`-JSON snapshot. Returns `None` for ordinary formatted text so
+/// the caller falls through to the char-props / style path.
 #[cfg(feature = "serde")]
 fn decode_inline_object(attrs: &rustc_hash::FxHashMap<String, LoroValue>) -> Option<Inline> {
-    if let Some(LoroValue::String(json)) = attrs.get(MARK_IMAGE) {
-        match serde_json::from_str::<Inline>(json) {
-            Ok(inline @ Inline::Image(..)) => return Some(inline),
-            Ok(_) => tracing::warn!("loro bridge: MARK_IMAGE snapshot was not an Image"),
-            Err(err) => tracing::warn!("loro bridge: failed to decode inline image: {err}"),
+    decode_object_mark(attrs, MARK_IMAGE, |i| matches!(i, Inline::Image(..)))
+        .or_else(|| decode_object_mark(attrs, MARK_NOTE, |i| matches!(i, Inline::Note(..))))
+}
+
+/// Decodes the `serde`-JSON `Inline` snapshot stored under `key`, accepting it
+/// only when `is_expected` confirms the variant matches the mark.
+#[cfg(feature = "serde")]
+fn decode_object_mark(
+    attrs: &rustc_hash::FxHashMap<String, LoroValue>,
+    key: &str,
+    is_expected: impl Fn(&Inline) -> bool,
+) -> Option<Inline> {
+    let Some(LoroValue::String(json)) = attrs.get(key) else {
+        return None;
+    };
+    match serde_json::from_str::<Inline>(json) {
+        Ok(inline) if is_expected(&inline) => Some(inline),
+        Ok(_) => {
+            tracing::warn!("loro bridge: {key} snapshot had an unexpected inline variant");
+            None
+        }
+        Err(err) => {
+            tracing::warn!("loro bridge: failed to decode inline object ({key}): {err}");
+            None
         }
     }
-    None
 }
 
 #[cfg(not(feature = "serde"))]

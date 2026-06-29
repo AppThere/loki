@@ -113,14 +113,24 @@ Per maintainer direction (*"do the Loro-bridge extension first"*), structured
 inlines are being migrated to native CRDT mappings before the Insert tab ships,
 one tested increment per turn:
 
-- **✅ Inline image (top-level)** — native: an `OBJECT_REPLACEMENT_CHAR` anchor
-  carries the image as a `MARK_IMAGE` mark (`loro_bridge::inlines`/`inlines_read`;
-  `opaque.rs` un-gates top-level images). The image is now a live, positioned,
-  deletable inline; image-bearing paragraphs are no longer opaque. Tests:
-  `loro_bridge_opaque_tests::{inline_image_stored_natively_not_opaque,
-  nested_inline_image_stays_opaque_but_survives}`. *(An image nested inside a
-  wrapper/run is still flattened → block stays opaque.)*
-- **⏳ Footnote, table** — pending native mappings (next increments).
+The shared mechanism is `inlines::write_inline_object`: a top-level structured
+inline is written as an `OBJECT_REPLACEMENT_CHAR` (U+FFFC) anchor carrying the
+object as a `serde`-JSON mark (registered `ExpandType::None`), decoded back on
+read by `inlines_read::decode_inline_object`; `opaque.rs` un-gates the variant
+at top level only. An object *nested* inside a wrapper/run is still flattened by
+the text path → its block stays opaque (no silent loss).
+
+- **✅ Inline image (top-level)** — native via `MARK_IMAGE`. The image is a live,
+  positioned, deletable inline; image-bearing paragraphs are no longer opaque.
+  Tests: `loro_bridge_opaque_tests::{inline_image_stored_natively_not_opaque,
+  nested_inline_image_stays_opaque_but_survives}`.
+- **✅ Footnote / endnote (top-level)** — native via `MARK_NOTE`. The note
+  *reference* is a discrete, deletable inline anchor; its `NoteKind` + block
+  body round-trip losslessly in the mark (the body is a snapshot payload, not
+  yet a live CRDT subtree). Tests: `footnote_stored_natively_not_opaque`,
+  `endnote_kind_survives_native_roundtrip`, `nested_footnote_stays_opaque_but_survives`.
+- **⏳ Table (block-level)** — pending native mapping (next increment; a bigger
+  lift — block-level grid of cell subtrees, not an inline anchor).
 
 ---
 

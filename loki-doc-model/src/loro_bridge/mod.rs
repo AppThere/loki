@@ -116,32 +116,11 @@ fn map_header_footer_slot(
 pub fn document_to_loro(doc: &Document) -> Result<LoroDoc, BridgeError> {
     let loro_doc = LoroDoc::new();
 
-    // Register all mark keys so Loro tracks their expand behaviour.
+    // Register every mark key so Loro tracks its expand behaviour.
     let mut style_config = StyleConfigMap::new();
-    for key in &[
-        MARK_BOLD,
-        MARK_ITALIC,
-        MARK_UNDERLINE,
-        MARK_STRIKETHROUGH,
-        MARK_COLOR,
-        MARK_HIGHLIGHT_COLOR,
-        MARK_FONT_FAMILY,
-        MARK_FONT_SIZE_PT,
-        MARK_VERTICAL_ALIGN,
-        MARK_LINK_URL,
-        MARK_LANGUAGE,
-        MARK_LANGUAGE_COMPLEX,
-        MARK_LANGUAGE_EAST_ASIAN,
-        MARK_LETTER_SPACING,
-        MARK_WORD_SPACING,
-        MARK_SCALE,
-        MARK_SMALL_CAPS,
-        MARK_ALL_CAPS,
-        MARK_SHADOW,
-        MARK_KERNING,
-        MARK_OUTLINE,
-        MARK_CHAR_STYLE_ID,
-    ] {
+    // Character formatting marks expand onto text inserted at their trailing
+    // edge (`After`) — the single source of truth is `CHAR_MARK_KEYS`.
+    for key in CHAR_MARK_KEYS {
         style_config.insert(
             loro::InternalString::from(*key),
             StyleConfig {
@@ -151,12 +130,14 @@ pub fn document_to_loro(doc: &Document) -> Result<LoroDoc, BridgeError> {
     }
     // Inline-object anchor marks must not expand onto adjacent text — they
     // describe a single placeholder position, not a formatting span.
-    style_config.insert(
-        loro::InternalString::from(MARK_IMAGE),
-        StyleConfig {
-            expand: ExpandType::None,
-        },
-    );
+    for key in INLINE_OBJECT_MARK_KEYS {
+        style_config.insert(
+            loro::InternalString::from(*key),
+            StyleConfig {
+                expand: ExpandType::None,
+            },
+        );
+    }
     loro_doc.config_text_style(style_config);
 
     // Metadata — full DocumentMeta (core + Dublin Core) as a lossless snapshot.

@@ -97,14 +97,18 @@ pub(super) fn map_inlines(inlines: &[Inline], text: &LoroText) -> Result<(), Bri
                     text.mark(start..end, MARK_LINK_URL, target.url.as_str())?;
                 }
             }
-            // Inline image: anchored natively (placeholder char + data mark) so
-            // it stays a live, positioned object. Only top-level images reach
-            // here — an image nested in a wrapper keeps its block opaque (see
-            // `opaque.rs`). Without `serde` the image falls through to the
-            // catch-all and its block is preserved opaquely instead.
+            // Inline objects anchored natively (placeholder char + data mark) so
+            // they stay live, positioned, deletable inlines. Only *top-level*
+            // objects reach here — one nested in a wrapper keeps its block
+            // opaque (see `opaque.rs`). Without `serde` they fall through to the
+            // catch-all and their block is preserved opaquely instead.
             #[cfg(feature = "serde")]
             Inline::Image(..) => {
-                write_inline_image(inline, text)?;
+                write_inline_object(inline, text, MARK_IMAGE)?;
+            }
+            #[cfg(feature = "serde")]
+            Inline::Note(..) => {
+                write_inline_object(inline, text, MARK_NOTE)?;
             }
             // Text-bearing wrappers without a dedicated mark: keep the text.
             // Quote type / span attrs / citation metadata are not yet carried
@@ -120,25 +124,32 @@ pub(super) fn map_inlines(inlines: &[Inline], text: &LoroText) -> Result<(), Bri
     Ok(())
 }
 
-/// Writes an inline image as an [`OBJECT_REPLACEMENT_CHAR`] anchor carrying the
-/// image's `serde`-JSON snapshot in a [`MARK_IMAGE`] mark.
+/// Writes a structured inline object (`Inline::Image`, `Inline::Note`, …) as an
+/// [`OBJECT_REPLACEMENT_CHAR`] anchor carrying the object's `serde`-JSON
+/// snapshot in `mark_key`.
 ///
-/// The anchor is a single Unicode scalar, so the image becomes a discrete,
-/// deletable inline object rather than collapsing the whole paragraph to an
-/// opaque snapshot. Reconstructed by `inlines_read::reconstruct_inlines`.
+/// The anchor is a single Unicode scalar, so the object becomes a discrete,
+/// positioned, deletable inline rather than collapsing the whole paragraph to
+/// an opaque snapshot. The object's payload (an image's geometry, a footnote's
+/// body) rides along in the mark and round-trips losslessly. Reconstructed by
+/// `inlines_read::reconstruct_inlines`.
 #[cfg(feature = "serde")]
-fn write_inline_image(inline: &Inline, text: &LoroText) -> Result<(), BridgeError> {
+fn write_inline_object(
+    inline: &Inline,
+    text: &LoroText,
+    mark_key: &str,
+) -> Result<(), BridgeError> {
     match serde_json::to_string(inline) {
         Ok(json) => {
             let start = text.len_unicode();
             text.insert(start, OBJECT_REPLACEMENT_STR)?;
             let end = text.len_unicode();
-            text.mark(start..end, MARK_IMAGE, json)?;
+            text.mark(start..end, mark_key, json)?;
         }
         Err(err) => {
             // Unreachable in practice: `Inline` derives Serialize. Drop the
-            // image rather than leave a bare anchor with no backing data.
-            tracing::warn!("loro bridge: failed to encode inline image: {err}");
+            // object rather than leave a bare anchor with no backing data.
+            tracing::warn!("loro bridge: failed to encode inline object ({mark_key}): {err}");
         }
     }
     Ok(())

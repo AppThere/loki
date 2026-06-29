@@ -181,6 +181,68 @@ fn nested_inline_image_stays_opaque_but_survives() {
     assert_eq!(round_trip(&doc).sections[0].blocks[0], block);
 }
 
+/// A bare (top-level) footnote/endnote is mapped natively — its reference is a
+/// placeholder anchor carrying the note (kind + block body) as a mark — so the
+/// paragraph is a live `para`, with the note a discrete inline, and the body
+/// round-trips losslessly.
+#[test]
+fn footnote_stored_natively_not_opaque() {
+    let block = Block::Para(vec![
+        Inline::Str("claim".into()),
+        Inline::Note(
+            NoteKind::Footnote,
+            vec![para("supporting detail"), para("second paragraph")],
+        ),
+        Inline::Str(" continues".into()),
+    ]);
+    let doc = doc_with_blocks(vec![block.clone()]);
+    assert_eq!(
+        first_block_type(&doc).as_deref(),
+        Some(BLOCK_TYPE_PARA),
+        "a footnote paragraph must be a native para, not an opaque snapshot"
+    );
+    let recovered = round_trip(&doc);
+    assert_eq!(recovered.sections[0].blocks[0], block);
+    let Block::Para(inlines) = &recovered.sections[0].blocks[0] else {
+        panic!("expected Para");
+    };
+    assert_eq!(
+        inlines.len(),
+        3,
+        "note must stay a discrete inline: {inlines:?}"
+    );
+    assert!(matches!(inlines[1], Inline::Note(NoteKind::Footnote, _)));
+}
+
+/// Endnotes use the same path; the `NoteKind` discriminant must survive.
+#[test]
+fn endnote_kind_survives_native_roundtrip() {
+    let block = Block::Para(vec![Inline::Note(
+        NoteKind::Endnote,
+        vec![para("endnote body")],
+    )]);
+    let doc = doc_with_blocks(vec![block.clone()]);
+    assert_eq!(first_block_type(&doc).as_deref(), Some(BLOCK_TYPE_PARA));
+    assert_eq!(round_trip(&doc).sections[0].blocks[0], block);
+}
+
+/// A note *nested* inside a wrapper is flattened by the text write path, so its
+/// block must remain an opaque snapshot to avoid silent data loss.
+#[test]
+fn nested_footnote_stays_opaque_but_survives() {
+    let block = Block::Para(vec![Inline::Emph(vec![Inline::Note(
+        NoteKind::Footnote,
+        vec![para("body")],
+    )])]);
+    let doc = doc_with_blocks(vec![block.clone()]);
+    assert_eq!(
+        first_block_type(&doc).as_deref(),
+        Some(BLOCK_TYPE_OPAQUE),
+        "a note nested in a wrapper must keep its block opaque"
+    );
+    assert_eq!(round_trip(&doc).sections[0].blocks[0], block);
+}
+
 // ── C2: text-bearing inline variants keep text and formatting ───────────────
 
 /// Collects all visible text of a block's inlines, descending into runs.

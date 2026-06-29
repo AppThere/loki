@@ -17,12 +17,14 @@
 //! mappings is tracked as TODO(loro-bridge) work.
 //!
 //! Inline objects are migrating off this fallback one variant at a time. A
-//! *top-level* inline image is now mapped natively — an
+//! *top-level* inline image ([`MARK_IMAGE`][crate::loro_schema::MARK_IMAGE]) or
+//! footnote/endnote ([`MARK_NOTE`][crate::loro_schema::MARK_NOTE]) is now mapped
+//! natively — an
 //! [`OBJECT_REPLACEMENT_CHAR`][crate::loro_schema::OBJECT_REPLACEMENT_CHAR]
-//! anchor carries the image as a [`MARK_IMAGE`][crate::loro_schema::MARK_IMAGE]
-//! mark — so it stays a live, positioned, deletable inline (see
-//! `inlines::write_inline_image`). An image *nested* inside a wrapper or run is
-//! flattened by the text write path, so its block still takes the opaque path.
+//! anchor carries the object as a mark — so it stays a live, positioned,
+//! deletable inline (see `inlines::write_inline_object`). The same object
+//! *nested* inside a wrapper or run is flattened by the text write path, so its
+//! block still takes the opaque path.
 
 use super::BridgeError;
 use crate::content::block::Block;
@@ -48,14 +50,14 @@ fn inlines_round_trip(inlines: &[Inline]) -> bool {
 
 /// Top-level inline (a direct child of the paragraph's inline list).
 ///
-/// A bare image here is mapped natively by the write path — an
-/// [`OBJECT_REPLACEMENT_CHAR`][crate::loro_schema::OBJECT_REPLACEMENT_CHAR]
-/// anchor carrying the image as a mark — so an image-bearing paragraph stays
-/// live-editable instead of collapsing to an opaque snapshot. This requires
-/// `serde` (the snapshot format); without it the image is not representable.
+/// A bare image or footnote/endnote here is mapped natively by the write path —
+/// an [`OBJECT_REPLACEMENT_CHAR`][crate::loro_schema::OBJECT_REPLACEMENT_CHAR]
+/// anchor carrying the object as a mark — so the paragraph stays live-editable
+/// instead of collapsing to an opaque snapshot. This requires `serde` (the
+/// snapshot format); without it the object is not representable.
 fn inline_round_trips_top(inline: &Inline) -> bool {
     match inline {
-        Inline::Image(..) => cfg!(feature = "serde"),
+        Inline::Image(..) | Inline::Note(..) => cfg!(feature = "serde"),
         other => inline_round_trips_nested(other),
     }
 }
@@ -86,9 +88,10 @@ fn inline_round_trips_nested(inline: &Inline) -> bool {
         // keeps the vast majority of paragraphs editable.
         // TODO(loro-bridge): preserve comment/bookmark anchors as marks.
         Inline::Comment(_) | Inline::Bookmark(_, _) => true,
-        // Note (footnote/endnote bodies), nested Image, Field, Math, RawInline,
-        // Cite — structured content the flat text cannot carry. The whole
-        // containing block is preserved as an opaque snapshot instead.
+        // Nested Note/Image, Field, Math, RawInline, Cite — structured content
+        // the flat text cannot carry (and, when nested, the native anchor path
+        // does not reach it). The whole containing block is preserved as an
+        // opaque snapshot instead.
         _ => false,
     }
 }

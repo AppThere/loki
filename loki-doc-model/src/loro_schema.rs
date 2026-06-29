@@ -138,6 +138,19 @@ pub const OBJECT_REPLACEMENT_STR: &str = "\u{FFFC}";
 /// positioned inline object) instead of as opaque block snapshots.
 pub const MARK_IMAGE: &str = "image";
 
+/// Inline footnote/endnote data: a `serde`-JSON snapshot of the `Inline::Note`
+/// (its [`NoteKind`][crate::content::inline::NoteKind] and block body), carried
+/// as a mark over a single [`OBJECT_REPLACEMENT_CHAR`] anchor so the note
+/// reference is a live, positioned, deletable inline. The body rides along in
+/// the mark and round-trips losslessly (it is not yet a live CRDT subtree).
+pub const MARK_NOTE: &str = "note";
+
+/// Every inline-object anchor mark key (carried over a single
+/// [`OBJECT_REPLACEMENT_CHAR`]). Registered with non-expanding behaviour and
+/// shared by the write/read paths. Keep in sync as new inline objects migrate
+/// off the opaque-snapshot fallback.
+pub const INLINE_OBJECT_MARK_KEYS: &[&str] = &[MARK_IMAGE, MARK_NOTE];
+
 /// Every character-level mark key (formatting that lives on a text range).
 ///
 /// Single source of truth shared by `document_to_loro` (which registers each
