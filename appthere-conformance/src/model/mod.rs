@@ -27,6 +27,9 @@ use loki_doc_model::style::props::char_props::CharProps;
 
 use crate::roundtrip::{CanonicalEntry, NormalizedModel};
 
+mod meta;
+mod tables;
+
 impl NormalizedModel for Document {
     fn canonical(&self) -> Vec<CanonicalEntry> {
         canonicalize_document(self)
@@ -37,6 +40,7 @@ impl NormalizedModel for Document {
 #[must_use]
 pub fn canonicalize_document(doc: &Document) -> Vec<CanonicalEntry> {
     let mut out = Vec::new();
+    meta::canonicalize_meta(&doc.meta, &mut out);
     for (si, section) in doc.sections.iter().enumerate() {
         for (bi, block) in section.blocks.iter().enumerate() {
             walk_block(block, &format!("sec{si:04}/blk{bi:04}"), &mut out);
@@ -81,6 +85,7 @@ fn walk_block(block: &Block, path: &str, out: &mut Vec<CanonicalEntry>) {
         Block::CodeBlock(_, code) | Block::RawBlock(_, code) => {
             push(out, format!("{path}/text"), code.clone());
         }
+        Block::Table(tbl) => tables::walk_table(tbl, path, out),
         // Other kinds: recorded by `kind` above; deep walk is a follow-up.
         _ => {}
     }

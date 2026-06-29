@@ -5,6 +5,8 @@ use loki_doc_model::Document;
 use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::{BookmarkKind, Inline, StyledRun};
+use loki_doc_model::content::table::core::{Table, TableBody, TableCaption, TableFoot, TableHead};
+use loki_doc_model::content::table::row::{Cell, Row};
 use loki_doc_model::layout::section::Section;
 use loki_doc_model::style::props::char_props::CharProps;
 
@@ -130,4 +132,87 @@ fn structural_change_is_caught_by_kind() {
     assert!(d.path.ends_with("/kind"));
     assert_eq!(d.left.as_deref(), Some("para"));
     assert_eq!(d.right.as_deref(), Some("heading"));
+}
+
+/// A single-body table whose cells hold the given paragraph texts.
+fn table(rows: Vec<Vec<&str>>) -> Block {
+    let body_rows = rows
+        .into_iter()
+        .map(|cells| {
+            Row::new(
+                cells
+                    .into_iter()
+                    .map(|t| Cell::simple(vec![Block::Para(vec![str_(t)])]))
+                    .collect(),
+            )
+        })
+        .collect();
+    Block::Table(Box::new(Table {
+        attr: NodeAttr::default(),
+        caption: TableCaption::default(),
+        width: None,
+        col_specs: vec![],
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(body_rows)],
+        foot: TableFoot::empty(),
+    }))
+}
+
+#[test]
+fn dropped_cell_text_is_caught_with_a_table_path() {
+    let a = doc(vec![table(vec![vec!["A1", "A2"], vec!["B1", "B2"]])]);
+    // The bottom-right cell loses its text on export.
+    let b = doc(vec![table(vec![vec!["A1", "A2"], vec!["B1", ""]])]);
+
+    let d = diff_models(&a, &b).expect("dropped cell text must be caught");
+    assert!(d.path.contains("/c0001/"), "path = {}", d.path);
+    assert_eq!(d.left.as_deref(), Some("B2"));
+    assert_eq!(d.right.as_deref(), Some(""));
+}
+
+#[test]
+fn merged_cell_span_change_is_caught() {
+    let mut a_cell = Cell::simple(vec![Block::Para(vec![str_("x")])]);
+    a_cell.col_span = 2;
+    let a = doc(vec![Block::Table(Box::new(Table {
+        attr: NodeAttr::default(),
+        caption: TableCaption::default(),
+        width: None,
+        col_specs: vec![],
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![Row::new(vec![a_cell])])],
+        foot: TableFoot::empty(),
+    }))]);
+    // Re-import drops the col-span (cell de-merged to 1×1).
+    let b = doc(vec![table(vec![vec!["x"]])]);
+
+    let d = diff_models(&a, &b).expect("lost col-span must be caught");
+    assert!(d.path.ends_with("/span"), "path = {}", d.path);
+    assert_eq!(d.left.as_deref(), Some("1x2"));
+    assert!(d.right.is_none(), "right should lack the span entry");
+}
+
+#[test]
+fn dropped_metadata_title_is_caught() {
+    let mut a = doc(vec![Block::Para(vec![str_("body")])]);
+    a.meta.title = Some("My Report".to_string());
+    let b = doc(vec![Block::Para(vec![str_("body")])]);
+
+    let d = diff_models(&a, &b).expect("dropped title must be caught");
+    assert_eq!(d.path, "meta/title");
+    assert_eq!(d.left.as_deref(), Some("My Report"));
+    assert!(d.right.is_none());
+}
+
+#[test]
+fn changed_metadata_creator_reports_both_sides() {
+    let mut a = doc(vec![Block::Para(vec![str_("body")])]);
+    a.meta.creator = Some("Ada".to_string());
+    let mut b = doc(vec![Block::Para(vec![str_("body")])]);
+    b.meta.creator = Some("Grace".to_string());
+
+    let d = diff_models(&a, &b).expect("changed creator must be caught");
+    assert_eq!(d.path, "meta/creator");
+    assert_eq!(d.left.as_deref(), Some("Ada"));
+    assert_eq!(d.right.as_deref(), Some("Grace"));
 }
