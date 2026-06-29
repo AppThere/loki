@@ -8,10 +8,18 @@ repository = "https://github.com/appthere/loki"
 keywords = ["conformance", "testing", "ooxml", "odf", "loki"]
 categories = ["development-tools::testing"]
 
+[features]
+default = []
+# Adds the `model` adapter: `NormalizedModel` for the suite's format-neutral
+# `loki_doc_model::Document`, so the round-trip axis works on real documents.
+doc-model = ["dep:loki-doc-model"]
+
 [dependencies]
 thiserror = { workspace = true }
 # Round-trip the candidate XML through a temp file for `xmllint` validation.
 tempfile = "3"
+# Optional: the format-neutral document model, for the round-trip canonicalizer.
+loki-doc-model = { path = "../loki-doc-model", optional = true }
 
 [package.metadata.docs.rs]
 all-features = true

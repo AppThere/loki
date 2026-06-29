@@ -35,6 +35,8 @@
 #![forbid(unsafe_code)]
 
 pub mod golden;
+#[cfg(feature = "doc-model")]
+pub mod model;
 pub mod roundtrip;
 pub mod schema;
 
