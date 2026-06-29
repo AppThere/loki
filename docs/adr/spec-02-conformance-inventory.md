@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 
 | | |
 |---|---|
-| **Status** | Draft — inventory complete; **B-1 + B-10 resolved by maintainer** (see banner) |
+| **Status** | Draft — inventory complete; **B-1 + B-10 resolved**; **B-11 unblocked** (Spec 01 CI pipeline now built — see banner) |
 | **Companion to** | [`spec-02-conformance-testing.md`](spec-02-conformance-testing.md) |
 | **Method** | Read-only audit pass (§3.1). **No code changed.** |
 | **Snapshot** | branch `claude/adr-docs-setup-ogwz5a`, 2026-06-28 |
@@ -22,8 +22,20 @@ SPDX-License-Identifier: Apache-2.0
 >   Spec 02, completing the metric-compatible font set.
 >
 > The original findings are preserved below as the audit-first snapshot; each is
-> annotated inline with its resolution. All other findings (B-2…B-9, B-11) remain
+> annotated inline with its resolution. All other findings (B-2…B-9) remain
 > open for triage — the **Priority** column is still the maintainer's.
+
+> **Spec 01 enforcement update (2026-06-29).** When this inventory was filed,
+> Spec 01's CI pipeline was *"specified but not yet implemented"*, and **B-11**
+> (and §8) flagged that M6 (CI integration) was blocked on it. **That work has
+> since landed:** `.github/workflows/rust.yml`'s lint job now runs **nine
+> structural gates** (license-header, panic-guard, unsafe-policy, file-ceiling,
+> TODO-format, `unwrap_used`/`expect_used`, dependency-direction, viewport-dim) —
+> see [`spec-01-audit-report.md`](spec-01-audit-report.md) §4. So **B-11 is no
+> longer blocked**: the conformance schema + round-trip gates plug into the
+> existing, populated pipeline using the same script-gate-→-lint-job pattern. The
+> few other Spec-01-dependent notes below (B-6's loki-opc SPDX reference, B-3's
+> "1280px-class" analogy) are annotated where they occur.
 
 Spec 02 §1/§3 mandate **audit-first**: "inspect the existing ACID cases, the
 import/export crates, and the render path before building." This document is that
@@ -100,9 +112,10 @@ trait — flagged as the main refactor cost.
   the `SchemaValidator` libxml2 impl (`--schema` for XSD, `--relaxng` for RNG) is
   immediately runnable, and the "missing `xmllint` fails loudly" build-time check
   (§5) is straightforward.
-- **OPC layer:** `loki-opc` produces `[Content_Types].xml` + relationship parts;
-  the audit (Spec 01 A-3) noted that crate also lacks SPDX headers — orthogonal,
-  but the same crate is the one Axis 1's package-structure validation exercises.
+- **OPC layer:** `loki-opc` produces `[Content_Types].xml` + relationship parts —
+  the crate Axis 1's package-structure validation exercises. (The Spec 01 A-3
+  SPDX-header finding once noted here is now resolved: `loki-opc` is MIT-licensed
+  with correct headers — see [`0010-per-crate-licensing.md`](0010-per-crate-licensing.md).)
 - **Export surfaces to validate** (from the crate graph): DOCX export
   (`loki-ooxml/src/docx/write/`), ODT/ODS export (`loki-odf/src/odt/write/`,
   `ods/export.rs`), XLSX export (`loki-ooxml/src/xlsx/export.rs`). Each emits the
@@ -180,7 +193,8 @@ Fold the 25 existing tests into it rather than discard.
   `golden_pixel.rs:18` hardcodes `const SSIM_THRESHOLD: f64 = 0.98;` with no
   calibration record. D5/§7.4 require this be *derived* from a measured
   cross-renderer noise floor and committed. (This is precisely the "1280px-class"
-  pattern Spec 01 fights, in the test domain.)
+  magic-number pattern Spec 01 just **eliminated** in the editor — A-1 — applied
+  here in the test domain: a load-bearing literal nobody measured.)
 - **B-4 — Differ is SSIM-only and averaged.** §7.4 wants **SSIM + CIEDE2000/ΔE**,
   **regional/tiled scoring where the worst region drives the result** (not the
   mean), per-test tolerance overrides, and **failure heatmaps**. Today: mean SSIM,
@@ -241,25 +255,27 @@ needing no graphics adapter) is what lets the visual axis run here at all.
 | B-8 | Shared crate / M1 | `appthere-conformance` absent; `loki-acid` is Text-coupled | **Large** | Create crate; extract `Fixture`/`Consumer` traits; promote `loki-acid` modules | |
 | B-9 | Corpus / §9 | 141 TC cases flat; not organised feature×format×axis; ODP/ODG/PPTX importers absent | **Medium** | Reorganise on disk; record axes+ref-app+overrides per fixture (PPTX gap = Presentation scope) | |
 | B-10 | Fonts / D4 | Gelasio (≈Georgia) not bundled; substitution suite absent | **Small** | ✅ **Resolved → bundle Gelasio**; still author the substitution suite | **Resolved** |
-| B-11 | CI / §11 M6 | Depends on Spec 01 pipeline (not yet built) | **Sequencing** | Land schema+round-trip as hard gates, visual post-calibration, into Spec 01's reserved slot | |
+| B-11 | CI / §11 M6 | ✅ **Unblocked** — Spec 01 pipeline now built (9 gates in `rust.yml`) | **Sequencing** | Land schema+round-trip as hard gates (and visual post-calibration) into the now-populated lint job, same script-gate pattern | **Unblocked** |
 
 ---
 
 ## 8. Sequencing & dependency on Spec 01
 
-Spec 02 §0 depends on Spec 01's CI pipeline and enforcement primitives — which
-are, as of [`spec-01-audit-report.md`](spec-01-audit-report.md) §4, **specified
-but not yet implemented** (CI today is fmt + clippy + build/test only). Concrete
-implication: **M6 (CI integration) cannot complete until Spec 01's M3 gate
-infrastructure lands.** The axes themselves (M1–M5) can be built against the
-existing `loki-acid` regardless. Recommended order, lowest-risk-first and
-independent of B-1:
+Spec 02 §0 depends on Spec 01's CI pipeline and enforcement primitives. When this
+inventory was filed those were "specified but not yet implemented"; **as of
+2026-06-29 they are built** — [`spec-01-audit-report.md`](spec-01-audit-report.md)
+§4 lists nine structural gates live in `rust.yml`. So **M6 (CI integration) is no
+longer blocked**: the schema and round-trip gates plug into the populated lint job
+exactly like the gates already there (a script under `scripts/`, one `run:` step).
+The axes themselves (M1–M5) build against the existing `loki-acid` regardless.
+Recommended order, lowest-risk-first and independent of B-1:
 
 1. **B-8 + B-6** — crate skeleton + schema axis (no GPU, `xmllint` ready). = M1+M2.
 2. **B-7** — normalized round-trip differ, folding the 25 existing tests. = M3.
 3. **B-1 (resolved → `vello_cpu`) + B-2/B-5** — CPU rasterizer + ODF golden generation. = M4.
 4. **B-4 + B-3** — extended differ + calibration record. = M5.
-5. **B-11** — wire gates once Spec 01 M3 exists. = M6.
+5. **B-11** — wire the schema + round-trip gates into the lint job (Spec 01's
+   pipeline is now built, so this is ready whenever M2/M3 land). = M6.
 
 ---
 
@@ -279,5 +295,6 @@ independent of B-1:
 **Honest scope note:** this is the read-only inventory only. Building
 `appthere-conformance`, vendoring schemas, the CPU render backend, golden
 generation, and calibration (M1–M6) are deferred pending maintainer triage of the
-table above (B-1 and B-10 now resolved; B-2…B-9 and B-11 still open) — and
-several (M6) are gated on Spec 01 implementation that does not yet exist.
+table above (B-1, B-10 resolved; B-11 unblocked; B-2…B-9 still open). The earlier
+caveat that M6 was gated on un-built Spec 01 infrastructure **no longer applies**
+— that pipeline now exists (9 gates).
