@@ -19,6 +19,7 @@ mod opaque;
 mod props_read;
 mod read;
 mod styles;
+mod table;
 mod write;
 
 pub use comments::{read_document_comments, write_document_comments};

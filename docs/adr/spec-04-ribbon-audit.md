@@ -129,8 +129,24 @@ the text path → its block stays opaque (no silent loss).
   body round-trip losslessly in the mark (the body is a snapshot payload, not
   yet a live CRDT subtree). Tests: `footnote_stored_natively_not_opaque`,
   `endnote_kind_survives_native_roundtrip`, `nested_footnote_stays_opaque_but_survives`.
-- **⏳ Table (block-level)** — pending native mapping (next increment; a bigger
-  lift — block-level grid of cell subtrees, not an inline anchor).
+- **✅ Table (block-level)** — native `BLOCK_TYPE_TABLE` (`loro_bridge::table`).
+  Stored as a **structural skeleton** (`KEY_TABLE_SKELETON`: the `Table` with
+  cell blocks emptied — grid/col-specs, spans, cell & row props, borders,
+  caption, attrs) plus **live per-cell block lists** (`KEY_TABLE_CELLS`: one
+  CRDT container per cell, content via the shared block path). Cell *text* is
+  therefore real CRDT state — concurrent edits to different cells merge — and
+  the mapping recurses (a table nested in a cell is itself native). Structural
+  edits (add row, change span) still rewrite the skeleton blob → not yet
+  cell-structurally mergeable; full structural CRDT mapping is TODO. Tests:
+  `loro_bridge_table_tests` (7 cases: native storage, separate cell containers,
+  rich/empty cells, spans + props, nested table, positioning).
+
+**Bridge-extension status: complete for the M4 Insert set.** Image, footnote,
+hyperlink, and table all have live mappings; the Insert tab can now offer all
+four without inert/dead UI. *(Caveat: the editor's `loro_mutation` API addresses
+only top-level section blocks — creating/typing inside table cells and note
+bodies needs a nested-addressing extension to that layer; tracked separately
+from this bridge-representation work.)*
 
 ---
 

@@ -81,12 +81,12 @@ pub(super) fn map_loro_block(map: &LoroMap) -> Result<Block, BridgeError> {
         }
         BLOCK_TYPE_HR => Ok(Block::HorizontalRule),
         BLOCK_TYPE_OPAQUE => Ok(super::opaque::read_opaque_block(map)),
+        // Native table mapping (skeleton + live per-cell block lists). A legacy
+        // stub written before this mapping has no skeleton and falls back to a
+        // rule inside `read_table`.
+        BLOCK_TYPE_TABLE => Ok(super::table::read_table(map)),
         // Legacy stubs: blocks written by bridge versions that predate the
         // opaque-snapshot scheme carry no content and cannot be recovered.
-        BLOCK_TYPE_TABLE => {
-            tracing::debug!("TODO/stub: loro bridge table");
-            Ok(Block::HorizontalRule)
-        }
         BLOCK_TYPE_BULLET_LIST => {
             tracing::debug!("TODO/stub: loro bridge bullet list");
             Ok(Block::HorizontalRule)

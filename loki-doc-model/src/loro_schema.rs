@@ -90,6 +90,22 @@ pub const BLOCK_TYPE_OPAQUE: &str = "opaque";
 /// Key for the serialized JSON snapshot of a [`BLOCK_TYPE_OPAQUE`] block.
 pub const KEY_OPAQUE_JSON: &str = "opaque_json";
 
+/// Key (within a [`BLOCK_TYPE_TABLE`] block map) for the table's structural
+/// skeleton — a `serde`-JSON snapshot of the whole `Table` **with every cell's
+/// blocks emptied**. Carries the grid (col specs, widths), section/row layout,
+/// spans, cell/row props, borders, caption, and attributes. Cell *content*
+/// lives separately under [`KEY_TABLE_CELLS`] as live CRDT containers, so cell
+/// text round-trips natively (and concurrent edits to different cells merge)
+/// instead of as one opaque blob.
+pub const KEY_TABLE_SKELETON: &str = "table_skeleton";
+
+/// Key (within a [`BLOCK_TYPE_TABLE`] block map) for the live cell contents — a
+/// movable list with one entry per cell (in head → bodies → foot, row-major
+/// order), each entry itself a movable list of the cell's blocks (written via
+/// the shared block path). Re-attached to the [`KEY_TABLE_SKELETON`] cells on
+/// read by the same traversal order.
+pub const KEY_TABLE_CELLS: &str = "table_cells";
+
 // -----------------------------------------------------------------------------
 // CharProps Mark Keys
 // -----------------------------------------------------------------------------

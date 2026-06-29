@@ -15,6 +15,13 @@ use loro::{LoroMap, LoroMovableList, LoroText};
 // ── Block serialization ───────────────────────────────────────────────────────
 
 pub(super) fn map_block(block: &Block, map: &LoroMap) -> Result<(), BridgeError> {
+    // Tables have a native mapping: a structural skeleton plus live per-cell
+    // block lists (see `table.rs`). Without `serde` there is no skeleton
+    // format, so the table takes the opaque path below instead.
+    #[cfg(feature = "serde")]
+    if let Block::Table(table) = block {
+        return super::table::write_table(table, map);
+    }
     // Blocks (or paragraphs whose inline content) the flat text schema cannot
     // represent are preserved verbatim as opaque JSON snapshots so that a
     // document_to_loro → loro_to_document round-trip is lossless. See
