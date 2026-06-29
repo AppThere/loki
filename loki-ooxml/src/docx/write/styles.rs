@@ -92,6 +92,24 @@ pub(super) fn write_styles_xml(catalog: &StyleCatalog) -> Vec<u8> {
         let _ = write_end(&mut w, "w:style");
     }
 
+    // Built-in note-reference character styles. These carry the superscript for
+    // footnote/endnote markers (the body writer references them by id rather
+    // than emitting an explicit `<w:vertAlign>` on each marker run). Word always
+    // includes them; emit defaults only when the catalog did not already define
+    // them above, so an imported style with edited props still wins.
+    if !catalog
+        .character_styles
+        .contains_key(&StyleId::new("FootnoteReference"))
+    {
+        write_note_reference_style(&mut w, "FootnoteReference", "footnote reference");
+    }
+    if !catalog
+        .character_styles
+        .contains_key(&StyleId::new("EndnoteReference"))
+    {
+        write_note_reference_style(&mut w, "EndnoteReference", "endnote reference");
+    }
+
     let _ = write_end(&mut w, "w:styles");
     drop(w);
     out
@@ -204,5 +222,20 @@ fn write_default_heading<W: std::io::Write>(
     let _ = write_empty(w, "w:szCs", &wval(&sz_s));
     let _ = write_end(w, "w:rPr");
 
+    let _ = write_end(w, "w:style");
+}
+
+/// Writes a built-in `<w:style w:type="character">` for a footnote/endnote
+/// reference: only the superscript run property, matching Word's defaults.
+fn write_note_reference_style<W: std::io::Write>(w: &mut Writer<W>, style_id: &str, name: &str) {
+    let _ = write_start(
+        w,
+        "w:style",
+        &[("w:type", "character"), ("w:styleId", style_id)],
+    );
+    let _ = write_empty(w, "w:name", &wval(name));
+    let _ = write_start(w, "w:rPr", &[]);
+    let _ = write_empty(w, "w:vertAlign", &wval("superscript"));
+    let _ = write_end(w, "w:rPr");
     let _ = write_end(w, "w:style");
 }

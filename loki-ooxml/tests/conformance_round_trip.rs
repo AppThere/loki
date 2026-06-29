@@ -147,19 +147,18 @@ fn docx_round_trip_preserves_secondary_run_formatting() {
 /// The comprehensive reference fixture (headers, footnotes, hyperlinks, images,
 /// …) under the same import-export-import comparison.
 ///
-/// **Still surfaces a real export→reimport gap** — the conformance axis doing its
-/// job. The earlier content-loss gap (highlight / letter-spacing runs collapsing
-/// and dropping text at `blk0005`) is now fixed; the first remaining divergence
-/// is at `blk0026/i0001/props`: the footnote-reference export hard-codes
-/// `<w:vertAlign w:val="superscript"/>` where the style-driven fixture left it
-/// implicit, so re-import gains an explicit `valign=Superscript`. Ignored so CI
-/// stays green; run `cargo test -p loki-ooxml --test conformance_round_trip --
-/// --ignored` to see the current first divergence. Un-ignore once the remaining
-/// export gaps are closed (or an expected-divergence tolerance is added per
-/// Spec 02 §6).
+/// This started as an `#[ignore]`'d gap-finder and is now a **green guard**: the
+/// conformance harness surfaced two real export bugs which have since been fixed
+/// — the content-loss gap at `blk0005` (highlight / letter-spacing runs
+/// collapsing and dropping adjacent text; fixed by making `emit_char_props`
+/// symmetric with the reader) and the footnote-reference instability at
+/// `blk0026` (export hard-coded an explicit `<w:vertAlign>` the source model
+/// never had; the superscript now lives only in the always-emitted
+/// `FootnoteReference` character style). The full reference fixture now
+/// round-trips with **no model divergence**. Any future export regression that
+/// drops or fabricates a canonicalised property fails here with a model path.
 #[test]
-#[ignore = "surfaces real DOCX round-trip gaps in the full reference fixture — tracked, not yet fixed"]
-fn docx_reference_round_trip_surfaces_gaps() {
+fn docx_reference_round_trip_is_stable() {
     let a = import(helpers::build_reference_docx());
     let b = import(export(&a));
     if let Some(d) = first_divergence(&canonicalize_document(&a), &canonicalize_document(&b)) {

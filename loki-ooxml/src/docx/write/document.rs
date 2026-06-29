@@ -829,7 +829,7 @@ fn write_inline<W: std::io::Write>(
 
             let _ = write_start(w, "w:r", &[]);
             let _ = write_start(w, "w:rPr", &[]);
-            let _ = write_empty(w, "w:vertAlign", &wval("superscript"));
+            // Superscript comes from the note-reference char style (styles.rs).
             let style = match kind {
                 NoteKind::Footnote => "FootnoteReference",
                 NoteKind::Endnote => "EndnoteReference",
