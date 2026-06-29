@@ -49,9 +49,9 @@ LAYERS: dict[str, float] = {
     "loki-text": 6, "loki-spreadsheet": 6, "loki-presentation": 6,
 }
 
-# Dev/test members outside the layering (ADR-0009): the ACID harness depends
-# across every layer by design. Its outgoing edges are not checked.
-EXEMPT: set[str] = {"loki-acid"}
+# Dev/test members outside the layering (ADR-0009): conformance/test harnesses
+# depend across every layer by design. Their outgoing edges are not checked.
+EXEMPT: set[str] = {"loki-acid", "appthere-conformance"}
 
 
 def metadata() -> dict:

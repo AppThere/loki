@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 
 | | |
 |---|---|
-| **Status** | Draft — inventory complete; **B-1 + B-10 resolved**; **B-11 unblocked** (Spec 01 CI pipeline now built — see banner) |
+| **Status** | Draft — inventory complete; B-1 + B-10 resolved; B-11 unblocked; **build started: M1 skeleton + M2 schema axis + M3 differ core landed (B-6/B-7/B-8 in progress)** |
 | **Companion to** | [`spec-02-conformance-testing.md`](spec-02-conformance-testing.md) |
 | **Method** | Read-only audit pass (§3.1). **No code changed.** |
 | **Snapshot** | branch `claude/adr-docs-setup-ogwz5a`, 2026-06-28 |
@@ -250,9 +250,9 @@ needing no graphics adapter) is what lets the visual axis run here at all.
 | B-3 | Visual / D5 | Threshold hardcoded `0.98`, uncalibrated | **Small (now), gating (later)** | Calibration pass + committed record; replace constant | |
 | B-4 | Visual / §7.4 | SSIM-only, averaged; no ΔE/worst-region/heatmap/override | **Medium** | Extend `diff.rs`: CIEDE2000, regional worst-region, heatmap, per-test override | |
 | B-5 | Visual / D3 | No shared pinned PDF→PNG stage | **Medium** | Build rasterizer wrapper; share golden+candidate | |
-| B-6 | Schema / M2 | 0 vendored schemas | **Medium** | Vendor + pin ISO 29500 (Transitional+Strict) & ODF RNG; `SchemaValidator` libxml2 impl | |
-| B-7 | Round-trip / M3 | 25 ad-hoc tests, no normalized differ / path reporting | **Medium** | Build normalized-model differ (first-divergence path); fold existing tests; cover bookmark-id class | |
-| B-8 | Shared crate / M1 | `appthere-conformance` absent; `loki-acid` is Text-coupled | **Large** | Create crate; extract `Fixture`/`Consumer` traits; promote `loki-acid` modules | |
+| B-6 | Schema / M2 | 0 vendored schemas | **Medium** | 🔨 **Validator done** — `schema::SchemaValidator` + libxml2 `XmllintValidator` (XSD + RNG, located violations, fails-loud), tested; CI installs `libxml2-utils`. **Remaining:** vendor + pin ISO 29500 / ODF RNG and validate real exports (`schemas/README.md`). | |
+| B-7 | Round-trip / M3 | 25 ad-hoc tests, no normalized differ / path reporting | **Medium** | 🔨 **Differ core done** — `roundtrip::{NormalizedModel, first_divergence}` (sorted merge-walk, order-insensitive, first-divergence-with-path), tested incl. the bookmark-id class. **Remaining:** per-format `NormalizedModel` impls, the 3 shapes, fold the 25 tests. | |
+| B-8 | Shared crate / M1 | `appthere-conformance` absent; `loki-acid` is Text-coupled | **Large** | 🔨 **Skeleton up** — `appthere-conformance` crate created (workspace member, `forbid(unsafe_code)`, 3 axis modules), wired into the dep-direction gate (exempt). **Remaining:** promote `loki-acid`'s catalog/SSIM/golden-discovery; extract `Fixture`/`Consumer` traits. | |
 | B-9 | Corpus / §9 | 141 TC cases flat; not organised feature×format×axis; ODP/ODG/PPTX importers absent | **Medium** | Reorganise on disk; record axes+ref-app+overrides per fixture (PPTX gap = Presentation scope) | |
 | B-10 | Fonts / D4 | Gelasio (≈Georgia) not bundled; substitution suite absent | **Small** | ✅ **Resolved → bundle Gelasio**; still author the substitution suite | **Resolved** |
 | B-11 | CI / §11 M6 | ✅ **Unblocked** — Spec 01 pipeline now built (9 gates in `rust.yml`) | **Sequencing** | Land schema+round-trip as hard gates (and visual post-calibration) into the now-populated lint job, same script-gate pattern | **Unblocked** |

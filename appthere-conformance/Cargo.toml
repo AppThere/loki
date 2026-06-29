@@ -1,0 +1,17 @@
+[package]
+name = "appthere-conformance"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Shared conformance-testing harness (schema validation, round-trip stability, visual goldens) for the AppThere Loki suite — Spec 02"
+repository = "https://github.com/appthere/loki"
+keywords = ["conformance", "testing", "ooxml", "odf", "loki"]
+categories = ["development-tools::testing"]
+
+[dependencies]
+thiserror = { workspace = true }
+# Round-trip the candidate XML through a temp file for `xmllint` validation.
+tempfile = "3"
+
+[package.metadata.docs.rs]
+all-features = true

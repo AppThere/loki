@@ -58,6 +58,11 @@ jobs:
     - name: Install toolchain
       uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
+    - name: Install xmllint (libxml2)
+      # appthere-conformance's schema axis (Spec 02 M2) shells to xmllint; install
+      # it so those tests actually run instead of skipping. The harness fails
+      # loudly if it is absent, so this keeps the schema axis genuinely exercised.
+      run: sudo apt-get update && sudo apt-get install -y libxml2-utils
     # `--all-features` so the feature-gated format crates (pptx, xlsx) and their
     # integration tests actually compile and run — under the default feature set
     # `cargo test --workspace` silently skips `#![cfg(feature = ...)]` suites.
