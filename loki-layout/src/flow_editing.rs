@@ -36,6 +36,18 @@ impl NestedEditing {
             }],
         }
     }
+
+    /// Context for the `body_block`-th block of the `cell`-th cell (in the
+    /// bridge's flat head → bodies → foot order) of the table at `table`.
+    pub(super) fn cell(table: usize, cell: usize, body_block: usize) -> Self {
+        Self {
+            root_block: table,
+            path: vec![PathStep::Cell {
+                cell,
+                block: body_block,
+            }],
+        }
+    }
 }
 
 /// Records a paragraph's editing data. When `state.nested_editing` is set (a

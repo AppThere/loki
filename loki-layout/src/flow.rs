@@ -1606,7 +1606,9 @@ fn flow_table(
         }
     }
 
-    // Pass 3: Place and flow cell blocks
+    // Pass 3: Place and flow cell blocks. `cell_flat` counts cells in the bridge's
+    // flat `KEY_TABLE_CELLS` order so cell paragraphs get a matching `PathStep::Cell`.
+    let mut cell_flat = 0usize;
     for (row_idx, row) in rows.iter().enumerate() {
         let row_max_h = row_heights[row_idx];
 
@@ -1719,9 +1721,12 @@ fn flow_table(
                 let old_break = state.break_long_words;
                 state.break_long_words = true;
 
-                for block in &cell.blocks {
+                for (bi, block) in cell.blocks.iter().enumerate() {
+                    // Tag cell paragraphs so a click resolves to the live cell.
+                    state.nested_editing = Some(editing::NestedEditing::cell(idx, cell_flat, bi));
                     flow_block(state, block, idx);
                 }
+                state.nested_editing = None;
                 state.break_long_words = old_break;
 
                 // If it fits on a single page, apply vertical alignment
@@ -1742,15 +1747,9 @@ fn flow_table(
                         }
                     }
 
-                    // Clip the cell's content to its box so over-wide content
-                    // (a wide image, or an unbreakable token exceeding the
-                    // column) cannot bleed into neighbouring cells — Word clips
-                    // cell content to the cell boundary. Char-wrapping already
-                    // keeps ordinary text inside the column; this is the safety
-                    // net for the rest. Only single-page cells are clipped here;
-                    // a cell that spilled onto a later page keeps its items
-                    // unwrapped (per-page clipping would need a rect per page —
-                    // see fidelity-status Tables & Images).
+                    // Clip single-page cell content to its box so over-wide
+                    // content can't bleed into neighbours (Word behaviour). A cell
+                    // spilling to a later page stays unclipped — see fidelity-status.
                     if state.current_items.len() > cell_item_start {
                         let cell_top_y = if state.page_number == original_row_page {
                             original_row_y_start
@@ -1785,6 +1784,7 @@ fn flow_table(
 
             state.current_indent = old_indent;
             state.content_width = old_width;
+            cell_flat += 1;
         }
 
         let row_page_end = state.page_number;

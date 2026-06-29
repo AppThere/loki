@@ -321,9 +321,18 @@ the editor mutates `paragraph_index` as a flat global block index.
      bug**. Test: `footnote_editing_tests`. *(Multi-paragraph note bodies are
      addressed per body block; a note body containing a table is a known edge —
      the inner cell paragraphs inherit the note context.)*
-   - ⏳ **Table cells (next):** the substantive part — cells are measured in a
-     throwaway `temp_state`, so emitting their editing data with page-relative
-     origins and a `[Cell]` path is the core remaining work.
+   - ✅ **Table cells (shipped):** the non-rotated cell path already flows cell
+     blocks into the *main* state (only the block index/path were wrong), so a
+     per-cell `NestedEditing::cell` context (keyed by a `cell_flat` counter that
+     walks rows in the bridge's `head → bodies → foot` order) now tags each cell
+     paragraph with the table's block + a `PathStep::Cell`. Test:
+     `table_cell_editing_tests`. **Known limits:** rotated cells (laid out via
+     `flow_cell_blocks`/`temp_state`) don't yet emit editing data; a vertically
+     -aligned cell's caret-y is offset (items are translated, editing origins
+     are not); and a table nested in a cell/note doesn't yet compose paths.
+
+   Increment 3 is **complete** for the common cases — clicks into top-aligned
+   table cells and footnote bodies resolve to the correct `BlockPath`.
 4. **Routing:** the typing/formatting/insert paths build a `BlockPath` from the
    cursor and call the `*_at` primitives when nested (flat path → unchanged).
 5. **Caret rendering** for nested paragraphs, then the **Table/Footnote Insert
