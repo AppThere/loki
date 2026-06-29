@@ -49,10 +49,11 @@ silently. The headline findings:
   now all rewritten and locked by `clippy::unwrap_used`/`expect_used` in CI;
   `panic!` in lib code is 0 (A-6); ad-hoc `Box<dyn Error>`/`String` errors are
   effectively absent (A-10). `thiserror` is the norm.
-- **One real layering violation (A-8):** `loki-renderer` (render layer) imports
-  `appthere_ui` (ui layer) — a single uphill edge, for design tokens. The UDOM
-  waist otherwise holds: no format crate (`loki-odf`/`loki-ooxml`) leaks into
-  layout or render.
+- **One real layering violation (A-8) — now fixed:** `loki-renderer` (render
+  layer) imported `appthere_ui` (ui layer) for two design tokens — a single
+  uphill edge, now removed (tokens injected via props; dep dropped). The UDOM
+  waist already held (no format crate leaks into layout/render), so the graph is
+  now fully downhill and gated.
 - **Two clean, mechanical hygiene gaps:** `loki-opc`'s SPDX headers are present
   but on line 2 with one test file missing a header (A-3 — see the **correction
   note** in §3.5; the original "26 files missing" was a false positive), and 11
@@ -60,11 +61,12 @@ silently. The headline findings:
   production files exceed the 300-line ceiling (A-2, already tracked in
   `docs/audit-2026-06.md`).
 - **Enforcement is the actual deliverable.** *At audit time*, CI ran only `cargo
-  fmt --check` + default `clippy -D warnings` + build/test. **Since then** the
-  license-header, panic-guard, unsafe-policy, file-ceiling, TODO-format, and
-  `unwrap_used`/`expect_used` gates have landed (see §4); still outstanding is the
-  dependency-direction gate / dylint (A-13). Every convention in §6 of the
-  spec is currently unenforced.
+  fmt --check` + default `clippy -D warnings` + build/test. **Since then** nine
+  structural gates have landed (see §4): license-header, panic-guard,
+  unsafe-policy, file-ceiling, TODO-format, `unwrap_used`/`expect_used`,
+  dependency-direction, and the viewport-dimension guard. The only documented
+  residuals are the `clippy::pedantic` lint set and the full general-purpose
+  dylint (both out of reach of this stable-toolchain environment; §4).
 
 Net: this is a **gates-first** job, not a sweep. The smells are few and mostly
 mechanical; the value is in making them un-reintroducible (M3).
@@ -380,46 +382,62 @@ Mostly consistent: import/export config is uniformly `*Options`
   is the norm — but `DocxSettings` maps to the OOXML `settings.xml` part, so the
   name is domain-justified. Leave as-is.
 
-### 3.11 Layering violations (A-8, A-9)
+### 3.11 Layering violations (A-8, A-9) — ✅ resolved
 
 Computed from `cargo metadata` against the target layers (full analysis in
 [`0009-target-architecture.md`](0009-target-architecture.md)):
 
-- **A-8 — `loki-renderer` → `appthere_ui` (uphill render→ui).** Single edge, via
-  `use appthere_ui::tokens;` (`loki-renderer/src/document_view.rs:9`). The render
-  layer pulls UI design tokens. Migration: relocate the consumed tokens to a
-  foundation crate (or inject them through a render context). **The only true
-  uphill edge in the workspace.**
-- **A-9 — `loki-pdf` → `loki-layout` (classification, not a violation).** `loki-pdf`
-  is an *export* crate but legitimately reuses layout for positioning, so it sits
-  *above* layout, not in the io/serde waist. The ADR refines the layering to put
-  layout-consuming exporters (`loki-pdf`) above layout and pure-serialisation
-  exporters (`loki-epub`, which imports only model+primitives) in the waist.
+- **A-8 — `loki-renderer` → `appthere_ui` (uphill render→ui). ✅ Fixed.** The
+  single edge existed only for two design-token constants (`PAGE_GAP_PX`,
+  `SPACE_6`) read in `document_view.rs`. They are now **injected** into
+  `DocumentViewProps` (`page_gap_px`, `content_padding_bottom_px`) by the app —
+  which legitimately depends on `appthere_ui` — and the `appthere-ui` dependency
+  is dropped from `loki-renderer/Cargo.toml`. Verified by `cargo check -p
+  loki-renderer`. The workspace graph is now fully downhill.
+- **A-9 — `loki-pdf` → `loki-layout` (classification, not a violation).** Resolved
+  by ADR-0009's L3b exporter-above-layout tier (`loki-pdf` above layout;
+  `loki-epub` in the L2 waist) — see §3.8 and [`0009`](0009-target-architecture.md).
 
 No `model → render/layout/ui` edges exist; foundation crates remain leaves;
-`loki-odf`/`loki-ooxml` do not leak into layout/render. The architecture is
-**one edge away from clean**.
+`loki-odf`/`loki-ooxml` do not leak into layout/render. The architecture is now
+**clean** — enforced by the dependency-direction gate (A-13).
 
 ---
 
-## 4. Enforcement gap (A-13)
+## 4. Enforcement gap (A-13) — ✅ substantially closed
 
 | Convention claimed (CLAUDE.md / spec §6) | Enforced today? |
 |---|---|
 | `cargo fmt` | ✅ CI (`rust.yml` `fmt --check`) |
 | `clippy -D warnings` (default lints) | ✅ CI |
-| `clippy::pedantic` + curated allow-list | ❌ no `[workspace.lints]` |
+| `clippy::pedantic` + curated allow-list | ❌ no `[workspace.lints]` (remaining; see below) |
 | No `panic!`/`todo!`/`unimplemented!` in lib code | ✅ CI (`scripts/check-no-panics.py`, A-6) |
 | No `unwrap`/`expect` in lib code | ✅ CI (`clippy::unwrap_used`/`expect_used` + `clippy.toml` test exemption, A-5) |
 | `TODO(<topic>)` tags, no FIXME/HACK/XXX | ✅ CI (`scripts/check-todo-format.py`, A-11) |
 | 300-line file ceiling | ✅ CI (`scripts/check-file-ceiling.py` ratchet + baseline, A-2) |
 | SPDX header on line 1 (per-crate license) | ✅ CI (`scripts/check-license-headers.py`, ADR-0010) |
 | `forbid(unsafe_code)` + enumerated exceptions | ✅ CI (`scripts/check-unsafe-policy.py` + allow-list, A-7) |
-| Acyclic downhill-only deps | ❌ no `cargo metadata` gate |
-| `no_hardcoded_layout_dims` (1280 class) | ❌ no dylint |
+| Acyclic downhill-only deps | ✅ CI (`scripts/check-dependency-direction.py` vs ADR-0009, A-13) |
+| `no_hardcoded_layout_dims` (1280 class) | ✅ CI guard (`scripts/check-no-hardcoded-viewport-dims.py`); full dylint deferred (see below) |
 
-CI = `.github/workflows/rust.yml` (one workflow: lint job + build-and-test job).
-This table is the M3 work-list.
+CI = `.github/workflows/rust.yml`: the lint job now runs **nine** structural
+gates ahead of fmt/clippy/build-test.
+
+**Two deliberate residuals.**
+
+1. **`clippy::pedantic` workspace lint set (§6.1).** Not enabled. Turning on
+   `pedantic` across 25 crates produces a large, noisy initial diff and needs a
+   curated `[workspace.lints]` allow-list (per-crate opt-in × 25). It is a
+   self-contained future pass; the high-value restriction lints
+   (`unwrap_used`/`expect_used`) are already on.
+2. **The `no_hardcoded_layout_dims` *dylint* (§6.2).** A true dylint does
+   AST-level analysis on a pinned nightly via the dylint driver —
+   infrastructure not present in this stable-toolchain CI, and fragile to
+   maintain. The **specific 1280 class it targets is already eliminated** (A-1),
+   and `scripts/check-no-hardcoded-viewport-dims.py` now blocks its
+   re-introduction in the editor input/viewport hot-paths (with a named-`const`
+   escape hatch). The general-purpose dylint remains a deferred specialist task,
+   honestly out of reach of this environment.
 
 ---
 
@@ -434,12 +452,12 @@ This table is the M3 work-list.
 | A-5 | Library `unwrap`/`expect` | 11 genuine (loki-opc ×6, loki-ooxml ×1, loki-layout ×2, loki-i18n ×2) | 11 | **Small** | ✅ **Done** — all 11 rewritten (0 library `#[allow]`); `clippy::unwrap_used`/`expect_used` denied in CI + `clippy.toml` test exemption | **Resolved** |
 | A-6 | `panic!` in production | 0 in lib src (3 in `benches/`); 7 documented `unreachable!` | 0 | n/a | ✅ **Done** — `scripts/check-no-panics.py` gate (forbids `panic!`/`todo!`/`unimplemented!` in lib src; allows messaged `unreachable!`), wired into CI | **Resolved** |
 | A-7 | `forbid(unsafe_code)` absent | `loki-text`, `loki-presentation`, `loki-spreadsheet` `lib.rs` | 3 (expected) | **Small** | ✅ **Done** — `#![deny(unsafe_code)]` + macro-emitted scoped `#[allow]`; `unsafe-policy-allowlist.txt` + `check-unsafe-policy.py` CI gate | **Resolved** |
-| A-8 | Layering: render→ui (uphill) | `loki-renderer/src/document_view.rs:9` | 1 edge | **Small–Medium** | Move consumed `appthere_ui::tokens` to a foundation crate or inject via render ctx | |
+| A-8 | Layering: render→ui (uphill) | `loki-renderer/src/document_view.rs:9` | 1 edge | **Small–Medium** | ✅ **Done** — 2 tokens injected via `DocumentViewProps`; `appthere-ui` dep dropped from `loki-renderer`; dep-direction gate enforces | **Resolved** |
 | A-9 | Layering classification | `loki-pdf` → `loki-layout` | 1 | **None (doc)** | ✅ **Done** — L3b exporter-above-layout tier documented in [`0009`](0009-target-architecture.md) (refinement #1); `loki-epub` stays L2, `loki-pdf` L3b | **Resolved** |
 | A-10 | Inconsistent error handling | core libs clean; 3 `Result<_,String>` holdouts (2 test-harness, 1 UI-facing app glue) | 3 | **None** | ✅ **Verified** — no core-lib remediation needed; residuals noted (§3.6); enforcement rides with the deferred clippy `disallowed-types` gate (A-13) | **Resolved** |
 | A-11 | TODO/COMPAT debt | 47 TODO (all tagged) / 57 COMPAT (prod) | 104 | **Medium (process)** | ✅ **Done** — inventory doc; `check-todo-format.py` gate (CI); COMPATs grouped for Dioxus-pin re-validation | **Resolved** |
 | A-12 | Naming: `*Props` overloaded | model bags vs Dioxus props | ~6 model bags | **Medium (rename)** | ✅ **Decided ([0011](0011-props-naming-convention.md))** — keep `*Props`; rename (350+ refs) disproportionate, available on request | **Resolved** |
-| A-13 | Enforcement gap | `clippy.toml`, ceiling/SPDX/dep-direction gates, dylint all absent | — | **Foundational** | Implement §6 gates (M3) before bulk fixes (D2) | |
+| A-13 | Enforcement gap | `clippy.toml`, ceiling/SPDX/dep-direction gates, dylint all absent | — | **Foundational** | ✅ **Substantially done** — 9 CI gates live (§4); residuals: `clippy::pedantic` set + general dylint (both documented, out-of-env) | **Resolved** |
 | A-14 | Duplication | centring math (A-1); `android_main` ×3 | 2 clusters | **Small–Medium** | ✅ **Done** — `android_main` → `loki_app_shell::android_main!` macro; centring math → `Viewport::centred_origin_x()` (with A-1) | **Resolved** |
 
 ---

@@ -37,6 +37,12 @@ jobs:
     - name: TODO-format gate (TODO(<topic>) tags)
       # Spec 01 audit A-11. No bare TODO / FIXME / HACK / XXX in production code.
       run: python3 scripts/check-todo-format.py
+    - name: Dependency-direction gate (acyclic, downhill-only)
+      # Spec 01 audit A-13 / ADR-0009. Fails on any uphill internal edge.
+      run: python3 scripts/check-dependency-direction.py
+    - name: Viewport-dimension guard (no assumed screen sizes)
+      # Spec 01 audit A-1. No bare 1280-class literals in editor input/viewport paths.
+      run: python3 scripts/check-no-hardcoded-viewport-dims.py
     - name: Format check
       run: cargo fmt --all --check
     - name: Clippy (workspace, all features, warnings denied)

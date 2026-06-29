@@ -4078,7 +4078,6 @@ version = "0.1.0"
 dependencies = [
  "anyrender_vello",
  "appthere-canvas",
- "appthere-ui",
  "dioxus",
  "loki-doc-model",
  "loki-layout",

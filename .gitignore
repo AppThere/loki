@@ -41,3 +41,7 @@ vendor/
 /test_output*.png
 /test_output*.txt
 /test_log*.txt
+
+# Python bytecode cache (from scripts/*.py gate helpers)
+__pycache__/
+*.pyc

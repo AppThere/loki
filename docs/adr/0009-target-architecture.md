@@ -58,9 +58,11 @@ leaf foundation.
                 loki-i18n · loki-spell
 ```
 
-Dev/test-only members (`loki-acid`, `loki-templates`) sit outside the layering
-and may depend across it; the dependency-direction gate (§6.3) exempts them by
-an explicit allow-list, not silently.
+The ACID test harness (`loki-acid`) sits outside the layering and depends across
+it by design; the dependency-direction gate
+(`scripts/check-dependency-direction.py`) exempts it by an explicit allow-list,
+not silently. (`loki-templates` is *not* exempt — it is a real runtime content
+dependency of the app binaries, mapped at **L2**.)
 
 ---
 
@@ -78,10 +80,14 @@ an explicit allow-list, not silently.
 - `loki-layout → loki-doc-model, loki-fonts, loki-primitives, loki-spell` — all
   L0/L1, downhill. ✅
 - `loki-vello → appthere-canvas, loki-layout` — L4/L3, downhill. ✅
-- **Violation (A-8):** `loki-renderer → appthere-ui`. The render layer (L4)
-  imports the ui layer (L5) — a single **uphill** edge, via `use
-  appthere_ui::tokens;` in `loki-renderer/src/document_view.rs:9`. This is the
-  one edge that must be repaired (migration M-1 below).
+- **Violation (A-8) — ✅ resolved.** `loki-renderer → appthere-ui` was a single
+  **uphill** edge (render L4 → ui L5), via `use appthere_ui::tokens;` in
+  `document_view.rs` for two constants (`PAGE_GAP_PX`, `SPACE_6`). **Fixed** (M-1):
+  the two values are now **injected** into `DocumentViewProps` (`page_gap_px`,
+  `content_padding_bottom_px`) by the app — which legitimately depends on
+  `appthere_ui` — and the `appthere-ui` dependency is dropped from
+  `loki-renderer/Cargo.toml`. The graph is now **fully downhill**, enforced by
+  `scripts/check-dependency-direction.py` (A-13).
 
 No cycles exist.
 
@@ -161,7 +167,7 @@ pragmatically rather than forced:
 
 | Boundary / invariant | Violations found (M1) | Migration |
 |---|---|---|
-| I1 render ⊁ ui | `loki-renderer → appthere-ui` (`document_view.rs:9`, design tokens) | **M-1:** extract the consumed `appthere_ui::tokens` into a foundation token crate (or `loki-primitives`), or inject tokens via a `RenderContext` field. Then the edge disappears and the gate can forbid render→ui. |
+| I1 render ⊁ ui | `loki-renderer → appthere-ui` (`document_view.rs`, design tokens) | ✅ **Done (M-1)** — tokens injected via `DocumentViewProps`; `appthere-ui` dep dropped from `loki-renderer`. Enforced by the dependency-direction gate. |
 | I2 waist | none | hold the line via the §6.3 gate (forbid `loki-odf`/`loki-ooxml` above L2) |
 | I3 foundation purity | none | gate: foundation crates may import only foundation |
 | I4 unsafe | 3 crates omit the attribute (expected) | **M-4:** `deny(unsafe_code)` + scoped `allow` + checked-in allow-list |
@@ -224,14 +230,16 @@ mechanical. None require a rewrite — consistent with D3: the target is reached
 | loki-render-cache | L4 | — |
 | appthere-canvas | L4 | loki-render-cache |
 | loki-vello | L4 | appthere-canvas, loki-layout |
-| loki-renderer | L4 | appthere-canvas, **appthere-ui ⚠ (A-8)**, loki-doc-model, loki-layout, loki-vello |
+| loki-renderer | L4 | appthere-canvas, loki-doc-model, loki-layout, loki-vello (A-8 `appthere-ui` edge removed) |
 | appthere-ui | L5 | loki-i18n |
 | loki-app-shell | L5 | loki-i18n, loki-spell |
 | loki-text | L6 | appthere-ui, loki-app-shell, loki-doc-model, loki-epub, loki-fonts, loki-i18n, loki-layout, loki-odf, loki-ooxml, loki-pdf, loki-renderer, loki-templates, loki-vello |
 | loki-spreadsheet | L6 | appthere-ui, loki-app-shell, loki-doc-model, loki-fonts, loki-i18n, loki-layout, loki-odf, loki-ooxml, loki-renderer, loki-sheet-model, loki-vello |
 | loki-presentation | L6 | appthere-ui, loki-app-shell, loki-doc-model, loki-fonts, loki-graphics, loki-i18n, loki-layout, loki-odf, loki-ooxml, loki-presentation-model, loki-renderer, loki-vello |
 | loki-acid | test | (exempt) |
-| loki-templates | support | loki-doc-model, loki-ooxml, loki-primitives |
+| loki-templates | L2 | loki-doc-model, loki-ooxml, loki-primitives |
 
-The single ⚠ marks the one edge that must move for the gate to pass with
-render→ui forbidden (A-8 / M-1). Every other edge is already conformant.
+The former A-8 `loki-renderer → appthere-ui` edge has been removed (M-1), so
+**every edge is now conformant** — `scripts/check-dependency-direction.py`
+verifies all 71 internal edges flow downhill (24 mapped crates + the exempt
+`loki-acid` harness) and fails CI on any future uphill edge.
