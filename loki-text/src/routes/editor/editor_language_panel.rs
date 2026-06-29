@@ -186,10 +186,13 @@ fn muted_style() -> String {
 }
 
 fn action_style() -> String {
+    // Min interactive size: 44×44 logical px (WCAG 2.5.8) — Spec 03 M5 (R-15).
     format!(
-        "padding: {p}px {p2}px; background: {bg}; border: 1px solid {border}; \
+        "min-height: {touch}px; display: inline-flex; align-items: center; \
+         padding: {p}px {p2}px; background: {bg}; border: 1px solid {border}; \
          border-radius: 4px; color: {fg}; font-size: {size}px; cursor: pointer; \
          flex-shrink: 0;",
+        touch = tokens::TOUCH_MIN,
         p = tokens::SPACE_1,
         p2 = tokens::SPACE_3,
         bg = tokens::COLOR_SURFACE_3,

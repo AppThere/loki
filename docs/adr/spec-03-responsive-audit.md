@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 
 | | |
 |---|---|
-| **Status** | Audit complete; triaged → **M1 (Breakpoint) + M2 (page-fit) + M3 (font-warning) + M4 (non-paginated typography) implemented**. M5 (cross-UI sweep) pending. |
+| **Status** | Audit complete; triaged → **M1–M5 implemented** (Breakpoint foundation, page-fit switch, font-warning redesign, bounded reflow typography, cross-UI sweep). Spec 03 done; ribbon responsive collapse (R-13e/R-14) handed to Spec 04 as specified. |
 | **Method** | Audit-first per Spec 03 §4. Confirms the Blitz responsive surface, locates the font-warning component and the paginated↔non-paginated switch, and inventories every chrome surface that misbehaves when narrow. |
 | **Companion** | [spec-03-responsive-ui-foundation.md](spec-03-responsive-ui-foundation.md) (the design spec) |
 | **Precedent** | Same audit-then-triage flow as [spec-01-audit-report.md](spec-01-audit-report.md) and [spec-02-conformance-inventory.md](spec-02-conformance-inventory.md). |
@@ -214,7 +214,7 @@ presentation to the card's action slot.
 | **M2 — Page-fit switch** | ✅ **Implemented** | `appthere_ui::responsive::resolve_page_fit` decides paginated↔reflow from page-fit (page width × `viewport.zoom` + gutter vs measured width), hysteretic (`PAGE_FIT_HYSTERESIS_PX` dead-band). The `900` guess is gone; the editor's effect now reads the document's real `page_width_px`. 6 window-free tests incl. landscape-phone-fits, narrow-desktop-doesn't, and a no-thrash drag sweep (R-7, R-8 resolved). Zoom is fixed at 100% until zoom lands, but the rule already scales by `viewport.zoom`. |
 | **M3 — Font-warning redesign** | ✅ **Implemented** | New `editor_font_warning::FontWarning` component: compact chip by default (`N fonts substituted`), expand-on-demand into a **breakpoint-aware** view — a table on Expanded, a vertical card stack on Compact (uses M1's `use_breakpoint`). Severity model (metric-compatible vs material fallback) styles the badge; dismiss + a generic status-bar recovery chip (`AtStatusBar.notice_*`); `fl!()` strings; Blitz-clean (border/background, no fixed/shadow/custom-props). 3 unit tests for the severity/link/sort logic. Extracted from `editor_inner` (1002→878). R-9/R-10/R-11/R-12 resolved. |
 | **M4 — Non-paginated typography** | ✅ **Implemented** | The GPU reflow measure is now **bounded** at `MAX_REFLOW_TILE_PX = 820` (the HTML-fallback precedent) and **centred** (the renderer's `margin: auto` centres the capped tile). A single shared `render_layout::{reflow_tile_width_px, reflow_content_width_pt}` drives paint, hit-test, and keyboard nav so they stay aligned (Spec 01 discipline); the HTML fallback references the same constant. Narrow screens still use full width; wide windows cap & centre. 3 unit tests. R-6 resolved. **Responsive *type scale* deferred** — rescaling the document's own point sizes is a fidelity concern; the bounded+centred measure is the readability fix. |
-| **M5 — Cross-UI sweep** | Inventory done (this report) | Fix R-13* surfaces; ribbon strip touch target (R-14); verify panel touch heights (R-15). Ribbon collapse stays Spec 04. |
+| **M5 — Cross-UI sweep** | ✅ **Implemented** | `use_breakpoint` made **resilient** (defaults to Expanded when an app hasn't wired the context, so shared shells can adapt without panicking). **AtTitleBar** hides the redundant top-right app-name at Compact; **AtStatusBar** drops the secondary word-count + language labels at Compact — the two wrap-and-spill cases (R-13a/R-13b) are cleared. Panel action buttons (metadata, language) bumped to `TOUCH_MIN` (R-15). **Deferred (documented):** metadata-panel label *stacking* only matters below ~250 px (sub-phone) and the panels render conditionally (can't host a hook) — a follow-up; ribbon select width (R-13e) + tab-strip touch height (R-14) are **Spec 04** (ribbon) as the spec directs. |
 
 ---
 
@@ -234,9 +234,9 @@ presentation to the card's action slot.
 | R-10 | ~~Med~~ **Resolved (M3)** | Expanded view stacks as cards at Compact and a table at Expanded (`use_breakpoint`). | §6 |
 | R-11 | ~~Med~~ **Resolved (M3)** | Severity model: metric-compatible substitutes styled calmly, material fallbacks prominently (UI heuristic; removal condition documented for when the engine exposes severity). | §6 |
 | R-12 | ~~Med~~ **Resolved (M3)** | Dismiss is recoverable via a generic `AtStatusBar` notice chip that restores the warning. | §6 |
-| R-13 | Med | Chrome sweep: title bar + status bar SPILL/WASTE; metadata-panel fixed 140 px label; select fixed 180 px | §5 |
-| R-14 | Med | Ribbon tab strip 36 px height < 44 px touch minimum (documented TODO) | §5 |
-| R-15 | Low | Spell/metadata/language panel action-button touch heights unverified | §5 |
+| R-13 | **Resolved (M5) / partial** | Title bar + status bar SPILL/WASTE **fixed** (hide secondary chrome at Compact). Metadata-panel label *stacking* (R-13g) deferred — functional at phone widths, only clips sub-phone; ribbon select 180 px (R-13e) is Spec 04. | §5 |
+| R-14 | **Deferred → Spec 04** | Ribbon tab strip touch height is a ribbon concern (Spec 04, which consumes the M1 breakpoint). | §5 |
+| R-15 | **Resolved (M5)** | Metadata + language panel action buttons bumped to `TOUCH_MIN` (44 px). | §5 |
 
 ---
 

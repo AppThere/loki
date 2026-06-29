@@ -220,9 +220,11 @@ fn action_button_style(primary: bool) -> String {
     } else {
         (tokens::COLOR_SURFACE_3, tokens::COLOR_TEXT_ON_CHROME)
     };
+    // Min interactive size: 44×44 logical px (WCAG 2.5.8) — Spec 03 M5 (R-15).
     format!(
-        "min-height: 28px; padding: 0 {p}px; background: {bg}; border: 1px solid {border}; \
+        "min-height: {touch}px; padding: 0 {p}px; background: {bg}; border: 1px solid {border}; \
          border-radius: {r}px; font-family: {ff}; font-size: {fs}px; color: {fg}; cursor: pointer;",
+        touch = tokens::TOUCH_MIN,
         p = tokens::SPACE_3,
         bg = bg,
         border = tokens::COLOR_BORDER_CHROME,

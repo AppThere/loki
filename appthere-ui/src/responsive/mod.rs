@@ -83,7 +83,16 @@ pub fn use_viewport() -> Viewport {
 
 /// Reads the current [`Breakpoint`] from context (reactive on the class
 /// boundary only — the common case for responsive components).
+///
+/// **Resilient:** shell components are shared across the suite, but only apps
+/// that called [`use_provide_responsive`] expose the context. Without it this
+/// returns [`Breakpoint::Expanded`] (full chrome) rather than panicking, so an
+/// app that has not wired the responsive context yet keeps its existing,
+/// non-adaptive layout.
 #[must_use]
 pub fn use_breakpoint() -> Breakpoint {
-    *use_responsive().breakpoint.read()
+    match try_consume_context::<AtResponsiveContext>() {
+        Some(ctx) => *ctx.breakpoint.read(),
+        None => Breakpoint::Expanded,
+    }
 }

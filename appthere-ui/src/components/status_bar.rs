@@ -7,6 +7,7 @@
 
 use dioxus::prelude::*;
 
+use crate::responsive::use_breakpoint;
 use crate::tokens::colors::{
     COLOR_BORDER_CHROME, COLOR_CONTEXTUAL_TAB, COLOR_SURFACE_3, COLOR_SURFACE_CHROME,
     COLOR_TEXT_ACCENT, COLOR_TEXT_ON_CHROME_SECONDARY,
@@ -48,6 +49,9 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
     };
     let show_view_toggle = !props.view_mode_label.is_empty();
     let show_notice = !props.notice_label.is_empty();
+    // Compact (phone-width): drop the secondary stats (word count, language)
+    // so the essential page / notice / view-mode / zoom items don't crowd.
+    let compact = use_breakpoint().is_compact();
 
     rsx! {
         div {
@@ -82,8 +86,9 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                 }
             }
 
-            // Word count label (e.g. "1,847 words"). Hidden when empty.
-            if !props.word_count_label.is_empty() {
+            // Word count label (e.g. "1,847 words"). Hidden when empty or at
+            // Compact width (secondary stat).
+            if !props.word_count_label.is_empty() && !compact {
                 span {
                     style: format!(
                         "font-size: {size}px; color: {fg};",
@@ -124,14 +129,16 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
 
             // ── Right: language, zoom, collaborators ──────────────────────────
 
-            // Language label (e.g. "English (US)")
-            span {
-                style: format!(
-                    "font-size: {size}px; color: {fg};",
-                    size = FONT_SIZE_XS,
-                    fg   = COLOR_TEXT_ON_CHROME_SECONDARY,
-                ),
-                "{props.language_label}"
+            // Language label (e.g. "English (US)"). Hidden at Compact width.
+            if !compact {
+                span {
+                    style: format!(
+                        "font-size: {size}px; color: {fg};",
+                        size = FONT_SIZE_XS,
+                        fg   = COLOR_TEXT_ON_CHROME_SECONDARY,
+                    ),
+                    "{props.language_label}"
+                }
             }
 
             // View-mode toggle (paginated ⇆ reflowed). Hidden unless a label is
