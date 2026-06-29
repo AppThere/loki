@@ -6,6 +6,8 @@
 
 use std::io::Cursor;
 
+use appthere_conformance::model::canonicalize_document;
+use appthere_conformance::roundtrip::first_divergence;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::Inline;
 use loki_doc_model::document::Document;
@@ -23,13 +25,29 @@ fn doc_with_meta(meta: DocumentMeta) -> Document {
     doc
 }
 
-fn round_trip(doc: &Document) -> Document {
+fn export_import(doc: &Document) -> Document {
     let mut buf = Cursor::new(Vec::new());
     DocxExport::export(doc, &mut buf, ()).expect("export should succeed");
     DocxImporter::new(DocxImportOptions::default())
         .run(Cursor::new(buf.into_inner()))
         .expect("re-import should succeed")
         .document
+}
+
+/// One export→re-import cycle, **plus** a whole-model differ backstop: a second
+/// cycle must introduce no divergence (Spec 02 round-trip axis). This folds the
+/// per-field assertions below into the normalized differ, so any metadata loss
+/// the asserts do not explicitly check still fails with a model path.
+fn round_trip(doc: &Document) -> Document {
+    let a = export_import(doc);
+    let b = export_import(&a);
+    if let Some(d) = first_divergence(&canonicalize_document(&a), &canonicalize_document(&b)) {
+        panic!(
+            "metadata round-trip diverged at `{}`:\n  {:?}\n  {:?}",
+            d.path, d.left, d.right
+        );
+    }
+    a
 }
 
 #[test]
