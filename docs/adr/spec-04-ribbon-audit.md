@@ -224,9 +224,9 @@ top-level section blocks. New `loro_mutation::nested`:
 
 - ✅ **Table cell text** is now reachable and editable at the CRDT layer (cells
   were already live containers from the table native mapping).
-- ⏳ **Footnote/endnote bodies** — addressing pending, but the **representation
-  change landed** (see §5e): note bodies are now live containers, so a
-  `BlockPath` note-descent is a small follow-on.
+- ✅ **Footnote/endnote bodies** — now addressable too (see §5e + §5f): the
+  `BlockPath` `PathStep::Note` descent reaches a note body's blocks, recursively
+  (a note inside a table cell is `[Cell, Note]`).
 - This is the *mutation-layer* foundation only. Driving it from the UI still
   needs (a) layout to assign positions to cell paragraphs, (b) hit-test/cursor
   to produce a nested position, and (c) `CursorState` to carry a `BlockPath`.
@@ -256,9 +256,27 @@ kind+order, and no notes container when there are no notes — plus the existing
 note round-trip tests still green. Refactor (ceiling): the inline-object write
 helpers moved to `loro_bridge::inline_objects`, keeping `inlines.rs` ≤ 300.
 
-**Next increments:** `BlockPath` note-descent (small — note bodies are now live)
-→ cursor/hit-test nested positions (layout) → then the Table/Footnote Insert
-controls.
+### 5f. `BlockPath` note-descent — nested addressing complete
+
+`BlockPath` now addresses **both** container kinds uniformly. `CellStep` was
+generalised into a `PathStep` enum (`Cell { cell, block }` | `Note { note,
+block }`); `descend` resolves either through `KEY_TABLE_CELLS` or `KEY_NOTES`.
+New constructor `BlockPath::in_note(root, note, block)`, and arbitrary `steps`
+support recursion — a footnote nested inside a table cell is `[Cell, Note]`.
+
+Tests (`loro_mutation_nested_tests`, now 12): the table-cell cases plus
+read/edit/round-trip inside a note body, addressing the correct note among
+several, the no-notes-container error, and **editing a note nested inside a
+table cell**. The path-based text/mark/get primitives are unchanged — they
+resolve through the generalised `descend`.
+
+The **mutation-layer nested-addressing story is now complete**: table cell text
+and footnote/endnote bodies are uniformly reachable, editable, and round-tripping.
+
+**Next increments (UI wiring):** cursor/hit-test must produce a nested position
+and `CursorState` must carry a `BlockPath`, and layout must assign positions to
+cell / note paragraphs — then the Table/Footnote Insert controls (Table also
+needs a block-insert primitive) can offer in-place editing.
 
 ---
 

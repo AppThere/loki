@@ -1,46 +1,69 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! Addressing for content nested inside container blocks (currently table
-//! cells), and text mutations against it.
+//! Addressing for content nested inside container blocks (table cells and
+//! footnote/endnote bodies), and text mutations against it.
 //!
 //! The flat mutation API addresses a block by a document-global index into the
-//! section block lists. That cannot reach a paragraph *inside a table cell*,
-//! whose `LoroText` lives under the table block's [`KEY_TABLE_CELLS`] container
-//! (see `loro_bridge::table`). A [`BlockPath`] names such a target: a root
-//! block plus zero or more [`CellStep`] descents — each selecting a cell (in the
-//! bridge's flat head → bodies → foot order) and a block within it. The path is
-//! recursive, so a table nested in a cell is reachable too.
+//! section block lists. That cannot reach a paragraph *inside a table cell* or
+//! *inside a note body*, whose `LoroText` lives under the owning block's
+//! [`KEY_TABLE_CELLS`] / [`KEY_NOTES`] container (see `loro_bridge::table` and
+//! `loro_bridge::inline_objects`). A [`BlockPath`] names such a target: a root
+//! block plus zero or more [`PathStep`] descents — each selecting a cell or note
+//! (in the bridge's flat order) and a block within it. The path is recursive, so
+//! a table nested in a cell, or a note inside a cell, is reachable too.
 //!
-//! Mutating the live cell `LoroText` round-trips: `loro_bridge::table` rebuilds
-//! each cell's blocks from these same containers on read.
+//! Mutating the live nested `LoroText` round-trips: the bridge rebuilds each
+//! cell / note body from these same containers on read.
 
 use loro::{LoroDoc, LoroMap, LoroText, LoroValue};
 
 use super::{MutationError, get_block_map_and_list};
-use crate::loro_schema::{KEY_CONTENT, KEY_TABLE_CELLS};
+use crate::loro_schema::{KEY_CONTENT, KEY_NOTES, KEY_TABLE_CELLS};
 
-/// One descent into a table block: the `cell`-th cell (in the bridge's flat
-/// head → bodies → foot, row-major order) and the `block`-th block within it.
+/// One descent into a container block: select a cell (of a table) or a note body
+/// (of a paragraph), then a block within that nested block list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CellStep {
-    /// Flat cell index within the table's [`KEY_TABLE_CELLS`] list.
-    pub cell: usize,
-    /// Block index within that cell's content.
-    pub block: usize,
+pub enum PathStep {
+    /// Into a table's `cell`-th cell (bridge flat head → bodies → foot order),
+    /// then the `block`-th block of that cell.
+    Cell {
+        /// Flat cell index within the table's [`KEY_TABLE_CELLS`] list.
+        cell: usize,
+        /// Block index within that cell's content.
+        block: usize,
+    },
+    /// Into a block's `note`-th footnote/endnote body, then the `block`-th block
+    /// of that body.
+    Note {
+        /// Note index within the block's [`KEY_NOTES`] list.
+        note: usize,
+        /// Block index within that note's body.
+        block: usize,
+    },
 }
 
-/// A path to a block, either top-level or nested inside table cell(s).
+impl PathStep {
+    /// The container key, nested-list index, block index, and a label for errors.
+    fn parts(self) -> (&'static str, usize, usize, &'static str) {
+        match self {
+            PathStep::Cell { cell, block } => (KEY_TABLE_CELLS, cell, block, "cell"),
+            PathStep::Note { note, block } => (KEY_NOTES, note, block, "note"),
+        }
+    }
+}
+
+/// A path to a block, either top-level or nested inside table cell(s) / note(s).
 ///
 /// `root` is a document-global block index (the same space the flat API and the
-/// cursor use); `steps` descends through table cells. An empty `steps` resolves
+/// cursor use); `steps` descends through containers. An empty `steps` resolves
 /// exactly like the flat API.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockPath {
     /// Document-global index of the root block.
     pub root: usize,
-    /// Successive cell descents from the root.
-    pub steps: Vec<CellStep>,
+    /// Successive container descents from the root.
+    pub steps: Vec<PathStep>,
 }
 
 impl BlockPath {
@@ -58,31 +81,40 @@ impl BlockPath {
     pub fn in_cell(root: usize, cell: usize, block: usize) -> Self {
         Self {
             root,
-            steps: vec![CellStep { cell, block }],
+            steps: vec![PathStep::Cell { cell, block }],
+        }
+    }
+
+    /// A block at `block` inside the `note`-th footnote/endnote body of `root`.
+    #[must_use]
+    pub fn in_note(root: usize, note: usize, block: usize) -> Self {
+        Self {
+            root,
+            steps: vec![PathStep::Note { note, block }],
         }
     }
 }
 
-/// Descends one [`CellStep`] from a table block's map to a nested block's map.
-fn descend(table_map: &LoroMap, step: CellStep) -> Result<LoroMap, MutationError> {
-    let cells = table_map
-        .get(KEY_TABLE_CELLS)
+/// Descends one [`PathStep`] from a container block's map to a nested block's map.
+fn descend(parent_map: &LoroMap, step: PathStep) -> Result<LoroMap, MutationError> {
+    let (key, container_idx, block_idx, label) = step.parts();
+    let container = parent_map
+        .get(key)
         .and_then(|v| v.into_container().ok())
         .and_then(|c| c.into_movable_list().ok())
-        .ok_or_else(|| MutationError::InvalidBlockPath("block is not a table".to_string()))?;
-    let cell_list = cells
-        .get(step.cell)
+        .ok_or_else(|| MutationError::InvalidBlockPath(format!("block has no {label}s")))?;
+    let inner = container
+        .get(container_idx)
         .and_then(|v| v.into_container().ok())
         .and_then(|c| c.into_movable_list().ok())
-        .ok_or_else(|| MutationError::InvalidBlockPath(format!("no cell {}", step.cell)))?;
-    cell_list
-        .get(step.block)
+        .ok_or_else(|| MutationError::InvalidBlockPath(format!("no {label} {container_idx}")))?;
+    inner
+        .get(block_idx)
         .and_then(|v| v.into_container().ok())
         .and_then(|c| c.into_map().ok())
         .ok_or_else(|| {
             MutationError::InvalidBlockPath(format!(
-                "no block {} in cell {}",
-                step.block, step.cell
+                "no block {block_idx} in {label} {container_idx}"
             ))
         })
 }
