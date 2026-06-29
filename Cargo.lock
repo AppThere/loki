@@ -3967,6 +3967,7 @@ name = "loki-ooxml"
 version = "0.1.0"
 dependencies = [
  "appthere-color",
+ "appthere-conformance",
  "base64",
  "chrono",
  "indexmap",
