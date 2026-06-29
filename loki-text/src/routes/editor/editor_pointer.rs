@@ -10,7 +10,7 @@ use loki_doc_model::loro_bridge::derive_loro_cursor;
 use loki_doc_model::loro_mutation::get_block_text;
 
 use loki_renderer::ViewMode;
-use loki_renderer::render_layout::{MIN_REFLOW_CONTENT_PT, REFLOW_PADDING_PT};
+use loki_renderer::render_layout::{reflow_content_width_pt, reflow_tile_width_px};
 
 use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::hit_test::{hit_test_document, reflow_hit_test_window};
@@ -18,9 +18,6 @@ use crate::editing::state::{DocumentState, ensure_reflow_layout};
 use crate::editing::touch::{TouchInteractionState, TouchPhase, word_boundaries_at};
 use crate::editing::viewport::Viewport;
 use crate::routes::editor::editor_scrollbar::ScrollMetrics;
-
-/// CSS pixels → layout points (72 dpi / 96 dpi).
-const PX_TO_PT: f32 = 72.0 / 96.0;
 
 /// Resolves a window-relative tap to a reflow document position, using the same
 /// continuous layout width as the painted view. Returns `None` outside reflow
@@ -35,11 +32,12 @@ fn reflow_tap_position(
     if client_width_px <= 1.0 {
         return None;
     }
-    let content_w =
-        (client_width_px * PX_TO_PT - 2.0 * REFLOW_PADDING_PT).max(MIN_REFLOW_CONTENT_PT);
+    let content_w = reflow_content_width_pt(client_width_px);
     let layout = ensure_reflow_layout(doc_state, content_w)?;
-    // Reflow tiles span the canvas client width, centred in the viewport.
-    let x_off = viewport.centred_origin_x(client_width_px);
+    // Reflow tiles are capped to a reading measure and centred in the viewport
+    // (`margin: auto` on paint); the hit-test origin uses the same tile width so
+    // clicks land on the painted glyphs (Spec 03 M4).
+    let x_off = viewport.centred_origin_x(reflow_tile_width_px(client_width_px));
     let origin = (x_off, tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6);
     reflow_hit_test_window(client_pos.0, client_pos.1, origin, scroll_offset, &layout)
 }

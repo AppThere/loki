@@ -17,7 +17,7 @@ use loki_layout::PaginatedLayout;
 #[cfg(any(not(target_os = "android"), android_gpu))]
 use crate::page_tile::PageTile;
 #[cfg(any(not(target_os = "android"), android_gpu))]
-use crate::render_layout::RenderMode;
+use crate::render_layout::{PX_TO_PT, RenderMode, reflow_tile_width_px};
 use crate::renderer_state::RendererState;
 
 // The HTML-flow fallback is only used on the Android CPU path; GPU targets
@@ -193,7 +193,7 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         // formatting fidelity), presented as zero-gap virtual tiles.
         let render_mode = if props.view_mode == ViewMode::Reflow && props.reflow_width_px > 1.0 {
             RenderMode::Reflow {
-                available_width_pt: (props.reflow_width_px * 72.0 / 96.0) as f32,
+                available_width_pt: reflow_tile_width_px(props.reflow_width_px as f32) * PX_TO_PT,
             }
         } else {
             RenderMode::Paginated

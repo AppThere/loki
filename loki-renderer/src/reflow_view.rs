@@ -171,9 +171,12 @@ pub(crate) fn ReflowDocView(props: ReflowDocViewProps) -> Element {
             // does not bleed through the reflowable content area.  max-width +
             // auto margins give a web-article reading measure on wide windows;
             // width:100% lets it shrink to fit narrow screens.
-            style: "font-family: 'Carlito', 'Arimo', sans-serif; padding: 16px; \
-                    box-sizing: border-box; color: #1a1a1a; width: 100%; \
-                    max-width: 820px; margin: 0 auto; background: #FAFAFA;",
+            style: format!(
+                "font-family: 'Carlito', 'Arimo', sans-serif; padding: 16px; \
+                 box-sizing: border-box; color: #1a1a1a; width: 100%; \
+                 max-width: {max}px; margin: 0 auto; background: #FAFAFA;",
+                max = crate::render_layout::MAX_REFLOW_TILE_PX,
+            ),
             for (inner_html, div_style) in &items {
                 div {
                     style: "{div_style}",

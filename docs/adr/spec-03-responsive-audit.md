@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 
 | | |
 |---|---|
-| **Status** | Audit complete; triaged → **M1 (Breakpoint) + M2 (page-fit) + M3 (font-warning redesign) implemented**. M4–M5 pending, audit-first per finding. |
+| **Status** | Audit complete; triaged → **M1 (Breakpoint) + M2 (page-fit) + M3 (font-warning) + M4 (non-paginated typography) implemented**. M5 (cross-UI sweep) pending. |
 | **Method** | Audit-first per Spec 03 §4. Confirms the Blitz responsive surface, locates the font-warning component and the paginated↔non-paginated switch, and inventories every chrome surface that misbehaves when narrow. |
 | **Companion** | [spec-03-responsive-ui-foundation.md](spec-03-responsive-ui-foundation.md) (the design spec) |
 | **Precedent** | Same audit-then-triage flow as [spec-01-audit-report.md](spec-01-audit-report.md) and [spec-02-conformance-inventory.md](spec-02-conformance-inventory.md). |
@@ -213,7 +213,7 @@ presentation to the card's action slot.
 | **M1 — Breakpoint foundation** | ✅ **Implemented** | Triaged → built: `Breakpoint` (Compact/Medium/Expanded @ 600/1024) + the relocated, zoom/DPI-extended `Viewport` live in `appthere-ui::responsive`; `AtResponsiveContext` + `use_breakpoint`/`use_viewport` expose it; the editor funnels its one measured width into it (no second source). 11 window-free unit tests (R-2, R-3, R-4, R-5 resolved). |
 | **M2 — Page-fit switch** | ✅ **Implemented** | `appthere_ui::responsive::resolve_page_fit` decides paginated↔reflow from page-fit (page width × `viewport.zoom` + gutter vs measured width), hysteretic (`PAGE_FIT_HYSTERESIS_PX` dead-band). The `900` guess is gone; the editor's effect now reads the document's real `page_width_px`. 6 window-free tests incl. landscape-phone-fits, narrow-desktop-doesn't, and a no-thrash drag sweep (R-7, R-8 resolved). Zoom is fixed at 100% until zoom lands, but the rule already scales by `viewport.zoom`. |
 | **M3 — Font-warning redesign** | ✅ **Implemented** | New `editor_font_warning::FontWarning` component: compact chip by default (`N fonts substituted`), expand-on-demand into a **breakpoint-aware** view — a table on Expanded, a vertical card stack on Compact (uses M1's `use_breakpoint`). Severity model (metric-compatible vs material fallback) styles the badge; dismiss + a generic status-bar recovery chip (`AtStatusBar.notice_*`); `fl!()` strings; Blitz-clean (border/background, no fixed/shadow/custom-props). 3 unit tests for the severity/link/sort logic. Extracted from `editor_inner` (1002→878). R-9/R-10/R-11/R-12 resolved. |
-| **M4 — Non-paginated typography** | Reflow path exists (✅) | Bound the GPU measure + responsive scale (R-6); reuse the 820 px precedent from the HTML path. |
+| **M4 — Non-paginated typography** | ✅ **Implemented** | The GPU reflow measure is now **bounded** at `MAX_REFLOW_TILE_PX = 820` (the HTML-fallback precedent) and **centred** (the renderer's `margin: auto` centres the capped tile). A single shared `render_layout::{reflow_tile_width_px, reflow_content_width_pt}` drives paint, hit-test, and keyboard nav so they stay aligned (Spec 01 discipline); the HTML fallback references the same constant. Narrow screens still use full width; wide windows cap & centre. 3 unit tests. R-6 resolved. **Responsive *type scale* deferred** — rescaling the document's own point sizes is a fidelity concern; the bounded+centred measure is the readability fix. |
 | **M5 — Cross-UI sweep** | Inventory done (this report) | Fix R-13* surfaces; ribbon strip touch target (R-14); verify panel touch heights (R-15). Ribbon collapse stays Spec 04. |
 
 ---
@@ -227,7 +227,7 @@ presentation to the card's action slot.
 | R-3 | ~~High~~ **Resolved (M1)** | `Viewport` + `Breakpoint` relocated to `appthere-ui::responsive` (shared infra); `loki-text` re-exports `Viewport` for path stability. | §3, §9 |
 | R-4 | ~~High~~ **Resolved (M1)** | One `Breakpoint` (600/1024). `BREAKPOINT_DESKTOP_PX = 768` deprecated to `AtHomeTab` only (M5 reconciles); `900` stays the renderer threshold until M2's page-fit replaces it. | §4 |
 | R-5 | Info | Spec 01 M4 *width* unification landed; `LayoutContext` never created (not a blocker) | §3 |
-| R-6 | High | GPU reflow measure is unbounded → "cramped" readability bug; HTML path already caps at 820 px | §8 |
+| R-6 | ~~High~~ **Resolved (M4)** | GPU reflow measure bounded + centred at `MAX_REFLOW_TILE_PX` (820) via shared `render_layout` functions used by paint/hit-test/keyboard nav; HTML fallback references the same constant. | §8 |
 | R-7 | ~~High~~ **Resolved (M2)** | Renderer switch now follows page-fit (page width × zoom + gutter vs measured width), reading the document's real `page_width_px`; the `900` guess is deleted. | §7 |
 | R-8 | ~~Med~~ **Resolved (M2)** | `resolve_page_fit` is hysteretic on the current mode (`PAGE_FIT_HYSTERESIS_PX` dead-band); a no-thrash drag sweep test guards it. | §7 |
 | R-9 | ~~High~~ **Resolved (M3)** | Warning is now compact-by-default (a chip) and never a full-width band; expands on demand. | §6 |
