@@ -46,8 +46,8 @@ pub use components::{
     Platform, RecentDocument,
 };
 pub use responsive::{
-    use_breakpoint, use_provide_responsive, use_responsive, use_viewport, AtResponsiveContext,
-    Breakpoint, Viewport, DEFAULT_DPI,
+    page_fits, required_page_width, resolve_page_fit, use_breakpoint, use_provide_responsive,
+    use_responsive, use_viewport, AtResponsiveContext, Breakpoint, PageFit, Viewport, DEFAULT_DPI,
 };
 pub use safe_area::{set_safe_area_insets, update_safe_area_insets, use_safe_area, SafeAreaInsets};
 pub use theme::{use_theme, AtThemeContext, ThemeVariant};

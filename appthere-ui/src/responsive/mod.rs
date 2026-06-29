@@ -28,9 +28,11 @@
 //! ```
 
 mod breakpoint;
+mod page_fit;
 mod viewport;
 
 pub use breakpoint::Breakpoint;
+pub use page_fit::{page_fits, required_page_width, resolve_page_fit, PageFit};
 pub use viewport::{Viewport, DEFAULT_DPI};
 
 use dioxus::prelude::*;

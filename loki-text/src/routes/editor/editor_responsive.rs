@@ -10,32 +10,28 @@
 //!
 //! 1. seed `scroll_metrics` from `get_client_rect` at mount (so the width is
 //!    known before the first scroll),
-//! 2. default the view mode by width until the user freezes it,
+//! 2. choose the renderer by **page-fit** (Spec 03 M2) — paginated when a page
+//!    column fits, reflowed otherwise, hysteretic to avoid thrash — until the
+//!    user freezes the mode,
 //! 3. publish the measured width into the shared `appthere_ui` responsive
 //!    context so any component can read the derived [`Breakpoint`].
 //!
 //! [`Breakpoint`]: appthere_ui::Breakpoint
 
-use appthere_ui::{AtResponsiveContext, Viewport};
+use std::sync::{Arc, Mutex};
+
+use appthere_ui::{AtResponsiveContext, PageFit, Viewport, resolve_page_fit};
 use dioxus::prelude::*;
 use loki_renderer::ViewMode;
 
 use super::editor_scrollbar::{CanvasMounted, ScrollMetrics};
-
-/// Viewport width (logical px) below which the editor defaults to the
-/// reflowable view: a US-Letter page (~816px) plus margins no longer fits, so
-/// paginated view would otherwise force horizontal scrolling. The user can
-/// still toggle back to paginated.
-///
-/// Spec 03 M2 replaces this width guess with a real page-fit computation
-/// (page geometry + zoom from the shared `Viewport`); until then it remains the
-/// renderer-switch threshold.
-const REFLOW_BREAKPOINT_PX: f32 = 900.0;
+use crate::editing::state::DocumentState;
 
 /// Wires the three viewport-driven effects (see the module docs).
 pub(super) fn use_viewport_effects(
     canvas_mounted: CanvasMounted,
     scroll_metrics: Signal<ScrollMetrics>,
+    doc_state: Arc<Mutex<DocumentState>>,
     mut view_mode: Signal<ViewMode>,
     view_mode_user_set: Signal<bool>,
 ) {
@@ -58,25 +54,39 @@ pub(super) fn use_viewport_effects(
         });
     });
 
-    // 2. Default the view mode by width — paginated when a page fits, reflowed
-    //    when narrow — until the user picks a mode (which freezes this default).
-    use_effect(move || {
-        if *view_mode_user_set.read() {
-            return;
-        }
-        let width = scroll_metrics.read().client_width;
-        if width <= 0.0 {
-            return;
-        }
-        let desired = if width < REFLOW_BREAKPOINT_PX {
-            ViewMode::Reflow
-        } else {
-            ViewMode::Paginated
-        };
-        if *view_mode.peek() != desired {
-            view_mode.set(desired);
-        }
-    });
+    // 2. Default the view mode by **page fit** (Spec 03 M2 / D2) — paginated when
+    //    a full page column fits the measured viewport at the current zoom,
+    //    reflowed when it would force horizontal scrolling — until the user picks
+    //    a mode (which freezes this default). The decision is hysteretic on the
+    //    *current* mode, so dragging across the boundary doesn't thrash.
+    {
+        let doc_state = Arc::clone(&doc_state);
+        use_effect(move || {
+            if *view_mode_user_set.read() {
+                return;
+            }
+            let width = scroll_metrics.read().client_width;
+            if width <= 0.0 {
+                return;
+            }
+            // Page geometry is per-document (CSS px); falls back to the A4 token
+            // default if the state lock is unavailable. Zoom is fixed at 100%
+            // until zoom is implemented — `resolve_page_fit` already scales by
+            // `Viewport::zoom`, so this becomes live for free when it lands.
+            let page_width_px = doc_state
+                .lock()
+                .map_or(appthere_ui::tokens::PAGE_WIDTH_PX, |s| s.page_width_px);
+            let currently_paginated = *view_mode.peek() == ViewMode::Paginated;
+            let desired =
+                match resolve_page_fit(Viewport::new(width), page_width_px, currently_paginated) {
+                    PageFit::Paginated => ViewMode::Paginated,
+                    PageFit::Reflow => ViewMode::Reflow,
+                };
+            if *view_mode.peek() != desired {
+                view_mode.set(desired);
+            }
+        });
+    }
 
     // 3. Publish the measured width into the shared responsive context so the
     //    breakpoint derives from the same value the renderer/hit-test use. Zoom

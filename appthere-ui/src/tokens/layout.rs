@@ -40,6 +40,17 @@ pub const PAGE_HEIGHT_PX: f32 = 1123.0;
 /// Vertical gap between stacked pages in the editor scroll canvas (px).
 pub const PAGE_GAP_PX: f32 = 24.0;
 
+/// Horizontal breathing room (CSS px) required on **each** side of the page for
+/// it to count as fitting the viewport — so paginated view is kept only when the
+/// page isn't edge-to-edge. Spec 03 M2 page-fit switch
+/// ([`crate::responsive::resolve_page_fit`]).
+pub const PAGE_FIT_GUTTER_PX: f32 = 24.0;
+
+/// Hysteresis dead-band half-width (CSS px) around the page-fit threshold. A
+/// window dragged to exactly the boundary must cross `threshold ± this` to flip
+/// renderers, so it cannot thrash. Spec 03 M2.
+pub const PAGE_FIT_HYSTERESIS_PX: f32 = 48.0;
+
 /// Standard document page margin in CSS pixels (≈ 1 inch at 96 dpi).
 ///
 /// Used to derive text content width: `PAGE_WIDTH_PX - 2 × PAGE_MARGIN_PX = 650 px`.

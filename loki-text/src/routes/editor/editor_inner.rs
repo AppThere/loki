@@ -588,14 +588,14 @@ pub(super) fn EditorInner(path: String) -> Element {
         save_message.set(Some(msg));
     });
 
-    // ── Viewport-driven effects (Spec 03 M1) ─────────────────────────────────
+    // ── Viewport-driven effects (Spec 03 M1/M2) ──────────────────────────────
     //
-    // Seed the metrics at mount, default the view mode by width, and publish the
-    // one measured width into the shared responsive context. See
-    // `editor_responsive`.
+    // Seed metrics at mount, choose the renderer by page-fit, and publish the
+    // measured width into the shared responsive context. See `editor_responsive`.
     super::editor_responsive::use_viewport_effects(
         canvas_mounted,
         scroll_metrics,
+        std::sync::Arc::clone(&doc_state),
         view_mode,
         view_mode_user_set,
     );
