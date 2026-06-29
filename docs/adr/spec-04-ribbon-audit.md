@@ -148,6 +148,33 @@ only top-level section blocks — creating/typing inside table cells and note
 bodies needs a nested-addressing extension to that layer; tracked separately
 from this bridge-representation work.)*
 
+### 5b. M4 Insert tab — increment 1 (Hyperlink) shipped
+
+The **Insert** ribbon tab now exists (Write · Insert · Publish), with its first
+control: **Link**. Dependency analysis reorders the Insert set by *what is
+useful today* without the deferred cell/note interior-editing work:
+
+- **Hyperlink & Image** are fully useful now — they need no interior editing
+  (the linked text already exists; an image displays on its own).
+- **Table & Footnote** insert objects whose cells / bodies cannot yet be typed
+  into (they await the `loro_mutation` nested-addressing extension), so adding
+  their Insert controls now would create can't-fill objects — deferred.
+
+Increment 1 ships **Hyperlink** end-to-end: `editor_insert::set_hyperlink`
+(reuses `editor_formatting::resolve_format_range` + `mark_text`/`MARK_LINK_URL`)
+applies/clears a link over the selection or word at the cursor; a small URL
+panel (`editor_insert_panel`, docked above the ribbon like the metadata panel)
+drives it. No dead buttons: the tab shows only the Link control. Tests:
+`editor_insert` unit tests (selection, word-at-cursor, clear, trim). The Link
+icon (`LUCIDE_LINK`) was added to `appthere_ui`.
+
+Refactor folded in: the spelling, language, and link panels were bundled into
+`editor_docked_panels::docked_panels` to keep `editor_inner` within its
+baselined 878-line ceiling rather than growing it.
+
+**Next increments:** Image (file picker + media embedding) → then Table /
+Footnote once the mutation layer can address nested cell/note content.
+
 ---
 
 ## 6. Blitz layout surface for the collapse engine (Spec 04 §4.3)

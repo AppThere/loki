@@ -46,6 +46,17 @@ ribbon-style-editor-heading = Edit Style
 ribbon-style-new-aria = New custom style
 ribbon-style-apply-changes = Apply Changes
 
+# Insert tab (Spec 04 M4)
+ribbon-tab-insert = Insert
+ribbon-group-insert = Links
+ribbon-insert-link-aria = Insert link
+ribbon-insert-link-title = Insert Link
+ribbon-insert-link-placeholder = https://example.com
+ribbon-insert-link-url-aria = Link URL
+ribbon-insert-link-apply = Apply
+ribbon-insert-link-cancel = Cancel
+ribbon-insert-link-remove = Remove
+
 # Ribbon collapse toggle
 ribbon-collapse-aria = Collapse ribbon
 ribbon-expand-aria = Expand ribbon

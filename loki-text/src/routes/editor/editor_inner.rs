@@ -36,7 +36,7 @@ use loki_renderer::ViewMode;
 use loro::LoroValue;
 
 use super::editor_canvas::render_canvas_area;
-use super::editor_language_panel::language_panel;
+use super::editor_docked_panels::{DockedSync, docked_panels};
 use super::editor_load::load_document;
 use super::editor_metadata_panel::metadata_panel;
 use super::editor_path_sync::{
@@ -44,12 +44,12 @@ use super::editor_path_sync::{
 };
 use super::editor_publish::{publish_panel, publish_tab_content};
 use super::editor_ribbon::write_tab_content;
+use super::editor_ribbon_insert::insert_tab_content;
 use super::editor_save::{
     export_document_to_token, export_template_to_token, save_document_to_path,
 };
 use super::editor_save_banner::save_banner;
-use super::editor_spell::{SpellMenu, SpellSync};
-use super::editor_spell_panel::spelling_panel;
+use super::editor_spell::SpellMenu;
 use super::editor_state::{EditorState, use_editor_state};
 use super::editor_style::style_picker_panel;
 use super::editor_style_catalog::available_font_families;
@@ -138,6 +138,8 @@ pub(super) fn EditorInner(path: String) -> Element {
     let language_status = use_signal(|| Option::<String>::None);
     // Key of the spelling-menu row currently hovered (Blitz has no CSS :hover).
     let spell_hover = use_signal(|| Option::<String>::None);
+    // Insert-tab hyperlink panel: `Some(url)` while open (Spec 04 M4).
+    let link_draft = use_signal(|| Option::<String>::None);
     // Stashed sessions for inactive tabs — unsaved edits survive tab switches.
     let doc_sessions = use_context::<Signal<DocSessions>>();
     // Document generation considered "clean" (matches the on-disk file).
@@ -258,11 +260,10 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_publish = Arc::clone(&doc_state);
     let doc_state_publish_panel = Arc::clone(&doc_state);
     let doc_state_meta = Arc::clone(&doc_state);
+    let doc_state_docked = Arc::clone(&doc_state);
     let doc_state_style_picker = Arc::clone(&doc_state);
     let doc_state_style_editor = Arc::clone(&doc_state);
     let doc_state_spell_ctx = Arc::clone(&doc_state);
-    let doc_state_spell_panel = Arc::clone(&doc_state);
-    let doc_state_lang_panel = Arc::clone(&doc_state);
     let doc_state_seed = Arc::clone(&doc_state);
     let doc_state_render = Arc::clone(&doc_state);
     let doc_state_scroll = Arc::clone(&doc_state);
@@ -722,36 +723,26 @@ pub(super) fn EditorInner(path: String) -> Element {
                 )}
             }
 
-            // ── Spelling suggestions panel (right-click) ──────────────────────
-            // Docked above the ribbon (no position: absolute in Blitz).
-            if spell_menu.read().is_some() {
-                {spelling_panel(
-                    doc_state_spell_panel,
-                    SpellSync {
-                        loro_doc,
-                        cursor_state,
-                        undo_manager,
-                        can_undo,
-                        can_redo,
-                    },
-                    spell_service.clone(),
-                    spell_menu,
-                    is_language_panel_open,
-                    scroll_metrics().client_width,
-                    spell_hover,
-                )}
-            }
-
-            // ── Spelling language picker ──────────────────────────────────────
-            if is_language_panel_open() {
-                {language_panel(
-                    doc_state_lang_panel,
+            // ── Docked panels: spelling menu, language picker, Insert link ────
+            // Each self-gates on its trigger signal. Docked above the ribbon
+            // (no position: absolute in Blitz, except the spelling menu).
+            {docked_panels(
+                doc_state_docked,
+                DockedSync {
+                    loro_doc,
                     cursor_state,
-                    spell_service.clone(),
-                    is_language_panel_open,
-                    language_status,
-                )}
-            }
+                    undo_manager,
+                    can_undo,
+                    can_redo,
+                },
+                spell_service.clone(),
+                spell_menu,
+                is_language_panel_open,
+                language_status,
+                spell_hover,
+                scroll_metrics().client_width,
+                link_draft,
+            )}
 
             // ── Metadata editor panel (Dublin Core) ───────────────────────────
             if editing_metadata.read().is_some() {
@@ -785,11 +776,12 @@ pub(super) fn EditorInner(path: String) -> Element {
 
             // ── Ribbon (formatting controls) ──────────────────────────────────
             AtRibbon {
-                // Only Home and Publish have controls today; the former Insert/
+                // Write, Insert, and Publish have controls today; the former
                 // Format/Review/View tabs had no content of their own (they fell
                 // through to Write's controls) and are omitted until they do.
                 tabs: vec![
                     RibbonTabDesc { label: fl!("ribbon-tab-write"),   is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-insert"),  is_contextual: false, aria_label: None },
                     RibbonTabDesc { label: fl!("ribbon-tab-publish"), is_contextual: false, aria_label: None },
                 ],
                 active_tab: active_ribbon_tab(),
@@ -806,7 +798,8 @@ pub(super) fn EditorInner(path: String) -> Element {
                     fl!("ribbon-collapse-aria")
                 },
                 tab_content: match active_ribbon_tab() {
-                    1 => publish_tab_content(
+                    1 => insert_tab_content(link_draft),
+                    2 => publish_tab_content(
                         &doc_state_publish,
                         path_signal,
                         save_message,

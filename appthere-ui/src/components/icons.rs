@@ -67,6 +67,10 @@ pub const LUCIDE_ALIGN_JUSTIFY: &str = "M3 6h18M3 12h18M3 18h18";
 /// Lucide `pilcrow` — paragraph mark (¶).
 pub const LUCIDE_PILCROW: &str = "M13 4v16M17 4v16M8 4h4a4 4 0 0 1 0 8H8";
 
+/// Lucide `link` — two interlocking chain links (two subpaths in one `d`).
+pub const LUCIDE_LINK: &str =
+    "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71";
+
 // ── AtIcon component ──────────────────────────────────────────────────────────
 
 /// Renders a single Lucide SVG icon.
