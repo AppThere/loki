@@ -14,7 +14,7 @@ use loro::{LoroMap, LoroMovableList, LoroText};
 
 // ── Block serialization ───────────────────────────────────────────────────────
 
-pub(super) fn map_block(block: &Block, map: &LoroMap) -> Result<(), BridgeError> {
+pub(crate) fn map_block(block: &Block, map: &LoroMap) -> Result<(), BridgeError> {
     // Tables have a native mapping: a structural skeleton plus live per-cell
     // block lists (see `table.rs`). Without `serde` there is no skeleton
     // format, so the table takes the opaque path below instead.

@@ -129,3 +129,9 @@ editor-insert-image-success = Image inserted
 editor-insert-image-unsupported = Unsupported image format
 editor-insert-image-no-cursor = Place the cursor in the text, then insert the image
 editor-insert-image-error = Could not insert image: { $reason }
+
+# Insert → Table / Footnote (Spec 04 M4) — status banner messages
+editor-insert-table-success = Table inserted
+editor-insert-footnote-success = Footnote inserted
+editor-insert-no-cursor = Place the cursor in the document first
+editor-insert-failed = Could not insert here

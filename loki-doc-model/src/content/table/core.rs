@@ -155,6 +155,37 @@ impl Table {
     pub fn col_count(&self) -> usize {
         self.col_specs.len()
     }
+
+    /// Builds a `rows` × `cols` table of empty paragraph cells with evenly
+    /// proportioned columns — the shape the editor's Insert → Table control
+    /// creates. Each cell holds one empty `Block::Para` so it is immediately
+    /// editable via a `BlockPath`. `rows` and `cols` are clamped to at least 1.
+    #[must_use]
+    pub fn grid(rows: usize, cols: usize) -> Self {
+        use crate::content::block::Block;
+        use crate::content::table::row::{Cell, Row};
+        let rows = rows.max(1);
+        let cols = cols.max(1);
+        let col_specs = (0..cols).map(|_| ColSpec::proportional(1.0)).collect();
+        let body_rows = (0..rows)
+            .map(|_| {
+                Row::new(
+                    (0..cols)
+                        .map(|_| Cell::simple(vec![Block::Para(Vec::new())]))
+                        .collect(),
+                )
+            })
+            .collect();
+        Self {
+            attr: NodeAttr::default(),
+            caption: TableCaption::default(),
+            width: None,
+            col_specs,
+            head: TableHead::empty(),
+            bodies: vec![TableBody::from_rows(body_rows)],
+            foot: TableFoot::empty(),
+        }
+    }
 }
 
 #[cfg(test)]

@@ -59,6 +59,10 @@ ribbon-insert-link-cancel = Cancel
 ribbon-insert-link-remove = Remove
 ribbon-insert-image-aria = Insert image
 ribbon-insert-image-filter = Images
+ribbon-group-tables = Tables
+ribbon-group-references = References
+ribbon-insert-table-aria = Insert table
+ribbon-insert-footnote-aria = Insert footnote
 
 # Ribbon collapse toggle
 ribbon-collapse-aria = Collapse ribbon

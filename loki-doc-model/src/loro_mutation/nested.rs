@@ -19,11 +19,7 @@
 use loro::{LoroDoc, LoroMap, LoroMovableList, LoroText, LoroValue};
 
 use super::{MutationError, get_block_map_and_list, resolve_section_blocks};
-#[cfg(feature = "serde")]
-use crate::content::inline::Inline;
 use crate::loro_schema::{KEY_CONTENT, KEY_NOTES, KEY_TABLE_CELLS};
-#[cfg(feature = "serde")]
-use crate::loro_schema::{MARK_IMAGE, OBJECT_REPLACEMENT_STR};
 
 /// One descent into a container block: select a cell (of a table) or a note body
 /// (of a paragraph), then a block within that nested block list.
@@ -161,7 +157,10 @@ pub(super) fn resolve_block_list(
 }
 
 /// Resolves `path` to the block's `LoroMap`.
-fn resolve_block_map(loro: &LoroDoc, path: &BlockPath) -> Result<LoroMap, MutationError> {
+pub(super) fn resolve_block_map(
+    loro: &LoroDoc,
+    path: &BlockPath,
+) -> Result<LoroMap, MutationError> {
     let (_, mut block_map, _) = get_block_map_and_list(loro, path.root)?;
     for step in &path.steps {
         block_map = descend(&block_map, *step)?;
@@ -170,7 +169,7 @@ fn resolve_block_map(loro: &LoroDoc, path: &BlockPath) -> Result<LoroMap, Mutati
 }
 
 /// Resolves `path` to the `LoroText` content container of the addressed block.
-fn text_for_path(loro: &LoroDoc, path: &BlockPath) -> Result<LoroText, MutationError> {
+pub(super) fn text_for_path(loro: &LoroDoc, path: &BlockPath) -> Result<LoroText, MutationError> {
     resolve_block_map(loro, path)?
         .get(KEY_CONTENT)
         .and_then(|v| v.into_container().ok())
@@ -235,35 +234,6 @@ pub fn get_block_text_at(loro: &LoroDoc, path: &BlockPath) -> String {
     text_for_path(loro, path)
         .map(|t| t.to_string())
         .unwrap_or_default()
-}
-
-/// Inserts an inline image at `byte_offset` in the block addressed by `path`.
-///
-/// The image becomes an `OBJECT_REPLACEMENT_CHAR` anchor + `MARK_IMAGE`
-/// snapshot (the bridge's native encoding) inside the addressed paragraph —
-/// which may be a table cell or note body. `image` must be an `Inline::Image`.
-#[cfg(feature = "serde")]
-pub fn insert_inline_image_at(
-    loro: &LoroDoc,
-    path: &BlockPath,
-    byte_offset: usize,
-    image: &Inline,
-) -> Result<(), MutationError> {
-    if !matches!(image, Inline::Image(..)) {
-        return Err(MutationError::Encode("not an Inline::Image".to_string()));
-    }
-    let json = serde_json::to_string(image).map_err(|e| MutationError::Encode(e.to_string()))?;
-    insert_text_at(loro, path, byte_offset, OBJECT_REPLACEMENT_STR)?;
-    let end = byte_offset + OBJECT_REPLACEMENT_STR.len();
-    mark_text_at(
-        loro,
-        path,
-        byte_offset,
-        end,
-        MARK_IMAGE,
-        LoroValue::from(json),
-    )?;
-    Ok(())
 }
 
 /// Returns the value of `mark_key` at UTF-8 `byte_offset` in the block

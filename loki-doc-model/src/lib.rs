@@ -159,7 +159,9 @@ pub use loro_mutation::{
     split_block_at,
 };
 #[cfg(feature = "serde")]
-pub use loro_mutation::{insert_inline_image, insert_inline_image_at};
+pub use loro_mutation::{
+    insert_block_after, insert_inline_image, insert_inline_image_at, insert_inline_note_at,
+};
 pub mod error;
 pub mod io;
 pub mod layout;

@@ -28,16 +28,20 @@
 
 mod block;
 mod nested;
+#[cfg(feature = "serde")]
+mod objects;
 mod style;
 mod text;
 
-pub use self::block::{merge_block, merge_block_at, split_block, split_block_at};
 #[cfg(feature = "serde")]
-pub use self::nested::insert_inline_image_at;
+pub use self::block::insert_block_after;
+pub use self::block::{merge_block, merge_block_at, split_block, split_block_at};
 pub use self::nested::{
     BlockPath, PathStep, delete_text_at, get_block_text_at, get_mark_at_path, insert_text_at,
     mark_text_at,
 };
+#[cfg(feature = "serde")]
+pub use self::objects::{insert_inline_image_at, insert_inline_note_at};
 pub use self::style::{
     get_block_alignment, get_block_style_name, set_block_alignment, set_block_style,
     set_block_type_heading, set_block_type_para,

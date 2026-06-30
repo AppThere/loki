@@ -370,8 +370,31 @@ the editor mutates `paragraph_index` as a flat global block index.
      (`TODO(rotated-cell-editing)` in `flow.rs`). Rotated cells stay read-only
      for now (graceful: no caret rather than a wrong one).
 
-   Then the **Table/Footnote Insert controls** (Table also needs a block-insert
-   primitive).
+   - ✅ **Table / Footnote Insert controls (shipped):** the Insert tab now has
+     **Table** and **Footnote** buttons.
+     - *Primitives (`loki-doc-model`):* `insert_block_after(loro, block_index,
+       &Block)` writes a new block after the cursor's root block using the
+       bridge's own schema (exposed as `pub(crate) loro_bridge::map_block`), so a
+       `Block::Table` round-trips and its cells are live editable containers.
+       `insert_inline_note_at(loro, path, byte_offset, kind, &body)` anchors a
+       footnote at the cursor with a live body container (delegating the
+       `KEY_NOTES`/`MARK_NOTE` schema to the bridge's new
+       `inline_objects::insert_note_at`). `Table::grid(rows, cols)` builds a
+       grid of empty-paragraph cells. Inline-object inserts moved to a new
+       `loro_mutation::objects` module (image + note) to keep `nested.rs` under
+       the ceiling. Tests: `loro_mutation_insert_tests` (table/footnote
+       round-trip, cells/body editable, footnote inside a cell).
+     - *UI (`loki-text`):* `insert_table_after_cursor` / `insert_footnote_at_cursor`
+       in `editor_insert`; ribbon buttons (`LUCIDE_TABLE` / `LUCIDE_FOOTNOTE`,
+       new in `appthere-ui`) routed through a shared `run_insert` helper that
+       relays out, syncs undo/redo, and reports via the status banner. A default
+       2×2 table is inserted after the cursor; a footnote with an empty body at
+       the cursor. *(Cursor stays put after insert — repositioning into the new
+       cell/note needs a relayout-then-locate step with a fresh `page_index`,
+       deferred; the user clicks in to edit, which hit-tests correctly.)*
+
+   **Item 5 is complete.** Spec 04 M4 (the Insert tab) ships Image, Table,
+   Footnote, and Link controls over live, editable nested containers.
 
 Increment 1 shipped: `PageParagraphData.path` + the `push_editing_para` helper
 (which also DRY-collapsed the six placement sites, keeping `flow_para.rs` under

@@ -10,20 +10,25 @@
 //!
 //! **Image** insertion picks a file, embeds it as a `data:` URI (the form the
 //! renderer decodes), and inserts an `Inline::Image` anchor at the cursor via
-//! the native [`insert_inline_image`] mapping — no interior editing required.
+//! the native [`insert_inline_image_at`] mapping — no interior editing required.
 //!
-//! Table and footnote creation follow once the mutation layer can address
-//! content nested inside cells and note bodies (tracked separately from the
-//! bridge-representation work).
+//! **Table** ([`insert_table_after_cursor`]) inserts an empty grid as a new
+//! block after the cursor, and **Footnote** ([`insert_footnote_at_cursor`])
+//! anchors a note at the cursor with an empty body — both built as live CRDT
+//! containers, so their cells / body are editable via a `BlockPath`.
 
 use std::io::Cursor;
 
 use base64::Engine as _;
 use image::ImageFormat;
 use loki_doc_model::content::attr::NodeAttr;
-use loki_doc_model::content::inline::{Inline, LinkTarget};
+use loki_doc_model::content::block::Block;
+use loki_doc_model::content::inline::{Inline, LinkTarget, NoteKind};
+use loki_doc_model::content::table::core::Table;
 use loki_doc_model::loro_schema::MARK_LINK_URL;
-use loki_doc_model::{MutationError, insert_inline_image_at, mark_text_at};
+use loki_doc_model::{
+    MutationError, insert_block_after, insert_inline_image_at, insert_inline_note_at, mark_text_at,
+};
 use loro::{LoroDoc, LoroValue};
 
 use super::editor_formatting::resolve_format_range;
@@ -105,6 +110,51 @@ pub fn insert_image_at_cursor(
     };
     insert_inline_image_at(loro, &focus.block_path(), focus.byte_offset, image)?;
     Ok(true)
+}
+
+/// Default dimensions for the Insert → Table control.
+const DEFAULT_TABLE_ROWS: usize = 2;
+const DEFAULT_TABLE_COLS: usize = 2;
+
+/// Inserts an empty footnote at the cursor's focus position.
+///
+/// The note anchors at the cursor and its body is a single empty paragraph the
+/// user can then edit (its body is a live container reachable via a
+/// `BlockPath`). Returns `true` when inserted, `false` when there is no cursor.
+pub fn insert_footnote_at_cursor(
+    loro: &LoroDoc,
+    cursor: &CursorState,
+) -> Result<bool, MutationError> {
+    let Some(focus) = cursor.focus.as_ref() else {
+        return Ok(false);
+    };
+    insert_inline_note_at(
+        loro,
+        &focus.block_path(),
+        focus.byte_offset,
+        &NoteKind::Footnote,
+        &[Block::Para(Vec::new())],
+    )?;
+    Ok(true)
+}
+
+/// Inserts a default empty table immediately after the cursor's (root) block.
+///
+/// Returns the new block's global index, or `None` when there is no cursor. The
+/// table's cells are empty paragraphs the user edits by clicking into them.
+pub fn insert_table_after_cursor(
+    loro: &LoroDoc,
+    cursor: &CursorState,
+) -> Result<Option<usize>, MutationError> {
+    let Some(focus) = cursor.focus.as_ref() else {
+        return Ok(None);
+    };
+    let table = Block::Table(Box::new(Table::grid(
+        DEFAULT_TABLE_ROWS,
+        DEFAULT_TABLE_COLS,
+    )));
+    let new_index = insert_block_after(loro, focus.paragraph_index, &table)?;
+    Ok(Some(new_index))
 }
 
 #[cfg(test)]

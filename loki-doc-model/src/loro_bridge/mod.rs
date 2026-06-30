@@ -29,6 +29,13 @@ pub use incremental::IncrementalReader;
 pub use meta::{read_document_meta, write_document_meta};
 pub use styles::{read_document_styles, write_document_styles};
 
+// Crate-internal block / note writers reused by the mutation layer to insert a
+// new `Block` or footnote against a live document (same schema as the initial
+// `document_to_loro`).
+#[cfg(feature = "serde")]
+pub(crate) use inline_objects::insert_note_at;
+pub(crate) use write::map_block;
+
 use crate::document::Document;
 use crate::layout::header_footer::HeaderFooter;
 use crate::layout::page::{PageLayout, PageOrientation};

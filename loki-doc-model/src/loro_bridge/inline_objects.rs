@@ -70,6 +70,31 @@ pub(super) fn write_note(
     Ok(())
 }
 
+/// Inserts a note (footnote/endnote) anchor at UTF-8 `byte_offset` in `text` —
+/// the mutation-time analog of [`write_note`], which appends at the text end.
+/// The `(kind, idx)` mark and the live body container at `idx` under
+/// [`KEY_NOTES`] follow the same schema, so the inserted note round-trips and
+/// its body is an editable container reachable via a `BlockPath`.
+#[cfg(feature = "serde")]
+pub(crate) fn insert_note_at(
+    text: &LoroText,
+    block_map: &LoroMap,
+    byte_offset: usize,
+    kind: &NoteKind,
+    body: &[Block],
+) -> Result<(), BridgeError> {
+    let notes = get_or_create_notes_list(block_map)?;
+    let idx = notes.len();
+    text.insert_utf8(byte_offset, OBJECT_REPLACEMENT_STR)?;
+    let end = byte_offset + OBJECT_REPLACEMENT_STR.len();
+    let meta =
+        serde_json::to_string(&(kind, idx)).unwrap_or_else(|_| String::from("[\"Footnote\",0]"));
+    text.mark_utf8(byte_offset..end, MARK_NOTE, meta)?;
+    let body_list = notes.insert_container(idx, LoroMovableList::new())?;
+    super::write::map_blocks_to_list(body, &body_list)?;
+    Ok(())
+}
+
 /// Returns the block's [`KEY_NOTES`] movable list, creating it if absent.
 fn get_or_create_notes_list(block_map: &LoroMap) -> Result<LoroMovableList, BridgeError> {
     if let Some(list) = block_map

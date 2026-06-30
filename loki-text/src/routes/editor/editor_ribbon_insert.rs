@@ -4,26 +4,33 @@
 //!
 //! [`insert_tab_content`] returns the `Element` passed to
 //! [`AtRibbon::tab_content`] when the Insert tab is active. It hosts the create
-//! controls for objects with a native Loro mapping that are useful without the
-//! deferred cell/note interior-editing work:
+//! controls for objects with a native Loro mapping:
 //!
 //! - **Image** — picks a file, embeds it as a `data:` URI, and inserts an
 //!   `Inline::Image` at the cursor (see [`super::editor_insert`]).
+//! - **Table** — inserts an empty 2×2 table after the cursor's block; its cells
+//!   are live editable containers (click in to edit).
+//! - **Footnote** — inserts a footnote at the cursor with an empty, editable
+//!   body.
 //! - **Link** — opens the URL panel ([`super::editor_insert_panel`]).
-//!
-//! Table and footnote controls arrive once the mutation layer can address
-//! content nested inside cells / note bodies — no control is shown before it
-//! does something.
 
 use std::io::Read;
 use std::sync::{Arc, Mutex};
 
-use appthere_ui::{AtIcon, AtRibbonGroup, AtRibbonIconButton, LUCIDE_IMAGE, LUCIDE_LINK};
+use appthere_ui::{
+    AtIcon, AtRibbonGroup, AtRibbonIconButton, LUCIDE_FOOTNOTE, LUCIDE_IMAGE, LUCIDE_LINK,
+    LUCIDE_TABLE,
+};
 use dioxus::prelude::*;
+use loki_doc_model::MutationError;
 use loki_file_access::{FileAccessToken, FilePicker, PickOptions};
 use loki_i18n::fl;
+use loro::LoroDoc;
 
-use super::editor_insert::{image_inline_from_bytes, insert_image_at_cursor};
+use super::editor_insert::{
+    image_inline_from_bytes, insert_footnote_at_cursor, insert_image_at_cursor,
+    insert_table_after_cursor,
+};
 use super::editor_keydown_ctrl::post_mutation_sync;
 use crate::editing::cursor::CursorState;
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
@@ -75,8 +82,49 @@ pub(super) fn insert_tab_content(
                 aria_label:  fl!("ribbon-insert-image-aria"),
                 is_active:   false,
                 is_disabled: false,
-                on_click: move |_| spawn_pick_and_insert_image(ctx.clone()),
+                on_click: {
+                    let ctx = ctx.clone();
+                    move |_| spawn_pick_and_insert_image(ctx.clone())
+                },
                 AtIcon { path_d: LUCIDE_IMAGE.to_string() }
+            }
+        }
+
+        // ── Tables group ──────────────────────────────────────────────────────
+        AtRibbonGroup {
+            label:      Some(fl!("ribbon-group-tables")),
+            aria_label: fl!("ribbon-group-tables"),
+
+            AtRibbonIconButton {
+                aria_label:  fl!("ribbon-insert-table-aria"),
+                is_active:   false,
+                is_disabled: false,
+                on_click: {
+                    let ctx = ctx.clone();
+                    move |_| run_insert(
+                        &ctx,
+                        |ldoc, cur| insert_table_after_cursor(ldoc, cur).map(|o| o.is_some()),
+                        fl!("editor-insert-table-success"),
+                    )
+                },
+                AtIcon { path_d: LUCIDE_TABLE.to_string() }
+            }
+        }
+
+        // ── References group ──────────────────────────────────────────────────
+        AtRibbonGroup {
+            label:      Some(fl!("ribbon-group-references")),
+            aria_label: fl!("ribbon-group-references"),
+
+            AtRibbonIconButton {
+                aria_label:  fl!("ribbon-insert-footnote-aria"),
+                is_active:   false,
+                is_disabled: false,
+                on_click: {
+                    let ctx = ctx.clone();
+                    move |_| run_insert(&ctx, insert_footnote_at_cursor, fl!("editor-insert-footnote-success"))
+                },
+                AtIcon { path_d: LUCIDE_FOOTNOTE.to_string() }
             }
         }
 
@@ -99,6 +147,48 @@ pub(super) fn insert_tab_content(
                 AtIcon { path_d: LUCIDE_LINK.to_string() }
             }
         }
+    }
+}
+
+/// Runs a synchronous Insert-tab `op` against the live document, relays out,
+/// syncs undo/redo, and reports the outcome through the status banner.
+///
+/// `op` returns `Ok(true)` when it mutated, `Ok(false)` when there was no
+/// cursor, or `Err` on failure — surfaced as the no-cursor / failure messages.
+fn run_insert(
+    ctx: &InsertCtx,
+    op: impl FnOnce(&LoroDoc, &CursorState) -> Result<bool, MutationError>,
+    success: String,
+) {
+    let mut save_message = ctx.save_message;
+    let outcome = {
+        let guard = ctx.loro_doc.read();
+        let Some(ldoc) = guard.as_ref() else {
+            return;
+        };
+        match op(ldoc, &ctx.cursor_state.read()) {
+            Ok(true) => {
+                apply_mutation_and_relayout(&ctx.doc_state, ldoc);
+                Some(true)
+            }
+            Ok(false) => Some(false),
+            Err(_) => None,
+        }
+    };
+    match outcome {
+        Some(true) => {
+            post_mutation_sync(
+                &ctx.doc_state,
+                ctx.loro_doc,
+                ctx.cursor_state,
+                ctx.undo_manager,
+                ctx.can_undo,
+                ctx.can_redo,
+            );
+            save_message.set(Some(success));
+        }
+        Some(false) => save_message.set(Some(fl!("editor-insert-no-cursor"))),
+        None => save_message.set(Some(fl!("editor-insert-failed"))),
     }
 }
 

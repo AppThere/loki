@@ -76,6 +76,15 @@ pub const LUCIDE_LINK: &str =
 pub const LUCIDE_IMAGE: &str =
     "M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zM10 9a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zM21 15l-5-5L5 21";
 
+/// Lucide `table` — a bordered grid (outer frame plus one mid horizontal and
+/// one mid vertical divider). Used for Insert → Table.
+pub const LUCIDE_TABLE: &str =
+    "M12 3v18M3 9h18M3 15h18M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z";
+
+/// Lucide `superscript`-style reference mark reused for Insert → Footnote — a
+/// down-step baseline with a raised reference tick, evoking a footnote marker.
+pub const LUCIDE_FOOTNOTE: &str = "M4 5h6M4 5v10a3 3 0 0 0 6 0M16 5v6m0-6h4m-4 0-1 1";
+
 // ── AtIcon component ──────────────────────────────────────────────────────────
 
 /// Renders a single Lucide SVG icon.
