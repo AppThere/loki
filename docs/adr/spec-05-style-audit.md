@@ -180,9 +180,18 @@ Model gaps gate the UI, so the sequence front-loads model work:
    blockers): per-family `Default` sources beyond paragraph (char/table defaults),
    and the `page_styles` catalog field itself (lands with the M6 page panel).*
    *Foundation — everything reads it.*
-2. **M3 — Conditional-panel pattern.** Land D1 as a convention + convert the
-   inspector and first family panel to components reading `use_breakpoint`
-   (§4). Cheap, unblocks Compact and retroactively R-13g.
+2. **M3 — Conditional-panel pattern.** ✅ **Shipped.** Convention recorded in
+   [ADR-0013](0013-conditional-panels-are-components.md) + a CLAUDE.md note:
+   conditionally-shown panels are `#[component]`s mounted at the boundary
+   (`{open().then(|| rsx!{ … })}`), reading `use_breakpoint()` directly — no
+   `compact` flag threaded, so the parent does not grow. Reusable
+   `appthere_ui::AtPanelHost` realizes it (a component reading the breakpoint;
+   pure unit-tested `PanelPosture::for_breakpoint` → Compact full-width sheet vs
+   Medium/Expanded bounded side panel; close control ≥ `TOUCH_MIN`; token
+   border/background, no `box-shadow`, in-flow, per Blitz limits). Spec 05's
+   family panels (M2/M6) mount their inspector inside it, born responsive.
+   *(R-13g's metadata-panel conversion remains Spec 03's milestone — this only
+   provides the pattern + host it needs.)*
 3. **M2 — Inspector** (paragraph + character) over M1, with provenance rows,
    reset-to-inherited, edit-creates-override, jump-to-ancestor, staged display,
    display-name-over-id. Resolve the **built-in-style identification** question

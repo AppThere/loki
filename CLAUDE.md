@@ -298,6 +298,18 @@ is documented in the Loki Text UI specification (v0.4).
 5. All interactive elements: 44×44 px minimum, documented in a doc comment.
 6. Mark Dioxus Native CSS limitations with `// COMPAT(dioxus-native): ...`
 
+### Conditionally-mounted panels are components (ADR-0013)
+
+A panel shown behind a condition must be a `#[component]` mounted **at the
+boundary** — `{open().then(|| rsx! { Panel { .. } })}` — never a plain function
+called inside `if cond { panel(..) }` with an early `return rsx!{}`. Only a
+component owns a hook scope, so only a component can call `use_breakpoint()` (or
+any hook) and adapt to the size class **without threading a `compact` flag**
+through the parent (which grows it). Prefer hosting the panel in
+`appthere_ui::AtPanelHost`, which reads the breakpoint and picks Compact-sheet vs
+Expanded-side-panel posture for you. See
+[docs/adr/0013-conditional-panels-are-components.md](docs/adr/0013-conditional-panels-are-components.md).
+
 ### Confirmed CSS properties (Dioxus Native 0.7.x / Blitz)
 
 These work in production code:

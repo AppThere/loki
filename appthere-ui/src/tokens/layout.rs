@@ -97,3 +97,8 @@ pub const BREAKPOINT_DESKTOP_PX: f32 = 768.0;
 
 /// Maximum width for primary action buttons on desktop (centered, fixed width).
 pub const BUTTON_WIDTH_DESKTOP_MAX: f32 = 320.0;
+
+/// Width (logical px) of a bounded side panel hosted by `AtPanelHost` at the
+/// Medium/Expanded size classes. At Compact the host fills the available width
+/// (a touch-first sheet) instead. See [`crate::AtPanelHost`].
+pub const PANEL_SIDE_WIDTH_PX: f32 = 360.0;

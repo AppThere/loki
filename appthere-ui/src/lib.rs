@@ -42,9 +42,9 @@ pub use components::ribbon::{
     AtRibbon, AtRibbonGroup, AtRibbonIconButton, AtRibbonSelect, RibbonTabDesc, RibbonTabIndex,
 };
 pub use components::{
-    AtDocumentTab, AtDocumentTabData, AtDocumentTabProps, AtHomeTab, AtHomeTabProps, AtStatusBar,
-    AtStatusBarProps, AtTabBar, AtTabBarProps, AtTitleBar, AtTitleBarProps, BuiltinTemplate,
-    Platform, RecentDocument,
+    AtDocumentTab, AtDocumentTabData, AtDocumentTabProps, AtHomeTab, AtHomeTabProps, AtPanelHost,
+    AtPanelHostProps, AtStatusBar, AtStatusBarProps, AtTabBar, AtTabBarProps, AtTitleBar,
+    AtTitleBarProps, BuiltinTemplate, PanelPosture, Platform, RecentDocument,
 };
 pub use responsive::{
     page_fits, required_page_width, resolve_page_fit, use_breakpoint, use_provide_responsive,
