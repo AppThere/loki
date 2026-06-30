@@ -327,9 +327,9 @@ the editor mutates `paragraph_index` as a flat global block index.
      walks rows in the bridge's `head → bodies → foot` order) now tags each cell
      paragraph with the table's block + a `PathStep::Cell`. Test:
      `table_cell_editing_tests`. **Known limits:** rotated cells (laid out via
-     `flow_cell_blocks`/`temp_state`) don't yet emit editing data; a vertically
-     -aligned cell's caret-y is offset (items are translated, editing origins
-     are not); and a table nested in a cell/note doesn't yet compose paths.
+     `flow_cell_blocks`/`temp_state`) don't yet emit editing data (see
+     increment 5); and a table nested in a cell/note doesn't yet compose paths.
+     *(The vertically-aligned cell caret-y offset is fixed in increment 5.)*
 
    Increment 3 is **complete** for the common cases — clicks into top-aligned
    table cells and footnote bodies resolve to the correct `BlockPath`.
@@ -354,9 +354,24 @@ the editor mutates `paragraph_index` as a flat global block index.
      no-op (no container boundary is ever crossed). Tests
      (`loro_mutation_nested_tests`): split/merge inside a cell and a note body
      round-trip; merge at a cell's first block errors.
-5. **Caret rendering** refinements for nested paragraphs (v-align caret-y;
-   rotated cells), then the **Table/Footnote Insert controls** (Table also needs
-   a block-insert primitive).
+5. **Caret rendering** refinements for nested paragraphs.
+   - ✅ **V-align caret-y (shipped):** a vertically-aligned (`Middle`/`Bottom`)
+     cell translates its glyph items down by the alignment offset, but the
+     editing-paragraph origins were left at the cell top, so the caret floated
+     above the text. The non-rotated cell path now translates
+     `current_paragraphs[cell_para_start..]` by the same `y_offset` as the
+     items (`cell_para_start` captured before the cell's blocks flow), so the
+     caret tracks the glyphs. Test (`table_cell_editing_tests`): the cell-0
+     editing origin.y for `Bottom > Middle > Top` (all equal before the fix).
+   - **Rotated-cell editing (deferred):** rotated cells lay content out in a
+     width/height-swapped space wrapped in a `RotatedGroup`, and `flow_cell_blocks`
+     discards its editing paragraphs. Emitting usable editing data needs the caret
+     and hit-test to apply the same rotation transform — a dedicated task
+     (`TODO(rotated-cell-editing)` in `flow.rs`). Rotated cells stay read-only
+     for now (graceful: no caret rather than a wrong one).
+
+   Then the **Table/Footnote Insert controls** (Table also needs a block-insert
+   primitive).
 
 Increment 1 shipped: `PageParagraphData.path` + the `push_editing_para` helper
 (which also DRY-collapsed the six placement sites, keeping `flow_para.rs` under

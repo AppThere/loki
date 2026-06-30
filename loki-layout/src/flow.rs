@@ -209,9 +209,8 @@ impl FlowState<'_> {
 impl<'a> FlowState<'a> {
     /// Advance the counter for `list_id` at `level` and return the new value.
     ///
-    /// - Initialises the counter from `start_value` on first use.
-    /// - Resets all deeper-level counters to 0 so they re-initialise from
-    ///   their own `start_value` when next encountered.
+    /// Initialises from `start_value` on first use; resets all deeper-level
+    /// counters to 0 so they re-initialise from their own `start_value` next.
     pub(super) fn advance_counter(&mut self, list_id: &ListId, level: u8, start_value: u32) -> u32 {
         let counters = self
             .list_counters
@@ -372,11 +371,10 @@ fn run_paginated_loop(
 /// Resumes a paginated body flow at `start_block` from a [`FlowCheckpoint`],
 /// for incremental relayout. See [`crate::incremental`].
 ///
-/// Returns the pages produced from `start_block` up to either the end of the
-/// section or the first clean page top where `resync` fires. When it runs to the
-/// end, the trailing footnotes and final partial page are flushed; when it stops
-/// at a resync the current page is empty (a clean page top) and is not flushed,
-/// so the caller can splice the reused suffix without a duplicate page.
+/// Returns the pages produced from `start_block` up to the end of the section or
+/// the first clean page top where `resync` fires. Running to the end flushes the
+/// trailing footnotes and final partial page; stopping at a resync leaves the
+/// empty current page unflushed, so the caller splices the reused suffix cleanly.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn flow_section_resume(
     resources: &mut FontResources,
@@ -429,9 +427,8 @@ pub(crate) fn flow_section_resume(
 /// Returns a [`FlowOutput`] discriminated by layout mode:
 ///
 /// - [`FlowOutput::Pages`]: each page's items are in page-content-area-local
-///   coordinates (origin `(0, 0)` at the content-area top-left). The `margins`
-///   field on each [`LayoutPage`] carries the insets. No further translation
-///   by the caller is needed.
+///   coordinates (origin `(0, 0)` at the content-area top-left); the `margins`
+///   on each [`LayoutPage`] carry the insets. No caller translation needed.
 /// - [`FlowOutput::Canvas`]: all items on a single canvas. In `Pageless` mode
 ///   items are offset by `margins.left`; in `Reflow` mode there is no offset.
 pub fn flow_section(
@@ -535,8 +532,7 @@ fn begin_continuous_section(state: &mut FlowState, section: &Section) {
 ///
 /// Paginated mode only — the non-paginated (reflow/pageless) path flows each
 /// section independently (continuous-scroll has no pages to share). Editing
-/// block indices are group-local (0-based across the group's combined blocks);
-/// the caller globalises them like a single section.
+/// block indices are group-local; the caller globalises them per section.
 pub fn flow_section_group(
     resources: &mut FontResources,
     sections: &[&Section],
@@ -944,9 +940,8 @@ fn substitute_page_fields(blocks: &mut [Block], ctx: &crate::FieldContext) {
 /// per page with a [`crate::FieldContext`] carrying the real page number and
 /// `total_page_count`, so "Page X of Y" chrome renders correctly.
 ///
-/// Items are translated to page-local coordinates:
-/// - Header top: `margins.header`
-/// - Footer top: `page_height - margins.footer - footer_height`
+/// Items are translated to page-local coords: header top `margins.header`;
+/// footer top `page_height - margins.footer - footer_height`.
 pub(crate) fn assign_headers_footers(
     pages: &mut [LayoutPage],
     layout: &PageLayout,
@@ -1676,11 +1671,10 @@ fn flow_table(
             };
 
             let cell_items = if let Some(degrees) = rotation_degrees {
-                // NOTE(cell-rotation): for rotated cells, content is laid out
-                // with width/height swapped, then the RotatedGroup transform
-                // visually rotates the result into the correct orientation.
-                // This approximation works for text runs but may not be pixel-
-                // perfect for complex mixed content.
+                // NOTE(cell-rotation): content laid out width/height-swapped,
+                // then RotatedGroup rotates it (fine for text runs).
+                // TODO(rotated-cell-editing): emits no editing data (the caret
+                // needs the same rotation transform) — cells stay read-only.
                 let rotated_content_width = (cell_height - pad_top - pad_bottom).max(0.0);
                 let inner_items = flow_cell_blocks(
                     state.resources,
@@ -1721,6 +1715,7 @@ fn flow_table(
                 let old_break = state.break_long_words;
                 state.break_long_words = true;
 
+                let cell_para_start = state.current_paragraphs.len();
                 for (bi, block) in cell.blocks.iter().enumerate() {
                     // Tag cell paragraphs so a click resolves to the live cell.
                     state.nested_editing = Some(editing::NestedEditing::cell(idx, cell_flat, bi));
@@ -1745,11 +1740,16 @@ fn flow_table(
                         for item in &mut state.current_items[cell_item_start..] {
                             item.translate(0.0, y_offset);
                         }
+                        // Editing origins must follow their translated glyphs so
+                        // the caret in a v-aligned cell lands on the text.
+                        for para in &mut state.current_paragraphs[cell_para_start..] {
+                            para.origin.1 += y_offset;
+                        }
                     }
 
                     // Clip single-page cell content to its box so over-wide
-                    // content can't bleed into neighbours (Word behaviour). A cell
-                    // spilling to a later page stays unclipped — see fidelity-status.
+                    // content can't bleed into neighbours (Word). A cell spilling
+                    // to a later page stays unclipped — see fidelity-status.
                     if state.current_items.len() > cell_item_start {
                         let cell_top_y = if state.page_number == original_row_page {
                             original_row_y_start
