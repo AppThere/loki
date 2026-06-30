@@ -167,11 +167,19 @@ nor `editor_inner.rs` (baseline 878) may grow.
 
 Model gaps gate the UI, so the sequence front-loads model work:
 
-1. **M1 — Provenance resolution layer + page-style ADR.** New `(provenance,
-   value)` result; instrument the existing merge to record the source ancestor;
-   add `resolve_char_style`; define per-family defaults + format-default; cycle
-   check for re-parent; decide page-style representation (§3). *Foundation —
-   everything reads it.*
+1. **M1 — Provenance resolution layer + page-style ADR.** ✅ **Core shipped.**
+   `style/resolve.rs`: `Provenance` (Local / Inherited(id) / Default /
+   FormatDefault) + generic `Resolved<T>`; getter-based `resolve_para_chain`
+   (serves para props *and* a paragraph style's run-default char props) and
+   `resolve_char_chain` (the standalone `CharacterStyle` resolver SM-2 lacked);
+   cycle/depth-guarded, with `para_ancestors` + `para_reparent_cycles` for the
+   §7 re-parent guard. 13 tests. The page-style asymmetry + provenance model are
+   recorded in [ADR-0012](0012-style-resolution-and-page-styles.md) (page styling
+   = ODF-native named page styles in the catalog, mapped to OOXML sections on
+   export, a **non-inheriting** family). *Remaining M1 follow-ups (sequenced, not
+   blockers): per-family `Default` sources beyond paragraph (char/table defaults),
+   and the `page_styles` catalog field itself (lands with the M6 page panel).*
+   *Foundation — everything reads it.*
 2. **M3 — Conditional-panel pattern.** Land D1 as a convention + convert the
    inspector and first family panel to components reading `use_breakpoint`
    (§4). Cheap, unblocks Compact and retroactively R-13g.

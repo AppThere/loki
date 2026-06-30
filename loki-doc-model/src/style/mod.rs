@@ -13,6 +13,7 @@ pub mod char_style;
 pub mod list_style;
 pub mod para_style;
 pub mod props;
+pub mod resolve;
 pub mod table_style;
 
 pub use catalog::{ResolvedCharProps, ResolvedParaProps, StyleCatalog, StyleId};
@@ -21,4 +22,5 @@ pub use list_style::{
     BulletChar, LabelAlignment, ListId, ListLevel, ListLevelKind, ListStyle, NumberingScheme,
 };
 pub use para_style::ParagraphStyle;
+pub use resolve::{Provenance, Resolved};
 pub use table_style::TableStyle;

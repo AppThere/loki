@@ -180,7 +180,7 @@ pub use content::attr::{ExtensionBag, ExtensionKey, NodeAttr};
 pub use content::{Block, Inline};
 pub use layout::Section;
 pub use meta::DocumentMeta;
-pub use style::{StyleCatalog, StyleId};
+pub use style::{Provenance, Resolved, StyleCatalog, StyleId};
 
 /// Derive-macro re-exports (serde support is feature-gated).
 #[cfg(feature = "serde")]
