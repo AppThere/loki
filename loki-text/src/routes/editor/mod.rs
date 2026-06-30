@@ -40,6 +40,9 @@ mod editor_state;
 mod editor_style;
 mod editor_style_catalog;
 mod editor_style_editor;
+// The inspector-row model (Spec 05 M2) lands before its rendering consumer.
+#[allow(dead_code)] // TODO(spec-05-m2): wired by the inspector panel UI (next increment)
+mod style_inspector;
 
 use dioxus::prelude::*;
 use editor_inner::EditorInner;

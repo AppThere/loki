@@ -194,9 +194,19 @@ Model gaps gate the UI, so the sequence front-loads model work:
    provides the pattern + host it needs.)*
 3. **M2 — Inspector** (paragraph + character) over M1, with provenance rows,
    reset-to-inherited, edit-creates-override, jump-to-ancestor, staged display,
-   display-name-over-id. Resolve the **built-in-style identification** question
-   (SM-11) here: use `is_default` + a known-id set; decide whether to introduce
-   the `COMPAT(i18n)` annotations the spec assumed or drop that framing.
+   display-name-over-id. 🚧 **Row model shipped** (`style_inspector.rs`):
+   `paragraph_inspector_rows(&catalog, &id)` builds one `InspectorRow` per
+   *applicable* property (font/size/bold/italic + alignment/indents/spacing/
+   line-height), each carrying its resolved `value_display` and a display-ready
+   `RowProvenance` (Local / Inherited{ancestor_id, ancestor_display} / Default /
+   FormatDefault) — every property appears regardless of local-set state (the
+   local-only blindness fix), and inherited rows name the source ancestor by
+   **display name** while keeping its `StyleId` for jump-to-ancestor. Pure +
+   i18n-free; 7 tests. *Remaining M2: the row/inspector **components** (host in
+   `AtPanelHost`), reset/edit affordances + staged display, and the
+   built-in-style identification question (SM-11 — `is_default` + a known-id set;
+   decide whether to add the `COMPAT(i18n)` annotations the spec assumed or drop
+   that framing).*
 4. **M5 — Creation & management** (create → pick parent → override; rename;
    re-parent; delete-with-orphan-handling; built-in rules).
 5. **M4 — Tree view + propagation + impact preview** (in-memory over the catalog;
