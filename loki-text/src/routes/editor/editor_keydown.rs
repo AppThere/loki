@@ -9,7 +9,7 @@ use keyboard_types::Modifiers;
 use loki_doc_model::loro_mutation::{
     delete_text_at, get_block_text, get_block_text_at, insert_text_at,
 };
-use loki_doc_model::merge_block;
+use loki_doc_model::merge_block_at;
 
 use loki_renderer::ViewMode;
 use loki_renderer::render_layout::reflow_content_width_pt;
@@ -122,16 +122,16 @@ pub(super) fn make_keydown_handler(
             // ── Backspace ─────────────────────────────────────────────────────
             Key::Backspace => {
                 if focus.byte_offset == 0 {
-                    // Backspace-at-start merges blocks, which only the top-level
-                    // block list supports; inside a cell/note body it is a no-op.
-                    if focus.paragraph_index == 0 || !focus.path.is_empty() {
-                        return;
-                    }
+                    // Backspace-at-start merges this block into its previous
+                    // sibling within the same container. `merge_block_at` returns
+                    // `NoPreviousBlock` at the first block of a container (a
+                    // top-level paragraph 0 or the first block of a cell / note
+                    // body), making this a no-op there.
                     let ldoc_guard = loro_doc.read();
                     let Some(ldoc) = ldoc_guard.as_ref() else {
                         return;
                     };
-                    let Ok(merged_offset) = merge_block(ldoc, focus.paragraph_index) else {
+                    let Ok(merged_offset) = merge_block_at(ldoc, &focus.block_path()) else {
                         return;
                     };
                     apply_mutation_and_relayout(&doc_state, ldoc);
@@ -143,14 +143,9 @@ pub(super) fn make_keydown_handler(
                         can_undo,
                         can_redo,
                     );
-                    // TODO(3b-3): recompute page_index from layout after merge
-                    let new_pos = DocumentPosition {
-                        page_index: focus.page_index,
-                        paragraph_index: focus.paragraph_index - 1,
-                        byte_offset: merged_offset,
-                        // Same container as the merged-from paragraph.
-                        path: focus.path.clone(),
-                    };
+                    // TODO(3b-3): recompute page_index from layout after merge.
+                    // Caret lands at the join point in the previous sibling block.
+                    let new_pos = focus.sibling_block(-1, merged_offset);
                     let mut cs = cursor_state.write();
                     cs.focus = Some(new_pos.clone());
                     cs.anchor = Some(new_pos);

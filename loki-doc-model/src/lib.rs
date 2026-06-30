@@ -154,8 +154,9 @@ pub use loro_mutation::{
 };
 pub use loro_mutation::{
     MutationError, delete_text, get_block_alignment, get_block_style_name, get_block_text,
-    get_mark_at, insert_text, mark_text, merge_block, replace_text, set_block_alignment,
-    set_block_style, set_block_type_heading, set_block_type_para, split_block,
+    get_mark_at, insert_text, mark_text, merge_block, merge_block_at, replace_text,
+    set_block_alignment, set_block_style, set_block_type_heading, set_block_type_para, split_block,
+    split_block_at,
 };
 #[cfg(feature = "serde")]
 pub use loro_mutation::{insert_inline_image, insert_inline_image_at};

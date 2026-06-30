@@ -49,6 +49,29 @@ impl DocumentPosition {
             steps: self.path.clone(),
         }
     }
+
+    /// The position of a sibling block within the **same container**, shifted by
+    /// `delta` blocks, at `byte_offset`.
+    ///
+    /// For a top-level position this shifts `paragraph_index`; for a nested
+    /// position (inside a table cell / note body) it shifts the leaf
+    /// [`PathStep`]'s block index, leaving the root `paragraph_index` untouched.
+    /// Used to place the cursor after a paragraph split (`delta = 1`, offset 0)
+    /// or merge (`delta = -1`, offset = the join point).
+    #[must_use]
+    pub fn sibling_block(&self, delta: isize, byte_offset: usize) -> Self {
+        let mut pos = self.clone();
+        pos.byte_offset = byte_offset;
+        match pos.path.last_mut() {
+            Some(PathStep::Cell { block, .. } | PathStep::Note { block, .. }) => {
+                *block = block.saturating_add_signed(delta);
+            }
+            None => {
+                pos.paragraph_index = pos.paragraph_index.saturating_add_signed(delta);
+            }
+        }
+        pos
+    }
 }
 
 /// The current cursor and selection state for the editor.
@@ -228,6 +251,37 @@ mod tests {
             path: vec![PathStep::Cell { cell: 1, block: 0 }],
         };
         assert_eq!(pos.block_path(), BlockPath::in_cell(2, 1, 0));
+    }
+
+    #[test]
+    fn sibling_block_shifts_top_level_paragraph() {
+        let pos = DocumentPosition::top_level(0, 3, 7);
+        let next = pos.sibling_block(1, 0);
+        assert_eq!(next.paragraph_index, 4);
+        assert_eq!(next.byte_offset, 0);
+        assert!(next.path.is_empty());
+        // Saturates at 0 rather than underflowing.
+        assert_eq!(
+            DocumentPosition::top_level(0, 0, 0)
+                .sibling_block(-1, 5)
+                .paragraph_index,
+            0
+        );
+    }
+
+    #[test]
+    fn sibling_block_shifts_nested_leaf_block_only() {
+        let pos = DocumentPosition {
+            page_index: 0,
+            paragraph_index: 2,
+            byte_offset: 9,
+            path: vec![PathStep::Cell { cell: 1, block: 0 }],
+        };
+        let next = pos.sibling_block(1, 0);
+        // Root paragraph_index is untouched; the leaf block index advances.
+        assert_eq!(next.paragraph_index, 2);
+        assert_eq!(next.byte_offset, 0);
+        assert_eq!(next.path, vec![PathStep::Cell { cell: 1, block: 1 }]);
     }
 
     #[test]

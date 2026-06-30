@@ -16,9 +16,9 @@
 //! Mutating the live nested `LoroText` round-trips: the bridge rebuilds each
 //! cell / note body from these same containers on read.
 
-use loro::{LoroDoc, LoroMap, LoroText, LoroValue};
+use loro::{LoroDoc, LoroMap, LoroMovableList, LoroText, LoroValue};
 
-use super::{MutationError, get_block_map_and_list};
+use super::{MutationError, get_block_map_and_list, resolve_section_blocks};
 #[cfg(feature = "serde")]
 use crate::content::inline::Inline;
 use crate::loro_schema::{KEY_CONTENT, KEY_NOTES, KEY_TABLE_CELLS};
@@ -99,19 +99,30 @@ impl BlockPath {
     }
 }
 
-/// Descends one [`PathStep`] from a container block's map to a nested block's map.
-fn descend(parent_map: &LoroMap, step: PathStep) -> Result<LoroMap, MutationError> {
-    let (key, container_idx, block_idx, label) = step.parts();
+/// The movable list of blocks for the `container_idx`-th cell / note body under
+/// `key` in `parent_map` (the inner list that `block`-indices address).
+fn nested_block_list(
+    parent_map: &LoroMap,
+    key: &str,
+    container_idx: usize,
+    label: &str,
+) -> Result<LoroMovableList, MutationError> {
     let container = parent_map
         .get(key)
         .and_then(|v| v.into_container().ok())
         .and_then(|c| c.into_movable_list().ok())
         .ok_or_else(|| MutationError::InvalidBlockPath(format!("block has no {label}s")))?;
-    let inner = container
+    container
         .get(container_idx)
         .and_then(|v| v.into_container().ok())
         .and_then(|c| c.into_movable_list().ok())
-        .ok_or_else(|| MutationError::InvalidBlockPath(format!("no {label} {container_idx}")))?;
+        .ok_or_else(|| MutationError::InvalidBlockPath(format!("no {label} {container_idx}")))
+}
+
+/// Descends one [`PathStep`] from a container block's map to a nested block's map.
+fn descend(parent_map: &LoroMap, step: PathStep) -> Result<LoroMap, MutationError> {
+    let (key, container_idx, block_idx, label) = step.parts();
+    let inner = nested_block_list(parent_map, key, container_idx, label)?;
     inner
         .get(block_idx)
         .and_then(|v| v.into_container().ok())
@@ -121,6 +132,32 @@ fn descend(parent_map: &LoroMap, step: PathStep) -> Result<LoroMap, MutationErro
                 "no block {block_idx} in {label} {container_idx}"
             ))
         })
+}
+
+/// Resolves `path` to the movable list that *contains* the addressed block and
+/// the block's index within that list.
+///
+/// For an empty path this is the root block's section list — the same space the
+/// flat API uses; otherwise it descends to the leaf step's container (a table
+/// cell's or note body's block list) and pairs it with the leaf block index.
+/// This is the seam the path-aware structural ops ([`super::split_block_at`],
+/// [`super::merge_block_at`]) build on: split inserts and merge deletes within
+/// this list, so a paragraph split/merge stays inside its own container.
+pub(super) fn resolve_block_list(
+    loro: &LoroDoc,
+    path: &BlockPath,
+) -> Result<(LoroMovableList, usize), MutationError> {
+    let Some((last, rest)) = path.steps.split_last() else {
+        let (list, local) = resolve_section_blocks(loro, path.root)?;
+        return Ok((list, local));
+    };
+    let (_, mut block_map, _) = get_block_map_and_list(loro, path.root)?;
+    for step in rest {
+        block_map = descend(&block_map, *step)?;
+    }
+    let (key, container_idx, block_idx, label) = last.parts();
+    let inner = nested_block_list(&block_map, key, container_idx, label)?;
+    Ok((inner, block_idx))
 }
 
 /// Resolves `path` to the block's `LoroMap`.

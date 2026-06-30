@@ -17,12 +17,34 @@ use loki_doc_model::loro_bridge::{document_to_loro, loro_to_document};
 use loki_doc_model::loro_schema::MARK_BOLD;
 use loki_doc_model::{
     BlockPath, MutationError, PathStep, delete_text_at, get_block_text_at, insert_text_at,
-    mark_text_at,
+    mark_text_at, merge_block_at, split_block_at,
 };
 use loro::LoroValue;
 
 fn text_cell(s: &str) -> Cell {
     Cell::simple(vec![Block::Para(vec![Inline::Str(s.into())])])
+}
+
+/// Plain text of every paragraph block in the `cell`-th cell of the table at
+/// global block index 1 of a rebuilt document.
+fn cell_block_texts(doc: &Document, cell: usize) -> Vec<String> {
+    let Block::Table(t) = &doc.sections[0].blocks[1] else {
+        panic!("expected a table");
+    };
+    t.bodies[0].body_rows[0].cells[cell]
+        .blocks
+        .iter()
+        .map(|b| match b {
+            Block::Para(inlines) => inlines
+                .iter()
+                .filter_map(|i| match i {
+                    Inline::Str(s) => Some(s.as_str()),
+                    _ => None,
+                })
+                .collect(),
+            _ => String::new(),
+        })
+        .collect()
 }
 
 /// `[Para("intro"), Table]` — the table is global block index 1, with one body
@@ -294,4 +316,114 @@ fn edits_a_note_nested_inside_a_table_cell() {
         })
         .collect();
     assert_eq!(text, "fn!");
+}
+
+// ── Path-aware split / merge ────────────────────────────────────────────────
+
+/// Table at global block index 1 whose first body cell (flat index 0) holds two
+/// paragraphs "a" and "b"; the second cell holds "z".
+fn doc_with_two_block_cell() -> Document {
+    let cell = Cell::simple(vec![
+        Block::Para(vec![Inline::Str("a".into())]),
+        Block::Para(vec![Inline::Str("b".into())]),
+    ]);
+    let table = Table {
+        attr: NodeAttr::default(),
+        caption: TableCaption::default(),
+        width: None,
+        col_specs: Vec::new(),
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![Row::new(vec![
+            cell,
+            text_cell("z"),
+        ])])],
+        foot: TableFoot::empty(),
+    };
+    let mut doc = Document::new();
+    doc.sections[0].blocks = vec![
+        Block::Para(vec![Inline::Str("intro".into())]),
+        Block::Table(Box::new(table)),
+    ];
+    doc
+}
+
+#[test]
+fn splits_a_paragraph_inside_a_table_cell() {
+    let loro = document_to_loro(&doc_with_table()).unwrap();
+    // Cell 0 is "a"; extend to "ab" then split between them.
+    insert_text_at(&loro, &BlockPath::in_cell(1, 0, 0), 1, "b").unwrap();
+    split_block_at(&loro, &BlockPath::in_cell(1, 0, 0), 1).unwrap();
+    let rebuilt = loro_to_document(&loro).unwrap();
+    assert_eq!(cell_block_texts(&rebuilt, 0), vec!["a", "b"]);
+    // The sibling cell is untouched (still a single "b" paragraph).
+    assert_eq!(cell_block_texts(&rebuilt, 1), vec!["b"]);
+}
+
+#[test]
+fn split_at_addresses_the_new_sibling_block() {
+    let loro = document_to_loro(&doc_with_table()).unwrap();
+    insert_text_at(&loro, &BlockPath::in_cell(1, 0, 0), 1, "b").unwrap(); // "ab"
+    split_block_at(&loro, &BlockPath::in_cell(1, 0, 0), 1).unwrap();
+    // The tail moved to block 1 of the cell; it is now live and editable.
+    assert_eq!(get_block_text_at(&loro, &BlockPath::in_cell(1, 0, 1)), "b");
+    insert_text_at(&loro, &BlockPath::in_cell(1, 0, 1), 1, "X").unwrap();
+    let rebuilt = loro_to_document(&loro).unwrap();
+    assert_eq!(cell_block_texts(&rebuilt, 0), vec!["a", "bX"]);
+}
+
+#[test]
+fn split_at_with_a_flat_path_matches_split_block() {
+    let loro = document_to_loro(&doc_with_table()).unwrap();
+    // Root-only path splits the top-level "intro" paragraph (global block 0).
+    split_block_at(&loro, &BlockPath::block(0), 2).unwrap();
+    let rebuilt = loro_to_document(&loro).unwrap();
+    let texts: Vec<String> = rebuilt.sections[0].blocks[..2]
+        .iter()
+        .filter_map(|b| match b {
+            Block::Para(inlines) => Some(
+                inlines
+                    .iter()
+                    .filter_map(|i| match i {
+                        Inline::Str(s) => Some(s.as_str()),
+                        _ => None,
+                    })
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(texts, vec!["in", "tro"]);
+}
+
+#[test]
+fn merges_a_paragraph_inside_a_table_cell() {
+    let loro = document_to_loro(&doc_with_two_block_cell()).unwrap();
+    // Merge block 1 ("b") into block 0 ("a") of the first cell.
+    let offset = merge_block_at(&loro, &BlockPath::in_cell(1, 0, 1)).unwrap();
+    assert_eq!(offset, 1); // join point = prior length of "a"
+    let rebuilt = loro_to_document(&loro).unwrap();
+    assert_eq!(cell_block_texts(&rebuilt, 0), vec!["ab"]);
+    assert_eq!(cell_block_texts(&rebuilt, 1), vec!["z"]);
+}
+
+#[test]
+fn merge_at_first_block_of_a_cell_has_no_previous() {
+    let loro = document_to_loro(&doc_with_two_block_cell()).unwrap();
+    // Block 0 is the first of its container — no sibling to merge into.
+    let err = merge_block_at(&loro, &BlockPath::in_cell(1, 0, 0));
+    assert!(matches!(err, Err(MutationError::NoPreviousBlock)));
+}
+
+#[test]
+fn split_then_merge_inside_a_note_body_round_trips() {
+    let mut doc = Document::new();
+    doc.sections[0].blocks = vec![note_para("ref", vec![("", "body")])];
+    let loro = document_to_loro(&doc).unwrap();
+    // Split "body" into "bo" | "dy", then merge them back.
+    split_block_at(&loro, &BlockPath::in_note(0, 0, 0), 2).unwrap();
+    assert_eq!(get_block_text_at(&loro, &BlockPath::in_note(0, 0, 1)), "dy");
+    let offset = merge_block_at(&loro, &BlockPath::in_note(0, 0, 1)).unwrap();
+    assert_eq!(offset, 2);
+    let rebuilt = loro_to_document(&loro).unwrap();
+    assert_eq!(note_body_text(&rebuilt, 0, 0), "body");
 }

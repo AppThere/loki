@@ -31,7 +31,7 @@ mod nested;
 mod style;
 mod text;
 
-pub use self::block::{merge_block, split_block};
+pub use self::block::{merge_block, merge_block_at, split_block, split_block_at};
 #[cfg(feature = "serde")]
 pub use self::nested::insert_inline_image_at;
 pub use self::nested::{

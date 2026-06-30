@@ -339,14 +339,24 @@ the editor mutates `paragraph_index` as a flat global block index.
    returns a `BlockPath`; the formatting toggles, hyperlink, image-insert
    (new `insert_inline_image_at`, with the flat version delegating to it),
    typing (`insert_text_at`), and within-paragraph delete (`delete_text_at`)
-   all route through it. The **structural** ops are guarded: backspace-at-start
-   (`merge_block`) and Enter (`split_block`) are no-ops inside a cell/note for
-   now — `TODO(nested-split)`, they only address the top-level block list.
-   Tests (`editor_insert_tests`): a nested cursor links and inserts an image
-   *into a table cell*. Top-level editing unchanged.
+   all route through it. Tests (`editor_insert_tests`): a nested cursor links
+   and inserts an image *into a table cell*. Top-level editing unchanged.
+   - ✅ **Path-aware split/merge (shipped):** `split_block_at` / `merge_block_at`
+     resolve the *leaf step's* block list (a cell's or note body's movable list)
+     via a new `resolve_block_list` seam and split/merge **within that
+     container** — top-level `split_block`/`merge_block` now delegate to the same
+     `*_in_list` cores (31 existing top-level tests unchanged). Enter and
+     backspace-at-start route through the `*_at` variants for any cursor; the
+     caret moves to the sibling block via `DocumentPosition::sibling_block`
+     (which shifts the leaf `PathStep` block for a nested cursor, the
+     `paragraph_index` for a top-level one). `merge_block_at` returns
+     `NoPreviousBlock` at the first block of a container, so backspace there is a
+     no-op (no container boundary is ever crossed). Tests
+     (`loro_mutation_nested_tests`): split/merge inside a cell and a note body
+     round-trip; merge at a cell's first block errors.
 5. **Caret rendering** refinements for nested paragraphs (v-align caret-y;
-   rotated cells) + path-aware split/merge, then the **Table/Footnote Insert
-   controls** (Table also needs a block-insert primitive).
+   rotated cells), then the **Table/Footnote Insert controls** (Table also needs
+   a block-insert primitive).
 
 Increment 1 shipped: `PageParagraphData.path` + the `push_editing_para` helper
 (which also DRY-collapsed the six placement sites, keeping `flow_para.rs` under
