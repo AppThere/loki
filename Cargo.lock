@@ -4564,6 +4564,7 @@ dependencies = [
  "async-trait",
  "axum",
  "base64",
+ "futures-util",
  "loki-model",
  "loki-server-store",
  "serde",

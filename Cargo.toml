@@ -42,6 +42,8 @@ sqlx = { version = "0.8", default-features = false, features = [
     "chrono",
     "migrate",
     "derive",
+    "macros",
+    "json",
 ] }
 object_store = { version = "0.12", features = ["aws"] }
 async-trait = "0.1"

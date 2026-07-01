@@ -55,3 +55,54 @@ impl std::fmt::Display for AuditAction {
         f.write_str(self.as_str())
     }
 }
+
+/// Error returned when a stored action value is unknown.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("unknown audit action {0:?}")]
+pub struct ActionParseError(pub String);
+
+impl std::str::FromStr for AuditAction {
+    type Err = ActionParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        const ALL: [AuditAction; 10] = [
+            AuditAction::AuthLogin,
+            AuditAction::AuthDenied,
+            AuditAction::WorkspaceCreate,
+            AuditAction::DocumentCreate,
+            AuditAction::AclChange,
+            AuditAction::TierChange,
+            AuditAction::Export,
+            AuditAction::Delete,
+            AuditAction::GdprExport,
+            AuditAction::GdprErase,
+        ];
+        ALL.into_iter()
+            .find(|a| a.as_str() == s)
+            .ok_or_else(|| ActionParseError(s.to_owned()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_action_parses_back() {
+        for action in [
+            AuditAction::AuthLogin,
+            AuditAction::AuthDenied,
+            AuditAction::WorkspaceCreate,
+            AuditAction::DocumentCreate,
+            AuditAction::AclChange,
+            AuditAction::TierChange,
+            AuditAction::Export,
+            AuditAction::Delete,
+            AuditAction::GdprExport,
+            AuditAction::GdprErase,
+        ] {
+            assert_eq!(action.as_str().parse::<AuditAction>(), Ok(action));
+        }
+        assert!("rm-rf".parse::<AuditAction>().is_err());
+    }
+}
