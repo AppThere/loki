@@ -82,6 +82,8 @@ pub(super) fn style_editor_panel(
     // Handles for the reset-to-inherited action on locally-set inspector rows.
     let ds_reset = Arc::clone(&doc_state);
     let reset_id = draft.id.clone();
+    // Handle for the jump-to-ancestor link on inherited inspector rows.
+    let ds_jump = Arc::clone(&doc_state);
 
     rsx! {
         div {
@@ -226,6 +228,13 @@ pub(super) fn style_editor_panel(
                             // the reset (the cleared property now shows inherited).
                             if let Some(updated) = get_catalog_style(&ds_reset, &reset_id) {
                                 editing_style_draft.set(Some(style_to_draft(&updated)));
+                            }
+                        },
+                        on_jump: move |ancestor: loki_doc_model::style::StyleId| {
+                            // Open the ancestor that sets an inherited property, so
+                            // the user can change it there for all dependents.
+                            if let Some(s) = get_catalog_style(&ds_jump, ancestor.as_str()) {
+                                editing_style_draft.set(Some(style_to_draft(&s)));
                             }
                         },
                     }

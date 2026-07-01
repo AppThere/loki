@@ -18,17 +18,22 @@ use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_i18n::fl;
 
+use loki_doc_model::style::StyleId;
+
 use super::super::style_inspector::{InspectorRow, RowProvenance, StyleProperty};
 
 /// Renders the provenance inspector column for the selected style's rows.
 ///
 /// `on_reset` is invoked with the property whose local override the user wants
 /// to clear (reset to inherited); the reset control appears only on rows that
-/// are set locally.
+/// are set locally. `on_jump` is invoked with a source ancestor's id when the
+/// user clicks an *inherited* row's provenance chip — the jump-to-ancestor
+/// workflow ("identify where a property is set, change it for all dependents").
 #[component]
 pub(super) fn StyleProvenanceList(
     rows: Vec<InspectorRow>,
     on_reset: EventHandler<StyleProperty>,
+    on_jump: EventHandler<StyleId>,
 ) -> Element {
     rsx! {
         div {
@@ -59,6 +64,11 @@ pub(super) fn StyleProvenanceList(
                 {
                     let local = row.provenance.is_local();
                     let property = row.property;
+                    // Inherited rows link to the ancestor that sets the value.
+                    let jump_target = match &row.provenance {
+                        RowProvenance::Inherited { ancestor_id, .. } => Some(ancestor_id.clone()),
+                        _ => None,
+                    };
                     rsx! {
                         div {
                             key: "{row.property:?}",
@@ -99,17 +109,35 @@ pub(super) fn StyleProvenanceList(
                             // reset-to-inherited control on locally-set rows.
                             div {
                                 style: "display: flex; align-items: center; justify-content: space-between; gap: 8px;",
-                                span {
-                                    style: format!(
-                                        "font-size: {fs}px; color: {fg};",
-                                        fs = tokens::FONT_SIZE_XS,
-                                        fg = if local {
-                                            tokens::COLOR_TAB_ACTIVE_INDICATOR
-                                        } else {
-                                            tokens::COLOR_TEXT_ON_CHROME_SECONDARY
-                                        },
-                                    ),
-                                    { provenance_label(&row.provenance) }
+                                // Inherited rows: the chip is a link to the source
+                                // ancestor. Other rows: a plain, accent-if-local chip.
+                                if let Some(target) = jump_target {
+                                    button {
+                                        style: format!(
+                                            "background: transparent; border: none; cursor: pointer; \
+                                             padding: 0; text-align: left; text-decoration: underline; \
+                                             font-family: {ff}; font-size: {fs}px; color: {fg};",
+                                            ff = tokens::FONT_FAMILY_UI,
+                                            fs = tokens::FONT_SIZE_XS,
+                                            fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
+                                        ),
+                                        aria_label: fl!("style-jump-aria"),
+                                        onclick: move |_| on_jump.call(target.clone()),
+                                        { provenance_label(&row.provenance) }
+                                    }
+                                } else {
+                                    span {
+                                        style: format!(
+                                            "font-size: {fs}px; color: {fg};",
+                                            fs = tokens::FONT_SIZE_XS,
+                                            fg = if local {
+                                                tokens::COLOR_TAB_ACTIVE_INDICATOR
+                                            } else {
+                                                tokens::COLOR_TEXT_ON_CHROME_SECONDARY
+                                            },
+                                        ),
+                                        { provenance_label(&row.provenance) }
+                                    }
                                 }
                                 // Reset to inherited (local rows only). Compact
                                 // affordance in a dense inspector; the row's

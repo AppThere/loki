@@ -19,6 +19,8 @@ style-prop-line-height = Line height
 
 # Reset-to-inherited control (shown on locally-set rows)
 style-reset-aria = Reset to inherited
+# Jump-to-ancestor link (shown on inherited rows)
+style-jump-aria = Open the source style
 
 # Provenance labels
 style-provenance-local = Local
