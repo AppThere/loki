@@ -66,6 +66,22 @@ pub struct ParagraphStyle {
     pub extensions: ExtensionBag,
 }
 
+impl ParagraphStyle {
+    /// Whether this is a **built-in** (application-provided) style rather than a
+    /// user-created one — the styles the management panel protects from deletion
+    /// and rename (Spec 05 §8 / audit SM-11).
+    ///
+    /// The rule is the existing model flags: a style is built-in when it is the
+    /// document default (`is_default`) or is not user-custom (`!is_custom`). Spec
+    /// 05 assumed `COMPAT(i18n)` annotations on internal match keys would mark
+    /// built-ins; those do not exist and are not needed — `is_custom` already
+    /// carries the built-in-vs-user distinction, so that framing is dropped.
+    #[must_use]
+    pub fn is_builtin(&self) -> bool {
+        self.is_default || !self.is_custom
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,5 +107,30 @@ mod tests {
         };
         assert_eq!(style.parent, Some(parent_id));
         assert_eq!(style.char_props.bold, Some(true));
+    }
+
+    fn style(is_default: bool, is_custom: bool) -> ParagraphStyle {
+        ParagraphStyle {
+            id: StyleId("S".into()),
+            display_name: None,
+            parent: None,
+            linked_char_style: None,
+            next_style_id: None,
+            para_props: ParaProps::default(),
+            char_props: CharProps::default(),
+            is_default,
+            is_custom,
+            extensions: ExtensionBag::default(),
+        }
+    }
+
+    #[test]
+    fn is_builtin_distinguishes_application_styles_from_user_styles() {
+        // Built-in: not user-custom.
+        assert!(style(false, false).is_builtin());
+        // The document default is always built-in (protected), even if flagged custom.
+        assert!(style(true, true).is_builtin());
+        // A user-created custom style is not built-in.
+        assert!(!style(false, true).is_builtin());
     }
 }

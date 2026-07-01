@@ -211,12 +211,17 @@ Model gaps gate the UI, so the sequence front-loads model work:
    shipped**: pure `clear_local_property(&mut style, property)` (10 tests total)
    + a per-row reset control on locally-set rows that clears the override via the
    existing `commit_style_to_loro` path (undoable) and re-derives the draft, so
-   the property falls through to its inherited/default/engine value. *Remaining
-   M2: edit-creates-override staged display (the §12 staged-vs-committed model —
-   the form already writes overrides live on Apply), jump-to-ancestor navigation,
-   promoting the panel into `AtPanelHost`, and the built-in-style identification
-   question (SM-11 — `is_default` + a known-id set; decide whether to add the
-   `COMPAT(i18n)` annotations the spec assumed or drop that framing).*
+   the property falls through to its inherited/default/engine value.
+   **Jump-to-ancestor shipped**: an inherited row's provenance chip is a link
+   that opens the source ancestor in the editor (via the `StyleId` the row
+   carries), so a property can be changed at its source for all dependents.
+   **Built-in identification decided (SM-11):** the assumed `COMPAT(i18n)`
+   annotations do not exist and are *dropped*; `ParagraphStyle::is_builtin()`
+   (`is_default || !is_custom`) is the rule M5's delete/rename guards will use.
+   *Remaining M2: edit-creates-override **staged** display — the form already
+   writes overrides live on Apply (§12), so the open item is overlaying the
+   uncommitted draft in the inspector as "pending"; and promoting the panel into
+   `AtPanelHost` (a larger mount/layout refactor).*
 4. **M5 — Creation & management** (create → pick parent → override; rename;
    re-parent; delete-with-orphan-handling; built-in rules).
 5. **M4 — Tree view + propagation + impact preview** (in-memory over the catalog;
