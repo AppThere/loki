@@ -5,9 +5,18 @@
 use std::sync::{Arc, Mutex};
 
 use loki_doc_model::style::ParagraphStyle;
-use loki_doc_model::style::catalog::StyleId;
+use loki_doc_model::style::catalog::{StyleCatalog, StyleId};
 
 use crate::editing::state::DocumentState;
+
+/// Clones the document's current [`StyleCatalog`] for read-only inspection
+/// (e.g. the provenance inspector). Returns `None` when no document is loaded.
+pub(super) fn catalog_snapshot(doc_state: &Arc<Mutex<DocumentState>>) -> Option<StyleCatalog> {
+    doc_state
+        .lock()
+        .ok()
+        .and_then(|s| s.document.as_ref().map(|d| d.styles.clone()))
+}
 
 /// Inserts or replaces a paragraph style in the catalog and persists the result
 /// through the Loro CRDT, committing it as a discrete, undoable transaction.

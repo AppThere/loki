@@ -202,11 +202,17 @@ Model gaps gate the UI, so the sequence front-loads model work:
    FormatDefault) — every property appears regardless of local-set state (the
    local-only blindness fix), and inherited rows name the source ancestor by
    **display name** while keeping its `StyleId` for jump-to-ancestor. Pure +
-   i18n-free; 7 tests. *Remaining M2: the row/inspector **components** (host in
-   `AtPanelHost`), reset/edit affordances + staged display, and the
-   built-in-style identification question (SM-11 — `is_default` + a known-id set;
-   decide whether to add the `COMPAT(i18n)` annotations the spec assumed or drop
-   that framing).*
+   i18n-free; 7 tests. **Read-only inspector view shipped**
+   (`editor_style_editor/provenance.rs`): a `StyleProvenanceList` `#[component]`
+   (ADR-0013) renders every property with its resolved value and a localized
+   provenance line (Local / Inherited · ⟨ancestor⟩ / Default / Auto) as a column
+   in the style editor panel — the local-only blindness is now *visible* gone;
+   local rows are emphasised. New `style` i18n domain. *Remaining M2: reset-to-
+   inherited / edit-creates-override with staged display (the mutation + §12
+   Apply plumbing), jump-to-ancestor navigation, promoting the panel into
+   `AtPanelHost`, and the built-in-style identification question (SM-11 —
+   `is_default` + a known-id set; decide whether to add the `COMPAT(i18n)`
+   annotations the spec assumed or drop that framing).*
 4. **M5 — Creation & management** (create → pick parent → override; rename;
    re-parent; delete-with-orphan-handling; built-in rules).
 5. **M4 — Tree view + propagation + impact preview** (in-memory over the catalog;

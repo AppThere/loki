@@ -11,18 +11,24 @@
 mod draft;
 mod form;
 mod form_font;
+mod provenance;
 
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::tokens;
 use dioxus::prelude::*;
+use loki_doc_model::style::StyleId;
 use loki_i18n::fl;
 
 use super::editor_state::StyleDraft;
-use super::editor_style_catalog::{catalog_style_list, get_catalog_style, new_custom_style_id};
+use super::editor_style_catalog::{
+    catalog_snapshot, catalog_style_list, get_catalog_style, new_custom_style_id,
+};
+use super::style_inspector::paragraph_inspector_rows;
 use crate::editing::cursor::CursorState;
 use crate::editing::state::DocumentState;
+use provenance::StyleProvenanceList;
 
 pub(super) use draft::style_to_draft;
 
@@ -65,6 +71,12 @@ pub(super) fn style_editor_panel(
     let active_id = draft.id.clone();
     let ds_list = Arc::clone(&doc_state);
     let ds_new = Arc::clone(&doc_state);
+
+    // Provenance rows for the selected style — every applicable property with
+    // where its value comes from (empty for a not-yet-committed new style).
+    let provenance_rows = catalog_snapshot(&doc_state)
+        .map(|cat| paragraph_inspector_rows(&cat, &StyleId::new(&draft.id)))
+        .unwrap_or_default();
 
     rsx! {
         div {
@@ -181,8 +193,13 @@ pub(super) fn style_editor_panel(
                     }
                 }
 
-                // ── Right: edit form ───────────────────────────────────────────
+                // ── Middle: edit form ──────────────────────────────────────────
                 { form::style_form(doc_state, editing_style_draft, draft, font_families, sync) }
+
+                // ── Right: provenance inspector (read-only; Spec 05 M2) ────────
+                if !provenance_rows.is_empty() {
+                    StyleProvenanceList { rows: provenance_rows }
+                }
             }
         }
     }
