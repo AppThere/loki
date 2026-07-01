@@ -1,0 +1,24 @@
+[package]
+name = "loki-server-collab"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "WebSocket collaboration relay and fan-out bus for the Loki server (ADR-C012/C013)"
+repository = "https://github.com/appthere/loki"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt", "macros"] }
+axum = { workspace = true }
+sqlx = { workspace = true }
+tracing = { workspace = true }
+base64 = { workspace = true }
+loki-model = { workspace = true }
+loki-server-store = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }

@@ -1,0 +1,23 @@
+[package]
+name = "loki-server"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "AppThere Loki collaboration server — single modular Axum binary (ADR-C012)"
+repository = "https://github.com/appthere/loki"
+
+[dependencies]
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "net"] }
+axum = { workspace = true }
+sqlx = { workspace = true }
+object_store = { workspace = true }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+url = "2"
+loki-model = { workspace = true }
+loki-crypto = { workspace = true }
+loki-server-auth = { workspace = true }
+loki-server-store = { workspace = true }
+loki-server-collab = { workspace = true }
+loki-server-api = { workspace = true }
