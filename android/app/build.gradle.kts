@@ -36,9 +36,11 @@ android {
 
     buildTypes {
         getByName("release") {
-            // FilePickerActivity is resolved by fully-qualified name over JNI from
-            // Rust (loki-file-access).  R8/ProGuard would rename or strip it and
-            // break file open/save, so minification stays OFF.
+            // The Java shims (FilePickerActivity, ImeInsetsListener) are resolved
+            // by fully-qualified name over JNI from Rust (loki-file-access), and
+            // ImeInsetsListener's native callback is bound via RegisterNatives.
+            // R8/ProGuard would rename or strip these — breaking file open/save
+            // and the soft-keyboard visibility signal — so minification stays OFF.
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("upload")
         }

@@ -11,6 +11,8 @@
 mod application;
 mod convert_events;
 mod event;
+#[cfg(target_os = "android")]
+mod ime_android;
 mod net;
 mod tooltip;
 mod window;
@@ -20,6 +22,8 @@ mod accessibility;
 
 pub use crate::application::BlitzApplication;
 pub use crate::event::BlitzShellEvent;
+#[cfg(target_os = "android")]
+pub use crate::ime_android::notify_ime_visibility_changed;
 pub use crate::net::BlitzShellNetCallback;
 pub use crate::window::{View, WindowConfig};
 

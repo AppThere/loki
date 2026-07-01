@@ -148,10 +148,29 @@ app's hidden `SafeAreaResizeSensor` catches that tick and re-queries
 the returned `bottom` grows to the keyboard height. The settle window exists
 because Android reports/animates the IME inset a frame or two after the
 visibility request (it is the real animation duration, not an arbitrary sleep).
-Limitation: a system-back / swipe-down dismissal is not reported by the OS, so
-the expanded bottom padding (harmless chrome, no content overlap) persists until
-the next focus change or tap re-syncs — the same OS gap the re-trigger note above
-documents. Android-only; on desktop `ime_settle_until` stays `None`.
+Android-only; on desktop `ime_settle_until` stays `None`. (The former limitation
+— a system-back / swipe-down dismissal not re-syncing the bottom padding — is now
+closed by the user-driven IME visibility signal below.)
+
+**User-driven soft-keyboard collapse signal (PATCH(loki), 2026-07-01):** the
+re-sync above only fires when *the app* drives the keyboard (focus change / caret
+tap). When the **user** collapses (or re-summons) the keyboard — system back
+button, swipe-down gesture, or the keyboard's own hide key — a `NativeActivity`
+gets no winit event and its surface is not resized, so `ime_active` went stale and
+the bottom safe area stayed reserved for a keyboard that is gone. This is now
+closed with a real Android inset callback: `loki-file-access`'s
+`ImeInsetsListener` (a Java shim) is installed on the decor view via
+`install_ime_listener` and fires `View.OnApplyWindowInsetsListener` on **every**
+IME transition, reading `WindowInsets.Type.ime()` visibility (API 30+; a no-op
+below, matching the query fallback). Its native callback — bound with
+`RegisterNatives`, so it is independent of the host `.so` name — is bridged in
+`android_main` to `blitz_shell::notify_ime_visibility_changed`, which (in
+`ime_android.rs`) records the new visibility and wakes the event loop with a
+`Poll`. `WindowState::poll` drains it: it mirrors `ime_active` and calls
+`arm_ime_settle`, reusing the exact re-sync path above so the bottom safe area
+converges to the settled keyboard height (0 on a collapse). The listener passes
+insets through (`v.onApplyWindowInsets`), so it does not consume or alter the
+system's inset handling. Android-only.
 
 **Scroll re-sync on resize (PATCH(loki), 2026-06-12):** `resync_scroll_geometry`
 calls `doc.resolve()` and then re-dispatches `onscroll` (via
@@ -428,6 +447,21 @@ height while it is visible. Combined with the blitz-shell IME-settle re-sync
 keyboard on a `NativeActivity` whose surface does not resize. `ime()` is API 30+
 — the same level as `getInsets(int)` — so the existing `None` fallback already
 covers older API levels.
+
+**Adds (PATCH(loki), 2026-07-01):** `install_ime_listener(activity_ptr)` and
+`set_ime_visibility_listener(cb)` — a soft-keyboard visibility signal. The former
+loads the `ImeInsetsListener` Java shim (in `android/`) through the *application*
+class loader (a native thread's default `FindClass` sees only framework classes),
+binds its `nativeOnImeInsetsChanged` callback via `RegisterNatives` (so it does
+not depend on the host `.so` name), and calls its static `install`, which sets a
+decor-view `OnApplyWindowInsetsListener` on the UI thread. The listener reports
+every IME visibility change — including the user-initiated dismiss/re-summon the
+OS never surfaces to a `NativeActivity` — to the registered closure. loki-text
+wires this to `blitz_shell::notify_ime_visibility_changed`. See the blitz-shell
+"user-driven soft-keyboard collapse signal" note. The shim is dexed alongside
+`FilePickerActivity` (build.rs / build-android.sh / build-aab.sh /
+build-android.ps1) and, being JNI-referenced, requires minification to stay off
+(already the case).
 
 **Root cause:** loki-file-access 0.1.2 was designed for desktop and WASM; the
 Android implementation was scaffolded but never exercised on a real NativeActivity

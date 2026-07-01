@@ -147,14 +147,15 @@ for i in "${!TRIPLES[@]}"; do
     echo "    -> jniLibs/$abidir/libloki_text.so ($(du -h "$so" | cut -f1))"
 done
 
-# ── Stage FilePickerActivity.java (single source of truth in patches/) ────────
+# ── Stage Java shims (single source of truth in patches/) ─────────────────────
 
 JAVA_PKG_DIR="$ROOT/android/app/src/main/java/io/github/appthere/lokifileaccess"
 echo ""
-echo "==> Staging FilePickerActivity.java..."
+echo "==> Staging Java shims (FilePickerActivity, ImeInsetsListener)..."
 rm -rf "$ROOT/android/app/src/main/java"
 mkdir -p "$JAVA_PKG_DIR"
 cp "$ROOT/patches/loki-file-access/android/FilePickerActivity.java" "$JAVA_PKG_DIR/"
+cp "$ROOT/patches/loki-file-access/android/ImeInsetsListener.java" "$JAVA_PKG_DIR/"
 
 # ── Gradle bundleRelease ──────────────────────────────────────────────────────
 
