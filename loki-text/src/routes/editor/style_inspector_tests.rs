@@ -221,3 +221,88 @@ fn unknown_style_yields_no_rows() {
     let cat = StyleCatalog::new();
     assert!(paragraph_inspector_rows(&cat, &StyleId::new("Ghost")).is_empty());
 }
+
+#[test]
+fn clearing_a_local_override_falls_through_to_inherited() {
+    let mut cat = StyleCatalog::new();
+    let base_pp = ParaProps {
+        alignment: Some(ParagraphAlignment::Justify),
+        ..Default::default()
+    };
+    insert(&mut cat, para("Base", None, base_pp, CharProps::default()));
+    // Child locally overrides alignment to Center.
+    let child_pp = ParaProps {
+        alignment: Some(ParagraphAlignment::Center),
+        ..Default::default()
+    };
+    insert(
+        &mut cat,
+        para("Child", Some("Base"), child_pp, CharProps::default()),
+    );
+
+    // Before reset: the row is Local/Center.
+    let before = paragraph_inspector_rows(&cat, &StyleId::new("Child"));
+    assert!(row(&before, StyleProperty::Alignment).provenance.is_local());
+
+    // Reset the local override.
+    let child = cat
+        .paragraph_styles
+        .get_mut(&StyleId::new("Child"))
+        .unwrap();
+    clear_local_property(child, StyleProperty::Alignment);
+
+    // After reset: alignment now resolves as Inherited from Base (Justify).
+    let after = paragraph_inspector_rows(&cat, &StyleId::new("Child"));
+    let a = row(&after, StyleProperty::Alignment);
+    assert_eq!(
+        a.provenance,
+        RowProvenance::Inherited {
+            ancestor_id: StyleId::new("Base"),
+            ancestor_display: "Base".to_string(),
+        }
+    );
+    assert_eq!(a.value_display.as_deref(), Some("Justify"));
+}
+
+#[test]
+fn clearing_the_only_source_falls_through_to_format_default() {
+    let mut cat = StyleCatalog::new();
+    let pp = ParaProps {
+        indent_start: Some(loki_doc_model::loki_primitives::units::Points::new(24.0)),
+        ..Default::default()
+    };
+    insert(&mut cat, para("Solo", None, pp, CharProps::default()));
+
+    let solo = cat.paragraph_styles.get_mut(&StyleId::new("Solo")).unwrap();
+    clear_local_property(solo, StyleProperty::IndentStart);
+
+    let rows = paragraph_inspector_rows(&cat, &StyleId::new("Solo"));
+    let r = row(&rows, StyleProperty::IndentStart);
+    assert_eq!(r.provenance, RowProvenance::FormatDefault);
+    assert_eq!(r.value_display, None);
+}
+
+#[test]
+fn clearing_char_props_resets_run_defaults() {
+    let mut cat = StyleCatalog::new();
+    let cp = CharProps {
+        bold: Some(true),
+        font_name: Some("Inter".to_string()),
+        ..Default::default()
+    };
+    insert(&mut cat, para("Body", None, ParaProps::default(), cp));
+
+    let body = cat.paragraph_styles.get_mut(&StyleId::new("Body")).unwrap();
+    clear_local_property(body, StyleProperty::Bold);
+    clear_local_property(body, StyleProperty::FontFamily);
+
+    let rows = paragraph_inspector_rows(&cat, &StyleId::new("Body"));
+    assert_eq!(
+        row(&rows, StyleProperty::Bold).provenance,
+        RowProvenance::FormatDefault
+    );
+    assert_eq!(
+        row(&rows, StyleProperty::FontFamily).provenance,
+        RowProvenance::FormatDefault
+    );
+}

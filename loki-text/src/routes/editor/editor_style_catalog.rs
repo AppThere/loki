@@ -43,6 +43,24 @@ pub(super) fn commit_style_to_loro(
     loro.commit();
 }
 
+/// Clears the local override of `property` on the paragraph style `id` and
+/// persists the result through Loro (a discrete, undoable transaction) — the
+/// "reset to inherited" action (Spec 05 §6). A no-op when the style is absent.
+///
+/// The caller relays out and refreshes undo bookkeeping (as for
+/// [`commit_style_to_loro`]).
+pub(super) fn reset_style_property(
+    loro: &loro::LoroDoc,
+    doc_state: &Arc<Mutex<DocumentState>>,
+    id: &str,
+    property: super::style_inspector::StyleProperty,
+) {
+    if let Some(mut style) = get_catalog_style(doc_state, id) {
+        super::style_inspector::clear_local_property(&mut style, property);
+        commit_style_to_loro(loro, doc_state, style);
+    }
+}
+
 /// Generates a unique id string for a new custom style.
 pub(super) fn new_custom_style_id(doc_state: &Arc<Mutex<DocumentState>>) -> String {
     let Ok(state) = doc_state.lock() else {

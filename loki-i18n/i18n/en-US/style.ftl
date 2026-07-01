@@ -17,6 +17,9 @@ style-prop-space-before = Space before
 style-prop-space-after = Space after
 style-prop-line-height = Line height
 
+# Reset-to-inherited control (shown on locally-set rows)
+style-reset-aria = Reset to inherited
+
 # Provenance labels
 style-provenance-local = Local
 style-provenance-inherited = Inherited · { $ancestor }

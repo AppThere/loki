@@ -217,6 +217,28 @@ fn to_row_provenance(catalog: &StyleCatalog, p: Provenance) -> RowProvenance {
     }
 }
 
+/// Clears the local override of `property` on `style`, so the property falls
+/// through to its inherited / default / engine value on the next resolution —
+/// the "reset to inherited" action (Spec 05 §6). A no-op when the property was
+/// not set locally.
+pub fn clear_local_property(style: &mut ParagraphStyle, property: StyleProperty) {
+    let pp = &mut style.para_props;
+    let cp = &mut style.char_props;
+    match property {
+        StyleProperty::FontFamily => cp.font_name = None,
+        StyleProperty::FontSize => cp.font_size = None,
+        StyleProperty::Bold => cp.bold = None,
+        StyleProperty::Italic => cp.italic = None,
+        StyleProperty::Alignment => pp.alignment = None,
+        StyleProperty::IndentStart => pp.indent_start = None,
+        StyleProperty::IndentEnd => pp.indent_end = None,
+        StyleProperty::IndentFirstLine => pp.indent_first_line = None,
+        StyleProperty::SpaceBefore => pp.space_before = None,
+        StyleProperty::SpaceAfter => pp.space_after = None,
+        StyleProperty::LineHeight => pp.line_height = None,
+    }
+}
+
 // ── Value formatters ──────────────────────────────────────────────────────────
 
 // Must take `&String` (not `&str`) to satisfy the generic `fmt: Fn(&T) -> String`

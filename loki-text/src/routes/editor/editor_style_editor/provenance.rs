@@ -21,8 +21,15 @@ use loki_i18n::fl;
 use super::super::style_inspector::{InspectorRow, RowProvenance, StyleProperty};
 
 /// Renders the provenance inspector column for the selected style's rows.
+///
+/// `on_reset` is invoked with the property whose local override the user wants
+/// to clear (reset to inherited); the reset control appears only on rows that
+/// are set locally.
 #[component]
-pub(super) fn StyleProvenanceList(rows: Vec<InspectorRow>) -> Element {
+pub(super) fn StyleProvenanceList(
+    rows: Vec<InspectorRow>,
+    on_reset: EventHandler<StyleProperty>,
+) -> Element {
     rsx! {
         div {
             style: format!(
@@ -51,6 +58,7 @@ pub(super) fn StyleProvenanceList(rows: Vec<InspectorRow>) -> Element {
             for row in rows.iter() {
                 {
                     let local = row.provenance.is_local();
+                    let property = row.property;
                     rsx! {
                         div {
                             key: "{row.property:?}",
@@ -87,18 +95,39 @@ pub(super) fn StyleProvenanceList(rows: Vec<InspectorRow>) -> Element {
                                 }
                             }
 
-                            // Provenance line — accented when the value is local.
-                            span {
-                                style: format!(
-                                    "font-size: {fs}px; color: {fg};",
-                                    fs = tokens::FONT_SIZE_XS,
-                                    fg = if local {
-                                        tokens::COLOR_TAB_ACTIVE_INDICATOR
-                                    } else {
-                                        tokens::COLOR_TEXT_ON_CHROME_SECONDARY
-                                    },
-                                ),
-                                { provenance_label(&row.provenance) }
+                            // Provenance line — accented when local — plus a
+                            // reset-to-inherited control on locally-set rows.
+                            div {
+                                style: "display: flex; align-items: center; justify-content: space-between; gap: 8px;",
+                                span {
+                                    style: format!(
+                                        "font-size: {fs}px; color: {fg};",
+                                        fs = tokens::FONT_SIZE_XS,
+                                        fg = if local {
+                                            tokens::COLOR_TAB_ACTIVE_INDICATOR
+                                        } else {
+                                            tokens::COLOR_TEXT_ON_CHROME_SECONDARY
+                                        },
+                                    ),
+                                    { provenance_label(&row.provenance) }
+                                }
+                                // Reset to inherited (local rows only). Compact
+                                // affordance in a dense inspector; the row's
+                                // click area carries the intent.
+                                if local {
+                                    button {
+                                        style: format!(
+                                            "background: transparent; border: none; cursor: pointer; \
+                                             padding: {p}px; font-size: {fs}px; color: {fg};",
+                                            p = tokens::SPACE_1,
+                                            fs = tokens::FONT_SIZE_XS,
+                                            fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
+                                        ),
+                                        aria_label: fl!("style-reset-aria"),
+                                        onclick: move |_| on_reset.call(property),
+                                        "\u{21A9}"
+                                    }
+                                }
                             }
                         }
                     }

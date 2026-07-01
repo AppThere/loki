@@ -21,13 +21,15 @@ use dioxus::prelude::*;
 use loki_doc_model::style::StyleId;
 use loki_i18n::fl;
 
+use super::editor_keydown_ctrl::post_mutation_sync;
 use super::editor_state::StyleDraft;
 use super::editor_style_catalog::{
     catalog_snapshot, catalog_style_list, get_catalog_style, new_custom_style_id,
+    reset_style_property,
 };
 use super::style_inspector::paragraph_inspector_rows;
 use crate::editing::cursor::CursorState;
-use crate::editing::state::DocumentState;
+use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 use provenance::StyleProvenanceList;
 
 pub(super) use draft::style_to_draft;
@@ -77,6 +79,9 @@ pub(super) fn style_editor_panel(
     let provenance_rows = catalog_snapshot(&doc_state)
         .map(|cat| paragraph_inspector_rows(&cat, &StyleId::new(&draft.id)))
         .unwrap_or_default();
+    // Handles for the reset-to-inherited action on locally-set inspector rows.
+    let ds_reset = Arc::clone(&doc_state);
+    let reset_id = draft.id.clone();
 
     rsx! {
         div {
@@ -196,9 +201,34 @@ pub(super) fn style_editor_panel(
                 // ── Middle: edit form ──────────────────────────────────────────
                 { form::style_form(doc_state, editing_style_draft, draft, font_families, sync) }
 
-                // ── Right: provenance inspector (read-only; Spec 05 M2) ────────
+                // ── Right: provenance inspector (Spec 05 M2) ───────────────────
                 if !provenance_rows.is_empty() {
-                    StyleProvenanceList { rows: provenance_rows }
+                    StyleProvenanceList {
+                        rows: provenance_rows,
+                        on_reset: move |property| {
+                            {
+                                let ldoc_guard = sync.loro_doc.read();
+                                let Some(ldoc) = ldoc_guard.as_ref() else {
+                                    return;
+                                };
+                                reset_style_property(ldoc, &ds_reset, &reset_id, property);
+                                apply_mutation_and_relayout(&ds_reset, ldoc);
+                            }
+                            post_mutation_sync(
+                                &ds_reset,
+                                sync.loro_doc,
+                                sync.cursor_state,
+                                sync.undo_manager,
+                                sync.can_undo,
+                                sync.can_redo,
+                            );
+                            // Re-derive the draft so the form + inspector reflect
+                            // the reset (the cleared property now shows inherited).
+                            if let Some(updated) = get_catalog_style(&ds_reset, &reset_id) {
+                                editing_style_draft.set(Some(style_to_draft(&updated)));
+                            }
+                        },
+                    }
                 }
             }
         }
