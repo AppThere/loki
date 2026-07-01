@@ -218,10 +218,18 @@ Model gaps gate the UI, so the sequence front-loads model work:
    **Built-in identification decided (SM-11):** the assumed `COMPAT(i18n)`
    annotations do not exist and are *dropped*; `ParagraphStyle::is_builtin()`
    (`is_default || !is_custom`) is the rule M5's delete/rename guards will use.
-   *Remaining M2: edit-creates-override **staged** display — the form already
-   writes overrides live on Apply (§12), so the open item is overlaying the
-   uncommitted draft in the inspector as "pending"; and promoting the panel into
-   `AtPanelHost` (a larger mount/layout refactor).*
+   **Staged display shipped (§12):** the inspector previews the *pending* draft
+   (`draft_to_style` over a catalog snapshot) and flags rows that differ from the
+   committed style with a pending marker; an unedited draft round-trips, so
+   markers appear only for actually-changed properties and clear on Apply/reset.
+   **M2 is substantively complete** — provenance view, reset-to-inherited,
+   jump-to-ancestor, staged display, and built-in identification all shipped and
+   tested. *One item deferred with rationale: promoting the panel into
+   `AtPanelHost` is **not** a mechanical wrap — `AtPanelHost` is a narrow
+   (360px) side-panel/sheet host, whereas the legacy editor is a wide
+   three-column surface (list + form + 220px provenance ≈ 600px+); forcing that
+   posture would break the layout. It lands with the M6/M7 full-panel redesign
+   (§9/§11), when the inspector becomes its own right-sized panel.*
 4. **M5 — Creation & management** (create → pick parent → override; rename;
    re-parent; delete-with-orphan-handling; built-in rules).
 5. **M4 — Tree view + propagation + impact preview** (in-memory over the catalog;
