@@ -24,6 +24,10 @@ use super::super::style_inspector::{InspectorRow, RowProvenance, StyleProperty};
 
 /// Renders the provenance inspector column for the selected style's rows.
 ///
+/// Each row pairs an [`InspectorRow`] with a `staged` flag — `true` when the
+/// value reflects an uncommitted draft edit not yet applied (Spec 05 §12), shown
+/// with a pending marker.
+///
 /// `on_reset` is invoked with the property whose local override the user wants
 /// to clear (reset to inherited); the reset control appears only on rows that
 /// are set locally. `on_jump` is invoked with a source ancestor's id when the
@@ -31,7 +35,7 @@ use super::super::style_inspector::{InspectorRow, RowProvenance, StyleProperty};
 /// workflow ("identify where a property is set, change it for all dependents").
 #[component]
 pub(super) fn StyleProvenanceList(
-    rows: Vec<InspectorRow>,
+    rows: Vec<(InspectorRow, bool)>,
     on_reset: EventHandler<StyleProperty>,
     on_jump: EventHandler<StyleId>,
 ) -> Element {
@@ -60,9 +64,10 @@ pub(super) fn StyleProvenanceList(
                 { fl!("style-inspector-heading") }
             }
 
-            for row in rows.iter() {
+            for (row, staged) in rows.iter() {
                 {
                     let local = row.provenance.is_local();
+                    let staged = *staged;
                     let property = row.property;
                     // Inherited rows link to the ancestor that sets the value.
                     let jump_target = match &row.provenance {
@@ -74,7 +79,7 @@ pub(super) fn StyleProvenanceList(
                             key: "{row.property:?}",
                             style: "display: flex; flex-direction: column;",
 
-                            // Property label + resolved value.
+                            // Property label (+ pending marker) and resolved value.
                             div {
                                 style: "display: flex; justify-content: space-between; gap: 8px;",
                                 span {
@@ -89,6 +94,14 @@ pub(super) fn StyleProvenanceList(
                                             tokens::FONT_WEIGHT_REGULAR
                                         },
                                     ),
+                                    // Pending (uncommitted draft edit) marker.
+                                    if staged {
+                                        span {
+                                            style: format!("color: {};", tokens::COLOR_TAB_ACTIVE_INDICATOR),
+                                            title: fl!("style-staged-title"),
+                                            "\u{25CF} "
+                                        }
+                                    }
                                     { property_label(row.property) }
                                 }
                                 span {

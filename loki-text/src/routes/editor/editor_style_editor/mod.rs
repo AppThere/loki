@@ -27,7 +27,7 @@ use super::editor_style_catalog::{
     catalog_snapshot, catalog_style_list, get_catalog_style, new_custom_style_id,
     reset_style_property,
 };
-use super::style_inspector::paragraph_inspector_rows;
+use super::style_inspector::{InspectorRow, paragraph_inspector_rows};
 use crate::editing::cursor::CursorState;
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 use provenance::StyleProvenanceList;
@@ -74,11 +74,30 @@ pub(super) fn style_editor_panel(
     let ds_list = Arc::clone(&doc_state);
     let ds_new = Arc::clone(&doc_state);
 
-    // Provenance rows for the selected style — every applicable property with
-    // where its value comes from (empty for a not-yet-committed new style).
-    let provenance_rows = catalog_snapshot(&doc_state)
-        .map(|cat| paragraph_inspector_rows(&cat, &StyleId::new(&draft.id)))
+    // Inspector rows for the selected style, previewing the *pending* draft:
+    // committed values come from the catalog; a row is flagged "staged" when the
+    // draft's uncommitted edit changes it, so pending overrides read distinctly
+    // from committed ones until Apply (Spec 05 §12).
+    let sid = StyleId::new(&draft.id);
+    let committed_rows = catalog_snapshot(&doc_state)
+        .map(|cat| paragraph_inspector_rows(&cat, &sid))
         .unwrap_or_default();
+    let display_rows: Vec<(InspectorRow, bool)> = catalog_snapshot(&doc_state)
+        .map(|mut cat| {
+            cat.paragraph_styles
+                .insert(sid.clone(), draft::draft_to_style(&draft));
+            paragraph_inspector_rows(&cat, &sid)
+        })
+        .unwrap_or_default()
+        .into_iter()
+        .map(|pending| {
+            let staged = committed_rows
+                .iter()
+                .find(|c| c.property == pending.property)
+                != Some(&pending);
+            (pending, staged)
+        })
+        .collect();
     // Handles for the reset-to-inherited action on locally-set inspector rows.
     let ds_reset = Arc::clone(&doc_state);
     let reset_id = draft.id.clone();
@@ -204,9 +223,9 @@ pub(super) fn style_editor_panel(
                 { form::style_form(doc_state, editing_style_draft, draft, font_families, sync) }
 
                 // ── Right: provenance inspector (Spec 05 M2) ───────────────────
-                if !provenance_rows.is_empty() {
+                if !display_rows.is_empty() {
                     StyleProvenanceList {
-                        rows: provenance_rows,
+                        rows: display_rows,
                         on_reset: move |property| {
                             {
                                 let ldoc_guard = sync.loro_doc.read();

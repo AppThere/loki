@@ -21,6 +21,8 @@ style-prop-line-height = Line height
 style-reset-aria = Reset to inherited
 # Jump-to-ancestor link (shown on inherited rows)
 style-jump-aria = Open the source style
+# Pending (uncommitted draft edit) marker
+style-staged-title = Pending — apply to commit
 
 # Provenance labels
 style-provenance-local = Local
