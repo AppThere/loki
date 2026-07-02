@@ -53,8 +53,8 @@ impl WorkspaceStore for PgStores {
 
     async fn list_documents(&self, id: WorkspaceId) -> Result<Vec<DocMetaRecord>, StoreError> {
         let rows = sqlx::query(
-            "SELECT id, workspace_id, title, tier, residency, snapshot_ptr, dek_wrapped,
-                    created_at
+            "SELECT id, workspace_id, title, tier, residency, snapshot_ptr, snapshot_seq,
+                    dek_wrapped, created_at
              FROM doc_meta WHERE workspace_id = $1 ORDER BY created_at DESC",
         )
         .bind(id.as_uuid())

@@ -12,10 +12,12 @@
 
 mod claims;
 mod error;
+mod jwks;
 mod rbac;
 mod verifier;
 
 pub use claims::{AuthContext, Claims};
 pub use error::AuthError;
+pub use jwks::{DEFAULT_MIN_REFRESH, HttpJwksFetcher, JwksError, JwksFetcher, JwksKeySource};
 pub use rbac::{AccessError, require};
 pub use verifier::{IdentityVerifier, KeySource, OidcVerifier, StaticKeys};

@@ -2,7 +2,8 @@
 
 //! Document creation, metadata, listing, and snapshot download.
 
-use axum::extract::{Path, State};
+use axum::body::Bytes;
+use axum::extract::{Path, Query, State};
 use axum::http::{StatusCode, header};
 use axum::response::IntoResponse;
 use axum::{Extension, Json};
@@ -51,6 +52,7 @@ pub(crate) async fn create(
         tier,
         residency: workspace.residency.clone(),
         snapshot_ptr: None,
+        snapshot_seq: 0,
         dek_wrapped,
         created_at: Utc::now(),
     };
@@ -127,4 +129,54 @@ pub(crate) async fn snapshot(
     // stored bytes either way (ADR-C013).
     let bytes = state.blob.get(&ptr).await?;
     Ok(([(header::CONTENT_TYPE, "application/octet-stream")], bytes))
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct PutSnapshotQuery {
+    /// Highest oplog sequence the uploaded snapshot incorporates. The writer
+    /// asserts coverage — under Tier 2 the server cannot verify ciphertext
+    /// by construction, so this is part of the writer trust model.
+    up_to: i64,
+}
+
+/// `PUT /v1/documents/{doc}/snapshot` — client-produced snapshot upload.
+///
+/// This is how Tier-2 documents get compacted (ADR-C013/C014: the server
+/// compacts nothing it cannot read; clients upload encrypted snapshots and
+/// the covered oplog ciphertext is dropped). Also usable on Tier 0/1 by a
+/// client that compacted locally. The snapshot pointer only moves forward;
+/// a stale upload gets `409` and changes nothing.
+pub(crate) async fn put_snapshot(
+    State(state): State<ApiState>,
+    Path(doc): Path<DocumentId>,
+    Query(query): Query<PutSnapshotQuery>,
+    Extension(CurrentUser(user)): Extension<CurrentUser>,
+    body: Bytes,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let (meta, _role) = require_doc_role(&state, doc, user.id, Action::WriteContent).await?;
+    if body.is_empty() {
+        return Err(ApiError::Validation(
+            "snapshot body must not be empty".into(),
+        ));
+    }
+    if query.up_to <= meta.snapshot_seq {
+        return Err(ApiError::SnapshotSuperseded);
+    }
+    // Same safety order as server-side compaction: durable snapshot →
+    // guarded pointer advance → truncate only on winning the guard.
+    let ptr = state
+        .blob
+        .put_snapshot(doc, query.up_to, body.to_vec())
+        .await?;
+    if !state
+        .stores
+        .documents
+        .set_snapshot(doc, &ptr, query.up_to)
+        .await?
+    {
+        state.blob.delete(&ptr).await?;
+        return Err(ApiError::SnapshotSuperseded);
+    }
+    state.collab.oplog.truncate_up_to(doc, query.up_to).await?;
+    Ok(Json(serde_json::json!({ "snapshot_seq": query.up_to })))
 }

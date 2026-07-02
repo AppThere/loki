@@ -48,8 +48,15 @@ pub trait DocumentStore: Send + Sync {
     async fn create_document(&self, doc: &DocMetaRecord) -> Result<(), StoreError>;
     /// Loads document metadata.
     async fn get_document(&self, id: DocumentId) -> Result<Option<DocMetaRecord>, StoreError>;
-    /// Points the document at a newly written snapshot (ADR-C013).
-    async fn set_snapshot_ptr(&self, id: DocumentId, ptr: &str) -> Result<(), StoreError>;
+    /// Points the document at a newly written snapshot covering every oplog
+    /// entry with `seq <= up_to` (ADR-C013).
+    ///
+    /// Returns `false` (without changing anything) when the document already
+    /// has a snapshot at `up_to` or newer — the guard that stops a slow
+    /// concurrent compactor from regressing the pointer and orphaning
+    /// truncated updates. Callers must only truncate the oplog on `true`.
+    async fn set_snapshot(&self, id: DocumentId, ptr: &str, up_to: i64)
+    -> Result<bool, StoreError>;
     /// Changes the confidentiality tier and replaces the wrapped DEK.
     async fn set_tier(
         &self,
@@ -99,6 +106,12 @@ pub trait OplogStore: Send + Sync {
     async fn fetch_one(&self, doc: DocumentId, seq: i64) -> Result<Option<OplogEntry>, StoreError>;
     /// Drops updates with `seq <= up_to` after snapshot compaction.
     async fn truncate_up_to(&self, doc: DocumentId, up_to: i64) -> Result<(), StoreError>;
+    /// Documents whose oplog holds at least `min_entries` updates, with the
+    /// count — the compaction candidates (ADR-C013).
+    async fn docs_with_backlog(
+        &self,
+        min_entries: i64,
+    ) -> Result<Vec<(DocumentId, i64)>, StoreError>;
 }
 
 /// The append-only audit chain (ADR-C020).

@@ -227,17 +227,20 @@ The workspace is a set of focused crates (one responsibility each). Key groups:
   encryption + crypto-agile `KeyWrap`: symmetric KEK for Tiers 0/1, X25519
   for Tier-2 zero-knowledge), `loki-server-audit` (hash-chained audit log),
   `loki-server-store` (Postgres/SQLx + `object_store` ports, with in-memory
-  test impls), `loki-server-collab` (WebSocket relay, `FanOutBus`:
-  `PgNotifyBus`/`InMemoryBus`), `loki-server-auth` (OIDC relying party +
-  RBAC), `loki-server-api` (REST `/v1`, problem+json errors,
-  `E2eeCapabilityDisabled` = the canonical Tier-2 409), and the
-  `loki-server` binary (env config with sovereignty validation, graceful
-  shutdown). Deliberate deferrals are marked in-code:
-  `TODO(oidc-jwks)` (JWKS fetch/rotation), `TODO(kms)` (KEK from
-  Vault/KMS instead of env), `TODO(headless-c021)` (export job queue),
-  `TODO(ws-membership)` (workspace-scope roles + listing join).
-  Server-side snapshot compaction (ADR-C013) is not yet implemented —
-  the oplog grows until it lands.
+  test impls; `doc_meta.snapshot_seq` is the move-forward-only compaction
+  guard), `loki-server-collab` (WebSocket relay, `FanOutBus`:
+  `PgNotifyBus`/`InMemoryBus`, and the ADR-C013 `Compactor` — a periodic
+  task folds each Tier-0/1 oplog backlog into a Loro snapshot and
+  truncates; Tier-2 documents are compacted by clients via
+  `PUT /v1/documents/{doc}/snapshot`), `loki-server-auth` (OIDC relying
+  party + RBAC; keys come from the IdP's JWKS endpoint with caching and
+  rotation-on-unknown-kid, or a static PEM), `loki-server-api` (REST
+  `/v1`, problem+json errors, `E2eeCapabilityDisabled` = the canonical
+  Tier-2 409), and the `loki-server` binary (env config with sovereignty
+  validation, graceful shutdown). Deliberate deferrals are marked in-code:
+  `TODO(kms)` (KEK from Vault/KMS instead of env), `TODO(headless-c021)`
+  (export job queue), `TODO(ws-membership)` (workspace-scope roles +
+  listing join).
 
 The **Publish** ribbon tab in `loki-text` drives PDF/X + EPUB export and the
 Dublin Core metadata editor.

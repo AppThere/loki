@@ -49,6 +49,10 @@ pub struct DocMetaRecord {
     pub residency: Residency,
     /// Object-storage key of the current snapshot, if one exists.
     pub snapshot_ptr: Option<String>,
+    /// Highest oplog sequence the current snapshot covers (`0` = none).
+    /// Clients resume the collab WebSocket with `after = snapshot_seq`;
+    /// compaction only moves this forward (ADR-C013).
+    pub snapshot_seq: i64,
     /// The document DEK wrapped by the tier KEK (Tiers 0/1). `None` under
     /// Tier 2 (per-member wraps live on `doc_member`) and after
     /// crypto-shredding (ADR-C020).

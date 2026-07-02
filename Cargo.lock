@@ -4552,12 +4552,15 @@ name = "loki-server-auth"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64",
  "jsonwebtoken",
  "loki-model",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -4567,9 +4570,12 @@ dependencies = [
  "async-trait",
  "axum",
  "base64",
+ "chrono",
  "futures-util",
  "loki-model",
  "loki-server-store",
+ "loro",
+ "object_store",
  "serde",
  "serde_json",
  "sqlx",

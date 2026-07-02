@@ -71,6 +71,10 @@ pub struct DocumentResponse {
     pub residency: String,
     /// Whether a snapshot exists (`GET …/snapshot` succeeds).
     pub has_snapshot: bool,
+    /// Highest oplog sequence the snapshot covers (`0` = none). After
+    /// downloading the snapshot, connect the collab WebSocket with
+    /// `after = snapshot_seq` to replay only the tail (ADR-C013).
+    pub snapshot_seq: i64,
     /// Creation time.
     pub created_at: DateTime<Utc>,
 }
@@ -84,6 +88,7 @@ impl From<DocMetaRecord> for DocumentResponse {
             tier: record.tier,
             residency: record.residency.as_config_value(),
             has_snapshot: record.snapshot_ptr.is_some(),
+            snapshot_seq: record.snapshot_seq,
             created_at: record.created_at,
         }
     }

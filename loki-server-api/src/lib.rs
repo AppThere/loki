@@ -39,7 +39,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/documents/{doc}", get(routes::documents::get_meta))
         .route(
             "/v1/documents/{doc}/snapshot",
-            get(routes::documents::snapshot),
+            get(routes::documents::snapshot).put(routes::documents::put_snapshot),
         )
         .route("/v1/documents/{doc}/members", post(routes::members::add))
         .route("/v1/documents/{doc}/blobs", post(routes::blobs::upload))

@@ -9,6 +9,7 @@
 //! Tier 2 (zero-knowledge is per-document opt-in, ratified decision §6.1).
 
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use loki_crypto::Kek;
 use loki_model::{EncryptionTier, Residency, ResidencyError};
@@ -32,15 +33,29 @@ pub struct ServerConfig {
     pub oidc_issuer: String,
     /// Expected token audience (`LOKI_OIDC_AUDIENCE`).
     pub oidc_audience: String,
-    /// PEM-encoded RSA public key for token verification
-    /// (`LOKI_OIDC_RSA_PEM_FILE`, a file path).
-    // TODO(oidc-jwks): replace with JWKS discovery + rotation (see
-    // loki-server-auth).
-    pub oidc_rsa_pem: Vec<u8>,
+    /// Where token-verification keys come from: `LOKI_OIDC_JWKS_URL` (the
+    /// IdP's `jwks_uri`; cached, rotation-aware — the recommended setup) or
+    /// `LOKI_OIDC_RSA_PEM_FILE` (a static PEM public key, for IdPs without
+    /// a reachable JWKS endpoint). Exactly one must be set.
+    pub oidc_keys: OidcKeyConfig,
     /// Tier-0/1 key-encryption key (`LOKI_KEK_BASE64`, 32 bytes base64).
     // TODO(kms): source the KEK from Vault/KMS/PKCS#11 instead of the
     // environment; env is acceptable for single-node self-host only.
     pub kek: Kek,
+    /// Snapshot-compaction cadence (`LOKI_COMPACT_INTERVAL_SECS`, default
+    /// 300; `0` disables the background compactor — ADR-C013).
+    pub compact_interval: Option<Duration>,
+    /// Minimum oplog backlog before a document is compacted
+    /// (`LOKI_COMPACT_MIN_ENTRIES`, default 256).
+    pub compact_min_entries: i64,
+}
+
+/// Source of OIDC token-verification keys (ADR-C017).
+pub enum OidcKeyConfig {
+    /// Fetch and cache the IdP's JWKS document, refreshing on rotation.
+    JwksUrl(String),
+    /// A fixed PEM-encoded RSA public key loaded at startup.
+    StaticRsaPem(Vec<u8>),
 }
 
 /// Where snapshots/attachments live.
@@ -126,9 +141,44 @@ impl ServerConfig {
             }
         };
 
-        let pem_path = required("LOKI_OIDC_RSA_PEM_FILE")?;
-        let oidc_rsa_pem =
-            std::fs::read(&pem_path).map_err(|e| invalid("LOKI_OIDC_RSA_PEM_FILE", e))?;
+        let oidc_keys = match (
+            std::env::var("LOKI_OIDC_JWKS_URL").ok(),
+            std::env::var("LOKI_OIDC_RSA_PEM_FILE").ok(),
+        ) {
+            (Some(url), None) => OidcKeyConfig::JwksUrl(url),
+            (None, Some(pem_path)) => OidcKeyConfig::StaticRsaPem(
+                std::fs::read(&pem_path).map_err(|e| invalid("LOKI_OIDC_RSA_PEM_FILE", e))?,
+            ),
+            (Some(_), Some(_)) => {
+                return Err(invalid(
+                    "LOKI_OIDC_JWKS_URL",
+                    "set either LOKI_OIDC_JWKS_URL or LOKI_OIDC_RSA_PEM_FILE, not both",
+                ));
+            }
+            (None, None) => return Err(ConfigError::Missing("LOKI_OIDC_JWKS_URL")),
+        };
+
+        let compact_interval = match std::env::var("LOKI_COMPACT_INTERVAL_SECS").as_deref() {
+            Err(_) => Some(Duration::from_secs(300)),
+            Ok(raw) => match raw.parse::<u64>() {
+                Ok(0) => None,
+                Ok(secs) => Some(Duration::from_secs(secs)),
+                Err(e) => return Err(invalid("LOKI_COMPACT_INTERVAL_SECS", e)),
+            },
+        };
+        let compact_min_entries = match std::env::var("LOKI_COMPACT_MIN_ENTRIES").as_deref() {
+            Err(_) => 256,
+            Ok(raw) => raw
+                .parse::<i64>()
+                .map_err(|e| invalid("LOKI_COMPACT_MIN_ENTRIES", e))
+                .and_then(|n| {
+                    if n >= 1 {
+                        Ok(n)
+                    } else {
+                        Err(invalid("LOKI_COMPACT_MIN_ENTRIES", "must be >= 1"))
+                    }
+                })?,
+        };
 
         let kek_b64 = required("LOKI_KEK_BASE64")?;
         let kek_bytes = base64_decode(&kek_b64)
@@ -143,8 +193,10 @@ impl ServerConfig {
             default_tier,
             oidc_issuer: required("LOKI_OIDC_ISSUER")?,
             oidc_audience: required("LOKI_OIDC_AUDIENCE")?,
-            oidc_rsa_pem,
+            oidc_keys,
             kek,
+            compact_interval,
+            compact_min_entries,
         })
     }
 }

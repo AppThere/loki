@@ -80,4 +80,26 @@ impl OplogStore for PgStores {
             .await?;
         Ok(())
     }
+
+    async fn docs_with_backlog(
+        &self,
+        min_entries: i64,
+    ) -> Result<Vec<(DocumentId, i64)>, StoreError> {
+        let rows = sqlx::query(
+            "SELECT doc_id, COUNT(*) AS backlog
+             FROM doc_oplog GROUP BY doc_id HAVING COUNT(*) >= $1
+             ORDER BY backlog DESC",
+        )
+        .bind(min_entries)
+        .fetch_all(self.pool())
+        .await?;
+        rows.into_iter()
+            .map(|row| {
+                Ok((
+                    DocumentId::from_uuid(row.try_get::<Uuid, _>("doc_id")?),
+                    row.try_get::<i64, _>("backlog")?,
+                ))
+            })
+            .collect()
+    }
 }

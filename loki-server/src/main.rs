@@ -11,8 +11,10 @@ use std::sync::Arc;
 use jsonwebtoken::DecodingKey;
 use loki_crypto::AeadKeyWrap;
 use loki_server_api::{ApiState, router};
-use loki_server_auth::{OidcVerifier, StaticKeys};
-use loki_server_collab::{CollabState, PgNotifyBus};
+use loki_server_auth::{
+    HttpJwksFetcher, IdentityVerifier, JwksKeySource, OidcVerifier, StaticKeys,
+};
+use loki_server_collab::{CollabState, Compactor, PgNotifyBus};
 use loki_server_store::BlobStore;
 use loki_server_store::pg::PgStores;
 use object_store::ObjectStore;
@@ -20,7 +22,7 @@ use object_store::aws::AmazonS3Builder;
 use sqlx::postgres::PgPoolOptions;
 use uuid::Uuid;
 
-use crate::config::{ConfigError, ObjectStoreConfig, ServerConfig};
+use crate::config::{ConfigError, ObjectStoreConfig, OidcKeyConfig, ServerConfig};
 
 #[derive(Debug, thiserror::Error)]
 enum ServerError {
@@ -78,17 +80,45 @@ async fn main() -> Result<(), ServerError> {
     let bus = PgNotifyBus::start(pool, Arc::clone(&stores.oplog), instance).await?;
     let collab = CollabState::new(Arc::clone(&stores.oplog), bus, instance);
 
-    let verifier = OidcVerifier::new(
-        config.oidc_issuer.clone(),
-        config.oidc_audience.clone(),
-        StaticKeys::single(DecodingKey::from_rsa_pem(&config.oidc_rsa_pem)?),
-    );
+    let verifier: Arc<dyn IdentityVerifier> = match &config.oidc_keys {
+        OidcKeyConfig::JwksUrl(url) => Arc::new(OidcVerifier::new(
+            config.oidc_issuer.clone(),
+            config.oidc_audience.clone(),
+            JwksKeySource::new(HttpJwksFetcher::new(url.clone())),
+        )),
+        OidcKeyConfig::StaticRsaPem(pem) => Arc::new(OidcVerifier::new(
+            config.oidc_issuer.clone(),
+            config.oidc_audience.clone(),
+            StaticKeys::single(DecodingKey::from_rsa_pem(pem)?),
+        )),
+    };
+
+    let blob = BlobStore::new(object_store);
+
+    // Background snapshot compaction (ADR-C013): folds each Tier-0/1
+    // document's oplog backlog into a fresh snapshot on a fixed cadence.
+    match config.compact_interval {
+        Some(interval) => {
+            let compactor = Arc::new(Compactor::new(
+                Arc::clone(&stores.documents),
+                Arc::clone(&stores.oplog),
+                blob.clone(),
+            ));
+            tracing::info!(
+                interval_secs = interval.as_secs(),
+                min_entries = config.compact_min_entries,
+                "snapshot compactor running"
+            );
+            tokio::spawn(compactor.run_periodic(interval, config.compact_min_entries));
+        }
+        None => tracing::warn!("snapshot compactor disabled; the oplog will grow unbounded"),
+    }
 
     let state = ApiState {
         stores,
-        blob: BlobStore::new(object_store),
+        blob,
         collab,
-        verifier: Arc::new(verifier),
+        verifier,
         tier_kek: Arc::new(AeadKeyWrap::new(config.kek)),
         residency: config.residency,
         default_tier: config.default_tier,

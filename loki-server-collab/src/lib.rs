@@ -19,6 +19,7 @@
 mod bus;
 mod bus_memory;
 mod bus_pg;
+mod compact;
 mod hub;
 mod msg;
 mod relay;
@@ -27,6 +28,7 @@ mod ws;
 pub use bus::{BusError, BusEvent, FanOutBus, Origin};
 pub use bus_memory::InMemoryBus;
 pub use bus_pg::PgNotifyBus;
+pub use compact::{CompactError, CompactionOutcome, Compactor};
 pub use msg::{CollabFrame, FrameError};
 pub use relay::{CollabState, DocRelay, RelayError};
 pub use ws::drive_socket;

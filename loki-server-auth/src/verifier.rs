@@ -12,13 +12,14 @@ use crate::error::AuthError;
 
 /// Resolves the verification key for a token's `kid` header.
 ///
-/// [`StaticKeys`] serves keys loaded at startup. A JWKS-over-HTTP source
-/// (with rotation) is deliberately deferred:
-// TODO(oidc-jwks): fetch and cache the IdP's JWKS document (RFC 7517) with
-// rotation on unknown-kid, instead of requiring keys in the config.
+/// [`StaticKeys`] serves keys loaded at startup; [`crate::JwksKeySource`]
+/// fetches and caches the IdP's JWKS document with rotation on unknown
+/// `kid`. The trait is async so a source may refresh on demand; keys are
+/// returned owned because the backing cache can change between calls.
+#[async_trait]
 pub trait KeySource: Send + Sync {
     /// Returns the key for `kid`, or the default key when `kid` is `None`.
-    fn key_for(&self, kid: Option<&str>) -> Option<&DecodingKey>;
+    async fn key_for(&self, kid: Option<&str>) -> Option<DecodingKey>;
 }
 
 /// A fixed key set loaded from configuration.
@@ -44,11 +45,12 @@ impl StaticKeys {
     }
 }
 
+#[async_trait]
 impl KeySource for StaticKeys {
-    fn key_for(&self, kid: Option<&str>) -> Option<&DecodingKey> {
+    async fn key_for(&self, kid: Option<&str>) -> Option<DecodingKey> {
         match kid {
-            Some(kid) => self.keys.get(kid).or(self.default_key.as_ref()),
-            None => self.default_key.as_ref(),
+            Some(kid) => self.keys.get(kid).or(self.default_key.as_ref()).cloned(),
+            None => self.default_key.clone(),
         }
     }
 }
@@ -107,12 +109,13 @@ impl<K: KeySource> IdentityVerifier for OidcVerifier<K> {
         let key = self
             .keys
             .key_for(header.kid.as_deref())
+            .await
             .ok_or(AuthError::UnknownKey { kid: header.kid })?;
         let mut validation = Validation::default();
         validation.algorithms = self.algorithms.clone();
         validation.set_issuer(&[&self.issuer]);
         validation.set_audience(&[&self.audience]);
-        let data = decode::<Claims>(token, key, &validation)?;
+        let data = decode::<Claims>(token, &key, &validation)?;
         Ok(AuthContext::from(data.claims))
     }
 }

@@ -30,6 +30,10 @@ pub enum ApiError {
     /// ADR-C015: server-side processing is disabled for Tier-2 documents.
     #[error("server-side processing is disabled for zero-knowledge documents")]
     E2eeCapabilityDisabled,
+    /// An uploaded snapshot does not advance past the current one — the
+    /// pointer is move-forward-only (ADR-C013).
+    #[error("a snapshot covering this sequence already exists")]
+    SnapshotSuperseded,
     /// The capability is specified but not yet implemented (returned instead
     /// of silently succeeding).
     #[error("not implemented: {0}")]
@@ -55,6 +59,7 @@ impl ApiError {
             Self::NotFound => "not-found",
             Self::Validation(_) => "validation-failed",
             Self::E2eeCapabilityDisabled => "e2ee-capability-disabled",
+            Self::SnapshotSuperseded => "snapshot-superseded",
             Self::NotImplemented(_) => "not-implemented",
             Self::Crypto(_) => "crypto-error",
             Self::Store(_) => "storage-error",
@@ -69,7 +74,7 @@ impl ApiError {
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Validation(_) => StatusCode::UNPROCESSABLE_ENTITY,
             // The spec pins the Tier-2 rejection to 409 (spec §3).
-            Self::E2eeCapabilityDisabled => StatusCode::CONFLICT,
+            Self::E2eeCapabilityDisabled | Self::SnapshotSuperseded => StatusCode::CONFLICT,
             Self::NotImplemented(_) => StatusCode::NOT_IMPLEMENTED,
             Self::Crypto(_) | Self::Store(_) | Self::Bus(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }

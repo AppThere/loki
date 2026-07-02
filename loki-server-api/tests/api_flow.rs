@@ -337,3 +337,94 @@ async fn validation_errors_are_422() {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(problem["type"], "urn:appthere:loki:error:validation-failed");
 }
+
+/// Sends a raw-body request (snapshot upload) and returns status + JSON.
+async fn send_bytes(
+    app: &Router,
+    method: &str,
+    path: &str,
+    token: &str,
+    body: &[u8],
+) -> (StatusCode, Value) {
+    let request = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::from(body.to_vec()))
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+#[tokio::test]
+async fn client_snapshot_upload_is_forward_only() {
+    let app = test_router();
+    let (_, ws) = send(
+        &app,
+        "POST",
+        "/v1/workspaces",
+        Some("alice"),
+        Some(json!({"name": "Vault"})),
+    )
+    .await;
+    let ws_id = ws["id"].as_str().unwrap().to_owned();
+    let (_, doc) = send(
+        &app,
+        "POST",
+        &format!("/v1/workspaces/{ws_id}/documents"),
+        Some("alice"),
+        Some(json!({"title": "secret", "tier": "zero-knowledge"})),
+    )
+    .await;
+    let doc_id = doc["id"].as_str().unwrap().to_owned();
+    assert_eq!(doc["snapshot_seq"], 0);
+
+    // The owner's client uploads an (encrypted) snapshot covering seq 3.
+    let path = format!("/v1/documents/{doc_id}/snapshot?up_to=3");
+    let (status, body) = send_bytes(&app, "PUT", &path, "alice", b"ciphertext-snap").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["snapshot_seq"], 3);
+
+    // Metadata reflects it; the snapshot downloads byte-identically.
+    let (_, meta) = send(
+        &app,
+        "GET",
+        &format!("/v1/documents/{doc_id}"),
+        Some("alice"),
+        None,
+    )
+    .await;
+    assert_eq!(meta["has_snapshot"], true);
+    assert_eq!(meta["snapshot_seq"], 3);
+
+    // A stale re-upload (same or older seq) is a typed 409.
+    let (status, problem) = send_bytes(&app, "PUT", &path, "alice", b"older").await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(
+        problem["type"],
+        "urn:appthere:loki:error:snapshot-superseded"
+    );
+
+    // A viewer may not upload snapshots (write action).
+    let (_, bob_export) = send(&app, "GET", "/v1/gdpr/export", Some("bob"), None).await;
+    let bob_id = bob_export["user_id"].as_str().unwrap().to_owned();
+    send(
+        &app,
+        "POST",
+        &format!("/v1/documents/{doc_id}/members"),
+        Some("alice"),
+        Some(json!({
+            "user_id": bob_id, "role": "viewer",
+            "dek_wrapped_for_user": {"algorithm": "x25519-hkdf-sha256-xchacha20.v1", "blob": "AAEC"},
+        })),
+    )
+    .await;
+    let path5 = format!("/v1/documents/{doc_id}/snapshot?up_to=5");
+    let (status, _) = send_bytes(&app, "PUT", &path5, "bob", b"snap").await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
