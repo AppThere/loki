@@ -22,10 +22,11 @@ pub(crate) async fn request(
     if !meta.tier.allows_server_side_processing() {
         return Err(ApiError::E2eeCapabilityDisabled);
     }
-    // TODO(headless-c021): enqueue an apalis export job for the headless
-    // render/print/convert worker (LOKI_HEADLESS_SERVER_SPEC.md). Until the
-    // worker exists this is an honest 501, not a silent success.
+    // TODO(headless-c025): enqueue an apalis export job for the headless
+    // render/print/convert worker (LOKI_HEADLESS_SERVER_SPEC.md; the
+    // conversion engine itself is loki-convert). Until the queue exists
+    // this is an honest 501, not a silent success.
     Err(ApiError::NotImplemented(
-        "export jobs require the headless worker (ADR-C021)",
+        "export jobs require the headless worker queue (ADR-C025)",
     ))
 }

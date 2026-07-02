@@ -238,9 +238,27 @@ The workspace is a set of focused crates (one responsibility each). Key groups:
   `/v1`, problem+json errors, `E2eeCapabilityDisabled` = the canonical
   Tier-2 409), and the `loki-server` binary (env config with sovereignty
   validation, graceful shutdown). Deliberate deferrals are marked in-code:
-  `TODO(kms)` (KEK from Vault/KMS instead of env), `TODO(headless-c021)`
-  (export job queue), `TODO(ws-membership)` (workspace-scope roles +
+  `TODO(kms)` (KEK from Vault/KMS instead of env), `TODO(headless-c025)`
+  (apalis export job queue), `TODO(ws-membership)` (workspace-scope roles +
   listing join).
+- **Headless (print & conversion)** — spec:
+  [docs/adr/LOKI_HEADLESS_SERVER_SPEC.md](docs/adr/LOKI_HEADLESS_SERVER_SPEC.md)
+  (ADRs C021–C028). `loki-convert` (ADR-C024 conversion matrix over the
+  existing import/export crates — DOCX/ODT ↔ each other and → EPUB/PDF;
+  XLSX ↔ ODS; PPTX/ODP/ODG gated behind the unbuilt ACID PPTX generator,
+  ratified decision §5.1; unsupported pairs are a typed
+  `ConversionUnsupported`), `loki-print` (ADR-C023 blocking IPP client:
+  Print-Job dispatch of rendered PDF with copies/duplex/media/colour
+  attributes, Get-Job-Attributes polling), and the `loki-headless` CLI
+  (`convert`/`render`/`print`/`formats`; print renders non-PDF inputs via
+  `loki-convert` first). The whole print path is CPU-only already
+  (Parley layout → pdf-writer), so no GPU is involved. Deferrals marked
+  in-code in `loki-headless/src/main.rs`: `TODO(headless-c025)` (apalis
+  worker + HTTP endpoint), `TODO(headless-c021)` (vello_cpu thumbnails),
+  `TODO(headless-c022)` (krilla migration for PDF/A-2b — `pdf-a2b` is a
+  typed `ProfileUnsupported` today), `TODO(headless-c023-discovery)`
+  (DNS-SD printer discovery), `TODO(headless-c027)` (fail-closed fonts),
+  `TODO(headless-c028)` (TEE attestation).
 
 The **Publish** ribbon tab in `loki-text` drives PDF/X + EPUB export and the
 Dublin Core metadata editor.
