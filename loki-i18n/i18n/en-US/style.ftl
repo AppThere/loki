@@ -23,6 +23,8 @@ style-reset-aria = Reset to inherited
 style-jump-aria = Open the source style
 # Pending (uncommitted draft edit) marker
 style-staged-title = Pending — apply to commit
+# Impact preview: dependent styles a staged change will also change
+style-impact-preview = Applying also changes { $count } dependent style(s): { $names }
 
 # Provenance labels
 style-provenance-local = Local

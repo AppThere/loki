@@ -36,6 +36,9 @@ use super::super::style_inspector::{InspectorRow, RowProvenance, StyleProperty};
 #[component]
 pub(super) fn StyleProvenanceList(
     rows: Vec<(InspectorRow, bool)>,
+    /// Display names of dependent styles that a staged change will also change
+    /// (Spec 05 §7 impact preview). Empty when nothing staged affects dependents.
+    impact: Vec<String>,
     on_reset: EventHandler<StyleProperty>,
     on_jump: EventHandler<StyleId>,
 ) -> Element {
@@ -62,6 +65,31 @@ pub(super) fn StyleProvenanceList(
                     mb = tokens::SPACE_1,
                 ),
                 { fl!("style-inspector-heading") }
+            }
+
+            // Impact preview — dependents a staged change will also affect.
+            if !impact.is_empty() {
+                div {
+                    style: format!(
+                        "font-size: {fs}px; color: {fg}; background: {bg}; \
+                         border: 1px solid {border}; border-radius: {r}px; \
+                         padding: {p}px; margin-bottom: {mb}px;",
+                        fs = tokens::FONT_SIZE_XS,
+                        fg = tokens::COLOR_TEXT_ON_CHROME,
+                        bg = tokens::COLOR_SURFACE_2,
+                        border = tokens::COLOR_TAB_ACTIVE_INDICATOR,
+                        r = tokens::RADIUS_SM,
+                        p = tokens::SPACE_2,
+                        mb = tokens::SPACE_1,
+                    ),
+                    {
+                        fl!(
+                            "style-impact-preview",
+                            count = impact.len() as i64,
+                            names = impact.join(", ")
+                        )
+                    }
+                }
             }
 
             for (row, staged) in rows.iter() {

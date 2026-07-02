@@ -40,6 +40,7 @@ mod editor_state;
 mod editor_style;
 mod editor_style_catalog;
 mod editor_style_editor;
+mod style_impact;
 mod style_inspector;
 
 use dioxus::prelude::*;

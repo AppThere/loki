@@ -27,6 +27,7 @@ use super::editor_style_catalog::{
     catalog_snapshot, catalog_style_list, get_catalog_style, new_custom_style_id,
     reset_style_property,
 };
+use super::style_impact::affected_dependents;
 use super::style_inspector::{InspectorRow, paragraph_inspector_rows};
 use crate::editing::cursor::CursorState;
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
@@ -98,6 +99,27 @@ pub(super) fn style_editor_panel(
             (pending, staged)
         })
         .collect();
+    // Impact preview: the dependent styles a staged change to this style will
+    // also change (Spec 05 §7) — computed on the committed catalog, shown by
+    // display name before Apply.
+    let changed: Vec<_> = display_rows
+        .iter()
+        .filter(|(_, staged)| *staged)
+        .map(|(row, _)| row.property)
+        .collect();
+    let impact_names: Vec<String> = catalog_snapshot(&doc_state)
+        .map(|cat| {
+            affected_dependents(&cat, &sid, &changed)
+                .into_iter()
+                .map(|d| {
+                    cat.paragraph_styles
+                        .get(&d)
+                        .and_then(|s| s.display_name.clone())
+                        .unwrap_or_else(|| d.as_str().to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     // Handles for the reset-to-inherited action on locally-set inspector rows.
     let ds_reset = Arc::clone(&doc_state);
     let reset_id = draft.id.clone();
@@ -226,6 +248,7 @@ pub(super) fn style_editor_panel(
                 if !display_rows.is_empty() {
                     StyleProvenanceList {
                         rows: display_rows,
+                        impact: impact_names,
                         on_reset: move |property| {
                             {
                                 let ldoc_guard = sync.loro_doc.read();
