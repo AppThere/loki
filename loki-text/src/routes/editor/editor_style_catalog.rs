@@ -110,26 +110,25 @@ pub(super) fn available_font_families(doc_state: &Arc<Mutex<DocumentState>>) -> 
     fr.available_font_families()
 }
 
-/// Returns `(style_id, display_name)` pairs for all catalog styles, sorted by display name.
-pub(super) fn catalog_style_list(doc_state: &Arc<Mutex<DocumentState>>) -> Vec<(String, String)> {
-    let Ok(state) = doc_state.lock() else {
+/// Returns `(style_id, display_name, depth)` for all catalog paragraph styles in
+/// inheritance-tree pre-order (parents before their subtrees), for the tree-view
+/// picker (Spec 05 §7). `depth` is the indentation level.
+pub(super) fn catalog_style_tree(
+    doc_state: &Arc<Mutex<DocumentState>>,
+) -> Vec<(String, String, usize)> {
+    let Some(catalog) = catalog_snapshot(doc_state) else {
         return vec![];
     };
-    let Some(doc) = &state.document else {
-        return vec![];
-    };
-    let mut entries: Vec<(String, String)> = doc
-        .styles
-        .paragraph_styles
-        .iter()
-        .map(|(id, style)| {
-            let display = style
-                .display_name
-                .clone()
+    catalog
+        .para_forest_preorder()
+        .into_iter()
+        .map(|(id, depth)| {
+            let display = catalog
+                .paragraph_styles
+                .get(&id)
+                .and_then(|s| s.display_name.clone())
                 .unwrap_or_else(|| id.as_str().to_string());
-            (id.as_str().to_string(), display)
+            (id.as_str().to_string(), display, depth)
         })
-        .collect();
-    entries.sort_by(|(_, a), (_, b)| a.cmp(b));
-    entries
+        .collect()
 }

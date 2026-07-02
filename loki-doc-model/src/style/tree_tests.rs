@@ -132,6 +132,27 @@ fn impact_preview_covers_adding_a_new_override() {
 }
 
 #[test]
+fn forest_preorder_lists_parents_before_subtrees_with_depths() {
+    let c = tree_catalog();
+    let order = c.para_forest_preorder();
+    let flat: Vec<(&str, usize)> = order.iter().map(|(id, d)| (id.as_str(), *d)).collect();
+    // A(0) then its subtree B(1) → D(2), then C(1).
+    assert_eq!(flat, vec![("A", 0), ("B", 1), ("D", 2), ("C", 1)]);
+}
+
+#[test]
+fn forest_preorder_surfaces_cycle_stranded_styles_once() {
+    let mut c = StyleCatalog::new();
+    // A → B → A: no root. Both must still appear exactly once.
+    insert(&mut c, para("A", Some("B"), ParaProps::default()));
+    insert(&mut c, para("B", Some("A"), ParaProps::default()));
+    let order = c.para_forest_preorder();
+    let mut ids: Vec<&str> = order.iter().map(|(id, _)| id.as_str()).collect();
+    ids.sort_unstable();
+    assert_eq!(ids, vec!["A", "B"]);
+}
+
+#[test]
 fn reparent_cycle_guard_still_holds_for_the_tree_view() {
     // Sanity: the M1 guard composes with the downward view.
     let c = tree_catalog();

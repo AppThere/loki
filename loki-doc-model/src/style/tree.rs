@@ -53,6 +53,57 @@ impl StyleCatalog {
         out
     }
 
+    /// The paragraph-style forest in pre-order (each parent immediately before
+    /// its subtree), paired with each style's depth — the render order for an
+    /// indented tree view (Spec 05 §7).
+    ///
+    /// Roots are styles with no parent (or a parent absent from the catalog), in
+    /// catalog order; children follow in catalog order. Cycle-safe: any styles
+    /// only reachable through a cycle are appended once at depth 0.
+    #[must_use]
+    pub fn para_forest_preorder(&self) -> Vec<(StyleId, usize)> {
+        let mut out = Vec::new();
+        let mut visited = HashSet::new();
+        let is_root = |s: &ParagraphStyle| {
+            s.parent
+                .as_ref()
+                .is_none_or(|p| !self.paragraph_styles.contains_key(p))
+        };
+        for (id, style) in &self.paragraph_styles {
+            if is_root(style) {
+                self.preorder_visit(id, 0, &mut visited, &mut out);
+            }
+        }
+        // Styles stranded in a cycle (no root) — surface them, once, at depth 0.
+        let stranded: Vec<StyleId> = self
+            .paragraph_styles
+            .keys()
+            .filter(|id| !visited.contains(*id))
+            .cloned()
+            .collect();
+        for id in stranded {
+            self.preorder_visit(&id, 0, &mut visited, &mut out);
+        }
+        out
+    }
+
+    /// Pre-order DFS from `id`, recording `(id, depth)`; cycle-safe via `visited`.
+    fn preorder_visit(
+        &self,
+        id: &StyleId,
+        depth: usize,
+        visited: &mut HashSet<StyleId>,
+        out: &mut Vec<(StyleId, usize)>,
+    ) {
+        if !visited.insert(id.clone()) {
+            return;
+        }
+        out.push((id.clone(), depth));
+        for child in self.para_children(id) {
+            self.preorder_visit(&child, depth + 1, visited, out);
+        }
+    }
+
     /// The **exact set of descendants whose value of a property would change** if
     /// that property were changed on `base` — the impact preview (Spec 05 §7).
     ///

@@ -24,7 +24,7 @@ use loki_i18n::fl;
 use super::editor_keydown_ctrl::post_mutation_sync;
 use super::editor_state::StyleDraft;
 use super::editor_style_catalog::{
-    catalog_snapshot, catalog_style_list, get_catalog_style, new_custom_style_id,
+    catalog_snapshot, catalog_style_tree, get_catalog_style, new_custom_style_id,
     reset_style_property,
 };
 use super::style_impact::affected_dependents;
@@ -72,7 +72,7 @@ pub(super) fn style_editor_panel(
         None => return rsx! {},
     };
 
-    let styles = catalog_style_list(&doc_state);
+    let styles = catalog_style_tree(&doc_state);
     let active_id = draft.id.clone();
     let ds_list = Arc::clone(&doc_state);
     let ds_new = Arc::clone(&doc_state);
@@ -185,7 +185,9 @@ pub(super) fn style_editor_panel(
                         p = tokens::SPACE_2,
                     ),
 
-                    {styles.into_iter().map(|(id, display)| {
+                    // Inheritance-tree picker: styles indented by depth so the
+                    // parent → child hierarchy is visible (Spec 05 §7).
+                    {styles.into_iter().map(|(id, display, depth)| {
                         let is_active = id == active_id;
                         let ds_c = Arc::clone(&ds_list);
                         let id_cap = id.clone();
@@ -194,10 +196,12 @@ pub(super) fn style_editor_panel(
                                 key: "{id}",
                                 style: format!(
                                     "text-align: left; padding: {p}px {p2}px; \
+                                     padding-left: {indent}px; \
                                      border-radius: 3px; border: 1px solid {border}; \
                                      cursor: pointer; font-family: {ff}; \
                                      font-size: {fs}px; background: {bg}; color: {fg};",
                                     p = tokens::SPACE_1, p2 = tokens::SPACE_2,
+                                    indent = tokens::SPACE_2 + depth as f32 * tokens::SPACE_3,
                                     border = if is_active { tokens::COLOR_TAB_ACTIVE_INDICATOR } else { tokens::COLOR_BORDER_CHROME },
                                     ff = tokens::FONT_FAMILY_UI,
                                     fs = tokens::FONT_SIZE_LABEL,

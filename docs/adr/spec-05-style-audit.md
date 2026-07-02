@@ -232,8 +232,15 @@ Model gaps gate the UI, so the sequence front-loads model work:
    (§9/§11), when the inspector becomes its own right-sized panel.*
 4. **M5 — Creation & management** (create → pick parent → override; rename;
    re-parent; delete-with-orphan-handling; built-in rules).
-5. **M4 — Tree view + propagation + impact preview** (in-memory over the catalog;
-   cycle-guarded re-parent from M1).
+5. **M4 — Tree view + propagation + impact preview.** ✅ **Shipped.** Model
+   (`style/tree.rs`): `para_children` / `para_descendants` (cycle/depth-guarded)
+   / `para_forest_preorder` (indented render order) / `dependents_affected`
+   (the *exact* set whose value changes — excludes subtrees shadowed by a closer
+   override, covers add-override; 9 tests). UI: the style-editor left column is
+   now an inheritance-tree picker (depth-indented, `catalog_style_tree`); an
+   impact-preview banner names the dependents a staged change will also change
+   (`style_impact::affected_dependents`, 4 tests); and Apply rejects a cyclic
+   re-parent via `para_reparent_cycles` (M1) with a status message.
 6. **M6 — Remaining families.** Linked (relationship surface), list (per-level),
    then **table** (after `TableProps` conditional-region extension) and **page**
    (after the M1 representation decision).
