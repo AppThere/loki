@@ -25,6 +25,8 @@ style-jump-aria = Open the source style
 style-staged-title = Pending — apply to commit
 # Impact preview: dependent styles a staged change will also change
 style-impact-preview = Applying also changes { $count } dependent style(s): { $names }
+# Re-parenting rejected because it would create an inheritance cycle
+style-reparent-cycle = Cannot set that parent: it would create an inheritance cycle
 
 # Provenance labels
 style-provenance-local = Local

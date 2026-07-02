@@ -14,9 +14,11 @@ use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_i18n::fl;
 
+use loki_doc_model::style::StyleId;
+
 use super::super::editor_keydown_ctrl::post_mutation_sync;
 use super::super::editor_state::StyleDraft;
-use super::super::editor_style_catalog::commit_style_to_loro;
+use super::super::editor_style_catalog::{catalog_snapshot, commit_style_to_loro};
 use super::StyleEditorSync;
 use super::draft::draft_to_style;
 use super::form_font::{font_picker, input_style, label_style, weight_selector};
@@ -214,6 +216,19 @@ pub(super) fn style_form(
                         let Some(draft_val) = editing_style_draft.read().clone() else {
                             return;
                         };
+                        // Guard re-parenting against cycles (Spec 05 §7): reject
+                        // an Apply whose based-on would make the tree non-acyclic.
+                        if !draft_val.parent.is_empty() {
+                            let child = StyleId::new(&draft_val.id);
+                            let new_parent = StyleId::new(&draft_val.parent);
+                            let cycles = catalog_snapshot(&ds_apply)
+                                .is_some_and(|cat| cat.para_reparent_cycles(&child, &new_parent));
+                            if cycles {
+                                let mut save_message = sync.save_message;
+                                save_message.set(Some(fl!("style-reparent-cycle")));
+                                return;
+                            }
+                        }
                         let style = draft_to_style(&draft_val);
                         // Persist through Loro then re-derive (which reads the
                         // catalog back from the CRDT) so the edit is durable and

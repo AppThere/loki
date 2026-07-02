@@ -53,6 +53,8 @@ pub(super) struct StyleEditorSync {
     pub can_undo: Signal<bool>,
     /// Whether redo is available.
     pub can_redo: Signal<bool>,
+    /// Status-banner sink for feedback (e.g. a rejected cyclic re-parent).
+    pub save_message: Signal<Option<String>>,
 }
 
 /// Renders the inline style catalog editor panel.

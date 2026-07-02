@@ -697,6 +697,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                         undo_manager,
                         can_undo,
                         can_redo,
+                        save_message,
                     },
                 )}
             }
