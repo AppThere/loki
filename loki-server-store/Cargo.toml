@@ -1,0 +1,25 @@
+[package]
+name = "loki-server-store"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Persistence ports for the Loki server: Postgres (SQLx) + object storage (ADR-C016)"
+repository = "https://github.com/appthere/loki"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt"] }
+sqlx = { workspace = true }
+object_store = { workspace = true }
+tracing = { workspace = true }
+loki-model = { workspace = true }
+loki-crypto = { workspace = true }
+loki-server-audit = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

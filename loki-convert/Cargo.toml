@@ -1,0 +1,16 @@
+[package]
+name = "loki-convert"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Format-conversion matrix over Loki's existing import/export crates (headless spec ADR-C024)"
+repository = "https://github.com/appthere/loki"
+
+[dependencies]
+thiserror = { workspace = true }
+loki-doc-model = { path = "../loki-doc-model" }
+loki-sheet-model = { path = "../loki-sheet-model" }
+loki-ooxml = { path = "../loki-ooxml", features = ["docx", "xlsx"] }
+loki-odf = { path = "../loki-odf" }
+loki-epub = { path = "../loki-epub" }
+loki-pdf = { path = "../loki-pdf" }
