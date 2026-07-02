@@ -24,7 +24,7 @@ mod wrap;
 mod x25519_wrap;
 
 pub use aead_wrap::{AeadKeyWrap, Kek};
-pub use dek::{Dek, DEK_LEN};
+pub use dek::{DEK_LEN, Dek};
 pub use error::CryptoError;
 pub use wrap::{KeyWrap, WrappedDek};
 pub use x25519_wrap::{X25519KeyWrap, X25519PublicKey, X25519SecretKey};

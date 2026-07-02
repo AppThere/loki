@@ -41,7 +41,11 @@ pub async fn drive_socket(socket: WebSocket, relay: DocRelay, resume_after: i64)
     match relay.backlog(resume_after).await {
         Ok(frames) => {
             for frame in frames {
-                if sink.send(Message::Binary(frame.encode().into())).await.is_err() {
+                if sink
+                    .send(Message::Binary(frame.encode().into()))
+                    .await
+                    .is_err()
+                {
                     return;
                 }
             }

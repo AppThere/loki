@@ -80,6 +80,9 @@ mod tests {
     #[test]
     fn bad_frames_are_typed() {
         assert_eq!(CollabFrame::decode(&[]), Err(FrameError::Empty));
-        assert_eq!(CollabFrame::decode(&[0x7f, 1]), Err(FrameError::UnknownTag(0x7f)));
+        assert_eq!(
+            CollabFrame::decode(&[0x7f, 1]),
+            Err(FrameError::UnknownTag(0x7f))
+        );
     }
 }

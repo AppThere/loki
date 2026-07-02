@@ -3,8 +3,8 @@
 //! The per-connection relay logic, factored out of the WebSocket adapter so
 //! it is testable without sockets.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use loki_model::{DocumentId, UserId};
 use loki_server_store::{OplogStore, StoreError};

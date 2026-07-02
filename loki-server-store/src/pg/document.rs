@@ -5,15 +5,15 @@
 use async_trait::async_trait;
 use loki_crypto::WrappedDek;
 use loki_model::{DocumentId, EncryptionTier, WorkspaceId};
-use sqlx::postgres::PgRow;
 use sqlx::Row;
+use sqlx::postgres::PgRow;
 use uuid::Uuid;
 
 use crate::error::StoreError;
 use crate::ports::DocumentStore;
 use crate::records::DocMetaRecord;
 
-use super::{residency_from_db, tier_from_db, wrapped_dek_from_db, wrapped_dek_to_db, PgStores};
+use super::{PgStores, residency_from_db, tier_from_db, wrapped_dek_from_db, wrapped_dek_to_db};
 
 /// Maps a `doc_meta` row (shared with the workspace listing).
 pub(super) fn doc_meta_from_row(row: PgRow) -> Result<DocMetaRecord, StoreError> {

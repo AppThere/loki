@@ -27,7 +27,9 @@ pub struct WrappedDek {
 /// Implementations: [`crate::AeadKeyWrap`] (symmetric KEK, Tiers 0/1) and
 /// [`crate::X25519KeyWrap`] (per-member public key, Tier 2). A hybrid PQC
 /// implementation slots in without touching stored data.
-pub trait KeyWrap {
+///
+/// `Send + Sync` because instances are shared server state (`Arc<dyn KeyWrap>`).
+pub trait KeyWrap: Send + Sync {
     /// Stable identifier written into [`WrappedDek::algorithm`].
     fn algorithm(&self) -> &'static str;
 

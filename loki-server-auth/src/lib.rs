@@ -17,5 +17,5 @@ mod verifier;
 
 pub use claims::{AuthContext, Claims};
 pub use error::AuthError;
-pub use rbac::{require, AccessError};
+pub use rbac::{AccessError, require};
 pub use verifier::{IdentityVerifier, KeySource, OidcVerifier, StaticKeys};

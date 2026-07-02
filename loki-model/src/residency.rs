@@ -77,7 +77,9 @@ impl From<Residency> for String {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ResidencyError {
     /// A managed region outside `fsn1`/`nbg1`/`hel1` (never a US location).
-    #[error("residency {0:?} is not an allowed EU region (fsn1, nbg1, hel1) or self-hosted:<label>")]
+    #[error(
+        "residency {0:?} is not an allowed EU region (fsn1, nbg1, hel1) or self-hosted:<label>"
+    )]
     DisallowedRegion(String),
     /// `self-hosted:` with no label.
     #[error("self-hosted residency requires a non-empty label (self-hosted:<label>)")]

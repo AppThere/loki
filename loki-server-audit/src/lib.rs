@@ -14,4 +14,4 @@ mod action;
 mod entry;
 
 pub use action::{ActionParseError, AuditAction};
-pub use entry::{verify_chain, AuditEntry, ChainError, HASH_LEN};
+pub use entry::{AuditEntry, ChainError, HASH_LEN, verify_chain};

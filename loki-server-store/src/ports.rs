@@ -93,7 +93,8 @@ pub trait OplogStore: Send + Sync {
         payload: &[u8],
     ) -> Result<i64, StoreError>;
     /// Fetches updates with `seq > after`, oldest first.
-    async fn fetch_after(&self, doc: DocumentId, after: i64) -> Result<Vec<OplogEntry>, StoreError>;
+    async fn fetch_after(&self, doc: DocumentId, after: i64)
+    -> Result<Vec<OplogEntry>, StoreError>;
     /// Fetches one update by sequence number (used by the fan-out bus).
     async fn fetch_one(&self, doc: DocumentId, seq: i64) -> Result<Option<OplogEntry>, StoreError>;
     /// Drops updates with `seq <= up_to` after snapshot compaction.

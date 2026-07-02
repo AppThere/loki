@@ -12,7 +12,7 @@ use rand_core::OsRng;
 use sha2::Sha256;
 use x25519_dalek::{EphemeralSecret, PublicKey, StaticSecret};
 
-use crate::dek::{Dek, DEK_LEN};
+use crate::dek::{DEK_LEN, Dek};
 use crate::error::CryptoError;
 use crate::wrap::{KeyWrap, WrappedDek};
 
@@ -29,10 +29,12 @@ pub struct X25519PublicKey(PublicKey);
 impl X25519PublicKey {
     /// Reconstructs a public key from its 32-byte form.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
-        let arr: [u8; PK_LEN] = bytes.try_into().map_err(|_| CryptoError::InvalidKeyLength {
-            expected: PK_LEN,
-            actual: bytes.len(),
-        })?;
+        let arr: [u8; PK_LEN] = bytes
+            .try_into()
+            .map_err(|_| CryptoError::InvalidKeyLength {
+                expected: PK_LEN,
+                actual: bytes.len(),
+            })?;
         Ok(Self(PublicKey::from(arr)))
     }
 
@@ -55,10 +57,12 @@ impl X25519SecretKey {
 
     /// Reconstructs a secret key from its 32-byte form.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
-        let arr: [u8; PK_LEN] = bytes.try_into().map_err(|_| CryptoError::InvalidKeyLength {
-            expected: PK_LEN,
-            actual: bytes.len(),
-        })?;
+        let arr: [u8; PK_LEN] = bytes
+            .try_into()
+            .map_err(|_| CryptoError::InvalidKeyLength {
+                expected: PK_LEN,
+                actual: bytes.len(),
+            })?;
         Ok(Self(StaticSecret::from(arr)))
     }
 
@@ -155,8 +159,7 @@ impl KeyWrap for X25519KeyWrap {
         let (pk_bytes, sealed) = wrapped.blob.split_at(PK_LEN);
         let ephemeral_pk = X25519PublicKey::from_bytes(pk_bytes)?;
         let shared = secret.0.diffie_hellman(&ephemeral_pk.0);
-        let wrapping_key =
-            Self::derive_wrapping_key(&shared, &ephemeral_pk.0, &self.recipient_pk)?;
+        let wrapping_key = Self::derive_wrapping_key(&shared, &ephemeral_pk.0, &self.recipient_pk)?;
         let raw = wrapping_key.open(sealed, X25519_WRAP_ALGORITHM.as_bytes())?;
         Dek::from_bytes(&raw)
     }

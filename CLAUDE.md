@@ -220,6 +220,24 @@ The workspace is a set of focused crates (one responsibility each). Key groups:
   `TC-*` cases, embedded fixtures, page-count/glyph-coverage canaries, SSIM
   primitives, and the `load_bench` open-latency benchmark). See
   `loki-acid/README.md`.
+- **Server (collaboration & storage)** — spec:
+  [docs/adr/LOKI_WEB_SERVER_SPEC.md](docs/adr/LOKI_WEB_SERVER_SPEC.md)
+  (ADRs C012–C020). `loki-model` (server-side IDs, `EncryptionTier`,
+  RBAC `Role`/`Action`, EU-pinned `Residency`), `loki-crypto` (DEK envelope
+  encryption + crypto-agile `KeyWrap`: symmetric KEK for Tiers 0/1, X25519
+  for Tier-2 zero-knowledge), `loki-server-audit` (hash-chained audit log),
+  `loki-server-store` (Postgres/SQLx + `object_store` ports, with in-memory
+  test impls), `loki-server-collab` (WebSocket relay, `FanOutBus`:
+  `PgNotifyBus`/`InMemoryBus`), `loki-server-auth` (OIDC relying party +
+  RBAC), `loki-server-api` (REST `/v1`, problem+json errors,
+  `E2eeCapabilityDisabled` = the canonical Tier-2 409), and the
+  `loki-server` binary (env config with sovereignty validation, graceful
+  shutdown). Deliberate deferrals are marked in-code:
+  `TODO(oidc-jwks)` (JWKS fetch/rotation), `TODO(kms)` (KEK from
+  Vault/KMS instead of env), `TODO(headless-c021)` (export job queue),
+  `TODO(ws-membership)` (workspace-scope roles + listing join).
+  Server-side snapshot compaction (ADR-C013) is not yet implemented —
+  the oplog grows until it lands.
 
 The **Publish** ribbon tab in `loki-text` drives PDF/X + EPUB export and the
 Dublin Core metadata editor.

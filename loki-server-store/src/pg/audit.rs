@@ -9,8 +9,8 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use loki_server_audit::{AuditAction, AuditEntry, HASH_LEN};
-use sqlx::postgres::PgRow;
 use sqlx::Row;
+use sqlx::postgres::PgRow;
 
 use crate::error::StoreError;
 use crate::ports::AuditStore;
@@ -28,8 +28,8 @@ fn hash_from_db(bytes: Vec<u8>) -> Result<[u8; HASH_LEN], StoreError> {
 
 fn entry_from_row(row: PgRow) -> Result<AuditEntry, StoreError> {
     let seq: i64 = row.try_get("seq")?;
-    let seq = u64::try_from(seq)
-        .map_err(|_| StoreError::Corrupt(format!("negative audit seq {seq}")))?;
+    let seq =
+        u64::try_from(seq).map_err(|_| StoreError::Corrupt(format!("negative audit seq {seq}")))?;
     let action: String = row.try_get("action")?;
     Ok(AuditEntry {
         seq,
@@ -71,9 +71,10 @@ impl AuditStore for PgStores {
             "INSERT INTO audit_log (seq, prev_hash, hash, actor, action, target, created_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7)",
         )
-        .bind(i64::try_from(entry.seq).map_err(|_| {
-            StoreError::Corrupt(format!("audit seq {} exceeds i64", entry.seq))
-        })?)
+        .bind(
+            i64::try_from(entry.seq)
+                .map_err(|_| StoreError::Corrupt(format!("audit seq {} exceeds i64", entry.seq)))?,
+        )
         .bind(entry.prev_hash.as_slice())
         .bind(entry.hash.as_slice())
         .bind(&entry.actor)

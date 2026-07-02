@@ -5,8 +5,8 @@
 use std::sync::Arc;
 
 use loki_model::DocumentId;
-use object_store::path::Path;
 use object_store::ObjectStore;
+use object_store::path::Path;
 
 use crate::error::StoreError;
 
@@ -50,7 +50,9 @@ impl BlobStore {
         bytes: Vec<u8>,
     ) -> Result<String, StoreError> {
         let key = Self::snapshot_key(doc, version);
-        self.inner.put(&Path::from(key.as_str()), bytes.into()).await?;
+        self.inner
+            .put(&Path::from(key.as_str()), bytes.into())
+            .await?;
         Ok(key)
     }
 
@@ -62,7 +64,9 @@ impl BlobStore {
         bytes: Vec<u8>,
     ) -> Result<String, StoreError> {
         let key = Self::attachment_key(doc, blob_id);
-        self.inner.put(&Path::from(key.as_str()), bytes.into()).await?;
+        self.inner
+            .put(&Path::from(key.as_str()), bytes.into())
+            .await?;
         Ok(key)
     }
 
@@ -94,7 +98,10 @@ mod tests {
     async fn snapshot_round_trip() {
         let store = BlobStore::new(Arc::new(InMemory::new()));
         let doc = DocumentId::new();
-        let ptr = store.put_snapshot(doc, 7, b"snapshot-bytes".to_vec()).await.unwrap();
+        let ptr = store
+            .put_snapshot(doc, 7, b"snapshot-bytes".to_vec())
+            .await
+            .unwrap();
         assert_eq!(ptr, format!("{doc}/snap/7"));
         assert_eq!(store.get(&ptr).await.unwrap(), b"snapshot-bytes");
         store.delete(&ptr).await.unwrap();

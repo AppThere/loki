@@ -32,10 +32,12 @@ impl Dek {
 
     /// Reconstructs a DEK from raw bytes (e.g. after unwrapping).
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
-        let arr: [u8; DEK_LEN] = bytes.try_into().map_err(|_| CryptoError::InvalidKeyLength {
-            expected: DEK_LEN,
-            actual: bytes.len(),
-        })?;
+        let arr: [u8; DEK_LEN] = bytes
+            .try_into()
+            .map_err(|_| CryptoError::InvalidKeyLength {
+                expected: DEK_LEN,
+                actual: bytes.len(),
+            })?;
         Ok(Self(arr))
     }
 

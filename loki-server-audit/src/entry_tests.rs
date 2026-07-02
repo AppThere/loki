@@ -47,7 +47,10 @@ fn removed_entry_is_detected() {
     chain.remove(1);
     assert_eq!(
         verify_chain(&chain),
-        Err(ChainError::OutOfSequence { seq: 3, expected: 2 })
+        Err(ChainError::OutOfSequence {
+            seq: 3,
+            expected: 2
+        })
     );
 }
 

@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 
 use crate::claims::{AuthContext, Claims};
 use crate::error::AuthError;

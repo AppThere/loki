@@ -69,7 +69,9 @@ impl MemoryStores {
 #[async_trait]
 impl WorkspaceStore for MemoryStores {
     async fn create_workspace(&self, workspace: &WorkspaceRecord) -> Result<(), StoreError> {
-        self.lock().workspaces.insert(workspace.id, workspace.clone());
+        self.lock()
+            .workspaces
+            .insert(workspace.id, workspace.clone());
         Ok(())
     }
 
@@ -241,7 +243,11 @@ impl OplogStore for MemoryStores {
         Ok(seq)
     }
 
-    async fn fetch_after(&self, doc: DocumentId, after: i64) -> Result<Vec<OplogEntry>, StoreError> {
+    async fn fetch_after(
+        &self,
+        doc: DocumentId,
+        after: i64,
+    ) -> Result<Vec<OplogEntry>, StoreError> {
         let inner = self.lock();
         Ok(inner
             .oplog

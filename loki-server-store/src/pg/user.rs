@@ -4,8 +4,8 @@
 
 use async_trait::async_trait;
 use loki_model::UserId;
-use sqlx::postgres::PgRow;
 use sqlx::Row;
+use sqlx::postgres::PgRow;
 use uuid::Uuid;
 
 use crate::error::StoreError;

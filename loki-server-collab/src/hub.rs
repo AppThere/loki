@@ -46,11 +46,11 @@ impl LocalHub {
     /// Delivers an event to local subscribers (no-op when nobody listens).
     pub(crate) fn publish(&self, event: BusEvent) {
         let mut channels = self.lock();
-        if let Some(sender) = channels.get(&event.doc) {
-            if sender.send(event.clone()).is_err() {
-                // Last receiver dropped: reclaim the channel.
-                channels.remove(&event.doc);
-            }
+        if let Some(sender) = channels.get(&event.doc)
+            && sender.send(event.clone()).is_err()
+        {
+            // Last receiver dropped: reclaim the channel.
+            channels.remove(&event.doc);
         }
     }
 }

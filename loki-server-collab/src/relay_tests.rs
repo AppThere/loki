@@ -2,8 +2,8 @@
 
 //! Relay tests against the in-memory oplog and bus.
 
-use loki_server_store::memory::MemoryStores;
 use loki_server_store::OplogStore as _;
+use loki_server_store::memory::MemoryStores;
 
 use crate::bus_memory::InMemoryBus;
 
@@ -27,7 +27,10 @@ async fn update_is_persisted_then_broadcast() {
     let bob = state.open_relay(doc, UserId::new(), false);
     let mut bob_rx = bob.subscribe().await;
 
-    alice.ingest(CollabFrame::Update(b"op-1".to_vec())).await.unwrap();
+    alice
+        .ingest(CollabFrame::Update(b"op-1".to_vec()))
+        .await
+        .unwrap();
 
     // Durable first …
     let entries = stores.fetch_after(doc, 0).await.unwrap();
@@ -64,7 +67,10 @@ async fn backlog_replays_updates_after_seq() {
     let doc = DocumentId::new();
     let writer = state.open_relay(doc, UserId::new(), true);
     for payload in [b"a".as_slice(), b"b", b"c"] {
-        writer.ingest(CollabFrame::Update(payload.to_vec())).await.unwrap();
+        writer
+            .ingest(CollabFrame::Update(payload.to_vec()))
+            .await
+            .unwrap();
     }
     let all = writer.backlog(0).await.unwrap();
     assert_eq!(all.len(), 3);
@@ -81,6 +87,9 @@ async fn events_do_not_cross_documents() {
     let reader_b = state.open_relay(doc_b, UserId::new(), false);
     let mut rx_b = reader_b.subscribe().await;
 
-    writer_a.ingest(CollabFrame::Update(b"op".to_vec())).await.unwrap();
+    writer_a
+        .ingest(CollabFrame::Update(b"op".to_vec()))
+        .await
+        .unwrap();
     assert!(rx_b.try_recv().is_err());
 }

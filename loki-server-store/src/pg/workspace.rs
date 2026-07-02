@@ -12,7 +12,7 @@ use crate::ports::WorkspaceStore;
 use crate::records::{DocMetaRecord, WorkspaceRecord};
 
 use super::document::doc_meta_from_row;
-use super::{residency_from_db, tier_from_db, PgStores};
+use super::{PgStores, residency_from_db, tier_from_db};
 
 #[async_trait]
 impl WorkspaceStore for PgStores {

@@ -4495,6 +4495,8 @@ name = "loki-server"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64",
+ "jsonwebtoken",
  "loki-crypto",
  "loki-model",
  "loki-server-api",
@@ -4507,7 +4509,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "url",
+ "uuid",
 ]
 
 [[package]]
@@ -4525,6 +4527,7 @@ dependencies = [
  "loki-server-auth",
  "loki-server-collab",
  "loki-server-store",
+ "object_store",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

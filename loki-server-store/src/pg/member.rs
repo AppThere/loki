@@ -11,7 +11,7 @@ use crate::error::StoreError;
 use crate::ports::MemberStore;
 use crate::records::DocMemberRecord;
 
-use super::{role_from_db, wrapped_dek_from_db, wrapped_dek_to_db, PgStores};
+use super::{PgStores, role_from_db, wrapped_dek_from_db, wrapped_dek_to_db};
 
 #[async_trait]
 impl MemberStore for PgStores {

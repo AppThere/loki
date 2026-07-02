@@ -4,7 +4,7 @@
 
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::dek::{Dek, DEK_LEN};
+use crate::dek::{DEK_LEN, Dek};
 use crate::error::CryptoError;
 use crate::wrap::{KeyWrap, WrappedDek};
 
@@ -22,10 +22,12 @@ pub struct Kek([u8; DEK_LEN]);
 impl Kek {
     /// Reconstructs a KEK from raw bytes supplied by the KMS integration.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
-        let arr: [u8; DEK_LEN] = bytes.try_into().map_err(|_| CryptoError::InvalidKeyLength {
-            expected: DEK_LEN,
-            actual: bytes.len(),
-        })?;
+        let arr: [u8; DEK_LEN] = bytes
+            .try_into()
+            .map_err(|_| CryptoError::InvalidKeyLength {
+                expected: DEK_LEN,
+                actual: bytes.len(),
+            })?;
         Ok(Self(arr))
     }
 

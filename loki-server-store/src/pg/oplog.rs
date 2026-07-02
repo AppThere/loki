@@ -4,8 +4,8 @@
 
 use async_trait::async_trait;
 use loki_model::{DocumentId, UserId};
-use sqlx::postgres::PgRow;
 use sqlx::Row;
+use sqlx::postgres::PgRow;
 use uuid::Uuid;
 
 use crate::error::StoreError;
@@ -59,11 +59,7 @@ impl OplogStore for PgStores {
         rows.into_iter().map(oplog_from_row).collect()
     }
 
-    async fn fetch_one(
-        &self,
-        doc: DocumentId,
-        seq: i64,
-    ) -> Result<Option<OplogEntry>, StoreError> {
+    async fn fetch_one(&self, doc: DocumentId, seq: i64) -> Result<Option<OplogEntry>, StoreError> {
         let row = sqlx::query(
             "SELECT doc_id, seq, actor, payload, created_at
              FROM doc_oplog WHERE doc_id = $1 AND seq = $2",

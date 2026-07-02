@@ -39,7 +39,10 @@ mod tests {
 
     #[test]
     fn non_member_is_distinct_from_forbidden() {
-        assert_eq!(require(None, Action::ReadContent), Err(AccessError::NotMember));
+        assert_eq!(
+            require(None, Action::ReadContent),
+            Err(AccessError::NotMember)
+        );
         assert_eq!(
             require(Some(Role::Viewer), Action::WriteContent),
             Err(AccessError::Forbidden {
@@ -47,6 +50,9 @@ mod tests {
                 action: Action::WriteContent
             })
         );
-        assert_eq!(require(Some(Role::Editor), Action::WriteContent), Ok(Role::Editor));
+        assert_eq!(
+            require(Some(Role::Editor), Action::WriteContent),
+            Ok(Role::Editor)
+        );
     }
 }

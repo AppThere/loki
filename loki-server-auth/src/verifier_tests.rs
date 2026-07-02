@@ -2,7 +2,7 @@
 
 //! Verifier tests (HS256 keys — production pins RS256/ES256).
 
-use jsonwebtoken::{encode, EncodingKey, Header};
+use jsonwebtoken::{EncodingKey, Header, encode};
 use serde_json::json;
 
 use super::*;
