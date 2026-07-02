@@ -15,6 +15,7 @@ pub mod para_style;
 pub mod props;
 pub mod resolve;
 pub mod table_style;
+pub mod tree;
 
 pub use catalog::{ResolvedCharProps, ResolvedParaProps, StyleCatalog, StyleId};
 pub use char_style::CharacterStyle;
