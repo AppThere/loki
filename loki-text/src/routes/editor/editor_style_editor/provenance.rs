@@ -22,6 +22,10 @@ use loki_doc_model::style::StyleId;
 
 use super::super::style_inspector::{InspectorRow, RowProvenance, StyleProperty};
 
+/// A linked character style shown alongside a paragraph style (§9 linked
+/// family): its display name and its resolved rows (read-only).
+pub(super) type LinkedRows = Option<(String, Vec<InspectorRow>)>;
+
 /// Renders the provenance inspector column for the selected style's rows.
 ///
 /// Each row pairs an [`InspectorRow`] with a `staged` flag — `true` when the
@@ -39,6 +43,8 @@ pub(super) fn StyleProvenanceList(
     /// Display names of dependent styles that a staged change will also change
     /// (Spec 05 §7 impact preview). Empty when nothing staged affects dependents.
     impact: Vec<String>,
+    /// The paragraph style's linked character style, if any (§9 linked family).
+    linked: LinkedRows,
     on_reset: EventHandler<StyleProperty>,
     on_jump: EventHandler<StyleId>,
 ) -> Element {
@@ -198,6 +204,55 @@ pub(super) fn StyleProvenanceList(
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+
+            // Linked character style (§9 linked family) — read-only rows.
+            if let Some((name, rows)) = linked {
+                LinkedCharSection { name, rows }
+            }
+        }
+    }
+}
+
+/// The linked character style's rows, shown read-only beneath the paragraph
+/// rows (§9). Each row is property · resolved value · provenance.
+#[component]
+fn LinkedCharSection(name: String, rows: Vec<InspectorRow>) -> Element {
+    rsx! {
+        div {
+            style: format!("margin-top: {}px;", tokens::SPACE_3),
+            div {
+                style: format!(
+                    "font-size: {fs}px; font-weight: {fw}; color: {fg}; margin-bottom: {mb}px;",
+                    fs = tokens::FONT_SIZE_LABEL,
+                    fw = tokens::FONT_WEIGHT_MEDIUM,
+                    fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
+                    mb = tokens::SPACE_1,
+                ),
+                { fl!("style-linked-heading", name = name.clone()) }
+            }
+            for lrow in rows.iter() {
+                div {
+                    key: "linked-{lrow.property:?}",
+                    style: "display: flex; justify-content: space-between; gap: 8px;",
+                    span {
+                        style: format!(
+                            "font-size: {fs}px; color: {fg};",
+                            fs = tokens::FONT_SIZE_LABEL, fg = tokens::COLOR_TEXT_ON_CHROME,
+                        ),
+                        { property_label(lrow.property) }
+                    }
+                    span {
+                        style: format!(
+                            "font-size: {fs}px; color: {fg};",
+                            fs = tokens::FONT_SIZE_XS, fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
+                        ),
+                        {
+                            let val = lrow.value_display.clone().unwrap_or_default();
+                            format!("{val} · {}", provenance_label(&lrow.provenance))
                         }
                     }
                 }

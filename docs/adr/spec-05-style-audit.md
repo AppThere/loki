@@ -248,9 +248,20 @@ Model gaps gate the UI, so the sequence front-loads model work:
    impact-preview banner names the dependents a staged change will also change
    (`style_impact::affected_dependents`, 4 tests); and Apply rejects a cyclic
    re-parent via `para_reparent_cycles` (M1) with a status message.
-6. **M6 — Remaining families.** Linked (relationship surface), list (per-level),
-   then **table** (after `TableProps` conditional-region extension) and **page**
-   (after the M1 representation decision).
+6. **M6 — Remaining families.** 🚧 **In progress.** *Character:*
+   `style_char_inspector::character_inspector_rows` resolves a standalone
+   `CharacterStyle`'s own chain via `resolve_char_chain` (M1 / SM-2), emitting the
+   shared `InspectorRow` shape so the provenance view is reused across families
+   (4 tests). *Linked (shipped):* the paragraph inspector now shows the linked
+   character style's rows read-only beneath the paragraph rows (`LinkedCharSection`,
+   fed by `panel_data::inspector_data` which reads `linked_char_style`) — the §9
+   "both aspects, one surface". Inspector-data computation was extracted to
+   `panel_data.rs` (mod.rs 257). *Remaining:* a dedicated **character panel**
+   (family selector + char tree/form); **list** (per-level, non-inheriting);
+   **table** — deferred (needs `TableProps` conditional regions, which the
+   renderer does not yet honor → the spec's "don't add unrenderable properties"
+   gate); **page** — deferred (needs the `page_styles` catalog representation of
+   ADR-0012).
 7. **M7 — Compact posture** applied throughout (bottom-sheet, breadcrumb tree,
    segmented family nav), verified at <600.
 

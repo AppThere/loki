@@ -12,6 +12,7 @@ mod actions;
 mod draft;
 mod form;
 mod form_font;
+mod panel_data;
 mod provenance;
 
 use std::rc::Rc;
@@ -19,17 +20,13 @@ use std::sync::{Arc, Mutex};
 
 use appthere_ui::tokens;
 use dioxus::prelude::*;
-use loki_doc_model::style::StyleId;
 use loki_i18n::fl;
 
 use super::editor_keydown_ctrl::post_mutation_sync;
 use super::editor_state::StyleDraft;
 use super::editor_style_catalog::{
-    catalog_snapshot, catalog_style_tree, get_catalog_style, new_custom_style_id,
-    reset_style_property,
+    catalog_style_tree, get_catalog_style, new_custom_style_id, reset_style_property,
 };
-use super::style_impact::affected_dependents;
-use super::style_inspector::{InspectorRow, paragraph_inspector_rows};
 use crate::editing::cursor::CursorState;
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 use provenance::StyleProvenanceList;
@@ -78,54 +75,14 @@ pub(super) fn style_editor_panel(
     let ds_list = Arc::clone(&doc_state);
     let ds_new = Arc::clone(&doc_state);
 
-    // Inspector rows previewing the pending draft; a row is "staged" when the
-    // draft's uncommitted edit changes it vs the committed value (§12).
-    let sid = StyleId::new(&draft.id);
-    let committed_rows = catalog_snapshot(&doc_state)
-        .map(|cat| paragraph_inspector_rows(&cat, &sid))
-        .unwrap_or_default();
-    let display_rows: Vec<(InspectorRow, bool)> = catalog_snapshot(&doc_state)
-        .map(|mut cat| {
-            cat.paragraph_styles
-                .insert(sid.clone(), draft::draft_to_style(&draft));
-            paragraph_inspector_rows(&cat, &sid)
-        })
-        .unwrap_or_default()
-        .into_iter()
-        .map(|pending| {
-            let staged = committed_rows
-                .iter()
-                .find(|c| c.property == pending.property)
-                != Some(&pending);
-            (pending, staged)
-        })
-        .collect();
-    // Impact preview: dependents a staged change will also change (§7), by
-    // display name, from the committed catalog.
-    let changed: Vec<_> = display_rows
-        .iter()
-        .filter(|(_, staged)| *staged)
-        .map(|(row, _)| row.property)
-        .collect();
-    let impact_names: Vec<String> = catalog_snapshot(&doc_state)
-        .map(|cat| {
-            affected_dependents(&cat, &sid, &changed)
-                .into_iter()
-                .map(|d| {
-                    cat.paragraph_styles
-                        .get(&d)
-                        .and_then(|s| s.display_name.clone())
-                        .unwrap_or_else(|| d.as_str().to_string())
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    // A new style defaults to a child of the current committed style (§8).
-    let new_style_parent = if committed_rows.is_empty() {
-        String::new()
-    } else {
-        draft.id.clone()
-    };
+    // Everything the provenance column renders (staged rows, impact preview,
+    // new-style parent default, linked character-style rows) — see `panel_data`.
+    let panel_data::InspectorData {
+        display_rows,
+        impact_names,
+        new_style_parent,
+        linked,
+    } = panel_data::inspector_data(&doc_state, &draft);
     // Handles for the reset-to-inherited action on locally-set inspector rows.
     let ds_reset = Arc::clone(&doc_state);
     let reset_id = draft.id.clone();
@@ -261,6 +218,7 @@ pub(super) fn style_editor_panel(
                     StyleProvenanceList {
                         rows: display_rows,
                         impact: impact_names,
+                        linked,
                         on_reset: move |property| {
                             {
                                 let ldoc_guard = sync.loro_doc.read();
