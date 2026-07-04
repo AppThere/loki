@@ -50,8 +50,8 @@ pub struct ParagraphStyle {
     /// at the end of a paragraph with this style. `None` means the same style
     /// continues. ODF: `style:next-style-name`; OOXML: `w:next @w:val`.
     ///
-    // TODO(editing): next_style_id used by split_block to determine
-    // the style of the newly created paragraph after Enter.
+    /// Consumed on the Enter/split path: `loki_text`'s `editor_keydown_ctrl`
+    /// resolves this and applies it to the new block via `set_block_style`.
     pub next_style_id: Option<String>,
 
     /// Whether this is the document's default paragraph style.

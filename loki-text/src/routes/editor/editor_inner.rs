@@ -675,9 +675,9 @@ pub(super) fn EditorInner(path: String) -> Element {
             }
 
             // ── Paragraph style picker panel (inline, above ribbon) ───────────
-            // Rendered between canvas and ribbon in the flex column so it
-            // works without position: absolute (unsupported in Blitz).
-            // COMPAT(dioxus-native): see editor_style.rs for layout rationale.
+            // Rendered between canvas and ribbon in the flex column — an in-flow
+            // choice (block-level position: absolute is now confirmed in Blitz;
+            // see editor_style.rs for the layout rationale).
             if *is_style_picker_open.read() {
                 {style_picker_panel(
                     doc_state_style_picker,
@@ -693,8 +693,8 @@ pub(super) fn EditorInner(path: String) -> Element {
             }
 
             // ── Style catalog editor panel (inline, above ribbon) ─────────────
-            // COMPAT(dioxus-native): position: absolute is unsupported in
-            // Blitz — rendered inline in the flex column, above the ribbon.
+            // Rendered inline in the flex column, above the ribbon (an in-flow
+            // choice; block-level position: absolute is now confirmed in Blitz).
             if editing_style_draft.read().is_some() {
                 {style_editor_panel(
                     doc_state_style_editor,
@@ -717,7 +717,7 @@ pub(super) fn EditorInner(path: String) -> Element {
 
             // ── Docked panels: spelling menu, language picker, Insert link ────
             // Each self-gates on its trigger signal. Docked above the ribbon
-            // (no position: absolute in Blitz, except the spelling menu).
+            // in flow; the spelling menu uses position: absolute (confirmed).
             {docked_panels(
                 doc_state_docked,
                 DockedSync {

@@ -30,8 +30,11 @@ fn weight_label(w: u16) -> String {
 /// Inline font-family picker: a text input that doubles as a substring filter
 /// over the available families, with a scrollable result list beneath it.
 ///
-/// COMPAT(dioxus-native): a native dropdown / `position: absolute` popover is
-/// unsupported in Blitz, so the candidate list renders inline below the input.
+/// The candidate list renders inline below the input rather than as an
+/// overlaid popover. Blitz has no native `<select>` dropdown; block-level
+/// `position: absolute` is now confirmed (CLAUDE.md), but an overlay anchored to
+/// this input sits in an *inline* formatting context, where absolute positioning
+/// is still unverified in Blitz — so the inline list stays for now.
 ///
 /// Touch targets: each family row is a full-width button; with 4px vertical
 /// padding inside the 84px scroll area the rows clear the 44×44 logical-pixel

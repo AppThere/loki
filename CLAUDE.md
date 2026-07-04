@@ -172,15 +172,18 @@ baseline file. Two techniques:
 
 | File | Current lines | Priority |
 |---|---|---|
-| `loki-layout/src/flow.rs` | 1612 | High |
-| `loki-odf/src/odt/reader/styles.rs` | 1441 | High |
-| `loki-odf/src/odt/reader/document.rs` | 1428 | High |
-| `loki-layout/src/para.rs` | 1278 | High |
-| `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1241 | High |
-| `loki-ooxml/src/docx/write/document.rs` | 1169 | High |
-| `loki-ooxml/src/docx/reader/document.rs` | 1126 | High |
-| `loki-text/src/routes/editor/editor_inner.rs` | 1040 | High |
-| … 24 more (300–600 lines) — see the audit (10 files split 2026-06-21) | | |
+| `loki-layout/src/para.rs` | 1979 | High |
+| `loki-layout/src/flow.rs` | 1953 | High |
+| `loki-odf/src/odt/reader/styles.rs` | 1554 | High |
+| `loki-odf/src/odt/reader/document.rs` | 1494 | High |
+| `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1244 | High |
+| `loki-ooxml/src/docx/reader/document.rs` | 1209 | High |
+| `loki-ooxml/src/docx/write/document.rs` | 1073 | High |
+| `loki-layout/src/resolve.rs` | 984 | High |
+| … 27 more (6 over 600, 21 in 300–600) — see `scripts/file-ceiling-baseline.txt` | | |
+
+*(Sizes above are from `scripts/file-ceiling-baseline.txt`, refreshed 2026-07-04;
+the earlier numbers were stale — several files grew since first baselined.)*
 
 (`odt/mapper/document.rs` (1094 lines) was split into the `odt/mapper/document/`
 directory on 2026-06-26 — each module is now under the ceiling.)
@@ -198,7 +201,7 @@ but are **not perfectly round-tripped through the Loro CRDT**.
 |---|---|---|
 | `tab_stops` | Written as unreadable Debug string; not read back. | Medium |
 | `background_color` (paragraph) | Written as Debug string; not decoded on read. | Low |
-| `DocumentMeta` / `DublinCoreMeta` | Round-trips **through the Loro CRDT** as a JSON snapshot (`loro_bridge::meta`), so Publish-tab edits are durable and undoable. Still **not** written back to DOCX/ODT on export (export drops the extended Dublin Core fields). | Low |
+| `DocumentMeta` / `DublinCoreMeta` | Round-trips **through the Loro CRDT** (`loro_bridge::meta`) **and is written back on export** — core properties + extended Dublin Core reach DOCX (`docProps/core.xml` + `custom.xml`) and ODT (`meta.xml`), tested by `metadata_round_trip.rs` / `extended_dublin_core_round_trips`. Remaining tail (not the Loro bridge): custom user properties, `meta:editing-duration`, and OOXML `docProps/app.xml` are still not written. | Low |
 
 ---
 

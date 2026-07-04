@@ -6,11 +6,13 @@ SPDX-License-Identifier: Apache-2.0
 
 | | |
 |---|---|
-| **Status** | Draft — pending implementation (B-1 resolved: `vello_cpu`) |
+| **Status** | Draft — pending implementation. The "✅ Resolved" B-items below are audit **decisions**, not shipped code. |
 | **Scope** | AppThere Loki (Text), DOCX + ODT; harness designed as shared monorepo infrastructure |
 | **Sequence** | 2 of 6 — establishes model trustworthiness before styling is built on top |
 | **Depends on** | Spec 01 (CI pipeline, the `Viewport`/`LayoutContext` type, enforcement primitives at monorepo root) |
 | **Feeds** | Styling Panel (trusted model), and the schema/round-trip CI gates Spec 01 reserved a slot for |
+
+> **Not-yet-built (verified 2026-07-04, [`deferred-features-audit`](../deferred-features-audit-2026-07-04.md)):** the harness is still unimplemented — the `vello_cpu` candidate render path (no `vello` dep in `appthere-conformance`), the vendored ISO 29500 / ODF schemas (`schemas/` is a README only), zero committed goldens, the uncalibrated SSIM threshold, and the **Gelasio** font bundling (below) are all *decisions awaiting implementation*, not done work.
 
 ---
 
@@ -122,7 +124,7 @@ Both reference apps rasterize *via PDF* through one shared rasterizer so the gol
 
 ### 7.3 Font parity
 
-Comparison is meaningless unless both sides use the same fonts. Loki bundles the metric-compatible set: **Carlito** (≈ Calibri), **Caladea** (≈ Cambria), and the third bundled C-font equivalent; plus the newly-added **Tinos** (≈ Times New Roman), **Cousine** (≈ Courier New), **Arimo** (≈ Arial) for the classic web-safe faces. **Gelasio** (≈ Georgia) is added as a bundled asset under this spec — the audit found it the one missing metric-compatible face — so the corpus can exercise a Georgia-family fixture. The reference machines (Windows/Office, LibreOffice) must have the same set installed.
+Comparison is meaningless unless both sides use the same fonts. Loki bundles the metric-compatible set: **Carlito** (≈ Calibri), **Caladea** (≈ Cambria), and the third bundled C-font equivalent; plus the newly-added **Tinos** (≈ Times New Roman), **Cousine** (≈ Courier New), **Arimo** (≈ Arial) for the classic web-safe faces. **Gelasio** (≈ Georgia) is *to be* added as a bundled asset under this spec — the audit found it the one missing metric-compatible face — so the corpus can exercise a Georgia-family fixture. (Not yet bundled: `loki-fonts/fonts/` has no Gelasio face as of 2026-07-04.) The reference machines (Windows/Office, LibreOffice) must have the same set installed.
 
 - **Fidelity fixtures reference the metric-compatible font names directly** (Carlito, Tinos, …). This isolates *rendering* from *substitution*: both reference app and Loki use the literal bundled font, so any diff is a rendering difference, not a substitution disagreement. The reference machines must have these fonts installed.
 - **A separate, smaller substitution suite** authors fixtures referencing the *original* proprietary names (Calibri, Times New Roman) and asserts Loki's substitution engine maps them to the bundled equivalents and warns appropriately (this ties into the font-substitution warning redesigned in Spec 03). Kept apart so the substitution variable never contaminates fidelity scoring.

@@ -172,10 +172,10 @@ pub struct StyleSpan {
     pub strikethrough: Option<StrikethroughStyle>,
     /// Line-height multiplier (e.g. `1.5`). `None` = paragraph default.
     pub line_height: Option<f32>,
-    /// Vertical alignment for super/subscript. Font size is reduced to 58%.
-    ///
-    /// TODO(super-sub): Parley does not expose baseline-shift; only font-size
-    /// reduction applied. Revisit when Parley adds StyleProperty::BaselineShift.
+    /// Vertical alignment for super/subscript. Font size is reduced to 58% and
+    /// the run is shifted via a manual `va_offset` in `para_emit` (plus a
+    /// per-glyph `baseline_shift` for `w:position`). TODO(super-sub): the shift is
+    /// manual only because Parley lacks a native `StyleProperty::BaselineShift`.
     pub vertical_align: Option<VerticalAlign>,
     /// Highlight colour to paint behind the run. `None` = no highlight.
     pub highlight_color: Option<LayoutColor>,
@@ -866,8 +866,8 @@ pub(crate) fn push_para_styles(
             continue;
         }
         let r = span.range.clone();
-        // For super/subscript (gap #3), reduce font size to 58 %.
-        // TODO(super-sub): Parley does not expose baseline-shift.
+        // For super/subscript (gap #3), reduce font size to 58 %. The shift is
+        // applied in `para_emit` (`va_offset`) — TODO(super-sub): no native API.
         let effective_font_size = if span.vertical_align.is_some() {
             span.font_size * 0.58
         } else {

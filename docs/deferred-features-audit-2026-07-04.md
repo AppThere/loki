@@ -169,9 +169,9 @@ From `docs/mvp-scope-spreadsheet-presentation-2026-06-13.md` — deliberately po
 
 ---
 
-## 8. Recommended actions (from §1)
+## 8. Recommended actions (from §1) — ✅ applied 2026-07-04
 
-Pure documentation hygiene — no functional change, but stops the docs from misdirecting future work:
+Pure documentation hygiene — no functional change, but stops the docs from misdirecting future work. **All items below were applied in the same pass** (comment rewrites + status-marker corrections; no behaviour changed):
 
 1. Update the four stale **memory/audit/fidelity** statuses: memory Finding 2 → Fixed (S-4); audit-2026-06-10 C1 (S-5) and S1–S4 (S-6) → resolved; fidelity gap #14 → resolved (S-7).
 2. Remove/rewrite the stale **in-code** notes: `TODO(editing)` (S-2), `TODO(super-sub)` wording (S-3), and the ~5 `COMPAT(dioxus-native): position:absolute` notes (S-1).
