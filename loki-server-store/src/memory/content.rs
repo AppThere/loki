@@ -178,7 +178,7 @@ impl OplogStore for MemoryStores {
             .into_iter()
             .filter(|(_, count)| *count >= min_entries)
             .collect();
-        backlog.sort_by(|a, b| b.1.cmp(&a.1));
+        backlog.sort_by_key(|&(_, count)| std::cmp::Reverse(count));
         Ok(backlog)
     }
 }

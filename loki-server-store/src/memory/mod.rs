@@ -88,7 +88,7 @@ impl WorkspaceStore for MemoryStores {
             .filter(|d| d.workspace_id == id)
             .cloned()
             .collect();
-        docs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        docs.sort_by_key(|d| std::cmp::Reverse(d.created_at));
         Ok(docs)
     }
 }
