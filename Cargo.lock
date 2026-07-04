@@ -3907,6 +3907,10 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "dhat",
+ "loki-doc-model",
+ "loki-layout",
+ "loki-odf",
+ "loki-ooxml",
 ]
 
 [[package]]
