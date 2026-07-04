@@ -11,12 +11,16 @@ use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_i18n::fl;
 
+use super::posture::StylePanelPosture;
+
 /// Renders the "Character styles" heading and one button per character style
-/// (empty when the document has none). `char_selected` highlights the active id.
+/// (empty when the document has none). `char_selected` highlights the active id;
+/// `posture` supplies the Compact touch minimum (§11).
 pub(super) fn char_list_section(
     char_list: Vec<(String, String)>,
     char_selected: Option<String>,
     mut editing_char_style: Signal<Option<String>>,
+    posture: StylePanelPosture,
 ) -> Element {
     if char_list.is_empty() {
         return rsx! {};
@@ -39,11 +43,12 @@ pub(super) fn char_list_section(
                     button {
                         key: "char-{id}",
                         style: format!(
-                            "text-align: left; padding: {p}px {p2}px; border-radius: 3px; \
+                            "text-align: left; padding: {p}px {p2}px; border-radius: 3px; {touch} \
                              border: 1px solid {border}; cursor: pointer; font-family: {ff}; \
                              font-size: {fs}px; background: {bg}; color: {fg};",
                             p = tokens::SPACE_1,
                             p2 = tokens::SPACE_2,
+                            touch = posture.touch_min_css(),
                             border = if is_sel {
                                 tokens::COLOR_TAB_ACTIVE_INDICATOR
                             } else {

@@ -8,11 +8,8 @@
 //! [`super::super::style_inspector::paragraph_inspector_rows`]. Every property
 //! appears, not just locally-set ones, so a user can see at a glance which
 //! properties this style *owns* versus passively receives (the fix for the old
-//! panel's local-only blindness). Edit / reset affordances land in a later M2
-//! increment; this pass makes provenance visible.
-//!
-//! A `#[component]` (ADR-0013) so it owns its hook scope — ready to read the
-//! breakpoint for Compact posture without prop threading in a future pass.
+//! panel's local-only blindness). A `#[component]` (ADR-0013) taking a
+//! [`StylePanelPosture`] for its Compact width + touch targets (Spec 05 M7).
 
 use appthere_ui::tokens;
 use dioxus::prelude::*;
@@ -21,6 +18,7 @@ use loki_i18n::fl;
 use loki_doc_model::style::StyleId;
 
 use super::super::style_inspector::{InspectorRow, RowProvenance, StyleProperty};
+use super::posture::StylePanelPosture;
 
 /// A linked character style shown alongside a paragraph style (§9 linked
 /// family): its display name and its resolved rows (read-only).
@@ -45,16 +43,19 @@ pub(super) fn StyleProvenanceList(
     impact: Vec<String>,
     /// The paragraph style's linked character style, if any (§9 linked family).
     linked: LinkedRows,
+    /// Breakpoint posture (Spec 05 M7): full-width + touch targets at Compact.
+    posture: StylePanelPosture,
     on_reset: EventHandler<StyleProperty>,
     on_jump: EventHandler<StyleId>,
 ) -> Element {
     rsx! {
         div {
             style: format!(
-                "width: 220px; min-width: 220px; overflow-y: auto; \
+                "width: {w}; min-width: {w}; overflow-y: auto; \
                  border-left: 1px solid {border}; display: flex; \
                  flex-direction: column; gap: {gap}px; padding: {p}px; \
                  font-family: {ff};",
+                w = posture.section_width(220.0),
                 border = tokens::COLOR_BORDER_CHROME,
                 gap = tokens::SPACE_2,
                 p = tokens::SPACE_3,
@@ -162,8 +163,9 @@ pub(super) fn StyleProvenanceList(
                                     button {
                                         style: format!(
                                             "background: transparent; border: none; cursor: pointer; \
-                                             padding: 0; text-align: left; text-decoration: underline; \
+                                             padding: 0; {touch} text-align: left; text-decoration: underline; \
                                              font-family: {ff}; font-size: {fs}px; color: {fg};",
+                                            touch = posture.touch_min_css(),
                                             ff = tokens::FONT_FAMILY_UI,
                                             fs = tokens::FONT_SIZE_XS,
                                             fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
@@ -193,8 +195,9 @@ pub(super) fn StyleProvenanceList(
                                     button {
                                         style: format!(
                                             "background: transparent; border: none; cursor: pointer; \
-                                             padding: {p}px; font-size: {fs}px; color: {fg};",
+                                             padding: {p}px; {touch} font-size: {fs}px; color: {fg};",
                                             p = tokens::SPACE_1,
+                                            touch = posture.touch_min_css(),
                                             fs = tokens::FONT_SIZE_XS,
                                             fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
                                         ),

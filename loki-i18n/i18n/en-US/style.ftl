@@ -35,6 +35,9 @@ style-list-family-heading = List styles
 style-list-level-label = Level { $n }
 # A list level's label kind and geometry (non-inheriting; shown read-only)
 style-list-level-detail = { $label } · indent { $indent } · hanging { $hanging } · { $alignment }
+# Compact (< 600 px) segmented switcher between the edit and inspect panes (§11)
+style-section-edit = Edit
+style-section-inspect = Inspect
 # Re-parenting rejected because it would create an inheritance cycle
 style-reparent-cycle = Cannot set that parent: it would create an inheritance cycle
 # Delete control (user styles only; built-in styles are protected)

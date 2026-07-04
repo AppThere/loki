@@ -14,25 +14,27 @@ use dioxus::prelude::*;
 use loki_i18n::fl;
 
 use super::panel_data::{CharSelection, ListSelection};
+use super::posture::StylePanelPosture;
 use super::provenance::CharRowsSection;
 
 /// Renders the character and list read-only inspector columns, each present only
 /// when its family has a selection. Both sit to the right of the paragraph
-/// provenance column.
+/// provenance column (or stack full-width beneath it at Compact, per `posture`).
 pub(super) fn family_inspector_columns(
     char_selected_rows: CharSelection,
     list_selected_rows: ListSelection,
+    posture: StylePanelPosture,
 ) -> Element {
     rsx! {
         // ── Character inspector (read-only; §9 character family) ────────────
         if let Some((name, rows)) = char_selected_rows {
-            div { style: column_style(), CharRowsSection { heading: name, rows } }
+            div { style: column_style(posture), CharRowsSection { heading: name, rows } }
         }
 
         // ── List inspector (read-only; §9 list family, non-inheriting) ──────
         if let Some((name, rows)) = list_selected_rows {
             div {
-                style: column_style(),
+                style: column_style(posture),
                 div {
                     style: format!(
                         "font-size: {fs}px; font-weight: {fw}; color: {fg}; margin-bottom: {mb}px;",
@@ -79,11 +81,13 @@ pub(super) fn family_inspector_columns(
     }
 }
 
-/// The shared 220px read-only column chrome (border + padding + scroll).
-fn column_style() -> String {
+/// The shared read-only column chrome (border + padding + scroll). 220px wide at
+/// Expanded; full-width when the panel stacks at Compact.
+fn column_style(posture: StylePanelPosture) -> String {
     format!(
-        "width: 220px; min-width: 220px; overflow-y: auto; \
+        "width: {w}; min-width: {w}; overflow-y: auto; \
          border-left: 1px solid {border}; padding: {p}px;",
+        w = posture.section_width(220.0),
         border = tokens::COLOR_BORDER_CHROME,
         p = tokens::SPACE_3,
     )

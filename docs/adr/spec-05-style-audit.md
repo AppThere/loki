@@ -224,12 +224,12 @@ Model gaps gate the UI, so the sequence front-loads model work:
    markers appear only for actually-changed properties and clear on Apply/reset.
    **M2 is substantively complete** — provenance view, reset-to-inherited,
    jump-to-ancestor, staged display, and built-in identification all shipped and
-   tested. *One item deferred with rationale: promoting the panel into
-   `AtPanelHost` is **not** a mechanical wrap — `AtPanelHost` is a narrow
-   (360px) side-panel/sheet host, whereas the legacy editor is a wide
-   three-column surface (list + form + 220px provenance ≈ 600px+); forcing that
-   posture would break the layout. It lands with the M6/M7 full-panel redesign
-   (§9/§11), when the inspector becomes its own right-sized panel.*
+   tested. *Resolved in M7:* the panel was **not** wrapped in `AtPanelHost` —
+   that host is a narrow (360px) side-panel/sheet, whereas this editor is a wide
+   multi-column surface (list + form + 220px provenance + family inspectors);
+   forcing that posture would break the layout. M7 instead gives the panel its
+   own breakpoint-driven `StylePanelPosture` (a Compact stacked sheet), reusing
+   `PanelPosture`'s tested `for_breakpoint` shape without its container.*
 4. **M5 — Creation & management.** ✅ **Shipped.** *Delete-with-orphan-handling:*
    `StyleCatalog::delete_paragraph_style` re-parents the deleted style's children
    to the grandparent (5 tests); `perform_style_delete` guards built-ins
@@ -279,8 +279,24 @@ Model gaps gate the UI, so the sequence front-loads model work:
    needs the `page_styles` catalog representation of ADR-0012. Both are model-gated
    and out of scope for this UI pass; the family-panel scaffold (list + inspector
    columns) is in place to host them once the model lands.
-7. **M7 — Compact posture** applied throughout (bottom-sheet, breadcrumb tree,
-   segmented family nav), verified at <600.
+7. **M7 — Compact posture.** ✅ **Shipped.** A pure, tested
+   `posture::StylePanelPosture::for_breakpoint` (mirrors `appthere_ui::PanelPosture`;
+   2 tests) maps the size class to layout: at Compact (< 600, Spec 03) the body
+   switches from side-by-side columns to a **full-width stacked sheet** (taller
+   height, `flex-direction: column`, vertical scroll — no horizontal overflow),
+   every nav control meets the 44 px `TOUCH_MIN`, and a segmented **Edit / Inspect**
+   switcher (`body::section_switcher`) chooses which stacked group is visible so
+   the tree + families + inspectors are all reachable without horizontal scrolling.
+   At Medium/Expanded the existing side-by-side surface is unchanged. Posture is
+   threaded (the panel is a plain fn that cannot host `use_breakpoint()`, so
+   `editor_inner` — a component — reads the breakpoint and passes it in, plus a
+   `style_panel_inspect` signal for the switcher); every section/inspector consumes
+   it for width + touch. Decomposition held the ceiling: the left column + switcher
+   moved to `body.rs`, posture to `posture.rs` (mod.rs 243). *Deferred with
+   rationale:* the tree's **breadcrumb + drill-down** degrade (§7/§11) — the
+   depth-indented tree remains operable at Compact (indentation is small, no
+   horizontal scroll), so breadcrumb navigation is a refinement, not an
+   accept-blocker; it lands when the tree grows a dedicated component.
 
 **Prerequisite model extensions** (call out so they're not discovered late):
 provenance result type + char-style resolver + per-family defaults (M1);

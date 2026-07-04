@@ -23,7 +23,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use appthere_ui::tokens;
-use appthere_ui::{AtRibbon, AtStatusBar, RibbonTabDesc};
+use appthere_ui::{AtRibbon, AtStatusBar, RibbonTabDesc, use_breakpoint};
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 use loki_doc_model::get_mark_at;
@@ -141,6 +141,9 @@ pub(super) fn EditorInner(path: String) -> Element {
     // List style being browsed in the style panel (Spec 05 M6 list family):
     // `Some(id)` selects a list style for the read-only per-level inspector.
     let editing_list_style = use_signal(|| Option::<String>::None);
+    // Compact style-panel pane (Spec 05 M7 §11): `true` = Inspect, `false` = Edit.
+    // Ignored at Expanded/Medium (both panes visible side-by-side).
+    let style_panel_inspect = use_signal(|| false);
     // Stashed sessions for inactive tabs — unsaved edits survive tab switches.
     let doc_sessions = use_context::<Signal<DocSessions>>();
     // Document generation considered "clean" (matches the on-disk file).
@@ -698,6 +701,8 @@ pub(super) fn EditorInner(path: String) -> Element {
                     editing_style_draft,
                     editing_char_style,
                     editing_list_style,
+                    style_panel_inspect,
+                    use_breakpoint(),
                     Rc::clone(&font_families),
                     super::editor_style_editor::StyleEditorSync {
                         loro_doc,
