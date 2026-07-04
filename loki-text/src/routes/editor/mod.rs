@@ -40,6 +40,9 @@ mod editor_state;
 mod editor_style;
 mod editor_style_catalog;
 mod editor_style_editor;
+// The character-family inspector model (Spec 05 M6) lands before its panel UI.
+#[allow(dead_code)] // TODO(spec-05-m6): wired by the character style panel (next increment)
+mod style_char_inspector;
 mod style_impact;
 mod style_inspector;
 
