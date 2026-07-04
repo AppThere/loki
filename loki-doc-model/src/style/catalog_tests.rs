@@ -203,3 +203,86 @@ fn effective_paragraph_style_falls_back_to_default() {
         Some(&explicit)
     );
 }
+
+// ── delete_paragraph_style (Spec 05 M5) ─────────────────────────────────────
+
+fn plain(id: &str, parent: Option<&str>) -> ParagraphStyle {
+    ParagraphStyle {
+        id: StyleId::new(id),
+        display_name: None,
+        parent: parent.map(StyleId::new),
+        linked_char_style: None,
+        next_style_id: None,
+        para_props: ParaProps::default(),
+        char_props: CharProps::default(),
+        is_default: false,
+        is_custom: true,
+        extensions: ExtensionBag::default(),
+    }
+}
+
+/// A → { B → { D }, C }
+fn small_tree() -> StyleCatalog {
+    let mut c = StyleCatalog::new();
+    for s in [
+        plain("A", None),
+        plain("B", Some("A")),
+        plain("C", Some("A")),
+        plain("D", Some("B")),
+    ] {
+        c.paragraph_styles.insert(s.id.clone(), s);
+    }
+    c
+}
+
+fn parent_of<'a>(c: &'a StyleCatalog, id: &str) -> Option<&'a StyleId> {
+    c.paragraph_styles
+        .get(&StyleId::new(id))
+        .unwrap()
+        .parent
+        .as_ref()
+}
+
+#[test]
+fn deleting_a_middle_style_reparents_children_to_the_grandparent() {
+    let mut c = small_tree();
+    let reparented = c.delete_paragraph_style(&StyleId::new("B"));
+    assert_eq!(reparented, vec![StyleId::new("D")]);
+    assert!(!c.paragraph_styles.contains_key(&StyleId::new("B")));
+    // D's parent is now A (B's former parent), keeping the tree connected.
+    assert_eq!(parent_of(&c, "D"), Some(&StyleId::new("A")));
+}
+
+#[test]
+fn deleting_a_root_makes_its_children_roots() {
+    let mut c = small_tree();
+    let reparented = c.delete_paragraph_style(&StyleId::new("A"));
+    assert_eq!(reparented, vec![StyleId::new("B"), StyleId::new("C")]);
+    assert_eq!(parent_of(&c, "B"), None);
+    assert_eq!(parent_of(&c, "C"), None);
+}
+
+#[test]
+fn deleting_a_leaf_removes_it_without_reparenting() {
+    let mut c = small_tree();
+    assert!(c.delete_paragraph_style(&StyleId::new("D")).is_empty());
+    assert!(!c.paragraph_styles.contains_key(&StyleId::new("D")));
+    // Siblings/parents untouched.
+    assert_eq!(parent_of(&c, "B"), Some(&StyleId::new("A")));
+}
+
+#[test]
+fn deleting_an_absent_style_is_a_noop() {
+    let mut c = small_tree();
+    assert!(c.delete_paragraph_style(&StyleId::new("Ghost")).is_empty());
+    assert_eq!(c.paragraph_styles.len(), 4);
+}
+
+#[test]
+fn deleting_the_document_default_falls_back_to_the_grandparent() {
+    let mut c = small_tree();
+    c.default_paragraph_style = Some(StyleId::new("B"));
+    c.delete_paragraph_style(&StyleId::new("B"));
+    // B's parent was A, so the default falls back to A.
+    assert_eq!(c.default_paragraph_style, Some(StyleId::new("A")));
+}

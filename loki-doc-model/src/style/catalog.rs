@@ -167,6 +167,33 @@ impl StyleCatalog {
         }
         Some(resolved)
     }
+
+    /// Deletes paragraph style `id`, re-parenting its direct children to `id`'s
+    /// own parent (their grandparent) so the inheritance tree stays connected and
+    /// no child is orphaned (Spec 05 §8). Catalog order is otherwise preserved.
+    ///
+    /// If `id` was the document default paragraph style, the default falls back to
+    /// that grandparent (`None` when `id` was a root). Returns the ids of the
+    /// re-parented children (for the caller's confirmation message). A no-op
+    /// returning an empty vector when `id` is not in the catalog.
+    pub fn delete_paragraph_style(&mut self, id: &StyleId) -> Vec<StyleId> {
+        let Some(style) = self.paragraph_styles.get(id) else {
+            return Vec::new();
+        };
+        let grandparent = style.parent.clone();
+        let children = self.para_children(id);
+        for child in &children {
+            if let Some(c) = self.paragraph_styles.get_mut(child) {
+                c.parent = grandparent.clone();
+            }
+        }
+        // `shift_remove` preserves the order of the remaining styles.
+        self.paragraph_styles.shift_remove(id);
+        if self.default_paragraph_style.as_ref() == Some(id) {
+            self.default_paragraph_style = grandparent;
+        }
+        children
+    }
 }
 
 #[cfg(test)]
