@@ -30,8 +30,8 @@ exact stale-doc failure mode the audit was written to catch.
 
 | Task | Detail | Exit criterion |
 |---|---|---|
-| 0.1 | Re-drive F1–F7 against current `loki-text` / `loki-presentation` / `loki-spreadsheet` code; record each as open or resolved in a short addendum to the audit doc. | Each of F1–F7 has a verified status with `file:line` evidence. |
-| 0.2 | Fold the confirmed-open subset into Phase 4 (they are all editor/app-shell UX items). | Phase 4 backlog updated. |
+| 0.1 | ✅ **Done 2026-07-04** — F1–F7 re-driven; verdicts in the audit's new §9 addendum. Headline: F1/F2/F4 resolved, F3 largely resolved, F5 resolved-by-removal, F6/F7 partial. | Each of F1–F7 has a verified status with `file:line` evidence. |
+| 0.2 | ✅ **Done 2026-07-04** — confirmed-open subset folded into Phases 4/6 and the Watch list (see 4b.6/4b.7, 4c.5, 6.7 below). | Phase 4 backlog updated. |
 
 ---
 
@@ -120,6 +120,8 @@ TODOs (merged with whatever Phase 0 confirms from F1–F7).
 | 4b.3 | `undo-dirty` | Saved-vs-undo-stack clean tracking. **Depends on Save existing** — sequence after the Save/Save-As outcome of Phase 0 (F-findings). Also the natural moment to do Spec 01's typed `SaveError` residual. | M |
 | 4b.4 | `nested-nav` | Sibling-path navigation inside cell/note bodies (`navigation.rs:138,174`). | S |
 | 4b.5 | `rotated-cell-editing` | Editing data for rotated table cells (`flow.rs:1676`) — read-only today. **Note:** `flow.rs` is a top ceiling offender; split it (Phase 7) before or with this change. | M |
+| 4b.6 | F3c + F1 residual (audit §9) | Dirty-work protection: confirm-before-close for dirty tabs in loki-text (`shell.rs:101-145` discards the stashed session silently) and save-prompt/retention on presentation tab switch (`editor_inner.rs:50-57`). | S–M |
+| 4b.7 | F6c + F6f (audit §9) | Selection-aware typing/Backspace (replace active selection), clipboard (copy/cut/paste), and move save/load I/O off the UI thread (`editor_ribbon.rs:93`, `editor_load.rs:56-101`). | M |
 
 ### 4c. Shell/UX polish TODOs (§2) — batchable
 
@@ -129,6 +131,7 @@ TODOs (merged with whatever Phase 0 confirms from F1–F7).
 | 4c.2 | `a11y` | Expand invisible status-bar touch targets to `TOUCH_MIN` (WCAG 2.5.8 is a stated project convention). | S |
 | 4c.3 | `title-edit`, `browse-templates`, `tabs` | Inline-editable title; template-browser dialog; tab-driven navigation + blank-doc. | M |
 | 4c.4 | `icons`, `ribbon`, `theme`, `platform`, `font` | Real Tabler/SVG icons over emoji; ribbon separator variant; **light-theme tokens** (currently Dark-only); macOS traffic-light region / real OS check; verify bundled UI fonts registered. | M |
+| 4c.5 | F6a/F6d/F7a/F7b/F7c (audit §9) | Extract recent-file rows into child components (hooks-in-loops); wire zoom controls (all 3 apps) + spreadsheet ribbon tab-select/collapse; adopt `use_breakpoint()` in `AtHomeTab`; stable list keys + `active_slide_idx` fix-up on slide delete; word count in the status bar. | M |
 
 ---
 
@@ -167,6 +170,7 @@ findings (P-3/P-5/P-6 were "not re-driven").
 | 6.4 | `partial-render` | Viewport clipping / direct `node.scroll_offset` (`scene.rs:148`, `editor_pointer.rs:139`) — partially gated on the vendored blitz-dom scroll API; do the locally-possible part. |
 | 6.5 | audit P-3/P-5/P-6 | Re-measure first (bench), then fix if confirmed: glyph-run scans, coarse cache invalidation, cold-path clones. |
 | 6.6 | Spec 06 tails | BM-3 render-cost proxy executes once Phase 3.3 lands `vello_cpu`; GPU frame-time (`device` feature) and on-device RSS recalibration remain device-gated — keep deferred, tracked in Spec 06. |
+| 6.7 | F5 residual (audit §9) | Replace the hardwired-`false` `DocumentViewProps::eq` (`document_view.rs:143-147`) with a real comparison — benign today (PageTile eq caps the cost) but pure over-render. |
 
 ---
 
@@ -194,6 +198,7 @@ procedure in `docs/patches.md`).
 - **Vello**: blur primitive for true soft text shadow (`shadow` — hard offset copy today).
 - **Blitz CSS**: `white-space: nowrap`, `text-overflow: ellipsis`, `:hover`, `scrollbar-width`, SVG rendering, `position: fixed` (collapses to `absolute`) — runtime-verify each on every Blitz bump and update the `CLAUDE.md` confirmed/unconfirmed lists.
 - **Platform quirks (permanent)**: Mali-G715 Vulkan device-loss workarounds, Android 16 double `ANativeActivity_onCreate`, Word/OOXML file quirks — documented COMPAT, never removable.
+- **Patch-tree fixes queued for the next re-vendor** (audit §9 F7e/F7f): strip the `[LOKI/head]` / `println!` / `dbg!` debug leftovers from the vendored patches, and fix the `buttons ^= Main` XOR on touch end/cancel (`patches/blitz-shell/src/window.rs:1133`, should be `&= !Main`) — batch these with the next Dioxus/Blitz patch re-vendor rather than churning the vendored tree now.
 - **Headless/server deferrals with in-code TODOs**: `TODO(headless-c025)` (apalis job queue), `TODO(headless-c021/c022/c023-discovery/c027/c028)`, `TODO(kms)`, `TODO(ws-membership)` — deliberate spec deferrals (ADR C021–C028); schedule when the server milestone that needs them is planned, not before.
 
 ## Out of scope — deliberate post-MVP (do not schedule)

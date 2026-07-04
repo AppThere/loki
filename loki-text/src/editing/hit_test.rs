@@ -21,8 +21,9 @@
 //!   Spec 01 audit A-1.)
 //! - `canvas_origin.y` = `TOOLBAR_HEIGHT_TOP + SPACE_6` (exact from tokens).
 //!
-//! - `scroll_offset` = 0.0 (Blitz does not expose `node.scroll_offset` to
-//!   Dioxus components; wired as a TODO once the API is available).
+//! - `scroll_offset` = the live scroll position mirrored from the canvas
+//!   `onscroll` handler (`editor_canvas.rs` → `scroll_metrics`), threaded in
+//!   by the pointer handlers (`editor_pointer.rs`).
 //!
 //! All geometry inside this function works in layout **points** (1 pt = 1/72 in).
 //! The conversion from CSS logical pixels is applied once at entry:

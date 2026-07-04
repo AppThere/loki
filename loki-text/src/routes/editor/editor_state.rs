@@ -115,10 +115,12 @@ pub(super) struct EditorState {
     pub subscript_active: Signal<bool>,
     /// Loro undo manager — `None` until the document loads.
     ///
-    /// // TODO(undo-dirty): `can_undo` does not track whether the document is
-    /// saved relative to the undo stack.  When a Save action is implemented,
-    /// call `UndoManager::record_new_checkpoint()` to mark the clean state so
-    /// the ribbon Save button can be disabled when there is nothing to save.
+    /// // TODO(undo-dirty): the tab dirty indicator already tracks
+    /// saved-vs-edited via a generation baseline (`editor_inner.rs`,
+    /// `baseline_gen`), but the undo stack itself has no clean checkpoint.
+    /// Call `UndoManager::record_new_checkpoint()` on Save so undoing back
+    /// to the saved state clears dirty and the ribbon Save button can be
+    /// disabled when there is nothing to save.
     pub undo_manager: Signal<Option<loro::UndoManager>>,
     /// Whether Ctrl+Z is currently applicable (derived from `undo_manager`).
     pub can_undo: Signal<bool>,

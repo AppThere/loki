@@ -179,3 +179,34 @@ Pure documentation hygiene — no functional change, but stops the docs from mis
 4. Reclassify the Spec 02 **"resolved-as-decision"** items (Gelasio, schemas, goldens, SSIM, `vello_cpu`) so they read as *decided, not built*.
 
 Everything else in §2–§7 is a genuine, correctly-documented deferral.
+
+---
+
+## 9. Addendum (2026-07-04, later the same day): F1–F7 re-driven
+
+The §5 closing note flagged the app-layer findings F1–F7 (audit-2026-06-10) as
+"not individually re-driven; treat as likely-open pending a focused check."
+That focused check has now been done (Phase 0 of
+[`deferred-features-plan-2026-07-04.md`](deferred-features-plan-2026-07-04.md));
+per-sub-item verdicts against HEAD `20b05a6`:
+
+| # | Original claim | Verdict | Evidence / residual |
+|---|---|---|---|
+| F1 | Presentation editor is a hardcoded demo; no load/save | **RESOLVED** (core) | Real PPTX import (`editor_load.rs:40-54` → `PptxImport`) and export with Save/Save As (`editor_save.rs`, `editor_inner.rs:87-149`); ODP is a typed `UnsupportedFormat` (deferred by MVP scope, not faked). **Residual:** in-memory edits still discarded on tab switch (`editor_inner.rs:50-57` resets `doc` on path change) — now *warned* via dirty indicator, no longer silent. |
+| F2 | Recents Delete/Copy are silent no-ops (3 apps) | **RESOLVED** | `FileAccessToken::delete()` / `copy_bytes_to()` exist (`patches/loki-file-access/src/token.rs:116,132`) and all three `home.rs` handlers use them; failures surfaced via `pick_error` + `errors.ftl` keys. Remaining `TODO(ux)` confirm-dialog is tracked separately (plan 4c.1). |
+| F3 | Edits lost on tab switch; dirty flag never set | **LARGELY RESOLVED** | Per-tab retention via `loki-text/src/sessions.rs` `DocSession` (stash/restore in `editor_path_sync.rs:42-154`); dirty tracks a generation baseline (`editor_inner.rs:465-476`), cleared on save. **Residual (F3c):** `shell.rs:101-145` still closes dirty tabs with no confirmation, discarding the stashed session. |
+| F4 | Untitled documents cannot be saved; no Ctrl+S | **RESOLVED** | Save As via `pick_file_to_save` (`editor_inner.rs:484-535`); Ctrl/Cmd+S bound (`editor_keydown.rs:60-67`) routing untitled → Save As. |
+| F5 | Settle/retier pipeline wired to dead channels | **RESOLVED (by removal)** | The pipeline was deleted, not fixed: virtualization now bounds memory by mounting only viewport-window pages (`virtualize.rs` `visible_window`, `document_view.rs:290`). The 06-10 audit's §5 claim of "downsample by viewport distance" was wrong about the mechanism — corrected there. **Residual:** `DocumentViewProps::eq` still hardwired `false` (`document_view.rs:143-147`) — now a benign over-render, capped by `PageTile`'s own `PartialEq`. |
+| F6 | Medium grab-bag | **PARTIAL** | RESOLVED: F6b hit-testing geometry (live `client_width`/`scroll_offset` via `scroll_metrics`), F6e spreadsheet (visible save errors, SUM/COUNT/AVERAGE/MIN/MAX/IF engine, dynamic grid to 500×52), F6g onscroll panic path (`convert_scroll_data` implemented; unimplemented converters have no registered handlers), F6h i18n variant-locale fallback (parsed-langid comparison + regression test). PARTIAL: F6d dead UI — loki-text ribbon tabs/collapse/template cards fixed; **zoom controls dead in all 3 apps; spreadsheet ribbon tab-select/collapse dead**. STILL-OPEN: F6a hooks in conditionals/loops (`recent_files.rs:45,96,219`), F6c typing/Backspace ignore selection + no clipboard, F6f synchronous save/load on UI thread. |
+| F7 | Low grab-bag | **PARTIAL** | RESOLVED: F7d safe-area insets (RwLock + reactive version signal + resize sensor). PARTIAL: F7c — loki-text page number now live; word count still empty everywhere. STILL-OPEN: F7a `AtHomeTab` responsive layout (`viewport_width` fixed 375.0, never adopted `use_breakpoint()`), F7b index-based list keys + `active_slide_idx` not adjusted on delete-before-active, F7e debug leftovers in vendored patches, F7f `buttons ^= Main` XOR on touch end/cancel (`patches/blitz-shell/src/window.rs:1133`). |
+
+**Two stale in-code comments found during verification were fixed in the same
+pass:** the `TODO(undo-dirty)` parenthetical ("Save not implemented" — Save now
+exists; remaining work is the undo-stack clean checkpoint) and the
+`editing/hit_test.rs` doc-comment claiming `scroll_offset = 0.0`.
+
+The confirmed-open items fold into the plan as follows: F3c + F1-residual
+(close/switch protection for dirty work) join Phase 4b; F6a/F6c/F6d/F6f and
+F7a/F7b/F7c join the Phase 4b/4c backlog; F7e/F7f are patch-tree fixes queued
+with the next patch re-vendor (Watch list); the F5 `PartialEq` residual joins
+Phase 6 (perf polish).
