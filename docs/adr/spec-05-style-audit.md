@@ -253,11 +253,17 @@ Model gaps gate the UI, so the sequence front-loads model work:
    `CharacterStyle`'s own chain via `resolve_char_chain` (M1 / SM-2), emitting the
    shared `InspectorRow` shape so the provenance view is reused across families
    (4 tests). *Linked (shipped):* the paragraph inspector now shows the linked
-   character style's rows read-only beneath the paragraph rows (`LinkedCharSection`,
+   character style's rows read-only beneath the paragraph rows (`CharRowsSection`,
    fed by `panel_data::inspector_data` which reads `linked_char_style`) — the §9
    "both aspects, one surface". Inspector-data computation was extracted to
-   `panel_data.rs` (mod.rs 257). *Remaining:* a dedicated **character panel**
-   (family selector + char tree/form); **list** (per-level, non-inheriting);
+   `panel_data.rs` (mod.rs 257). *Character panel (shipped):* the panel's left
+   column now lists every `CharacterStyle` under a "Character styles" heading
+   (`char_browser::char_list_section`, fed by `panel_data::char_data`); selecting
+   one writes its id into the threaded `editing_char_style` signal and renders that
+   style's own resolved rows read-only in a right-hand `CharRowsSection` — a
+   browse-and-inspect surface reusing the shared provenance renderer. Char-style
+   *editing* (a char-props form) is a later increment (§9 "equal depth not required
+   in v1"). *Remaining:* **list** (per-level, non-inheriting);
    **table** — deferred (needs `TableProps` conditional regions, which the
    renderer does not yet honor → the spec's "don't add unrenderable properties"
    gate); **page** — deferred (needs the `page_styles` catalog representation of

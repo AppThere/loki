@@ -104,3 +104,44 @@ fn display_name_of(cat: &loki_doc_model::style::StyleCatalog, id: &StyleId) -> S
         .and_then(|s| s.display_name.clone())
         .unwrap_or_else(|| id.as_str().to_string())
 }
+
+/// A character style's `(id, display name)` pair for the family list.
+pub(super) type CharListEntry = (String, String);
+/// The selected character style's `(display name, rows)` for the inspector.
+pub(super) type CharSelection = Option<(String, Vec<InspectorRow>)>;
+
+/// The character-styles browser data (§9 character family): the `(id, display)`
+/// list sorted by display name, and — when `selected` names one — its
+/// `(display, rows)` for the read-only inspector.
+pub(super) fn char_data(
+    doc_state: &Arc<Mutex<DocumentState>>,
+    selected: Option<&str>,
+) -> (Vec<CharListEntry>, CharSelection) {
+    let Some(catalog) = catalog_snapshot(doc_state) else {
+        return (Vec::new(), None);
+    };
+    let mut list: Vec<(String, String)> = catalog
+        .character_styles
+        .iter()
+        .map(|(id, s)| {
+            let display = s
+                .display_name
+                .clone()
+                .unwrap_or_else(|| id.as_str().to_string());
+            (id.as_str().to_string(), display)
+        })
+        .collect();
+    list.sort_by(|(_, a), (_, b)| a.cmp(b));
+
+    let selected_rows = selected.and_then(|sel| {
+        let sid = StyleId::new(sel);
+        let rows = character_inspector_rows(&catalog, &sid);
+        let name = catalog
+            .character_styles
+            .get(&sid)
+            .and_then(|s| s.display_name.clone())
+            .unwrap_or_else(|| sel.to_string());
+        (!rows.is_empty()).then_some((name, rows))
+    });
+    (list, selected_rows)
+}

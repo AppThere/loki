@@ -135,6 +135,9 @@ pub(super) fn EditorInner(path: String) -> Element {
     let spell_hover = use_signal(|| Option::<String>::None);
     // Insert-tab hyperlink panel: `Some(url)` while open (Spec 04 M4).
     let link_draft = use_signal(|| Option::<String>::None);
+    // Character style being browsed in the style panel (Spec 05 M6 character
+    // family): `Some(id)` selects a character style for the read-only inspector.
+    let editing_char_style = use_signal(|| Option::<String>::None);
     // Stashed sessions for inactive tabs — unsaved edits survive tab switches.
     let doc_sessions = use_context::<Signal<DocSessions>>();
     // Document generation considered "clean" (matches the on-disk file).
@@ -690,6 +693,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                 {style_editor_panel(
                     doc_state_style_editor,
                     editing_style_draft,
+                    editing_char_style,
                     Rc::clone(&font_families),
                     super::editor_style_editor::StyleEditorSync {
                         loro_doc,

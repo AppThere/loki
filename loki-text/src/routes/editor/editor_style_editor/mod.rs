@@ -9,6 +9,7 @@
 //! commits to the catalog and relays out.
 
 mod actions;
+mod char_browser;
 mod draft;
 mod form;
 mod form_font;
@@ -62,6 +63,7 @@ pub(super) struct StyleEditorSync {
 pub(super) fn style_editor_panel(
     doc_state: Arc<Mutex<DocumentState>>,
     mut editing_style_draft: Signal<Option<StyleDraft>>,
+    editing_char_style: Signal<Option<String>>,
     font_families: Rc<Vec<String>>,
     sync: StyleEditorSync,
 ) -> Element {
@@ -69,6 +71,12 @@ pub(super) fn style_editor_panel(
         Some(d) => d,
         None => return rsx! {},
     };
+
+    // Character-family browser (§9): the char-style list + the selected style's
+    // read-only rows. The selection lives in `editing_char_style`.
+    let char_selected = editing_char_style.read().clone();
+    let (char_list, char_selected_rows) =
+        panel_data::char_data(&doc_state, char_selected.as_deref());
 
     let styles = catalog_style_tree(&doc_state);
     let active_id = draft.id.clone();
@@ -208,6 +216,9 @@ pub(super) fn style_editor_panel(
                         },
                         { fl!("editor-style-new") }
                     }
+
+                    // ── Character styles (§9 character family) ─────────────────
+                    { char_browser::char_list_section(char_list, char_selected, editing_char_style) }
                 }
 
                 // ── Middle: edit form ──────────────────────────────────────────
@@ -249,6 +260,19 @@ pub(super) fn style_editor_panel(
                                 editing_style_draft.set(Some(style_to_draft(&s)));
                             }
                         },
+                    }
+                }
+
+                // ── Right: character inspector (read-only; §9) ─────────────────
+                if let Some((name, rows)) = char_selected_rows {
+                    div {
+                        style: format!(
+                            "width: 220px; min-width: 220px; overflow-y: auto; \
+                             border-left: 1px solid {border}; padding: {p}px;",
+                            border = tokens::COLOR_BORDER_CHROME,
+                            p = tokens::SPACE_3,
+                        ),
+                        provenance::CharRowsSection { heading: name, rows }
                     }
                 }
             }

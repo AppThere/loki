@@ -27,6 +27,8 @@ style-staged-title = Pending — apply to commit
 style-impact-preview = Applying also changes { $count } dependent style(s): { $names }
 # Linked character style section heading (§9 linked family)
 style-linked-heading = Linked character style · { $name }
+# Character-styles family list heading (§9 character family)
+style-char-family-heading = Character styles
 # Re-parenting rejected because it would create an inheritance cycle
 style-reparent-cycle = Cannot set that parent: it would create an inheritance cycle
 # Delete control (user styles only; built-in styles are protected)

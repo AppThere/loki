@@ -211,16 +211,17 @@ pub(super) fn StyleProvenanceList(
 
             // Linked character style (§9 linked family) — read-only rows.
             if let Some((name, rows)) = linked {
-                LinkedCharSection { name, rows }
+                CharRowsSection { heading: fl!("style-linked-heading", name = name), rows }
             }
         }
     }
 }
 
-/// The linked character style's rows, shown read-only beneath the paragraph
-/// rows (§9). Each row is property · resolved value · provenance.
+/// A read-only block of character-property rows under a heading — used for the
+/// linked character style (§9) and the standalone character panel (§9 character
+/// family). Each row is property · resolved value · provenance.
 #[component]
-fn LinkedCharSection(name: String, rows: Vec<InspectorRow>) -> Element {
+pub(super) fn CharRowsSection(heading: String, rows: Vec<InspectorRow>) -> Element {
     rsx! {
         div {
             style: format!("margin-top: {}px;", tokens::SPACE_3),
@@ -232,7 +233,7 @@ fn LinkedCharSection(name: String, rows: Vec<InspectorRow>) -> Element {
                     fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
                     mb = tokens::SPACE_1,
                 ),
-                { fl!("style-linked-heading", name = name.clone()) }
+                { heading.clone() }
             }
             for lrow in rows.iter() {
                 div {
