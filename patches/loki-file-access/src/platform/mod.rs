@@ -28,7 +28,8 @@ pub(crate) use android::{
 };
 #[cfg(target_os = "android")]
 pub use android::{
-    init_android, on_activity_result, query_insets_dp, query_window_insets_dp,
+    init_android, install_ime_listener, on_activity_result, query_insets_dp, query_window_insets_dp,
+    set_ime_visibility_listener,
 };
 
 #[cfg(target_os = "ios")]

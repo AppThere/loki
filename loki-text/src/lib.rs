@@ -73,6 +73,18 @@ fn android_main(android_app: android_activity::AndroidApp) {
         crate::recent_documents::set_android_data_dir(data_path);
     }
     blitz_shell::set_android_app(android_app);
+    // Bridge Android soft-keyboard visibility back to the editor. A
+    // NativeActivity is never told when the *user* dismisses the keyboard
+    // (back button, swipe-down gesture, hide key), so the bottom safe area
+    // would stay reserved for a keyboard that is gone. loki-file-access installs
+    // a decor-view inset listener that reports every IME visibility change;
+    // blitz-shell re-queries the safe area in response (converging to 0 on a
+    // collapse). Register the bridge before installing the listener so the first
+    // callback is not dropped.
+    loki_file_access::set_ime_visibility_listener(Box::new(|visible| {
+        blitz_shell::notify_ime_visibility_changed(visible);
+    }));
+    loki_file_access::install_ime_listener(blitz_shell::current_android_app().activity_as_ptr());
     log::info!("android_main: i18n init");
     loki_i18n::init();
     log::info!("android_main: launching dioxus");

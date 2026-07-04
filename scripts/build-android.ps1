@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-    Full Android build pipeline for Loki apps including optional FilePickerActivity.
+    Full Android build pipeline for Loki apps including optional Java shims.
 
 .DESCRIPTION
-    1. Compiles FilePickerActivity.java → classes.dex (loki-text only).
+    1. Compiles the Java shims (FilePickerActivity, ImeInsetsListener) → classes.dex (loki-text only).
     2. Runs `cargo apk build` to produce the native library + bare APK.
     3. Post-processes the APK:
          a. Replaces the auto-generated AndroidManifest.xml with the custom one
@@ -128,7 +128,10 @@ Write-Host "==> App:         $App ($cargoPackage)"
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 $profile       = if ($Release) { "release" } else { "debug" }
-$javaSrc       = "patches\loki-file-access\android\FilePickerActivity.java"
+$javaSrcs      = @(
+    "patches\loki-file-access\android\FilePickerActivity.java",
+    "patches\loki-file-access\android\ImeInsetsListener.java"
+)
 $outDir        = "target\android-pkg"
 $apkSrc        = "$PWD\target\$profile\apk\$apkBaseName.apk"
 
@@ -152,16 +155,19 @@ if (Test-Path $debugKey) {
 # ── Step 1: Compile FilePickerActivity.java → classes.dex (loki-text only) ───
 
 if ($includeDex) {
-    Write-Host "`n==> Compiling FilePickerActivity.java..."
+    Write-Host "`n==> Compiling Java shims (FilePickerActivity, ImeInsetsListener)..."
     $classesDir = "$outDir\java-classes"
     $dexDir     = "$outDir\dex-out"
     New-Item -ItemType Directory -Force $classesDir, $dexDir | Out-Null
 
-    & $javac -source 8 -target 8 -classpath $platform -d $classesDir $javaSrc
+    & $javac -source 8 -target 8 -classpath $platform -d $classesDir @javaSrcs
     if ($LASTEXITCODE -ne 0) { throw "javac failed" }
 
-    $classFile = "$classesDir\io\github\appthere\lokifileaccess\FilePickerActivity.class"
-    & $d8 $classFile --output $dexDir --min-api 26
+    # Dex every produced .class (includes inner classes such as the anonymous
+    # Runnable in ImeInsetsListener).
+    $classFiles = Get-ChildItem -Path $classesDir -Recurse -Filter *.class | ForEach-Object { $_.FullName }
+    if ($classFiles.Count -eq 0) { throw "javac produced no .class files" }
+    & $d8 @classFiles --output $dexDir --min-api 26
     if ($LASTEXITCODE -ne 0) { throw "d8 failed" }
 
     $dexPath = "$dexDir\classes.dex"
