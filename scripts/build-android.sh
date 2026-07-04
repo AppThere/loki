@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# Full Android build pipeline for Loki Text including FilePickerActivity.
+# Full Android build pipeline for Loki Text including the Java shims.
 #
 # Steps:
-#   1. Compile FilePickerActivity.java → classes.dex (javac + d8)
+#   1. Compile the Java shims (FilePickerActivity, ImeInsetsListener) → classes.dex
 #   2. cargo apk build --package loki-text
 #   3. Replace auto-generated AndroidManifest.xml with the custom one
 #      (adds FilePickerActivity + android:hasCode="true")
@@ -204,7 +204,8 @@ echo "==> javac:       $JAVAC"
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 PROFILE="$([ "$RELEASE" -eq 1 ] && echo "release" || echo "debug")"
-JAVA_SRC="patches/loki-file-access/android/FilePickerActivity.java"
+JAVA_SRC_DIR="patches/loki-file-access/android"
+JAVA_SRCS=("$JAVA_SRC_DIR/FilePickerActivity.java" "$JAVA_SRC_DIR/ImeInsetsListener.java")
 MANIFEST_XML="loki-text/AndroidManifest.xml"
 OUT_DIR="target/android-pkg"
 APK_SRC="$(pwd)/target/$PROFILE/apk/loki_text.apk"
@@ -215,15 +216,21 @@ OUT_DIR="$(cd "$OUT_DIR" && pwd)"   # make absolute for aapt
 # ── Step 1: Compile FilePickerActivity.java → classes.dex ────────────────────
 
 echo ""
-echo "==> Compiling FilePickerActivity.java..."
+echo "==> Compiling Java shims (FilePickerActivity, ImeInsetsListener)..."
 CLASSES_DIR="$OUT_DIR/java-classes"
 DEX_DIR="$OUT_DIR/dex-out"
 mkdir -p "$CLASSES_DIR" "$DEX_DIR"
 
-"$JAVAC" -source 8 -target 8 -classpath "$PLATFORM" -d "$CLASSES_DIR" "$JAVA_SRC"
+"$JAVAC" -source 8 -target 8 -classpath "$PLATFORM" -d "$CLASSES_DIR" "${JAVA_SRCS[@]}"
 
-CLASS_FILE="$CLASSES_DIR/io/github/appthere/lokifileaccess/FilePickerActivity.class"
-"$D8" "$CLASS_FILE" --output "$DEX_DIR" --min-api 26
+# Dex every produced .class (includes inner classes such as the anonymous
+# Runnable in ImeInsetsListener).
+mapfile -t CLASS_FILES < <(find "$CLASSES_DIR" -name '*.class')
+if [[ "${#CLASS_FILES[@]}" -eq 0 ]]; then
+    echo "ERROR: javac produced no .class files." >&2
+    exit 1
+fi
+"$D8" "${CLASS_FILES[@]}" --output "$DEX_DIR" --min-api 26
 
 DEX_PATH="$DEX_DIR/classes.dex"
 echo "    DEX: $DEX_PATH"

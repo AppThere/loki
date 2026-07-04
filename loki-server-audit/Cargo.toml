@@ -1,0 +1,13 @@
+[package]
+name = "loki-server-audit"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Append-only, hash-chained, tamper-evident audit log for the Loki server (ADR-C020)"
+repository = "https://github.com/appthere/loki"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+sha2 = { workspace = true }
+chrono = { workspace = true }

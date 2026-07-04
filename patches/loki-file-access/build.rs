@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 AppThere
 
-//! Build script — compiles `FilePickerActivity.java` into `classes.dex` for Android targets.
+//! Build script — compiles the Android Java shims into `classes.dex` for
+//! Android targets.
+//!
+//! Shims (in `android/`):
+//! - `FilePickerActivity.java` — Storage Access Framework trampoline.
+//! - `ImeInsetsListener.java` — soft-keyboard (IME) visibility bridge.
 //!
 //! Requires:
 //! - `ANDROID_HOME` or `ANDROID_SDK_ROOT` pointing to the Android SDK
@@ -11,8 +16,13 @@
 
 use std::path::PathBuf;
 
+/// Java shim source files (relative to `android/`) compiled into the DEX.
+const JAVA_SHIMS: &[&str] = &["FilePickerActivity.java", "ImeInsetsListener.java"];
+
 fn main() {
-    println!("cargo:rerun-if-changed=android/FilePickerActivity.java");
+    for shim in JAVA_SHIMS {
+        println!("cargo:rerun-if-changed=android/{shim}");
+    }
 
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os != "android" {
@@ -21,16 +31,19 @@ fn main() {
 
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    let java_src = manifest_dir.join("android/FilePickerActivity.java");
+    let java_srcs: Vec<PathBuf> = JAVA_SHIMS
+        .iter()
+        .map(|shim| manifest_dir.join("android").join(shim))
+        .collect();
     let dex_out = out_dir.join("classes.dex");
 
-    match compile_to_dex(&java_src, &out_dir, &dex_out) {
+    match compile_to_dex(&java_srcs, &out_dir, &dex_out) {
         Ok(()) => {
-            println!("cargo:warning=FilePickerActivity DEX: {}", dex_out.display());
+            println!("cargo:warning=Java shim DEX: {}", dex_out.display());
             println!("cargo:warning=Inject into APK with: scripts/build-android.ps1 -Install");
         }
         Err(e) => {
-            println!("cargo:warning=FilePickerActivity compile skipped: {e}");
+            println!("cargo:warning=Java shim compile skipped: {e}");
             println!("cargo:warning=Run scripts/build-android.ps1 which compiles the DEX itself.");
         }
     }
@@ -39,7 +52,7 @@ fn main() {
 }
 
 fn compile_to_dex(
-    java_src: &std::path::Path,
+    java_srcs: &[PathBuf],
     out_dir: &std::path::Path,
     dex_out: &std::path::Path,
 ) -> Result<(), String> {
@@ -55,46 +68,73 @@ fn compile_to_dex(
     let classes_dir = out_dir.join("java_classes");
     std::fs::create_dir_all(&classes_dir).map_err(|e| format!("mkdir classes: {e}"))?;
 
+    let mut javac_args: Vec<String> = vec![
+        "-source".into(),
+        "8".into(),
+        "-target".into(),
+        "8".into(),
+        "-classpath".into(),
+        android_jar.to_str().unwrap().to_owned(),
+        "-d".into(),
+        classes_dir.to_str().unwrap().to_owned(),
+    ];
+    javac_args.extend(java_srcs.iter().map(|p| p.to_str().unwrap().to_owned()));
+
     let status = std::process::Command::new(&javac)
-        .args([
-            "-source", "8",
-            "-target", "8",
-            "-classpath",
-            android_jar.to_str().unwrap(),
-            "-d",
-            classes_dir.to_str().unwrap(),
-            java_src.to_str().unwrap(),
-        ])
+        .args(&javac_args)
         .status()
         .map_err(|e| format!("javac exec failed: {e}"))?;
     if !status.success() {
         return Err(format!("javac exited {status}"));
     }
 
-    let class_file = classes_dir
-        .join("io/github/appthere/lokifileaccess/FilePickerActivity.class");
+    // Collect every produced `.class` file (including inner classes such as the
+    // anonymous `Runnable` in `ImeInsetsListener`) so d8 dexes all of them.
+    let class_files = collect_class_files(&classes_dir);
+    if class_files.is_empty() {
+        return Err("no .class files produced by javac".to_owned());
+    }
 
     let dex_dir = out_dir.join("dex_out");
     std::fs::create_dir_all(&dex_dir).map_err(|e| format!("mkdir dex: {e}"))?;
 
+    let mut d8_args: Vec<String> = class_files
+        .iter()
+        .map(|p| p.to_str().unwrap().to_owned())
+        .collect();
+    d8_args.push("--output".into());
+    d8_args.push(dex_dir.to_str().unwrap().to_owned());
+    d8_args.push("--min-api".into());
+    d8_args.push("26".into());
+
     let status = std::process::Command::new(&d8)
-        .args([
-            class_file.to_str().unwrap(),
-            "--output",
-            dex_dir.to_str().unwrap(),
-            "--min-api",
-            "26",
-        ])
+        .args(&d8_args)
         .status()
         .map_err(|e| format!("d8 exec failed: {e}"))?;
     if !status.success() {
         return Err(format!("d8 exited {status}"));
     }
 
-    std::fs::copy(dex_dir.join("classes.dex"), dex_out)
-        .map_err(|e| format!("copy dex: {e}"))?;
+    std::fs::copy(dex_dir.join("classes.dex"), dex_out).map_err(|e| format!("copy dex: {e}"))?;
 
     Ok(())
+}
+
+/// Recursively collect all `.class` files under `dir`.
+fn collect_class_files(dir: &std::path::Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return out;
+    };
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.is_dir() {
+            out.extend(collect_class_files(&path));
+        } else if path.extension().is_some_and(|ext| ext == "class") {
+            out.push(path);
+        }
+    }
+    out
 }
 
 fn find_android_jar(android_home: &std::path::Path) -> Result<PathBuf, String> {
@@ -139,11 +179,14 @@ fn find_javac() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
         let pf = std::env::var("PROGRAMFILES").unwrap_or_else(|_| "C:\\Program Files".into());
-        let p = PathBuf::from(pf)
-            .join("Android\\Android Studio\\jbr\\bin\\javac.exe");
+        let p = PathBuf::from(pf).join("Android\\Android Studio\\jbr\\bin\\javac.exe");
         if p.exists() {
             return p;
         }
     }
-    PathBuf::from(if cfg!(target_os = "windows") { "javac.exe" } else { "javac" })
+    PathBuf::from(if cfg!(target_os = "windows") {
+        "javac.exe"
+    } else {
+        "javac"
+    })
 }

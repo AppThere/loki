@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["loki-doc-model","loki-sheet-model","loki-opc","loki-primitives","loki-ooxml","loki-odf","loki-layout","loki-vello","appthere-ui","loki-app-shell","loki-text","loki-spreadsheet","loki-presentation","loki-render-cache","loki-renderer","loki-i18n","appthere-canvas","loki-fonts","loki-graphics","loki-presentation-model","loki-epub","loki-pdf","loki-acid","loki-templates","loki-spell","appthere-conformance","loki-bench"]
+members = ["loki-doc-model","loki-sheet-model","loki-opc","loki-primitives","loki-ooxml","loki-odf","loki-layout","loki-vello","appthere-ui","loki-app-shell","loki-text","loki-spreadsheet","loki-presentation","loki-render-cache","loki-renderer","loki-i18n","appthere-canvas","loki-fonts","loki-graphics","loki-presentation-model","loki-epub","loki-pdf","loki-acid","loki-templates","loki-spell","loki-model","loki-crypto","loki-server-audit","loki-server-store","loki-server-collab","loki-server-auth","loki-server-api","loki-server","loki-convert","loki-print","loki-headless"]
 
 [workspace.dependencies]
 # Shared across appthere-ui and any other workspace member that needs Dioxus.
@@ -19,6 +20,45 @@ appthere-canvas = { path = "appthere-canvas", features = ["gpu", "font-cache"] }
 loki-file-access = { git = "https://github.com/appthere/loki-file-access", branch = "main" }
 loki-fonts = { path = "loki-fonts" }
 android-activity = "0.6"
+
+# ── Server-side crates (LOKI_WEB_SERVER_SPEC.md, ADRs C012–C020) ─────────────
+loki-model = { path = "loki-model" }
+loki-crypto = { path = "loki-crypto" }
+loki-server-audit = { path = "loki-server-audit" }
+loki-server-store = { path = "loki-server-store" }
+loki-server-collab = { path = "loki-server-collab" }
+loki-server-auth = { path = "loki-server-auth" }
+loki-server-api = { path = "loki-server-api" }
+loki-convert = { path = "loki-convert" }
+loki-print = { path = "loki-print" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde", "clock", "std"], default-features = false }
+tokio = { version = "1", default-features = false }
+axum = { version = "0.8", features = ["ws", "macros"] }
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "postgres",
+    "uuid",
+    "chrono",
+    "migrate",
+    "derive",
+    "macros",
+    "json",
+] }
+object_store = { version = "0.12", features = ["aws"] }
+async-trait = "0.1"
+tracing = "0.1"
+chacha20poly1305 = "0.10"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+hkdf = "0.12"
+sha2 = "0.10"
+rand_core = { version = "0.6", features = ["getrandom"] }
+zeroize = { version = "1", features = ["derive"] }
+jsonwebtoken = "9"
+base64 = "0.22"
 
 [patch.crates-io]
 # PATCH: vendors dioxus-native-dom to avoid runtime unimplemented!() panics in

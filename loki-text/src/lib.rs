@@ -27,3 +27,88 @@ pub mod utils;
 // copy (Spec 01 audit A-14). `null_context`: init_android is a no-op here (the
 // JNI context comes from ndk_context) — see the macro docs.
 loki_app_shell::android_main!(tag = "LOKI", root = app::App, file_access = null_context);
+#[cfg(target_os = "android")]
+// COMPAT(android-16): On Android 16 (API 36) ANativeActivity_onCreate fires
+// twice in rapid succession, spawning two concurrent android_main threads.
+// A static OnceLock would also block legitimate activity-recreation relaunches
+// within the same process (process reuse), so use a Mutex<bool> "is-running"
+// flag instead: set on entry, cleared on exit, so concurrent duplicates are
+// rejected while sequential re-entries (activity destroyed → recreated) succeed.
+static ANDROID_MAIN_RUNNING: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
+
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+fn android_main(android_app: android_activity::AndroidApp) {
+    {
+        let mut running = ANDROID_MAIN_RUNNING
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if *running {
+            // Concurrent duplicate invocation on Android 16 — discard it.
+            return;
+        }
+        *running = true;
+    }
+    android_logger::init_once(
+        android_logger::Config::default()
+            .with_tag("LOKI")
+            .with_max_level(log::LevelFilter::Debug),
+    );
+    // Route panic messages to logcat. The default panic hook writes to
+    // stderr, which Android discards — without this, any Rust panic (e.g.
+    // during GPU renderer init) is indistinguishable from a native crash.
+    std::panic::set_hook(Box::new(|info| {
+        log::error!("PANIC: {info}");
+    }));
+    log::info!("android_main: start");
+    // init_android is a no-op kept for API compatibility; the Application
+    // context used by all JNI calls comes from ndk_context, which
+    // android-activity initialises before android_main is called.
+    unsafe { loki_file_access::init_android(std::ptr::null_mut()) };
+    let (top, bottom) = loki_file_access::query_insets_dp();
+    log::info!("android_main: safe area insets top={top} bottom={bottom}");
+    appthere_ui::set_safe_area_insets(appthere_ui::SafeAreaInsets {
+        top,
+        bottom,
+        ..Default::default()
+    });
+    // Store the internal data path before android_app is moved, so that
+    // recent_documents can persist to a writable location on Android.
+    if let Some(data_path) = android_app.internal_data_path() {
+        crate::recent_documents::set_android_data_dir(data_path);
+    }
+    blitz_shell::set_android_app(android_app);
+    // Bridge Android soft-keyboard visibility back to the editor. A
+    // NativeActivity is never told when the *user* dismisses the keyboard
+    // (back button, swipe-down gesture, hide key), so the bottom safe area
+    // would stay reserved for a keyboard that is gone. loki-file-access installs
+    // a decor-view inset listener that reports every IME visibility change;
+    // blitz-shell re-queries the safe area in response (converging to 0 on a
+    // collapse). Register the bridge before installing the listener so the first
+    // callback is not dropped.
+    loki_file_access::set_ime_visibility_listener(Box::new(|visible| {
+        blitz_shell::notify_ime_visibility_changed(visible);
+    }));
+    loki_file_access::install_ime_listener(blitz_shell::current_android_app().activity_as_ptr());
+    log::info!("android_main: i18n init");
+    loki_i18n::init();
+    log::info!("android_main: launching dioxus");
+    // Register the bundled UI + metric-compatible fonts directly into the
+    // renderer's font collection at startup, so they resolve synchronously on
+    // Android instead of relying on the asynchronous `@font-face` `data:` URI
+    // fetch (which does not reliably run before first paint on Android, leaving
+    // UI chrome digits in a wide system fallback). See `loki_fonts::ui_font_blobs`.
+    dioxus::native::launch_cfg(
+        app::App,
+        vec![],
+        vec![Box::new(
+            dioxus::native::Config::new().with_fonts(loki_fonts::ui_font_blobs()),
+        )],
+    );
+    log::info!("android_main: dioxus exited");
+    // Clear the running flag so a subsequent activity-recreation relaunch
+    // (in the same process) is allowed to proceed.
+    *ANDROID_MAIN_RUNNING
+        .lock()
+        .unwrap_or_else(|p| p.into_inner()) = false;
+}

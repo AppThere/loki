@@ -43,6 +43,7 @@
 mod jni_activity;
 mod jni_common;
 mod jni_fd;
+mod jni_ime;
 mod jni_insets;
 mod jni_intents;
 
@@ -103,6 +104,10 @@ pub fn query_insets_dp() -> (f32, f32) {
 pub fn query_window_insets_dp(activity_ptr: *mut std::ffi::c_void) -> Option<(f32, f32, f32, f32)> {
     jni_insets::query_window_insets_dp(activity_ptr)
 }
+
+// ── Soft-keyboard (IME) visibility signal ─────────────────────────────────────
+
+pub use jni_ime::{install_ime_listener, set_ime_visibility_listener};
 
 // ── JNI result callback (called from Java FilePickerActivity) ─────────────────
 

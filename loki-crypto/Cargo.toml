@@ -1,0 +1,21 @@
+[package]
+name = "loki-crypto"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Envelope encryption and crypto-agile key wrapping for the Loki server (ADR-C014)"
+repository = "https://github.com/appthere/loki"
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+chacha20poly1305 = { workspace = true }
+x25519-dalek = { workspace = true }
+hkdf = { workspace = true }
+sha2 = { workspace = true }
+rand_core = { workspace = true }
+zeroize = { workspace = true }
+base64 = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

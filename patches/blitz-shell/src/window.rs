@@ -166,6 +166,13 @@ impl<Rend: WindowRenderer> View<Rend> {
             winit_window.set_title(&title);
         }
 
+        // PATCH(loki): let the Android IME-visibility bridge wake this window
+        // when the user shows/hides the soft keyboard outside our control
+        // (back button, swipe-down gesture, keyboard hide key). See
+        // `ime_android` and the `take_pending` drain in `poll`.
+        #[cfg(target_os = "android")]
+        crate::ime_android::register(proxy.clone(), winit_window.id());
+
         Self {
             renderer: config.renderer,
             waker: None,
@@ -317,6 +324,19 @@ impl<Rend: WindowRenderer> View<Rend> {
     }
 
     pub fn poll(&mut self) -> bool {
+        // PATCH(loki): the user toggled the soft keyboard outside our control
+        // (back button, swipe-down gesture, keyboard hide key). The Android
+        // inset listener recorded the new visibility and woke us; mirror it into
+        // `ime_active` so a later caret tap does not needlessly re-summon a
+        // still-visible keyboard, and open a settle window so the bottom safe
+        // area re-queries across the keyboard animation (converging to 0 on a
+        // collapse). Same downstream path as an app-driven show/hide.
+        #[cfg(target_os = "android")]
+        if let Some(visible) = crate::ime_android::take_pending() {
+            self.ime_active = visible;
+            self.arm_ime_settle();
+        }
+
         // PATCH(loki): during the post-IME settle window, re-query the safe-area
         // insets so the app's bottom padding follows the soft keyboard as the
         // platform finishes reporting and animating the IME inset. The re-sync
