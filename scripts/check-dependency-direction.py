@@ -47,11 +47,27 @@ LAYERS: dict[str, float] = {
     "appthere-ui": 5, "loki-app-shell": 5,
     # L6 app binaries
     "loki-text": 6, "loki-spreadsheet": 6, "loki-presentation": 6,
+    # ── Server subsystem (backend; web-server spec ADRs C012–C028) ──────────
+    # A separate top-level stack: it consumes the document/format libraries
+    # (loki-convert reaches down to loki-pdf at L3.5) but is never consumed by
+    # the client app binaries, so it sits above L6. Layers order the server
+    # crates by their own dependency graph (all edges verified downhill).
+    # L7 server foundation
+    "loki-model": 7, "loki-crypto": 7, "loki-server-audit": 7, "loki-print": 7,
+    # L8 server services + document conversion
+    "loki-server-store": 8, "loki-server-auth": 8, "loki-convert": 8,
+    # L9 collaboration relay
+    "loki-server-collab": 9,
+    # L10 server API surface
+    "loki-server-api": 10,
+    # L11 server + headless binaries
+    "loki-server": 11, "loki-headless": 11,
 }
 
-# Dev/test members outside the layering (ADR-0009): conformance/test harnesses
-# depend across every layer by design. Their outgoing edges are not checked.
-EXEMPT: set[str] = {"loki-acid", "appthere-conformance"}
+# Dev/test members outside the layering (ADR-0009): conformance/test/benchmark
+# harnesses depend across every layer by design. Their outgoing edges are not
+# checked.
+EXEMPT: set[str] = {"loki-acid", "appthere-conformance", "loki-bench"}
 
 
 def metadata() -> dict:

@@ -238,8 +238,28 @@ mechanical. None require a rewrite — consistent with D3: the target is reached
 | loki-presentation | L6 | appthere-ui, loki-app-shell, loki-doc-model, loki-fonts, loki-graphics, loki-i18n, loki-layout, loki-odf, loki-ooxml, loki-presentation-model, loki-renderer, loki-vello |
 | loki-acid | test | (exempt) |
 | loki-templates | L2 | loki-doc-model, loki-ooxml, loki-primitives |
+| appthere-conformance | test | (exempt) |
+| loki-bench | test | (exempt — benchmark harness) |
+| loki-model | L7 | — |
+| loki-crypto | L7 | — |
+| loki-server-audit | L7 | — |
+| loki-print | L7 | — |
+| loki-server-store | L8 | loki-crypto, loki-model, loki-server-audit |
+| loki-server-auth | L8 | loki-model |
+| loki-convert | L8 | loki-doc-model, loki-epub, loki-odf, loki-ooxml, loki-pdf, loki-sheet-model |
+| loki-server-collab | L9 | loki-model, loki-server-store |
+| loki-server-api | L10 | loki-crypto, loki-model, loki-server-audit, loki-server-auth, loki-server-collab, loki-server-store |
+| loki-server | L11 | loki-crypto, loki-model, loki-server-api, loki-server-auth, loki-server-collab, loki-server-store |
+| loki-headless | L11 | loki-convert, loki-print |
+
+**Server subsystem (L7–L11)** was added when `main`'s web-server / headless
+effort (spec ADRs C012–C028) merged in: a separate backend stack that consumes
+the document/format libraries (`loki-convert` reaches down to `loki-pdf` at L3b)
+but is never consumed by the client app binaries, so it sits above L6. The
+layers order those crates by their own dependency graph.
 
 The former A-8 `loki-renderer → appthere-ui` edge has been removed (M-1), so
 **every edge is now conformant** — `scripts/check-dependency-direction.py`
-verifies all 71 internal edges flow downhill (24 mapped crates + the exempt
-`loki-acid` harness) and fails CI on any future uphill edge.
+verifies all internal edges flow downhill (35 mapped crates + the exempt
+`loki-acid` / `appthere-conformance` / `loki-bench` harnesses) and fails CI on
+any future uphill edge.
