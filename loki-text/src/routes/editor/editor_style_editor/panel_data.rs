@@ -17,6 +17,7 @@ use super::super::editor_style_catalog::catalog_snapshot;
 use super::super::style_char_inspector::character_inspector_rows;
 use super::super::style_impact::affected_dependents;
 use super::super::style_inspector::{InspectorRow, paragraph_inspector_rows};
+use super::super::style_list_inspector::{ListLevelRow, list_inspector_rows};
 use super::draft::draft_to_style;
 use crate::editing::state::DocumentState;
 
@@ -139,6 +140,45 @@ pub(super) fn char_data(
         let name = catalog
             .character_styles
             .get(&sid)
+            .and_then(|s| s.display_name.clone())
+            .unwrap_or_else(|| sel.to_string());
+        (!rows.is_empty()).then_some((name, rows))
+    });
+    (list, selected_rows)
+}
+
+/// The selected list style's `(display name, per-level rows)` for the inspector.
+pub(super) type ListSelection = Option<(String, Vec<ListLevelRow>)>;
+
+/// The list-styles browser data (§9 list family; non-inheriting): the
+/// `(id, display)` list sorted by display name, and — when `selected` names one
+/// — its flattened per-level rows for the read-only inspector.
+pub(super) fn list_data(
+    doc_state: &Arc<Mutex<DocumentState>>,
+    selected: Option<&str>,
+) -> (Vec<CharListEntry>, ListSelection) {
+    let Some(catalog) = catalog_snapshot(doc_state) else {
+        return (Vec::new(), None);
+    };
+    let mut list: Vec<CharListEntry> = catalog
+        .list_styles
+        .iter()
+        .map(|(id, s)| {
+            let display = s
+                .display_name
+                .clone()
+                .unwrap_or_else(|| id.as_str().to_string());
+            (id.as_str().to_string(), display)
+        })
+        .collect();
+    list.sort_by(|(_, a), (_, b)| a.cmp(b));
+
+    let selected_rows = selected.and_then(|sel| {
+        let lid = loki_doc_model::style::ListId::new(sel);
+        let rows = list_inspector_rows(&catalog, &lid);
+        let name = catalog
+            .list_styles
+            .get(&lid)
             .and_then(|s| s.display_name.clone())
             .unwrap_or_else(|| sel.to_string());
         (!rows.is_empty()).then_some((name, rows))

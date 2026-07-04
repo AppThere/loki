@@ -11,8 +11,10 @@
 mod actions;
 mod char_browser;
 mod draft;
+mod family_inspector;
 mod form;
 mod form_font;
+mod list_browser;
 mod panel_data;
 mod provenance;
 
@@ -64,6 +66,7 @@ pub(super) fn style_editor_panel(
     doc_state: Arc<Mutex<DocumentState>>,
     mut editing_style_draft: Signal<Option<StyleDraft>>,
     editing_char_style: Signal<Option<String>>,
+    editing_list_style: Signal<Option<String>>,
     font_families: Rc<Vec<String>>,
     sync: StyleEditorSync,
 ) -> Element {
@@ -72,11 +75,14 @@ pub(super) fn style_editor_panel(
         None => return rsx! {},
     };
 
-    // Character-family browser (§9): the char-style list + the selected style's
-    // read-only rows. The selection lives in `editing_char_style`.
+    // Family browsers (§9): the char/list style lists + the selected style's
+    // read-only rows. Selections live in `editing_char_style` / `editing_list_style`.
     let char_selected = editing_char_style.read().clone();
     let (char_list, char_selected_rows) =
         panel_data::char_data(&doc_state, char_selected.as_deref());
+    let list_selected = editing_list_style.read().clone();
+    let (list_list, list_selected_rows) =
+        panel_data::list_data(&doc_state, list_selected.as_deref());
 
     let styles = catalog_style_tree(&doc_state);
     let active_id = draft.id.clone();
@@ -219,6 +225,9 @@ pub(super) fn style_editor_panel(
 
                     // ── Character styles (§9 character family) ─────────────────
                     { char_browser::char_list_section(char_list, char_selected, editing_char_style) }
+
+                    // ── List styles (§9 list family, non-inheriting) ───────────
+                    { list_browser::list_list_section(list_list, list_selected, editing_list_style) }
                 }
 
                 // ── Middle: edit form ──────────────────────────────────────────
@@ -263,18 +272,8 @@ pub(super) fn style_editor_panel(
                     }
                 }
 
-                // ── Right: character inspector (read-only; §9) ─────────────────
-                if let Some((name, rows)) = char_selected_rows {
-                    div {
-                        style: format!(
-                            "width: 220px; min-width: 220px; overflow-y: auto; \
-                             border-left: 1px solid {border}; padding: {p}px;",
-                            border = tokens::COLOR_BORDER_CHROME,
-                            p = tokens::SPACE_3,
-                        ),
-                        provenance::CharRowsSection { heading: name, rows }
-                    }
-                }
+                // ── Right: character + list inspectors (read-only; §9) ─────────
+                { family_inspector::family_inspector_columns(char_selected_rows, list_selected_rows) }
             }
         }
     }

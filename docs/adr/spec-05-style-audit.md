@@ -248,7 +248,8 @@ Model gaps gate the UI, so the sequence front-loads model work:
    impact-preview banner names the dependents a staged change will also change
    (`style_impact::affected_dependents`, 4 tests); and Apply rejects a cyclic
    re-parent via `para_reparent_cycles` (M1) with a status message.
-6. **M6 — Remaining families.** 🚧 **In progress.** *Character:*
+6. **M6 — Remaining families.** ✅ **Actionable families shipped** (character,
+   linked, list); table + page deferred model-gated (rationale below). *Character:*
    `style_char_inspector::character_inspector_rows` resolves a standalone
    `CharacterStyle`'s own chain via `resolve_char_chain` (M1 / SM-2), emitting the
    shared `InspectorRow` shape so the provenance view is reused across families
@@ -263,11 +264,21 @@ Model gaps gate the UI, so the sequence front-loads model work:
    style's own resolved rows read-only in a right-hand `CharRowsSection` — a
    browse-and-inspect surface reusing the shared provenance renderer. Char-style
    *editing* (a char-props form) is a later increment (§9 "equal depth not required
-   in v1"). *Remaining:* **list** (per-level, non-inheriting);
-   **table** — deferred (needs `TableProps` conditional regions, which the
-   renderer does not yet honor → the spec's "don't add unrenderable properties"
-   gate); **page** — deferred (needs the `page_styles` catalog representation of
-   ADR-0012).
+   in v1"). *List panel (shipped):* list styles are **non-inheriting** (ADR-0004:
+   a flat vector of per-level definitions), so `style_list_inspector`
+   `list_inspector_rows` flattens a `ListStyle` into one read-only row per indent
+   level (label kind + geometry + alignment) — no provenance chain (4 tests). The
+   left column lists every list style under a "List styles" heading
+   (`list_browser::list_list_section`, fed by `panel_data::list_data`); selecting
+   one shows its per-level rows in a right-hand column. Both non-paragraph
+   read-only columns now share `family_inspector::family_inspector_columns` (char
+   reuses `CharRowsSection`; list renders per-level), keeping `mod.rs` under the
+   ceiling (280). *Remaining (deferred, with rationale):*
+   **table** — needs `TableProps` conditional regions, which the renderer does not
+   yet honor → the spec's "don't add unrenderable properties" gate; **page** —
+   needs the `page_styles` catalog representation of ADR-0012. Both are model-gated
+   and out of scope for this UI pass; the family-panel scaffold (list + inspector
+   columns) is in place to host them once the model lands.
 7. **M7 — Compact posture** applied throughout (bottom-sheet, breadcrumb tree,
    segmented family nav), verified at <600.
 

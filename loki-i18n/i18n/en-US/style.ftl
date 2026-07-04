@@ -29,6 +29,12 @@ style-impact-preview = Applying also changes { $count } dependent style(s): { $n
 style-linked-heading = Linked character style · { $name }
 # Character-styles family list heading (§9 character family)
 style-char-family-heading = Character styles
+# List-styles family list heading (§9 list family, non-inheriting)
+style-list-family-heading = List styles
+# One indent level of a list style
+style-list-level-label = Level { $n }
+# A list level's label kind and geometry (non-inheriting; shown read-only)
+style-list-level-detail = { $label } · indent { $indent } · hanging { $hanging } · { $alignment }
 # Re-parenting rejected because it would create an inheritance cycle
 style-reparent-cycle = Cannot set that parent: it would create an inheritance cycle
 # Delete control (user styles only; built-in styles are protected)

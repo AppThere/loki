@@ -43,6 +43,7 @@ mod editor_style_editor;
 mod style_char_inspector;
 mod style_impact;
 mod style_inspector;
+mod style_list_inspector;
 
 use dioxus::prelude::*;
 use editor_inner::EditorInner;

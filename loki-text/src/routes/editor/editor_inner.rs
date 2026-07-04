@@ -138,6 +138,9 @@ pub(super) fn EditorInner(path: String) -> Element {
     // Character style being browsed in the style panel (Spec 05 M6 character
     // family): `Some(id)` selects a character style for the read-only inspector.
     let editing_char_style = use_signal(|| Option::<String>::None);
+    // List style being browsed in the style panel (Spec 05 M6 list family):
+    // `Some(id)` selects a list style for the read-only per-level inspector.
+    let editing_list_style = use_signal(|| Option::<String>::None);
     // Stashed sessions for inactive tabs — unsaved edits survive tab switches.
     let doc_sessions = use_context::<Signal<DocSessions>>();
     // Document generation considered "clean" (matches the on-disk file).
@@ -694,6 +697,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     doc_state_style_editor,
                     editing_style_draft,
                     editing_char_style,
+                    editing_list_style,
                     Rc::clone(&font_families),
                     super::editor_style_editor::StyleEditorSync {
                         loro_doc,
