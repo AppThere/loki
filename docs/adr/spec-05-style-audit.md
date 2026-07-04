@@ -230,8 +230,15 @@ Model gaps gate the UI, so the sequence front-loads model work:
    three-column surface (list + form + 220px provenance ≈ 600px+); forcing that
    posture would break the layout. It lands with the M6/M7 full-panel redesign
    (§9/§11), when the inspector becomes its own right-sized panel.*
-4. **M5 — Creation & management** (create → pick parent → override; rename;
-   re-parent; delete-with-orphan-handling; built-in rules).
+4. **M5 — Creation & management.** ✅ **Shipped.** *Delete-with-orphan-handling:*
+   `StyleCatalog::delete_paragraph_style` re-parents the deleted style's children
+   to the grandparent (5 tests); `perform_style_delete` guards built-ins
+   (`is_builtin`, M2) and a Delete control (`actions.rs`) reports the re-parented
+   count via the status banner and closes the panel. *Create-from-parent:* "+ New"
+   now defaults the new style's parent to the current committed style, so it opens
+   inheriting everything ready to override (all props empty → shown as inherited).
+   *Rename* (display-name field) and *re-parent* (based-on field + M4 cycle guard)
+   were already present; *built-in rules* enforced via `is_builtin`.
 5. **M4 — Tree view + propagation + impact preview.** ✅ **Shipped.** Model
    (`style/tree.rs`): `para_children` / `para_descendants` (cycle/depth-guarded)
    / `para_forest_preorder` (indented render order) / `dependents_affected`

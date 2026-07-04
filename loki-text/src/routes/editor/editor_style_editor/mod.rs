@@ -78,10 +78,8 @@ pub(super) fn style_editor_panel(
     let ds_list = Arc::clone(&doc_state);
     let ds_new = Arc::clone(&doc_state);
 
-    // Inspector rows for the selected style, previewing the *pending* draft:
-    // committed values come from the catalog; a row is flagged "staged" when the
-    // draft's uncommitted edit changes it, so pending overrides read distinctly
-    // from committed ones until Apply (Spec 05 §12).
+    // Inspector rows previewing the pending draft; a row is "staged" when the
+    // draft's uncommitted edit changes it vs the committed value (§12).
     let sid = StyleId::new(&draft.id);
     let committed_rows = catalog_snapshot(&doc_state)
         .map(|cat| paragraph_inspector_rows(&cat, &sid))
@@ -102,9 +100,8 @@ pub(super) fn style_editor_panel(
             (pending, staged)
         })
         .collect();
-    // Impact preview: the dependent styles a staged change to this style will
-    // also change (Spec 05 §7) — computed on the committed catalog, shown by
-    // display name before Apply.
+    // Impact preview: dependents a staged change will also change (§7), by
+    // display name, from the committed catalog.
     let changed: Vec<_> = display_rows
         .iter()
         .filter(|(_, staged)| *staged)
@@ -123,6 +120,12 @@ pub(super) fn style_editor_panel(
                 .collect()
         })
         .unwrap_or_default();
+    // A new style defaults to a child of the current committed style (§8).
+    let new_style_parent = if committed_rows.is_empty() {
+        String::new()
+    } else {
+        draft.id.clone()
+    };
     // Handles for the reset-to-inherited action on locally-set inspector rows.
     let ds_reset = Arc::clone(&doc_state);
     let reset_id = draft.id.clone();
@@ -240,7 +243,9 @@ pub(super) fn style_editor_panel(
                                 id: new_id.clone(),
                                 name: new_id,
                                 is_custom: true,
-                                alignment: "Left".to_string(),
+                                // Inherit from the current style; leave props
+                                // empty so every value shows as inherited.
+                                parent: new_style_parent.clone(),
                                 ..StyleDraft::default()
                             }));
                         },
