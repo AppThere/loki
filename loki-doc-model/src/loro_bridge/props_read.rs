@@ -16,7 +16,6 @@ use crate::meta::language::LanguageTag;
 use crate::style::list_style::ListId;
 use crate::style::props::char_props::CharProps;
 use crate::style::props::para_props::ParaProps;
-use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 use loro::LoroMap;
 
@@ -253,13 +252,13 @@ pub(super) fn reconstruct_char_props_from_map(block_map: &LoroMap) -> Option<Cha
         any = true;
     }
     if let Some(s) = get_str_from_map(&props_map, "color")
-        && let Ok(c) = DocumentColor::from_hex(&s)
+        && let Some(c) = decode_document_color(&s)
     {
         props.color = Some(c);
         any = true;
     }
     if let Some(s) = get_str_from_map(&props_map, "background_color")
-        && let Ok(c) = DocumentColor::from_hex(&s)
+        && let Some(c) = decode_document_color(&s)
     {
         props.background_color = Some(c);
         any = true;

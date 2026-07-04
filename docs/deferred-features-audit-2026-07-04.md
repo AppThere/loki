@@ -43,7 +43,7 @@ All are genuine, mostly upstream-gated (Parley/Blitz/Vello) or deliberately defe
 | Topic | file:line(s) | Defers what |
 |---|---|---|
 | `3b-3` (partial) | `navigation.rs` (many) | Cross-page nav: up/down works; **left/right at page edges + `page_index` recompute after split/merge still `None`** |
-| `loro-bridge` | `loro_bridge/inlines.rs:123,220`, `opaque.rs`, `table.rs:25` | Non-Rgb colors (Theme/Cmyk), comment/bookmark anchors, quote/span attrs, structural-table CRDT semantics |
+| `loro-bridge` | `loro_bridge/decode.rs` (borders), `table.rs:25` | ~~Non-Rgb colors, comment/bookmark anchors, quote/span attrs~~ **fixed 2026-07-04** (plan Phase 1.4). Remaining: non-Rgb *border* colors (format migration), `Cite` metadata, structural-table CRDT semantics |
 | `loro-compaction` | `loki-bench/benches/leak_loro_history.rs`; bridge | Compact the CRDT oplog at save/undo-horizon (memory Finding 6) |
 | `omml` | `docx/omml/mod.rs:20` | OMML↔MathML for delimiters, n-ary, matrices, accents |
 | `link-click` | `resolve.rs:689`, `items.rs:125`, `para.rs:203`, `scene.rs:519` | Interactive hyperlink hit-testing (only a visual hint today) |

@@ -209,6 +209,10 @@ pub(super) fn decode_tab_stops(s: &str) -> Option<Vec<TabStop>> {
 // ── Border codec ─────────────────────────────────────────────────────────────
 
 /// Encode a [`Border`] as a compact `"Style:width_pt:color:spacing_pt"` string.
+///
+/// TODO(loro-bridge): non-Rgb border colors (Theme/Cmyk) collapse to `auto`
+/// here — the colon-delimited format cannot carry the `color_codec` encodings
+/// (they contain `:`), so lifting this needs a format migration.
 pub(super) fn encode_border(b: &Border) -> String {
     let style = match b.style {
         BorderStyle::None => "None",

@@ -85,10 +85,12 @@ fn inline_round_trips_nested(inline: &Inline) -> bool {
         | Inline::Span(_, inner)
         | Inline::Link(_, inner, _) => inner.iter().all(inline_round_trips_nested),
         Inline::StyledRun(run) => run.content.iter().all(inline_round_trips_nested),
-        // Comment and bookmark anchors carry no body text and have always
-        // been dropped by the text flattening; treating them as representable
-        // keeps the vast majority of paragraphs editable.
-        // TODO(loro-bridge): preserve comment/bookmark anchors as marks.
+        // Comment and bookmark anchors carry no body text. A *top-level*
+        // anchor is now preserved natively (an OBJECT_REPLACEMENT_CHAR anchor
+        // with a MARK_COMMENT/MARK_BOOKMARK snapshot mark — see
+        // `inlines::map_inlines`); one nested inside a wrapper is still
+        // dropped by the text flattening, which loses no text and keeps the
+        // vast majority of paragraphs editable.
         Inline::Comment(_) | Inline::Bookmark(_, _) => true,
         // Nested Note/Image, Field, Math, RawInline, Cite — structured content
         // the flat text cannot carry (and, when nested, the native anchor path

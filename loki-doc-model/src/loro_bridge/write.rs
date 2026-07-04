@@ -262,11 +262,11 @@ pub(super) fn map_char_props_to_map(props: &CharProps, map: &LoroMap) -> Result<
     if let Some(v) = &props.hyperlink {
         map.insert("hyperlink", v.as_str())?;
     }
-    if let Some(hex) = props.color.as_ref().and_then(|c| c.to_hex()) {
-        map.insert("color", hex)?;
+    if let Some(v) = &props.color {
+        map.insert("color", encode_document_color(v))?;
     }
-    if let Some(hex) = props.background_color.as_ref().and_then(|c| c.to_hex()) {
-        map.insert("background_color", hex)?;
+    if let Some(v) = &props.background_color {
+        map.insert("background_color", encode_document_color(v))?;
     }
     if let Some(v) = &props.highlight_color {
         map.insert("highlight_color", format!("{v:?}"))?;

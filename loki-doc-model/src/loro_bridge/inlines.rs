@@ -7,7 +7,8 @@
 //! stay under the 300-line ceiling.
 
 use super::BridgeError;
-use crate::content::inline::Inline;
+use super::color_codec::encode_document_color;
+use crate::content::inline::{Inline, QuoteType};
 use crate::loro_schema::*;
 use crate::style::props::char_props::CharProps;
 use loro::{LoroMap, LoroText};
@@ -105,6 +106,35 @@ pub(super) fn map_inlines(
                     text.mark(start..end, MARK_LINK_URL, target.url.as_str())?;
                 }
             }
+            // Quote/span wrappers write their children recursively (so nested
+            // marks survive) and then lay their own range mark on top.
+            Inline::Quoted(quote_type, inner) => {
+                let start = text.len_unicode();
+                map_inlines(inner, text, block_map)?;
+                let end = text.len_unicode();
+                if start < end {
+                    let value = match quote_type {
+                        QuoteType::SingleQuote => "Single",
+                        QuoteType::DoubleQuote => "Double",
+                    };
+                    text.mark(start..end, MARK_QUOTE_TYPE, value)?;
+                }
+            }
+            #[cfg(feature = "serde")]
+            Inline::Span(attr, inner) => {
+                let start = text.len_unicode();
+                map_inlines(inner, text, block_map)?;
+                let end = text.len_unicode();
+                if start < end {
+                    match serde_json::to_string(attr) {
+                        Ok(json) => text.mark(start..end, MARK_SPAN_ATTR, json)?,
+                        Err(err) => {
+                            // Unreachable in practice: NodeAttr derives Serialize.
+                            tracing::warn!("loro bridge: failed to encode span attr: {err}");
+                        }
+                    }
+                }
+            }
             // Inline objects anchored natively (placeholder char + data mark) so
             // they stay live, positioned, deletable inlines. Only *top-level*
             // objects reach here — one nested in a wrapper keeps its block
@@ -118,9 +148,19 @@ pub(super) fn map_inlines(
             Inline::Note(kind, body) => {
                 super::inline_objects::write_note(kind, body, text, block_map)?;
             }
+            // Comment/bookmark range markers carry no text; anchor them like
+            // images so they survive round-trips as positioned inlines.
+            #[cfg(feature = "serde")]
+            Inline::Comment(_) => {
+                super::inline_objects::write_inline_object(inline, text, MARK_COMMENT)?;
+            }
+            #[cfg(feature = "serde")]
+            Inline::Bookmark(_, _) => {
+                super::inline_objects::write_inline_object(inline, text, MARK_BOOKMARK)?;
+            }
             // Text-bearing wrappers without a dedicated mark: keep the text.
-            // Quote type / span attrs / citation metadata are not yet carried
-            // through the CRDT — TODO(loro-bridge).
+            // Citation metadata is not yet carried through the CRDT —
+            // TODO(loro-bridge).
             _ => {
                 let text_str = extract_plain_text(std::slice::from_ref(inline));
                 if !text_str.is_empty() {
@@ -217,11 +257,8 @@ pub(super) fn apply_char_props_marks(
     if let Some(v) = &props.vertical_align {
         text.mark(start..end, MARK_VERTICAL_ALIGN, format!("{:?}", v))?;
     }
-    // Non-Rgb variants (Theme, Cmyk, Transparent) have no hex repr and are deferred — TODO(loro-bridge)
-    if let Some(v) = &props.color
-        && let Some(hex) = v.to_hex()
-    {
-        text.mark(start..end, MARK_COLOR, hex)?;
+    if let Some(v) = &props.color {
+        text.mark(start..end, MARK_COLOR, encode_document_color(v))?;
     }
     if let Some(v) = &props.highlight_color {
         text.mark(start..end, MARK_HIGHLIGHT_COLOR, format!("{v:?}"))?;
