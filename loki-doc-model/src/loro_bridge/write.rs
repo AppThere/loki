@@ -4,7 +4,10 @@
 //! Serialization: Loki document model → Loro CRDT containers.
 
 use super::BridgeError;
-use super::decode::{encode_alignment, encode_border, encode_line_height, encode_spacing};
+use super::color_codec::encode_document_color;
+use super::decode::{
+    encode_alignment, encode_border, encode_line_height, encode_spacing, encode_tab_stops,
+};
 use super::inlines::map_inlines;
 use crate::content::block::Block;
 use crate::loro_schema::*;
@@ -184,10 +187,10 @@ pub(super) fn map_para_props(props: &ParaProps, map: &LoroMap) -> Result<(), Bri
         map.insert(PROP_PADDING_RIGHT, v.value())?;
     }
     if let Some(v) = &props.tab_stops {
-        map.insert(PROP_TAB_STOPS, format!("{:?}", v))?;
+        map.insert(PROP_TAB_STOPS, encode_tab_stops(v))?;
     }
     if let Some(v) = &props.background_color {
-        map.insert("background_color", format!("{:?}", v))?;
+        map.insert(PROP_BACKGROUND_COLOR, encode_document_color(v))?;
     }
     Ok(())
 }

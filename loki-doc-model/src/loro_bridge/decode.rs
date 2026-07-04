@@ -12,6 +12,7 @@ use crate::style::props::char_props::{
     HighlightColor, StrikethroughStyle, UnderlineStyle, VerticalAlign,
 };
 use crate::style::props::para_props::{LineHeight, ParagraphAlignment, Spacing};
+use crate::style::props::tab_stop::{TabAlignment, TabLeader, TabStop};
 use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 
@@ -137,6 +138,72 @@ pub(super) fn decode_line_height(s: &str) -> Option<LineHeight> {
     } else {
         None
     }
+}
+
+// ── Tab-stop codec ───────────────────────────────────────────────────────────
+
+/// Encode a tab-stop list as `"position_pt:Alignment:Leader"` entries joined
+/// by `';'` (e.g. `"36:Left:None;144:Decimal:Dot"`).
+pub(super) fn encode_tab_stops(stops: &[TabStop]) -> String {
+    stops
+        .iter()
+        .map(|ts| {
+            let alignment = match ts.alignment {
+                TabAlignment::Left => "Left",
+                TabAlignment::Right => "Right",
+                TabAlignment::Center => "Center",
+                TabAlignment::Decimal => "Decimal",
+                TabAlignment::Clear => "Clear",
+            };
+            let leader = match ts.leader {
+                TabLeader::None => "None",
+                TabLeader::Dot => "Dot",
+                TabLeader::Dash => "Dash",
+                TabLeader::Underscore => "Underscore",
+                TabLeader::Heavy => "Heavy",
+                TabLeader::MiddleDot => "MiddleDot",
+            };
+            format!("{}:{}:{}", ts.position.value(), alignment, leader)
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Decode a tab-stop list produced by [`encode_tab_stops`]. Returns `None`
+/// for unparseable input (including the pre-codec Debug-string encoding),
+/// which callers treat as an absent property.
+pub(super) fn decode_tab_stops(s: &str) -> Option<Vec<TabStop>> {
+    if s.is_empty() {
+        return Some(Vec::new());
+    }
+    let mut stops = Vec::new();
+    for entry in s.split(';') {
+        let mut fields = entry.splitn(3, ':');
+        let position: f64 = fields.next()?.parse().ok()?;
+        let alignment = match fields.next()? {
+            "Left" => TabAlignment::Left,
+            "Right" => TabAlignment::Right,
+            "Center" => TabAlignment::Center,
+            "Decimal" => TabAlignment::Decimal,
+            "Clear" => TabAlignment::Clear,
+            _ => return None,
+        };
+        let leader = match fields.next()? {
+            "None" => TabLeader::None,
+            "Dot" => TabLeader::Dot,
+            "Dash" => TabLeader::Dash,
+            "Underscore" => TabLeader::Underscore,
+            "Heavy" => TabLeader::Heavy,
+            "MiddleDot" => TabLeader::MiddleDot,
+            _ => return None,
+        };
+        stops.push(TabStop {
+            position: Points::new(position),
+            alignment,
+            leader,
+        });
+    }
+    Some(stops)
 }
 
 // ── Border codec ─────────────────────────────────────────────────────────────

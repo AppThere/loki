@@ -239,6 +239,7 @@ pub const PROP_PADDING_BOTTOM: &str = "padding_bottom";
 pub const PROP_PADDING_LEFT: &str = "padding_left";
 pub const PROP_PADDING_RIGHT: &str = "padding_right";
 pub const PROP_TAB_STOPS: &str = "tab_stops";
+pub const PROP_BACKGROUND_COLOR: &str = "background_color";
 
 // -----------------------------------------------------------------------------
 // Section / PageLayout Keys

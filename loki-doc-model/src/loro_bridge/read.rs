@@ -5,10 +5,8 @@
 
 use super::BridgeError;
 use super::inlines_read::reconstruct_inlines;
-use super::props_read::{
-    get_bool_from_map, get_f64_from_map, get_i64_from_map, get_str_from_map,
-    reconstruct_char_props_from_map, reconstruct_para_props,
-};
+use super::map_get::{get_bool_from_map, get_f64_from_map, get_i64_from_map, get_str_from_map};
+use super::props_read::{reconstruct_char_props_from_map, reconstruct_para_props};
 use crate::content::attr::NodeAttr;
 use crate::content::block::Block;
 use crate::layout::header_footer::{HeaderFooter, HeaderFooterKind};

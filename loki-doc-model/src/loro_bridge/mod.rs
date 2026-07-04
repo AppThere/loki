@@ -9,6 +9,7 @@
 //! - `read`  — deserialization (Loro → Loki)
 //! - `inlines` — inline content helpers shared by both directions
 
+mod color_codec;
 mod comments;
 mod decode;
 mod incremental;
@@ -16,6 +17,7 @@ mod incremental;
 mod inline_objects;
 mod inlines;
 mod inlines_read;
+mod map_get;
 mod meta;
 mod opaque;
 mod props_read;
