@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! Device-bound axis marker (Spec 06 §5): GPU frame-time and real peak RSS run
-//! **only on real hardware** (Kevin's Windows+RTX 3050 / MacBook A16) — they are
-//! not agent-runnable and never gate CI.
+//! GPU frame-time (Spec 06 §5 / M5): the production paint path's per-frame cost,
+//! measured via **wgpu timestamp queries** on real hardware (Kevin's Windows+RTX
+//! 3050 / MacBook A16). It is **not agent-runnable** — the agent has no GPU — and
+//! never gates CI.
 //!
-//! M1 stakes out the axis without pulling GPU dependencies into the default,
-//! headless build: the target compiles and runs everywhere, but the actual
-//! measurement is gated behind the `device` feature and lands in Spec 06 M5.
-//! Running it headless is a deliberate, explicit no-op with a hardware notice.
+//! This is the one M5 metric that cannot be executed or verified headless (peak
+//! RSS *is* runnable — see the `device_rss` target). It stays gated behind the
+//! `device` feature so no GPU dependency enters the default headless build; the
+//! on-device implementation wires wgpu timestamp queries around the
+//! `loki-renderer` paint path and records per-frame GPU time alongside the
+//! `device_rss` peak-RSS pass. See `docs/adr/spec-06-calibration.md`.
 //!
 //! Run (on GPU hardware): `cargo bench -p loki-bench --bench device_frame_time --features device`
 
@@ -16,17 +19,18 @@ fn main() {
     #[cfg(not(feature = "device"))]
     {
         eprintln!(
-            "device_frame_time — hardware-only (Spec 06 §5). Skipped: the agent \
-             environment has no GPU. Re-run on real hardware with `--features \
-             device`. GPU frame-time + peak RSS are implemented in Spec 06 M5."
+            "device_frame_time — hardware-only (Spec 06 §5 / M5). Skipped: the agent \
+             environment has no GPU. Re-run on real hardware with `--features device`. \
+             Peak RSS (the runnable M5 metric) is the `device_rss` target."
         );
     }
 
     #[cfg(feature = "device")]
     {
         eprintln!(
-            "device_frame_time — device feature enabled; GPU frame-time + peak \
-             RSS measurement is Spec 06 M5 (not yet implemented)."
+            "device_frame_time — device feature enabled. The wgpu timestamp-query \
+             frame-time pass is wired around the loki-renderer paint path on-device \
+             (Spec 06 M5); see docs/adr/spec-06-calibration.md."
         );
     }
 }

@@ -57,9 +57,23 @@ cargo bench -p loki-bench --bench leak_detection     # clean cycle Bounded; seed
 cargo bench -p loki-bench --bench leak_loro_history  # reports oplog growth over a long session
 ```
 
+## Device benches + budgets (M5)
+
+Peak RSS is measurable now (Linux `/proc`; device-local numbers). Budgets are
+committed (`baselines/rss_budgets.txt`) and reviewed, not gated (§11). GPU
+frame-time is device-only (needs a GPU).
+
+```bash
+cargo bench -p loki-bench --bench device_rss               # peak RSS per tier + budget review
+cargo bench -p loki-bench --bench device_rss -- --update   # recalibrate budgets (1.5× measured peak)
+cargo bench -p loki-bench --bench device_frame_time --features device   # GPU frame-time (hardware only)
+```
+
+The committed budgets are **agent-provisional** — they under-count real devices
+(no GPU textures); see [`docs/adr/spec-06-calibration.md`](../docs/adr/spec-06-calibration.md)
+for the recalibration steps on Kevin's hardware (audit BM-14).
+
 ## Not yet (later milestones)
 
-Device benches + budgets (M5) and the CPU/GPU parity cadence (M6). The `device`
-feature currently only **marks** the device axis — the GPU/RSS measurement itself
-is M5. The `vello_cpu` render-cost proxy is blocked on Spec 02 landing the CPU
+The CPU/GPU parity cadence (M6), blocked on Spec 02 landing the `vello_cpu` CPU
 render path (audit finding BM-3).

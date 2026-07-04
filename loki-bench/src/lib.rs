@@ -40,15 +40,19 @@
 
 mod axis;
 mod baseline;
+mod budget;
 mod leak;
 mod memory;
+mod rss;
 
 pub use axis::{Axis, Metric};
 pub use baseline::{
     Baseline, BaselineError, Delta, DeltaStatus, Tolerance, any_regressed, diff, render_report,
 };
+pub use budget::{BudgetStatus, Budgets, check, headroom_frac};
 pub use leak::{LeakVerdict, ResidualStats, classify_leak, residual_after};
 pub use memory::{AllocStats, measure};
+pub use rss::{current_rss_bytes, parse_status_kib, peak_rss_bytes};
 
 /// Re-exported so [`dhat_global_allocator!`] can name `dhat` from any bench
 /// binary without that binary declaring a direct `dhat` dependency.

@@ -204,9 +204,22 @@ so a naive inspector-open over a deep, wide catalog is the thing to measure.
    against. (BM-4/BM-5's production `ParaCache`/GPU-tier boundedness stays where it
    is proven — the loki-layout `ParaCache` unit tests and, for the device tiers,
    M5; the seeded unbounded cache here proves the *detector*.)
-5. **M5 — Device benches + budgets.** *Device-gated.* GPU frame-time + peak RSS on
-   Kevin's hardware; **must re-measure the headline figures on-device (BM-14)** before
-   calibrating per-tier RSS budgets. Peak-RSS plumbing is absent (BM-1) and must be added.
+5. **M5 — Device benches + budgets.** ✅ **Shipped (agent-runnable half); GPU
+   frame-time device-gated.** Peak-RSS plumbing (BM-1) built and **verified in the
+   agent**: `rss` module (Linux `/proc/self/status` `VmHWM`/`VmRSS`, pure parser +
+   3 tests) drives the `device_rss` bench, which measures peak RSS per tier
+   (agent: small 9.3 / medium 12.1 / large 22.9 MiB) and reviews it against the
+   committed budgets (`baselines/rss_budgets.txt`). The budget mechanism (`budget`
+   module: `check`/`headroom_frac` + `Budgets` parse/render, 4 tests) calibrates
+   budgets at 1.5× measured peak (`-- --update`) and reviews-not-gates (§11). The
+   calibration record is committed ([spec-06-calibration.md](spec-06-calibration.md)):
+   measured distributions, device/date/tool versions, chosen budgets — with the
+   explicit **BM-14 caveat that agent numbers under-count real devices (no GPU
+   textures)** and Kevin must re-run on the Windows+RTX 3050 / MacBook A16 (adding
+   the macOS/Windows RSS readers) before budgets are authoritative. **GPU
+   frame-time** stays device-only (wgpu timestamp queries; `device_frame_time`
+   behind the `device` feature) — the one M5 metric that cannot execute or be
+   verified headless, documented for the on-device pass.
 6. **M6 — Discipline + parity cadence.** *Partly blocked.* The tracked-not-gated
    discipline (§11) is pure documentation and ready; the parity cadence (§12) is blocked
    on Spec 02's `vello_cpu` path existing (BM-3) and needs a GPU, so it lands with M5's
