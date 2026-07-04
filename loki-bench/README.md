@@ -34,10 +34,21 @@ cargo bench -p loki-bench --bench portable_alloc       # dhat captures allocatio
 cargo bench -p loki-bench --bench device_frame_time    # hardware-only: prints a skip notice headless
 ```
 
+## Continuous memory tracking (M3)
+
+`baselines/portable.txt` is the committed per-tier baseline (one line per key).
+Each run diffs against it and surfaces deltas for **review** — never a CI failure
+(§11). The Arc steady-state guard asserts sharing allocates nothing.
+
+```bash
+cargo bench -p loki-bench --bench baseline               # diff current run vs committed baseline
+cargo bench -p loki-bench --bench baseline -- --update   # rewrite the baseline (intentional)
+cargo bench -p loki-bench --bench arc_steady_state       # assert Arc::clone allocates 0
+```
+
 ## Not yet (later milestones)
 
-Per-target portable benches (M2), the committed baseline + diff (M3), leak
-detection (M4), device benches + budgets (M5), and the CPU/GPU parity cadence
+Leak detection (M4), device benches + budgets (M5), and the CPU/GPU parity cadence
 (M6). The `device` feature currently only **marks** the device axis — the GPU/RSS
 measurement itself is M5. The `vello_cpu` render-cost proxy is blocked on Spec 02
 landing the CPU render path (audit finding BM-3).

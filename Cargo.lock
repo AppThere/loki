@@ -3911,6 +3911,7 @@ dependencies = [
  "loki-layout",
  "loki-odf",
  "loki-ooxml",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

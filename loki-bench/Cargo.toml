@@ -20,6 +20,8 @@ device = []
 # Rust-native heap profiler: the portable allocation bytes/counts signal that
 # backs continuous memory tracking (Spec 06 §5/§10, decision D1).
 dhat = "0.3"
+# Typed errors for baseline-file parsing (workspace convention: thiserror, no anyhow).
+thiserror = { workspace = true }
 
 [dev-dependencies]
 # Statistical timed-bench harness — variance-robust, suits the noisy local
@@ -62,6 +64,14 @@ harness = false
 
 [[bench]]
 name = "portable_export"
+harness = false
+
+[[bench]]
+name = "arc_steady_state"
+harness = false
+
+[[bench]]
+name = "baseline"
 harness = false
 
 [package.metadata.docs.rs]

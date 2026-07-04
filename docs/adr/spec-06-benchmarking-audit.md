@@ -178,9 +178,18 @@ so a naive inspector-open over a deep, wide catalog is the thing to measure.
    `portable_export` (DOCX vs ODT emission). All run headless and produce stable
    allocation metrics. **One target still blocked:** the `vello_cpu` render-cost
    proxy waits on Spec 02 (BM-3) — deferred, not built here.
-3. **M3 — Continuous memory tracking.** *Ready to build (greenfield).* dhat baseline per
-   tier + diff tooling (BM-2, BM-13); the Arc steady-state guard is well-founded (§4)
-   and its regression is a detectable allocation-count delta.
+3. **M3 — Continuous memory tracking.** ✅ **Shipped.** A committed per-tier baseline
+   (`loki-bench/baselines/portable.txt`, 18 curated keys — a representative metric per
+   §6 target × Small/Medium/Large, plus the Arc guard metric) with a pure, tested
+   diff engine (`baseline` module: parse/render round-trip + `diff` classifying
+   New/Removed/Regressed/Improved/Unchanged under a jitter tolerance — counts tight,
+   bytes looser for DOCX zip drift; 7 unit tests). The `baseline` bench collects the
+   samples, diffs against the committed file, and prints deltas for **review** (never
+   a CI failure, §11); `-- --update` rewrites the baseline intentionally. The **Arc
+   steady-state guard** (`arc_steady_state` bench) asserts `Arc::clone` of a real
+   shared resource allocates **zero** (audit §4); the same metric is tracked in the
+   baseline, so a value-clone regression turns 0 → nonzero = `+INF` = Regressed
+   (proven end-to-end and in `arc_share_replaced_by_value_clone_is_flagged`).
 4. **M4 — Leak detection.** *Well-scaffolded.* The three culprits are all identified in
    source: Arc-cycle open/edit/close returns-to-baseline; bounded-cache assertions over
    the pathological tier (BM-4/BM-5); Loro-history bench reading the existing
