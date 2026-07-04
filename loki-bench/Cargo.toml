@@ -1,0 +1,42 @@
+[package]
+name = "loki-bench"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Shared benchmarking & continuous-memory-tracking harness for the AppThere Loki suite — Spec 06. Sorts every bench onto one of two axes: portable (headless: allocation bytes/counts, op cost) and device-bound (GPU frame-time, peak RSS; hardware-only)."
+repository = "https://github.com/appthere/loki"
+keywords = ["benchmarking", "memory", "profiling", "loki"]
+categories = ["development-tools::profiling"]
+
+[features]
+default = []
+# Marks the device-bound axis (GPU frame-time, real peak RSS). Off by default so
+# the portable set builds and runs headless in the agent environment with no GPU
+# — the device benches are hardware-only (Spec 06 §5). The GPU/RSS measurement
+# itself lands in Spec 06 M5; this feature only gates the axis today.
+device = []
+
+[dependencies]
+# Rust-native heap profiler: the portable allocation bytes/counts signal that
+# backs continuous memory tracking (Spec 06 §5/§10, decision D1).
+dhat = "0.3"
+
+[dev-dependencies]
+# Statistical timed-bench harness — variance-robust, suits the noisy local
+# environment (Spec 06 §10).
+criterion = "0.8"
+
+[[bench]]
+name = "portable_smoke"
+harness = false
+
+[[bench]]
+name = "portable_alloc"
+harness = false
+
+[[bench]]
+name = "device_frame_time"
+harness = false
+
+[package.metadata.docs.rs]
+all-features = true
