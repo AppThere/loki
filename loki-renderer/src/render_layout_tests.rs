@@ -82,6 +82,7 @@ fn one_para_reflow(text: &str, origin: (f32, f32)) -> RenderLayout {
             items: vec![],
             paragraphs: vec![PageParagraphData {
                 block_index: 3,
+                path: vec![],
                 layout: std::sync::Arc::new(para),
                 origin,
             }],
