@@ -25,6 +25,12 @@ dhat = "0.3"
 # Statistical timed-bench harness — variance-robust, suits the noisy local
 # environment (Spec 06 §10).
 criterion = "0.8"
+# The workloads the portable benches drive (Spec 06 §6). Dev-deps so they build
+# only for the bench targets, never for the harness library itself.
+loki-doc-model = { path = "../loki-doc-model" }
+loki-layout = { path = "../loki-layout" }
+loki-ooxml = { path = "../loki-ooxml" }
+loki-odf = { path = "../loki-odf" }
 
 [[bench]]
 name = "portable_smoke"
@@ -36,6 +42,26 @@ harness = false
 
 [[bench]]
 name = "device_frame_time"
+harness = false
+
+[[bench]]
+name = "portable_style_resolution"
+harness = false
+
+[[bench]]
+name = "portable_layout"
+harness = false
+
+[[bench]]
+name = "portable_model"
+harness = false
+
+[[bench]]
+name = "portable_io"
+harness = false
+
+[[bench]]
+name = "portable_export"
 harness = false
 
 [package.metadata.docs.rs]

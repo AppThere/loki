@@ -167,11 +167,17 @@ so a naive inspector-open over a deep, wide catalog is the thing to measure.
    Criterion (already in `loki-layout`) workspace-wide and add `dhat`. Model the axis
    split on the portable/device table (§5). Reuse `loki-acid`'s fixture-loading
    precedent. Blockers: none.
-2. **M2 — Portable benches.** *Mostly ready.* Model/layout/IO/export/style benches are
-   all pure-CPU and buildable now; open/save reuses `load_bench` + open spans (BM-11);
-   style resolution stressor per §6/BM-10. **One target blocked:** the `vello_cpu`
-   render-cost proxy waits on Spec 02 (BM-3) — sequence it last or co-deliver the CPU
-   entry point.
+2. **M2 — Portable benches.** ✅ **Shipped** (except the blocked proxy). Five
+   `harness = false` allocation benches in `loki-bench/benches/`, each measuring a
+   §6 target via `loki_bench::measure` over the scale corpus (`benches/support/`):
+   `portable_style_resolution` (the headline — sweeps depth × chains, and the
+   depth×count scaling is visible: `depth=64 chains=1000` → ~3.4 MB / 38 000
+   allocs, `depth=1` resolves Local with **zero** allocations),
+   `portable_layout` (cold-cache `layout_document`), `portable_model`
+   (`loro_to_document` rebuild), `portable_io` (DOCX save + open), and
+   `portable_export` (DOCX vs ODT emission). All run headless and produce stable
+   allocation metrics. **One target still blocked:** the `vello_cpu` render-cost
+   proxy waits on Spec 02 (BM-3) — deferred, not built here.
 3. **M3 — Continuous memory tracking.** *Ready to build (greenfield).* dhat baseline per
    tier + diff tooling (BM-2, BM-13); the Arc steady-state guard is well-founded (§4)
    and its regression is a detectable allocation-count delta.
