@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#![forbid(unsafe_code)]
+
 //! `loki-headless` — GPU-free printing and file conversion (headless spec
 //! §3). The standalone CLI is the "office printing" deployment: no server,
 //! no Postgres, just files in, PDF/converted files or IPP print jobs out.

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#![forbid(unsafe_code)]
+
 //! `loki-server` — the single modular Axum binary (ADR-C012): REST API,
 //! WebSocket collaboration relay, and OIDC auth in one artifact, scaled
 //! horizontally behind a load balancer or run alone on a small box.
