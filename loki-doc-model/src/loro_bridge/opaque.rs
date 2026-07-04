@@ -4,10 +4,12 @@
 //! Opaque-snapshot preservation for blocks the Loro schema cannot represent.
 //!
 //! The CRDT schema flattens paragraph content into a [`loro::LoroText`] with
-//! marks, which cannot carry most structured content (lists, figures, footnote
-//! bodies, fields, math; tables have their own native mapping in `table.rs`).
-//! Before this module existed, such blocks were written as empty stubs and read
-//! back as `Block::HorizontalRule` — i.e. a single edit cycle destroyed them.
+//! marks, which cannot carry structured content the marks cannot express
+//! (definition lists, fields, math, nested notes/images). Tables have a
+//! native mapping in `table.rs`; lists, block quotes, divs, and figures have
+//! theirs in `containers.rs`. Before this module existed, unsupported blocks
+//! were written as empty stubs and read back as `Block::HorizontalRule` —
+//! i.e. a single edit cycle destroyed them.
 //!
 //! Instead, any block that cannot round-trip through the text schema is
 //! serialized to JSON (via the model's `serde` derives) and stored verbatim

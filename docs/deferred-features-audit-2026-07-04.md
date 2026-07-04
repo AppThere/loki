@@ -152,10 +152,10 @@ Still-open after verification (the DONE-SINCE ones moved to §1).
 | Item | Status |
 |---|---|
 | 300-line-ceiling backlog | **35** baselined files; CI-ratcheted so it can only shrink. `CLAUDE.md`'s worst-offenders sizes are stale (see S-9). |
-| `tab_stops` Loro round-trip | STILL-OPEN — written as Debug string (`loro_bridge/write.rs:187`), no reader in `props_read.rs`. |
-| paragraph `background_color` Loro round-trip | STILL-OPEN — Debug string (`write.rs:190`); the only reader (`props_read.rs:273`) uses `from_hex` and cannot parse it. |
+| `tab_stops` Loro round-trip | ~~STILL-OPEN~~ **FIXED 2026-07-04** (plan Phase 1.1) — structured codec written + read back; `bridge_tab_stops_roundtrip`. |
+| paragraph `background_color` Loro round-trip | ~~STILL-OPEN~~ **FIXED 2026-07-04** (plan Phase 1.2) — total `DocumentColor` codec (`loro_bridge/color_codec.rs`); `bridge_para_background_color_roundtrip`. |
 | `DocumentMeta`/DublinCore export | **DONE** (writes back to DOCX/ODT) — `CLAUDE.md` row is stale (see S-8). |
-| CRDT bridge stubs | `BulletList`/`OrderedList`/`Figure`/`BlockQuote`/`Div` are debug-log-only in the bridge (export still works from the Document snapshot). |
+| CRDT bridge stubs | ~~debug-log-only~~ **FIXED 2026-07-04** (plan Phase 1.3) — `BulletList`/`OrderedList`/`BlockQuote`/`Div`/`Figure` now have native mappings (`loro_bridge/containers.rs`, `table.rs` pattern: JSON metadata + live nested block lists); tested by `loro_bridge_container_tests.rs`. Legacy pre-opaque stubs still read as `HorizontalRule` (nothing recoverable); `DefinitionList` and inline fields/math stay on the opaque path. |
 
 ---
 

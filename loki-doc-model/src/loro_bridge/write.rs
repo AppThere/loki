@@ -18,12 +18,19 @@ use loro::{LoroMap, LoroMovableList, LoroText};
 // ── Block serialization ───────────────────────────────────────────────────────
 
 pub(crate) fn map_block(block: &Block, map: &LoroMap) -> Result<(), BridgeError> {
-    // Tables have a native mapping: a structural skeleton plus live per-cell
-    // block lists (see `table.rs`). Without `serde` there is no skeleton
-    // format, so the table takes the opaque path below instead.
+    // Tables and container blocks (lists, quotes, divs, figures) have native
+    // mappings: structural metadata plus live nested block lists (see
+    // `table.rs` / `containers.rs`). Without `serde` there is no metadata
+    // format, so they take the opaque path below instead.
     #[cfg(feature = "serde")]
-    if let Block::Table(table) = block {
-        return super::table::write_table(table, map);
+    match block {
+        Block::Table(table) => return super::table::write_table(table, map),
+        Block::BulletList(_)
+        | Block::OrderedList(_, _)
+        | Block::BlockQuote(_)
+        | Block::Div(_, _)
+        | Block::Figure(_, _, _) => return super::containers::write_container(block, map),
+        _ => {}
     }
     // Blocks (or paragraphs whose inline content) the flat text schema cannot
     // represent are preserved verbatim as opaque JSON snapshots so that a

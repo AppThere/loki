@@ -43,9 +43,9 @@ closest thing to data loss in the suite. These are all code-confirmed in audit
 
 | Task | Source | Detail | Effort |
 |---|---|---|---|
-| 1.1 | §6 | **`tab_stops` round-trip**: replace the Debug-string write (`loro_bridge/write.rs:187`) with a structured serialization (mirror the existing `props_read.rs` patterns) and add the missing reader. Add a round-trip test. | S–M |
-| 1.2 | §6 | **Paragraph `background_color` round-trip**: same fix shape — structured write in `write.rs:190`, teach `props_read.rs:273` to decode it (today it calls `from_hex` on a Debug string and always fails). Round-trip test. | S |
-| 1.3 | §6 | **CRDT bridge block stubs**: implement native bridge writes for `BulletList`/`OrderedList`/`Figure`/`BlockQuote`/`Div` (currently debug-log-only). The `Block::Table` write (`loro_bridge/write.rs:22`) is the worked example. Per-block round-trip tests. | M |
+| 1.1 | §6 | ✅ **Done 2026-07-04** — structured tab-stop codec (`loro_bridge/decode.rs`) + reader; `bridge_tab_stops_roundtrip`. | S–M |
+| 1.2 | §6 | ✅ **Done 2026-07-04** — total `DocumentColor` codec (`loro_bridge/color_codec.rs`, Rgb/Cmyk/Theme/Transparent) + reader; `bridge_para_background_color_roundtrip`. | S |
+| 1.3 | §6 | ✅ **Done 2026-07-04** — native mappings for `BulletList`/`OrderedList`/`BlockQuote`/`Div`/`Figure` (`loro_bridge/containers.rs`, table.rs pattern); `loro_bridge_container_tests.rs`. `DefinitionList` + inline fields/math stay opaque. | M |
 | 1.4 | §2 | **`loro-bridge` tail**: non-Rgb colors (Theme/Cmyk), comment/bookmark anchors, quote/span attrs (`loro_bridge/inlines.rs:123,220`, `opaque.rs`, `table.rs:25`). Structural-table CRDT semantics can stay deferred (design work) but must keep its TODO. | M |
 | 1.5 | §2, §5 | **Loro oplog compaction** (`TODO(loro-compaction)`, memory Finding 6, Spec 06): compact at save/undo-horizon. `loki-bench/benches/leak_loro_history.rs` is the pre-built yardstick — use it as the acceptance test (history must stop growing linearly with edit count past the undo horizon). Server-side ADR-C013 `Compactor` already exists as prior art. | M |
 

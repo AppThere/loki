@@ -11,6 +11,7 @@
 
 mod color_codec;
 mod comments;
+mod containers;
 mod decode;
 mod incremental;
 #[cfg(feature = "serde")]

@@ -83,20 +83,14 @@ pub(super) fn map_loro_block(map: &LoroMap) -> Result<Block, BridgeError> {
         // stub written before this mapping has no skeleton and falls back to a
         // rule inside `read_table`.
         BLOCK_TYPE_TABLE => Ok(super::table::read_table(map)),
-        // Legacy stubs: blocks written by bridge versions that predate the
-        // opaque-snapshot scheme carry no content and cannot be recovered.
-        BLOCK_TYPE_BULLET_LIST => {
-            tracing::debug!("TODO/stub: loro bridge bullet list");
-            Ok(Block::HorizontalRule)
-        }
-        BLOCK_TYPE_ORDERED_LIST => {
-            tracing::debug!("TODO/stub: loro bridge ordered list");
-            Ok(Block::HorizontalRule)
-        }
-        BLOCK_TYPE_FIGURE => {
-            tracing::debug!("TODO/stub: loro bridge figure");
-            Ok(Block::HorizontalRule)
-        }
+        // Native container mappings (metadata + live nested block lists).
+        // Legacy stubs with no content lists fall back to a rule inside
+        // `read_container`.
+        BLOCK_TYPE_BULLET_LIST
+        | BLOCK_TYPE_ORDERED_LIST
+        | BLOCK_TYPE_BLOCKQUOTE
+        | BLOCK_TYPE_DIV
+        | BLOCK_TYPE_FIGURE => Ok(super::containers::read_container(&block_type, map)),
         _ => {
             let inlines = reconstruct_inlines(map)?;
             if inlines.is_empty() {

@@ -81,6 +81,7 @@ pub const BLOCK_TYPE_FIGURE: &str = "figure";
 pub const BLOCK_TYPE_CODE_BLOCK: &str = "code_block";
 pub const BLOCK_TYPE_HR: &str = "hr";
 pub const BLOCK_TYPE_BLOCKQUOTE: &str = "blockquote";
+pub const BLOCK_TYPE_DIV: &str = "div";
 pub const BLOCK_TYPE_STYLED_PARA: &str = "styled_para";
 /// Block preserved as an opaque JSON snapshot (see `loro_bridge::opaque`).
 /// Used for block types without a native CRDT mapping so that round-trips
@@ -105,6 +106,25 @@ pub const KEY_TABLE_SKELETON: &str = "table_skeleton";
 /// the shared block path). Re-attached to the [`KEY_TABLE_SKELETON`] cells on
 /// read by the same traversal order.
 pub const KEY_TABLE_CELLS: &str = "table_cells";
+
+/// Key for the JSON structural metadata of a native container block (see
+/// `loro_bridge::containers`): the [`ListAttributes`] of a
+/// [`BLOCK_TYPE_ORDERED_LIST`], the `NodeAttr` of a [`BLOCK_TYPE_DIV`], or the
+/// `(NodeAttr, short caption)` pair of a [`BLOCK_TYPE_FIGURE`].
+/// [`BLOCK_TYPE_BULLET_LIST`] and [`BLOCK_TYPE_BLOCKQUOTE`] carry no metadata.
+pub const KEY_CONTAINER_META: &str = "container_meta";
+
+/// Key for the live item contents of a native list block — a movable list with
+/// one entry per list item, each entry itself a movable list of that item's
+/// blocks (written via the shared block path, like [`KEY_TABLE_CELLS`]).
+pub const KEY_LIST_ITEMS: &str = "list_items";
+
+/// Key for the live child blocks of a native container block (block-quote /
+/// div children, figure content) — a movable list of blocks.
+pub const KEY_CHILD_BLOCKS: &str = "child_blocks";
+
+/// Key for the live caption body blocks of a native [`BLOCK_TYPE_FIGURE`].
+pub const KEY_CAPTION_BLOCKS: &str = "caption_blocks";
 
 // -----------------------------------------------------------------------------
 // CharProps Mark Keys
