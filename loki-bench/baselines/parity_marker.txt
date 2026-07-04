@@ -1,0 +1,16 @@
+# loki-bench CPU/GPU parity cadence marker (Spec 06 M6 / §12).
+#
+# Records the Vello version the CPU/GPU parity check was last CONFIRMED against on
+# GPU hardware. `parity_status` compares this to the pinned `vello` in Cargo.lock
+# and flags a version bump as DUE (the mechanical §12 trigger).
+#
+# NOT YET CONFIRMED. The parity CHECK needs a GPU and Spec 02's `vello_cpu` render
+# path (audit BM-3), so no on-device run exists yet. Until one does, the cadence
+# tool correctly reports DUE for the current pin (vello 0.6.0). After a passing
+# on-device parity run, record the confirmed version (and note date/device/
+# tolerance) with:
+#
+#   cargo bench -p loki-bench --bench parity_status -- --update
+#
+# There is deliberately no `vello_version` line below yet → status is
+# "never confirmed", which is the honest current state.

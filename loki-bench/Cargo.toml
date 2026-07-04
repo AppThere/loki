@@ -51,6 +51,10 @@ name = "device_rss"
 harness = false
 
 [[bench]]
+name = "parity_status"
+harness = false
+
+[[bench]]
 name = "portable_style_resolution"
 harness = false
 

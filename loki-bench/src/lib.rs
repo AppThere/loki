@@ -43,6 +43,7 @@ mod baseline;
 mod budget;
 mod leak;
 mod memory;
+mod parity;
 mod rss;
 
 pub use axis::{Axis, Metric};
@@ -52,6 +53,10 @@ pub use baseline::{
 pub use budget::{BudgetStatus, Budgets, check, headroom_frac};
 pub use leak::{LeakVerdict, ResidualStats, classify_leak, residual_after};
 pub use memory::{AllocStats, measure};
+pub use parity::{
+    ParityStatus, confirmed_version_from_marker, parity_status, render_marker,
+    vello_version_from_lock,
+};
 pub use rss::{current_rss_bytes, parse_status_kib, peak_rss_bytes};
 
 /// Re-exported so [`dhat_global_allocator!`] can name `dhat` from any bench

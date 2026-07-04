@@ -73,7 +73,22 @@ The committed budgets are **agent-provisional** — they under-count real device
 (no GPU textures); see [`docs/adr/spec-06-calibration.md`](../docs/adr/spec-06-calibration.md)
 for the recalibration steps on Kevin's hardware (audit BM-14).
 
-## Not yet (later milestones)
+## Discipline + parity cadence (M6)
 
-The CPU/GPU parity cadence (M6), blocked on Spec 02 landing the `vello_cpu` CPU
-render path (audit finding BM-3).
+The tracked-not-gated discipline and the CPU/GPU parity cadence are written down
+in [`docs/adr/spec-06-discipline.md`](../docs/adr/spec-06-discipline.md). The "on
+every Vello bump" trigger is mechanical:
+
+```bash
+cargo bench -p loki-bench --bench parity_status              # DUE if pinned vello != last confirmed
+cargo bench -p loki-bench --bench parity_status -- --update  # record a confirmed run (after on-device pass)
+```
+
+The parity *check* it prompts needs a GPU + Spec 02's `vello_cpu` path (BM-3), so
+the marker is currently unconfirmed and the tool reports `[DUE]`.
+
+## Status
+
+Spec 06 M1–M6 are shipped for the agent-runnable scope. Device-/upstream-gated
+remainders: GPU frame-time execution, on-device RSS recalibration (BM-14), and the
+`vello_cpu` render proxy + parity-check execution (BM-3, gated on Spec 02).

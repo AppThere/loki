@@ -220,10 +220,25 @@ so a naive inspector-open over a deep, wide catalog is the thing to measure.
    frame-time** stays device-only (wgpu timestamp queries; `device_frame_time`
    behind the `device` feature) — the one M5 metric that cannot execute or be
    verified headless, documented for the on-device pass.
-6. **M6 — Discipline + parity cadence.** *Partly blocked.* The tracked-not-gated
-   discipline (§11) is pure documentation and ready; the parity cadence (§12) is blocked
-   on Spec 02's `vello_cpu` path existing (BM-3) and needs a GPU, so it lands with M5's
-   device work.
+6. **M6 — Discipline + parity cadence.** ✅ **Shipped.** The tracked-not-gated
+   discipline (§11) and the CPU/GPU parity cadence (§12) are written down in
+   [spec-06-discipline.md](spec-06-discipline.md): the before/after-change
+   run→review→intentional-update workflow over the committed artifacts, and the
+   parity triggers + actionable divergence response. The §12 "on every Vello bump"
+   trigger is made **mechanical**: the `parity` module (pure `vello_version_from_lock`
+   / `parity_status` / marker parse+render, 6 tests) drives the `parity_status`
+   bench, which reads the pinned `vello` (0.6.0) from `Cargo.lock`, compares it to
+   the committed `parity_marker.txt`, and flags a bump as `[DUE]` — headless, so the
+   trigger is verifiable in the agent. **Honest state:** the parity *check* still
+   needs a GPU + Spec 02's `vello_cpu` path (BM-3), so the marker is deliberately
+   **unconfirmed** and the tool correctly reports `[DUE]` for the current pin; the
+   trigger + process are in place, the check executes once Spec 02 lands the CPU
+   path.
+
+**Spec 06 status: M1–M6 all shipped** (agent-runnable scope). The only work that
+remains is genuinely device-/upstream-gated: GPU frame-time execution (M5, needs a
+GPU), on-device RSS recalibration (BM-14), and the `vello_cpu` render-cost proxy +
+parity-check execution (BM-3, gated on Spec 02).
 
 **Prerequisite call-outs** (so they are not discovered late): `dhat` integration and a
 baseline/diff mechanism (M1/M3, greenfield); the **scale corpus** generator, especially
