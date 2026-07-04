@@ -17,6 +17,11 @@
 
 #![forbid(unsafe_code)]
 
+// The shared Android entry-point macro. `#[macro_export]` hoists `android_main!`
+// to the crate root (`loki_app_shell::android_main!`). The macro body's `unsafe`
+// tokens are emitted into the *caller*, so this crate stays `forbid(unsafe_code)`.
+mod android;
+
 pub mod new_document;
 pub mod recent_documents;
 pub mod spell;

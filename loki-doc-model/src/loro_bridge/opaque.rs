@@ -4,10 +4,10 @@
 //! Opaque-snapshot preservation for blocks the Loro schema cannot represent.
 //!
 //! The CRDT schema flattens paragraph content into a [`loro::LoroText`] with
-//! marks, which cannot carry structured content (tables, lists, figures,
-//! footnote bodies, inline images, fields, math). Before this module existed,
-//! such blocks were written as empty stubs and read back as
-//! `Block::HorizontalRule` — i.e. a single edit cycle destroyed them.
+//! marks, which cannot carry most structured content (lists, figures, footnote
+//! bodies, fields, math; tables have their own native mapping in `table.rs`).
+//! Before this module existed, such blocks were written as empty stubs and read
+//! back as `Block::HorizontalRule` — i.e. a single edit cycle destroyed them.
 //!
 //! Instead, any block that cannot round-trip through the text schema is
 //! serialized to JSON (via the model's `serde` derives) and stored verbatim
@@ -15,6 +15,16 @@
 //! original [`Block`]. Opaque blocks render normally but are not
 //! collaboratively editable from within; converting them to native CRDT
 //! mappings is tracked as TODO(loro-bridge) work.
+//!
+//! Inline objects are migrating off this fallback one variant at a time. A
+//! *top-level* inline image ([`MARK_IMAGE`][crate::loro_schema::MARK_IMAGE]) or
+//! footnote/endnote ([`MARK_NOTE`][crate::loro_schema::MARK_NOTE]) is now mapped
+//! natively — an
+//! [`OBJECT_REPLACEMENT_CHAR`][crate::loro_schema::OBJECT_REPLACEMENT_CHAR]
+//! anchor carries the object as a mark — so it stays a live, positioned,
+//! deletable inline (see `inlines::write_inline_object`). The same object
+//! *nested* inside a wrapper or run is flattened by the text write path, so its
+//! block still takes the opaque path.
 
 use super::BridgeError;
 use crate::content::block::Block;
@@ -35,7 +45,28 @@ pub(super) fn block_round_trips_as_text(block: &Block) -> bool {
 }
 
 fn inlines_round_trip(inlines: &[Inline]) -> bool {
-    inlines.iter().all(|inline| match inline {
+    inlines.iter().all(inline_round_trips_top)
+}
+
+/// Top-level inline (a direct child of the paragraph's inline list).
+///
+/// A bare image or footnote/endnote here is mapped natively by the write path —
+/// an [`OBJECT_REPLACEMENT_CHAR`][crate::loro_schema::OBJECT_REPLACEMENT_CHAR]
+/// anchor carrying the object as a mark — so the paragraph stays live-editable
+/// instead of collapsing to an opaque snapshot. This requires `serde` (the
+/// snapshot format); without it the object is not representable.
+fn inline_round_trips_top(inline: &Inline) -> bool {
+    match inline {
+        Inline::Image(..) | Inline::Note(..) => cfg!(feature = "serde"),
+        other => inline_round_trips_nested(other),
+    }
+}
+
+/// Inline nested inside a wrapper or styled run. The write path flattens these
+/// to plain text, so any structured object here (including a nested image)
+/// cannot survive natively and forces the whole block to an opaque snapshot.
+fn inline_round_trips_nested(inline: &Inline) -> bool {
+    match inline {
         Inline::Str(_)
         | Inline::Space
         | Inline::SoftBreak
@@ -50,18 +81,19 @@ fn inlines_round_trip(inlines: &[Inline]) -> bool {
         | Inline::SmallCaps(inner)
         | Inline::Quoted(_, inner)
         | Inline::Span(_, inner)
-        | Inline::Link(_, inner, _) => inlines_round_trip(inner),
-        Inline::StyledRun(run) => inlines_round_trip(&run.content),
+        | Inline::Link(_, inner, _) => inner.iter().all(inline_round_trips_nested),
+        Inline::StyledRun(run) => run.content.iter().all(inline_round_trips_nested),
         // Comment and bookmark anchors carry no body text and have always
         // been dropped by the text flattening; treating them as representable
         // keeps the vast majority of paragraphs editable.
         // TODO(loro-bridge): preserve comment/bookmark anchors as marks.
         Inline::Comment(_) | Inline::Bookmark(_, _) => true,
-        // Note (footnote/endnote bodies), Image, Field, Math, RawInline,
-        // Cite — structured content the flat text cannot carry. The whole
-        // containing block is preserved as an opaque snapshot instead.
+        // Nested Note/Image, Field, Math, RawInline, Cite — structured content
+        // the flat text cannot carry (and, when nested, the native anchor path
+        // does not reach it). The whole containing block is preserved as an
+        // opaque snapshot instead.
         _ => false,
-    })
+    }
 }
 
 /// Writes `block` into `map` as an opaque JSON snapshot.

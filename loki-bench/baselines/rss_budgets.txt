@@ -1,0 +1,6 @@
+# loki-bench per-tier peak-RSS budgets (Spec 06 M5 / §9, bytes).
+# Review targets, not gates. Recalibrate on device: see spec-06-calibration.md
+# tier  budget_bytes
+large                          36089856
+medium                         19101696
+small                          14573568

@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use loro::{LoroDoc, LoroText, LoroValue, TextDelta};
 
 use super::{MutationError, get_loro_text_for_block};
+#[cfg(feature = "serde")]
+use crate::content::inline::Inline;
 use crate::loro_schema::CHAR_MARK_KEYS;
 
 /// Inserts `text` at UTF-8 `byte_offset` into the `LoroText` for the block
@@ -162,6 +164,24 @@ pub fn mark_text(
     // coordinate space. The non-suffixed mark() uses unicode character positions.
     text.mark_utf8(byte_start..byte_end, mark_key, mark_value)
         .map_err(MutationError::from)
+}
+
+/// Inserts an inline image at UTF-8 `byte_offset` in top-level block
+/// `block_index` — a thin wrapper over [`super::insert_inline_image_at`] with a
+/// flat [`super::BlockPath`]. See that function for the encoding and errors.
+#[cfg(feature = "serde")]
+pub fn insert_inline_image(
+    loro: &LoroDoc,
+    block_index: usize,
+    byte_offset: usize,
+    image: &Inline,
+) -> Result<(), MutationError> {
+    super::insert_inline_image_at(
+        loro,
+        &super::BlockPath::block(block_index),
+        byte_offset,
+        image,
+    )
 }
 
 /// Returns the value of a named mark at a UTF-8 byte offset within a block,

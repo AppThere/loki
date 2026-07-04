@@ -90,6 +90,22 @@ pub const BLOCK_TYPE_OPAQUE: &str = "opaque";
 /// Key for the serialized JSON snapshot of a [`BLOCK_TYPE_OPAQUE`] block.
 pub const KEY_OPAQUE_JSON: &str = "opaque_json";
 
+/// Key (within a [`BLOCK_TYPE_TABLE`] block map) for the table's structural
+/// skeleton — a `serde`-JSON snapshot of the whole `Table` **with every cell's
+/// blocks emptied**. Carries the grid (col specs, widths), section/row layout,
+/// spans, cell/row props, borders, caption, and attributes. Cell *content*
+/// lives separately under [`KEY_TABLE_CELLS`] as live CRDT containers, so cell
+/// text round-trips natively (and concurrent edits to different cells merge)
+/// instead of as one opaque blob.
+pub const KEY_TABLE_SKELETON: &str = "table_skeleton";
+
+/// Key (within a [`BLOCK_TYPE_TABLE`] block map) for the live cell contents — a
+/// movable list with one entry per cell (in head → bodies → foot, row-major
+/// order), each entry itself a movable list of the cell's blocks (written via
+/// the shared block path). Re-attached to the [`KEY_TABLE_SKELETON`] cells on
+/// read by the same traversal order.
+pub const KEY_TABLE_CELLS: &str = "table_cells";
+
 // -----------------------------------------------------------------------------
 // CharProps Mark Keys
 // -----------------------------------------------------------------------------
@@ -118,6 +134,47 @@ pub const MARK_KERNING: &str = "kerning";
 /// run-level style references survive Loro round-trips.
 pub const MARK_CHAR_STYLE_ID: &str = "char_style_id";
 pub const MARK_OUTLINE: &str = "outline";
+
+// -----------------------------------------------------------------------------
+// Inline objects (anchored by a placeholder char + a data-bearing mark)
+// -----------------------------------------------------------------------------
+
+/// Object-replacement character (U+FFFC) — the in-text anchor for an inline
+/// object whose structured data is carried by a mark over the single anchor
+/// position. The anchor occupies one Unicode scalar so the object is a
+/// discrete, positioned, deletable element in the flat text stream.
+pub const OBJECT_REPLACEMENT_CHAR: char = '\u{FFFC}';
+
+/// String form of [`OBJECT_REPLACEMENT_CHAR`] for `LoroText::insert`.
+pub const OBJECT_REPLACEMENT_STR: &str = "\u{FFFC}";
+
+/// Inline image data: a `serde`-JSON snapshot of the `Inline::Image`, carried
+/// as a mark over a single [`OBJECT_REPLACEMENT_CHAR`] anchor so that
+/// image-bearing paragraphs round-trip *natively* (the image is a live,
+/// positioned inline object) instead of as opaque block snapshots.
+pub const MARK_IMAGE: &str = "image";
+
+/// Inline footnote/endnote reference: carried as a mark over a single
+/// [`OBJECT_REPLACEMENT_CHAR`] anchor. The value is a `serde`-JSON
+/// `(NoteKind, usize)` pair — the note's kind and the index of its **body** in
+/// the block's [`KEY_NOTES`] container. The `usize` index also makes each note's
+/// mark unique, so adjacent notes do not merge into one rich-text delta span.
+///
+/// The body itself is a **live CRDT container** (not a JSON blob in the mark),
+/// so footnote text is editable and mergeable like a table cell's.
+pub const MARK_NOTE: &str = "note";
+
+/// Key (within a paragraph-like block's map) for the block's note bodies — a
+/// movable list with one entry per [`MARK_NOTE`] anchor in the block, each a
+/// movable list of the note body's blocks (written via the shared block path).
+/// Indexed by the `usize` carried in each anchor's [`MARK_NOTE`] mark.
+pub const KEY_NOTES: &str = "notes";
+
+/// Every inline-object anchor mark key (carried over a single
+/// [`OBJECT_REPLACEMENT_CHAR`]). Registered with non-expanding behaviour and
+/// shared by the write/read paths. Keep in sync as new inline objects migrate
+/// off the opaque-snapshot fallback.
+pub const INLINE_OBJECT_MARK_KEYS: &[&str] = &[MARK_IMAGE, MARK_NOTE];
 
 /// Every character-level mark key (formatting that lives on a text range).
 ///

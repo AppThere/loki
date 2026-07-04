@@ -1,0 +1,94 @@
+[package]
+name = "loki-bench"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Shared benchmarking & continuous-memory-tracking harness for the AppThere Loki suite — Spec 06. Sorts every bench onto one of two axes: portable (headless: allocation bytes/counts, op cost) and device-bound (GPU frame-time, peak RSS; hardware-only)."
+repository = "https://github.com/appthere/loki"
+keywords = ["benchmarking", "memory", "profiling", "loki"]
+categories = ["development-tools::profiling"]
+
+[features]
+default = []
+# Marks the device-bound axis (GPU frame-time, real peak RSS). Off by default so
+# the portable set builds and runs headless in the agent environment with no GPU
+# — the device benches are hardware-only (Spec 06 §5). The GPU/RSS measurement
+# itself lands in Spec 06 M5; this feature only gates the axis today.
+device = []
+
+[dependencies]
+# Rust-native heap profiler: the portable allocation bytes/counts signal that
+# backs continuous memory tracking (Spec 06 §5/§10, decision D1).
+dhat = "0.3"
+# Typed errors for baseline-file parsing (workspace convention: thiserror, no anyhow).
+thiserror = { workspace = true }
+
+[dev-dependencies]
+# Statistical timed-bench harness — variance-robust, suits the noisy local
+# environment (Spec 06 §10).
+criterion = "0.8"
+# The workloads the portable benches drive (Spec 06 §6). Dev-deps so they build
+# only for the bench targets, never for the harness library itself.
+loki-doc-model = { path = "../loki-doc-model" }
+loki-layout = { path = "../loki-layout" }
+loki-ooxml = { path = "../loki-ooxml" }
+loki-odf = { path = "../loki-odf" }
+
+[[bench]]
+name = "portable_smoke"
+harness = false
+
+[[bench]]
+name = "portable_alloc"
+harness = false
+
+[[bench]]
+name = "device_frame_time"
+harness = false
+
+[[bench]]
+name = "device_rss"
+harness = false
+
+[[bench]]
+name = "parity_status"
+harness = false
+
+[[bench]]
+name = "portable_style_resolution"
+harness = false
+
+[[bench]]
+name = "portable_layout"
+harness = false
+
+[[bench]]
+name = "portable_model"
+harness = false
+
+[[bench]]
+name = "portable_io"
+harness = false
+
+[[bench]]
+name = "portable_export"
+harness = false
+
+[[bench]]
+name = "arc_steady_state"
+harness = false
+
+[[bench]]
+name = "baseline"
+harness = false
+
+[[bench]]
+name = "leak_detection"
+harness = false
+
+[[bench]]
+name = "leak_loro_history"
+harness = false
+
+[package.metadata.docs.rs]
+all-features = true

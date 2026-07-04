@@ -149,9 +149,18 @@ pub mod loro_bridge;
 pub use loro_bridge::{BridgeError, IncrementalReader, document_to_loro, loro_to_document};
 pub mod loro_mutation;
 pub use loro_mutation::{
+    BlockPath, PathStep, delete_text_at, get_block_text_at, get_mark_at_path, insert_text_at,
+    mark_text_at,
+};
+pub use loro_mutation::{
     MutationError, delete_text, get_block_alignment, get_block_style_name, get_block_text,
-    get_mark_at, insert_text, mark_text, merge_block, replace_text, set_block_alignment,
-    set_block_style, set_block_type_heading, set_block_type_para, split_block,
+    get_mark_at, insert_text, mark_text, merge_block, merge_block_at, replace_text,
+    set_block_alignment, set_block_style, set_block_type_heading, set_block_type_para, split_block,
+    split_block_at,
+};
+#[cfg(feature = "serde")]
+pub use loro_mutation::{
+    insert_block_after, insert_inline_image, insert_inline_image_at, insert_inline_note_at,
 };
 pub mod error;
 pub mod io;
@@ -171,7 +180,7 @@ pub use content::attr::{ExtensionBag, ExtensionKey, NodeAttr};
 pub use content::{Block, Inline};
 pub use layout::Section;
 pub use meta::DocumentMeta;
-pub use style::{StyleCatalog, StyleId};
+pub use style::{Provenance, Resolved, StyleCatalog, StyleId};
 
 /// Derive-macro re-exports (serde support is feature-gated).
 #[cfg(feature = "serde")]

@@ -8,6 +8,7 @@
 use dioxus::prelude::*;
 
 use crate::components::platform::Platform;
+use crate::responsive::use_breakpoint;
 use crate::tokens::colors::{
     COLOR_BORDER_CHROME, COLOR_SURFACE_CHROME, COLOR_TEXT_ACCENT, COLOR_TEXT_ON_CHROME,
     COLOR_TEXT_ON_CHROME_SECONDARY,
@@ -62,6 +63,9 @@ pub fn AtTitleBar(props: AtTitleBarProps) -> Element {
     } else {
         "transparent"
     };
+
+    // Compact (phone-width): drop redundant chrome so the title isn't crowded.
+    let compact = use_breakpoint().is_compact();
 
     let title_text = match &props.document_title {
         Some(t) if props.is_dirty => format!("• {t}"),
@@ -153,8 +157,10 @@ pub fn AtTitleBar(props: AtTitleBarProps) -> Element {
                 }
             }
 
-            // App name in top-right corner when a document is open
-            if props.document_title.is_some() {
+            // App name in top-right corner when a document is open. Hidden at
+            // Compact width — the app icon already identifies the app, and the
+            // narrow title bar needs the space for the document title.
+            if props.document_title.is_some() && !compact {
                 span {
                     style: format!(
                         "font-size: {size}px; font-weight: {weight}; \

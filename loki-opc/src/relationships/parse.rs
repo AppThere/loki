@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
 
 //! Parses a `.rels` part into `Relationship` records using `quick-xml`'s
 //! event-mode reader.

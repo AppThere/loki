@@ -21,6 +21,7 @@ pub(super) mod media;
 mod metadata;
 mod numbering;
 mod rels;
+mod run_props;
 mod section;
 mod settings;
 mod style_props;

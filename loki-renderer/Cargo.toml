@@ -10,7 +10,6 @@ appthere-canvas   = { workspace = true }
 loki-doc-model    = { path = "../loki-doc-model" }
 loki-layout       = { path = "../loki-layout" }
 loki-vello        = { path = "../loki-vello" }
-appthere-ui       = { path = "../appthere-ui" }
 dioxus            = { version = "=0.7.9", features = ["native"] }
 # CustomPaintSource / CustomPaintCtx / TextureHandle / DeviceHandle for LokiPageSource.
 anyrender_vello   = "0.6.2"

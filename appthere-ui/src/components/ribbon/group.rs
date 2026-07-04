@@ -38,9 +38,11 @@ pub fn AtRibbonGroup(
         div {
             role: "group",
             aria_label: aria_label,
-            // COMPAT(dioxus-native): position: absolute is unsupported in Blitz.
             // Group label rendered as a flex column child below the buttons
-            // rather than absolutely positioned at the group bottom.
+            // rather than absolutely positioned at the group bottom. (Block-level
+            // position: absolute is now confirmed working in Blitz — see
+            // CLAUDE.md "Confirmed CSS properties" — so this in-flow layout is a
+            // deliberate choice, no longer a Blitz limitation.)
             style: format!(
                 "display: flex; flex-direction: column; align-items: center; \
                  height: 100%; padding: 0 {p}px; \

@@ -29,7 +29,7 @@
 use loki_doc_model::loro_schema::{
     MARK_BOLD, MARK_ITALIC, MARK_STRIKETHROUGH, MARK_UNDERLINE, MARK_VERTICAL_ALIGN,
 };
-use loki_doc_model::{MutationError, get_block_text, get_mark_at, mark_text};
+use loki_doc_model::{BlockPath, MutationError, get_block_text_at, get_mark_at_path, mark_text_at};
 use loro::{LoroDoc, LoroValue};
 
 use crate::editing::cursor::CursorState;
@@ -93,46 +93,48 @@ pub fn toggle_subscript(
 
 // ── Range resolution ──────────────────────────────────────────────────────────
 
-/// Resolves the format range from cursor state: `(block_index, byte_start, byte_end)`.
+/// Resolves the format range from cursor state: `(BlockPath, byte_start, byte_end)`.
 ///
-/// With a selection spanning a single block, the selection range is returned.
-/// With a point cursor (no selection), the word at the cursor is expanded.
-/// Cross-block selections are clamped to the focus block.
+/// The [`BlockPath`] addresses the focus paragraph — top-level or nested inside
+/// a table cell / note body — so formatting applies to the right container.
+/// With a selection within a single paragraph, the selection range is returned;
+/// with a point cursor, the word at the cursor is expanded; a cross-paragraph
+/// selection is clamped to the focus paragraph.
 ///
 /// Returns `None` when there is no valid cursor position.
 ///
-/// # Limitation
-///
-/// // TODO(formatting): Extend to multi-block selections by iterating blocks
-/// // between anchor and focus and applying the mark to each independently.
-pub fn resolve_format_range(loro: &LoroDoc, cursor: &CursorState) -> Option<(usize, usize, usize)> {
+/// // TODO(formatting): extend to multi-block selections.
+pub fn resolve_format_range(
+    loro: &LoroDoc,
+    cursor: &CursorState,
+) -> Option<(BlockPath, usize, usize)> {
     let focus = cursor.focus.as_ref()?;
-    let block_index = focus.paragraph_index;
+    let path = focus.block_path();
 
     if cursor.has_selection() {
         let anchor = cursor.anchor.as_ref()?;
-        if anchor.paragraph_index == focus.paragraph_index {
+        // Same paragraph requires the same index *and* the same nesting path
+        // (two cells of one table share the root index but differ by path).
+        if anchor.paragraph_index == focus.paragraph_index && anchor.path == focus.path {
             let (start, end) = if anchor.byte_offset <= focus.byte_offset {
                 (anchor.byte_offset, focus.byte_offset)
             } else {
                 (focus.byte_offset, anchor.byte_offset)
             };
             if start < end {
-                return Some((block_index, start, end));
+                return Some((path, start, end));
             }
-        } else {
-            // Cross-block: use focus block from 0 to focus offset as a best-effort.
-            if focus.byte_offset > 0 {
-                return Some((block_index, 0, focus.byte_offset));
-            }
+        } else if focus.byte_offset > 0 {
+            // Cross-paragraph: clamp to the focus paragraph as a best-effort.
+            return Some((path, 0, focus.byte_offset));
         }
     }
 
     // No selection — expand to the word at cursor.
-    let text = get_block_text(loro, block_index);
+    let text = get_block_text_at(loro, &path);
     let (word_start, word_end) = word_bounds_at(&text, focus.byte_offset);
     if word_start < word_end {
-        Some((block_index, word_start, word_end))
+        Some((path, word_start, word_end))
     } else {
         None
     }
@@ -146,12 +148,12 @@ fn toggle_string_mark(
     mark_key: &str,
     enable_value: &str,
 ) -> Result<ToggleResult, MutationError> {
-    let (block_index, byte_start, byte_end) = match resolve_format_range(loro, cursor) {
+    let (path, byte_start, byte_end) = match resolve_format_range(loro, cursor) {
         Some(r) => r,
         None => return Ok(false),
     };
     let active = matches!(
-        get_mark_at(loro, block_index, byte_start, mark_key)?,
+        get_mark_at_path(loro, &path, byte_start, mark_key)?,
         Some(LoroValue::String(_))
     );
     let new_value = if active {
@@ -159,7 +161,7 @@ fn toggle_string_mark(
     } else {
         LoroValue::from(enable_value.to_string())
     };
-    mark_text(loro, block_index, byte_start, byte_end, mark_key, new_value)?;
+    mark_text_at(loro, &path, byte_start, byte_end, mark_key, new_value)?;
     Ok(!active)
 }
 
@@ -168,13 +170,13 @@ fn toggle_bool_mark(
     cursor: &CursorState,
     mark_key: &str,
 ) -> Result<ToggleResult, MutationError> {
-    let (block_index, byte_start, byte_end) = match resolve_format_range(loro, cursor) {
+    let (path, byte_start, byte_end) = match resolve_format_range(loro, cursor) {
         Some(r) => r,
         None => return Ok(false),
     };
 
     let active = matches!(
-        get_mark_at(loro, block_index, byte_start, mark_key)?,
+        get_mark_at_path(loro, &path, byte_start, mark_key)?,
         Some(LoroValue::Bool(true))
     );
 
@@ -183,7 +185,7 @@ fn toggle_bool_mark(
     } else {
         LoroValue::Bool(true)
     };
-    mark_text(loro, block_index, byte_start, byte_end, mark_key, new_value)?;
+    mark_text_at(loro, &path, byte_start, byte_end, mark_key, new_value)?;
     Ok(!active)
 }
 
@@ -192,13 +194,13 @@ fn toggle_vertical_align(
     cursor: &CursorState,
     target_str: &str,
 ) -> Result<ToggleResult, MutationError> {
-    let (block_index, byte_start, byte_end) = match resolve_format_range(loro, cursor) {
+    let (path, byte_start, byte_end) = match resolve_format_range(loro, cursor) {
         Some(r) => r,
         None => return Ok(false),
     };
 
     let already_active = matches!(
-        get_mark_at(loro, block_index, byte_start, MARK_VERTICAL_ALIGN)?,
+        get_mark_at_path(loro, &path, byte_start, MARK_VERTICAL_ALIGN)?,
         Some(LoroValue::String(ref s)) if s.as_str() == target_str
     );
 
@@ -209,9 +211,9 @@ fn toggle_vertical_align(
     } else {
         LoroValue::from(target_str.to_string())
     };
-    mark_text(
+    mark_text_at(
         loro,
-        block_index,
+        &path,
         byte_start,
         byte_end,
         MARK_VERTICAL_ALIGN,

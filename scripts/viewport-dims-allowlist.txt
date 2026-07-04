@@ -1,0 +1,8 @@
+# Reviewed exceptions to the viewport-dimension guard
+# (scripts/check-no-hardcoded-viewport-dims.py).
+#
+# One `path:line` per line. `#` starts a comment. Each entry MUST carry a
+# justification. Prefer naming a `const` over an allow-list entry.
+#
+# (no exceptions currently — the one fallback default is the named
+#  DEFAULT_VIEWPORT_HEIGHT_PX constant in editor_canvas.rs)

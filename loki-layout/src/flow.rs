@@ -15,6 +15,8 @@
 mod columns_impl;
 #[path = "flow_comments.rs"]
 mod comments_impl;
+#[path = "flow_editing.rs"]
+mod editing;
 #[path = "flow_float.rs"]
 mod float_impl;
 #[path = "flow_para.rs"]
@@ -128,15 +130,12 @@ pub(super) struct FlowState<'a> {
     pub(super) options: &'a LayoutOptions,
     /// Current y within the current page content area (or canvas).
     pub(super) cursor_y: f32,
-    /// Available width for content.
     pub(super) content_width: f32,
     /// Items accumulating in the current page (or entire canvas for continuous).
     pub(super) current_items: Vec<PositionedItem>,
     /// Completed pages (paginated mode only).
     pub(super) pages: Vec<LayoutPage>,
-    /// Physical page dimensions in points.
     pub(super) page_size: LayoutSize,
-    /// Content-area margins derived from the section's `PageLayout`.
     pub(super) margins: LayoutInsets,
     /// Height of the content area within a page (page_height − v_margins).
     pub(super) page_content_height: f32,
@@ -146,28 +145,22 @@ pub(super) struct FlowState<'a> {
     pub(super) warnings: Vec<LayoutWarning>,
     /// Accumulated horizontal indentation in points.
     pub(super) current_indent: f32,
-    /// Per-list counter arrays. Each entry maps a `ListId` to a 9-element
-    /// array where index = level (0-based) and value = current counter (1-based
-    /// after first advance, 0 = not yet initialised).
+    /// Per-list counters: `ListId` → 9-element array (index = level, value =
+    /// current counter; `0` = not yet initialised).
     pub(super) list_counters: HashMap<ListId, [u32; 9]>,
-    /// The `ListId` of the most recently placed list item, used to detect
-    /// list-id changes and reset counters for the new list.
+    /// `ListId` of the most recently placed list item (to detect list changes).
     pub(super) prev_list_id: Option<ListId>,
-    /// Monotonically-increasing counter for footnotes and endnotes within
-    /// the current section. Incremented by `walk_inlines` when a `Note` is met.
+    /// Footnote/endnote counter for the current section (bumped by `walk_inlines`).
     pub(super) note_counter: u32,
-    /// Footnotes and endnotes collected while flowing the current section.
-    /// Rendered at the end of the section by `flow_footnotes`.
+    /// Footnotes/endnotes collected this section, rendered by `flow_footnotes`.
     pub(super) pending_footnotes: Vec<CollectedNote>,
     /// Paragraph metadata for the current page (block index, layout, origin).
     pub(super) current_paragraphs: Vec<PageParagraphData>,
-    /// Clean-page-top checkpoints recorded during a top-level paginated flow,
-    /// used by incremental relayout. Populated only by [`run_paginated_loop`];
-    /// nested flows (tables, cells, headers) never call it, so it stays empty.
+    /// Clean-page-top checkpoints for incremental relayout; populated only by the
+    /// top-level paginated loop (empty in nested flows).
     pub(super) checkpoints: Vec<PageStart>,
-    /// Number of text columns for this section (`1` = single column). When
-    /// `> 1`, [`content_width`](Self::content_width) holds the *column* width and
-    /// content flows down each column before moving to the next, then the page.
+    /// Number of text columns (`1` = single); when `> 1`,
+    /// [`content_width`](Self::content_width) is the *column* width.
     pub(super) columns: u8,
     /// Gap between adjacent columns in points (meaningful only when `columns > 1`).
     pub(super) column_gap: f32,
@@ -175,33 +168,29 @@ pub(super) struct FlowState<'a> {
     pub(super) column_separator: bool,
     /// 0-based index of the column currently being filled.
     pub(super) col_index: u8,
-    /// Content-area y at which the current column band begins. Normally `0`
-    /// (columns start at the page content top), but a `continuous` section break
-    /// can start a new column band *mid-page* (below the previous section), so
-    /// each column of that band starts here rather than at `0`.
+    /// Content-area y where the current column band begins (`0` normally; mid-page
+    /// for a `continuous` section break that starts a band below the previous one).
     pub(super) column_top_y: f32,
-    /// Index into `current_items` at which the current column's items begin, so
-    /// they can be shifted to the column's horizontal offset when it is finished.
+    /// First `current_items` index of the current column (shifted to its x offset
+    /// when the column finishes).
     pub(super) column_item_start: usize,
-    /// Index into `current_paragraphs` at which the current column's editing
-    /// data begins (parallel to `column_item_start`).
+    /// First `current_paragraphs` index of the current column (parallel to
+    /// `column_item_start`).
     pub(super) column_para_start: usize,
-    /// Document comments (annotation bodies), looked up by id when laying out
-    /// the comment panel. Empty in nested flows (headers/footers, cells).
+    /// Document comments, looked up by id for the gutter panel; empty in nested flows.
     pub(super) comments: &'a [loki_doc_model::content::annotation::Comment],
-    /// Comment anchors (`id`, content-local `y`) recorded on the current page,
-    /// consumed by [`finish_page`] to lay out the gutter comment panel.
+    /// Comment anchors (`id`, content-local `y`) on the current page, consumed by
+    /// [`finish_page`] for the gutter comment panel.
     pub(super) pending_comment_anchors: Vec<(String, f32)>,
-    /// When `true`, paragraphs laid out in this state break over-long words to
-    /// the available width (CSS `overflow-wrap: anywhere`). Set while flowing
-    /// table-cell content so a long word wraps to the column width instead of
-    /// overflowing into the neighbouring cell.
+    /// Break over-long words to the available width (CSS `overflow-wrap: anywhere`);
+    /// set while flowing table-cell content so words wrap to the column width.
     pub(super) break_long_words: bool,
-    /// A float taller than its anchoring paragraph whose remaining vertical
-    /// extent the following paragraphs on this page keep wrapping beside. Set by
-    /// [`para_impl::flow_paragraph`]; reserved/cleared by
-    /// [`float_impl::reserve_active_float`] and on every page boundary.
+    /// A float taller than its anchoring paragraph whose remaining extent the
+    /// following paragraphs keep wrapping beside. Set by `para_impl::flow_paragraph`;
+    /// cleared by `float_impl::reserve_active_float` and on every page boundary.
     pub(super) active_float: Option<float_impl::ActiveFloat>,
+    /// Editing-path context for nested content (see [`editing::NestedEditing`]).
+    pub(super) nested_editing: Option<editing::NestedEditing>,
 }
 
 impl FlowState<'_> {
@@ -220,9 +209,8 @@ impl FlowState<'_> {
 impl<'a> FlowState<'a> {
     /// Advance the counter for `list_id` at `level` and return the new value.
     ///
-    /// - Initialises the counter from `start_value` on first use.
-    /// - Resets all deeper-level counters to 0 so they re-initialise from
-    ///   their own `start_value` when next encountered.
+    /// Initialises from `start_value` on first use; resets all deeper-level
+    /// counters to 0 so they re-initialise from their own `start_value` next.
     pub(super) fn advance_counter(&mut self, list_id: &ListId, level: u8, start_value: u32) -> u32 {
         let counters = self
             .list_counters
@@ -324,6 +312,7 @@ fn new_flow_state<'a>(
         pending_comment_anchors: Vec::new(),
         break_long_words: false,
         active_float: None,
+        nested_editing: None,
     }
 }
 
@@ -382,11 +371,10 @@ fn run_paginated_loop(
 /// Resumes a paginated body flow at `start_block` from a [`FlowCheckpoint`],
 /// for incremental relayout. See [`crate::incremental`].
 ///
-/// Returns the pages produced from `start_block` up to either the end of the
-/// section or the first clean page top where `resync` fires. When it runs to the
-/// end, the trailing footnotes and final partial page are flushed; when it stops
-/// at a resync the current page is empty (a clean page top) and is not flushed,
-/// so the caller can splice the reused suffix without a duplicate page.
+/// Returns the pages produced from `start_block` up to the end of the section or
+/// the first clean page top where `resync` fires. Running to the end flushes the
+/// trailing footnotes and final partial page; stopping at a resync leaves the
+/// empty current page unflushed, so the caller splices the reused suffix cleanly.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn flow_section_resume(
     resources: &mut FontResources,
@@ -439,9 +427,8 @@ pub(crate) fn flow_section_resume(
 /// Returns a [`FlowOutput`] discriminated by layout mode:
 ///
 /// - [`FlowOutput::Pages`]: each page's items are in page-content-area-local
-///   coordinates (origin `(0, 0)` at the content-area top-left). The `margins`
-///   field on each [`LayoutPage`] carries the insets. No further translation
-///   by the caller is needed.
+///   coordinates (origin `(0, 0)` at the content-area top-left); the `margins`
+///   on each [`LayoutPage`] carry the insets. No caller translation needed.
 /// - [`FlowOutput::Canvas`]: all items on a single canvas. In `Pageless` mode
 ///   items are offset by `margins.left`; in `Reflow` mode there is no offset.
 pub fn flow_section(
@@ -545,8 +532,7 @@ fn begin_continuous_section(state: &mut FlowState, section: &Section) {
 ///
 /// Paginated mode only — the non-paginated (reflow/pageless) path flows each
 /// section independently (continuous-scroll has no pages to share). Editing
-/// block indices are group-local (0-based across the group's combined blocks);
-/// the caller globalises them like a single section.
+/// block indices are group-local; the caller globalises them per section.
 pub fn flow_section_group(
     resources: &mut FontResources,
     sections: &[&Section],
@@ -954,9 +940,8 @@ fn substitute_page_fields(blocks: &mut [Block], ctx: &crate::FieldContext) {
 /// per page with a [`crate::FieldContext`] carrying the real page number and
 /// `total_page_count`, so "Page X of Y" chrome renders correctly.
 ///
-/// Items are translated to page-local coordinates:
-/// - Header top: `margins.header`
-/// - Footer top: `page_height - margins.footer - footer_height`
+/// Items are translated to page-local coords: header top `margins.header`;
+/// footer top `page_height - margins.footer - footer_height`.
 pub(crate) fn assign_headers_footers(
     pages: &mut [LayoutPage],
     layout: &PageLayout,
@@ -1145,7 +1130,14 @@ fn flow_footnotes(state: &mut FlowState) {
     for note in notes {
         let mark = format!("{} ", &footnote_mark(note.number));
         let mut first = true;
-        for block in &note.blocks {
+        for (body_block, block) in note.blocks.iter().enumerate() {
+            // Tag body paragraph(s) so a click into the footnote resolves to the
+            // live note-body container.
+            state.nested_editing = Some(editing::NestedEditing::note(
+                note.owner_block_index,
+                note.note_in_block,
+                body_block,
+            ));
             if first {
                 first = false;
                 if let Block::StyledPara(p) = block {
@@ -1158,6 +1150,7 @@ fn flow_footnotes(state: &mut FlowState) {
             flow_block(state, block, 0);
         }
     }
+    state.nested_editing = None;
 }
 
 /// Return the Unicode superscript mark for note number `n`.
@@ -1339,6 +1332,7 @@ fn measure_cell_height(
         // Cell content: break over-long words to the column width (Word).
         break_long_words: true,
         active_float: None,
+        nested_editing: None,
     };
 
     for block in &cell.blocks {
@@ -1479,6 +1473,7 @@ fn flow_cell_blocks(
         // Cell content: break over-long words to the column width (Word).
         break_long_words: true,
         active_float: None,
+        nested_editing: None,
     };
 
     for block in blocks {
@@ -1606,7 +1601,9 @@ fn flow_table(
         }
     }
 
-    // Pass 3: Place and flow cell blocks
+    // Pass 3: Place and flow cell blocks. `cell_flat` counts cells in the bridge's
+    // flat `KEY_TABLE_CELLS` order so cell paragraphs get a matching `PathStep::Cell`.
+    let mut cell_flat = 0usize;
     for (row_idx, row) in rows.iter().enumerate() {
         let row_max_h = row_heights[row_idx];
 
@@ -1674,11 +1671,10 @@ fn flow_table(
             };
 
             let cell_items = if let Some(degrees) = rotation_degrees {
-                // NOTE(cell-rotation): for rotated cells, content is laid out
-                // with width/height swapped, then the RotatedGroup transform
-                // visually rotates the result into the correct orientation.
-                // This approximation works for text runs but may not be pixel-
-                // perfect for complex mixed content.
+                // NOTE(cell-rotation): content laid out width/height-swapped,
+                // then RotatedGroup rotates it (fine for text runs).
+                // TODO(rotated-cell-editing): emits no editing data (the caret
+                // needs the same rotation transform) — cells stay read-only.
                 let rotated_content_width = (cell_height - pad_top - pad_bottom).max(0.0);
                 let inner_items = flow_cell_blocks(
                     state.resources,
@@ -1719,9 +1715,13 @@ fn flow_table(
                 let old_break = state.break_long_words;
                 state.break_long_words = true;
 
-                for block in &cell.blocks {
+                let cell_para_start = state.current_paragraphs.len();
+                for (bi, block) in cell.blocks.iter().enumerate() {
+                    // Tag cell paragraphs so a click resolves to the live cell.
+                    state.nested_editing = Some(editing::NestedEditing::cell(idx, cell_flat, bi));
                     flow_block(state, block, idx);
                 }
+                state.nested_editing = None;
                 state.break_long_words = old_break;
 
                 // If it fits on a single page, apply vertical alignment
@@ -1740,17 +1740,16 @@ fn flow_table(
                         for item in &mut state.current_items[cell_item_start..] {
                             item.translate(0.0, y_offset);
                         }
+                        // Editing origins must follow their translated glyphs so
+                        // the caret in a v-aligned cell lands on the text.
+                        for para in &mut state.current_paragraphs[cell_para_start..] {
+                            para.origin.1 += y_offset;
+                        }
                     }
 
-                    // Clip the cell's content to its box so over-wide content
-                    // (a wide image, or an unbreakable token exceeding the
-                    // column) cannot bleed into neighbouring cells — Word clips
-                    // cell content to the cell boundary. Char-wrapping already
-                    // keeps ordinary text inside the column; this is the safety
-                    // net for the rest. Only single-page cells are clipped here;
-                    // a cell that spilled onto a later page keeps its items
-                    // unwrapped (per-page clipping would need a rect per page —
-                    // see fidelity-status Tables & Images).
+                    // Clip single-page cell content to its box so over-wide
+                    // content can't bleed into neighbours (Word). A cell spilling
+                    // to a later page stays unclipped — see fidelity-status.
                     if state.current_items.len() > cell_item_start {
                         let cell_top_y = if state.page_number == original_row_page {
                             original_row_y_start
@@ -1785,6 +1784,7 @@ fn flow_table(
 
             state.current_indent = old_indent;
             state.content_width = old_width;
+            cell_flat += 1;
         }
 
         let row_page_end = state.page_number;

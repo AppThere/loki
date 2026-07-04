@@ -12,7 +12,7 @@ identified here are independent of that.
 | # | Finding | Severity | Status |
 |---|---------|----------|--------|
 | 1 | Page tiles default to **Hot tier** and only demote on scroll-settle, so an opened-but-unscrolled document keeps a full-resolution texture per page | **Critical** | **Fixed** |
-| 2 | No page virtualization — every page is a mounted tile holding a texture | High | Recommended |
+| 2 | No page virtualization — every page is a mounted tile holding a texture | High | **Fixed** (`virtualize.rs` `visible_window`; `document_view.rs` mounts tiles only near the viewport, placeholders elsewhere) |
 | 3 | Inactive-tab sessions retain the full preserved layout (+ Loro + undo) | Medium | Recommended |
 | 4 | Paragraph shaping cache accumulated across documents; generous cap | Medium | **Fixed** |
 | 5 | Per-tile `FontDataCache` duplicates interned font bytes across tiles | Low | Recommended |
@@ -79,12 +79,13 @@ the editor's layout — see the single-canonical-layout change).
 These need the GPU/app running to validate, so they are written up rather than
 applied blind.
 
-- **Finding 2 — Virtualize page tiles.** `DocumentView` mounts a `PageTile`
-  for *every* page (`for (idx, w, h) in pages` over `0..page_count`). Even Cold,
-  each tile keeps a ~0.75 MB texture, a `FontDataCache`, and component state.
-  Render only the tiles within (hot ∪ warm ∪ a margin) of the viewport and mount
-  lightweight placeholders elsewhere. With Finding 1 fixed the per-tile cost is
-  already much lower, but this removes it for off-screen pages entirely.
+- **Finding 2 — Virtualize page tiles. ✅ FIXED (verified 2026-07-04).** The
+  recommendation below was implemented: `loki-renderer/src/virtualize.rs`
+  (`visible_window`) restricts mounted `PageTile`s to the viewport neighbourhood,
+  and `document_view.rs` mounts lightweight placeholders elsewhere. *Original
+  recommendation:* `DocumentView` mounted a `PageTile` for *every* page; even Cold,
+  each tile kept a ~0.75 MB texture, a `FontDataCache`, and component state — so
+  render only the tiles within (hot ∪ warm ∪ a margin) of the viewport.
 
 - **Finding 3 — Drop preserved layouts for inactive tabs.** `DocSession`
   stashes `paginated_layout: Arc<PaginatedLayout>` for every inactive tab. With

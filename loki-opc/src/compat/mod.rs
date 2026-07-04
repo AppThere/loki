@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
 
 //! Compatibility shims for non-conformant OPC packages produced by real-world
 //! OOXML writers ([MS-OI29500] / [MS-OE376]).

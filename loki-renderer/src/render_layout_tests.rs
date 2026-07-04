@@ -82,6 +82,7 @@ fn one_para_reflow(text: &str, origin: (f32, f32)) -> RenderLayout {
             items: vec![],
             paragraphs: vec![PageParagraphData {
                 block_index: 3,
+                path: vec![],
                 layout: std::sync::Arc::new(para),
                 origin,
             }],
@@ -130,4 +131,37 @@ fn render_mode_width_tolerant_equality() {
     assert!(a.matches(&b));
     assert!(!a.matches(&c));
     assert!(!a.matches(&RenderMode::Paginated));
+}
+
+// ── Spec 03 M4: bounded reflow measure ──────────────────────────────────────
+
+#[test]
+fn narrow_viewport_uses_its_full_width() {
+    // Below the cap the tile tracks the viewport (phones use the whole screen).
+    assert_eq!(reflow_tile_width_px(375.0), 375.0);
+    assert_eq!(reflow_tile_width_px(600.0), 600.0);
+}
+
+#[test]
+fn wide_viewport_caps_the_measure_so_it_can_centre() {
+    // At and beyond the cap the tile stops growing — leaving room for the
+    // renderer's `margin: auto` to centre the reading column.
+    assert_eq!(reflow_tile_width_px(MAX_REFLOW_TILE_PX), MAX_REFLOW_TILE_PX);
+    assert_eq!(reflow_tile_width_px(2560.0), MAX_REFLOW_TILE_PX);
+    // The measure no longer grows with the window — the "cramped"/edge-to-edge
+    // bug (R-6) cannot recur on a wide window.
+    assert_eq!(
+        reflow_content_width_pt(1600.0),
+        reflow_content_width_pt(3000.0)
+    );
+}
+
+#[test]
+fn content_width_is_tile_minus_insets_and_floored() {
+    // Content = tile(px)·PX_TO_PT − 2·padding, in points.
+    let expect = MAX_REFLOW_TILE_PX * PX_TO_PT - 2.0 * REFLOW_PADDING_PT;
+    assert!((reflow_content_width_pt(2000.0) - expect).abs() < 1e-3);
+    // A degenerate (tiny) viewport floors at the engine minimum, never negative.
+    assert_eq!(reflow_content_width_pt(1.0), MIN_REFLOW_CONTENT_PT);
+    assert_eq!(reflow_content_width_pt(0.0), MIN_REFLOW_CONTENT_PT);
 }

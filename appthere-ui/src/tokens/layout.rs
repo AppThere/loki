@@ -40,6 +40,17 @@ pub const PAGE_HEIGHT_PX: f32 = 1123.0;
 /// Vertical gap between stacked pages in the editor scroll canvas (px).
 pub const PAGE_GAP_PX: f32 = 24.0;
 
+/// Horizontal breathing room (CSS px) required on **each** side of the page for
+/// it to count as fitting the viewport — so paginated view is kept only when the
+/// page isn't edge-to-edge. Spec 03 M2 page-fit switch
+/// ([`crate::responsive::resolve_page_fit`]).
+pub const PAGE_FIT_GUTTER_PX: f32 = 24.0;
+
+/// Hysteresis dead-band half-width (CSS px) around the page-fit threshold. A
+/// window dragged to exactly the boundary must cross `threshold ± this` to flip
+/// renderers, so it cannot thrash. Spec 03 M2.
+pub const PAGE_FIT_HYSTERESIS_PX: f32 = 48.0;
+
 /// Standard document page margin in CSS pixels (≈ 1 inch at 96 dpi).
 ///
 /// Used to derive text content width: `PAGE_WIDTH_PX - 2 × PAGE_MARGIN_PX = 650 px`.
@@ -62,8 +73,32 @@ pub const RIBBON_TOTAL_HEIGHT: f32 = RIBBON_TAB_STRIP_HEIGHT + RIBBON_CONTENT_HE
 
 // ── Responsive breakpoints ────────────────────────────────────────────────────
 
-/// Viewport width above which the UI switches to the desktop two-column layout.
+/// Upper bound (exclusive) of the **Compact** window-size class, in CSS px.
+/// Below this the UI is single-column, touch-first, non-paginated by default.
+/// Spec 03 §5.1 tier boundary. The classification lives in
+/// [`crate::responsive::Breakpoint`].
+pub const BREAKPOINT_COMPACT_MAX_PX: f32 = 600.0;
+
+/// Lower bound (inclusive) of the **Expanded** window-size class, in CSS px.
+/// At or above this the UI runs full chrome with side-by-side panels. The
+/// `[BREAKPOINT_COMPACT_MAX_PX, BREAKPOINT_EXPANDED_MIN_PX)` band is **Medium**.
+/// Spec 03 §5.1 tier boundary.
+pub const BREAKPOINT_EXPANDED_MIN_PX: f32 = 1024.0;
+
+/// Viewport width above which the home screen switches to its two-column
+/// layout.
+///
+/// **Deprecated as a general responsive threshold** — Spec 03 unifies window
+/// classification under [`crate::responsive::Breakpoint`] (Compact / Medium /
+/// Expanded at 600 / 1024). This constant remains only for `AtHomeTab`'s
+/// existing row↔column switch; the M5 cross-UI sweep reconciles it onto the
+/// breakpoint system.
 pub const BREAKPOINT_DESKTOP_PX: f32 = 768.0;
 
 /// Maximum width for primary action buttons on desktop (centered, fixed width).
 pub const BUTTON_WIDTH_DESKTOP_MAX: f32 = 320.0;
+
+/// Width (logical px) of a bounded side panel hosted by `AtPanelHost` at the
+/// Medium/Expanded size classes. At Compact the host fills the available width
+/// (a touch-first sheet) instead. See [`crate::AtPanelHost`].
+pub const PANEL_SIDE_WIDTH_PX: f32 = 360.0;

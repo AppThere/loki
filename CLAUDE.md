@@ -82,10 +82,21 @@ These conventions apply to all crates in the workspace.
 - **Error handling:** Use typed error enums with `thiserror`. Do not use `anyhow`
   in library crates. Do not use `.unwrap()` or `.expect()` in library code
   outside of `#[cfg(test)]` blocks.
-- **Unsafe:** `#![forbid(unsafe_code)]` must be present in `lib.rs` for all
-  `appthere-ui` and future library crates.
-- **License header:** Every `.rs` file must begin with:
-  `// SPDX-License-Identifier: Apache-2.0`
+- **Unsafe:** every crate root must carry `#![forbid(unsafe_code)]`. The sole
+  exception is the three Android `cdylib` binaries (`loki-text`,
+  `loki-presentation`, `loki-spreadsheet`): their `#[unsafe(no_mangle)]`
+  `android_main` FFI entry point makes `forbid` impossible, so they use
+  `#![deny(unsafe_code)]` + a scoped `#[allow(unsafe_code)]` (emitted by
+  `loki_app_shell::android_main!`) and are enumerated in
+  `scripts/unsafe-policy-allowlist.txt`. Enforced in CI by
+  `scripts/check-unsafe-policy.py` (Spec 01 audit A-7). New crates must `forbid`.
+- **License header:** Line 1 of every `.rs` file must be the SPDX identifier
+  matching that crate's `Cargo.toml` `license` field, line 2 the copyright.
+  The suite is Apache-2.0 (`// SPDX-License-Identifier: Apache-2.0`), **except
+  `loki-opc`, which is MIT** (`// SPDX-License-Identifier: MIT`) because it is
+  released as a standalone crate — see
+  [docs/adr/0010-per-crate-licensing.md](docs/adr/0010-per-crate-licensing.md).
+  Enforced in CI by `scripts/check-license-headers.py`.
 - **Annotations:**
   - `// COMPAT(dioxus-native): <explanation>` — marks any workaround for a
     Dioxus Native / Blitz CSS or API limitation, including unconfirmed CSS
@@ -132,13 +143,21 @@ lines). The full list and a proposed split strategy live in
 offenders are below. This is a dedicated split-pass backlog, not a per-change
 blocker — but do not *grow* these files or add new ones over the ceiling.
 
-The split pass is **in progress** — **11 of 43 files done** (≈32 remain). Two
-techniques:
+**The ceiling is now mechanically enforced** (Spec 01 audit A-2):
+`scripts/check-file-ceiling.py` (CI) ratchets against
+`scripts/file-ceiling-baseline.txt` — new files must be ≤300, baselined files
+may not grow, and a file split to ≤300 must be removed from the baseline. So the
+backlog can only shrink. When you split a file below the ceiling, drop its line
+with `scripts/check-file-ceiling.py --update` (review the diff).
+
+The split pass is **in progress** — current backlog is the **35** entries in the
+baseline file. Two techniques:
 1. *Inline-test extraction* (safest, no production-code change): move a file's
    `#[cfg(test)] mod tests { … }` into a sibling `<name>_tests.rs` referenced via
    `#[cfg(test)] #[path = "<name>_tests.rs"] mod tests;`. Done 2026-06-21 for
    `block.rs`, `docx/mapper/{paragraph,numbering,mod,table}.rs`, `odt/import.rs`,
-   `odt/mapper/lists.rs`, `layout/result.rs`, `renderer/render_layout.rs` — each
+   `odt/mapper/lists.rs`, `layout/result.rs`, `renderer/render_layout.rs`, and
+   2026-06-28 for `editing/hit_test.rs`, `xml_util.rs`, `pdf/src/page.rs` — each
    was over the ceiling only because of a large inline test module.
 2. *Directory split*: convert `foo.rs` → a `foo/` directory with section-cohesive
    submodules, re-export the public entry points from `foo/mod.rs`, and move the
@@ -153,15 +172,18 @@ techniques:
 
 | File | Current lines | Priority |
 |---|---|---|
-| `loki-layout/src/flow.rs` | 1612 | High |
-| `loki-odf/src/odt/reader/styles.rs` | 1441 | High |
-| `loki-odf/src/odt/reader/document.rs` | 1428 | High |
-| `loki-layout/src/para.rs` | 1278 | High |
-| `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1241 | High |
-| `loki-ooxml/src/docx/write/document.rs` | 1169 | High |
-| `loki-ooxml/src/docx/reader/document.rs` | 1126 | High |
-| `loki-text/src/routes/editor/editor_inner.rs` | 1040 | High |
-| … 24 more (300–600 lines) — see the audit (10 files split 2026-06-21) | | |
+| `loki-layout/src/para.rs` | 1979 | High |
+| `loki-layout/src/flow.rs` | 1953 | High |
+| `loki-odf/src/odt/reader/styles.rs` | 1554 | High |
+| `loki-odf/src/odt/reader/document.rs` | 1494 | High |
+| `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1244 | High |
+| `loki-ooxml/src/docx/reader/document.rs` | 1209 | High |
+| `loki-ooxml/src/docx/write/document.rs` | 1073 | High |
+| `loki-layout/src/resolve.rs` | 984 | High |
+| … 27 more (6 over 600, 21 in 300–600) — see `scripts/file-ceiling-baseline.txt` | | |
+
+*(Sizes above are from `scripts/file-ceiling-baseline.txt`, refreshed 2026-07-04;
+the earlier numbers were stale — several files grew since first baselined.)*
 
 (`odt/mapper/document.rs` (1094 lines) was split into the `odt/mapper/document/`
 directory on 2026-06-26 — each module is now under the ceiling.)
@@ -179,7 +201,7 @@ but are **not perfectly round-tripped through the Loro CRDT**.
 |---|---|---|
 | `tab_stops` | Written as unreadable Debug string; not read back. | Medium |
 | `background_color` (paragraph) | Written as Debug string; not decoded on read. | Low |
-| `DocumentMeta` / `DublinCoreMeta` | Round-trips **through the Loro CRDT** as a JSON snapshot (`loro_bridge::meta`), so Publish-tab edits are durable and undoable. Still **not** written back to DOCX/ODT on export (export drops the extended Dublin Core fields). | Low |
+| `DocumentMeta` / `DublinCoreMeta` | Round-trips **through the Loro CRDT** (`loro_bridge::meta`) **and is written back on export** — core properties + extended Dublin Core reach DOCX (`docProps/core.xml` + `custom.xml`) and ODT (`meta.xml`), tested by `metadata_round_trip.rs` / `extended_dublin_core_round_trips`. Remaining tail (not the Loro bridge): custom user properties, `meta:editing-duration`, and OOXML `docProps/app.xml` are still not written. | Low |
 
 ---
 
@@ -317,6 +339,18 @@ is documented in the Loki Text UI specification (v0.4).
 4. Use only token constants from `appthere_ui::tokens::*` — no magic numbers.
 5. All interactive elements: 44×44 px minimum, documented in a doc comment.
 6. Mark Dioxus Native CSS limitations with `// COMPAT(dioxus-native): ...`
+
+### Conditionally-mounted panels are components (ADR-0013)
+
+A panel shown behind a condition must be a `#[component]` mounted **at the
+boundary** — `{open().then(|| rsx! { Panel { .. } })}` — never a plain function
+called inside `if cond { panel(..) }` with an early `return rsx!{}`. Only a
+component owns a hook scope, so only a component can call `use_breakpoint()` (or
+any hook) and adapt to the size class **without threading a `compact` flag**
+through the parent (which grows it). Prefer hosting the panel in
+`appthere_ui::AtPanelHost`, which reads the breakpoint and picks Compact-sheet vs
+Expanded-side-panel posture for you. See
+[docs/adr/0013-conditional-panels-are-components.md](docs/adr/0013-conditional-panels-are-components.md).
 
 ### Confirmed CSS properties (Dioxus Native 0.7.x / Blitz)
 

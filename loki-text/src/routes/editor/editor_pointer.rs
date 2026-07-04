@@ -10,16 +10,14 @@ use loki_doc_model::loro_bridge::derive_loro_cursor;
 use loki_doc_model::loro_mutation::get_block_text;
 
 use loki_renderer::ViewMode;
-use loki_renderer::render_layout::{MIN_REFLOW_CONTENT_PT, REFLOW_PADDING_PT};
+use loki_renderer::render_layout::{reflow_content_width_pt, reflow_tile_width_px};
 
 use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::hit_test::{hit_test_document, reflow_hit_test_window};
 use crate::editing::state::{DocumentState, ensure_reflow_layout};
 use crate::editing::touch::{TouchInteractionState, TouchPhase, word_boundaries_at};
+use crate::editing::viewport::Viewport;
 use crate::routes::editor::editor_scrollbar::ScrollMetrics;
-
-/// CSS pixels → layout points (72 dpi / 96 dpi).
-const PX_TO_PT: f32 = 72.0 / 96.0;
 
 /// Resolves a window-relative tap to a reflow document position, using the same
 /// continuous layout width as the painted view. Returns `None` outside reflow
@@ -27,18 +25,19 @@ const PX_TO_PT: f32 = 72.0 / 96.0;
 fn reflow_tap_position(
     doc_state: &Arc<Mutex<DocumentState>>,
     client_pos: (f32, f32),
-    window_width: f32,
-    client_width_px: f32,
+    viewport: Viewport,
     scroll_offset: f32,
 ) -> Option<(usize, usize)> {
+    let client_width_px = viewport.inner_width_px;
     if client_width_px <= 1.0 {
         return None;
     }
-    let content_w =
-        (client_width_px * PX_TO_PT - 2.0 * REFLOW_PADDING_PT).max(MIN_REFLOW_CONTENT_PT);
+    let content_w = reflow_content_width_pt(client_width_px);
     let layout = ensure_reflow_layout(doc_state, content_w)?;
-    // Reflow tiles span the canvas client width, centred in the window.
-    let x_off = ((window_width - client_width_px) / 2.0).max(0.0);
+    // Reflow tiles are capped to a reading measure and centred in the viewport
+    // (`margin: auto` on paint); the hit-test origin uses the same tile width so
+    // clicks land on the painted glyphs (Spec 03 M4).
+    let x_off = viewport.centred_origin_x(reflow_tile_width_px(client_width_px));
     let origin = (x_off, tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6);
     reflow_hit_test_window(client_pos.0, client_pos.1, origin, scroll_offset, &layout)
 }
@@ -57,7 +56,7 @@ pub(super) fn make_mousemove_handler(
     doc_state: Arc<Mutex<DocumentState>>,
     mut is_dragging: Signal<bool>,
     drag_origin: Signal<Option<(f32, f32)>>,
-    window_width: Signal<f32>,
+    scroll_metrics: Signal<ScrollMetrics>,
     scroll_offset: Signal<f32>,
     mut cursor_state: Signal<CursorState>,
     page_gap_px: f32,
@@ -95,7 +94,8 @@ pub(super) fn make_mousemove_handler(
             )
         };
         let Some(layout) = layout_opt else { return };
-        let x_off = (window_width() - page_width_px).max(0.0) / 2.0;
+        let viewport = Viewport::new(scroll_metrics.peek().client_width);
+        let x_off = viewport.centred_origin_x(page_width_px);
         let origin = (x_off, tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6);
         if let Some(p) = hit_test_document(
             cx,
@@ -117,7 +117,6 @@ pub(super) fn make_mousemove_handler(
 pub(super) fn make_touchmove_handler(
     doc_state: Arc<Mutex<DocumentState>>,
     mut touch_state: Signal<Option<TouchInteractionState>>,
-    window_width: Signal<f32>,
     scroll_offset: Signal<f32>,
     loro_doc: Signal<Option<loro::LoroDoc>>,
     mut cursor_state: Signal<CursorState>,
@@ -149,8 +148,7 @@ pub(super) fn make_touchmove_handler(
                 reflow_tap_position(
                     &doc_state,
                     start,
-                    window_width(),
-                    scroll_metrics.peek().client_width,
+                    Viewport::new(scroll_metrics.peek().client_width),
                     scroll_offset(),
                 )
                 .map(|(para, byte)| (0, para, byte))
@@ -164,7 +162,8 @@ pub(super) fn make_touchmove_handler(
                     )
                 };
                 layout_opt.and_then(|layout| {
-                    let x_off = (window_width() - page_width_px).max(0.0) / 2.0;
+                    let viewport = Viewport::new(scroll_metrics.peek().client_width);
+                    let x_off = viewport.centred_origin_x(page_width_px);
                     let origin = (x_off, tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6);
                     hit_test_document(
                         start.0,
@@ -185,16 +184,8 @@ pub(super) fn make_touchmove_handler(
                     let text = get_block_text(ldoc, para);
                     if let Some((ws, we)) = word_boundaries_at(&text, byte) {
                         let mut cs = cursor_state.write();
-                        cs.anchor = Some(DocumentPosition {
-                            page_index: page,
-                            paragraph_index: para,
-                            byte_offset: ws,
-                        });
-                        cs.focus = Some(DocumentPosition {
-                            page_index: page,
-                            paragraph_index: para,
-                            byte_offset: we,
-                        });
+                        cs.anchor = Some(DocumentPosition::top_level(page, para, ws));
+                        cs.focus = Some(DocumentPosition::top_level(page, para, we));
                     }
                 }
             }
@@ -208,7 +199,6 @@ pub(super) fn make_touchmove_handler(
 pub(super) fn make_touchend_handler(
     doc_state: Arc<Mutex<DocumentState>>,
     mut touch_state: Signal<Option<TouchInteractionState>>,
-    window_width: Signal<f32>,
     scroll_offset: Signal<f32>,
     loro_doc: Signal<Option<loro::LoroDoc>>,
     mut cursor_state: Signal<CursorState>,
@@ -224,19 +214,14 @@ pub(super) fn make_touchend_handler(
                 if let Some((para, byte)) = reflow_tap_position(
                     &doc_state,
                     ts.start_pos,
-                    window_width(),
-                    scroll_metrics.peek().client_width,
+                    Viewport::new(scroll_metrics.peek().client_width),
                     scroll_offset(),
                 ) {
                     let loro_cursor = loro_doc
                         .read()
                         .as_ref()
                         .and_then(|ldoc| derive_loro_cursor(ldoc, para, byte));
-                    let pos = DocumentPosition {
-                        page_index: 0,
-                        paragraph_index: para,
-                        byte_offset: byte,
-                    };
+                    let pos = DocumentPosition::top_level(0, para, byte);
                     let mut cs = cursor_state.write();
                     cs.loro_cursor = loro_cursor;
                     cs.anchor = Some(pos.clone());
@@ -257,7 +242,8 @@ pub(super) fn make_touchend_handler(
                     )
                 };
                 if let Some(layout) = layout_opt {
-                    let x_off = (window_width() - page_width_px).max(0.0) / 2.0;
+                    let viewport = Viewport::new(scroll_metrics.peek().client_width);
+                    let x_off = viewport.centred_origin_x(page_width_px);
                     let origin = (x_off, tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6);
                     if let Some(pos) = hit_test_document(
                         ts.start_pos.0,

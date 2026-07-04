@@ -55,6 +55,13 @@ use crate::error::LoadError;
 use loki_doc_model::loro_bridge::derive_loro_cursor;
 use loki_i18n::fl;
 
+/// Fallback viewport height (CSS px) for tile virtualization before the scroll
+/// container is first measured. A named default — not a hardcoded screen
+/// dimension assumed in a layout path (cf. the 1280px viewport bug, Spec 01
+/// audit A-1) — used only for the single frame until `get_client_rect` reports
+/// the real height.
+const DEFAULT_VIEWPORT_HEIGHT_PX: f64 = 800.0;
+
 /// Blank page placeholder shown while a document is being opened.
 ///
 /// Renders immediately when the editor tab mounts (before the async load
@@ -118,10 +125,8 @@ fn open_spell_panel_at(
             menu.anchor_x = ctx.client_x;
             menu.anchor_y = ctx.client_y;
             // Select the whole word so the user sees what the suggestions apply to.
-            let word_pos = |byte_offset| DocumentPosition {
-                page_index: pos.page_index,
-                paragraph_index: menu.paragraph_index,
-                byte_offset,
+            let word_pos = |byte_offset| {
+                DocumentPosition::top_level(pos.page_index, menu.paragraph_index, byte_offset)
             };
             cursor_state.write().anchor = Some(word_pos(menu.byte_start));
             cursor_state.write().focus = Some(word_pos(menu.byte_end));
@@ -151,7 +156,6 @@ pub(super) fn render_canvas_area(
     mut is_dragging: Signal<bool>,
     mut drag_origin: Signal<Option<(f32, f32)>>,
     touch_state: Signal<Option<TouchInteractionState>>,
-    window_width: Signal<f32>,
     mut scroll_offset: Signal<f32>,
     mut scroll_metrics: Signal<ScrollMetrics>,
     mut canvas_mounted: CanvasMounted,
@@ -281,7 +285,7 @@ pub(super) fn render_canvas_area(
                 doc_state_mousemove,
                 is_dragging,
                 drag_origin,
-                window_width,
+                scroll_metrics,
                 scroll_offset,
                 cursor_state,
                 page_gap_px,
@@ -306,7 +310,6 @@ pub(super) fn render_canvas_area(
             ontouchmove: make_touchmove_handler(
                 doc_state_touch,
                 touch_state,
-                window_width,
                 scroll_offset,
                 loro_doc,
                 cursor_state,
@@ -318,7 +321,6 @@ pub(super) fn render_canvas_area(
             ontouchend: make_touchend_handler(
                 doc_state_touchend,
                 touch_state,
-                window_width,
                 scroll_offset,
                 loro_doc,
                 cursor_state,
@@ -380,7 +382,7 @@ pub(super) fn render_canvas_area(
                             // of the viewport are GPU-rendered.
                             viewport_height_px: {
                                 let h = scroll_metrics().client_height as f64;
-                                if h > 1.0 { h } else { 800.0 }
+                                if h > 1.0 { h } else { DEFAULT_VIEWPORT_HEIGHT_PX }
                             },
                             // Real scroll offset so the renderer can virtualize
                             // tiles to the viewport (this scroll container is the
@@ -392,6 +394,10 @@ pub(super) fn render_canvas_area(
                             // Width for reflow layout; <= 0 until the canvas is
                             // measured (mount rect or first scroll event).
                             reflow_width_px: scroll_metrics().client_width as f64,
+                            // Design tokens injected so the render layer need not
+                            // depend on appthere_ui (Spec 01 audit A-8).
+                            page_gap_px: tokens::PAGE_GAP_PX as f64,
+                            content_padding_bottom_px: tokens::SPACE_6,
                             // Paginated: hit-test against the editor's paginated
                             // layout (reflow clicks are hit-tested inside
                             // DocumentView and arrive via on_reflow_click).
@@ -419,14 +425,10 @@ pub(super) fn render_canvas_area(
                                 let loro_cursor = loro_doc.read().as_ref().and_then(|ldoc| {
                                     derive_loro_cursor(ldoc, para, byte)
                                 });
-                                let pos = DocumentPosition {
-                                    // page_index is meaningless in reflow; 0 is a
-                                    // safe placeholder (the caret is painted from
-                                    // paragraph/byte, not page, in reflow mode).
-                                    page_index: 0,
-                                    paragraph_index: para,
-                                    byte_offset: byte,
-                                };
+                                // page_index is meaningless in reflow; 0 is a safe
+                                // placeholder (the caret is painted from paragraph/
+                                // byte, not page, in reflow mode).
+                                let pos = DocumentPosition::top_level(0, para, byte);
                                 let mut cs = cursor_state.write();
                                 cs.loro_cursor = loro_cursor;
                                 cs.anchor = Some(pos.clone());
@@ -440,11 +442,7 @@ pub(super) fn render_canvas_area(
                                 });
                                 let mut cs = cursor_state.write();
                                 cs.loro_cursor = loro_cursor;
-                                cs.focus = Some(DocumentPosition {
-                                    page_index: 0,
-                                    paragraph_index: para,
-                                    byte_offset: byte,
-                                });
+                                cs.focus = Some(DocumentPosition::top_level(0, para, byte));
                             },
                             // Right-click → spelling menu (paginated only). Uses
                             // accurate tile-local coordinates from the tile event.

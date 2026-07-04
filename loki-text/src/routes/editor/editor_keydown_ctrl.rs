@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 use keyboard_types::{Key, Modifiers};
-use loki_doc_model::loro_mutation::{delete_text, get_block_text};
-use loki_doc_model::{StyleId, get_block_style_name, set_block_style, split_block};
+use loki_doc_model::loro_mutation::{delete_text_at, get_block_text, get_block_text_at};
+use loki_doc_model::{StyleId, get_block_style_name, set_block_style, split_block_at};
 
 use super::editor_formatting;
 use crate::editing::cursor::{CursorState, DocumentPosition, next_grapheme_boundary};
@@ -43,11 +43,7 @@ pub(super) fn handle_ctrl_keys(
                 state.paginated_layout.clone()
             };
             if let Some(layout) = layout_opt {
-                let first = DocumentPosition {
-                    page_index: 0,
-                    paragraph_index: 0,
-                    byte_offset: 0,
-                };
+                let first = DocumentPosition::top_level(0, 0, 0);
                 let last_opt = layout
                     .pages
                     .iter()
@@ -67,11 +63,7 @@ pub(super) fn handle_ctrl_keys(
                         .as_ref()
                         .map(|l| get_block_text(l, last_block).len())
                         .unwrap_or(0);
-                    let last = DocumentPosition {
-                        page_index: last_page,
-                        paragraph_index: last_block,
-                        byte_offset: end_offset,
-                    };
+                    let last = DocumentPosition::top_level(last_page, last_block, end_offset);
                     let mut cs = cursor_state.write();
                     cs.anchor = Some(first);
                     cs.focus = Some(last);
@@ -153,7 +145,7 @@ pub(super) fn handle_delete_key(
         let ldoc_guard = loro_doc.read();
         ldoc_guard
             .as_ref()
-            .map(|l| get_block_text(l, focus.paragraph_index))
+            .map(|l| get_block_text_at(l, &focus.block_path()))
             .unwrap_or_default()
     };
     if focus.byte_offset >= text.len() {
@@ -166,7 +158,7 @@ pub(super) fn handle_delete_key(
         let Some(ldoc) = ldoc_guard.as_ref() else {
             return;
         };
-        if delete_text(ldoc, focus.paragraph_index, focus.byte_offset, len).is_err() {
+        if delete_text_at(ldoc, &focus.block_path(), focus.byte_offset, len).is_err() {
             return;
         }
     }
@@ -203,8 +195,14 @@ pub(super) fn handle_enter_key(
         return;
     };
 
+    let nested = !focus.path.is_empty();
+
     // Resolve next_style_id for the current block's style before splitting.
-    let next_style: Option<String> = {
+    // Style inheritance via next_style_id is a top-level concern (named styles
+    // address top-level paragraphs); nested splits keep the source block's type.
+    let next_style: Option<String> = if nested {
+        None
+    } else {
         let style_name = get_block_style_name(ldoc, focus.paragraph_index);
         doc_state.lock().ok().and_then(|state| {
             state
@@ -217,7 +215,7 @@ pub(super) fn handle_enter_key(
         })
     };
 
-    if split_block(ldoc, focus.paragraph_index, focus.byte_offset).is_err() {
+    if split_block_at(ldoc, &focus.block_path(), focus.byte_offset).is_err() {
         return;
     }
 
@@ -235,12 +233,10 @@ pub(super) fn handle_enter_key(
         can_undo,
         can_redo,
     );
-    // TODO(3b-3): recompute page_index from layout after split
-    let new_pos = DocumentPosition {
-        page_index: focus.page_index,
-        paragraph_index: focus.paragraph_index + 1,
-        byte_offset: 0,
-    };
+    // TODO(3b-3): recompute page_index from layout after split.
+    // The split inserts the new block right after the source within the same
+    // container, so the caret moves to the next sibling block at offset 0.
+    let new_pos = focus.sibling_block(1, 0);
     let mut cs = cursor_state.write();
     cs.focus = Some(new_pos.clone());
     cs.anchor = Some(new_pos);

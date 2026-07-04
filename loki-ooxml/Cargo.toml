@@ -39,6 +39,9 @@ features = ["std"]
 [dev-dependencies]
 loki-opc    = { path = "../loki-opc" }
 loki-layout = { path = "../loki-layout" }
+# Spec 02 round-trip axis: the normalized-model differ + Document/Workbook
+# canonicalizers (doc-model for DOCX, sheet-model for XLSX).
+appthere-conformance = { path = "../appthere-conformance", features = ["doc-model", "sheet-model"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 parley = "0.10"
 read-fonts = "0.40"

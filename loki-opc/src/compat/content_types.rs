@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
 
 //! Content-types compatibility shims: fallback media types for unmapped
 //! extensions and locating a `[Content_Types].xml` part that some writers place

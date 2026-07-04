@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
 
 //! Open Packaging Conventions (ISO/IEC 29500-2:2021) primary root struct definitions.
 
@@ -168,10 +168,8 @@ impl Package {
 
     /// Mutable core properties. Creates the part and relationship if absent.
     pub fn core_properties_mut(&mut self) -> &mut CoreProperties {
-        if self.core_properties.is_none() {
-            self.core_properties = Some(CoreProperties::default());
-        }
-        self.core_properties.as_mut().unwrap()
+        self.core_properties
+            .get_or_insert_with(CoreProperties::default)
     }
 
     // --- Thumbnails ---

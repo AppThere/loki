@@ -1,0 +1,298 @@
+// SPDX-License-Identifier: Apache-2.0
+
+//! Read-only resolved-vs-overridden inspector column (Spec 05 M2).
+//!
+//! [`StyleProvenanceList`] renders one line per applicable style property — its
+//! resolved value and where it comes from (Local / Inherited · ⟨ancestor⟩ /
+//! Default / Auto) — from the rows built by
+//! [`super::super::style_inspector::paragraph_inspector_rows`]. Every property
+//! appears, not just locally-set ones, so a user can see at a glance which
+//! properties this style *owns* versus passively receives (the fix for the old
+//! panel's local-only blindness). A `#[component]` (ADR-0013) taking a
+//! [`StylePanelPosture`] for its Compact width + touch targets (Spec 05 M7).
+
+use appthere_ui::tokens;
+use dioxus::prelude::*;
+use loki_i18n::fl;
+
+use loki_doc_model::style::StyleId;
+
+use super::super::style_inspector::{InspectorRow, RowProvenance, StyleProperty};
+use super::posture::StylePanelPosture;
+
+/// A linked character style shown alongside a paragraph style (§9 linked
+/// family): its display name and its resolved rows (read-only).
+pub(super) type LinkedRows = Option<(String, Vec<InspectorRow>)>;
+
+/// Renders the provenance inspector column for the selected style's rows.
+///
+/// Each row pairs an [`InspectorRow`] with a `staged` flag — `true` when the
+/// value reflects an uncommitted draft edit not yet applied (Spec 05 §12), shown
+/// with a pending marker.
+///
+/// `on_reset` is invoked with the property whose local override the user wants
+/// to clear (reset to inherited); the reset control appears only on rows that
+/// are set locally. `on_jump` is invoked with a source ancestor's id when the
+/// user clicks an *inherited* row's provenance chip — the jump-to-ancestor
+/// workflow ("identify where a property is set, change it for all dependents").
+#[component]
+pub(super) fn StyleProvenanceList(
+    rows: Vec<(InspectorRow, bool)>,
+    /// Display names of dependent styles that a staged change will also change
+    /// (Spec 05 §7 impact preview). Empty when nothing staged affects dependents.
+    impact: Vec<String>,
+    /// The paragraph style's linked character style, if any (§9 linked family).
+    linked: LinkedRows,
+    /// Breakpoint posture (Spec 05 M7): full-width + touch targets at Compact.
+    posture: StylePanelPosture,
+    on_reset: EventHandler<StyleProperty>,
+    on_jump: EventHandler<StyleId>,
+) -> Element {
+    rsx! {
+        div {
+            style: format!(
+                "width: {w}; min-width: {w}; overflow-y: auto; \
+                 border-left: 1px solid {border}; display: flex; \
+                 flex-direction: column; gap: {gap}px; padding: {p}px; \
+                 font-family: {ff};",
+                w = posture.section_width(220.0),
+                border = tokens::COLOR_BORDER_CHROME,
+                gap = tokens::SPACE_2,
+                p = tokens::SPACE_3,
+                ff = tokens::FONT_FAMILY_UI,
+            ),
+
+            div {
+                style: format!(
+                    "font-size: {fs}px; font-weight: {fw}; color: {fg}; \
+                     margin-bottom: {mb}px;",
+                    fs = tokens::FONT_SIZE_LABEL,
+                    fw = tokens::FONT_WEIGHT_MEDIUM,
+                    fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
+                    mb = tokens::SPACE_1,
+                ),
+                { fl!("style-inspector-heading") }
+            }
+
+            // Impact preview — dependents a staged change will also affect.
+            if !impact.is_empty() {
+                div {
+                    style: format!(
+                        "font-size: {fs}px; color: {fg}; background: {bg}; \
+                         border: 1px solid {border}; border-radius: {r}px; \
+                         padding: {p}px; margin-bottom: {mb}px;",
+                        fs = tokens::FONT_SIZE_XS,
+                        fg = tokens::COLOR_TEXT_ON_CHROME,
+                        bg = tokens::COLOR_SURFACE_2,
+                        border = tokens::COLOR_TAB_ACTIVE_INDICATOR,
+                        r = tokens::RADIUS_SM,
+                        p = tokens::SPACE_2,
+                        mb = tokens::SPACE_1,
+                    ),
+                    {
+                        fl!(
+                            "style-impact-preview",
+                            count = impact.len() as i64,
+                            names = impact.join(", ")
+                        )
+                    }
+                }
+            }
+
+            for (row, staged) in rows.iter() {
+                {
+                    let local = row.provenance.is_local();
+                    let staged = *staged;
+                    let property = row.property;
+                    // Inherited rows link to the ancestor that sets the value.
+                    let jump_target = match &row.provenance {
+                        RowProvenance::Inherited { ancestor_id, .. } => Some(ancestor_id.clone()),
+                        _ => None,
+                    };
+                    rsx! {
+                        div {
+                            key: "{row.property:?}",
+                            style: "display: flex; flex-direction: column;",
+
+                            // Property label (+ pending marker) and resolved value.
+                            div {
+                                style: "display: flex; justify-content: space-between; gap: 8px;",
+                                span {
+                                    style: format!(
+                                        "font-size: {fs}px; color: {fg}; font-weight: {fw};",
+                                        fs = tokens::FONT_SIZE_LABEL,
+                                        fg = tokens::COLOR_TEXT_ON_CHROME,
+                                        // Bold the properties this style actually owns.
+                                        fw = if local {
+                                            tokens::FONT_WEIGHT_SEMIBOLD
+                                        } else {
+                                            tokens::FONT_WEIGHT_REGULAR
+                                        },
+                                    ),
+                                    // Pending (uncommitted draft edit) marker.
+                                    if staged {
+                                        span {
+                                            style: format!("color: {};", tokens::COLOR_TAB_ACTIVE_INDICATOR),
+                                            title: fl!("style-staged-title"),
+                                            "\u{25CF} "
+                                        }
+                                    }
+                                    { property_label(row.property) }
+                                }
+                                span {
+                                    style: format!(
+                                        "font-size: {fs}px; color: {fg};",
+                                        fs = tokens::FONT_SIZE_LABEL,
+                                        fg = tokens::COLOR_TEXT_ON_CHROME,
+                                    ),
+                                    {
+                                        row.value_display
+                                            .clone()
+                                            .unwrap_or_else(|| fl!("style-inspector-unset"))
+                                    }
+                                }
+                            }
+
+                            // Provenance line — accented when local — plus a
+                            // reset-to-inherited control on locally-set rows.
+                            div {
+                                style: "display: flex; align-items: center; justify-content: space-between; gap: 8px;",
+                                // Inherited rows: the chip is a link to the source
+                                // ancestor. Other rows: a plain, accent-if-local chip.
+                                if let Some(target) = jump_target {
+                                    button {
+                                        style: format!(
+                                            "background: transparent; border: none; cursor: pointer; \
+                                             padding: 0; {touch} text-align: left; text-decoration: underline; \
+                                             font-family: {ff}; font-size: {fs}px; color: {fg};",
+                                            touch = posture.touch_min_css(),
+                                            ff = tokens::FONT_FAMILY_UI,
+                                            fs = tokens::FONT_SIZE_XS,
+                                            fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
+                                        ),
+                                        aria_label: fl!("style-jump-aria"),
+                                        onclick: move |_| on_jump.call(target.clone()),
+                                        { provenance_label(&row.provenance) }
+                                    }
+                                } else {
+                                    span {
+                                        style: format!(
+                                            "font-size: {fs}px; color: {fg};",
+                                            fs = tokens::FONT_SIZE_XS,
+                                            fg = if local {
+                                                tokens::COLOR_TAB_ACTIVE_INDICATOR
+                                            } else {
+                                                tokens::COLOR_TEXT_ON_CHROME_SECONDARY
+                                            },
+                                        ),
+                                        { provenance_label(&row.provenance) }
+                                    }
+                                }
+                                // Reset to inherited (local rows only). Compact
+                                // affordance in a dense inspector; the row's
+                                // click area carries the intent.
+                                if local {
+                                    button {
+                                        style: format!(
+                                            "background: transparent; border: none; cursor: pointer; \
+                                             padding: {p}px; {touch} font-size: {fs}px; color: {fg};",
+                                            p = tokens::SPACE_1,
+                                            touch = posture.touch_min_css(),
+                                            fs = tokens::FONT_SIZE_XS,
+                                            fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
+                                        ),
+                                        aria_label: fl!("style-reset-aria"),
+                                        onclick: move |_| on_reset.call(property),
+                                        "\u{21A9}"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Linked character style (§9 linked family) — read-only rows.
+            if let Some((name, rows)) = linked {
+                CharRowsSection { heading: fl!("style-linked-heading", name = name), rows }
+            }
+        }
+    }
+}
+
+/// A read-only block of character-property rows under a heading — used for the
+/// linked character style (§9) and the standalone character panel (§9 character
+/// family). Each row is property · resolved value · provenance.
+#[component]
+pub(super) fn CharRowsSection(heading: String, rows: Vec<InspectorRow>) -> Element {
+    rsx! {
+        div {
+            style: format!("margin-top: {}px;", tokens::SPACE_3),
+            div {
+                style: format!(
+                    "font-size: {fs}px; font-weight: {fw}; color: {fg}; margin-bottom: {mb}px;",
+                    fs = tokens::FONT_SIZE_LABEL,
+                    fw = tokens::FONT_WEIGHT_MEDIUM,
+                    fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
+                    mb = tokens::SPACE_1,
+                ),
+                { heading.clone() }
+            }
+            for lrow in rows.iter() {
+                div {
+                    key: "linked-{lrow.property:?}",
+                    style: "display: flex; justify-content: space-between; gap: 8px;",
+                    span {
+                        style: format!(
+                            "font-size: {fs}px; color: {fg};",
+                            fs = tokens::FONT_SIZE_LABEL, fg = tokens::COLOR_TEXT_ON_CHROME,
+                        ),
+                        { property_label(lrow.property) }
+                    }
+                    span {
+                        style: format!(
+                            "font-size: {fs}px; color: {fg};",
+                            fs = tokens::FONT_SIZE_XS, fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
+                        ),
+                        {
+                            let val = lrow.value_display.clone().unwrap_or_default();
+                            format!("{val} · {}", provenance_label(&lrow.provenance))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Localized label for a style property.
+fn property_label(property: StyleProperty) -> String {
+    match property {
+        StyleProperty::FontFamily => fl!("style-prop-font-family"),
+        StyleProperty::FontSize => fl!("style-prop-font-size"),
+        StyleProperty::Bold => fl!("style-prop-bold"),
+        StyleProperty::Italic => fl!("style-prop-italic"),
+        StyleProperty::Alignment => fl!("style-prop-alignment"),
+        StyleProperty::IndentStart => fl!("style-prop-indent-start"),
+        StyleProperty::IndentEnd => fl!("style-prop-indent-end"),
+        StyleProperty::IndentFirstLine => fl!("style-prop-indent-first-line"),
+        StyleProperty::SpaceBefore => fl!("style-prop-space-before"),
+        StyleProperty::SpaceAfter => fl!("style-prop-space-after"),
+        StyleProperty::LineHeight => fl!("style-prop-line-height"),
+    }
+}
+
+/// Localized provenance label; inherited rows name the source ancestor.
+fn provenance_label(provenance: &RowProvenance) -> String {
+    match provenance {
+        RowProvenance::Local => fl!("style-provenance-local"),
+        RowProvenance::Inherited {
+            ancestor_display, ..
+        } => fl!(
+            "style-provenance-inherited",
+            ancestor = ancestor_display.clone()
+        ),
+        RowProvenance::Default => fl!("style-provenance-default"),
+        RowProvenance::FormatDefault => fl!("style-provenance-engine"),
+    }
+}

@@ -21,10 +21,35 @@ jobs:
       with:
         components: rustfmt, clippy
     - uses: Swatinem/rust-cache@v2
+    - name: License-header gate (per-crate SPDX on line 1)
+      # loki-opc is MIT (released standalone); the rest of the suite is
+      # Apache-2.0. See docs/adr/0010-per-crate-licensing.md.
+      run: python3 scripts/check-license-headers.py
+    - name: Panic-guard gate (no panic!/todo!/unimplemented! in lib src)
+      # Spec 01 audit A-6. unreachable! with a message is permitted.
+      run: python3 scripts/check-no-panics.py
+    - name: Unsafe-policy gate (forbid, or deny + allow-list)
+      # Spec 01 audit A-7. Only the 3 Android cdylib crates may use deny+allow.
+      run: python3 scripts/check-unsafe-policy.py
+    - name: File-ceiling gate (300-line ratchet)
+      # Spec 01 audit A-2. New files <= 300 lines; baselined debt may not grow.
+      run: python3 scripts/check-file-ceiling.py
+    - name: TODO-format gate (TODO(<topic>) tags)
+      # Spec 01 audit A-11. No bare TODO / FIXME / HACK / XXX in production code.
+      run: python3 scripts/check-todo-format.py
+    - name: Dependency-direction gate (acyclic, downhill-only)
+      # Spec 01 audit A-13 / ADR-0009. Fails on any uphill internal edge.
+      run: python3 scripts/check-dependency-direction.py
+    - name: Viewport-dimension guard (no assumed screen sizes)
+      # Spec 01 audit A-1. No bare 1280-class literals in editor input/viewport paths.
+      run: python3 scripts/check-no-hardcoded-viewport-dims.py
     - name: Format check
       run: cargo fmt --all --check
     - name: Clippy (workspace, all features, warnings denied)
-      run: cargo clippy --workspace --all-features -- -D warnings
+      # `unwrap_used`/`expect_used` keep panicking calls out of library runtime
+      # code (audit A-5); clippy.toml exempts test code. Tooling (build.rs, the
+      # gen_templates bin) carries a scoped file-level allow.
+      run: cargo clippy --workspace --all-features -- -D warnings -D clippy::unwrap_used -D clippy::expect_used
 
   build-and-test:
     runs-on: ubuntu-latest
@@ -33,6 +58,11 @@ jobs:
     - name: Install toolchain
       uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
+    - name: Install xmllint (libxml2)
+      # appthere-conformance's schema axis (Spec 02 M2) shells to xmllint; install
+      # it so those tests actually run instead of skipping. The harness fails
+      # loudly if it is absent, so this keeps the schema axis genuinely exercised.
+      run: sudo apt-get update && sudo apt-get install -y libxml2-utils
     # `--all-features` so the feature-gated format crates (pptx, xlsx) and their
     # integration tests actually compile and run — under the default feature set
     # `cargo test --workspace` silently skips `#![cfg(feature = ...)]` suites.

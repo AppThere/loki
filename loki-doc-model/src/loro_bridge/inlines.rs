@@ -10,7 +10,7 @@ use super::BridgeError;
 use crate::content::inline::Inline;
 use crate::loro_schema::*;
 use crate::style::props::char_props::CharProps;
-use loro::LoroText;
+use loro::{LoroMap, LoroText};
 
 // ── Serialization ─────────────────────────────────────────────────────────────
 
@@ -25,7 +25,15 @@ fn insert_inline_text(text: &LoroText, inlines: &[Inline]) -> Result<(usize, usi
     Ok((start, text.len_unicode()))
 }
 
-pub(super) fn map_inlines(inlines: &[Inline], text: &LoroText) -> Result<(), BridgeError> {
+/// Serializes `inlines` into `text`. `block_map` is the owning block's map, used
+/// to store live side-containers (currently footnote/endnote bodies under
+/// [`KEY_NOTES`]).
+pub(super) fn map_inlines(
+    inlines: &[Inline],
+    text: &LoroText,
+    block_map: &LoroMap,
+) -> Result<(), BridgeError> {
+    let _ = block_map; // used only by the serde-gated Note arm below
     for inline in inlines {
         let start = text.len_unicode();
         match inline {
@@ -96,6 +104,19 @@ pub(super) fn map_inlines(inlines: &[Inline], text: &LoroText) -> Result<(), Bri
                 if start < end {
                     text.mark(start..end, MARK_LINK_URL, target.url.as_str())?;
                 }
+            }
+            // Inline objects anchored natively (placeholder char + data mark) so
+            // they stay live, positioned, deletable inlines. Only *top-level*
+            // objects reach here — one nested in a wrapper keeps its block
+            // opaque (see `opaque.rs`). Without `serde` they fall through to the
+            // catch-all and their block is preserved opaquely instead.
+            #[cfg(feature = "serde")]
+            Inline::Image(..) => {
+                super::inline_objects::write_inline_object(inline, text, MARK_IMAGE)?;
+            }
+            #[cfg(feature = "serde")]
+            Inline::Note(kind, body) => {
+                super::inline_objects::write_note(kind, body, text, block_map)?;
             }
             // Text-bearing wrappers without a dedicated mark: keep the text.
             // Quote type / span attrs / citation metadata are not yet carried

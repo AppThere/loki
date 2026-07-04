@@ -135,3 +135,49 @@ fn replace_keeps_a_uniformly_formatted_word_formatted() {
     assert_eq!(spans[0].0, "the");
     assert_eq!(spans[0].1, Some(red()), "replacement keeps the word's red");
 }
+
+#[cfg(feature = "serde")]
+#[test]
+fn insert_inline_image_makes_a_discrete_editable_image() {
+    use crate::content::inline::LinkTarget;
+    use crate::loro_mutation::insert_inline_image;
+
+    let block = Block::Para(vec![Inline::Str("ab".to_string())]);
+    let section = Section::with_layout_and_blocks(Default::default(), vec![block]);
+    let mut doc = Document::new();
+    doc.sections = vec![section];
+    let loro = document_to_loro(&doc).expect("to loro");
+
+    let image = Inline::Image(
+        NodeAttr::default(),
+        vec![Inline::Str("alt".to_string())],
+        LinkTarget::new("data:image/png;base64,AAAA"),
+    );
+    // Insert between 'a' and 'b'.
+    insert_inline_image(&loro, 0, 1, &image).expect("insert image");
+
+    let rebuilt = loro_to_document(&loro).expect("rebuild");
+    let Block::Para(inlines) = &rebuilt.sections[0].blocks[0] else {
+        panic!("para");
+    };
+    // The image is a discrete inline between the two characters.
+    assert_eq!(inlines.len(), 3, "expected Str, Image, Str: {inlines:?}");
+    assert!(matches!(inlines[0], Inline::Str(ref s) if s == "a"));
+    assert_eq!(inlines[1], image, "image round-trips exactly");
+    assert!(matches!(inlines[2], Inline::Str(ref s) if s == "b"));
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn insert_inline_image_rejects_non_image() {
+    use crate::loro_mutation::{MutationError, insert_inline_image};
+
+    let block = Block::Para(vec![Inline::Str("ab".to_string())]);
+    let section = Section::with_layout_and_blocks(Default::default(), vec![block]);
+    let mut doc = Document::new();
+    doc.sections = vec![section];
+    let loro = document_to_loro(&doc).expect("to loro");
+
+    let err = insert_inline_image(&loro, 0, 1, &Inline::Str("x".to_string()));
+    assert!(matches!(err, Err(MutationError::Encode(_))));
+}

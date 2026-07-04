@@ -10,9 +10,13 @@
 //! All editing logic lives in [`editor_inner::EditorInner`].
 
 mod editor_canvas;
+mod editor_docked_panels;
 mod editor_error_view;
+mod editor_font_warning;
 mod editor_formatting;
 mod editor_inner;
+mod editor_insert;
+mod editor_insert_panel;
 mod editor_keydown;
 mod editor_keydown_ctrl;
 mod editor_language_panel;
@@ -23,9 +27,12 @@ mod editor_metadata_panel;
 mod editor_path_sync;
 mod editor_pointer;
 mod editor_publish;
+mod editor_responsive;
 mod editor_ribbon;
+mod editor_ribbon_insert;
 mod editor_save;
 mod editor_save_banner;
+mod editor_save_callbacks;
 mod editor_scrollbar;
 mod editor_spell;
 mod editor_spell_panel;
@@ -33,6 +40,10 @@ mod editor_state;
 mod editor_style;
 mod editor_style_catalog;
 mod editor_style_editor;
+mod style_char_inspector;
+mod style_impact;
+mod style_inspector;
+mod style_list_inspector;
 
 use dioxus::prelude::*;
 use editor_inner::EditorInner;

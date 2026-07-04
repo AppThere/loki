@@ -34,6 +34,36 @@ pub const REFLOW_PADDING_PT: f32 = 18.0;
 /// measured.
 pub const MIN_REFLOW_CONTENT_PT: f32 = 50.0;
 
+/// Widest reflow **tile** (CSS px) — caps the reading measure so the
+/// non-paginated view holds a comfortable line length and **centres** on wide
+/// windows instead of running edge-to-edge (Spec 03 M4 / D5). Below this the
+/// tile tracks the viewport, so narrow screens use their full width. Matches the
+/// HTML reflow fallback's `max-width` so both reflow paths read identically.
+pub const MAX_REFLOW_TILE_PX: f32 = 820.0;
+
+/// CSS pixels → layout points (72 dpi / 96 dpi).
+pub const PX_TO_PT: f32 = 72.0 / 96.0;
+
+/// The reflow **tile** width (CSS px) for a measured viewport: the viewport
+/// width capped at [`MAX_REFLOW_TILE_PX`]. The renderer centres the tile
+/// (`margin: auto`), so capping it centres the reading column. The single source
+/// of reflow width for paint, hit-testing, and keyboard navigation — they must
+/// agree (Spec 01 A-1), so all derive from this.
+#[must_use]
+pub fn reflow_tile_width_px(viewport_width_px: f32) -> f32 {
+    viewport_width_px.clamp(0.0, MAX_REFLOW_TILE_PX)
+}
+
+/// The reflow **content** width (the reading measure, in points) for a measured
+/// viewport: the tile minus the [`REFLOW_PADDING_PT`] side insets, floored at
+/// [`MIN_REFLOW_CONTENT_PT`]. Hit-testing and keyboard navigation use this so
+/// they match what was painted.
+#[must_use]
+pub fn reflow_content_width_pt(viewport_width_px: f32) -> f32 {
+    (reflow_tile_width_px(viewport_width_px) * PX_TO_PT - 2.0 * REFLOW_PADDING_PT)
+        .max(MIN_REFLOW_CONTENT_PT)
+}
+
 // ── RenderMode ────────────────────────────────────────────────────────────────
 
 /// Which layout the renderer should produce.

@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
 
 //! Validated OPC part names: parsing and the grammar rules from §6.2.2.
 
@@ -75,7 +75,7 @@ impl PartName {
             }
         }
 
-        Self::new_unchecked(s)
+        Ok(Self::new_unchecked(s))
     }
 
     /// Wraps an already-validated string as a [`PartName`] without re-running
@@ -84,8 +84,8 @@ impl PartName {
     /// # Safety note
     /// Only for internal use where the name is known to be valid (e.g. ZIP
     /// entries already checked during read).
-    pub fn new_unchecked(s: String) -> OpcResult<Self> {
-        Ok(Self(s))
+    pub fn new_unchecked(s: String) -> Self {
+        Self(s)
     }
 
     /// Returns the string representation.
@@ -107,7 +107,7 @@ impl PartName {
             None => ("", name_str),
         };
         // Unchecked is safe because the parent part was already validated.
-        Self::new_unchecked(format!("{}/_rels/{}.rels", dir, filename)).unwrap()
+        Self::new_unchecked(format!("{}/_rels/{}.rels", dir, filename))
     }
 }
 

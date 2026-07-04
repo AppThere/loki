@@ -23,7 +23,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use appthere_ui::tokens;
-use appthere_ui::{AtRibbon, AtStatusBar, RibbonTabDesc};
+use appthere_ui::{AtRibbon, AtStatusBar, RibbonTabDesc, use_breakpoint};
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 use loki_doc_model::get_mark_at;
@@ -36,20 +36,18 @@ use loki_renderer::ViewMode;
 use loro::LoroValue;
 
 use super::editor_canvas::render_canvas_area;
-use super::editor_language_panel::language_panel;
+use super::editor_docked_panels::{DockedSync, docked_panels};
 use super::editor_load::load_document;
 use super::editor_metadata_panel::metadata_panel;
 use super::editor_path_sync::{
     PathSyncSignals, restore_session, stash_outgoing, sync_path_and_reset,
 };
 use super::editor_publish::{publish_panel, publish_tab_content};
-use super::editor_ribbon::home_tab_content;
-use super::editor_save::{
-    export_document_to_token, export_template_to_token, save_document_to_path,
-};
+use super::editor_ribbon::write_tab_content;
+use super::editor_ribbon_insert::insert_tab_content;
+use super::editor_save::{export_document_to_token, save_document_to_path};
 use super::editor_save_banner::save_banner;
-use super::editor_spell::{SpellMenu, SpellSync};
-use super::editor_spell_panel::spelling_panel;
+use super::editor_spell::SpellMenu;
 use super::editor_state::{EditorState, use_editor_state};
 use super::editor_style::style_picker_panel;
 use super::editor_style_catalog::available_font_families;
@@ -66,15 +64,6 @@ use loki_file_access::{FilePicker, SaveOptions};
 
 /// MIME type used when saving documents (DOCX is the only writable format).
 const DOCX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-
-/// MIME type used by the "Save as Template" flow (Word `.dotx`).
-const DOTX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.template";
-
-/// Viewport width (logical px) below which the editor defaults to the
-/// reflowable view: a US-Letter page (~816px) plus margins no longer fits, so
-/// paginated view would otherwise force horizontal scrolling. The user can
-/// still toggle back to paginated.
-const REFLOW_BREAKPOINT_PX: f32 = 900.0;
 
 // EditorMode removed — the editor is always in edit mode when a document is
 // open. Distraction-free reading is handled by the View ribbon tab (future
@@ -105,7 +94,6 @@ pub(super) fn EditorInner(path: String) -> Element {
         is_dragging,
         drag_origin,
         touch_state,
-        window_width,
         scroll_offset,
         scroll_metrics,
         canvas_mounted,
@@ -145,6 +133,17 @@ pub(super) fn EditorInner(path: String) -> Element {
     let language_status = use_signal(|| Option::<String>::None);
     // Key of the spelling-menu row currently hovered (Blitz has no CSS :hover).
     let spell_hover = use_signal(|| Option::<String>::None);
+    // Insert-tab hyperlink panel: `Some(url)` while open (Spec 04 M4).
+    let link_draft = use_signal(|| Option::<String>::None);
+    // Character style being browsed in the style panel (Spec 05 M6 character
+    // family): `Some(id)` selects a character style for the read-only inspector.
+    let editing_char_style = use_signal(|| Option::<String>::None);
+    // List style being browsed in the style panel (Spec 05 M6 list family):
+    // `Some(id)` selects a list style for the read-only per-level inspector.
+    let editing_list_style = use_signal(|| Option::<String>::None);
+    // Compact style-panel pane (Spec 05 M7 §11): `true` = Inspect, `false` = Edit.
+    // Ignored at Expanded/Medium (both panes visible side-by-side).
+    let style_panel_inspect = use_signal(|| false);
     // Stashed sessions for inactive tabs — unsaved edits survive tab switches.
     let doc_sessions = use_context::<Signal<DocSessions>>();
     // Document generation considered "clean" (matches the on-disk file).
@@ -265,11 +264,10 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_publish = Arc::clone(&doc_state);
     let doc_state_publish_panel = Arc::clone(&doc_state);
     let doc_state_meta = Arc::clone(&doc_state);
+    let doc_state_docked = Arc::clone(&doc_state);
     let doc_state_style_picker = Arc::clone(&doc_state);
     let doc_state_style_editor = Arc::clone(&doc_state);
     let doc_state_spell_ctx = Arc::clone(&doc_state);
-    let doc_state_spell_panel = Arc::clone(&doc_state);
-    let doc_state_lang_panel = Arc::clone(&doc_state);
     let doc_state_seed = Arc::clone(&doc_state);
     let doc_state_render = Arc::clone(&doc_state);
     let doc_state_scroll = Arc::clone(&doc_state);
@@ -366,11 +364,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                         // the user can type immediately without clicking first.
                         if cursor_state.read().focus.is_none() {
                             use crate::editing::cursor::DocumentPosition;
-                            let start = DocumentPosition {
-                                page_index: 0,
-                                paragraph_index: 0,
-                                byte_offset: 0,
-                            };
+                            let start = DocumentPosition::top_level(0, 0, 0);
                             let mut cs = cursor_state.write();
                             cs.anchor = Some(start.clone());
                             cs.focus = Some(start);
@@ -539,36 +533,23 @@ pub(super) fn EditorInner(path: String) -> Element {
     });
 
     // ── Save as Template (.dotx) ───────────────────────────────────────────────
-    //
-    // Exports the current document as a Word template to a picked destination.
-    // Unlike Save As this does not repoint the tab — the user keeps editing their
-    // document; the template is a separate artifact.
-    let doc_state_savetmpl = Arc::clone(&doc_state);
-    let save_as_template = use_callback(move |_: ()| {
-        let doc_state = Arc::clone(&doc_state_savetmpl);
-        let mut save_message = save_message;
-        let suggested = format!("{}.dotx", display_title_from_path(&path_signal.peek()));
-        spawn(async move {
-            let picker = FilePicker::new();
-            let opts = SaveOptions {
-                mime_type: Some(DOTX_MIME.to_string()),
-                suggested_name: Some(suggested),
-            };
-            match picker.pick_file_to_save(opts).await {
-                Ok(Some(token)) => {
-                    let msg = match export_template_to_token(&token, &doc_state) {
-                        Ok(()) => fl!("editor-save-template-success"),
-                        Err(e) => fl!("editor-save-error", reason = e.to_string()),
-                    };
-                    save_message.set(Some(msg));
-                }
-                Ok(None) => { /* user cancelled — no-op */ }
-                Err(e) => {
-                    save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
-                }
-            }
-        });
-    });
+    // Self-contained save flow — extracted to keep this file under its ceiling.
+    let save_as_template = super::editor_save_callbacks::use_save_as_template_callback(
+        Arc::clone(&doc_state),
+        save_message,
+        path_signal,
+    );
+
+    // ── Insert tab handles (image insertion at the cursor) ────────────────────
+    let insert_ctx = super::editor_ribbon_insert::InsertCtx {
+        doc_state: Arc::clone(&doc_state),
+        loro_doc,
+        cursor_state,
+        undo_manager,
+        can_undo,
+        can_redo,
+        save_message,
+    };
 
     // ── Ctrl+S handler ───────────────────────────────────────────────────────
     //
@@ -595,53 +576,17 @@ pub(super) fn EditorInner(path: String) -> Element {
         save_message.set(Some(msg));
     });
 
-    // ── Measure the canvas at mount ──────────────────────────────────────────
+    // ── Viewport-driven effects (Spec 03 M1/M2) ──────────────────────────────
     //
-    // Scroll metrics are otherwise only populated by the first DOM scroll
-    // event, which would leave the view-mode default and the reflow layout
-    // width unknown until the user scrolls. Query the mounted scroll
-    // container's client rect once (backed by the dioxus-native MountedData
-    // patch) and seed the metrics.
-    use_effect(move || {
-        let Some(evt) = canvas_mounted() else { return };
-        if scroll_metrics.peek().client_width > 0.0 {
-            return;
-        }
-        let mut metrics = scroll_metrics;
-        spawn(async move {
-            if let Ok(rect) = evt.get_client_rect().await {
-                let mut m = metrics.write();
-                if m.client_width <= 0.0 {
-                    m.client_width = rect.size.width as f32;
-                    m.client_height = rect.size.height as f32;
-                }
-            }
-        });
-    });
-
-    // ── Default view mode by viewport width ──────────────────────────────────
-    //
-    // Paginated on wide viewports, reflowed on narrow ones — until the user
-    // picks a mode explicitly (which sets `view_mode_user_set` and freezes this
-    // default). The viewport width becomes known from the scroll container's
-    // `client_width`, reported on the first DOM scroll event.
-    use_effect(move || {
-        if *view_mode_user_set.read() {
-            return;
-        }
-        let width = scroll_metrics.read().client_width;
-        if width <= 0.0 {
-            return;
-        }
-        let desired = if width < REFLOW_BREAKPOINT_PX {
-            ViewMode::Reflow
-        } else {
-            ViewMode::Paginated
-        };
-        if *view_mode.peek() != desired {
-            view_mode.set(desired);
-        }
-    });
+    // Seed metrics at mount, choose the renderer by page-fit, and publish the
+    // measured width into the shared responsive context. See `editor_responsive`.
+    super::editor_responsive::use_viewport_effects(
+        canvas_mounted,
+        scroll_metrics,
+        std::sync::Arc::clone(&doc_state),
+        view_mode,
+        view_mode_user_set,
+    );
 
     let canvas_hovered = use_signal(|| false);
     let page_gap_px = tokens::PAGE_GAP_PX;
@@ -659,77 +604,20 @@ pub(super) fn EditorInner(path: String) -> Element {
         )
     };
 
-    let font_substitutions = {
-        if let Ok(state) = doc_state.lock() {
-            if let Ok(fr) = state.shared_font_resources.lock() {
-                fr.substitutions.clone()
-            } else {
-                std::collections::HashMap::new()
-            }
-        } else {
-            std::collections::HashMap::new()
-        }
-    };
-
-    let mut substituted_items = Vec::new();
-    let mut missing_items = Vec::new();
-    let mut download_links = Vec::new();
-
-    for (requested, sub) in &font_substitutions {
-        if let Some(sub_name) = sub {
-            substituted_items.push(format!("{} → {}", requested, sub_name));
-        } else {
-            missing_items.push(requested.clone());
-        }
-
-        let link = match requested.to_lowercase().as_str() {
-            "aptos" => Some((
-                "Aptos",
-                "https://www.microsoft.com/en-us/download/details.aspx?id=106037",
-            )),
-            "calibri" => Some((
-                "Calibri",
-                "https://learn.microsoft.com/en-us/typography/font-list/calibri",
-            )),
-            "cambria" => Some((
-                "Cambria",
-                "https://learn.microsoft.com/en-us/typography/font-list/cambria",
-            )),
-            "arial" => Some((
-                "Arial",
-                "https://learn.microsoft.com/en-us/typography/font-list/arial",
-            )),
-            "courier new" => Some((
-                "Courier New",
-                "https://learn.microsoft.com/en-us/typography/font-list/courier-new",
-            )),
-            "times new roman" => Some((
-                "Times New Roman",
-                "https://learn.microsoft.com/en-us/typography/font-list/times-new-roman",
-            )),
-            _ => None,
-        };
-        if let Some((label, url)) = link {
-            download_links.push((label, url));
-        }
-    }
-
-    download_links.sort_by_key(|(lbl, _)| *lbl);
-    download_links.dedup_by_key(|(lbl, _)| *lbl);
-
-    let sub_text = if !substituted_items.is_empty() {
-        format!("Substituted: {}. ", substituted_items.join(", "))
-    } else {
-        String::new()
-    };
-
-    let miss_text = if !missing_items.is_empty() {
-        format!("Missing: {}. ", missing_items.join(", "))
-    } else {
-        String::new()
-    };
-
-    let font_warning_details = format!("{}{}", sub_text, miss_text);
+    // Font substitutions reported by the layout engine (requested → substitute).
+    // The redesigned warning UI lives in `editor_font_warning`; recovery (after
+    // dismiss) is the status-bar notice chip below.
+    let font_substitutions = doc_state
+        .lock()
+        .ok()
+        .and_then(|s| {
+            s.shared_font_resources
+                .lock()
+                .ok()
+                .map(|fr| fr.substitutions.clone())
+        })
+        .unwrap_or_default();
+    let font_sub_count = font_substitutions.len() as i64;
 
     rsx! {
         div {
@@ -754,7 +642,6 @@ pub(super) fn EditorInner(path: String) -> Element {
                 is_dragging,
                 drag_origin,
                 touch_state,
-                window_width,
                 scroll_offset,
                 scroll_metrics,
                 canvas_mounted,
@@ -778,94 +665,19 @@ pub(super) fn EditorInner(path: String) -> Element {
                 doc_state_spell_ctx,
             )}
 
-            // ── Font Warning Banner ──────────────────────────────────────────
-            if !font_substitutions.is_empty() && !dismiss_font_warning() {
-                div {
-                    style: format!(
-                        "display: flex; flex-direction: row; align-items: center; justify-content: space-between; \
-                         padding: {p}px {p2}px; background: {bg}; border-top: 1px solid {border}; \
-                         border-bottom: 1px solid {border}; font-family: {ff}; font-size: {size}px; \
-                         color: {fg}; flex-shrink: 0;",
-                        p      = tokens::SPACE_2,
-                        p2     = tokens::SPACE_4,
-                        bg     = tokens::COLOR_SURFACE_2,
-                        border = tokens::COLOR_CONTEXTUAL_TAB,
-                        ff     = tokens::FONT_FAMILY_UI,
-                        size   = tokens::FONT_SIZE_BODY - 1.0,
-                        fg     = tokens::COLOR_TEXT_ON_CHROME,
-                    ),
-                    div {
-                        style: "display: flex; flex-direction: column; gap: 4px; flex: 1;",
-                        div {
-                            style: "display: flex; flex-direction: row; align-items: center; gap: 8px;",
-                            span {
-                                style: format!("color: {}; font-weight: bold;", tokens::COLOR_CONTEXTUAL_TAB),
-                                "⚠️ {fl!(\"editor-font-substitution-title\")}:"
-                            }
-                            span { {fl!("editor-font-substitution-message")} }
-                        }
-                        span {
-                            style: format!("font-size: {size}px; color: {fg_sec};",
-                                size   = tokens::FONT_SIZE_LABEL,
-                                fg_sec = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
-                            ),
-                            "{font_warning_details}"
-                        }
-                    }
-                    div {
-                        style: "display: flex; flex-direction: row; align-items: center; gap: 16px; margin-left: 16px;",
-                        if !download_links.is_empty() {
-                            div {
-                                style: "display: flex; flex-direction: row; align-items: center; gap: 8px;",
-                                span {
-                                    style: format!("font-size: {size}px; color: {fg_sec};",
-                                        size   = tokens::FONT_SIZE_LABEL,
-                                        fg_sec = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
-                                    ),
-                                    {fl!("editor-font-substitution-download")}
-                                }
-                                {
-                                    download_links.iter().map(|(label, url)| rsx! {
-                                        a {
-                                            key: "{label}",
-                                            style: format!(
-                                                "color: {accent}; text-decoration: underline; font-size: {size}px; cursor: pointer;",
-                                                accent = tokens::COLOR_TAB_ACTIVE_INDICATOR,
-                                                size   = tokens::FONT_SIZE_LABEL,
-                                            ),
-                                            href: "{url}",
-                                            target: "_blank",
-                                            "{label}"
-                                        }
-                                    })
-                                }
-                            }
-                        }
-                        button {
-                            style: format!(
-                                "padding: {p}px {p2}px; background: {bg}; border: 1px solid {border}; \
-                                 border-radius: 4px; color: {fg}; font-size: {size}px; cursor: pointer; \
-                                 margin-left: 8px;",
-                                p      = tokens::SPACE_1,
-                                p2     = tokens::SPACE_2,
-                                bg     = tokens::COLOR_SURFACE_3,
-                                border = tokens::COLOR_BORDER_CHROME,
-                                fg     = tokens::COLOR_TEXT_ON_CHROME,
-                                size   = tokens::FONT_SIZE_LABEL,
-                            ),
-                            onclick: move |_| {
-                                dismiss_font_warning.set(true);
-                            },
-                            {fl!("editor-font-dismiss")}
-                        }
-                    }
-                }
+            // ── Font-substitution warning (Spec 03 M3) ────────────────────────
+            // Compact-by-default, expand-on-demand, breakpoint-aware (table vs.
+            // card stack). Renders nothing when empty or dismissed; recovery is
+            // the status-bar notice chip below.
+            super::editor_font_warning::FontWarning {
+                substitutions: font_substitutions.clone(),
+                dismiss: dismiss_font_warning,
             }
 
             // ── Paragraph style picker panel (inline, above ribbon) ───────────
-            // Rendered between canvas and ribbon in the flex column so it
-            // works without position: absolute (unsupported in Blitz).
-            // COMPAT(dioxus-native): see editor_style.rs for layout rationale.
+            // Rendered between canvas and ribbon in the flex column — an in-flow
+            // choice (block-level position: absolute is now confirmed in Blitz;
+            // see editor_style.rs for the layout rationale).
             if *is_style_picker_open.read() {
                 {style_picker_panel(
                     doc_state_style_picker,
@@ -881,12 +693,16 @@ pub(super) fn EditorInner(path: String) -> Element {
             }
 
             // ── Style catalog editor panel (inline, above ribbon) ─────────────
-            // COMPAT(dioxus-native): position: absolute is unsupported in
-            // Blitz — rendered inline in the flex column, above the ribbon.
+            // Rendered inline in the flex column, above the ribbon (an in-flow
+            // choice; block-level position: absolute is now confirmed in Blitz).
             if editing_style_draft.read().is_some() {
                 {style_editor_panel(
                     doc_state_style_editor,
                     editing_style_draft,
+                    editing_char_style,
+                    editing_list_style,
+                    style_panel_inspect,
+                    use_breakpoint(),
                     Rc::clone(&font_families),
                     super::editor_style_editor::StyleEditorSync {
                         loro_doc,
@@ -894,40 +710,31 @@ pub(super) fn EditorInner(path: String) -> Element {
                         undo_manager,
                         can_undo,
                         can_redo,
+                        save_message,
                     },
                 )}
             }
 
-            // ── Spelling suggestions panel (right-click) ──────────────────────
-            // Docked above the ribbon (no position: absolute in Blitz).
-            if spell_menu.read().is_some() {
-                {spelling_panel(
-                    doc_state_spell_panel,
-                    SpellSync {
-                        loro_doc,
-                        cursor_state,
-                        undo_manager,
-                        can_undo,
-                        can_redo,
-                    },
-                    spell_service.clone(),
-                    spell_menu,
-                    is_language_panel_open,
-                    window_width(),
-                    spell_hover,
-                )}
-            }
-
-            // ── Spelling language picker ──────────────────────────────────────
-            if is_language_panel_open() {
-                {language_panel(
-                    doc_state_lang_panel,
+            // ── Docked panels: spelling menu, language picker, Insert link ────
+            // Each self-gates on its trigger signal. Docked above the ribbon
+            // in flow; the spelling menu uses position: absolute (confirmed).
+            {docked_panels(
+                doc_state_docked,
+                DockedSync {
+                    loro_doc,
                     cursor_state,
-                    spell_service.clone(),
-                    is_language_panel_open,
-                    language_status,
-                )}
-            }
+                    undo_manager,
+                    can_undo,
+                    can_redo,
+                },
+                spell_service.clone(),
+                spell_menu,
+                is_language_panel_open,
+                language_status,
+                spell_hover,
+                scroll_metrics().client_width,
+                link_draft,
+            )}
 
             // ── Metadata editor panel (Dublin Core) ───────────────────────────
             if editing_metadata.read().is_some() {
@@ -961,11 +768,12 @@ pub(super) fn EditorInner(path: String) -> Element {
 
             // ── Ribbon (formatting controls) ──────────────────────────────────
             AtRibbon {
-                // Only Home and Publish have controls today; the former Insert/
+                // Write, Insert, and Publish have controls today; the former
                 // Format/Review/View tabs had no content of their own (they fell
-                // through to Home's controls) and are omitted until they do.
+                // through to Write's controls) and are omitted until they do.
                 tabs: vec![
-                    RibbonTabDesc { label: fl!("ribbon-tab-home"),    is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-write"),   is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-insert"),  is_contextual: false, aria_label: None },
                     RibbonTabDesc { label: fl!("ribbon-tab-publish"), is_contextual: false, aria_label: None },
                 ],
                 active_tab: active_ribbon_tab(),
@@ -982,14 +790,15 @@ pub(super) fn EditorInner(path: String) -> Element {
                     fl!("ribbon-collapse-aria")
                 },
                 tab_content: match active_ribbon_tab() {
-                    1 => publish_tab_content(
+                    1 => insert_tab_content(link_draft, insert_ctx.clone()),
+                    2 => publish_tab_content(
                         &doc_state_publish,
                         path_signal,
                         save_message,
                         is_publish_panel_open,
                         editing_metadata,
                     ),
-                    _ => home_tab_content(
+                    _ => write_tab_content(
                     &doc_state_ribbon,
                     loro_doc,
                     cursor_state,
@@ -1040,6 +849,14 @@ pub(super) fn EditorInner(path: String) -> Element {
                     };
                     view_mode.set(next);
                 },
+                // Recover a dismissed font-substitution warning (Spec 03 M3).
+                notice_label: if dismiss_font_warning() && font_sub_count > 0 {
+                    fl!("editor-font-substitution-chip", count = font_sub_count)
+                } else {
+                    String::new()
+                },
+                notice_aria_label: fl!("editor-font-substitution-title"),
+                on_notice_click:    move |_| { dismiss_font_warning.set(false); },
             }
         }
     }

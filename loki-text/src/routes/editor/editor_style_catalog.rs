@@ -5,9 +5,53 @@
 use std::sync::{Arc, Mutex};
 
 use loki_doc_model::style::ParagraphStyle;
-use loki_doc_model::style::catalog::StyleId;
+use loki_doc_model::style::catalog::{StyleCatalog, StyleId};
 
-use crate::editing::state::DocumentState;
+use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
+
+/// Why a style delete was refused.
+pub(super) enum DeleteError {
+    /// Built-in / default styles are protected from deletion (Spec 05 §8).
+    Builtin,
+    /// The style id is not in the catalog (or no document is loaded).
+    NotFound,
+}
+
+/// Deletes the paragraph style `id` (re-parenting its children to the
+/// grandparent), persists the catalog, and relays out. Built-in styles are
+/// refused. On success returns the number of re-parented child styles for the
+/// caller's confirmation message. The caller refreshes undo bookkeeping.
+pub(super) fn perform_style_delete(
+    loro: &loro::LoroDoc,
+    doc_state: &Arc<Mutex<DocumentState>>,
+    id: &str,
+) -> Result<usize, DeleteError> {
+    let mut catalog = catalog_snapshot(doc_state).ok_or(DeleteError::NotFound)?;
+    let sid = StyleId::new(id);
+    let style = catalog
+        .paragraph_styles
+        .get(&sid)
+        .ok_or(DeleteError::NotFound)?;
+    if style.is_builtin() {
+        return Err(DeleteError::Builtin);
+    }
+    let reparented = catalog.delete_paragraph_style(&sid).len();
+    if let Err(e) = loki_doc_model::loro_bridge::write_document_styles(loro, &catalog) {
+        tracing::warn!("failed to persist style catalog to Loro: {e}");
+    }
+    loro.commit();
+    apply_mutation_and_relayout(doc_state, loro);
+    Ok(reparented)
+}
+
+/// Clones the document's current [`StyleCatalog`] for read-only inspection
+/// (e.g. the provenance inspector). Returns `None` when no document is loaded.
+pub(super) fn catalog_snapshot(doc_state: &Arc<Mutex<DocumentState>>) -> Option<StyleCatalog> {
+    doc_state
+        .lock()
+        .ok()
+        .and_then(|s| s.document.as_ref().map(|d| d.styles.clone()))
+}
 
 /// Inserts or replaces a paragraph style in the catalog and persists the result
 /// through the Loro CRDT, committing it as a discrete, undoable transaction.
@@ -32,6 +76,24 @@ pub(super) fn commit_style_to_loro(
         tracing::warn!("failed to persist style catalog to Loro: {e}");
     }
     loro.commit();
+}
+
+/// Clears the local override of `property` on the paragraph style `id` and
+/// persists the result through Loro (a discrete, undoable transaction) — the
+/// "reset to inherited" action (Spec 05 §6). A no-op when the style is absent.
+///
+/// The caller relays out and refreshes undo bookkeeping (as for
+/// [`commit_style_to_loro`]).
+pub(super) fn reset_style_property(
+    loro: &loro::LoroDoc,
+    doc_state: &Arc<Mutex<DocumentState>>,
+    id: &str,
+    property: super::style_inspector::StyleProperty,
+) {
+    if let Some(mut style) = get_catalog_style(doc_state, id) {
+        super::style_inspector::clear_local_property(&mut style, property);
+        commit_style_to_loro(loro, doc_state, style);
+    }
 }
 
 /// Generates a unique id string for a new custom style.
@@ -83,26 +145,25 @@ pub(super) fn available_font_families(doc_state: &Arc<Mutex<DocumentState>>) -> 
     fr.available_font_families()
 }
 
-/// Returns `(style_id, display_name)` pairs for all catalog styles, sorted by display name.
-pub(super) fn catalog_style_list(doc_state: &Arc<Mutex<DocumentState>>) -> Vec<(String, String)> {
-    let Ok(state) = doc_state.lock() else {
+/// Returns `(style_id, display_name, depth)` for all catalog paragraph styles in
+/// inheritance-tree pre-order (parents before their subtrees), for the tree-view
+/// picker (Spec 05 §7). `depth` is the indentation level.
+pub(super) fn catalog_style_tree(
+    doc_state: &Arc<Mutex<DocumentState>>,
+) -> Vec<(String, String, usize)> {
+    let Some(catalog) = catalog_snapshot(doc_state) else {
         return vec![];
     };
-    let Some(doc) = &state.document else {
-        return vec![];
-    };
-    let mut entries: Vec<(String, String)> = doc
-        .styles
-        .paragraph_styles
-        .iter()
-        .map(|(id, style)| {
-            let display = style
-                .display_name
-                .clone()
+    catalog
+        .para_forest_preorder()
+        .into_iter()
+        .map(|(id, depth)| {
+            let display = catalog
+                .paragraph_styles
+                .get(&id)
+                .and_then(|s| s.display_name.clone())
                 .unwrap_or_else(|| id.as_str().to_string());
-            (id.as_str().to_string(), display)
+            (id.as_str().to_string(), display, depth)
         })
-        .collect();
-    entries.sort_by(|(_, a), (_, b)| a.cmp(b));
-    entries
+        .collect()
 }

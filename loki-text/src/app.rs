@@ -18,7 +18,7 @@
 //! window vertically scrollable.
 
 use appthere_ui::tokens;
-use appthere_ui::{AtThemeContext, use_safe_area};
+use appthere_ui::{AtThemeContext, use_provide_responsive, use_safe_area};
 use dioxus::prelude::*;
 
 use crate::recent_documents::RecentDocuments;
@@ -93,6 +93,12 @@ fn SafeAreaResizeSensor() -> Element {
 pub fn App() -> Element {
     // Inject the theme context before any shell component renders.
     provide_context(AtThemeContext::default());
+
+    // Provide the shared responsive context (Spec 03 M1). Seeded unmeasured
+    // (→ Breakpoint::Compact); the editor funnels the one measured scroll-
+    // container width into it (no second width source). Descendants read the
+    // derived breakpoint via `appthere_ui::use_breakpoint`.
+    use_provide_responsive();
 
     // Spell-check service — starts on the bundled English dictionary so checking
     // works offline. Provided into context for any component (e.g. a future

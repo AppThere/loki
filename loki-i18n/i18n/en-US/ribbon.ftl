@@ -1,9 +1,11 @@
 # Ribbon tabs and controls.
 
 # Tab labels
-ribbon-tab-home = Home
+# The ribbon's primary tab is "Write" (renamed from "Home" — Spec 04 D1 — to
+# resolve the collision with the application Home *screen*).
+ribbon-tab-write = Write
 
-# Inline formatting group (Home tab)
+# Inline formatting group (Write tab)
 ribbon-group-inline = Inline formatting
 ribbon-bold-aria = Bold (Ctrl+B)
 ribbon-italic-aria = Italic (Ctrl+I)
@@ -43,6 +45,24 @@ ribbon-align-justify-aria = Justify
 ribbon-style-editor-heading = Edit Style
 ribbon-style-new-aria = New custom style
 ribbon-style-apply-changes = Apply Changes
+
+# Insert tab (Spec 04 M4)
+ribbon-tab-insert = Insert
+ribbon-group-media = Media
+ribbon-group-links = Links
+ribbon-insert-link-aria = Insert link
+ribbon-insert-link-title = Insert Link
+ribbon-insert-link-placeholder = https://example.com
+ribbon-insert-link-url-aria = Link URL
+ribbon-insert-link-apply = Apply
+ribbon-insert-link-cancel = Cancel
+ribbon-insert-link-remove = Remove
+ribbon-insert-image-aria = Insert image
+ribbon-insert-image-filter = Images
+ribbon-group-tables = Tables
+ribbon-group-references = References
+ribbon-insert-table-aria = Insert table
+ribbon-insert-footnote-aria = Insert footnote
 
 # Ribbon collapse toggle
 ribbon-collapse-aria = Collapse ribbon

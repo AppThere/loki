@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
 
 //! OPC relationships: the `Relationship`/`RelationshipSet` model plus parsing
 //! and writing of `.rels` parts and resolution of relationship targets.

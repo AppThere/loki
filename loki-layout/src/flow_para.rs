@@ -59,9 +59,9 @@ use crate::para::{
     ParagraphLayout, ResolvedParaProps, format_list_marker, layout_paragraph_spelled,
 };
 use crate::resolve::{emu_to_pt, flatten_paragraph, pts_to_f32, resolve_para_props};
-use crate::result::PageParagraphData;
 
 use super::columns_impl::break_column;
+use super::editing::push_editing_para;
 use super::{FlowState, LayoutWarning, finish_page};
 
 /// Maximum keep-with-next chain length before truncation (ADR 004 §4).
@@ -140,8 +140,13 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     let effective_para: &StyledParagraph = owned_para.as_ref().unwrap_or(para);
     // ────────────────────────────────────────────────────────────────────────
 
-    let (text, spans, mut images, notes) =
+    let (text, spans, mut images, mut notes) =
         flatten_paragraph(effective_para, state.catalog, &mut state.note_counter);
+    // Tag each note with its owning block + per-block order (see flow_footnotes).
+    for (i, note) in notes.iter_mut().enumerate() {
+        note.owner_block_index = block_index;
+        note.note_in_block = i;
+    }
     state.pending_footnotes.extend(notes);
 
     // ── Floating image wrap (gap #12) ────────────────────────────────────────
@@ -295,13 +300,8 @@ pub(super) fn place_paragraph_layout(
         let dy = state.cursor_y;
         let dx = state.current_indent;
         if state.options.preserve_for_editing {
-            state.current_paragraphs.push(PageParagraphData {
-                block_index,
-                layout: Arc::new(para_layout.clone()),
-                // Match the item translation below so hit-testing and cursor
-                // geometry line up with the rendered glyphs (lists indent dx).
-                origin: (dx, dy),
-            });
+            // origin (dx, dy) matches the item translation below (lists indent dx).
+            push_editing_para(state, block_index, Arc::new(para_layout.clone()), (dx, dy));
         }
         for mut item in para_layout.items {
             item.translate(dx, dy);
@@ -336,11 +336,7 @@ pub(super) fn place_paragraph_layout(
             let dy = state.cursor_y;
             let dx = state.current_indent;
             if state.options.preserve_for_editing {
-                state.current_paragraphs.push(PageParagraphData {
-                    block_index,
-                    layout: Arc::new(para_layout.clone()),
-                    origin: (0.0, dy),
-                });
+                push_editing_para(state, block_index, Arc::new(para_layout.clone()), (0.0, dy));
             }
             for mut item in para_layout.items {
                 item.translate(dx, dy);
@@ -603,11 +599,7 @@ fn split_and_place_loop(
             if frag_start < f32::EPSILON {
                 // First (and only) fragment: emit items directly without clip.
                 if let Some(ref al) = arc_layout {
-                    state.current_paragraphs.push(PageParagraphData {
-                        block_index,
-                        layout: al.clone(),
-                        origin: (0.0, ty),
-                    });
+                    push_editing_para(state, block_index, al.clone(), (0.0, ty));
                 }
                 for item in &para_layout.items {
                     let mut item = item.clone();
@@ -617,11 +609,7 @@ fn split_and_place_loop(
             } else {
                 // Continuation fragment: clip to hide content from prior pages.
                 if let Some(ref al) = arc_layout {
-                    state.current_paragraphs.push(PageParagraphData {
-                        block_index,
-                        layout: al.clone(),
-                        origin: (0.0, ty),
-                    });
+                    push_editing_para(state, block_index, al.clone(), (0.0, ty));
                 }
                 let clip_rect =
                     LayoutRect::new(0.0, state.cursor_y, state.content_width, frag_height);
@@ -671,11 +659,7 @@ fn split_and_place_loop(
                     // Still no progress: emit remainder and bail.
                     let ty = state.cursor_y - frag_start;
                     if let Some(ref al) = arc_layout {
-                        state.current_paragraphs.push(PageParagraphData {
-                            block_index,
-                            layout: al.clone(),
-                            origin: (0.0, ty),
-                        });
+                        push_editing_para(state, block_index, al.clone(), (0.0, ty));
                     }
                     for item in &para_layout.items {
                         let mut item = item.clone();
@@ -744,11 +728,7 @@ fn emit_fragment(
     let clip_rect = LayoutRect::new(0.0, state.cursor_y, state.content_width, clip_height);
     let ty = state.cursor_y - frag_start;
     if let Some(al) = arc_layout {
-        state.current_paragraphs.push(PageParagraphData {
-            block_index,
-            layout: al,
-            origin: (0.0, ty),
-        });
+        push_editing_para(state, block_index, al, (0.0, ty));
     }
     let mut items = para_layout.items.clone();
     for item in &mut items {

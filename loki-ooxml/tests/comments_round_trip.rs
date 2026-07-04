@@ -6,6 +6,8 @@
 
 use std::io::Cursor;
 
+use appthere_conformance::model::canonicalize_document;
+use appthere_conformance::roundtrip::first_divergence;
 use chrono::TimeZone;
 use loki_doc_model::content::annotation::{Comment, CommentRef, CommentRefKind};
 use loki_doc_model::content::block::Block;
@@ -14,6 +16,16 @@ use loki_doc_model::document::Document;
 use loki_doc_model::io::DocumentExport;
 use loki_ooxml::DocxExport;
 use loki_ooxml::docx::import::{DocxImportOptions, DocxImporter};
+
+/// One export→re-import cycle.
+fn export_import(doc: &Document) -> Document {
+    let mut buf = Cursor::new(Vec::new());
+    DocxExport::export(doc, &mut buf, ()).expect("export should succeed");
+    DocxImporter::new(DocxImportOptions::default())
+        .run(Cursor::new(buf.into_inner()))
+        .expect("re-import should succeed")
+        .document
+}
 
 fn doc_with_comment() -> Document {
     // "Hello [commented]world[/commented]!" with comment id "0".
@@ -59,12 +71,19 @@ fn anchors(doc: &Document) -> Vec<(String, CommentRefKind)> {
 fn comment_range_and_body_round_trip() {
     let doc = doc_with_comment();
 
-    let mut buf = Cursor::new(Vec::new());
-    DocxExport::export(&doc, &mut buf, ()).expect("export should succeed");
-    let re = DocxImporter::new(DocxImportOptions::default())
-        .run(Cursor::new(buf.into_inner()))
-        .expect("re-import should succeed")
-        .document;
+    let re = export_import(&doc);
+
+    // Whole-model differ backstop: the commented range's anchors live in the
+    // body flow, so a second cycle must introduce no divergence — catching any
+    // anchor displacement the targeted assertions below do not check. (The
+    // comment *body* lives in `doc.comments`, outside the body canonical form.)
+    let re2 = export_import(&re);
+    if let Some(d) = first_divergence(&canonicalize_document(&re), &canonicalize_document(&re2)) {
+        panic!(
+            "comment body-flow round-trip diverged at `{}`:\n  {:?}\n  {:?}",
+            d.path, d.left, d.right
+        );
+    }
 
     // The start/end anchors survive in the content flow.
     let got = anchors(&re);

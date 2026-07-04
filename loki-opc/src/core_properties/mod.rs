@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
 
 //! OPC core properties (`/docProps/core.xml`) — Dublin Core document metadata
 //! such as title, creator, and the created/modified timestamps. Parsing and

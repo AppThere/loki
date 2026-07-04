@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
 
 //! Reads an OPC package from a ZIP archive.
 //!
@@ -115,13 +115,12 @@ pub fn read_package_from_zip<R: Read + Seek>(reader: &mut R) -> OpcResult<Packag
                 *pkg.relationships_mut() = rel_set;
             } else {
                 let (dir, file) = match name.as_str().rsplit_once("/_rels/") {
-                    Some((d, f)) => {
-                        if d.is_empty() {
-                            ("".to_string(), f.strip_suffix(".rels").unwrap().to_string())
-                        } else {
-                            (d.to_string(), f.strip_suffix(".rels").unwrap().to_string())
-                        }
-                    }
+                    // `name` ends with ".rels" (guarded above), so `f` does too;
+                    // `unwrap_or` keeps the gate panic-free regardless.
+                    Some((d, f)) => (
+                        d.to_string(),
+                        f.strip_suffix(".rels").unwrap_or(f).to_string(),
+                    ),
                     None => continue,
                 };
 

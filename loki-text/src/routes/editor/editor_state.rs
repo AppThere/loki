@@ -87,7 +87,6 @@ pub(super) struct EditorState {
     pub is_dragging: Signal<bool>,
     pub drag_origin: Signal<Option<(f32, f32)>>,
     pub touch_state: Signal<Option<TouchInteractionState>>,
-    pub window_width: Signal<f32>,
     pub scroll_offset: Signal<f32>,
     /// Live scroll geometry of the canvas container, mirrored from the most
     /// recent DOM `scroll` event and consumed by the custom scrollbars.
@@ -174,7 +173,6 @@ pub(super) fn use_editor_state() -> EditorState {
         is_dragging: use_signal(|| false),
         drag_origin: use_signal(|| None),
         touch_state: use_signal(|| None),
-        window_width: use_signal(|| 1280.0_f32),
         scroll_offset: use_signal(|| 0.0_f32),
         scroll_metrics: use_signal(ScrollMetrics::default),
         canvas_mounted: use_signal(|| None),

@@ -6,11 +6,13 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 use keyboard_types::Modifiers;
-use loki_doc_model::loro_mutation::{delete_text, get_block_text, insert_text};
-use loki_doc_model::merge_block;
+use loki_doc_model::loro_mutation::{
+    delete_text_at, get_block_text, get_block_text_at, insert_text_at,
+};
+use loki_doc_model::merge_block_at;
 
 use loki_renderer::ViewMode;
-use loki_renderer::render_layout::{MIN_REFLOW_CONTENT_PT, REFLOW_PADDING_PT};
+use loki_renderer::render_layout::reflow_content_width_pt;
 
 use super::editor_keydown_ctrl::{
     handle_ctrl_keys, handle_delete_key, handle_enter_key, post_mutation_sync,
@@ -88,7 +90,7 @@ pub(super) fn make_keydown_handler(
                     let Some(ldoc) = ldoc_guard.as_ref() else {
                         return;
                     };
-                    if insert_text(ldoc, focus.paragraph_index, focus.byte_offset, &ch).is_err() {
+                    if insert_text_at(ldoc, &focus.block_path(), focus.byte_offset, &ch).is_err() {
                         return;
                     }
                 }
@@ -120,14 +122,16 @@ pub(super) fn make_keydown_handler(
             // ── Backspace ─────────────────────────────────────────────────────
             Key::Backspace => {
                 if focus.byte_offset == 0 {
-                    if focus.paragraph_index == 0 {
-                        return;
-                    }
+                    // Backspace-at-start merges this block into its previous
+                    // sibling within the same container. `merge_block_at` returns
+                    // `NoPreviousBlock` at the first block of a container (a
+                    // top-level paragraph 0 or the first block of a cell / note
+                    // body), making this a no-op there.
                     let ldoc_guard = loro_doc.read();
                     let Some(ldoc) = ldoc_guard.as_ref() else {
                         return;
                     };
-                    let Ok(merged_offset) = merge_block(ldoc, focus.paragraph_index) else {
+                    let Ok(merged_offset) = merge_block_at(ldoc, &focus.block_path()) else {
                         return;
                     };
                     apply_mutation_and_relayout(&doc_state, ldoc);
@@ -139,12 +143,9 @@ pub(super) fn make_keydown_handler(
                         can_undo,
                         can_redo,
                     );
-                    // TODO(3b-3): recompute page_index from layout after merge
-                    let new_pos = DocumentPosition {
-                        page_index: focus.page_index,
-                        paragraph_index: focus.paragraph_index - 1,
-                        byte_offset: merged_offset,
-                    };
+                    // TODO(3b-3): recompute page_index from layout after merge.
+                    // Caret lands at the join point in the previous sibling block.
+                    let new_pos = focus.sibling_block(-1, merged_offset);
                     let mut cs = cursor_state.write();
                     cs.focus = Some(new_pos.clone());
                     cs.anchor = Some(new_pos);
@@ -154,7 +155,7 @@ pub(super) fn make_keydown_handler(
                     let ldoc_guard = loro_doc.read();
                     ldoc_guard
                         .as_ref()
-                        .map(|l| get_block_text(l, focus.paragraph_index))
+                        .map(|l| get_block_text_at(l, &focus.block_path()))
                         .unwrap_or_default()
                 };
                 let prev = prev_grapheme_boundary(&text, focus.byte_offset);
@@ -164,7 +165,7 @@ pub(super) fn make_keydown_handler(
                     let Some(ldoc) = ldoc_guard.as_ref() else {
                         return;
                     };
-                    if delete_text(ldoc, focus.paragraph_index, prev, len).is_err() {
+                    if delete_text_at(ldoc, &focus.block_path(), prev, len).is_err() {
                         return;
                     }
                 }
@@ -229,8 +230,7 @@ pub(super) fn make_keydown_handler(
                     if width_px <= 1.0 {
                         return;
                     }
-                    let content_w = (width_px * (72.0 / 96.0) - 2.0 * REFLOW_PADDING_PT)
-                        .max(MIN_REFLOW_CONTENT_PT);
+                    let content_w = reflow_content_width_pt(width_px);
                     let Some(layout) = ensure_reflow_layout(&doc_state, content_w) else {
                         return;
                     };

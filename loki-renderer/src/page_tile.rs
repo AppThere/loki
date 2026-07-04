@@ -102,8 +102,10 @@ pub(crate) fn PageTile(props: PageTileProps) -> Element {
 
     rsx! {
         div {
-            // COMPAT(dioxus-native): position:absolute is unsupported in Blitz.
-            // Use block flow with auto margins for horizontal centring instead.
+            // Block flow with auto margins for horizontal centring. (Block-level
+            // position: absolute is now confirmed working in Blitz — CLAUDE.md
+            // "Confirmed CSS properties" — so this is a layout choice, not a
+            // Blitz limitation.)
             style: format!(
                 "display: block; width: {w}px; height: {h}px; \
                  margin-left: auto; margin-right: auto; \

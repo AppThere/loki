@@ -1,0 +1,21 @@
+# loki-bench portable memory baseline (Spec 06 M3).
+# Update intentionally: cargo bench -p loki-bench --bench baseline -- --update
+# key  total_bytes  total_blocks  max_bytes  max_blocks
+arc/share_font_resources                            0          0            0          0
+export/large_odt                              2216661       5129       502238         33
+export/medium_odt                             1617711       1327       393271         33
+export/small_odt                              1449585        324       364408         33
+io/large_open                                 6419674      18080      3561347       6111
+io/large_save                                 2752812       6484       624867         83
+io/medium_open                                1921306       4774       900757       1551
+io/medium_save                                2299839       1922       431317         89
+io/small_open                                  749856       1268       206808        351
+io/small_save                                 2186362        720       381285         83
+layout/large                                 40450212      59870     14124464      12215
+layout/medium                                 9737350      14325      3404897       2933
+layout/small                                  3223680       2533      2135824        607
+model/large                                   2072947      15031       589840       2030
+model/medium                                   498380       3627       143044        510
+model/small                                     84899        621        25934        110
+style_resolution/depth16_chains100             165330       2100         1313         17
+style_resolution/depth64_chains1000           3407370      38000         2635         31

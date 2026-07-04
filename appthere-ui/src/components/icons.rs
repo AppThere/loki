@@ -67,6 +67,24 @@ pub const LUCIDE_ALIGN_JUSTIFY: &str = "M3 6h18M3 12h18M3 18h18";
 /// Lucide `pilcrow` — paragraph mark (¶).
 pub const LUCIDE_PILCROW: &str = "M13 4v16M17 4v16M8 4h4a4 4 0 0 1 0 8H8";
 
+/// Lucide `link` — two interlocking chain links (two subpaths in one `d`).
+pub const LUCIDE_LINK: &str =
+    "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71";
+
+/// Lucide `image` — framed picture with a sun and a mountain (subpaths in one
+/// `d`; the circle is approximated with two arc halves).
+pub const LUCIDE_IMAGE: &str =
+    "M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zM10 9a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zM21 15l-5-5L5 21";
+
+/// Lucide `table` — a bordered grid (outer frame plus one mid horizontal and
+/// one mid vertical divider). Used for Insert → Table.
+pub const LUCIDE_TABLE: &str =
+    "M12 3v18M3 9h18M3 15h18M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z";
+
+/// Lucide `superscript`-style reference mark reused for Insert → Footnote — a
+/// down-step baseline with a raised reference tick, evoking a footnote marker.
+pub const LUCIDE_FOOTNOTE: &str = "M4 5h6M4 5v10a3 3 0 0 0 6 0M16 5v6m0-6h4m-4 0-1 1";
+
 // ── AtIcon component ──────────────────────────────────────────────────────────
 
 /// Renders a single Lucide SVG icon.

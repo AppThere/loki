@@ -57,7 +57,7 @@ pub(crate) fn layout_band_body(
     para_props: &ResolvedParaProps,
     line_w: f32,
     display_scale: f32,
-    band: Band,
+    band: &Band,
 ) -> BandBody {
     let indent_start = para_props.indent_start;
     let x_shift = if band.shift_text { band.inset } else { 0.0 };

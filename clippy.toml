@@ -1,0 +1,8 @@
+# Clippy configuration for the Loki workspace (Spec 01 enforcement).
+#
+# `clippy::unwrap_used` / `clippy::expect_used` are enabled in CI to keep
+# panicking `.unwrap()` / `.expect()` out of library runtime code (audit A-5).
+# Test code may use them freely — these options exempt `#[cfg(test)]` modules
+# and `#[test]` functions so the gate targets shipped code only.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true

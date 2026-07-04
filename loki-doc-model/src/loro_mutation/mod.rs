@@ -27,14 +27,27 @@
 //! All `byte_offset` and `len` parameters are **UTF-8 byte positions**.
 
 mod block;
+mod nested;
+#[cfg(feature = "serde")]
+mod objects;
 mod style;
 mod text;
 
-pub use self::block::{merge_block, split_block};
+#[cfg(feature = "serde")]
+pub use self::block::insert_block_after;
+pub use self::block::{merge_block, merge_block_at, split_block, split_block_at};
+pub use self::nested::{
+    BlockPath, PathStep, delete_text_at, get_block_text_at, get_mark_at_path, insert_text_at,
+    mark_text_at,
+};
+#[cfg(feature = "serde")]
+pub use self::objects::{insert_inline_image_at, insert_inline_note_at};
 pub use self::style::{
     get_block_alignment, get_block_style_name, set_block_alignment, set_block_style,
     set_block_type_heading, set_block_type_para,
 };
+#[cfg(feature = "serde")]
+pub use self::text::insert_inline_image;
 pub use self::text::{
     delete_text, get_block_text, get_mark_at, insert_text, mark_text, replace_text,
 };
@@ -55,6 +68,10 @@ pub enum MutationError {
     /// An error returned by the underlying Loro library.
     #[error("Loro error: {0}")]
     Loro(String),
+    /// Failed to serialize structured inline content (e.g. an image) to the
+    /// JSON snapshot carried by an inline-object mark.
+    #[error("Encoding error: {0}")]
+    Encode(String),
     /// `byte_offset` is out of range or not on a UTF-8 character boundary.
     #[error("Invalid byte offset {offset} for block split")]
     InvalidByteOffset { offset: usize },
@@ -66,6 +83,11 @@ pub enum MutationError {
     /// would remove the break) is not supported.
     #[error("Cannot merge across a section break")]
     CrossSectionMerge,
+    /// A [`nested::BlockPath`] could not be resolved — e.g. a descent step
+    /// addressed a non-table block, or a cell / nested-block index was out of
+    /// range.
+    #[error("Invalid block path: {0}")]
+    InvalidBlockPath(String),
 }
 
 impl From<loro::LoroError> for MutationError {

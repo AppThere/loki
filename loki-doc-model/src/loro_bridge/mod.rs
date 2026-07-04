@@ -12,6 +12,8 @@
 mod comments;
 mod decode;
 mod incremental;
+#[cfg(feature = "serde")]
+mod inline_objects;
 mod inlines;
 mod inlines_read;
 mod meta;
@@ -19,12 +21,20 @@ mod opaque;
 mod props_read;
 mod read;
 mod styles;
+mod table;
 mod write;
 
 pub use comments::{read_document_comments, write_document_comments};
 pub use incremental::IncrementalReader;
 pub use meta::{read_document_meta, write_document_meta};
 pub use styles::{read_document_styles, write_document_styles};
+
+// Crate-internal block / note writers reused by the mutation layer to insert a
+// new `Block` or footnote against a live document (same schema as the initial
+// `document_to_loro`).
+#[cfg(feature = "serde")]
+pub(crate) use inline_objects::insert_note_at;
+pub(crate) use write::map_block;
 
 use crate::document::Document;
 use crate::layout::header_footer::HeaderFooter;
@@ -116,36 +126,25 @@ fn map_header_footer_slot(
 pub fn document_to_loro(doc: &Document) -> Result<LoroDoc, BridgeError> {
     let loro_doc = LoroDoc::new();
 
-    // Register all mark keys so Loro tracks their expand behaviour.
+    // Register every mark key so Loro tracks its expand behaviour.
     let mut style_config = StyleConfigMap::new();
-    for key in &[
-        MARK_BOLD,
-        MARK_ITALIC,
-        MARK_UNDERLINE,
-        MARK_STRIKETHROUGH,
-        MARK_COLOR,
-        MARK_HIGHLIGHT_COLOR,
-        MARK_FONT_FAMILY,
-        MARK_FONT_SIZE_PT,
-        MARK_VERTICAL_ALIGN,
-        MARK_LINK_URL,
-        MARK_LANGUAGE,
-        MARK_LANGUAGE_COMPLEX,
-        MARK_LANGUAGE_EAST_ASIAN,
-        MARK_LETTER_SPACING,
-        MARK_WORD_SPACING,
-        MARK_SCALE,
-        MARK_SMALL_CAPS,
-        MARK_ALL_CAPS,
-        MARK_SHADOW,
-        MARK_KERNING,
-        MARK_OUTLINE,
-        MARK_CHAR_STYLE_ID,
-    ] {
+    // Character formatting marks expand onto text inserted at their trailing
+    // edge (`After`) — the single source of truth is `CHAR_MARK_KEYS`.
+    for key in CHAR_MARK_KEYS {
         style_config.insert(
             loro::InternalString::from(*key),
             StyleConfig {
                 expand: ExpandType::After,
+            },
+        );
+    }
+    // Inline-object anchor marks must not expand onto adjacent text — they
+    // describe a single placeholder position, not a formatting span.
+    for key in INLINE_OBJECT_MARK_KEYS {
+        style_config.insert(
+            loro::InternalString::from(*key),
+            StyleConfig {
+                expand: ExpandType::None,
             },
         );
     }

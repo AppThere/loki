@@ -6,7 +6,6 @@
 use std::sync::{Arc, Mutex};
 
 #[cfg(any(not(target_os = "android"), android_gpu))]
-use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 use loki_layout::PaginatedLayout;
@@ -18,7 +17,7 @@ use loki_layout::PaginatedLayout;
 #[cfg(any(not(target_os = "android"), android_gpu))]
 use crate::page_tile::PageTile;
 #[cfg(any(not(target_os = "android"), android_gpu))]
-use crate::render_layout::RenderMode;
+use crate::render_layout::{PX_TO_PT, RenderMode, reflow_tile_width_px};
 use crate::renderer_state::RendererState;
 
 // The HTML-flow fallback is only used on the Android CPU path; GPU targets
@@ -130,6 +129,15 @@ pub struct DocumentViewProps {
     /// Called when a page tile is right-clicked (paginated mode), carrying the
     /// accurate tile-local + client coordinates. Drives the spelling context menu.
     pub on_tile_context: EventHandler<TileContext>,
+    /// Vertical gap between page tiles in paginated mode, in CSS px. Injected by
+    /// the app (from `appthere_ui::tokens::PAGE_GAP_PX`) rather than imported
+    /// here, so the render layer does not depend on the UI layer — Spec 01 audit
+    /// A-8. Zeroed automatically in reflow mode.
+    pub page_gap_px: f64,
+    /// Bottom padding below the last page, in CSS px (from
+    /// `appthere_ui::tokens::SPACE_6`). Injected for the same reason as
+    /// `page_gap_px`.
+    pub content_padding_bottom_px: f32,
 }
 
 impl PartialEq for DocumentViewProps {
@@ -185,7 +193,7 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         // formatting fidelity), presented as zero-gap virtual tiles.
         let render_mode = if props.view_mode == ViewMode::Reflow && props.reflow_width_px > 1.0 {
             RenderMode::Reflow {
-                available_width_pt: (props.reflow_width_px * 72.0 / 96.0) as f32,
+                available_width_pt: reflow_tile_width_px(props.reflow_width_px as f32) * PX_TO_PT,
             }
         } else {
             RenderMode::Paginated
@@ -253,11 +261,7 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                 focus,
             }
         });
-        let gap_px = if is_reflow {
-            0.0
-        } else {
-            tokens::PAGE_GAP_PX as f64
-        };
+        let gap_px = if is_reflow { 0.0 } else { props.page_gap_px };
         let on_tile_click = props.on_tile_click;
         let on_reflow_click = props.on_reflow_click;
         let on_reflow_drag = props.on_reflow_drag;
@@ -316,7 +320,7 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                 div {
                     style: format!(
                         "position: relative; width: 100%; padding-bottom: {pb}px;{bg}",
-                        pb = tokens::SPACE_6,
+                        pb = props.content_padding_bottom_px,
                         bg = wrapper_bg,
                     ),
                     for (idx, w, h, visible) in tiles {

@@ -24,11 +24,7 @@ fn para_pos(layout: &ContinuousLayout, block_index: usize) -> Option<usize> {
 }
 
 fn pos_at(paragraph_index: usize, byte_offset: usize) -> DocumentPosition {
-    DocumentPosition {
-        page_index: 0,
-        paragraph_index,
-        byte_offset,
-    }
+    DocumentPosition::top_level(0, paragraph_index, byte_offset)
 }
 
 /// Move one grapheme left, crossing into the previous paragraph at offset 0.
@@ -193,6 +189,7 @@ mod tests {
         );
         PageParagraphData {
             block_index,
+            path: Vec::new(),
             layout: Arc::new(layout),
             origin,
         }
@@ -211,11 +208,7 @@ mod tests {
     }
 
     fn pos(p: usize, b: usize) -> DocumentPosition {
-        DocumentPosition {
-            page_index: 0,
-            paragraph_index: p,
-            byte_offset: b,
-        }
+        DocumentPosition::top_level(0, p, b)
     }
 
     #[test]

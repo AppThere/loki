@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
 
 //! Public-API tests for `loki-opc`: part names, content types, relationships,
 //! the compatibility shims, target-reference resolution, and a full package

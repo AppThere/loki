@@ -1,0 +1,6 @@
+# Reviewed exceptions to the panic-guard gate (scripts/check-no-panics.py).
+#
+# One repo-relative path per line. `#` starts a comment. A path here is skipped
+# by the gate and MUST carry a justification comment above it.
+#
+# (no exceptions currently — library src is free of panic!/todo!/unimplemented!)

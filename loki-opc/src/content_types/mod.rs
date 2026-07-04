@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
 
 //! The `[Content_Types].xml` model: per-extension default media types plus
 //! per-part overrides, with override taking precedence on lookup.

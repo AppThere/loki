@@ -11,6 +11,8 @@ fluent = "0.17"
 # fluent-bundle is pulled transitively by fluent; declare explicitly to
 # access fluent_bundle::concurrent::FluentBundle which is Send + Sync.
 fluent-bundle = "0.16"
-unic-langid = "0.9"
+# `macros` for `langid!` — compile-time `LanguageIdentifier` construction so the
+# built-in `en-US` fallback needs no runtime parse/expect (audit A-5).
+unic-langid = { version = "0.9", features = ["macros"] }
 sys-locale = "0.3"
 rust-embed = { version = "8", features = ["debug-embed"] }

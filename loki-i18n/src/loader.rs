@@ -14,11 +14,14 @@ use crate::embed::LokiTranslations;
 
 /// All translation domains; each maps to one `.ftl` file per locale.
 const DOMAINS: &[&str] = &[
-    "shell", "home", "editor", "ribbon", "errors", "document", "publish",
+    "shell", "home", "editor", "ribbon", "errors", "document", "publish", "style",
 ];
 
-/// Locale used when the system locale has no embedded translations.
-const FALLBACK_LOCALE: &str = "en-US";
+/// Locale used when the system locale has no embedded translations,
+/// constructed at compile time (no runtime parse can fail).
+fn fallback_locale() -> LanguageIdentifier {
+    unic_langid::langid!("en-US")
+}
 
 /// Type alias for the concurrent Fluent bundle.
 type Bundle = FluentBundle<FluentResource>;
@@ -39,9 +42,7 @@ impl LokiBundle {
     /// A separate `en-US` fallback bundle is kept so keys missing from the
     /// primary locale still resolve.
     pub fn load(locale_str: &str) -> Self {
-        let langid: LanguageIdentifier = locale_str
-            .parse()
-            .unwrap_or_else(|_| FALLBACK_LOCALE.parse().expect("en-US is valid"));
+        let langid: LanguageIdentifier = locale_str.parse().unwrap_or_else(|_| fallback_locale());
 
         let bundle = load_locale(&langid);
 
@@ -50,7 +51,7 @@ impl LokiBundle {
         // than a `starts_with("en-US")` string check) is important: variants
         // like `en-US-posix` have no embedded `.ftl` files of their own, so
         // without a fallback every key would render as its raw identifier.
-        let fb_id: LanguageIdentifier = FALLBACK_LOCALE.parse().expect("en-US is valid");
+        let fb_id: LanguageIdentifier = fallback_locale();
         let fallback = if langid == fb_id {
             None
         } else {

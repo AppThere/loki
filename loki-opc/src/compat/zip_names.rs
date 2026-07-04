@@ -1,5 +1,5 @@
-// Copyright 2026 AppThere Loki contributors
 // SPDX-License-Identifier: MIT
+// Copyright 2026 AppThere Loki contributors
 
 //! ZIP path compatibility shim: rewrite backslash separators emitted by
 //! non-conformant writers to forward slashes ([MS-OI29500] / [MS-OE376]).

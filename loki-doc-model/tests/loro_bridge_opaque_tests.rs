@@ -11,6 +11,9 @@ use loki_doc_model::content::block::{Block, Caption, ListAttributes};
 use loki_doc_model::content::inline::{Inline, LinkTarget, NoteKind, StyledRun};
 use loki_doc_model::document::Document;
 use loki_doc_model::loro_bridge::{derive_loro_cursor, document_to_loro, loro_to_document};
+use loki_doc_model::loro_schema::{
+    BLOCK_TYPE_OPAQUE, BLOCK_TYPE_PARA, KEY_BLOCKS, KEY_SECTIONS, KEY_TYPE,
+};
 use loki_doc_model::style::catalog::StyleId;
 use loki_doc_model::style::props::char_props::{CharProps, HighlightColor};
 
@@ -100,6 +103,143 @@ fn inline_image_paragraph_survives_roundtrip() {
         ),
     ]);
     let doc = doc_with_blocks(vec![block.clone()]);
+    assert_eq!(round_trip(&doc).sections[0].blocks[0], block);
+}
+
+/// Reads the `KEY_TYPE` discriminator of the first block in the first section
+/// directly from the Loro document, to distinguish a native mapping from an
+/// opaque snapshot.
+fn first_block_type(doc: &Document) -> Option<String> {
+    let loro = document_to_loro(doc).ok()?;
+    let sections = loro.get_list(KEY_SECTIONS);
+    let sec = sections.get(0)?.into_container().ok()?.into_map().ok()?;
+    let blocks = sec
+        .get(KEY_BLOCKS)?
+        .into_container()
+        .ok()?
+        .into_movable_list()
+        .ok()?;
+    let block = blocks.get(0)?.into_container().ok()?.into_map().ok()?;
+    block
+        .get(KEY_TYPE)?
+        .into_value()
+        .ok()?
+        .into_string()
+        .ok()
+        .map(|s| s.to_string())
+}
+
+/// A bare (top-level) image is mapped natively — a placeholder anchor carrying
+/// the image as a mark — so the paragraph is a live `para`, not an opaque
+/// snapshot, while still round-tripping byte-for-byte.
+#[test]
+fn inline_image_stored_natively_not_opaque() {
+    let block = Block::Para(vec![
+        Inline::Str("see ".into()),
+        Inline::Image(
+            NodeAttr::default(),
+            vec![Inline::Str("alt".into())],
+            LinkTarget::new("media/i.png"),
+        ),
+        Inline::Str(" here".into()),
+    ]);
+    let doc = doc_with_blocks(vec![block.clone()]);
+    assert_eq!(
+        first_block_type(&doc).as_deref(),
+        Some(BLOCK_TYPE_PARA),
+        "an image paragraph must be a native para, not an opaque snapshot"
+    );
+    let recovered = round_trip(&doc);
+    assert_eq!(recovered.sections[0].blocks[0], block);
+    // The image must survive as a discrete, positioned inline (Str, Image, Str).
+    let Block::Para(inlines) = &recovered.sections[0].blocks[0] else {
+        panic!("expected Para");
+    };
+    assert_eq!(
+        inlines.len(),
+        3,
+        "image must stay a discrete inline: {inlines:?}"
+    );
+    assert!(matches!(inlines[1], Inline::Image(..)));
+}
+
+/// An image *nested* inside a wrapper is flattened by the text write path, so
+/// its block must remain an opaque snapshot to avoid silent data loss.
+#[test]
+fn nested_inline_image_stays_opaque_but_survives() {
+    let block = Block::Para(vec![Inline::Strong(vec![Inline::Image(
+        NodeAttr::default(),
+        vec![],
+        LinkTarget::new("media/i.png"),
+    )])]);
+    let doc = doc_with_blocks(vec![block.clone()]);
+    assert_eq!(
+        first_block_type(&doc).as_deref(),
+        Some(BLOCK_TYPE_OPAQUE),
+        "an image nested in a wrapper must keep its block opaque"
+    );
+    assert_eq!(round_trip(&doc).sections[0].blocks[0], block);
+}
+
+/// A bare (top-level) footnote/endnote is mapped natively — its reference is a
+/// placeholder anchor carrying the note (kind + block body) as a mark — so the
+/// paragraph is a live `para`, with the note a discrete inline, and the body
+/// round-trips losslessly.
+#[test]
+fn footnote_stored_natively_not_opaque() {
+    let block = Block::Para(vec![
+        Inline::Str("claim".into()),
+        Inline::Note(
+            NoteKind::Footnote,
+            vec![para("supporting detail"), para("second paragraph")],
+        ),
+        Inline::Str(" continues".into()),
+    ]);
+    let doc = doc_with_blocks(vec![block.clone()]);
+    assert_eq!(
+        first_block_type(&doc).as_deref(),
+        Some(BLOCK_TYPE_PARA),
+        "a footnote paragraph must be a native para, not an opaque snapshot"
+    );
+    let recovered = round_trip(&doc);
+    assert_eq!(recovered.sections[0].blocks[0], block);
+    let Block::Para(inlines) = &recovered.sections[0].blocks[0] else {
+        panic!("expected Para");
+    };
+    assert_eq!(
+        inlines.len(),
+        3,
+        "note must stay a discrete inline: {inlines:?}"
+    );
+    assert!(matches!(inlines[1], Inline::Note(NoteKind::Footnote, _)));
+}
+
+/// Endnotes use the same path; the `NoteKind` discriminant must survive.
+#[test]
+fn endnote_kind_survives_native_roundtrip() {
+    let block = Block::Para(vec![Inline::Note(
+        NoteKind::Endnote,
+        vec![para("endnote body")],
+    )]);
+    let doc = doc_with_blocks(vec![block.clone()]);
+    assert_eq!(first_block_type(&doc).as_deref(), Some(BLOCK_TYPE_PARA));
+    assert_eq!(round_trip(&doc).sections[0].blocks[0], block);
+}
+
+/// A note *nested* inside a wrapper is flattened by the text write path, so its
+/// block must remain an opaque snapshot to avoid silent data loss.
+#[test]
+fn nested_footnote_stays_opaque_but_survives() {
+    let block = Block::Para(vec![Inline::Emph(vec![Inline::Note(
+        NoteKind::Footnote,
+        vec![para("body")],
+    )])]);
+    let doc = doc_with_blocks(vec![block.clone()]);
+    assert_eq!(
+        first_block_type(&doc).as_deref(),
+        Some(BLOCK_TYPE_OPAQUE),
+        "a note nested in a wrapper must keep its block opaque"
+    );
     assert_eq!(round_trip(&doc).sections[0].blocks[0], block);
 }
 
