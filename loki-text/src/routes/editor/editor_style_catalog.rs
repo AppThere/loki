@@ -7,7 +7,42 @@ use std::sync::{Arc, Mutex};
 use loki_doc_model::style::ParagraphStyle;
 use loki_doc_model::style::catalog::{StyleCatalog, StyleId};
 
-use crate::editing::state::DocumentState;
+use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
+
+/// Why a style delete was refused.
+pub(super) enum DeleteError {
+    /// Built-in / default styles are protected from deletion (Spec 05 §8).
+    Builtin,
+    /// The style id is not in the catalog (or no document is loaded).
+    NotFound,
+}
+
+/// Deletes the paragraph style `id` (re-parenting its children to the
+/// grandparent), persists the catalog, and relays out. Built-in styles are
+/// refused. On success returns the number of re-parented child styles for the
+/// caller's confirmation message. The caller refreshes undo bookkeeping.
+pub(super) fn perform_style_delete(
+    loro: &loro::LoroDoc,
+    doc_state: &Arc<Mutex<DocumentState>>,
+    id: &str,
+) -> Result<usize, DeleteError> {
+    let mut catalog = catalog_snapshot(doc_state).ok_or(DeleteError::NotFound)?;
+    let sid = StyleId::new(id);
+    let style = catalog
+        .paragraph_styles
+        .get(&sid)
+        .ok_or(DeleteError::NotFound)?;
+    if style.is_builtin() {
+        return Err(DeleteError::Builtin);
+    }
+    let reparented = catalog.delete_paragraph_style(&sid).len();
+    if let Err(e) = loki_doc_model::loro_bridge::write_document_styles(loro, &catalog) {
+        tracing::warn!("failed to persist style catalog to Loro: {e}");
+    }
+    loro.commit();
+    apply_mutation_and_relayout(doc_state, loro);
+    Ok(reparented)
+}
 
 /// Clones the document's current [`StyleCatalog`] for read-only inspection
 /// (e.g. the provenance inspector). Returns `None` when no document is loaded.

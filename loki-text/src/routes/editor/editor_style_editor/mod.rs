@@ -8,6 +8,7 @@
 //! ([`form::style_form`]) edits the selected draft, which the Apply button
 //! commits to the catalog and relays out.
 
+mod actions;
 mod draft;
 mod form;
 mod form_font;

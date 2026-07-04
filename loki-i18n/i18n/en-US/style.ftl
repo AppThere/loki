@@ -27,6 +27,11 @@ style-staged-title = Pending — apply to commit
 style-impact-preview = Applying also changes { $count } dependent style(s): { $names }
 # Re-parenting rejected because it would create an inheritance cycle
 style-reparent-cycle = Cannot set that parent: it would create an inheritance cycle
+# Delete control (user styles only; built-in styles are protected)
+style-delete-label = Delete
+style-delete-aria = Delete this style
+style-delete-success = Style deleted; { $count } child style(s) re-parented
+style-delete-builtin = Built-in styles can't be deleted
 
 # Provenance labels
 style-provenance-local = Local

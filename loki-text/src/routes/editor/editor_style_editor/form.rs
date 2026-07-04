@@ -144,6 +144,9 @@ pub(super) fn style_form(
     sync: StyleEditorSync,
 ) -> Element {
     let ds_apply = Arc::clone(&doc_state);
+    let ds_delete = Arc::clone(&doc_state);
+    let can_delete = draft.is_custom;
+    let delete_id = draft.id.clone();
     let align_cur = draft.alignment.clone();
     rsx! {
         div {
@@ -256,6 +259,10 @@ pub(super) fn style_form(
                     },
                     { fl!("ribbon-style-apply-changes") }
                 }
+
+                // Delete — user styles only; built-in/default styles are
+                // protected (§8). Extracted to keep this file under the ceiling.
+                { super::actions::delete_button(can_delete, ds_delete, delete_id, editing_style_draft, sync) }
             }
         }
     }
