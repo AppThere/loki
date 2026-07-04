@@ -40,12 +40,14 @@
 
 mod axis;
 mod baseline;
+mod leak;
 mod memory;
 
 pub use axis::{Axis, Metric};
 pub use baseline::{
     Baseline, BaselineError, Delta, DeltaStatus, Tolerance, any_regressed, diff, render_report,
 };
+pub use leak::{LeakVerdict, ResidualStats, classify_leak, residual_after};
 pub use memory::{AllocStats, measure};
 
 /// Re-exported so [`dhat_global_allocator!`] can name `dhat` from any bench

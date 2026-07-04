@@ -74,5 +74,13 @@ harness = false
 name = "baseline"
 harness = false
 
+[[bench]]
+name = "leak_detection"
+harness = false
+
+[[bench]]
+name = "leak_loro_history"
+harness = false
+
 [package.metadata.docs.rs]
 all-features = true

@@ -46,9 +46,20 @@ cargo bench -p loki-bench --bench baseline -- --update   # rewrite the baseline 
 cargo bench -p loki-bench --bench arc_steady_state       # assert Arc::clone allocates 0
 ```
 
+## Leak detection (M4)
+
+Residual live-heap measurement (`residual_after`) + a pure `classify_leak`
+verdict catch the §7 culprits: Arc cycles / retained documents, unbounded
+caches, and Loro history growth.
+
+```bash
+cargo bench -p loki-bench --bench leak_detection     # clean cycle Bounded; seeded leaks caught
+cargo bench -p loki-bench --bench leak_loro_history  # reports oplog growth over a long session
+```
+
 ## Not yet (later milestones)
 
-Leak detection (M4), device benches + budgets (M5), and the CPU/GPU parity cadence
-(M6). The `device` feature currently only **marks** the device axis — the GPU/RSS
-measurement itself is M5. The `vello_cpu` render-cost proxy is blocked on Spec 02
-landing the CPU render path (audit finding BM-3).
+Device benches + budgets (M5) and the CPU/GPU parity cadence (M6). The `device`
+feature currently only **marks** the device axis — the GPU/RSS measurement itself
+is M5. The `vello_cpu` render-cost proxy is blocked on Spec 02 landing the CPU
+render path (audit finding BM-3).

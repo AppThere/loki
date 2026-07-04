@@ -190,10 +190,20 @@ so a naive inspector-open over a deep, wide catalog is the thing to measure.
    shared resource allocates **zero** (audit §4); the same metric is tracked in the
    baseline, so a value-clone regression turns 0 → nonzero = `+INF` = Regressed
    (proven end-to-end and in `arc_share_replaced_by_value_clone_is_flagged`).
-4. **M4 — Leak detection.** *Well-scaffolded.* The three culprits are all identified in
-   source: Arc-cycle open/edit/close returns-to-baseline; bounded-cache assertions over
-   the pathological tier (BM-4/BM-5); Loro-history bench reading the existing
-   `loki_text::mem` counters (BM-6). Needs the pathological corpus (BM-12).
+4. **M4 — Leak detection.** ✅ **Shipped.** A residual live-heap primitive
+   (`leak` module: `residual_after` measures the heap still held after N cycles;
+   pure `classify_leak` verdict — Bounded vs Leaking — 4 unit tests) drives two
+   benches. `leak_detection` covers the Arc-cycle and unbounded-cache culprits:
+   the real open→edit→close cycle returns to **0 B** residual (leak-free — loro
+   fully frees on drop), while a **seeded** retained-document leak (1.9 MB → 124 MB
+   over 1→64 cycles) and a **seeded** unbounded cache (64 KB → 4.2 MB) are both
+   flagged `Leaking` — the acceptance. `leak_loro_history` measures and reports the
+   third culprit: 5 000 keystrokes grow the oplog +10 000 ops (2/keystroke, ~550 B
+   each) with the document length stable, quantifying Finding 6 /
+   `TODO(loro-compaction)` — the yardstick a future compaction fix is validated
+   against. (BM-4/BM-5's production `ParaCache`/GPU-tier boundedness stays where it
+   is proven — the loki-layout `ParaCache` unit tests and, for the device tiers,
+   M5; the seeded unbounded cache here proves the *detector*.)
 5. **M5 — Device benches + budgets.** *Device-gated.* GPU frame-time + peak RSS on
    Kevin's hardware; **must re-measure the headline figures on-device (BM-14)** before
    calibrating per-tier RSS budgets. Peak-RSS plumbing is absent (BM-1) and must be added.
