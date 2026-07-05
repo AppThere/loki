@@ -21,6 +21,8 @@ sheet-model = ["dep:loki-sheet-model"]
 thiserror = { workspace = true }
 # Round-trip the candidate XML through a temp file for `xmllint` validation.
 tempfile = "3"
+# PNG decode/encode for the visual-goldens differ and heatmap emission.
+image = { version = "0.25", default-features = false, features = ["png"] }
 # Optional: the format-neutral document model, for the round-trip canonicalizer.
 loki-doc-model = { path = "../loki-doc-model", optional = true }
 # Optional: the spreadsheet model, for the workbook round-trip canonicalizer.

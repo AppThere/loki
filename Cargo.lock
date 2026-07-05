@@ -397,6 +397,7 @@ dependencies = [
 name = "appthere-conformance"
 version = "0.1.0"
 dependencies = [
+ "image",
  "loki-doc-model",
  "loki-sheet-model",
  "tempfile",

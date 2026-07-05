@@ -19,6 +19,10 @@
 
 use std::path::PathBuf;
 
+pub mod diff;
+
+pub use diff::{DiffError, Tolerance, compare_pages, emit_heatmap};
+
 /// A perceptual score for one tiled region of a page.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RegionScore {

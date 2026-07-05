@@ -37,11 +37,13 @@
 pub mod golden;
 #[cfg(feature = "doc-model")]
 pub mod model;
+pub mod raster;
 pub mod roundtrip;
 pub mod schema;
 #[cfg(feature = "sheet-model")]
 pub mod sheet;
 
+pub use raster::{CONFORMANCE_DPI, PdfRasterizer, RasterError};
 pub use roundtrip::{CanonicalEntry, Divergence, NormalizedModel, first_divergence};
 pub use schema::xmllint::XmllintValidator;
 pub use schema::{SchemaError, SchemaKind, SchemaReport, SchemaValidator, SchemaViolation};
