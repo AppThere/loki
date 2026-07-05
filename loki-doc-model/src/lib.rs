@@ -149,8 +149,8 @@ pub mod loro_bridge;
 pub use loro_bridge::{BridgeError, IncrementalReader, document_to_loro, loro_to_document};
 pub mod loro_mutation;
 pub use loro_mutation::{
-    BlockPath, PathStep, delete_text_at, get_block_text_at, get_mark_at_path, insert_text_at,
-    mark_text_at,
+    BlockPath, PathStep, delete_selection_at, delete_text_at, get_block_text_at, get_mark_at_path,
+    insert_text_at, mark_text_at,
 };
 pub use loro_mutation::{
     MutationError, delete_text, get_block_alignment, get_block_style_name, get_block_text,

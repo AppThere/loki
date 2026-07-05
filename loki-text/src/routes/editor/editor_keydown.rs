@@ -6,20 +6,18 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 use keyboard_types::Modifiers;
-use loki_doc_model::loro_mutation::{
-    delete_text_at, get_block_text, get_block_text_at, insert_text_at,
-};
-use loki_doc_model::merge_block_at;
+use loki_doc_model::loro_mutation::get_block_text;
 
 use loki_renderer::ViewMode;
 use loki_renderer::render_layout::reflow_content_width_pt;
 
-use super::editor_keydown_ctrl::{
-    handle_ctrl_keys, handle_delete_key, handle_enter_key, post_mutation_sync,
+use super::editor_keydown_ctrl::{handle_ctrl_keys, handle_delete_key, handle_enter_key};
+use super::editor_keydown_text::{
+    SelectionRemoval, handle_backspace_key, handle_character_key, remove_selection,
 };
 use super::editor_scrollbar::ScrollMetrics;
 
-use crate::editing::cursor::{CursorState, DocumentPosition, prev_grapheme_boundary};
+use crate::editing::cursor::CursorState;
 use crate::editing::navigation::{
     navigate_down, navigate_end, navigate_home, navigate_left, navigate_right, navigate_up,
 };
@@ -27,7 +25,7 @@ use crate::editing::reflow_nav::{
     reflow_navigate_down, reflow_navigate_end, reflow_navigate_home, reflow_navigate_left,
     reflow_navigate_right, reflow_navigate_up,
 };
-use crate::editing::state::{DocumentState, apply_mutation_and_relayout, ensure_reflow_layout};
+use crate::editing::state::{DocumentState, ensure_reflow_layout};
 
 // EditorMode removed — the editor is always in edit mode when a document is
 // open. Distraction-free reading is handled by the View ribbon tab (future
@@ -82,120 +80,10 @@ pub(super) fn make_keydown_handler(
         let Some(focus) = focus else { return };
 
         match &key {
-            // ── Printable characters ──────────────────────────────────────────
+            // ── Printable characters (replace the selection if one is active) ─
             Key::Character(ch) => {
-                let ch = ch.clone();
-                {
-                    let ldoc_guard = loro_doc.read();
-                    let Some(ldoc) = ldoc_guard.as_ref() else {
-                        return;
-                    };
-                    if insert_text_at(ldoc, &focus.block_path(), focus.byte_offset, &ch).is_err() {
-                        return;
-                    }
-                }
-                {
-                    let ldoc_guard = loro_doc.read();
-                    let Some(ldoc) = ldoc_guard.as_ref() else {
-                        return;
-                    };
-                    apply_mutation_and_relayout(&doc_state, ldoc);
-                }
-                post_mutation_sync(
-                    &doc_state,
-                    loro_doc,
-                    cursor_state,
-                    undo_manager,
-                    can_undo,
-                    can_redo,
-                );
-                let new_offset = focus.byte_offset + ch.len();
-                let new_pos = DocumentPosition {
-                    byte_offset: new_offset,
-                    ..focus
-                };
-                let mut cs = cursor_state.write();
-                cs.focus = Some(new_pos.clone());
-                cs.anchor = Some(new_pos);
-            }
-
-            // ── Backspace ─────────────────────────────────────────────────────
-            Key::Backspace => {
-                if focus.byte_offset == 0 {
-                    // Backspace-at-start merges this block into its previous
-                    // sibling within the same container. `merge_block_at` returns
-                    // `NoPreviousBlock` at the first block of a container (a
-                    // top-level paragraph 0 or the first block of a cell / note
-                    // body), making this a no-op there.
-                    let ldoc_guard = loro_doc.read();
-                    let Some(ldoc) = ldoc_guard.as_ref() else {
-                        return;
-                    };
-                    let Ok(merged_offset) = merge_block_at(ldoc, &focus.block_path()) else {
-                        return;
-                    };
-                    apply_mutation_and_relayout(&doc_state, ldoc);
-                    post_mutation_sync(
-                        &doc_state,
-                        loro_doc,
-                        cursor_state,
-                        undo_manager,
-                        can_undo,
-                        can_redo,
-                    );
-                    // TODO(3b-3): recompute page_index from layout after merge.
-                    // Caret lands at the join point in the previous sibling block.
-                    let new_pos = focus.sibling_block(-1, merged_offset);
-                    let mut cs = cursor_state.write();
-                    cs.focus = Some(new_pos.clone());
-                    cs.anchor = Some(new_pos);
-                    return;
-                }
-                let text = {
-                    let ldoc_guard = loro_doc.read();
-                    ldoc_guard
-                        .as_ref()
-                        .map(|l| get_block_text_at(l, &focus.block_path()))
-                        .unwrap_or_default()
-                };
-                let prev = prev_grapheme_boundary(&text, focus.byte_offset);
-                let len = focus.byte_offset - prev;
-                {
-                    let ldoc_guard = loro_doc.read();
-                    let Some(ldoc) = ldoc_guard.as_ref() else {
-                        return;
-                    };
-                    if delete_text_at(ldoc, &focus.block_path(), prev, len).is_err() {
-                        return;
-                    }
-                }
-                {
-                    let ldoc_guard = loro_doc.read();
-                    let Some(ldoc) = ldoc_guard.as_ref() else {
-                        return;
-                    };
-                    apply_mutation_and_relayout(&doc_state, ldoc);
-                }
-                post_mutation_sync(
-                    &doc_state,
-                    loro_doc,
-                    cursor_state,
-                    undo_manager,
-                    can_undo,
-                    can_redo,
-                );
-                let new_pos = DocumentPosition {
-                    byte_offset: prev,
-                    ..focus
-                };
-                let mut cs = cursor_state.write();
-                cs.focus = Some(new_pos.clone());
-                cs.anchor = Some(new_pos);
-            }
-
-            // ── Forward delete ────────────────────────────────────────────────
-            Key::Delete => {
-                handle_delete_key(
+                handle_character_key(
+                    ch.clone(),
                     focus,
                     loro_doc,
                     &doc_state,
@@ -204,6 +92,46 @@ pub(super) fn make_keydown_handler(
                     can_undo,
                     can_redo,
                 );
+            }
+
+            // ── Backspace (selection removal / block merge / grapheme) ────────
+            Key::Backspace => {
+                handle_backspace_key(
+                    focus,
+                    loro_doc,
+                    &doc_state,
+                    cursor_state,
+                    undo_manager,
+                    can_undo,
+                    can_redo,
+                );
+            }
+
+            // ── Forward delete ────────────────────────────────────────────────
+            Key::Delete => {
+                // An active selection is removed instead of the next grapheme;
+                // a rejected (cross-container) selection swallows the key.
+                if matches!(
+                    remove_selection(
+                        loro_doc,
+                        &doc_state,
+                        cursor_state,
+                        undo_manager,
+                        can_undo,
+                        can_redo,
+                    ),
+                    SelectionRemoval::NoSelection
+                ) {
+                    handle_delete_key(
+                        focus,
+                        loro_doc,
+                        &doc_state,
+                        cursor_state,
+                        undo_manager,
+                        can_undo,
+                        can_redo,
+                    );
+                }
             }
 
             // ── Arrow / Home / End navigation (mode-aware) ────────────────────

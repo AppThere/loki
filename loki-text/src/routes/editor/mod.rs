@@ -20,6 +20,7 @@ mod editor_insert;
 mod editor_insert_panel;
 mod editor_keydown;
 mod editor_keydown_ctrl;
+mod editor_keydown_text;
 mod editor_language_panel;
 mod editor_layout_task;
 mod editor_load;

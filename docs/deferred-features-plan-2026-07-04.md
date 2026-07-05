@@ -122,7 +122,7 @@ TODOs (merged with whatever Phase 0 confirms from F1–F7).
 | 4b.4 | `nested-nav` | Sibling-path navigation inside cell/note bodies (`navigation.rs:138,174`). | S |
 | 4b.5 | `rotated-cell-editing` | Editing data for rotated table cells (`flow.rs:1676`) — read-only today. **Note:** `flow.rs` is a top ceiling offender; split it (Phase 7) before or with this change. | M |
 | 4b.6 | F3c + F1 residual (audit §9) | Dirty-work protection: confirm-before-close for dirty tabs in loki-text (`shell.rs:101-145` discards the stashed session silently) and save-prompt/retention on presentation tab switch (`editor_inner.rs:50-57`). | S–M |
-| 4b.7 | F6c + F6f (audit §9) | Selection-aware typing/Backspace (replace active selection), clipboard (copy/cut/paste), and move save/load I/O off the UI thread (`editor_ribbon.rs:93`, `editor_load.rs:56-101`). | M |
+| 4b.7 | F6c + F6f (audit §9) | **Selection editing ✅ Done 2026-07-05:** typing replaces the active selection, Backspace/Delete remove it, incl. multi-block ranges — `loki_doc_model::delete_selection_at` (merge-then-delete composition, whole range pre-validated so cross-container / table-spanning selections are rejected untouched), editor wiring in `editor_keydown_text.rs` (replace-typing is one undo entry); tests: `loro_selection_delete_tests.rs` (10) + editor unit tests (7). **Remaining:** clipboard copy/cut/paste (partially gated on the unimplemented dioxus-native-dom clipboard converter), and moving save/load I/O off the UI thread (`editor_ribbon.rs:93`, `editor_load.rs:56-101`). | M |
 
 ### 4c. Shell/UX polish TODOs (§2) — batchable
 
