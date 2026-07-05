@@ -6,11 +6,12 @@
 //! passes, a mis-rendered one fails, and the threshold traces to the
 //! calibration record, not a literal).
 //!
-//! Advisory status: this suite runs in CI as ordinary tests, but the gate is
-//! kept honest by pinning the *known* divergence (`para-carlito`, fidelity
-//! gap #23 — kerning) as an expected failure rather than hiding it. When
-//! kerning lands in `loki-layout`, that canary flips and must be promoted to
-//! a passing assertion (and the calibration re-run).
+//! All three committed fixtures pass at the calibrated tolerance. The
+//! original `para-carlito` divergence was root-caused (2026-07-05) to loki
+//! kerning unconditionally while the reference apps default kerning OFF;
+//! `StyleSpan::kerning` now honours the document property with a
+//! reference-matching default (see `loki-layout/tests/kerning_applied.rs`
+//! and goldens/CALIBRATION.md).
 
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -95,17 +96,14 @@ fn para_gelasio_matches_its_golden() {
     );
 }
 
-/// Expected-divergence canary: LibreOffice applies Carlito's kern pairs;
-/// Loki's layout does not yet (fidelity gap #23), so lines drift and wrap
-/// differently. When kerning lands this assertion FAILS — flip it to a
-/// passing golden check and re-run the calibration (CALIBRATION.md).
+/// Formerly the kerning-gap canary: this fixture diverged while loki kerned
+/// text the reference apps leave unkerned (gap #23, resolved 2026-07-05).
+/// Now a full member of the passing golden set.
 #[test]
-fn para_carlito_divergence_is_the_known_kerning_gap() {
+fn para_carlito_matches_its_golden() {
     let (passed, worst) = compare("para-carlito");
     assert!(
-        !passed,
-        "para-carlito unexpectedly passes — kerning may have landed; \
-         promote this canary to a passing check and re-calibrate"
+        passed,
+        "para-carlito must pass calibrated tolerance; {worst}"
     );
-    eprintln!("known kerning-gap divergence (fidelity #23): {worst}");
 }

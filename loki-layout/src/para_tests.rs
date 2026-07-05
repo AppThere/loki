@@ -48,6 +48,7 @@ fn single_span(text: &str, font_size: f32) -> StyleSpan {
         link_url: None,
         math: None,
         scale: None,
+        kerning: None,
         baseline_shift: None,
     }
 }
@@ -668,6 +669,7 @@ fn coalesced_scale_and_baseline_shift_apply_per_glyph() {
     let mk = |range: std::ops::Range<usize>, scale: Option<f32>, rise: Option<f32>| StyleSpan {
         range,
         scale,
+        kerning: None,
         baseline_shift: rise,
         ..single_span("A", 20.0)
     };

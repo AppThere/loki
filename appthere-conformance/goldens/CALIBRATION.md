@@ -18,40 +18,53 @@ this record.
 | **Fonts** | The bundled `loki-fonts` faces, installed for fontconfig so both sides shape the identical bytes |
 | **Method** | `cargo run -p loki-render-cpu --example calibrate_odf` — 64 px regions, windowed SSIM + mean CIEDE2000 ΔE per region, pages cropped to the common area (the two sides differ by ≤1 px of DPI rounding) |
 
-## Measured distributions (500 regions/fixture, 1500 total)
+## Measured distributions (500 regions/fixture, 1500 total; re-measured 2026-07-05 after the kerning fix)
 
 | Fixture | SSIM min | SSIM p1 | SSIM p5 | ΔE max | ΔE p99 | ΔE p95 |
 |---|---|---|---|---|---|---|
-| `styles-tinos` | 0.6324 | 0.8894 | 1.0000 | 9.083 | 1.112 | 0.000 |
+| `styles-tinos` | 0.6603 | 0.8894 | 1.0000 | 7.854 | 1.112 | 0.000 |
 | `para-gelasio` | 0.9044 | 0.9650 | 0.9985 | 4.014 | 2.336 | 0.177 |
-| `para-carlito` | **0.2348** | 0.3495 | 0.6578 | **19.797** | 16.484 | 9.631 |
+| `para-carlito` | 0.6922 | 0.7875 | 0.9804 | 7.515 | 5.251 | 1.408 |
 
-## Analysis
+All three fixtures now sit in one noise band and pass the calibrated
+thresholds — the visual golden suite (`loki-render-cpu/tests/visual_golden.rs`)
+asserts all of them.
 
-- `styles-tinos` and `para-gelasio` agree well: the sub-1.0 regions are the
-  expected AA/hinting/subpixel noise plus small glyph-position deltas — the
-  genuine cross-renderer noise floor.
-- `para-carlito` diverges structurally. The failure heatmap shows text
-  starting aligned at each line head and drifting rightward with cumulative
-  error until the wrap points differ — the signature of **kerning**:
-  LibreOffice applies Carlito's kern pairs, Loki's layout does not yet apply
-  kerning (**fidelity gap #23**, `docs/audit-2026-06.md`). This is a *real,
-  known fidelity gap that the calibration pass independently found and
-  quantified*, not rasterizer noise — precisely the bug class the visual
-  axis exists to catch.
+## Analysis — how the divergence was root-caused (kept as a worked example)
+
+The first calibration run (2026-07-05, same day) measured `para-carlito` at
+SSIM min **0.2348** / ΔE max **19.8** — structural divergence. Diagnosis went
+through two corrections, both driven by this harness's own artifacts:
+
+1. The heatmap showed per-line cumulative rightward drift, initially read as
+   *loki missing kerning* (fidelity gap #23 was listed open). A shaping probe
+   disproved that: Parley 0.10's harfrust shaper applies Carlito's GPOS kern
+   pairs (and `fi` ligatures) — the historical gap had been closed silently
+   by the Parley 0.8→0.10 upgrade.
+2. Per-line ink measurement then showed the *golden* consistently ~4–7 px
+   **wider** per line — the total kern amount, with the sign inverted from
+   the first reading: **LibreOffice was not kerning this document** (the
+   fixture ODT carries no `style:letter-kerning`, and both LO-on-import and
+   Word default pair kerning off), while loki kerned unconditionally. The
+   width delta flipped borderline line wraps, cascading into whole-line
+   diffs.
+
+**Fix (the real gap #23):** `CharProps.kerning` is now forwarded to layout
+(`StyleSpan::kerning`) and applied as a shaper feature toggle with a
+reference-matching default of **off** (`"kern" 0` unless the document enables
+it). Regression-locked by `loki-layout/tests/kerning_applied.rs`: kern applied
+when enabled, natural advances when defaulted, contextual pairs only,
+ligatures unaffected.
 
 ## Decision
 
-- **Calibrated thresholds** (derived from the two agreeing fixtures, with
-  margin): `min_ssim = 0.60` (observed min on correct fixtures 0.6324),
-  `max_delta_e = 10.0` (observed max 9.083). These pass the agreeing
-  fixtures and fail `para-carlito`-class divergence.
-- **The visual gate stays advisory** (not a hard CI gate) until fidelity
-  gap #23 (kerning) is closed and this pass is re-run — hardening it now
-  would permanently red a known, tracked gap. `visual_golden.rs` in
-  `loki-render-cpu` asserts the two agreeing fixtures pass and pins
-  `para-carlito`'s failure as an expected-divergence canary that flips when
-  kerning lands.
+- **Calibrated thresholds:** `min_ssim = 0.60` (re-measured floor 0.6603),
+  `max_delta_e = 10.0` (re-measured max 7.854). Confirmed against the
+  post-fix distributions; unchanged from the initial derivation.
+- **The visual axis now has all fixtures green** and can be considered for
+  promotion to a hard CI gate once the corpus grows past this baseline set
+  (the gate-hardening call is the maintainer's; the suite already fails a
+  PR that regresses any fixture past tolerance).
 
 ## Reproduction
 

@@ -304,13 +304,16 @@ fn effective_run_char_props(
 //   shadow             → StyleSpan.shadow               (gap #24, P3)
 //   scale              → StyleSpan.scale                (gap #14, P2)
 //
+//   kerning            → StyleSpan.kerning              (gap #23, P3 —
+//                        applied as a shaper feature toggle; default OFF to
+//                        match Word/LO defaults)
+//
 // Fields SILENTLY DROPPED (out of scope for Group 1):
 //   font_name_complex    — complex-script font (BiDi)
 //   font_name_east_asian — East Asian font
 //   font_size_complex    — complex-script font size
 //   background_color     — per-run background (distinct from highlight)
 //   outline              — hollow text effect
-//   kerning              — kerning flag (gap #23, P3)
 //   language / language_complex / language_east_asian — locale (gap #30, P3)
 //   hyperlink            — URL (gap #11, P1 — handled at Inline level)
 
@@ -382,6 +385,7 @@ fn char_props_to_style_span(props: &CharProps, range: Range<usize>) -> StyleSpan
         font_variant,
         word_spacing: props.word_spacing.map(pts_to_f32), // gap #22
         shadow: props.shadow.unwrap_or(false),            // gap #24
+        kerning: props.kerning,                           // gap #23
         link_url: None, // set by walk_inlines when inside Inline::Link (gap #11)
         math: None,     // set by walk_inlines for Inline::Math placeholders
         // Horizontal text scale (gap #14): only forward a non-trivial, positive

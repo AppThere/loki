@@ -113,6 +113,15 @@ fn main() {
         let heatmap = scratch.join(format!("{stem}-heatmap.png"));
         emit_heatmap(&golden, &candidate_c, &heatmap).expect("heatmap");
         println!("  heatmap: {}", heatmap.display());
+        // Optional side-by-side dump for offline inspection of a divergence.
+        if let Ok(dir) = std::env::var("CALIBRATE_DUMP_DIR") {
+            let dir = Path::new(&dir);
+            std::fs::create_dir_all(dir).expect("dump dir");
+            golden.save(dir.join(format!("{stem}-golden.png"))).ok();
+            candidate_c
+                .save(dir.join(format!("{stem}-candidate.png")))
+                .ok();
+        }
 
         all_ssim.extend(ssim);
         all_de.extend(de);

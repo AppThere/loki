@@ -151,7 +151,7 @@ the Watch list). Every task here must update `docs/fidelity-status.md`.
 | 5.6 | gap #12 / `floating-image` | External-URL images render a grey placeholder (`loki-vello/src/image.rs:34`) + detect "floating" class for inline images (`resolve.rs:705`). | M |
 | 5.7 | `odf-master-page` | ODF master-page transitions (`odf/reader/styles.rs:200`); pairs with the `style:default-style` registry row. | M |
 | 5.8 | `omml` | OMML↔MathML: delimiters, n-ary, matrices, accents (`docx/omml/mod.rs:20`). | L |
-| 5.9 | gaps #23–#30 tail | Kerning, orphan/widow control, `border_between`, DocxSettings, content controls, language tags — schedule individually from the fidelity registry; orphan/widow is the highest-value (visible in any multi-page doc). | L (aggregate) |
+| 5.9 | gaps #23–#30 tail | ~~Kerning~~ (✅ **#23 done 2026-07-05**: root-caused by the Phase 3 calibration pass — loki kerned unconditionally while Word/LO default off; `CharProps.kerning` now drives a shaper feature toggle with reference-matching default, regression-locked, all three visual goldens green), orphan/widow control, `border_between`, DocxSettings, content controls, language tags — schedule individually from the fidelity registry; orphan/widow is the highest-value (visible in any multi-page doc). | L (aggregate) |
 | 5.10 | registry | Page/column geometry set: even/odd blank pages, unequal column widths, column height balancing; PDF font subsetting + ICC/CMYK; EPUB math/fields/comments. | L (aggregate) |
 | 5.11 | `link-click` | Interactive hyperlink hit-testing (visual hint only today) — spans layout (`resolve.rs:689`, `items.rs:125`, `para.rs:203`) and renderer (`scene.rs:519`). | M |
 

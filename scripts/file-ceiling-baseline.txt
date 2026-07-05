@@ -3,21 +3,21 @@
 # these may not GROW, and must be removed once split to <= 300 lines.
 # Regenerate with: scripts/check-file-ceiling.py --update
 
-1979 loki-layout/src/para.rs
 1953 loki-layout/src/flow.rs
+1856 loki-layout/src/para.rs
 1554 loki-odf/src/odt/reader/styles.rs
 1494 loki-odf/src/odt/reader/document.rs
 1244 loki-spreadsheet/src/routes/editor/editor_inner.rs
 1209 loki-ooxml/src/docx/reader/document.rs
 1073 loki-ooxml/src/docx/write/document.rs
-974 loki-layout/src/resolve.rs
+978 loki-layout/src/resolve.rs
 948 loki-vello/src/scene.rs
 870 loki-text/src/routes/editor/editor_inner.rs
 741 loki-layout/src/flow_para.rs
 730 loki-ooxml/src/docx/mapper/inline.rs
 651 loki-odf/src/package.rs
 611 loki-ooxml/src/docx/mapper/document.rs
-591 loki-text/src/editing/navigation.rs
+593 loki-text/src/editing/navigation.rs
 582 loki-ooxml/src/docx/mapper/props.rs
 575 loki-ooxml/src/xlsx/import.rs
 491 loki-text/src/routes/editor/editor_canvas.rs
@@ -29,7 +29,7 @@
 373 loki-layout/src/incremental.rs
 365 loki-odf/src/ods/export.rs
 364 loki-text/src/routes/home.rs
-333 loki-layout/src/lib.rs
+334 loki-layout/src/lib.rs
 331 loki-text/src/editing/state.rs
 328 loki-ooxml/src/docx/model/paragraph.rs
 316 loki-text/src/routes/editor/editor_style.rs

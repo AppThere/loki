@@ -49,14 +49,26 @@ fn doc(blocks: Vec<Block>) -> Document {
 /// The calibration baseline set: simple single-page documents believed
 /// correct in both engines (Spec 02 §7.4).
 fn fixtures() -> Vec<(&'static str, Document)> {
+    // Varied sentences, not one repeated pangram: repeating an identical
+    // sentence manufactures many near-identical wrap candidates, so a
+    // sub-pixel cross-renderer advance delta (the ~0.3%/line noise floor,
+    // see goldens/CALIBRATION.md) can flip a borderline line break and
+    // cascade into a whole-line diff. Visual-axis fixtures must wrap
+    // decisively.
+    let carlito_p1 = "Conformance fixtures exercise the rendering pipeline end to end. \
+         Each paragraph flows through import, layout, and rasterization before \
+         the perceptual differ compares it against a reference render. \
+         Distinct sentence lengths keep every line break decisive.";
+    let carlito_p2 = "A second paragraph checks inter-paragraph spacing. \
+         Short words then follow: it is so, and we go on to the end of the block.";
     let lorem = "The quick brown fox jumps over the lazy dog, \
                  pack my box with five dozen liquor jugs. ";
     vec![
         (
             "para-carlito",
             doc(vec![
-                Block::Para(vec![run(&lorem.repeat(3), font("Carlito"))]),
-                Block::Para(vec![run(&lorem.repeat(2), font("Carlito"))]),
+                Block::Para(vec![run(carlito_p1, font("Carlito"))]),
+                Block::Para(vec![run(carlito_p2, font("Carlito"))]),
             ]),
         ),
         (

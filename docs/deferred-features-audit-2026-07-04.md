@@ -140,7 +140,7 @@ Still-open after verification (the DONE-SINCE ones moved to §1).
 | audit-2026-06 T-2/T-3/T-5 tails | ODT export impl; per-case DOCX/XLSX round-trips; hard PPTX cases | STILL-OPEN |
 | fidelity gap #12 | External-URL images → grey placeholder (`loki-vello/src/image.rs:34`) | STILL-OPEN |
 | fidelity gap #19 | RTL/bidi direction not forwarded (no Parley bidi API) | STILL-OPEN |
-| fidelity gaps #23,#25,#26,#27,#29,#30 | kerning, orphan/widow, `border_between`, DocxSettings, content controls, language tags | STILL-OPEN |
+| fidelity gaps #23,#25,#26,#27,#29,#30 | ~~kerning~~ (**#23 FIXED 2026-07-05** — `StyleSpan.kerning` + reference-matching off default, found by the Spec 02 calibration pass), orphan/widow, `border_between`, DocxSettings, content controls, language tags | STILL-OPEN (except #23) |
 | fidelity-status registry | even/odd blank pages; unequal column widths; column height balancing; drop-cap editor fallback; PDF font subsetting; PDF ICC/CMYK; PDF clip/rotate paint; EPUB drops math/fields/comments; ODT `style:default-style`; macOS symbol-bullet fallback; reflow selection-delete + touch select; ACID headless raster + ODP/ODG importers + PPTX fixture; Calc/Slides squiggle rendering; personal-dictionary persistence | STILL-OPEN (registry-tracked) |
 
 > **F1–F7** (audit-2026-06-10 app-layer: presentation tab-switch edit loss, no-op delete/copy, dead retier channels, no Save-As) were **not individually re-driven** this pass — they are app-layer and echoed in the MVP-scope doc §6; treat as likely-open pending a focused check.

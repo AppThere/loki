@@ -343,6 +343,7 @@ mod tests {
                 link_url: None,
                 math: None,
                 scale: None,
+                kerning: None,
                 baseline_shift: None,
             }],
             &ResolvedParaProps::default(),
@@ -494,6 +495,7 @@ mod tests {
             link_url: None,
             math: None,
             scale: None,
+            kerning: None,
             baseline_shift: None,
         };
         let para0 = layout_paragraph(
