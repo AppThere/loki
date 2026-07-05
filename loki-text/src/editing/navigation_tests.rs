@@ -3,6 +3,8 @@
 
 use std::sync::Arc;
 
+use loki_doc_model::PathStep;
+
 use loki_layout::{
     FontResources, LayoutColor, LayoutInsets, LayoutPage, LayoutSize, PageEditingData,
     PageParagraphData, PaginatedLayout, ResolvedParaProps, StyleSpan, layout_paragraph,
@@ -382,4 +384,99 @@ fn navigate_end_inside_a_cell_uses_the_cell_line() {
     let layout = nested_cell_layout();
     let result = navigate_end(&cell_pos(0, 1), &layout, nested_text);
     assert_eq!(result, Some(cell_pos(0, 5)));
+}
+
+// ── Cross-page Left/Right (4b.1 / 3b-3) ───────────────────────────────────────
+
+/// Two pages: block 0 ("first page") on page 0, block 1 ("second") on page 1.
+fn two_page_layout() -> PaginatedLayout {
+    let mut resources = FontResources::new();
+    let page_size = LayoutSize::new(595.0, 842.0);
+    let margins = LayoutInsets {
+        top: 72.0,
+        right: 72.0,
+        bottom: 72.0,
+        left: 72.0,
+    };
+    let mk_page = |number: usize, paras: Vec<PageParagraphData>| LayoutPage {
+        page_number: number,
+        page_size,
+        margins,
+        content_items: vec![],
+        header_items: vec![],
+        footer_items: vec![],
+        comment_items: vec![],
+        header_height: 0.0,
+        footer_height: 0.0,
+        editing_data: Some(PageEditingData { paragraphs: paras }),
+    };
+    let p0 = layout_para(&mut resources, "first page");
+    let p1 = layout_para(&mut resources, "second");
+    PaginatedLayout {
+        page_size,
+        pages: vec![
+            Arc::new(mk_page(
+                1,
+                vec![PageParagraphData {
+                    block_index: 0,
+                    path: Vec::new(),
+                    layout: p0,
+                    origin: (0.0, 0.0),
+                }],
+            )),
+            Arc::new(mk_page(
+                2,
+                vec![PageParagraphData {
+                    block_index: 1,
+                    path: Vec::new(),
+                    layout: p1,
+                    origin: (0.0, 0.0),
+                }],
+            )),
+        ],
+    }
+}
+
+fn two_page_text(bp: &BlockPath) -> String {
+    match bp.root {
+        0 => "first page",
+        1 => "second",
+        _ => "",
+    }
+    .to_string()
+}
+
+#[test]
+fn navigate_right_crosses_to_the_next_page() {
+    let layout = two_page_layout();
+    // End of block 0 (page 0) → start of block 1 on page 1.
+    let focus = DocumentPosition::top_level(0, 0, "first page".len());
+    let result = navigate_right(&focus, &layout, two_page_text);
+    assert_eq!(result, Some(DocumentPosition::top_level(1, 1, 0)));
+}
+
+#[test]
+fn navigate_left_crosses_to_the_previous_page() {
+    let layout = two_page_layout();
+    // Start of block 1 (page 1) → end of block 0 on page 0.
+    let focus = DocumentPosition::top_level(1, 1, 0);
+    let result = navigate_left(&focus, &layout, two_page_text);
+    assert_eq!(
+        result,
+        Some(DocumentPosition::top_level(0, 0, "first page".len()))
+    );
+}
+
+#[test]
+fn navigate_left_at_document_start_still_returns_none() {
+    let layout = two_page_layout();
+    let focus = DocumentPosition::top_level(0, 0, 0);
+    assert_eq!(navigate_left(&focus, &layout, two_page_text), None);
+}
+
+#[test]
+fn navigate_right_at_document_end_still_returns_none() {
+    let layout = two_page_layout();
+    let focus = DocumentPosition::top_level(1, 1, "second".len());
+    assert_eq!(navigate_right(&focus, &layout, two_page_text), None);
 }

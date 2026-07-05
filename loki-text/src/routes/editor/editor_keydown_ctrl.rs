@@ -185,7 +185,7 @@ pub(super) fn handle_enter_key(
     focus: DocumentPosition,
     loro_doc: Signal<Option<loro::LoroDoc>>,
     doc_state: &Arc<Mutex<DocumentState>>,
-    mut cursor_state: Signal<CursorState>,
+    cursor_state: Signal<CursorState>,
     undo_manager: Signal<Option<loro::UndoManager>>,
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
@@ -233,13 +233,12 @@ pub(super) fn handle_enter_key(
         can_undo,
         can_redo,
     );
-    // TODO(3b-3): recompute page_index from layout after split.
     // The split inserts the new block right after the source within the same
-    // container, so the caret moves to the next sibling block at offset 0.
+    // container, so the caret moves to the next sibling block at offset 0
+    // (its page_index is re-derived from the fresh layout — the new
+    // paragraph may start on the next page).
     let new_pos = focus.sibling_block(1, 0);
-    let mut cs = cursor_state.write();
-    cs.focus = Some(new_pos.clone());
-    cs.anchor = Some(new_pos);
+    super::editor_keydown_text::set_collapsed_cursor(doc_state, cursor_state, new_pos);
 }
 
 /// Syncs cursor generation, `can_undo`, and `can_redo` after any document mutation.

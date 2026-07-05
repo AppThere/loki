@@ -9,10 +9,10 @@
 //!
 //! # Cross-page navigation
 //!
-//! All six navigation functions clamp at the current page boundary and return
-//! `None` when the target falls off the page. The caller leaves the cursor
-//! unchanged on `None`.  Cross-page traversal is tracked as
-//! `TODO(3b-3)` throughout this file.
+//! Left/Right cross page boundaries (the prev/next-entry searches walk the
+//! whole layout); Up/Down cross via their previous/next-paragraph fallback.
+//! `None` means there is nowhere to go (document start/end) and the caller
+//! leaves the cursor unchanged.
 //!
 //! # Double-Enter to exit a list
 //!
@@ -22,125 +22,23 @@
 //! the list properties from the trailing empty block.
 //! `TODO(3b-3)`: implement `clear_para_props` / list-exit heuristic.
 
-use loki_doc_model::{BlockPath, PathStep};
-use loki_layout::{PageParagraphData, PaginatedLayout};
+use loki_doc_model::BlockPath;
+use loki_layout::PaginatedLayout;
 
 use super::cursor::{DocumentPosition, next_grapheme_boundary, prev_grapheme_boundary};
 use super::hit_test::hit_test_page;
-
-// ── Internal helpers ──────────────────────────────────────────────────────────
-
-/// Look up the [`PageParagraphData`] for a paragraph on a specific page.
-///
-/// `block_index` is the flat document block index stored in
-/// [`DocumentPosition::paragraph_index`]; `path` is the nested descent
-/// ([`DocumentPosition::path`]). Nested paragraphs (table cells, note bodies)
-/// share their root's `block_index`, so both must match — matching on the
-/// index alone would return the first cell's entry for *every* paragraph of
-/// a table.
-fn find_para_data<'a>(
-    layout: &'a PaginatedLayout,
-    page_index: usize,
-    block_index: usize,
-    path: &[PathStep],
-) -> Option<&'a PageParagraphData> {
-    layout
-        .pages
-        .get(page_index)?
-        .editing_data
-        .as_ref()?
-        .paragraphs
-        .iter()
-        .find(|p| p.block_index == block_index && p.path == path)
-}
-
-/// The leaf block index of a nested position within its container (the leaf
-/// step's block index; positions with an empty path are not nested).
-fn nested_leaf(focus: &DocumentPosition) -> Option<usize> {
-    match focus.path.last() {
-        Some(PathStep::Cell { block, .. } | PathStep::Note { block, .. }) => Some(*block),
-        None => None,
-    }
-}
-
-/// The sibling of a nested `focus` shifted by `delta` blocks within its
-/// container, if it exists in the page's layout. Clamps at the container's
-/// first/last block by returning `None` — crossing out of a cell or note body
-/// into the surrounding document is a separate feature.
-fn nested_sibling(
-    focus: &DocumentPosition,
-    layout: &PaginatedLayout,
-    delta: isize,
-) -> Option<DocumentPosition> {
-    let leaf = nested_leaf(focus)?;
-    leaf.checked_add_signed(delta)?; // clamp at the container start
-    let sibling = focus.sibling_block(delta, 0);
-    // Only cross when the sibling paragraph actually exists in the layout.
-    find_para_data(
-        layout,
-        sibling.page_index,
-        sibling.paragraph_index,
-        &sibling.path,
-    )?;
-    Some(sibling)
-}
-
-/// Find the paragraph entry immediately preceding `block_index` in document order.
-///
-/// Searches the current page first (for `block_index - 1`), then walks backward
-/// through previous pages. Returns `(page_index, para_data)`.
-///
-/// Returns `None` when `block_index` is 0 (no predecessor exists).
-fn find_prev_para_data(
-    layout: &PaginatedLayout,
-    page_index: usize,
-    block_index: usize,
-) -> Option<(usize, &PageParagraphData)> {
-    if block_index == 0 {
-        return None;
-    }
-    let prev_block = block_index - 1;
-    // Search this page and previous pages for the entry with prev_block.
-    for pi in (0..=page_index).rev() {
-        if let Some(ed) = layout.pages[pi].editing_data.as_ref()
-            && let Some(para) = ed.paragraphs.iter().find(|p| p.block_index == prev_block)
-        {
-            return Some((pi, para));
-        }
-    }
-    None
-}
-
-/// Find the paragraph entry immediately following `block_index` in document order.
-///
-/// Searches the current page first (for `block_index + 1`), then walks forward
-/// through subsequent pages. Returns `(page_index, para_data)`.
-///
-/// Returns `None` when no following block exists in the layout.
-fn find_next_para_data(
-    layout: &PaginatedLayout,
-    page_index: usize,
-    block_index: usize,
-) -> Option<(usize, &PageParagraphData)> {
-    let next_block = block_index + 1;
-    for pi in page_index..layout.pages.len() {
-        if let Some(ed) = layout.pages[pi].editing_data.as_ref()
-            && let Some(para) = ed.paragraphs.iter().find(|p| p.block_index == next_block)
-        {
-            return Some((pi, para));
-        }
-    }
-    None
-}
+use super::navigation_find::{
+    find_next_para_data, find_para_data, find_prev_para_data, nested_sibling,
+};
 
 // ── Public navigation functions ───────────────────────────────────────────────
 
 /// Move one grapheme cluster to the left.
 ///
 /// - Within a paragraph: moves to the previous grapheme boundary.
-/// - At offset 0: moves to the end of the previous paragraph **on the same
-///   page** — the previous sibling within the same container for a nested
-///   position (table cell / note body), which clamps at the container's
+/// - At offset 0: moves to the end of the previous paragraph, crossing page
+///   boundaries — or, for a nested position (table cell / note body), to the
+///   previous sibling within the same container, clamping at the container's
 ///   first block.
 ///
 /// Returns `None` when already at the very start (first block on first page)
@@ -148,9 +46,6 @@ fn find_next_para_data(
 ///
 /// `get_text(path)` is called to retrieve the plain text of the addressed
 /// paragraph. Pass a closure over [`loki_doc_model::get_block_text_at`].
-///
-/// `TODO(3b-3)`: when at offset 0 of the first block on a page, navigate to
-/// the last character of the last block on the previous page.
 pub fn navigate_left(
     focus: &DocumentPosition,
     layout: &PaginatedLayout,
@@ -176,32 +71,32 @@ pub fn navigate_left(
         });
     }
 
-    // At start of paragraph — move to end of previous block on the same page.
-    if focus.paragraph_index == 0 {
-        // TODO(3b-3): navigate to last char of last block on previous page
-        return None;
-    }
-    let prev_index = focus.paragraph_index - 1;
-    // Verify the previous block is actually on this page before crossing.
-    find_para_data(layout, focus.page_index, prev_index, &[])?;
-    let prev_text = get_text(&BlockPath::block(prev_index));
-    Some(DocumentPosition::top_level(
-        focus.page_index,
-        prev_index,
-        prev_text.len(),
-    ))
+    // At start of paragraph — move to the end of the previous block,
+    // crossing page boundaries (the entry search walks backward through the
+    // layout, so the nearest fragment page wins for split paragraphs).
+    let (prev_pi, prev_para) =
+        find_prev_para_data(layout, focus.page_index, focus.paragraph_index)?;
+    let prev_pos = DocumentPosition {
+        page_index: prev_pi,
+        paragraph_index: prev_para.block_index,
+        byte_offset: 0,
+        path: prev_para.path.clone(),
+    };
+    let prev_text = get_text(&prev_pos.block_path());
+    Some(DocumentPosition {
+        byte_offset: prev_text.len(),
+        ..prev_pos
+    })
 }
 
 /// Move one grapheme cluster to the right.
 ///
 /// - Within a paragraph: moves to the next grapheme boundary.
-/// - At the end: moves to the start of the next paragraph **on the same page**
-///   — the next sibling within the same container for a nested position,
-///   which clamps at the container's last block.
+/// - At the end: moves to the start of the next paragraph, crossing page
+///   boundaries — or, for a nested position, to the next sibling within the
+///   same container, clamping at the container's last block.
 ///
 /// Returns `None` when already at the very end or no layout data is available.
-///
-/// `TODO(3b-3)`: cross-page rightward navigation.
 pub fn navigate_right(
     focus: &DocumentPosition,
     layout: &PaginatedLayout,
@@ -222,12 +117,16 @@ pub fn navigate_right(
         return nested_sibling(focus, layout, 1);
     }
 
-    // At end of paragraph — move to start of next block on the same page.
-    let next_index = focus.paragraph_index + 1;
-    // Verify the next block is actually on this page.
-    find_para_data(layout, focus.page_index, next_index, &[])?;
-    // TODO(3b-3): cross-page rightward navigation
-    Some(DocumentPosition::top_level(focus.page_index, next_index, 0))
+    // At end of paragraph — move to the start of the next block, crossing
+    // page boundaries (the entry search walks forward through the layout).
+    let (next_pi, next_para) =
+        find_next_para_data(layout, focus.page_index, focus.paragraph_index)?;
+    Some(DocumentPosition {
+        page_index: next_pi,
+        paragraph_index: next_para.block_index,
+        byte_offset: 0,
+        path: next_para.path.clone(),
+    })
 }
 
 /// Move the cursor one line up, preserving the horizontal screen position.

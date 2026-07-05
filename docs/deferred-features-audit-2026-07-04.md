@@ -42,7 +42,7 @@ All are genuine, mostly upstream-gated (Parley/Blitz/Vello) or deliberately defe
 
 | Topic | file:line(s) | Defers what |
 |---|---|---|
-| `3b-3` (partial) | `navigation.rs` (many) | Cross-page nav: up/down works; **left/right at page edges + `page_index` recompute after split/merge still `None`** |
+| `3b-3` (partial) | `navigation.rs` (many) | ~~Left/right at page edges + `page_index` recompute after split/merge~~ **fixed 2026-07-05** (plan 4b.1: cross-page Left/Right + `page_locate::recompute_page_index` after every mutation/move). Remaining: double-Enter list-exit heuristic (`clear_para_props`) |
 | `loro-bridge` | `loro_bridge/decode.rs` (borders), `table.rs:25` | ~~Non-Rgb colors, comment/bookmark anchors, quote/span attrs~~ **fixed 2026-07-04** (plan Phase 1.4). Remaining: non-Rgb *border* colors (format migration), `Cite` metadata, structural-table CRDT semantics |
 | `loro-compaction` | `loki-bench/benches/leak_loro_history.rs`; bridge | ~~Compact the CRDT oplog~~ **fixed 2026-07-04** (plan Phase 1.5): `loro_bridge::compact` + save-point wiring in loki-text; bench asserts the flattened curve. On-device validation pending (BM-14) |
 | `omml` | `docx/omml/mod.rs:20` | OMML↔MathML for delimiters, n-ary, matrices, accents |

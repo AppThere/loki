@@ -195,6 +195,9 @@ pub(super) fn make_keydown_handler(
                         Key::End => navigate_end(&focus, &layout, get_text_at),
                         _ => None,
                     }
+                    // A move inside a page-spanning paragraph can land on a
+                    // line shown on a different page — re-derive the page.
+                    .map(|np| crate::editing::page_locate::recompute_page_index(&layout, &np))
                 };
 
                 if let Some(np) = new_pos {

@@ -21,6 +21,28 @@ use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 #[path = "editor_keydown_text_tests.rs"]
 mod tests;
 
+/// Collapses the cursor to `pos` after a mutation, re-deriving its
+/// `page_index` from the freshly relaid-out layout — a split, merge, or
+/// keystroke near a page boundary can move the caret's paragraph to a
+/// different page (plan 4b.1).
+pub(super) fn set_collapsed_cursor(
+    doc_state: &Arc<Mutex<DocumentState>>,
+    mut cursor_state: Signal<CursorState>,
+    pos: DocumentPosition,
+) {
+    let layout = doc_state
+        .lock()
+        .ok()
+        .and_then(|s| s.paginated_layout.clone());
+    let pos = match layout {
+        Some(l) => crate::editing::page_locate::recompute_page_index(&l, &pos),
+        None => pos,
+    };
+    let mut cs = cursor_state.write();
+    cs.focus = Some(pos.clone());
+    cs.anchor = Some(pos);
+}
+
 /// What [`remove_selection`] did with the active selection.
 pub(super) enum SelectionRemoval {
     /// No range selection was active — the caller performs its normal
@@ -81,7 +103,7 @@ fn delete_selection_in_doc(ldoc: &loro::LoroDoc, cursor: &CursorState) -> Option
 pub(super) fn remove_selection(
     loro_doc: Signal<Option<loro::LoroDoc>>,
     doc_state: &Arc<Mutex<DocumentState>>,
-    mut cursor_state: Signal<CursorState>,
+    cursor_state: Signal<CursorState>,
     undo_manager: Signal<Option<loro::UndoManager>>,
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
@@ -108,9 +130,7 @@ pub(super) fn remove_selection(
         can_undo,
         can_redo,
     );
-    let mut cs = cursor_state.write();
-    cs.focus = Some(collapsed.clone());
-    cs.anchor = Some(collapsed);
+    set_collapsed_cursor(doc_state, cursor_state, collapsed);
     SelectionRemoval::Removed
 }
 
@@ -125,7 +145,7 @@ pub(super) fn handle_character_key(
     focus: DocumentPosition,
     loro_doc: Signal<Option<loro::LoroDoc>>,
     doc_state: &Arc<Mutex<DocumentState>>,
-    mut cursor_state: Signal<CursorState>,
+    cursor_state: Signal<CursorState>,
     undo_manager: Signal<Option<loro::UndoManager>>,
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
@@ -162,9 +182,7 @@ pub(super) fn handle_character_key(
         byte_offset: insert_at.byte_offset + ch.len(),
         ..insert_at
     };
-    let mut cs = cursor_state.write();
-    cs.focus = Some(new_pos.clone());
-    cs.anchor = Some(new_pos);
+    set_collapsed_cursor(doc_state, cursor_state, new_pos);
 }
 
 /// Handles Backspace: removes the active selection, or merges with the
@@ -174,7 +192,7 @@ pub(super) fn handle_backspace_key(
     focus: DocumentPosition,
     loro_doc: Signal<Option<loro::LoroDoc>>,
     doc_state: &Arc<Mutex<DocumentState>>,
-    mut cursor_state: Signal<CursorState>,
+    cursor_state: Signal<CursorState>,
     undo_manager: Signal<Option<loro::UndoManager>>,
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
@@ -215,12 +233,10 @@ pub(super) fn handle_backspace_key(
             can_undo,
             can_redo,
         );
-        // TODO(3b-3): recompute page_index from layout after merge.
-        // Caret lands at the join point in the previous sibling block.
+        // Caret lands at the join point in the previous sibling block (its
+        // page_index is re-derived from the merged layout).
         let new_pos = focus.sibling_block(-1, merged_offset);
-        let mut cs = cursor_state.write();
-        cs.focus = Some(new_pos.clone());
-        cs.anchor = Some(new_pos);
+        set_collapsed_cursor(doc_state, cursor_state, new_pos);
         return;
     }
     let prev = {
@@ -249,7 +265,5 @@ pub(super) fn handle_backspace_key(
         byte_offset: prev,
         ..focus
     };
-    let mut cs = cursor_state.write();
-    cs.focus = Some(new_pos.clone());
-    cs.anchor = Some(new_pos);
+    set_collapsed_cursor(doc_state, cursor_state, new_pos);
 }
