@@ -18,3 +18,6 @@ thiserror = { workspace = true }
 [dev-dependencies]
 loki-doc-model = { path = "../loki-doc-model" }
 loki-fonts = { path = "../loki-fonts" }
+# Calibration example: import the ODF fixtures and diff against goldens.
+loki-odf = { path = "../loki-odf" }
+appthere-conformance = { path = "../appthere-conformance" }

@@ -44,16 +44,29 @@ pub enum DiffError {
 
 /// Pass thresholds for one comparison.
 ///
-/// The default threshold must come from the committed calibration record
-/// (Spec 02 D5) — never a guessed literal. Until that record lands (M5
-/// calibration pass), construct explicitly; a per-test override must carry a
-/// comment justifying it.
+/// The default comes from the committed calibration record via
+/// [`Tolerance::calibrated`] — never a guessed literal (Spec 02 D5). A
+/// per-test override must carry a comment justifying it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tolerance {
     /// Minimum acceptable per-region SSIM.
     pub min_ssim: f64,
     /// Maximum acceptable per-region mean CIEDE2000 ΔE.
     pub max_delta_e: f64,
+}
+
+impl Tolerance {
+    /// The calibrated default thresholds — measured, not guessed (Spec 02
+    /// D5). Values and provenance live in
+    /// `appthere-conformance/goldens/CALIBRATION.md` and
+    /// [`super::calibration`]; update them only together.
+    #[must_use]
+    pub fn calibrated() -> Self {
+        Self {
+            min_ssim: super::calibration::CALIBRATED_MIN_SSIM,
+            max_delta_e: super::calibration::CALIBRATED_MAX_DELTA_E,
+        }
+    }
 }
 
 /// Converts an RGBA image to a row-major luminance buffer (BT.601, 0–255).

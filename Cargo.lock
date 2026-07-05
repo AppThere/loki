@@ -4738,10 +4738,12 @@ dependencies = [
 name = "loki-render-cpu"
 version = "0.1.0"
 dependencies = [
+ "appthere-conformance",
  "image",
  "loki-doc-model",
  "loki-fonts",
  "loki-layout",
+ "loki-odf",
  "thiserror 2.0.18",
  "vello_cpu 0.0.9",
 ]
