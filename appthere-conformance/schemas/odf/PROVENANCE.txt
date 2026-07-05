@@ -1,0 +1,19 @@
+OASIS OpenDocument Format v1.3 OS RELAX NG schemas (schema, manifest, dsig)
+and the W3C MathML3 RELAX NG set (referenced by ODF math content).
+
+Source: extracted 2026-07-05 from Maven Central artifact
+org.odftoolkit:odfvalidator:0.12.0 (odfvalidator-0.12.0-classes.jar,
+sha256 9869ba7e15f8271ea12e54b5d611519da03616095459e6a820d7b31ff505def1),
+paths schema/odf1.3/*.rng and schema/mathml3/*.rng.
+Upstream origin: https://docs.oasis-open.org/office/OpenDocument/v1.3/os/schemas/
+(OASIS copyright, redistributable with notice) and https://www.w3.org/Math/RelaxNG/.
+
+sha256 manifest:
+1760eab7fba2394b6b9d2c77b4ed2187ed01ff8029f8538ba7bff3b834866573  odf/OpenDocument-v1.3-dsig-schema.rng
+8aee71f03484be112af972d622cc9031280c007b0a454ae8815e8e333c9bdd17  odf/OpenDocument-v1.3-manifest-schema.rng
+40bad03efdbb02825230d357da0aa6ac679934c5bf56c6281752c0c24d58e4e6  odf/OpenDocument-v1.3-schema.rng
+7d197e1dafda7ea85dd3bd9703f34a957002189b328771954177c225ea39a843  mathml3/mathml3-common.rng
+fc751250f9c0e5ebfe60fcce8210a09a24dff30034d52f258d28a1ab8c939d0c  mathml3/mathml3-content.rng
+025b24864a7ed2f4902e06412e18870d044ede6868d5dcd9086d5b11a32757a5  mathml3/mathml3-presentation.rng
+4d6bf5094f37234013c3c0bd41913fdacbdda7f0caf4ffffb5445e6937a2d2f8  mathml3/mathml3-strict-content.rng
+2b5045425b926e52685a9fab5c2835a2f792b17f06fb59a1e2e1328054129570  mathml3/mathml3.rng

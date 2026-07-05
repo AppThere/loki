@@ -163,6 +163,7 @@ impl FontResources {
             "times new roman" => Some("Tinos"),
             "calibri" => Some("Carlito"),
             "cambria" => Some("Caladea"),
+            "georgia" => Some("Gelasio"),
             _ => None,
         };
 
@@ -252,7 +253,7 @@ mod tests {
     #[test]
     fn substituted_family_is_actually_available() {
         let mut r = FontResources::new();
-        for requested in ["Calibri", "Arial", "Times New Roman", "Cambria"] {
+        for requested in ["Calibri", "Arial", "Times New Roman", "Cambria", "Georgia"] {
             let resolved = r.resolve_font_name(requested);
             assert!(
                 r.font_cx.collection.family_id(resolved.as_str()).is_some(),
