@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 use keyboard_types::Modifiers;
-use loki_doc_model::loro_mutation::get_block_text;
+use loki_doc_model::loro_mutation::{get_block_text, get_block_text_at};
 
 use loki_renderer::ViewMode;
 use loki_renderer::render_layout::reflow_content_width_pt;
@@ -146,10 +146,19 @@ pub(super) fn make_keydown_handler(
             | Key::End => {
                 let shift_held = modifiers.shift();
                 let ldoc_guard = loro_doc.read();
+                // Reflow navigation addresses top-level blocks by flat index;
+                // the paginated path is path-aware so navigation works inside
+                // table cells and note bodies too (4b.4).
                 let get_text = |idx: usize| {
                     ldoc_guard
                         .as_ref()
                         .map(|l| get_block_text(l, idx))
+                        .unwrap_or_default()
+                };
+                let get_text_at = |bp: &loki_doc_model::BlockPath| {
+                    ldoc_guard
+                        .as_ref()
+                        .map(|l| get_block_text_at(l, bp))
                         .unwrap_or_default()
                 };
 
@@ -178,12 +187,12 @@ pub(super) fn make_keydown_handler(
                     };
                     let Some(layout) = layout_opt else { return };
                     match &key {
-                        Key::ArrowLeft => navigate_left(&focus, &layout, get_text),
-                        Key::ArrowRight => navigate_right(&focus, &layout, get_text),
+                        Key::ArrowLeft => navigate_left(&focus, &layout, get_text_at),
+                        Key::ArrowRight => navigate_right(&focus, &layout, get_text_at),
                         Key::ArrowUp => navigate_up(&focus, &layout),
                         Key::ArrowDown => navigate_down(&focus, &layout),
                         Key::Home => navigate_home(&focus, &layout),
-                        Key::End => navigate_end(&focus, &layout, get_text),
+                        Key::End => navigate_end(&focus, &layout, get_text_at),
                         _ => None,
                     }
                 };

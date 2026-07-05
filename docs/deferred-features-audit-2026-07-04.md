@@ -63,7 +63,7 @@ All are genuine, mostly upstream-gated (Parley/Blitz/Vello) or deliberately defe
 | `odt-fidelity` | `editor_load.rs:84,88` | Tracked DOCX/ODT import gaps |
 | `formatting` | `editor_formatting.rs:106` | Multi-block-selection formatting (clamped to focus paragraph) |
 | `undo-dirty` | `editor_state.rs:118` | ~~Saved-vs-undo-stack clean tracking~~ **fixed 2026-07-05** (plan 4b.3): `editing/saved_state.rs` clean checkpoint — undoing back to the save point clears dirty |
-| `nested-nav` | `navigation.rs:138,174` | Sibling path inside cell/note body |
+| `nested-nav` | `navigation.rs:138,174` | ~~Sibling path inside cell/note body~~ **fixed 2026-07-05** (plan 4b.4): paginated navigation is path-aware; Left/Right cross cell/note siblings and clamp at the container edge |
 | `tabs` | `shell.rs:148`, `home.rs:89` | Tab-driven (vs router) navigation; blank-doc |
 | `ux` | `text/home.rs:266` (+ presentation/spreadsheet) | Confirm-before-delete dialog (delete is immediate) |
 | `browse-templates` / `title-edit` | `text/home.rs:355`, `title_bar.rs:133` | Template browser dialog; inline-editable title |
