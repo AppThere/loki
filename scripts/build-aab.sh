@@ -147,15 +147,28 @@ for i in "${!TRIPLES[@]}"; do
     echo "    -> jniLibs/$abidir/libloki_text.so ($(du -h "$so" | cut -f1))"
 done
 
-# ── Stage Java shims (single source of truth in patches/) ─────────────────────
+# ── Stage Java shims (single source of truth: the loki-file-access crate) ─────
+
+# The shims live in the loki-file-access crate (a git dependency since the
+# local patch was upstreamed, 2026-07-05); resolve its checkout directory
+# from cargo metadata rather than hardcoding a path.
+LFA_DIR="$(cd "$ROOT" && cargo metadata --format-version 1 | python3 -c '
+import json, os, sys
+meta = json.load(sys.stdin)
+for p in meta["packages"]:
+    if p["name"] == "loki-file-access":
+        print(os.path.dirname(p["manifest_path"]))
+        break
+')"
+[[ -n "$LFA_DIR" ]] || { echo "ERROR: loki-file-access not found in cargo metadata" >&2; exit 1; }
 
 JAVA_PKG_DIR="$ROOT/android/app/src/main/java/io/github/appthere/lokifileaccess"
 echo ""
 echo "==> Staging Java shims (FilePickerActivity, ImeInsetsListener)..."
 rm -rf "$ROOT/android/app/src/main/java"
 mkdir -p "$JAVA_PKG_DIR"
-cp "$ROOT/patches/loki-file-access/android/FilePickerActivity.java" "$JAVA_PKG_DIR/"
-cp "$ROOT/patches/loki-file-access/android/ImeInsetsListener.java" "$JAVA_PKG_DIR/"
+cp "$LFA_DIR/android/FilePickerActivity.java" "$JAVA_PKG_DIR/"
+cp "$LFA_DIR/android/ImeInsetsListener.java" "$JAVA_PKG_DIR/"
 
 # ── Gradle bundleRelease ──────────────────────────────────────────────────────
 

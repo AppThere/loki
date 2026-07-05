@@ -4461,7 +4461,8 @@ dependencies = [
 
 [[package]]
 name = "loki-file-access"
-version = "0.1.2"
+version = "0.1.3"
+source = "git+https://github.com/appthere/loki-file-access?branch=main#d2b7bc5c0a0f1703d1df0d083a9c5d660ddcb2cb"
 dependencies = [
  "base64",
  "jni 0.21.1",

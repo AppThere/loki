@@ -6,7 +6,8 @@ app/build/
 
 # Staged by scripts/build-aab.sh from the canonical sources — not committed:
 #   * native libraries built by cargo
-#   * FilePickerActivity.java copied from patches/loki-file-access/android/
+#   * FilePickerActivity.java copied from the loki-file-access crate's
+#     android/ directory (resolved via cargo metadata)
 app/src/main/jniLibs/
 app/src/main/java/
 

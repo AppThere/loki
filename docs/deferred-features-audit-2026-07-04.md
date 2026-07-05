@@ -104,7 +104,7 @@ All are genuine, mostly upstream-gated (Parley/Blitz/Vello) or deliberately defe
 | `blitz-net` 0.2.1 | upstream ships rustls by default / feature flag | Gated — not met |
 | `dioxus-native` 0.7.9 | upstream calls `request_redraw()` after head-element/event processing | Gated — not met |
 | `blitz-dom` 0.2.4 | upstream: tabindex focus-on-click, scroll dispatch, absolute node-scroll API, static-canvas anim fix | Gated — not met |
-| **`loki-file-access` 0.1.2** | push fixes to the (same-team) `appthere/loki-file-access` repo, publish, repoint | **Actionable locally** — same-team-owned; no evidence pushed. Also needs Gradle `FilePickerActivity.kt`. |
+| ~~**`loki-file-access` 0.1.2**~~ | push fixes to the (same-team) `appthere/loki-file-access` repo, publish, repoint | **REMOVED 2026-07-05** (plan Phase 2) — upstreamed as 0.1.3 (`d2b7bc5` on `main`), patch + vendored dir deleted, build scripts repointed via cargo metadata. 5 patches remain, all upstream-gated. |
 | ~~`fontique`~~ | — | Already removed 2026-06-21. |
 
 ---

@@ -128,9 +128,16 @@ Write-Host "==> App:         $App ($cargoPackage)"
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 $profile       = if ($Release) { "release" } else { "debug" }
+# The Java shims live in the loki-file-access crate (a git dependency since
+# the local patch was upstreamed, 2026-07-05); resolve its checkout directory
+# from cargo metadata rather than hardcoding a path.
+$lfaPackage = (cargo metadata --format-version 1 | ConvertFrom-Json).packages |
+    Where-Object { $_.name -eq "loki-file-access" } | Select-Object -First 1
+if (-not $lfaPackage) { throw "loki-file-access not found in cargo metadata" }
+$lfaDir        = Split-Path $lfaPackage.manifest_path
 $javaSrcs      = @(
-    "patches\loki-file-access\android\FilePickerActivity.java",
-    "patches\loki-file-access\android\ImeInsetsListener.java"
+    "$lfaDir\android\FilePickerActivity.java",
+    "$lfaDir\android\ImeInsetsListener.java"
 )
 $outDir        = "target\android-pkg"
 $apkSrc        = "$PWD\target\$profile\apk\$apkBaseName.apk"

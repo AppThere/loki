@@ -96,15 +96,6 @@ anyrender_vello = { path = "patches/anyrender_vello" }
 # handles the redraw itself.
 dioxus-native = { path = "patches/dioxus-native" }
 
-[patch."https://github.com/appthere/loki-file-access"]
-# PATCH: fixes two Android bugs —
-# (1) ndk_context stores Application (not Activity); startActivityForResult needs
-#     the actual NativeActivity, obtained via AndroidApp::activity_as_ptr().
-# (2) ANativeActivityCallbacks has no onActivityResult; returns a clear error
-#     instead of hanging indefinitely, and exports the JNI hook for the future
-#     Gradle-based FilePickerActivity shim.
-loki-file-access = { path = "patches/loki-file-access" }
-
 # ── Build profiles ─────────────────────────────────────────────────────────────
 #
 # The unoptimized debug profile embeds full DWARF symbols for every dependency.

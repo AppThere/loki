@@ -204,7 +204,19 @@ echo "==> javac:       $JAVAC"
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 PROFILE="$([ "$RELEASE" -eq 1 ] && echo "release" || echo "debug")"
-JAVA_SRC_DIR="patches/loki-file-access/android"
+# The Java shims live in the loki-file-access crate (a git dependency since
+# the local patch was upstreamed, 2026-07-05); resolve its checkout directory
+# from cargo metadata rather than hardcoding a path.
+LFA_DIR="$(cargo metadata --format-version 1 | python3 -c '
+import json, os, sys
+meta = json.load(sys.stdin)
+for p in meta["packages"]:
+    if p["name"] == "loki-file-access":
+        print(os.path.dirname(p["manifest_path"]))
+        break
+')"
+[[ -n "$LFA_DIR" ]] || { echo "ERROR: loki-file-access not found in cargo metadata" >&2; exit 1; }
+JAVA_SRC_DIR="$LFA_DIR/android"
 JAVA_SRCS=("$JAVA_SRC_DIR/FilePickerActivity.java" "$JAVA_SRC_DIR/ImeInsetsListener.java")
 MANIFEST_XML="loki-text/AndroidManifest.xml"
 OUT_DIR="target/android-pkg"

@@ -64,11 +64,11 @@ entirely in our hands.
 
 | Task | Detail |
 |---|---|
-| 2.1 | Push the local patch fixes to the `appthere/loki-file-access` repo (including the Gradle `FilePickerActivity.kt` piece noted in `docs/patches.md`). |
-| 2.2 | Publish the new version, repoint the workspace dependency, delete the `[patch]` entry, and update `docs/patches.md` (patch count 6 → 5). |
+| 2.1 | ✅ **Done 2026-07-05** — full patch content (Android NativeActivity fixes, Java shims + dexing `build.rs`, insets/IME bridges, `token.delete()`/`copy_bytes_to()`) upstreamed to `appthere/loki-file-access` as **0.1.3**, commit `d2b7bc5` fast-forwarded to `main` (fix branch `claude/upstream-android-nativeactivity-fixes` also pushed). 43 tests + clippy clean upstream. |
+| 2.2 | ✅ **Done 2026-07-05** — `[patch]` entry and `patches/loki-file-access/` removed; the `branch = "main"` git dependency resolves to 0.1.3 directly. The three Android build scripts now resolve the Java-shim directory from `cargo metadata` instead of the deleted patch path. Registry publication remains optional (the workspace dep is git, not registry) — noted in `docs/patches.md` "Removed patches". |
 
-**Exit criterion**: `cargo build` with no `loki-file-access` patch and no
-`Patch ... was not used` warnings.
+**Exit criterion**: ✅ met — `cargo check --workspace` with no `loki-file-access`
+patch and zero `Patch ... was not used` warnings.
 
 ---
 
