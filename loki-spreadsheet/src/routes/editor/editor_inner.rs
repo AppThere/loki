@@ -3,10 +3,9 @@
 
 //! Spreadsheet editor inner view.
 
-use appthere_ui::tokens;
 use appthere_ui::{
     AtIcon, AtRibbon, AtRibbonGroup, AtRibbonIconButton, AtStatusBar, LUCIDE_BOLD, LUCIDE_ITALIC,
-    LUCIDE_REDO, LUCIDE_UNDERLINE, LUCIDE_UNDO, RibbonTabDesc,
+    LUCIDE_REDO, LUCIDE_UNDERLINE, LUCIDE_UNDO, RibbonTabDesc, tokens,
 };
 use dioxus::prelude::*;
 use loki_file_access::{FileAccessToken, FilePicker, SaveOptions};
@@ -1123,6 +1122,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                 collaborator_count: 0,
                 collaborator_label: String::new(),
                 zoom_aria_label:    fl!("editor-zoom-aria"),
+                // TODO(zoom): needs zoom-aware col_px + resize px↔pt (plan 4c.5).
                 on_zoom_click:      |_| {},
             }
         }

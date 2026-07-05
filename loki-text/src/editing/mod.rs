@@ -21,3 +21,4 @@ pub mod spell;
 pub mod state;
 pub mod touch;
 pub mod viewport;
+pub mod word_count;

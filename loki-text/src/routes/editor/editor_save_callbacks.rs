@@ -124,3 +124,75 @@ pub(super) fn use_save_as_template_callback(
         });
     })
 }
+
+/// Signals the Ctrl+S flow reads and writes, grouped for the hook call.
+pub(super) struct CtrlSCtx {
+    pub doc_state: Arc<Mutex<DocumentState>>,
+    pub path_signal: Signal<String>,
+    pub save_request: Signal<u32>,
+    pub save_as: Callback<()>,
+    pub baseline_gen: Signal<u64>,
+    pub cursor_state: Signal<crate::editing::cursor::CursorState>,
+    pub loro_doc: Signal<Option<loro::LoroDoc>>,
+    pub undo_manager: Signal<Option<loro::UndoManager>>,
+    pub saved_state: Signal<crate::editing::saved_state::SavedStateHandle>,
+    pub can_undo: Signal<bool>,
+    pub can_redo: Signal<bool>,
+    pub save_message: Signal<Option<String>>,
+}
+
+/// The Ctrl+S save effect: the keydown handler bumps `save_request`; the save
+/// runs here, where the tab/recents context is reachable. Untitled documents
+/// route to Save As. On success the clean baseline + undo checkpoint are
+/// recorded and the CRDT history is compacted (see `editor_compact`).
+pub(super) fn use_ctrl_s_save(ctx: CtrlSCtx) {
+    let CtrlSCtx {
+        doc_state,
+        path_signal,
+        save_request,
+        save_as,
+        mut baseline_gen,
+        cursor_state,
+        loro_doc,
+        mut undo_manager,
+        saved_state,
+        can_undo,
+        can_redo,
+        mut save_message,
+    } = ctx;
+    use_effect(move || {
+        let n = save_request(); // subscribe — fires on each Ctrl+S
+        if n == 0 {
+            return; // initial value — nothing requested yet
+        }
+        let path = path_signal.peek().clone();
+        if crate::new_document::is_untitled(&path) {
+            save_as.call(());
+            return;
+        }
+        let msg = match super::editor_save::save_document_to_path(&path, &doc_state) {
+            Ok(()) => {
+                baseline_gen.set(cursor_state.peek().document_generation);
+                // Record the undo-stack clean checkpoint: undoing back to
+                // this depth means the document equals the file again.
+                if let Some(um) = undo_manager.write().as_mut() {
+                    let _ = um.record_new_checkpoint();
+                }
+                saved_state.peek().mark_saved();
+                // The file is now the durable state — bound the CRDT history
+                // memory (memory-audit Finding 6; see editor_compact.rs).
+                super::editor_compact::compact_after_save(
+                    loro_doc,
+                    undo_manager,
+                    saved_state,
+                    can_undo,
+                    can_redo,
+                    &doc_state,
+                );
+                fl!("editor-save-success")
+            }
+            Err(e) => fl!("editor-save-error", reason = e.to_string()),
+        };
+        save_message.set(Some(msg));
+    });
+}

@@ -21,6 +21,9 @@ pub(crate) struct PageTileProps {
     pub(crate) page_index: usize,
     pub(crate) w: f64,
     pub(crate) h: f64,
+    /// Paginated render zoom factor — tile-local CSS px are
+    /// `pt × 96/72 × zoom`, so hit-test conversions divide it back out.
+    pub(crate) zoom: f64,
     pub(crate) shared_renderer: Arc<Mutex<Option<vello::Renderer>>>,
     pub(crate) cursor_holder: Arc<Mutex<Option<RendererSelection>>>,
     pub(crate) selection: Option<RendererSelection>,
@@ -47,6 +50,7 @@ impl PartialEq for PageTileProps {
             && self.page_index == other.page_index
             && self.w == other.w
             && self.h == other.h
+            && self.zoom == other.zoom
             && Arc::ptr_eq(&self.cursor_holder, &other.cursor_holder)
             && self.selection == other.selection
             && self.doc_gen == other.doc_gen
@@ -118,8 +122,8 @@ pub(crate) fn PageTile(props: PageTileProps) -> Element {
             // which exactly equals page-local CSS pixels — no origin math needed.
             onmousedown: move |evt: MouseEvent| {
                 let e = evt.element_coordinates();
-                let x_pt = e.x as f32 * (72.0 / 96.0);
-                let y_pt = e.y as f32 * (72.0 / 96.0);
+                let x_pt = (e.x / props.zoom) as f32 * (72.0 / 96.0);
+                let y_pt = (e.y / props.zoom) as f32 * (72.0 / 96.0);
                 // Right-click → context menu (carry client coords to anchor it);
                 // any other button → cursor placement / drag origin.
                 if evt.trigger_button() == Some(MouseButton::Secondary) {
@@ -142,8 +146,8 @@ pub(crate) fn PageTile(props: PageTileProps) -> Element {
                     return;
                 }
                 let e = evt.element_coordinates();
-                let x_pt = e.x as f32 * (72.0 / 96.0);
-                let y_pt = e.y as f32 * (72.0 / 96.0);
+                let x_pt = (e.x / props.zoom) as f32 * (72.0 / 96.0);
+                let y_pt = (e.y / props.zoom) as f32 * (72.0 / 96.0);
                 on_tile_drag.call((page_index, x_pt, y_pt));
             },
             canvas {

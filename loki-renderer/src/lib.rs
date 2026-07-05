@@ -13,12 +13,14 @@
 #![forbid(unsafe_code)]
 
 pub mod doc_page_source;
+mod doc_page_source_reflow;
 pub mod document_view;
 #[cfg(any(not(target_os = "android"), android_gpu))]
 pub mod page_paint_source;
 pub(crate) mod page_source_impl;
 #[cfg(any(not(target_os = "android"), android_gpu))]
 pub(crate) mod page_tile;
+mod view_types;
 // The HTML-flow fallback view is only compiled on the Android CPU path; GPU
 // targets render reflow mode through the layout engine (RenderMode::Reflow).
 #[cfg(all(target_os = "android", not(android_gpu)))]

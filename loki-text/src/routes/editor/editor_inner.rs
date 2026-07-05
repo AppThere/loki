@@ -22,8 +22,7 @@
 use std::rc::Rc;
 use std::sync::Arc;
 
-use appthere_ui::tokens;
-use appthere_ui::{AtRibbon, AtStatusBar, RibbonTabDesc, use_breakpoint};
+use appthere_ui::{AtRibbon, AtStatusBar, RibbonTabDesc, tokens, use_breakpoint};
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 use loki_doc_model::get_mark_at;
@@ -45,7 +44,6 @@ use super::editor_path_sync::{
 use super::editor_publish::{publish_panel, publish_tab_content};
 use super::editor_ribbon::write_tab_content;
 use super::editor_ribbon_insert::insert_tab_content;
-use super::editor_save::save_document_to_path;
 use super::editor_save_banner::save_banner;
 use super::editor_spell::SpellMenu;
 use super::editor_state::{EditorState, use_editor_state};
@@ -108,7 +106,8 @@ pub(super) fn EditorInner(path: String) -> Element {
         can_redo,
         is_style_picker_open,
         editing_style_draft,
-        mut save_message,
+        mut zoom_percent,
+        save_message,
         save_request,
         mut active_ribbon_tab,
         is_publish_panel_open,
@@ -455,6 +454,10 @@ pub(super) fn EditorInner(path: String) -> Element {
     // blitz-dom / dioxus-native-dom) whenever a wheel or touch gesture changes
     // the scroll container's offset.
 
+    // Live status-bar word count, recomputed per mutation (F7c / 4c.5).
+    let word_count_label =
+        crate::editing::word_count::use_word_count_label(Arc::clone(&doc_state), cursor_state);
+
     // ── Unsaved-changes (dirty) tracking ─────────────────────────────────────
     //
     // The tab shows a dirty indicator when the live document generation differs
@@ -506,45 +509,20 @@ pub(super) fn EditorInner(path: String) -> Element {
         save_message,
     };
 
-    // ── Ctrl+S handler ───────────────────────────────────────────────────────
-    //
-    // The keydown handler bumps `save_request`; perform the save here, where the
-    // tab/recents context is reachable. Untitled documents route to Save As.
-    let doc_state_savereq = Arc::clone(&doc_state);
-    use_effect(move || {
-        let n = save_request(); // subscribe — fires on each Ctrl+S
-        if n == 0 {
-            return; // initial value — nothing requested yet
-        }
-        let path = path_signal.peek().clone();
-        if is_untitled(&path) {
-            save_as.call(());
-            return;
-        }
-        let msg = match save_document_to_path(&path, &doc_state_savereq) {
-            Ok(()) => {
-                baseline_gen.set(cursor_state.peek().document_generation);
-                // Record the undo-stack clean checkpoint: undoing back to
-                // this depth means the document equals the file again.
-                if let Some(um) = undo_manager.write().as_mut() {
-                    let _ = um.record_new_checkpoint();
-                }
-                saved_state.peek().mark_saved();
-                // The file is now the durable state — bound the CRDT history
-                // memory (memory-audit Finding 6; see editor_compact.rs).
-                super::editor_compact::compact_after_save(
-                    loro_doc,
-                    undo_manager,
-                    saved_state,
-                    can_undo,
-                    can_redo,
-                    &doc_state_savereq,
-                );
-                fl!("editor-save-success")
-            }
-            Err(e) => fl!("editor-save-error", reason = e.to_string()),
-        };
-        save_message.set(Some(msg));
+    // ── Ctrl+S handler (extracted flow — see editor_save_callbacks) ─────────
+    super::editor_save_callbacks::use_ctrl_s_save(super::editor_save_callbacks::CtrlSCtx {
+        doc_state: Arc::clone(&doc_state),
+        path_signal,
+        save_request,
+        save_as,
+        baseline_gen,
+        cursor_state,
+        loro_doc,
+        undo_manager,
+        saved_state,
+        can_undo,
+        can_redo,
+        save_message,
     });
 
     // ── Viewport-driven effects (Spec 03 M1/M2) ──────────────────────────────
@@ -634,6 +612,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                 spell_service.clone(),
                 spell_menu,
                 doc_state_spell_ctx,
+                zoom_percent,
             )}
 
             // ── Font-substitution warning (Spec 03 M3) ────────────────────────
@@ -795,13 +774,16 @@ pub(super) fn EditorInner(path: String) -> Element {
             // ── Status bar ────────────────────────────────────────────────────
             AtStatusBar {
                 page_label:         page_label,
-                word_count_label:   "".to_string(),
+                word_count_label:   word_count_label(),
                 language_label:     fl!("editor-language"),
-                zoom_percent:       100,
+                zoom_percent:       zoom_percent(),
                 collaborator_count: 0,
                 collaborator_label: String::new(),
                 zoom_aria_label:    fl!("editor-zoom-aria"),
-                on_zoom_click:      |_| {},
+                on_zoom_click:      move |_| {
+                    let next = appthere_ui::next_zoom(*zoom_percent.peek());
+                    zoom_percent.set(next);
+                },
                 view_mode_label:    if view_mode() == ViewMode::Reflow {
                     fl!("editor-view-reflowed")
                 } else {

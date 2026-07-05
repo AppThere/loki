@@ -15,6 +15,7 @@ pub mod ribbon;
 pub mod status_bar;
 pub mod tab_bar;
 pub mod title_bar;
+pub mod zoom;
 
 pub use confirm_dialog::{AtConfirmDialog, AtConfirmDialogProps};
 pub use document_tab::{AtDocumentTab, AtDocumentTabProps};
@@ -25,3 +26,4 @@ pub use ribbon::{AtRibbon, AtRibbonGroup, AtRibbonGroupProps, RibbonTabDesc, Rib
 pub use status_bar::{AtStatusBar, AtStatusBarProps};
 pub use tab_bar::{AtDocumentTabData, AtTabBar, AtTabBarProps};
 pub use title_bar::{AtTitleBar, AtTitleBarProps};
+pub use zoom::next_zoom;

@@ -38,6 +38,8 @@ pub(super) fn EditorInner(path: String) -> Element {
     let mut active_idx = use_signal(|| 0usize);
     let mut dirty = use_signal(|| false);
     let mut save_message = use_signal(|| Option::<String>::None);
+    // Slide render zoom, in percent (status-bar badge; 4c.5).
+    let mut zoom_percent = use_signal(|| 100_u32);
     // Stashed sessions for inactive tabs — unsaved edits survive tab switches
     // (audit F1 residual / plan 4b.6).
     let doc_sessions = use_context::<Signal<DocSessions>>();
@@ -171,7 +173,15 @@ pub(super) fn EditorInner(path: String) -> Element {
                 button {
                     style: toolbar_btn_style(),
                     onclick: move |_| {
-                        if let Some(p) = doc.write().as_mut() { edit::delete_slide(p, idx); }
+                        let new_len = {
+                            let mut d = doc.write();
+                            let Some(p) = d.as_mut() else { return };
+                            edit::delete_slide(p, idx);
+                            p.slide_count()
+                        };
+                        // Keep the selection on the same position, clamped to
+                        // the shrunken deck (F7b).
+                        active_idx.set(idx.min(new_len.saturating_sub(1)));
                         dirty.set(true);
                     },
                     {fl!("editor-action-delete-slide")}
@@ -214,6 +224,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     if let Some(v) = active {
                         SlideCanvas {
                             view: v,
+                            zoom: zoom_percent() as f64 / 100.0,
                             on_edit: move |msg: EditMsg| {
                                 if let Some(p) = doc.write().as_mut() {
                                     edit::set_shape_text(p, idx, &msg.shape_id, msg.para, &msg.text);
@@ -243,11 +254,14 @@ pub(super) fn EditorInner(path: String) -> Element {
                 ),
                 word_count_label: String::new(),
                 language_label: fl!("editor-language"),
-                zoom_percent: 100,
+                zoom_percent: zoom_percent(),
                 collaborator_count: 0,
                 collaborator_label: String::new(),
                 zoom_aria_label: fl!("editor-zoom-aria"),
-                on_zoom_click: |_| {},
+                on_zoom_click: move |_| {
+                    let next = appthere_ui::next_zoom(*zoom_percent.peek());
+                    zoom_percent.set(next);
+                },
             }
         }
     }

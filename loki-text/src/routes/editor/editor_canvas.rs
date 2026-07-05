@@ -31,8 +31,12 @@
 use std::sync::Arc;
 
 use appthere_ui::tokens;
+use dioxus::html::input_data::MouseButton;
 use dioxus::prelude::*;
+use loki_app_shell::spell::SpellService;
 use loki_doc_model::document::Document;
+use loki_doc_model::loro_bridge::derive_loro_cursor;
+use loki_i18n::fl;
 use loki_renderer::{DocumentView, RendererCursorPos, TileContext, ViewMode};
 
 use super::editor_error_view::EditorErrorView;
@@ -43,17 +47,10 @@ use super::editor_pointer::{
 use super::editor_scrollbar::{
     CanvasMounted, ScrollMetrics, ThumbDrag, horizontal_scrollbar, vertical_scrollbar,
 };
-use crate::editing::cursor::{CursorState, DocumentPosition};
-use crate::editing::hit_test::hit_test_page;
-use crate::editing::state::DocumentState;
-use crate::editing::touch::TouchInteractionState;
-use dioxus::html::input_data::MouseButton;
-use loki_app_shell::spell::SpellService;
-
 use super::editor_spell::{SpellMenu, resolve_spell_menu};
+use crate::editing::cursor::{CursorState, DocumentPosition};
+use crate::editing::{hit_test::hit_test_page, state::DocumentState, touch::TouchInteractionState};
 use crate::error::LoadError;
-use loki_doc_model::loro_bridge::derive_loro_cursor;
-use loki_i18n::fl;
 
 /// Fallback viewport height (CSS px) for tile virtualization before the scroll
 /// container is first measured. A named default — not a hardcoded screen
@@ -177,6 +174,7 @@ pub(super) fn render_canvas_area(
     service: SpellService,
     spell_menu: Signal<Option<SpellMenu>>,
     doc_state_context: Arc<std::sync::Mutex<DocumentState>>,
+    zoom_percent: Signal<u32>,
 ) -> Element {
     rsx! {
         // Outer wrapper occupies the editor column's flex:1 slot and lays out
@@ -376,6 +374,7 @@ pub(super) fn render_canvas_area(
                         DocumentView {
                             doc: arc_doc,
                             paginated_layout,
+                            zoom: zoom_percent() as f64 / 100.0,
                             // Real measured viewport height (falls back to a
                             // sensible default before the first measure). Drives
                             // tile virtualization: only pages within ~one screen

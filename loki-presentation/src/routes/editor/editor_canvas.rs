@@ -34,7 +34,7 @@ pub(super) fn SlideThumbnails(
                     padding: 12px; gap: 12px;",
             for (i, v) in views.iter().enumerate() {
                 div {
-                    key: "{i}",
+                    key: "{v.slide_id}",
                     style: format!(
                         "position: relative; width: 100%; height: 90px; background: {bg}; \
                          border: 2px solid {border}; border-radius: 6px; cursor: pointer; \
@@ -86,23 +86,34 @@ pub(super) fn SlideCanvas(
     view: SlideView,
     on_edit: EventHandler<EditMsg>,
     on_add_bullet: EventHandler<()>,
+    /// Render zoom factor (1.0 = 100%): scales the slide box and its text
+    /// together (status-bar zoom badge; 4c.5).
+    zoom: f64,
 ) -> Element {
+    let z = |px: f64| px * zoom;
     rsx! {
         div {
             style: format!(
-                "width: 720px; height: 405px; background: {bg}; color: {fg}; \
+                "width: {w}px; height: {h}px; background: {bg}; color: {fg}; \
                  border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); \
-                 padding: 40px; box-sizing: border-box; display: flex; \
-                 flex-direction: column; justify-content: flex-start; gap: 8px;",
+                 padding: {pad}px; box-sizing: border-box; display: flex; \
+                 flex-direction: column; justify-content: flex-start; gap: {gap}px;",
+                w = z(720.0),
+                h = z(405.0),
+                pad = z(40.0),
+                gap = z(8.0),
                 bg = view.bg_css,
                 fg = view.fg_css,
             ),
 
             if let Some(t) = &view.title {
                 input {
-                    style: "font-size: 32px; font-weight: bold; background: transparent; \
-                            border: 1px dashed rgba(128,128,128,0.4); color: inherit; \
-                            width: 100%; outline: none; font-family: inherit; padding: 2px;",
+                    style: format!(
+                        "font-size: {fs}px; font-weight: bold; background: transparent; \
+                         border: 1px dashed rgba(128,128,128,0.4); color: inherit; \
+                         width: 100%; outline: none; font-family: inherit; padding: 2px;",
+                        fs = z(32.0),
+                    ),
                     value: "{t.text}",
                     placeholder: fl!("editor-placeholder-title"),
                     oninput: {
@@ -116,9 +127,12 @@ pub(super) fn SlideCanvas(
 
             if let Some(s) = &view.subtitle {
                 input {
-                    style: "font-size: 16px; font-style: italic; background: transparent; \
-                            border: 1px dashed rgba(128,128,128,0.4); color: inherit; \
-                            width: 100%; outline: none; font-family: inherit; padding: 2px; opacity: 0.85;",
+                    style: format!(
+                        "font-size: {fs}px; font-style: italic; background: transparent; \
+                         border: 1px dashed rgba(128,128,128,0.4); color: inherit; \
+                         width: 100%; outline: none; font-family: inherit; padding: 2px; opacity: 0.85;",
+                        fs = z(16.0),
+                    ),
                     value: "{s.text}",
                     placeholder: fl!("editor-placeholder-subtitle"),
                     oninput: {
@@ -132,14 +146,22 @@ pub(super) fn SlideCanvas(
 
             ul {
                 style: "margin: 12px 0 0 0; padding-left: 20px; flex: 1; overflow-y: auto;",
-                for (i, line) in view.bullets.iter().enumerate() {
+                for line in view.bullets.iter() {
                     li {
-                        key: "{i}",
-                        style: "margin: 6px 0; font-size: 16px; list-style-type: square;",
+                        // Shape + paragraph is stable across bullet edits, so
+                        // inserting a bullet re-uses the right inputs (F7b).
+                        key: "{line.shape_id}-{line.para}",
+                        style: format!(
+                            "margin: 6px 0; font-size: {fs}px; list-style-type: square;",
+                            fs = z(16.0),
+                        ),
                         input {
-                            style: "background: transparent; border: 1px dashed rgba(128,128,128,0.4); \
-                                    color: inherit; width: 92%; outline: none; font-size: 16px; \
-                                    font-family: inherit; padding: 2px;",
+                            style: format!(
+                                "background: transparent; border: 1px dashed rgba(128,128,128,0.4); \
+                                 color: inherit; width: 92%; outline: none; font-size: {fs}px; \
+                                 font-family: inherit; padding: 2px;",
+                                fs = z(16.0),
+                            ),
                             value: "{line.text}",
                             oninput: {
                                 let id = line.shape_id.clone();
