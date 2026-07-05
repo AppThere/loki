@@ -13,7 +13,7 @@ use crate::tokens::colors::{
     COLOR_TEXT_ACCENT, COLOR_TEXT_ON_CHROME_SECONDARY,
 };
 use crate::tokens::layout::STATUS_BAR_HEIGHT;
-use crate::tokens::spacing::{RADIUS_SM, SPACE_1, SPACE_2, SPACE_4};
+use crate::tokens::spacing::{RADIUS_SM, SPACE_1, SPACE_2, SPACE_4, TOUCH_MIN};
 use crate::tokens::typography::{FONT_FAMILY_UI, FONT_SIZE_XS, FONT_WEIGHT_MEDIUM};
 
 // ── AtStatusBar ───────────────────────────────────────────────────────────────
@@ -23,10 +23,14 @@ use crate::tokens::typography::{FONT_FAMILY_UI, FONT_SIZE_XS, FONT_WEIGHT_MEDIUM
 /// Displays document statistics on the left and navigation controls (zoom,
 /// language, collaborator count) on the right.
 ///
-/// **Minimum interactive size: 44×44 logical pixels (WCAG 2.5.8).**
-///
-/// The zoom badge is smaller than `TOUCH_MIN` in its visual footprint.
-/// TODO(a11y): Expand the invisible touch target to `TOUCH_MIN` using padding.
+/// **Touch targets (WCAG 2.5.8):** every interactive control (notice chip,
+/// view-mode toggle, zoom badge) is at least [`TOUCH_MIN`] (44 px) wide and
+/// fills the bar's full [`STATUS_BAR_HEIGHT`] (24 px) — the WCAG 2.5.8 AA
+/// 24 px minimum. The bar itself caps the vertical target below the suite's
+/// 44 px convention; meeting it fully needs a taller bar on touch platforms
+/// (a design decision tracked in the deferred-features plan, 4c.2 tail).
+/// The visual chip is a smaller nested `span`; the transparent button around
+/// it is the hit area.
 #[component]
 pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
     let mut zoom_hovered = use_signal(|| false);
@@ -101,26 +105,33 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
 
             // Optional status notice chip (e.g. recover a dismissed warning).
             // Border + background only — no box-shadow (Blitz constraint).
+            // Hit area: full bar height × ≥ TOUCH_MIN wide (see component doc).
             if show_notice {
                 button {
                     "aria-label": props.notice_aria_label.clone(),
                     style: format!(
-                        "background: {bg}; border: 1px solid {border}; border-radius: {r}px; \
-                         color: {fg}; font-size: {size}px; font-weight: {weight}; \
-                         cursor: pointer; padding: {pv}px {ph}px; flex-shrink: 0;",
-                        bg     = notice_bg,
-                        border = COLOR_CONTEXTUAL_TAB,
-                        r      = RADIUS_SM,
-                        fg     = COLOR_TEXT_ON_CHROME_SECONDARY,
-                        size   = FONT_SIZE_XS,
-                        weight = FONT_WEIGHT_MEDIUM,
-                        pv     = SPACE_1,
-                        ph     = SPACE_2,
+                        "{hit} background: transparent; border: none; cursor: pointer;",
+                        hit = hit_area_style(),
                     ),
                     onmouseenter: move |_| { notice_hovered.set(true); },
                     onmouseleave: move |_| { notice_hovered.set(false); },
                     onclick: move |_| { props.on_notice_click.call(()); },
-                    "⚠ {props.notice_label}"
+                    span {
+                        style: format!(
+                            "background: {bg}; border: 1px solid {border}; border-radius: {r}px; \
+                             color: {fg}; font-size: {size}px; font-weight: {weight}; \
+                             padding: {pv}px {ph}px;",
+                            bg     = notice_bg,
+                            border = COLOR_CONTEXTUAL_TAB,
+                            r      = RADIUS_SM,
+                            fg     = COLOR_TEXT_ON_CHROME_SECONDARY,
+                            size   = FONT_SIZE_XS,
+                            weight = FONT_WEIGHT_MEDIUM,
+                            pv     = SPACE_1,
+                            ph     = SPACE_2,
+                        ),
+                        "⚠ {props.notice_label}"
+                    }
                 }
             }
 
@@ -143,51 +154,39 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
 
             // View-mode toggle (paginated ⇆ reflowed). Hidden unless a label is
             // supplied, so apps that do not offer the toggle are unaffected.
-            // **Minimum interactive size: 44×44 logical pixels (WCAG 2.5.8).**
-            // TODO(a11y): expand the invisible touch target to TOUCH_MIN.
+            // Hit area: full bar height × ≥ TOUCH_MIN wide (see component doc).
             if show_view_toggle {
                 button {
                     "aria-label": props.view_mode_aria_label.clone(),
                     style: format!(
-                        "background: {bg}; border: none; border-radius: {r}px; \
-                         color: {fg}; font-size: {size}px; font-weight: {weight}; \
-                         cursor: pointer; padding: {pv}px {ph}px; flex-shrink: 0;",
-                        bg     = view_bg,
-                        r      = RADIUS_SM,
-                        fg     = COLOR_TEXT_ON_CHROME_SECONDARY,
-                        size   = FONT_SIZE_XS,
-                        weight = FONT_WEIGHT_MEDIUM,
-                        pv     = SPACE_1,
-                        ph     = SPACE_2,
+                        "{hit} background: transparent; border: none; cursor: pointer;",
+                        hit = hit_area_style(),
                     ),
                     onmouseenter: move |_| { view_hovered.set(true); },
                     onmouseleave: move |_| { view_hovered.set(false); },
                     onclick: move |_| { props.on_view_mode_click.call(()); },
-                    "{props.view_mode_label}"
+                    span {
+                        style: chip_style(view_bg),
+                        "{props.view_mode_label}"
+                    }
                 }
             }
 
-            // Zoom badge (clickable button)
-            // The zoom badge is smaller than TOUCH_MIN in its visual footprint.
-            // TODO(a11y): Expand the invisible touch target to TOUCH_MIN using padding.
+            // Zoom badge (clickable button).
+            // Hit area: full bar height × ≥ TOUCH_MIN wide (see component doc).
             button {
                 "aria-label": props.zoom_aria_label,
                 style: format!(
-                    "background: {bg}; border: none; border-radius: {r}px; \
-                     color: {fg}; font-size: {size}px; font-weight: {weight}; \
-                     cursor: pointer; padding: {pv}px {ph}px; flex-shrink: 0;",
-                    bg     = zoom_bg,
-                    r      = RADIUS_SM,
-                    fg     = COLOR_TEXT_ON_CHROME_SECONDARY,
-                    size   = FONT_SIZE_XS,
-                    weight = FONT_WEIGHT_MEDIUM,
-                    pv     = SPACE_1,
-                    ph     = SPACE_2,
+                    "{hit} background: transparent; border: none; cursor: pointer;",
+                    hit = hit_area_style(),
                 ),
                 onmouseenter: move |_| { zoom_hovered.set(true); },
                 onmouseleave: move |_| { zoom_hovered.set(false); },
                 onclick: move |_| { props.on_zoom_click.call(()); },
-                "{props.zoom_percent}%"
+                span {
+                    style: chip_style(zoom_bg),
+                    "{props.zoom_percent}%"
+                }
             }
 
             // Collaborator badge (hidden when count is 0)
@@ -203,6 +202,30 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
             }
         }
     }
+}
+
+/// Shared hit-area style for the status bar's interactive controls: at least
+/// [`TOUCH_MIN`] wide and the bar's full height, centring the visual chip.
+fn hit_area_style() -> String {
+    format!(
+        "min-width: {w}px; height: 100%; box-sizing: border-box; padding: 0; \
+         display: flex; align-items: center; justify-content: center; flex-shrink: 0;",
+        w = TOUCH_MIN,
+    )
+}
+
+/// Visual chip style for the view-mode / zoom badges (`bg` swaps on hover).
+fn chip_style(bg: &str) -> String {
+    format!(
+        "background: {bg}; border-radius: {r}px; color: {fg}; \
+         font-size: {size}px; font-weight: {weight}; padding: {pv}px {ph}px;",
+        r = RADIUS_SM,
+        fg = COLOR_TEXT_ON_CHROME_SECONDARY,
+        size = FONT_SIZE_XS,
+        weight = FONT_WEIGHT_MEDIUM,
+        pv = SPACE_1,
+        ph = SPACE_2,
+    )
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -255,9 +278,8 @@ pub struct AtStatusBarProps {
     /// default) hides it, so apps that do not use it are unaffected. Generic by
     /// design — not font-specific.
     ///
-    /// **Min interactive size: 44×44 logical px (WCAG 2.5.8).** TODO(a11y):
-    /// expand the invisible touch target to `TOUCH_MIN` (shared with the zoom /
-    /// view-mode badges, which carry the same status-bar-height constraint).
+    /// Touch target: ≥ `TOUCH_MIN` wide × full bar height (see the component
+    /// doc for the shared status-bar-height constraint).
     #[props(default)]
     pub notice_label: String,
 

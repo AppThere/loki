@@ -129,7 +129,7 @@ TODOs (merged with whatever Phase 0 confirms from F1–F7).
 | Task | Topics | Detail | Effort |
 |---|---|---|---|
 | 4c.1 | `ux` | ✅ **Done 2026-07-05** — the recents Delete menu action now only *requests* deletion; `AtConfirmDialog` performs it on confirm (all three apps' Home; `home.rs` split `home_util.rs` out to stay under the ceiling). | S |
-| 4c.2 | `a11y` | Expand invisible status-bar touch targets to `TOUCH_MIN` (WCAG 2.5.8 is a stated project convention). | S |
+| 4c.2 | `a11y` | ✅ **Done 2026-07-05 (bounded by bar height)** — the status bar's three interactive controls (notice chip, view-mode toggle, zoom badge) are now transparent hit areas ≥ `TOUCH_MIN` (44 px) wide × the bar's full height, with the visual chip nested inside. **Honest constraint:** the 24 px `STATUS_BAR_HEIGHT` caps the vertical target at WCAG 2.5.8 AA's 24 px minimum, below the suite's 44 px convention — meeting it fully requires a taller bar on touch platforms (design decision, deferred; documented on `AtStatusBar`). | S |
 | 4c.3 | `title-edit`, `browse-templates`, `tabs` | Inline-editable title; template-browser dialog; tab-driven navigation + blank-doc. | M |
 | 4c.4 | `icons`, `ribbon`, `theme`, `platform`, `font` | Real Tabler/SVG icons over emoji; ribbon separator variant; **light-theme tokens** (currently Dark-only); macOS traffic-light region / real OS check; verify bundled UI fonts registered. | M |
 | 4c.5 | F6a/F6d/F7a/F7b/F7c (audit §9) | Extract recent-file rows into child components (hooks-in-loops); wire zoom controls (all 3 apps) + spreadsheet ribbon tab-select/collapse; adopt `use_breakpoint()` in `AtHomeTab`; stable list keys + `active_slide_idx` fix-up on slide delete; word count in the status bar. | M |
