@@ -59,3 +59,9 @@ home-template-portfolio = Portfolio
 home-template-portfolio-description = Visual design portfolio
 home-template-portfolio-format = PPTX
 home-filter-label-presentation = Presentations
+
+# Recents delete confirmation
+home-delete-confirm-title = Delete file
+home-delete-confirm-message = Permanently delete "{ $title }"? This cannot be undone.
+home-delete-confirm-confirm = Delete
+home-delete-confirm-cancel = Cancel

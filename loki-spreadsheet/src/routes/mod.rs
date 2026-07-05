@@ -5,6 +5,7 @@
 
 pub mod editor;
 pub mod home;
+mod home_util;
 pub mod shell;
 
 use dioxus::prelude::*;

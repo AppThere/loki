@@ -5,6 +5,7 @@
 //! All components are application-agnostic — they must not reference any
 //! application-specific route enum, document model, or business logic.
 
+pub mod confirm_dialog;
 pub mod document_tab;
 pub mod home_tab;
 pub mod icons;
@@ -15,6 +16,7 @@ pub mod status_bar;
 pub mod tab_bar;
 pub mod title_bar;
 
+pub use confirm_dialog::{AtConfirmDialog, AtConfirmDialogProps};
 pub use document_tab::{AtDocumentTab, AtDocumentTabProps};
 pub use home_tab::{AtHomeTab, AtHomeTabProps, BuiltinTemplate, RecentDocument};
 pub use panel_host::{AtPanelHost, AtPanelHostProps, PanelPosture};

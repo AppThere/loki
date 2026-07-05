@@ -10,3 +10,9 @@ shell-home-tab = Home
 shell-tab-bar-aria = Open documents
 shell-new-document-aria = New document
 shell-close-tab-aria = Close { $title }
+
+# Dirty-tab close confirmation
+shell-close-dirty-title = Unsaved changes
+shell-close-dirty-message = "{ $title }" has unsaved changes. Close the tab and discard them?
+shell-close-dirty-confirm = Discard changes
+shell-close-dirty-cancel = Keep editing
