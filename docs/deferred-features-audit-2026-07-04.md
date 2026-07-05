@@ -44,7 +44,7 @@ All are genuine, mostly upstream-gated (Parley/Blitz/Vello) or deliberately defe
 |---|---|---|
 | `3b-3` (partial) | `navigation.rs` (many) | Cross-page nav: up/down works; **left/right at page edges + `page_index` recompute after split/merge still `None`** |
 | `loro-bridge` | `loro_bridge/decode.rs` (borders), `table.rs:25` | ~~Non-Rgb colors, comment/bookmark anchors, quote/span attrs~~ **fixed 2026-07-04** (plan Phase 1.4). Remaining: non-Rgb *border* colors (format migration), `Cite` metadata, structural-table CRDT semantics |
-| `loro-compaction` | `loki-bench/benches/leak_loro_history.rs`; bridge | Compact the CRDT oplog at save/undo-horizon (memory Finding 6) |
+| `loro-compaction` | `loki-bench/benches/leak_loro_history.rs`; bridge | ~~Compact the CRDT oplog~~ **fixed 2026-07-04** (plan Phase 1.5): `loro_bridge::compact` + save-point wiring in loki-text; bench asserts the flattened curve. On-device validation pending (BM-14) |
 | `omml` | `docx/omml/mod.rs:20` | OMML↔MathML for delimiters, n-ary, matrices, accents |
 | `link-click` | `resolve.rs:689`, `items.rs:125`, `para.rs:203`, `scene.rs:519` | Interactive hyperlink hit-testing (only a visual hint today) |
 | `shadow` | `para_emit.rs:187`, `para.rs:196`, `scene.rs:93` | True soft text shadow (Vello blur) — hard grey offset copy today |
@@ -132,7 +132,7 @@ Still-open after verification (the DONE-SINCE ones moved to §1).
 |---|---|---|
 | memory-audit F3 | Drop preserved layout for inactive tabs (`sessions.rs:39` still retains `Arc<PaginatedLayout>`) | STILL-OPEN |
 | memory-audit F5 | Share render `FontDataCache` (per-tile `page_paint_source.rs:53` vs shared `DocPageSource`) | STILL-OPEN |
-| memory-audit F6 | Compact Loro oplog (`TODO(loro-compaction)`) | STILL-OPEN |
+| memory-audit F6 | Compact Loro oplog (`TODO(loro-compaction)`) | ~~STILL-OPEN~~ **FIXED 2026-07-04** (plan Phase 1.5) |
 | audit-2026-06 Q-1 | 300-line ceiling backlog — 43→**35**, CI-ratcheted (PARTIAL; `para.rs`/`flow.rs` grew) | PARTIAL |
 | audit-2026-06 Q-2 | App-shell duplication (per-app `routes/`, `shell.rs`) | PARTIAL |
 | audit-2026-06 Q-3/Q-4 | 301 `let _ =` writer error-swallows (downgraded); ~100 `#[allow]` incl. 32 `dead_code` OOXML | STILL-OPEN (downgraded/P2) |

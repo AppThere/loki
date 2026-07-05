@@ -569,6 +569,15 @@ pub(super) fn EditorInner(path: String) -> Element {
         let msg = match save_document_to_path(&path, &doc_state_savereq) {
             Ok(()) => {
                 baseline_gen.set(cursor_state.peek().document_generation);
+                // The file is now the durable state — bound the CRDT history
+                // memory (memory-audit Finding 6; see editor_compact.rs).
+                super::editor_compact::compact_after_save(
+                    loro_doc,
+                    undo_manager,
+                    can_undo,
+                    can_redo,
+                    &doc_state_savereq,
+                );
                 fl!("editor-save-success")
             }
             Err(e) => fl!("editor-save-error", reason = e.to_string()),
@@ -813,12 +822,10 @@ pub(super) fn EditorInner(path: String) -> Element {
                     subscript_active,
                     current_style_name,
                     is_style_picker_open,
-                    path_signal,
-                    save_message,
+                    save_request,
                     editing_style_draft,
                     save_as,
                     save_as_template,
-                    baseline_gen,
                 ),
                 },
             }

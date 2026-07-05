@@ -10,6 +10,7 @@
 //! All editing logic lives in [`editor_inner::EditorInner`].
 
 mod editor_canvas;
+mod editor_compact;
 mod editor_docked_panels;
 mod editor_error_view;
 mod editor_font_warning;
