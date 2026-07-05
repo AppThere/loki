@@ -82,16 +82,17 @@ BM-3** (render-cost proxy) and the ACID headless-raster registry item.
 
 | Task | Spec item | Detail | Effort |
 |---|---|---|---|
-| 3.1 | B-10 | Bundle the Gelasio font face into `loki-fonts/fonts/` (license-check first, as with the existing Croscore/Crosextra faces). | S |
-| 3.2 | B-6 | Vendor the ISO 29500 / ODF RELAX NG schemas into `appthere-conformance/schemas/` and wire schema validation. | M |
-| 3.3 | B-1 | `vello_cpu` render path in the conformance crate (no GPU in CI). Prerequisite for 3.4–3.6 and Spec 06 BM-3. | M |
-| 3.4 | B-5 | Pin a PDF→PNG rasterizer (version-locked) for golden comparison. | S |
-| 3.5 | B-2, B-3, B-4 | Commit the first visual goldens; calibrate the SSIM threshold empirically (replace the uncalibrated 0.98); add ΔE / worst-region / heatmap differ. | M |
-| 3.6 | B-11 | Wire the conformance gate into CI (advisory first, then required once goldens are stable). | S |
-| 3.7 | B-8, B-9 | Shared `Fixture`/`Consumer` traits; corpus reorg. ODP/ODG/PPTX importers stay gated on the unbuilt ACID PPTX generator (ratified decision §5.1) — keep deferred, but record it in the conformance README. | M |
+| 3.1 | B-10 | ✅ **Done 2026-07-05** — Gelasio ×4 faces bundled (OFL, full coverage reconstructed from fontsource subsets), Georgia→Gelasio mapping, dedicated substitution suite (`loki-layout/tests/font_substitution_suite.rs`). | S |
+| 3.2 | B-6 | ✅ **Done 2026-07-05** — ISO 29500-4:2016 Transitional + mce, ECMA-376 Part-2 OPC, OASIS ODF 1.3 RNG + MathML3 vendored with PROVENANCE (sha256); real DOCX/ODT exports schema-validated incl. malformed-part negative tests. Tails: Strict XSDs, Dublin Core imports for core.xml (documented in `schemas/README.md`). | M |
+| 3.3 | B-1 | ✅ **Done 2026-07-05** — new `loki-render-cpu` crate: `vello_cpu` (=0.0.9) rasterizes the same `PositionedItem` stream the GPU path paints, headless, byte-deterministic (M5 acceptance smoke tests). TODO(conformance-render): decode image items (grey placeholder today). | M |
+| 3.4 | B-5 | ✅ **Done 2026-07-05** — `appthere_conformance::raster::PdfRasterizer` (pdftoppm pinned flags @ `CONFORMANCE_DPI` 144, version captured, byte-determinism tested). | S |
+| 3.5 | B-2, B-3, B-4 | ✅ **Done 2026-07-05** — SSIM+CIEDE2000 worst-region differ with heatmaps (`golden/diff.rs`, Sharma reference pairs verified); 3 ODF goldens committed with GENERATION metadata (`scripts/generate-odf-goldens.sh`); calibration record `goldens/CALIBRATION.md` → `Tolerance::calibrated()` {0.60, 10.0}. **The calibration pass found and quantified fidelity gap #23 (kerning)** — pinned as the `para-carlito` expected-failure canary. OOXML goldens remain the manual Windows/Word COM procedure (§7.2). | M |
+| 3.6 | B-11 | ✅ **Done 2026-07-05** — all three axes run as cargo tests in the existing `build-and-test` job (xmllint + pdftoppm installed); schema + round-trip are hard gates, visual is advisory-by-construction (known divergence pinned; hardens when kerning lands + recalibration). | S |
+| 3.7 | B-8, B-9 | **Deferred** — shared `Fixture`/`Consumer` trait extraction from `loki-acid` and the 141-case corpus reorg remain open (the new fixtures/goldens live under `appthere-conformance/{fixtures,goldens}` as the seed of that layout). ODP/ODG/PPTX importers stay gated on the unbuilt ACID PPTX generator (§5.1). | M |
 
-**Exit criterion**: CI runs a golden-image conformance pass on every PR;
-Spec 02's tracker rows flip from "decided" to "built".
+**Exit criterion**: ✅ met for the built scope — CI runs schema, round-trip,
+and visual-golden passes on every PR; Spec 02 rows B-1…B-6, B-10, B-11 are
+*built*, B-7 was already largely done, B-8/B-9 remain the tracked tail.
 
 ---
 
