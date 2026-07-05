@@ -301,7 +301,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e2c6900aa6fa601379c17b824d0882c5c4ffd2f974124b273ba083b64f76077"
 dependencies = [
  "kurbo 0.12.0",
- "peniko",
+ "peniko 0.5.0",
  "raw-window-handle",
 ]
 
@@ -314,7 +314,7 @@ dependencies = [
  "anyrender",
  "image",
  "kurbo 0.12.0",
- "peniko",
+ "peniko 0.5.0",
  "thiserror 2.0.18",
  "usvg",
 ]
@@ -326,7 +326,7 @@ dependencies = [
  "anyrender",
  "debug_timer",
  "kurbo 0.12.0",
- "peniko",
+ "peniko 0.5.0",
  "pollster",
  "rustc-hash 2.1.3",
  "vello",
@@ -343,9 +343,9 @@ dependencies = [
  "anyrender",
  "debug_timer",
  "kurbo 0.12.0",
- "peniko",
+ "peniko 0.5.0",
  "softbuffer_window_renderer",
- "vello_cpu",
+ "vello_cpu 0.0.4",
 ]
 
 [[package]]
@@ -378,7 +378,7 @@ name = "appthere-canvas"
 version = "0.1.0"
 dependencies = [
  "loki-render-cache",
- "peniko",
+ "peniko 0.5.0",
  "read-fonts 0.40.2",
 ]
 
@@ -993,7 +993,7 @@ dependencies = [
  "euclid",
  "kurbo 0.12.0",
  "parley 0.6.0",
- "peniko",
+ "peniko 0.5.0",
  "stylo",
  "taffy",
  "usvg",
@@ -1016,7 +1016,7 @@ dependencies = [
  "kurbo 0.12.0",
  "log",
  "parley 0.6.0",
- "peniko",
+ "peniko 0.5.0",
  "rfd 0.17.2",
  "winit",
 ]
@@ -2752,6 +2752,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "fearless_simd"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b97b65636e5b9ef369943878ac74335ba1c55c1cb6adbf1e2c293c624248d693"
+
+[[package]]
 name = "fiat-crypto"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3231,6 +3237,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "glifo"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d99fc21d493812643aae86d53b7bbd02f376434a90317e8a790bc209fdd6605e"
+dependencies = [
+ "bytemuck",
+ "foldhash 0.2.0",
+ "hashbrown 0.17.1",
+ "log",
+ "peniko 0.6.1",
+ "png 0.18.1",
+ "skrifa 0.42.1",
+ "smallvec",
+ "vello_common 0.0.9",
+]
+
+[[package]]
 name = "gloo-timers"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3328,6 +3351,15 @@ checksum = "b62d5865c036cb1393e23c50693df631d3f5d7bcca4c04fe4cc0fd592e74a782"
 dependencies = [
  "euclid",
  "svg_fmt",
+]
+
+[[package]]
+name = "guillotiere"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b17e70c989c36bad147b27a58d148c0741c51448aa5653436547323e524d0ab"
+dependencies = [
+ "euclid",
 ]
 
 [[package]]
@@ -3870,7 +3902,7 @@ dependencies = [
  "gif",
  "image-webp",
  "num-traits",
- "png",
+ "png 0.17.16",
  "qoi",
  "ravif",
  "rayon",
@@ -4221,6 +4253,18 @@ checksum = "ce9729cc38c18d86123ab736fd2e7151763ba226ac2490ec092d1dd148825e32"
 dependencies = [
  "arrayvec",
  "euclid",
+ "smallvec",
+]
+
+[[package]]
+name = "kurbo"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b60dfc32f652b926df6192e55525b16d186c69d47876c3ead4da5cc9f8450e2"
+dependencies = [
+ "arrayvec",
+ "euclid",
+ "polycool",
  "smallvec",
 ]
 
@@ -4642,7 +4686,7 @@ dependencies = [
  "loki-renderer",
  "loki-vello",
  "loro",
- "peniko",
+ "peniko 0.5.0",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -4688,6 +4732,18 @@ version = "0.1.0"
 dependencies = [
  "thiserror 2.0.18",
  "wgpu",
+]
+
+[[package]]
+name = "loki-render-cpu"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "loki-doc-model",
+ "loki-fonts",
+ "loki-layout",
+ "thiserror 2.0.18",
+ "vello_cpu 0.0.9",
 ]
 
 [[package]]
@@ -4869,7 +4925,7 @@ dependencies = [
  "loki-sheet-model",
  "loki-vello",
  "loro",
- "peniko",
+ "peniko 0.5.0",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -4919,7 +4975,7 @@ dependencies = [
  "loki-templates",
  "loki-vello",
  "loro",
- "peniko",
+ "peniko 0.5.0",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -4941,7 +4997,7 @@ dependencies = [
  "loki-layout",
  "loki-odf",
  "loki-ooxml",
- "peniko",
+ "peniko 0.5.0",
  "pollster",
  "thiserror 2.0.18",
  "vello",
@@ -6250,6 +6306,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "peniko"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "839c8299360d2e998bdb106dc0a6cd71dcc5f4df51df1b620361bf50e283cca6"
+dependencies = [
+ "bytemuck",
+ "color",
+ "kurbo 0.13.1",
+ "linebender_resource_handle",
+ "smallvec",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6467,6 +6536,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "png"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60769b8b31b2a9f263dae2776c37b1b28ae246943cf719eb6946a1db05128a61"
+dependencies = [
+ "bitflags 2.13.0",
+ "crc32fast",
+ "fdeflate",
+ "flate2",
+ "miniz_oxide",
+]
+
+[[package]]
 name = "polling"
 version = "3.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6495,6 +6577,15 @@ dependencies = [
  "cpufeatures",
  "opaque-debug",
  "universal-hash",
+]
+
+[[package]]
+name = "polycool"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50596ddc09eb5ad5f75cacd40209568e66df71baf86e1499a0e99c4cff12a5a6"
+dependencies = [
+ "arrayvec",
 ]
 
 [[package]]
@@ -9347,8 +9438,8 @@ dependencies = [
  "bytemuck",
  "futures-intrusive",
  "log",
- "peniko",
- "png",
+ "peniko 0.5.0",
+ "png 0.17.16",
  "skrifa 0.37.0",
  "static_assertions",
  "thiserror 2.0.18",
@@ -9364,12 +9455,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a235ba928b3109ad9e7696270edb09445a52ae1c7c08e6d31a19b1cdd6cbc24a"
 dependencies = [
  "bytemuck",
- "fearless_simd",
+ "fearless_simd 0.3.0",
  "hashbrown 0.15.5",
  "log",
- "peniko",
+ "peniko 0.5.0",
  "skrifa 0.37.0",
  "smallvec",
+]
+
+[[package]]
+name = "vello_common"
+version = "0.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19d672facaa2d697285a786cd9d44d614cd2ce54cdc022504bf339f8fff3b750"
+dependencies = [
+ "bytemuck",
+ "fearless_simd 0.4.1",
+ "guillotiere 0.7.0",
+ "hashbrown 0.17.1",
+ "log",
+ "peniko 0.6.1",
+ "png 0.18.1",
+ "smallvec",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -9379,7 +9487,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0bd1fcf9c1814f17a491e07113623d44e3ec1125a9f3401f5e047d6d326da21"
 dependencies = [
  "bytemuck",
- "vello_common",
+ "vello_common 0.0.4",
+]
+
+[[package]]
+name = "vello_cpu"
+version = "0.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "588691169aed86b5c8fb487266afee01323234e6fd0a3f2aaec0eaa8e4007f23"
+dependencies = [
+ "bytemuck",
+ "glifo",
+ "hashbrown 0.17.1",
+ "png 0.18.1",
+ "vello_common 0.0.9",
 ]
 
 [[package]]
@@ -9389,8 +9510,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfd5e0b9fec91df34a09fbcbbed474cec68d05691b590a911c7af83c4860ae42"
 dependencies = [
  "bytemuck",
- "guillotiere",
- "peniko",
+ "guillotiere 0.6.2",
+ "peniko 0.5.0",
  "skrifa 0.37.0",
  "smallvec",
 ]
