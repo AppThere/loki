@@ -14,6 +14,7 @@ mod editor_compact;
 mod editor_docked_panels;
 mod editor_error_view;
 mod editor_font_warning;
+mod editor_format_range;
 mod editor_formatting;
 mod editor_inner;
 mod editor_insert;

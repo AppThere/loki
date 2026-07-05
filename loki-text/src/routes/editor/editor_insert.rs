@@ -31,7 +31,7 @@ use loki_doc_model::{
 };
 use loro::{LoroDoc, LoroValue};
 
-use super::editor_formatting::resolve_format_range;
+use super::editor_format_range::resolve_format_range;
 use crate::editing::cursor::CursorState;
 
 /// EMU per CSS pixel at 96 DPI (1 inch = 914 400 EMU = 96 px). Inserted images

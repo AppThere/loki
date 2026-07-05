@@ -61,7 +61,7 @@ All are genuine, mostly upstream-gated (Parley/Blitz/Vello) or deliberately defe
 | `pdf-rotate` | `pdf/src/page.rs:83` | Rotation transform in PDF export |
 | `odf-master-page` | `odf/reader/styles.rs:200` | ODF master-page transitions |
 | `odt-fidelity` | `editor_load.rs:84,88` | Tracked DOCX/ODT import gaps |
-| `formatting` | `editor_formatting.rs:106` | Multi-block-selection formatting (clamped to focus paragraph) |
+| `formatting` | `editor_formatting.rs:106` | ~~Multi-block-selection formatting~~ **fixed 2026-07-05** (plan 4b.2: per-paragraph ranges via `editor_format_range.rs`; cross-container still clamps) |
 | `undo-dirty` | `editor_state.rs:118` | ~~Saved-vs-undo-stack clean tracking~~ **fixed 2026-07-05** (plan 4b.3): `editing/saved_state.rs` clean checkpoint — undoing back to the save point clears dirty |
 | `nested-nav` | `navigation.rs:138,174` | ~~Sibling path inside cell/note body~~ **fixed 2026-07-05** (plan 4b.4): paginated navigation is path-aware; Left/Right cross cell/note siblings and clamp at the container edge |
 | `tabs` | `shell.rs:148`, `home.rs:89` | Tab-driven (vs router) navigation; blank-doc |
