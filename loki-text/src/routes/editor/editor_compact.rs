@@ -33,6 +33,7 @@ const COMPACT_THRESHOLD_OPS: usize = 20_000;
 pub(super) fn compact_after_save(
     mut loro_doc: Signal<Option<LoroDoc>>,
     mut undo_manager: Signal<Option<loro::UndoManager>>,
+    mut saved_state: Signal<crate::editing::saved_state::SavedStateHandle>,
     mut can_undo: Signal<bool>,
     mut can_redo: Signal<bool>,
     doc_state: &Arc<Mutex<DocumentState>>,
@@ -50,9 +51,13 @@ pub(super) fn compact_after_save(
     match loki_doc_model::loro_bridge::compact_history(&doc) {
         Ok(fresh) => {
             // Everything bound to the old doc instance is recreated: the
-            // undo manager restarts at the save point, and the incremental
-            // reader re-seeds from the new doc on the next edit.
-            let um = loro::UndoManager::new(&fresh);
+            // undo manager restarts at the save point, the clean-checkpoint
+            // tracker restarts at depth 0 (= the just-saved state), and the
+            // incremental reader re-seeds from the new doc on the next edit.
+            let mut um = loro::UndoManager::new(&fresh);
+            let tracker = crate::editing::saved_state::SavedStateHandle::new();
+            tracker.attach(&mut um);
+            saved_state.set(tracker);
             loro_doc.set(Some(fresh));
             undo_manager.set(Some(um));
             can_undo.set(false);

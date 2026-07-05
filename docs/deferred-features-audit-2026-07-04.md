@@ -62,7 +62,7 @@ All are genuine, mostly upstream-gated (Parley/Blitz/Vello) or deliberately defe
 | `odf-master-page` | `odf/reader/styles.rs:200` | ODF master-page transitions |
 | `odt-fidelity` | `editor_load.rs:84,88` | Tracked DOCX/ODT import gaps |
 | `formatting` | `editor_formatting.rs:106` | Multi-block-selection formatting (clamped to focus paragraph) |
-| `undo-dirty` | `editor_state.rs:118` | Saved-vs-undo-stack clean tracking (Save not implemented) |
+| `undo-dirty` | `editor_state.rs:118` | ~~Saved-vs-undo-stack clean tracking~~ **fixed 2026-07-05** (plan 4b.3): `editing/saved_state.rs` clean checkpoint — undoing back to the save point clears dirty |
 | `nested-nav` | `navigation.rs:138,174` | Sibling path inside cell/note body |
 | `tabs` | `shell.rs:148`, `home.rs:89` | Tab-driven (vs router) navigation; blank-doc |
 | `ux` | `text/home.rs:266` (+ presentation/spreadsheet) | Confirm-before-delete dialog (delete is immediate) |

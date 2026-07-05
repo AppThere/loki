@@ -15,6 +15,7 @@ use loki_renderer::ViewMode;
 
 use super::editor_scrollbar::{CanvasMounted, ScrollMetrics, ThumbDrag};
 use crate::editing::cursor::CursorState;
+use crate::editing::saved_state::SavedStateHandle;
 use crate::editing::state::DocumentState;
 use crate::editing::touch::TouchInteractionState;
 
@@ -114,14 +115,13 @@ pub(super) struct EditorState {
     pub superscript_active: Signal<bool>,
     pub subscript_active: Signal<bool>,
     /// Loro undo manager — `None` until the document loads.
-    ///
-    /// // TODO(undo-dirty): the tab dirty indicator already tracks
-    /// saved-vs-edited via a generation baseline (`editor_inner.rs`,
-    /// `baseline_gen`), but the undo stack itself has no clean checkpoint.
-    /// Call `UndoManager::record_new_checkpoint()` on Save so undoing back
-    /// to the saved state clears dirty and the ribbon Save button can be
-    /// disabled when there is nothing to save.
     pub undo_manager: Signal<Option<loro::UndoManager>>,
+    /// Clean-checkpoint tracker paired with `undo_manager` (plan 4b.3): save
+    /// records the undo-stack depth, so undoing back to the saved state
+    /// clears the tab's dirty indicator. Replaced together with the manager
+    /// (load, post-save compaction swap) and stashed with it in the tab's
+    /// `DocSession`.
+    pub saved_state: Signal<SavedStateHandle>,
     /// Whether Ctrl+Z is currently applicable (derived from `undo_manager`).
     pub can_undo: Signal<bool>,
     /// Whether Ctrl+Y / Ctrl+Shift+Z is currently applicable.
@@ -191,6 +191,7 @@ pub(super) fn use_editor_state() -> EditorState {
         superscript_active: use_signal(|| false),
         subscript_active: use_signal(|| false),
         undo_manager: use_signal(|| None),
+        saved_state: use_signal(SavedStateHandle::new),
         can_undo: use_signal(|| false),
         can_redo: use_signal(|| false),
         is_style_picker_open: use_signal(|| false),

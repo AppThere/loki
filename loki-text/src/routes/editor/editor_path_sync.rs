@@ -16,6 +16,7 @@ use dioxus::prelude::*;
 
 use super::editor_state::StyleDraft;
 use crate::editing::cursor::CursorState;
+use crate::editing::saved_state::SavedStateHandle;
 use crate::editing::state::DocumentState;
 use crate::sessions::{DocSession, DocSessions};
 
@@ -34,6 +35,7 @@ pub(super) struct PathSyncSignals {
     pub editing_style_draft: Signal<Option<StyleDraft>>,
     pub save_message: Signal<Option<String>>,
     pub baseline_gen: Signal<u64>,
+    pub saved_state: Signal<SavedStateHandle>,
 }
 
 /// Synchronises `path_signal` with the `path` prop.  On change, stashes the
@@ -115,6 +117,7 @@ pub(super) fn stash_outgoing(
             page_height_px,
             cursor: sig.cursor_state.peek().clone(),
             baseline_gen: *sig.baseline_gen.peek(),
+            saved_state: sig.saved_state.peek().clone(),
             can_undo: *sig.can_undo.peek(),
             can_redo: *sig.can_redo.peek(),
         },
@@ -148,6 +151,7 @@ pub(super) fn restore_session(
     sig.can_undo.set(session.can_undo);
     sig.can_redo.set(session.can_redo);
     sig.baseline_gen.set(session.baseline_gen);
+    sig.saved_state.set(session.saved_state);
 }
 
 /// Reset all per-document state ahead of a fresh `load_document` pass.
@@ -167,4 +171,5 @@ fn reset_for_fresh_load(doc_state: &Arc<Mutex<DocumentState>>, sig: &mut PathSyn
     sig.current_page.set(1);
     sig.can_undo.set(false);
     sig.can_redo.set(false);
+    sig.saved_state.set(SavedStateHandle::new());
 }

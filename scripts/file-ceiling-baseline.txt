@@ -12,7 +12,7 @@
 1073 loki-ooxml/src/docx/write/document.rs
 978 loki-layout/src/resolve.rs
 948 loki-vello/src/scene.rs
-870 loki-text/src/routes/editor/editor_inner.rs
+833 loki-text/src/routes/editor/editor_inner.rs
 741 loki-layout/src/flow_para.rs
 730 loki-ooxml/src/docx/mapper/inline.rs
 651 loki-odf/src/package.rs
