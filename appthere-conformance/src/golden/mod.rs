@@ -19,6 +19,7 @@
 
 use std::path::PathBuf;
 
+mod ciede;
 pub mod diff;
 
 pub use diff::{DiffError, Tolerance, compare_pages, emit_heatmap};
