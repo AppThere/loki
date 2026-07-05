@@ -7,6 +7,8 @@ mod cell_ref;
 mod editor_error_view;
 mod editor_inner;
 mod editor_load;
+mod editor_mutate;
+mod editor_path_sync;
 mod editor_state;
 mod formula;
 #[cfg(test)]

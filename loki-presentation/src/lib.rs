@@ -13,6 +13,7 @@ pub mod error;
 pub mod new_document;
 pub mod recent_documents;
 pub mod routes;
+pub mod sessions;
 pub mod tabs;
 pub mod utils;
 

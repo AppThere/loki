@@ -15,57 +15,15 @@ use std::collections::HashSet;
 
 use super::cell_ref::{col_to_label, grid_dimensions};
 use super::editor_load::{DocumentFormat, detect_format, load_document};
+use super::editor_mutate::{mutate_cell, mutate_cell_style, mutate_column_width};
+use super::editor_path_sync::{
+    PathSyncSignals, restore_session, stash_outgoing, sync_path_and_reset,
+};
 use super::editor_state::{EditorState, use_editor_state};
 use super::formula::{evaluate_cell, format_evaluated_value};
 use crate::routes::Route;
 use crate::routes::dioxus_router::Navigator;
 use crate::utils::display_title_from_path;
-
-/// Helper to mutate Loro cells in-place
-fn mutate_cell(
-    ldoc: &loro::LoroDoc,
-    sheet_idx: usize,
-    row: u32,
-    col: u32,
-    val: String,
-    formula: Option<String>,
-) -> Result<(), loro::LoroError> {
-    let sheets_list = ldoc.get_list(loki_sheet_model::loro_bridge::KEY_SHEETS);
-    let sheet_val = sheets_list
-        .get(sheet_idx)
-        .ok_or_else(|| loro::LoroError::internal("Sheet not found"))?;
-    let sheet_map = sheet_val
-        .into_container()
-        .ok()
-        .and_then(|c| c.into_map().ok())
-        .ok_or_else(|| loro::LoroError::internal("Sheet is not a map"))?;
-    let cells_map = match sheet_map.get("cells") {
-        Some(val) => val
-            .into_container()
-            .ok()
-            .and_then(|c| c.into_map().ok())
-            .ok_or_else(|| loro::LoroError::internal("Cells container is not a map"))?,
-        None => sheet_map.insert_container("cells", loro::LoroMap::new())?,
-    };
-
-    let key = format!("{},{}", row, col);
-    let cell_map = match cells_map.get(&key) {
-        Some(val) => val
-            .into_container()
-            .ok()
-            .and_then(|c| c.into_map().ok())
-            .ok_or_else(|| loro::LoroError::internal("Cell container is not a map"))?,
-        None => cells_map.insert_container(&key, loro::LoroMap::new())?,
-    };
-
-    cell_map.insert("value", val.as_str())?;
-    if let Some(f) = formula {
-        cell_map.insert("formula", f.as_str())?;
-    } else {
-        let _ = cell_map.delete("formula");
-    }
-    Ok(())
-}
 
 /// Default rendered column width in CSS px (when the document specifies none).
 const DEFAULT_COL_PX: f64 = 100.0;
@@ -88,94 +46,6 @@ struct ColResize {
     start_x: f64,
     start_px: f64,
     current_px: f64,
-}
-
-/// Writes a column width (points) into the Loro sheet's `columns` map.
-fn mutate_column_width(
-    ldoc: &loro::LoroDoc,
-    sheet_idx: usize,
-    col: u32,
-    width_pt: f64,
-) -> Result<(), loro::LoroError> {
-    let sheets_list = ldoc.get_list(loki_sheet_model::loro_bridge::KEY_SHEETS);
-    let sheet_val = sheets_list
-        .get(sheet_idx)
-        .ok_or_else(|| loro::LoroError::internal("Sheet not found"))?;
-    let sheet_map = sheet_val
-        .into_container()
-        .ok()
-        .and_then(|c| c.into_map().ok())
-        .ok_or_else(|| loro::LoroError::internal("Sheet is not a map"))?;
-    let cols_map = match sheet_map.get("columns") {
-        Some(val) => val
-            .into_container()
-            .ok()
-            .and_then(|c| c.into_map().ok())
-            .ok_or_else(|| loro::LoroError::internal("Columns container is not a map"))?,
-        None => sheet_map.insert_container("columns", loro::LoroMap::new())?,
-    };
-    cols_map.insert(col.to_string().as_str(), width_pt)?;
-    Ok(())
-}
-
-/// Helper to mutate cell style properties in-place
-fn mutate_cell_style<F>(
-    ldoc: &loro::LoroDoc,
-    sheet_idx: usize,
-    row: u32,
-    col: u32,
-    style_fn: F,
-) -> Result<(), loro::LoroError>
-where
-    F: FnOnce(&loro::LoroMap) -> Result<(), loro::LoroError>,
-{
-    let sheets_list = ldoc.get_list(loki_sheet_model::loro_bridge::KEY_SHEETS);
-    let sheet_val = sheets_list
-        .get(sheet_idx)
-        .ok_or_else(|| loro::LoroError::internal("Sheet not found"))?;
-    let sheet_map = sheet_val
-        .into_container()
-        .ok()
-        .and_then(|c| c.into_map().ok())
-        .ok_or_else(|| loro::LoroError::internal("Sheet is not a map"))?;
-    let cells_map = match sheet_map.get("cells") {
-        Some(val) => val
-            .into_container()
-            .ok()
-            .and_then(|c| c.into_map().ok())
-            .ok_or_else(|| loro::LoroError::internal("Cells container is not a map"))?,
-        None => sheet_map.insert_container("cells", loro::LoroMap::new())?,
-    };
-
-    let key = format!("{},{}", row, col);
-    let cell_map = match cells_map.get(&key) {
-        Some(val) => val
-            .into_container()
-            .ok()
-            .and_then(|c| c.into_map().ok())
-            .ok_or_else(|| loro::LoroError::internal("Cell container is not a map"))?,
-        None => cells_map.insert_container(&key, loro::LoroMap::new())?,
-    };
-
-    let style_map = match cell_map.get("style") {
-        Some(val) => val
-            .into_container()
-            .ok()
-            .and_then(|c| c.into_map().ok())
-            .ok_or_else(|| loro::LoroError::internal("Style container is not a map"))?,
-        None => {
-            let m = cell_map.insert_container("style", loro::LoroMap::new())?;
-            m.insert("bold", false)?;
-            m.insert("italic", false)?;
-            m.insert("underline", false)?;
-            m.insert("align", "left")?;
-            m.insert("num_format", "general")?;
-            m
-        }
-    };
-
-    style_fn(&style_map)?;
-    Ok(())
 }
 
 /// Dispatches changes to Loro, commits, deserializes back, and marks the active tab as dirty
@@ -320,38 +190,6 @@ fn save_document(
     });
 }
 
-/// Reset per-document state when switching paths reactively
-#[allow(clippy::too_many_arguments)]
-fn sync_path_and_reset(
-    path: &str,
-    path_signal: &mut Signal<String>,
-    workbook_snap: &mut Signal<loki_sheet_model::Workbook>,
-    loro_doc: &mut Signal<Option<loro::LoroDoc>>,
-    undo_manager: &mut Signal<Option<loro::UndoManager>>,
-    can_undo: &mut Signal<bool>,
-    can_redo: &mut Signal<bool>,
-    selected_cell: &mut Signal<Option<(usize, usize)>>,
-    editing_cell: &mut Signal<Option<(usize, usize)>>,
-) {
-    let current = path_signal.peek().clone();
-    if current == path {
-        return;
-    }
-    tracing::debug!(
-        "EditorInner: path changed from {} to {} -> resetting state",
-        current,
-        path
-    );
-    path_signal.set(path.to_owned());
-    workbook_snap.set(loki_sheet_model::Workbook::new());
-    loro_doc.set(None);
-    undo_manager.set(None);
-    can_undo.set(false);
-    can_redo.set(false);
-    selected_cell.set(Some((0, 0)));
-    editing_cell.set(None);
-}
-
 /// Spreadsheet editor inner component.
 #[component]
 pub(super) fn EditorInner(path: String) -> Element {
@@ -362,13 +200,15 @@ pub(super) fn EditorInner(path: String) -> Element {
     let tabs = use_context::<Signal<Vec<crate::tabs::OpenTab>>>();
     let active_tab = use_context::<Signal<usize>>();
     let active_tab_idx = *active_tab.read();
+    // Stashed sessions for inactive tabs — unsaved edits survive tab switches.
+    let doc_sessions = use_context::<Signal<crate::sessions::DocSessions>>();
 
     let EditorState {
         mut workbook_snap,
         mut loro_doc,
         mut undo_manager,
-        mut can_undo,
-        mut can_redo,
+        can_undo,
+        can_redo,
         mut selected_cell,
         mut editing_cell,
     } = use_editor_state();
@@ -376,17 +216,63 @@ pub(super) fn EditorInner(path: String) -> Element {
     // Transient save status (success or error) shown as a dismissible banner.
     let mut save_message = use_signal(|| Option::<String>::None);
 
-    // ── Synchronous Path Sync & State Reset ──────────────────────────────────
+    // ── Session restore at mount ─────────────────────────────────────────────
+    // Navigating Editor → Home unmounts this component (different routes), so
+    // returning to a workbook tab mounts a fresh EditorInner. The matching
+    // stash happens in the unmount hook below.
+    {
+        let mut sessions_at_mount = doc_sessions;
+        use_hook(move || {
+            let initial_path = path_signal.peek().clone();
+            if let Some(session) = sessions_at_mount.write().remove(&initial_path) {
+                let mut sig = PathSyncSignals {
+                    workbook_snap,
+                    loro_doc,
+                    undo_manager,
+                    can_undo,
+                    can_redo,
+                    selected_cell,
+                    editing_cell,
+                };
+                restore_session(session, &mut sig);
+            }
+        });
+    }
+
+    // ── Session stash at unmount ─────────────────────────────────────────────
+    {
+        let tabs_at_drop = tabs;
+        let sessions_at_drop = doc_sessions;
+        use_drop(move || {
+            let old_path = path_signal.peek().clone();
+            let mut sig = PathSyncSignals {
+                workbook_snap,
+                loro_doc,
+                undo_manager,
+                can_undo,
+                can_redo,
+                selected_cell,
+                editing_cell,
+            };
+            stash_outgoing(&old_path, tabs_at_drop, sessions_at_drop, &mut sig);
+        });
+    }
+
+    // ── Synchronous Path Sync & Session Handover ─────────────────────────────
     sync_path_and_reset(
         &path,
         &mut path_signal,
-        &mut workbook_snap,
-        &mut loro_doc,
-        &mut undo_manager,
-        &mut can_undo,
-        &mut can_redo,
-        &mut selected_cell,
-        &mut editing_cell,
+        tabs,
+        doc_sessions,
+        &mut PathSyncSignals {
+            workbook_snap,
+            loro_doc,
+            undo_manager,
+            can_undo,
+            can_redo,
+            selected_cell,
+            editing_cell,
+        },
     );
 
     // ── Document load — reactive on path_signal ───────────────────────────────

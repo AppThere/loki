@@ -13,7 +13,6 @@
 use appthere_ui::AtStatusBar;
 use appthere_ui::tokens;
 use dioxus::prelude::*;
-use loki_file_access::{FileAccessToken, FilePicker, SaveOptions};
 use loki_i18n::fl;
 use loki_presentation_model::Presentation;
 
@@ -21,22 +20,17 @@ use super::edit;
 use super::editor_canvas::{EditMsg, SlideCanvas, SlideThumbnails};
 use super::editor_error_view::EditorErrorView;
 use super::editor_load::load_presentation;
-use super::editor_save::export_to_token;
+use super::editor_path_sync::{restore_session, stash_outgoing};
+use super::editor_save_flows::{SaveCtx, use_save_callbacks};
 use super::slide_view::slide_views;
-use crate::new_document::is_untitled;
-use crate::recent_documents::RecentDocuments;
-use crate::routes::Route;
+use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
 use crate::utils::display_title_from_path;
-
-const PPTX_MIME: &str = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 /// Presentation editor inner component.
 #[component]
 pub(super) fn EditorInner(path: String) -> Element {
-    let navigator = use_navigator();
     let mut tabs = use_context::<Signal<Vec<OpenTab>>>();
-    let recent_docs = use_context::<Signal<RecentDocuments>>();
 
     let mut path_signal = use_signal(|| path.clone());
     let mut doc = use_signal(|| Option::<Presentation>::None);
@@ -44,28 +38,59 @@ pub(super) fn EditorInner(path: String) -> Element {
     let mut active_idx = use_signal(|| 0usize);
     let mut dirty = use_signal(|| false);
     let mut save_message = use_signal(|| Option::<String>::None);
+    // Stashed sessions for inactive tabs — unsaved edits survive tab switches
+    // (audit F1 residual / plan 4b.6).
+    let doc_sessions = use_context::<Signal<DocSessions>>();
 
-    // Reset per-document state when the route path changes (tab switch / Save As
-    // navigation reuses this component instance).
+    // ── Session restore at mount ──────────────────────────────────────────────
+    // Navigating Editor → Home unmounts this component (different routes), so
+    // returning to a presentation tab mounts a fresh EditorInner. The matching
+    // stash happens in the unmount hook below.
+    use_hook(move || {
+        let initial_path = path_signal.peek().clone();
+        restore_session(&initial_path, doc_sessions, doc, active_idx, dirty);
+    });
+
+    // ── Session stash at unmount ──────────────────────────────────────────────
+    use_drop(move || {
+        let old_path = path_signal.peek().clone();
+        stash_outgoing(&old_path, tabs, doc_sessions, doc, active_idx, dirty);
+    });
+
+    // Per-document state handover when the route path changes (tab switch /
+    // Save As navigation reuses this component instance): stash the outgoing
+    // presentation, then restore the incoming one or reset for a fresh load.
     if *path_signal.peek() != path {
+        let old_path = path_signal.peek().clone();
+        stash_outgoing(&old_path, tabs, doc_sessions, doc, active_idx, dirty);
         path_signal.set(path.clone());
-        doc.set(None);
         load_error.set(None);
-        active_idx.set(0);
-        dirty.set(false);
         save_message.set(None);
+        if !restore_session(&path, doc_sessions, doc, active_idx, dirty) {
+            doc.set(None);
+            active_idx.set(0);
+            dirty.set(false);
+        }
     }
 
-    // Load reactively on path; populate the editable doc once resolved.
-    let load = use_resource(move || async move { load_presentation(path_signal()) });
+    // Load reactively on path; populate the editable doc once resolved. The
+    // result carries the path it was loaded for, so a stale value from the
+    // previous tab can never clobber a restored session or the wrong document
+    // (same guard as loki-text / loki-spreadsheet).
+    let load = use_resource(move || async move {
+        let p = path_signal();
+        (p.clone(), load_presentation(p))
+    });
     use_effect(move || {
         if doc.peek().is_some() || load_error.peek().is_some() {
             return;
         }
         match &*load.value().read_unchecked() {
-            Some(Ok(p)) => doc.set(Some(p.clone())),
-            Some(Err(e)) => load_error.set(Some(e.to_string())),
-            None => {}
+            Some((loaded_path, Ok(p))) if *loaded_path == path_signal() => doc.set(Some(p.clone())),
+            Some((loaded_path, Err(e))) if *loaded_path == path_signal() => {
+                load_error.set(Some(e.to_string()));
+            }
+            _ => {}
         }
     });
 
@@ -83,69 +108,14 @@ pub(super) fn EditorInner(path: String) -> Element {
 
     let title = use_memo(move || display_title_from_path(&path_signal()));
 
-    // ── Save As ───────────────────────────────────────────────────────────────
-    let save_as = use_callback(move |_: ()| {
-        let Some(pres) = doc.peek().clone() else {
-            return;
-        };
-        let cur_path = path_signal.peek().clone();
-        let suggested = format!("{}.pptx", display_title_from_path(&cur_path));
-        let mut tabs = tabs;
-        let mut recent = recent_docs;
-        let nav = navigator;
-        spawn(async move {
-            let picker = FilePicker::new();
-            let opts = SaveOptions {
-                mime_type: Some(PPTX_MIME.to_string()),
-                suggested_name: Some(suggested),
-            };
-            match picker.pick_file_to_save(opts).await {
-                Ok(Some(token)) => match export_to_token(&token, &pres) {
-                    Ok(()) => {
-                        let new_path = token.serialize();
-                        let new_title = display_title_from_path(&new_path);
-                        {
-                            let mut t = tabs.write();
-                            if let Some(tab) = t.iter_mut().find(|tb| tb.path == cur_path) {
-                                tab.path = new_path.clone();
-                                tab.title = new_title.clone();
-                                tab.is_dirty = false;
-                            }
-                        }
-                        recent.write().record(new_path.clone(), new_title);
-                        recent.read().save();
-                        dirty.set(false);
-                        save_message.set(Some(fl!("editor-save-success")));
-                        nav.push(Route::Editor { path: new_path });
-                    }
-                    Err(e) => save_message.set(Some(fl!("editor-save-error", reason = e))),
-                },
-                Ok(None) => {}
-                Err(e) => save_message.set(Some(fl!("editor-save-error", reason = e.to_string()))),
-            }
-        });
-    });
-
-    // ── Save ──────────────────────────────────────────────────────────────────
-    let save = use_callback(move |_: ()| {
-        let cur = path_signal.peek().clone();
-        if is_untitled(&cur) {
-            save_as.call(());
-            return;
-        }
-        let Some(pres) = doc.peek().clone() else {
-            return;
-        };
-        match FileAccessToken::deserialize(&cur) {
-            Ok(token) => match export_to_token(&token, &pres) {
-                Ok(()) => {
-                    dirty.set(false);
-                    save_message.set(Some(fl!("editor-save-success")));
-                }
-                Err(e) => save_message.set(Some(fl!("editor-save-error", reason = e))),
-            },
-            Err(e) => save_message.set(Some(fl!("editor-save-error", reason = e.to_string()))),
-        }
+    // ── Save / Save As (extracted flows) ──────────────────────────────────────
+    // Only `save` is dispatched from the toolbar; it routes untitled
+    // documents to the Save As flow internally.
+    let (save, _save_as) = use_save_callbacks(SaveCtx {
+        doc,
+        path_signal,
+        dirty,
+        save_message,
     });
 
     // ── Render states ──────────────────────────────────────────────────────────

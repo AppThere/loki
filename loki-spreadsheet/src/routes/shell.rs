@@ -9,14 +9,17 @@ use dioxus_router::Navigator;
 use loki_i18n::fl;
 
 use crate::routes::Route;
+use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
 
-/// Closes the tab at 1-based tab-bar index `idx` and fixes up the active
-/// tab / route.
+/// Closes the tab at 1-based tab-bar index `idx`: drops its stashed editing
+/// session (so a later reopen loads fresh from disk instead of resurrecting
+/// discarded unsaved edits) and fixes up the active tab / route.
 fn close_tab(
     idx: usize,
     mut tabs: Signal<Vec<OpenTab>>,
     mut active_tab: Signal<usize>,
+    mut doc_sessions: Signal<DocSessions>,
     navigator: Navigator,
 ) {
     let vec_idx = idx - 1;
@@ -26,6 +29,11 @@ fn close_tab(
         return;
     }
     let current_active = *active_tab.read();
+
+    let closed_path = tabs.read().get(vec_idx).map(|t| t.path.clone());
+    if let Some(p) = closed_path {
+        doc_sessions.write().remove(&p);
+    }
 
     tabs.write().remove(vec_idx);
     let new_len = tabs.read().len();
@@ -51,6 +59,7 @@ fn close_tab(
 pub fn Shell() -> Element {
     let tabs = use_context::<Signal<Vec<OpenTab>>>();
     let mut active_tab = use_context::<Signal<usize>>();
+    let doc_sessions = use_context::<Signal<DocSessions>>();
     let navigator = use_navigator();
     // A dirty tab awaiting close confirmation: `(tab-bar index, title)`.
     // While `Some`, the confirmation dialog overlays the shell (plan 4b.6).
@@ -92,8 +101,8 @@ pub fn Shell() -> Element {
                     }
                     let vec_idx = idx - 1;
                     // A dirty tab gets a confirmation dialog instead of an
-                    // immediate close — this app has no session stash, so
-                    // closing discards its unsaved edits outright (plan 4b.6).
+                    // immediate close — closing discards its unsaved edits
+                    // together with the stashed session (plan 4b.6).
                     let dirty_title = tabs
                         .read()
                         .get(vec_idx)
@@ -102,7 +111,7 @@ pub fn Shell() -> Element {
                         pending_close.set(Some((idx, title)));
                         return;
                     }
-                    close_tab(idx, tabs, active_tab, navigator);
+                    close_tab(idx, tabs, active_tab, doc_sessions, navigator);
                 },
                 on_new_tab: move |_| {
                     *active_tab.write() = 0;
@@ -130,7 +139,7 @@ pub fn Shell() -> Element {
                     cancel_label: fl!("shell-close-dirty-cancel"),
                     on_confirm: move |_| {
                         pending_close.set(None);
-                        close_tab(idx, tabs, active_tab, navigator);
+                        close_tab(idx, tabs, active_tab, doc_sessions, navigator);
                     },
                     on_cancel: move |_| pending_close.set(None),
                 }
