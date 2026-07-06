@@ -31,10 +31,14 @@
 use std::sync::Arc;
 
 use appthere_ui::tokens;
+use dioxus::html::input_data::MouseButton;
 use dioxus::prelude::*;
+use loki_app_shell::spell::SpellService;
 use loki_doc_model::document::Document;
+use loki_doc_model::loro_bridge::derive_loro_cursor;
 use loki_renderer::{DocumentView, RendererCursorPos, TileContext, ViewMode};
 
+use super::editor_canvas_loading::loading_view;
 use super::editor_error_view::EditorErrorView;
 use super::editor_keydown::make_keydown_handler;
 use super::editor_pointer::{
@@ -43,17 +47,10 @@ use super::editor_pointer::{
 use super::editor_scrollbar::{
     CanvasMounted, ScrollMetrics, ThumbDrag, horizontal_scrollbar, vertical_scrollbar,
 };
-use crate::editing::cursor::{CursorState, DocumentPosition};
-use crate::editing::hit_test::hit_test_page;
-use crate::editing::state::DocumentState;
-use crate::editing::touch::TouchInteractionState;
-use dioxus::html::input_data::MouseButton;
-use loki_app_shell::spell::SpellService;
-
 use super::editor_spell::{SpellMenu, resolve_spell_menu};
+use crate::editing::cursor::{CursorState, DocumentPosition};
+use crate::editing::{hit_test::hit_test_page, state::DocumentState, touch::TouchInteractionState};
 use crate::error::LoadError;
-use loki_doc_model::loro_bridge::derive_loro_cursor;
-use loki_i18n::fl;
 
 /// Fallback viewport height (CSS px) for tile virtualization before the scroll
 /// container is first measured. A named default — not a hardcoded screen
@@ -61,43 +58,6 @@ use loki_i18n::fl;
 /// audit A-1) — used only for the single frame until `get_client_rect` reports
 /// the real height.
 const DEFAULT_VIEWPORT_HEIGHT_PX: f64 = 800.0;
-
-/// Blank page placeholder shown while a document is being opened.
-///
-/// Renders immediately when the editor tab mounts (before the async load
-/// resolves), so the user sees a page-shaped surface with an "opening" label
-/// instead of an empty canvas while the file is read, imported, and laid out.
-fn loading_view() -> Element {
-    rsx! {
-        div {
-            style: format!(
-                "display: flex; flex: 1; align-items: flex-start; \
-                 justify-content: center; width: 100%; padding-top: {gap}px;",
-                gap = tokens::SPACE_6,
-            ),
-            div {
-                style: format!(
-                    "width: {w}px; height: {h}px; flex-shrink: 0; background: {page}; \
-                     border: 1px solid {border}; border-radius: 2px; display: flex; \
-                     align-items: center; justify-content: center;",
-                    w = tokens::PAGE_WIDTH_PX,
-                    h = tokens::PAGE_HEIGHT_PX,
-                    page = tokens::CANVAS_PAGE_BG,
-                    border = tokens::COLOR_BORDER_CHROME,
-                ),
-                span {
-                    style: format!(
-                        "font-family: {ff}; font-size: {fs}px; color: {fg};",
-                        ff = tokens::FONT_FAMILY_UI,
-                        fs = tokens::FONT_SIZE_BODY,
-                        fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
-                    ),
-                    { fl!("editor-document-loading") }
-                }
-            }
-        }
-    }
-}
 
 /// Right-click handler body: resolves the word under the tile-local coordinates
 /// in `ctx` (accurate, via `element_coordinates` — no window-centring math),
@@ -177,6 +137,7 @@ pub(super) fn render_canvas_area(
     service: SpellService,
     spell_menu: Signal<Option<SpellMenu>>,
     doc_state_context: Arc<std::sync::Mutex<DocumentState>>,
+    zoom_percent: Signal<u32>,
 ) -> Element {
     rsx! {
         // Outer wrapper occupies the editor column's flex:1 slot and lays out
@@ -258,7 +219,11 @@ pub(super) fn render_canvas_area(
                     Ok(s) => (s.page_height_px, s.page_count),
                     Err(_) => return,
                 };
-                let slot = page_h + page_gap_px;
+                // Tiles are painted at `zoom` scale (the inter-page gap is a
+                // fixed, unscaled CSS margin), so the page stride the scroll
+                // offset measures against is `page_h × zoom + gap`.
+                let zoom = zoom_percent() as f32 / 100.0;
+                let slot = page_h * zoom + page_gap_px;
                 if slot <= 0.0 || count == 0 {
                     return;
                 }
@@ -290,6 +255,7 @@ pub(super) fn render_canvas_area(
                 cursor_state,
                 page_gap_px,
                 view_mode,
+                zoom_percent,
             ),
 
             onmouseup: move |_| {
@@ -316,6 +282,7 @@ pub(super) fn render_canvas_area(
                 page_gap_px,
                 view_mode,
                 scroll_metrics,
+                zoom_percent,
             ),
 
             ontouchend: make_touchend_handler(
@@ -327,6 +294,7 @@ pub(super) fn render_canvas_area(
                 page_gap_px,
                 view_mode,
                 scroll_metrics,
+                zoom_percent,
             ),
 
             onkeydown: make_keydown_handler(
@@ -376,6 +344,7 @@ pub(super) fn render_canvas_area(
                         DocumentView {
                             doc: arc_doc,
                             paginated_layout,
+                            zoom: zoom_percent() as f64 / 100.0,
                             // Real measured viewport height (falls back to a
                             // sensible default before the first measure). Drives
                             // tile virtualization: only pages within ~one screen

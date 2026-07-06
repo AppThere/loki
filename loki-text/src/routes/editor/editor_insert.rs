@@ -31,7 +31,7 @@ use loki_doc_model::{
 };
 use loro::{LoroDoc, LoroValue};
 
-use super::editor_formatting::resolve_format_range;
+use super::editor_format_range::resolve_format_ranges;
 use crate::editing::cursor::CursorState;
 
 /// EMU per CSS pixel at 96 DPI (1 inch = 914 400 EMU = 96 px). Inserted images
@@ -40,25 +40,37 @@ const EMU_PER_PX_96: u64 = 9525;
 
 /// Applies (or clears) a hyperlink over the selection or the word at the cursor.
 ///
-/// An empty/whitespace-only `url` clears any existing link; otherwise the
-/// resolved range is marked with [`MARK_LINK_URL`]. Returns `true` when a link
-/// was applied, `false` when it was cleared or there was no resolvable range
-/// (e.g. the cursor sits on whitespace with no selection).
+/// An empty/whitespace-only `url` clears any existing link; otherwise every
+/// resolved range is marked with [`MARK_LINK_URL`]. A multi-paragraph selection
+/// resolves to one range per paragraph (like the character-formatting toggles),
+/// so the whole selection is linked — not just its first paragraph. Returns
+/// `true` when a link was applied, `false` when it was cleared or there was no
+/// resolvable range (e.g. the cursor sits on whitespace with no selection).
 pub fn set_hyperlink(
     loro: &LoroDoc,
     cursor: &CursorState,
     url: &str,
 ) -> Result<bool, MutationError> {
-    let Some((path, byte_start, byte_end)) = resolve_format_range(loro, cursor) else {
+    let ranges = resolve_format_ranges(loro, cursor);
+    if ranges.is_empty() {
         return Ok(false);
-    };
+    }
     let trimmed = url.trim();
     let value = if trimmed.is_empty() {
         LoroValue::Null
     } else {
         LoroValue::from(trimmed.to_string())
     };
-    mark_text_at(loro, &path, byte_start, byte_end, MARK_LINK_URL, value)?;
+    for (path, byte_start, byte_end) in &ranges {
+        mark_text_at(
+            loro,
+            path,
+            *byte_start,
+            *byte_end,
+            MARK_LINK_URL,
+            value.clone(),
+        )?;
+    }
     Ok(!trimmed.is_empty())
 }
 

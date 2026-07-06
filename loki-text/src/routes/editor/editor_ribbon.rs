@@ -3,8 +3,7 @@
 //! Write tab ribbon content for the document editor (was "Home", Spec 04 D1).
 //!
 //! [`write_tab_content`] returns the `Element` passed to [`AtRibbon::tab_content`].
-//! Separating it here keeps `editor_inner.rs` under the 300-line ceiling and
-//! makes ribbon content easy to extend independently.
+//! Separating it here keeps `editor_inner.rs` under the 300-line ceiling.
 
 use std::sync::{Arc, Mutex};
 
@@ -19,11 +18,9 @@ use loro::LoroDoc;
 
 use crate::editing::cursor::CursorState;
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
-use crate::new_document::is_untitled;
 
 use super::editor_formatting;
 use super::editor_keydown_ctrl::post_mutation_sync;
-use super::editor_save::save_document_to_path;
 use super::editor_state::StyleDraft;
 use super::editor_style_catalog::get_catalog_style;
 use super::editor_style_editor::style_to_draft;
@@ -53,15 +50,13 @@ pub(super) fn write_tab_content(
     subscript_active: Signal<bool>,
     current_style_name: String,
     mut is_style_picker_open: Signal<bool>,
-    path_signal: Signal<String>,
-    mut save_message: Signal<Option<String>>,
+    mut save_request: Signal<u32>,
+    is_dirty: Signal<bool>,
     mut editing_style_draft: Signal<Option<StyleDraft>>,
     save_as: Callback<()>,
     save_as_template: Callback<()>,
-    mut baseline_gen: Signal<u64>,
 ) -> Element {
     // One Arc clone per button — cheap reference-count increment.
-    let ds_save = Arc::clone(doc_state);
     let ds_para = Arc::clone(doc_state);
     let current_style_name_para = current_style_name.clone();
     let ds_undo = Arc::clone(doc_state);
@@ -82,24 +77,15 @@ pub(super) fn write_tab_content(
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-save-aria"),
                 is_active:   false,
-                is_disabled: false,
+                // Disabled when clean (plan 4b.3); untitled reads as dirty.
+                is_disabled: !is_dirty(),
                 on_click: move |_| {
-                    let path = path_signal();
-                    // An untitled document has no file yet — route to Save As.
-                    if is_untitled(&path) {
-                        save_as.call(());
-                        return;
-                    }
-                    let msg = match save_document_to_path(&path, &ds_save) {
-                        Ok(()) => {
-                            // Mark the current generation as clean so the tab's
-                            // unsaved-changes indicator clears.
-                            baseline_gen.set(cursor_state.peek().document_generation);
-                            fl!("editor-save-success")
-                        }
-                        Err(e) => fl!("editor-save-error", reason = e.to_string()),
-                    };
-                    save_message.set(Some(msg));
+                    // Route through the shared save handler (the Ctrl+S effect
+                    // in `EditorInner`), which owns the untitled→Save-As
+                    // routing, the clean baseline, the status message, and
+                    // post-save history compaction.
+                    let next = save_request.peek().wrapping_add(1);
+                    save_request.set(next);
                 },
                 AtIcon { path_d: LUCIDE_SAVE.to_string() }
             }

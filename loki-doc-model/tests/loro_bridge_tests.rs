@@ -498,7 +498,7 @@ fn roundtrip_rgb_color_mark() {
 }
 
 #[test]
-fn roundtrip_transparent_color_graceful_drop() {
+fn roundtrip_transparent_color_survives() {
     let mut doc = Document::new();
     let props = CharProps {
         color: Some(DocumentColor::Transparent),
@@ -517,17 +517,18 @@ fn roundtrip_transparent_color_graceful_drop() {
     let loro = document_to_loro(&doc).expect("serialize");
     let doc2 = loro_to_document(&loro).expect("deserialize — must not crash");
 
-    // Transparent has no hex representation so the mark is dropped gracefully
+    // The total DocumentColor codec carries every variant, including
+    // Transparent (formerly dropped for lack of a hex representation).
     if let Block::Para(inlines) = &doc2.sections[0].blocks[0] {
         match &inlines[0] {
             Inline::StyledRun(run) => {
                 let color = run.direct_props.as_ref().and_then(|p| p.color.as_ref());
-                assert!(
-                    color.is_none(),
-                    "Transparent should not round-trip as a color value"
+                assert_eq!(
+                    color,
+                    Some(&DocumentColor::Transparent),
+                    "Transparent must round-trip as a color value"
                 );
             }
-            Inline::Str(_) => {} // also acceptable — no mark means plain Str
             other => panic!("unexpected inline variant: {other:?}"),
         }
     } else {

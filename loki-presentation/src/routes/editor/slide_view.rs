@@ -36,6 +36,9 @@ pub(super) struct EditableLine {
 /// A flattened, edit-aware view of one slide.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SlideView {
+    /// The slide's stable identifier — the Dioxus list key for thumbnails, so
+    /// inserting/deleting slides re-uses the right DOM nodes (F7b).
+    pub slide_id: String,
     /// Title field, if the slide has a title placeholder.
     pub title: Option<Editable>,
     /// Subtitle field, if present.
@@ -76,6 +79,7 @@ fn slide_to_view(slide: &Slide) -> SlideView {
     };
 
     SlideView {
+        slide_id: slide.id.as_str().to_string(),
         title,
         subtitle,
         bullets,

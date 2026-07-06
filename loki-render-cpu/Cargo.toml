@@ -1,0 +1,23 @@
+[package]
+name = "loki-render-cpu"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Deterministic in-process CPU rasterizer for loki-layout output (Spec 02 D2 conformance candidate render path)"
+repository = "https://github.com/appthere/loki"
+
+[dependencies]
+loki-layout = { path = "../loki-layout" }
+# Pinned exactly: the conformance candidate render must be reproducible
+# (Spec 02 D2 — fixed DPI, pinned rasterizer settings). Bump deliberately,
+# together with a golden/calibration re-check.
+vello_cpu = { version = "=0.0.9", features = ["text"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+loki-doc-model = { path = "../loki-doc-model" }
+loki-fonts = { path = "../loki-fonts" }
+# Calibration example: import the ODF fixtures and diff against goldens.
+loki-odf = { path = "../loki-odf" }
+appthere-conformance = { path = "../appthere-conformance" }

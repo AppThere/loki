@@ -15,6 +15,7 @@ use loki_renderer::ViewMode;
 
 use super::editor_scrollbar::{CanvasMounted, ScrollMetrics, ThumbDrag};
 use crate::editing::cursor::CursorState;
+use crate::editing::saved_state::SavedStateHandle;
 use crate::editing::state::DocumentState;
 use crate::editing::touch::TouchInteractionState;
 
@@ -114,12 +115,13 @@ pub(super) struct EditorState {
     pub superscript_active: Signal<bool>,
     pub subscript_active: Signal<bool>,
     /// Loro undo manager — `None` until the document loads.
-    ///
-    /// // TODO(undo-dirty): `can_undo` does not track whether the document is
-    /// saved relative to the undo stack.  When a Save action is implemented,
-    /// call `UndoManager::record_new_checkpoint()` to mark the clean state so
-    /// the ribbon Save button can be disabled when there is nothing to save.
     pub undo_manager: Signal<Option<loro::UndoManager>>,
+    /// Clean-checkpoint tracker paired with `undo_manager` (plan 4b.3): save
+    /// records the undo-stack depth, so undoing back to the saved state
+    /// clears the tab's dirty indicator. Replaced together with the manager
+    /// (load, post-save compaction swap) and stashed with it in the tab's
+    /// `DocSession`.
+    pub saved_state: Signal<SavedStateHandle>,
     /// Whether Ctrl+Z is currently applicable (derived from `undo_manager`).
     pub can_undo: Signal<bool>,
     /// Whether Ctrl+Y / Ctrl+Shift+Z is currently applicable.
@@ -128,6 +130,14 @@ pub(super) struct EditorState {
     pub is_style_picker_open: Signal<bool>,
     /// Style catalog editor draft — `Some` when the editor panel is open.
     pub editing_style_draft: Signal<Option<StyleDraft>>,
+    /// Paginated render zoom, in percent (100 = 1:1). Cycled by the status
+    /// bar's zoom badge; scales page tiles + paint together (4c.5 / F6d).
+    pub zoom_percent: Signal<u32>,
+    /// Whether the document has unsaved changes (mirror of the tab's dirty
+    /// indicator; plan 4b.3). Drives the ribbon Save button's disabled state —
+    /// a clean *titled* document has nothing to save. Untitled documents stay
+    /// dirty (Save routes to Save As), so their Save button stays enabled.
+    pub is_dirty: Signal<bool>,
     /// Last save result message (`None` = nothing to show).
     pub save_message: Signal<Option<String>>,
     /// Monotonic counter bumped by the Ctrl+S handler. `EditorInner` watches it
@@ -189,10 +199,13 @@ pub(super) fn use_editor_state() -> EditorState {
         superscript_active: use_signal(|| false),
         subscript_active: use_signal(|| false),
         undo_manager: use_signal(|| None),
+        saved_state: use_signal(SavedStateHandle::new),
         can_undo: use_signal(|| false),
         can_redo: use_signal(|| false),
         is_style_picker_open: use_signal(|| false),
         editing_style_draft: use_signal(|| None),
+        zoom_percent: use_signal(|| 100_u32),
+        is_dirty: use_signal(|| false),
         save_message: use_signal(|| None),
         save_request: use_signal(|| 0_u32),
         active_ribbon_tab: use_signal(|| 0_usize),

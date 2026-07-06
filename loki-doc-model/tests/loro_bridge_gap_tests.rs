@@ -4,7 +4,8 @@
 //! Loro bridge round-trip tests for L-severity gap fixes.
 //!
 //! Verifies that language, border, padding, page_break_before, orphan_control,
-//! and outline_level all survive a document_to_loro → loro_to_document cycle.
+//! outline_level, tab_stops, and paragraph background_color all survive a
+//! document_to_loro → loro_to_document cycle.
 
 use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::Block;
@@ -15,7 +16,8 @@ use loki_doc_model::meta::language::LanguageTag;
 use loki_doc_model::style::props::border::{Border, BorderStyle};
 use loki_doc_model::style::props::char_props::CharProps;
 use loki_doc_model::style::props::para_props::ParaProps;
-use loki_primitives::color::DocumentColor;
+use loki_doc_model::style::props::tab_stop::{TabAlignment, TabLeader, TabStop};
+use loki_primitives::color::{DocumentColor, ThemeColorSlot};
 use loki_primitives::units::Points;
 
 fn round_trip(doc: &Document) -> Document {
@@ -164,6 +166,93 @@ fn bridge_border_roundtrip() {
         (bottom.spacing.map_or(0.0, |s| s.value()) - 2.0).abs() < 0.001,
         "border_bottom spacing must be 2.0"
     );
+}
+
+// ── bridge_tab_stops_roundtrip ────────────────────────────────────────────────
+
+fn styled_para_with_para(props: ParaProps) -> Block {
+    Block::StyledPara(loki_doc_model::content::block::StyledParagraph {
+        style_id: None,
+        direct_para_props: Some(Box::new(props)),
+        direct_char_props: None,
+        inlines: vec![Inline::Str("text".into())],
+        attr: NodeAttr::default(),
+    })
+}
+
+fn recovered_para_props(doc: &Document) -> ParaProps {
+    doc.sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| {
+            if let Block::StyledPara(p) = b {
+                p.direct_para_props.as_deref().cloned()
+            } else {
+                None
+            }
+        })
+        .expect("StyledPara with direct_para_props must survive round-trip")
+}
+
+/// `ParaProps.tab_stops` must survive a Loro CRDT round-trip with position,
+/// alignment, and leader intact (was written as an unreadable Debug string).
+#[test]
+fn bridge_tab_stops_roundtrip() {
+    let mut para_props = ParaProps::default();
+    para_props.tab_stops = Some(vec![
+        TabStop {
+            position: Points::new(36.0),
+            alignment: TabAlignment::Left,
+            leader: TabLeader::None,
+        },
+        TabStop {
+            position: Points::new(144.5),
+            alignment: TabAlignment::Decimal,
+            leader: TabLeader::Dot,
+        },
+    ]);
+
+    let doc = single_block_doc(styled_para_with_para(para_props));
+    let pp = recovered_para_props(&round_trip(&doc));
+
+    let stops = pp.tab_stops.as_ref().expect("tab_stops must survive");
+    assert_eq!(stops.len(), 2, "both tab stops must survive");
+    assert!((stops[0].position.value() - 36.0).abs() < 0.001);
+    assert_eq!(stops[0].alignment, TabAlignment::Left);
+    assert_eq!(stops[0].leader, TabLeader::None);
+    assert!((stops[1].position.value() - 144.5).abs() < 0.001);
+    assert_eq!(stops[1].alignment, TabAlignment::Decimal);
+    assert_eq!(stops[1].leader, TabLeader::Dot);
+}
+
+// ── bridge_para_background_color_roundtrip ────────────────────────────────────
+
+/// Paragraph `background_color` must survive a Loro CRDT round-trip (was
+/// written as a Debug string the reader could not parse) — including non-Rgb
+/// variants, which the codec must not collapse or drop.
+#[test]
+fn bridge_para_background_color_roundtrip() {
+    for color in [
+        DocumentColor::from_hex("#ABCDEF").unwrap(),
+        DocumentColor::Cmyk(loki_primitives::color::CmykColor::new(0.1, 0.2, 0.3, 0.4)),
+        DocumentColor::Theme {
+            slot: ThemeColorSlot::Accent3,
+            tint: 0.25,
+        },
+        DocumentColor::Transparent,
+    ] {
+        let mut para_props = ParaProps::default();
+        para_props.background_color = Some(color.clone());
+
+        let doc = single_block_doc(styled_para_with_para(para_props));
+        let pp = recovered_para_props(&round_trip(&doc));
+
+        assert_eq!(
+            pp.background_color,
+            Some(color),
+            "paragraph background_color must survive Loro round-trip"
+        );
+    }
 }
 
 // ── bridge_para_fields_roundtrip ──────────────────────────────────────────────

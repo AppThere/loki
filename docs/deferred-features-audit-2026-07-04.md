@@ -42,9 +42,9 @@ All are genuine, mostly upstream-gated (Parley/Blitz/Vello) or deliberately defe
 
 | Topic | file:line(s) | Defers what |
 |---|---|---|
-| `3b-3` (partial) | `navigation.rs` (many) | Cross-page nav: up/down works; **left/right at page edges + `page_index` recompute after split/merge still `None`** |
-| `loro-bridge` | `loro_bridge/inlines.rs:123,220`, `opaque.rs`, `table.rs:25` | Non-Rgb colors (Theme/Cmyk), comment/bookmark anchors, quote/span attrs, structural-table CRDT semantics |
-| `loro-compaction` | `loki-bench/benches/leak_loro_history.rs`; bridge | Compact the CRDT oplog at save/undo-horizon (memory Finding 6) |
+| `3b-3` (partial) | `navigation.rs` (many) | ~~Left/right at page edges + `page_index` recompute after split/merge~~ **fixed 2026-07-05** (plan 4b.1: cross-page Left/Right + `page_locate::recompute_page_index` after every mutation/move). Remaining: double-Enter list-exit heuristic (`clear_para_props`) |
+| `loro-bridge` | `loro_bridge/decode.rs` (borders), `table.rs:25` | ~~Non-Rgb colors, comment/bookmark anchors, quote/span attrs~~ **fixed 2026-07-04** (plan Phase 1.4). Remaining: non-Rgb *border* colors (format migration), `Cite` metadata, structural-table CRDT semantics |
+| `loro-compaction` | `loki-bench/benches/leak_loro_history.rs`; bridge | ~~Compact the CRDT oplog~~ **fixed 2026-07-04** (plan Phase 1.5): `loro_bridge::compact` + save-point wiring in loki-text; bench asserts the flattened curve. On-device validation pending (BM-14) |
 | `omml` | `docx/omml/mod.rs:20` | OMML↔MathML for delimiters, n-ary, matrices, accents |
 | `link-click` | `resolve.rs:689`, `items.rs:125`, `para.rs:203`, `scene.rs:519` | Interactive hyperlink hit-testing (only a visual hint today) |
 | `shadow` | `para_emit.rs:187`, `para.rs:196`, `scene.rs:93` | True soft text shadow (Vello blur) — hard grey offset copy today |
@@ -61,9 +61,9 @@ All are genuine, mostly upstream-gated (Parley/Blitz/Vello) or deliberately defe
 | `pdf-rotate` | `pdf/src/page.rs:83` | Rotation transform in PDF export |
 | `odf-master-page` | `odf/reader/styles.rs:200` | ODF master-page transitions |
 | `odt-fidelity` | `editor_load.rs:84,88` | Tracked DOCX/ODT import gaps |
-| `formatting` | `editor_formatting.rs:106` | Multi-block-selection formatting (clamped to focus paragraph) |
-| `undo-dirty` | `editor_state.rs:118` | Saved-vs-undo-stack clean tracking (Save not implemented) |
-| `nested-nav` | `navigation.rs:138,174` | Sibling path inside cell/note body |
+| `formatting` | `editor_formatting.rs:106` | ~~Multi-block-selection formatting~~ **fixed 2026-07-05** (plan 4b.2: per-paragraph ranges via `editor_format_range.rs`; cross-container still clamps) |
+| `undo-dirty` | `editor_state.rs:118` | ~~Saved-vs-undo-stack clean tracking~~ **fixed 2026-07-05** (plan 4b.3): `editing/saved_state.rs` clean checkpoint — undoing back to the save point clears dirty |
+| `nested-nav` | `navigation.rs:138,174` | ~~Sibling path inside cell/note body~~ **fixed 2026-07-05** (plan 4b.4): paginated navigation is path-aware; Left/Right cross cell/note siblings and clamp at the container edge |
 | `tabs` | `shell.rs:148`, `home.rs:89` | Tab-driven (vs router) navigation; blank-doc |
 | `ux` | `text/home.rs:266` (+ presentation/spreadsheet) | Confirm-before-delete dialog (delete is immediate) |
 | `browse-templates` / `title-edit` | `text/home.rs:355`, `title_bar.rs:133` | Template browser dialog; inline-editable title |
@@ -104,7 +104,7 @@ All are genuine, mostly upstream-gated (Parley/Blitz/Vello) or deliberately defe
 | `blitz-net` 0.2.1 | upstream ships rustls by default / feature flag | Gated — not met |
 | `dioxus-native` 0.7.9 | upstream calls `request_redraw()` after head-element/event processing | Gated — not met |
 | `blitz-dom` 0.2.4 | upstream: tabindex focus-on-click, scroll dispatch, absolute node-scroll API, static-canvas anim fix | Gated — not met |
-| **`loki-file-access` 0.1.2** | push fixes to the (same-team) `appthere/loki-file-access` repo, publish, repoint | **Actionable locally** — same-team-owned; no evidence pushed. Also needs Gradle `FilePickerActivity.kt`. |
+| ~~**`loki-file-access` 0.1.2**~~ | push fixes to the (same-team) `appthere/loki-file-access` repo, publish, repoint | **REMOVED 2026-07-05** (plan Phase 2) — upstreamed as 0.1.3 (`d2b7bc5` on `main`), patch + vendored dir deleted, build scripts repointed via cargo metadata. 5 patches remain, all upstream-gated. |
 | ~~`fontique`~~ | — | Already removed 2026-06-21. |
 
 ---
@@ -116,7 +116,7 @@ Verified against code; none silently done-since except the Spec-02 "resolved-as-
 | Spec | Deferred item | Verified |
 |---|---|---|
 | 01 | `clippy::pedantic` lint set + allow-list; AST-level `no_hardcoded_layout_dims` dylint; `cargo udeps` dead-`pub` sweep; `editor_save` typed `SaveError`; Android target build verification; 300-line backlog | STILL-OPEN (deliberate residuals) |
-| 02 | `vello_cpu` render path (B-1); vendored ISO 29500/ODF schemas (B-6); zero committed goldens (B-2); uncalibrated SSIM 0.98 (B-3); ΔE/worst-region/heatmap differ (B-4); pinned PDF→PNG rasterizer (B-5); shared `Fixture`/`Consumer` traits (B-8); corpus reorg + ODP/ODG/PPTX importers (B-9); **bundle Gelasio (B-10)**; CI gate wiring (B-11) | STILL-OPEN (several "resolved-as-decision" only) |
+| 02 | ~~`vello_cpu` path, schemas, goldens, calibration, differ, rasterizer, Gelasio, CI wiring~~ **BUILT 2026-07-05** (plan Phase 3): B-1 (`loki-render-cpu`), B-2 (3 ODF goldens + generation script), B-3 (`CALIBRATION.md` → `Tolerance::calibrated()`; the pass quantified fidelity gap #23/kerning, pinned as a canary), B-4 (SSIM+ΔE worst-region differ + heatmaps), B-5 (`PdfRasterizer`), B-6 (ISO 29500/OPC/ODF/MathML3 vendored + real-export validation), B-10 (Gelasio + substitution suite), B-11 (axes live in CI). Remaining: B-8 `Fixture`/`Consumer` traits, B-9 corpus reorg, OOXML manual goldens, Strict XSDs. | LARGELY BUILT |
 | 03 | Metadata-panel label stacking <250px (R-13g); responsive doc type-scale (M4); real `Viewport.zoom`; ribbon tab-strip touch height (handed to Spec 04) | STILL-OPEN |
 | 04 | **M3 width-driven collapse cascade** (condensed/overflow menu, priority, hysteresis) — unbuilt; **M5 Layout/References/Review tabs + `selected_object` contextual signal** — unbuilt (only 3 non-contextual tabs); M6 touch posture; cursor-into-new-cell after insert | STILL-OPEN (Spec 04 is the least-complete "shipped" spec) |
 | 05 | **Page** family (`page_styles` catalog, ADR-0012); **Table** family (`TableProps` conditional/banding regions); character-style **editing form**; per-family non-paragraph `Default` sources; Compact tree breadcrumb (M7) | STILL-OPEN (model-gated) |
@@ -132,7 +132,7 @@ Still-open after verification (the DONE-SINCE ones moved to §1).
 |---|---|---|
 | memory-audit F3 | Drop preserved layout for inactive tabs (`sessions.rs:39` still retains `Arc<PaginatedLayout>`) | STILL-OPEN |
 | memory-audit F5 | Share render `FontDataCache` (per-tile `page_paint_source.rs:53` vs shared `DocPageSource`) | STILL-OPEN |
-| memory-audit F6 | Compact Loro oplog (`TODO(loro-compaction)`) | STILL-OPEN |
+| memory-audit F6 | Compact Loro oplog (`TODO(loro-compaction)`) | ~~STILL-OPEN~~ **FIXED 2026-07-04** (plan Phase 1.5) |
 | audit-2026-06 Q-1 | 300-line ceiling backlog — 43→**35**, CI-ratcheted (PARTIAL; `para.rs`/`flow.rs` grew) | PARTIAL |
 | audit-2026-06 Q-2 | App-shell duplication (per-app `routes/`, `shell.rs`) | PARTIAL |
 | audit-2026-06 Q-3/Q-4 | 301 `let _ =` writer error-swallows (downgraded); ~100 `#[allow]` incl. 32 `dead_code` OOXML | STILL-OPEN (downgraded/P2) |
@@ -140,8 +140,8 @@ Still-open after verification (the DONE-SINCE ones moved to §1).
 | audit-2026-06 T-2/T-3/T-5 tails | ODT export impl; per-case DOCX/XLSX round-trips; hard PPTX cases | STILL-OPEN |
 | fidelity gap #12 | External-URL images → grey placeholder (`loki-vello/src/image.rs:34`) | STILL-OPEN |
 | fidelity gap #19 | RTL/bidi direction not forwarded (no Parley bidi API) | STILL-OPEN |
-| fidelity gaps #23,#25,#26,#27,#29,#30 | kerning, orphan/widow, `border_between`, DocxSettings, content controls, language tags | STILL-OPEN |
-| fidelity-status registry | even/odd blank pages; unequal column widths; column height balancing; drop-cap editor fallback; PDF font subsetting; PDF ICC/CMYK; PDF clip/rotate paint; EPUB drops math/fields/comments; ODT `style:default-style`; macOS symbol-bullet fallback; reflow selection-delete + touch select; ACID headless raster + ODP/ODG importers + PPTX fixture; Calc/Slides squiggle rendering; personal-dictionary persistence | STILL-OPEN (registry-tracked) |
+| fidelity gaps #23,#25,#26,#27,#29,#30 | ~~kerning~~ (**#23 FIXED 2026-07-05** — `StyleSpan.kerning` + reference-matching off default, found by the Spec 02 calibration pass), orphan/widow, `border_between`, DocxSettings, content controls, language tags | STILL-OPEN (except #23) |
+| fidelity-status registry | even/odd blank pages; unequal column widths; column height balancing; drop-cap editor fallback; PDF font subsetting; PDF ICC/CMYK; PDF clip/rotate paint; EPUB drops math/fields/comments; ODT `style:default-style`; macOS symbol-bullet fallback; reflow touch select (selection-delete resolved 2026-07-05); ACID headless raster + ODP/ODG importers + PPTX fixture; Calc/Slides squiggle rendering; personal-dictionary persistence | STILL-OPEN (registry-tracked) |
 
 > **F1–F7** (audit-2026-06-10 app-layer: presentation tab-switch edit loss, no-op delete/copy, dead retier channels, no Save-As) were **not individually re-driven** this pass — they are app-layer and echoed in the MVP-scope doc §6; treat as likely-open pending a focused check.
 
@@ -152,10 +152,10 @@ Still-open after verification (the DONE-SINCE ones moved to §1).
 | Item | Status |
 |---|---|
 | 300-line-ceiling backlog | **35** baselined files; CI-ratcheted so it can only shrink. `CLAUDE.md`'s worst-offenders sizes are stale (see S-9). |
-| `tab_stops` Loro round-trip | STILL-OPEN — written as Debug string (`loro_bridge/write.rs:187`), no reader in `props_read.rs`. |
-| paragraph `background_color` Loro round-trip | STILL-OPEN — Debug string (`write.rs:190`); the only reader (`props_read.rs:273`) uses `from_hex` and cannot parse it. |
+| `tab_stops` Loro round-trip | ~~STILL-OPEN~~ **FIXED 2026-07-04** (plan Phase 1.1) — structured codec written + read back; `bridge_tab_stops_roundtrip`. |
+| paragraph `background_color` Loro round-trip | ~~STILL-OPEN~~ **FIXED 2026-07-04** (plan Phase 1.2) — total `DocumentColor` codec (`loro_bridge/color_codec.rs`); `bridge_para_background_color_roundtrip`. |
 | `DocumentMeta`/DublinCore export | **DONE** (writes back to DOCX/ODT) — `CLAUDE.md` row is stale (see S-8). |
-| CRDT bridge stubs | `BulletList`/`OrderedList`/`Figure`/`BlockQuote`/`Div` are debug-log-only in the bridge (export still works from the Document snapshot). |
+| CRDT bridge stubs | ~~debug-log-only~~ **FIXED 2026-07-04** (plan Phase 1.3) — `BulletList`/`OrderedList`/`BlockQuote`/`Div`/`Figure` now have native mappings (`loro_bridge/containers.rs`, `table.rs` pattern: JSON metadata + live nested block lists); tested by `loro_bridge_container_tests.rs`. Legacy pre-opaque stubs still read as `HorizontalRule` (nothing recoverable); `DefinitionList` and inline fields/math stay on the opaque path. |
 
 ---
 
@@ -179,3 +179,34 @@ Pure documentation hygiene — no functional change, but stops the docs from mis
 4. Reclassify the Spec 02 **"resolved-as-decision"** items (Gelasio, schemas, goldens, SSIM, `vello_cpu`) so they read as *decided, not built*.
 
 Everything else in §2–§7 is a genuine, correctly-documented deferral.
+
+---
+
+## 9. Addendum (2026-07-04, later the same day): F1–F7 re-driven
+
+The §5 closing note flagged the app-layer findings F1–F7 (audit-2026-06-10) as
+"not individually re-driven; treat as likely-open pending a focused check."
+That focused check has now been done (Phase 0 of
+[`deferred-features-plan-2026-07-04.md`](deferred-features-plan-2026-07-04.md));
+per-sub-item verdicts against HEAD `20b05a6`:
+
+| # | Original claim | Verdict | Evidence / residual |
+|---|---|---|---|
+| F1 | Presentation editor is a hardcoded demo; no load/save | **RESOLVED** (core) | Real PPTX import (`editor_load.rs:40-54` → `PptxImport`) and export with Save/Save As (`editor_save.rs`, `editor_inner.rs:87-149`); ODP is a typed `UnsupportedFormat` (deferred by MVP scope, not faked). **Residual resolved 2026-07-05** (plan 4b.6): tab switches now stash/restore the live presentation via `sessions.rs` + `editor_path_sync.rs` (and loki-spreadsheet got the same treatment). |
+| F2 | Recents Delete/Copy are silent no-ops (3 apps) | **RESOLVED** | `FileAccessToken::delete()` / `copy_bytes_to()` exist (`patches/loki-file-access/src/token.rs:116,132`) and all three `home.rs` handlers use them; failures surfaced via `pick_error` + `errors.ftl` keys. The `TODO(ux)` confirm-dialog landed 2026-07-05 (plan 4c.1, `AtConfirmDialog`). |
+| F3 | Edits lost on tab switch; dirty flag never set | **LARGELY RESOLVED** | Per-tab retention via `loki-text/src/sessions.rs` `DocSession` (stash/restore in `editor_path_sync.rs:42-154`); dirty tracks a generation baseline (`editor_inner.rs:465-476`), cleared on save. **Residual (F3c) resolved 2026-07-05** (plan 4b.6): closing a dirty tab raises an `AtConfirmDialog` confirmation in all three apps' shells. |
+| F4 | Untitled documents cannot be saved; no Ctrl+S | **RESOLVED** | Save As via `pick_file_to_save` (`editor_inner.rs:484-535`); Ctrl/Cmd+S bound (`editor_keydown.rs:60-67`) routing untitled → Save As. |
+| F5 | Settle/retier pipeline wired to dead channels | **RESOLVED (by removal)** | The pipeline was deleted, not fixed: virtualization now bounds memory by mounting only viewport-window pages (`virtualize.rs` `visible_window`, `document_view.rs:290`). The 06-10 audit's §5 claim of "downsample by viewport distance" was wrong about the mechanism — corrected there. **Residual:** `DocumentViewProps::eq` still hardwired `false` (`document_view.rs:143-147`) — now a benign over-render, capped by `PageTile`'s own `PartialEq`. |
+| F6 | Medium grab-bag | **PARTIAL** | RESOLVED: F6b hit-testing geometry (live `client_width`/`scroll_offset` via `scroll_metrics`), F6e spreadsheet (visible save errors, SUM/COUNT/AVERAGE/MIN/MAX/IF engine, dynamic grid to 500×52), F6g onscroll panic path (`convert_scroll_data` implemented; unimplemented converters have no registered handlers), F6h i18n variant-locale fallback (parsed-langid comparison + regression test). PARTIAL: F6d dead UI — loki-text ribbon tabs/collapse/template cards fixed; **zoom wired 2026-07-05 in loki-text (GPU tile scale) + loki-presentation (slide scale); spreadsheet ribbon tab-select/collapse now wired (2026-07-05) and the dead extra tabs removed; spreadsheet grid-zoom (`TODO(zoom)`) still deferred**. RESOLVED 2026-07-05: F6c-selection — typing replaces the active selection and Backspace/Delete remove it, including multi-block ranges (`loki_doc_model::delete_selection_at` composes `merge_block_at` + `delete_text_at` with pre-validation, so cross-container or table-spanning ranges are rejected untouched; wired via `editor_keydown_text.rs`; tested by `loro_selection_delete_tests.rs` + editor unit tests). RESOLVED 2026-07-05: F6a hooks-in-conditionals/loops — `recent_files.rs` + `template_gallery.rs` rows/cards are now child `#[component]`s so `use_signal` no longer lives in `for`/`if` bodies (plan 4c.5). STILL-OPEN residual:, F6c-clipboard (copy/cut/paste — partially gated on the unimplemented dioxus-native-dom clipboard converter), F6f synchronous save/load on UI thread. |
+| F7 | Low grab-bag | **PARTIAL** | RESOLVED: F7d safe-area insets (RwLock + reactive version signal + resize sensor). PARTIAL → word count now live in loki-text (2026-07-05); still empty in Calc/Slides (no meaningful doc-text count yet). RESOLVED 2026-07-05: F7b (stable slide/bullet list keys + explicit `active_idx` clamp on slide delete), F7c word count (live in loki-text's status bar; `editing/word_count.rs`). PARTIAL: F7a — `AtHomeTab` now reads `use_breakpoint()` (2026-07-05); the two smaller apps still don't push a measured width so it falls back to Expanded there. STILL-OPEN: F7e debug leftovers in vendored patches, F7f `buttons ^= Main` XOR on touch end/cancel (`patches/blitz-shell/src/window.rs:1133`). |
+
+**Two stale in-code comments found during verification were fixed in the same
+pass:** the `TODO(undo-dirty)` parenthetical ("Save not implemented" — Save now
+exists; remaining work is the undo-stack clean checkpoint) and the
+`editing/hit_test.rs` doc-comment claiming `scroll_offset = 0.0`.
+
+The confirmed-open items fold into the plan as follows: F3c + F1-residual
+(close/switch protection for dirty work) join Phase 4b; F6a/F6c/F6d/F6f and
+F7a/F7b/F7c join the Phase 4b/4c backlog; F7e/F7f are patch-tree fixes queued
+with the next patch re-vendor (Watch list); the F5 `PartialEq` residual joins
+Phase 6 (perf polish).

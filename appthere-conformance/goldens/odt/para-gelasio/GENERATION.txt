@@ -1,0 +1,5 @@
+fixture:    para-gelasio.odt
+reference:  LibreOffice headless (LibreOffice 24.2.7.2 420(Build:2))
+rasterizer: pdftoppm version 24.02.0 @ 144 dpi (CONFORMANCE_DPI), -aa yes -aaVector yes
+generated:  2026-07-05
+operator:   scripts/generate-odf-goldens.sh (scripted; Spec 02 §7.2)

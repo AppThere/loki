@@ -41,6 +41,22 @@ impl DocumentPosition {
         }
     }
 
+    /// Whether two positions address the same caret location, ignoring
+    /// `page_index`.
+    ///
+    /// `page_index` is a display-only artifact: a paragraph flowing across a
+    /// page break has an entry on every page it touches, so the same logical
+    /// caret `(paragraph_index, byte_offset, path)` can carry different
+    /// `page_index` values depending on which fragment produced it. Selection
+    /// logic must compare on the logical caret so a "phantom" zero-width
+    /// selection differing only in `page_index` is not treated as a range.
+    #[must_use]
+    pub fn same_caret(&self, other: &DocumentPosition) -> bool {
+        self.paragraph_index == other.paragraph_index
+            && self.byte_offset == other.byte_offset
+            && self.path == other.path
+    }
+
     /// The [`BlockPath`] addressing this position's paragraph for mutation.
     #[must_use]
     pub fn block_path(&self) -> BlockPath {
@@ -126,9 +142,18 @@ impl CursorState {
         }
     }
 
-    /// Returns `true` when a range selection exists (anchor differs from focus).
+    /// Returns `true` when a range selection exists — the anchor and focus
+    /// address different caret locations.
+    ///
+    /// Compares on the logical caret (via [`DocumentPosition::same_caret`]), so
+    /// two positions that differ only in `page_index` (a page-spanning
+    /// paragraph fragment) do not register as a phantom zero-width selection
+    /// that would swallow the next Backspace/Delete.
     pub fn has_selection(&self) -> bool {
-        self.anchor.is_some() && self.focus.is_some() && self.anchor != self.focus
+        match (self.anchor.as_ref(), self.focus.as_ref()) {
+            (Some(a), Some(f)) => !a.same_caret(f),
+            _ => false,
+        }
     }
 
     /// The [`BlockPath`] of the focus position, if a cursor is placed.
@@ -193,107 +218,5 @@ pub fn next_grapheme_boundary(text: &str, offset: usize) -> usize {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn prev_grapheme_in_ascii_mid() {
-        // "hello": h(0) e(1) l(2) l(3) o(4)
-        assert_eq!(prev_grapheme_boundary("hello", 3), 2);
-    }
-
-    #[test]
-    fn prev_grapheme_at_start() {
-        assert_eq!(prev_grapheme_boundary("hello", 0), 0);
-    }
-
-    #[test]
-    fn next_grapheme_in_ascii_mid() {
-        assert_eq!(next_grapheme_boundary("hello", 2), 3);
-    }
-
-    #[test]
-    fn next_grapheme_at_end() {
-        assert_eq!(next_grapheme_boundary("hello", 5), 5);
-    }
-
-    #[test]
-    fn prev_grapheme_multibyte() {
-        // "héllo": h(0) é(1..3) l(3) l(4) o(5)
-        // é is U+00E9, encoded as 0xC3 0xA9 — 2 bytes.
-        // byte 3 is the start of 'l'; prev boundary should be 1 (start of é).
-        let s = "héllo";
-        assert_eq!(prev_grapheme_boundary(s, 3), 1);
-    }
-
-    #[test]
-    fn next_grapheme_emoji() {
-        // "a😀b": a(0) 😀(1..5) b(5)
-        // 😀 is U+1F600, encoded as 4 bytes.
-        // next boundary after offset 1 should be 5 (end of emoji / start of 'b').
-        let s = "a\u{1F600}b";
-        assert_eq!(next_grapheme_boundary(s, 1), 5);
-    }
-
-    #[test]
-    fn top_level_position_block_path_is_flat() {
-        let pos = DocumentPosition::top_level(0, 3, 7);
-        assert_eq!(pos.block_path(), BlockPath::block(3));
-        assert!(pos.path.is_empty());
-    }
-
-    #[test]
-    fn nested_position_block_path_carries_steps() {
-        let pos = DocumentPosition {
-            page_index: 0,
-            paragraph_index: 2,
-            byte_offset: 0,
-            path: vec![PathStep::Cell { cell: 1, block: 0 }],
-        };
-        assert_eq!(pos.block_path(), BlockPath::in_cell(2, 1, 0));
-    }
-
-    #[test]
-    fn sibling_block_shifts_top_level_paragraph() {
-        let pos = DocumentPosition::top_level(0, 3, 7);
-        let next = pos.sibling_block(1, 0);
-        assert_eq!(next.paragraph_index, 4);
-        assert_eq!(next.byte_offset, 0);
-        assert!(next.path.is_empty());
-        // Saturates at 0 rather than underflowing.
-        assert_eq!(
-            DocumentPosition::top_level(0, 0, 0)
-                .sibling_block(-1, 5)
-                .paragraph_index,
-            0
-        );
-    }
-
-    #[test]
-    fn sibling_block_shifts_nested_leaf_block_only() {
-        let pos = DocumentPosition {
-            page_index: 0,
-            paragraph_index: 2,
-            byte_offset: 9,
-            path: vec![PathStep::Cell { cell: 1, block: 0 }],
-        };
-        let next = pos.sibling_block(1, 0);
-        // Root paragraph_index is untouched; the leaf block index advances.
-        assert_eq!(next.paragraph_index, 2);
-        assert_eq!(next.byte_offset, 0);
-        assert_eq!(next.path, vec![PathStep::Cell { cell: 1, block: 1 }]);
-    }
-
-    #[test]
-    fn cursor_block_path_follows_focus() {
-        let mut cs = CursorState::new();
-        assert_eq!(cs.block_path(), None);
-        cs.focus = Some(DocumentPosition {
-            page_index: 0,
-            paragraph_index: 5,
-            byte_offset: 0,
-            path: vec![PathStep::Note { note: 0, block: 0 }],
-        });
-        assert_eq!(cs.block_path(), Some(BlockPath::in_note(5, 0, 0)));
-    }
-}
+#[path = "cursor_tests.rs"]
+mod tests;

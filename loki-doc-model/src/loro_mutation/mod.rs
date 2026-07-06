@@ -30,6 +30,7 @@ mod block;
 mod nested;
 #[cfg(feature = "serde")]
 mod objects;
+mod selection;
 mod style;
 mod text;
 
@@ -42,6 +43,7 @@ pub use self::nested::{
 };
 #[cfg(feature = "serde")]
 pub use self::objects::{insert_inline_image_at, insert_inline_note_at};
+pub use self::selection::delete_selection_at;
 pub use self::style::{
     get_block_alignment, get_block_style_name, set_block_alignment, set_block_style,
     set_block_type_heading, set_block_type_para,
@@ -88,6 +90,11 @@ pub enum MutationError {
     /// range.
     #[error("Invalid block path: {0}")]
     InvalidBlockPath(String),
+    /// A selection operation was given endpoints in different containers
+    /// (body ↔ table cell, cell ↔ cell, note ↔ body, or different sections).
+    /// Nothing is mutated.
+    #[error("Selection endpoints are in different containers")]
+    CrossContainerSelection,
 }
 
 impl From<loro::LoroError> for MutationError {

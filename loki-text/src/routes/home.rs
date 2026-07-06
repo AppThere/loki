@@ -9,14 +9,18 @@
 //! All user-visible strings come from `loki_i18n::fl!()` — no hardcoded
 //! English literals.
 
-use appthere_ui::{AtHomeTab, BuiltinTemplate, RecentDocument};
+use appthere_ui::{AtConfirmDialog, AtHomeTab, BuiltinTemplate, RecentDocument};
 use dioxus::prelude::*;
 use loki_file_access::{FileAccessToken, FilePicker, PickOptions, PickerError, SaveOptions};
 use loki_i18n::fl;
 
+use super::home_util::{
+    close_tab_for_path, is_template_name, push_new_tab, push_or_switch_tab, suggested_copy_name,
+};
 use crate::new_document::{new_blank_tab, new_import_tab, new_template_tab};
 use crate::recent_documents::RecentDocuments;
 use crate::routes::Route;
+use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
 use crate::utils::display_title_from_path;
 
@@ -71,71 +75,6 @@ fn make_templates() -> Vec<BuiltinTemplate> {
     ]
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/// Push `path` as a new open tab, or switch to its existing tab if already open.
-fn push_or_switch_tab(mut tabs: Signal<Vec<OpenTab>>, mut active_tab: Signal<usize>, path: String) {
-    let title = display_title_from_path(&path);
-    let existing = tabs.read().iter().position(|t| t.path == path);
-    if let Some(idx) = existing {
-        *active_tab.write() = idx + 1;
-    } else {
-        tabs.write().push(OpenTab {
-            title,
-            path,
-            is_dirty: false,
-            is_discarded: false,
-        });
-        // TODO(tabs): Replace router-driven navigation with tab-driven navigation.
-        *active_tab.write() = tabs.read().len(); // new tab is last; +1 for Home
-    }
-}
-
-/// Close any open tab whose `path` matches `path`, resetting the active tab to
-/// Home when the closed (or a now-shifted) tab was selected.
-fn close_tab_for_path(mut tabs: Signal<Vec<OpenTab>>, mut active_tab: Signal<usize>, path: &str) {
-    let removed = tabs.read().iter().position(|t| t.path == path);
-    if let Some(idx) = removed {
-        tabs.write().remove(idx);
-        // active_tab is 1-based (index 0 = Home). Reset to Home if the active
-        // selection pointed at or past the removed tab to avoid a stale index.
-        if *active_tab.read() > idx {
-            *active_tab.write() = 0;
-        }
-    }
-}
-
-/// True if `name` has a template extension (Word `.dotx`/`.dotm` or
-/// LibreOffice `.ott`/`.ots`). Templates open as fresh, detached documents.
-fn is_template_name(name: &str) -> bool {
-    name.rsplit('.')
-        .next()
-        .map(|e| e.to_ascii_lowercase())
-        .is_some_and(|e| matches!(e.as_str(), "dotx" | "dotm" | "ott" | "ots"))
-}
-
-/// Push `tab` as a new open tab (last position) and return its path so the
-/// caller can navigate to the editor.
-fn push_new_tab(
-    mut tabs: Signal<Vec<OpenTab>>,
-    mut active_tab: Signal<usize>,
-    tab: OpenTab,
-) -> String {
-    let path = tab.path.clone();
-    tabs.write().push(tab);
-    *active_tab.write() = tabs.read().len(); // new tab is last; +1 for Home
-    path
-}
-
-/// Build a "<stem> Copy.<ext>" filename from a token's display name.
-fn suggested_copy_name(token: &FileAccessToken) -> String {
-    let name = token.display_name();
-    match name.rsplit_once('.') {
-        Some((stem, ext)) if !stem.is_empty() => format!("{stem} Copy.{ext}"),
-        _ => format!("{name} Copy"),
-    }
-}
-
 // ── Home ──────────────────────────────────────────────────────────────────────
 
 /// Home screen component — wraps [`AtHomeTab`] with Loki Text data and routing.
@@ -148,6 +87,7 @@ pub fn Home() -> Element {
 
     let tabs = use_context::<Signal<Vec<OpenTab>>>();
     let active_tab = use_context::<Signal<usize>>();
+    let doc_sessions = use_context::<Signal<DocSessions>>();
     let mut recent_docs = use_context::<Signal<RecentDocuments>>();
 
     // Holds the last file-picker error message, if any.
@@ -240,15 +180,23 @@ pub fn Home() -> Element {
 
     // ── on_recent_delete ──────────────────────────────────────────────────────
     //
-    // `path` is a serialised FileAccessToken, not a filesystem path. Decode it,
-    // delete the underlying file via the capability token, close any open tab
-    // for it, then drop the recents entry.
+    // Deleting a file is destructive, so the menu action only *requests* it:
+    // the confirmation dialog below performs the deletion on confirm (4c.1).
+    let mut pending_delete: Signal<Option<(String, String)>> = use_signal(|| None);
     let on_recent_delete = move |idx: usize| {
-        let mut err_sig = pick_error;
-        let Some(path) = recent_docs.read().entries.get(idx).map(|e| e.path.clone()) else {
-            return;
-        };
+        let entry = recent_docs
+            .read()
+            .entries
+            .get(idx)
+            .map(|e| (e.path.clone(), e.title.clone()));
+        if let Some(path_and_title) = entry {
+            pending_delete.set(Some(path_and_title));
+        }
+    };
 
+    // Confirmed deletion: delete the file, close its tab + stashed session, drop recents.
+    let mut delete_recent = move |path: String| {
+        let mut err_sig = pick_error;
         match FileAccessToken::deserialize(&path) {
             Ok(token) => {
                 if let Err(e) = token.delete() {
@@ -262,8 +210,7 @@ pub fn Home() -> Element {
             }
         }
 
-        close_tab_for_path(tabs, active_tab, &path);
-        // TODO(ux): Add a confirmation dialog before destructive deletion.
+        close_tab_for_path(tabs, active_tab, doc_sessions, &path);
         recent_docs.write().remove(&path);
         recent_docs.read().save();
     };
@@ -337,8 +284,12 @@ pub fn Home() -> Element {
         .collect();
 
     rsx! {
-        AtHomeTab {
-            templates:              make_templates(),
+        // position: relative anchors the AtConfirmDialog overlay over the
+        // home area (AtHomeTab sizes itself to the viewport minus tab bar).
+        div {
+            style: "position: relative;",
+            AtHomeTab {
+                templates:              make_templates(),
             recent_documents:       recent_list,
             templates_label:        fl!("home-templates-heading"),
             recent_label:           fl!("home-recent-heading"),
@@ -350,15 +301,31 @@ pub fn Home() -> Element {
             recent_remove_label:    fl!("home-recent-menu-remove"),
             recent_delete_label:    fl!("home-recent-menu-delete"),
             recent_open_copy_label: fl!("home-recent-menu-open-copy"),
-            pick_error:             pick_error,
-            on_template_select:     on_template_select,
-            // TODO(browse-templates): open a template browser dialog.
-            on_browse_templates:    |_| {},
-            on_recent_open:         on_recent_open,
-            on_open_file:           on_open_file,
-            on_recent_remove:       on_recent_remove,
-            on_recent_delete:       on_recent_delete,
-            on_recent_open_copy:    on_recent_open_copy,
+                pick_error:             pick_error,
+                on_template_select:     on_template_select,
+                // TODO(browse-templates): open a template browser dialog.
+                on_browse_templates:    |_| {},
+                on_recent_open:         on_recent_open,
+                on_open_file:           on_open_file,
+                on_recent_remove:       on_recent_remove,
+                on_recent_delete:       on_recent_delete,
+                on_recent_open_copy:    on_recent_open_copy,
+            }
+
+            // ── Delete confirmation (ADR-0013 boundary mount) ─────────────────
+            {pending_delete.read().clone().map(|(path, title)| rsx! {
+                AtConfirmDialog {
+                    title: fl!("home-delete-confirm-title"),
+                    message: fl!("home-delete-confirm-message", title = title),
+                    confirm_label: fl!("home-delete-confirm-confirm"),
+                    cancel_label: fl!("home-delete-confirm-cancel"),
+                    on_confirm: move |_| {
+                        pending_delete.set(None);
+                        delete_recent(path.clone());
+                    },
+                    on_cancel: move |_| pending_delete.set(None),
+                }
+            })}
         }
     }
 }

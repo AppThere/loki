@@ -9,13 +9,17 @@
 //! - `read`  — deserialization (Loro → Loki)
 //! - `inlines` — inline content helpers shared by both directions
 
+mod color_codec;
 mod comments;
+mod compact;
+mod containers;
 mod decode;
 mod incremental;
 #[cfg(feature = "serde")]
 mod inline_objects;
 mod inlines;
 mod inlines_read;
+mod map_get;
 mod meta;
 mod opaque;
 mod props_read;
@@ -25,6 +29,7 @@ mod table;
 mod write;
 
 pub use comments::{read_document_comments, write_document_comments};
+pub use compact::{compact_history, compact_in_place};
 pub use incremental::IncrementalReader;
 pub use meta::{read_document_meta, write_document_meta};
 pub use styles::{read_document_styles, write_document_styles};
@@ -40,7 +45,7 @@ use crate::document::Document;
 use crate::layout::header_footer::HeaderFooter;
 use crate::layout::page::{PageLayout, PageOrientation};
 use crate::loro_schema::*;
-use loro::{ExpandType, LoroDoc, LoroMap, LoroMovableList, StyleConfig, StyleConfigMap};
+use loro::{LoroDoc, LoroMap, LoroMovableList};
 use read::{reconstruct_blocks_from_list, reconstruct_page_layout};
 use write::map_blocks_to_list;
 
@@ -127,28 +132,7 @@ pub fn document_to_loro(doc: &Document) -> Result<LoroDoc, BridgeError> {
     let loro_doc = LoroDoc::new();
 
     // Register every mark key so Loro tracks its expand behaviour.
-    let mut style_config = StyleConfigMap::new();
-    // Character formatting marks expand onto text inserted at their trailing
-    // edge (`After`) — the single source of truth is `CHAR_MARK_KEYS`.
-    for key in CHAR_MARK_KEYS {
-        style_config.insert(
-            loro::InternalString::from(*key),
-            StyleConfig {
-                expand: ExpandType::After,
-            },
-        );
-    }
-    // Inline-object anchor marks must not expand onto adjacent text — they
-    // describe a single placeholder position, not a formatting span.
-    for key in INLINE_OBJECT_MARK_KEYS {
-        style_config.insert(
-            loro::InternalString::from(*key),
-            StyleConfig {
-                expand: ExpandType::None,
-            },
-        );
-    }
-    loro_doc.config_text_style(style_config);
+    compact::configure_text_style(&loro_doc);
 
     // Metadata — full DocumentMeta (core + Dublin Core) as a lossless snapshot.
     let meta_map = loro_doc.get_map(KEY_METADATA);

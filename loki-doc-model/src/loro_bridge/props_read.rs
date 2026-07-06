@@ -5,45 +5,19 @@
 //!
 //! Split from `read.rs` to keep individual files under the 300-line ceiling.
 
+use super::color_codec::decode_document_color;
 use super::decode::{
     decode_alignment, decode_border, decode_highlight_color, decode_line_height, decode_spacing,
-    decode_strikethrough, decode_underline, decode_vertical_align,
+    decode_strikethrough, decode_tab_stops, decode_underline, decode_vertical_align,
 };
+use super::map_get::{get_bool_from_map, get_f64_from_map, get_i64_from_map, get_str_from_map};
 use crate::loro_schema::*;
 use crate::meta::language::LanguageTag;
 use crate::style::list_style::ListId;
 use crate::style::props::char_props::CharProps;
 use crate::style::props::para_props::ParaProps;
-use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 use loro::LoroMap;
-
-// ── Loro map value accessors ──────────────────────────────────────────────────
-
-pub(super) fn get_str_from_map(map: &LoroMap, key: &str) -> Option<String> {
-    map.get(key)
-        .and_then(|v| v.into_value().ok())
-        .and_then(|v| v.into_string().ok())
-        .map(|s| s.to_string())
-}
-
-pub(super) fn get_f64_from_map(map: &LoroMap, key: &str) -> Option<f64> {
-    map.get(key)
-        .and_then(|v| v.into_value().ok())
-        .and_then(|v| v.into_double().ok())
-}
-
-pub(super) fn get_bool_from_map(map: &LoroMap, key: &str) -> Option<bool> {
-    map.get(key)
-        .and_then(|v| v.into_value().ok())
-        .and_then(|v| v.into_bool().ok())
-}
-
-pub(super) fn get_i64_from_map(map: &LoroMap, key: &str) -> Option<i64> {
-    map.get(key)
-        .and_then(|v| v.into_value().ok())
-        .and_then(|v| v.into_i64().ok())
-}
 
 // ── ParaProps reconstruction ──────────────────────────────────────────────────
 
@@ -168,6 +142,19 @@ pub(super) fn reconstruct_para_props(block_map: &LoroMap) -> Option<ParaProps> {
     read_pt!(padding_left, PROP_PADDING_LEFT);
     read_pt!(padding_right, PROP_PADDING_RIGHT);
 
+    if let Some(s) = get_str_from_map(&props_map, PROP_TAB_STOPS)
+        && let Some(ts) = decode_tab_stops(&s)
+    {
+        props.tab_stops = Some(ts);
+        any = true;
+    }
+    if let Some(s) = get_str_from_map(&props_map, PROP_BACKGROUND_COLOR)
+        && let Some(c) = decode_document_color(&s)
+    {
+        props.background_color = Some(c);
+        any = true;
+    }
+
     if any { Some(props) } else { None }
 }
 
@@ -265,13 +252,13 @@ pub(super) fn reconstruct_char_props_from_map(block_map: &LoroMap) -> Option<Cha
         any = true;
     }
     if let Some(s) = get_str_from_map(&props_map, "color")
-        && let Ok(c) = DocumentColor::from_hex(&s)
+        && let Some(c) = decode_document_color(&s)
     {
         props.color = Some(c);
         any = true;
     }
     if let Some(s) = get_str_from_map(&props_map, "background_color")
-        && let Ok(c) = DocumentColor::from_hex(&s)
+        && let Some(c) = decode_document_color(&s)
     {
         props.background_color = Some(c);
         any = true;

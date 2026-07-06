@@ -69,6 +69,37 @@ fn url_is_trimmed() {
     assert_eq!(link_at(&loro, 0).as_deref(), Some("https://trim.example"));
 }
 
+#[test]
+fn applies_link_across_a_multi_paragraph_selection() {
+    // Two paragraphs; a selection spanning both must link the tail of the
+    // first AND the head of the second (the bug linked only the first).
+    let mut doc = Document::new();
+    doc.sections[0].blocks = vec![
+        Block::Para(vec![Inline::Str("hello".into())]),
+        Block::Para(vec![Inline::Str("world".into())]),
+    ];
+    let loro = document_to_loro(&doc).expect("document_to_loro");
+    let cursor = CursorState {
+        loro_cursor: None,
+        anchor: Some(DocumentPosition::top_level(0, 0, 2)),
+        focus: Some(DocumentPosition::top_level(0, 1, 3)),
+        document_generation: 0,
+    };
+    assert!(set_hyperlink(&loro, &cursor, "https://multi.example").unwrap());
+    // First paragraph: linked from byte 2 onward.
+    let p0 = get_mark_at(&loro, 0, 3, MARK_LINK_URL).expect("get_mark_at p0");
+    assert!(
+        matches!(p0, Some(LoroValue::String(_))),
+        "first para linked"
+    );
+    // Second paragraph: also linked (byte 1 lies inside 0..3).
+    let p1 = get_mark_at(&loro, 1, 1, MARK_LINK_URL).expect("get_mark_at p1");
+    assert!(
+        matches!(p1, Some(LoroValue::String(_))),
+        "second paragraph of the selection must be linked too"
+    );
+}
+
 /// Encodes a `w`×`h` RGBA PNG into bytes for the image-insert tests.
 fn png_bytes(w: u32, h: u32) -> Vec<u8> {
     let img = image::RgbaImage::new(w, h);

@@ -19,6 +19,13 @@
 
 use std::path::PathBuf;
 
+pub mod calibration;
+mod ciede;
+pub mod diff;
+
+pub use calibration::{CALIBRATED_MAX_DELTA_E, CALIBRATED_MIN_SSIM};
+pub use diff::{DiffError, Tolerance, compare_pages, emit_heatmap};
+
 /// A perceptual score for one tiled region of a page.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RegionScore {

@@ -84,9 +84,14 @@ pub fn App() -> Element {
     let recent_docs: Signal<RecentDocuments> =
         use_signal(|| RecentDocuments::load(crate::recent_documents::RECENT_FILE));
 
+    // Stashed sessions for inactive tabs — unsaved edits survive tab switches.
+    let doc_sessions: Signal<crate::sessions::DocSessions> =
+        use_signal(std::collections::HashMap::new);
+
     provide_context(tabs);
     provide_context(active_tab);
     provide_context(recent_docs);
+    provide_context(doc_sessions);
 
     let insets = use_safe_area();
 

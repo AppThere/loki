@@ -199,8 +199,8 @@ but are **not perfectly round-tripped through the Loro CRDT**.
 
 | Field(s) | Status | Priority |
 |---|---|---|
-| `tab_stops` | Written as unreadable Debug string; not read back. | Medium |
-| `background_color` (paragraph) | Written as Debug string; not decoded on read. | Low |
+| `tab_stops` | **DONE** (2026-07-04) — structured `"pos:Align:Leader;…"` codec (`loro_bridge/decode.rs`) written and read back; tested by `bridge_tab_stops_roundtrip`. Pre-fix Debug strings decode as absent. | — |
+| `background_color` (paragraph) | **DONE** (2026-07-04) — total `DocumentColor` codec (`loro_bridge/color_codec.rs`, covers Rgb/Cmyk/Theme/Transparent) written and read back; tested by `bridge_para_background_color_roundtrip`. | — |
 | `DocumentMeta` / `DublinCoreMeta` | Round-trips **through the Loro CRDT** (`loro_bridge::meta`) **and is written back on export** — core properties + extended Dublin Core reach DOCX (`docProps/core.xml` + `custom.xml`) and ODT (`meta.xml`), tested by `metadata_round_trip.rs` / `extended_dublin_core_round_trips`. Remaining tail (not the Loro bridge): custom user properties, `meta:editing-duration`, and OOXML `docProps/app.xml` are still not written. | Low |
 
 ---

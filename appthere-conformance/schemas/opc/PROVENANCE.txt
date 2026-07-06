@@ -1,0 +1,15 @@
+ECMA-376 4th edition, Part 2: Open Packaging Conventions XML Schemas.
+
+Source: the ecma/fouth-edition OPC schema set of the same bundle as
+../ooxml (vendored 2026-07-05). Upstream origin:
+https://ecma-international.org/publications-and-standards/standards/ecma-376/
+
+NOTE: opc-coreProperties.xsd imports the Dublin Core XSDs by live URL
+(dublincore.org); those are not yet vendored, so offline validation of
+docProps/core.xml is deferred — see loki-ooxml/tests/schema_validation.rs.
+
+sha256 manifest:
+49ec1c03440a9b5590e69acdf92b200fe133697de0b05f43a129fb94d1885026  opc/opc-contentTypes.xsd
+69688ea15f82a870053b9a60c79359063dbcfeec9cdabafabad51a53934bc35b  opc/opc-coreProperties.xsd
+ee7e7e1b9a1340536e25e87c8650a2b90a43b0e67d02d6746cd430048b3c1439  opc/opc-digSig.xsd
+607ffb6879cf5d5d765bfdfb2548f3f427ea964ddee6d08a15f0dc781749866d  opc/opc-relationships.xsd

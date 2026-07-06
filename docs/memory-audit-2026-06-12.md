@@ -154,22 +154,16 @@ RUST_LOG=loki_text::mem=info <run loki-text>
 `loro_ops` / `loro_changes` climbing without bound while `pages` / `blocks` stay
 flat confirms the history (not the layout or document) is what grows.
 
-**Proposed fix (compaction — needs on-device validation, not yet applied):**
-Loro can drop history before a frontier via
-`export(ExportMode::shallow_snapshot(&doc.oplog_frontiers()))` re-imported into a
-fresh `LoroDoc`. Doing this at a natural checkpoint (e.g. on **save**, or after
-the undo horizon of 100 steps is exceeded) caps the oplog. The cost: the swap
-invalidates the `UndoManager` (recreate it), the `IncrementalReader` version
-(reseed it), and every signal/`DocSession` holding the old `LoroDoc` (re-point
-them), and it truncates undo history at the compaction point. Because that
-touches the live editing/undo wiring and can't be validated headlessly, it is
-recorded here as the next step rather than applied blind.
-<!-- TODO(loro-compaction): compact oplog history at save/undo-horizon; see above. -->
-
-### Tech debt
-
-- **TODO(loro-compaction):** the Loro history (oplog + rich-text tombstones) is
-  never compacted, so a long single-document editing session grows resident
-  memory without bound (observed >3 GB). Compact via a shallow-snapshot swap at a
-  safe checkpoint; requires recreating the `UndoManager`/`IncrementalReader` and
-  re-pointing the `loro_doc` signal, plus on-device validation.
+**Fix applied (2026-07-04, plan Phase 1.5):** `loro_bridge::compact` now
+provides `compact_in_place` (re-encode the change store + drop checkout
+caches; history and undo preserved) and `compact_history` (minimal-history
+`StateOnly` snapshot re-imported into a fresh mark-configured `LoroDoc`).
+loki-text wires both at the save point (`editor_compact::compact_after_save`,
+called from the unified save handler): below 20k ops the in-place pass runs;
+above it the doc is swapped, recreating the `UndoManager` (undo restarts at
+the save point) and dropping the `IncrementalReader` seed exactly as
+anticipated above. The `leak_loro_history` bench now runs a compacted phase
+and asserts the curve flattens (5 000 keystrokes: 19 208 ops uncompacted →
+1 op with periodic compaction). **On-device long-session validation is still
+pending** — the swap path exercises real editing/undo wiring that only a
+device run can confirm (tracked in Spec 06 BM-14's on-device pass).

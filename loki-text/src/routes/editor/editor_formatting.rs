@@ -9,29 +9,30 @@
 //!
 //! # Toggle semantics
 //!
-//! Each `toggle_*` function reads the mark at the start of the resolved
-//! format range.  If the mark is already active, it is cleared (`LoroValue::Null`);
-//! otherwise it is applied.  This matches Word/LibreOffice toggle behaviour.
+//! Each `toggle_*` function reads the mark at the start of the **first**
+//! resolved range (the document-order start of the selection).  If the mark
+//! is already active there, it is cleared (`LoroValue::Null`) across every
+//! range; otherwise it is applied across every range.  This matches
+//! Word/LibreOffice toggle behaviour, extended to multi-paragraph selections
+//! (plan 4b.2): the state at the selection start decides, and the whole
+//! selection is made uniform.
 //!
 //! # Range resolution
 //!
-//! [`resolve_format_range`] maps `CursorState` to `(block_index, byte_start, byte_end)`.
-//! With an active selection in a single block, the selection is used directly.
-//! With a point cursor (no selection), the word at the cursor is expanded.
-//! Cross-block selections are clamped to the focus block — a future pass can
-//! extend this.
-//!
-//! # Byte offset coordinate space
-//!
-//! All byte offsets are UTF-8 byte positions, matching `CursorState` and the
-//! `mark_utf8` API used by `mark_text`.
+//! [`resolve_format_ranges`](super::editor_format_range::resolve_format_ranges)
+//! maps `CursorState` to one `(BlockPath, byte_start, byte_end)` per
+//! paragraph: the selection's ranges for single- and multi-paragraph
+//! selections within one container, the word at the cursor for a point
+//! cursor, and a clamp to the focus paragraph for cross-container
+//! selections. See `editor_format_range.rs`.
 
 use loki_doc_model::loro_schema::{
     MARK_BOLD, MARK_ITALIC, MARK_STRIKETHROUGH, MARK_UNDERLINE, MARK_VERTICAL_ALIGN,
 };
-use loki_doc_model::{BlockPath, MutationError, get_block_text_at, get_mark_at_path, mark_text_at};
+use loki_doc_model::{BlockPath, MutationError, get_mark_at_path, mark_text_at};
 use loro::{LoroDoc, LoroValue};
 
+use super::editor_format_range::resolve_format_ranges;
 use crate::editing::cursor::CursorState;
 
 /// Whether the mark was applied (`true`) or removed (`false`).
@@ -91,56 +92,27 @@ pub fn toggle_subscript(
     toggle_vertical_align(loro, cursor, "Subscript")
 }
 
-// ── Range resolution ──────────────────────────────────────────────────────────
-
-/// Resolves the format range from cursor state: `(BlockPath, byte_start, byte_end)`.
-///
-/// The [`BlockPath`] addresses the focus paragraph — top-level or nested inside
-/// a table cell / note body — so formatting applies to the right container.
-/// With a selection within a single paragraph, the selection range is returned;
-/// with a point cursor, the word at the cursor is expanded; a cross-paragraph
-/// selection is clamped to the focus paragraph.
-///
-/// Returns `None` when there is no valid cursor position.
-///
-/// // TODO(formatting): extend to multi-block selections.
-pub fn resolve_format_range(
-    loro: &LoroDoc,
-    cursor: &CursorState,
-) -> Option<(BlockPath, usize, usize)> {
-    let focus = cursor.focus.as_ref()?;
-    let path = focus.block_path();
-
-    if cursor.has_selection() {
-        let anchor = cursor.anchor.as_ref()?;
-        // Same paragraph requires the same index *and* the same nesting path
-        // (two cells of one table share the root index but differ by path).
-        if anchor.paragraph_index == focus.paragraph_index && anchor.path == focus.path {
-            let (start, end) = if anchor.byte_offset <= focus.byte_offset {
-                (anchor.byte_offset, focus.byte_offset)
-            } else {
-                (focus.byte_offset, anchor.byte_offset)
-            };
-            if start < end {
-                return Some((path, start, end));
-            }
-        } else if focus.byte_offset > 0 {
-            // Cross-paragraph: clamp to the focus paragraph as a best-effort.
-            return Some((path, 0, focus.byte_offset));
-        }
-    }
-
-    // No selection — expand to the word at cursor.
-    let text = get_block_text_at(loro, &path);
-    let (word_start, word_end) = word_bounds_at(&text, focus.byte_offset);
-    if word_start < word_end {
-        Some((path, word_start, word_end))
-    } else {
-        None
-    }
-}
-
 // ── Private helpers ───────────────────────────────────────────────────────────
+
+/// Applies `new_value` for `mark_key` across every resolved range.
+fn mark_ranges(
+    loro: &LoroDoc,
+    ranges: &[(BlockPath, usize, usize)],
+    mark_key: &str,
+    new_value: &LoroValue,
+) -> Result<(), MutationError> {
+    for (path, byte_start, byte_end) in ranges {
+        mark_text_at(
+            loro,
+            path,
+            *byte_start,
+            *byte_end,
+            mark_key,
+            new_value.clone(),
+        )?;
+    }
+    Ok(())
+}
 
 fn toggle_string_mark(
     loro: &LoroDoc,
@@ -148,12 +120,12 @@ fn toggle_string_mark(
     mark_key: &str,
     enable_value: &str,
 ) -> Result<ToggleResult, MutationError> {
-    let (path, byte_start, byte_end) = match resolve_format_range(loro, cursor) {
-        Some(r) => r,
-        None => return Ok(false),
+    let ranges = resolve_format_ranges(loro, cursor);
+    let Some((first_path, first_start, _)) = ranges.first() else {
+        return Ok(false);
     };
     let active = matches!(
-        get_mark_at_path(loro, &path, byte_start, mark_key)?,
+        get_mark_at_path(loro, first_path, *first_start, mark_key)?,
         Some(LoroValue::String(_))
     );
     let new_value = if active {
@@ -161,7 +133,7 @@ fn toggle_string_mark(
     } else {
         LoroValue::from(enable_value.to_string())
     };
-    mark_text_at(loro, &path, byte_start, byte_end, mark_key, new_value)?;
+    mark_ranges(loro, &ranges, mark_key, &new_value)?;
     Ok(!active)
 }
 
@@ -170,13 +142,13 @@ fn toggle_bool_mark(
     cursor: &CursorState,
     mark_key: &str,
 ) -> Result<ToggleResult, MutationError> {
-    let (path, byte_start, byte_end) = match resolve_format_range(loro, cursor) {
-        Some(r) => r,
-        None => return Ok(false),
+    let ranges = resolve_format_ranges(loro, cursor);
+    let Some((first_path, first_start, _)) = ranges.first() else {
+        return Ok(false);
     };
 
     let active = matches!(
-        get_mark_at_path(loro, &path, byte_start, mark_key)?,
+        get_mark_at_path(loro, first_path, *first_start, mark_key)?,
         Some(LoroValue::Bool(true))
     );
 
@@ -185,7 +157,7 @@ fn toggle_bool_mark(
     } else {
         LoroValue::Bool(true)
     };
-    mark_text_at(loro, &path, byte_start, byte_end, mark_key, new_value)?;
+    mark_ranges(loro, &ranges, mark_key, &new_value)?;
     Ok(!active)
 }
 
@@ -194,13 +166,13 @@ fn toggle_vertical_align(
     cursor: &CursorState,
     target_str: &str,
 ) -> Result<ToggleResult, MutationError> {
-    let (path, byte_start, byte_end) = match resolve_format_range(loro, cursor) {
-        Some(r) => r,
-        None => return Ok(false),
+    let ranges = resolve_format_ranges(loro, cursor);
+    let Some((first_path, first_start, _)) = ranges.first() else {
+        return Ok(false);
     };
 
     let already_active = matches!(
-        get_mark_at_path(loro, &path, byte_start, MARK_VERTICAL_ALIGN)?,
+        get_mark_at_path(loro, first_path, *first_start, MARK_VERTICAL_ALIGN)?,
         Some(LoroValue::String(ref s)) if s.as_str() == target_str
     );
 
@@ -211,47 +183,6 @@ fn toggle_vertical_align(
     } else {
         LoroValue::from(target_str.to_string())
     };
-    mark_text_at(
-        loro,
-        &path,
-        byte_start,
-        byte_end,
-        MARK_VERTICAL_ALIGN,
-        new_value,
-    )?;
+    mark_ranges(loro, &ranges, MARK_VERTICAL_ALIGN, &new_value)?;
     Ok(!already_active)
-}
-
-/// Returns the word boundary around `byte_offset` in `text` as
-/// `(word_start_byte, word_end_byte)`.
-///
-/// A "word character" is alphanumeric or underscore.  If the cursor is
-/// on whitespace or punctuation, `word_start == word_end` (empty word).
-fn word_bounds_at(text: &str, byte_offset: usize) -> (usize, usize) {
-    let clamped = byte_offset.min(text.len());
-    let before = &text[..clamped];
-
-    // Walk backward to find the last non-word character, then word starts one
-    // character after it.
-    let word_start = match before
-        .char_indices()
-        .rev()
-        .find(|(_, c)| !c.is_alphanumeric() && *c != '_')
-    {
-        Some((i, c)) => i + c.len_utf8(),
-        None => 0,
-    };
-
-    // Walk forward from clamped to find the first non-word character.
-    let after = &text[clamped..];
-    let word_end = clamped
-        + match after
-            .char_indices()
-            .find(|(_, c)| !c.is_alphanumeric() && *c != '_')
-        {
-            Some((i, _)) => i,
-            None => after.len(),
-        };
-
-    (word_start, word_end)
 }

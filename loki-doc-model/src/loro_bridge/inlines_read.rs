@@ -7,15 +7,15 @@
 //! under the 300-line ceiling.
 
 use super::BridgeError;
+use super::color_codec::decode_document_color;
 use super::decode::{
     decode_highlight_color, decode_strikethrough, decode_underline, decode_vertical_align,
 };
 use crate::content::attr::NodeAttr;
-use crate::content::inline::{Inline, StyledRun};
+use crate::content::inline::{Inline, QuoteType, StyledRun};
 use crate::loro_schema::*;
 use crate::style::catalog::StyleId;
 use crate::style::props::char_props::CharProps;
-use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 use loro::LoroValue;
 
@@ -55,19 +55,40 @@ pub(super) fn reconstruct_inlines(map: &loro::LoroMap) -> Result<Vec<Inline>, Br
                         inlines.push(note);
                         continue;
                     }
+                    if let Some(anchor) = decode_snapshot_anchor(&attrs, MARK_COMMENT, |i| {
+                        matches!(i, Inline::Comment(_))
+                    }) {
+                        inlines.push(anchor);
+                        continue;
+                    }
+                    if let Some(anchor) = decode_snapshot_anchor(&attrs, MARK_BOOKMARK, |i| {
+                        matches!(i, Inline::Bookmark(_, _))
+                    }) {
+                        inlines.push(anchor);
+                        continue;
+                    }
                     let props = read_char_props_from_marks(&attrs);
                     let style_id = read_style_id_from_marks(&attrs);
-                    if props.is_some() || style_id.is_some() {
-                        let run = StyledRun {
+                    let mut inline = if props.is_some() || style_id.is_some() {
+                        Inline::StyledRun(StyledRun {
                             style_id,
                             direct_props: props.map(Box::new),
                             content: vec![Inline::Str(insert.to_string())],
                             attr: NodeAttr::default(),
-                        };
-                        inlines.push(Inline::StyledRun(run));
+                        })
                     } else {
-                        inlines.push(Inline::Str(insert.to_string()));
+                        Inline::Str(insert.to_string())
+                    };
+                    // Re-wrap span/quote range marks (innermost first, so a
+                    // quoted span reads back as Quoted(Span(..)) — the write
+                    // path flattens both onto the same range).
+                    if let Some(attr) = decode_span_attr(&attrs) {
+                        inline = Inline::Span(attr, vec![inline]);
                     }
+                    if let Some(qt) = decode_quote_type(&attrs) {
+                        inline = Inline::Quoted(qt, vec![inline]);
+                    }
+                    inlines.push(inline);
                 }
             }
         }
@@ -75,24 +96,45 @@ pub(super) fn reconstruct_inlines(map: &loro::LoroMap) -> Result<Vec<Inline>, Br
     Ok(inlines)
 }
 
+/// Reconstructs an inline from a snapshot-anchor mark (`mark_key` holding a
+/// `serde`-JSON `Inline`), if present and of the expected variant (`want`).
+/// Returns `None` for ordinary formatted text.
+#[cfg(feature = "serde")]
+fn decode_snapshot_anchor(
+    attrs: &rustc_hash::FxHashMap<String, LoroValue>,
+    mark_key: &str,
+    want: fn(&Inline) -> bool,
+) -> Option<Inline> {
+    let Some(LoroValue::String(json)) = attrs.get(mark_key) else {
+        return None;
+    };
+    match serde_json::from_str::<Inline>(json) {
+        Ok(inline) if want(&inline) => Some(inline),
+        Ok(_) => {
+            tracing::warn!("loro bridge: {mark_key} snapshot was the wrong inline variant");
+            None
+        }
+        Err(err) => {
+            tracing::warn!("loro bridge: failed to decode {mark_key} anchor: {err}");
+            None
+        }
+    }
+}
+
+#[cfg(not(feature = "serde"))]
+fn decode_snapshot_anchor(
+    _attrs: &rustc_hash::FxHashMap<String, LoroValue>,
+    _mark_key: &str,
+    _want: fn(&Inline) -> bool,
+) -> Option<Inline> {
+    None
+}
+
 /// Reconstructs an [`Inline::Image`] from a [`MARK_IMAGE`] anchor's `serde`-JSON
 /// snapshot, if present. Returns `None` for ordinary formatted text.
 #[cfg(feature = "serde")]
 fn decode_image(attrs: &rustc_hash::FxHashMap<String, LoroValue>) -> Option<Inline> {
-    let Some(LoroValue::String(json)) = attrs.get(MARK_IMAGE) else {
-        return None;
-    };
-    match serde_json::from_str::<Inline>(json) {
-        Ok(inline @ Inline::Image(..)) => Some(inline),
-        Ok(_) => {
-            tracing::warn!("loro bridge: MARK_IMAGE snapshot was not an image");
-            None
-        }
-        Err(err) => {
-            tracing::warn!("loro bridge: failed to decode inline image: {err}");
-            None
-        }
-    }
+    decode_snapshot_anchor(attrs, MARK_IMAGE, |i| matches!(i, Inline::Image(..)))
 }
 
 /// Reconstructs an [`Inline::Note`] from a [`MARK_NOTE`] anchor: its `(kind,
@@ -126,6 +168,29 @@ fn decode_note(
     _attrs: &rustc_hash::FxHashMap<String, LoroValue>,
     _notes: Option<&loro::LoroMovableList>,
 ) -> Option<Inline> {
+    None
+}
+
+/// Reads the quote style carried by [`MARK_QUOTE_TYPE`].
+fn decode_quote_type(attrs: &rustc_hash::FxHashMap<String, LoroValue>) -> Option<QuoteType> {
+    match attrs.get(MARK_QUOTE_TYPE) {
+        Some(LoroValue::String(s)) if s.as_str() == "Single" => Some(QuoteType::SingleQuote),
+        Some(LoroValue::String(s)) if s.as_str() == "Double" => Some(QuoteType::DoubleQuote),
+        _ => None,
+    }
+}
+
+/// Reads the span attributes carried by [`MARK_SPAN_ATTR`].
+#[cfg(feature = "serde")]
+fn decode_span_attr(attrs: &rustc_hash::FxHashMap<String, LoroValue>) -> Option<NodeAttr> {
+    let Some(LoroValue::String(json)) = attrs.get(MARK_SPAN_ATTR) else {
+        return None;
+    };
+    serde_json::from_str(json).ok()
+}
+
+#[cfg(not(feature = "serde"))]
+fn decode_span_attr(_attrs: &rustc_hash::FxHashMap<String, LoroValue>) -> Option<NodeAttr> {
     None
 }
 
@@ -196,7 +261,7 @@ fn read_char_props_from_marks(
     read_str!(underline, MARK_UNDERLINE, decode_underline);
     read_str!(strikethrough, MARK_STRIKETHROUGH, decode_strikethrough);
     read_str!(vertical_align, MARK_VERTICAL_ALIGN, decode_vertical_align);
-    read_str!(color, MARK_COLOR, |s: &str| DocumentColor::from_hex(s).ok());
+    read_str!(color, MARK_COLOR, decode_document_color);
     read_str!(
         highlight_color,
         MARK_HIGHLIGHT_COLOR,

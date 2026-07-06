@@ -12,9 +12,13 @@
 pub mod cursor;
 pub mod hit_test;
 pub mod navigation;
+mod navigation_find;
+pub mod page_locate;
 pub mod reflow_nav;
 pub mod relayout;
+pub mod saved_state;
 pub mod spell;
 pub mod state;
 pub mod touch;
 pub mod viewport;
+pub mod word_count;

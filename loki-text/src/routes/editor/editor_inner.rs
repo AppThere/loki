@@ -22,8 +22,7 @@
 use std::rc::Rc;
 use std::sync::Arc;
 
-use appthere_ui::tokens;
-use appthere_ui::{AtRibbon, AtStatusBar, RibbonTabDesc, use_breakpoint};
+use appthere_ui::{AtRibbon, AtStatusBar, RibbonTabDesc, tokens, use_breakpoint};
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 use loki_doc_model::get_mark_at;
@@ -45,7 +44,6 @@ use super::editor_path_sync::{
 use super::editor_publish::{publish_panel, publish_tab_content};
 use super::editor_ribbon::write_tab_content;
 use super::editor_ribbon_insert::insert_tab_content;
-use super::editor_save::{export_document_to_token, save_document_to_path};
 use super::editor_save_banner::save_banner;
 use super::editor_spell::SpellMenu;
 use super::editor_state::{EditorState, use_editor_state};
@@ -53,17 +51,9 @@ use super::editor_style::style_picker_panel;
 use super::editor_style_catalog::available_font_families;
 use super::editor_style_editor::style_editor_panel;
 use crate::error::LoadError;
-use crate::new_document::is_untitled;
-use crate::recent_documents::RecentDocuments;
-use crate::routes::Route;
 use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
-use crate::utils::display_title_from_path;
 use loki_app_shell::spell::SpellService;
-use loki_file_access::{FilePicker, SaveOptions};
-
-/// MIME type used when saving documents (DOCX is the only writable format).
-const DOCX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 // EditorMode removed — the editor is always in edit mode when a document is
 // open. Distraction-free reading is handled by the View ribbon tab (future
@@ -110,11 +100,14 @@ pub(super) fn EditorInner(path: String) -> Element {
         mut superscript_active,
         mut subscript_active,
         mut undo_manager,
+        mut saved_state,
         can_undo,
         can_redo,
         is_style_picker_open,
         editing_style_draft,
-        mut save_message,
+        mut zoom_percent,
+        is_dirty,
+        save_message,
         save_request,
         mut active_ribbon_tab,
         is_publish_panel_open,
@@ -123,8 +116,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     } = use_editor_state();
 
     // ── Tab/recents context for Save As and the unsaved-changes indicator ────
-    let mut tabs = use_context::<Signal<Vec<OpenTab>>>();
-    let recent_docs = use_context::<Signal<RecentDocuments>>();
+    let tabs = use_context::<Signal<Vec<OpenTab>>>();
     // Spell-check service (provided at the app root). Drives the right-click
     // suggestions panel and the language picker.
     let spell_service = use_context::<SpellService>();
@@ -178,6 +170,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     editing_style_draft,
                     save_message,
                     baseline_gen,
+                    saved_state,
                 };
                 restore_session(session, &doc_state_restore, &mut sig);
             }
@@ -186,17 +179,15 @@ pub(super) fn EditorInner(path: String) -> Element {
 
     // ── Session stash at unmount ─────────────────────────────────────────────
     //
-    // Skipped when the tab was closed (Shell already dropped the session and
-    // re-stashing would resurrect discarded edits on reopen).
+    // `stash_outgoing` itself skips the stash when no tab still points at the
+    // path (the tab was closed, and Shell already dropped the session — re-
+    // stashing would resurrect discarded edits on reopen).
     {
         let doc_state_drop = Arc::clone(&doc_state);
         let tabs_at_drop = tabs;
         let mut sessions_at_drop = doc_sessions;
         use_drop(move || {
             let path = path_signal.peek().clone();
-            if !tabs_at_drop.peek().iter().any(|t| t.path == path) {
-                return;
-            }
             let mut sig = PathSyncSignals {
                 cursor_state,
                 loro_doc,
@@ -210,8 +201,15 @@ pub(super) fn EditorInner(path: String) -> Element {
                 editing_style_draft,
                 save_message,
                 baseline_gen,
+                saved_state,
             };
-            stash_outgoing(&path, &doc_state_drop, &mut sessions_at_drop, &mut sig);
+            stash_outgoing(
+                &path,
+                &doc_state_drop,
+                tabs_at_drop,
+                &mut sessions_at_drop,
+                &mut sig,
+            );
         });
     }
 
@@ -224,6 +222,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         &path,
         &mut path_signal,
         &doc_state,
+        tabs,
         doc_sessions,
         &mut PathSyncSignals {
             cursor_state,
@@ -238,6 +237,7 @@ pub(super) fn EditorInner(path: String) -> Element {
             editing_style_draft,
             save_message,
             baseline_gen,
+            saved_state,
         },
     );
 
@@ -289,8 +289,6 @@ pub(super) fn EditorInner(path: String) -> Element {
             (p, res)
         }
     });
-
-    let navigator = use_navigator();
 
     // ── Loro bridge: initialise CRDT once the document is loaded ─────────────
     //
@@ -352,7 +350,12 @@ pub(super) fn EditorInner(path: String) -> Element {
 
                 match document_to_loro(&doc) {
                     Ok(l_doc) => {
-                        let um = loro::UndoManager::new(&l_doc);
+                        let mut um = loro::UndoManager::new(&l_doc);
+                        // Pair a fresh clean-checkpoint tracker with the fresh
+                        // undo manager (depth 0 = the on-disk state).
+                        let tracker = crate::editing::saved_state::SavedStateHandle::new();
+                        tracker.attach(&mut um);
+                        saved_state.set(tracker);
                         loro_doc.set(Some(l_doc));
                         undo_manager.set(Some(um));
 
@@ -456,84 +459,27 @@ pub(super) fn EditorInner(path: String) -> Element {
     // blitz-dom / dioxus-native-dom) whenever a wheel or touch gesture changes
     // the scroll container's offset.
 
-    // ── Unsaved-changes (dirty) tracking ─────────────────────────────────────
-    //
-    // The tab shows a dirty indicator when the live document generation differs
-    // from the clean baseline captured at load/save. Untitled documents are
-    // always dirty until the first Save As. Runs whenever the cursor's mirrored
-    // generation, the path, or the baseline changes.
-    use_effect(move || {
-        let live_gen = cursor_state.read().document_generation;
-        let path = path_signal();
-        let base = baseline_gen();
-        let dirty = is_untitled(&path) || live_gen != base;
-        let mut t = tabs.write();
-        if let Some(tab) = t.iter_mut().find(|tab| tab.path == path)
-            && tab.is_dirty != dirty
-        {
-            tab.is_dirty = dirty;
-        }
-    });
+    // Live status-bar word count, recomputed per mutation (F7c / 4c.5).
+    let word_count_label =
+        crate::editing::word_count::use_word_count_label(Arc::clone(&doc_state), cursor_state);
 
-    // ── Save As ──────────────────────────────────────────────────────────────
-    //
-    // Picks a destination via the platform save dialog, exports DOCX to it, then
-    // repoints the current tab at the new file and records it in recents. This
-    // is the only way to persist an untitled document.
-    let doc_state_saveas = Arc::clone(&doc_state);
-    let save_as = use_callback(move |_: ()| {
-        let doc_state = Arc::clone(&doc_state_saveas);
-        let mut tabs = tabs;
-        let mut recent = recent_docs;
-        let mut save_message = save_message;
-        let mut baseline_gen = baseline_gen;
-        let nav = navigator;
-        let cur_path = path_signal.peek().clone();
-        let suggested = {
-            let stem = display_title_from_path(&cur_path);
-            format!("{stem}.docx")
-        };
-        spawn(async move {
-            let picker = FilePicker::new();
-            let opts = SaveOptions {
-                mime_type: Some(DOCX_MIME.to_string()),
-                suggested_name: Some(suggested),
-            };
-            match picker.pick_file_to_save(opts).await {
-                Ok(Some(token)) => match export_document_to_token(&token, &doc_state) {
-                    Ok(()) => {
-                        let new_path = token.serialize();
-                        let new_title = display_title_from_path(&new_path);
-                        {
-                            let mut t = tabs.write();
-                            if let Some(tab) = t.iter_mut().find(|tab| tab.path == cur_path) {
-                                tab.path = new_path.clone();
-                                tab.title = new_title.clone();
-                                tab.is_dirty = false;
-                            }
-                        }
-                        recent.write().record(new_path.clone(), new_title);
-                        recent.read().save();
-                        save_message.set(Some(fl!("editor-save-success")));
-                        // Navigate to the saved file; the editor reloads it and
-                        // re-establishes a clean baseline.
-                        baseline_gen.set(0);
-                        nav.push(Route::Editor { path: new_path });
-                    }
-                    Err(e) => {
-                        save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
-                    }
-                },
-                Ok(None) => { /* user cancelled — no-op */ }
-                Err(e) => {
-                    save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
-                }
-            }
-        });
-    });
+    // Unsaved-changes (dirty) tracking → tab indicator + ribbon Save state.
+    super::editor_dirty::use_dirty_tracking(
+        cursor_state,
+        path_signal,
+        baseline_gen,
+        saved_state,
+        is_dirty,
+        tabs,
+    );
 
-    // ── Save as Template (.dotx) ───────────────────────────────────────────────
-    // Self-contained save flow — extracted to keep this file under its ceiling.
+    // ── Save As / Save as Template (extracted flows: editor_save_callbacks) ──
+    let save_as = super::editor_save_callbacks::use_save_as_callback(
+        Arc::clone(&doc_state),
+        save_message,
+        baseline_gen,
+        path_signal,
+    );
     let save_as_template = super::editor_save_callbacks::use_save_as_template_callback(
         Arc::clone(&doc_state),
         save_message,
@@ -551,29 +497,20 @@ pub(super) fn EditorInner(path: String) -> Element {
         save_message,
     };
 
-    // ── Ctrl+S handler ───────────────────────────────────────────────────────
-    //
-    // The keydown handler bumps `save_request`; perform the save here, where the
-    // tab/recents context is reachable. Untitled documents route to Save As.
-    let doc_state_savereq = Arc::clone(&doc_state);
-    use_effect(move || {
-        let n = save_request(); // subscribe — fires on each Ctrl+S
-        if n == 0 {
-            return; // initial value — nothing requested yet
-        }
-        let path = path_signal.peek().clone();
-        if is_untitled(&path) {
-            save_as.call(());
-            return;
-        }
-        let msg = match save_document_to_path(&path, &doc_state_savereq) {
-            Ok(()) => {
-                baseline_gen.set(cursor_state.peek().document_generation);
-                fl!("editor-save-success")
-            }
-            Err(e) => fl!("editor-save-error", reason = e.to_string()),
-        };
-        save_message.set(Some(msg));
+    // ── Ctrl+S handler (extracted flow — see editor_save_callbacks) ─────────
+    super::editor_save_callbacks::use_ctrl_s_save(super::editor_save_callbacks::CtrlSCtx {
+        doc_state: Arc::clone(&doc_state),
+        path_signal,
+        save_request,
+        save_as,
+        baseline_gen,
+        cursor_state,
+        loro_doc,
+        undo_manager,
+        saved_state,
+        can_undo,
+        can_redo,
+        save_message,
     });
 
     // ── Viewport-driven effects (Spec 03 M1/M2) ──────────────────────────────
@@ -663,6 +600,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                 spell_service.clone(),
                 spell_menu,
                 doc_state_spell_ctx,
+                zoom_percent,
             )}
 
             // ── Font-substitution warning (Spec 03 M3) ────────────────────────
@@ -813,12 +751,11 @@ pub(super) fn EditorInner(path: String) -> Element {
                     subscript_active,
                     current_style_name,
                     is_style_picker_open,
-                    path_signal,
-                    save_message,
+                    save_request,
+                    is_dirty,
                     editing_style_draft,
                     save_as,
                     save_as_template,
-                    baseline_gen,
                 ),
                 },
             }
@@ -826,13 +763,16 @@ pub(super) fn EditorInner(path: String) -> Element {
             // ── Status bar ────────────────────────────────────────────────────
             AtStatusBar {
                 page_label:         page_label,
-                word_count_label:   "".to_string(),
+                word_count_label:   word_count_label(),
                 language_label:     fl!("editor-language"),
-                zoom_percent:       100,
+                zoom_percent:       zoom_percent(),
                 collaborator_count: 0,
                 collaborator_label: String::new(),
                 zoom_aria_label:    fl!("editor-zoom-aria"),
-                on_zoom_click:      |_| {},
+                on_zoom_click:      move |_| {
+                    let next = appthere_ui::next_zoom(*zoom_percent.peek());
+                    zoom_percent.set(next);
+                },
                 view_mode_label:    if view_mode() == ViewMode::Reflow {
                     fl!("editor-view-reflowed")
                 } else {

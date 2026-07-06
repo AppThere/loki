@@ -21,8 +21,9 @@
 //!   Spec 01 audit A-1.)
 //! - `canvas_origin.y` = `TOOLBAR_HEIGHT_TOP + SPACE_6` (exact from tokens).
 //!
-//! - `scroll_offset` = 0.0 (Blitz does not expose `node.scroll_offset` to
-//!   Dioxus components; wired as a TODO once the API is available).
+//! - `scroll_offset` = the live scroll position mirrored from the canvas
+//!   `onscroll` handler (`editor_canvas.rs` → `scroll_metrics`), threaded in
+//!   by the pointer handlers (`editor_pointer.rs`).
 //!
 //! All geometry inside this function works in layout **points** (1 pt = 1/72 in).
 //! The conversion from CSS logical pixels is applied once at entry:
@@ -87,8 +88,16 @@ pub fn reflow_hit_test_window(
 ///   offset to Dioxus components.
 /// * `layout` — paginated layout produced with
 ///   `LayoutOptions { preserve_for_editing: true }`.
-/// * `page_width_px` / `page_height_px` — page canvas dimensions in CSS px.
-/// * `page_gap_px` — vertical gap between page canvases in CSS px.
+/// * `page_width_px` / `page_height_px` — **unzoomed** page canvas dimensions in
+///   CSS px (as stored in `DocumentState`). The painted tiles are these scaled
+///   by `zoom`; this function reapplies the scale internally.
+/// * `page_gap_px` — vertical gap between page canvases in CSS px. This is a
+///   fixed CSS margin that is **not** scaled by zoom (see
+///   `loki_renderer::document_view`).
+/// * `zoom` — the paginated render zoom (1.0 = 1:1). The caller must also pass a
+///   `canvas_origin.0` centred on the **scaled** page width
+///   (`centred_origin_x(page_width_px * zoom)`), since the tiles are centred at
+///   their painted width.
 // All arguments are semantically distinct; grouping into a struct would reduce clarity at call sites.
 #[allow(clippy::too_many_arguments)]
 pub fn hit_test_document(
@@ -100,7 +109,10 @@ pub fn hit_test_document(
     _page_width_px: f32,
     page_height_px: f32,
     page_gap_px: f32,
+    zoom: f32,
 ) -> Option<DocumentPosition> {
+    let zoom = if zoom > 0.0 { zoom } else { 1.0 };
+
     // ── 1. Canvas-local coordinates in CSS pixels ─────────────────────────────
     let canvas_x_px = client_x - canvas_origin.0;
     let canvas_y_px = client_y - canvas_origin.1 + scroll_offset;
@@ -109,25 +121,27 @@ pub fn hit_test_document(
         return None;
     }
 
-    // ── 2. Convert to layout points (1 pt = 96/72 CSS px) ────────────────────
-    let canvas_x = canvas_x_px * PX_TO_PT;
-    let canvas_y = canvas_y_px * PX_TO_PT;
-
-    let page_height_pt = page_height_px * PX_TO_PT;
-    let page_gap_pt = page_gap_px * PX_TO_PT;
-
-    // ── 3. Determine which page was clicked ───────────────────────────────────
-    let page_and_gap = page_height_pt + page_gap_pt;
-    if page_and_gap <= 0.0 {
+    // ── 2. Locate the page in scaled CSS px ──────────────────────────────────
+    // Tiles are painted at `zoom` scale; the inter-page gap is a fixed CSS
+    // margin that is not scaled. Work the page stride in CSS px, then convert
+    // the in-page offset to layout points, dividing the zoom back out.
+    let page_h_scaled = page_height_px * zoom;
+    let slot_px = page_h_scaled + page_gap_px;
+    if slot_px <= 0.0 {
         return None;
     }
-    let page_index = (canvas_y / page_and_gap) as usize;
-    let y_in_page = canvas_y - (page_index as f32 * page_and_gap);
+    let page_index = (canvas_y_px / slot_px) as usize;
+    let y_in_page_px = canvas_y_px - (page_index as f32 * slot_px);
 
     // Reject clicks in the gap between pages.
-    if y_in_page > page_height_pt || y_in_page < 0.0 {
+    if y_in_page_px > page_h_scaled || y_in_page_px < 0.0 {
         return None;
     }
+
+    // ── 3. In-page CSS px → layout points (1 pt = 96/72 CSS px, ÷ zoom) ───────
+    let px_to_pt = PX_TO_PT / zoom;
+    let canvas_x = canvas_x_px * px_to_pt;
+    let y_in_page = y_in_page_px * px_to_pt;
 
     hit_test_page(page_index, canvas_x, y_in_page, layout)
 }

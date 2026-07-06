@@ -10,11 +10,38 @@ use std::sync::{Arc, Mutex};
 use dioxus::prelude::*;
 use keyboard_types::{Key, Modifiers};
 use loki_doc_model::loro_mutation::{delete_text_at, get_block_text, get_block_text_at};
-use loki_doc_model::{StyleId, get_block_style_name, set_block_style, split_block_at};
 
 use super::editor_formatting;
 use crate::editing::cursor::{CursorState, DocumentPosition, next_grapheme_boundary};
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
+
+/// Re-derives the `page_index` of the cursor's anchor and focus from the
+/// current paginated layout. Used after undo/redo, which can move (or remove)
+/// the caret's paragraph across a page boundary; `recompute_page_index` leaves
+/// a position unchanged when its paragraph is no longer in the layout.
+fn recompute_cursor_pages(
+    doc_state: &Arc<Mutex<DocumentState>>,
+    mut cursor_state: Signal<CursorState>,
+) {
+    let Some(layout) = doc_state
+        .lock()
+        .ok()
+        .and_then(|s| s.paginated_layout.clone())
+    else {
+        return;
+    };
+    let mut cs = cursor_state.write();
+    if let Some(f) = cs.focus.clone() {
+        cs.focus = Some(crate::editing::page_locate::recompute_page_index(
+            &layout, &f,
+        ));
+    }
+    if let Some(a) = cs.anchor.clone() {
+        cs.anchor = Some(crate::editing::page_locate::recompute_page_index(
+            &layout, &a,
+        ));
+    }
+}
 
 /// Dispatches Ctrl/Meta/Super+key shortcuts.
 ///
@@ -106,6 +133,8 @@ pub(super) fn handle_ctrl_keys(
             if let Some(ldoc) = ldoc_guard.as_ref() {
                 apply_mutation_and_relayout(doc_state, ldoc);
             }
+            drop(ldoc_guard);
+            recompute_cursor_pages(doc_state, cursor_state);
         }
         "y" => {
             {
@@ -118,6 +147,8 @@ pub(super) fn handle_ctrl_keys(
             if let Some(ldoc) = ldoc_guard.as_ref() {
                 apply_mutation_and_relayout(doc_state, ldoc);
             }
+            drop(ldoc_guard);
+            recompute_cursor_pages(doc_state, cursor_state);
         }
         _ => {}
     }
@@ -169,7 +200,6 @@ pub(super) fn handle_delete_key(
         };
         apply_mutation_and_relayout(doc_state, ldoc);
     }
-    // Cursor stays at the same offset after forward delete.
     post_mutation_sync(
         doc_state,
         loro_doc,
@@ -178,68 +208,10 @@ pub(super) fn handle_delete_key(
         can_undo,
         can_redo,
     );
-}
-
-/// Handles the Enter key: splits the current paragraph at the cursor position.
-pub(super) fn handle_enter_key(
-    focus: DocumentPosition,
-    loro_doc: Signal<Option<loro::LoroDoc>>,
-    doc_state: &Arc<Mutex<DocumentState>>,
-    mut cursor_state: Signal<CursorState>,
-    undo_manager: Signal<Option<loro::UndoManager>>,
-    can_undo: Signal<bool>,
-    can_redo: Signal<bool>,
-) {
-    let ldoc_guard = loro_doc.read();
-    let Some(ldoc) = ldoc_guard.as_ref() else {
-        return;
-    };
-
-    let nested = !focus.path.is_empty();
-
-    // Resolve next_style_id for the current block's style before splitting.
-    // Style inheritance via next_style_id is a top-level concern (named styles
-    // address top-level paragraphs); nested splits keep the source block's type.
-    let next_style: Option<String> = if nested {
-        None
-    } else {
-        let style_name = get_block_style_name(ldoc, focus.paragraph_index);
-        doc_state.lock().ok().and_then(|state| {
-            state
-                .document
-                .as_ref()?
-                .styles
-                .paragraph_styles
-                .get(&StyleId::new(&style_name))
-                .and_then(|s| s.next_style_id.clone())
-        })
-    };
-
-    if split_block_at(ldoc, &focus.block_path(), focus.byte_offset).is_err() {
-        return;
-    }
-
-    // Apply the next_style to the newly created block if one is defined.
-    if let Some(ref nstyle) = next_style {
-        let _ = set_block_style(ldoc, focus.paragraph_index + 1, nstyle);
-    }
-
-    apply_mutation_and_relayout(doc_state, ldoc);
-    post_mutation_sync(
-        doc_state,
-        loro_doc,
-        cursor_state,
-        undo_manager,
-        can_undo,
-        can_redo,
-    );
-    // TODO(3b-3): recompute page_index from layout after split.
-    // The split inserts the new block right after the source within the same
-    // container, so the caret moves to the next sibling block at offset 0.
-    let new_pos = focus.sibling_block(1, 0);
-    let mut cs = cursor_state.write();
-    cs.focus = Some(new_pos.clone());
-    cs.anchor = Some(new_pos);
+    // The caret byte is unchanged, but forward-deleting text from a
+    // page-spanning paragraph can pull its later lines back a page — re-derive
+    // the caret's page_index from the fresh layout (plan 4b.1).
+    super::editor_keydown_text::set_collapsed_cursor(doc_state, cursor_state, focus);
 }
 
 /// Syncs cursor generation, `can_undo`, and `can_redo` after any document mutation.

@@ -4,7 +4,10 @@
 //! Serialization: Loki document model → Loro CRDT containers.
 
 use super::BridgeError;
-use super::decode::{encode_alignment, encode_border, encode_line_height, encode_spacing};
+use super::color_codec::encode_document_color;
+use super::decode::{
+    encode_alignment, encode_border, encode_line_height, encode_spacing, encode_tab_stops,
+};
 use super::inlines::map_inlines;
 use crate::content::block::Block;
 use crate::loro_schema::*;
@@ -15,12 +18,19 @@ use loro::{LoroMap, LoroMovableList, LoroText};
 // ── Block serialization ───────────────────────────────────────────────────────
 
 pub(crate) fn map_block(block: &Block, map: &LoroMap) -> Result<(), BridgeError> {
-    // Tables have a native mapping: a structural skeleton plus live per-cell
-    // block lists (see `table.rs`). Without `serde` there is no skeleton
-    // format, so the table takes the opaque path below instead.
+    // Tables and container blocks (lists, quotes, divs, figures) have native
+    // mappings: structural metadata plus live nested block lists (see
+    // `table.rs` / `containers.rs`). Without `serde` there is no metadata
+    // format, so they take the opaque path below instead.
     #[cfg(feature = "serde")]
-    if let Block::Table(table) = block {
-        return super::table::write_table(table, map);
+    match block {
+        Block::Table(table) => return super::table::write_table(table, map),
+        Block::BulletList(_)
+        | Block::OrderedList(_, _)
+        | Block::BlockQuote(_)
+        | Block::Div(_, _)
+        | Block::Figure(_, _, _) => return super::containers::write_container(block, map),
+        _ => {}
     }
     // Blocks (or paragraphs whose inline content) the flat text schema cannot
     // represent are preserved verbatim as opaque JSON snapshots so that a
@@ -184,10 +194,10 @@ pub(super) fn map_para_props(props: &ParaProps, map: &LoroMap) -> Result<(), Bri
         map.insert(PROP_PADDING_RIGHT, v.value())?;
     }
     if let Some(v) = &props.tab_stops {
-        map.insert(PROP_TAB_STOPS, format!("{:?}", v))?;
+        map.insert(PROP_TAB_STOPS, encode_tab_stops(v))?;
     }
     if let Some(v) = &props.background_color {
-        map.insert("background_color", format!("{:?}", v))?;
+        map.insert(PROP_BACKGROUND_COLOR, encode_document_color(v))?;
     }
     Ok(())
 }
@@ -252,11 +262,11 @@ pub(super) fn map_char_props_to_map(props: &CharProps, map: &LoroMap) -> Result<
     if let Some(v) = &props.hyperlink {
         map.insert("hyperlink", v.as_str())?;
     }
-    if let Some(hex) = props.color.as_ref().and_then(|c| c.to_hex()) {
-        map.insert("color", hex)?;
+    if let Some(v) = &props.color {
+        map.insert("color", encode_document_color(v))?;
     }
-    if let Some(hex) = props.background_color.as_ref().and_then(|c| c.to_hex()) {
-        map.insert("background_color", hex)?;
+    if let Some(v) = &props.background_color {
+        map.insert("background_color", encode_document_color(v))?;
     }
     if let Some(v) = &props.highlight_color {
         map.insert("highlight_color", format!("{v:?}"))?;

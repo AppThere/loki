@@ -380,107 +380,6 @@ is made synchronous (the `todo(jon)` comment in the original acknowledges this).
 
 ---
 
-### loki-file-access — 0.1.2
-
-**Source:** `patches/loki-file-access/` (local), vendored from the git source at
-commit `176b590fb2da82b2ab278a15b34f0bea56ae0a7a` of
-[appthere/loki-file-access](https://github.com/appthere/loki-file-access).
-
-**Fixes:** Two Android-specific bugs that caused a crash when tapping "Open
-File" on a NativeActivity (cargo-apk) build:
-
-1. **Wrong activity reference for `startActivityForResult`.** android-activity
-   v0.6 intentionally stores the `Application` object (not the `Activity`) in
-   `ndk_context`, because `Application` outlives the Activity lifecycle.
-   `startActivityForResult` only exists on `Activity`, so calling it on the
-   `Application` object threw a `java.lang.NoSuchMethodError` / ART abort. The
-   patch adds `init_android(activity_as_ptr)` — called from `android_main` with
-   `AndroidApp::activity_as_ptr()` — which stores the actual NativeActivity
-   `GlobalRef` in an `AtomicPtr<c_void>`. `start_activity_for_result` now
-   prefers this pointer over `ndk_context::android_context().context()`.
-
-2. **JNI exception not cleared on failure.** When `startActivityForResult`
-   failed (e.g., called on the wrong receiver type), a JNI exception was left
-   pending. The next `FindClass` JNI call made while an exception was pending
-   caused ART's checked-JNI mode to abort the process. The patch calls
-   `env.exception_clear()` when `call_method` returns an error.
-
-3. **Fail-fast for NativeActivity without Java shim.** `ANativeActivityCallbacks`
-   has no `onActivityResult` field — NDK NativeActivity can never receive
-   `startActivityForResult` results. Rather than hanging the async task
-   indefinitely, the patch returns `Err(PickerError::Platform)` immediately with
-   an explanatory message when the NativeActivity pointer is set but no Java
-   `FilePickerActivity` shim is registered.
-
-4. **Pre-wired JNI callback for future Gradle build.** The function
-   `Java_com_appthere_loki_FilePickerActivity_nativeOnResult` is exported from
-   the binary. Once a Gradle-based build includes `FilePickerActivity.kt`
-   (calling `nativeOnResult` from `onActivityResult`), end-to-end file picking
-   will work without further changes to this crate.
-
-**Also fixes:** `jni::errors::JniError` → `jni::errors::Error` in `jvm_err` and
-`attach_err` helpers (the original used the wrong variant type for the jni
-0.21.x API), and corrects a `#[no_mangle]` → `#[unsafe(no_mangle)]` attribute
-for Rust 2024 edition compatibility.
-
-**Adds (PATCH(loki), 2026-06-13):** `query_window_insets_dp(activity_ptr)` —
-orientation-aware safe-area insets `(top, bottom, left, right)` in dp from
-`decorView.getRootWindowInsets().getInsets(systemBars | displayCutout)`. Unlike
-the existing `query_insets_dp` (which reads the orientation-independent
-`status_bar_height` / `navigation_bar_height` resources), this reflects the real
-per-side insets, so landscape — where the navigation bar / cutout move to a side
-— is padded correctly instead of keeping the portrait top/bottom values. Needs
-the **Activity** (passed in via `AndroidApp::activity_as_ptr()`), since
-`ndk_context` holds the `Application`, which has no window. Returns `None`
-(caller falls back to `query_insets_dp`) before the view is attached or on
-API < 30. Each Loki app (loki-text, loki-spreadsheet, loki-presentation)
-re-queries it on resize via a hidden scroll-container sensor and pushes the
-result into `appthere_ui::update_safe_area_insets`.
-
-**Extends (PATCH(loki), 2026-06-26):** the mask now also includes
-`WindowInsets.Type.ime()`, i.e.
-`getInsets(systemBars | displayCutout | ime)`. Because `getInsets` returns the
-per-side union and `ime()` contributes only a bottom inset, top/left/right are
-unchanged while the keyboard is hidden, and `bottom` grows to the soft-keyboard
-height while it is visible. Combined with the blitz-shell IME-settle re-sync
-(see the blitz-shell section), this is what reserves a bottom safe area for the
-keyboard on a `NativeActivity` whose surface does not resize. `ime()` is API 30+
-— the same level as `getInsets(int)` — so the existing `None` fallback already
-covers older API levels.
-
-**Adds (PATCH(loki), 2026-07-01):** `install_ime_listener(activity_ptr)` and
-`set_ime_visibility_listener(cb)` — a soft-keyboard visibility signal. The former
-loads the `ImeInsetsListener` Java shim (in `android/`) through the *application*
-class loader (a native thread's default `FindClass` sees only framework classes),
-binds its `nativeOnImeInsetsChanged` callback via `RegisterNatives` (so it does
-not depend on the host `.so` name), and calls its static `install`, which sets a
-decor-view `OnApplyWindowInsetsListener` on the UI thread. The listener reports
-every IME visibility change — including the user-initiated dismiss/re-summon the
-OS never surfaces to a `NativeActivity` — to the registered closure. loki-text
-wires this to `blitz_shell::notify_ime_visibility_changed`. See the blitz-shell
-"user-driven soft-keyboard collapse signal" note. The shim is dexed alongside
-`FilePickerActivity` (build.rs / build-android.sh / build-aab.sh /
-build-android.ps1) and, being JNI-referenced, requires minification to stay off
-(already the case).
-
-**Root cause:** loki-file-access 0.1.2 was designed for desktop and WASM; the
-Android implementation was scaffolded but never exercised on a real NativeActivity
-build before this patch.
-
-**Upstream status:** The appthere/loki-file-access repository is maintained by
-the same team. These fixes should be pushed upstream and the patch removed once
-they are merged and a new version is published.
-
-**Removal condition:** Push these fixes to `appthere/loki-file-access`, publish
-a new version, and update the workspace dependency to point at the registry
-version. The `[patch."https://github.com/appthere/loki-file-access"]` entry and
-the `patches/loki-file-access/` directory can then be removed. Full end-to-end
-file picking additionally requires a Gradle build with `FilePickerActivity.kt`.
-
-**Added:** 2026-05-25
-
----
-
 ### blitz-dom — 0.2.4
 
 **Source:** `patches/blitz-dom/` (local).
@@ -729,6 +628,25 @@ Before removing a patch:
 5. Update or remove the corresponding entry in this file.
 
 ## Removed patches
+
+### loki-file-access — removed 2026-07-05 (was 0.1.2)
+
+The `patches/loki-file-access` patch (added 2026-05-25) carried the Android
+NativeActivity fixes — `init_android` Activity `GlobalRef` for
+`startActivityForResult`, JNI exception clearing, the fail-fast for missing
+`FilePickerActivity`, the `FilePickerActivity`/`ImeInsetsListener` Java shims
++ dexing `build.rs`, `query_window_insets_dp` / `install_ime_listener`, and
+`FileAccessToken::delete()` / `copy_bytes_to()` — plus jni 0.21 error-type and
+Rust-2024 `#[unsafe(no_mangle)]` fixes.
+
+Removed when the full patch content was upstreamed to
+[appthere/loki-file-access](https://github.com/appthere/loki-file-access) as
+**0.1.3** (commit `d2b7bc5`, fast-forwarded to `main`; the workspace's
+`branch = "main"` git dependency now resolves to it directly). The crate is
+not yet published to a registry — if it ever is, the git dependency can be
+swapped for the registry version, but nothing requires that. Full end-to-end
+Android file picking still requires a Gradle build that bundles the (now
+upstream) `FilePickerActivity` shim.
 
 ### fontique — removed 2026-06-21 (was 0.8.0)
 

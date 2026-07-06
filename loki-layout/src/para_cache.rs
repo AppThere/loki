@@ -160,6 +160,7 @@ mod tests {
             link_url: None,
             math: None,
             scale: None,
+            kerning: None,
             baseline_shift: None,
         }
     }

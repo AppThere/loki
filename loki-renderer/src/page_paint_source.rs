@@ -198,7 +198,7 @@ impl CustomPaintSource for LokiPageSource {
         let view = texture.create_view(&TextureViewDescriptor::default());
 
         // Step 6: build Vello scene for this page.
-        let render_scale = scale as f32 * (96.0 / 72.0);
+        let render_scale = scale as f32 * (96.0 / 72.0) * self.source.zoom();
 
         // Compute cursor paint data in a scoped block so the layout guard is
         // dropped before the second layout_for_generation call below.

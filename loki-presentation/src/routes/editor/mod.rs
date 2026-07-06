@@ -8,7 +8,9 @@ mod editor_canvas;
 mod editor_error_view;
 mod editor_inner;
 mod editor_load;
+mod editor_path_sync;
 mod editor_save;
+mod editor_save_flows;
 mod slide_view;
 
 use dioxus::prelude::*;

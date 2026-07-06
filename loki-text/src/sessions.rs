@@ -45,6 +45,8 @@ pub struct DocSession {
     pub cursor: CursorState,
     /// Document generation considered clean (matches the on-disk file).
     pub baseline_gen: u64,
+    /// Undo-stack clean-checkpoint tracker paired with `undo_manager`.
+    pub saved_state: crate::editing::saved_state::SavedStateHandle,
     /// Ribbon undo/redo button state at stash time.
     pub can_undo: bool,
     /// Ribbon undo/redo button state at stash time.

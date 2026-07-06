@@ -67,6 +67,7 @@ fn one_para_reflow(text: &str, origin: (f32, f32)) -> RenderLayout {
             link_url: None,
             math: None,
             scale: None,
+            kerning: None,
             baseline_shift: None,
         }],
         &ResolvedParaProps::default(),
