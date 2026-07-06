@@ -8,7 +8,7 @@ use loro::{LoroDoc, LoroMap};
 use super::{MutationError, get_block_map_and_list};
 use crate::loro_schema::{
     BLOCK_TYPE_HEADING, BLOCK_TYPE_PARA, BLOCK_TYPE_STYLED_PARA, KEY_HEADING_LEVEL, KEY_PARA_PROPS,
-    KEY_TYPE, PROP_ALIGNMENT,
+    KEY_TYPE, PROP_ALIGNMENT, PROP_LIST_ID, PROP_LIST_LEVEL,
 };
 
 /// Returns a display string for the current named style of the block at
@@ -197,5 +197,52 @@ pub fn set_block_alignment(
         block_map.insert_container(KEY_PARA_PROPS, LoroMap::new())?
     };
     props_map.insert(PROP_ALIGNMENT, alignment)?;
+    Ok(())
+}
+
+/// Returns the direct `list_id` paragraph property of the block at
+/// `block_index`, if it participates in a list via its **own** props (a paragraph
+/// whose list membership comes only from a named style is not detected here).
+///
+/// Returns `None` when the block has no `para_props`, no `list_id`, or is out of
+/// range — so callers can treat `None` as "not a list item."
+#[must_use]
+pub fn get_block_list_id(loro: &LoroDoc, block_index: usize) -> Option<String> {
+    let (_, block_map, _) = get_block_map_and_list(loro, block_index).ok()?;
+    let props_map = block_map
+        .get(KEY_PARA_PROPS)
+        .and_then(|v| v.into_container().ok())
+        .and_then(|c| c.into_map().ok())?;
+    props_map
+        .get(PROP_LIST_ID)
+        .and_then(|v| v.into_value().ok())
+        .and_then(|v| v.into_string().ok())
+        .map(|s| s.to_string())
+}
+
+/// Removes the list paragraph properties (`list_id` and `list_level`) from the
+/// block at `block_index`, taking it out of its list. A no-op when the block has
+/// no `para_props` map (or no list props).
+///
+/// # Errors
+///
+/// - [`MutationError::BlockIndexOutOfRange`] if `block_index` is out of range.
+/// - [`MutationError::Loro`] for underlying Loro errors.
+pub fn clear_block_list(loro: &LoroDoc, block_index: usize) -> Result<(), MutationError> {
+    let (_, block_map, _) = get_block_map_and_list(loro, block_index)?;
+    let Some(props_map) = block_map
+        .get(KEY_PARA_PROPS)
+        .and_then(|v| v.into_container().ok())
+        .and_then(|c| c.into_map().ok())
+    else {
+        return Ok(());
+    };
+    // Guard each delete: removing an absent key would be a wasted op.
+    if props_map.get(PROP_LIST_ID).is_some() {
+        props_map.delete(PROP_LIST_ID)?;
+    }
+    if props_map.get(PROP_LIST_LEVEL).is_some() {
+        props_map.delete(PROP_LIST_LEVEL)?;
+    }
     Ok(())
 }

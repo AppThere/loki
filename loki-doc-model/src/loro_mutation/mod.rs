@@ -45,8 +45,8 @@ pub use self::nested::{
 pub use self::objects::{insert_inline_image_at, insert_inline_note_at};
 pub use self::selection::delete_selection_at;
 pub use self::style::{
-    get_block_alignment, get_block_style_name, set_block_alignment, set_block_style,
-    set_block_type_heading, set_block_type_para,
+    clear_block_list, get_block_alignment, get_block_list_id, get_block_style_name,
+    set_block_alignment, set_block_style, set_block_type_heading, set_block_type_para,
 };
 #[cfg(feature = "serde")]
 pub use self::text::insert_inline_image;

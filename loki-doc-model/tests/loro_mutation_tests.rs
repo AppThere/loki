@@ -8,15 +8,16 @@
 //! populated by `document_to_loro`.
 
 use loki_doc_model::{
-    Document, MutationError, NodeAttr,
+    Document, MutationError, NodeAttr, clear_block_list,
     content::block::{Block, StyledParagraph},
     content::inline::Inline,
-    delete_text, get_block_text, insert_text,
+    delete_text, get_block_list_id, get_block_text, insert_text,
     layout::section::Section,
     loro_bridge::document_to_loro,
     merge_block, split_block,
     style::{
         StyleId,
+        list_style::ListId,
         props::{CharProps, ParaProps},
     },
 };
@@ -714,4 +715,63 @@ fn global_index_past_the_last_section_errors() {
         matches!(err, MutationError::BlockIndexOutOfRange(2)),
         "got {err:?}"
     );
+}
+
+// ── List paragraph props: read + clear (plan 4b.1 list-exit) ────────────────
+
+/// A `Document` with one list paragraph: `list_id = "L1"`, `list_level = 0`.
+fn make_doc_with_list_item(text: &str) -> Document {
+    let para_props = ParaProps {
+        list_id: Some(ListId::new("L1")),
+        list_level: Some(0),
+        ..ParaProps::default()
+    };
+    make_doc_with_para_props(text, para_props)
+}
+
+#[test]
+fn get_block_list_id_reads_direct_list_membership() {
+    let ldoc = document_to_loro(&make_doc_with_list_item("item")).expect("to loro");
+    assert_eq!(get_block_list_id(&ldoc, 0).as_deref(), Some("L1"));
+}
+
+#[test]
+fn get_block_list_id_is_none_for_a_plain_paragraph() {
+    let ldoc = document_to_loro(&make_doc_with_paragraphs(&["plain"])).expect("to loro");
+    assert_eq!(get_block_list_id(&ldoc, 0), None);
+}
+
+#[test]
+fn clear_block_list_removes_list_membership() {
+    let ldoc = document_to_loro(&make_doc_with_list_item("item")).expect("to loro");
+    assert_eq!(
+        get_block_list_id(&ldoc, 0).as_deref(),
+        Some("L1"),
+        "starts a list item"
+    );
+
+    clear_block_list(&ldoc, 0).expect("clear ok");
+
+    // The paragraph is no longer a list item and its text is untouched.
+    assert_eq!(get_block_list_id(&ldoc, 0), None, "list membership cleared");
+    assert_eq!(get_block_text(&ldoc, 0), "item");
+
+    // The list_level prop is gone too, confirmed via a full round-trip.
+    let doc = loki_doc_model::loro_bridge::loro_to_document(&ldoc).expect("rebuild");
+    let Block::StyledPara(sp) = &doc.sections[0].blocks[0] else {
+        panic!("expected StyledPara");
+    };
+    let props = sp.direct_para_props.as_ref();
+    assert!(
+        props.is_none_or(|p| p.list_id.is_none() && p.list_level.is_none()),
+        "both list props cleared, got {props:?}",
+    );
+}
+
+#[test]
+fn clear_block_list_on_a_plain_paragraph_is_a_noop() {
+    let ldoc = document_to_loro(&make_doc_with_paragraphs(&["plain"])).expect("to loro");
+    clear_block_list(&ldoc, 0).expect("no-op ok");
+    assert_eq!(get_block_text(&ldoc, 0), "plain");
+    assert_eq!(get_block_list_id(&ldoc, 0), None);
 }
