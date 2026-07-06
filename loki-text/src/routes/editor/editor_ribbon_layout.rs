@@ -4,18 +4,21 @@
 //!
 //! Layout controls change the section page geometry in the CRDT and relayout,
 //! so the document immediately re-flows. Controls: page **orientation**
-//! (portrait/landscape), **margin** presets, and page **size** (A4/Letter).
+//! (portrait/landscape), **margin** presets, page **size** (A4/Letter), and
+//! **columns** (one/two/three).
 
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::{
-    AT_MARGIN_NARROW, AT_MARGIN_NORMAL, AT_MARGIN_WIDE, AT_PAGE_A4, AT_PAGE_LANDSCAPE,
-    AT_PAGE_LETTER, AT_PAGE_PORTRAIT, AtIcon, AtRibbonGroup, AtRibbonIconButton,
+    AT_COLUMNS_ONE, AT_COLUMNS_THREE, AT_COLUMNS_TWO, AT_MARGIN_NARROW, AT_MARGIN_NORMAL,
+    AT_MARGIN_WIDE, AT_PAGE_A4, AT_PAGE_LANDSCAPE, AT_PAGE_LETTER, AT_PAGE_PORTRAIT, AtIcon,
+    AtRibbonGroup, AtRibbonIconButton,
 };
 use dioxus::prelude::*;
 use loki_doc_model::{
-    MutationError, document_is_landscape, document_margins, document_page_size,
-    set_document_margins, set_document_orientation, set_document_page_size,
+    MutationError, document_column_count, document_is_landscape, document_margins,
+    document_page_size, set_document_columns, set_document_margins, set_document_orientation,
+    set_document_page_size,
 };
 use loki_i18n::fl;
 
@@ -65,6 +68,13 @@ fn margin_matches(current: Option<(f64, f64, f64, f64)>, preset: (f64, f64, f64,
 const PAGE_SIZE_PRESETS: &[(&str, f64, f64, &str)] = &[
     ("ribbon-page-a4-aria", 595.28, 841.89, AT_PAGE_A4),
     ("ribbon-page-letter-aria", 612.0, 792.0, AT_PAGE_LETTER),
+];
+
+/// A column preset: `(aria-key, count, icon)`.
+const COLUMN_PRESETS: &[(&str, u8, &str)] = &[
+    ("ribbon-columns-one-aria", 1, AT_COLUMNS_ONE),
+    ("ribbon-columns-two-aria", 2, AT_COLUMNS_TWO),
+    ("ribbon-columns-three-aria", 3, AT_COLUMNS_THREE),
 ];
 
 /// Whether the document's `current` page size is the `preset` paper, comparing
@@ -119,7 +129,7 @@ pub(super) fn layout_tab_content(
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
 ) -> Element {
-    let (landscape, margins, page_size) = loro_doc
+    let (landscape, margins, page_size, columns) = loro_doc
         .read()
         .as_ref()
         .map(|ldoc| {
@@ -127,9 +137,10 @@ pub(super) fn layout_tab_content(
                 document_is_landscape(ldoc),
                 document_margins(ldoc),
                 document_page_size(ldoc),
+                document_column_count(ldoc),
             )
         })
-        .unwrap_or((false, None, None));
+        .unwrap_or((false, None, None, 1));
     let ds_portrait = Arc::clone(doc_state);
     let ds_landscape = Arc::clone(doc_state);
 
@@ -197,6 +208,28 @@ pub(super) fn layout_tab_content(
                         move |_| apply_and_sync(
                             &ds, loro_doc, cursor_state, undo_manager,
                             can_undo, can_redo, |lo| set_document_page_size(lo, pw, ph),
+                        )
+                    },
+                    AtIcon { path_d: icon.to_string() }
+                }
+            }
+        }
+
+        AtRibbonGroup {
+            label:      Some(fl!("ribbon-group-columns")),
+            aria_label: fl!("ribbon-group-columns"),
+
+            for (aria, count, icon) in COLUMN_PRESETS.iter().copied() {
+                AtRibbonIconButton {
+                    key: "{aria}",
+                    aria_label:  fl!(aria),
+                    is_active:   columns == count,
+                    is_disabled: false,
+                    on_click: {
+                        let ds = Arc::clone(doc_state);
+                        move |_| apply_and_sync(
+                            &ds, loro_doc, cursor_state, undo_manager,
+                            can_undo, can_redo, |lo| set_document_columns(lo, count),
                         )
                     },
                     AtIcon { path_d: icon.to_string() }

@@ -16,9 +16,13 @@ use loro::{LoroDoc, LoroMap};
 
 use super::MutationError;
 use crate::loro_schema::{
-    KEY_LAYOUT, KEY_MARGIN_BOTTOM, KEY_MARGIN_LEFT, KEY_MARGIN_RIGHT, KEY_MARGIN_TOP, KEY_MARGINS,
-    KEY_ORIENTATION, KEY_PAGE_SIZE, KEY_SECTIONS,
+    KEY_COL_COUNT, KEY_COL_GAP, KEY_COL_SEPARATOR, KEY_COLUMNS, KEY_LAYOUT, KEY_MARGIN_BOTTOM,
+    KEY_MARGIN_LEFT, KEY_MARGIN_RIGHT, KEY_MARGIN_TOP, KEY_MARGINS, KEY_ORIENTATION, KEY_PAGE_SIZE,
+    KEY_SECTIONS,
 };
+
+/// Default gap between columns when the Layout tab first creates them: 0.5 in.
+const DEFAULT_COL_GAP_PT: f64 = 36.0;
 
 /// Reads a nested `LoroMap` child by key.
 fn child_map(map: &LoroMap, key: &str) -> Option<LoroMap> {
@@ -198,6 +202,59 @@ pub fn set_document_page_size(
         };
         size.insert("width", w)?;
         size.insert("height", h)?;
+    }
+    Ok(())
+}
+
+/// Section 0's column count (`1` when there is no columns map). Lets the Layout
+/// tab highlight the active column preset.
+#[must_use]
+pub fn document_column_count(loro: &LoroDoc) -> u8 {
+    let sections = loro.get_list(KEY_SECTIONS);
+    sections
+        .get(0)
+        .and_then(|v| v.into_container().ok())
+        .and_then(|c| c.into_map().ok())
+        .and_then(|section| child_map(&section, KEY_LAYOUT))
+        .and_then(|layout| child_map(&layout, KEY_COLUMNS))
+        .and_then(|cols| cols.get(KEY_COL_COUNT))
+        .and_then(|v| v.into_value().ok())
+        .and_then(|v| v.into_i64().ok())
+        .map_or(1, |c| c.clamp(1, u8::MAX as i64) as u8)
+}
+
+/// Sets every section's column `count` (clamped to ≥ 1). A newly-created columns
+/// map gets a default gap and no separator; an existing one keeps its gap and
+/// separator — only the count changes. A `count` of 1 leaves a single-column
+/// layout (the whole content width).
+///
+/// # Errors
+///
+/// [`MutationError::Loro`] for an underlying Loro error.
+pub fn set_document_columns(loro: &LoroDoc, count: u8) -> Result<(), MutationError> {
+    let count = count.max(1);
+    let sections = loro.get_list(KEY_SECTIONS);
+    for s in 0..sections.len() {
+        let Some(section) = sections
+            .get(s)
+            .and_then(|v| v.into_container().ok())
+            .and_then(|c| c.into_map().ok())
+        else {
+            continue;
+        };
+        let Some(layout) = child_map(&section, KEY_LAYOUT) else {
+            continue;
+        };
+        let cols = match child_map(&layout, KEY_COLUMNS) {
+            Some(m) => m,
+            None => {
+                let m = layout.insert_container(KEY_COLUMNS, LoroMap::new())?;
+                m.insert(KEY_COL_GAP, DEFAULT_COL_GAP_PT)?;
+                m.insert(KEY_COL_SEPARATOR, false)?;
+                m
+            }
+        };
+        cols.insert(KEY_COL_COUNT, i64::from(count))?;
     }
     Ok(())
 }

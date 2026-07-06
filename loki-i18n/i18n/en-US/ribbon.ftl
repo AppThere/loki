@@ -99,6 +99,10 @@ ribbon-margin-wide-aria = Wide margins
 ribbon-group-page-size = Size
 ribbon-page-a4-aria = A4
 ribbon-page-letter-aria = US Letter
+ribbon-group-columns = Columns
+ribbon-columns-one-aria = One column
+ribbon-columns-two-aria = Two columns
+ribbon-columns-three-aria = Three columns
 
 # Ribbon collapse toggle
 ribbon-collapse-aria = Collapse ribbon

@@ -143,6 +143,18 @@ pub const AT_PAGE_A4: &str = "M7 3h10v18H7z";
 /// US Letter paper: a slightly wider, shorter page (≈1:1.29).
 pub const AT_PAGE_LETTER: &str = "M6 4h12v16H6z";
 
+// App-custom column-count glyphs (not Lucide): a page with N-1 vertical
+// divider lines.
+
+/// One column: a plain page.
+pub const AT_COLUMNS_ONE: &str = "M5 4h14v16H5z";
+
+/// Two columns: a page split by one vertical divider.
+pub const AT_COLUMNS_TWO: &str = "M5 4h14v16H5zM12 4v16";
+
+/// Three columns: a page split by two vertical dividers.
+pub const AT_COLUMNS_THREE: &str = "M5 4h14v16H5zM9.7 4v16M14.3 4v16";
+
 // ── AtIcon component ──────────────────────────────────────────────────────────
 
 /// Renders a single Lucide SVG icon.
