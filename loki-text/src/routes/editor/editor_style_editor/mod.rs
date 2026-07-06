@@ -18,6 +18,7 @@ mod form;
 mod form_font;
 mod list_browser;
 mod page_browser;
+mod page_form;
 mod panel_data;
 mod posture;
 mod provenance;
@@ -115,6 +116,12 @@ pub(super) fn style_editor_panel(
     let ds_char_form = Arc::clone(&doc_state);
     let char_draft = editing_char_draft.read().clone();
     let char_form_fonts = Rc::clone(&font_families);
+    // Editable page form (Spec 05 M6 page family): the selected page style's name
+    // + current geometry, for the per-page-style preset buttons.
+    let ds_page_form = Arc::clone(&doc_state);
+    let page_edit = page_selected
+        .as_deref()
+        .and_then(|n| panel_data::page_edit_target(&doc_state, n).map(|(l, _)| (n.to_string(), l)));
 
     // Everything the provenance column renders (staged rows, impact preview,
     // new-style parent default, linked character-style rows) — see `panel_data`.
@@ -255,6 +262,9 @@ pub(super) fn style_editor_panel(
                 if show_inspect {
                     if let Some(cdraft) = char_draft {
                         { char_form::char_style_form(ds_char_form, editing_char_draft, cdraft, char_form_fonts, sync) }
+                    }
+                    if let Some((pname, playout)) = page_edit {
+                        { page_form::page_style_form(&ds_page_form, pname, playout, sync) }
                     }
                     { family_inspector::family_inspector_columns(char_selected_rows, list_selected_rows, page_selected_rows, posture) }
                 }

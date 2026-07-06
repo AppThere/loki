@@ -230,3 +230,24 @@ pub(super) fn page_data(
     });
     (list, selected_rows)
 }
+
+/// The current geometry + target section indices for the page style `name` — what
+/// the edit form needs to compute and apply a change (via `set_page_style_geometry`).
+/// Derived on demand, so it always reflects the live sections. `None` when the
+/// document or the named page style is absent.
+pub(super) fn page_edit_target(
+    doc_state: &Arc<Mutex<DocumentState>>,
+    name: &str,
+) -> Option<(loki_doc_model::layout::page::PageLayout, Vec<usize>)> {
+    let state = doc_state.lock().ok()?;
+    let doc = state.document.as_ref()?;
+    let styles = derive_page_styles(&doc.sections);
+    let layout = styles.get(&StyleId::new(name))?.layout.clone();
+    let indices = loki_doc_model::style::section_page_style_ids(&doc.sections)
+        .iter()
+        .enumerate()
+        .filter(|(_, id)| id.as_str() == name)
+        .map(|(i, _)| i)
+        .collect();
+    Some((layout, indices))
+}
