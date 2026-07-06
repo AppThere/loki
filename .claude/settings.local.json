@@ -100,7 +100,8 @@
       "Bash(echo \"exit: $?\")",
       "Bash(claude plugin *)",
       "Bash(cp \"/root/.claude/uploads/995af0a3-e865-5b96-b002-e90985880970/cc51b77a-spec01codebaseauditandarchitecture.md\" \"/home/user/loki/docs/adr/spec-01-codebase-audit-and-architecture.md\" && echo \"placed\" && ls -la docs/adr/spec-01-codebase-audit-and-architecture.md)",
-      "mcp__code-review-graph__list_graph_stats_tool"
+      "mcp__code-review-graph__list_graph_stats_tool",
+      "mcp__Claude_Code_Remote__send_later"
     ]
   },
   "enableAllProjectMcpServers": true,

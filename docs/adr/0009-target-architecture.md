@@ -44,7 +44,7 @@ leaf foundation.
  L5  ui /       appthere-ui · loki-app-shell
      app-shell  (design system, shared runtime services: SpellService, i18n)
                 ───────────────────────────────────────────────────────────
- L4  render     loki-renderer · loki-vello · appthere-canvas · loki-render-cache
+ L4  render     loki-renderer · loki-vello · appthere-canvas · loki-render-cache · loki-render-cpu
                 ───────────────────────────────────────────────────────────
  L3b export+    loki-pdf            (exporters that REUSE layout for positioning)
  L3  layout     loki-layout         (pagination · Parley text layout)
@@ -231,6 +231,7 @@ mechanical. None require a rewrite — consistent with D3: the target is reached
 | appthere-canvas | L4 | loki-render-cache |
 | loki-vello | L4 | appthere-canvas, loki-layout |
 | loki-renderer | L4 | appthere-canvas, loki-doc-model, loki-layout, loki-vello (A-8 `appthere-ui` edge removed) |
+| loki-render-cpu | L4 | loki-layout (deterministic CPU rasterizer; conformance candidate render path) |
 | appthere-ui | L5 | loki-i18n |
 | loki-app-shell | L5 | loki-i18n, loki-spell |
 | loki-text | L6 | appthere-ui, loki-app-shell, loki-doc-model, loki-epub, loki-fonts, loki-i18n, loki-layout, loki-odf, loki-ooxml, loki-pdf, loki-renderer, loki-templates, loki-vello |

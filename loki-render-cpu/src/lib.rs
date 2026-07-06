@@ -46,6 +46,16 @@ pub enum RenderCpuError {
     /// The page dimensions overflow the rasterizer's u16 pixel space.
     #[error("page pixel size {0}x{1} exceeds the rasterizer limit (65535)")]
     PageTooLarge(u32, u32),
+    /// The rasterizer's pixel buffer did not match the page dimensions.
+    #[error("pixel buffer ({len} bytes) does not match {width}x{height} RGBA")]
+    BufferMismatch {
+        /// Buffer length in bytes.
+        len: usize,
+        /// Page width in pixels.
+        width: u32,
+        /// Page height in pixels.
+        height: u32,
+    },
 }
 
 /// White paper, matching the production painter's page background.
@@ -128,8 +138,15 @@ pub fn render_page(
     ctx.render_to_pixmap(&mut resources, &mut pixmap);
 
     let data = pixmap.data_as_u8_slice().to_vec();
-    Ok(RgbaImage::from_raw(px_w, px_h, data)
-        .expect("pixmap dimensions match the buffer by construction"))
+    let len = data.len();
+    // `from_raw` only returns `None` if the buffer length ≠ width*height*4;
+    // it matches by construction here, but surface a typed error rather than
+    // panic (no `.expect()` in library code — CLAUDE.md).
+    RgbaImage::from_raw(px_w, px_h, data).ok_or(RenderCpuError::BufferMismatch {
+        len,
+        width: px_w,
+        height: px_h,
+    })
 }
 
 /// Renders every page of the layout, in page order.
