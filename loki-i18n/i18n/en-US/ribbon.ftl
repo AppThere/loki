@@ -36,6 +36,7 @@ ribbon-style-apply-aria = Apply style: { $name }
 ribbon-group-paragraph = Paragraph
 ribbon-para-props-aria = Edit paragraph style
 ribbon-para-props-heading = Paragraph Properties
+ribbon-group-alignment = Alignment
 ribbon-align-left-aria = Align left
 ribbon-align-centre-aria = Centre
 ribbon-align-right-aria = Align right

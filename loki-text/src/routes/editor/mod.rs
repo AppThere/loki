@@ -9,6 +9,7 @@
 //!
 //! All editing logic lives in [`editor_inner::EditorInner`].
 
+mod editor_alignment;
 mod editor_canvas;
 mod editor_canvas_loading;
 mod editor_compact;
@@ -35,6 +36,7 @@ mod editor_pointer;
 mod editor_publish;
 mod editor_responsive;
 mod editor_ribbon;
+mod editor_ribbon_format;
 mod editor_ribbon_insert;
 mod editor_ribbon_insert_image;
 mod editor_ribbon_table;

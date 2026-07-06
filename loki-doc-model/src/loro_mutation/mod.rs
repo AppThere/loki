@@ -26,6 +26,7 @@
 //!
 //! All `byte_offset` and `len` parameters are **UTF-8 byte positions**.
 
+mod align;
 mod block;
 mod block_edit;
 mod nested;
@@ -37,6 +38,9 @@ mod style;
 mod table_ops;
 mod text;
 
+pub use self::align::{
+    get_block_alignment, get_block_alignment_at, set_block_alignment, set_block_alignment_at,
+};
 pub use self::block::{merge_block, merge_block_at, split_block, split_block_at};
 pub use self::block_edit::delete_block;
 #[cfg(feature = "serde")]
@@ -49,8 +53,8 @@ pub use self::nested::{
 pub use self::objects::{insert_inline_image_at, insert_inline_note_at};
 pub use self::selection::delete_selection_at;
 pub use self::style::{
-    clear_block_list, get_block_alignment, get_block_list_id, get_block_style_name,
-    set_block_alignment, set_block_style, set_block_type_heading, set_block_type_para,
+    clear_block_list, get_block_list_id, get_block_style_name, set_block_style,
+    set_block_type_heading, set_block_type_para,
 };
 #[cfg(feature = "serde")]
 pub use self::table_ops::{

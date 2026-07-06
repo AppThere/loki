@@ -8,9 +8,8 @@
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::{
-    AtIcon, AtRibbonGroup, AtRibbonIconButton, AtRibbonSelect, LUCIDE_BOLD, LUCIDE_DOWNLOAD,
-    LUCIDE_ITALIC, LUCIDE_LAYOUT_TEMPLATE, LUCIDE_PILCROW, LUCIDE_REDO, LUCIDE_SAVE,
-    LUCIDE_STRIKETHROUGH, LUCIDE_SUBSCRIPT, LUCIDE_SUPERSCRIPT, LUCIDE_UNDERLINE, LUCIDE_UNDO,
+    AtIcon, AtRibbonGroup, AtRibbonIconButton, AtRibbonSelect, LUCIDE_DOWNLOAD,
+    LUCIDE_LAYOUT_TEMPLATE, LUCIDE_PILCROW, LUCIDE_REDO, LUCIDE_SAVE, LUCIDE_UNDO,
 };
 use dioxus::prelude::*;
 use loki_i18n::fl;
@@ -19,7 +18,6 @@ use loro::LoroDoc;
 use crate::editing::cursor::CursorState;
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
-use super::editor_formatting;
 use super::editor_keydown_ctrl::post_mutation_sync;
 use super::editor_state::StyleDraft;
 use super::editor_style_catalog::get_catalog_style;
@@ -61,12 +59,30 @@ pub(super) fn write_tab_content(
     let current_style_name_para = current_style_name.clone();
     let ds_undo = Arc::clone(doc_state);
     let ds_redo = Arc::clone(doc_state);
-    let ds_bold = Arc::clone(doc_state);
-    let ds_italic = Arc::clone(doc_state);
-    let ds_underline = Arc::clone(doc_state);
-    let ds_strike = Arc::clone(doc_state);
-    let ds_super = Arc::clone(doc_state);
-    let ds_sub = Arc::clone(doc_state);
+
+    // The inline-formatting and alignment groups are extracted to
+    // `editor_ribbon_format` (ceiling). They share these live handles + states.
+    let edit_ctx = super::editor_ribbon_format::RibbonEditCtx {
+        loro_doc,
+        cursor_state,
+        undo_manager,
+        can_undo,
+        can_redo,
+    };
+    let inline_state = super::editor_ribbon_format::InlineFormatState {
+        bold: bold_active,
+        italic: italic_active,
+        underline: underline_active,
+        strikethrough: strikethrough_active,
+        superscript: superscript_active,
+        subscript: subscript_active,
+    };
+    // Alignment of the caret's paragraph, for the alignment group's active state.
+    let current_align = loro_doc
+        .read()
+        .as_ref()
+        .map(|ldoc| super::editor_alignment::current_alignment(ldoc, &cursor_state.read()))
+        .unwrap_or_else(|| "Left".to_string());
 
     rsx! {
         // ── Document group ────────────────────────────────────────────────────
@@ -201,100 +217,9 @@ pub(super) fn write_tab_content(
             }
         }
 
-        // ── Inline formatting group ───────────────────────────────────────────
-        AtRibbonGroup {
-            label:      Some(fl!("ribbon-group-inline")),
-            aria_label: fl!("ribbon-group-inline"),
+        // ── Inline formatting + alignment groups (see editor_ribbon_format) ────
+        {super::editor_ribbon_format::inline_format_group(doc_state, edit_ctx, inline_state)}
 
-            AtRibbonIconButton {
-                aria_label:  fl!("ribbon-bold-aria"),
-                is_active:   *bold_active.read(),
-                is_disabled: false,
-                on_click: move |_| {
-                    let ldoc_guard = loro_doc.read();
-                    if let Some(ldoc) = ldoc_guard.as_ref() {
-                        let _ = editor_formatting::toggle_bold(ldoc, &cursor_state.read());
-                        apply_mutation_and_relayout(&ds_bold, ldoc);
-                    }
-                    post_mutation_sync(&ds_bold, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
-                },
-                AtIcon { path_d: LUCIDE_BOLD.to_string() }
-            }
-
-            AtRibbonIconButton {
-                aria_label:  fl!("ribbon-italic-aria"),
-                is_active:   *italic_active.read(),
-                is_disabled: false,
-                on_click: move |_| {
-                    let ldoc_guard = loro_doc.read();
-                    if let Some(ldoc) = ldoc_guard.as_ref() {
-                        let _ = editor_formatting::toggle_italic(ldoc, &cursor_state.read());
-                        apply_mutation_and_relayout(&ds_italic, ldoc);
-                    }
-                    post_mutation_sync(&ds_italic, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
-                },
-                AtIcon { path_d: LUCIDE_ITALIC.to_string() }
-            }
-
-            AtRibbonIconButton {
-                aria_label:  fl!("ribbon-underline-aria"),
-                is_active:   *underline_active.read(),
-                is_disabled: false,
-                on_click: move |_| {
-                    let ldoc_guard = loro_doc.read();
-                    if let Some(ldoc) = ldoc_guard.as_ref() {
-                        let _ = editor_formatting::toggle_underline(ldoc, &cursor_state.read());
-                        apply_mutation_and_relayout(&ds_underline, ldoc);
-                    }
-                    post_mutation_sync(&ds_underline, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
-                },
-                AtIcon { path_d: LUCIDE_UNDERLINE.to_string() }
-            }
-
-            AtRibbonIconButton {
-                aria_label:  fl!("ribbon-strikethrough-aria"),
-                is_active:   *strikethrough_active.read(),
-                is_disabled: false,
-                on_click: move |_| {
-                    let ldoc_guard = loro_doc.read();
-                    if let Some(ldoc) = ldoc_guard.as_ref() {
-                        let _ = editor_formatting::toggle_strikethrough(ldoc, &cursor_state.read());
-                        apply_mutation_and_relayout(&ds_strike, ldoc);
-                    }
-                    post_mutation_sync(&ds_strike, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
-                },
-                AtIcon { path_d: LUCIDE_STRIKETHROUGH.to_string() }
-            }
-
-            AtRibbonIconButton {
-                aria_label:  fl!("ribbon-superscript-aria"),
-                is_active:   *superscript_active.read(),
-                is_disabled: false,
-                on_click: move |_| {
-                    let ldoc_guard = loro_doc.read();
-                    if let Some(ldoc) = ldoc_guard.as_ref() {
-                        let _ = editor_formatting::toggle_superscript(ldoc, &cursor_state.read());
-                        apply_mutation_and_relayout(&ds_super, ldoc);
-                    }
-                    post_mutation_sync(&ds_super, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
-                },
-                AtIcon { path_d: LUCIDE_SUPERSCRIPT.to_string() }
-            }
-
-            AtRibbonIconButton {
-                aria_label:  fl!("ribbon-subscript-aria"),
-                is_active:   *subscript_active.read(),
-                is_disabled: false,
-                on_click: move |_| {
-                    let ldoc_guard = loro_doc.read();
-                    if let Some(ldoc) = ldoc_guard.as_ref() {
-                        let _ = editor_formatting::toggle_subscript(ldoc, &cursor_state.read());
-                        apply_mutation_and_relayout(&ds_sub, ldoc);
-                    }
-                    post_mutation_sync(&ds_sub, loro_doc, cursor_state, undo_manager, can_undo, can_redo);
-                },
-                AtIcon { path_d: LUCIDE_SUBSCRIPT.to_string() }
-            }
-        }
+        {super::editor_ribbon_format::alignment_group(doc_state, edit_ctx, current_align)}
     }
 }
