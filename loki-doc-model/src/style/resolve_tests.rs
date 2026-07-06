@@ -323,6 +323,50 @@ fn character_style_unset_is_format_default() {
     assert_eq!(r.value, None);
 }
 
+#[test]
+fn character_style_falls_through_to_the_document_default_char_style() {
+    // The docDefaults run defaults live in a synthetic default character style;
+    // a property unset along the queried style's own chain resolves to it as
+    // `Default` (ADR-0012 Decision 1 — the character family's `Default` source).
+    let mut cat = StyleCatalog::new();
+    cat.character_styles.insert(
+        StyleId::new("__DocDefaultChar"),
+        char_style("__DocDefaultChar", None, bold()),
+    );
+    cat.default_character_style = Some(StyleId::new("__DocDefaultChar"));
+    cat.character_styles.insert(
+        StyleId::new("Plain"),
+        char_style("Plain", None, CharProps::default()),
+    );
+
+    let r = cat
+        .resolve_char_chain(&StyleId::new("Plain"), |s| s.char_props.bold)
+        .unwrap();
+    assert_eq!(r.provenance, Provenance::Default);
+    assert_eq!(r.value, Some(true));
+}
+
+#[test]
+fn character_local_value_wins_over_the_document_default() {
+    // A value set on the style itself is `Local`, never the doc default.
+    let mut cat = StyleCatalog::new();
+    cat.character_styles.insert(
+        StyleId::new("__DocDefaultChar"),
+        char_style("__DocDefaultChar", None, bold()),
+    );
+    cat.default_character_style = Some(StyleId::new("__DocDefaultChar"));
+    let mut not_bold = CharProps::default();
+    not_bold.bold = Some(false);
+    cat.character_styles
+        .insert(StyleId::new("Plain"), char_style("Plain", None, not_bold));
+
+    let r = cat
+        .resolve_char_chain(&StyleId::new("Plain"), |s| s.char_props.bold)
+        .unwrap();
+    assert_eq!(r.provenance, Provenance::Local);
+    assert_eq!(r.value, Some(false));
+}
+
 // ── Re-parent cycle guard ────────────────────────────────────────────────────
 
 #[test]

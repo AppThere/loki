@@ -114,6 +114,65 @@ fn doc_defaults_create_synthetic_root() {
 }
 
 #[test]
+fn doc_defaults_create_the_default_character_style() {
+    use crate::docx::model::paragraph::DocxRPr;
+    // The same `w:rPrDefault` also synthesises the character family's `Default`
+    // source (ADR-0012 Decision 1), pointed at by `default_character_style`.
+    let styles = DocxStyles {
+        default_rpr: Some(DocxRPr {
+            bold: Some(true),
+            ..Default::default()
+        }),
+        default_ppr: None,
+        styles: vec![],
+    };
+    let catalog = map_styles(&styles);
+    assert_eq!(
+        catalog.default_character_style,
+        Some(StyleId::new("__DocDefaultChar")),
+    );
+    let def = catalog
+        .character_styles
+        .get(&StyleId::new("__DocDefaultChar"))
+        .expect("synthetic default character style present");
+    assert_eq!(def.char_props.bold, Some(true));
+    // A standalone character style with `bold` unset now resolves the docDefault
+    // as `Default` (was `FormatDefault` before this source existed).
+    let mut cat = catalog;
+    cat.character_styles.insert(
+        StyleId::new("Plain"),
+        CharacterStyle {
+            id: StyleId::new("Plain"),
+            display_name: Some("Plain".into()),
+            parent: None,
+            char_props: Default::default(),
+            extensions: Default::default(),
+        },
+    );
+    let r = cat
+        .resolve_char_chain(&StyleId::new("Plain"), |s| s.char_props.bold)
+        .unwrap();
+    assert_eq!(r.provenance, loki_doc_model::style::Provenance::Default);
+    assert_eq!(r.value, Some(true));
+}
+
+#[test]
+fn no_doc_defaults_leaves_no_default_character_style() {
+    let styles = DocxStyles {
+        default_rpr: None,
+        default_ppr: None,
+        styles: vec![],
+    };
+    let catalog = map_styles(&styles);
+    assert_eq!(catalog.default_character_style, None);
+    assert!(
+        !catalog
+            .character_styles
+            .contains_key(&StyleId::new("__DocDefaultChar"))
+    );
+}
+
+#[test]
 fn default_paragraph_style_resolves_doc_default_font() {
     use crate::docx::model::paragraph::{DocxRFonts, DocxRPr};
     // docDefaults font Calibri, no explicit pStyle → Normal synthesized.

@@ -124,6 +124,9 @@ pub(super) fn char_data(
     let mut list: Vec<(String, String)> = catalog
         .character_styles
         .iter()
+        // Hide synthetic internal styles (e.g. `__DocDefaultChar`, the docDefaults
+        // `Default` source) — they resolve provenance, they are not user-selectable.
+        .filter(|(id, _)| !id.as_str().starts_with("__"))
         .map(|(id, s)| {
             let display = s
                 .display_name

@@ -100,6 +100,18 @@ pub struct StyleCatalog {
     /// rendering and pagination drift.
     #[cfg_attr(feature = "serde", serde(default))]
     pub default_paragraph_style: Option<StyleId>,
+    /// The id of the document's **default character style** — the character-family
+    /// analogue of [`default_paragraph_style`](Self::default_paragraph_style). A
+    /// standalone [`CharacterStyle`] whose own chain does not set a property falls
+    /// through to this style for it, resolving as [`Provenance::Default`] (Spec 05
+    /// M6, ADR-0012 Decision 1 — the per-family `Default` source).
+    ///
+    /// OOXML: synthesised from `w:docDefaults/w:rPrDefault` (the run defaults);
+    /// ODF: `style:default-style style:family="text"`. `None` means the character
+    /// family has no document default, so a bare property resolves to
+    /// [`Provenance::FormatDefault`] (the previous behaviour).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub default_character_style: Option<StyleId>,
 }
 
 impl StyleCatalog {

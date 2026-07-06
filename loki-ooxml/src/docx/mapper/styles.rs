@@ -45,6 +45,27 @@ pub(crate) fn map_styles(styles: &DocxStyles) -> StyleCatalog {
             .insert(StyleId::new("__DocDefault"), default_style);
     }
 
+    // Synthesise the document's **default character style** from the same
+    // `w:rPrDefault` run defaults (ADR-0012 Decision 1 — the character family's
+    // `Default` source), so a standalone character style resolves docDefaults
+    // properties as `Provenance::Default` instead of `FormatDefault`. Distinct
+    // from the paragraph `__DocDefault` because the character resolver walks the
+    // `character_styles` catalog, not the paragraph one.
+    if let Some(rpr) = styles.default_rpr.as_ref() {
+        let id = StyleId::new("__DocDefaultChar");
+        catalog.character_styles.insert(
+            id.clone(),
+            CharacterStyle {
+                id: id.clone(),
+                display_name: None,
+                parent: None,
+                char_props: map_rpr(rpr),
+                extensions: ExtensionBag::default(),
+            },
+        );
+        catalog.default_character_style = Some(id);
+    }
+
     for style in &styles.styles {
         let id = StyleId::new(&style.style_id);
         match style.style_type {

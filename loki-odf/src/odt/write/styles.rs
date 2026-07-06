@@ -67,11 +67,21 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
     out.push_str(HEADER);
 
     // ── Named styles (the catalog) ─────────────────────────────────────────
+    // Synthetic internal styles (`__`-prefixed, e.g. `__DocDefault` /
+    // `__DocDefaultChar`) hold the document's `docDefaults` and are not named
+    // styles — skip them here (they belong in `style:default-style`, not
+    // `style:style`).
     out.push_str("<office:styles>");
     for (id, style) in &doc.styles.paragraph_styles {
+        if id.as_str().starts_with("__") {
+            continue;
+        }
         write_paragraph_style(&mut out, id.as_str(), style);
     }
     for (id, style) in &doc.styles.character_styles {
+        if id.as_str().starts_with("__") {
+            continue;
+        }
         out.push_str("<style:style");
         attr(&mut out, "style:name", id.as_str());
         if let Some(name) = &style.display_name {

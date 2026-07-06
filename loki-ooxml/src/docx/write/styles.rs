@@ -35,6 +35,13 @@ fn is_builtin_id(sid: &str) -> bool {
     sid == "Normal" || HEADINGS.iter().any(|(h, _, _, _, _)| *h == sid)
 }
 
+/// Synthetic internal styles (id prefixed `__`, e.g. `__DocDefault` /
+/// `__DocDefaultChar`) represent the document's `docDefaults`, not user-named
+/// styles — they are emitted as `w:docDefaults`, never as `w:style` entries.
+fn is_synthetic_id(sid: &str) -> bool {
+    sid.starts_with("__")
+}
+
 /// Serializes the document's style catalog to `word/styles.xml` bytes.
 pub(super) fn write_styles_xml(catalog: &StyleCatalog) -> Vec<u8> {
     let mut out = Vec::new();
@@ -68,16 +75,21 @@ pub(super) fn write_styles_xml(catalog: &StyleCatalog) -> Vec<u8> {
         }
     }
 
-    // Remaining (custom / non-built-in) paragraph styles.
+    // Remaining (custom / non-built-in) paragraph styles. Synthetic internal
+    // styles (`__`-prefixed, e.g. `__DocDefault` — the docDefaults source) are
+    // not real named styles and are written as `w:docDefaults`, not `w:style`.
     for (id, style) in &catalog.paragraph_styles {
-        if !is_builtin_id(id.as_str()) {
+        if !is_builtin_id(id.as_str()) && !is_synthetic_id(id.as_str()) {
             emit_paragraph_style(&mut w, style);
         }
     }
 
-    // Character styles.
+    // Character styles (skip the synthetic `__DocDefaultChar` docDefaults source).
     for (id, style) in &catalog.character_styles {
         let sid = id.as_str();
+        if is_synthetic_id(sid) {
+            continue;
+        }
         let _ = write_start(
             &mut w,
             "w:style",

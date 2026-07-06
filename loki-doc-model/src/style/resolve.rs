@@ -191,7 +191,41 @@ impl StyleCatalog {
             }
             cursor = parent.parent.as_ref();
         }
+
+        // Fall through to the document default character style (ADR-0012 Decision
+        // 1 — the per-family `Default` source), when set and not already visited.
+        if let Some(def) = self.default_character_style.as_ref()
+            && !visited.contains(def)
+            && let Some(v) = self.first_in_char_chain(def, &get)
+        {
+            return Some(Resolved::from_default(v));
+        }
+
         Some(Resolved::format_default())
+    }
+
+    /// First local value of a property along a character chain starting at
+    /// `start` (inclusive), cycle/depth-guarded. Backs the character family's
+    /// `Default`-level lookup (mirrors [`first_in_para_chain`](Self::first_in_para_chain)).
+    fn first_in_char_chain<T: Clone>(
+        &self,
+        start: &StyleId,
+        get: &impl Fn(&CharacterStyle) -> Option<T>,
+    ) -> Option<T> {
+        let mut visited = HashSet::new();
+        let mut cursor = Some(start.clone());
+        for _ in 0..MAX_STYLE_CHAIN_DEPTH {
+            let id = cursor?;
+            if !visited.insert(id.clone()) {
+                return None;
+            }
+            let style = self.character_styles.get(&id)?;
+            if let Some(v) = get(style) {
+                return Some(v);
+            }
+            cursor = style.parent.clone();
+        }
+        None
     }
 
     /// The paragraph style's ancestors, nearest-first and **including** `id`
