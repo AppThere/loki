@@ -10,6 +10,7 @@
 //! strings from `loki_i18n::fl!()` can be passed directly.
 
 mod recent_files;
+mod recent_row;
 mod template_gallery;
 
 use dioxus::prelude::*;
@@ -17,13 +18,14 @@ use loki_i18n::fl;
 use recent_files::AtRecentFileList;
 use template_gallery::AtTemplateGallery;
 
+use crate::responsive::use_breakpoint;
 use crate::safe_area::use_safe_area;
 use crate::tokens::colors::{
     COLOR_ACCENT_PRIMARY, COLOR_ACCENT_PRIMARY_HOVER, COLOR_STATUS_ERROR_BG,
     COLOR_STATUS_ERROR_BORDER, COLOR_STATUS_ERROR_TEXT, COLOR_SURFACE_BASE, COLOR_TEXT_ON_CHROME,
     COLOR_TEXT_ON_CHROME_SECONDARY, COLOR_TEXT_PRIMARY,
 };
-use crate::tokens::layout::{BREAKPOINT_DESKTOP_PX, TAB_BAR_HEIGHT};
+use crate::tokens::layout::TAB_BAR_HEIGHT;
 use crate::tokens::spacing::{RADIUS_SM, SPACE_2, SPACE_3, SPACE_4, SPACE_6, TOUCH_MIN};
 use crate::tokens::typography::{
     FONT_FAMILY_UI, FONT_SIZE_BODY, FONT_SIZE_LABEL, FONT_WEIGHT_SEMIBOLD,
@@ -61,15 +63,20 @@ pub struct RecentDocument {
 /// Home tab content surface.
 ///
 /// Renders a header, a template gallery, and a recent documents list.
-/// On viewports wider than [`BREAKPOINT_DESKTOP_PX`] the gallery and list
-/// are placed side-by-side; on narrower viewports they stack vertically.
+/// At the Compact size class (`use_breakpoint`, < 600 px) the gallery and
+/// list stack vertically; at Medium/Expanded they sit side-by-side. Apps
+/// that provide no responsive context fall back to Expanded (desktop-first);
+/// pushing a measured width from the app root is what makes this live
+/// (loki-text does; see the plan 4c.5 tail for the other apps).
 ///
 /// **Minimum interactive size: 44×44 logical pixels (WCAG 2.5.8).**
 /// All interactive elements (template cards, document rows, buttons) meet this.
 #[component]
 pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
-    let viewport_width = use_signal(|| 375.0_f32);
-    let is_desktop = viewport_width() >= BREAKPOINT_DESKTOP_PX;
+    // F7a: the size class comes from the shared responsive context — the old
+    // fixed `viewport_width = 375.0` signal locked this surface to the
+    // stacked phone layout everywhere.
+    let is_desktop = !use_breakpoint().is_compact();
 
     // Taffy does not propagate a definite height from a flex:1 child back to
     // its own children's flex:1 items.  Match the Shell outlet's height exactly

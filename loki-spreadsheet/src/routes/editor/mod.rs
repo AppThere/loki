@@ -9,6 +9,7 @@ mod editor_inner;
 mod editor_load;
 mod editor_mutate;
 mod editor_path_sync;
+mod editor_save;
 mod editor_state;
 mod formula;
 #[cfg(test)]

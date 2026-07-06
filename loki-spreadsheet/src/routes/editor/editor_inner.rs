@@ -8,20 +8,18 @@ use appthere_ui::{
     LUCIDE_REDO, LUCIDE_UNDERLINE, LUCIDE_UNDO, RibbonTabDesc, tokens,
 };
 use dioxus::prelude::*;
-use loki_file_access::{FileAccessToken, FilePicker, SaveOptions};
 use loki_i18n::fl;
 use std::collections::HashSet;
 
 use super::cell_ref::{col_to_label, grid_dimensions};
-use super::editor_load::{DocumentFormat, detect_format, load_document};
+use super::editor_load::load_document;
 use super::editor_mutate::{mutate_cell, mutate_cell_style, mutate_column_width};
 use super::editor_path_sync::{
     PathSyncSignals, restore_session, stash_outgoing, sync_path_and_reset,
 };
+use super::editor_save::save_document;
 use super::editor_state::{EditorState, use_editor_state};
 use super::formula::{evaluate_cell, format_evaluated_value};
-use crate::routes::Route;
-use crate::routes::dioxus_router::Navigator;
 use crate::utils::display_title_from_path;
 
 /// Default rendered column width in CSS px (when the document specifies none).
@@ -103,92 +101,6 @@ fn sync_undo_redo(
     }
 }
 
-/// Saves the workbook snapshot to the file target (or picks a target first if untitled)
-fn save_document(
-    _path_prop: String,
-    mut path_signal: Signal<String>,
-    workbook_snap: Signal<loki_sheet_model::Workbook>,
-    mut tabs: Signal<Vec<crate::tabs::OpenTab>>,
-    active_tab: Signal<usize>,
-    navigator: Navigator,
-    mut save_message: Signal<Option<String>>,
-) {
-    let active_tab_idx = *active_tab.peek();
-    let current_path = path_signal.peek().clone();
-    let wb = workbook_snap.peek().clone();
-
-    spawn(async move {
-        save_message.set(None); // clear any previous status
-        let token = if crate::new_document::is_untitled(&current_path) {
-            let picker = FilePicker::new();
-            let opts = SaveOptions {
-                mime_type: Some(
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string(),
-                ),
-                suggested_name: Some("Workbook.xlsx".to_string()),
-            };
-            match picker.pick_file_to_save(opts).await {
-                Ok(Some(t)) => t,
-                Ok(None) => return, // user cancelled — not an error
-                Err(e) => {
-                    save_message.set(Some(fl!("error-file-picker", err = e.to_string())));
-                    return;
-                }
-            }
-        } else {
-            match FileAccessToken::deserialize(&current_path) {
-                Ok(t) => t,
-                Err(e) => {
-                    save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
-                    return;
-                }
-            }
-        };
-
-        let format = detect_format(&token);
-        let mut writer = match token.open_write() {
-            Ok(w) => w,
-            Err(e) => {
-                save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
-                return;
-            }
-        };
-
-        let res = match format {
-            DocumentFormat::Xlsx => loki_ooxml::xlsx::export::XlsxExport::export(&wb, &mut *writer)
-                .map_err(|e| e.to_string()),
-            DocumentFormat::Ods => {
-                loki_odf::OdsExport::export(&wb, &mut *writer).map_err(|e| e.to_string())
-            }
-            DocumentFormat::Unsupported(ext) => Err(format!("Unsupported format: .{ext}")),
-        };
-
-        match res {
-            Err(e) => {
-                save_message.set(Some(fl!("editor-save-error", reason = e)));
-            }
-            Ok(()) => {
-                let new_path = token.serialize();
-                let new_title = display_title_from_path(&new_path);
-
-                path_signal.set(new_path.clone());
-
-                if active_tab_idx > 0 {
-                    let mut tabs_mut = tabs.write();
-                    if let Some(tab) = tabs_mut.get_mut(active_tab_idx - 1) {
-                        tab.path = new_path.clone();
-                        tab.title = new_title;
-                        tab.is_dirty = false;
-                    }
-                }
-
-                save_message.set(Some(fl!("editor-save-success")));
-                navigator.push(Route::Editor { path: new_path });
-            }
-        }
-    });
-}
-
 /// Spreadsheet editor inner component.
 #[component]
 pub(super) fn EditorInner(path: String) -> Element {
@@ -214,6 +126,9 @@ pub(super) fn EditorInner(path: String) -> Element {
 
     // Transient save status (success or error) shown as a dismissible banner.
     let mut save_message = use_signal(|| Option::<String>::None);
+    // Ribbon chrome state (F6d): active tab + collapse are live signals.
+    let mut ribbon_tab = use_signal(|| 0_usize);
+    let mut ribbon_collapsed = use_signal(|| false);
 
     // ── Session restore at mount ─────────────────────────────────────────────
     // Navigating Editor → Home unmounts this component (different routes), so
@@ -1097,19 +1012,21 @@ pub(super) fn EditorInner(path: String) -> Element {
             {main_content}
 
             // ── Ribbon (formatting controls) ──────────────────────────────────
+            // Only tabs with real content are listed (the loki-text
+            // convention) — the earlier Insert/Format/Review/View entries were
+            // dead affordances (audit F6d). Collapse is wired for real.
             AtRibbon {
                 tabs: vec![
-                    RibbonTabDesc { label: fl!("ribbon-tab-home"),   is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-insert"), is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-format"), is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-review"), is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-view"),   is_contextual: false, aria_label: None },
+                    RibbonTabDesc { label: fl!("ribbon-tab-home"), is_contextual: false, aria_label: None },
                 ],
-                active_tab: 0,
-                collapsed: false,
-                on_toggle_collapse: move |_| {},
+                active_tab: ribbon_tab(),
+                collapsed: ribbon_collapsed(),
+                on_toggle_collapse: move |_| {
+                    let next = !*ribbon_collapsed.peek();
+                    ribbon_collapsed.set(next);
+                },
                 toggle_aria_label: fl!("ribbon-collapse-aria"),
-                on_tab_select: move |_idx| {},
+                on_tab_select: move |idx| ribbon_tab.set(idx),
                 tab_content: home_tab
             }
 
