@@ -3,8 +3,7 @@
 //! Write tab ribbon content for the document editor (was "Home", Spec 04 D1).
 //!
 //! [`write_tab_content`] returns the `Element` passed to [`AtRibbon::tab_content`].
-//! Separating it here keeps `editor_inner.rs` under the 300-line ceiling and
-//! makes ribbon content easy to extend independently.
+//! Separating it here keeps `editor_inner.rs` under the 300-line ceiling.
 
 use std::sync::{Arc, Mutex};
 
@@ -52,6 +51,7 @@ pub(super) fn write_tab_content(
     current_style_name: String,
     mut is_style_picker_open: Signal<bool>,
     mut save_request: Signal<u32>,
+    is_dirty: Signal<bool>,
     mut editing_style_draft: Signal<Option<StyleDraft>>,
     save_as: Callback<()>,
     save_as_template: Callback<()>,
@@ -77,7 +77,8 @@ pub(super) fn write_tab_content(
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-save-aria"),
                 is_active:   false,
-                is_disabled: false,
+                // Disabled when clean (plan 4b.3); untitled reads as dirty.
+                is_disabled: !is_dirty(),
                 on_click: move |_| {
                     // Route through the shared save handler (the Ctrl+S effect
                     // in `EditorInner`), which owns the untitled→Save-As

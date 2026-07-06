@@ -107,6 +107,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         is_style_picker_open,
         editing_style_draft,
         mut zoom_percent,
+        mut is_dirty,
         save_message,
         save_request,
         mut active_ribbon_tab,
@@ -460,18 +461,19 @@ pub(super) fn EditorInner(path: String) -> Element {
 
     // ── Unsaved-changes (dirty) tracking ─────────────────────────────────────
     //
-    // The tab shows a dirty indicator when the live document generation differs
-    // from the clean baseline captured at load/save — unless the undo-stack
-    // clean checkpoint says the document is back at its saved state (undoing
-    // to the save point clears dirty; plan 4b.3). Untitled documents are
-    // always dirty until the first Save As. Runs whenever the cursor's
-    // mirrored generation, the path, or the baseline changes.
+    // Dirty = the live generation differs from the clean baseline AND the
+    // undo-stack clean checkpoint disagrees (undoing to the save point clears
+    // dirty; plan 4b.3); untitled docs are always dirty until the first Save
+    // As. Drives the tab indicator and the `is_dirty` signal (ribbon Save).
     use_effect(move || {
         let live_gen = cursor_state.read().document_generation;
         let path = path_signal();
         let base = baseline_gen();
         let undo_clean = saved_state.read().is_clean();
         let dirty = is_untitled(&path) || (live_gen != base && !undo_clean);
+        if *is_dirty.peek() != dirty {
+            is_dirty.set(dirty); // guard avoids a needless ribbon re-render
+        }
         let mut t = tabs.write();
         if let Some(tab) = t.iter_mut().find(|tab| tab.path == path)
             && tab.is_dirty != dirty
@@ -480,18 +482,13 @@ pub(super) fn EditorInner(path: String) -> Element {
         }
     });
 
-    // ── Save As ──────────────────────────────────────────────────────────────
-    // Extracted flow (editor_save_callbacks): picks a destination, exports
-    // DOCX, repoints the tab, records recents, and navigates to the new path.
+    // ── Save As / Save as Template (extracted flows: editor_save_callbacks) ──
     let save_as = super::editor_save_callbacks::use_save_as_callback(
         Arc::clone(&doc_state),
         save_message,
         baseline_gen,
         path_signal,
     );
-
-    // ── Save as Template (.dotx) ───────────────────────────────────────────────
-    // Self-contained save flow — extracted to keep this file under its ceiling.
     let save_as_template = super::editor_save_callbacks::use_save_as_template_callback(
         Arc::clone(&doc_state),
         save_message,
@@ -764,6 +761,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     current_style_name,
                     is_style_picker_open,
                     save_request,
+                    is_dirty,
                     editing_style_draft,
                     save_as,
                     save_as_template,

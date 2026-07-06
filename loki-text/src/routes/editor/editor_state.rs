@@ -133,6 +133,11 @@ pub(super) struct EditorState {
     /// Paginated render zoom, in percent (100 = 1:1). Cycled by the status
     /// bar's zoom badge; scales page tiles + paint together (4c.5 / F6d).
     pub zoom_percent: Signal<u32>,
+    /// Whether the document has unsaved changes (mirror of the tab's dirty
+    /// indicator; plan 4b.3). Drives the ribbon Save button's disabled state —
+    /// a clean *titled* document has nothing to save. Untitled documents stay
+    /// dirty (Save routes to Save As), so their Save button stays enabled.
+    pub is_dirty: Signal<bool>,
     /// Last save result message (`None` = nothing to show).
     pub save_message: Signal<Option<String>>,
     /// Monotonic counter bumped by the Ctrl+S handler. `EditorInner` watches it
@@ -200,6 +205,7 @@ pub(super) fn use_editor_state() -> EditorState {
         is_style_picker_open: use_signal(|| false),
         editing_style_draft: use_signal(|| None),
         zoom_percent: use_signal(|| 100_u32),
+        is_dirty: use_signal(|| false),
         save_message: use_signal(|| None),
         save_request: use_signal(|| 0_u32),
         active_ribbon_tab: use_signal(|| 0_usize),
