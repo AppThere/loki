@@ -62,6 +62,13 @@ pub fn AtRibbonGroups(
         .map(|(g, _)| g)
         .collect();
 
+    // A widen (or content change) that removes the overflow must not leave a
+    // stale-open menu — its "More" button is gone, so it could never be toggled
+    // shut. Reconcile in-render; it converges in one frame.
+    if !cascade.overflow && *menu_open.peek() {
+        menu_open.set(false);
+    }
+
     rsx! {
         // In-strip groups, each at its resolved collapse state.
         for (spec, state) in groups.iter().zip(cascade.states.iter()) {
@@ -99,10 +106,15 @@ pub fn AtRibbonGroups(
                     // anchored to the More button. `position: absolute` (block-level)
                     // is confirmed working in the current Blitz stack (see CLAUDE.md).
                     //
-                    // TODO(ribbon): outside-click-to-dismiss needs a window-level
-                    // backdrop host — `position: fixed` collapses to `absolute` in
-                    // stylo_taffy, so a backdrop here would only cover this wrapper.
-                    // For now the menu toggles closed via the More button.
+                    // Dismissal: the More button toggles it shut, and a resize that
+                    // removes the overflow auto-closes it (above). True
+                    // outside-click-to-dismiss needs a full-viewport backdrop, which
+                    // must be hosted at a positioned window-level ancestor (like the
+                    // editor-root overlay the spell panel uses) — `position: fixed`
+                    // collapses to `absolute` in stylo_taffy, so a backdrop rendered
+                    // here would only cover this small wrapper. TODO(ribbon): host the
+                    // overflow menu in a shared window-level overlay so a backdrop can
+                    // span the viewport.
                     div {
                         style: format!(
                             "position: absolute; bottom: 100%; right: 0; z-index: 41; \

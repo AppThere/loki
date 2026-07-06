@@ -31,7 +31,6 @@
 331 loki-text/src/editing/state.rs
 328 loki-ooxml/src/docx/model/paragraph.rs
 316 loki-text/src/routes/editor/editor_style.rs
-315 loki-text/src/routes/editor/editor_publish.rs
 315 loki-odf/src/odt/model/styles.rs
 314 loki-renderer/src/page_paint_source.rs
 307 loki-ooxml/src/docx/mapper/table.rs

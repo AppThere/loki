@@ -12,7 +12,6 @@ use std::io::{Cursor, Write};
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::tokens;
-use appthere_ui::{AtRibbonGroup, AtRibbonIconButton};
 use dioxus::prelude::*;
 use loki_doc_model::io::DocumentExport;
 use loki_epub::{EpubExport, EpubOptions};
@@ -20,7 +19,6 @@ use loki_file_access::{FilePicker, SaveOptions};
 use loki_i18n::fl;
 use loki_pdf::{PdfXLevel, PdfXOptions};
 
-use super::editor_metadata::{MetaDraft, meta_to_draft};
 use crate::editing::state::DocumentState;
 use crate::utils::display_title_from_path;
 
@@ -48,83 +46,6 @@ impl From<PdfXLevelChoice> for PdfXLevel {
             PdfXLevelChoice::X1a => PdfXLevel::X1a,
             PdfXLevelChoice::X3 => PdfXLevel::X3,
             PdfXLevelChoice::X4 => PdfXLevel::X4,
-        }
-    }
-}
-
-/// Builds the Publish tab ribbon content.
-pub(super) fn publish_tab_content(
-    doc_state: &Arc<Mutex<DocumentState>>,
-    path_signal: Signal<String>,
-    save_message: Signal<Option<String>>,
-    mut is_publish_panel_open: Signal<bool>,
-    mut editing_metadata: Signal<Option<MetaDraft>>,
-) -> Element {
-    let ds_epub = Arc::clone(doc_state);
-    let ds_meta = Arc::clone(doc_state);
-
-    rsx! {
-        // ── Export group ──────────────────────────────────────────────────────
-        AtRibbonGroup {
-            label: Some(fl!("publish-group-export")),
-            aria_label: fl!("publish-group-export"),
-
-            AtRibbonIconButton {
-                aria_label: fl!("publish-export-pdf-aria"),
-                is_active: is_publish_panel_open(),
-                is_disabled: false,
-                on_click: move |_| {
-                    let open = is_publish_panel_open();
-                    is_publish_panel_open.set(!open);
-                },
-                {label_node(&fl!("publish-export-pdf-label"))}
-            }
-
-            AtRibbonIconButton {
-                aria_label: fl!("publish-export-epub-aria"),
-                is_active: false,
-                is_disabled: false,
-                on_click: move |_| {
-                    run_export(&ds_epub, PublishFormat::Epub, &path_signal.peek(), save_message);
-                },
-                {label_node(&fl!("publish-export-epub-label"))}
-            }
-        }
-
-        // ── Metadata group ────────────────────────────────────────────────────
-        AtRibbonGroup {
-            label: Some(fl!("publish-group-metadata")),
-            aria_label: fl!("publish-group-metadata"),
-
-            AtRibbonIconButton {
-                aria_label: fl!("publish-metadata-aria"),
-                is_active: editing_metadata.read().is_some(),
-                is_disabled: false,
-                on_click: move |_| {
-                    if editing_metadata.read().is_some() {
-                        editing_metadata.set(None);
-                    } else {
-                        editing_metadata.set(Some(meta_to_draft(&ds_meta)));
-                    }
-                },
-                {label_node(&fl!("publish-metadata-label"))}
-            }
-        }
-    }
-}
-
-/// Renders a compact text label inside a ribbon button (these actions have no
-/// dedicated icon).
-fn label_node(text: &str) -> Element {
-    rsx! {
-        span {
-            style: format!(
-                "font-family: {ff}; font-size: {fs}px; color: inherit; \
-                 white-space: nowrap;",
-                ff = tokens::FONT_FAMILY_UI,
-                fs = tokens::FONT_SIZE_LABEL,
-            ),
-            "{text}"
         }
     }
 }
@@ -205,7 +126,7 @@ pub(super) fn publish_panel(
 }
 
 /// Picks a destination and writes the document in `format` to it.
-fn run_export(
+pub(super) fn run_export(
     doc_state: &Arc<Mutex<DocumentState>>,
     format: PublishFormat,
     cur_path: &str,

@@ -41,9 +41,10 @@ use super::editor_metadata_panel::metadata_panel;
 use super::editor_path_sync::{
     PathSyncSignals, restore_session, stash_outgoing, sync_path_and_reset,
 };
-use super::editor_publish::{publish_panel, publish_tab_content};
+use super::editor_publish::publish_panel;
 use super::editor_ribbon::write_tab_content;
 use super::editor_ribbon_insert::insert_tab_content;
+use super::editor_ribbon_publish::publish_tab_content;
 use super::editor_save_banner::save_banner;
 use super::editor_spell::SpellMenu;
 use super::editor_state::{EditorState, use_editor_state};
@@ -56,8 +57,7 @@ use crate::tabs::OpenTab;
 use loki_app_shell::spell::SpellService;
 
 // EditorMode removed — the editor is always in edit mode when a document is
-// open. Distraction-free reading is handled by the View ribbon tab (future
-// pass), not by a separate mode.
+// open. Distraction-free reading is the View ribbon tab's job (future pass).
 
 /// Document editor inner component — all editing logic lives here.
 ///

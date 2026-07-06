@@ -12,19 +12,18 @@ use std::sync::{Arc, Mutex};
 
 use appthere_ui::{
     AT_TABLE_COL_DELETE, AT_TABLE_COL_INSERT, AT_TABLE_COL_INSERT_LEFT, AT_TABLE_ROW_DELETE,
-    AT_TABLE_ROW_INSERT, AT_TABLE_ROW_INSERT_ABOVE, AtIcon, AtRibbonGroup, AtRibbonIconButton,
-    LUCIDE_TRASH_2, RibbonTabDesc,
+    AT_TABLE_ROW_INSERT, AT_TABLE_ROW_INSERT_ABOVE, AtIcon, AtRibbonGroups, AtRibbonIconButton,
+    LUCIDE_TRASH_2, RibbonGroupSpec, RibbonTabDesc, estimate_group_metrics,
 };
 use dioxus::prelude::*;
-use loki_doc_model::{delete_block, table_grid_dims};
+use loki_doc_model::table_grid_dims;
 use loki_i18n::fl;
 
-use super::editor_keydown_ctrl::post_mutation_sync;
-use super::editor_keydown_text::set_collapsed_cursor;
+use super::editor_ribbon_table_delete::delete_current_table;
 use super::editor_ribbon_table_ops::{TableOp, run_table_op};
-use crate::editing::cursor::{CursorState, DocumentPosition};
+use crate::editing::cursor::CursorState;
 use crate::editing::selected_object::{SelectedObject, selected_object};
-use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
+use crate::editing::state::DocumentState;
 
 /// Index of the Table contextual tab in the ribbon strip — it follows the four
 /// core tabs (Write=0, Insert=1, Layout=2, Publish=3), so any `active_tab >= 4`
@@ -91,7 +90,7 @@ pub(super) fn use_ribbon_tabs(
 
 /// The document's total top-level block count across all sections, or `0` when
 /// no document is loaded.
-fn block_count(doc_state: &Arc<Mutex<DocumentState>>) -> usize {
+pub(super) fn block_count(doc_state: &Arc<Mutex<DocumentState>>) -> usize {
     doc_state
         .lock()
         .ok()
@@ -139,12 +138,13 @@ pub(super) fn table_tab_content(
     let simple = dims.is_some();
     let (rows, cols) = dims.unwrap_or((0, 0));
 
-    rsx! {
-        // ── Rows & Columns group ──────────────────────────────────────────────
-        AtRibbonGroup {
-            label:      Some(fl!("ribbon-group-table-rows")),
-            aria_label: fl!("ribbon-group-table-rows"),
-
+    // Rows & Columns (6 ops) is kept full longer than the single Delete-table
+    // button (priority 1 vs 0).
+    let rows_cols = RibbonGroupSpec {
+        metrics: estimate_group_metrics(1, 6, true),
+        label: Some(fl!("ribbon-group-table-rows")),
+        aria_label: fl!("ribbon-group-table-rows"),
+        content: rsx! {
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-table-row-insert-above-aria"),
                 is_active:   false,
@@ -205,13 +205,14 @@ pub(super) fn table_tab_content(
                 ),
                 AtIcon { path_d: AT_TABLE_COL_DELETE.to_string() }
             }
-        }
+        },
+    };
 
-        // ── Table group ───────────────────────────────────────────────────────
-        AtRibbonGroup {
-            label:      Some(fl!("ribbon-group-table")),
-            aria_label: fl!("ribbon-group-table"),
-
+    let table = RibbonGroupSpec {
+        metrics: estimate_group_metrics(0, 1, true),
+        label: Some(fl!("ribbon-group-table")),
+        aria_label: fl!("ribbon-group-table"),
+        content: rsx! {
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-table-delete-aria"),
                 is_active:   false,
@@ -223,61 +224,15 @@ pub(super) fn table_tab_content(
                 },
                 AtIcon { path_d: LUCIDE_TRASH_2.to_string() }
             }
-        }
-    }
-}
-
-/// Deletes the table the caret is inside (its root block) and re-homes the
-/// caret to the block that takes its place (or the previous block if it was
-/// last), at offset 0.
-fn delete_current_table(
-    doc_state: &Arc<Mutex<DocumentState>>,
-    loro_doc: Signal<Option<loro::LoroDoc>>,
-    cursor_state: Signal<CursorState>,
-    undo_manager: Signal<Option<loro::UndoManager>>,
-    can_undo: Signal<bool>,
-    can_redo: Signal<bool>,
-) {
-    // The table is the caret's root block (works from inside any of its cells).
-    let Some(root) = cursor_state
-        .peek()
-        .focus
-        .as_ref()
-        .map(|f| f.paragraph_index)
-    else {
-        return;
+        },
     };
-    // Re-check the guard at click time (the document may have changed).
-    if block_count(doc_state) <= 1 {
-        return;
-    }
-    {
-        let guard = loro_doc.read();
-        let Some(ldoc) = guard.as_ref() else {
-            return;
-        };
-        if delete_block(ldoc, root).is_err() {
-            return;
+
+    rsx! {
+        AtRibbonGroups {
+            overflow_aria_label: fl!("ribbon-overflow-aria"),
+            groups: vec![rows_cols, table],
         }
-        apply_mutation_and_relayout(doc_state, ldoc);
     }
-    post_mutation_sync(
-        doc_state,
-        loro_doc,
-        cursor_state,
-        undo_manager,
-        can_undo,
-        can_redo,
-    );
-    // `remaining >= 1` (guarded above), so this index is valid; the page is
-    // re-derived from the fresh layout.
-    let remaining = block_count(doc_state);
-    let target = root.min(remaining.saturating_sub(1));
-    set_collapsed_cursor(
-        doc_state,
-        cursor_state,
-        DocumentPosition::top_level(0, target, 0),
-    );
 }
 
 #[cfg(test)]
