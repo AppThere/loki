@@ -14,6 +14,7 @@ pub mod list_style;
 pub mod para_style;
 pub mod props;
 pub mod resolve;
+pub mod resolve_table;
 pub mod table_style;
 pub mod tree;
 

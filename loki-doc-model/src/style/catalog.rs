@@ -112,6 +112,15 @@ pub struct StyleCatalog {
     /// [`Provenance::FormatDefault`] (the previous behaviour).
     #[cfg_attr(feature = "serde", serde(default))]
     pub default_character_style: Option<StyleId>,
+    /// The id of the document's **default table style** — the table-family
+    /// analogue of the paragraph/character defaults (Spec 05 M6, ADR-0012
+    /// Decision 1). A table style whose own chain does not set a property falls
+    /// through to this style for it, resolving as [`Provenance::Default`].
+    ///
+    /// OOXML: the table style flagged `w:default="1"` (typically `TableNormal`);
+    /// ODF: `style:default-style style:family="table"`. `None` = no table default.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub default_table_style: Option<StyleId>,
 }
 
 impl StyleCatalog {

@@ -108,6 +108,11 @@ pub(crate) fn map_styles(styles: &DocxStyles) -> StyleCatalog {
                     table_props: TableProps::default(),
                     extensions: ExtensionBag::default(),
                 };
+                // The table style flagged `w:default="1"` (e.g. TableNormal) is
+                // the table family's `Default` source (ADR-0012 Decision 1).
+                if style.is_default {
+                    catalog.default_table_style = Some(id.clone());
+                }
                 // COMPAT(microsoft): duplicate styleId — last definition wins,
                 // matching Microsoft Word's behavior per §2.7.3.17.
                 catalog.table_styles.insert(id, s);

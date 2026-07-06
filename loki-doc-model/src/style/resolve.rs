@@ -49,28 +49,30 @@ pub struct Resolved<T> {
 }
 
 impl<T> Resolved<T> {
-    fn local(value: T) -> Self {
+    // `pub(crate)` so the per-family resolvers split across sibling modules
+    // (e.g. `resolve_table`) can build results without duplicating the type.
+    pub(crate) fn local(value: T) -> Self {
         Self {
             provenance: Provenance::Local,
             value: Some(value),
         }
     }
 
-    fn inherited(from: StyleId, value: T) -> Self {
+    pub(crate) fn inherited(from: StyleId, value: T) -> Self {
         Self {
             provenance: Provenance::Inherited(from),
             value: Some(value),
         }
     }
 
-    fn from_default(value: T) -> Self {
+    pub(crate) fn from_default(value: T) -> Self {
         Self {
             provenance: Provenance::Default,
             value: Some(value),
         }
     }
 
-    fn format_default() -> Self {
+    pub(crate) fn format_default() -> Self {
         Self {
             provenance: Provenance::FormatDefault,
             value: None,

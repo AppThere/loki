@@ -10,6 +10,8 @@ use crate::style::char_style::CharacterStyle;
 use crate::style::para_style::ParagraphStyle;
 use crate::style::props::char_props::CharProps;
 use crate::style::props::para_props::{ParaProps, ParagraphAlignment};
+use crate::style::table_style::{TableProps, TableStyle};
+use loki_primitives::units::Points;
 
 // ── Builders ────────────────────────────────────────────────────────────────
 
@@ -445,4 +447,85 @@ fn para_ancestors_lists_chain_nearest_first_including_self() {
         cat.para_ancestors(&StyleId::new("C")),
         vec![StyleId::new("C"), StyleId::new("B"), StyleId::new("A")]
     );
+}
+
+// ── Table-style provenance (ADR-0012 Decision 1, table family) ────────────────
+
+fn table_style(id: &str, parent: Option<&str>, props: TableProps) -> TableStyle {
+    TableStyle {
+        id: StyleId::new(id),
+        display_name: None,
+        parent: parent.map(StyleId::new),
+        table_props: props,
+        extensions: Default::default(),
+    }
+}
+
+fn spacing(pt: f64) -> TableProps {
+    TableProps {
+        cell_spacing: Some(Points::new(pt)),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn table_style_inherits_and_falls_through_to_the_default() {
+    let mut cat = StyleCatalog::new();
+    // TableNormal (the w:default) sets spacing; Grid inherits from Fancy which
+    // sets nothing, and Fancy does not chain to TableNormal → Default level.
+    cat.table_styles.insert(
+        StyleId::new("TableNormal"),
+        table_style("TableNormal", None, spacing(2.0)),
+    );
+    cat.default_table_style = Some(StyleId::new("TableNormal"));
+    cat.table_styles.insert(
+        StyleId::new("Fancy"),
+        table_style("Fancy", None, TableProps::default()),
+    );
+    cat.table_styles.insert(
+        StyleId::new("Grid"),
+        table_style("Grid", Some("Fancy"), TableProps::default()),
+    );
+
+    // Local wins.
+    let r = cat
+        .resolve_table_chain(&StyleId::new("TableNormal"), |s| s.table_props.cell_spacing)
+        .unwrap();
+    assert_eq!(r.provenance, Provenance::Local);
+
+    // Grid → Fancy set nothing; falls through to the default table style.
+    let r = cat
+        .resolve_table_chain(&StyleId::new("Grid"), |s| s.table_props.cell_spacing)
+        .unwrap();
+    assert_eq!(r.provenance, Provenance::Default);
+    assert_eq!(r.value, Some(Points::new(2.0)));
+}
+
+#[test]
+fn table_style_unset_without_default_is_format_default() {
+    let mut cat = StyleCatalog::new();
+    cat.table_styles.insert(
+        StyleId::new("Bare"),
+        table_style("Bare", None, TableProps::default()),
+    );
+    let r = cat
+        .resolve_table_chain(&StyleId::new("Bare"), |s| s.table_props.cell_spacing)
+        .unwrap();
+    assert_eq!(r.provenance, Provenance::FormatDefault);
+    assert_eq!(r.value, None);
+}
+
+#[test]
+fn table_reparent_cycle_is_detected() {
+    let mut cat = StyleCatalog::new();
+    cat.table_styles.insert(
+        StyleId::new("A"),
+        table_style("A", None, TableProps::default()),
+    );
+    cat.table_styles.insert(
+        StyleId::new("B"),
+        table_style("B", Some("A"), TableProps::default()),
+    );
+    assert!(cat.table_reparent_cycles(&StyleId::new("A"), &StyleId::new("B")));
+    assert!(!cat.table_reparent_cycles(&StyleId::new("B"), &StyleId::new("A")));
 }

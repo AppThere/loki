@@ -91,6 +91,33 @@ fn table_style_in_table_catalog() {
             .paragraph_styles
             .contains_key(&StyleId::new("TableGrid"))
     );
+    // Not flagged default → no default table style recorded.
+    assert_eq!(catalog.default_table_style, None);
+}
+
+#[test]
+fn default_flagged_table_style_becomes_the_table_default() {
+    let styles = DocxStyles {
+        default_rpr: None,
+        default_ppr: None,
+        styles: vec![DocxStyle {
+            style_type: DocxStyleType::Table,
+            style_id: "TableNormal".into(),
+            is_default: true,
+            is_custom: false,
+            name: Some("Table Normal".into()),
+            based_on: None,
+            next: None,
+            link: None,
+            ppr: None,
+            rpr: None,
+        }],
+    };
+    let catalog = map_styles(&styles);
+    assert_eq!(
+        catalog.default_table_style,
+        Some(StyleId::new("TableNormal")),
+    );
 }
 
 #[test]
