@@ -213,6 +213,49 @@ fn hyperlink_routes_into_a_table_cell() {
     );
 }
 
+// ── Table insert places the caret in the first cell (plan 4a.5) ─────────
+
+#[test]
+fn first_cell_caret_addresses_top_left_cell() {
+    use loki_doc_model::PathStep;
+    let p = first_cell_caret(7);
+    assert_eq!(p.paragraph_index, 7, "root is the table block index");
+    assert_eq!(p.byte_offset, 0);
+    assert_eq!(p.path, vec![PathStep::Cell { cell: 0, block: 0 }]);
+}
+
+#[test]
+fn insert_table_returns_first_cell_caret() {
+    // Block 0 is a paragraph; inserting a table after it puts the table at
+    // block 1 and returns a caret pointing at that table's first cell.
+    let loro = doc_with_text("hello");
+    let target = insert_table_after_cursor(&loro, &selection(2, 2))
+        .expect("insert ok")
+        .expect("a cursor was placed");
+    assert_eq!(target, first_cell_caret(1));
+
+    // The table really landed at block 1 and its first cell is an empty,
+    // editable paragraph — exactly where the returned caret points.
+    let doc = loki_doc_model::loro_to_document(&loro).unwrap();
+    let Block::Table(t) = &doc.sections[0].blocks[1] else {
+        panic!(
+            "block 1 should be the new table: {:?}",
+            doc.sections[0].blocks
+        );
+    };
+    let Block::Para(inlines) = &t.bodies[0].body_rows[0].cells[0].blocks[0] else {
+        panic!("first cell should hold one empty paragraph");
+    };
+    assert!(inlines.is_empty(), "first cell paragraph starts empty");
+}
+
+#[test]
+fn insert_table_without_cursor_is_a_noop() {
+    let loro = doc_with_text("hello");
+    let target = insert_table_after_cursor(&loro, &CursorState::new()).unwrap();
+    assert!(target.is_none(), "no cursor → no table, no caret");
+}
+
 #[test]
 fn image_routes_into_a_table_cell() {
     let loro = doc_with_table_cell("ab");

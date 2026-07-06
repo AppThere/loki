@@ -14,7 +14,6 @@
 //!   body.
 //! - **Link** — opens the URL panel ([`super::editor_insert_panel`]).
 
-use std::io::Read;
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::{
@@ -23,26 +22,15 @@ use appthere_ui::{
 };
 use dioxus::prelude::*;
 use loki_doc_model::MutationError;
-use loki_file_access::{FileAccessToken, FilePicker, PickOptions};
 use loki_i18n::fl;
 use loro::LoroDoc;
 
-use super::editor_insert::{
-    image_inline_from_bytes, insert_footnote_at_cursor, insert_image_at_cursor,
-    insert_table_after_cursor,
-};
+use super::editor_insert::{insert_footnote_at_cursor, insert_table_after_cursor};
 use super::editor_keydown_ctrl::post_mutation_sync;
-use crate::editing::cursor::CursorState;
+use super::editor_keydown_text::set_collapsed_cursor;
+use super::editor_ribbon_insert_image::spawn_pick_and_insert_image;
+use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
-
-/// Raster image MIME types offered in the Insert → Image picker.
-const IMAGE_MIME_TYPES: &[&str] = &[
-    "image/png",
-    "image/jpeg",
-    "image/gif",
-    "image/webp",
-    "image/bmp",
-];
 
 /// Live-document handles the Insert tab needs to create objects at the cursor.
 #[derive(Clone)]
@@ -103,7 +91,13 @@ pub(super) fn insert_tab_content(
                     let ctx = ctx.clone();
                     move |_| run_insert(
                         &ctx,
-                        |ldoc, cur| insert_table_after_cursor(ldoc, cur).map(|o| o.is_some()),
+                        // Move the caret into the new table's first cell.
+                        |ldoc, cur| insert_table_after_cursor(ldoc, cur).map(|target| {
+                            match target {
+                                Some(pos) => InsertResult::Inserted(Some(pos)),
+                                None => InsertResult::NoCursor,
+                            }
+                        }),
                         fl!("editor-insert-table-success"),
                     )
                 },
@@ -122,7 +116,19 @@ pub(super) fn insert_tab_content(
                 is_disabled: false,
                 on_click: {
                     let ctx = ctx.clone();
-                    move |_| run_insert(&ctx, insert_footnote_at_cursor, fl!("editor-insert-footnote-success"))
+                    // The footnote body is editable via its `BlockPath`, but the
+                    // caret stays at the anchor (Word leaves it there too).
+                    move |_| run_insert(
+                        &ctx,
+                        |ldoc, cur| insert_footnote_at_cursor(ldoc, cur).map(|inserted| {
+                            if inserted {
+                                InsertResult::Inserted(None)
+                            } else {
+                                InsertResult::NoCursor
+                            }
+                        }),
+                        fl!("editor-insert-footnote-success"),
+                    )
                 },
                 AtIcon { path_d: LUCIDE_FOOTNOTE.to_string() }
             }
@@ -150,33 +156,47 @@ pub(super) fn insert_tab_content(
     }
 }
 
+/// What an Insert-tab `op` did with the live document.
+pub(super) enum InsertResult {
+    /// Content was inserted. If `Some`, the caret should collapse to this
+    /// position after relayout (e.g. the new table's first cell); if `None`,
+    /// the caret is left where it was.
+    Inserted(Option<DocumentPosition>),
+    /// There was no placed cursor, so nothing was inserted.
+    NoCursor,
+}
+
 /// Runs a synchronous Insert-tab `op` against the live document, relays out,
-/// syncs undo/redo, and reports the outcome through the status banner.
+/// syncs undo/redo, optionally moves the caret into the new object, and reports
+/// the outcome through the status banner.
 ///
-/// `op` returns `Ok(true)` when it mutated, `Ok(false)` when there was no
-/// cursor, or `Err` on failure — surfaced as the no-cursor / failure messages.
+/// `op` returns [`InsertResult::Inserted`] (with an optional caret target) when
+/// it mutated, [`InsertResult::NoCursor`] when there was no cursor, or `Err` on
+/// failure — surfaced as the no-cursor / failure messages.
 fn run_insert(
     ctx: &InsertCtx,
-    op: impl FnOnce(&LoroDoc, &CursorState) -> Result<bool, MutationError>,
+    op: impl FnOnce(&LoroDoc, &CursorState) -> Result<InsertResult, MutationError>,
     success: String,
 ) {
     let mut save_message = ctx.save_message;
-    let outcome = {
+    // `Ok(target)` — inserted, move caret to `target` if `Some`; `Err(true)` —
+    // no cursor; `Err(false)` — the op failed.
+    let outcome: Result<Option<DocumentPosition>, bool> = {
         let guard = ctx.loro_doc.read();
         let Some(ldoc) = guard.as_ref() else {
             return;
         };
         match op(ldoc, &ctx.cursor_state.read()) {
-            Ok(true) => {
+            Ok(InsertResult::Inserted(target)) => {
                 apply_mutation_and_relayout(&ctx.doc_state, ldoc);
-                Some(true)
+                Ok(target)
             }
-            Ok(false) => Some(false),
-            Err(_) => None,
+            Ok(InsertResult::NoCursor) => Err(true),
+            Err(_) => Err(false),
         }
     };
     match outcome {
-        Some(true) => {
+        Ok(target) => {
             post_mutation_sync(
                 &ctx.doc_state,
                 ctx.loro_doc,
@@ -185,90 +205,13 @@ fn run_insert(
                 ctx.can_undo,
                 ctx.can_redo,
             );
+            // After relayout, re-derive the caret's page from the fresh layout.
+            if let Some(pos) = target {
+                set_collapsed_cursor(&ctx.doc_state, ctx.cursor_state, pos);
+            }
             save_message.set(Some(success));
         }
-        Some(false) => save_message.set(Some(fl!("editor-insert-no-cursor"))),
-        None => save_message.set(Some(fl!("editor-insert-failed"))),
+        Err(true) => save_message.set(Some(fl!("editor-insert-no-cursor"))),
+        Err(false) => save_message.set(Some(fl!("editor-insert-failed"))),
     }
-}
-
-/// Reads all bytes from a picked file token.
-fn read_token_bytes(token: &FileAccessToken) -> std::io::Result<Vec<u8>> {
-    let mut reader = token
-        .open_read()
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
-    let mut buf = Vec::new();
-    reader.read_to_end(&mut buf)?;
-    Ok(buf)
-}
-
-/// Spawns the async pick → embed → insert flow for an image at the cursor.
-///
-/// Opens the platform file picker, reads the chosen file, builds a data-URI
-/// `Inline::Image`, inserts it at the cursor, and reports the outcome through
-/// the status banner. A cancelled picker is a silent no-op.
-fn spawn_pick_and_insert_image(ctx: InsertCtx) {
-    let mut save_message = ctx.save_message;
-    spawn(async move {
-        let picker = FilePicker::new();
-        let opts = PickOptions {
-            mime_types: IMAGE_MIME_TYPES.iter().map(|s| (*s).to_string()).collect(),
-            filter_label: Some(fl!("ribbon-insert-image-filter")),
-            multi: false,
-        };
-        match picker.pick_file_to_open(opts).await {
-            Ok(Some(token)) => {
-                let bytes = match read_token_bytes(&token) {
-                    Ok(b) => b,
-                    Err(e) => {
-                        save_message.set(Some(fl!(
-                            "editor-insert-image-error",
-                            reason = e.to_string()
-                        )));
-                        return;
-                    }
-                };
-                let Some(image) = image_inline_from_bytes(&bytes) else {
-                    save_message.set(Some(fl!("editor-insert-image-unsupported")));
-                    return;
-                };
-                let outcome = {
-                    let guard = ctx.loro_doc.read();
-                    match guard.as_ref() {
-                        Some(ldoc) => {
-                            match insert_image_at_cursor(ldoc, &ctx.cursor_state.read(), &image) {
-                                Ok(true) => {
-                                    apply_mutation_and_relayout(&ctx.doc_state, ldoc);
-                                    Some(true)
-                                }
-                                Ok(false) => Some(false),
-                                Err(_) => None,
-                            }
-                        }
-                        None => None,
-                    }
-                };
-                match outcome {
-                    Some(true) => {
-                        post_mutation_sync(
-                            &ctx.doc_state,
-                            ctx.loro_doc,
-                            ctx.cursor_state,
-                            ctx.undo_manager,
-                            ctx.can_undo,
-                            ctx.can_redo,
-                        );
-                        save_message.set(Some(fl!("editor-insert-image-success")));
-                    }
-                    Some(false) => save_message.set(Some(fl!("editor-insert-image-no-cursor"))),
-                    None => save_message.set(Some(fl!("editor-insert-image-error", reason = "—"))),
-                }
-            }
-            Ok(None) => { /* user cancelled — no-op */ }
-            Err(e) => save_message.set(Some(fl!(
-                "editor-insert-image-error",
-                reason = e.to_string()
-            ))),
-        }
-    });
 }
