@@ -127,19 +127,18 @@ pub(super) fn EditorInner(path: String) -> Element {
     let spell_hover = use_signal(|| Option::<String>::None);
     // Insert-tab hyperlink panel: `Some(url)` while open (Spec 04 M4).
     let link_draft = use_signal(|| Option::<String>::None);
-    // Character style in the style panel (Spec 05 M6): the id selects it for the
-    // read-only inspector; the draft drives the editable character form (4a.3).
+    // Character style in the style panel (Spec 05 M6): id → inspector, draft → form.
     let editing_char_style = use_signal(|| Option::<String>::None);
     let editing_char_draft = use_signal(|| Option::<StyleDraft>::None);
-    // List style browsed in the style panel (Spec 05 M6): read-only per-level.
+    // List / page styles browsed in the style panel (Spec 05 M6): read-only.
     let editing_list_style = use_signal(|| Option::<String>::None);
+    let editing_page_style = use_signal(|| Option::<String>::None);
     // Compact style-panel pane (Spec 05 M7 §11): Inspect vs Edit; ignored ≥Medium.
     let style_panel_inspect = use_signal(|| false);
     // Stashed sessions for inactive tabs — unsaved edits survive tab switches.
     let doc_sessions = use_context::<Signal<DocSessions>>();
-    // Document generation considered "clean" (matches the on-disk file).
-    // Captured when the document finishes loading and after each successful
-    // save; the tab is dirty whenever the live generation differs.
+    // Document generation considered "clean" (matches the on-disk file): captured
+    // at load and after each save; the tab is dirty when the live generation differs.
     let mut baseline_gen = use_signal(|| 0_u64);
 
     // ── Session restore at mount ─────────────────────────────────────────────
@@ -643,6 +642,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     editing_char_style,
                     editing_char_draft,
                     editing_list_style,
+                    editing_page_style,
                     style_panel_inspect,
                     use_breakpoint(),
                     Rc::clone(&font_families),

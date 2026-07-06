@@ -17,6 +17,7 @@ mod family_inspector;
 mod form;
 mod form_font;
 mod list_browser;
+mod page_browser;
 mod panel_data;
 mod posture;
 mod provenance;
@@ -75,6 +76,7 @@ pub(super) fn style_editor_panel(
     editing_char_style: Signal<Option<String>>,
     editing_char_draft: Signal<Option<StyleDraft>>,
     editing_list_style: Signal<Option<String>>,
+    editing_page_style: Signal<Option<String>>,
     style_panel_inspect: Signal<bool>,
     breakpoint: Breakpoint,
     font_families: Rc<Vec<String>>,
@@ -100,6 +102,10 @@ pub(super) fn style_editor_panel(
     let list_selected = editing_list_style.read().clone();
     let (list_list, list_selected_rows) =
         panel_data::list_data(&doc_state, list_selected.as_deref());
+    // Page styles (§9 page family) are derived on demand from the sections.
+    let page_selected = editing_page_style.read().clone();
+    let (page_list, page_selected_rows) =
+        panel_data::page_data(&doc_state, page_selected.as_deref());
 
     let styles = catalog_style_tree(&doc_state);
     let active_id = draft.id.clone();
@@ -195,6 +201,9 @@ pub(super) fn style_editor_panel(
                         list_list,
                         list_selected,
                         editing_list_style,
+                        page_list,
+                        page_selected,
+                        editing_page_style,
                         posture,
                     ) }
 
@@ -247,7 +256,7 @@ pub(super) fn style_editor_panel(
                     if let Some(cdraft) = char_draft {
                         { char_form::char_style_form(ds_char_form, editing_char_draft, cdraft, char_form_fonts, sync) }
                     }
-                    { family_inspector::family_inspector_columns(char_selected_rows, list_selected_rows, posture) }
+                    { family_inspector::family_inspector_columns(char_selected_rows, list_selected_rows, page_selected_rows, posture) }
                 }
             }
         }

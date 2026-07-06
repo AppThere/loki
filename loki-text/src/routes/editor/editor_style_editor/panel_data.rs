@@ -10,7 +10,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use loki_doc_model::style::StyleId;
+use loki_doc_model::style::{StyleId, derive_page_styles};
 
 use super::super::editor_state::StyleDraft;
 use super::super::editor_style_catalog::catalog_snapshot;
@@ -18,6 +18,7 @@ use super::super::style_char_inspector::character_inspector_rows;
 use super::super::style_impact::affected_dependents;
 use super::super::style_inspector::{InspectorRow, paragraph_inspector_rows};
 use super::super::style_list_inspector::{ListLevelRow, list_inspector_rows};
+use super::super::style_page_inspector::{PagePropRow, page_inspector_rows};
 use super::draft::draft_to_style;
 use crate::editing::state::DocumentState;
 
@@ -185,6 +186,47 @@ pub(super) fn list_data(
             .and_then(|s| s.display_name.clone())
             .unwrap_or_else(|| sel.to_string());
         (!rows.is_empty()).then_some((name, rows))
+    });
+    (list, selected_rows)
+}
+
+/// The selected page style's `(display name, geometry rows)` for the inspector.
+pub(super) type PageSelection = Option<(String, Vec<PagePropRow>)>;
+
+/// The page-styles browser data (§9 page family; non-inheriting, ADR-0012
+/// Decision 2). Page styles are **derived on demand** from the live document's
+/// sections (`derive_page_styles`) rather than stored — the section layouts are
+/// the source of truth (the Layout ribbon mutates them directly), so deriving
+/// each render keeps the panel from drifting. Returns the `(id, display)` list
+/// and, when `selected` names one, its geometry rows for the read-only inspector.
+pub(super) fn page_data(
+    doc_state: &Arc<Mutex<DocumentState>>,
+    selected: Option<&str>,
+) -> (Vec<CharListEntry>, PageSelection) {
+    let Ok(state) = doc_state.lock() else {
+        return (Vec::new(), None);
+    };
+    let Some(doc) = state.document.as_ref() else {
+        return (Vec::new(), None);
+    };
+    let styles = derive_page_styles(&doc.sections);
+
+    let list: Vec<CharListEntry> = styles
+        .iter()
+        .map(|(id, ps)| {
+            let display = ps
+                .display_name
+                .clone()
+                .unwrap_or_else(|| id.as_str().to_string());
+            (id.as_str().to_string(), display)
+        })
+        .collect();
+
+    let selected_rows = selected.and_then(|sel| {
+        let ps = styles.get(&StyleId::new(sel))?;
+        let rows = page_inspector_rows(&ps.layout);
+        let name = ps.display_name.clone().unwrap_or_else(|| sel.to_string());
+        Some((name, rows))
     });
     (list, selected_rows)
 }

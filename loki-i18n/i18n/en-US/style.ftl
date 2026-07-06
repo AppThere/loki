@@ -35,6 +35,12 @@ style-char-form-heading = Edit character style
 style-tree-substyles-heading = Substyles
 # List-styles family list heading (§9 list family, non-inheriting)
 style-list-family-heading = List styles
+# Page-styles family (§9 page family, non-inheriting; ADR-0012 Decision 2)
+style-page-family-heading = Page styles
+style-page-size = Size
+style-page-orientation = Orientation
+style-page-margins = Margins
+style-page-columns = Columns
 # One indent level of a list style
 style-list-level-label = Level { $n }
 # A list level's label kind and geometry (non-inheriting; shown read-only)

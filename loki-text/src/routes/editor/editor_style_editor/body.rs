@@ -19,7 +19,7 @@ use super::super::editor_state::StyleDraft;
 use super::super::editor_style_catalog::{get_catalog_style, new_custom_style_id};
 use super::posture::StylePanelPosture;
 use super::style_to_draft;
-use super::{char_browser, list_browser, tree_nav};
+use super::{char_browser, list_browser, page_browser, tree_nav};
 use crate::editing::state::DocumentState;
 
 /// The panel's left navigation column: inheritance tree + "+ New" + family lists.
@@ -37,6 +37,9 @@ pub(super) fn left_column(
     list_list: Vec<(String, String)>,
     list_selected: Option<String>,
     editing_list_style: Signal<Option<String>>,
+    page_list: Vec<(String, String)>,
+    page_selected: Option<String>,
+    editing_page_style: Signal<Option<String>>,
     posture: StylePanelPosture,
 ) -> Element {
     let ds_new = Arc::clone(&doc_state);
@@ -127,6 +130,9 @@ pub(super) fn left_column(
 
             // ── List styles (§9 list family, non-inheriting) ───────────────────
             { list_browser::list_list_section(list_list, list_selected, editing_list_style, posture) }
+
+            // ── Page styles (§9 page family, non-inheriting) ───────────────────
+            { page_browser::page_list_section(page_list, page_selected, editing_page_style, posture) }
         }
     }
 }
