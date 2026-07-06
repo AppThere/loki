@@ -109,7 +109,7 @@ TODOs (merged with whatever Phase 0 confirms from F1–F7).
 | 4a.1 | Spec 04 M3 | Width-driven ribbon collapse cascade: condensed variant, overflow menu, per-group priority, hysteresis. | L |
 | 4a.2 | Spec 04 M5 | Layout/References/Review ribbon tabs + `selected_object` contextual-tab signal (only 3 non-contextual tabs exist). | L |
 | 4a.3 | Spec 05 | **Page** style family (`page_styles` catalog per ADR-0012) and **Table** family (`TableProps` conditional/banding regions); character-style editing form; per-family non-paragraph `Default` sources; Compact-tree breadcrumb (M7). | L |
-| 4a.4 | Spec 03 | Metadata-panel label stacking <250 px (R-13g); responsive doc type-scale (M4); real `Viewport.zoom`. | M |
+| 4a.4 | Spec 03 | ~~Metadata-panel label stacking <250 px (R-13g)~~ (✅ **Done 2026-07-06** — `FieldRow` is now a `#[component]` reading `use_viewport()` per ADR-0013; below `METADATA_LABEL_STACK_PX` (250 px) the label stacks above its input via a `flex-direction: column` switch so the input keeps a usable width; pure `stack_labels` helper + 3 tests in `editor_metadata_panel_tests.rs`); responsive doc type-scale (M4); ~~real `Viewport.zoom`~~ (✅ **Done 2026-07-06** — the status-bar zoom now feeds the shared responsive `Viewport::zoom` (`editor_responsive.rs`: pure `zoom_fraction`/`desired_view_mode` helpers wired into effects 2 & 3), so zooming a page past the point it fits flips the page-fit renderer to reflow instead of forcing horizontal scroll; 5 tests in `editor_responsive_tests.rs`). **Remaining:** responsive doc type-scale (M4). | M |
 | 4a.5 | Spec 04 M6 | Touch posture + cursor-into-new-cell after insert. | M |
 
 ### 4b. Editing-core TODOs (§2)

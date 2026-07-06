@@ -514,15 +514,15 @@ pub(super) fn EditorInner(path: String) -> Element {
     });
 
     // ── Viewport-driven effects (Spec 03 M1/M2) ──────────────────────────────
-    //
-    // Seed metrics at mount, choose the renderer by page-fit, and publish the
-    // measured width into the shared responsive context. See `editor_responsive`.
+    // Seed metrics at mount, pick the renderer by zoom-aware page-fit, publish the
+    // measured width + live zoom to the responsive context. See `editor_responsive`.
     super::editor_responsive::use_viewport_effects(
         canvas_mounted,
         scroll_metrics,
         std::sync::Arc::clone(&doc_state),
         view_mode,
         view_mode_user_set,
+        zoom_percent,
     );
 
     let canvas_hovered = use_signal(|| false);

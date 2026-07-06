@@ -8,7 +8,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use appthere_ui::tokens;
+use appthere_ui::{tokens, use_viewport};
 use dioxus::prelude::*;
 use loki_i18n::fl;
 
@@ -19,6 +19,18 @@ use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
 /// Height of the open metadata panel in CSS pixels.
 pub(super) const METADATA_PANEL_HEIGHT_PX: f32 = 280.0;
+
+/// Below this measured viewport width (CSS px) the field label stacks *above*
+/// the input instead of sitting beside it (Spec 03 R-13g). At 140 px the fixed
+/// side label crushes the input on very narrow / split-screen viewports.
+pub(super) const METADATA_LABEL_STACK_PX: f32 = 250.0;
+
+/// Whether the metadata field labels should stack above their inputs at
+/// `width_px` (Spec 03 R-13g). An unmeasured viewport (`<= 0`) keeps the wide
+/// side-by-side layout — the first measured frame corrects it.
+pub(super) fn stack_labels(width_px: f32) -> bool {
+    width_px > 0.0 && width_px < METADATA_LABEL_STACK_PX
+}
 
 /// Signals the metadata panel needs to persist edits through Loro and refresh
 /// the undo/dirty state. Grouped to keep the function signature manageable.
@@ -96,7 +108,13 @@ pub(super) fn metadata_panel(
                     p2 = tokens::SPACE_4,
                 ),
                 for (idx, (field, value)) in draft.values.iter().enumerate() {
-                    {field_row(*field, value.clone(), idx, editing_metadata)}
+                    FieldRow {
+                        key: "{idx}",
+                        field: *field,
+                        value: value.clone(),
+                        idx,
+                        editing_metadata,
+                    }
                 }
             }
 
@@ -155,19 +173,41 @@ pub(super) fn metadata_panel(
 }
 
 /// Renders one labelled text field bound to entry `idx` of the draft.
-fn field_row(
+///
+/// A `#[component]` (not a plain function) so it owns a hook scope and can read
+/// [`use_viewport`] itself to stack the label above the input on narrow
+/// viewports (Spec 03 R-13g, ADR-0013) — no `compact` flag threaded from the
+/// parent.
+#[component]
+fn FieldRow(
     field: MetaField,
     value: String,
     idx: usize,
     mut editing_metadata: Signal<Option<MetaDraft>>,
 ) -> Element {
+    // Reactive on the measured width; below 250 px the label stacks so the input
+    // keeps a usable width instead of being crushed by the 140 px side label.
+    let stack = stack_labels(use_viewport().inner_width_px);
+
+    // Row: label beside input (centred). Column: label above input (stretched).
+    let row_style = if stack {
+        "display: flex; flex-direction: column; align-items: stretch; gap: 4px;"
+    } else {
+        "display: flex; flex-direction: row; align-items: center; gap: 8px;"
+    };
+    // The side label is a fixed 140 px column; the stacked label is full width.
+    let label_width = if stack {
+        String::new()
+    } else {
+        "min-width: 140px; max-width: 140px;".to_string()
+    };
+
     rsx! {
         div {
-            style: "display: flex; flex-direction: row; align-items: center; gap: 8px;",
+            style: row_style,
             span {
                 style: format!(
-                    "font-family: {ff}; font-size: {fs}px; color: {fg}; \
-                     min-width: 140px; max-width: 140px;",
+                    "font-family: {ff}; font-size: {fs}px; color: {fg}; {label_width}",
                     ff = tokens::FONT_FAMILY_UI,
                     fs = tokens::FONT_SIZE_LABEL,
                     fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
@@ -234,3 +274,7 @@ fn action_button_style(primary: bool) -> String {
         fg = fg,
     )
 }
+
+#[cfg(test)]
+#[path = "editor_metadata_panel_tests.rs"]
+mod tests;
