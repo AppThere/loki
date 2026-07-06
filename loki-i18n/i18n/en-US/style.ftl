@@ -31,6 +31,8 @@ style-linked-heading = Linked character style · { $name }
 style-char-family-heading = Character styles
 # Editable character-style form heading (M6 character family, 4a.3)
 style-char-form-heading = Edit character style
+# Compact breadcrumb drill-down heading — the selected style's substyles (M7)
+style-tree-substyles-heading = Substyles
 # List-styles family list heading (§9 list family, non-inheriting)
 style-list-family-heading = List styles
 # One indent level of a list style

@@ -20,6 +20,7 @@ mod list_browser;
 mod panel_data;
 mod posture;
 mod provenance;
+mod tree_nav;
 
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
