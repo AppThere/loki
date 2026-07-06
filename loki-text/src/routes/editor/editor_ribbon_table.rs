@@ -3,16 +3,17 @@
 //! Table **contextual** ribbon tab (Spec 04 M5, plan 4a.2).
 //!
 //! [`table_tab_content`] is rendered only while the caret is inside a table (the
-//! `selected_object` signal is `Table`). It offers table-scoped operations; the
-//! first is **Delete Table**, which removes the whole table block the caret sits
-//! in. Row/column operations are future work (they need structural CRDT table
-//! mutations).
+//! `selected_object` signal is `Table`). It offers table-scoped operations:
+//! insert/delete rows and columns relative to the caret's cell (via the
+//! structural CRDT table mutations), and **Delete Table**, which removes the
+//! whole table block the caret sits in.
 
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::{
-    AT_TABLE_COL_DELETE, AT_TABLE_COL_INSERT, AT_TABLE_ROW_DELETE, AT_TABLE_ROW_INSERT, AtIcon,
-    AtRibbonGroup, AtRibbonIconButton, LUCIDE_TRASH_2, RibbonTabDesc,
+    AT_TABLE_COL_DELETE, AT_TABLE_COL_INSERT, AT_TABLE_COL_INSERT_LEFT, AT_TABLE_ROW_DELETE,
+    AT_TABLE_ROW_INSERT, AT_TABLE_ROW_INSERT_ABOVE, AtIcon, AtRibbonGroup, AtRibbonIconButton,
+    LUCIDE_TRASH_2, RibbonTabDesc,
 };
 use dioxus::prelude::*;
 use loki_doc_model::{delete_block, table_grid_dims};
@@ -125,9 +126,11 @@ pub(super) fn table_tab_content(
 ) -> Element {
     let ds = Arc::clone(doc_state);
     // One Arc clone per row/column button — each on_click closure borrows its own.
-    let ds_row_ins = Arc::clone(doc_state);
+    let ds_row_above = Arc::clone(doc_state);
+    let ds_row_below = Arc::clone(doc_state);
     let ds_row_del = Arc::clone(doc_state);
-    let ds_col_ins = Arc::clone(doc_state);
+    let ds_col_left = Arc::clone(doc_state);
+    let ds_col_right = Arc::clone(doc_state);
     let ds_col_del = Arc::clone(doc_state);
     // Never delete the document's only block — that would leave nothing to edit.
     let only_block = block_count(doc_state) <= 1;
@@ -143,11 +146,21 @@ pub(super) fn table_tab_content(
             aria_label: fl!("ribbon-group-table-rows"),
 
             AtRibbonIconButton {
+                aria_label:  fl!("ribbon-table-row-insert-above-aria"),
+                is_active:   false,
+                is_disabled: !simple,
+                on_click: move |_| run_table_op(
+                    TableOp::InsertRowAbove, &ds_row_above, loro_doc, cursor_state,
+                    undo_manager, can_undo, can_redo,
+                ),
+                AtIcon { path_d: AT_TABLE_ROW_INSERT_ABOVE.to_string() }
+            }
+            AtRibbonIconButton {
                 aria_label:  fl!("ribbon-table-row-insert-aria"),
                 is_active:   false,
                 is_disabled: !simple,
                 on_click: move |_| run_table_op(
-                    TableOp::InsertRow, &ds_row_ins, loro_doc, cursor_state,
+                    TableOp::InsertRowBelow, &ds_row_below, loro_doc, cursor_state,
                     undo_manager, can_undo, can_redo,
                 ),
                 AtIcon { path_d: AT_TABLE_ROW_INSERT.to_string() }
@@ -163,11 +176,21 @@ pub(super) fn table_tab_content(
                 AtIcon { path_d: AT_TABLE_ROW_DELETE.to_string() }
             }
             AtRibbonIconButton {
+                aria_label:  fl!("ribbon-table-col-insert-left-aria"),
+                is_active:   false,
+                is_disabled: !simple,
+                on_click: move |_| run_table_op(
+                    TableOp::InsertColumnLeft, &ds_col_left, loro_doc, cursor_state,
+                    undo_manager, can_undo, can_redo,
+                ),
+                AtIcon { path_d: AT_TABLE_COL_INSERT_LEFT.to_string() }
+            }
+            AtRibbonIconButton {
                 aria_label:  fl!("ribbon-table-col-insert-aria"),
                 is_active:   false,
                 is_disabled: !simple,
                 on_click: move |_| run_table_op(
-                    TableOp::InsertColumn, &ds_col_ins, loro_doc, cursor_state,
+                    TableOp::InsertColumnRight, &ds_col_right, loro_doc, cursor_state,
                     undo_manager, can_undo, can_redo,
                 ),
                 AtIcon { path_d: AT_TABLE_COL_INSERT.to_string() }

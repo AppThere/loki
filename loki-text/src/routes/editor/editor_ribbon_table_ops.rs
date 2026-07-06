@@ -20,13 +20,15 @@ use super::editor_keydown_text::set_collapsed_cursor;
 use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
-/// A structural table edit driven from the caret's cell. Insert ops add *after*
-/// the caret's row/column (below / to the right); delete ops remove it.
+/// A structural table edit driven from the caret's cell. Insert ops add a row
+/// above/below or a column left/right of the caret; delete ops remove it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum TableOp {
-    InsertRow,
+    InsertRowAbove,
+    InsertRowBelow,
     DeleteRow,
-    InsertColumn,
+    InsertColumnLeft,
+    InsertColumnRight,
     DeleteColumn,
 }
 
@@ -42,9 +44,13 @@ pub(super) fn caret_flat_after(
 ) -> usize {
     match op {
         // Insert below: (row, col) and the column count are unchanged.
-        TableOp::InsertRow => row * cols + col,
+        TableOp::InsertRowBelow => row * cols + col,
+        // Insert above: the caret's row shifts down one; column count unchanged.
+        TableOp::InsertRowAbove => (row + 1) * cols + col,
         // Insert to the right: (row, col) unchanged, the grid is one column wider.
-        TableOp::InsertColumn => row * (cols + 1) + col,
+        TableOp::InsertColumnRight => row * (cols + 1) + col,
+        // Insert to the left: the caret shifts one column right in the wider grid.
+        TableOp::InsertColumnLeft => row * (cols + 1) + col + 1,
         // The caret's row is gone; land in the row that takes its place (or the
         // new last row if it was the last).
         TableOp::DeleteRow => {
@@ -98,9 +104,11 @@ pub(super) fn run_table_op(
         };
         let (row, col) = (flat / cols, flat % cols);
         let res = match op {
-            TableOp::InsertRow => insert_table_row(ldoc, table_index, row + 1),
+            TableOp::InsertRowAbove => insert_table_row(ldoc, table_index, row),
+            TableOp::InsertRowBelow => insert_table_row(ldoc, table_index, row + 1),
             TableOp::DeleteRow => delete_table_row(ldoc, table_index, row),
-            TableOp::InsertColumn => insert_table_column(ldoc, table_index, col + 1),
+            TableOp::InsertColumnLeft => insert_table_column(ldoc, table_index, col),
+            TableOp::InsertColumnRight => insert_table_column(ldoc, table_index, col + 1),
             TableOp::DeleteColumn => delete_table_column(ldoc, table_index, col),
         };
         if res.is_err() {

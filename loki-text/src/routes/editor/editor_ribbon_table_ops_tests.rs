@@ -9,16 +9,32 @@ use super::{TableOp, caret_flat_after};
 #[test]
 fn insert_row_below_keeps_the_caret_cell() {
     // 2×2, caret at (row 0, col 1) → flat 1. Inserting below leaves it at 1.
-    assert_eq!(caret_flat_after(TableOp::InsertRow, 0, 1, 2, 2), 1);
+    assert_eq!(caret_flat_after(TableOp::InsertRowBelow, 0, 1, 2, 2), 1);
     // Caret in the last row stays put too.
-    assert_eq!(caret_flat_after(TableOp::InsertRow, 1, 0, 2, 2), 2);
+    assert_eq!(caret_flat_after(TableOp::InsertRowBelow, 1, 0, 2, 2), 2);
 }
 
 #[test]
-fn insert_column_widens_the_flat_index_for_later_rows() {
+fn insert_row_above_shifts_the_caret_down_a_row() {
+    // 2×2, caret at (row 0, col 1) → flat 1. A new row above pushes it to
+    // row 1, col 1 → flat 3.
+    assert_eq!(caret_flat_after(TableOp::InsertRowAbove, 0, 1, 2, 2), 3);
+    // Caret in row 1 → row 2, col 0 → flat 4.
+    assert_eq!(caret_flat_after(TableOp::InsertRowAbove, 1, 0, 2, 2), 4);
+}
+
+#[test]
+fn insert_column_right_widens_the_flat_index_for_later_rows() {
     // 2×2 → 2×3. Row 0 col 1 stays flat 1; row 1 col 1 moves 3 → 4.
-    assert_eq!(caret_flat_after(TableOp::InsertColumn, 0, 1, 2, 2), 1);
-    assert_eq!(caret_flat_after(TableOp::InsertColumn, 1, 1, 2, 2), 4);
+    assert_eq!(caret_flat_after(TableOp::InsertColumnRight, 0, 1, 2, 2), 1);
+    assert_eq!(caret_flat_after(TableOp::InsertColumnRight, 1, 1, 2, 2), 4);
+}
+
+#[test]
+fn insert_column_left_shifts_the_caret_one_column_right() {
+    // 2×2 → 2×3. Row 0 col 1 → col 2 (flat 2); row 1 col 1 → col 2 (flat 5).
+    assert_eq!(caret_flat_after(TableOp::InsertColumnLeft, 0, 1, 2, 2), 2);
+    assert_eq!(caret_flat_after(TableOp::InsertColumnLeft, 1, 1, 2, 2), 5);
 }
 
 #[test]

@@ -20,6 +20,7 @@ mod editor_font_size;
 mod editor_font_warning;
 mod editor_format_range;
 mod editor_formatting;
+mod editor_highlight_color;
 mod editor_inner;
 mod editor_insert;
 mod editor_insert_panel;

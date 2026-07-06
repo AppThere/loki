@@ -93,14 +93,20 @@ pub const LUCIDE_TRASH_2: &str =
 // App-custom table-op glyphs (not Lucide): a box for the affected row/column
 // plus a `+` / `−`, drawn in the same 24×24 stroked style as the Lucide set.
 
-/// Insert row: a horizontal bar with a plus below it.
+/// Insert row below: a horizontal bar with a plus beneath it.
 pub const AT_TABLE_ROW_INSERT: &str = "M4 4h16v6h-16zM12 14v6M9 17h6";
+
+/// Insert row above: a horizontal bar with a plus above it.
+pub const AT_TABLE_ROW_INSERT_ABOVE: &str = "M4 14h16v6h-16zM12 4v6M9 7h6";
 
 /// Delete row: a horizontal bar with a minus below it.
 pub const AT_TABLE_ROW_DELETE: &str = "M4 4h16v6h-16zM9 17h6";
 
-/// Insert column: a vertical bar with a plus to its right.
+/// Insert column right: a vertical bar with a plus to its right.
 pub const AT_TABLE_COL_INSERT: &str = "M4 4h6v16h-6zM17 9v6M14 12h6";
+
+/// Insert column left: a vertical bar with a plus to its left.
+pub const AT_TABLE_COL_INSERT_LEFT: &str = "M14 4h6v16h-6zM7 9v6M4 12h6";
 
 /// Delete column: a vertical bar with a minus to its right.
 pub const AT_TABLE_COL_DELETE: &str = "M4 4h6v16h-6zM14 12h6";
