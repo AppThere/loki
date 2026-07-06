@@ -35,7 +35,8 @@ mod viewport;
 pub use breakpoint::Breakpoint;
 pub use page_fit::{page_fits, required_page_width, resolve_page_fit, PageFit};
 pub use ribbon_collapse::{
-    group_layout, resolve_cascade, GroupCollapse, GroupLayout, GroupMetrics, RibbonCascade,
+    estimate_group_metrics, group_layout, resolve_cascade, GroupCollapse, GroupLayout,
+    GroupMetrics, RibbonCascade,
 };
 pub use viewport::{Viewport, DEFAULT_DPI};
 

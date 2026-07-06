@@ -34,7 +34,11 @@
 //! on top of this engine.
 
 use crate::tokens::layout::{RIBBON_COLLAPSE_HYSTERESIS_PX, RIBBON_OVERFLOW_BUTTON_PX};
-use crate::tokens::spacing::{SPACE_1, SPACE_2};
+use crate::tokens::spacing::{SPACE_1, SPACE_2, TOUCH_MIN};
+
+/// Inter-control gap (CSS px) inside a full group's button row — matches the
+/// `gap` [`group_layout`] returns for [`GroupCollapse::Full`].
+const GROUP_BUTTON_GAP_PX: f32 = 2.0;
 
 /// How a single ribbon group is displayed at the resolved collapse level.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -80,6 +84,32 @@ pub struct RibbonCascade {
     /// Whether even the fully-overflowed strip still exceeds the width — the
     /// horizontal-scroll floor (§7 step 4), never the first resort.
     pub scroll: bool,
+}
+
+/// A declared width estimate for a group of `buttons` touch-sized icon buttons
+/// at collapse `priority`.
+///
+/// The ribbon collapse engine is width-driven off *available* space (measured
+/// once, at the viewport) but takes each group's own width as a **declaration**,
+/// not a Blitz per-element measurement (which is unreliable) — mirroring how
+/// desktop ribbons size groups from their control set. This derives that
+/// declaration from the button count: full width is the buttons at
+/// [`TOUCH_MIN`] plus inter-control gaps and roomy side padding; condensed drops
+/// the gaps and tightens the padding (consistent with [`group_layout`]). Groups
+/// with wider controls (e.g. a font-family select) should build [`GroupMetrics`]
+/// directly instead.
+#[must_use]
+pub fn estimate_group_metrics(priority: u8, buttons: usize, has_label: bool) -> GroupMetrics {
+    let _ = has_label; // label width is bounded below the button row in practice
+    let n = buttons.max(1) as f32;
+    let content = n * TOUCH_MIN;
+    let full_px = content + (n - 1.0) * GROUP_BUTTON_GAP_PX + 2.0 * SPACE_2;
+    let condensed_px = content + 2.0 * SPACE_1;
+    GroupMetrics {
+        priority,
+        full_px,
+        condensed_px,
+    }
 }
 
 /// The in-strip layout a group adopts for a given [`GroupCollapse`] state:

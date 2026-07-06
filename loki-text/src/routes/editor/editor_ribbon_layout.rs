@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use appthere_ui::{
     AT_COLUMNS_ONE, AT_COLUMNS_THREE, AT_COLUMNS_TWO, AT_MARGIN_NARROW, AT_MARGIN_NORMAL,
     AT_MARGIN_WIDE, AT_PAGE_A4, AT_PAGE_LANDSCAPE, AT_PAGE_LETTER, AT_PAGE_PORTRAIT, AtIcon,
-    AtRibbonGroup, AtRibbonIconButton,
+    AtRibbonGroups, AtRibbonIconButton, RibbonGroupSpec, estimate_group_metrics,
 };
 use dioxus::prelude::*;
 use loki_doc_model::{
@@ -144,11 +144,14 @@ pub(super) fn layout_tab_content(
     let ds_portrait = Arc::clone(doc_state);
     let ds_landscape = Arc::clone(doc_state);
 
-    rsx! {
-        AtRibbonGroup {
-            label:      Some(fl!("ribbon-group-orientation")),
-            aria_label: fl!("ribbon-group-orientation"),
-
+    // The four Layout groups, declared as collapse specs (Spec 04 M3). Priority
+    // descends left→right so Columns overflows first and Orientation stays full
+    // the longest; the container runs the width-driven cascade + overflow menu.
+    let orientation = RibbonGroupSpec {
+        metrics: estimate_group_metrics(3, 2, true),
+        label: Some(fl!("ribbon-group-orientation")),
+        aria_label: fl!("ribbon-group-orientation"),
+        content: rsx! {
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-orientation-portrait-aria"),
                 is_active:   !landscape,
@@ -169,12 +172,14 @@ pub(super) fn layout_tab_content(
                 ),
                 AtIcon { path_d: AT_PAGE_LANDSCAPE.to_string() }
             }
-        }
+        },
+    };
 
-        AtRibbonGroup {
-            label:      Some(fl!("ribbon-group-margins")),
-            aria_label: fl!("ribbon-group-margins"),
-
+    let margins_group = RibbonGroupSpec {
+        metrics: estimate_group_metrics(2, MARGIN_PRESETS.len(), true),
+        label: Some(fl!("ribbon-group-margins")),
+        aria_label: fl!("ribbon-group-margins"),
+        content: rsx! {
             for (aria, t, b, l, r, icon) in MARGIN_PRESETS.iter().copied() {
                 AtRibbonIconButton {
                     key: "{aria}",
@@ -191,12 +196,14 @@ pub(super) fn layout_tab_content(
                     AtIcon { path_d: icon.to_string() }
                 }
             }
-        }
+        },
+    };
 
-        AtRibbonGroup {
-            label:      Some(fl!("ribbon-group-page-size")),
-            aria_label: fl!("ribbon-group-page-size"),
-
+    let size_group = RibbonGroupSpec {
+        metrics: estimate_group_metrics(1, PAGE_SIZE_PRESETS.len(), true),
+        label: Some(fl!("ribbon-group-page-size")),
+        aria_label: fl!("ribbon-group-page-size"),
+        content: rsx! {
             for (aria, pw, ph, icon) in PAGE_SIZE_PRESETS.iter().copied() {
                 AtRibbonIconButton {
                     key: "{aria}",
@@ -213,12 +220,14 @@ pub(super) fn layout_tab_content(
                     AtIcon { path_d: icon.to_string() }
                 }
             }
-        }
+        },
+    };
 
-        AtRibbonGroup {
-            label:      Some(fl!("ribbon-group-columns")),
-            aria_label: fl!("ribbon-group-columns"),
-
+    let columns_group = RibbonGroupSpec {
+        metrics: estimate_group_metrics(0, COLUMN_PRESETS.len(), true),
+        label: Some(fl!("ribbon-group-columns")),
+        aria_label: fl!("ribbon-group-columns"),
+        content: rsx! {
             for (aria, count, icon) in COLUMN_PRESETS.iter().copied() {
                 AtRibbonIconButton {
                     key: "{aria}",
@@ -235,6 +244,13 @@ pub(super) fn layout_tab_content(
                     AtIcon { path_d: icon.to_string() }
                 }
             }
+        },
+    };
+
+    rsx! {
+        AtRibbonGroups {
+            groups: vec![orientation, margins_group, size_group, columns_group],
+            overflow_aria_label: fl!("ribbon-overflow-aria"),
         }
     }
 }

@@ -31,12 +31,14 @@
 pub mod button;
 pub mod content_row;
 pub mod group;
+pub mod groups;
 pub mod select;
 pub mod tab_strip;
 
 pub use button::AtRibbonIconButton;
 pub use content_row::AtRibbonContent;
 pub use group::{AtRibbonGroup, AtRibbonGroupProps};
+pub use groups::{AtRibbonGroups, AtRibbonGroupsProps, RibbonGroupSpec};
 pub use select::AtRibbonSelect;
 pub use tab_strip::AtRibbonTabStrip;
 

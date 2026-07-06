@@ -85,6 +85,11 @@ pub const LUCIDE_TABLE: &str =
 /// down-step baseline with a raised reference tick, evoking a footnote marker.
 pub const LUCIDE_FOOTNOTE: &str = "M4 5h6M4 5v10a3 3 0 0 0 6 0M16 5v6m0-6h4m-4 0-1 1";
 
+/// Lucide `more-horizontal` — three dots. Used for the ribbon overflow ("More")
+/// menu button. Rendered as three round-capped zero-length strokes (Lucide's own
+/// dot idiom), so it needs `stroke-linecap: round` (which [`AtIcon`] sets).
+pub const LUCIDE_MORE_HORIZONTAL: &str = "M5 12h.01M12 12h.01M19 12h.01";
+
 /// Lucide `trash-2` — a waste bin with lid and two vertical bars. Used for the
 /// Table contextual tab's Delete Table action.
 pub const LUCIDE_TRASH_2: &str =

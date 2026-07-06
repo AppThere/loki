@@ -116,3 +116,7 @@ ribbon-columns-three-aria = Three columns
 # Ribbon collapse toggle
 ribbon-collapse-aria = Collapse ribbon
 ribbon-expand-aria = Expand ribbon
+
+# Ribbon collapse cascade (Spec 04 M3) — the overflow ("More") menu that holds
+# groups the strip is too narrow to show in full.
+ribbon-overflow-aria = More controls

@@ -3,9 +3,9 @@
 
 //! Tests for the width-driven ribbon collapse cascade (Spec 04 M3 §7).
 
-use super::{group_layout, resolve_cascade, GroupCollapse, GroupMetrics};
+use super::{estimate_group_metrics, group_layout, resolve_cascade, GroupCollapse, GroupMetrics};
 use crate::tokens::layout::{RIBBON_COLLAPSE_HYSTERESIS_PX, RIBBON_OVERFLOW_BUTTON_PX};
-use crate::tokens::spacing::{SPACE_1, SPACE_2};
+use crate::tokens::spacing::{SPACE_1, SPACE_2, TOUCH_MIN};
 
 /// Three groups, priorities low→high left→right, each 100 px full / 50 px
 /// condensed. Total full = 300.
@@ -194,4 +194,25 @@ fn overflow_layout_renders_nothing_in_the_strip() {
     let lay = group_layout(GroupCollapse::Overflow, true);
     assert!(!lay.rendered);
     assert!(!lay.show_label);
+}
+
+#[test]
+fn estimated_metrics_scale_with_button_count_and_condense_smaller() {
+    let two = estimate_group_metrics(1, 2, true);
+    let three = estimate_group_metrics(1, 3, true);
+    assert_eq!(two.priority, 1);
+    // Two buttons + one gap + both side paddings.
+    assert_eq!(two.full_px, 2.0 * TOUCH_MIN + 2.0 + 2.0 * SPACE_2);
+    // Condensed drops the gap and tightens the padding.
+    assert_eq!(two.condensed_px, 2.0 * TOUCH_MIN + 2.0 * SPACE_1);
+    assert!(two.condensed_px < two.full_px);
+    assert!(three.full_px > two.full_px, "more buttons ⇒ wider");
+}
+
+#[test]
+fn estimated_metrics_never_underflow_for_an_empty_group() {
+    // A zero-button group is treated as one button (never negative gap width).
+    let m = estimate_group_metrics(0, 0, false);
+    assert_eq!(m.full_px, TOUCH_MIN + 2.0 * SPACE_2);
+    assert!(m.condensed_px > 0.0);
 }

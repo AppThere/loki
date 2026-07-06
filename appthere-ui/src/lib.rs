@@ -38,11 +38,13 @@ pub use components::icons::{
     AT_TABLE_COL_INSERT_LEFT, AT_TABLE_ROW_DELETE, AT_TABLE_ROW_INSERT, AT_TABLE_ROW_INSERT_ABOVE,
     LUCIDE_ALIGN_CENTER, LUCIDE_ALIGN_JUSTIFY, LUCIDE_ALIGN_LEFT, LUCIDE_ALIGN_RIGHT, LUCIDE_BOLD,
     LUCIDE_DOWNLOAD, LUCIDE_FOOTNOTE, LUCIDE_IMAGE, LUCIDE_ITALIC, LUCIDE_LAYOUT_TEMPLATE,
-    LUCIDE_LINK, LUCIDE_PILCROW, LUCIDE_REDO, LUCIDE_SAVE, LUCIDE_STRIKETHROUGH, LUCIDE_SUBSCRIPT,
-    LUCIDE_SUPERSCRIPT, LUCIDE_TABLE, LUCIDE_TRASH_2, LUCIDE_UNDERLINE, LUCIDE_UNDO,
+    LUCIDE_LINK, LUCIDE_MORE_HORIZONTAL, LUCIDE_PILCROW, LUCIDE_REDO, LUCIDE_SAVE,
+    LUCIDE_STRIKETHROUGH, LUCIDE_SUBSCRIPT, LUCIDE_SUPERSCRIPT, LUCIDE_TABLE, LUCIDE_TRASH_2,
+    LUCIDE_UNDERLINE, LUCIDE_UNDO,
 };
 pub use components::ribbon::{
-    AtRibbon, AtRibbonGroup, AtRibbonIconButton, AtRibbonSelect, RibbonTabDesc, RibbonTabIndex,
+    AtRibbon, AtRibbonGroup, AtRibbonGroups, AtRibbonIconButton, AtRibbonSelect, RibbonGroupSpec,
+    RibbonTabDesc, RibbonTabIndex,
 };
 pub use components::{
     next_zoom, AtConfirmDialog, AtConfirmDialogProps, AtDocumentTab, AtDocumentTabData,
@@ -51,10 +53,10 @@ pub use components::{
     PanelPosture, Platform, RecentDocument,
 };
 pub use responsive::{
-    group_layout, page_fits, required_page_width, resolve_cascade, resolve_page_fit,
-    use_breakpoint, use_provide_responsive, use_responsive, use_ribbon_cascade, use_viewport,
-    AtResponsiveContext, Breakpoint, GroupCollapse, GroupLayout, GroupMetrics, PageFit,
-    RibbonCascade, Viewport, DEFAULT_DPI,
+    estimate_group_metrics, group_layout, page_fits, required_page_width, resolve_cascade,
+    resolve_page_fit, use_breakpoint, use_provide_responsive, use_responsive, use_ribbon_cascade,
+    use_viewport, AtResponsiveContext, Breakpoint, GroupCollapse, GroupLayout, GroupMetrics,
+    PageFit, RibbonCascade, Viewport, DEFAULT_DPI,
 };
 pub use safe_area::{set_safe_area_insets, update_safe_area_insets, use_safe_area, SafeAreaInsets};
 pub use theme::{use_theme, AtThemeContext, ThemeVariant};
