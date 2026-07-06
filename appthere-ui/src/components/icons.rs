@@ -90,6 +90,21 @@ pub const LUCIDE_FOOTNOTE: &str = "M4 5h6M4 5v10a3 3 0 0 0 6 0M16 5v6m0-6h4m-4 0
 pub const LUCIDE_TRASH_2: &str =
     "M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6";
 
+// App-custom table-op glyphs (not Lucide): a box for the affected row/column
+// plus a `+` / `−`, drawn in the same 24×24 stroked style as the Lucide set.
+
+/// Insert row: a horizontal bar with a plus below it.
+pub const AT_TABLE_ROW_INSERT: &str = "M4 4h16v6h-16zM12 14v6M9 17h6";
+
+/// Delete row: a horizontal bar with a minus below it.
+pub const AT_TABLE_ROW_DELETE: &str = "M4 4h16v6h-16zM9 17h6";
+
+/// Insert column: a vertical bar with a plus to its right.
+pub const AT_TABLE_COL_INSERT: &str = "M4 4h6v16h-6zM17 9v6M14 12h6";
+
+/// Delete column: a vertical bar with a minus to its right.
+pub const AT_TABLE_COL_DELETE: &str = "M4 4h6v16h-6zM14 12h6";
+
 // ── AtIcon component ──────────────────────────────────────────────────────────
 
 /// Renders a single Lucide SVG icon.

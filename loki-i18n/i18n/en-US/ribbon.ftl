@@ -68,7 +68,12 @@ ribbon-insert-footnote-aria = Insert footnote
 # inside a table.
 ribbon-tab-table = Table
 ribbon-group-table = Table
+ribbon-group-table-rows = Rows & Columns
 ribbon-table-delete-aria = Delete table
+ribbon-table-row-insert-aria = Insert row below
+ribbon-table-row-delete-aria = Delete row
+ribbon-table-col-insert-aria = Insert column right
+ribbon-table-col-delete-aria = Delete column
 
 # Ribbon collapse toggle
 ribbon-collapse-aria = Collapse ribbon

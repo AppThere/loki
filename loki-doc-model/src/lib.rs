@@ -160,7 +160,9 @@ pub use loro_mutation::{
 };
 #[cfg(feature = "serde")]
 pub use loro_mutation::{
-    insert_block_after, insert_inline_image, insert_inline_image_at, insert_inline_note_at,
+    delete_table_column, delete_table_row, insert_block_after, insert_inline_image,
+    insert_inline_image_at, insert_inline_note_at, insert_table_column, insert_table_row,
+    table_grid_dims,
 };
 pub mod error;
 pub mod io;

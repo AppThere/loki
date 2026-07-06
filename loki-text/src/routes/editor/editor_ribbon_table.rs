@@ -10,13 +10,17 @@
 
 use std::sync::{Arc, Mutex};
 
-use appthere_ui::{AtIcon, AtRibbonGroup, AtRibbonIconButton, LUCIDE_TRASH_2, RibbonTabDesc};
+use appthere_ui::{
+    AT_TABLE_COL_DELETE, AT_TABLE_COL_INSERT, AT_TABLE_ROW_DELETE, AT_TABLE_ROW_INSERT, AtIcon,
+    AtRibbonGroup, AtRibbonIconButton, LUCIDE_TRASH_2, RibbonTabDesc,
+};
 use dioxus::prelude::*;
-use loki_doc_model::delete_block;
+use loki_doc_model::{delete_block, table_grid_dims};
 use loki_i18n::fl;
 
 use super::editor_keydown_ctrl::post_mutation_sync;
 use super::editor_keydown_text::set_collapsed_cursor;
+use super::editor_ribbon_table_ops::{TableOp, run_table_op};
 use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::selected_object::{SelectedObject, selected_object};
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
@@ -93,6 +97,18 @@ fn block_count(doc_state: &Arc<Mutex<DocumentState>>) -> usize {
         .unwrap_or(0)
 }
 
+/// The `(rows, cols)` of the simple-grid table the caret is in, else `None`
+/// (no caret, not in a table, or a non-simple-grid table where structural
+/// row/column ops are unsupported).
+fn table_dims_at_caret(
+    loro_doc: Signal<Option<loro::LoroDoc>>,
+    cursor_state: Signal<CursorState>,
+) -> Option<(usize, usize)> {
+    let idx = cursor_state.peek().focus.as_ref()?.paragraph_index;
+    let guard = loro_doc.read();
+    table_grid_dims(guard.as_ref()?, idx)
+}
+
 /// Builds the Table contextual tab content.
 pub(super) fn table_tab_content(
     doc_state: &Arc<Mutex<DocumentState>>,
@@ -103,10 +119,67 @@ pub(super) fn table_tab_content(
     can_redo: Signal<bool>,
 ) -> Element {
     let ds = Arc::clone(doc_state);
+    // One Arc clone per row/column button — each on_click closure borrows its own.
+    let ds_row_ins = Arc::clone(doc_state);
+    let ds_row_del = Arc::clone(doc_state);
+    let ds_col_ins = Arc::clone(doc_state);
+    let ds_col_del = Arc::clone(doc_state);
     // Never delete the document's only block — that would leave nothing to edit.
     let only_block = block_count(doc_state) <= 1;
+    // Row/column ops need a simple grid; delete is bounded to keep ≥1 row/col.
+    let dims = table_dims_at_caret(loro_doc, cursor_state);
+    let simple = dims.is_some();
+    let (rows, cols) = dims.unwrap_or((0, 0));
 
     rsx! {
+        // ── Rows & Columns group ──────────────────────────────────────────────
+        AtRibbonGroup {
+            label:      Some(fl!("ribbon-group-table-rows")),
+            aria_label: fl!("ribbon-group-table-rows"),
+
+            AtRibbonIconButton {
+                aria_label:  fl!("ribbon-table-row-insert-aria"),
+                is_active:   false,
+                is_disabled: !simple,
+                on_click: move |_| run_table_op(
+                    TableOp::InsertRow, &ds_row_ins, loro_doc, cursor_state,
+                    undo_manager, can_undo, can_redo,
+                ),
+                AtIcon { path_d: AT_TABLE_ROW_INSERT.to_string() }
+            }
+            AtRibbonIconButton {
+                aria_label:  fl!("ribbon-table-row-delete-aria"),
+                is_active:   false,
+                is_disabled: !simple || rows <= 1,
+                on_click: move |_| run_table_op(
+                    TableOp::DeleteRow, &ds_row_del, loro_doc, cursor_state,
+                    undo_manager, can_undo, can_redo,
+                ),
+                AtIcon { path_d: AT_TABLE_ROW_DELETE.to_string() }
+            }
+            AtRibbonIconButton {
+                aria_label:  fl!("ribbon-table-col-insert-aria"),
+                is_active:   false,
+                is_disabled: !simple,
+                on_click: move |_| run_table_op(
+                    TableOp::InsertColumn, &ds_col_ins, loro_doc, cursor_state,
+                    undo_manager, can_undo, can_redo,
+                ),
+                AtIcon { path_d: AT_TABLE_COL_INSERT.to_string() }
+            }
+            AtRibbonIconButton {
+                aria_label:  fl!("ribbon-table-col-delete-aria"),
+                is_active:   false,
+                is_disabled: !simple || cols <= 1,
+                on_click: move |_| run_table_op(
+                    TableOp::DeleteColumn, &ds_col_del, loro_doc, cursor_state,
+                    undo_manager, can_undo, can_redo,
+                ),
+                AtIcon { path_d: AT_TABLE_COL_DELETE.to_string() }
+            }
+        }
+
+        // ── Table group ───────────────────────────────────────────────────────
         AtRibbonGroup {
             label:      Some(fl!("ribbon-group-table")),
             aria_label: fl!("ribbon-group-table"),

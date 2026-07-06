@@ -33,6 +33,8 @@ mod nested;
 mod objects;
 mod selection;
 mod style;
+#[cfg(feature = "serde")]
+mod table_ops;
 mod text;
 
 pub use self::block::{merge_block, merge_block_at, split_block, split_block_at};
@@ -49,6 +51,10 @@ pub use self::selection::delete_selection_at;
 pub use self::style::{
     clear_block_list, get_block_alignment, get_block_list_id, get_block_style_name,
     set_block_alignment, set_block_style, set_block_type_heading, set_block_type_para,
+};
+#[cfg(feature = "serde")]
+pub use self::table_ops::{
+    delete_table_column, delete_table_row, insert_table_column, insert_table_row, table_grid_dims,
 };
 #[cfg(feature = "serde")]
 pub use self::text::insert_inline_image;
@@ -97,6 +103,11 @@ pub enum MutationError {
     /// Nothing is mutated.
     #[error("Selection endpoints are in different containers")]
     CrossContainerSelection,
+    /// A structural table mutation was attempted on a table shape it does not
+    /// support — merged (spanning) cells, head/foot rows, more than one body, a
+    /// ragged grid, or an index out of range. Nothing is mutated.
+    #[error("Unsupported table structure: {0}")]
+    UnsupportedTableStructure(String),
 }
 
 impl From<loro::LoroError> for MutationError {
