@@ -105,7 +105,12 @@ fn count_blocks(blocks: &[Block], counter: &mut Counter) {
                     }
                 }
             }
-            Block::Figure(_, _, content) => count_blocks(content, counter),
+            Block::Figure(_, caption, content) => {
+                // The module contract counts figure captions; `caption.full`
+                // holds the caption's block content.
+                count_blocks(&caption.full, counter);
+                count_blocks(content, counter);
+            }
             // Generated or non-text content (and, `#[non_exhaustive]`, any
             // future block kind until it is classified) contributes nothing.
             _ => {}
@@ -147,8 +152,15 @@ pub fn use_word_count_label(
     doc_state: Arc<Mutex<DocumentState>>,
     cursor_state: Signal<CursorState>,
 ) -> Memo<String> {
+    // Narrow the change signal. Reading `cursor_state` directly in the count
+    // memo would subscribe it to *every* CursorState write — each cursor move,
+    // click, and drag update — re-running the full-document walk on the UI path
+    // even when the document did not change. This cheap intermediate memo reads
+    // the generation on every write, but its `u64` output only changes on a real
+    // mutation, so the expensive count below is gated on that.
+    let generation = use_memo(move || cursor_state.read().document_generation);
     use_memo(move || {
-        let _generation = cursor_state.read().document_generation;
+        let _generation = generation();
         let count = doc_state
             .lock()
             .ok()

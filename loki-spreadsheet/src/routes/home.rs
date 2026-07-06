@@ -12,6 +12,7 @@ use super::home_util::{close_tab_for_path, push_or_switch_tab, suggested_copy_na
 use crate::new_document::new_blank_tab;
 use crate::recent_documents::RecentDocuments;
 use crate::routes::Route;
+use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
 use crate::utils::display_title_from_path;
 
@@ -53,6 +54,7 @@ pub fn Home() -> Element {
 
     let tabs = use_context::<Signal<Vec<OpenTab>>>();
     let active_tab = use_context::<Signal<usize>>();
+    let doc_sessions = use_context::<Signal<DocSessions>>();
     let mut recent_docs = use_context::<Signal<RecentDocuments>>();
 
     // Holds the last file-picker error message, if any.
@@ -161,7 +163,7 @@ pub fn Home() -> Element {
             }
         }
 
-        close_tab_for_path(tabs, active_tab, &path);
+        close_tab_for_path(tabs, active_tab, doc_sessions, &path);
         recent_docs.write().remove(&path);
         recent_docs.read().save();
     };

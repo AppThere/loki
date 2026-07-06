@@ -60,10 +60,14 @@ pub fn navigate_left(
         });
     }
 
-    // At start of a nested paragraph — move to the end of the previous
-    // sibling within the same cell / note body (clamped at the first block).
-    if !focus.path.is_empty() {
-        let sibling = nested_sibling(focus, layout, -1)?;
+    // At start of a nested paragraph — move to the end of the previous sibling
+    // within the same cell / note body. When there is no previous sibling (the
+    // container's first block), fall through to the top-level prev-block search:
+    // the container is addressed by its root `paragraph_index`, so that search
+    // finds the block preceding it and the caret escapes the cell / note body.
+    if !focus.path.is_empty()
+        && let Some(sibling) = nested_sibling(focus, layout, -1)
+    {
         let prev_text = get_text(&sibling.block_path());
         return Some(DocumentPosition {
             byte_offset: prev_text.len(),
@@ -111,10 +115,15 @@ pub fn navigate_right(
         });
     }
 
-    // At the end of a nested paragraph — move to the start of the next
-    // sibling within the same cell / note body (clamped at the last block).
-    if !focus.path.is_empty() {
-        return nested_sibling(focus, layout, 1);
+    // At the end of a nested paragraph — move to the start of the next sibling
+    // within the same cell / note body. When there is no next sibling (the
+    // container's last block), fall through to the top-level next-block search:
+    // the container is addressed by its root `paragraph_index`, so that search
+    // finds the block following it and the caret escapes the cell / note body.
+    if !focus.path.is_empty()
+        && let Some(sibling) = nested_sibling(focus, layout, 1)
+    {
+        return Some(sibling);
     }
 
     // At end of paragraph — move to the start of the next block, crossing

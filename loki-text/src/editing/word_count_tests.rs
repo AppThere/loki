@@ -2,7 +2,7 @@
 // Copyright 2026 AppThere Loki contributors
 
 use loki_doc_model::content::attr::NodeAttr;
-use loki_doc_model::content::block::Block;
+use loki_doc_model::content::block::{Block, Caption};
 use loki_doc_model::content::inline::{Inline, NoteKind};
 use loki_doc_model::content::table::core::{Table, TableBody, TableCaption, TableFoot, TableHead};
 use loki_doc_model::content::table::row::{Cell, Row};
@@ -101,6 +101,22 @@ fn footnote_bodies_are_excluded() {
         Inline::Str("more".into()),
     ])]);
     assert_eq!(count_words(&doc), 2);
+}
+
+#[test]
+fn figure_caption_and_content_are_both_counted() {
+    // The module contract counts figure captions as well as figure content.
+    let caption = Caption {
+        short: None,
+        full: vec![Block::Para(vec![Inline::Str("caption words here".into())])],
+    };
+    let doc = doc_with(vec![Block::Figure(
+        NodeAttr::default(),
+        caption,
+        vec![Block::Para(vec![Inline::Str("figure body".into())])],
+    )]);
+    // "caption words here" (3) + "figure body" (2) = 5.
+    assert_eq!(count_words(&doc), 5);
 }
 
 #[test]

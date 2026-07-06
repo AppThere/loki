@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Printable-character and Backspace handling for the document canvas,
 //! including selection-aware replacement and removal (audit F6c): typing
@@ -76,11 +77,15 @@ fn selection_start(a: &DocumentPosition, b: &DocumentPosition) -> DocumentPositi
 }
 
 /// Deletes the active selection in the CRDT only — no relayout or undo
-/// commit, so a caller can batch a follow-up insert into the same undo entry.
+/// commit, so a caller can batch a follow-up insert (typing) or split (Enter)
+/// into the same undo entry.
 ///
 /// Returns the collapsed cursor position, or `None` when there is no active
 /// selection or the model rejected the range (nothing mutated either way).
-fn delete_selection_in_doc(ldoc: &loro::LoroDoc, cursor: &CursorState) -> Option<DocumentPosition> {
+pub(super) fn delete_selection_in_doc(
+    ldoc: &loro::LoroDoc,
+    cursor: &CursorState,
+) -> Option<DocumentPosition> {
     if !cursor.has_selection() {
         return None;
     }

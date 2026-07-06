@@ -44,6 +44,16 @@ fn with_leaf(path: &BlockPath, leaf: usize) -> BlockPath {
     p
 }
 
+/// Validates that `byte` is a UTF-8 char boundary within the text of the block
+/// at `path` (rejecting a stale offset before any mutation runs).
+fn validate_offset(loro: &LoroDoc, path: &BlockPath, byte: usize) -> Result<(), MutationError> {
+    let text = text_for_path(loro, path)?.to_string();
+    if byte > text.len() || !text.is_char_boundary(byte) {
+        return Err(MutationError::InvalidByteOffset { offset: byte });
+    }
+    Ok(())
+}
+
 /// Whether two paths address sibling blocks of one container: both top-level,
 /// or nested with identical root, identical non-leaf steps, and the same leaf
 /// cell / note.
@@ -75,6 +85,9 @@ fn same_container(a: &BlockPath, b: &BlockPath) -> bool {
 /// - [`MutationError::TextNotFound`] — a block inside the range carries no
 ///   editable text (e.g. a table or horizontal rule); nothing is mutated
 ///   (the whole range is validated before the first mutation).
+/// - [`MutationError::InvalidByteOffset`] — an endpoint offset is past the end
+///   of its block's text or not on a char boundary (e.g. a stale offset from a
+///   concurrent edit); nothing is mutated.
 /// - Any error the underlying primitives report.
 pub fn delete_selection_at(
     loro: &LoroDoc,
@@ -93,6 +106,16 @@ pub fn delete_selection_at(
         };
     let start_leaf = leaf_index(start_path);
     let end_leaf = leaf_index(end_path);
+
+    // Validate the byte offsets against the actual block text lengths BEFORE
+    // any mutation. Without this, a stale offset (e.g. a concurrent remote edit
+    // that shortened a paragraph) would only surface when the final
+    // `delete_text_at` runs — after every `merge_block_at` has already mutated
+    // the document, leaving it half-applied — and `join + end_byte - start_byte`
+    // could underflow `usize`. Validating start against its (full) block also
+    // guarantees `start_byte <= join`, so that subtraction cannot underflow.
+    validate_offset(loro, start_path, start_byte)?;
+    validate_offset(loro, end_path, end_byte)?;
 
     // Single-block selection: one plain text deletion.
     if start_leaf == end_leaf {

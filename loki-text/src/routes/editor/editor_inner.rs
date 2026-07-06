@@ -51,7 +51,6 @@ use super::editor_style::style_picker_panel;
 use super::editor_style_catalog::available_font_families;
 use super::editor_style_editor::style_editor_panel;
 use crate::error::LoadError;
-use crate::new_document::is_untitled;
 use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
 use loki_app_shell::spell::SpellService;
@@ -107,7 +106,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         is_style_picker_open,
         editing_style_draft,
         mut zoom_percent,
-        mut is_dirty,
+        is_dirty,
         save_message,
         save_request,
         mut active_ribbon_tab,
@@ -117,7 +116,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     } = use_editor_state();
 
     // ── Tab/recents context for Save As and the unsaved-changes indicator ────
-    let mut tabs = use_context::<Signal<Vec<OpenTab>>>();
+    let tabs = use_context::<Signal<Vec<OpenTab>>>();
     // Spell-check service (provided at the app root). Drives the right-click
     // suggestions panel and the language picker.
     let spell_service = use_context::<SpellService>();
@@ -180,17 +179,15 @@ pub(super) fn EditorInner(path: String) -> Element {
 
     // ── Session stash at unmount ─────────────────────────────────────────────
     //
-    // Skipped when the tab was closed (Shell already dropped the session and
-    // re-stashing would resurrect discarded edits on reopen).
+    // `stash_outgoing` itself skips the stash when no tab still points at the
+    // path (the tab was closed, and Shell already dropped the session — re-
+    // stashing would resurrect discarded edits on reopen).
     {
         let doc_state_drop = Arc::clone(&doc_state);
         let tabs_at_drop = tabs;
         let mut sessions_at_drop = doc_sessions;
         use_drop(move || {
             let path = path_signal.peek().clone();
-            if !tabs_at_drop.peek().iter().any(|t| t.path == path) {
-                return;
-            }
             let mut sig = PathSyncSignals {
                 cursor_state,
                 loro_doc,
@@ -206,7 +203,13 @@ pub(super) fn EditorInner(path: String) -> Element {
                 baseline_gen,
                 saved_state,
             };
-            stash_outgoing(&path, &doc_state_drop, &mut sessions_at_drop, &mut sig);
+            stash_outgoing(
+                &path,
+                &doc_state_drop,
+                tabs_at_drop,
+                &mut sessions_at_drop,
+                &mut sig,
+            );
         });
     }
 
@@ -219,6 +222,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         &path,
         &mut path_signal,
         &doc_state,
+        tabs,
         doc_sessions,
         &mut PathSyncSignals {
             cursor_state,
@@ -459,28 +463,15 @@ pub(super) fn EditorInner(path: String) -> Element {
     let word_count_label =
         crate::editing::word_count::use_word_count_label(Arc::clone(&doc_state), cursor_state);
 
-    // ── Unsaved-changes (dirty) tracking ─────────────────────────────────────
-    //
-    // Dirty = the live generation differs from the clean baseline AND the
-    // undo-stack clean checkpoint disagrees (undoing to the save point clears
-    // dirty; plan 4b.3); untitled docs are always dirty until the first Save
-    // As. Drives the tab indicator and the `is_dirty` signal (ribbon Save).
-    use_effect(move || {
-        let live_gen = cursor_state.read().document_generation;
-        let path = path_signal();
-        let base = baseline_gen();
-        let undo_clean = saved_state.read().is_clean();
-        let dirty = is_untitled(&path) || (live_gen != base && !undo_clean);
-        if *is_dirty.peek() != dirty {
-            is_dirty.set(dirty); // guard avoids a needless ribbon re-render
-        }
-        let mut t = tabs.write();
-        if let Some(tab) = t.iter_mut().find(|tab| tab.path == path)
-            && tab.is_dirty != dirty
-        {
-            tab.is_dirty = dirty;
-        }
-    });
+    // Unsaved-changes (dirty) tracking → tab indicator + ribbon Save state.
+    super::editor_dirty::use_dirty_tracking(
+        cursor_state,
+        path_signal,
+        baseline_gen,
+        saved_state,
+        is_dirty,
+        tabs,
+    );
 
     // ── Save As / Save as Template (extracted flows: editor_save_callbacks) ──
     let save_as = super::editor_save_callbacks::use_save_as_callback(

@@ -104,6 +104,44 @@ fn reversed_offsets_within_one_block_normalize() {
     assert_eq!(para_texts(&rebuilt, 0), vec!["Helld", "middle", "goodbye"]);
 }
 
+#[test]
+fn rejects_a_stale_end_offset_without_mutating() {
+    // A multi-block selection whose END offset is past the last block's text
+    // (e.g. a concurrent edit shortened "goodbye"): the pre-validation must
+    // reject it before any merge runs, leaving all three paragraphs intact.
+    let loro = document_to_loro(&three_para_doc()).unwrap();
+    let (start, end) = (BlockPath::block(0), BlockPath::block(2));
+    let err = delete_selection_at(&loro, (&start, 6), (&end, 99));
+    assert!(matches!(
+        err,
+        Err(MutationError::InvalidByteOffset { offset: 99 })
+    ));
+    let rebuilt = loro_to_document(&loro).unwrap();
+    assert_eq!(
+        para_texts(&rebuilt, 0),
+        vec!["Hello world", "middle", "goodbye"]
+    );
+}
+
+#[test]
+fn rejects_a_stale_start_offset_without_underflow() {
+    // A multi-block selection whose START offset is past the first block's text
+    // would make `join + end_byte - start_byte` underflow `usize` if it reached
+    // the delete; the pre-validation must reject it first, untouched.
+    let loro = document_to_loro(&three_para_doc()).unwrap();
+    let (start, end) = (BlockPath::block(0), BlockPath::block(2));
+    let err = delete_selection_at(&loro, (&start, 99), (&end, 4));
+    assert!(matches!(
+        err,
+        Err(MutationError::InvalidByteOffset { offset: 99 })
+    ));
+    let rebuilt = loro_to_document(&loro).unwrap();
+    assert_eq!(
+        para_texts(&rebuilt, 0),
+        vec!["Hello world", "middle", "goodbye"]
+    );
+}
+
 // ── Nested containers ───────────────────────────────────────────────────────
 
 /// `[Para("intro"), Table]` — the table (global block 1) has one body row of

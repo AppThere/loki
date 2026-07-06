@@ -355,17 +355,22 @@ fn navigate_left_crosses_to_the_previous_cell_sibling() {
 }
 
 #[test]
-fn navigate_left_clamps_at_the_first_block_of_a_cell() {
+fn navigate_left_escapes_a_cell_at_its_first_block() {
     let layout = nested_cell_layout();
-    // Start of "alpha": must NOT teleport to the top-level "intro" paragraph.
-    assert_eq!(navigate_left(&cell_pos(0, 0), &layout, nested_text), None);
+    // Start of "alpha" (first block of the cell): escape the table to the end
+    // of the preceding top-level "intro" paragraph (block 0). Arrow keys must
+    // be able to leave a table, not just enter it.
+    let result = navigate_left(&cell_pos(0, 0), &layout, nested_text);
+    assert_eq!(result, Some(DocumentPosition::top_level(0, 0, 5)));
 }
 
 #[test]
-fn navigate_right_clamps_at_the_last_block_of_a_cell() {
+fn navigate_right_escapes_a_cell_at_its_last_block() {
     let layout = nested_cell_layout();
-    // End of "beta": must NOT teleport to the top-level "outro" paragraph.
-    assert_eq!(navigate_right(&cell_pos(1, 4), &layout, nested_text), None);
+    // End of "beta" (last block of the cell): escape the table to the start of
+    // the following top-level "outro" paragraph (block 2).
+    let result = navigate_right(&cell_pos(1, 4), &layout, nested_text);
+    assert_eq!(result, Some(DocumentPosition::top_level(0, 2, 0)));
 }
 
 #[test]
@@ -479,4 +484,79 @@ fn navigate_right_at_document_end_still_returns_none() {
     let layout = two_page_layout();
     let focus = DocumentPosition::top_level(1, 1, "second".len());
     assert_eq!(navigate_right(&focus, &layout, two_page_text), None);
+}
+
+// ── Cross-page nested sibling (cell split across a page break) ────────────────
+
+/// A table (block 1) whose single cell has two paragraphs that flow across a
+/// page break: "alpha" on page 0, "beta" on page 1.
+fn cell_split_across_pages() -> PaginatedLayout {
+    let mut resources = FontResources::new();
+    let page_size = LayoutSize::new(595.0, 842.0);
+    let margins = LayoutInsets {
+        top: 72.0,
+        right: 72.0,
+        bottom: 72.0,
+        left: 72.0,
+    };
+    let mk_page = |number: usize, paras: Vec<PageParagraphData>| LayoutPage {
+        page_number: number,
+        page_size,
+        margins,
+        content_items: vec![],
+        header_items: vec![],
+        footer_items: vec![],
+        comment_items: vec![],
+        header_height: 0.0,
+        footer_height: 0.0,
+        editing_data: Some(PageEditingData { paragraphs: paras }),
+    };
+    let alpha = layout_para(&mut resources, "alpha");
+    let beta = layout_para(&mut resources, "beta");
+    PaginatedLayout {
+        page_size,
+        pages: vec![
+            Arc::new(mk_page(
+                1,
+                vec![PageParagraphData {
+                    block_index: 1,
+                    path: vec![PathStep::Cell { cell: 0, block: 0 }],
+                    layout: alpha,
+                    origin: (0.0, 0.0),
+                }],
+            )),
+            Arc::new(mk_page(
+                2,
+                vec![PageParagraphData {
+                    block_index: 1,
+                    path: vec![PathStep::Cell { cell: 0, block: 1 }],
+                    layout: beta,
+                    origin: (0.0, 0.0),
+                }],
+            )),
+        ],
+    }
+}
+
+#[test]
+fn navigate_right_crosses_to_a_cell_sibling_on_the_next_page() {
+    let layout = cell_split_across_pages();
+    // End of "alpha" (page 0, cell block 0) → start of "beta", which was laid
+    // out on page 1. The result must adopt page_index 1, not stay on page 0.
+    let focus = DocumentPosition {
+        page_index: 0,
+        paragraph_index: 1,
+        byte_offset: 5,
+        path: vec![PathStep::Cell { cell: 0, block: 0 }],
+    };
+    let result = navigate_right(&focus, &layout, |_| "alpha".to_string());
+    assert_eq!(
+        result,
+        Some(DocumentPosition {
+            page_index: 1,
+            paragraph_index: 1,
+            byte_offset: 0,
+            path: vec![PathStep::Cell { cell: 0, block: 1 }],
+        })
+    );
 }

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Tab and file-token helpers for the Home route.
 //!
@@ -7,6 +8,7 @@
 use dioxus::prelude::*;
 use loki_file_access::FileAccessToken;
 
+use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
 use crate::utils::display_title_from_path;
 
@@ -35,10 +37,18 @@ pub(super) fn push_or_switch_tab(
 }
 
 /// Close any open tab whose `path` matches `path`, resetting the active tab to
-/// Home when the closed (or a now-shifted) tab was selected.
+/// Home when the closed (or a now-shifted) tab was selected, and drop any
+/// stashed editing session for that path.
+///
+/// The session must be dropped here (not only in the shell's tab-close button):
+/// deleting a file from the recents list while it is open, or with a session
+/// stashed from an earlier tab switch, would otherwise leak the whole
+/// `LoroDoc`/layout in the map — and a later file created at the same token
+/// key would restore the deleted document's content instead of loading fresh.
 pub(super) fn close_tab_for_path(
     mut tabs: Signal<Vec<OpenTab>>,
     mut active_tab: Signal<usize>,
+    mut sessions: Signal<DocSessions>,
     path: &str,
 ) {
     let removed = tabs.read().iter().position(|t| t.path == path);
@@ -50,6 +60,9 @@ pub(super) fn close_tab_for_path(
             *active_tab.write() = 0;
         }
     }
+    // Drop the stashed session regardless of whether a tab was open — a session
+    // can outlive its tab (stashed on tab switch, then the tab closed).
+    sessions.write().remove(path);
 }
 
 /// True if `name` has a template extension (Word `.dotx`/`.dotm` or

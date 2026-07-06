@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Path-change detection and per-document state handover for
 //! [`super::editor_inner::EditorInner`].

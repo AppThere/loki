@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! One row of [`super::recent_files::AtRecentFileList`]: the document info
 //! button, the ⋮ menu toggle, and the inline context menu.

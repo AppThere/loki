@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
 
 //! Format-range resolution: maps the cursor/selection to the per-paragraph
 //! byte ranges a character-formatting action applies to (plan 4b.2).
@@ -81,18 +82,6 @@ pub fn resolve_format_ranges(
     } else {
         Vec::new()
     }
-}
-
-/// Resolves a single format range — the first of [`resolve_format_ranges`].
-///
-/// Used by actions that need one contiguous range (e.g. hyperlink insertion);
-/// for a multi-paragraph selection this is the selection's portion of its
-/// first paragraph.
-pub fn resolve_format_range(
-    loro: &LoroDoc,
-    cursor: &CursorState,
-) -> Option<(BlockPath, usize, usize)> {
-    resolve_format_ranges(loro, cursor).into_iter().next()
 }
 
 /// The leaf block index of a position within its container (the leaf step's

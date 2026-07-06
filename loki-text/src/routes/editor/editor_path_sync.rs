@@ -19,6 +19,7 @@ use crate::editing::cursor::CursorState;
 use crate::editing::saved_state::SavedStateHandle;
 use crate::editing::state::DocumentState;
 use crate::sessions::{DocSession, DocSessions};
+use crate::tabs::OpenTab;
 
 /// All per-document signals reset or restored on tab switch, grouped to keep
 /// the [`sync_path_and_reset`] signature manageable.
@@ -45,6 +46,7 @@ pub(super) fn sync_path_and_reset(
     path: &str,
     path_signal: &mut Signal<String>,
     doc_state: &Arc<Mutex<DocumentState>>,
+    tabs: Signal<Vec<OpenTab>>,
     mut sessions: Signal<DocSessions>,
     sig: &mut PathSyncSignals,
 ) {
@@ -59,7 +61,7 @@ pub(super) fn sync_path_and_reset(
     );
     path_signal.set(path.to_owned());
 
-    stash_outgoing(&current, doc_state, &mut sessions, sig);
+    stash_outgoing(&current, doc_state, tabs, &mut sessions, sig);
 
     // Transient UI state never carries across documents.
     sig.dismiss_font_warning.set(false);
@@ -74,14 +76,18 @@ pub(super) fn sync_path_and_reset(
     }
 }
 
-/// Move the outgoing document's live state into the session map (no-op when
-/// no document ever finished loading in this editor).
+/// Move the outgoing document's live state into the session map. No-op when no
+/// document ever finished loading, or when no tab points at `old_path` any more
+/// — a closed (or Save-As-repointed) tab must not resurrect its old state on
+/// reopen. The liveness guard lives here so both call sites (path change and
+/// the unmount hook) are covered uniformly.
 ///
 /// Called on path change (doc → doc tab switch) and from the unmount hook in
 /// `EditorInner` (doc → Home navigation unmounts the editor route).
 pub(super) fn stash_outgoing(
     old_path: &str,
     doc_state: &Arc<Mutex<DocumentState>>,
+    tabs: Signal<Vec<OpenTab>>,
     sessions: &mut Signal<DocSessions>,
     sig: &mut PathSyncSignals,
 ) {
@@ -89,6 +95,9 @@ pub(super) fn stash_outgoing(
         return; // nothing loaded — nothing to stash
     };
     let undo_manager = sig.undo_manager.write().take();
+    if !tabs.peek().iter().any(|t| t.path == old_path) {
+        return; // tab closed or Save-As-repointed — do not resurrect on reopen
+    }
     let (document, generation, page_count, paginated_layout, page_width_px, page_height_px) =
         match doc_state.lock() {
             Ok(s) => (

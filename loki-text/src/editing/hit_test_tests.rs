@@ -108,6 +108,7 @@ fn click_at_content_origin_returns_page0_para0_offset0() {
         page_w_px,
         page_h_px,
         pt_to_px(24.0), // page_gap_px
+        1.0,            // zoom
     );
     let pos = result.expect("click at content origin should hit para 0");
     assert_eq!(pos.page_index, 0);
@@ -132,6 +133,7 @@ fn click_below_all_content_returns_none() {
         page_w_px,
         page_h_px,
         pt_to_px(24.0),
+        1.0, // zoom
     );
     assert!(
         result.is_none(),
@@ -170,6 +172,7 @@ fn click_on_page2_returns_page_index_1() {
         page_w_px,
         page_h_px,
         page_gap_px,
+        1.0, // zoom
     );
     let pos = result.expect("click on page 2 should succeed");
     assert_eq!(pos.page_index, 1, "should land on page 1 (0-based)");
@@ -229,6 +232,7 @@ fn scroll_offset_corrects_page2_click() {
         page_w_px,
         page_h_px,
         page_gap_px,
+        1.0, // zoom
     );
     let pos = result.expect("correct scroll_offset must resolve page 2 click");
     assert_eq!(
@@ -272,6 +276,7 @@ fn missing_scroll_offset_misses_page2_click() {
         page_w_px,
         page_h_px,
         page_gap_px,
+        1.0, // zoom
     );
     // Without scroll_offset, click_y maps to page 0 content (near top),
     // so result is either page 0 or None — never page 1.
@@ -281,6 +286,80 @@ fn missing_scroll_offset_misses_page2_click() {
             "without scroll_offset, click must not reach page 1"
         );
     }
+}
+
+/// At zoom ≠ 1.0 the painted tiles are scaled, so a window-relative click must
+/// be de-scaled before mapping to layout points. A click at the content origin
+/// scaled by the zoom must still resolve to para 0, byte 0.
+#[test]
+fn zoomed_click_at_content_origin_resolves_para0() {
+    let layout = make_test_layout();
+    let page = &layout.pages[0];
+    let page_w_px = pt_to_px(page.page_size.width);
+    let page_h_px = pt_to_px(page.page_size.height);
+    let zoom = 2.0;
+    // The painted content origin is the (unzoomed) margin offset scaled by zoom.
+    let click_x = pt_to_px(page.margins.left) * zoom;
+    let click_y = pt_to_px(page.margins.top) * zoom;
+
+    let result = hit_test_document(
+        click_x,
+        click_y,
+        canvas_origin_for_test(),
+        0.0,
+        &layout,
+        page_w_px,
+        page_h_px,
+        pt_to_px(24.0),
+        zoom,
+    );
+    let pos = result.expect("zoomed click at content origin should hit para 0");
+    assert_eq!(pos.page_index, 0);
+    assert_eq!(pos.paragraph_index, 0);
+    assert_eq!(pos.byte_offset, 0, "top-left click should land at byte 0");
+}
+
+/// The page stride is `page_height × zoom + gap` (the gap is a fixed CSS margin,
+/// unscaled). A zoomed click at page 2's content origin must resolve to page
+/// index 1 — the pre-fix code divided by an unzoomed stride and over-counted.
+#[test]
+fn zoomed_click_on_page2_resolves_page_index_1() {
+    let layout = {
+        let single = make_test_layout();
+        let page0 = single.pages[0].clone();
+        let mut page1 = (*page0).clone();
+        page1.page_number = 2;
+        PaginatedLayout {
+            page_size: single.page_size,
+            pages: vec![page0, Arc::new(page1)],
+        }
+    };
+    let page = &layout.pages[1];
+    let page_h_px = pt_to_px(layout.page_size.height);
+    let page_w_px = pt_to_px(layout.page_size.width);
+    let page_gap_px = pt_to_px(24.0);
+    let zoom = 2.0;
+    // Page 1's top is one scaled page height + one (unscaled) gap down; its
+    // content origin adds the scaled top margin.
+    let click_x = pt_to_px(page.margins.left) * zoom;
+    let click_y = page_h_px * zoom + page_gap_px + pt_to_px(page.margins.top) * zoom;
+
+    let result = hit_test_document(
+        click_x,
+        click_y,
+        canvas_origin_for_test(),
+        0.0,
+        &layout,
+        page_w_px,
+        page_h_px,
+        page_gap_px,
+        zoom,
+    );
+    let pos = result.expect("zoomed click on page 2 should succeed");
+    assert_eq!(
+        pos.page_index, 1,
+        "should land on page 1 (0-based) at zoom 2×"
+    );
 }
 
 // ── Reflow (continuous) hit-testing ───────────────────────────────────────

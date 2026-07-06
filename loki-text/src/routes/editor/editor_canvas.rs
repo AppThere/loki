@@ -36,9 +36,9 @@ use dioxus::prelude::*;
 use loki_app_shell::spell::SpellService;
 use loki_doc_model::document::Document;
 use loki_doc_model::loro_bridge::derive_loro_cursor;
-use loki_i18n::fl;
 use loki_renderer::{DocumentView, RendererCursorPos, TileContext, ViewMode};
 
+use super::editor_canvas_loading::loading_view;
 use super::editor_error_view::EditorErrorView;
 use super::editor_keydown::make_keydown_handler;
 use super::editor_pointer::{
@@ -58,43 +58,6 @@ use crate::error::LoadError;
 /// audit A-1) — used only for the single frame until `get_client_rect` reports
 /// the real height.
 const DEFAULT_VIEWPORT_HEIGHT_PX: f64 = 800.0;
-
-/// Blank page placeholder shown while a document is being opened.
-///
-/// Renders immediately when the editor tab mounts (before the async load
-/// resolves), so the user sees a page-shaped surface with an "opening" label
-/// instead of an empty canvas while the file is read, imported, and laid out.
-fn loading_view() -> Element {
-    rsx! {
-        div {
-            style: format!(
-                "display: flex; flex: 1; align-items: flex-start; \
-                 justify-content: center; width: 100%; padding-top: {gap}px;",
-                gap = tokens::SPACE_6,
-            ),
-            div {
-                style: format!(
-                    "width: {w}px; height: {h}px; flex-shrink: 0; background: {page}; \
-                     border: 1px solid {border}; border-radius: 2px; display: flex; \
-                     align-items: center; justify-content: center;",
-                    w = tokens::PAGE_WIDTH_PX,
-                    h = tokens::PAGE_HEIGHT_PX,
-                    page = tokens::CANVAS_PAGE_BG,
-                    border = tokens::COLOR_BORDER_CHROME,
-                ),
-                span {
-                    style: format!(
-                        "font-family: {ff}; font-size: {fs}px; color: {fg};",
-                        ff = tokens::FONT_FAMILY_UI,
-                        fs = tokens::FONT_SIZE_BODY,
-                        fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
-                    ),
-                    { fl!("editor-document-loading") }
-                }
-            }
-        }
-    }
-}
 
 /// Right-click handler body: resolves the word under the tile-local coordinates
 /// in `ctx` (accurate, via `element_coordinates` — no window-centring math),
@@ -256,7 +219,11 @@ pub(super) fn render_canvas_area(
                     Ok(s) => (s.page_height_px, s.page_count),
                     Err(_) => return,
                 };
-                let slot = page_h + page_gap_px;
+                // Tiles are painted at `zoom` scale (the inter-page gap is a
+                // fixed, unscaled CSS margin), so the page stride the scroll
+                // offset measures against is `page_h × zoom + gap`.
+                let zoom = zoom_percent() as f32 / 100.0;
+                let slot = page_h * zoom + page_gap_px;
                 if slot <= 0.0 || count == 0 {
                     return;
                 }
@@ -288,6 +255,7 @@ pub(super) fn render_canvas_area(
                 cursor_state,
                 page_gap_px,
                 view_mode,
+                zoom_percent,
             ),
 
             onmouseup: move |_| {
@@ -314,6 +282,7 @@ pub(super) fn render_canvas_area(
                 page_gap_px,
                 view_mode,
                 scroll_metrics,
+                zoom_percent,
             ),
 
             ontouchend: make_touchend_handler(
@@ -325,6 +294,7 @@ pub(super) fn render_canvas_area(
                 page_gap_px,
                 view_mode,
                 scroll_metrics,
+                zoom_percent,
             ),
 
             onkeydown: make_keydown_handler(

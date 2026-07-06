@@ -61,6 +61,7 @@ pub(super) fn make_mousemove_handler(
     mut cursor_state: Signal<CursorState>,
     page_gap_px: f32,
     view_mode: Signal<ViewMode>,
+    zoom_percent: Signal<u32>,
 ) -> impl FnMut(MouseEvent) {
     move |evt: MouseEvent| {
         // Reflow drag-select is handled per-tile (clean tile-local coordinates);
@@ -94,8 +95,11 @@ pub(super) fn make_mousemove_handler(
             )
         };
         let Some(layout) = layout_opt else { return };
+        // Tiles are painted at `zoom` scale and centred at that painted width, so
+        // the centring origin and the hit-test both use the zoom factor.
+        let zoom = zoom_percent() as f32 / 100.0;
         let viewport = Viewport::new(scroll_metrics.peek().client_width);
-        let x_off = viewport.centred_origin_x(page_width_px);
+        let x_off = viewport.centred_origin_x(page_width_px * zoom);
         let origin = (x_off, tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6);
         if let Some(p) = hit_test_document(
             cx,
@@ -106,6 +110,7 @@ pub(super) fn make_mousemove_handler(
             page_width_px,
             page_height_px,
             page_gap_px,
+            zoom,
         ) {
             cursor_state.write().focus = Some(p);
         }
@@ -123,6 +128,7 @@ pub(super) fn make_touchmove_handler(
     page_gap_px: f32,
     view_mode: Signal<ViewMode>,
     scroll_metrics: Signal<ScrollMetrics>,
+    zoom_percent: Signal<u32>,
 ) -> impl FnMut(TouchEvent) {
     move |evt: TouchEvent| {
         let Some(mut ts) = touch_state() else { return };
@@ -162,8 +168,9 @@ pub(super) fn make_touchmove_handler(
                     )
                 };
                 layout_opt.and_then(|layout| {
+                    let zoom = zoom_percent() as f32 / 100.0;
                     let viewport = Viewport::new(scroll_metrics.peek().client_width);
-                    let x_off = viewport.centred_origin_x(page_width_px);
+                    let x_off = viewport.centred_origin_x(page_width_px * zoom);
                     let origin = (x_off, tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6);
                     hit_test_document(
                         start.0,
@@ -174,6 +181,7 @@ pub(super) fn make_touchmove_handler(
                         page_width_px,
                         page_height_px,
                         page_gap_px,
+                        zoom,
                     )
                     .map(|p| (p.page_index, p.paragraph_index, p.byte_offset))
                 })
@@ -205,6 +213,7 @@ pub(super) fn make_touchend_handler(
     page_gap_px: f32,
     view_mode: Signal<ViewMode>,
     scroll_metrics: Signal<ScrollMetrics>,
+    zoom_percent: Signal<u32>,
 ) -> impl FnMut(TouchEvent) {
     move |_evt: TouchEvent| {
         let Some(ts) = touch_state() else { return };
@@ -242,8 +251,9 @@ pub(super) fn make_touchend_handler(
                     )
                 };
                 if let Some(layout) = layout_opt {
+                    let zoom = zoom_percent() as f32 / 100.0;
                     let viewport = Viewport::new(scroll_metrics.peek().client_width);
-                    let x_off = viewport.centred_origin_x(page_width_px);
+                    let x_off = viewport.centred_origin_x(page_width_px * zoom);
                     let origin = (x_off, tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6);
                     if let Some(pos) = hit_test_document(
                         ts.start_pos.0,
@@ -254,6 +264,7 @@ pub(super) fn make_touchend_handler(
                         page_width_px,
                         page_height_px,
                         page_gap_px,
+                        zoom,
                     ) {
                         let loro_cursor = loro_doc.read().as_ref().and_then(|ldoc| {
                             derive_loro_cursor(ldoc, pos.paragraph_index, pos.byte_offset)

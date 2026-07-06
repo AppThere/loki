@@ -10,7 +10,9 @@
 //! All editing logic lives in [`editor_inner::EditorInner`].
 
 mod editor_canvas;
+mod editor_canvas_loading;
 mod editor_compact;
+mod editor_dirty;
 mod editor_docked_panels;
 mod editor_error_view;
 mod editor_font_warning;
@@ -21,6 +23,7 @@ mod editor_insert;
 mod editor_insert_panel;
 mod editor_keydown;
 mod editor_keydown_ctrl;
+mod editor_keydown_enter;
 mod editor_keydown_text;
 mod editor_language_panel;
 mod editor_layout_task;

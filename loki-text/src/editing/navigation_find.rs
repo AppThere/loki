@@ -43,10 +43,34 @@ pub(super) fn nested_leaf(focus: &DocumentPosition) -> Option<usize> {
     }
 }
 
+/// The page index of a nested paragraph entry, searching **every** page.
+///
+/// A table cell's blocks can flow across a page break, so the sibling of the
+/// focus need not live on the focus's page; a page-local search would miss it
+/// and strand the caret. Returns the first page whose editing data holds the
+/// `(block_index, path)` entry.
+fn nested_para_page(
+    layout: &PaginatedLayout,
+    block_index: usize,
+    path: &[PathStep],
+) -> Option<usize> {
+    layout.pages.iter().position(|page| {
+        page.editing_data.as_ref().is_some_and(|ed| {
+            ed.paragraphs
+                .iter()
+                .any(|p| p.block_index == block_index && p.path == path)
+        })
+    })
+}
+
 /// The sibling of a nested `focus` shifted by `delta` blocks within its
-/// container, if it exists in the page's layout. Clamps at the container's
-/// first/last block by returning `None` — crossing out of a cell or note body
-/// into the surrounding document is a separate feature.
+/// container, if it exists in the layout. Clamps at the container's first/last
+/// block by returning `None` — crossing out of a cell or note body into the
+/// surrounding document is handled by the caller's top-level fallback.
+///
+/// The sibling may have flowed onto a different page than the focus (a cell
+/// split across a page break), so its `page_index` is re-derived from wherever
+/// its entry actually appears rather than inherited from the focus.
 pub(super) fn nested_sibling(
     focus: &DocumentPosition,
     layout: &PaginatedLayout,
@@ -55,14 +79,13 @@ pub(super) fn nested_sibling(
     let leaf = nested_leaf(focus)?;
     leaf.checked_add_signed(delta)?; // clamp at the container start
     let sibling = focus.sibling_block(delta, 0);
-    // Only cross when the sibling paragraph actually exists in the layout.
-    find_para_data(
-        layout,
-        sibling.page_index,
-        sibling.paragraph_index,
-        &sibling.path,
-    )?;
-    Some(sibling)
+    // Only cross when the sibling paragraph actually exists somewhere in the
+    // layout, and adopt the page it was laid out on.
+    let page = nested_para_page(layout, sibling.paragraph_index, &sibling.path)?;
+    Some(DocumentPosition {
+        page_index: page,
+        ..sibling
+    })
 }
 
 /// Find the paragraph entry immediately preceding `block_index` in document order.
