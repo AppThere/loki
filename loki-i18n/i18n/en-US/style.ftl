@@ -29,6 +29,8 @@ style-impact-preview = Applying also changes { $count } dependent style(s): { $n
 style-linked-heading = Linked character style · { $name }
 # Character-styles family list heading (§9 character family)
 style-char-family-heading = Character styles
+# Editable character-style form heading (M6 character family, 4a.3)
+style-char-form-heading = Edit character style
 # List-styles family list heading (§9 list family, non-inheriting)
 style-list-family-heading = List styles
 # One indent level of a list style

@@ -47,7 +47,7 @@ use super::editor_ribbon_insert::insert_tab_content;
 use super::editor_ribbon_publish::publish_tab_content;
 use super::editor_save_banner::save_banner;
 use super::editor_spell::SpellMenu;
-use super::editor_state::{EditorState, use_editor_state};
+use super::editor_state::{EditorState, StyleDraft, use_editor_state};
 use super::editor_style::style_picker_panel;
 use super::editor_style_catalog::available_font_families;
 use super::editor_style_editor::style_editor_panel;
@@ -127,14 +127,13 @@ pub(super) fn EditorInner(path: String) -> Element {
     let spell_hover = use_signal(|| Option::<String>::None);
     // Insert-tab hyperlink panel: `Some(url)` while open (Spec 04 M4).
     let link_draft = use_signal(|| Option::<String>::None);
-    // Character style being browsed in the style panel (Spec 05 M6 character
-    // family): `Some(id)` selects a character style for the read-only inspector.
+    // Character style in the style panel (Spec 05 M6): the id selects it for the
+    // read-only inspector; the draft drives the editable character form (4a.3).
     let editing_char_style = use_signal(|| Option::<String>::None);
-    // List style being browsed in the style panel (Spec 05 M6 list family):
-    // `Some(id)` selects a list style for the read-only per-level inspector.
+    let editing_char_draft = use_signal(|| Option::<StyleDraft>::None);
+    // List style browsed in the style panel (Spec 05 M6): read-only per-level.
     let editing_list_style = use_signal(|| Option::<String>::None);
-    // Compact style-panel pane (Spec 05 M7 §11): `true` = Inspect, `false` = Edit.
-    // Ignored at Expanded/Medium (both panes visible side-by-side).
+    // Compact style-panel pane (Spec 05 M7 §11): Inspect vs Edit; ignored ≥Medium.
     let style_panel_inspect = use_signal(|| false);
     // Stashed sessions for inactive tabs — unsaved edits survive tab switches.
     let doc_sessions = use_context::<Signal<DocSessions>>();
@@ -642,6 +641,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     doc_state_style_editor,
                     editing_style_draft,
                     editing_char_style,
+                    editing_char_draft,
                     editing_list_style,
                     style_panel_inspect,
                     use_breakpoint(),

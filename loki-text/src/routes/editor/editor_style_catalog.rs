@@ -4,8 +4,8 @@
 
 use std::sync::{Arc, Mutex};
 
-use loki_doc_model::style::ParagraphStyle;
 use loki_doc_model::style::catalog::{StyleCatalog, StyleId};
+use loki_doc_model::style::{CharacterStyle, ParagraphStyle};
 
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
@@ -76,6 +76,41 @@ pub(super) fn commit_style_to_loro(
         tracing::warn!("failed to persist style catalog to Loro: {e}");
     }
     loro.commit();
+}
+
+/// Persists an edited `CharacterStyle` into the catalog through Loro — the
+/// character-family analogue of [`commit_style_to_loro`] (Spec 05 M6). Inserts
+/// (or replaces) `style` in `character_styles` and writes the whole catalog back
+/// as a discrete, undoable CRDT transaction. The caller relays out and refreshes
+/// undo bookkeeping.
+pub(super) fn commit_char_style_to_loro(
+    loro: &loro::LoroDoc,
+    doc_state: &Arc<Mutex<DocumentState>>,
+    style: CharacterStyle,
+) {
+    let mut catalog = doc_state
+        .lock()
+        .ok()
+        .and_then(|s| s.document.as_ref().map(|d| d.styles.clone()))
+        .unwrap_or_default();
+    catalog.character_styles.insert(style.id.clone(), style);
+    if let Err(e) = loki_doc_model::loro_bridge::write_document_styles(loro, &catalog) {
+        tracing::warn!("failed to persist style catalog to Loro: {e}");
+    }
+    loro.commit();
+}
+
+/// Returns a clone of the catalog **character** style with the given id, or `None`.
+pub(super) fn get_catalog_char_style(
+    doc_state: &Arc<Mutex<DocumentState>>,
+    style_id: &str,
+) -> Option<CharacterStyle> {
+    let state = doc_state.lock().ok()?;
+    let doc = state.document.as_ref()?;
+    doc.styles
+        .character_styles
+        .get(&StyleId::new(style_id))
+        .cloned()
 }
 
 /// Clears the local override of `property` on the paragraph style `id` and

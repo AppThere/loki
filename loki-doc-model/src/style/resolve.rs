@@ -259,6 +259,37 @@ impl StyleCatalog {
         // (which includes `new_parent` itself, covering `new_parent == child`).
         self.para_ancestors(new_parent).iter().any(|a| a == child)
     }
+
+    /// The character style's ancestors, nearest-first and **including** `id`
+    /// itself, stopping at the root or the first repeat (cycle/depth-guarded).
+    /// The character-family analogue of [`para_ancestors`](Self::para_ancestors).
+    #[must_use]
+    pub fn char_ancestors(&self, id: &StyleId) -> Vec<StyleId> {
+        let mut chain = Vec::new();
+        let mut seen = HashSet::new();
+        let mut cursor = Some(id.clone());
+        for _ in 0..=MAX_STYLE_CHAIN_DEPTH {
+            let Some(current) = cursor else { break };
+            if !seen.insert(current.clone()) {
+                break; // cycle
+            }
+            chain.push(current.clone());
+            cursor = self
+                .character_styles
+                .get(&current)
+                .and_then(|s| s.parent.clone());
+        }
+        chain
+    }
+
+    /// Whether making `new_parent` the parent of `child` would create a cycle in
+    /// the character-style tree (the analogue of
+    /// [`para_reparent_cycles`](Self::para_reparent_cycles)). The character-style
+    /// editor must reject these to keep the family a tree (Spec 05 §7).
+    #[must_use]
+    pub fn char_reparent_cycles(&self, child: &StyleId, new_parent: &StyleId) -> bool {
+        self.char_ancestors(new_parent).iter().any(|a| a == child)
+    }
 }
 
 #[cfg(test)]

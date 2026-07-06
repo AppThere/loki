@@ -33,12 +33,14 @@ pub(super) fn left_column(
     char_list: Vec<(String, String)>,
     char_selected: Option<String>,
     editing_char_style: Signal<Option<String>>,
+    editing_char_draft: Signal<Option<StyleDraft>>,
     list_list: Vec<(String, String)>,
     list_selected: Option<String>,
     editing_list_style: Signal<Option<String>>,
     posture: StylePanelPosture,
 ) -> Element {
     let ds_new = Arc::clone(&doc_state);
+    let ds_char = Arc::clone(&doc_state);
     rsx! {
         div {
             style: format!(
@@ -116,7 +118,7 @@ pub(super) fn left_column(
             }
 
             // ── Character styles (§9 character family) ─────────────────────────
-            { char_browser::char_list_section(char_list, char_selected, editing_char_style, posture) }
+            { char_browser::char_list_section(ds_char, char_list, char_selected, editing_char_style, editing_char_draft, posture) }
 
             // ── List styles (§9 list family, non-inheriting) ───────────────────
             { list_browser::list_list_section(list_list, list_selected, editing_list_style, posture) }

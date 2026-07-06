@@ -11,6 +11,7 @@
 mod actions;
 mod body;
 mod char_browser;
+mod char_form;
 mod draft;
 mod family_inspector;
 mod form;
@@ -71,6 +72,7 @@ pub(super) fn style_editor_panel(
     doc_state: Arc<Mutex<DocumentState>>,
     mut editing_style_draft: Signal<Option<StyleDraft>>,
     editing_char_style: Signal<Option<String>>,
+    editing_char_draft: Signal<Option<StyleDraft>>,
     editing_list_style: Signal<Option<String>>,
     style_panel_inspect: Signal<bool>,
     breakpoint: Breakpoint,
@@ -101,6 +103,11 @@ pub(super) fn style_editor_panel(
     let styles = catalog_style_tree(&doc_state);
     let active_id = draft.id.clone();
     let ds_left = Arc::clone(&doc_state);
+    // Editable character form (Spec 05 M6): shown alongside the read-only
+    // provenance inspector when a character style is selected.
+    let ds_char_form = Arc::clone(&doc_state);
+    let char_draft = editing_char_draft.read().clone();
+    let char_form_fonts = Rc::clone(&font_families);
 
     // Everything the provenance column renders (staged rows, impact preview,
     // new-style parent default, linked character-style rows) — see `panel_data`.
@@ -183,6 +190,7 @@ pub(super) fn style_editor_panel(
                         char_list,
                         char_selected,
                         editing_char_style,
+                        editing_char_draft,
                         list_list,
                         list_selected,
                         editing_list_style,
@@ -233,8 +241,11 @@ pub(super) fn style_editor_panel(
                     }
                 }
 
-                // ── Right: character + list inspectors (read-only; §9) ─────────
+                // ── Right: editable character form (M6) + read-only inspectors ─
                 if show_inspect {
+                    if let Some(cdraft) = char_draft {
+                        { char_form::char_style_form(ds_char_form, editing_char_draft, cdraft, char_form_fonts, sync) }
+                    }
                     { family_inspector::family_inspector_columns(char_selected_rows, list_selected_rows, posture) }
                 }
             }

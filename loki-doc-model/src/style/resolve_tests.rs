@@ -347,6 +347,24 @@ fn character_style_falls_through_to_the_document_default_char_style() {
 }
 
 #[test]
+fn character_reparent_cycle_is_detected() {
+    // A ← B (B based on A). Re-parenting A onto B would close a cycle.
+    let mut cat = StyleCatalog::new();
+    cat.character_styles.insert(
+        StyleId::new("A"),
+        char_style("A", None, CharProps::default()),
+    );
+    cat.character_styles.insert(
+        StyleId::new("B"),
+        char_style("B", Some("A"), CharProps::default()),
+    );
+    assert!(cat.char_reparent_cycles(&StyleId::new("A"), &StyleId::new("B")));
+    // Self-parenting is also a cycle; an unrelated parent is fine.
+    assert!(cat.char_reparent_cycles(&StyleId::new("A"), &StyleId::new("A")));
+    assert!(!cat.char_reparent_cycles(&StyleId::new("B"), &StyleId::new("A")));
+}
+
+#[test]
 fn character_local_value_wins_over_the_document_default() {
     // A value set on the style itself is `Local`, never the doc default.
     let mut cat = StyleCatalog::new();
