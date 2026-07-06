@@ -2,38 +2,82 @@
 
 //! Layout ribbon tab content (Spec 04 M5, plan 4a.2).
 //!
-//! The first Layout control is **page orientation**. Portrait/Landscape apply
-//! [`set_document_orientation`] to every section (swapping page width/height)
-//! and relayout, so the document immediately re-flows at the new page size.
+//! Layout controls change the section page geometry in the CRDT and relayout,
+//! so the document immediately re-flows. First controls: page **orientation**
+//! (portrait/landscape) and **margin** presets.
 
 use std::sync::{Arc, Mutex};
 
-use appthere_ui::{AT_PAGE_LANDSCAPE, AT_PAGE_PORTRAIT, AtIcon, AtRibbonGroup, AtRibbonIconButton};
+use appthere_ui::{
+    AT_MARGIN_NARROW, AT_MARGIN_NORMAL, AT_MARGIN_WIDE, AT_PAGE_LANDSCAPE, AT_PAGE_PORTRAIT,
+    AtIcon, AtRibbonGroup, AtRibbonIconButton,
+};
 use dioxus::prelude::*;
-use loki_doc_model::{document_is_landscape, set_document_orientation};
+use loki_doc_model::{
+    MutationError, document_is_landscape, document_margins, set_document_margins,
+    set_document_orientation,
+};
 use loki_i18n::fl;
 
 use super::editor_keydown_ctrl::post_mutation_sync;
 use crate::editing::cursor::CursorState;
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
-/// Applies `landscape` orientation to the document, relays out, and syncs
-/// undo/redo.
-fn set_orientation(
+/// A margin preset: `(aria-key, top, bottom, left, right, icon)` — points.
+const MARGIN_PRESETS: &[(&str, f64, f64, f64, f64, &str)] = &[
+    (
+        "ribbon-margin-normal-aria",
+        72.0,
+        72.0,
+        72.0,
+        72.0,
+        AT_MARGIN_NORMAL,
+    ),
+    (
+        "ribbon-margin-narrow-aria",
+        36.0,
+        36.0,
+        36.0,
+        36.0,
+        AT_MARGIN_NARROW,
+    ),
+    (
+        "ribbon-margin-wide-aria",
+        72.0,
+        72.0,
+        144.0,
+        144.0,
+        AT_MARGIN_WIDE,
+    ),
+];
+
+/// Whether the document's `current` margins match a preset `(top, bottom, left,
+/// right)` within half a point — drives which preset button shows active.
+fn margin_matches(current: Option<(f64, f64, f64, f64)>, preset: (f64, f64, f64, f64)) -> bool {
+    let Some((t, b, l, r)) = current else {
+        return false;
+    };
+    let close = |a: f64, x: f64| (a - x).abs() < 0.5;
+    close(t, preset.0) && close(b, preset.1) && close(l, preset.2) && close(r, preset.3)
+}
+
+/// Runs a page-geometry mutation `f` against the live document, relays out, and
+/// syncs undo/redo — the shared path for every Layout button.
+fn apply_and_sync(
     doc_state: &Arc<Mutex<DocumentState>>,
     loro_doc: Signal<Option<loro::LoroDoc>>,
     cursor_state: Signal<CursorState>,
     undo_manager: Signal<Option<loro::UndoManager>>,
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
-    landscape: bool,
+    f: impl FnOnce(&loro::LoroDoc) -> Result<(), MutationError>,
 ) {
     {
         let guard = loro_doc.read();
         let Some(ldoc) = guard.as_ref() else {
             return;
         };
-        if set_document_orientation(ldoc, landscape).is_err() {
+        if f(ldoc).is_err() {
             return;
         }
         apply_mutation_and_relayout(doc_state, ldoc);
@@ -48,7 +92,8 @@ fn set_orientation(
     );
 }
 
-/// Builds the Layout tab content (currently the Orientation group).
+/// Builds the Layout tab content (Orientation + Margins groups).
+#[allow(clippy::too_many_arguments)]
 pub(super) fn layout_tab_content(
     doc_state: &Arc<Mutex<DocumentState>>,
     loro_doc: Signal<Option<loro::LoroDoc>>,
@@ -57,7 +102,11 @@ pub(super) fn layout_tab_content(
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
 ) -> Element {
-    let landscape = loro_doc.read().as_ref().is_some_and(document_is_landscape);
+    let (landscape, margins) = loro_doc
+        .read()
+        .as_ref()
+        .map(|ldoc| (document_is_landscape(ldoc), document_margins(ldoc)))
+        .unwrap_or((false, None));
     let ds_portrait = Arc::clone(doc_state);
     let ds_landscape = Arc::clone(doc_state);
 
@@ -70,8 +119,9 @@ pub(super) fn layout_tab_content(
                 aria_label:  fl!("ribbon-orientation-portrait-aria"),
                 is_active:   !landscape,
                 is_disabled: false,
-                on_click: move |_| set_orientation(
-                    &ds_portrait, loro_doc, cursor_state, undo_manager, can_undo, can_redo, false,
+                on_click: move |_| apply_and_sync(
+                    &ds_portrait, loro_doc, cursor_state, undo_manager,
+                    can_undo, can_redo, |l| set_document_orientation(l, false),
                 ),
                 AtIcon { path_d: AT_PAGE_PORTRAIT.to_string() }
             }
@@ -79,11 +129,38 @@ pub(super) fn layout_tab_content(
                 aria_label:  fl!("ribbon-orientation-landscape-aria"),
                 is_active:   landscape,
                 is_disabled: false,
-                on_click: move |_| set_orientation(
-                    &ds_landscape, loro_doc, cursor_state, undo_manager, can_undo, can_redo, true,
+                on_click: move |_| apply_and_sync(
+                    &ds_landscape, loro_doc, cursor_state, undo_manager,
+                    can_undo, can_redo, |l| set_document_orientation(l, true),
                 ),
                 AtIcon { path_d: AT_PAGE_LANDSCAPE.to_string() }
             }
         }
+
+        AtRibbonGroup {
+            label:      Some(fl!("ribbon-group-margins")),
+            aria_label: fl!("ribbon-group-margins"),
+
+            for (aria, t, b, l, r, icon) in MARGIN_PRESETS.iter().copied() {
+                AtRibbonIconButton {
+                    key: "{aria}",
+                    aria_label:  fl!(aria),
+                    is_active:   margin_matches(margins, (t, b, l, r)),
+                    is_disabled: false,
+                    on_click: {
+                        let ds = Arc::clone(doc_state);
+                        move |_| apply_and_sync(
+                            &ds, loro_doc, cursor_state, undo_manager,
+                            can_undo, can_redo, |lo| set_document_margins(lo, t, b, l, r),
+                        )
+                    },
+                    AtIcon { path_d: icon.to_string() }
+                }
+            }
+        }
     }
 }
+
+#[cfg(test)]
+#[path = "editor_ribbon_layout_tests.rs"]
+mod tests;

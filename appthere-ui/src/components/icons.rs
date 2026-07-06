@@ -122,6 +122,18 @@ pub const AT_PAGE_PORTRAIT: &str = "M7 3h10v18H7z";
 /// Landscape orientation: a wide page rectangle.
 pub const AT_PAGE_LANDSCAPE: &str = "M3 7h18v10H3z";
 
+// App-custom margin-preset glyphs (not Lucide): a page rectangle with an inner
+// content rectangle whose inset shows the margin size. Disambiguated by tooltip.
+
+/// Normal margins: a page with a moderate inset content area.
+pub const AT_MARGIN_NORMAL: &str = "M5 3h14v18H5zM8 6h8v12H8z";
+
+/// Narrow margins: a page with a small inset (large content area).
+pub const AT_MARGIN_NARROW: &str = "M5 3h14v18H5zM6.5 4.5h11v15h-11z";
+
+/// Wide margins: a page with a wide horizontal inset (narrow content area).
+pub const AT_MARGIN_WIDE: &str = "M5 3h14v18H5zM9 6h6v12H9z";
+
 // ── AtIcon component ──────────────────────────────────────────────────────────
 
 /// Renders a single Lucide SVG icon.

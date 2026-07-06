@@ -92,6 +92,10 @@ ribbon-tab-layout = Layout
 ribbon-group-orientation = Orientation
 ribbon-orientation-portrait-aria = Portrait
 ribbon-orientation-landscape-aria = Landscape
+ribbon-group-margins = Margins
+ribbon-margin-normal-aria = Normal margins
+ribbon-margin-narrow-aria = Narrow margins
+ribbon-margin-wide-aria = Wide margins
 
 # Ribbon collapse toggle
 ribbon-collapse-aria = Collapse ribbon

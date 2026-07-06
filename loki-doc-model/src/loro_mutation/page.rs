@@ -15,7 +15,10 @@
 use loro::{LoroDoc, LoroMap};
 
 use super::MutationError;
-use crate::loro_schema::{KEY_LAYOUT, KEY_ORIENTATION, KEY_PAGE_SIZE, KEY_SECTIONS};
+use crate::loro_schema::{
+    KEY_LAYOUT, KEY_MARGIN_BOTTOM, KEY_MARGIN_LEFT, KEY_MARGIN_RIGHT, KEY_MARGIN_TOP, KEY_MARGINS,
+    KEY_ORIENTATION, KEY_PAGE_SIZE, KEY_SECTIONS,
+};
 
 /// Reads a nested `LoroMap` child by key.
 fn child_map(map: &LoroMap, key: &str) -> Option<LoroMap> {
@@ -82,6 +85,64 @@ pub fn set_document_orientation(loro: &LoroDoc, landscape: bool) -> Result<(), M
             KEY_ORIENTATION,
             if landscape { "Landscape" } else { "Portrait" },
         )?;
+    }
+    Ok(())
+}
+
+/// Section 0's page margins in points as `(top, bottom, left, right)`, or `None`
+/// when there is no margins map. Lets the Layout tab highlight the active
+/// margin preset.
+#[must_use]
+pub fn document_margins(loro: &LoroDoc) -> Option<(f64, f64, f64, f64)> {
+    let sections = loro.get_list(KEY_SECTIONS);
+    let margins = sections
+        .get(0)
+        .and_then(|v| v.into_container().ok())
+        .and_then(|c| c.into_map().ok())
+        .and_then(|section| child_map(&section, KEY_LAYOUT))
+        .and_then(|layout| child_map(&layout, KEY_MARGINS))?;
+    Some((
+        read_f64(&margins, KEY_MARGIN_TOP),
+        read_f64(&margins, KEY_MARGIN_BOTTOM),
+        read_f64(&margins, KEY_MARGIN_LEFT),
+        read_f64(&margins, KEY_MARGIN_RIGHT),
+    ))
+}
+
+/// Sets every section's top/bottom/left/right page margins (in points),
+/// leaving header/footer/gutter distances untouched. Creates a margins map for
+/// any section that lacks one.
+///
+/// # Errors
+///
+/// [`MutationError::Loro`] for an underlying Loro error.
+pub fn set_document_margins(
+    loro: &LoroDoc,
+    top: f64,
+    bottom: f64,
+    left: f64,
+    right: f64,
+) -> Result<(), MutationError> {
+    let sections = loro.get_list(KEY_SECTIONS);
+    for s in 0..sections.len() {
+        let Some(section) = sections
+            .get(s)
+            .and_then(|v| v.into_container().ok())
+            .and_then(|c| c.into_map().ok())
+        else {
+            continue;
+        };
+        let Some(layout) = child_map(&section, KEY_LAYOUT) else {
+            continue;
+        };
+        let margins = match child_map(&layout, KEY_MARGINS) {
+            Some(m) => m,
+            None => layout.insert_container(KEY_MARGINS, LoroMap::new())?,
+        };
+        margins.insert(KEY_MARGIN_TOP, top)?;
+        margins.insert(KEY_MARGIN_BOTTOM, bottom)?;
+        margins.insert(KEY_MARGIN_LEFT, left)?;
+        margins.insert(KEY_MARGIN_RIGHT, right)?;
     }
     Ok(())
 }
