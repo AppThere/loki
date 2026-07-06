@@ -9,15 +9,16 @@
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::{
-    AtIcon, AtRibbonGroup, AtRibbonIconButton, LUCIDE_ALIGN_CENTER, LUCIDE_ALIGN_JUSTIFY,
-    LUCIDE_ALIGN_LEFT, LUCIDE_ALIGN_RIGHT, LUCIDE_BOLD, LUCIDE_ITALIC, LUCIDE_STRIKETHROUGH,
-    LUCIDE_SUBSCRIPT, LUCIDE_SUPERSCRIPT, LUCIDE_UNDERLINE,
+    AT_FONT_GROW, AT_FONT_SHRINK, AtIcon, AtRibbonGroup, AtRibbonIconButton, LUCIDE_ALIGN_CENTER,
+    LUCIDE_ALIGN_JUSTIFY, LUCIDE_ALIGN_LEFT, LUCIDE_ALIGN_RIGHT, LUCIDE_BOLD, LUCIDE_ITALIC,
+    LUCIDE_STRIKETHROUGH, LUCIDE_SUBSCRIPT, LUCIDE_SUPERSCRIPT, LUCIDE_UNDERLINE,
 };
 use dioxus::prelude::*;
 use loki_i18n::fl;
 use loro::LoroDoc;
 
 use super::editor_alignment::apply_alignment;
+use super::editor_font_size::adjust_font_size;
 use super::editor_formatting;
 use super::editor_keydown_ctrl::post_mutation_sync;
 use crate::editing::cursor::CursorState;
@@ -153,6 +154,47 @@ pub(super) fn inline_format_group(
                     }
                 },
                 AtIcon { path_d: LUCIDE_SUBSCRIPT.to_string() }
+            }
+        }
+    }
+}
+
+/// The Font group — grow / shrink the selection's font size by one step.
+pub(super) fn font_group(doc_state: &Arc<Mutex<DocumentState>>, ctx: RibbonEditCtx) -> Element {
+    let ds_grow = Arc::clone(doc_state);
+    let ds_shrink = Arc::clone(doc_state);
+    let loro = ctx.loro_doc;
+    let cursor = ctx.cursor_state;
+    rsx! {
+        AtRibbonGroup {
+            label:      Some(fl!("ribbon-group-font")),
+            aria_label: fl!("ribbon-group-font"),
+
+            AtRibbonIconButton {
+                aria_label:  fl!("ribbon-font-grow-aria"),
+                is_active:   false,
+                is_disabled: false,
+                on_click: move |_| {
+                    if let Some(ldoc) = loro.read().as_ref()
+                        && adjust_font_size(ldoc, &cursor.read(), true).is_ok()
+                    {
+                        ctx.finish(&ds_grow, ldoc);
+                    }
+                },
+                AtIcon { path_d: AT_FONT_GROW.to_string() }
+            }
+            AtRibbonIconButton {
+                aria_label:  fl!("ribbon-font-shrink-aria"),
+                is_active:   false,
+                is_disabled: false,
+                on_click: move |_| {
+                    if let Some(ldoc) = loro.read().as_ref()
+                        && adjust_font_size(ldoc, &cursor.read(), false).is_ok()
+                    {
+                        ctx.finish(&ds_shrink, ldoc);
+                    }
+                },
+                AtIcon { path_d: AT_FONT_SHRINK.to_string() }
             }
         }
     }

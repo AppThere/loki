@@ -105,6 +105,15 @@ pub const AT_TABLE_COL_INSERT: &str = "M4 4h6v16h-6zM17 9v6M14 12h6";
 /// Delete column: a vertical bar with a minus to its right.
 pub const AT_TABLE_COL_DELETE: &str = "M4 4h6v16h-6zM14 12h6";
 
+// App-custom glyphs (not Lucide): an "A" beside an up/down arrow, for the
+// grow/shrink font-size buttons.
+
+/// Increase font size: an "A" with an upward arrow.
+pub const AT_FONT_GROW: &str = "M6 15 10 7 14 15M7.5 12h5M18 8v7M15.5 10.5 18 8 20.5 10.5";
+
+/// Decrease font size: an "A" with a downward arrow.
+pub const AT_FONT_SHRINK: &str = "M6 15 10 7 14 15M7.5 12h5M18 8v7M15.5 12.5 18 15 20.5 12.5";
+
 // ── AtIcon component ──────────────────────────────────────────────────────────
 
 /// Renders a single Lucide SVG icon.

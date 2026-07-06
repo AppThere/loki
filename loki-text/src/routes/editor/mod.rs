@@ -16,6 +16,7 @@ mod editor_compact;
 mod editor_dirty;
 mod editor_docked_panels;
 mod editor_error_view;
+mod editor_font_size;
 mod editor_font_warning;
 mod editor_format_range;
 mod editor_formatting;

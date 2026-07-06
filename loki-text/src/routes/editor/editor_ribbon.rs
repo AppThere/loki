@@ -217,7 +217,9 @@ pub(super) fn write_tab_content(
             }
         }
 
-        // ── Inline formatting + alignment groups (see editor_ribbon_format) ────
+        // ── Font, inline-formatting, and alignment groups (editor_ribbon_format) ─
+        {super::editor_ribbon_format::font_group(doc_state, edit_ctx)}
+
         {super::editor_ribbon_format::inline_format_group(doc_state, edit_ctx, inline_state)}
 
         {super::editor_ribbon_format::alignment_group(doc_state, edit_ctx, current_align)}
