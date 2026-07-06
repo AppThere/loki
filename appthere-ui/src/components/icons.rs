@@ -85,6 +85,11 @@ pub const LUCIDE_TABLE: &str =
 /// down-step baseline with a raised reference tick, evoking a footnote marker.
 pub const LUCIDE_FOOTNOTE: &str = "M4 5h6M4 5v10a3 3 0 0 0 6 0M16 5v6m0-6h4m-4 0-1 1";
 
+/// Lucide `trash-2` — a waste bin with lid and two vertical bars. Used for the
+/// Table contextual tab's Delete Table action.
+pub const LUCIDE_TRASH_2: &str =
+    "M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6";
+
 // ── AtIcon component ──────────────────────────────────────────────────────────
 
 /// Renders a single Lucide SVG icon.

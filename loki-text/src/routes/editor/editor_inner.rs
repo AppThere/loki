@@ -22,7 +22,7 @@
 use std::rc::Rc;
 use std::sync::Arc;
 
-use appthere_ui::{AtRibbon, AtStatusBar, RibbonTabDesc, tokens, use_breakpoint};
+use appthere_ui::{AtRibbon, AtStatusBar, tokens, use_breakpoint};
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 use loki_doc_model::get_mark_at;
@@ -525,6 +525,10 @@ pub(super) fn EditorInner(path: String) -> Element {
         zoom_percent,
     );
 
+    // Contextual ribbon tabs (Spec 04 M5 / plan 4a.2): a Table tab appears while the caret is in a table.
+    let (ribbon_tabs, table_selected) =
+        super::editor_ribbon_table::use_ribbon_tabs(cursor_state, active_ribbon_tab);
+
     let canvas_hovered = use_signal(|| false);
     let page_gap_px = tokens::PAGE_GAP_PX;
 
@@ -706,22 +710,15 @@ pub(super) fn EditorInner(path: String) -> Element {
 
             // ── Ribbon (formatting controls) ──────────────────────────────────
             AtRibbon {
-                // Write, Insert, and Publish have controls today; the former
-                // Format/Review/View tabs had no content of their own (they fell
-                // through to Write's controls) and are omitted until they do.
-                tabs: vec![
-                    RibbonTabDesc { label: fl!("ribbon-tab-write"),   is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-insert"),  is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-publish"), is_contextual: false, aria_label: None },
-                ],
+                // Write/Insert/Publish are the core tabs; the Table contextual
+                // tab is appended by `use_ribbon_tabs` while the caret is in a
+                // table. (The former Format/Review/View tabs had no content and
+                // are omitted until they do.)
+                tabs: ribbon_tabs,
                 active_tab: active_ribbon_tab(),
-                on_tab_select: move |idx| {
-                    active_ribbon_tab.set(idx);
-                },
+                on_tab_select: move |idx| active_ribbon_tab.set(idx),
                 collapsed: ribbon_collapsed(),
-                on_toggle_collapse: move |_| {
-                    ribbon_collapsed.set(!ribbon_collapsed());
-                },
+                on_toggle_collapse: move |_| ribbon_collapsed.set(!ribbon_collapsed()),
                 toggle_aria_label: if ribbon_collapsed() {
                     fl!("ribbon-expand-aria")
                 } else {
@@ -729,6 +726,9 @@ pub(super) fn EditorInner(path: String) -> Element {
                 },
                 tab_content: match active_ribbon_tab() {
                     1 => insert_tab_content(link_draft, insert_ctx.clone()),
+                    3 if table_selected => super::editor_ribbon_table::table_tab_content(
+                        &doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo,
+                    ),
                     2 => publish_tab_content(
                         &doc_state_publish,
                         path_signal,

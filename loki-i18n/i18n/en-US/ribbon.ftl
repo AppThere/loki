@@ -64,6 +64,12 @@ ribbon-group-references = References
 ribbon-insert-table-aria = Insert table
 ribbon-insert-footnote-aria = Insert footnote
 
+# Table contextual tab (Spec 04 M5, plan 4a.2) — shown only while the caret is
+# inside a table.
+ribbon-tab-table = Table
+ribbon-group-table = Table
+ribbon-table-delete-aria = Delete table
+
 # Ribbon collapse toggle
 ribbon-collapse-aria = Collapse ribbon
 ribbon-expand-aria = Expand ribbon

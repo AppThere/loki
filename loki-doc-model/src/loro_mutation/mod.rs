@@ -27,6 +27,7 @@
 //! All `byte_offset` and `len` parameters are **UTF-8 byte positions**.
 
 mod block;
+mod block_edit;
 mod nested;
 #[cfg(feature = "serde")]
 mod objects;
@@ -34,9 +35,10 @@ mod selection;
 mod style;
 mod text;
 
-#[cfg(feature = "serde")]
-pub use self::block::insert_block_after;
 pub use self::block::{merge_block, merge_block_at, split_block, split_block_at};
+pub use self::block_edit::delete_block;
+#[cfg(feature = "serde")]
+pub use self::block_edit::insert_block_after;
 pub use self::nested::{
     BlockPath, PathStep, delete_text_at, get_block_text_at, get_mark_at_path, insert_text_at,
     mark_text_at,

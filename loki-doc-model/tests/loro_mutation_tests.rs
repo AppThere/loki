@@ -11,7 +11,7 @@ use loki_doc_model::{
     Document, MutationError, NodeAttr, clear_block_list,
     content::block::{Block, StyledParagraph},
     content::inline::Inline,
-    delete_text, get_block_list_id, get_block_text, insert_text,
+    delete_block, delete_text, get_block_list_id, get_block_text, insert_text,
     layout::section::Section,
     loro_bridge::document_to_loro,
     merge_block, split_block,
@@ -774,4 +774,53 @@ fn clear_block_list_on_a_plain_paragraph_is_a_noop() {
     clear_block_list(&ldoc, 0).expect("no-op ok");
     assert_eq!(get_block_text(&ldoc, 0), "plain");
     assert_eq!(get_block_list_id(&ldoc, 0), None);
+}
+
+// ── delete_block (contextual Table tab "Delete Table") ──────────────────────
+
+#[test]
+fn delete_block_removes_the_addressed_block() {
+    let ldoc = document_to_loro(&make_doc_with_paragraphs(&["a", "b", "c"])).expect("to loro");
+    delete_block(&ldoc, 1).expect("delete middle block");
+
+    let doc = loki_doc_model::loro_bridge::loro_to_document(&ldoc).expect("rebuild");
+    let texts: Vec<String> = doc.sections[0]
+        .blocks
+        .iter()
+        .map(|b| match b {
+            Block::StyledPara(sp) => sp
+                .inlines
+                .iter()
+                .filter_map(|i| match i {
+                    Inline::Str(s) => Some(s.as_str()),
+                    _ => None,
+                })
+                .collect(),
+            _ => String::new(),
+        })
+        .collect();
+    assert_eq!(texts, vec!["a", "c"], "block 'b' removed, order preserved");
+}
+
+#[test]
+fn delete_block_resolves_across_sections() {
+    // Global index 2 is the first block of the second section.
+    let ldoc = document_to_loro(&make_doc_with_sections(&[&["a0", "a1"], &["b0", "b1"]]))
+        .expect("to loro");
+    delete_block(&ldoc, 2).expect("delete b0");
+
+    let doc = loki_doc_model::loro_bridge::loro_to_document(&ldoc).expect("rebuild");
+    assert_eq!(doc.sections[0].blocks.len(), 2, "section 0 untouched");
+    assert_eq!(doc.sections[1].blocks.len(), 1, "section 1 lost one block");
+    assert_eq!(block_text(&doc.sections[1].blocks[0]), "b1");
+}
+
+#[test]
+fn delete_block_out_of_range_errors() {
+    let ldoc = document_to_loro(&make_doc_with_paragraphs(&["only"])).expect("to loro");
+    let err = delete_block(&ldoc, 5).expect_err("out of range");
+    assert!(
+        matches!(err, MutationError::BlockIndexOutOfRange(5)),
+        "got {err:?}"
+    );
 }
