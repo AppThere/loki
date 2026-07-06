@@ -37,7 +37,7 @@ pub(super) struct RibbonEditCtx {
 
 impl RibbonEditCtx {
     /// Relays out and syncs undo/redo after a button's mutation.
-    fn finish(&self, doc_state: &Arc<Mutex<DocumentState>>, ldoc: &LoroDoc) {
+    pub(super) fn finish(&self, doc_state: &Arc<Mutex<DocumentState>>, ldoc: &LoroDoc) {
         apply_mutation_and_relayout(doc_state, ldoc);
         post_mutation_sync(
             doc_state,

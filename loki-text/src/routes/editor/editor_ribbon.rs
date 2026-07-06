@@ -83,6 +83,11 @@ pub(super) fn write_tab_content(
         .as_ref()
         .map(|ldoc| super::editor_alignment::current_alignment(ldoc, &cursor_state.read()))
         .unwrap_or_else(|| "Left".to_string());
+    // Direct text colour at the caret, for the colour group's active swatch.
+    let current_color = loro_doc
+        .read()
+        .as_ref()
+        .and_then(|ldoc| super::editor_text_color::current_text_color(ldoc, &cursor_state.read()));
 
     rsx! {
         // ── Document group ────────────────────────────────────────────────────
@@ -221,6 +226,8 @@ pub(super) fn write_tab_content(
         {super::editor_ribbon_format::font_group(doc_state, edit_ctx)}
 
         {super::editor_ribbon_format::inline_format_group(doc_state, edit_ctx, inline_state)}
+
+        {super::editor_ribbon_color::font_color_group(doc_state, edit_ctx, current_color)}
 
         {super::editor_ribbon_format::alignment_group(doc_state, edit_ctx, current_align)}
     }
