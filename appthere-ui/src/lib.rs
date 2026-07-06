@@ -51,9 +51,10 @@ pub use components::{
     PanelPosture, Platform, RecentDocument,
 };
 pub use responsive::{
-    page_fits, required_page_width, resolve_cascade, resolve_page_fit, use_breakpoint,
-    use_provide_responsive, use_responsive, use_viewport, AtResponsiveContext, Breakpoint,
-    GroupCollapse, GroupMetrics, PageFit, RibbonCascade, Viewport, DEFAULT_DPI,
+    group_layout, page_fits, required_page_width, resolve_cascade, resolve_page_fit,
+    use_breakpoint, use_provide_responsive, use_responsive, use_ribbon_cascade, use_viewport,
+    AtResponsiveContext, Breakpoint, GroupCollapse, GroupLayout, GroupMetrics, PageFit,
+    RibbonCascade, Viewport, DEFAULT_DPI,
 };
 pub use safe_area::{set_safe_area_insets, update_safe_area_insets, use_safe_area, SafeAreaInsets};
 pub use theme::{use_theme, AtThemeContext, ThemeVariant};

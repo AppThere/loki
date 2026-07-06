@@ -34,6 +34,7 @@
 //! on top of this engine.
 
 use crate::tokens::layout::{RIBBON_COLLAPSE_HYSTERESIS_PX, RIBBON_OVERFLOW_BUTTON_PX};
+use crate::tokens::spacing::{SPACE_1, SPACE_2};
 
 /// How a single ribbon group is displayed at the resolved collapse level.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,6 +80,53 @@ pub struct RibbonCascade {
     /// Whether even the fully-overflowed strip still exceeds the width — the
     /// horizontal-scroll floor (§7 step 4), never the first resort.
     pub scroll: bool,
+}
+
+/// The in-strip layout a group adopts for a given [`GroupCollapse`] state:
+/// whether it renders in the strip at all, its horizontal padding and
+/// inter-control gap (CSS px), and whether its label row shows.
+///
+/// Pure so the ribbon group's visual cascade (§7 step 2) is testable without a
+/// Blitz runtime; [`AtRibbonGroup`](crate::AtRibbonGroup) applies it directly.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GroupLayout {
+    /// `false` for [`GroupCollapse::Overflow`] — the group lives in the "More"
+    /// menu and paints nothing in the strip.
+    pub rendered: bool,
+    /// Horizontal padding on each side of the group (CSS px).
+    pub pad_px: f32,
+    /// Gap between the group's controls (CSS px).
+    pub gap_px: f32,
+    /// Whether the group's label row shows (dropped when condensed).
+    pub show_label: bool,
+}
+
+/// The strip layout for a group in `collapse`, given whether it declares a label.
+///
+/// Condensed reclaims width by dropping the label and tightening padding/gap; it
+/// never shrinks the buttons themselves, so touch targets are preserved.
+#[must_use]
+pub fn group_layout(collapse: GroupCollapse, has_label: bool) -> GroupLayout {
+    match collapse {
+        GroupCollapse::Full => GroupLayout {
+            rendered: true,
+            pad_px: SPACE_2,
+            gap_px: 2.0,
+            show_label: has_label,
+        },
+        GroupCollapse::Condensed => GroupLayout {
+            rendered: true,
+            pad_px: SPACE_1,
+            gap_px: 0.0,
+            show_label: false,
+        },
+        GroupCollapse::Overflow => GroupLayout {
+            rendered: false,
+            pad_px: 0.0,
+            gap_px: 0.0,
+            show_label: false,
+        },
+    }
 }
 
 /// Indices of `metrics` in collapse order: ascending priority, ties by original

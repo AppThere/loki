@@ -3,8 +3,9 @@
 
 //! Tests for the width-driven ribbon collapse cascade (Spec 04 M3 §7).
 
-use super::{resolve_cascade, GroupCollapse, GroupMetrics};
+use super::{group_layout, resolve_cascade, GroupCollapse, GroupMetrics};
 use crate::tokens::layout::{RIBBON_COLLAPSE_HYSTERESIS_PX, RIBBON_OVERFLOW_BUTTON_PX};
+use crate::tokens::spacing::{SPACE_1, SPACE_2};
 
 /// Three groups, priorities low→high left→right, each 100 px full / 50 px
 /// condensed. Total full = 300.
@@ -165,4 +166,32 @@ fn empty_ribbon_resolves_to_nothing() {
     assert_eq!(c.level, 0);
     assert!(!c.overflow);
     assert!(!c.scroll);
+}
+
+#[test]
+fn full_layout_keeps_the_label_and_roomy_padding() {
+    let lay = group_layout(GroupCollapse::Full, true);
+    assert!(lay.rendered);
+    assert_eq!(lay.pad_px, SPACE_2);
+    assert_eq!(lay.gap_px, 2.0);
+    assert!(lay.show_label);
+    // A group without a declared label shows none even when full.
+    assert!(!group_layout(GroupCollapse::Full, false).show_label);
+}
+
+#[test]
+fn condensed_layout_drops_the_label_and_tightens() {
+    let lay = group_layout(GroupCollapse::Condensed, true);
+    assert!(lay.rendered);
+    assert_eq!(lay.pad_px, SPACE_1);
+    assert_eq!(lay.gap_px, 0.0);
+    assert!(!lay.show_label, "the label drops to reclaim width");
+    assert!(SPACE_1 < SPACE_2, "condensed padding is tighter than full");
+}
+
+#[test]
+fn overflow_layout_renders_nothing_in_the_strip() {
+    let lay = group_layout(GroupCollapse::Overflow, true);
+    assert!(!lay.rendered);
+    assert!(!lay.show_label);
 }
