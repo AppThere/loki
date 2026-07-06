@@ -51,6 +51,17 @@ pub fn AtRibbonGroup(
     /// Buttons and controls inside this group.
     children: Element,
 ) -> Element {
+    // Expose the collapse state to descendant controls (e.g. `AtRibbonSelect`)
+    // so they can adapt their own sizing (R-13e). A *signal* context, not a plain
+    // value: prop-memoised children would otherwise miss the change on resize —
+    // reading a signal subscribes them, so the select re-sizes reactively. Must
+    // run before any early return to keep the hook order stable (rules of hooks).
+    let mut collapse_ctx = use_signal(|| collapse);
+    if *collapse_ctx.peek() != collapse {
+        collapse_ctx.set(collapse);
+    }
+    use_context_provider(|| collapse_ctx);
+
     // The pure cascade helper decides render/pad/gap/label for this state.
     let lay = group_layout(collapse, label.is_some());
     // Overflowed groups live in the "More" menu, not the strip.

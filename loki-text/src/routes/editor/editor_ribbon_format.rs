@@ -9,9 +9,10 @@
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::{
-    AT_FONT_GROW, AT_FONT_SHRINK, AtIcon, AtRibbonGroup, AtRibbonIconButton, LUCIDE_ALIGN_CENTER,
+    AT_FONT_GROW, AT_FONT_SHRINK, AtIcon, AtRibbonIconButton, LUCIDE_ALIGN_CENTER,
     LUCIDE_ALIGN_JUSTIFY, LUCIDE_ALIGN_LEFT, LUCIDE_ALIGN_RIGHT, LUCIDE_BOLD, LUCIDE_ITALIC,
-    LUCIDE_STRIKETHROUGH, LUCIDE_SUBSCRIPT, LUCIDE_SUPERSCRIPT, LUCIDE_UNDERLINE,
+    LUCIDE_STRIKETHROUGH, LUCIDE_SUBSCRIPT, LUCIDE_SUPERSCRIPT, LUCIDE_UNDERLINE, RibbonGroupSpec,
+    estimate_group_metrics,
 };
 use dioxus::prelude::*;
 use loki_i18n::fl;
@@ -67,7 +68,8 @@ pub(super) fn inline_format_group(
     doc_state: &Arc<Mutex<DocumentState>>,
     ctx: RibbonEditCtx,
     state: InlineFormatState,
-) -> Element {
+    priority: u8,
+) -> RibbonGroupSpec {
     // One Arc clone per button — each on_click closure borrows its own.
     let ds_bold = Arc::clone(doc_state);
     let ds_italic = Arc::clone(doc_state);
@@ -78,11 +80,11 @@ pub(super) fn inline_format_group(
     let cursor = ctx.cursor_state;
     let loro = ctx.loro_doc;
 
-    rsx! {
-        AtRibbonGroup {
-            label:      Some(fl!("ribbon-group-inline")),
-            aria_label: fl!("ribbon-group-inline"),
-
+    RibbonGroupSpec {
+        metrics: estimate_group_metrics(priority, 6, true),
+        label: Some(fl!("ribbon-group-inline")),
+        aria_label: fl!("ribbon-group-inline"),
+        content: rsx! {
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-bold-aria"),
                 is_active:   *state.bold.read(),
@@ -155,21 +157,25 @@ pub(super) fn inline_format_group(
                 },
                 AtIcon { path_d: LUCIDE_SUBSCRIPT.to_string() }
             }
-        }
+        },
     }
 }
 
 /// The Font group — grow / shrink the selection's font size by one step.
-pub(super) fn font_group(doc_state: &Arc<Mutex<DocumentState>>, ctx: RibbonEditCtx) -> Element {
+pub(super) fn font_group(
+    doc_state: &Arc<Mutex<DocumentState>>,
+    ctx: RibbonEditCtx,
+    priority: u8,
+) -> RibbonGroupSpec {
     let ds_grow = Arc::clone(doc_state);
     let ds_shrink = Arc::clone(doc_state);
     let loro = ctx.loro_doc;
     let cursor = ctx.cursor_state;
-    rsx! {
-        AtRibbonGroup {
-            label:      Some(fl!("ribbon-group-font")),
-            aria_label: fl!("ribbon-group-font"),
-
+    RibbonGroupSpec {
+        metrics: estimate_group_metrics(priority, 2, true),
+        label: Some(fl!("ribbon-group-font")),
+        aria_label: fl!("ribbon-group-font"),
+        content: rsx! {
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-font-grow-aria"),
                 is_active:   false,
@@ -196,7 +202,7 @@ pub(super) fn font_group(doc_state: &Arc<Mutex<DocumentState>>, ctx: RibbonEditC
                 },
                 AtIcon { path_d: AT_FONT_SHRINK.to_string() }
             }
-        }
+        },
     }
 }
 
@@ -234,16 +240,17 @@ pub(super) fn alignment_group(
     doc_state: &Arc<Mutex<DocumentState>>,
     ctx: RibbonEditCtx,
     current_align: String,
-) -> Element {
-    rsx! {
-        AtRibbonGroup {
-            label:      Some(fl!("ribbon-group-alignment")),
-            aria_label: fl!("ribbon-group-alignment"),
-
+    priority: u8,
+) -> RibbonGroupSpec {
+    RibbonGroupSpec {
+        metrics: estimate_group_metrics(priority, 4, true),
+        label: Some(fl!("ribbon-group-alignment")),
+        aria_label: fl!("ribbon-group-alignment"),
+        content: rsx! {
             {align_button(doc_state, ctx, &current_align, "Left", fl!("ribbon-align-left-aria"), LUCIDE_ALIGN_LEFT)}
             {align_button(doc_state, ctx, &current_align, "Center", fl!("ribbon-align-centre-aria"), LUCIDE_ALIGN_CENTER)}
             {align_button(doc_state, ctx, &current_align, "Right", fl!("ribbon-align-right-aria"), LUCIDE_ALIGN_RIGHT)}
             {align_button(doc_state, ctx, &current_align, "Justify", fl!("ribbon-align-justify-aria"), LUCIDE_ALIGN_JUSTIFY)}
-        }
+        },
     }
 }

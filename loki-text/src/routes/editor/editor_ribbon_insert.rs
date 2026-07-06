@@ -17,8 +17,8 @@
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::{
-    AtIcon, AtRibbonGroup, AtRibbonIconButton, LUCIDE_FOOTNOTE, LUCIDE_IMAGE, LUCIDE_LINK,
-    LUCIDE_TABLE,
+    AtIcon, AtRibbonGroups, AtRibbonIconButton, LUCIDE_FOOTNOTE, LUCIDE_IMAGE, LUCIDE_LINK,
+    LUCIDE_TABLE, RibbonGroupSpec, estimate_group_metrics,
 };
 use dioxus::prelude::*;
 use loki_doc_model::MutationError;
@@ -60,12 +60,12 @@ pub(super) fn insert_tab_content(
     mut link_draft: Signal<Option<String>>,
     ctx: InsertCtx,
 ) -> Element {
-    rsx! {
-        // ── Media group ───────────────────────────────────────────────────────
-        AtRibbonGroup {
-            label:      Some(fl!("ribbon-group-media")),
-            aria_label: fl!("ribbon-group-media"),
-
+    // Priorities (higher = kept full longer): Media/Tables over References/Links.
+    let media = RibbonGroupSpec {
+        metrics: estimate_group_metrics(3, 1, true),
+        label: Some(fl!("ribbon-group-media")),
+        aria_label: fl!("ribbon-group-media"),
+        content: rsx! {
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-insert-image-aria"),
                 is_active:   false,
@@ -76,13 +76,14 @@ pub(super) fn insert_tab_content(
                 },
                 AtIcon { path_d: LUCIDE_IMAGE.to_string() }
             }
-        }
+        },
+    };
 
-        // ── Tables group ──────────────────────────────────────────────────────
-        AtRibbonGroup {
-            label:      Some(fl!("ribbon-group-tables")),
-            aria_label: fl!("ribbon-group-tables"),
-
+    let tables = RibbonGroupSpec {
+        metrics: estimate_group_metrics(2, 1, true),
+        label: Some(fl!("ribbon-group-tables")),
+        aria_label: fl!("ribbon-group-tables"),
+        content: rsx! {
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-insert-table-aria"),
                 is_active:   false,
@@ -103,13 +104,14 @@ pub(super) fn insert_tab_content(
                 },
                 AtIcon { path_d: LUCIDE_TABLE.to_string() }
             }
-        }
+        },
+    };
 
-        // ── References group ──────────────────────────────────────────────────
-        AtRibbonGroup {
-            label:      Some(fl!("ribbon-group-references")),
-            aria_label: fl!("ribbon-group-references"),
-
+    let references = RibbonGroupSpec {
+        metrics: estimate_group_metrics(1, 1, true),
+        label: Some(fl!("ribbon-group-references")),
+        aria_label: fl!("ribbon-group-references"),
+        content: rsx! {
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-insert-footnote-aria"),
                 is_active:   false,
@@ -132,13 +134,14 @@ pub(super) fn insert_tab_content(
                 },
                 AtIcon { path_d: LUCIDE_FOOTNOTE.to_string() }
             }
-        }
+        },
+    };
 
-        // ── Links group ───────────────────────────────────────────────────────
-        AtRibbonGroup {
-            label:      Some(fl!("ribbon-group-links")),
-            aria_label: fl!("ribbon-group-links"),
-
+    let links = RibbonGroupSpec {
+        metrics: estimate_group_metrics(0, 1, true),
+        label: Some(fl!("ribbon-group-links")),
+        aria_label: fl!("ribbon-group-links"),
+        content: rsx! {
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-insert-link-aria"),
                 is_active:   link_draft.read().is_some(),
@@ -152,6 +155,13 @@ pub(super) fn insert_tab_content(
                 },
                 AtIcon { path_d: LUCIDE_LINK.to_string() }
             }
+        },
+    };
+
+    rsx! {
+        AtRibbonGroups {
+            overflow_aria_label: fl!("ribbon-overflow-aria"),
+            groups: vec![media, tables, references, links],
         }
     }
 }

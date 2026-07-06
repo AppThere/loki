@@ -8,8 +8,9 @@
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::{
-    AtIcon, AtRibbonGroup, AtRibbonIconButton, AtRibbonSelect, LUCIDE_DOWNLOAD,
-    LUCIDE_LAYOUT_TEMPLATE, LUCIDE_PILCROW, LUCIDE_REDO, LUCIDE_SAVE, LUCIDE_UNDO,
+    AtIcon, AtRibbonGroups, AtRibbonIconButton, AtRibbonSelect, GroupMetrics, LUCIDE_DOWNLOAD,
+    LUCIDE_LAYOUT_TEMPLATE, LUCIDE_PILCROW, LUCIDE_REDO, LUCIDE_SAVE, LUCIDE_UNDO, RibbonGroupSpec,
+    estimate_group_metrics, tokens,
 };
 use dioxus::prelude::*;
 use loki_i18n::fl;
@@ -92,12 +93,15 @@ pub(super) fn write_tab_content(
         super::editor_highlight_color::current_highlight(ldoc, &cursor_state.read())
     });
 
-    rsx! {
-        // ── Document group ────────────────────────────────────────────────────
-        AtRibbonGroup {
-            label:      Some(fl!("ribbon-group-document")),
-            aria_label: fl!("ribbon-group-document"),
-
+    // Collapse priorities (higher = kept full longer, Spec 04 M3 §7): the core
+    // editing controls (Inline, Alignment, Font, Styles) stay full the longest;
+    // the wide colour-swatch groups overflow first (they also reclaim the most
+    // strip width per overflow).
+    let document = RibbonGroupSpec {
+        metrics: estimate_group_metrics(4, 3, true),
+        label: Some(fl!("ribbon-group-document")),
+        aria_label: fl!("ribbon-group-document"),
+        content: rsx! {
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-save-aria"),
                 is_active:   false,
@@ -105,41 +109,35 @@ pub(super) fn write_tab_content(
                 is_disabled: !is_dirty(),
                 on_click: move |_| {
                     // Route through the shared save handler (the Ctrl+S effect
-                    // in `EditorInner`), which owns the untitled→Save-As
-                    // routing, the clean baseline, the status message, and
-                    // post-save history compaction.
+                    // in `EditorInner`), which owns the untitled→Save-As routing,
+                    // the clean baseline, status message, and history compaction.
                     let next = save_request.peek().wrapping_add(1);
                     save_request.set(next);
                 },
                 AtIcon { path_d: LUCIDE_SAVE.to_string() }
             }
-
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-save-as-aria"),
                 is_active:   false,
                 is_disabled: false,
-                on_click: move |_| {
-                    save_as.call(());
-                },
+                on_click: move |_| save_as.call(()),
                 AtIcon { path_d: LUCIDE_DOWNLOAD.to_string() }
             }
-
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-save-as-template-aria"),
                 is_active:   false,
                 is_disabled: false,
-                on_click: move |_| {
-                    save_as_template.call(());
-                },
+                on_click: move |_| save_as_template.call(()),
                 AtIcon { path_d: LUCIDE_LAYOUT_TEMPLATE.to_string() }
             }
-        }
+        },
+    };
 
-        // ── History group ─────────────────────────────────────────────────────
-        AtRibbonGroup {
-            label:      Some(fl!("ribbon-group-history")),
-            aria_label: fl!("ribbon-group-history"),
-
+    let history = RibbonGroupSpec {
+        metrics: estimate_group_metrics(3, 2, true),
+        label: Some(fl!("ribbon-group-history")),
+        aria_label: fl!("ribbon-group-history"),
+        content: rsx! {
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-undo-aria"),
                 is_active:   false,
@@ -159,7 +157,6 @@ pub(super) fn write_tab_content(
                 },
                 AtIcon { path_d: LUCIDE_UNDO.to_string() }
             }
-
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-redo-aria"),
                 is_active:   false,
@@ -179,13 +176,20 @@ pub(super) fn write_tab_content(
                 },
                 AtIcon { path_d: LUCIDE_REDO.to_string() }
             }
-        }
+        },
+    };
 
-        // ── Styles group ──────────────────────────────────────────────────────
-        AtRibbonGroup {
-            label:      Some(fl!("ribbon-group-styles")),
-            aria_label: fl!("ribbon-group-styles"),
-
+    let styles = RibbonGroupSpec {
+        // A wide select, not icon buttons — size from the select-width tokens
+        // (R-13e: the select itself narrows in the condensed state).
+        metrics: GroupMetrics {
+            priority: 5,
+            full_px: tokens::RIBBON_SELECT_WIDTH_PX + 2.0 * tokens::SPACE_2,
+            condensed_px: tokens::RIBBON_SELECT_WIDTH_CONDENSED_PX + 2.0 * tokens::SPACE_1,
+        },
+        label: Some(fl!("ribbon-group-styles")),
+        aria_label: fl!("ribbon-group-styles"),
+        content: rsx! {
             AtRibbonSelect {
                 value:      current_style_name.clone(),
                 aria_label: fl!("ribbon-style-select-aria"),
@@ -195,13 +199,14 @@ pub(super) fn write_tab_content(
                     is_style_picker_open.set(!currently_open);
                 },
             }
-        }
+        },
+    };
 
-        // ── Paragraph group ───────────────────────────────────────────────────
-        AtRibbonGroup {
-            label:      Some(fl!("ribbon-group-paragraph")),
-            aria_label: fl!("ribbon-group-paragraph"),
-
+    let paragraph = RibbonGroupSpec {
+        metrics: estimate_group_metrics(2, 1, true),
+        label: Some(fl!("ribbon-group-paragraph")),
+        aria_label: fl!("ribbon-group-paragraph"),
+        content: rsx! {
             AtRibbonIconButton {
                 aria_label:  fl!("ribbon-para-props-aria"),
                 is_active:   editing_style_draft.read().is_some(),
@@ -223,17 +228,23 @@ pub(super) fn write_tab_content(
                 },
                 AtIcon { path_d: LUCIDE_PILCROW.to_string() }
             }
+        },
+    };
+
+    rsx! {
+        AtRibbonGroups {
+            overflow_aria_label: fl!("ribbon-overflow-aria"),
+            groups: vec![
+                document,
+                history,
+                styles,
+                paragraph,
+                super::editor_ribbon_format::font_group(doc_state, edit_ctx, 6),
+                super::editor_ribbon_format::inline_format_group(doc_state, edit_ctx, inline_state, 8),
+                super::editor_ribbon_color::font_color_group(doc_state, edit_ctx, current_color, 1),
+                super::editor_ribbon_color::highlight_group(doc_state, edit_ctx, current_highlight, 0),
+                super::editor_ribbon_format::alignment_group(doc_state, edit_ctx, current_align, 7),
+            ],
         }
-
-        // ── Font, inline-formatting, and alignment groups (editor_ribbon_format) ─
-        {super::editor_ribbon_format::font_group(doc_state, edit_ctx)}
-
-        {super::editor_ribbon_format::inline_format_group(doc_state, edit_ctx, inline_state)}
-
-        {super::editor_ribbon_color::font_color_group(doc_state, edit_ctx, current_color)}
-
-        {super::editor_ribbon_color::highlight_group(doc_state, edit_ctx, current_highlight)}
-
-        {super::editor_ribbon_format::alignment_group(doc_state, edit_ctx, current_align)}
     }
 }

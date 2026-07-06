@@ -83,6 +83,15 @@ pub const RIBBON_OVERFLOW_BUTTON_PX: f32 = 44.0;
 /// between collapse states (same principle as [`PAGE_FIT_HYSTERESIS_PX`]).
 pub const RIBBON_COLLAPSE_HYSTERESIS_PX: f32 = 32.0;
 
+/// Full width (CSS px) of a ribbon select control (e.g. the style picker) in the
+/// [`Full`](crate::GroupCollapse::Full) group state.
+pub const RIBBON_SELECT_WIDTH_PX: f32 = 180.0;
+
+/// Narrowed width (CSS px) a ribbon select shrinks to in the
+/// [`Condensed`](crate::GroupCollapse::Condensed) group state (Spec 04 M3 §7,
+/// R-13e select-width handling). Still wide enough to show a short style name.
+pub const RIBBON_SELECT_WIDTH_CONDENSED_PX: f32 = 112.0;
+
 // ── Responsive breakpoints ────────────────────────────────────────────────────
 
 /// Upper bound (exclusive) of the **Compact** window-size class, in CSS px.

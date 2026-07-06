@@ -9,7 +9,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use appthere_ui::{AtRibbonGroup, AtRibbonIconButton, tokens};
+use appthere_ui::{AtRibbonIconButton, RibbonGroupSpec, estimate_group_metrics, tokens};
 use dioxus::prelude::*;
 use loki_doc_model::MutationError;
 use loki_i18n::fl;
@@ -111,6 +111,7 @@ fn square(hex: &str) -> Element {
 /// A swatch group: a "clear" button (outlined square, applies `None`) plus one
 /// filled button per palette entry. `apply` writes the mark for the picked
 /// value; `current` is the active mark value (drives the highlighted swatch).
+#[allow(clippy::too_many_arguments)]
 fn swatch_group(
     doc_state: &Arc<Mutex<DocumentState>>,
     ctx: RibbonEditCtx,
@@ -119,16 +120,18 @@ fn swatch_group(
     current: Option<String>,
     palette: &'static [Swatch],
     apply: fn(&LoroDoc, &CursorState, Option<&str>) -> Result<(), MutationError>,
-) -> Element {
+    priority: u8,
+) -> RibbonGroupSpec {
     let ds_clear = Arc::clone(doc_state);
     let loro = ctx.loro_doc;
     let cursor = ctx.cursor_state;
 
-    rsx! {
-        AtRibbonGroup {
-            label:      Some(group_aria.clone()),
-            aria_label: group_aria,
-
+    RibbonGroupSpec {
+        // One clear swatch + one button per palette colour.
+        metrics: estimate_group_metrics(priority, palette.len() + 1, true),
+        label: Some(group_aria.clone()),
+        aria_label: group_aria,
+        content: rsx! {
             AtRibbonIconButton {
                 aria_label:  clear_aria,
                 is_active:   current.is_none(),
@@ -170,7 +173,7 @@ fn swatch_group(
                     {square(sw.fill)}
                 }
             }
-        }
+        },
     }
 }
 
@@ -179,7 +182,8 @@ pub(super) fn font_color_group(
     doc_state: &Arc<Mutex<DocumentState>>,
     ctx: RibbonEditCtx,
     current: Option<String>,
-) -> Element {
+    priority: u8,
+) -> RibbonGroupSpec {
     swatch_group(
         doc_state,
         ctx,
@@ -188,6 +192,7 @@ pub(super) fn font_color_group(
         current,
         FONT_COLOR_PALETTE,
         apply_text_color,
+        priority,
     )
 }
 
@@ -196,7 +201,8 @@ pub(super) fn highlight_group(
     doc_state: &Arc<Mutex<DocumentState>>,
     ctx: RibbonEditCtx,
     current: Option<String>,
-) -> Element {
+    priority: u8,
+) -> RibbonGroupSpec {
     swatch_group(
         doc_state,
         ctx,
@@ -205,5 +211,6 @@ pub(super) fn highlight_group(
         current,
         HIGHLIGHT_PALETTE,
         apply_highlight,
+        priority,
     )
 }
