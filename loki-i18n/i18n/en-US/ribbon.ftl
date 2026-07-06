@@ -87,6 +87,12 @@ ribbon-table-row-delete-aria = Delete row
 ribbon-table-col-insert-aria = Insert column right
 ribbon-table-col-delete-aria = Delete column
 
+# Layout tab (Spec 04 M5, plan 4a.2)
+ribbon-tab-layout = Layout
+ribbon-group-orientation = Orientation
+ribbon-orientation-portrait-aria = Portrait
+ribbon-orientation-landscape-aria = Landscape
+
 # Ribbon collapse toggle
 ribbon-collapse-aria = Collapse ribbon
 ribbon-expand-aria = Expand ribbon

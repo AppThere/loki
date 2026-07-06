@@ -710,10 +710,7 @@ pub(super) fn EditorInner(path: String) -> Element {
 
             // ── Ribbon (formatting controls) ──────────────────────────────────
             AtRibbon {
-                // Write/Insert/Publish are the core tabs; the Table contextual
-                // tab is appended by `use_ribbon_tabs` while the caret is in a
-                // table. (The former Format/Review/View tabs had no content and
-                // are omitted until they do.)
+                // Core tabs + a Table contextual tab (appended by `use_ribbon_tabs` in a table).
                 tabs: ribbon_tabs,
                 active_tab: active_ribbon_tab(),
                 on_tab_select: move |idx| active_ribbon_tab.set(idx),
@@ -726,10 +723,13 @@ pub(super) fn EditorInner(path: String) -> Element {
                 },
                 tab_content: match active_ribbon_tab() {
                     1 => insert_tab_content(link_draft, insert_ctx.clone()),
-                    3 if table_selected => super::editor_ribbon_table::table_tab_content(
+                    4 if table_selected => super::editor_ribbon_table::table_tab_content(
                         &doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo,
                     ),
-                    2 => publish_tab_content(
+                    2 => super::editor_ribbon_layout::layout_tab_content(
+                        &doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo,
+                    ),
+                    3 => publish_tab_content(
                         &doc_state_publish,
                         path_signal,
                         save_message,

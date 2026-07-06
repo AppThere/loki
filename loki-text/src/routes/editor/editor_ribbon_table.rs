@@ -25,12 +25,12 @@ use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::selected_object::{SelectedObject, selected_object};
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
-/// Index of the Table contextual tab in the ribbon strip — it follows the three
-/// core tabs (Write=0, Insert=1, Publish=2), so any `active_tab >= 3` is the
-/// contextual tab.
-const CONTEXTUAL_TAB_INDEX: usize = 3;
+/// Index of the Table contextual tab in the ribbon strip — it follows the four
+/// core tabs (Write=0, Insert=1, Layout=2, Publish=3), so any `active_tab >= 4`
+/// is the contextual tab.
+const CONTEXTUAL_TAB_INDEX: usize = 4;
 
-/// The ribbon tab descriptors for the current `selected` object: the three core
+/// The ribbon tab descriptors for the current `selected` object: the four core
 /// tabs, plus the Table contextual tab (amber) when the caret is in a table.
 ///
 /// Pure — the appearance logic is unit-tested without a Dioxus runtime.
@@ -43,6 +43,11 @@ pub(super) fn ribbon_tabs(selected: SelectedObject) -> Vec<RibbonTabDesc> {
         },
         RibbonTabDesc {
             label: fl!("ribbon-tab-insert"),
+            is_contextual: false,
+            aria_label: None,
+        },
+        RibbonTabDesc {
+            label: fl!("ribbon-tab-layout"),
             is_contextual: false,
             aria_label: None,
         },

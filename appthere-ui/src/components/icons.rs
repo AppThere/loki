@@ -114,6 +114,14 @@ pub const AT_FONT_GROW: &str = "M6 15 10 7 14 15M7.5 12h5M18 8v7M15.5 10.5 18 8 
 /// Decrease font size: an "A" with a downward arrow.
 pub const AT_FONT_SHRINK: &str = "M6 15 10 7 14 15M7.5 12h5M18 8v7M15.5 12.5 18 15 20.5 12.5";
 
+// App-custom page-orientation glyphs (not Lucide): a tall vs. wide page rect.
+
+/// Portrait orientation: a tall page rectangle.
+pub const AT_PAGE_PORTRAIT: &str = "M7 3h10v18H7z";
+
+/// Landscape orientation: a wide page rectangle.
+pub const AT_PAGE_LANDSCAPE: &str = "M3 7h18v10H3z";
+
 // ── AtIcon component ──────────────────────────────────────────────────────────
 
 /// Renders a single Lucide SVG icon.

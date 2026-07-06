@@ -41,6 +41,7 @@ mod editor_ribbon_color;
 mod editor_ribbon_format;
 mod editor_ribbon_insert;
 mod editor_ribbon_insert_image;
+mod editor_ribbon_layout;
 mod editor_ribbon_table;
 mod editor_ribbon_table_ops;
 mod editor_save;
