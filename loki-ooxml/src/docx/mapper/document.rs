@@ -70,10 +70,8 @@ fn map_section_start(section_type: Option<&str>) -> SectionStart {
     }
 }
 
-/// Converts a [`DocxSectPr`] to a [`PageLayout`].
-///
-/// Falls back to A4 portrait with 72pt margins when no `w:sectPr` is
-/// present (the OOXML default assumption for simple documents).
+/// Converts a [`DocxSectPr`] to a [`PageLayout`]. Falls back to A4 portrait with
+/// 72pt margins when no `w:sectPr` is present (the OOXML default for simple docs).
 fn map_page_layout(sect_pr: Option<&DocxSectPr>) -> PageLayout {
     let Some(sp) = sect_pr else {
         return PageLayout {
@@ -384,6 +382,7 @@ pub(crate) fn map_document(
                             &mut current_blocks,
                         )),
                         start: map_section_start(sp.section_type.as_deref()),
+                        page_style: None,
                         extensions: ExtensionBag::default(),
                     });
                 }
@@ -413,6 +412,7 @@ pub(crate) fn map_document(
                 .as_ref()
                 .and_then(|sp| sp.section_type.as_deref()),
         ),
+        page_style: None,
         extensions: ExtensionBag::default(),
     });
 

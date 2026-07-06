@@ -13,6 +13,7 @@
 use crate::content::attr::ExtensionBag;
 use crate::content::block::Block;
 use crate::layout::page::PageLayout;
+use crate::style::catalog::StyleId;
 
 /// How a section begins relative to the preceding one.
 ///
@@ -49,11 +50,22 @@ pub enum SectionStart {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Section {
     /// The page layout applied to this section.
+    ///
+    /// When [`page_style`](Self::page_style) names a catalogued page style, this
+    /// is kept in sync with that style's layout (the effective geometry the
+    /// renderer reads); it is also the source for an unnamed section.
     pub layout: PageLayout,
     /// The block-level content of this section.
     pub blocks: Vec<Block>,
     /// How this section begins relative to the previous one (`w:sectPr/w:type`).
     pub start: SectionStart,
+    /// The named **page style** this section uses (ADR-0012 Decision 2), keyed
+    /// into [`StyleCatalog::page_styles`](crate::style::StyleCatalog). `None` for
+    /// a section that has not been assigned a named page style (its inline
+    /// [`layout`](Self::layout) then stands alone). ODF: `style:master-page-name`;
+    /// OOXML has no named page style, so the reference is Loki-assigned on import.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub page_style: Option<StyleId>,
     /// Format-specific extension data.
     pub extensions: ExtensionBag,
 }
@@ -66,6 +78,7 @@ impl Section {
             layout: PageLayout::default(),
             blocks: Vec::new(),
             start: SectionStart::default(),
+            page_style: None,
             extensions: ExtensionBag::default(),
         }
     }
@@ -77,6 +90,7 @@ impl Section {
             layout,
             blocks,
             start: SectionStart::default(),
+            page_style: None,
             extensions: ExtensionBag::default(),
         }
     }

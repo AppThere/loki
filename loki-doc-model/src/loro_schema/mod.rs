@@ -38,6 +38,11 @@ pub const KEY_SECTIONS: &str = "sections";
 /// Key for the Document blocks movable list.
 pub const KEY_BLOCKS: &str = "blocks";
 
+/// Key on a section map for its named **page style** reference (ADR-0012
+/// Decision 2). A string — the `StyleId` of the section's page style — or absent
+/// when the section has no named page style.
+pub const KEY_PAGE_STYLE_REF: &str = "page_style";
+
 /// Key for the Document comments map (annotation bodies).
 pub const KEY_COMMENTS: &str = "comments";
 

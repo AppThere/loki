@@ -743,11 +743,11 @@ fn layout_blocks_reflow(
         layout: PageLayout::default(),
         blocks,
         start: loki_doc_model::layout::section::SectionStart::default(),
+        page_style: None,
         extensions: ExtensionBag::default(),
     };
     let mode = LayoutMode::Reflow { available_width };
-    // Headers/footers are read-only; always use default (no editing overhead).
-    let options = LayoutOptions::default();
+    let options = LayoutOptions::default(); // headers/footers read-only here
     match flow_section(
         resources,
         &synthetic,

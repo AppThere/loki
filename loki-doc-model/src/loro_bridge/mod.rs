@@ -151,6 +151,11 @@ pub fn document_to_loro(doc: &Document) -> Result<LoroDoc, BridgeError> {
         // Page layout (always present — Section.layout is not Option)
         map_page_layout(&section.layout, &sec_map)?;
 
+        // Named page-style reference (ADR-0012 Decision 2), when assigned.
+        if let Some(page_style) = &section.page_style {
+            sec_map.insert(KEY_PAGE_STYLE_REF, page_style.as_str())?;
+        }
+
         // Blocks
         let blocks_list = sec_map.insert_container(KEY_BLOCKS, LoroMovableList::new())?;
         map_blocks_to_list(&section.blocks, &blocks_list)?;
@@ -198,6 +203,13 @@ pub fn loro_to_document(loro: &LoroDoc) -> Result<Document, BridgeError> {
 
         // Page layout
         section.layout = reconstruct_page_layout(&sec_map);
+
+        // Named page-style reference (absent → None).
+        section.page_style = sec_map
+            .get(KEY_PAGE_STYLE_REF)
+            .and_then(|v| v.into_value().ok())
+            .and_then(|v| v.into_string().ok())
+            .map(|s| crate::style::catalog::StyleId::new(s.to_string()));
 
         // Blocks
         if let Some(blocks_val) = sec_map.get(KEY_BLOCKS)

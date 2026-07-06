@@ -41,6 +41,7 @@ fn para(text: &str) -> Block {
 fn doc_with(paragraphs: Vec<Block>) -> Document {
     let mut doc = Document::new_blank();
     doc.sections = vec![Section {
+        page_style: None,
         layout: PageLayout::default(),
         start: Default::default(),
         blocks: paragraphs,
@@ -83,6 +84,7 @@ fn multi_section_doc() -> Document {
             )));
         }
         sections.push(Section {
+            page_style: None,
             layout: PageLayout::default(),
             start: Default::default(),
             blocks,

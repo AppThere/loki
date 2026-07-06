@@ -58,13 +58,17 @@ pub(super) fn load_document(path: String) -> Result<Document, LoadError> {
 
     // Untitled paths encode how to build their initial content (blank, a bundled
     // template, or an imported external file) — see `loki_app_shell::untitled`.
-    match new_document::parse_new_doc_source(&path) {
-        Some(NewDocSource::Blank) => return Ok(Document::new_blank()),
-        Some(NewDocSource::Template(id)) => return build_template(&id),
-        Some(NewDocSource::Import(token)) => return import_token(&token),
-        None => {} // real file path — fall through
-    }
-    import_token(&path)
+    let mut doc = match new_document::parse_new_doc_source(&path) {
+        Some(NewDocSource::Blank) => Document::new_blank(),
+        Some(NewDocSource::Template(id)) => build_template(&id)?,
+        Some(NewDocSource::Import(token)) => import_token(&token)?,
+        None => import_token(&path)?, // real file path
+    };
+    // Normalise page geometry into named, catalogued page styles (ADR-0012
+    // Decision 2), so the style panel edits first-class page styles rather than
+    // deriving them each render.
+    doc.assign_page_styles();
+    Ok(doc)
 }
 
 /// Deserialises `serialized` as a file token, detects its format, and imports it.

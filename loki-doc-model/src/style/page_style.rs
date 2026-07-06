@@ -22,6 +22,7 @@
 use indexmap::IndexMap;
 
 use crate::content::attr::ExtensionBag;
+use crate::document::Document;
 use crate::layout::page::PageLayout;
 use crate::layout::section::Section;
 use crate::style::catalog::StyleId;
@@ -83,6 +84,51 @@ pub fn derive_page_styles(sections: &[Section]) -> IndexMap<StyleId, PageStyle> 
         out.insert(id.clone(), PageStyle::new(id, section.layout.clone()));
     }
     out
+}
+
+impl Document {
+    /// Assigns a named page style to every section that lacks one (ADR-0012
+    /// Decision 2's normalization), populating [`StyleCatalog::page_styles`].
+    ///
+    /// Sections sharing an identical [`PageLayout`] collapse to one page style
+    /// (reusing an existing catalogued style with the same layout, else creating a
+    /// new `PageStyleN`). **Idempotent** — a section that already names a page
+    /// style is left untouched, so a user rename or an ODF `style:master-page`
+    /// name is preserved across re-runs. Run once after import so page styles are
+    /// first-class, stored, renamable entities rather than derived on the fly.
+    ///
+    /// [`StyleCatalog::page_styles`]: crate::style::catalog::StyleCatalog::page_styles
+    pub fn assign_page_styles(&mut self) {
+        for i in 0..self.sections.len() {
+            if self.sections[i].page_style.is_some() {
+                continue;
+            }
+            let layout = self.sections[i].layout.clone();
+            let id = match self
+                .styles
+                .page_styles
+                .iter()
+                .find(|(_, ps)| ps.layout == layout)
+            {
+                Some((existing, _)) => existing.clone(),
+                None => {
+                    let mut n = self.styles.page_styles.len() + 1;
+                    let id = loop {
+                        let cand = StyleId::new(format!("PageStyle{n}"));
+                        if !self.styles.page_styles.contains_key(&cand) {
+                            break cand;
+                        }
+                        n += 1;
+                    };
+                    self.styles
+                        .page_styles
+                        .insert(id.clone(), PageStyle::new(id.clone(), layout));
+                    id
+                }
+            };
+            self.sections[i].page_style = Some(id);
+        }
+    }
 }
 
 /// The page-style id each section maps to, in section order — the inverse of
