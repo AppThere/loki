@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tests for the Layout tab's pure margin-preset matching.
+//! Tests for the Layout tab's pure margin- and page-size-preset matching.
 
-use super::{MARGIN_PRESETS, margin_matches};
+use super::{MARGIN_PRESETS, margin_matches, page_size_matches};
 
 #[test]
 fn no_margins_matches_no_preset() {
@@ -58,4 +58,34 @@ fn the_presets_are_distinct() {
             );
         }
     }
+}
+
+const A4: (f64, f64) = (595.28, 841.89);
+const LETTER: (f64, f64) = (612.0, 792.0);
+
+#[test]
+fn no_page_size_matches_no_preset() {
+    assert!(!page_size_matches(None, A4));
+}
+
+#[test]
+fn page_size_matches_regardless_of_orientation() {
+    // Portrait A4 and landscape A4 (swapped) both read as A4.
+    assert!(page_size_matches(Some(A4), A4));
+    assert!(
+        page_size_matches(Some((A4.1, A4.0)), A4),
+        "landscape A4 still A4"
+    );
+}
+
+#[test]
+fn a4_and_letter_do_not_cross_match() {
+    assert!(!page_size_matches(Some(LETTER), A4));
+    assert!(!page_size_matches(Some(A4), LETTER));
+    assert!(page_size_matches(Some(LETTER), LETTER));
+}
+
+#[test]
+fn sub_point_drift_still_matches() {
+    assert!(page_size_matches(Some((595.0, 842.0)), A4));
 }

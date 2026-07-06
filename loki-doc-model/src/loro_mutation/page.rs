@@ -146,3 +146,58 @@ pub fn set_document_margins(
     }
     Ok(())
 }
+
+/// Section 0's page size in points as `(width, height)`, or `None` when there
+/// is no page-size map. Lets the Layout tab highlight the active size preset.
+#[must_use]
+pub fn document_page_size(loro: &LoroDoc) -> Option<(f64, f64)> {
+    let sections = loro.get_list(KEY_SECTIONS);
+    let size = sections
+        .get(0)
+        .and_then(|v| v.into_container().ok())
+        .and_then(|c| c.into_map().ok())
+        .and_then(|section| child_map(&section, KEY_LAYOUT))
+        .and_then(|layout| child_map(&layout, KEY_PAGE_SIZE))?;
+    Some((read_f64(&size, "width"), read_f64(&size, "height")))
+}
+
+/// Sets every section's page size to the paper of `portrait_w` × `portrait_h`
+/// points, **preserving each section's orientation**: a landscape section keeps
+/// the long edge as its width (so choosing "A4" while landscape gives A4
+/// landscape, not portrait). Creates a page-size map for any section lacking one.
+///
+/// # Errors
+///
+/// [`MutationError::Loro`] for an underlying Loro error.
+pub fn set_document_page_size(
+    loro: &LoroDoc,
+    portrait_w: f64,
+    portrait_h: f64,
+) -> Result<(), MutationError> {
+    let sections = loro.get_list(KEY_SECTIONS);
+    for s in 0..sections.len() {
+        let Some(section) = sections
+            .get(s)
+            .and_then(|v| v.into_container().ok())
+            .and_then(|c| c.into_map().ok())
+        else {
+            continue;
+        };
+        let Some(layout) = child_map(&section, KEY_LAYOUT) else {
+            continue;
+        };
+        let size = match child_map(&layout, KEY_PAGE_SIZE) {
+            Some(m) => m,
+            None => layout.insert_container(KEY_PAGE_SIZE, LoroMap::new())?,
+        };
+        let landscape = read_f64(&size, "width") > read_f64(&size, "height");
+        let (w, h) = if landscape {
+            (portrait_h, portrait_w)
+        } else {
+            (portrait_w, portrait_h)
+        };
+        size.insert("width", w)?;
+        size.insert("height", h)?;
+    }
+    Ok(())
+}

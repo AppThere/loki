@@ -96,6 +96,9 @@ ribbon-group-margins = Margins
 ribbon-margin-normal-aria = Normal margins
 ribbon-margin-narrow-aria = Narrow margins
 ribbon-margin-wide-aria = Wide margins
+ribbon-group-page-size = Size
+ribbon-page-a4-aria = A4
+ribbon-page-letter-aria = US Letter
 
 # Ribbon collapse toggle
 ribbon-collapse-aria = Collapse ribbon

@@ -3,19 +3,19 @@
 //! Layout ribbon tab content (Spec 04 M5, plan 4a.2).
 //!
 //! Layout controls change the section page geometry in the CRDT and relayout,
-//! so the document immediately re-flows. First controls: page **orientation**
-//! (portrait/landscape) and **margin** presets.
+//! so the document immediately re-flows. Controls: page **orientation**
+//! (portrait/landscape), **margin** presets, and page **size** (A4/Letter).
 
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::{
-    AT_MARGIN_NARROW, AT_MARGIN_NORMAL, AT_MARGIN_WIDE, AT_PAGE_LANDSCAPE, AT_PAGE_PORTRAIT,
-    AtIcon, AtRibbonGroup, AtRibbonIconButton,
+    AT_MARGIN_NARROW, AT_MARGIN_NORMAL, AT_MARGIN_WIDE, AT_PAGE_A4, AT_PAGE_LANDSCAPE,
+    AT_PAGE_LETTER, AT_PAGE_PORTRAIT, AtIcon, AtRibbonGroup, AtRibbonIconButton,
 };
 use dioxus::prelude::*;
 use loki_doc_model::{
-    MutationError, document_is_landscape, document_margins, set_document_margins,
-    set_document_orientation,
+    MutationError, document_is_landscape, document_margins, document_page_size,
+    set_document_margins, set_document_orientation, set_document_page_size,
 };
 use loki_i18n::fl;
 
@@ -61,6 +61,23 @@ fn margin_matches(current: Option<(f64, f64, f64, f64)>, preset: (f64, f64, f64,
     close(t, preset.0) && close(b, preset.1) && close(l, preset.2) && close(r, preset.3)
 }
 
+/// A page-size preset: `(aria-key, portrait_width, portrait_height, icon)` — pt.
+const PAGE_SIZE_PRESETS: &[(&str, f64, f64, &str)] = &[
+    ("ribbon-page-a4-aria", 595.28, 841.89, AT_PAGE_A4),
+    ("ribbon-page-letter-aria", 612.0, 792.0, AT_PAGE_LETTER),
+];
+
+/// Whether the document's `current` page size is the `preset` paper, comparing
+/// the orientation-independent short/long edges within a point.
+fn page_size_matches(current: Option<(f64, f64)>, preset: (f64, f64)) -> bool {
+    let Some((w, h)) = current else {
+        return false;
+    };
+    let (cmin, cmax) = (w.min(h), w.max(h));
+    let (pmin, pmax) = (preset.0.min(preset.1), preset.0.max(preset.1));
+    (cmin - pmin).abs() < 1.0 && (cmax - pmax).abs() < 1.0
+}
+
 /// Runs a page-geometry mutation `f` against the live document, relays out, and
 /// syncs undo/redo — the shared path for every Layout button.
 fn apply_and_sync(
@@ -102,11 +119,17 @@ pub(super) fn layout_tab_content(
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
 ) -> Element {
-    let (landscape, margins) = loro_doc
+    let (landscape, margins, page_size) = loro_doc
         .read()
         .as_ref()
-        .map(|ldoc| (document_is_landscape(ldoc), document_margins(ldoc)))
-        .unwrap_or((false, None));
+        .map(|ldoc| {
+            (
+                document_is_landscape(ldoc),
+                document_margins(ldoc),
+                document_page_size(ldoc),
+            )
+        })
+        .unwrap_or((false, None, None));
     let ds_portrait = Arc::clone(doc_state);
     let ds_landscape = Arc::clone(doc_state);
 
@@ -152,6 +175,28 @@ pub(super) fn layout_tab_content(
                         move |_| apply_and_sync(
                             &ds, loro_doc, cursor_state, undo_manager,
                             can_undo, can_redo, |lo| set_document_margins(lo, t, b, l, r),
+                        )
+                    },
+                    AtIcon { path_d: icon.to_string() }
+                }
+            }
+        }
+
+        AtRibbonGroup {
+            label:      Some(fl!("ribbon-group-page-size")),
+            aria_label: fl!("ribbon-group-page-size"),
+
+            for (aria, pw, ph, icon) in PAGE_SIZE_PRESETS.iter().copied() {
+                AtRibbonIconButton {
+                    key: "{aria}",
+                    aria_label:  fl!(aria),
+                    is_active:   page_size_matches(page_size, (pw, ph)),
+                    is_disabled: false,
+                    on_click: {
+                        let ds = Arc::clone(doc_state);
+                        move |_| apply_and_sync(
+                            &ds, loro_doc, cursor_state, undo_manager,
+                            can_undo, can_redo, |lo| set_document_page_size(lo, pw, ph),
                         )
                     },
                     AtIcon { path_d: icon.to_string() }

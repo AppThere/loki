@@ -134,6 +134,15 @@ pub const AT_MARGIN_NARROW: &str = "M5 3h14v18H5zM6.5 4.5h11v15h-11z";
 /// Wide margins: a page with a wide horizontal inset (narrow content area).
 pub const AT_MARGIN_WIDE: &str = "M5 3h14v18H5zM9 6h6v12H9z";
 
+// App-custom page-size glyphs (not Lucide): page rectangles of the paper's
+// aspect ratio. Disambiguated by tooltip.
+
+/// A4 paper: a tall, narrow page (≈1:1.41).
+pub const AT_PAGE_A4: &str = "M7 3h10v18H7z";
+
+/// US Letter paper: a slightly wider, shorter page (≈1:1.29).
+pub const AT_PAGE_LETTER: &str = "M6 4h12v16H6z";
+
 // ── AtIcon component ──────────────────────────────────────────────────────────
 
 /// Renders a single Lucide SVG icon.

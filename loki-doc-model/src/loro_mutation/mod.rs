@@ -53,7 +53,8 @@ pub use self::nested::{
 #[cfg(feature = "serde")]
 pub use self::objects::{insert_inline_image_at, insert_inline_note_at};
 pub use self::page::{
-    document_is_landscape, document_margins, set_document_margins, set_document_orientation,
+    document_is_landscape, document_margins, document_page_size, set_document_margins,
+    set_document_orientation, set_document_page_size,
 };
 pub use self::selection::delete_selection_at;
 pub use self::style::{
