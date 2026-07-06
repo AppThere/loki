@@ -29,10 +29,12 @@
 
 mod breakpoint;
 mod page_fit;
+mod ribbon_collapse;
 mod viewport;
 
 pub use breakpoint::Breakpoint;
 pub use page_fit::{page_fits, required_page_width, resolve_page_fit, PageFit};
+pub use ribbon_collapse::{resolve_cascade, GroupCollapse, GroupMetrics, RibbonCascade};
 pub use viewport::{Viewport, DEFAULT_DPI};
 
 use dioxus::prelude::*;
