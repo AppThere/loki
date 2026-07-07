@@ -182,9 +182,11 @@ pub use loki_primitives;
 
 // Type aliases to make common imports more ergonomic
 pub use content::attr::{ExtensionBag, ExtensionKey, NodeAttr};
+pub use content::revision_ops::{accept_revisions, has_revisions, reject_revisions};
 pub use content::{Block, Inline};
 pub use layout::Section;
 pub use meta::DocumentMeta;
+pub use style::props::{RevisionKind, RevisionMark};
 pub use style::{Provenance, Resolved, StyleCatalog, StyleId};
 
 /// Derive-macro re-exports (serde support is feature-gated).

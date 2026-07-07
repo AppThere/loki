@@ -23,12 +23,19 @@ pub struct DocumentSettings {
     ///
     /// OOXML: `w:defaultTabStop @w:val` (twips; divide by 20 for points).
     pub default_tab_stop_pt: f32,
+
+    /// Whether **track changes** is on: new edits are recorded as tracked
+    /// insertions/deletions (Review tab, 4a.2) rather than applied silently.
+    /// Default `false`. OOXML `w:trackChanges`; ODF `text:track-changes`.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub track_changes: bool,
 }
 
 impl Default for DocumentSettings {
     fn default() -> Self {
         Self {
             default_tab_stop_pt: 36.0,
+            track_changes: false,
         }
     }
 }

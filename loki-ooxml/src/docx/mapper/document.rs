@@ -421,11 +421,11 @@ pub(crate) fn map_document(
     // ── 6. Metadata ────────────────────────────────────────────────────────
     let meta = map_meta(core_props);
 
-    let doc_settings = raw_settings.and_then(|s| {
-        #[allow(clippy::cast_precision_loss)] // twips are small values; f32 precision is sufficient
-        s.default_tab_stop.map(|twips| DocumentSettings {
-            default_tab_stop_pt: twips as f32 / 20.0,
-        })
+    let tab = raw_settings.and_then(|s| s.default_tab_stop);
+    #[allow(clippy::cast_precision_loss)] // twips are small; f32 precision is sufficient
+    let doc_settings = tab.map(|twips| DocumentSettings {
+        default_tab_stop_pt: twips as f32 / 20.0,
+        ..DocumentSettings::default()
     });
 
     let document = Document {

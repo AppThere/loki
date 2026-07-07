@@ -14,6 +14,7 @@ pub mod block;
 pub mod field;
 pub mod float;
 pub mod inline;
+pub mod revision_ops;
 pub mod table;
 pub mod toc;
 

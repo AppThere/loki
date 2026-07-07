@@ -38,6 +38,9 @@ pub const MARK_OUTLINE: &str = "outline";
 pub const MARK_QUOTE_TYPE: &str = "quote_type";
 /// `Inline::Span`'s `NodeAttr` as a `serde`-JSON snapshot over the span range.
 pub const MARK_SPAN_ATTR: &str = "span_attr";
+/// A live tracked-change (revision) mark over the run range — the packed
+/// `RevisionMark` string (`style::props::revision::encode`). Review tab / 4a.2.
+pub const MARK_REVISION: &str = "revision";
 
 // -----------------------------------------------------------------------------
 // Inline objects (anchored by a placeholder char + a data-bearing mark)
@@ -119,4 +122,5 @@ pub const CHAR_MARK_KEYS: &[&str] = &[
     MARK_CHAR_STYLE_ID,
     MARK_QUOTE_TYPE,
     MARK_SPAN_ATTR,
+    MARK_REVISION,
 ];
