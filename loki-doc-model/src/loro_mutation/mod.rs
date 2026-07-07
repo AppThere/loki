@@ -51,7 +51,7 @@ pub use self::block_edit::delete_block;
 pub use self::block_edit::insert_block_after;
 pub use self::nested::{
     BlockPath, PathStep, delete_text_at, get_block_text_at, get_mark_at_path, insert_text_at,
-    mark_text_at,
+    insert_text_tracked_at, mark_text_at,
 };
 #[cfg(feature = "serde")]
 pub use self::objects::{insert_inline_image_at, insert_inline_note_at};

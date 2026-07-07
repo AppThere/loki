@@ -11,7 +11,9 @@
 use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
-use loki_doc_model::loro_mutation::{delete_text_at, get_block_text_at, insert_text_at};
+use loki_doc_model::loro_mutation::{
+    delete_text_at, get_block_text_at, insert_text_at, insert_text_tracked_at,
+};
 use loki_doc_model::{PathStep, delete_selection_at, merge_block_at};
 
 use super::editor_keydown_ctrl::post_mutation_sync;
@@ -155,6 +157,12 @@ pub(super) fn handle_character_key(
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
 ) {
+    // When track changes is on, stamp typed text as a tracked insertion by the
+    // document's author (Review tab, 4a.2); otherwise insert plainly.
+    let revision = doc_state
+        .lock()
+        .ok()
+        .and_then(|s| s.document.as_ref().and_then(|d| d.insertion_revision()));
     let insert_at = {
         let ldoc_guard = loro_doc.read();
         let Some(ldoc) = ldoc_guard.as_ref() else {
@@ -169,7 +177,12 @@ pub(super) fn handle_character_key(
         } else {
             focus
         };
-        if insert_text_at(ldoc, &insert_at.block_path(), insert_at.byte_offset, &ch).is_err() {
+        let path = insert_at.block_path();
+        let inserted = match &revision {
+            Some(rev) => insert_text_tracked_at(ldoc, &path, insert_at.byte_offset, &ch, rev),
+            None => insert_text_at(ldoc, &path, insert_at.byte_offset, &ch),
+        };
+        if inserted.is_err() {
             return;
         }
         apply_mutation_and_relayout(doc_state, ldoc);

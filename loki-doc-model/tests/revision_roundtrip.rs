@@ -57,6 +57,57 @@ fn revision_mark_round_trips_through_the_bridge() {
 }
 
 #[test]
+fn tracked_insert_marks_only_its_range_and_does_not_leak() {
+    use loki_doc_model::loro_mutation::BlockPath;
+    use loki_doc_model::{insert_text_at, insert_text_tracked_at};
+
+    // Start with one empty paragraph.
+    let mut doc = Document::new();
+    doc.sections = vec![Section::with_layout_and_blocks(
+        PageLayout::default(),
+        vec![Block::Para(vec![])],
+    )];
+    let loro = document_to_loro(&doc).expect("to loro");
+    let path = BlockPath::block(0);
+
+    // Type "new" as a tracked insertion, then type " old" plainly right after it
+    // (track-changes turned off). The revision must cover exactly "new".
+    let mark = RevisionMark::new(RevisionKind::Insertion).with_author("Ada");
+    insert_text_tracked_at(&loro, &path, 0, "new", &mark).expect("tracked insert");
+    insert_text_at(&loro, &path, 3, " old").expect("plain insert");
+
+    let back = loro_to_document(&loro).expect("rebuild");
+    let Block::Para(inlines) = &back.sections[0].blocks[0] else {
+        panic!("expected a paragraph");
+    };
+    // The tracked run carries the mark; the plainly-typed run does not (the mark
+    // is `expand: None`, so it did not bleed onto " old").
+    let tracked: String = inlines
+        .iter()
+        .filter(|i| match i {
+            Inline::StyledRun(run) => run
+                .direct_props
+                .as_ref()
+                .is_some_and(|p| p.revision.is_some()),
+            _ => false,
+        })
+        .map(text_of)
+        .collect();
+    assert_eq!(tracked, "new", "only the tracked text carries a revision");
+    // The full paragraph text is intact.
+    let all: String = inlines.iter().map(text_of).collect();
+    assert_eq!(all, "new old");
+}
+
+fn text_of(inline: &Inline) -> String {
+    match inline {
+        Inline::Str(s) => s.clone(),
+        Inline::StyledRun(run) => run.content.iter().map(text_of).collect(),
+        _ => String::new(),
+    }
+}
+
+#[test]
 fn track_changes_setting_serde_is_backward_compatible() {
     use loki_doc_model::settings::DocumentSettings;
 

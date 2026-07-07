@@ -221,6 +221,20 @@ impl Document {
     pub fn has_tracked_changes(&self) -> bool {
         self.sections.iter().any(|s| has_revisions(&s.blocks))
     }
+
+    /// The revision mark to stamp on newly typed text when **track changes** is
+    /// on (`DocumentSettings::track_changes`) — an insertion attributed to the
+    /// document's author (`meta.creator`) — or `None` when tracking is off. The
+    /// editor routes typing through `insert_text_tracked_at` with this mark.
+    #[must_use]
+    pub fn insertion_revision(&self) -> Option<crate::style::props::revision::RevisionMark> {
+        use crate::style::props::revision::{RevisionKind, RevisionMark};
+        self.settings.as_ref().filter(|s| s.track_changes).map(|_| {
+            let mut mark = RevisionMark::new(RevisionKind::Insertion);
+            mark.author = self.meta.creator.clone();
+            mark
+        })
+    }
 }
 
 #[cfg(test)]

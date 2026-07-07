@@ -117,3 +117,27 @@ fn untracked_content_is_untouched() {
     accept_revisions(&mut blocks);
     assert_eq!(blocks, before);
 }
+
+#[test]
+fn insertion_revision_follows_the_track_changes_flag() {
+    use crate::settings::DocumentSettings;
+
+    let mut doc = Document::new();
+    doc.meta.creator = Some("Ada".into());
+
+    // Off (no settings) → no mark.
+    assert!(doc.insertion_revision().is_none());
+
+    // On → an insertion attributed to the document author.
+    doc.settings = Some(DocumentSettings {
+        track_changes: true,
+        ..DocumentSettings::default()
+    });
+    let mark = doc.insertion_revision().expect("tracking on ⇒ a mark");
+    assert_eq!(mark.kind, RevisionKind::Insertion);
+    assert_eq!(mark.author.as_deref(), Some("Ada"));
+
+    // Explicitly off again → none.
+    doc.settings = Some(DocumentSettings::default());
+    assert!(doc.insertion_revision().is_none());
+}

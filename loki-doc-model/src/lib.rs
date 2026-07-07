@@ -150,7 +150,7 @@ pub use loro_bridge::{BridgeError, IncrementalReader, document_to_loro, loro_to_
 pub mod loro_mutation;
 pub use loro_mutation::{
     BlockPath, PathStep, delete_selection_at, delete_text_at, get_block_text_at, get_mark_at_path,
-    insert_text_at, mark_text_at,
+    insert_text_at, insert_text_tracked_at, mark_text_at,
 };
 pub use loro_mutation::{
     MutationError, clear_block_list, delete_block, delete_text, document_column_count,

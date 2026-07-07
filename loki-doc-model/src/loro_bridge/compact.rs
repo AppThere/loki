@@ -24,7 +24,7 @@
 //!   `PUT /snapshot` flow).
 
 use super::BridgeError;
-use crate::loro_schema::{CHAR_MARK_KEYS, INLINE_OBJECT_MARK_KEYS};
+use crate::loro_schema::{CHAR_MARK_KEYS, INLINE_OBJECT_MARK_KEYS, MARK_REVISION};
 use loro::{ExpandType, ExportMode, LoroDoc, StyleConfig, StyleConfigMap};
 
 /// Registers every schema mark key's expand behaviour on `doc`.
@@ -35,14 +35,17 @@ use loro::{ExpandType, ExportMode, LoroDoc, StyleConfig, StyleConfigMap};
 pub(super) fn configure_text_style(doc: &LoroDoc) {
     let mut style_config = StyleConfigMap::new();
     // Character formatting marks expand onto text inserted at their trailing
-    // edge (`After`) — the single source of truth is `CHAR_MARK_KEYS`.
+    // edge (`After`) — the single source of truth is `CHAR_MARK_KEYS`. The
+    // tracked-change mark is the exception: a revision describes exactly the
+    // changed range, so it must **not** bleed onto adjacent (possibly untracked)
+    // typing — `None`, like the inline-object anchors.
     for key in CHAR_MARK_KEYS {
-        style_config.insert(
-            loro::InternalString::from(*key),
-            StyleConfig {
-                expand: ExpandType::After,
-            },
-        );
+        let expand = if *key == MARK_REVISION {
+            ExpandType::None
+        } else {
+            ExpandType::After
+        };
+        style_config.insert(loro::InternalString::from(*key), StyleConfig { expand });
     }
     // Inline-object anchor marks must not expand onto adjacent text — they
     // describe a single placeholder position, not a formatting span.

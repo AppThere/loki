@@ -19,7 +19,7 @@
 use loro::{LoroDoc, LoroMap, LoroMovableList, LoroText, LoroValue};
 
 use super::{MutationError, get_block_map_and_list, resolve_section_blocks};
-use crate::loro_schema::{KEY_CONTENT, KEY_NOTES, KEY_TABLE_CELLS};
+use crate::loro_schema::{KEY_CONTENT, KEY_NOTES, KEY_TABLE_CELLS, MARK_REVISION};
 
 /// One descent into a container block: select a cell (of a table) or a note body
 /// (of a paragraph), then a block within that nested block list.
@@ -192,6 +192,32 @@ pub fn insert_text_at(
 ) -> Result<(), MutationError> {
     text_for_path(loro, path)?.insert_utf8(byte_offset, text)?;
     Ok(())
+}
+
+/// Inserts `text` at `byte_offset` and marks it as a **tracked insertion**
+/// (Review tab, 4a.2): the inserted range gets a `MARK_REVISION` mark encoding
+/// `revision`, so it renders as an insertion and can be accepted/rejected.
+///
+/// The revision mark is configured `expand: None` (see `compact.rs`), so it
+/// covers exactly the inserted range and does not bleed onto adjacent typing —
+/// consecutive tracked inserts by one author coalesce because their encoded mark
+/// value is identical.
+pub fn insert_text_tracked_at(
+    loro: &LoroDoc,
+    path: &BlockPath,
+    byte_offset: usize,
+    text: &str,
+    revision: &crate::style::props::revision::RevisionMark,
+) -> Result<(), MutationError> {
+    if text.is_empty() {
+        return Ok(());
+    }
+    let loro_text = text_for_path(loro, path)?;
+    loro_text.insert_utf8(byte_offset, text)?;
+    let value = LoroValue::from(crate::style::props::revision::encode(revision));
+    loro_text
+        .mark_utf8(byte_offset..byte_offset + text.len(), MARK_REVISION, value)
+        .map_err(MutationError::from)
 }
 
 /// Deletes `len` UTF-8 bytes at `byte_offset` from the block addressed by
