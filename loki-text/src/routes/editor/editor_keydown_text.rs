@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 use loki_doc_model::loro_mutation::{
-    delete_text_at, get_block_text_at, insert_text_at, insert_text_tracked_at,
+    get_block_text_at, insert_text_at, insert_text_tracked_at, tracked_grapheme_delete,
 };
 use loki_doc_model::{PathStep, delete_selection_at, merge_block_at};
 
@@ -257,6 +257,14 @@ pub(super) fn handle_backspace_key(
         set_collapsed_cursor(doc_state, cursor_state, new_pos);
         return;
     }
+    // With track changes on, Backspace over normal text strikes it through
+    // instead of removing it (own insertions are un-typed; already-struck text is
+    // stepped over) — `tracked_grapheme_delete` decides. The caret still lands
+    // before the target grapheme in every case.
+    let del_rev = doc_state
+        .lock()
+        .ok()
+        .and_then(|s| s.document.as_ref().and_then(|d| d.deletion_revision()));
     let prev = {
         let ldoc_guard = loro_doc.read();
         let Some(ldoc) = ldoc_guard.as_ref() else {
@@ -264,8 +272,9 @@ pub(super) fn handle_backspace_key(
         };
         let text = get_block_text_at(ldoc, &focus.block_path());
         let prev = prev_grapheme_boundary(&text, focus.byte_offset);
-        let len = focus.byte_offset - prev;
-        if delete_text_at(ldoc, &focus.block_path(), prev, len).is_err() {
+        let path = focus.block_path();
+        if tracked_grapheme_delete(ldoc, &path, prev, focus.byte_offset, del_rev.as_ref()).is_err()
+        {
             return;
         }
         apply_mutation_and_relayout(doc_state, ldoc);

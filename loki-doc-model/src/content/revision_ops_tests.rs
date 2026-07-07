@@ -119,6 +119,42 @@ fn untracked_content_is_untouched() {
 }
 
 #[test]
+fn delete_action_matches_word_semantics() {
+    // Tracking off ⇒ always a hard delete, whatever the grapheme carries.
+    assert_eq!(delete_action(None, false), DeleteAction::HardDelete);
+    assert_eq!(
+        delete_action(Some(RevisionKind::Deletion), false),
+        DeleteAction::HardDelete
+    );
+    // Tracking on: normal text is struck; own insertion is un-typed; an
+    // already-struck deletion is skipped.
+    assert_eq!(delete_action(None, true), DeleteAction::MarkDeleted);
+    assert_eq!(
+        delete_action(Some(RevisionKind::Insertion), true),
+        DeleteAction::HardDelete
+    );
+    assert_eq!(
+        delete_action(Some(RevisionKind::Deletion), true),
+        DeleteAction::Skip
+    );
+}
+
+#[test]
+fn deletion_revision_follows_the_flag() {
+    use crate::settings::DocumentSettings;
+    let mut doc = Document::new();
+    doc.meta.creator = Some("Ada".into());
+    assert!(doc.deletion_revision().is_none());
+    doc.settings = Some(DocumentSettings {
+        track_changes: true,
+        ..DocumentSettings::default()
+    });
+    let mark = doc.deletion_revision().expect("tracking on");
+    assert_eq!(mark.kind, RevisionKind::Deletion);
+    assert_eq!(mark.author.as_deref(), Some("Ada"));
+}
+
+#[test]
 fn insertion_revision_follows_the_track_changes_flag() {
     use crate::settings::DocumentSettings;
 

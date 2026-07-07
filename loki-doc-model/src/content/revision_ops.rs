@@ -31,6 +31,34 @@ enum Resolution {
     Reject,
 }
 
+/// What a Backspace/Delete over one grapheme should do (Review tab, 4a.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeleteAction {
+    /// Remove the text outright — track changes is off, or the grapheme is the
+    /// author's own tracked insertion (un-typing it).
+    HardDelete,
+    /// Leave the text and mark it a tracked deletion (struck through).
+    MarkDeleted,
+    /// Do nothing — the grapheme is already a tracked deletion; the caret just
+    /// steps over it.
+    Skip,
+}
+
+/// Decides how deleting a grapheme carrying `existing` revision resolves when
+/// `tracking` is on/off. Off ⇒ always a hard delete; on ⇒ hard-delete the
+/// author's own insertion, skip an already-struck deletion, else mark it struck.
+#[must_use]
+pub fn delete_action(existing: Option<RevisionKind>, tracking: bool) -> DeleteAction {
+    if !tracking {
+        return DeleteAction::HardDelete;
+    }
+    match existing {
+        Some(RevisionKind::Insertion) => DeleteAction::HardDelete,
+        Some(RevisionKind::Deletion) => DeleteAction::Skip,
+        None => DeleteAction::MarkDeleted,
+    }
+}
+
 /// Whether a tracked run of `kind` is **removed** under `r` (rather than kept
 /// with its mark cleared): deletions vanish on accept, insertions on reject.
 fn drops(kind: RevisionKind, r: Resolution) -> bool {
@@ -228,9 +256,27 @@ impl Document {
     /// editor routes typing through `insert_text_tracked_at` with this mark.
     #[must_use]
     pub fn insertion_revision(&self) -> Option<crate::style::props::revision::RevisionMark> {
-        use crate::style::props::revision::{RevisionKind, RevisionMark};
+        self.author_revision(RevisionKind::Insertion)
+    }
+
+    /// The revision mark for a **tracked deletion** by the document's author when
+    /// track changes is on (else `None`) — applied to text struck out by
+    /// Backspace/Delete. Its `Some`/`None` also tells the editor whether tracking
+    /// is on (drives [`delete_action`]).
+    #[must_use]
+    pub fn deletion_revision(&self) -> Option<crate::style::props::revision::RevisionMark> {
+        self.author_revision(RevisionKind::Deletion)
+    }
+
+    /// A revision mark of `kind` attributed to `meta.creator` when track changes
+    /// is on; else `None`.
+    fn author_revision(
+        &self,
+        kind: RevisionKind,
+    ) -> Option<crate::style::props::revision::RevisionMark> {
+        use crate::style::props::revision::RevisionMark;
         self.settings.as_ref().filter(|s| s.track_changes).map(|_| {
-            let mut mark = RevisionMark::new(RevisionKind::Insertion);
+            let mut mark = RevisionMark::new(kind);
             mark.author = self.meta.creator.clone();
             mark
         })

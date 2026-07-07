@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! Accept / reject tracked changes on the live CRDT (Review tab, 4a.2).
+//! Tracked-change CRDT mutations (Review tab, 4a.2): accept/reject all, and the
+//! tracked grapheme delete that Backspace/Delete route through.
 //!
 //! The pure [`accept_revisions`][crate::content::revision_ops::accept_revisions]
 //! transforms operate on a rebuilt [`Document`][crate::document::Document]; this
@@ -17,9 +18,13 @@
 
 use loro::{LoroDoc, LoroText, LoroValue, TextDelta};
 
-use super::{MutationError, get_loro_text_for_block};
+use super::{
+    BlockPath, MutationError, delete_text_at, get_loro_text_for_block, get_mark_at_path,
+    mark_text_at,
+};
+use crate::content::revision_ops::{DeleteAction, delete_action};
 use crate::loro_schema::MARK_REVISION;
-use crate::style::props::revision::{RevisionKind, decode};
+use crate::style::props::revision::{RevisionKind, RevisionMark, decode, encode};
 
 /// Whether a revision run of `kind` is **removed** (vs. kept, mark cleared) when
 /// resolving with `accept` — the CRDT analogue of `revision_ops::drops`.
@@ -81,6 +86,58 @@ pub fn accept_reject_all_revisions(loro: &LoroDoc, accept: bool) -> Result<usize
         idx += 1;
     }
     Ok(total)
+}
+
+/// Deletes the grapheme `byte_start..byte_end` in `path`, honouring track
+/// changes (Review tab, 4a.2), and returns what it did so the editor can place
+/// the caret. `deletion` is the tracked-deletion mark to apply (its `Some`/`None`
+/// is whether tracking is on — see [`Document::deletion_revision`]).
+///
+/// - the author's own tracked **insertion** is hard-deleted (un-typed);
+/// - an already-struck **deletion** is skipped (no mutation);
+/// - otherwise the range is marked struck ([`DeleteAction::MarkDeleted`]);
+/// - with tracking off, always a hard delete.
+///
+/// [`Document::deletion_revision`]: crate::document::Document::deletion_revision
+///
+/// # Errors
+///
+/// [`MutationError::Loro`] / [`MutationError::InvalidBlockPath`] for underlying
+/// path/Loro errors.
+pub fn tracked_grapheme_delete(
+    loro: &LoroDoc,
+    path: &BlockPath,
+    byte_start: usize,
+    byte_end: usize,
+    deletion: Option<&RevisionMark>,
+) -> Result<DeleteAction, MutationError> {
+    if byte_start >= byte_end {
+        return Ok(DeleteAction::Skip);
+    }
+    let existing = get_mark_at_path(loro, path, byte_start, MARK_REVISION)?
+        .and_then(|v| match v {
+            LoroValue::String(s) => decode(&s),
+            _ => None,
+        })
+        .map(|m| m.kind);
+    let action = delete_action(existing, deletion.is_some());
+    match action {
+        DeleteAction::HardDelete => delete_text_at(loro, path, byte_start, byte_end - byte_start)?,
+        DeleteAction::MarkDeleted => {
+            if let Some(mark) = deletion {
+                mark_text_at(
+                    loro,
+                    path,
+                    byte_start,
+                    byte_end,
+                    MARK_REVISION,
+                    LoroValue::from(encode(mark)),
+                )?;
+            }
+        }
+        DeleteAction::Skip => {}
+    }
+    Ok(action)
 }
 
 #[cfg(test)]
