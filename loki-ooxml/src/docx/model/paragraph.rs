@@ -5,6 +5,7 @@
 //!
 //! Mirrors ECMA-376 §17.3.1 (paragraphs) and §17.3.2 (runs).
 
+pub use super::revision::{DocxRevisionInfo, DocxTrackedChange};
 pub use super::section::{DocxCols, DocxHdrFtrRef, DocxPgMar, DocxPgSz, DocxSectPr};
 
 /// Intermediate model for `w:p` (ECMA-376 §17.3.1.22).
@@ -16,8 +17,7 @@ pub struct DocxParagraph {
     pub children: Vec<DocxParaChild>,
 }
 
-/// A child element of `w:p` beyond `w:pPr`.
-// Run is substantially larger than Hyperlink; boxing would add indirection on every access.
+/// A child element of `w:p` beyond `w:pPr`. (`Run` ≫ `Hyperlink`; boxing would add indirection, so the size is allowed.)
 #[allow(clippy::large_enum_variant, dead_code)]
 #[derive(Debug, Clone)]
 pub enum DocxParaChild {
@@ -30,9 +30,9 @@ pub enum DocxParaChild {
     /// A `w:bookmarkEnd` element (ECMA-376 §17.13.6.1).
     BookmarkEnd { id: String },
     /// A `w:del` tracked deletion (ECMA-376 §17.13.5.14).
-    TrackDel(Vec<DocxRun>),
+    TrackDel(DocxTrackedChange),
     /// A `w:ins` tracked insertion (ECMA-376 §17.13.5.16).
-    TrackIns(Vec<DocxRun>),
+    TrackIns(DocxTrackedChange),
     /// A `w:fldSimple` simple field (ECMA-376 §17.16.19): the `@w:instr`
     /// instruction with the cached result carried as child runs.
     SimpleField {

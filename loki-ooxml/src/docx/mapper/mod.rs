@@ -145,7 +145,7 @@
 // │ DocxTcPr.v_merge         │ Stubbed row_span = 1           │ Track NYI v0.1.0 │
 // │ DocxSettings             │ even_and_odd_headers wired     │ Session 7        │
 // │ DocxNote (Separator)     │ Filtered out                   │ Not semantic     │
-// │ TrackDel content         │ Dropped                        │ Deleted content  │
+// │ TrackDel/TrackIns        │ Mapped to CharProps.revision   │ Review tab 4a.2  │
 // └──────────────────────────┴────────────────────────────────┴──────────────────┘
 //
 // ── Session 7 audit (2026-04-20) — gap #5: headers and footers ───────────────

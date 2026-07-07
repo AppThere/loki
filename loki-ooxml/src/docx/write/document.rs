@@ -867,7 +867,14 @@ fn write_styled_run<W: std::io::Write>(
         char_style: run.style_id.as_ref().map(|s| s.0.clone()),
         direct: run.direct_props.as_deref().cloned(),
     };
-    write_inlines(w, &run.content, &np, collector);
+    // A tracked run is wrapped in w:ins/w:del (its text emits as w:delText).
+    if let Some(rev) = run.direct_props.as_ref().and_then(|p| p.revision.clone()) {
+        super::revision::open(w, &rev);
+        write_inlines(w, &run.content, &np, collector);
+        let _ = write_end(w, super::revision::tag(&rev));
+    } else {
+        write_inlines(w, &run.content, &np, collector);
+    }
 }
 
 /// Writes a single `<w:r>` element with text content.
@@ -927,19 +934,9 @@ pub(super) fn write_text_run<W: std::io::Write>(w: &mut Writer<W>, text: &str, p
         let _ = write_end(w, "w:rPr");
     }
 
-    // Text node — always use xml:space="preserve" to keep leading/trailing spaces.
-    let _ = write_empty_checked(w, text);
+    let rev = props.direct.as_ref().and_then(|p| p.revision.as_ref());
+    super::revision::write_text_node(w, text, rev);
     let _ = write_end(w, "w:r");
-}
-
-/// Writes `<w:t xml:space="preserve">text</w:t>`.
-fn write_empty_checked<W: std::io::Write>(w: &mut Writer<W>, text: &str) -> quick_xml::Result<()> {
-    use quick_xml::events::{BytesStart, BytesText, Event};
-    let mut start = BytesStart::new("w:t");
-    start.push_attribute(("xml:space", "preserve"));
-    w.write_event(Event::Start(start))?;
-    w.write_event(Event::Text(BytesText::new(text)))?;
-    w.write_event(Event::End(quick_xml::events::BytesEnd::new("w:t")))
 }
 
 fn write_bookmark<W: std::io::Write>(

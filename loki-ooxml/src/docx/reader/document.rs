@@ -125,14 +125,14 @@ pub(crate) fn parse_paragraph(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxPar
                     }
                     b"del" => {
                         depth -= 1;
-                        let runs = parse_tracked_runs(reader, b"del")?;
-                        para.children.push(DocxParaChild::TrackDel(runs));
+                        let change = parse_tracked_runs(reader, e, b"del")?;
+                        para.children.push(DocxParaChild::TrackDel(change));
                         continue;
                     }
                     b"ins" => {
                         depth -= 1;
-                        let runs = parse_tracked_runs(reader, b"ins")?;
-                        para.children.push(DocxParaChild::TrackIns(runs));
+                        let change = parse_tracked_runs(reader, e, b"ins")?;
+                        para.children.push(DocxParaChild::TrackIns(change));
                         continue;
                     }
                     b"fldSimple" => {
@@ -448,7 +448,7 @@ pub(crate) fn parse_run(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxRun> {
                     let drawing = parse_drawing(reader)?;
                     run.children.push(DocxRunChild::Drawing(drawing));
                 }
-                b"t" => {
+                tag @ (b"t" | b"delText") => {
                     let preserve = attr_val(e, b"space").is_some_and(|v| v == "preserve");
                     let mut text = String::new();
                     let mut tbuf = Vec::new();
@@ -460,7 +460,7 @@ pub(crate) fn parse_run(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxRun> {
                                 }
                             }
                             Ok(Event::End(ref et))
-                                if local_name(et.local_name().as_ref()) == b"t" =>
+                                if local_name(et.local_name().as_ref()) == tag =>
                             {
                                 break;
                             }
