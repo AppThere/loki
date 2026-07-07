@@ -125,6 +125,9 @@ references-toc-title = Contents
 ribbon-tab-review = Review
 ribbon-group-review-track = Tracking
 ribbon-track-changes-aria = Track changes
+ribbon-group-review-changes = Changes
+ribbon-accept-all-aria = Accept all changes
+ribbon-reject-all-aria = Reject all changes
 
 # Ribbon collapse toggle
 ribbon-collapse-aria = Collapse ribbon

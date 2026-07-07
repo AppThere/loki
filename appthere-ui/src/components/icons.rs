@@ -179,6 +179,12 @@ pub const AT_TOC_UPDATE: &str = "M20 11A8 8 0 1 0 18 16M20 5v6h-6";
 /// Track changes: a pencil writing over a baseline (edits are recorded).
 pub const AT_TRACK_CHANGES: &str = "M4 21h8M14.5 4.5l5 5L9 20l-5 1 1-5z";
 
+/// Accept change: a check mark.
+pub const AT_CHANGE_ACCEPT: &str = "M20 6 9 17l-5-5";
+
+/// Reject change: a cross.
+pub const AT_CHANGE_REJECT: &str = "M18 6 6 18M6 6l12 12";
+
 // ── AtIcon component ──────────────────────────────────────────────────────────
 
 /// Renders a single Lucide SVG icon.
