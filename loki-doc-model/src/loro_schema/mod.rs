@@ -50,6 +50,13 @@ pub const KEY_COMMENTS: &str = "comments";
 /// and the style catalog, comments are stored as a lossless `serde` snapshot.
 pub const KEY_COMMENTS_JSON: &str = "comments_json";
 
+/// Key for the Document settings map (`DocumentSettings`, e.g. track-changes).
+pub const KEY_SETTINGS: &str = "settings";
+
+/// Key for the settings JSON snapshot inside the settings map — a lossless
+/// `serde` snapshot, like metadata and comments.
+pub const KEY_SETTINGS_JSON: &str = "settings_json";
+
 /// Key for the Block type discriminator.
 pub const KEY_TYPE: &str = "type";
 

@@ -723,16 +723,13 @@ pub(super) fn EditorInner(path: String) -> Element {
                 },
                 tab_content: match active_ribbon_tab() {
                     1 => insert_tab_content(link_draft, insert_ctx.clone()),
-                    5 if table_selected => super::editor_ribbon_table::table_tab_content(
+                    6 if table_selected => super::editor_ribbon_table::table_tab_content(
                         &doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo,
                     ),
-                    2 => super::editor_ribbon_layout::layout_tab_content(
-                        &doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo,
-                    ),
-                    3 => super::editor_ribbon_references::references_tab_content(
-                        &doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo,
-                    ),
-                    4 => publish_tab_content(
+                    2 => super::editor_ribbon_layout::layout_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
+                    3 => super::editor_ribbon_references::references_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
+                    4 => super::editor_ribbon_review::review_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
+                    5 => publish_tab_content(
                         &doc_state_publish, path_signal, save_message,
                         is_publish_panel_open, editing_metadata,
                     ),

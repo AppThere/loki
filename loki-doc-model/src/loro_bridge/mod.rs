@@ -24,6 +24,7 @@ mod meta;
 mod opaque;
 mod props_read;
 mod read;
+mod settings;
 mod styles;
 mod table;
 mod write;
@@ -32,6 +33,7 @@ pub use comments::{read_document_comments, write_document_comments};
 pub use compact::{compact_history, compact_in_place};
 pub use incremental::IncrementalReader;
 pub use meta::{read_document_meta, write_document_meta};
+pub use settings::{document_track_changes, set_track_changes};
 pub use styles::{read_document_styles, write_document_styles};
 
 // Crate-internal block / note writers reused by the mutation layer to insert a
@@ -165,6 +167,10 @@ pub fn document_to_loro(doc: &Document) -> Result<LoroDoc, BridgeError> {
     let comments_map = loro_doc.get_map(KEY_COMMENTS);
     comments::write_comments(&doc.comments, &comments_map)?;
 
+    // Document settings (track changes, default tab stop) — JSON snapshot.
+    let settings_map = loro_doc.get_map(KEY_SETTINGS);
+    settings::write_settings(doc.settings.as_ref(), &settings_map)?;
+
     Ok(loro_doc)
 }
 
@@ -231,6 +237,10 @@ pub fn loro_to_document(loro: &LoroDoc) -> Result<Document, BridgeError> {
     // Comments (annotation bodies).
     let comments_map: loro::LoroMap = loro.get_map(KEY_COMMENTS);
     doc.comments = comments::read_comments(&comments_map);
+
+    // Document settings (track changes, default tab stop).
+    let settings_map: loro::LoroMap = loro.get_map(KEY_SETTINGS);
+    doc.settings = settings::read_settings(&settings_map);
 
     Ok(doc)
 }

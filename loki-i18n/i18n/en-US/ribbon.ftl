@@ -121,6 +121,11 @@ ribbon-toc-update-aria = Update table of contents
 # The heading text of an inserted table of contents (document content).
 references-toc-title = Contents
 
+# Review tab (Spec 04 M5, plan 4a.2) — track changes
+ribbon-tab-review = Review
+ribbon-group-review-track = Tracking
+ribbon-track-changes-aria = Track changes
+
 # Ribbon collapse toggle
 ribbon-collapse-aria = Collapse ribbon
 ribbon-expand-aria = Expand ribbon

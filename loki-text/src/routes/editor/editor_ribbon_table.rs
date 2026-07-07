@@ -25,10 +25,10 @@ use crate::editing::cursor::CursorState;
 use crate::editing::selected_object::{SelectedObject, selected_object};
 use crate::editing::state::DocumentState;
 
-/// Index of the Table contextual tab in the ribbon strip — it follows the five
-/// core tabs (Write=0, Insert=1, Layout=2, References=3, Publish=4), so any
-/// `active_tab >= 5` is the contextual tab.
-const CONTEXTUAL_TAB_INDEX: usize = 5;
+/// Index of the Table contextual tab in the ribbon strip — it follows the six
+/// core tabs (Write=0, Insert=1, Layout=2, References=3, Review=4, Publish=5),
+/// so any `active_tab >= 6` is the contextual tab.
+const CONTEXTUAL_TAB_INDEX: usize = 6;
 
 /// The ribbon tab descriptors for the current `selected` object: the four core
 /// tabs, plus the Table contextual tab (amber) when the caret is in a table.
@@ -53,6 +53,11 @@ pub(super) fn ribbon_tabs(selected: SelectedObject) -> Vec<RibbonTabDesc> {
         },
         RibbonTabDesc {
             label: fl!("ribbon-tab-references"),
+            is_contextual: false,
+            aria_label: None,
+        },
+        RibbonTabDesc {
+            label: fl!("ribbon-tab-review"),
             is_contextual: false,
             aria_label: None,
         },

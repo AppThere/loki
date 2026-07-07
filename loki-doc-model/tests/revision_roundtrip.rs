@@ -125,3 +125,20 @@ fn track_changes_setting_serde_is_backward_compatible() {
         serde_json::from_str("{\"default_tab_stop_pt\":36.0}").expect("legacy deserialize");
     assert!(!old.track_changes);
 }
+
+#[test]
+fn document_settings_round_trip_through_the_bridge() {
+    use loki_doc_model::settings::DocumentSettings;
+
+    let mut doc = Document::new();
+    doc.settings = Some(DocumentSettings {
+        track_changes: true,
+        ..DocumentSettings::default()
+    });
+    let back = loro_to_document(&document_to_loro(&doc).expect("to loro")).expect("rebuild");
+    assert_eq!(
+        back.settings.map(|s| s.track_changes),
+        Some(true),
+        "settings now survive the CRDT round-trip",
+    );
+}

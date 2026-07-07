@@ -146,7 +146,10 @@ pub mod loro_schema;
 pub mod settings;
 pub use loro_schema::*;
 pub mod loro_bridge;
-pub use loro_bridge::{BridgeError, IncrementalReader, document_to_loro, loro_to_document};
+pub use loro_bridge::{
+    BridgeError, IncrementalReader, document_to_loro, document_track_changes, loro_to_document,
+    set_track_changes,
+};
 pub mod loro_mutation;
 pub use loro_mutation::{
     BlockPath, PathStep, delete_selection_at, delete_text_at, get_block_text_at, get_mark_at_path,

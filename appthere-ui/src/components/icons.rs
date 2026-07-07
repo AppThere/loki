@@ -174,6 +174,11 @@ pub const AT_TOC_INSERT: &str = "M4 5h16M4 10h10M8 15h12M4 20h9";
 /// Update table of contents: a clockwise refresh arrow (regenerate the field).
 pub const AT_TOC_UPDATE: &str = "M20 11A8 8 0 1 0 18 16M20 5v6h-6";
 
+// App-custom Review-tab glyphs (not Lucide).
+
+/// Track changes: a pencil writing over a baseline (edits are recorded).
+pub const AT_TRACK_CHANGES: &str = "M4 21h8M14.5 4.5l5 5L9 20l-5 1 1-5z";
+
 // ── AtIcon component ──────────────────────────────────────────────────────────
 
 /// Renders a single Lucide SVG icon.
