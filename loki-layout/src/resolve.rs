@@ -304,9 +304,7 @@ fn effective_run_char_props(
 //   shadow             → StyleSpan.shadow               (gap #24, P3)
 //   scale              → StyleSpan.scale                (gap #14, P2)
 //
-//   kerning            → StyleSpan.kerning              (gap #23, P3 —
-//                        applied as a shaper feature toggle; default OFF to
-//                        match Word/LO defaults)
+//   kerning            → StyleSpan.kerning (gap #23, P3; shaper toggle, default OFF)
 //
 // Fields SILENTLY DROPPED (out of scope for Group 1):
 //   font_name_complex    — complex-script font (BiDi)
@@ -367,7 +365,7 @@ fn char_props_to_style_span(props: &CharProps, range: Range<usize>) -> StyleSpan
     };
 
     let bold = props.bold.unwrap_or(false);
-    StyleSpan {
+    let mut span = StyleSpan {
         range,
         font_name: props.font_name.clone(),
         font_size: props.font_size.map(pts_to_f32).unwrap_or(12.0),
@@ -398,7 +396,9 @@ fn char_props_to_style_span(props: &CharProps, range: Range<usize>) -> StyleSpan
             .baseline_shift
             .map(pts_to_f32)
             .filter(|&s| s.abs() > f32::EPSILON),
-    }
+    };
+    crate::revision_style::apply(&mut span, props);
+    span
 }
 
 /// Convert a [`HighlightColor`] palette entry to a [`LayoutColor`].

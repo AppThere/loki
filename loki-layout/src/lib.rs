@@ -40,7 +40,7 @@ mod para_drop_cap;
 mod para_emit;
 pub mod resolve;
 pub mod result;
-
+mod revision_style;
 pub use color::LayoutColor;
 pub use error::{LayoutError, LayoutResult};
 pub use flow::{FlowOutput, LayoutWarning, flow_section};

@@ -24,7 +24,7 @@ use loki_primitives::units::Points;
 
 use crate::LayoutOptions;
 use crate::font::FontResources;
-use crate::items::PositionedItem;
+use crate::items::{DecorationKind, PositionedItem};
 use crate::mode::LayoutMode;
 
 /// Helper: run flow_section in Pageless mode and return (items, height, warnings).
@@ -1457,6 +1457,53 @@ mod page_fields {
             toc_items.len(),
             plain_items.len(),
             "a TOC must render its body identically to top-level paragraphs"
+        );
+    }
+
+    /// A tracked run renders its change decoration: an insertion is underlined,
+    /// a deletion is struck through (Review tab, 4a.2 render slice).
+    #[test]
+    fn tracked_runs_render_insertion_underline_and_deletion_strikethrough() {
+        use loki_doc_model::content::inline::StyledRun;
+        use loki_doc_model::style::props::char_props::CharProps;
+        use loki_doc_model::style::props::revision::{RevisionKind, RevisionMark};
+
+        let tracked = |kind: RevisionKind| {
+            Block::Para(vec![Inline::StyledRun(StyledRun {
+                style_id: None,
+                direct_props: Some(Box::new(CharProps {
+                    revision: Some(RevisionMark::new(kind)),
+                    ..CharProps::default()
+                })),
+                content: vec![Inline::Str("word".into())],
+                attr: NodeAttr::default(),
+            })])
+        };
+        let kinds = |items: &[PositionedItem]| -> Vec<DecorationKind> {
+            items
+                .iter()
+                .filter_map(|i| match i {
+                    PositionedItem::Decoration(d) => Some(d.kind),
+                    _ => None,
+                })
+                .collect()
+        };
+
+        let mut r = test_resources();
+        let ins =
+            Section::with_layout_and_blocks(tiny_layout(), vec![tracked(RevisionKind::Insertion)]);
+        let (ins_items, _, _) = flow_pageless(&mut r, &ins);
+        assert!(
+            kinds(&ins_items).contains(&DecorationKind::Underline),
+            "an inserted run must be underlined"
+        );
+
+        let del =
+            Section::with_layout_and_blocks(tiny_layout(), vec![tracked(RevisionKind::Deletion)]);
+        let (del_items, _, _) = flow_pageless(&mut r, &del);
+        assert!(
+            kinds(&del_items).contains(&DecorationKind::Strikethrough),
+            "a deleted run must be struck through"
         );
     }
 }
