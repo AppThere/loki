@@ -893,6 +893,10 @@ fn read_body_children(reader: &mut Reader<&[u8]>, end_tag: &[u8]) -> OdfResult<V
                         let section = read_section(reader, e)?;
                         children.push(OdfBodyChild::Section(section));
                     }
+                    b"tracked-changes" => {
+                        let regions = super::revisions::read_tracked_changes(reader)?;
+                        children.push(OdfBodyChild::TrackedChanges(regions));
+                    }
                     b"alphabetical-index"
                     | b"illustration-index"
                     | b"table-index"
@@ -907,13 +911,8 @@ fn read_body_children(reader: &mut Reader<&[u8]>, end_tag: &[u8]) -> OdfResult<V
                     }
                 }
             }
-            Ok(Event::Empty(ref e)) => {
-                // text:soft-page-break may appear between block elements
-                let local = e.local_name().into_inner();
-                if local != b"soft-page-break" {
-                    // ignore other empty block-level elements
-                }
-            }
+            // Empty block-level elements (e.g. text:soft-page-break) are ignored
+            // by the catch-all below.
             Ok(Event::End(ref e)) => {
                 if e.local_name().into_inner() == end_tag {
                     break;

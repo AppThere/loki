@@ -13,4 +13,5 @@ pub(crate) mod columns;
 pub(crate) mod document;
 pub(crate) mod inlines;
 pub(crate) mod meta;
+pub(crate) mod revisions;
 pub(crate) mod styles;

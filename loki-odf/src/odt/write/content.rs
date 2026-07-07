@@ -43,6 +43,9 @@ pub(super) struct Cx {
         std::collections::HashMap<String, loki_doc_model::content::annotation::Comment>,
     /// Embedded formula objects collected from `Inline::Math` runs.
     pub(super) objects: Vec<MathPart>,
+    /// Tracked-change regions collected from revision runs, flushed as the
+    /// `text:tracked-changes` table at the start of `office:text`.
+    pub(super) changes: super::revisions::Changes,
 }
 
 /// Renders the whole `content.xml` for `doc`, collecting any embedded images.
@@ -57,6 +60,7 @@ pub(crate) fn content_xml(doc: &Document) -> Rendered {
             .map(|c| (c.id.clone(), c.clone()))
             .collect(),
         objects: Vec::new(),
+        changes: super::revisions::Changes::default(),
     };
     // The section→master-page names, honouring the stored `page_style` refs so a
     // named page style round-trips (must agree with `styles.xml`).
@@ -97,6 +101,8 @@ pub(crate) fn content_xml(doc: &Document) -> Rendered {
     out.push_str(&cx.auto.render());
     out.push_str("</office:automatic-styles>");
     out.push_str("<office:body><office:text>");
+    // The tracked-change table precedes the body content (ODF 1.3 §5.5.3).
+    out.push_str(&cx.changes.render());
     out.push_str(&body);
     out.push_str("</office:text></office:body></office:document-content>");
     Rendered {

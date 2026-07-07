@@ -36,13 +36,7 @@ fn write_inline(out: &mut String, inl: &Inline, cx: &mut Cx) {
         Inline::Subscript(c) => span(out, c, cx, set_subscript),
         Inline::SmallCaps(c) => span(out, c, cx, set_small_caps),
         Inline::Span(_, c) | Inline::Quoted(_, c) | Inline::Cite(_, c) => write_inlines(out, c, cx),
-        Inline::StyledRun(sr) => {
-            let name = match sr.direct_props.as_deref() {
-                Some(dp) => cx.auto.text_style(dp),
-                None => sr.style_id.as_ref().map(|s| s.as_str().to_string()),
-            };
-            wrap_span(out, name.as_deref(), &sr.content, cx);
-        }
+        Inline::StyledRun(sr) => super::revisions::write_styled_run(out, sr, cx),
         Inline::Link(_, c, target) => {
             out.push_str("<text:a");
             attr(out, "xlink:href", &target.url);
@@ -195,8 +189,9 @@ fn write_image(out: &mut String, alt: &[Inline], url: &str, cx: &mut Cx) {
     out.push_str("</draw:image></draw:frame>");
 }
 
-/// Flattens inline runs to their plain text (for image alt text).
-fn plain_text(inlines: &[Inline]) -> String {
+/// Flattens inline runs to their plain text (image alt text, tracked-deletion
+/// content). Recurses through styled runs so a formatted deletion keeps its text.
+pub(super) fn plain_text(inlines: &[Inline]) -> String {
     let mut s = String::new();
     for inl in inlines {
         match inl {
@@ -205,6 +200,7 @@ fn plain_text(inlines: &[Inline]) -> String {
             Inline::Strong(c) | Inline::Emph(c) | Inline::Underline(c) | Inline::Span(_, c) => {
                 s.push_str(&plain_text(c));
             }
+            Inline::StyledRun(sr) => s.push_str(&plain_text(&sr.content)),
             _ => {}
         }
     }
@@ -244,7 +240,7 @@ fn span(out: &mut String, children: &[Inline], cx: &mut Cx, f: impl FnOnce(&mut 
 
 /// Wraps `children` in a `<text:span text:style-name=...>`; emits them bare when
 /// `name` is `None`.
-fn wrap_span(out: &mut String, name: Option<&str>, children: &[Inline], cx: &mut Cx) {
+pub(super) fn wrap_span(out: &mut String, name: Option<&str>, children: &[Inline], cx: &mut Cx) {
     if let Some(name) = name {
         out.push_str("<text:span");
         attr(out, "text:style-name", name);

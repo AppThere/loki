@@ -12,6 +12,7 @@ mod media;
 mod page_styles;
 mod para_props;
 mod props;
+mod revisions;
 mod styles;
 mod tables;
 mod xml;

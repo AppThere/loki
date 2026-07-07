@@ -12,6 +12,7 @@
 //! [`super::styles::OdfStylesheet`].
 
 use super::paragraph::OdfParagraph;
+use super::revision::OdfChangedRegion;
 use super::tables::OdfTable;
 use crate::version::OdfVersion;
 
@@ -51,6 +52,10 @@ pub(crate) enum OdfBodyChild {
     TableOfContent(OdfTableOfContent),
     /// A named text section (`text:section`). ODF 1.3 §5.4.
     Section(OdfSection),
+    /// The document-leading tracked-change table (`text:tracked-changes`).
+    /// ODF 1.3 §5.5.3 — holds no body content; its regions are matched against
+    /// the `text:change-*` milestones inside paragraphs during mapping.
+    TrackedChanges(Vec<OdfChangedRegion>),
     /// A recognised but unimplemented body-level element (e.g. index blocks).
     /// The element local name is carried for warning emission.
     Other { element: String },

@@ -51,6 +51,8 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
         // Comments inside headers/footers are not modelled; use an empty lookup.
         comments: std::collections::HashMap::new(),
         objects: Vec::new(),
+        // Tracked changes inside headers/footers are not modelled.
+        changes: super::revisions::Changes::default(),
     };
     let mut masters = String::new();
     let mut page_layouts = String::new();

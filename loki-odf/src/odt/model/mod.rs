@@ -23,5 +23,6 @@ pub(crate) mod frames;
 pub(crate) mod list_styles;
 pub(crate) mod notes;
 pub(crate) mod paragraph;
+pub(crate) mod revision;
 pub(crate) mod styles;
 pub(crate) mod tables;

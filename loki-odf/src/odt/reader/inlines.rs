@@ -163,6 +163,12 @@ fn read_inline_start_other(
             skip_element(reader)?;
             children.push(OdfParagraphChild::BookmarkEnd { name });
         }
+        // Tracked-change milestones — ODF 1.3 §5.5.7 (also emitted non-empty).
+        b"change-start" | b"change-end" | b"change" => {
+            let child = revision_milestone(e, local);
+            skip_element(reader)?;
+            children.push(child);
+        }
         // ── Text fields ────────────────────────────────────────────────────
         // Field attributes are extracted before the wrapping element (which
         // carries only the field's current display text) is skipped.
@@ -204,6 +210,7 @@ fn inline_from_empty(e: &BytesStart<'_>) -> OdfParagraphChild {
         b"annotation-end" => OdfParagraphChild::AnnotationEnd {
             name: local_attr_val(e, b"name"),
         },
+        b"change-start" | b"change-end" | b"change" => revision_milestone(e, local),
         b"annotation" => OdfParagraphChild::Annotation {
             // Self-closing annotation: a point comment with no body.
             name: local_attr_val(e, b"name"),
@@ -212,6 +219,17 @@ fn inline_from_empty(e: &BytesStart<'_>) -> OdfParagraphChild {
             body: Vec::new(),
         },
         _ => field_from_element(e, local),
+    }
+}
+
+/// Build a tracked-change milestone child (`text:change-start` /
+/// `text:change-end` / `text:change`) from its `text:change-id`. ODF 1.3 §5.5.7.
+fn revision_milestone(e: &BytesStart<'_>, local: &[u8]) -> OdfParagraphChild {
+    let change_id = local_attr_val(e, b"change-id").unwrap_or_default();
+    match local {
+        b"change-start" => OdfParagraphChild::RevisionStart { change_id },
+        b"change-end" => OdfParagraphChild::RevisionEnd { change_id },
+        _ => OdfParagraphChild::RevisionPoint { change_id },
     }
 }
 
