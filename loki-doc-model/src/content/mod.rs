@@ -15,6 +15,7 @@ pub mod field;
 pub mod float;
 pub mod inline;
 pub mod table;
+pub mod toc;
 
 pub use attr::{ExtensionBag, ExtensionKey, NodeAttr};
 pub use block::Block;

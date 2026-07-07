@@ -88,9 +88,9 @@ fn page_size_matches(current: Option<(f64, f64)>, preset: (f64, f64)) -> bool {
     (cmin - pmin).abs() < 1.0 && (cmax - pmax).abs() < 1.0
 }
 
-/// Runs a page-geometry mutation `f` against the live document, relays out, and
-/// syncs undo/redo — the shared path for every Layout button.
-fn apply_and_sync(
+/// Runs a mutation `f` against the live document, relays out, and syncs
+/// undo/redo — the shared path for every Layout button (and the References tab).
+pub(super) fn apply_and_sync(
     doc_state: &Arc<Mutex<DocumentState>>,
     loro_doc: Signal<Option<loro::LoroDoc>>,
     cursor_state: Signal<CursorState>,

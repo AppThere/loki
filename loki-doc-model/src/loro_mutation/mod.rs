@@ -39,6 +39,8 @@ mod style;
 #[cfg(feature = "serde")]
 mod table_ops;
 mod text;
+#[cfg(feature = "serde")]
+mod toc;
 
 pub use self::align::{
     get_block_alignment, get_block_alignment_at, set_block_alignment, set_block_alignment_at,
@@ -72,6 +74,8 @@ pub use self::text::insert_inline_image;
 pub use self::text::{
     delete_text, get_block_text, get_mark_at, insert_text, mark_text, replace_text,
 };
+#[cfg(feature = "serde")]
+pub use self::toc::{first_toc_block_index, insert_table_of_contents, refresh_table_of_contents};
 
 use loro::{LoroDoc, LoroList, LoroMap, LoroMovableList, LoroText};
 

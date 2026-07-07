@@ -1423,4 +1423,40 @@ mod page_fields {
              min x = {below_min_x}, float left = {left_edge}"
         );
     }
+
+    /// A generated table of contents flows its cached body exactly like the same
+    /// paragraphs at the top level — before this the layout dropped the block
+    /// entirely (the `_ => {}` catch-all), so an inserted or imported TOC was
+    /// invisible.
+    #[test]
+    fn table_of_contents_flows_its_body_like_top_level_paragraphs() {
+        use loki_doc_model::content::block::TableOfContentsBlock;
+
+        let mut r = test_resources();
+        let entries = || {
+            vec![
+                Block::StyledPara(make_para("Introduction")),
+                Block::StyledPara(make_para("Details")),
+                Block::StyledPara(make_para("Conclusion")),
+            ]
+        };
+        let plain = Section::with_layout_and_blocks(tiny_layout(), entries());
+        let wrapped = Section::with_layout_and_blocks(
+            tiny_layout(),
+            vec![Block::TableOfContents(TableOfContentsBlock {
+                title: None,
+                body: entries(),
+                attr: NodeAttr::default(),
+            })],
+        );
+
+        let (plain_items, _, _) = flow_pageless(&mut r, &plain);
+        let (toc_items, _, _) = flow_pageless(&mut r, &wrapped);
+        assert!(!plain_items.is_empty(), "sanity: plain paragraphs render");
+        assert_eq!(
+            toc_items.len(),
+            plain_items.len(),
+            "a TOC must render its body identically to top-level paragraphs"
+        );
+    }
 }

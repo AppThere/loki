@@ -44,6 +44,7 @@ mod editor_ribbon_insert;
 mod editor_ribbon_insert_image;
 mod editor_ribbon_layout;
 mod editor_ribbon_publish;
+mod editor_ribbon_references;
 mod editor_ribbon_table;
 mod editor_ribbon_table_delete;
 mod editor_ribbon_table_ops;

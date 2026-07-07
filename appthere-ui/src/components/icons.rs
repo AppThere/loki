@@ -166,6 +166,14 @@ pub const AT_COLUMNS_TWO: &str = "M5 4h14v16H5zM12 4v16";
 /// Three columns: a page split by two vertical dividers.
 pub const AT_COLUMNS_THREE: &str = "M5 4h14v16H5zM9.7 4v16M14.3 4v16";
 
+// App-custom References-tab glyphs (not Lucide).
+
+/// Insert table of contents: stacked outline entries of varying, indented width.
+pub const AT_TOC_INSERT: &str = "M4 5h16M4 10h10M8 15h12M4 20h9";
+
+/// Update table of contents: a clockwise refresh arrow (regenerate the field).
+pub const AT_TOC_UPDATE: &str = "M20 11A8 8 0 1 0 18 16M20 5v6h-6";
+
 // ── AtIcon component ──────────────────────────────────────────────────────────
 
 /// Renders a single Lucide SVG icon.

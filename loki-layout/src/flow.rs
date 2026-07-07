@@ -659,19 +659,19 @@ fn flow_block(state: &mut FlowState, block: &Block, idx: usize) {
             }
             state.current_indent = old_indent;
         }
-        Block::Div(_, blocks) => {
-            for b in blocks {
-                flow_block(state, b, idx);
-            }
-        }
-        Block::Figure(_, _, blocks) => {
-            for b in blocks {
-                flow_block(state, b, idx);
-            }
-        }
+        Block::Div(_, blocks) | Block::Figure(_, _, blocks) => flow_blocks(state, blocks, idx),
         Block::Table(tbl) => flow_table(state, tbl, idx),
         Block::HorizontalRule => flow_hrule(state),
+        Block::TableOfContents(toc) => flow_blocks(state, &toc.body, idx),
+        Block::Index(index) => flow_blocks(state, &index.body, idx),
         _ => {}
+    }
+}
+
+/// Flows child blocks at the parent's `idx` (Div/Figure bodies, TOC/index snapshots).
+fn flow_blocks(state: &mut FlowState, blocks: &[Block], idx: usize) {
+    for b in blocks {
+        flow_block(state, b, idx);
     }
 }
 

@@ -113,6 +113,14 @@ ribbon-columns-one-aria = One column
 ribbon-columns-two-aria = Two columns
 ribbon-columns-three-aria = Three columns
 
+# References tab (Spec 04 M5, plan 4a.2) — table of contents
+ribbon-tab-references = References
+ribbon-group-toc = Table of Contents
+ribbon-toc-insert-aria = Insert table of contents
+ribbon-toc-update-aria = Update table of contents
+# The heading text of an inserted table of contents (document content).
+references-toc-title = Contents
+
 # Ribbon collapse toggle
 ribbon-collapse-aria = Collapse ribbon
 ribbon-expand-aria = Expand ribbon
