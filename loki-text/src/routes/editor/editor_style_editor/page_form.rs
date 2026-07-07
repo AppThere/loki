@@ -17,11 +17,12 @@ use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_doc_model::layout::page::{PageLayout, PageOrientation, PageSize, SectionColumns};
 use loki_doc_model::loki_primitives::units::Points;
-use loki_doc_model::set_page_style_geometry;
+use loki_doc_model::{rename_page_style, set_page_style_geometry};
 use loki_i18n::fl;
 
 use super::super::editor_keydown_ctrl::post_mutation_sync;
 use super::StyleEditorSync;
+use super::page_rename::PageRenameField;
 use super::panel_data::page_edit_target;
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
@@ -211,6 +212,7 @@ pub(super) fn page_style_form(
     doc_state: &Arc<Mutex<DocumentState>>,
     name: String,
     layout: PageLayout,
+    mut editing_page_style: Signal<Option<String>>,
     sync: StyleEditorSync,
 ) -> Element {
     let btn = |label: String, preset: PagePreset| {
@@ -223,9 +225,33 @@ pub(super) fn page_style_form(
             is_active(&layout, preset),
         )
     };
+    // The rename callback: commit the new name through `rename_page_style`, sync
+    // undo/redo, and re-select the style under its new name so the panel keeps it
+    // open. Captured by value so the returned rsx owns everything it needs.
+    let ds_rename = Arc::clone(doc_state);
+    let old_name = name.clone();
+    let on_rename = move |new: String| {
+        let guard = sync.loro_doc.read();
+        let Some(ldoc) = guard.as_ref() else { return };
+        if rename_page_style(ldoc, &old_name, &new).is_ok() {
+            apply_mutation_and_relayout(&ds_rename, ldoc);
+            drop(guard);
+            post_mutation_sync(
+                &ds_rename,
+                sync.loro_doc,
+                sync.cursor_state,
+                sync.undo_manager,
+                sync.can_undo,
+                sync.can_redo,
+            );
+            editing_page_style.set(Some(new));
+        }
+    };
     rsx! {
         div {
             style: format!("display: flex; flex-direction: column; padding: {}px;", tokens::SPACE_2),
+
+            PageRenameField { key: "{name}", name: name.clone(), on_rename }
 
             { preset_row(fl!("style-page-orientation"), rsx! {
                 { btn(fl!("ribbon-orientation-portrait-aria"), PagePreset::Portrait) }

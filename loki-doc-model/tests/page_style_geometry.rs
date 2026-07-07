@@ -13,8 +13,8 @@ use loki_doc_model::document::Document;
 use loki_doc_model::layout::page::{PageLayout, PageOrientation, PageSize, SectionColumns};
 use loki_doc_model::layout::section::Section;
 use loki_doc_model::loro_bridge::{document_to_loro, loro_to_document};
-use loki_doc_model::set_page_style_geometry;
-use loki_doc_model::style::section_page_style_ids;
+use loki_doc_model::style::{StyleId, section_page_style_ids};
+use loki_doc_model::{rename_page_style, set_page_style_geometry};
 use loro::LoroDoc;
 
 /// A three-section document: A4, Letter, A4 — so there are two page styles
@@ -102,6 +102,64 @@ fn margins_and_columns_apply_to_the_targeted_sections() {
     assert_eq!(sec.columns.as_ref().map(|c| c.count), Some(2));
     // The A4 sections keep single-column default margins.
     assert_eq!(doc.sections[0].layout.margins.left.value(), 72.0);
+}
+
+#[test]
+fn rename_updates_the_catalog_key_and_every_section_reference() {
+    // Assign named page styles first (so sections carry refs + the catalog has
+    // entries), then persist to the CRDT.
+    let mut doc = loro_to_document(&three_section_doc()).expect("rebuild");
+    doc.assign_page_styles();
+    let loro = document_to_loro(&doc).expect("to loro");
+
+    // PageStyle1 covers sections 0 and 2. Rename it to "Body".
+    rename_page_style(&loro, "PageStyle1", "Body").expect("rename");
+
+    let back = loro_to_document(&loro).expect("rebuild");
+    assert!(back.styles.page_styles.contains_key(&StyleId::new("Body")));
+    assert!(
+        !back
+            .styles
+            .page_styles
+            .contains_key(&StyleId::new("PageStyle1"))
+    );
+    assert_eq!(back.sections[0].page_style, Some(StyleId::new("Body")));
+    assert_eq!(back.sections[2].page_style, Some(StyleId::new("Body")));
+    // The Letter page style (section 1) is untouched.
+    assert_eq!(
+        back.sections[1].page_style,
+        Some(StyleId::new("PageStyle2"))
+    );
+    // The renamed style keeps its own id in sync.
+    assert_eq!(
+        back.styles
+            .page_styles
+            .get(&StyleId::new("Body"))
+            .unwrap()
+            .id,
+        StyleId::new("Body")
+    );
+}
+
+#[test]
+fn rename_is_a_no_op_on_conflict_or_missing() {
+    let mut doc = loro_to_document(&three_section_doc()).expect("rebuild");
+    doc.assign_page_styles();
+    let loro = document_to_loro(&doc).expect("to loro");
+
+    // Target name already exists → no merge.
+    rename_page_style(&loro, "PageStyle1", "PageStyle2").expect("no-op");
+    let back = loro_to_document(&loro).expect("rebuild");
+    assert!(
+        back.styles
+            .page_styles
+            .contains_key(&StyleId::new("PageStyle1"))
+    );
+    assert_eq!(back.styles.page_styles.len(), 2);
+
+    // Unknown source → no-op.
+    rename_page_style(&loro, "Ghost", "Whatever").expect("no-op");
+    assert_eq!(loro_to_document(&loro).unwrap().styles.page_styles.len(), 2);
 }
 
 #[test]

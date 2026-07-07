@@ -57,7 +57,7 @@ pub use self::page::{
     document_column_count, document_is_landscape, document_margins, document_page_size,
     set_document_columns, set_document_margins, set_document_orientation, set_document_page_size,
 };
-pub use self::page_style::set_page_style_geometry;
+pub use self::page_style::{rename_page_style, set_page_style_geometry};
 pub use self::selection::delete_selection_at;
 pub use self::style::{
     clear_block_list, get_block_list_id, get_block_style_name, set_block_style,

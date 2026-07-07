@@ -19,6 +19,7 @@ mod form_font;
 mod list_browser;
 mod page_browser;
 mod page_form;
+mod page_rename;
 mod panel_data;
 mod posture;
 mod provenance;
@@ -264,7 +265,7 @@ pub(super) fn style_editor_panel(
                         { char_form::char_style_form(ds_char_form, editing_char_draft, cdraft, char_form_fonts, sync) }
                     }
                     if let Some((pname, playout)) = page_edit {
-                        { page_form::page_style_form(&ds_page_form, pname, playout, sync) }
+                        { page_form::page_style_form(&ds_page_form, pname, playout, editing_page_style, sync) }
                     }
                     { family_inspector::family_inspector_columns(char_selected_rows, list_selected_rows, page_selected_rows, posture) }
                 }

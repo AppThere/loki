@@ -21,8 +21,9 @@ use crate::layout::page::{PageLayout, PageOrientation};
 use crate::loro_schema::{
     KEY_COL_COUNT, KEY_COL_GAP, KEY_COL_SEPARATOR, KEY_COLUMNS, KEY_LAYOUT, KEY_MARGIN_BOTTOM,
     KEY_MARGIN_LEFT, KEY_MARGIN_RIGHT, KEY_MARGIN_TOP, KEY_MARGINS, KEY_ORIENTATION, KEY_PAGE_SIZE,
-    KEY_SECTIONS,
+    KEY_PAGE_STYLE_REF, KEY_SECTIONS,
 };
+use crate::style::catalog::StyleId;
 
 /// Reads a nested `LoroMap` child by key.
 fn child_map(map: &LoroMap, key: &str) -> Option<LoroMap> {
@@ -94,6 +95,57 @@ pub fn set_page_style_geometry(
         if let Some(c) = layout.columns.as_ref() {
             cols.insert(KEY_COL_GAP, c.gap.value())?;
             cols.insert(KEY_COL_SEPARATOR, c.separator)?;
+        }
+    }
+    Ok(())
+}
+
+/// The page-style reference string stored on a section map (`None` when unset).
+fn section_ref(section: &LoroMap) -> Option<String> {
+    section
+        .get(KEY_PAGE_STYLE_REF)
+        .and_then(|v| v.into_value().ok())
+        .and_then(|v| v.into_string().ok())
+        .map(|s| s.to_string())
+}
+
+/// Renames the page style `old` to `new`: updates the catalog entry (key + its
+/// own id) and re-points every section that referenced `old`. A no-op when the
+/// names are equal, `new` is empty or already taken (no silent merge), or `old`
+/// is not a page style — so the caller can validate loosely.
+///
+/// # Errors
+///
+/// [`MutationError::Loro`] for an underlying Loro error.
+pub fn rename_page_style(loro: &LoroDoc, old: &str, new: &str) -> Result<(), MutationError> {
+    if old == new || new.is_empty() {
+        return Ok(());
+    }
+    let (old_id, new_id) = (StyleId::new(old), StyleId::new(new));
+    let mut catalog = crate::loro_bridge::read_document_styles(loro);
+    if catalog.page_styles.contains_key(&new_id) {
+        return Ok(()); // don't clobber an existing style
+    }
+    let Some(mut ps) = catalog.page_styles.shift_remove(&old_id) else {
+        return Ok(());
+    };
+    ps.id = new_id.clone();
+    catalog.page_styles.insert(new_id, ps);
+    crate::loro_bridge::write_document_styles(loro, &catalog)
+        .map_err(|e| MutationError::Loro(e.to_string()))?;
+
+    // Re-point every section that named the old page style.
+    let sections = loro.get_list(KEY_SECTIONS);
+    for s in 0..sections.len() {
+        let Some(section) = sections
+            .get(s)
+            .and_then(|v| v.into_container().ok())
+            .and_then(|c| c.into_map().ok())
+        else {
+            continue;
+        };
+        if section_ref(&section).as_deref() == Some(old) {
+            section.insert(KEY_PAGE_STYLE_REF, new)?;
         }
     }
     Ok(())

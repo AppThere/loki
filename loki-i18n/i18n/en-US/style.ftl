@@ -37,6 +37,9 @@ style-tree-substyles-heading = Substyles
 style-list-family-heading = List styles
 # Page-styles family (§9 page family, non-inheriting; ADR-0012 Decision 2)
 style-page-family-heading = Page styles
+# Rename field for the selected page style (LibreOffice-style named page styles)
+style-page-name-label = Name
+style-page-rename = Rename
 style-page-size = Size
 style-page-orientation = Orientation
 style-page-margins = Margins
