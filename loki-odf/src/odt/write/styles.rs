@@ -57,6 +57,7 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
     for m in &names.masters {
         masters.push_str(&render_master_page(
             &m.master,
+            m.display_name.as_deref(),
             &m.page_layout,
             &m.layout,
             &mut cx,
@@ -119,10 +120,20 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
 
 /// Builds one `<style:master-page>` element (named `mp_name`, referencing
 /// page-layout `pl_name`), rendering each present header/footer variant into
-/// ODF `<style:header…>` / `<style:footer…>`.
-fn render_master_page(mp_name: &str, pl_name: &str, layout: &PageLayout, cx: &mut Cx) -> String {
+/// ODF `<style:header…>` / `<style:footer…>`. A `display_name` distinct from the
+/// name is written as `style:display-name` so a renamed page style round-trips.
+fn render_master_page(
+    mp_name: &str,
+    display_name: Option<&str>,
+    pl_name: &str,
+    layout: &PageLayout,
+    cx: &mut Cx,
+) -> String {
     let mut m = String::from("<style:master-page");
     attr(&mut m, "style:name", mp_name);
+    if let Some(dn) = display_name {
+        attr(&mut m, "style:display-name", dn);
+    }
     attr(&mut m, "style:page-layout-name", pl_name);
     m.push('>');
     write_hf(&mut m, "style:header", layout.header.as_ref(), cx);

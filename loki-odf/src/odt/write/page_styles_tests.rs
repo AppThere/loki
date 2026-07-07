@@ -8,7 +8,7 @@ use loki_doc_model::content::inline::Inline;
 use loki_doc_model::document::Document;
 use loki_doc_model::layout::page::{PageLayout, PageSize};
 use loki_doc_model::layout::section::Section;
-use loki_doc_model::style::StyleId;
+use loki_doc_model::style::{PageStyle, StyleId};
 
 use super::resolve_page_style_names;
 
@@ -79,6 +79,29 @@ fn ids_are_sanitised_to_valid_ncnames() {
     ];
     let names = resolve_page_style_names(&doc);
     assert_eq!(names.section_master, vec!["My_Page", "_2ndStyle"]);
+}
+
+#[test]
+fn a_distinct_catalog_display_name_is_carried_but_a_redundant_one_is_not() {
+    let mut doc = Document::new();
+    doc.sections = vec![
+        section(PageSize::a4(), Some("WideBody")),
+        section(PageSize::letter(), Some("Cover")),
+    ];
+    // "WideBody" has a human name distinct from its id; "Cover" repeats its id.
+    let mut wide = PageStyle::new(StyleId::new("WideBody"), doc.sections[0].layout.clone());
+    wide.display_name = Some("Wide Body".to_string());
+    doc.styles
+        .page_styles
+        .insert(StyleId::new("WideBody"), wide);
+    let mut cover = PageStyle::new(StyleId::new("Cover"), doc.sections[1].layout.clone());
+    cover.display_name = Some("Cover".to_string());
+    doc.styles.page_styles.insert(StyleId::new("Cover"), cover);
+
+    let names = resolve_page_style_names(&doc);
+    assert_eq!(names.masters[0].display_name.as_deref(), Some("Wide Body"));
+    // A display name equal to the emitted name is redundant — left unset.
+    assert_eq!(names.masters[1].display_name, None);
 }
 
 #[test]

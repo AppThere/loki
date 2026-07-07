@@ -25,6 +25,9 @@ pub(super) struct MasterPage {
     /// `style:master-page` name (also the `style:master-page-name` reference
     /// that `content.xml` attaches to a section's first paragraph).
     pub master: String,
+    /// `style:display-name` — the page style's human-readable name, when the
+    /// catalog gives it one distinct from the (sanitised) `master` name.
+    pub display_name: Option<String>,
     /// The associated `style:page-layout` name.
     pub page_layout: String,
     /// The representative geometry + header/footer master.
@@ -54,6 +57,7 @@ pub(super) fn resolve_page_style_names(doc: &Document) -> PageStyleNames {
         return PageStyleNames {
             masters: vec![MasterPage {
                 master: master.clone(),
+                display_name: None,
                 page_layout: "PL1".to_string(),
                 layout: PageLayout::default(),
             }],
@@ -72,8 +76,17 @@ pub(super) fn resolve_page_style_names(doc: &Document) -> PageStyleNames {
             .unwrap_or_else(|| master_page_name(idx));
         if !masters.iter().any(|m| m.master == name) {
             let page_layout = format!("PL{}", masters.len() + 1);
+            // A distinct human name (only when it differs from the emitted
+            // NCName) becomes `style:display-name`; the panel keeps the id.
+            let display_name = section
+                .page_style
+                .as_ref()
+                .and_then(|id| doc.styles.page_styles.get(id))
+                .and_then(|ps| ps.display_name.clone())
+                .filter(|dn| *dn != name);
             masters.push(MasterPage {
                 master: name.clone(),
+                display_name,
                 page_layout,
                 layout: section.layout.clone(),
             });

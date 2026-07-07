@@ -226,7 +226,16 @@ pub(crate) fn map_document(
         if let Some(id) = &section.page_style {
             catalog.page_styles.entry(id.clone()).or_insert_with(|| {
                 let mut ps = PageStyle::new(id.clone(), section.layout.clone());
-                ps.display_name = Some(id.as_str().to_string());
+                // Carry the master page's `style:display-name` when it declares
+                // one distinct from its `style:name`; else leave None (the id is
+                // the UI label). Fabricating `Some(id)` would shadow a later
+                // rename, so only a genuinely distinct human name is stored.
+                ps.display_name = stylesheet
+                    .master_pages
+                    .iter()
+                    .find(|m| m.name == id.as_str())
+                    .and_then(|m| m.display_name.clone())
+                    .filter(|dn| dn != id.as_str());
                 ps
             });
         }

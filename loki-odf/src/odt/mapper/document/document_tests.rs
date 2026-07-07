@@ -452,6 +452,7 @@ fn stylesheet_with_page_num_format(num_format: Option<&str>) -> OdfStylesheet {
     });
     sheet.master_pages.push(OdfMasterPage {
         name: "Standard".into(),
+        display_name: None,
         page_layout_name: "PL1".into(),
         header: None,
         footer: None,

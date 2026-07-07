@@ -496,10 +496,13 @@ fn named_page_styles_round_trip_as_master_pages() {
         StyleId::new("Cover"),
         PageStyle::new(StyleId::new("Cover"), doc.sections[0].layout.clone()),
     );
-    doc.styles.page_styles.insert(
-        StyleId::new("WideBody"),
-        PageStyle::new(StyleId::new("WideBody"), doc.sections[1].layout.clone()),
-    );
+    // "WideBody" carries a distinct human display name (with a space, so the id
+    // is the NCName and the display name is separate).
+    let mut wide = PageStyle::new(StyleId::new("WideBody"), doc.sections[1].layout.clone());
+    wide.display_name = Some("Wide Body".to_string());
+    doc.styles
+        .page_styles
+        .insert(StyleId::new("WideBody"), wide);
 
     let re = round_trip(&doc);
 
@@ -521,6 +524,22 @@ fn named_page_styles_round_trip_as_master_pages() {
         re.styles
             .page_styles
             .contains_key(&StyleId::new("WideBody"))
+    );
+    // The distinct display name survives via `style:display-name`; the style
+    // with no distinct display name leaves it unset (the id is the label).
+    assert_eq!(
+        re.styles
+            .page_styles
+            .get(&StyleId::new("WideBody"))
+            .and_then(|ps| ps.display_name.as_deref()),
+        Some("Wide Body"),
+    );
+    assert_eq!(
+        re.styles
+            .page_styles
+            .get(&StyleId::new("Cover"))
+            .and_then(|ps| ps.display_name.as_deref()),
+        None,
     );
     // Geometry still round-trips under the named styles.
     assert_eq!(

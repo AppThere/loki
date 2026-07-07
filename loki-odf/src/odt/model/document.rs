@@ -201,6 +201,9 @@ pub(crate) struct OdfHeaderFooterProps {
 pub(crate) struct OdfMasterPage {
     /// `style:name` — identifier (e.g. `"Standard"`, `"First_20_Page"`).
     pub name: String,
+    /// `style:display-name` — the human-readable page-style name shown in the UI,
+    /// when distinct from `name`. ODF 1.3 §16.9.
+    pub display_name: Option<String>,
     /// `style:page-layout-name` — references an [`OdfPageLayout`].
     pub page_layout_name: String,
     /// Paragraphs inside `style:header` (default/odd-page header).
@@ -215,6 +218,28 @@ pub(crate) struct OdfMasterPage {
     pub header_even: Option<Vec<OdfParagraph>>,
     /// Paragraphs inside `style:footer-left` (even-page/left footer). ODF 1.3 §16.9.
     pub footer_even: Option<Vec<OdfParagraph>>,
+}
+
+impl OdfMasterPage {
+    /// A master page with no header/footer content — a self-closing
+    /// `<style:master-page/>`. Avoids repeating the six `None` variants.
+    pub(crate) fn header_footer_less(
+        name: String,
+        display_name: Option<String>,
+        page_layout_name: String,
+    ) -> Self {
+        Self {
+            name,
+            display_name,
+            page_layout_name,
+            header: None,
+            footer: None,
+            header_first: None,
+            footer_first: None,
+            header_even: None,
+            footer_even: None,
+        }
+    }
 }
 
 // ── Document metadata ──────────────────────────────────────────────────────────

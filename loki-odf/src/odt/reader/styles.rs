@@ -136,10 +136,12 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
                     }
                     b"master-page" => {
                         let name = local_attr_val(e, b"name").unwrap_or_default();
+                        let display_name = local_attr_val(e, b"display-name");
                         let page_layout_name =
                             local_attr_val(e, b"page-layout-name").unwrap_or_default();
                         drop(e);
-                        let master = parse_master_page(&mut reader, name, page_layout_name)?;
+                        let master =
+                            parse_master_page(&mut reader, name, display_name, page_layout_name)?;
                         sheet.master_pages.push(master);
                     }
                     _ => {
@@ -199,18 +201,14 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
                         // Self-closing <style:master-page .../> — no header/footer content.
                         // TODO(odf-master-page): style:master-page-name transitions not implemented.
                         let name = local_attr_val(e, b"name").unwrap_or_default();
+                        let display_name = local_attr_val(e, b"display-name");
                         let page_layout_name =
                             local_attr_val(e, b"page-layout-name").unwrap_or_default();
-                        sheet.master_pages.push(OdfMasterPage {
+                        sheet.master_pages.push(OdfMasterPage::header_footer_less(
                             name,
+                            display_name,
                             page_layout_name,
-                            header: None,
-                            footer: None,
-                            header_first: None,
-                            footer_first: None,
-                            header_even: None,
-                            footer_even: None,
-                        });
+                        ));
                     }
                     _ => {}
                 }
@@ -1026,6 +1024,7 @@ fn parse_header_footer_style(
 fn parse_master_page(
     reader: &mut Reader<&[u8]>,
     name: String,
+    display_name: Option<String>,
     page_layout_name: String,
 ) -> OdfResult<OdfMasterPage> {
     let mut buf = Vec::new();
@@ -1090,6 +1089,7 @@ fn parse_master_page(
 
     Ok(OdfMasterPage {
         name,
+        display_name,
         page_layout_name,
         header,
         footer,
