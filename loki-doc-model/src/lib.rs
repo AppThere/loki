@@ -153,7 +153,8 @@ pub use loro_bridge::{
 pub mod loro_mutation;
 pub use loro_mutation::{
     BlockPath, PathStep, delete_selection_at, delete_text_at, get_block_text_at, get_mark_at_path,
-    insert_text_at, insert_text_tracked_at, mark_text_at, tracked_grapheme_delete,
+    insert_text_at, insert_text_tracked_at, mark_text_at, tracked_delete_selection_at,
+    tracked_grapheme_delete,
 };
 pub use loro_mutation::{
     MutationError, accept_reject_all_revisions, clear_block_list, delete_block, delete_text,

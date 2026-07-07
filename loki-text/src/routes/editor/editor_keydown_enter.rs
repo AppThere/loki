@@ -16,7 +16,7 @@ use loki_doc_model::{
 };
 
 use super::editor_keydown_ctrl::post_mutation_sync;
-use super::editor_keydown_text::{delete_selection_in_doc, set_collapsed_cursor};
+use super::editor_keydown_text::{delete_selection_in_doc, deletion_mark, set_collapsed_cursor};
 use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
@@ -66,9 +66,12 @@ pub(super) fn handle_enter_key(
     }
 
     // Replace the active selection: delete it in the CRDT first (batched into
-    // this same relayout/commit), then split at the collapsed start.
+    // this same relayout/commit), then split at the collapsed start. With track
+    // changes on the selection is struck (not removed) before the split.
     let focus = if has_selection {
-        let Some(pos) = delete_selection_in_doc(ldoc, &cursor_state.read()) else {
+        let deletion = deletion_mark(doc_state);
+        let Some(pos) = delete_selection_in_doc(ldoc, &cursor_state.read(), deletion.as_ref())
+        else {
             return; // rejected range — swallow the key, do not split
         };
         pos

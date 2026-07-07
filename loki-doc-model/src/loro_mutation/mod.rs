@@ -62,7 +62,7 @@ pub use self::page::{
 };
 pub use self::page_style::{rename_page_style, set_page_style_geometry};
 pub use self::revision::{accept_reject_all_revisions, tracked_grapheme_delete};
-pub use self::selection::delete_selection_at;
+pub use self::selection::{delete_selection_at, tracked_delete_selection_at};
 pub use self::style::{
     clear_block_list, get_block_list_id, get_block_style_name, set_block_style,
     set_block_type_heading, set_block_type_para,
