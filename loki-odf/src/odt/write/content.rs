@@ -14,8 +14,9 @@ use loki_doc_model::style::props::para_props::ParaProps;
 use super::auto::AutoStyles;
 use super::inlines::write_inlines;
 use super::media::{MathPart, Media, Rendered};
+use super::page_styles::resolve_page_style_names;
 use super::tables::table;
-use super::xml::{attr, escape, master_page_name};
+use super::xml::{attr, escape};
 
 const HEADER: &str = concat!(
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
@@ -57,12 +58,15 @@ pub(crate) fn content_xml(doc: &Document) -> Rendered {
             .collect(),
         objects: Vec::new(),
     };
+    // The section→master-page names, honouring the stored `page_style` refs so a
+    // named page style round-trips (must agree with `styles.xml`).
+    let names = resolve_page_style_names(doc);
     let mut body = String::new();
     for (idx, section) in doc.sections.iter().enumerate() {
         // Sections after the first trigger a page-geometry change by attaching
         // `style:master-page-name` to their first paragraph (ODF has no explicit
         // section element). The first section uses the initial master page.
-        let master = (idx > 0).then(|| master_page_name(idx));
+        let master = (idx > 0).then(|| names.section_master[idx].clone());
         match (master.as_deref(), section.blocks.first()) {
             (Some(mp), Some(first)) => {
                 write_block_with_master(&mut body, first, mp, &mut cx);

@@ -464,6 +464,72 @@ fn multi_section_page_geometry_round_trips() {
 }
 
 #[test]
+fn named_page_styles_round_trip_as_master_pages() {
+    use loki_doc_model::layout::page::PageOrientation;
+    use loki_doc_model::style::PageStyle;
+
+    let body = |t: &str| vec![Block::Para(vec![Inline::Str(t.to_string())])];
+
+    let mut cover = Section::with_layout_and_blocks(
+        PageLayout {
+            page_size: PageSize::a4(),
+            orientation: PageOrientation::Portrait,
+            ..PageLayout::default()
+        },
+        body("Cover section."),
+    );
+    cover.page_style = Some(StyleId::new("Cover"));
+    let mut landscape = Section::with_layout_and_blocks(
+        PageLayout {
+            page_size: PageSize::letter(),
+            orientation: PageOrientation::Landscape,
+            ..PageLayout::default()
+        },
+        body("Wide section."),
+    );
+    landscape.page_style = Some(StyleId::new("WideBody"));
+
+    let mut doc = Document::new();
+    doc.sections = vec![cover, landscape];
+    // The catalog carries the named page styles (as the app populates them).
+    doc.styles.page_styles.insert(
+        StyleId::new("Cover"),
+        PageStyle::new(StyleId::new("Cover"), doc.sections[0].layout.clone()),
+    );
+    doc.styles.page_styles.insert(
+        StyleId::new("WideBody"),
+        PageStyle::new(StyleId::new("WideBody"), doc.sections[1].layout.clone()),
+    );
+
+    let re = round_trip(&doc);
+
+    // The stored per-section page-style names survive as ODT master pages.
+    assert_eq!(re.sections.len(), 2, "both sections must survive");
+    assert_eq!(
+        re.sections[0].page_style,
+        Some(StyleId::new("Cover")),
+        "section 0 must keep its page-style name"
+    );
+    assert_eq!(
+        re.sections[1].page_style,
+        Some(StyleId::new("WideBody")),
+        "section 1 must keep its page-style name"
+    );
+    // Import registers them as first-class page styles in the catalog.
+    assert!(re.styles.page_styles.contains_key(&StyleId::new("Cover")));
+    assert!(
+        re.styles
+            .page_styles
+            .contains_key(&StyleId::new("WideBody"))
+    );
+    // Geometry still round-trips under the named styles.
+    assert_eq!(
+        re.sections[1].layout.orientation,
+        PageOrientation::Landscape
+    );
+}
+
+#[test]
 fn extended_dublin_core_round_trips() {
     use loki_doc_model::meta::dublin_core::DublinCoreMeta;
 

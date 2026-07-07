@@ -13,9 +13,10 @@ use loki_doc_model::style::para_style::ParagraphStyle;
 use super::auto::AutoStyles;
 use super::content::{Cx, write_block};
 use super::media::{Media, Rendered};
+use super::page_styles::resolve_page_style_names;
 use super::para_props::emit_paragraph_properties;
 use super::props::emit_text_properties;
-use super::xml::{attr, escape, master_page_name, page_layout_name, pt};
+use super::xml::{attr, escape, pt};
 
 const HEADER: &str = concat!(
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
@@ -35,14 +36,11 @@ const HEADER: &str = concat!(
 /// the master-page header/footer.
 #[must_use]
 pub(crate) fn styles_xml(doc: &Document) -> Rendered {
-    // One page-layout + master-page per section so each section's geometry and
-    // header/footer round-trip. A document with no sections falls back to a
-    // single default master page.
-    let layouts: Vec<PageLayout> = if doc.sections.is_empty() {
-        vec![PageLayout::default()]
-    } else {
-        doc.sections.iter().map(|s| s.layout.clone()).collect()
-    };
+    // One page-layout + master-page per **distinct page style** so each style's
+    // geometry and header/footer round-trip under its stored name. Sections
+    // sharing a page style share a master page; a document with no sections falls
+    // back to a single default master page. See [`resolve_page_style_names`].
+    let names = resolve_page_style_names(doc);
 
     // Render the master-page header/footer content first so its automatic
     // styles (and images) are collected before the automatic-styles section is
@@ -56,11 +54,14 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
     };
     let mut masters = String::new();
     let mut page_layouts = String::new();
-    for (idx, layout) in layouts.iter().enumerate() {
-        let mp_name = master_page_name(idx);
-        let pl_name = page_layout_name(idx);
-        masters.push_str(&render_master_page(&mp_name, &pl_name, layout, &mut cx));
-        write_page_layout(&mut page_layouts, &pl_name, layout);
+    for m in &names.masters {
+        masters.push_str(&render_master_page(
+            &m.master,
+            &m.page_layout,
+            &m.layout,
+            &mut cx,
+        ));
+        write_page_layout(&mut page_layouts, &m.page_layout, &m.layout);
     }
 
     let mut out = String::new();

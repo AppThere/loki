@@ -9,6 +9,7 @@ mod auto;
 mod content;
 mod inlines;
 mod media;
+mod page_styles;
 mod para_props;
 mod props;
 mod styles;

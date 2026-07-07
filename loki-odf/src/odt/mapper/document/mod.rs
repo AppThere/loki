@@ -30,6 +30,7 @@ use loki_doc_model::content::float::FloatWrap;
 use loki_doc_model::document::Document;
 use loki_doc_model::layout::section::Section;
 use loki_doc_model::style::catalog::StyleCatalog;
+use loki_doc_model::style::{PageStyle, StyleId};
 use loki_primitives::units::Points;
 
 use crate::error::OdfWarning;
@@ -192,10 +193,12 @@ pub(crate) fn map_document(
             {
                 let layout =
                     resolve_page_layout_by_name(stylesheet, current_master.as_deref(), &mut ctx);
-                sections.push(Section::with_layout_and_blocks(
-                    layout,
-                    std::mem::take(&mut current_blocks),
-                ));
+                let mut section =
+                    Section::with_layout_and_blocks(layout, std::mem::take(&mut current_blocks));
+                // The finished section used `current_master` — store it as the
+                // section's page style (ADR-0012 Decision 2's ODF-native mapping).
+                section.page_style = current_master.as_deref().map(StyleId::new);
+                sections.push(section);
                 current_master = Some(nm.clone());
             }
 
@@ -208,10 +211,26 @@ pub(crate) fn map_document(
 
         // Flush the final (or only) section.
         let layout = resolve_page_layout_by_name(stylesheet, current_master.as_deref(), &mut ctx);
-        sections.push(Section::with_layout_and_blocks(layout, current_blocks));
+        let mut section = Section::with_layout_and_blocks(layout, current_blocks);
+        section.page_style = current_master.as_deref().map(StyleId::new);
+        sections.push(section);
 
         (sections, ctx.warnings, ctx.comments)
     };
+
+    // ── 4b. Register ODF master-page names as first-class page styles ─────────
+    // (ADR-0012 Decision 2). The panel then shows the document's real page-style
+    // names and they round-trip on export; the geometry is each style's first
+    // referencing section's layout (the representative the panel reads too).
+    for section in &sections {
+        if let Some(id) = &section.page_style {
+            catalog.page_styles.entry(id.clone()).or_insert_with(|| {
+                let mut ps = PageStyle::new(id.clone(), section.layout.clone());
+                ps.display_name = Some(id.as_str().to_string());
+                ps
+            });
+        }
+    }
 
     // ── 5. Map metadata ───────────────────────────────────────────────────────
     let doc_meta = meta.map(map_meta).unwrap_or_default();
