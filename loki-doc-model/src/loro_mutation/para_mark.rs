@@ -17,7 +17,8 @@
 use loro::{LoroDoc, LoroMap, LoroMovableList};
 
 use super::block::merge_block_in_list;
-use super::{MutationError, get_block_map_and_list, section_blocks_list};
+use super::nested::resolve_block_map;
+use super::{BlockPath, MutationError, get_block_map_and_list, section_blocks_list};
 use crate::loro_schema::{
     BLOCK_TYPE_PARA, BLOCK_TYPE_STYLED_PARA, KEY_DIRECT_CHAR_PROPS, KEY_NOTES, KEY_SECTIONS,
     KEY_TABLE_CELLS, KEY_TYPE, PROP_REVISION,
@@ -62,12 +63,33 @@ pub fn set_para_mark_deletion(
     mark: &RevisionMark,
 ) -> Result<bool, MutationError> {
     let (_, map, _) = get_block_map_and_list(loro, block_index)?;
-    match block_type(&map).as_str() {
+    write_para_mark(&map, mark)
+}
+
+/// Path-aware [`set_para_mark_deletion`]: records the ¶-deletion on the paragraph
+/// addressed by `path`, so Backspace-at-start works inside a table cell / note
+/// body too (the accept/reject sweep already recurses into those containers).
+///
+/// # Errors
+///
+/// [`MutationError`] for an underlying path / Loro error.
+pub fn set_para_mark_deletion_at(
+    loro: &LoroDoc,
+    path: &BlockPath,
+    mark: &RevisionMark,
+) -> Result<bool, MutationError> {
+    write_para_mark(&resolve_block_map(loro, path)?, mark)
+}
+
+/// Stamps `mark` on a block map's paragraph-mark char props, upgrading a plain
+/// `para` to `styled_para`. Returns `false` for a non-paragraph block.
+fn write_para_mark(map: &LoroMap, mark: &RevisionMark) -> Result<bool, MutationError> {
+    match block_type(map).as_str() {
         BLOCK_TYPE_PARA | "" => map.insert(KEY_TYPE, BLOCK_TYPE_STYLED_PARA)?,
         BLOCK_TYPE_STYLED_PARA => {}
         _ => return Ok(false), // heading / table / … — not a paragraph mark
     }
-    get_or_create_char_props(&map)?.insert(PROP_REVISION, encode(mark))?;
+    get_or_create_char_props(map)?.insert(PROP_REVISION, encode(mark))?;
     Ok(true)
 }
 

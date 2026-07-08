@@ -14,10 +14,10 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 use loki_doc_model::loro_mutation::{
-    get_block_text_at, set_para_mark_deletion, tracked_grapheme_delete,
+    get_block_text_at, set_para_mark_deletion_at, tracked_grapheme_delete,
 };
 use loki_doc_model::style::props::revision::RevisionMark;
-use loki_doc_model::{BlockPath, merge_block_at};
+use loki_doc_model::{PathStep, merge_block_at};
 
 use super::editor_keydown_ctrl::post_mutation_sync;
 use super::editor_keydown_text::{
@@ -50,14 +50,13 @@ pub(super) fn handle_backspace_key(
         SelectionRemoval::NoSelection => {}
     }
     if focus.byte_offset == 0 {
-        // With track changes on, Backspace at the start of a top-level paragraph
-        // records a tracked deletion of the *previous* paragraph's mark (¶)
-        // instead of merging; accept-all performs the merge later. A nested
-        // container or a non-paragraph previous block falls back to a hard merge
-        // (TODO(review-para-mark-nested)).
+        // With track changes on, Backspace at a paragraph start records a tracked
+        // deletion of the *previous* paragraph's mark (¶) instead of merging;
+        // accept-all performs the merge later. Works at the top level and inside
+        // table cells / note bodies; a non-paragraph previous block falls back to
+        // a hard merge.
         if let Some(rev) = deletion_mark(doc_state)
-            && focus.path.is_empty()
-            && focus.paragraph_index > 0
+            && has_previous_sibling(&focus)
             && record_para_mark_deletion(
                 &focus,
                 rev,
@@ -93,9 +92,18 @@ pub(super) fn handle_backspace_key(
     );
 }
 
-/// Records a tracked ¶-deletion on the previous top-level paragraph, moving the
-/// caret to that paragraph's end. Returns `false` (recording nothing) when the
-/// previous block is not a paragraph, so the caller hard-merges instead.
+/// Whether `pos` has a previous sibling block in its own container — a top-level
+/// paragraph after the first, or a cell / note-body block after the first.
+fn has_previous_sibling(pos: &DocumentPosition) -> bool {
+    match pos.path.last() {
+        Some(PathStep::Cell { block, .. } | PathStep::Note { block, .. }) => *block > 0,
+        None => pos.paragraph_index > 0,
+    }
+}
+
+/// Records a tracked ¶-deletion on the previous paragraph (same container),
+/// moving the caret to that paragraph's end. Returns `false` (recording nothing)
+/// when the previous block is not a paragraph, so the caller hard-merges instead.
 #[allow(clippy::too_many_arguments)]
 fn record_para_mark_deletion(
     focus: &DocumentPosition,
@@ -107,16 +115,16 @@ fn record_para_mark_deletion(
     can_undo: Signal<bool>,
     can_redo: Signal<bool>,
 ) -> bool {
-    let prev = focus.paragraph_index - 1;
+    let prev_path = focus.sibling_block(-1, 0).block_path();
     let prev_len = {
         let ldoc_guard = loro_doc.read();
         let Some(ldoc) = ldoc_guard.as_ref() else {
             return false;
         };
-        match set_para_mark_deletion(ldoc, prev, &rev) {
+        match set_para_mark_deletion_at(ldoc, &prev_path, &rev) {
             Ok(true) => {
                 apply_mutation_and_relayout(doc_state, ldoc);
-                get_block_text_at(ldoc, &BlockPath::block(prev)).len()
+                get_block_text_at(ldoc, &prev_path).len()
             }
             // Declined (non-paragraph previous) or error — let the caller merge.
             _ => return false,

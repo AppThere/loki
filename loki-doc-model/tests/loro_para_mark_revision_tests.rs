@@ -10,11 +10,15 @@
 use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::{Block, StyledParagraph};
 use loki_doc_model::content::inline::Inline;
+use loki_doc_model::content::table::core::{Table, TableBody, TableCaption, TableFoot, TableHead};
+use loki_doc_model::content::table::row::{Cell, Row};
 use loki_doc_model::document::Document;
 use loki_doc_model::loro_bridge::{document_to_loro, loro_to_document};
 use loki_doc_model::style::props::char_props::CharProps;
 use loki_doc_model::style::props::revision::{RevisionKind, RevisionMark};
-use loki_doc_model::{BlockPath, accept_reject_all_revisions, set_para_mark_deletion};
+use loki_doc_model::{
+    BlockPath, accept_reject_all_revisions, set_para_mark_deletion, set_para_mark_deletion_at,
+};
 
 fn plain(text: &str) -> Block {
     Block::Para(vec![Inline::Str(text.into())])
@@ -165,4 +169,69 @@ fn merged_paragraph_is_editable() {
     loki_doc_model::delete_text_at(&loro, &p, 5, 1).unwrap();
     let back = loro_to_document(&loro).unwrap();
     assert_eq!(text(&back, 0), "firstecond");
+}
+
+/// A one-cell table (global block 0) whose cell holds two plain paragraphs.
+fn doc_with_two_para_cell() -> Document {
+    let table = Table {
+        attr: NodeAttr::default(),
+        caption: TableCaption::default(),
+        width: None,
+        col_specs: Vec::new(),
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![Row::new(vec![Cell::simple(
+            vec![plain("aaa"), plain("bbb")],
+        )])])],
+        foot: TableFoot::empty(),
+    };
+    let mut doc = Document::new();
+    doc.sections[0].blocks = vec![Block::Table(Box::new(table))];
+    doc
+}
+
+/// The paragraph texts of the table's first cell after a rebuild.
+fn cell_texts(doc: &Document) -> Vec<String> {
+    let Block::Table(t) = &doc.sections[0].blocks[0] else {
+        panic!("expected a table");
+    };
+    t.bodies[0].body_rows[0].cells[0]
+        .blocks
+        .iter()
+        .map(|b| match b {
+            Block::Para(v) | Block::Plain(v) => v
+                .iter()
+                .map(|x| match x {
+                    Inline::Str(s) => s.as_str(),
+                    _ => "",
+                })
+                .collect(),
+            Block::StyledPara(p) => p
+                .inlines
+                .iter()
+                .map(|x| match x {
+                    Inline::Str(s) => s.as_str(),
+                    _ => "",
+                })
+                .collect(),
+            _ => String::new(),
+        })
+        .collect()
+}
+
+#[test]
+fn records_and_accepts_a_para_mark_inside_a_table_cell() {
+    let loro = document_to_loro(&doc_with_two_para_cell()).unwrap();
+    let mark = RevisionMark::new(RevisionKind::Deletion).with_author("Cy");
+
+    // Backspace at the start of the cell's 2nd paragraph records a ¶-deletion on
+    // its 1st paragraph (in_cell(root=0, cell=0, block=0)).
+    let prev = BlockPath::in_cell(0, 0, 0);
+    assert!(set_para_mark_deletion_at(&loro, &prev, &mark).unwrap());
+    assert!(loro_to_document(&loro).unwrap().has_tracked_changes());
+
+    // Accept-all merges the two cell paragraphs (nested sweep).
+    accept_reject_all_revisions(&loro, true).unwrap();
+    let back = loro_to_document(&loro).unwrap();
+    assert_eq!(cell_texts(&back), vec!["aaabbb".to_string()]);
+    assert!(!back.has_tracked_changes());
 }
