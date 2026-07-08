@@ -29,7 +29,7 @@ use crate::odt::model::notes::{OdfNote, OdfNoteClass};
 use crate::odt::model::paragraph::{OdfListContext, OdfParagraph};
 use crate::odt::model::tables::{OdfTable, OdfTableCell, OdfTableColDef, OdfTableRow};
 use crate::version::OdfVersion;
-use crate::xml_util::local_attr_val;
+use crate::xml_util::{event_text, local_attr_val};
 
 use super::inlines::read_inline_children;
 
@@ -85,12 +85,11 @@ pub(crate) fn read_text_content(reader: &mut Reader<&[u8]>) -> OdfResult<String>
                     return Ok(text);
                 }
             }
-            Ok(Event::Text(ref t)) if depth == 1 => {
-                let s = t.unescape().map_err(|e| OdfError::Xml {
+            Ok(ref ev @ (Event::Text(_) | Event::GeneralRef(_))) if depth == 1 => {
+                text.push_str(&event_text(ev).map_err(|e| OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
-                })?;
-                text.push_str(&s);
+                })?);
             }
             Ok(Event::Eof) => return Ok(text),
             Err(e) => {

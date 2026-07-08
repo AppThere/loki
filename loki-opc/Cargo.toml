@@ -19,7 +19,7 @@ serde = ["dep:serde", "chrono/serde"]
 [dependencies]
 thiserror = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
-quick-xml = { version = "0.36", features = ["serialize"] }
+quick-xml = { version = "0.41", features = ["serialize"] }
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 
 [dependencies.serde]

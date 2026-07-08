@@ -11,6 +11,7 @@ use quick_xml::events::Event;
 
 use crate::error::{OdfError, OdfResult};
 use crate::odt::model::document::OdfMeta;
+use crate::xml_util::{resolve_general_ref, unescape_text};
 
 /// Parse `meta.xml` bytes and return the extracted [`OdfMeta`].
 ///
@@ -83,7 +84,16 @@ pub(crate) fn read_meta(xml: &[u8]) -> OdfResult<OdfMeta> {
             }
             Ok(Event::Text(ref t)) => {
                 if collecting.is_some() {
-                    let s = t.unescape().map_err(|e| OdfError::Xml {
+                    let s = unescape_text(t).map_err(|e| OdfError::Xml {
+                        part: "meta.xml".to_string(),
+                        source: e,
+                    })?;
+                    collect_text.push_str(&s);
+                }
+            }
+            Ok(Event::GeneralRef(ref r)) => {
+                if collecting.is_some() {
+                    let s = resolve_general_ref(r).map_err(|e| OdfError::Xml {
                         part: "meta.xml".to_string(),
                         source: e,
                     })?;

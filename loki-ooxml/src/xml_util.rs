@@ -14,9 +14,55 @@
 
 use appthere_color::RgbColor;
 use loki_primitives::units::Points;
-use quick_xml::events::BytesStart;
+use quick_xml::events::{BytesRef, BytesStart, BytesText, Event};
 
 use crate::constants::{EMUS_PER_PT, HALF_POINTS_PER_PT, TWIPS_PER_PT};
+
+/// Decodes and XML-entity-unescapes a text node's content.
+///
+/// `BytesText::unescape()` was removed in quick-xml 0.41 (COMPAT: split into
+/// separate `decode()` + `escape::unescape()` steps); this restores the old
+/// combined behaviour for the many call sites that just want plain text.
+pub fn unescape_text(text: &BytesText<'_>) -> quick_xml::Result<String> {
+    let decoded = text.decode()?;
+    Ok(quick_xml::escape::unescape(&decoded)?.into_owned())
+}
+
+/// Resolves a `&entity;` / `&#N;` general reference to its literal string.
+///
+/// COMPAT(quick-xml-0.41): quick-xml 0.41 stopped folding entity/character
+/// references into the surrounding `Event::Text`; they now arrive as their
+/// own `Event::GeneralRef` between Text events (verified empirically: a run
+/// containing `&quot;` is split into three events — Text, `GeneralRef`, Text —
+/// and the `&quot;` is dropped entirely if `GeneralRef` isn't handled). Every
+/// text-accumulation loop in this crate must match `Event::GeneralRef` next
+/// to `Event::Text` and push this function's result, or embedded entities
+/// (quotes in field-code instructions being the case that surfaced this)
+/// silently vanish from imported text.
+///
+/// Named references are resolved via the five predefined XML entities
+/// (`lt`, `gt`, `amp`, `apos`, `quot`); anything else (a custom DTD entity,
+/// which OOXML/ODF documents do not define) falls back to the literal
+/// `&name;` so no data is silently lost.
+pub fn resolve_general_ref(r: &BytesRef<'_>) -> quick_xml::Result<String> {
+    if let Some(ch) = r.resolve_char_ref()? {
+        return Ok(ch.to_string());
+    }
+    let name = r.decode()?;
+    Ok(quick_xml::escape::resolve_predefined_entity(&name)
+        .map_or_else(|| format!("&{name};"), ToString::to_string))
+}
+
+/// Extracts text from an `Event::Text` or `Event::GeneralRef`; `None` for any
+/// other event kind. One-call replacement for the `unescape_text`/
+/// `resolve_general_ref` pair, for call sites matching both in a single arm.
+pub fn event_text(event: &Event<'_>) -> quick_xml::Result<String> {
+    match event {
+        Event::Text(t) => unescape_text(t),
+        Event::GeneralRef(r) => resolve_general_ref(r),
+        _ => Ok(String::new()),
+    }
+}
 
 /// Extracts the local name (without namespace prefix) from an element.
 ///
@@ -61,7 +107,9 @@ pub fn local_attr_val(e: &BytesStart<'_>, local: &[u8]) -> Option<String> {
             key_bytes
         };
         if key_local == local {
-            attr.unescape_value().ok().map(std::borrow::Cow::into_owned)
+            attr.normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                .ok()
+                .map(std::borrow::Cow::into_owned)
         } else {
             None
         }

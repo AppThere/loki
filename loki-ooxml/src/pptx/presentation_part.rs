@@ -66,7 +66,9 @@ pub(super) fn parse_presentation(bytes: &[u8]) -> Result<PresentationInfo, quick
 fn rel_id_attr(e: &BytesStart<'_>) -> Option<String> {
     e.attributes().flatten().find_map(|attr| {
         if attr.key.as_ref() == b"r:id" {
-            attr.unescape_value().ok().map(std::borrow::Cow::into_owned)
+            attr.normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                .ok()
+                .map(std::borrow::Cow::into_owned)
         } else {
             None
         }

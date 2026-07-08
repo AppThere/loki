@@ -244,7 +244,9 @@ fn raw_version_attr(content: &[u8]) -> Option<String> {
                             key
                         };
                         if key_local == b"version" {
-                            attr.unescape_value().ok().map(std::borrow::Cow::into_owned)
+                            attr.normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                                .ok()
+                                .map(std::borrow::Cow::into_owned)
                         } else {
                             None
                         }

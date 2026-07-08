@@ -16,6 +16,8 @@
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
+use crate::xml_util::{resolve_general_ref, unescape_text};
+
 /// The `MathML` namespace URI placed on the root `<math>` element.
 const MATHML_NS: &str = "http://www.w3.org/1998/Math/MathML";
 
@@ -83,7 +85,12 @@ fn read_node(reader: &mut Reader<&[u8]>, tag: &str) -> Node {
                 ..Default::default()
             }),
             Ok(Event::Text(ref t)) => {
-                if let Ok(s) = t.unescape() {
+                if let Ok(s) = unescape_text(t) {
+                    node.text.push_str(&s);
+                }
+            }
+            Ok(Event::GeneralRef(ref r)) => {
+                if let Ok(s) = resolve_general_ref(r) {
                     node.text.push_str(&s);
                 }
             }

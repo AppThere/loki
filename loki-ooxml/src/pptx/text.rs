@@ -10,7 +10,7 @@ use std::io::BufRead;
 
 use super::units::{color_from_srgb, font_size_to_pt, parse_bool};
 use super::{end_is, parse_solid_fill_color, skip_subtree};
-use crate::xml_util::{local_attr_val, local_name};
+use crate::xml_util::{local_attr_val, local_name, resolve_general_ref, unescape_text};
 
 /// Parses a text body. Assumes the opening `txBody` start tag was already read;
 /// consumes through its end tag.
@@ -182,7 +182,8 @@ fn read_text<R: BufRead>(reader: &mut Reader<R>) -> Result<String, quick_xml::Er
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf)? {
-            Event::Text(t) => s.push_str(&t.unescape()?),
+            Event::Text(t) => s.push_str(&unescape_text(&t)?),
+            Event::GeneralRef(r) => s.push_str(&resolve_general_ref(&r)?),
             Event::End(e) if end_is(&e, b"t") => break,
             Event::Eof => break,
             _ => {}

@@ -939,7 +939,7 @@ fn write_empty_checked<W: std::io::Write>(w: &mut Writer<W>, text: &str) -> quic
     start.push_attribute(("xml:space", "preserve"));
     w.write_event(Event::Start(start))?;
     w.write_event(Event::Text(BytesText::new(text)))?;
-    w.write_event(Event::End(quick_xml::events::BytesEnd::new("w:t")))
+    Ok(w.write_event(Event::End(quick_xml::events::BytesEnd::new("w:t")))?)
 }
 
 fn write_bookmark<W: std::io::Write>(

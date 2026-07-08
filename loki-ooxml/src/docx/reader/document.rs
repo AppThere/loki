@@ -6,8 +6,7 @@
 //! ECMA-376 §17.2 (document structure), §17.3 (block-level content).
 //! Uses `quick-xml` event reader with `trim_text(false)` per ADR-0002.
 
-use quick_xml::Reader;
-use quick_xml::events::Event;
+use quick_xml::{Reader, events::Event};
 
 use crate::docx::model::document::{DocxBodyChild, DocxDocument};
 use crate::docx::model::paragraph::{
@@ -22,6 +21,7 @@ use crate::docx::model::styles::{
 use crate::docx::reader::runs::{parse_fld_simple_runs, parse_hyperlink_runs, parse_tracked_runs};
 use crate::docx::reader::util::{attr_val, local_name, parse_emu, toggle_prop};
 use crate::error::{OoxmlError, OoxmlResult};
+use crate::xml_util::event_text;
 use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
 
 /// Parses `word/document.xml` bytes into a [`DocxDocument`].
@@ -454,8 +454,8 @@ pub(crate) fn parse_run(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxRun> {
                     let mut tbuf = Vec::new();
                     loop {
                         match reader.read_event_into(&mut tbuf) {
-                            Ok(Event::Text(ref t)) => {
-                                if let Ok(s) = t.unescape() {
+                            Ok(ref ev @ (Event::Text(_) | Event::GeneralRef(_))) => {
+                                if let Ok(s) = event_text(ev) {
                                     text.push_str(&s);
                                 }
                             }
@@ -477,8 +477,8 @@ pub(crate) fn parse_run(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxRun> {
                     let mut tbuf = Vec::new();
                     loop {
                         match reader.read_event_into(&mut tbuf) {
-                            Ok(Event::Text(ref t)) => {
-                                if let Ok(s) = t.unescape() {
+                            Ok(ref ev @ (Event::Text(_) | Event::GeneralRef(_))) => {
+                                if let Ok(s) = event_text(ev) {
                                     text.push_str(&s);
                                 }
                             }

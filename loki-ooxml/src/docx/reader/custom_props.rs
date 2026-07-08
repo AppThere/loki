@@ -12,6 +12,7 @@ use quick_xml::events::Event;
 
 use crate::docx::reader::util::{attr_val, local_name};
 use crate::error::{OoxmlError, OoxmlResult};
+use crate::xml_util::{resolve_general_ref, unescape_text};
 
 /// Reads `docProps/custom.xml` (resolved via the package custom-properties
 /// relationship) and merges its reserved `dcmi:` fields into `dc`, preserving
@@ -70,7 +71,12 @@ pub(crate) fn parse_custom_props(xml: &[u8]) -> OoxmlResult<Vec<(String, String)
                 _ => {}
             },
             Ok(Event::Text(ref t)) if in_value => {
-                if let Ok(s) = t.unescape() {
+                if let Ok(s) = unescape_text(t) {
+                    value.push_str(&s);
+                }
+            }
+            Ok(Event::GeneralRef(ref r)) if in_value => {
+                if let Ok(s) = resolve_general_ref(r) {
                     value.push_str(&s);
                 }
             }
