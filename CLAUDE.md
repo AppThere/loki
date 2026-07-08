@@ -150,8 +150,8 @@ may not grow, and a file split to ≤300 must be removed from the baseline. So t
 backlog can only shrink. When you split a file below the ceiling, drop its line
 with `scripts/check-file-ceiling.py --update` (review the diff).
 
-The split pass is **in progress** — current backlog is the **35** entries in the
-baseline file. Two techniques:
+The split pass is **in progress** — current backlog is the **31** entries in the
+baseline file. Three techniques (the third added 2026-07-08):
 1. *Inline-test extraction* (safest, no production-code change): move a file's
    `#[cfg(test)] mod tests { … }` into a sibling `<name>_tests.rs` referenced via
    `#[cfg(test)] #[path = "<name>_tests.rs"] mod tests;`. Done 2026-06-21 for
@@ -167,6 +167,13 @@ baseline file. Two techniques:
    `odt/mapper/props/` and `odt/mapper/document.rs` →
    `odt/mapper/document/` (`mod`/`inlines`/`frames`/`blocks`/`page`/`meta`; worked
    examples).
+3. *Cohesive-cluster extraction* (for a monolith whose tests are already
+   extracted, so technique 1 doesn't apply): move a self-contained group of
+   functions into a new `<name>_helper.rs` sibling declared via
+   `#[path = "…"] mod <name>;`, accessing the parent's state through `super::`
+   (mark the shared items `pub(super)`). The new file must itself be ≤300.
+   Done 2026-07-08 for `loki-layout/src/flow.rs` (1948 → 1702): the four
+   table-geometry helpers → `flow_table_geom.rs` (`table_geom` submodule).
 
 (Test files are exempt from the production-line count.)
 
