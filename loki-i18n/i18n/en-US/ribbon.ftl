@@ -126,6 +126,8 @@ ribbon-tab-review = Review
 ribbon-group-review-track = Tracking
 ribbon-track-changes-aria = Track changes
 ribbon-group-review-changes = Changes
+ribbon-accept-change-aria = Accept change
+ribbon-reject-change-aria = Reject change
 ribbon-accept-all-aria = Accept all changes
 ribbon-reject-all-aria = Reject all changes
 

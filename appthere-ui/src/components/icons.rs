@@ -179,11 +179,18 @@ pub const AT_TOC_UPDATE: &str = "M20 11A8 8 0 1 0 18 16M20 5v6h-6";
 /// Track changes: a pencil writing over a baseline (edits are recorded).
 pub const AT_TRACK_CHANGES: &str = "M4 21h8M14.5 4.5l5 5L9 20l-5 1 1-5z";
 
-/// Accept change: a check mark.
+/// Accept all changes: a check mark.
 pub const AT_CHANGE_ACCEPT: &str = "M20 6 9 17l-5-5";
 
-/// Reject change: a cross.
+/// Reject all changes: a cross.
 pub const AT_CHANGE_REJECT: &str = "M18 6 6 18M6 6l12 12";
+
+/// Accept the change at the caret: a check inside a circle.
+pub const AT_CHANGE_ACCEPT_ONE: &str =
+    "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M8.5 12.5l2.5 2.5 4.5-5.5";
+
+/// Reject the change at the caret: a cross inside a circle.
+pub const AT_CHANGE_REJECT_ONE: &str = "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M15 9l-6 6M9 9l6 6";
 
 // ── AtIcon component ──────────────────────────────────────────────────────────
 

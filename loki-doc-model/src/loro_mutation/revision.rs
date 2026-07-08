@@ -18,6 +18,7 @@
 
 use loro::{LoroDoc, LoroText, LoroValue, TextDelta};
 
+use super::nested::text_for_path;
 use super::{
     BlockPath, MutationError, delete_text_at, get_loro_text_for_block, get_mark_at_path,
     mark_text_at,
@@ -35,12 +36,10 @@ fn removes(kind: RevisionKind, accept: bool) -> bool {
     )
 }
 
-/// Resolves every `MARK_REVISION` span in one text container, returning how many
-/// were resolved. Ops are applied back-to-front so a delete never shifts an
-/// earlier span's byte offset.
-fn resolve_text(text: &LoroText, accept: bool) -> Result<usize, MutationError> {
-    // Collect (byte_start, byte_len, kind) for each revision-marked span.
-    let mut ops: Vec<(usize, usize, RevisionKind)> = Vec::new();
+/// Collects every `MARK_REVISION` span in one text container as
+/// `(byte_start, byte_len, kind)`, in document order.
+fn revision_spans(text: &LoroText) -> Vec<(usize, usize, RevisionKind)> {
+    let mut spans = Vec::new();
     let mut byte_pos = 0usize;
     for delta in text.to_delta() {
         if let TextDelta::Insert { insert, attributes } = delta {
@@ -49,20 +48,98 @@ fn resolve_text(text: &LoroText, accept: bool) -> Result<usize, MutationError> {
                 && let Some(LoroValue::String(s)) = attrs.get(MARK_REVISION)
                 && let Some(mark) = decode(s.as_str())
             {
-                ops.push((byte_pos, span_bytes, mark.kind));
+                spans.push((byte_pos, span_bytes, mark.kind));
             }
             byte_pos += span_bytes;
         }
     }
-    let count = ops.len();
-    for (start, len, kind) in ops.into_iter().rev() {
-        if removes(kind, accept) {
-            text.delete_utf8(start, len)?;
-        } else {
-            text.mark_utf8(start..start + len, MARK_REVISION, LoroValue::Null)?;
-        }
+    spans
+}
+
+/// Applies the accept/reject resolution to one revision span: a removed run's
+/// text is deleted, a kept run's mark is cleared (the text stays, un-tracked).
+fn resolve_span(
+    text: &LoroText,
+    start: usize,
+    len: usize,
+    kind: RevisionKind,
+    accept: bool,
+) -> Result<(), MutationError> {
+    if removes(kind, accept) {
+        text.delete_utf8(start, len)?;
+    } else {
+        text.mark_utf8(start..start + len, MARK_REVISION, LoroValue::Null)?;
+    }
+    Ok(())
+}
+
+/// Resolves every `MARK_REVISION` span in one text container, returning how many
+/// were resolved. Ops are applied back-to-front so a delete never shifts an
+/// earlier span's byte offset.
+fn resolve_text(text: &LoroText, accept: bool) -> Result<usize, MutationError> {
+    let spans = revision_spans(text);
+    let count = spans.len();
+    for (start, len, kind) in spans.into_iter().rev() {
+        resolve_span(text, start, len, kind, accept)?;
     }
     Ok(count)
+}
+
+/// The tracked-change span at `byte_offset` — the marked span containing it, or
+/// (failing that) the one ending exactly at it (a caret just past a change).
+fn span_at(
+    spans: &[(usize, usize, RevisionKind)],
+    byte_offset: usize,
+) -> Option<(usize, usize, RevisionKind)> {
+    spans
+        .iter()
+        .copied()
+        .find(|&(s, l, _)| s <= byte_offset && byte_offset < s + l)
+        .or_else(|| {
+            spans
+                .iter()
+                .copied()
+                .find(|&(s, l, _)| s + l == byte_offset)
+        })
+}
+
+/// Whether a single tracked change sits at `byte_offset` in the block at `path`
+/// (drives the per-change Accept/Reject buttons' enabled state).
+#[must_use]
+pub fn revision_at(loro: &LoroDoc, path: &BlockPath, byte_offset: usize) -> bool {
+    text_for_path(loro, path)
+        .map(|t| span_at(&revision_spans(&t), byte_offset).is_some())
+        .unwrap_or(false)
+}
+
+/// Accepts (`accept = true`) or rejects the single tracked change at
+/// `byte_offset` in the block at `path` (Review tab, 4a.2). Resolves the
+/// contiguous `MARK_REVISION` span at the caret — the unit the editor records
+/// (consecutive same-author edits coalesce into one span).
+///
+/// Returns the collapsed caret offset when a change was resolved (the change
+/// start if its text was removed, else the offset unchanged), or `None` when the
+/// caret is not on a change.
+///
+/// # Errors
+///
+/// [`MutationError`] for an underlying path / Loro error.
+pub fn accept_reject_revision_at(
+    loro: &LoroDoc,
+    path: &BlockPath,
+    byte_offset: usize,
+    accept: bool,
+) -> Result<Option<usize>, MutationError> {
+    let text = text_for_path(loro, path)?;
+    let Some((start, len, kind)) = span_at(&revision_spans(&text), byte_offset) else {
+        return Ok(None);
+    };
+    resolve_span(&text, start, len, kind, accept)?;
+    Ok(Some(if removes(kind, accept) {
+        start
+    } else {
+        byte_offset
+    }))
 }
 
 /// Accepts (`accept = true`) or rejects (`false`) **every** tracked change in the
