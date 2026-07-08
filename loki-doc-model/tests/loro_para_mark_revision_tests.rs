@@ -17,7 +17,8 @@ use loki_doc_model::loro_bridge::{document_to_loro, loro_to_document};
 use loki_doc_model::style::props::char_props::CharProps;
 use loki_doc_model::style::props::revision::{RevisionKind, RevisionMark};
 use loki_doc_model::{
-    BlockPath, accept_reject_all_revisions, set_para_mark_deletion, set_para_mark_deletion_at,
+    BlockPath, accept_reject_all_revisions, accept_reject_para_mark_at, para_mark_at,
+    set_para_mark_deletion, set_para_mark_deletion_at,
 };
 
 fn plain(text: &str) -> Block {
@@ -234,4 +235,44 @@ fn records_and_accepts_a_para_mark_inside_a_table_cell() {
     let back = loro_to_document(&loro).unwrap();
     assert_eq!(cell_texts(&back), vec!["aaabbb".to_string()]);
     assert!(!back.has_tracked_changes());
+}
+
+#[test]
+fn para_mark_at_detects_the_caret_paragraph() {
+    let loro = document_to_loro(&two_para_mark_deleted()).unwrap();
+    assert!(para_mark_at(&loro, &BlockPath::block(0))); // its ¶ is struck
+    assert!(!para_mark_at(&loro, &BlockPath::block(1))); // plain paragraph
+}
+
+#[test]
+fn per_change_accept_of_a_para_mark_merges() {
+    let loro = document_to_loro(&two_para_mark_deleted()).unwrap();
+    // Caret on block 0 (whose ¶ is struck): per-change Accept merges block 1 in.
+    let caret = accept_reject_para_mark_at(&loro, &BlockPath::block(0), true).unwrap();
+    assert_eq!(caret, Some(5)); // the join point (end of "first")
+    let back = loro_to_document(&loro).unwrap();
+    assert_eq!(back.sections[0].blocks.len(), 1);
+    assert_eq!(text(&back, 0), "firstsecond");
+    assert!(!back.has_tracked_changes());
+}
+
+#[test]
+fn per_change_reject_of_a_para_mark_clears_and_keeps_split() {
+    let loro = document_to_loro(&two_para_mark_deleted()).unwrap();
+    let caret = accept_reject_para_mark_at(&loro, &BlockPath::block(0), false).unwrap();
+    assert_eq!(caret, Some(5));
+    let back = loro_to_document(&loro).unwrap();
+    assert_eq!(back.sections[0].blocks.len(), 2);
+    assert!(!back.has_tracked_changes());
+}
+
+#[test]
+fn per_change_para_mark_is_none_without_a_mark() {
+    let mut doc = Document::new();
+    doc.sections[0].blocks = vec![plain("first"), plain("second")];
+    let loro = document_to_loro(&doc).unwrap();
+    assert_eq!(
+        accept_reject_para_mark_at(&loro, &BlockPath::block(0), true).unwrap(),
+        None
+    );
 }

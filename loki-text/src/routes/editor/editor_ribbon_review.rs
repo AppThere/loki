@@ -20,8 +20,9 @@ use appthere_ui::{
 };
 use dioxus::prelude::*;
 use loki_doc_model::{
-    MutationError, accept_reject_all_revisions, accept_reject_revision_at, document_track_changes,
-    revision_at, set_track_changes,
+    MutationError, accept_reject_all_revisions, accept_reject_para_mark_at,
+    accept_reject_revision_at, document_track_changes, para_mark_at, revision_at,
+    set_track_changes,
 };
 use loki_i18n::fl;
 
@@ -54,10 +55,10 @@ fn change_at_caret(
     let Some(focus) = cursor_state.read().focus.clone() else {
         return false;
     };
-    loro_doc
-        .read()
-        .as_ref()
-        .is_some_and(|l| revision_at(l, &focus.block_path(), focus.byte_offset))
+    loro_doc.read().as_ref().is_some_and(|l| {
+        let path = focus.block_path();
+        revision_at(l, &path, focus.byte_offset) || para_mark_at(l, &path)
+    })
 }
 
 /// Accepts/rejects the single tracked change at the caret, then repositions the
@@ -81,9 +82,15 @@ fn accept_reject_at_caret(
         let Some(ldoc) = guard.as_ref() else {
             return;
         };
-        let Ok(Some(off)) = accept_reject_revision_at(ldoc, &path, focus.byte_offset, accept)
-        else {
-            return; // no change at the caret, or an error — nothing mutated
+        // A text-run change at the caret; failing that, a paragraph-mark deletion
+        // on the caret's paragraph. No change → nothing mutated.
+        let off = match accept_reject_revision_at(ldoc, &path, focus.byte_offset, accept) {
+            Ok(Some(off)) => off,
+            Ok(None) => match accept_reject_para_mark_at(ldoc, &path, accept) {
+                Ok(Some(off)) => off,
+                _ => return,
+            },
+            Err(_) => return,
         };
         apply_mutation_and_relayout(doc_state, ldoc);
         off

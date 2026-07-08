@@ -17,7 +17,7 @@
 use loro::{LoroDoc, LoroMap, LoroMovableList};
 
 use super::block::merge_block_in_list;
-use super::nested::resolve_block_map;
+use super::nested::{resolve_block_list, resolve_block_map, text_for_path};
 use super::{BlockPath, MutationError, get_block_map_and_list, section_blocks_list};
 use crate::loro_schema::{
     BLOCK_TYPE_PARA, BLOCK_TYPE_STYLED_PARA, KEY_DIRECT_CHAR_PROPS, KEY_NOTES, KEY_SECTIONS,
@@ -103,6 +103,49 @@ fn read_para_mark(map: &LoroMap) -> Option<RevisionKind> {
         .and_then(|v| v.into_string().ok())
         .and_then(|s| decode(&s))
         .map(|m| m.kind)
+}
+
+/// Whether the paragraph addressed by `path` has a tracked ¶ deletion (drives
+/// the per-change Accept/Reject buttons when the caret is on such a paragraph).
+#[must_use]
+pub fn para_mark_at(loro: &LoroDoc, path: &BlockPath) -> bool {
+    resolve_block_map(loro, path)
+        .map(|m| read_para_mark(&m) == Some(RevisionKind::Deletion))
+        .unwrap_or(false)
+}
+
+/// Accepts/rejects the single paragraph-mark deletion on the block at `path`
+/// (the per-change action when the caret sits on a paragraph whose ¶ is struck).
+/// Accept merges the successor into this paragraph; reject clears the mark.
+/// Returns the collapsed caret offset (the paragraph's end, where the ¶ was), or
+/// `None` when this paragraph has no ¶ deletion.
+///
+/// # Errors
+///
+/// [`MutationError`] for an underlying path / Loro error.
+pub fn accept_reject_para_mark_at(
+    loro: &LoroDoc,
+    path: &BlockPath,
+    accept: bool,
+) -> Result<Option<usize>, MutationError> {
+    let map = resolve_block_map(loro, path)?;
+    if read_para_mark(&map) != Some(RevisionKind::Deletion) {
+        return Ok(None);
+    }
+    // The caret lands at this paragraph's end (its length equals the join offset
+    // after a merge, and is unchanged by a reject).
+    let caret = text_for_path(loro, path)?.len_utf8();
+    if accept {
+        let (list, local) = resolve_block_list(loro, path)?;
+        if local + 1 < list.len() {
+            match merge_block_in_list(&list, local + 1, 0) {
+                Ok(_) | Err(MutationError::TextNotFound(_)) => {}
+                Err(e) => return Err(e),
+            }
+        }
+    }
+    clear_para_mark(&map)?;
+    Ok(Some(caret))
 }
 
 /// Clears a block's paragraph-mark revision (its ¶ is no longer tracked-deleted).

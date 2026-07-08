@@ -63,7 +63,9 @@ pub use self::page::{
     set_document_columns, set_document_margins, set_document_orientation, set_document_page_size,
 };
 pub use self::page_style::{rename_page_style, set_page_style_geometry};
-pub use self::para_mark::{set_para_mark_deletion, set_para_mark_deletion_at};
+pub use self::para_mark::{
+    accept_reject_para_mark_at, para_mark_at, set_para_mark_deletion, set_para_mark_deletion_at,
+};
 pub use self::revision::{
     accept_reject_all_revisions, accept_reject_revision_at, revision_at, tracked_grapheme_delete,
 };
