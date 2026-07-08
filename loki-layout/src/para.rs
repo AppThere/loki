@@ -23,13 +23,12 @@ use parley::{
 use crate::color::LayoutColor;
 use crate::font::FontResources;
 use crate::geometry::{LayoutInsets, LayoutRect};
-use crate::items::{
-    BorderEdge, DecorationKind, PositionedBorderRect, PositionedDecoration, PositionedItem,
-    PositionedRect,
-};
+use crate::items::{BorderEdge, PositionedBorderRect, PositionedItem, PositionedRect};
 
 #[path = "para_tabs.rs"]
 mod tabs;
+#[path = "para_underlays.rs"]
+mod underlays;
 
 /// Vertical text position for superscript / subscript runs.
 ///
@@ -890,15 +889,6 @@ pub fn layout_paragraph(
     )
 }
 
-/// Colour of the spelling squiggle (opaque red), matching the convention used
-/// by desktop word processors for misspelled words.
-const SPELL_SQUIGGLE_COLOR: LayoutColor = LayoutColor {
-    r: 0.84,
-    g: 0.0,
-    b: 0.0,
-    a: 1.0,
-};
-
 /// [`layout_paragraph`] with an optional spell checker.
 ///
 /// When `spell` is `Some`, misspelled words emit [`DecorationKind::Spelling`]
@@ -1405,87 +1395,25 @@ fn layout_paragraph_uncached(
         _ => None,
     };
 
-    // ── Highlight / background underlay (gap #10) ─────────────────────────────
-    // Emit a filled rect for each highlighted span via Parley selection geometry.
-    // This is robust to Parley shaping adjacent runs of the same font/colour
-    // (which may differ only in highlight colour — an attribute Parley does not
-    // track) into a single glyph run: selection geometry resolves the exact
-    // per-line extent of any byte range. Emitted before the glyph runs so the
-    // fill sits behind the text; `span.highlight_color` already folds in the
-    // run-shading (`w:shd`/`fo:background-color`) fallback.
-    for span in &clean_spans {
-        let Some(hl) = span.highlight_color else {
-            continue;
-        };
-        if span.range.start >= span.range.end {
-            continue;
-        }
-        let anchor =
-            Cursor::from_byte_index(&layout, span.range.start, parley::Affinity::Downstream);
-        let focus = Cursor::from_byte_index(&layout, span.range.end, parley::Affinity::Downstream);
-        for (bb, line_idx) in Selection::new(anchor, focus).geometry(&layout) {
-            let mut indent = if line_idx == 0 && para_props.indent_hanging > 0.0 {
-                para_props.indent_start - para_props.indent_hanging
-            } else {
-                para_props.indent_start
-            };
-            if line_idx < drop_lines {
-                indent += drop_shift;
-            }
-            items.push(PositionedItem::FilledRect(PositionedRect {
-                rect: LayoutRect::new(
-                    bb.x0 as f32 + indent,
-                    bb.y0 as f32,
-                    (bb.x1 - bb.x0) as f32,
-                    (bb.y1 - bb.y0) as f32,
-                ),
-                color: hl,
-            }));
-        }
-    }
-
-    // ── Spelling squiggles ────────────────────────────────────────────────────
-    // When a checker is supplied, flag misspelled words with a wavy underline.
-    // Word byte ranges are resolved to per-line extents with the same Parley
-    // selection-geometry pass as the highlight underlay (so the squiggle tracks
-    // wrapping and coalesced runs), then emitted as `DecorationKind::Spelling`
-    // decorations the renderer paints as a wave.
-    if let Some(spell) = spell {
-        for miss in spell.checker.check_text(&clean_text) {
-            if miss.range.start >= miss.range.end {
-                continue;
-            }
-            let anchor =
-                Cursor::from_byte_index(&layout, miss.range.start, parley::Affinity::Downstream);
-            let focus =
-                Cursor::from_byte_index(&layout, miss.range.end, parley::Affinity::Downstream);
-            for (bb, line_idx) in Selection::new(anchor, focus).geometry(&layout) {
-                let mut indent = if line_idx == 0 && para_props.indent_hanging > 0.0 {
-                    para_props.indent_start - para_props.indent_hanging
-                } else {
-                    para_props.indent_start
-                };
-                if line_idx < drop_lines {
-                    indent += drop_shift;
-                }
-                // Thickness scales with line height; the wave is anchored near the
-                // line-box bottom (just below the glyphs). The exact baseline
-                // offset is approximate — selection geometry yields the line box,
-                // not per-run metrics — but reads correctly as an under-word
-                // squiggle. TODO(spell-baseline): tighten to the run underline
-                // offset once verified against the GPU renderer at multiple zooms.
-                let thickness = (((bb.y1 - bb.y0) as f32) * 0.06).clamp(0.7, 1.5);
-                items.push(PositionedItem::Decoration(PositionedDecoration {
-                    x: bb.x0 as f32 + indent,
-                    y: bb.y1 as f32 - thickness * 2.5,
-                    width: (bb.x1 - bb.x0) as f32,
-                    thickness,
-                    kind: DecorationKind::Spelling,
-                    color: SPELL_SQUIGGLE_COLOR,
-                }));
-            }
-        }
-    }
+    // Highlight/background underlay (gap #10) and spelling squiggles: resolved
+    // via Parley selection geometry and emitted behind the glyph runs.
+    underlays::emit_highlight_underlays(
+        &mut items,
+        &layout,
+        &clean_spans,
+        para_props,
+        drop_lines,
+        drop_shift,
+    );
+    underlays::emit_spelling_squiggles(
+        &mut items,
+        &layout,
+        &clean_text,
+        spell,
+        para_props,
+        drop_lines,
+        drop_shift,
+    );
 
     for line in layout.lines() {
         // Index into `items` where this line's emitted items begin (used to wrap

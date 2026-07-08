@@ -186,7 +186,10 @@ baseline file. Three techniques (the third added 2026-07-08):
    narrowest scope is acceptable, per the `flow_cell_blocks` precedent). Done
    2026-07-08 for `flow.rs`'s `flow_table` (~420 lines): row-height measurement +
    cell-decoration passes → `flow_table_paint.rs` (`table_paint` submodule),
-   `flow.rs` 1535 → 1362.
+   `flow.rs` 1535 → 1362; and for `para.rs`'s `layout_paragraph_uncached`
+   (~630 lines): the two selection-geometry underlay passes (highlight fills +
+   spelling squiggles) → `para_underlays.rs` (`underlays` submodule),
+   `para.rs` 1698 → 1626.
 
 (Test files are exempt from the production-line count.)
 
