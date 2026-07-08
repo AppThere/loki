@@ -710,3 +710,74 @@ fn text_of_block(block: &Block) -> String {
         .collect::<Vec<_>>()
         .join("")
 }
+
+/// A cell with a background colour must survive ODT export → import: the
+/// writer emits an automatic `table-cell` style carrying `fo:background-color`,
+/// referenced by the cell's `table:style-name`. This is ODF's per-cell
+/// representation of table shading / banding.
+#[test]
+fn cell_background_round_trips_via_table_cell_style() {
+    use loki_doc_model::content::table::core::{Table, TableBody, TableFoot, TableHead};
+    use loki_doc_model::content::table::row::{Cell, CellProps, Row};
+    use loki_primitives::color::{DocumentColor, RgbColor};
+
+    let blue = DocumentColor::Rgb(RgbColor::new(
+        0x44 as f32 / 255.0,
+        0x72 as f32 / 255.0,
+        0xC4 as f32 / 255.0,
+    ));
+
+    // Row 1: shaded cell + plain cell. Row 2: both plain.
+    let shaded = Cell {
+        props: CellProps {
+            background_color: Some(blue),
+            ..CellProps::default()
+        },
+        ..Cell::simple(vec![Block::Para(vec![Inline::Str("hdr".into())])])
+    };
+    let plain = |t: &str| Cell::simple(vec![Block::Para(vec![Inline::Str(t.into())])]);
+    let table = Table {
+        attr: NodeAttr::default(),
+        caption: Default::default(),
+        width: None,
+        col_specs: vec![],
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![
+            Row::new(vec![shaded, plain("b")]),
+            Row::new(vec![plain("c"), plain("d")]),
+        ])],
+        foot: TableFoot::empty(),
+    };
+
+    let mut doc = Document::new();
+    doc.sections[0].blocks = vec![Block::Table(Box::new(table))];
+
+    let back = round_trip(&doc);
+
+    let t = back.sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            Block::Table(t) => Some(t.as_ref()),
+            _ => None,
+        })
+        .expect("table survives");
+    let first_cell = &t.bodies[0].body_rows[0].cells[0];
+    assert_eq!(
+        first_cell
+            .props
+            .background_color
+            .as_ref()
+            .and_then(DocumentColor::to_hex)
+            .as_deref(),
+        Some("#4472C4"),
+        "shaded cell keeps its background"
+    );
+    // The plain neighbour stays unshaded.
+    assert!(
+        t.bodies[0].body_rows[0].cells[1]
+            .props
+            .background_color
+            .is_none()
+    );
+}

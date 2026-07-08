@@ -33,6 +33,11 @@ fn table_row(out: &mut String, row: &Row, cx: &mut Cx) {
     out.push_str("<table:table-row>");
     for cell in &row.cells {
         out.push_str("<table:table-cell");
+        // Direct cell shading → an automatic `table-cell` style (ODF's
+        // per-cell representation of table shading / banding).
+        if let Some(style) = cx.auto.cell_style(&cell.props) {
+            attr(out, "table:style-name", &style);
+        }
         if cell.col_span > 1 {
             attr(
                 out,
