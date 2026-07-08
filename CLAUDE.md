@@ -176,7 +176,8 @@ baseline file. Three techniques (the third added 2026-07-08):
    four table-geometry helpers → `flow_table_geom.rs` (`table_geom` submodule),
    and the PAGE/NUMPAGES field cluster → `flow_page_fields.rs` (`page_fields`
    submodule; a `pub(crate)` item used elsewhere is re-exported from `flow.rs`
-   so its external path stays stable).
+   so its external path stays stable). Also `loki-layout/src/para.rs`
+   (1856 → 1698): the tab-stop cluster → `para_tabs.rs` (`tabs` submodule).
 
 (Test files are exempt from the production-line count.)
 
