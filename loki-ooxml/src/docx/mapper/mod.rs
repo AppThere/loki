@@ -207,6 +207,7 @@ pub(crate) mod paragraph;
 pub(crate) mod props;
 pub(crate) mod styles;
 pub(crate) mod table;
+pub(crate) mod table_look;
 
 // DocxSettings.even_and_odd_headers is now wired through map_document (Session 7).
 // DocxSettings.default_tab_stop and title_pg remain unused pending further work.

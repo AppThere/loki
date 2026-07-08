@@ -110,6 +110,31 @@ pub struct DocxTblPr {
     pub width: Option<DocxTblWidth>,
     /// `w:tblLayout @w:type` — `"fixed"` or `"autofit"` (the default).
     pub layout: Option<String>,
+    /// `w:tblLook` region flags — which conditional style regions apply.
+    pub tbl_look: Option<DocxTblLook>,
+}
+
+/// `w:tblLook` region flags (ECMA-376 §17.4.56) selecting which conditional
+/// style regions apply to a table instance. Parsed from the explicit
+/// attributes (`w:firstRow`, …) or the legacy `w:val` bitmask.
+// The six flags mirror the OOXML `w:tblLook` bit fields one-for-one — a
+// struct of bools is the faithful representation.
+#[allow(clippy::struct_excessive_bools)]
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DocxTblLook {
+    /// Apply the header-row (`firstRow`) conditional format.
+    pub first_row: bool,
+    /// Apply the total-row (`lastRow`) conditional format.
+    pub last_row: bool,
+    /// Apply the first-column conditional format.
+    pub first_column: bool,
+    /// Apply the last-column conditional format.
+    pub last_column: bool,
+    /// Apply row (horizontal) banding — `true` when `noHBand` is off.
+    pub h_band: bool,
+    /// Apply column (vertical) banding — `true` when `noVBand` is off.
+    pub v_band: bool,
 }
 
 /// Table width specification from `w:tblW` (ECMA-376 §17.4.63).

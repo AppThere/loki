@@ -49,16 +49,51 @@ fn resolve_table_style_finds_a_referenced_style() {
 #[test]
 fn cell_style_shading_applies_the_header_row_under_default_look() {
     // Word's default look enables firstRow, so the header row is shaded.
+    let look = TableLook::default();
     let style = styled("Grid", TableRegion::FirstRow, rgb(10, 20, 30));
     assert_eq!(
-        cell_style_shading(Some(&style), 0, 1, 4, 3),
+        cell_style_shading(Some(&style), &look, 0, 1, 4, 3),
         Some(rgb(10, 20, 30))
     );
     // A body cell is not in the first row → no shading from this style.
-    assert_eq!(cell_style_shading(Some(&style), 1, 1, 4, 3), None);
+    assert_eq!(cell_style_shading(Some(&style), &look, 1, 1, 4, 3), None);
+}
+
+#[test]
+fn tbl_look_with_first_row_off_suppresses_header_shading() {
+    // A look with firstRow disabled means the header-row region does not apply.
+    let look = TableLook {
+        first_row: false,
+        ..TableLook::default()
+    };
+    let style = styled("Grid", TableRegion::FirstRow, rgb(10, 20, 30));
+    assert_eq!(cell_style_shading(Some(&style), &look, 0, 1, 4, 3), None);
 }
 
 #[test]
 fn no_style_means_no_shading() {
-    assert_eq!(cell_style_shading(None, 0, 0, 4, 4), None);
+    let look = TableLook::default();
+    assert_eq!(cell_style_shading(None, &look, 0, 0, 4, 4), None);
+}
+
+#[test]
+fn table_look_reads_the_encoded_attr_or_defaults() {
+    use loki_doc_model::content::table::core::Table;
+
+    // A table with no encoded look → the format default.
+    let plain = Table::grid(2, 2);
+    assert_eq!(table_look(&plain), TableLook::default());
+
+    // A table carrying an encoded last-row/last-column look decodes to it.
+    let mut styled_tbl = Table::grid(2, 2);
+    let want = TableLook {
+        first_row: false,
+        last_row: true,
+        first_column: false,
+        last_column: true,
+        horizontal_banding: false,
+        vertical_banding: true,
+    };
+    styled_tbl.set_table_look_code(Some(want.encode_attr()));
+    assert_eq!(table_look(&styled_tbl), want);
 }

@@ -16,8 +16,8 @@ use crate::docx::model::paragraph::{
     DocxRPr, DocxRun, DocxRunChild, DocxSectPr, DocxSpacing, DocxTab,
 };
 use crate::docx::model::styles::{
-    DocxCellMargins, DocxTableCell, DocxTableModel, DocxTableRow, DocxTblPr, DocxTblWidth,
-    DocxTcBorders, DocxTcPr, DocxTextDirection, DocxTrPr, DocxVAlign,
+    DocxCellMargins, DocxTableCell, DocxTableModel, DocxTableRow, DocxTblLook, DocxTblPr,
+    DocxTblWidth, DocxTcBorders, DocxTcPr, DocxTextDirection, DocxTrPr, DocxVAlign,
 };
 use crate::docx::reader::runs::{parse_fld_simple_runs, parse_hyperlink_runs, parse_tracked_runs};
 use crate::docx::reader::util::{attr_val, local_name, parse_emu, toggle_prop};
@@ -873,6 +873,9 @@ fn parse_tbl_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTblPr> {
                 b"tblLayout" => {
                     pr.layout = attr_val(e, b"type");
                 }
+                b"tblLook" => {
+                    pr.tbl_look = Some(parse_tbl_look(e));
+                }
                 _ => {}
             },
             Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"tblPr" => {
@@ -890,6 +893,28 @@ fn parse_tbl_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTblPr> {
         buf.clear();
     }
     Ok(pr)
+}
+
+/// Parses a `w:tblLook` element (ECMA-376 §17.4.56). Prefers the explicit
+/// boolean attributes (`w:firstRow`, …); falls back to the legacy `w:val`
+/// hex bitmask. `noHBand`/`noVBand` are inverted into positive banding flags.
+fn parse_tbl_look(e: &quick_xml::events::BytesStart<'_>) -> DocxTblLook {
+    let flag = |name: &[u8]| attr_val(e, name).map(|v| v == "1" || v == "true");
+    let val = attr_val(e, b"val").and_then(|v| u32::from_str_radix(&v, 16).ok());
+    let bit = |mask: u32| val.map(|v| v & mask != 0);
+    // Banding is on unless the corresponding `no*Band` bit/flag is set.
+    let banding =
+        |flag_name: &[u8], mask: u32| flag(flag_name).or_else(|| bit(mask)).is_some_and(|no| !no);
+    DocxTblLook {
+        first_row: flag(b"firstRow").or_else(|| bit(0x0020)).unwrap_or(false),
+        last_row: flag(b"lastRow").or_else(|| bit(0x0040)).unwrap_or(false),
+        first_column: flag(b"firstColumn")
+            .or_else(|| bit(0x0080))
+            .unwrap_or(false),
+        last_column: flag(b"lastColumn").or_else(|| bit(0x0100)).unwrap_or(false),
+        h_band: banding(b"noHBand", 0x0200),
+        v_band: banding(b"noVBand", 0x0400),
+    }
 }
 
 /// Parses a `w:tr` element. Called after Start("tr") is consumed.

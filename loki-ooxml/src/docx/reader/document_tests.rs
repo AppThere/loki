@@ -57,3 +57,37 @@ fn final_sect_pr_parsed() {
     assert_eq!(pg_sz.w, 12240);
     assert_eq!(pg_sz.h, 15840);
 }
+
+#[test]
+fn parse_tbl_look_reads_the_legacy_val_bitmask() {
+    use quick_xml::events::BytesStart;
+    // 0x04A0 = firstRow + firstColumn + noVBand (Word's default look).
+    let e = BytesStart::new("w:tblLook").with_attributes([("w:val", "04A0")]);
+    let look = parse_tbl_look(&e);
+    assert!(look.first_row);
+    assert!(look.first_column);
+    assert!(look.h_band); // noHBand off → horizontal banding on
+    assert!(!look.last_row);
+    assert!(!look.last_column);
+    assert!(!look.v_band); // noVBand set → vertical banding off
+}
+
+#[test]
+fn parse_tbl_look_prefers_explicit_attributes() {
+    use quick_xml::events::BytesStart;
+    let e = BytesStart::new("w:tblLook").with_attributes([
+        ("w:firstRow", "0"),
+        ("w:lastRow", "1"),
+        ("w:firstColumn", "0"),
+        ("w:lastColumn", "1"),
+        ("w:noHBand", "1"), // banding off
+        ("w:noVBand", "0"), // banding on
+    ]);
+    let look = parse_tbl_look(&e);
+    assert!(!look.first_row);
+    assert!(look.last_row);
+    assert!(!look.first_column);
+    assert!(look.last_column);
+    assert!(!look.h_band);
+    assert!(look.v_band);
+}

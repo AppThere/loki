@@ -1181,6 +1181,63 @@ fn table_style_banding_shades_the_header_row() {
     );
 }
 
+/// The same banded style, but the table's `w:tblLook` disables the first-row
+/// region → the header shading must be suppressed. Proof the flow engine reads
+/// the instance's encoded look, not just the style's default.
+#[test]
+fn table_look_disabling_first_row_suppresses_style_shading() {
+    use appthere_color::RgbColor;
+    use loki_doc_model::style::catalog::StyleId;
+    use loki_doc_model::style::table_style::{
+        TableConditionalFormat, TableLook, TableRegion, TableStyle,
+    };
+
+    let mut catalog = StyleCatalog::new();
+    let mut style = TableStyle {
+        id: StyleId::new("Banded"),
+        display_name: None,
+        parent: None,
+        table_props: Default::default(),
+        conditional: Default::default(),
+        extensions: ExtensionBag::default(),
+    };
+    style.conditional.insert(
+        TableRegion::FirstRow,
+        TableConditionalFormat {
+            background_color: Some(DocumentColor::Rgb(RgbColor::new(0.0, 0.0, 1.0))),
+        },
+    );
+    catalog.table_styles.insert(StyleId::new("Banded"), style);
+
+    let Block::Table(mut table) = make_table_2x2(None) else {
+        unreachable!("make_table_2x2 builds a Block::Table")
+    };
+    table.set_style_name(Some("Banded".into()));
+    let look = TableLook {
+        first_row: false,
+        ..TableLook::default()
+    };
+    table.set_table_look_code(Some(look.encode_attr()));
+
+    let section = Section {
+        page_style: None,
+        layout: PageLayout::default(),
+        start: Default::default(),
+        blocks: vec![Block::Table(table)],
+        extensions: ExtensionBag::default(),
+    };
+    let mut r = test_resources();
+    let (items, _, _) = flow_with_catalog(&mut r, &section, &catalog);
+    let filled = items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::FilledRect(_)))
+        .count();
+    assert_eq!(
+        filled, 0,
+        "firstRow off in the look → no shading, got {filled}"
+    );
+}
+
 /// A cell with borders should produce a `BorderRect` item.
 #[test]
 fn table_cell_borders_produce_border_rect() {

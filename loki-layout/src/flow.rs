@@ -44,7 +44,7 @@ use crate::resolve::{
     CollectedNote, convert_border, pts_to_f32, resolve_color, resolve_para_props,
 };
 use crate::result::{LayoutPage, PageEditingData, PageParagraphData};
-use crate::table_shading::{cell_style_shading, resolve_table_style};
+use crate::table_shading::{cell_style_shading, resolve_table_style, table_look};
 
 use para_impl::{flow_keep_with_next_chain, flow_paragraph};
 
@@ -1544,9 +1544,9 @@ fn flow_table(
     // left (overlapping the merged cell) — the TC-DOCX-005 L-merge bug.
     let cell_cols = assign_cell_columns(&rows, col_widths.len());
 
-    // The table's named style supplies conditional/banding cell shading,
-    // applied under any direct cell shading in Pass 3b.
+    // Named style + `w:tblLook` → conditional/banding shading (under direct).
     let table_style = resolve_table_style(state.catalog, tbl.style_name());
+    let look = table_look(tbl);
     let (grid_rows, grid_cols) = (rows.len(), col_widths.len());
 
     let mut row_heights = vec![0.0f32; rows.len()];
@@ -1882,7 +1882,7 @@ fn flow_table(
 
                 // Direct cell shading wins, else the table style's banding.
                 let cell_bg = cell.props.background_color.clone().or_else(|| {
-                    cell_style_shading(table_style, row_idx, col_start, grid_rows, grid_cols)
+                    cell_style_shading(table_style, &look, row_idx, col_start, grid_rows, grid_cols)
                 });
 
                 let is_first = p == cell_page_start;

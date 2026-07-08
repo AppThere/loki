@@ -180,6 +180,28 @@ impl Table {
         }
     }
 
+    /// The encoded OOXML `w:tblLook` region flags for this table instance,
+    /// stored in [`NodeAttr`]'s `"tbllook"` key (see `TableLook::encode_attr`).
+    /// `None` ⇒ consumers assume the format default. Selects which of the
+    /// referenced style's conditional regions apply to this table. Stored as an
+    /// opaque string so `content` need not depend on the `style` module.
+    #[must_use]
+    pub fn table_look_code(&self) -> Option<&str> {
+        self.attr
+            .kv
+            .iter()
+            .find(|(k, _)| k == "tbllook")
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// Sets (or, with `None`, clears) the encoded `w:tblLook` region flags.
+    pub fn set_table_look_code(&mut self, code: Option<String>) {
+        self.attr.kv.retain(|(k, _)| k != "tbllook");
+        if let Some(code) = code {
+            self.attr.kv.push(("tbllook".to_string(), code));
+        }
+    }
+
     /// Builds a `rows` × `cols` table of empty paragraph cells with evenly
     /// proportioned columns — the shape the editor's Insert → Table control
     /// creates. Each cell holds one empty `Block::Para` so it is immediately

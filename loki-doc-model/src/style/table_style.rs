@@ -163,6 +163,49 @@ impl Default for TableLook {
     }
 }
 
+impl TableLook {
+    /// Encode the six region flags as a compact six-character `0`/`1` string in
+    /// the order first-row, last-row, first-column, last-column, horizontal
+    /// banding, vertical banding — for storage on a table instance's
+    /// [`NodeAttr`]. Format-neutral (independent of the OOXML `w:tblLook`
+    /// bitmask layout, which the DOCX mapper owns).
+    ///
+    /// [`NodeAttr`]: crate::content::attr::NodeAttr
+    #[must_use]
+    pub fn encode_attr(&self) -> String {
+        let bit = |on: bool| if on { '1' } else { '0' };
+        [
+            bit(self.first_row),
+            bit(self.last_row),
+            bit(self.first_column),
+            bit(self.last_column),
+            bit(self.horizontal_banding),
+            bit(self.vertical_banding),
+        ]
+        .iter()
+        .collect()
+    }
+
+    /// Decode a string produced by [`Self::encode_attr`]. Returns `None` unless
+    /// the input is exactly six `0`/`1` characters.
+    #[must_use]
+    pub fn decode_attr(s: &str) -> Option<Self> {
+        let b = s.as_bytes();
+        if b.len() != 6 || b.iter().any(|&c| c != b'0' && c != b'1') {
+            return None;
+        }
+        let on = |i: usize| b[i] == b'1';
+        Some(Self {
+            first_row: on(0),
+            last_row: on(1),
+            first_column: on(2),
+            last_column: on(3),
+            horizontal_banding: on(4),
+            vertical_banding: on(5),
+        })
+    }
+}
+
 /// A named table style.
 ///
 /// TR 29166 §7.2.4 (Table XML structure comparison).
@@ -221,5 +264,31 @@ mod tests {
         assert!(!look.last_row);
         assert!(!look.last_column);
         assert!(!look.vertical_banding);
+    }
+
+    #[test]
+    fn table_look_attr_round_trips() {
+        for look in [
+            TableLook::default(),
+            TableLook {
+                first_row: false,
+                last_row: true,
+                first_column: false,
+                last_column: true,
+                horizontal_banding: false,
+                vertical_banding: true,
+            },
+        ] {
+            assert_eq!(TableLook::decode_attr(&look.encode_attr()), Some(look));
+        }
+        assert_eq!(TableLook::default().encode_attr(), "101010");
+    }
+
+    #[test]
+    fn table_look_decode_rejects_malformed() {
+        assert_eq!(TableLook::decode_attr(""), None);
+        assert_eq!(TableLook::decode_attr("10101"), None);
+        assert_eq!(TableLook::decode_attr("1010102"), None);
+        assert_eq!(TableLook::decode_attr("10101x"), None);
     }
 }
