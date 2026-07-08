@@ -7,7 +7,6 @@
 
 use std::collections::HashMap;
 
-use loki_doc_model::content::table::row::CellProps;
 use loki_doc_model::style::props::char_props::CharProps;
 use loki_doc_model::style::props::para_props::ParaProps;
 use loki_primitives::color::DocumentColor;
@@ -122,13 +121,13 @@ impl AutoStyles {
     }
 
     /// Returns the automatic `family="table-cell"` style name for a cell's
-    /// direct properties, or `None` when the cell carries no exportable cell
-    /// formatting. Only `background_color` (`fo:background-color`) is emitted
-    /// today — the ODF-native representation of table-style banding, since ODF
-    /// bakes region shading into per-cell styles rather than conditional
-    /// regions. (Cell borders/padding export is future work.)
-    pub(super) fn cell_style(&mut self, props: &CellProps) -> Option<String> {
-        let cell_props = emit_cell_properties(props);
+    /// effective `background` (its direct shading or the resolved table-style
+    /// banding), or `None` when there is none. `fo:background-color` is the
+    /// ODF-native representation of table-style banding, since ODF bakes region
+    /// shading into per-cell styles rather than conditional regions. (Cell
+    /// borders/padding export is future work.)
+    pub(super) fn cell_style(&mut self, background: Option<&DocumentColor>) -> Option<String> {
+        let cell_props = emit_cell_properties(background);
         if cell_props.is_empty() {
             return None;
         }
@@ -151,12 +150,8 @@ impl AutoStyles {
 
 /// Serialises a cell's exportable direct properties as a
 /// `<style:table-cell-properties/>` element, or an empty string when none.
-fn emit_cell_properties(props: &CellProps) -> String {
-    let Some(hex) = props
-        .background_color
-        .as_ref()
-        .and_then(DocumentColor::to_hex)
-    else {
+fn emit_cell_properties(background: Option<&DocumentColor>) -> String {
+    let Some(hex) = background.and_then(DocumentColor::to_hex) else {
         return String::new();
     };
     format!("<style:table-cell-properties fo:background-color=\"{hex}\"/>")
@@ -167,28 +162,25 @@ mod tests {
     use super::*;
     use loki_primitives::color::RgbColor;
 
-    fn bg(r: u8, g: u8, b: u8) -> CellProps {
-        CellProps {
-            background_color: Some(DocumentColor::Rgb(RgbColor::new(
-                f32::from(r) / 255.0,
-                f32::from(g) / 255.0,
-                f32::from(b) / 255.0,
-            ))),
-            ..CellProps::default()
-        }
+    fn color(r: u8, g: u8, b: u8) -> DocumentColor {
+        DocumentColor::Rgb(RgbColor::new(
+            f32::from(r) / 255.0,
+            f32::from(g) / 255.0,
+            f32::from(b) / 255.0,
+        ))
     }
 
     #[test]
     fn cell_style_emits_background_and_dedupes() {
         let mut a = AutoStyles::new();
         let n1 = a
-            .cell_style(&bg(0x44, 0x72, 0xC4))
+            .cell_style(Some(&color(0x44, 0x72, 0xC4)))
             .expect("shaded cell → style");
         // Same colour reuses the same style name.
-        let n2 = a.cell_style(&bg(0x44, 0x72, 0xC4)).unwrap();
+        let n2 = a.cell_style(Some(&color(0x44, 0x72, 0xC4))).unwrap();
         assert_eq!(n1, n2);
         // A different colour gets a distinct name.
-        let n3 = a.cell_style(&bg(0xFF, 0x00, 0x00)).unwrap();
+        let n3 = a.cell_style(Some(&color(0xFF, 0x00, 0x00))).unwrap();
         assert_ne!(n1, n3);
 
         let xml = a.render();
@@ -200,7 +192,7 @@ mod tests {
     #[test]
     fn a_cell_without_shading_gets_no_style() {
         let mut a = AutoStyles::new();
-        assert_eq!(a.cell_style(&CellProps::default()), None);
+        assert_eq!(a.cell_style(None), None);
         assert!(a.render().is_empty());
     }
 }

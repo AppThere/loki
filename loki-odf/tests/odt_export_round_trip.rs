@@ -781,3 +781,93 @@ fn cell_background_round_trips_via_table_cell_style() {
             .is_none()
     );
 }
+
+/// A table referencing a banded style (with no direct cell shading) exports to
+/// ODT with the banding **resolved into per-cell backgrounds** (ODF's model),
+/// so the header row comes back shaded while the body row does not.
+#[test]
+fn table_style_banding_resolves_into_per_cell_shading_on_odt_export() {
+    use loki_doc_model::content::table::core::{Table, TableBody, TableFoot, TableHead};
+    use loki_doc_model::content::table::row::{Cell, Row};
+    use loki_doc_model::style::table_style::{
+        TableConditionalFormat, TableProps, TableRegion, TableStyle,
+    };
+    use loki_primitives::color::{DocumentColor, RgbColor};
+
+    let blue = DocumentColor::Rgb(RgbColor::new(
+        0x44 as f32 / 255.0,
+        0x72 as f32 / 255.0,
+        0xC4 as f32 / 255.0,
+    ));
+
+    // Style with header-row shading only.
+    let mut style = TableStyle {
+        id: StyleId::new("Banded"),
+        display_name: Some("Banded".into()),
+        parent: None,
+        table_props: TableProps::default(),
+        conditional: Default::default(),
+        extensions: Default::default(),
+    };
+    style.conditional.insert(
+        TableRegion::FirstRow,
+        TableConditionalFormat {
+            background_color: Some(blue.clone()),
+        },
+    );
+
+    // A 2×2 table with no direct cell shading, referencing "Banded".
+    let cell = |t: &str| Cell::simple(vec![Block::Para(vec![Inline::Str(t.into())])]);
+    let mut table = Table {
+        attr: NodeAttr::default(),
+        caption: Default::default(),
+        width: None,
+        col_specs: vec![],
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![
+            Row::new(vec![cell("a"), cell("b")]),
+            Row::new(vec![cell("c"), cell("d")]),
+        ])],
+        foot: TableFoot::empty(),
+    };
+    table.set_style_name(Some("Banded".into()));
+
+    let mut doc = Document::new();
+    doc.styles
+        .table_styles
+        .insert(StyleId::new("Banded"), style);
+    doc.sections[0].blocks = vec![Block::Table(Box::new(table))];
+
+    let back = round_trip(&doc);
+
+    let t = back.sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            Block::Table(t) => Some(t.as_ref()),
+            _ => None,
+        })
+        .expect("table survives");
+    let hex = |c: &Cell| {
+        c.props
+            .background_color
+            .as_ref()
+            .and_then(DocumentColor::to_hex)
+    };
+    // Header row (row 0): both cells shaded blue by the resolved firstRow band.
+    assert_eq!(
+        hex(&t.bodies[0].body_rows[0].cells[0]).as_deref(),
+        Some("#4472C4")
+    );
+    assert_eq!(
+        hex(&t.bodies[0].body_rows[0].cells[1]).as_deref(),
+        Some("#4472C4")
+    );
+    // Body row (row 1): no matching region → no shading.
+    assert!(
+        t.bodies[0].body_rows[1].cells[0]
+            .props
+            .background_color
+            .is_none()
+    );
+}
