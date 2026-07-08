@@ -2,7 +2,7 @@
 // Copyright 2026 AppThere Loki contributors
 
 use super::*;
-use crate::docx::model::styles::{DocxStyle, DocxStyleType};
+use crate::docx::model::styles::{DocxStyle, DocxStyleType, DocxTableStyleProps, DocxTblStylePr};
 
 fn make_styles(style_type: DocxStyleType, id: &str, name: &str) -> DocxStyles {
     DocxStyles {
@@ -19,6 +19,7 @@ fn make_styles(style_type: DocxStyleType, id: &str, name: &str) -> DocxStyles {
             link: None,
             ppr: None,
             rpr: None,
+            table: None,
         }],
     }
 }
@@ -50,6 +51,7 @@ fn paragraph_style_with_parent() {
             link: None,
             ppr: None,
             rpr: None,
+            table: None,
         }],
         ..Default::default()
     };
@@ -111,6 +113,7 @@ fn default_flagged_table_style_becomes_the_table_default() {
             link: None,
             ppr: None,
             rpr: None,
+            table: None,
         }],
     };
     let catalog = map_styles(&styles);
@@ -247,6 +250,7 @@ fn explicit_default_paragraph_style_is_preferred() {
             link: None,
             ppr: None,
             rpr: None,
+            table: None,
         }],
     };
     let catalog = map_styles(&styles);
@@ -279,6 +283,7 @@ fn duplicate_style_ids_last_definition_wins() {
                     bold: Some(true),
                     ..Default::default()
                 }),
+                table: None,
             },
             DocxStyle {
                 style_type: DocxStyleType::Paragraph,
@@ -295,6 +300,7 @@ fn duplicate_style_ids_last_definition_wins() {
                     bold: Some(false),
                     ..Default::default()
                 }),
+                table: None,
             },
         ],
     };
@@ -335,6 +341,7 @@ fn missing_normal_style_falls_back_to_doc_defaults() {
                 bold: Some(true),
                 ..Default::default()
             }),
+            table: None,
         }],
     };
     let catalog = map_styles(&styles);
@@ -351,4 +358,70 @@ fn missing_normal_style_falls_back_to_doc_defaults() {
     assert_eq!(resolved.font_size, Some(Points::new(11.0)));
     assert_eq!(resolved.font_name.as_deref(), Some("Calibri"));
     assert_eq!(resolved.bold, Some(true));
+}
+
+/// A table style with band sizes, base shading, and `w:tblStylePr` regions maps
+/// into `TableStyle.table_props` + the `conditional` region map; unknown region
+/// names and unshaded regions are skipped.
+#[test]
+fn table_style_conditional_formatting_maps() {
+    use loki_doc_model::style::table_style::TableRegion;
+
+    let table = DocxTableStyleProps {
+        row_band_size: Some(2),
+        col_band_size: None,
+        base_shd_fill: Some("FFFFFF".into()),
+        conditional: vec![
+            DocxTblStylePr {
+                region: "firstRow".into(),
+                shd_fill: Some("4472C4".into()),
+            },
+            DocxTblStylePr {
+                region: "band1Horz".into(),
+                shd_fill: Some("D9E2F3".into()),
+            },
+            // Unknown region → skipped.
+            DocxTblStylePr {
+                region: "bogusRegion".into(),
+                shd_fill: Some("000000".into()),
+            },
+            // Known region but no shading → skipped.
+            DocxTblStylePr {
+                region: "lastRow".into(),
+                shd_fill: None,
+            },
+        ],
+    };
+    let styles = DocxStyles {
+        default_rpr: None,
+        default_ppr: None,
+        styles: vec![DocxStyle {
+            style_type: DocxStyleType::Table,
+            style_id: "Banded".into(),
+            is_default: false,
+            is_custom: false,
+            name: Some("Banded".into()),
+            based_on: None,
+            next: None,
+            link: None,
+            ppr: None,
+            rpr: None,
+            table: Some(table),
+        }],
+    };
+
+    let catalog = map_styles(&styles);
+    let ts = catalog
+        .table_styles
+        .get(&StyleId::new("Banded"))
+        .expect("table style present");
+
+    assert_eq!(ts.table_props.row_band_size, Some(2));
+    assert_eq!(ts.table_props.col_band_size, None);
+    assert!(ts.table_props.background_color.is_some());
+    // Only the two shaded, known regions survive.
+    assert_eq!(ts.conditional.len(), 2);
+    assert!(ts.conditional.contains_key(&TableRegion::FirstRow));
+    assert!(ts.conditional.contains_key(&TableRegion::Band1Horz));
+    assert!(!ts.conditional.contains_key(&TableRegion::LastRow));
 }

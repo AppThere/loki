@@ -55,6 +55,35 @@ pub struct DocxStyle {
     pub ppr: Option<DocxPPr>,
     /// Run (character) properties.
     pub rpr: Option<DocxRPr>,
+    /// Table-style formatting (only for `w:type="table"` styles): band sizes,
+    /// base cell shading, and `w:tblStylePr` conditional regions.
+    pub table: Option<DocxTableStyleProps>,
+}
+
+/// Table-style formatting parsed from a `w:type="table"` style: band sizes
+/// (`w:tblStyleRowBandSize`/`w:tblStyleColBandSize`), the base whole-table
+/// cell shading (`w:tcPr/w:shd`), and each `w:tblStylePr` region's shading.
+/// ECMA-376 §17.7.6.
+#[derive(Debug, Clone, Default)]
+pub struct DocxTableStyleProps {
+    /// `w:tblStyleRowBandSize @w:val` — rows per horizontal band.
+    pub row_band_size: Option<u32>,
+    /// `w:tblStyleColBandSize @w:val` — columns per vertical band.
+    pub col_band_size: Option<u32>,
+    /// Base whole-table cell shading fill from `w:tcPr/w:shd @w:fill`.
+    pub base_shd_fill: Option<String>,
+    /// Per-region conditional formats from `w:tblStylePr`.
+    pub conditional: Vec<DocxTblStylePr>,
+}
+
+/// One `w:tblStylePr` conditional format (ECMA-376 §17.7.6.6). Only cell
+/// shading is captured today; borders and run/paragraph props are future work.
+#[derive(Debug, Clone, Default)]
+pub struct DocxTblStylePr {
+    /// `@w:type` — the region: `firstRow`, `lastRow`, `band1Horz`, `nwCell`, …
+    pub region: String,
+    /// Cell shading fill from this region's `w:tcPr/w:shd @w:fill`.
+    pub shd_fill: Option<String>,
 }
 
 /// Intermediate model for a table (`w:tbl`).

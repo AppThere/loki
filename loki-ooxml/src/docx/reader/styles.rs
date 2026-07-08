@@ -8,7 +8,9 @@
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
-use crate::docx::model::styles::{DocxStyle, DocxStyleType, DocxStyles};
+use crate::docx::model::styles::{
+    DocxStyle, DocxStyleType, DocxStyles, DocxTableStyleProps, DocxTblStylePr,
+};
 use crate::docx::reader::util::{attr_val, local_name};
 use crate::error::{OoxmlError, OoxmlResult};
 
@@ -29,6 +31,10 @@ pub fn parse_styles(xml: &[u8]) -> OoxmlResult<DocxStyles> {
     let mut in_style = false;
     let mut in_doc_defaults = false;
     let mut current_style: Option<DocxStyle> = None;
+    // Table-style parsing state: the `w:tblStylePr` region currently open (its
+    // `@w:type`), and whether we are inside a `w:tcPr` (to scope `w:shd`).
+    let mut current_region: Option<String> = None;
+    let mut in_tcpr = false;
 
     loop {
         match reader.read_event_into(&mut buf) {
@@ -71,6 +77,8 @@ pub fn parse_styles(xml: &[u8]) -> OoxmlResult<DocxStyles> {
                             link: None,
                             ppr: None,
                             rpr: None,
+                            table: (style_type == DocxStyleType::Table)
+                                .then(DocxTableStyleProps::default),
                         });
                     }
                     b"name" if in_style => {
@@ -107,16 +115,53 @@ pub fn parse_styles(xml: &[u8]) -> OoxmlResult<DocxStyles> {
                             s.rpr = Some(rpr);
                         }
                     }
+                    b"tblStyleRowBandSize" if in_style => {
+                        if let Some(t) = table_props_mut(&mut current_style) {
+                            t.row_band_size = attr_val(e, b"val").and_then(|v| v.parse().ok());
+                        }
+                    }
+                    b"tblStyleColBandSize" if in_style => {
+                        if let Some(t) = table_props_mut(&mut current_style) {
+                            t.col_band_size = attr_val(e, b"val").and_then(|v| v.parse().ok());
+                        }
+                    }
+                    b"tblStylePr" if in_style => {
+                        let region = attr_val(e, b"type").unwrap_or_default();
+                        current_region = Some(region.clone());
+                        if let Some(t) = table_props_mut(&mut current_style) {
+                            t.conditional.push(DocxTblStylePr {
+                                region,
+                                shd_fill: None,
+                            });
+                        }
+                    }
+                    b"tcPr" if in_style => in_tcpr = true,
+                    b"shd" if in_style && in_tcpr => {
+                        let fill = attr_val(e, b"fill");
+                        if let Some(t) = table_props_mut(&mut current_style) {
+                            if current_region.is_some() {
+                                if let Some(last) = t.conditional.last_mut() {
+                                    last.shd_fill = fill;
+                                }
+                            } else {
+                                t.base_shd_fill = fill;
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }
             Ok(Event::End(ref e)) => match local_name(e.local_name().as_ref()) {
                 b"docDefaults" => in_doc_defaults = false,
+                b"tcPr" => in_tcpr = false,
+                b"tblStylePr" => current_region = None,
                 b"style" => {
                     if let Some(style) = current_style.take() {
                         result.styles.push(style);
                     }
                     in_style = false;
+                    current_region = None;
+                    in_tcpr = false;
                 }
                 _ => {}
             },
@@ -132,6 +177,12 @@ pub fn parse_styles(xml: &[u8]) -> OoxmlResult<DocxStyles> {
         buf.clear();
     }
     Ok(result)
+}
+
+/// Mutable access to the in-progress style's table-props accumulator, if the
+/// current style is a table style.
+fn table_props_mut(style: &mut Option<DocxStyle>) -> Option<&mut DocxTableStyleProps> {
+    style.as_mut().and_then(|s| s.table.as_mut())
 }
 
 #[cfg(test)]
@@ -185,5 +236,57 @@ mod tests {
                 .iter()
                 .any(|s| s.style_type == DocxStyleType::Character)
         );
+    }
+
+    const TABLE_STYLE: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:type="table" w:styleId="Banded">
+    <w:name w:val="Banded"/>
+    <w:tblPr>
+      <w:tblStyleRowBandSize w:val="2"/>
+      <w:tblStyleColBandSize w:val="1"/>
+    </w:tblPr>
+    <w:tcPr><w:shd w:val="clear" w:fill="FFFFFF"/></w:tcPr>
+    <w:tblStylePr w:type="firstRow">
+      <w:rPr><w:b/></w:rPr>
+      <w:tcPr><w:shd w:val="clear" w:fill="4472C4"/></w:tcPr>
+    </w:tblStylePr>
+    <w:tblStylePr w:type="band1Horz">
+      <w:tcPr><w:shd w:val="clear" w:fill="D9E2F3"/></w:tcPr>
+    </w:tblStylePr>
+  </w:style>
+</w:styles>"#;
+
+    #[test]
+    fn parses_table_style_banding() {
+        let styles = parse_styles(TABLE_STYLE).unwrap();
+        let t = styles
+            .styles
+            .iter()
+            .find(|s| s.style_id == "Banded")
+            .and_then(|s| s.table.as_ref())
+            .expect("table props parsed");
+        assert_eq!(t.row_band_size, Some(2));
+        assert_eq!(t.col_band_size, Some(1));
+        assert_eq!(t.base_shd_fill.as_deref(), Some("FFFFFF"));
+        assert_eq!(t.conditional.len(), 2);
+        let first_row = t
+            .conditional
+            .iter()
+            .find(|c| c.region == "firstRow")
+            .unwrap();
+        assert_eq!(first_row.shd_fill.as_deref(), Some("4472C4"));
+        let band = t
+            .conditional
+            .iter()
+            .find(|c| c.region == "band1Horz")
+            .unwrap();
+        assert_eq!(band.shd_fill.as_deref(), Some("D9E2F3"));
+    }
+
+    #[test]
+    fn non_table_style_has_no_table_props() {
+        let styles = parse_styles(MINIMAL_STYLES).unwrap();
+        assert!(styles.styles.iter().all(|s| s.table.is_none()));
     }
 }
