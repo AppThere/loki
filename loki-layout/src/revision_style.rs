@@ -8,6 +8,12 @@
 //! through — matching Word / LibreOffice. Colour + decoration are derived at
 //! layout time, so accepting/rejecting a change (which clears the mark) reverts
 //! the run to its normal appearance with no stored styling to undo.
+//!
+//! TODO(review-para-mark-render): a tracked deletion of a *paragraph mark* (¶)
+//! — a `StyledParagraph.direct_char_props.revision` — is recorded and resolved
+//! but not yet painted here (no struck ¶ glyph), so it stays invisible until
+//! reviewed. Deferred: it is a paragraph-end decoration touching caret /
+//! hit-test / wrapping and needs interactive visual verification.
 
 use loki_doc_model::style::props::char_props::CharProps;
 use loki_doc_model::style::props::revision::RevisionKind;
