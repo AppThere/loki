@@ -5,8 +5,8 @@
 
 1698 loki-layout/src/para.rs
 1554 loki-odf/src/odt/reader/styles.rs
-1535 loki-layout/src/flow.rs
 1492 loki-odf/src/odt/reader/document.rs
+1362 loki-layout/src/flow.rs
 1185 loki-ooxml/src/docx/reader/document.rs
 1073 loki-ooxml/src/docx/write/document.rs
 1047 loki-spreadsheet/src/routes/editor/editor_inner.rs

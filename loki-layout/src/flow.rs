@@ -25,6 +25,8 @@ mod page_fields;
 mod para_impl;
 #[path = "flow_table_geom.rs"]
 mod table_geom;
+#[path = "flow_table_paint.rs"]
+mod table_paint;
 
 pub(crate) use page_fields::page_layout_has_page_fields;
 
@@ -44,13 +46,11 @@ use crate::color::LayoutColor;
 use crate::font::FontResources;
 use crate::geometry::{LayoutInsets, LayoutPoint, LayoutRect, LayoutSize};
 use crate::incremental::{FlowCheckpoint, PageStart};
-use crate::items::{PositionedBorderRect, PositionedItem, PositionedRect};
+use crate::items::{PositionedItem, PositionedRect};
 use crate::mode::LayoutMode;
-use crate::resolve::{
-    CollectedNote, convert_border, pts_to_f32, resolve_color, resolve_para_props,
-};
+use crate::resolve::{CollectedNote, pts_to_f32, resolve_para_props};
 use crate::result::{LayoutPage, PageEditingData, PageParagraphData};
-use crate::table_shading::{cell_style_shading, resolve_table_style, table_look};
+use crate::table_shading::{resolve_table_style, table_look};
 
 use para_impl::{flow_keep_with_next_chain, flow_paragraph};
 
@@ -1136,63 +1136,7 @@ fn flow_table(
     let look = table_look(tbl);
     let (grid_rows, grid_cols) = (rows.len(), col_widths.len());
 
-    let mut row_heights = vec![0.0f32; rows.len()];
-
-    // Pass 1: Measure all cells with row_span == 1
-    for (row_idx, row) in rows.iter().enumerate() {
-        for (c_idx, cell) in row.cells.iter().enumerate() {
-            let (col_start, col_end) = cell_cols[row_idx][c_idx];
-            if cell.row_span == 1 {
-                let pad_left = cell.props.padding_left.map(pts_to_f32).unwrap_or(0.0);
-                let pad_right = cell.props.padding_right.map(pts_to_f32).unwrap_or(0.0);
-                let cell_w: f32 = col_widths[col_start..col_end].iter().sum();
-                let cell_content_width = (cell_w - pad_left - pad_right).max(0.0);
-                let h = table_geom::measure_cell_height(
-                    state.resources,
-                    state.catalog,
-                    state.display_scale,
-                    state.options,
-                    cell,
-                    cell_content_width,
-                    idx,
-                );
-                row_heights[row_idx] = row_heights[row_idx].max(h);
-            }
-        }
-        row_heights[row_idx] = row_heights[row_idx].max(crate::MIN_ROW_HEIGHT);
-    }
-
-    // Pass 2: Distribute spanning cell heights across spanned rows
-    for (row_idx, row) in rows.iter().enumerate() {
-        for (c_idx, cell) in row.cells.iter().enumerate() {
-            let (col_start, col_end) = cell_cols[row_idx][c_idx];
-            if cell.row_span > 1 {
-                let span = cell.row_span as usize;
-                let spanned_height: f32 = row_heights
-                    [row_idx..(row_idx + span).min(row_heights.len())]
-                    .iter()
-                    .sum();
-                let pad_left = cell.props.padding_left.map(pts_to_f32).unwrap_or(0.0);
-                let pad_right = cell.props.padding_right.map(pts_to_f32).unwrap_or(0.0);
-                let cell_w: f32 = col_widths[col_start..col_end].iter().sum();
-                let cell_content_width = (cell_w - pad_left - pad_right).max(0.0);
-                let needed = table_geom::measure_cell_height(
-                    state.resources,
-                    state.catalog,
-                    state.display_scale,
-                    state.options,
-                    cell,
-                    cell_content_width,
-                    idx,
-                );
-                if needed > spanned_height {
-                    let extra = needed - spanned_height;
-                    let last = (row_idx + span - 1).min(row_heights.len() - 1);
-                    row_heights[last] += extra;
-                }
-            }
-        }
-    }
+    let row_heights = table_paint::measure_row_heights(state, &rows, &cell_cols, &col_widths, idx);
 
     // Pass 3: Place and flow cell blocks. `cell_flat` counts cells in the bridge's
     // flat `KEY_TABLE_CELLS` order so cell paragraphs get a matching `PathStep::Cell`.
@@ -1390,141 +1334,24 @@ fn flow_table(
             (row_max_h - first_h - intermediate_h).max(0.0)
         };
 
-        // Helper closures to calculate heights and Y coordinates of cell portions per page
-        let get_cell_height_on_page = |p: usize, cell_page_start: usize, cell_h: f32| -> f32 {
-            if p == cell_page_start {
-                if p == row_page_end {
-                    cell_h
-                } else {
-                    let y_start = if p == original_row_page {
-                        original_row_y_start
-                    } else {
-                        0.0
-                    };
-                    (state.page_content_height - y_start).max(0.0)
-                }
-            } else if p == row_page_end {
-                let start_y = if cell_page_start == original_row_page {
-                    original_row_y_start
-                } else {
-                    0.0
-                };
-                let first_h = (state.page_content_height - start_y).max(0.0);
-                let intermediate_h =
-                    (row_page_end - cell_page_start - 1) as f32 * state.page_content_height;
-                (cell_h - first_h - intermediate_h).max(0.0)
-            } else {
-                state.page_content_height
-            }
-        };
-
-        let get_cell_y_on_page = |p: usize| -> f32 {
-            if p == original_row_page {
-                original_row_y_start
-            } else {
-                0.0
-            }
-        };
-
-        // Pass 3b: Emit background and border decorations for this row's cells
-        for p in original_row_page..=row_page_end {
-            for (c_idx, cell) in row.cells.iter().enumerate().rev() {
-                let cell_page_start = cell_starts[c_idx].0;
-                let cell_item_start = cell_starts[c_idx].1;
-
-                if p < cell_page_start {
-                    continue;
-                }
-
-                let cell_h = if cell.row_span == 1 {
-                    row_max_h
-                } else {
-                    let span = cell.row_span as usize;
-                    row_heights[row_idx..(row_idx + span).min(row_heights.len())]
-                        .iter()
-                        .sum()
-                };
-
-                let h = get_cell_height_on_page(p, cell_page_start, cell_h);
-                if h < 0.0 || (h == 0.0 && cell_h > 0.0) {
-                    continue;
-                }
-
-                let y = get_cell_y_on_page(p);
-                let (col_start, col_end) = cell_cols[row_idx][c_idx];
-                let cell_w: f32 = col_widths[col_start..col_end].iter().sum();
-                let cell_x = table_indent + col_widths[0..col_start].iter().sum::<f32>();
-                let cell_rect = LayoutRect {
-                    origin: LayoutPoint { x: cell_x, y },
-                    size: LayoutSize {
-                        width: cell_w,
-                        height: h,
-                    },
-                };
-
-                let has_borders = cell.props.border_top.is_some()
-                    || cell.props.border_bottom.is_some()
-                    || cell.props.border_left.is_some()
-                    || cell.props.border_right.is_some();
-
-                // Direct cell shading wins, else the table style's banding.
-                let cell_bg = cell.props.background_color.clone().or_else(|| {
-                    cell_style_shading(table_style, &look, row_idx, col_start, grid_rows, grid_cols)
-                });
-
-                let is_first = p == cell_page_start;
-                let is_last = p == row_page_end;
-
-                let border_top = if is_first {
-                    cell.props.border_top.as_ref().and_then(convert_border)
-                } else {
-                    None
-                };
-                let border_bottom = if is_last {
-                    cell.props.border_bottom.as_ref().and_then(convert_border)
-                } else {
-                    None
-                };
-                let border_left = cell.props.border_left.as_ref().and_then(convert_border);
-                let border_right = cell.props.border_right.as_ref().and_then(convert_border);
-
-                let insert_idx = if p == cell_page_start {
-                    cell_item_start
-                } else {
-                    0
-                };
-
-                // Emit into the in-progress page or an already-finished one.
-                let target = if p == state.page_number {
-                    Some(&mut state.current_items)
-                } else {
-                    state.pages.get_mut(p - 1).map(|pg| &mut pg.content_items)
-                };
-                if let Some(items) = target {
-                    if has_borders {
-                        items.insert(
-                            insert_idx,
-                            PositionedItem::BorderRect(PositionedBorderRect {
-                                rect: cell_rect,
-                                top: border_top,
-                                bottom: border_bottom,
-                                left: border_left,
-                                right: border_right,
-                            }),
-                        );
-                    }
-                    if let Some(bg) = cell_bg.as_ref() {
-                        items.insert(
-                            insert_idx,
-                            PositionedItem::FilledRect(PositionedRect {
-                                rect: cell_rect,
-                                color: resolve_color(Some(bg)),
-                            }),
-                        );
-                    }
-                }
-            }
-        }
+        table_paint::emit_row_cell_decorations(
+            state,
+            row,
+            row_idx,
+            &cell_cols[row_idx],
+            &col_widths,
+            &row_heights,
+            row_max_h,
+            &cell_starts,
+            table_indent,
+            table_style,
+            &look,
+            grid_rows,
+            grid_cols,
+            original_row_page,
+            original_row_y_start,
+            row_page_end,
+        );
 
         state.cursor_y = row_y_end;
     }

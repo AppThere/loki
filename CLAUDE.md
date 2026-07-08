@@ -179,7 +179,14 @@ baseline file. Three techniques (the third added 2026-07-08):
    so its external path stays stable). Also `loki-layout/src/para.rs`
    (1856 → 1698): the tab-stop cluster → `para_tabs.rs` (`tabs` submodule); and
    `loki-layout/src/resolve.rs` (978 → 865): the `ParaProps`→`ResolvedParaProps`
-   mapping → `para_props_map.rs` (`para_map` submodule).
+   mapping → `para_props_map.rs` (`para_map` submodule). A fourth variant is
+   *function-internal phase extraction* — a single >300-line function split by
+   moving self-contained phases into helper fns in a sibling module (thread the
+   captured locals as params; `#[allow(clippy::too_many_arguments)]` at the
+   narrowest scope is acceptable, per the `flow_cell_blocks` precedent). Done
+   2026-07-08 for `flow.rs`'s `flow_table` (~420 lines): row-height measurement +
+   cell-decoration passes → `flow_table_paint.rs` (`table_paint` submodule),
+   `flow.rs` 1535 → 1362.
 
 (Test files are exempt from the production-line count.)
 
