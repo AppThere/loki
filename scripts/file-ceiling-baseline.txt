@@ -4,8 +4,8 @@
 # Regenerate with: scripts/check-file-ceiling.py --update
 
 1856 loki-layout/src/para.rs
-1702 loki-layout/src/flow.rs
 1554 loki-odf/src/odt/reader/styles.rs
+1535 loki-layout/src/flow.rs
 1492 loki-odf/src/odt/reader/document.rs
 1185 loki-ooxml/src/docx/reader/document.rs
 1073 loki-ooxml/src/docx/write/document.rs

@@ -3,6 +3,7 @@
 
 //! Unit tests for [`crate::flow`].
 
+use super::page_fields::{blocks_contain_page_field, substitute_page_fields};
 use super::*;
 
 use loki_doc_model::content::attr::{ExtensionBag, NodeAttr};

@@ -172,8 +172,11 @@ baseline file. Three techniques (the third added 2026-07-08):
    functions into a new `<name>_helper.rs` sibling declared via
    `#[path = "…"] mod <name>;`, accessing the parent's state through `super::`
    (mark the shared items `pub(super)`). The new file must itself be ≤300.
-   Done 2026-07-08 for `loki-layout/src/flow.rs` (1948 → 1702): the four
-   table-geometry helpers → `flow_table_geom.rs` (`table_geom` submodule).
+   Done 2026-07-08 for `loki-layout/src/flow.rs` (1948 → 1535, two cuts): the
+   four table-geometry helpers → `flow_table_geom.rs` (`table_geom` submodule),
+   and the PAGE/NUMPAGES field cluster → `flow_page_fields.rs` (`page_fields`
+   submodule; a `pub(crate)` item used elsewhere is re-exported from `flow.rs`
+   so its external path stays stable).
 
 (Test files are exempt from the production-line count.)
 
