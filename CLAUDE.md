@@ -157,8 +157,10 @@ baseline file. Three techniques (the third added 2026-07-08):
    `#[cfg(test)] #[path = "<name>_tests.rs"] mod tests;`. Done 2026-06-21 for
    `block.rs`, `docx/mapper/{paragraph,numbering,mod,table}.rs`, `odt/import.rs`,
    `odt/mapper/lists.rs`, `layout/result.rs`, `renderer/render_layout.rs`, and
-   2026-06-28 for `editing/hit_test.rs`, `xml_util.rs`, `pdf/src/page.rs` — each
-   was over the ceiling only because of a large inline test module.
+   2026-06-28 for `editing/hit_test.rs`, `xml_util.rs`, `pdf/src/page.rs`, and
+   2026-07-08 for `odt/reader/styles.rs` (1554 → 1298; ~258-line inline module →
+   `styles_tests.rs`) — each was over the ceiling only because of a large inline
+   test module (or, as with `styles.rs`, partly so).
 2. *Directory split*: convert `foo.rs` → a `foo/` directory with section-cohesive
    submodules, re-export the public entry points from `foo/mod.rs`, and move the
    tests via the same `#[path]` idiom. Give each submodule its **own explicit
