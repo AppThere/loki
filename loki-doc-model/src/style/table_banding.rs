@@ -118,7 +118,11 @@ fn vert_band(look: &TableLook, props: &TableProps, col: usize, cols: usize) -> O
 /// Map a zero-based band index to its 1-based parity region: even → band 1
 /// (odd stripes), odd → band 2 (even stripes).
 fn band_parity(index: usize, band1: TableRegion, band2: TableRegion) -> TableRegion {
-    if index.is_multiple_of(2) { band1 } else { band2 }
+    if index.is_multiple_of(2) {
+        band1
+    } else {
+        band2
+    }
 }
 
 /// Whether `region` covers the cell at `(row, col)`, given the precomputed

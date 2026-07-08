@@ -1128,6 +1128,59 @@ fn table_cell_background_produces_filled_rect() {
     );
 }
 
+/// A table referencing a style with first-row banding shading (and no direct
+/// cell shading) should paint that shading — proof the flow engine now
+/// consults the table style, not just direct `CellProps`.
+#[test]
+fn table_style_banding_shades_the_header_row() {
+    use appthere_color::RgbColor;
+    use loki_doc_model::style::catalog::StyleId;
+    use loki_doc_model::style::table_style::{TableConditionalFormat, TableRegion, TableStyle};
+
+    let mut catalog = StyleCatalog::new();
+    let mut style = TableStyle {
+        id: StyleId::new("Banded"),
+        display_name: None,
+        parent: None,
+        table_props: Default::default(),
+        conditional: Default::default(),
+        extensions: ExtensionBag::default(),
+    };
+    style.conditional.insert(
+        TableRegion::FirstRow,
+        TableConditionalFormat {
+            background_color: Some(DocumentColor::Rgb(RgbColor::new(0.0, 0.0, 1.0))),
+        },
+    );
+    catalog.table_styles.insert(StyleId::new("Banded"), style);
+
+    // A 2×2 table with no direct cell shading, referencing "Banded".
+    let Block::Table(mut table) = make_table_2x2(None) else {
+        unreachable!("make_table_2x2 builds a Block::Table")
+    };
+    table.set_style_name(Some("Banded".into()));
+
+    let section = Section {
+        page_style: None,
+        layout: PageLayout::default(),
+        start: Default::default(),
+        blocks: vec![Block::Table(table)],
+        extensions: ExtensionBag::default(),
+    };
+    let mut r = test_resources();
+    let (items, _, _) = flow_with_catalog(&mut r, &section, &catalog);
+    let filled = items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::FilledRect(_)))
+        .count();
+    // Under Word's default look, firstRow shades both header cells; the
+    // second (body) row has no matching region → exactly the 2 header cells.
+    assert_eq!(
+        filled, 2,
+        "header row's 2 cells should be shaded by the style, got {filled}"
+    );
+}
+
 /// A cell with borders should produce a `BorderRect` item.
 #[test]
 fn table_cell_borders_produce_border_rect() {

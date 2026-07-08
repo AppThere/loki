@@ -44,6 +44,7 @@ use crate::resolve::{
     CollectedNote, convert_border, pts_to_f32, resolve_color, resolve_para_props,
 };
 use crate::result::{LayoutPage, PageEditingData, PageParagraphData};
+use crate::table_shading::{cell_style_shading, resolve_table_style};
 
 use para_impl::{flow_keep_with_next_chain, flow_paragraph};
 
@@ -1543,6 +1544,11 @@ fn flow_table(
     // left (overlapping the merged cell) — the TC-DOCX-005 L-merge bug.
     let cell_cols = assign_cell_columns(&rows, col_widths.len());
 
+    // The table's named style supplies conditional/banding cell shading,
+    // applied under any direct cell shading in Pass 3b.
+    let table_style = resolve_table_style(state.catalog, tbl.style_name());
+    let (grid_rows, grid_cols) = (rows.len(), col_widths.len());
+
     let mut row_heights = vec![0.0f32; rows.len()];
 
     // Pass 1: Measure all cells with row_span == 1
@@ -1874,6 +1880,11 @@ fn flow_table(
                     || cell.props.border_left.is_some()
                     || cell.props.border_right.is_some();
 
+                // Direct cell shading wins, else the table style's banding.
+                let cell_bg = cell.props.background_color.clone().or_else(|| {
+                    cell_style_shading(table_style, row_idx, col_start, grid_rows, grid_cols)
+                });
+
                 let is_first = p == cell_page_start;
                 let is_last = p == row_page_end;
 
@@ -1896,9 +1907,15 @@ fn flow_table(
                     0
                 };
 
-                if p == state.page_number {
+                // Emit into the in-progress page or an already-finished one.
+                let target = if p == state.page_number {
+                    Some(&mut state.current_items)
+                } else {
+                    state.pages.get_mut(p - 1).map(|pg| &mut pg.content_items)
+                };
+                if let Some(items) = target {
                     if has_borders {
-                        state.current_items.insert(
+                        items.insert(
                             insert_idx,
                             PositionedItem::BorderRect(PositionedBorderRect {
                                 rect: cell_rect,
@@ -1909,30 +1926,8 @@ fn flow_table(
                             }),
                         );
                     }
-                    if let Some(bg) = cell.props.background_color.as_ref() {
-                        state.current_items.insert(
-                            insert_idx,
-                            PositionedItem::FilledRect(PositionedRect {
-                                rect: cell_rect,
-                                color: resolve_color(Some(bg)),
-                            }),
-                        );
-                    }
-                } else if let Some(page) = state.pages.get_mut(p - 1) {
-                    if has_borders {
-                        page.content_items.insert(
-                            insert_idx,
-                            PositionedItem::BorderRect(PositionedBorderRect {
-                                rect: cell_rect,
-                                top: border_top,
-                                bottom: border_bottom,
-                                left: border_left,
-                                right: border_right,
-                            }),
-                        );
-                    }
-                    if let Some(bg) = cell.props.background_color.as_ref() {
-                        page.content_items.insert(
+                    if let Some(bg) = cell_bg.as_ref() {
+                        items.insert(
                             insert_idx,
                             PositionedItem::FilledRect(PositionedRect {
                                 rect: cell_rect,

@@ -3,9 +3,8 @@
 
 //! Renderer-agnostic layout engine for the Loki suite.
 //!
-//! `loki-layout` takes a [`loki_doc_model::Document`] and produces a layout
-//! result containing absolute positions for all content elements. It has no
-//! GPU dependencies and is fully testable without a display.
+//! `loki-layout` turns a [`loki_doc_model::Document`] into absolute positions
+//! for all content — no GPU dependencies, fully testable without a display.
 //!
 //! # Layout Modes
 //!
@@ -41,6 +40,7 @@ mod para_emit;
 pub mod resolve;
 pub mod result;
 mod revision_style;
+mod table_shading;
 pub use color::LayoutColor;
 pub use error::{LayoutError, LayoutResult};
 pub use flow::{FlowOutput, LayoutWarning, flow_section};
