@@ -7,7 +7,9 @@
 use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};
 
-use crate::docx::model::paragraph::{DocxRevisionInfo, DocxRun, DocxTrackedChange};
+use crate::docx::model::paragraph::{
+    DocxMarkRevision, DocxRevisionInfo, DocxRun, DocxTrackedChange,
+};
 use crate::docx::reader::document::parse_run;
 use crate::docx::reader::util::{attr_val, local_name};
 use crate::error::{OoxmlError, OoxmlResult};
@@ -31,6 +33,20 @@ pub(crate) fn parse_tracked_runs(
     };
     let runs = collect_runs(reader, end_tag)?;
     Ok(DocxTrackedChange { info, runs })
+}
+
+/// Reads a `w:del` / `w:ins` element that marks a **paragraph mark** deleted /
+/// inserted (a child of `w:pPr/w:rPr`), from its (empty) element. `local` is the
+/// element's local name (`b"del"` / `b"ins"`).
+pub(crate) fn parse_mark_revision(local: &[u8], e: &BytesStart<'_>) -> DocxMarkRevision {
+    DocxMarkRevision {
+        is_deletion: local == b"del",
+        info: DocxRevisionInfo {
+            author: attr_val(e, b"author"),
+            date: attr_val(e, b"date"),
+            id: attr_val(e, b"id"),
+        },
+    }
 }
 
 /// Consumes the cached-result runs inside a `w:fldSimple` element.

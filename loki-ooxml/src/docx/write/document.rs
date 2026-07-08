@@ -256,6 +256,8 @@ fn write_styled_para<W: std::io::Write>(
         }
         if let Some(ref cp) = sp.direct_char_props {
             let _ = write_start(w, "w:rPr", &[]);
+            // A tracked deletion of the paragraph mark rides its rPr (w:del).
+            super::revision::write_mark_del(w, cp.revision.as_ref());
             emit_char_props(w, cp);
             let _ = write_end(w, "w:rPr");
         }

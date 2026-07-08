@@ -21,14 +21,15 @@ use loki_doc_model::style::props::tab_stop::{TabAlignment, TabLeader, TabStop};
 use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 
-use crate::docx::model::paragraph::{DocxBorderEdge, DocxFramePr, DocxPPr, DocxRPr};
+use crate::docx::model::paragraph::{
+    DocxBorderEdge, DocxFramePr, DocxMarkRevision, DocxPPr, DocxRPr,
+};
 use crate::xml_util::{hex_color, resolve_shading};
 
 // ── Internal conversion helpers ───────────────────────────────────────────────
 
 /// Maps `w:framePr` to a [`DropCap`], or `None` when no drop cap is requested
-/// (`w:dropCap` absent, `"none"`, or `"default"`). OOXML carries no explicit
-/// character count, so the length defaults to a single character.
+/// (`w:dropCap` absent/`"none"`/`"default"`); length defaults to one character.
 fn map_frame_pr(fp: &DocxFramePr) -> Option<DropCap> {
     let margin = match fp.drop_cap.as_deref()? {
         "drop" => false,
@@ -73,9 +74,7 @@ fn map_line_height(line: i32, line_rule: Option<&str>) -> LineHeight {
     }
 }
 
-/// Maps a `w:u @w:val` string to [`UnderlineStyle`].
-///
-/// Returns `None` for `"none"` (explicit removal of underline).
+/// Maps a `w:u @w:val` string to [`UnderlineStyle`] (`None` removes underline).
 fn map_underline(val: &str) -> Option<UnderlineStyle> {
     match val {
         "none" => None,
@@ -343,9 +342,10 @@ pub(crate) fn map_rpr(rpr: &DocxRPr) -> CharProps {
             "subscript" => Some(VerticalAlign::Subscript),
             _ => None,
         }),
-        // w:position is a manual baseline rise in half-points (positive = up).
         baseline_shift: rpr.position.map(|hp| Points::new(f64::from(hp) / 2.0)),
         outline: rpr.outline,
+        // A paragraph mark's w:ins/w:del (tracked ¶ deletion) → CharProps.revision.
+        revision: rpr.mark_rev.as_ref().map(DocxMarkRevision::to_mark),
         ..Default::default()
     }
 }

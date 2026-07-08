@@ -13,7 +13,7 @@ use std::io::Write;
 use loki_doc_model::style::props::revision::{RevisionKind, RevisionMark};
 use quick_xml::Writer;
 
-use super::xml::write_start;
+use super::xml::{write_empty, write_start};
 
 /// The wrapper element name for a revision: `w:ins` or `w:del`.
 #[must_use]
@@ -24,17 +24,37 @@ pub(super) fn tag(rev: &RevisionMark) -> &'static str {
     }
 }
 
-/// Opens the `w:ins` / `w:del` wrapper for `rev` with its `w:id` / `w:author` /
+/// Writes the `w:ins` / `w:del` element for `rev` with its `w:id` / `w:author` /
 /// `w:date` attributes (id defaults to `1`, author to empty, date omitted when
-/// absent). The caller closes it with `write_end(w, tag(rev))`.
-pub(super) fn open<W: Write>(w: &mut Writer<W>, rev: &RevisionMark) {
+/// absent) — as an opening tag (`empty = false`, the run wrapper) or a
+/// self-closing element (`empty = true`, the paragraph-mark marker in `w:rPr`).
+fn write_rev_element<W: Write>(w: &mut Writer<W>, rev: &RevisionMark, empty: bool) {
     let id = rev.id.clone().unwrap_or_else(|| "1".to_string());
     let author = rev.author.clone().unwrap_or_default();
     let mut attrs: Vec<(&str, &str)> = vec![("w:id", id.as_str()), ("w:author", author.as_str())];
     if let Some(date) = rev.date.as_deref() {
         attrs.push(("w:date", date));
     }
-    let _ = write_start(w, tag(rev), &attrs);
+    let _ = if empty {
+        write_empty(w, tag(rev), &attrs)
+    } else {
+        write_start(w, tag(rev), &attrs)
+    };
+}
+
+/// Opens the `w:ins` / `w:del` run wrapper for `rev`. The caller closes it with
+/// `write_end(w, tag(rev))`.
+pub(super) fn open<W: Write>(w: &mut Writer<W>, rev: &RevisionMark) {
+    write_rev_element(w, rev, false);
+}
+
+/// Writes the self-closing `<w:del/>` / `<w:ins/>` marker for a tracked
+/// **paragraph-mark** revision inside its `w:rPr` (OOXML §17.13.5.13 —
+/// `w:pPr/w:rPr/w:del`). A no-op when `rev` is `None` or not present.
+pub(super) fn write_mark_del<W: Write>(w: &mut Writer<W>, rev: Option<&RevisionMark>) {
+    if let Some(rev) = rev {
+        write_rev_element(w, rev, true);
+    }
 }
 
 /// Writes a run's text node — `w:delText` for a tracked deletion (ECMA-376

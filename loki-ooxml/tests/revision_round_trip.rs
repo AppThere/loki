@@ -8,7 +8,7 @@
 use std::io::Cursor;
 
 use loki_doc_model::content::attr::NodeAttr;
-use loki_doc_model::content::block::Block;
+use loki_doc_model::content::block::{Block, StyledParagraph};
 use loki_doc_model::content::inline::{Inline, StyledRun};
 use loki_doc_model::document::Document;
 use loki_doc_model::io::DocumentExport;
@@ -113,5 +113,43 @@ fn tracked_insertion_and_deletion_round_trip() {
     );
 
     // The deleted run's text survives too (via w:delText), and the kept text is intact.
+    assert!(back.has_tracked_changes());
+}
+
+/// The paragraph-mark char props of the first top-level block, if a StyledPara.
+fn para_mark_revision(doc: &Document) -> Option<RevisionMark> {
+    match &doc.sections[0].blocks[0] {
+        Block::StyledPara(p) => p
+            .direct_char_props
+            .as_ref()
+            .and_then(|c| c.revision.clone()),
+        _ => None,
+    }
+}
+
+#[test]
+fn paragraph_mark_deletion_round_trips() {
+    // A styled paragraph whose *mark* (¶) is a tracked deletion — OOXML
+    // `w:pPr/w:rPr/w:del`.
+    let mut mark = RevisionMark::new(RevisionKind::Deletion).with_author("Cy");
+    mark.date = Some("2026-07-08T09:00:00Z".into());
+    let mut doc = Document::new();
+    doc.sections[0].blocks = vec![Block::StyledPara(StyledParagraph {
+        style_id: None,
+        direct_para_props: None,
+        direct_char_props: Some(Box::new(CharProps {
+            revision: Some(mark),
+            ..CharProps::default()
+        })),
+        inlines: vec![Inline::Str("first".into())],
+        attr: NodeAttr::default(),
+    })];
+
+    let back = export_import(&doc);
+
+    let rev = para_mark_revision(&back).expect("paragraph-mark deletion survives");
+    assert_eq!(rev.kind, RevisionKind::Deletion);
+    assert_eq!(rev.author.as_deref(), Some("Cy"));
+    assert_eq!(rev.date.as_deref(), Some("2026-07-08T09:00:00Z"));
     assert!(back.has_tracked_changes());
 }
