@@ -40,6 +40,7 @@ mod style;
 #[cfg(feature = "serde")]
 mod table_ops;
 mod text;
+mod text_containers;
 #[cfg(feature = "serde")]
 mod toc;
 
@@ -138,7 +139,7 @@ impl From<loro::LoroError> for MutationError {
 // ── Shared internal helpers ───────────────────────────────────────────────────
 
 /// Resolves section `s`'s blocks movable list, if present.
-fn section_blocks_list(sections: &LoroList, s: usize) -> Option<LoroMovableList> {
+pub(super) fn section_blocks_list(sections: &LoroList, s: usize) -> Option<LoroMovableList> {
     let section = sections.get(s)?.into_container().ok()?.into_map().ok()?;
     section
         .get(KEY_BLOCKS)?

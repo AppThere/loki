@@ -13,16 +13,15 @@
 //!   cleared (`mark_utf8(range, …, Null)`) — the text stays, un-tracked;
 //! - a removed run (accepted deletion / rejected insertion) has its text deleted.
 //!
-//! Scope: top-level block text across every section. Revisions nested in table
-//! cells / note bodies are not yet resolved here — `TODO(review-nested)`.
+//! Scope: every text container in the document — the accept/reject-all sweep
+//! descends into table cells and note bodies, and the per-change ops are
+//! path-aware, so a revision anywhere in the tree resolves.
 
 use loro::{LoroDoc, LoroText, LoroValue, TextDelta};
 
 use super::nested::text_for_path;
-use super::{
-    BlockPath, MutationError, delete_text_at, get_loro_text_for_block, get_mark_at_path,
-    mark_text_at,
-};
+use super::text_containers::collect_all_text_containers;
+use super::{BlockPath, MutationError, delete_text_at, get_mark_at_path, mark_text_at};
 use crate::content::revision_ops::{DeleteAction, delete_action};
 use crate::loro_schema::MARK_REVISION;
 use crate::style::props::revision::{RevisionKind, RevisionMark, decode, encode};
@@ -143,24 +142,16 @@ pub fn accept_reject_revision_at(
 }
 
 /// Accepts (`accept = true`) or rejects (`false`) **every** tracked change in the
-/// document's top-level block text, returning the number of change runs resolved.
+/// document, returning the number of change runs resolved. Sweeps every text
+/// container — top-level blocks and those nested in table cells / note bodies.
 ///
 /// # Errors
 ///
 /// [`MutationError::Loro`] for an underlying Loro error.
 pub fn accept_reject_all_revisions(loro: &LoroDoc, accept: bool) -> Result<usize, MutationError> {
     let mut total = 0usize;
-    let mut idx = 0usize;
-    loop {
-        match get_loro_text_for_block(loro, idx) {
-            Ok(text) => total += resolve_text(&text, accept)?,
-            // A table / stub block has no top-level text — skip it (nested-cell
-            // revisions are TODO(review-nested)).
-            Err(MutationError::TextNotFound(_)) => {}
-            Err(MutationError::BlockIndexOutOfRange(_)) => break,
-            Err(e) => return Err(e),
-        }
-        idx += 1;
+    for text in collect_all_text_containers(loro) {
+        total += resolve_text(&text, accept)?;
     }
     Ok(total)
 }
