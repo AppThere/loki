@@ -871,3 +871,45 @@ fn table_style_banding_resolves_into_per_cell_shading_on_odt_export() {
             .is_none()
     );
 }
+
+/// A table's named-style reference (`table:style-name`) survives ODT export →
+/// import: the writer emits the `<style:style style:family="table">` definition
+/// in styles.xml and the reference on the table; import restores `style_name`.
+#[test]
+fn table_style_name_reference_round_trips() {
+    use loki_doc_model::content::table::core::Table;
+    use loki_doc_model::style::table_style::{TableProps, TableStyle, TableWidth};
+    use loki_primitives::units::Points;
+
+    let mut table = Table::grid(2, 2);
+    table.set_style_name(Some("Banded".into()));
+
+    let mut doc = Document::new();
+    doc.styles.table_styles.insert(
+        StyleId::new("Banded"),
+        TableStyle {
+            id: StyleId::new("Banded"),
+            display_name: Some("Banded".into()),
+            parent: None,
+            table_props: TableProps {
+                width: Some(TableWidth::Absolute(Points::new(340.0))),
+                ..TableProps::default()
+            },
+            conditional: Default::default(),
+            extensions: Default::default(),
+        },
+    );
+    doc.sections[0].blocks = vec![Block::Table(Box::new(table))];
+
+    let back = round_trip(&doc);
+
+    let t = back.sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            Block::Table(t) => Some(t.as_ref()),
+            _ => None,
+        })
+        .expect("table survives");
+    assert_eq!(t.style_name(), Some("Banded"));
+}

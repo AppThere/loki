@@ -14,6 +14,7 @@ mod para_props;
 mod props;
 mod revisions;
 mod styles;
+mod table_style;
 mod tables;
 mod xml;
 

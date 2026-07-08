@@ -17,7 +17,13 @@ use super::xml::attr;
 /// banding resolved for that grid position — is baked into a per-cell
 /// automatic style (ODF has no conditional-region concept).
 pub(super) fn table(out: &mut String, t: &Table, cx: &mut Cx) {
-    out.push_str("<table:table>");
+    out.push_str("<table:table");
+    // The table-level named style (width / alignment / background), defined in
+    // styles.xml. Banding is baked per cell below, not carried here.
+    if let Some(style) = t.style_name() {
+        attr(out, "table:style-name", style);
+    }
+    out.push('>');
     let cols = t.col_specs.len().max(1);
     out.push_str(&format!(
         "<table:table-column table:number-columns-repeated=\"{cols}\"/>"

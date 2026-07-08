@@ -188,7 +188,7 @@ pub(super) fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Bl
         })
         .collect();
 
-    Block::Table(Box::new(Table {
+    let mut mapped = Table {
         attr: NodeAttr::default(),
         caption: TableCaption::default(),
         width: None,
@@ -196,7 +196,10 @@ pub(super) fn map_table(table: &OdfTable, ctx: &mut OdfMappingContext<'_>) -> Bl
         head: TableHead::empty(),
         bodies: vec![TableBody::from_rows(body_rows)],
         foot: TableFoot::empty(),
-    }))
+    };
+    // Preserve the table's named-style reference (`table:style-name`).
+    mapped.set_style_name(table.style_name.clone());
+    Block::Table(Box::new(mapped))
 }
 
 // ── Table of contents ──────────────────────────────────────────────────────────

@@ -101,6 +101,8 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
         out.push_str(&emit_text_properties(&style.char_props));
         out.push_str("</style:style>");
     }
+    // Named table styles (table-level width / alignment / background).
+    super::table_style::write_table_styles(&mut out, &doc.styles);
     out.push_str("</office:styles>");
 
     // ── Automatic styles: page layouts + header/footer styles ──────────────
