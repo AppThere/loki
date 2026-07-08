@@ -106,6 +106,7 @@ pub(crate) fn map_styles(styles: &DocxStyles) -> StyleCatalog {
                     display_name: style.name.clone(),
                     parent: style.based_on.as_deref().map(StyleId::new),
                     table_props: TableProps::default(),
+                    conditional: indexmap::IndexMap::default(),
                     extensions: ExtensionBag::default(),
                 };
                 // The table style flagged `w:default="1"` (e.g. TableNormal) is

@@ -457,6 +457,7 @@ fn table_style(id: &str, parent: Option<&str>, props: TableProps) -> TableStyle 
         display_name: None,
         parent: parent.map(StyleId::new),
         table_props: props,
+        conditional: Default::default(),
         extensions: Default::default(),
     }
 }

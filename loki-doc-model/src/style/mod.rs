@@ -16,6 +16,7 @@ pub mod para_style;
 pub mod props;
 pub mod resolve;
 pub mod resolve_table;
+pub mod table_banding;
 pub mod table_style;
 pub mod tree;
 
@@ -27,4 +28,5 @@ pub use list_style::{
 pub use page_style::{PageStyle, derive_page_styles, section_page_style_ids};
 pub use para_style::ParagraphStyle;
 pub use resolve::{Provenance, Resolved};
-pub use table_style::TableStyle;
+pub use table_banding::resolve_cell_shading;
+pub use table_style::{TableConditionalFormat, TableLook, TableRegion, TableStyle};
