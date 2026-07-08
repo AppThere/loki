@@ -14,7 +14,7 @@ use quick_xml::events::Event;
 
 use crate::error::{OdfError, OdfResult};
 use crate::odt::model::revision::{OdfChangeKind, OdfChangedRegion};
-use crate::xml_util::local_attr_val;
+use crate::xml_util::{event_text, local_attr_val};
 
 /// Parses a `text:tracked-changes` element (its `Start` already consumed) into
 /// the list of changed regions it contains.
@@ -63,9 +63,11 @@ fn read_changed_region(reader: &mut Reader<&[u8]>, id: String) -> OdfResult<OdfC
                 b"p" => collecting = Some("p"),
                 _ => {}
             },
-            Ok(Event::Text(ref t)) => {
+            // quick-xml 0.41 no longer folds entity/character references into
+            // the surrounding Text event, so accumulate both event kinds.
+            Ok(ref ev @ (Event::Text(_) | Event::GeneralRef(_))) => {
                 if collecting.is_some() {
-                    text.push_str(&t.unescape().map_err(xml_err)?);
+                    text.push_str(&event_text(ev).map_err(xml_err)?);
                 }
             }
             Ok(Event::End(ref e)) => match e.local_name().into_inner() {

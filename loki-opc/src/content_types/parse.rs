@@ -36,13 +36,19 @@ pub fn parse_content_types(
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"Extension" {
                             ext = Some(
-                                attr.decode_and_unescape_value(reader.decoder())?
-                                    .to_string(),
+                                attr.decoded_and_normalized_value(
+                                    quick_xml::XmlVersion::Implicit1_0,
+                                    reader.decoder(),
+                                )?
+                                .to_string(),
                             );
                         } else if attr.key.as_ref() == b"ContentType" {
                             ct = Some(
-                                attr.decode_and_unescape_value(reader.decoder())?
-                                    .to_string(),
+                                attr.decoded_and_normalized_value(
+                                    quick_xml::XmlVersion::Implicit1_0,
+                                    reader.decoder(),
+                                )?
+                                .to_string(),
                             );
                         }
                     }
@@ -79,15 +85,21 @@ pub fn parse_content_types(
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"PartName" {
                             let s = attr
-                                .decode_and_unescape_value(reader.decoder())?
+                                .decoded_and_normalized_value(
+                                    quick_xml::XmlVersion::Implicit1_0,
+                                    reader.decoder(),
+                                )?
                                 .to_string();
                             part = Some(PartName::new(s).map_err(|_| {
                                 OpcError::InvalidContentTypes("Invalid Overrides PartName".into())
                             })?);
                         } else if attr.key.as_ref() == b"ContentType" {
                             ct = Some(
-                                attr.decode_and_unescape_value(reader.decoder())?
-                                    .to_string(),
+                                attr.decoded_and_normalized_value(
+                                    quick_xml::XmlVersion::Implicit1_0,
+                                    reader.decoder(),
+                                )?
+                                .to_string(),
                             );
                         }
                     }

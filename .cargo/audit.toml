@@ -1,0 +1,29 @@
+# cargo-audit configuration. See `cargo audit --help` / the rustsec/rustsec repo
+# for the full schema.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2023-0071 — "Marvin Attack" timing side-channel in `rsa`'s
+    # PKCS#1 v1.5 decryption. No patched `rsa` release exists upstream (this
+    # advisory has carried "No fixed upgrade is available!" since 2023).
+    #
+    # Root-cause diagnosis (2026-07-08): `rsa` reaches this workspace only as
+    # an optional transitive dependency of `sqlx-mysql`, itself an optional
+    # dependency of the `sqlx` meta-crate. This workspace's `sqlx` dependency
+    # is declared with `default-features = false` and only the `postgres`
+    # feature enabled (see the root `Cargo.toml` — no crate here requests
+    # `mysql`). Confirmed with `cargo tree -i rsa` (and `cargo tree --target
+    # all -i rsa`) returning "nothing to print" even against a from-scratch
+    # `cargo generate-lockfile` — Cargo.lock lists `sqlx-mysql`/`rsa` because
+    # modern Cargo pre-resolves every optional dependency for lockfile
+    # stability, not because either crate is compiled into any workspace
+    # binary. The vulnerable `rsa` decryption code path is therefore never
+    # linked or reachable; there is nothing to vendor-patch.
+    #
+    # Re-verify this reasoning (`cargo tree -i rsa`, expect no output) before
+    # removing this ignore, and remove it immediately if any crate ever
+    # enables `sqlx`'s `mysql` feature — at that point `rsa` would become
+    # reachable and would need a real fix (vendored patch or an alternate
+    # MySQL driver).
+    "RUSTSEC-2023-0071",
+]

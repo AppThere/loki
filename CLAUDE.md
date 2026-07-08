@@ -205,6 +205,34 @@ but are **not perfectly round-tripped through the Loro CRDT**.
 
 ---
 
+## Known tech debt — residual vulnerable transitive `quick-xml` copies (2026-07-08)
+
+This workspace's own `quick-xml` usage (`loki-epub`, `loki-odf`, `loki-ooxml`,
+`loki-opc`) is on `0.41.0`, patched against RUSTSEC-2026-0194 (quadratic-time
+duplicate-attribute check) and RUSTSEC-2026-0195 (unbounded namespace-allocation
+DoS). `cargo audit` still reports both advisories against three *other*,
+transitively-pulled `quick-xml` copies that this workspace does not control —
+each is pinned by an intermediate crate's own manifest to a range that doesn't
+yet reach `0.41`:
+
+| Locked version | Pulled in by | Actual exposure |
+|---|---|---|
+| `0.38.4` | `object_store` (`^0.38.0`, via the `aws` feature — `loki-server-store`'s S3 backend) | Parses XML API responses (list-bucket, multipart) from the configured object-storage endpoint. `object_store` 0.14.0 (latest at audit time) still only requires `quick-xml ^0.40.1`, which is *also* unpatched (fix requires `>=0.41.0`) — no released `object_store` version resolves this yet. |
+| `0.39.4` | `wayland-scanner` → `smithay-client-toolkit` → `winit` → `blitz-shell` (`loki-presentation`) | Build-time codegen only: generates Rust bindings from the (trusted, locally-vendored) Wayland protocol XML. Not exposed to untrusted runtime input. |
+| `0.30.0` | `zbus_xml` → `zbus-lockstep` → `atspi` → `accesskit_unix` → `accesskit_winit` → `blitz-shell` | Parses AT-SPI/D-Bus introspection XML on the local session bus (Linux accessibility stack) — local IPC, not attacker-controlled document content. |
+
+None of these are fixable by bumping our own `Cargo.toml` requirements — each is
+gated behind an upstream crate release that hasn't caught up to `quick-xml`
+0.41 yet. `object_store` is the one with real untrusted-network exposure and is
+worth re-checking most often. Re-run `cargo audit` (or
+`cargo tree -i quick-xml`) periodically and bump `object_store` /
+`wayland-scanner`'s dependents the moment a release satisfies `quick-xml
+>=0.41` — do not silence these via `.cargo/audit.toml` (unlike the
+`rsa`/Marvin-Attack entry there, these three *are* actually compiled and
+reachable).
+
+---
+
 ## Workspace layout & capabilities
 
 The workspace is a set of focused crates (one responsibility each). Key groups:

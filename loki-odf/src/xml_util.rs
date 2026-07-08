@@ -24,7 +24,45 @@
 
 use appthere_color::RgbColor;
 use loki_primitives::units::Points;
-use quick_xml::events::BytesStart;
+use quick_xml::events::{BytesRef, BytesStart, BytesText, Event};
+
+/// Decodes and XML-entity-unescapes a text node's content.
+///
+/// `BytesText::unescape()` was removed in quick-xml 0.41 (COMPAT: split into
+/// separate `decode()` + `escape::unescape()` steps); this restores the old
+/// combined behaviour for the many call sites that just want plain text.
+pub fn unescape_text(text: &BytesText<'_>) -> quick_xml::Result<String> {
+    let decoded = text.decode()?;
+    Ok(quick_xml::escape::unescape(&decoded)?.into_owned())
+}
+
+/// Resolves a `&entity;` / `&#N;` general reference to its literal string.
+///
+/// COMPAT(quick-xml-0.41): entity/character refs no longer fold into the
+/// surrounding `Event::Text`; they arrive as their own `Event::GeneralRef`
+/// (verified: `&quot;` splits a run into Text, `GeneralRef`, Text, and is
+/// dropped if unhandled) — every text loop here must match both. Named refs
+/// resolve via the 5 predefined XML entities; anything else (ODF defines no
+/// custom DTD entities) falls back to the literal `&name;`, so nothing is lost.
+pub fn resolve_general_ref(r: &BytesRef<'_>) -> quick_xml::Result<String> {
+    if let Some(ch) = r.resolve_char_ref()? {
+        return Ok(ch.to_string());
+    }
+    let name = r.decode()?;
+    Ok(quick_xml::escape::resolve_predefined_entity(&name)
+        .map_or_else(|| format!("&{name};"), ToString::to_string))
+}
+
+/// Extracts text from an `Event::Text` or `Event::GeneralRef`; `None` for any
+/// other event kind. One-call replacement for the `unescape_text`/
+/// `resolve_general_ref` pair, for call sites matching both in a single arm.
+pub fn event_text(event: &Event<'_>) -> quick_xml::Result<String> {
+    match event {
+        Event::Text(t) => unescape_text(t),
+        Event::GeneralRef(r) => resolve_general_ref(r),
+        _ => Ok(String::new()),
+    }
+}
 
 // ── Length parsing ─────────────────────────────────────────────────────────────
 
@@ -96,7 +134,9 @@ pub fn local_attr_val(e: &BytesStart<'_>, local: &[u8]) -> Option<String> {
             key_bytes
         };
         if key_local == local {
-            attr.unescape_value().ok().map(std::borrow::Cow::into_owned)
+            attr.normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                .ok()
+                .map(std::borrow::Cow::into_owned)
         } else {
             None
         }

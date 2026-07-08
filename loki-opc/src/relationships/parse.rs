@@ -41,24 +41,36 @@ pub fn parse_relationships_part(
                         match attr.key.as_ref() {
                             b"Id" => {
                                 id = Some(
-                                    attr.decode_and_unescape_value(reader.decoder())?
-                                        .to_string(),
+                                    attr.decoded_and_normalized_value(
+                                        quick_xml::XmlVersion::Implicit1_0,
+                                        reader.decoder(),
+                                    )?
+                                    .to_string(),
                                 );
                             }
                             b"Type" => {
                                 rel_type = Some(
-                                    attr.decode_and_unescape_value(reader.decoder())?
-                                        .to_string(),
+                                    attr.decoded_and_normalized_value(
+                                        quick_xml::XmlVersion::Implicit1_0,
+                                        reader.decoder(),
+                                    )?
+                                    .to_string(),
                                 );
                             }
                             b"Target" => {
                                 target = Some(
-                                    attr.decode_and_unescape_value(reader.decoder())?
-                                        .to_string(),
+                                    attr.decoded_and_normalized_value(
+                                        quick_xml::XmlVersion::Implicit1_0,
+                                        reader.decoder(),
+                                    )?
+                                    .to_string(),
                                 );
                             }
                             b"TargetMode" => {
-                                let val = attr.decode_and_unescape_value(reader.decoder())?;
+                                let val = attr.decoded_and_normalized_value(
+                                    quick_xml::XmlVersion::Implicit1_0,
+                                    reader.decoder(),
+                                )?;
                                 if val == "External" {
                                     target_mode = TargetMode::External;
                                 }

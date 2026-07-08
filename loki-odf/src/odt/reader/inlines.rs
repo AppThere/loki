@@ -19,7 +19,7 @@ use crate::odt::model::fields::OdfField;
 use crate::odt::model::frames::OdfFrame;
 use crate::odt::model::notes::OdfNoteClass;
 use crate::odt::model::paragraph::{OdfHyperlink, OdfParagraphChild, OdfSpan};
-use crate::xml_util::local_attr_val;
+use crate::xml_util::{local_attr_val, resolve_general_ref, unescape_text};
 
 use super::document::{read_frame_kind, read_note_body, skip_element};
 
@@ -88,12 +88,23 @@ pub(crate) fn read_inline_children(
             Ok(Event::Empty(ref e)) => children.push(inline_from_empty(e)),
             // ── Text nodes ─────────────────────────────────────────────────
             Ok(Event::Text(ref t)) => {
-                let s = t.unescape().map_err(|e| OdfError::Xml {
+                let s = unescape_text(t).map_err(|e| OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
                 })?;
                 if !s.is_empty() {
-                    children.push(OdfParagraphChild::Text(s.into_owned()));
+                    children.push(OdfParagraphChild::Text(s));
+                }
+            }
+            // ── General references (`&quot;`, `&#39;`, …) split out of Text
+            // as their own event since quick-xml 0.41 — see `resolve_general_ref`.
+            Ok(Event::GeneralRef(ref r)) => {
+                let s = resolve_general_ref(r).map_err(|e| OdfError::Xml {
+                    part: "content.xml".to_string(),
+                    source: e,
+                })?;
+                if !s.is_empty() {
+                    children.push(OdfParagraphChild::Text(s));
                 }
             }
             // ── End: the containing element has closed ──────────────────────

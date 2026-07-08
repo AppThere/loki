@@ -8,7 +8,7 @@ use quick_xml::events::{BytesStart, Event};
 
 use crate::error::{OdfError, OdfResult};
 use crate::odt::model::paragraph::OdfParagraphChild;
-use crate::xml_util::local_attr_val;
+use crate::xml_util::{local_attr_val, resolve_general_ref, unescape_text};
 
 /// Parses an `office:annotation` element (the `Start` event already consumed)
 /// into an [`OdfParagraphChild::Annotation`]. Collects `dc:creator`, `dc:date`,
@@ -49,7 +49,15 @@ pub(crate) fn read_annotation(
                 _ => {}
             },
             Ok(Event::Text(ref t)) => {
-                let s = t.unescape().map_err(xml_err)?;
+                let s = unescape_text(t).map_err(xml_err)?;
+                if collecting.is_some() {
+                    meta_text.push_str(&s);
+                } else if in_paragraph {
+                    para_text.push_str(&s);
+                }
+            }
+            Ok(Event::GeneralRef(ref r)) => {
+                let s = resolve_general_ref(r).map_err(xml_err)?;
                 if collecting.is_some() {
                     meta_text.push_str(&s);
                 } else if in_paragraph {

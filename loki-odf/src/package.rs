@@ -176,14 +176,7 @@ impl OdfPackage {
                     let local = local_name_bytes(e.local_name().into_inner());
                     if local == b"document-content" || local == b"document" {
                         // Found the root element; look for office:version
-                        let version_val = e.attributes().flatten().find_map(|attr| {
-                            let key = local_name_bytes(attr.key.as_ref());
-                            if key == b"version" {
-                                attr.unescape_value().ok().map(std::borrow::Cow::into_owned)
-                            } else {
-                                None
-                            }
-                        });
+                        let version_val = crate::xml_util::local_attr_val(e, b"version");
 
                         return match version_val {
                             None => Ok((OdfVersion::V1_1, true)),

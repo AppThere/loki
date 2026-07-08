@@ -13,7 +13,7 @@ loki-doc-model  = { path = "../loki-doc-model" }
 loki-sheet-model = { path = "../loki-sheet-model" }
 loki-primitives = { path = "../loki-primitives" }
 appthere-color  = "0.1.1"
-quick-xml       = { version = "0.36", features = [] }
+quick-xml       = { version = "0.41", features = [] }
 zip             = { version = "2", default-features = false, features = ["deflate"] }
 thiserror       = "2"
 indexmap        = "2"

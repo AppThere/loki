@@ -25,7 +25,7 @@ loki-primitives = { path = "../loki-primitives" }
 loki-graphics = { path = "../loki-graphics", optional = true }
 loki-presentation-model = { path = "../loki-presentation-model", optional = true }
 appthere-color = "0.1.1"
-quick-xml      = { version = "0.36", features = ["serialize"] }
+quick-xml      = { version = "0.41", features = ["serialize"] }
 thiserror      = "2"
 indexmap       = "2"
 
@@ -45,7 +45,7 @@ appthere-conformance = { path = "../appthere-conformance", features = ["doc-mode
 zip = { version = "2", default-features = false, features = ["deflate"] }
 parley = "0.10"
 read-fonts = "0.40"
-quick-xml = { version = "0.36" }
+quick-xml = { version = "0.41" }
 # The PPTX round-trip integration test (gated on the `pptx` feature) builds a
 # presentation from these crates directly.
 loki-presentation-model = { path = "../loki-presentation-model" }

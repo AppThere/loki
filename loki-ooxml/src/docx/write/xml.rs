@@ -66,11 +66,11 @@ pub(super) fn color_to_hex(color: &loki_primitives::color::DocumentColor) -> Str
 
 /// Writes the `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` declaration.
 pub(super) fn write_decl<W: Write>(w: &mut Writer<W>) -> quick_xml::Result<()> {
-    w.write_event(Event::Decl(BytesDecl::new(
+    Ok(w.write_event(Event::Decl(BytesDecl::new(
         "1.0",
         Some("UTF-8"),
         Some("yes"),
-    )))
+    )))?)
 }
 
 /// Writes a self-closing element: `<tag attr1="v1" attr2="v2"/>`.
@@ -85,7 +85,7 @@ pub(super) fn write_empty<W: Write>(
     for (k, v) in attrs {
         e.push_attribute((*k, *v));
     }
-    w.write_event(Event::Empty(e))
+    Ok(w.write_event(Event::Empty(e))?)
 }
 
 /// Writes `<tag attrs>text content</tag>`.
@@ -101,7 +101,7 @@ pub(super) fn write_text_elem<W: Write>(
     }
     w.write_event(Event::Start(start))?;
     w.write_event(Event::Text(BytesText::new(text)))?;
-    w.write_event(Event::End(BytesEnd::new(tag)))
+    Ok(w.write_event(Event::End(BytesEnd::new(tag)))?)
 }
 
 /// Writes `<tag attrs>` (opening tag only).
@@ -114,12 +114,12 @@ pub(super) fn write_start<W: Write>(
     for (k, v) in attrs {
         e.push_attribute((*k, *v));
     }
-    w.write_event(Event::Start(e))
+    Ok(w.write_event(Event::Start(e))?)
 }
 
 /// Writes `</tag>` (closing tag).
 pub(super) fn write_end<W: Write>(w: &mut Writer<W>, tag: &str) -> quick_xml::Result<()> {
-    w.write_event(Event::End(BytesEnd::new(tag)))
+    Ok(w.write_event(Event::End(BytesEnd::new(tag)))?)
 }
 
 /// Shorthand for a single `w:val="..."` attribute slice.
