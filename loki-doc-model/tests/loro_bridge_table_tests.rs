@@ -256,3 +256,16 @@ fn table_among_paragraphs_keeps_position() {
     assert_eq!(recovered.sections[0].blocks.len(), 3);
     assert_eq!(recovered.sections[0].blocks, doc.sections[0].blocks);
 }
+
+#[test]
+fn table_style_reference_round_trips_through_the_bridge() {
+    // A table's named style is stored in its `"style"` attr, which the bridge
+    // serialises as part of the table skeleton (Spec 05 4a.3 foundation).
+    let mut table = sample_table();
+    table.set_style_name(Some("GridTable4Accent2".into()));
+    let back = round_trip(&doc_with_block(Block::Table(Box::new(table))));
+    let Block::Table(t) = &back.sections[0].blocks[0] else {
+        panic!("expected a table");
+    };
+    assert_eq!(t.style_name(), Some("GridTable4Accent2"));
+}

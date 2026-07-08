@@ -57,8 +57,7 @@ pub(super) fn write_document_xml(
         let is_last = idx + 1 == sections.len();
         write_blocks(&mut w, &section.blocks, collector, 0);
 
-        // Emit w:sectPr — for the last section it is a direct child of w:body;
-        // for earlier sections it goes inside a final empty paragraph.
+        // Emit w:sectPr (last section: child of w:body; earlier: in a final para).
         let layout = &section.layout;
         if is_last {
             write_sect_pr(&mut w, layout, collector);
@@ -518,8 +517,11 @@ fn write_list_item<W: std::io::Write>(
 fn write_table<W: std::io::Write>(w: &mut Writer<W>, tbl: &Table, collector: &mut ExportCollector) {
     let _ = write_start(w, "w:tbl", &[]);
 
-    // Table properties: auto width.
+    // Table properties: named style (if any, before tblW per the schema), width.
     let _ = write_start(w, "w:tblPr", &[]);
+    if let Some(style) = tbl.style_name() {
+        let _ = write_empty(w, "w:tblStyle", &[("w:val", style)]);
+    }
     let _ = write_empty(w, "w:tblW", &[("w:w", "0"), ("w:type", "auto")]);
     let _ = write_end(w, "w:tblPr");
 
@@ -600,8 +602,7 @@ fn write_table_row<W: std::io::Write>(
             }
             col_idx += cell.col_span as usize;
         } else {
-            // Should not happen in a valid model.
-            break;
+            break; // no matching column in a valid model
         }
     }
 

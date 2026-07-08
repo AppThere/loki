@@ -156,6 +156,30 @@ impl Table {
         self.col_specs.len()
     }
 
+    /// The referenced table style's id — OOXML `w:tblStyle` / ODF
+    /// `table:style-name` — stored in [`NodeAttr`]'s `"style"` key (the same
+    /// convention a [`Block::Heading`] uses). `None` when there is no named
+    /// style. The style supplies table-level defaults and (future) banding /
+    /// conditional-region formatting.
+    ///
+    /// [`Block::Heading`]: crate::content::block::Block::Heading
+    #[must_use]
+    pub fn style_name(&self) -> Option<&str> {
+        self.attr
+            .kv
+            .iter()
+            .find(|(k, _)| k == "style")
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// Sets (or, with `None`, clears) the referenced table style id.
+    pub fn set_style_name(&mut self, id: Option<String>) {
+        self.attr.kv.retain(|(k, _)| k != "style");
+        if let Some(id) = id {
+            self.attr.kv.push(("style".to_string(), id));
+        }
+    }
+
     /// Builds a `rows` × `cols` table of empty paragraph cells with evenly
     /// proportioned columns — the shape the editor's Insert → Table control
     /// creates. Each cell holds one empty `Block::Para` so it is immediately

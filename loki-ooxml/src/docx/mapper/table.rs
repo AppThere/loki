@@ -24,14 +24,9 @@ use super::props::map_border_edge;
 
 /// Maps a `w:tbl` to a `Block::Table`.
 ///
-/// ## Vertical merge
-/// A two-pass algorithm resolves `w:vMerge` spans: restart cells receive
-/// the correct `row_span` count and continuation cells are removed from the
-/// output (OOXML §17.4.84).
-///
-/// ## Column widths
-/// `w:tblGrid` widths are converted from twips to points when present;
-/// otherwise `ColWidth::Default` is used.
+/// A two-pass algorithm resolves `w:vMerge` spans (restart cells get the
+/// `row_span` count, continuation cells are dropped — OOXML §17.4.84); `w:tblGrid`
+/// widths convert twips→points when present, else `ColWidth::Default`.
 pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Block {
     let col_specs = build_col_specs(t);
 
@@ -85,8 +80,8 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
 
     let width = map_tbl_width(t);
 
-    // OOXML `w:tblLayout w:type="fixed"` → honour grid column widths exactly
-    // (no autofit rescale). Mark the table so loki-layout skips its rescale.
+    // `w:tblLayout w:type="fixed"` → honour grid column widths exactly (no
+    // autofit); mark the table so loki-layout skips its rescale.
     let mut attr = NodeAttr::default();
     if t.tbl_pr
         .as_ref()
@@ -95,6 +90,10 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
     {
         attr.classes
             .push(loki_doc_model::content::table::core::TABLE_FIXED_LAYOUT_CLASS.to_string());
+    }
+    // `w:tblStyle` → the referenced table style, stored in the `"style"` attr.
+    if let Some(id) = t.tbl_pr.as_ref().and_then(|p| p.style_id.clone()) {
+        attr.kv.push(("style".to_string(), id));
     }
 
     let table = Table {
