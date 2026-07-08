@@ -150,9 +150,12 @@ pub fn accept_reject_revision_at(
 /// [`MutationError::Loro`] for an underlying Loro error.
 pub fn accept_reject_all_revisions(loro: &LoroDoc, accept: bool) -> Result<usize, MutationError> {
     let mut total = 0usize;
+    // Resolve text-span revisions first, so a paragraph merged by an accepted
+    // ¶-deletion carries already-clean text.
     for text in collect_all_text_containers(loro) {
         total += resolve_text(&text, accept)?;
     }
+    total += super::para_mark::resolve_para_marks(loro, accept)?;
     Ok(total)
 }
 

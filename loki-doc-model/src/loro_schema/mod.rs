@@ -175,6 +175,9 @@ pub const PROP_PADDING_LEFT: &str = "padding_left";
 pub const PROP_PADDING_RIGHT: &str = "padding_right";
 pub const PROP_TAB_STOPS: &str = "tab_stops";
 pub const PROP_BACKGROUND_COLOR: &str = "background_color";
+/// Key for a char-props map's tracked-change revision (the paragraph mark's
+/// deletion mark lives here — OOXML `w:pPr/w:rPr/w:del`; Review tab 4a.2).
+pub const PROP_REVISION: &str = "revision";
 
 // -----------------------------------------------------------------------------
 // Section / PageLayout Keys

@@ -156,21 +156,23 @@ fn resolve_block(block: &mut Block, r: Resolution) {
     }
 }
 
-fn resolve_blocks(blocks: &mut [Block], r: Resolution) {
-    for b in blocks {
+fn resolve_blocks(blocks: &mut Vec<Block>, r: Resolution) {
+    for b in blocks.iter_mut() {
         resolve_block(b, r);
     }
+    // A struck paragraph mark (¶) merges/clears at the block-list level.
+    super::para_mark_merge::resolve_para_marks(blocks, matches!(r, Resolution::Accept));
 }
 
 /// Accepts every tracked change in `blocks`: insertions become permanent (mark
-/// cleared) and deletions are removed.
-pub fn accept_revisions(blocks: &mut [Block]) {
+/// cleared) and deletions are removed (a struck paragraph mark merges).
+pub fn accept_revisions(blocks: &mut Vec<Block>) {
     resolve_blocks(blocks, Resolution::Accept);
 }
 
 /// Rejects every tracked change in `blocks`: insertions are removed and
 /// deletions are restored (mark cleared).
-pub fn reject_revisions(blocks: &mut [Block]) {
+pub fn reject_revisions(blocks: &mut Vec<Block>) {
     resolve_blocks(blocks, Resolution::Reject);
 }
 
@@ -207,7 +209,13 @@ pub fn has_revisions(blocks: &[Block]) -> bool {
     }
     blocks.iter().any(|block| match block {
         Block::Para(i) | Block::Plain(i) | Block::Heading(_, _, i) => i.iter().any(inline_has),
-        Block::StyledPara(p) => p.inlines.iter().any(inline_has),
+        Block::StyledPara(p) => {
+            p.inlines.iter().any(inline_has)
+                || p.direct_char_props
+                    .as_ref()
+                    .and_then(|c| c.revision.as_ref())
+                    .is_some()
+        }
         Block::LineBlock(lines) => lines.iter().flatten().any(inline_has),
         Block::BlockQuote(bs) | Block::Div(_, bs) | Block::Figure(_, _, bs) => has_revisions(bs),
         Block::BulletList(items) | Block::OrderedList(_, items) => {

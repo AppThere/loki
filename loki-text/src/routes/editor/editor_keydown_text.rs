@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! Printable-character and Backspace handling for the document canvas,
-//! including selection-aware replacement and removal (audit F6c): typing
-//! replaces the active selection, Backspace/Delete remove it. Called by
+//! Printable-character and selection handling for the document canvas (audit
+//! F6c): typing replaces the active selection; [`remove_selection`] deletes (or
+//! strikes) it for Backspace/Delete. Backspace's block/grapheme paths live in
+//! [`super::editor_keydown_backspace`]. Called by
 //! [`super::editor_keydown::make_keydown_handler`].
 
 use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
+use loki_doc_model::PathStep;
 use loki_doc_model::loro_mutation::{
-    get_block_text_at, insert_text_at, insert_text_tracked_at, tracked_delete_selection_at,
-    tracked_grapheme_delete,
+    insert_text_at, insert_text_tracked_at, tracked_delete_selection_at,
 };
 use loki_doc_model::style::props::revision::RevisionMark;
-use loki_doc_model::{PathStep, merge_block_at};
 
 use super::editor_keydown_ctrl::post_mutation_sync;
-use crate::editing::cursor::{CursorState, DocumentPosition, prev_grapheme_boundary};
+use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
 #[cfg(test)]
@@ -209,92 +209,6 @@ pub(super) fn handle_character_key(
     let new_pos = DocumentPosition {
         byte_offset: insert_at.byte_offset + ch.len(),
         ..insert_at
-    };
-    set_collapsed_cursor(doc_state, cursor_state, new_pos);
-}
-
-/// Handles Backspace: removes the active selection, or merges with the
-/// previous block at offset 0, or deletes the previous grapheme.
-#[allow(clippy::too_many_arguments)] // mirrors the other keydown helpers' signals
-pub(super) fn handle_backspace_key(
-    focus: DocumentPosition,
-    loro_doc: Signal<Option<loro::LoroDoc>>,
-    doc_state: &Arc<Mutex<DocumentState>>,
-    cursor_state: Signal<CursorState>,
-    undo_manager: Signal<Option<loro::UndoManager>>,
-    can_undo: Signal<bool>,
-    can_redo: Signal<bool>,
-) {
-    match remove_selection(
-        loro_doc,
-        doc_state,
-        cursor_state,
-        undo_manager,
-        can_undo,
-        can_redo,
-    ) {
-        SelectionRemoval::Removed | SelectionRemoval::Rejected => return,
-        SelectionRemoval::NoSelection => {}
-    }
-    if focus.byte_offset == 0 {
-        // Backspace-at-start merges this block into its previous sibling in the
-        // same container; `merge_block_at` returns `NoPreviousBlock` (a no-op) at
-        // the first block of a container.
-        let merged_offset = {
-            let ldoc_guard = loro_doc.read();
-            let Some(ldoc) = ldoc_guard.as_ref() else {
-                return;
-            };
-            let Ok(merged_offset) = merge_block_at(ldoc, &focus.block_path()) else {
-                return;
-            };
-            apply_mutation_and_relayout(doc_state, ldoc);
-            merged_offset
-        };
-        post_mutation_sync(
-            doc_state,
-            loro_doc,
-            cursor_state,
-            undo_manager,
-            can_undo,
-            can_redo,
-        );
-        // Caret lands at the join point in the previous sibling block.
-        let new_pos = focus.sibling_block(-1, merged_offset);
-        set_collapsed_cursor(doc_state, cursor_state, new_pos);
-        return;
-    }
-    // With track changes on, Backspace over normal text strikes it through
-    // instead of removing it (own insertions are un-typed; already-struck text is
-    // stepped over) — `tracked_grapheme_delete` decides. The caret still lands
-    // before the target grapheme in every case.
-    let del_rev = deletion_mark(doc_state);
-    let prev = {
-        let ldoc_guard = loro_doc.read();
-        let Some(ldoc) = ldoc_guard.as_ref() else {
-            return;
-        };
-        let text = get_block_text_at(ldoc, &focus.block_path());
-        let prev = prev_grapheme_boundary(&text, focus.byte_offset);
-        let path = focus.block_path();
-        if tracked_grapheme_delete(ldoc, &path, prev, focus.byte_offset, del_rev.as_ref()).is_err()
-        {
-            return;
-        }
-        apply_mutation_and_relayout(doc_state, ldoc);
-        prev
-    };
-    post_mutation_sync(
-        doc_state,
-        loro_doc,
-        cursor_state,
-        undo_manager,
-        can_undo,
-        can_redo,
-    );
-    let new_pos = DocumentPosition {
-        byte_offset: prev,
-        ..focus
     };
     set_collapsed_cursor(doc_state, cursor_state, new_pos);
 }

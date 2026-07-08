@@ -164,7 +164,7 @@ pub use loro_mutation::{
     merge_block_at, rename_page_style, replace_text, revision_at, set_block_alignment,
     set_block_alignment_at, set_block_style, set_block_type_heading, set_block_type_para,
     set_document_columns, set_document_margins, set_document_orientation, set_document_page_size,
-    set_page_style_geometry, split_block, split_block_at,
+    set_page_style_geometry, set_para_mark_deletion, split_block, split_block_at,
 };
 #[cfg(feature = "serde")]
 pub use loro_mutation::{

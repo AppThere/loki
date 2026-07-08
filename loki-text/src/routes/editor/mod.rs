@@ -25,6 +25,7 @@ mod editor_inner;
 mod editor_insert;
 mod editor_insert_panel;
 mod editor_keydown;
+mod editor_keydown_backspace;
 mod editor_keydown_ctrl;
 mod editor_keydown_enter;
 mod editor_keydown_text;

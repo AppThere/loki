@@ -257,6 +257,12 @@ pub(super) fn reconstruct_char_props_from_map(block_map: &LoroMap) -> Option<Cha
         props.color = Some(c);
         any = true;
     }
+    if let Some(s) = get_str_from_map(&props_map, PROP_REVISION)
+        && let Some(rev) = crate::style::props::revision::decode(&s)
+    {
+        props.revision = Some(rev);
+        any = true;
+    }
     if let Some(s) = get_str_from_map(&props_map, "background_color")
         && let Some(c) = decode_document_color(&s)
     {

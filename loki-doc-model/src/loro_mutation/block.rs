@@ -216,7 +216,10 @@ pub fn merge_block_at(loro: &LoroDoc, path: &BlockPath) -> Result<usize, Mutatio
 /// `blocks_list`, then removes block `local`. Returns the join offset (the prior
 /// UTF-8 length of block `local - 1`). Callers must ensure `local >= 1`.
 /// `block_index` is used only for error reporting.
-fn merge_block_in_list(
+///
+/// A [`MutationError::TextNotFound`] (block `local` has no text — e.g. a table)
+/// is returned before any mutation, so the caller can skip it cleanly.
+pub(super) fn merge_block_in_list(
     blocks_list: &LoroMovableList,
     local: usize,
     block_index: usize,
