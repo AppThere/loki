@@ -27,4 +27,5 @@ mod section;
 mod settings;
 mod style_props;
 mod styles;
+mod table_style;
 mod xml;

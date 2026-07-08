@@ -54,3 +54,75 @@ fn a_table_without_a_style_stays_unstyled() {
 
     assert_eq!(first_table(&back).and_then(Table::style_name), None);
 }
+
+#[test]
+fn table_style_banding_and_tbllook_round_trip() {
+    use loki_doc_model::style::catalog::StyleId;
+    use loki_doc_model::style::table_style::{
+        TableConditionalFormat, TableLook, TableProps, TableRegion, TableStyle,
+    };
+    use loki_primitives::color::{DocumentColor, RgbColor};
+
+    let blue = DocumentColor::Rgb(RgbColor::new(
+        0x44 as f32 / 255.0,
+        0x72 as f32 / 255.0,
+        0xC4 as f32 / 255.0,
+    ));
+
+    // A banded table style in the catalog.
+    let mut style = TableStyle {
+        id: StyleId::new("Banded"),
+        display_name: Some("Banded".into()),
+        parent: None,
+        table_props: TableProps {
+            row_band_size: Some(2),
+            ..TableProps::default()
+        },
+        conditional: Default::default(),
+        extensions: Default::default(),
+    };
+    style.conditional.insert(
+        TableRegion::FirstRow,
+        TableConditionalFormat {
+            background_color: Some(blue),
+        },
+    );
+
+    // A table referencing the style, with a non-default look (last row/col on).
+    let mut table = Table::grid(2, 2);
+    table.set_style_name(Some("Banded".into()));
+    let look = TableLook {
+        last_row: true,
+        last_column: true,
+        ..TableLook::default()
+    };
+    table.set_table_look_code(Some(look.encode_attr()));
+
+    let mut doc = Document::new();
+    doc.styles
+        .table_styles
+        .insert(StyleId::new("Banded"), style);
+    doc.sections[0].blocks = vec![Block::Table(Box::new(table))];
+
+    let back = export_import(&doc);
+
+    // The style definition's conditional shading survives.
+    let ts = back
+        .styles
+        .table_styles
+        .get(&StyleId::new("Banded"))
+        .expect("table style survives");
+    assert_eq!(ts.table_props.row_band_size, Some(2));
+    let fr = ts
+        .conditional
+        .get(&TableRegion::FirstRow)
+        .and_then(|c| c.background_color.as_ref())
+        .expect("firstRow shading survives");
+    assert_eq!(fr.to_hex().as_deref(), Some("#4472C4"));
+
+    // The instance's tblLook survives.
+    let t = first_table(&back).expect("table survives");
+    let back_look =
+        TableLook::decode_attr(t.table_look_code().expect("tbllook present")).expect("decodes");
+    assert_eq!(back_look, look);
+}

@@ -523,6 +523,7 @@ fn write_table<W: std::io::Write>(w: &mut Writer<W>, tbl: &Table, collector: &mu
         let _ = write_empty(w, "w:tblStyle", &[("w:val", style)]);
     }
     let _ = write_empty(w, "w:tblW", &[("w:w", "0"), ("w:type", "auto")]);
+    super::table_style::write_tbl_look(w, tbl.table_look_code());
     let _ = write_end(w, "w:tblPr");
 
     // Grid columns.
@@ -949,9 +950,8 @@ fn write_bookmark<W: std::io::Write>(
     collector: &mut ExportCollector,
 ) {
     use loki_doc_model::content::inline::BookmarkKind;
-    // The same numeric ID must appear on both `w:bookmarkStart` and its
-    // paired `w:bookmarkEnd` (ECMA-376 §17.13.6.2).  We allocate on Start
-    // and look up on End via the collector's per-name LIFO stack.
+    // The same numeric ID appears on `w:bookmarkStart` and its paired
+    // `w:bookmarkEnd` (§17.13.6.2): allocate on Start, look up on End (LIFO).
     let id = match kind {
         BookmarkKind::Start => collector.assign_bookmark_id(name),
         BookmarkKind::End => collector.resolve_bookmark_id(name),

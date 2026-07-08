@@ -122,6 +122,10 @@ pub(super) fn write_styles_xml(catalog: &StyleCatalog) -> Vec<u8> {
         write_note_reference_style(&mut w, "EndnoteReference", "endnote reference");
     }
 
+    // Table styles: band sizes, base cell shading, and `w:tblStylePr`
+    // conditional-region formatting.
+    super::table_style::write_table_styles(&mut w, catalog);
+
     let _ = write_end(&mut w, "w:styles");
     drop(w);
     out
