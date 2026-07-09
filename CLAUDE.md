@@ -196,7 +196,10 @@ baseline). Three techniques (the third added 2026-07-08):
    `flow.rs` 1535 → 1362; and for `para.rs`'s `layout_paragraph_uncached`
    (~630 lines): the two selection-geometry underlay passes (highlight fills +
    spelling squiggles) → `para_underlays.rs` (`underlays` submodule),
-   `para.rs` 1698 → 1626.
+   `para.rs` 1698 → 1626; and `flow.rs`'s `flow_table` pass 3a (the per-cell
+   content-flow loop) → `flow_table_cells.rs` (`table_cells` submodule),
+   `flow.rs` 1362 → 1209 (this landed the `rotated-cell-editing` path in a
+   sub-ceiling module, unblocking deferred-feature 4b.5).
 
 (Test files are exempt from the production-line count.)
 
