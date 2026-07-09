@@ -193,6 +193,7 @@ mod tests {
             path: Vec::new(),
             layout: Arc::new(layout),
             origin,
+            rotation: None,
         }
     }
 

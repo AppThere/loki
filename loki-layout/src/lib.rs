@@ -63,7 +63,7 @@ pub use resolve::{
     resolve_color, resolve_para_props,
 };
 pub use result::{
-    ContinuousLayout, DocumentLayout, LayoutPage, PageEditingData, PageParagraphData,
+    CellRotation, ContinuousLayout, DocumentLayout, LayoutPage, PageEditingData, PageParagraphData,
     PaginatedLayout,
 };
 

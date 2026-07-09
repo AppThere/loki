@@ -68,5 +68,6 @@ pub(super) fn push_editing_para(
         path,
         layout,
         origin,
+        rotation: None,
     });
 }

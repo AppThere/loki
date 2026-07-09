@@ -14,6 +14,10 @@ use crate::geometry::{LayoutInsets, LayoutRect, LayoutSize};
 use crate::items::PositionedItem;
 use crate::para::{CursorRect, ParagraphLayout};
 
+#[path = "result_rotation.rs"]
+mod rotation;
+pub use rotation::CellRotation;
+
 /// Per-page editing data that maps page-local coordinates to paragraph layouts.
 ///
 /// Only populated when `LayoutOptions::preserve_for_editing` is `true`.
@@ -36,9 +40,14 @@ pub struct PageParagraphData {
     pub path: Vec<loki_doc_model::PathStep>,
     /// The preserved layout data for hit-testing and cursor positioning.
     pub layout: Arc<ParagraphLayout>,
-    /// Page-local `(x, y)` origin of the paragraph in points, relative to
-    /// the page content area (i.e. after margins).
+    /// Origin of the paragraph in points. Page-local (after margins) for
+    /// ordinary paragraphs; **content-local** (see [`CellRotation`]) when
+    /// `rotation` is set, so the caret geometry can be transformed to match the
+    /// painted, rotated glyphs.
     pub origin: (f32, f32),
+    /// Rigid rotation applied by an enclosing rotated table cell, or `None` for
+    /// upright content. Present ⇒ `origin` is in the content-local frame.
+    pub rotation: Option<CellRotation>,
 }
 
 /// The result of laying out a document.
@@ -199,7 +208,11 @@ impl ContinuousLayout {
             .paragraphs
             .iter()
             .rev()
-            .find(|p| p.origin.1 <= canvas_y && canvas_y <= p.origin.1 + p.layout.height)
+            .find(|p| {
+                // Covering test in the paragraph's own (possibly rotated) frame.
+                let (_, ly) = p.hit_local(canvas_x, canvas_y);
+                (0.0..=p.layout.height).contains(&ly)
+            })
             .or_else(|| {
                 if canvas_y < self.paragraphs[0].origin.1 {
                     self.paragraphs.first()
@@ -207,11 +220,10 @@ impl ContinuousLayout {
                     self.paragraphs.last()
                 }
             })?;
-        let x_in = canvas_x - para.origin.0;
-        let y_in = (canvas_y - para.origin.1).max(0.0);
+        let (x_in, y_in) = para.hit_local(canvas_x, canvas_y);
         let byte = para
             .layout
-            .hit_test_point(x_in, y_in)
+            .hit_test_point(x_in, y_in.max(0.0))
             .map_or(0, |h| h.byte_offset);
         Some((para.block_index, byte))
     }
@@ -220,9 +232,12 @@ impl ContinuousLayout {
     pub fn cursor_rect_canvas(&self, block_index: usize, byte_offset: usize) -> Option<CursorRect> {
         let para = self.paragraph(block_index)?;
         let cr = para.layout.cursor_rect(byte_offset)?;
+        // Position is rotation-correct; the caret box stays axis-aligned (a
+        // tilted caret in a rotated cell is a follow-up — see fidelity-status).
+        let (x, y) = para.local_to_page(cr.x, cr.y);
         Some(CursorRect {
-            x: para.origin.0 + cr.x,
-            y: para.origin.1 + cr.y,
+            x,
+            y,
             height: cr.height,
         })
     }
@@ -253,8 +268,9 @@ impl ContinuousLayout {
             // Whole paragraph to the end for all but the final one.
             let hi = if i == end_i { end.1 } else { usize::MAX };
             for mut r in para.layout.selection_rects(lo, hi) {
-                r.origin.x += para.origin.0;
-                r.origin.y += para.origin.1;
+                let (x, y) = para.local_to_page(r.origin.x, r.origin.y);
+                r.origin.x = x;
+                r.origin.y = y;
                 rects.push(r);
             }
         }

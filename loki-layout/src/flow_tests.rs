@@ -1129,6 +1129,63 @@ fn table_cell_background_produces_filled_rect() {
     );
 }
 
+/// A rotated cell (vertical text) must now emit editing data: paragraphs
+/// tagged with a `CellRotation` whose transform round-trips a paragraph-local
+/// point to the page and back. This is the 4b.5 unblock — rotated cells are no
+/// longer read-only (before, `flow_cell_blocks` discarded their editing data).
+#[test]
+fn rotated_cell_emits_editing_data_with_rotation() {
+    use loki_doc_model::content::table::row::CellTextDirection;
+
+    let mut r = test_resources();
+    let props = CellProps {
+        text_direction: Some(CellTextDirection::TbRl),
+        ..Default::default()
+    };
+    let section = Section {
+        page_style: None,
+        layout: PageLayout::default(),
+        start: Default::default(),
+        blocks: vec![make_table_2x2(Some(props))],
+        extensions: ExtensionBag::default(),
+    };
+    let catalog = StyleCatalog::new();
+    let opts = LayoutOptions {
+        preserve_for_editing: true,
+        ..Default::default()
+    };
+    let FlowOutput::Canvas { paragraphs, .. } = flow_section(
+        &mut r,
+        &section,
+        &catalog,
+        &LayoutMode::Pageless,
+        1.0,
+        &opts,
+        &[],
+    ) else {
+        panic!("expected Canvas output");
+    };
+
+    let rotated: Vec<_> = paragraphs.iter().filter(|p| p.rotation.is_some()).collect();
+    assert!(
+        !rotated.is_empty(),
+        "rotated cells must emit editing paragraphs (got {} paras, none rotated)",
+        paragraphs.len()
+    );
+    for p in &rotated {
+        let rot = p.rotation.expect("filtered to Some");
+        assert_eq!(rot.degrees, 90.0, "TbRl → 90°");
+        // hit_local must invert the cell rotation: a page point at the rotated
+        // position of paragraph-local (3, 1) maps back to (3, 1).
+        let (page_x, page_y) = p.local_to_page(3.0, 1.0);
+        let (lx, ly) = p.hit_local(page_x, page_y);
+        assert!(
+            (lx - 3.0).abs() < 1e-2 && (ly - 1.0).abs() < 1e-2,
+            "hit_local round-trip failed: ({lx}, {ly})"
+        );
+    }
+}
+
 /// A table referencing a style with first-row banding shading (and no direct
 /// cell shading) should paint that shading — proof the flow engine now
 /// consults the table style, not just direct `CellProps`.

@@ -12,6 +12,7 @@ use loki_doc_model::content::table::row::Row;
 use crate::geometry::{LayoutPoint, LayoutRect, LayoutSize};
 use crate::items::PositionedItem;
 use crate::resolve::pts_to_f32;
+use crate::result::CellRotation;
 
 use super::{FlowState, editing, flow_block, get_items_max_x, table_geom};
 
@@ -83,10 +84,8 @@ pub(super) fn flow_row_cells(
         let cell_items = if let Some(degrees) = rotation_degrees {
             // NOTE(cell-rotation): content laid out width/height-swapped,
             // then RotatedGroup rotates it (fine for text runs).
-            // TODO(rotated-cell-editing): emits no editing data (the caret
-            // needs the same rotation transform) — cells stay read-only.
             let rotated_content_width = (cell_height - pad_top - pad_bottom).max(0.0);
-            let inner_items = table_geom::flow_cell_blocks(
+            let (inner_items, cell_paras) = table_geom::flow_cell_blocks(
                 state.resources,
                 state.catalog,
                 state.display_scale,
@@ -96,6 +95,7 @@ pub(super) fn flow_row_cells(
                 pad_top,
                 pad_left,
                 idx,
+                *cell_flat,
             );
 
             let max_x = get_items_max_x(&inner_items);
@@ -107,6 +107,31 @@ pub(super) fn flow_row_cells(
                 Some(CellVerticalAlign::Bottom) => extra_space,
                 _ => 0.0,
             };
+
+            // Editing data: the caret maps through the SAME affine the renderer
+            // applies to the RotatedGroup (content-local → page), so a click
+            // resolves to the right character in the rotated cell. Pivots mirror
+            // `loki-vello` scene.rs cx/cy_local + cx/cy_physical (90/270 branch).
+            //
+            // TODO(rotated-cell-caret): hit-testing (click → offset) and caret
+            // POSITION are rotation-correct via `PageParagraphData::hit_local` /
+            // `local_to_page`. Still upright: the rendered caret *line* (a tilted
+            // caret needs `CursorRect` + the vello caret to carry rotation) and
+            // loki-text's up/down arrow navigation across rotated cells (the
+            // `rect + origin` sites in editing/navigation.rs, which should route
+            // through `local_to_page`). See docs/fidelity-status.md §rotated-cells.
+            let rotation = CellRotation {
+                degrees,
+                pivot_local: (cell_height / 2.0, cell_content_width / 2.0),
+                pivot_page: (
+                    cell_x + cell_content_width / 2.0,
+                    (row_y_start + y_offset) + cell_height / 2.0,
+                ),
+            };
+            for mut para in cell_paras {
+                para.rotation = Some(rotation);
+                state.current_paragraphs.push(para);
+            }
 
             vec![PositionedItem::RotatedGroup {
                 origin: LayoutPoint {

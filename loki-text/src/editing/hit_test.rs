@@ -182,7 +182,13 @@ pub fn hit_test_page(
         .paragraphs
         .iter()
         .rev()
-        .find(|p| p.origin.1 <= content_y && content_y <= p.origin.1 + p.layout.height)
+        .find(|p| {
+            // Covering test in the paragraph's own frame; `hit_local` inverts
+            // an enclosing rotated cell's transform (upright cells: a plain
+            // origin subtraction, identical to the previous behaviour).
+            let (_, ly) = p.hit_local(content_x, content_y);
+            (0.0..=p.layout.height).contains(&ly)
+        })
         .or_else(|| {
             // Prefer the last paragraph for clicks below all content; it covers
             // both the "below last line" and the "empty document" cases.
@@ -190,14 +196,13 @@ pub fn hit_test_page(
         })?;
 
     // ── 6. Map to byte offset within the paragraph ────────────────────────────
-    let x_in_para = content_x - para_data.origin.0;
-    let y_in_para = (content_y - para_data.origin.1).max(0.0);
+    let (x_in_para, y_in_para) = para_data.hit_local(content_x, content_y);
 
     // hit_test_point returns None only when preserve_for_editing is false.
     // In editing mode it always returns Some; fall back to offset 0 defensively.
     let byte_offset = para_data
         .layout
-        .hit_test_point(x_in_para, y_in_para)
+        .hit_test_point(x_in_para, y_in_para.max(0.0))
         .map_or(0, |h| h.byte_offset);
 
     Some(DocumentPosition {

@@ -16,6 +16,56 @@ fn make_filled(x: f32) -> PositionedItem {
 }
 
 #[test]
+fn cell_rotation_forward_inverse_round_trips() {
+    // 90° cell, arbitrary pivots. page_to_local ∘ local_to_page == identity.
+    let rot = CellRotation {
+        degrees: 90.0,
+        pivot_local: (30.0, 8.0),
+        pivot_page: (100.0, 50.0),
+    };
+    for (lx, ly) in [(0.0, 0.0), (12.0, 3.0), (30.0, 8.0), (5.0, 16.0)] {
+        let (px, py) = rot.local_to_page(lx, ly);
+        let (rx, ry) = rot.page_to_local(px, py);
+        assert!(
+            (rx - lx).abs() < 1e-3 && (ry - ly).abs() < 1e-3,
+            "({rx},{ry})"
+        );
+    }
+}
+
+#[test]
+fn cell_rotation_90_maps_local_x_to_page_y() {
+    // Matches the renderer's Rotate(90°) in y-down coords: local +x → page +y.
+    let rot = CellRotation {
+        degrees: 90.0,
+        pivot_local: (0.0, 0.0),
+        pivot_page: (0.0, 0.0),
+    };
+    let (px, py) = rot.local_to_page(10.0, 0.0);
+    assert!(px.abs() < 1e-3 && (py - 10.0).abs() < 1e-3, "({px},{py})");
+}
+
+#[test]
+fn hit_local_inverts_rotation_for_paragraph() {
+    // A rotated paragraph whose content-local origin is (0,0); a page click at
+    // the rotated position of local (7, 2) must invert back to paragraph-local
+    // (7, 2) so ParagraphLayout::hit_test_point sees the right coordinates.
+    let mut p = para("hello", 0, (0.0, 0.0));
+    let rot = CellRotation {
+        degrees: 270.0,
+        pivot_local: (20.0, 5.0),
+        pivot_page: (60.0, 40.0),
+    };
+    p.rotation = Some(rot);
+    let (page_x, page_y) = rot.local_to_page(7.0, 2.0);
+    let (lx, ly) = p.hit_local(page_x, page_y);
+    assert!(
+        (lx - 7.0).abs() < 1e-3 && (ly - 2.0).abs() < 1e-3,
+        "({lx},{ly})"
+    );
+}
+
+#[test]
 fn continuous_all_items_count() {
     let layout = DocumentLayout::Continuous(ContinuousLayout {
         content_width: 500.0,
@@ -66,6 +116,7 @@ fn para(text: &str, block_index: usize, origin: (f32, f32)) -> PageParagraphData
         path: Vec::new(),
         layout: Arc::new(layout),
         origin,
+        rotation: None,
     }
 }
 

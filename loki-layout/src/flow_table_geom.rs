@@ -17,8 +17,9 @@ use crate::geometry::{LayoutInsets, LayoutSize};
 use crate::items::PositionedItem;
 use crate::mode::LayoutMode;
 use crate::resolve::pts_to_f32;
+use crate::result::PageParagraphData;
 
-use super::{FlowState, flow_block, get_items_max_x};
+use super::{FlowState, editing, flow_block, get_items_max_x};
 
 pub(super) fn measure_cell_height(
     resources: &mut FontResources,
@@ -172,8 +173,12 @@ pub(super) fn resolve_column_widths(
     resolved_widths
 }
 
-// Helper to layout cell blocks inside a nested flow state.
-// Helper requires passing all context values to configure the FlowState.
+/// Flow a rotated cell's blocks in an isolated (content-local) coordinate
+/// frame, returning both the positioned items and the per-paragraph editing
+/// data. Each paragraph is tagged with the cell's `NestedEditing` path (using
+/// `cell_flat`, the bridge's flat `KEY_TABLE_CELLS` index) so a click can
+/// resolve to the live cell; origins stay in the content-local frame, to be
+/// mapped to the page by the caller's [`crate::result::CellRotation`].
 #[allow(clippy::too_many_arguments)]
 pub(super) fn flow_cell_blocks(
     resources: &mut FontResources,
@@ -185,7 +190,8 @@ pub(super) fn flow_cell_blocks(
     starting_indent: f32,
     starting_y: f32,
     idx: usize,
-) -> Vec<PositionedItem> {
+    cell_flat: usize,
+) -> (Vec<PositionedItem>, Vec<PageParagraphData>) {
     let mut temp_state = FlowState {
         resources,
         catalog,
@@ -225,11 +231,14 @@ pub(super) fn flow_cell_blocks(
         nested_editing: None,
     };
 
-    for block in blocks {
+    for (bi, block) in blocks.iter().enumerate() {
+        // Tag cell paragraphs so a click in the rotated cell resolves to it.
+        temp_state.nested_editing = Some(editing::NestedEditing::cell(idx, cell_flat, bi));
         flow_block(&mut temp_state, block, idx);
     }
+    temp_state.nested_editing = None;
 
-    temp_state.current_items
+    (temp_state.current_items, temp_state.current_paragraphs)
 }
 
 /// Assign each cell its grid column span `(col_start, col_end)`, accounting for

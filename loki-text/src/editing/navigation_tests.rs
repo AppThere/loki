@@ -63,6 +63,7 @@ fn make_layout_with_paras(paras: &[(usize, Vec<PathStep>, &str)]) -> PaginatedLa
             path: path.clone(),
             layout,
             origin: (0.0, y),
+            rotation: None,
         });
         y += h;
     }
@@ -238,12 +239,14 @@ fn make_two_para_layout(text0: &str, text1: &str) -> PaginatedLayout {
                 path: Vec::new(),
                 layout: Arc::new(para0),
                 origin: (0.0, 0.0),
+                rotation: None,
             },
             PageParagraphData {
                 block_index: 1,
                 path: Vec::new(),
                 layout: Arc::new(para1),
                 origin: (0.0, h0),
+                rotation: None,
             },
         ],
     };
@@ -427,6 +430,7 @@ fn two_page_layout() -> PaginatedLayout {
                     path: Vec::new(),
                     layout: p0,
                     origin: (0.0, 0.0),
+                    rotation: None,
                 }],
             )),
             Arc::new(mk_page(
@@ -436,6 +440,7 @@ fn two_page_layout() -> PaginatedLayout {
                     path: Vec::new(),
                     layout: p1,
                     origin: (0.0, 0.0),
+                    rotation: None,
                 }],
             )),
         ],
@@ -523,6 +528,7 @@ fn cell_split_across_pages() -> PaginatedLayout {
                     path: vec![PathStep::Cell { cell: 0, block: 0 }],
                     layout: alpha,
                     origin: (0.0, 0.0),
+                    rotation: None,
                 }],
             )),
             Arc::new(mk_page(
@@ -532,6 +538,7 @@ fn cell_split_across_pages() -> PaginatedLayout {
                     path: vec![PathStep::Cell { cell: 0, block: 1 }],
                     layout: beta,
                     origin: (0.0, 0.0),
+                    rotation: None,
                 }],
             )),
         ],
