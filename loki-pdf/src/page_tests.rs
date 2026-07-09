@@ -86,6 +86,52 @@ fn clipped_group_emits_clip_operators() {
     );
 }
 
+// A RotatedGroup must emit a content-matrix (`cm`) transform wrapped in
+// save/restore, and still render its children (5.5). Previously the rotation
+// was dropped and children rendered axis-aligned at the group origin.
+#[test]
+fn rotated_group_emits_transform_and_children() {
+    use loki_layout::{LayoutRect, LayoutSize, PositionedRect};
+    let mut fonts = FontBank::new();
+    let mut images = ImageBank::new();
+    let mut banks = PageBanks {
+        fonts: &mut fonts,
+        images: &mut images,
+    };
+    let mut content = Content::new();
+    let child = PositionedItem::FilledRect(PositionedRect {
+        rect: LayoutRect {
+            origin: LayoutPoint { x: 0.0, y: 0.0 },
+            size: LayoutSize {
+                width: 10.0,
+                height: 4.0,
+            },
+        },
+        color: LayoutColor::new(0.0, 0.0, 0.0, 1.0),
+    });
+    let group = PositionedItem::RotatedGroup {
+        origin: LayoutPoint { x: 20.0, y: 30.0 },
+        degrees: 90.0,
+        content_width: 10.0,
+        content_height: 4.0,
+        items: vec![child],
+    };
+    render_item(&group, 200.0, 0.0, 0.0, &mut banks, &mut content);
+    let bytes = content.finish().to_vec();
+    let stream = String::from_utf8_lossy(&bytes);
+    // `cm` concatenates the rotation CTM; `q`/`Q` bracket it; `re`+`f` paint the
+    // child rectangle inside the rotated frame.
+    assert!(
+        stream.contains("cm"),
+        "content-matrix operator `cm` missing"
+    );
+    assert!(
+        stream.contains('q') && stream.contains('Q'),
+        "save/restore (`q`/`Q`) missing"
+    );
+    assert!(stream.contains('f'), "child fill operator `f` missing");
+}
+
 // A run mixing .notdef with real glyphs registers the face but excludes the
 // .notdef id from the subset (and never draws it).
 #[test]

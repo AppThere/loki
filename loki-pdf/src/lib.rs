@@ -25,6 +25,7 @@ pub mod image;
 pub mod metadata;
 pub mod options;
 pub mod page;
+mod page_rotate;
 
 use loki_doc_model::Document;
 use loki_layout::{
