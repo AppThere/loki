@@ -660,6 +660,66 @@ fn misspelled_word_emits_spelling_squiggle() {
 }
 
 #[test]
+fn spelling_squiggle_hugs_the_descender_not_the_line_box() {
+    // With a generous line height the line box extends far below the glyphs.
+    // The squiggle must anchor to the text descender (baseline + descent), not
+    // the line-box bottom — otherwise it floats in the inter-line leading.
+    let mut r = test_resources();
+    let checker =
+        std::sync::Arc::new(loki_spell::SpellChecker::bundled().expect("bundled dictionary loads"));
+    let spell = crate::SpellState {
+        checker,
+        generation: 1,
+    };
+    let props = ResolvedParaProps {
+        line_height: Some(ResolvedLineHeight::MetricsRelative(3.0)),
+        ..ResolvedParaProps::default()
+    };
+    let text = "hello teh world";
+    let spans = [single_span(text, 12.0)];
+    let result = layout_paragraph_spelled(
+        &mut r,
+        text,
+        &spans,
+        &props,
+        400.0,
+        1.0,
+        false,
+        Some(&spell),
+    );
+
+    // The single line's baseline is the glyph run origin y (see para_emit).
+    let baseline = result
+        .items
+        .iter()
+        .find_map(|i| match i {
+            PositionedItem::GlyphRun(g) => Some(g.origin.y),
+            _ => None,
+        })
+        .expect("a glyph run");
+    let sq = result
+        .items
+        .iter()
+        .find_map(|i| match i {
+            PositionedItem::Decoration(d) if d.kind == DecorationKind::Spelling => Some(d),
+            _ => None,
+        })
+        .expect("a squiggle");
+    // Just below the baseline (descender zone, well under one 12 pt em), NOT the
+    // ~2-em drop the old line-box-bottom anchor produced under 3× line height.
+    assert!(
+        sq.y > baseline,
+        "squiggle sits below the baseline: y={} baseline={baseline}",
+        sq.y
+    );
+    assert!(
+        sq.y < baseline + 10.0,
+        "squiggle hugs the descender, not the line-box bottom: y={} baseline={baseline}",
+        sq.y
+    );
+}
+
+#[test]
 fn no_squiggles_when_spelling_disabled() {
     let mut r = test_resources();
     let text = "hello teh world";

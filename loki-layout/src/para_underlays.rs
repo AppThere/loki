@@ -85,11 +85,8 @@ pub(super) fn emit_highlight_underlays(
 
 /// Emit a `DecorationKind::Spelling` wave under each misspelled word the
 /// supplied checker flags in `clean_text`. Thickness scales with line height;
-/// the wave is anchored near the line-box bottom.
-///
-/// TODO(spell-baseline): tighten to the run underline offset once verified
-/// against the GPU renderer at multiple zooms (selection geometry yields the
-/// line box, not per-run metrics).
+/// the wave is anchored just below the text descender (the run underline zone),
+/// so it hugs the glyphs instead of floating in the inter-line leading.
 pub(super) fn emit_spelling_squiggles(
     items: &mut Vec<PositionedItem>,
     layout: &Layout<LayoutColor>,
@@ -102,6 +99,16 @@ pub(super) fn emit_spelling_squiggles(
     let Some(spell) = spell else {
         return;
     };
+    // Per-line descender bottom (`baseline + descent`) — where a run underline
+    // sits, and the tight anchor for the squiggle. Selection geometry only gives
+    // the full line box (`bb`), whose bottom includes leading below the glyphs.
+    let line_descender_bottom: Vec<f32> = layout
+        .lines()
+        .map(|l| {
+            let m = l.metrics();
+            m.baseline + m.descent
+        })
+        .collect();
     for miss in spell.checker.check_text(clean_text) {
         if miss.range.start >= miss.range.end {
             continue;
@@ -112,9 +119,16 @@ pub(super) fn emit_spelling_squiggles(
         for (bb, line_idx) in Selection::new(anchor, focus).geometry(layout) {
             let indent = line_indent(para_props, line_idx, drop_lines, drop_shift);
             let thickness = (((bb.y1 - bb.y0) as f32) * 0.06).clamp(0.7, 1.5);
+            // Top of the squiggle band = the descender bottom, so the wave rides
+            // just under the glyphs. Fall back to the line-box bottom if the line
+            // index is somehow out of range.
+            let descender = line_descender_bottom
+                .get(line_idx)
+                .copied()
+                .unwrap_or(bb.y1 as f32);
             items.push(PositionedItem::Decoration(PositionedDecoration {
                 x: bb.x0 as f32 + indent,
-                y: bb.y1 as f32 - thickness * 2.5,
+                y: descender - thickness / 2.0,
                 width: (bb.x1 - bb.x0) as f32,
                 thickness,
                 kind: DecorationKind::Spelling,
