@@ -4,11 +4,11 @@
 # Regenerate with: scripts/check-file-ceiling.py --update
 
 1626 loki-layout/src/para.rs
-1492 loki-odf/src/odt/reader/document.rs
 1362 loki-layout/src/flow.rs
 1185 loki-ooxml/src/docx/reader/document.rs
 1073 loki-ooxml/src/docx/write/document.rs
 1047 loki-spreadsheet/src/routes/editor/editor_inner.rs
+1002 loki-odf/src/odt/reader/document.rs
 948 loki-vello/src/scene.rs
 892 loki-odf/src/odt/reader/styles.rs
 865 loki-layout/src/resolve.rs
