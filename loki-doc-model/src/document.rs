@@ -8,6 +8,9 @@
 //! `<office:document>/<office:body>/<office:text>` and OOXML's
 //! `w:document/w:body`.
 
+#[path = "document_paper.rs"]
+mod paper;
+
 use crate::io::source::DocumentSource;
 use crate::layout::section::Section;
 use crate::meta::core::DocumentMeta;
@@ -120,7 +123,7 @@ impl Document {
         use crate::content::block::Block;
         use crate::layout::page::PageLayout;
         let layout = PageLayout {
-            page_size: default_page_size_for_locale(),
+            page_size: paper::default_page_size_for_locale(),
             ..PageLayout::default()
         };
         let section = Section::with_layout_and_blocks(layout, vec![Block::Para(vec![])]);
@@ -282,36 +285,6 @@ impl Default for Document {
 
 /// Returns the appropriate default page size for the running locale.
 ///
-/// Reads `LC_PAPER`, `LC_ALL`, `LANGUAGE`, and `LANG` environment variables
-/// (in priority order).  Returns US Letter for regions that use it; A4 for
-/// all others.  Falls back to A4 if no locale can be determined.
-fn default_page_size_for_locale() -> crate::layout::page::PageSize {
-    use crate::layout::page::PageSize;
-    for var in &["LC_PAPER", "LC_ALL", "LANGUAGE", "LANG"] {
-        if let Ok(val) = std::env::var(var) {
-            let upper = val.to_uppercase();
-            if upper.is_empty() {
-                continue;
-            }
-            if uses_letter_paper(&upper) {
-                return PageSize::letter();
-            }
-            return PageSize::a4();
-        }
-    }
-    PageSize::a4()
-}
-
-/// Returns `true` when `locale_upper` (an uppercased locale string) indicates
-/// a region that uses US Letter paper by convention.
-fn uses_letter_paper(locale_upper: &str) -> bool {
-    const LETTER_REGIONS: &[&str] = &[
-        "_US", "_CA", "_MX", "_PH", "_CO", "_CL", "_VE", "_BO", "_SV", "_GT", "_HN", "_NI", "_CR",
-        "_DO", "_PR",
-    ];
-    LETTER_REGIONS.iter().any(|r| locale_upper.contains(r))
-}
-
 #[cfg(test)]
 #[path = "document_tests.rs"]
 mod tests;
