@@ -4,6 +4,7 @@
 //! Tests for the `word/document.xml` reader, extracted from `document.rs` to
 //! hold the 300-line ceiling.
 
+use super::table::parse_tbl_look;
 use super::*;
 
 const SIMPLE_DOC: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>

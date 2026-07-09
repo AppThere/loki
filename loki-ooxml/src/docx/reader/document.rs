@@ -14,9 +14,6 @@ use crate::docx::model::paragraph::{
     DocxNumPr, DocxPBdr, DocxPPr, DocxParaChild, DocxParagraph, DocxPgMar, DocxPgSz, DocxRFonts,
     DocxRPr, DocxRun, DocxRunChild, DocxSectPr, DocxSpacing, DocxTab,
 };
-use crate::docx::model::styles::{
-    DocxTableModel, DocxTableRow, DocxTblLook, DocxTblPr, DocxTblWidth, DocxTrPr,
-};
 use crate::docx::reader::runs::{parse_fld_simple_runs, parse_hyperlink_runs, parse_tracked_runs};
 use crate::docx::reader::util::{attr_val, local_name, parse_emu, toggle_prop};
 use crate::error::{OoxmlError, OoxmlResult};
@@ -24,6 +21,8 @@ use crate::xml_util::event_text;
 
 #[path = "document_cell.rs"]
 mod cell;
+#[path = "document_table.rs"]
+mod table;
 use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
 
 /// Parses `word/document.xml` bytes into a [`DocxDocument`].
@@ -44,7 +43,7 @@ pub fn parse_document(xml: &[u8]) -> OoxmlResult<DocxDocument> {
                     doc.body.children.push(DocxBodyChild::Paragraph(para));
                 }
                 b"tbl" if in_body => {
-                    let tbl = parse_table(&mut reader)?;
+                    let tbl = table::parse_table(&mut reader)?;
                     doc.body.children.push(DocxBodyChild::Table(tbl));
                 }
                 b"sdt" if in_body => {
@@ -812,163 +811,6 @@ fn parse_wrap_text(e: &quick_xml::events::BytesStart<'_>) -> WrapSide {
         Some("largest") => WrapSide::Largest,
         _ => WrapSide::Both,
     }
-}
-
-/// Parses a `w:tbl` element. Called after Start("tbl") is consumed.
-pub(super) fn parse_table(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTableModel> {
-    let mut tbl = DocxTableModel::default();
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => {
-                match local_name(e.local_name().as_ref()) {
-                    b"tr" => {
-                        let row = parse_table_row(reader)?;
-                        tbl.rows.push(row);
-                    }
-                    b"tblPr" => {
-                        tbl.tbl_pr = Some(parse_tbl_pr(reader)?);
-                    }
-                    _ => {}
-                }
-                // tblGrid and gridCol: handled via Empty event below
-            }
-            Ok(Event::Empty(ref e)) if local_name(e.local_name().as_ref()) == b"gridCol" => {
-                let w: i32 = attr_val(e, b"w").and_then(|v| v.parse().ok()).unwrap_or(0);
-                tbl.col_widths.push(w);
-            }
-            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"tbl" => {
-                break;
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OoxmlError::Xml {
-                    part: "word/document.xml".into(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-    Ok(tbl)
-}
-
-/// Parses a `w:tblPr` element. Called after Start("tblPr") is consumed.
-fn parse_tbl_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTblPr> {
-    let mut pr = DocxTblPr::default();
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e)) => match local_name(e.local_name().as_ref()) {
-                b"tblW" => {
-                    if let (Some(w), Some(w_type)) = (
-                        attr_val(e, b"w").and_then(|v| v.parse::<i32>().ok()),
-                        attr_val(e, b"type"),
-                    ) {
-                        pr.width = Some(DocxTblWidth { w, w_type });
-                    }
-                }
-                b"tblStyle" => {
-                    pr.style_id = attr_val(e, b"val");
-                }
-                b"tblLayout" => {
-                    pr.layout = attr_val(e, b"type");
-                }
-                b"tblLook" => {
-                    pr.tbl_look = Some(parse_tbl_look(e));
-                }
-                _ => {}
-            },
-            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"tblPr" => {
-                break;
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OoxmlError::Xml {
-                    part: "word/document.xml".into(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-    Ok(pr)
-}
-
-/// Parses a `w:tblLook` element (ECMA-376 §17.4.56). Prefers the explicit
-/// boolean attributes (`w:firstRow`, …); falls back to the legacy `w:val`
-/// hex bitmask. `noHBand`/`noVBand` are inverted into positive banding flags.
-fn parse_tbl_look(e: &quick_xml::events::BytesStart<'_>) -> DocxTblLook {
-    let flag = |name: &[u8]| attr_val(e, name).map(|v| v == "1" || v == "true");
-    let val = attr_val(e, b"val").and_then(|v| u32::from_str_radix(&v, 16).ok());
-    let bit = |mask: u32| val.map(|v| v & mask != 0);
-    // Banding is on unless the corresponding `no*Band` bit/flag is set.
-    let banding =
-        |flag_name: &[u8], mask: u32| flag(flag_name).or_else(|| bit(mask)).is_some_and(|no| !no);
-    DocxTblLook {
-        first_row: flag(b"firstRow").or_else(|| bit(0x0020)).unwrap_or(false),
-        last_row: flag(b"lastRow").or_else(|| bit(0x0040)).unwrap_or(false),
-        first_column: flag(b"firstColumn")
-            .or_else(|| bit(0x0080))
-            .unwrap_or(false),
-        last_column: flag(b"lastColumn").or_else(|| bit(0x0100)).unwrap_or(false),
-        h_band: banding(b"noHBand", 0x0200),
-        v_band: banding(b"noVBand", 0x0400),
-    }
-}
-
-/// Parses a `w:tr` element. Called after Start("tr") is consumed.
-fn parse_table_row(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTableRow> {
-    let mut row = DocxTableRow::default();
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => match local_name(e.local_name().as_ref()) {
-                b"tc" => {
-                    let cell = cell::parse_table_cell(reader)?;
-                    row.cells.push(cell);
-                }
-                b"trPr" => {
-                    let mut tr_pr = DocxTrPr::default();
-                    let mut tbuf = Vec::new();
-                    loop {
-                        match reader.read_event_into(&mut tbuf) {
-                            Ok(Event::Empty(ref te))
-                                if local_name(te.local_name().as_ref()) == b"tblHeader" =>
-                            {
-                                tr_pr.is_header = true;
-                            }
-                            Ok(Event::End(ref te))
-                                if local_name(te.local_name().as_ref()) == b"trPr" =>
-                            {
-                                break;
-                            }
-                            Ok(Event::Eof) | Err(_) => break,
-                            _ => {}
-                        }
-                        tbuf.clear();
-                    }
-                    row.tr_pr = Some(tr_pr);
-                }
-                _ => {}
-            },
-            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"tr" => {
-                break;
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OoxmlError::Xml {
-                    part: "word/document.xml".into(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-    Ok(row)
 }
 
 /// Skips all content inside an element until its matching end tag.

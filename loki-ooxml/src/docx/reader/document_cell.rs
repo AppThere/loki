@@ -16,7 +16,8 @@ use crate::docx::model::styles::{
 use crate::docx::reader::util::{attr_val, local_name};
 use crate::error::{OoxmlError, OoxmlResult};
 
-use super::{parse_paragraph, parse_table};
+use super::parse_paragraph;
+use super::table::parse_table;
 
 /// Parses a `w:tc` element. Called after Start("tc") is consumed.
 pub(super) fn parse_table_cell(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTableCell> {
