@@ -24,7 +24,6 @@
 388 loki-ooxml/src/docx/import.rs
 373 loki-layout/src/incremental.rs
 365 loki-odf/src/ods/export.rs
-357 loki-ooxml/src/docx/mapper/props.rs
 334 loki-layout/src/lib.rs
 331 loki-text/src/routes/home.rs
 331 loki-text/src/editing/state.rs

@@ -4,7 +4,8 @@
 //! Unit tests for the DOCX props mapper (`super`). Extracted from props.rs (Phase 7.1 inline-test extraction).
 
 use super::*;
-use crate::docx::model::paragraph::{DocxInd, DocxNumPr, DocxSpacing};
+use crate::docx::model::paragraph::{DocxInd, DocxNumPr, DocxRPr, DocxSpacing};
+use loki_doc_model::style::props::char_props::StrikethroughStyle;
 
 fn ppr_with_jc(jc: &str) -> DocxPPr {
     DocxPPr {
