@@ -11,9 +11,9 @@
 865 loki-layout/src/resolve.rs
 845 loki-ooxml/src/docx/reader/document.rs
 800 loki-text/src/routes/editor/editor_inner.rs
-751 loki-odf/src/odt/reader/document.rs
 741 loki-layout/src/flow_para.rs
 727 loki-vello/src/scene.rs
+586 loki-odf/src/odt/reader/document.rs
 575 loki-ooxml/src/xlsx/import.rs
 466 loki-ooxml/src/xlsx/export.rs
 465 loki-odf/src/ods/import.rs
