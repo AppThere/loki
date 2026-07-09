@@ -158,8 +158,10 @@ baseline file. Three techniques (the third added 2026-07-08):
    `block.rs`, `docx/mapper/{paragraph,numbering,mod,table}.rs`, `odt/import.rs`,
    `odt/mapper/lists.rs`, `layout/result.rs`, `renderer/render_layout.rs`, and
    2026-06-28 for `editing/hit_test.rs`, `xml_util.rs`, `pdf/src/page.rs`, and
-   2026-07-08 for `odt/reader/styles.rs` (1554 → 1298; ~258-line inline module →
-   `styles_tests.rs`) — each was over the ceiling only because of a large inline
+   2026-07-08 for `odt/reader/styles.rs` (1554 → 1298), `odt/reader/document.rs`
+   (1492 → 1002; ~490-line module), `loki-vello/scene.rs` (948 → 727),
+   `loki-odf/package.rs` (644 → 410), and `loki-ooxml/docx/mapper/document.rs`
+   (611 → 448) — each was over the ceiling only because of a large inline
    test module (or, as with `styles.rs`, partly so).
 2. *Directory split*: convert `foo.rs` → a `foo/` directory with section-cohesive
    submodules, re-export the public entry points from `foo/mod.rs`, and move the
