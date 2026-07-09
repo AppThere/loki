@@ -8,11 +8,11 @@
 1185 loki-ooxml/src/docx/reader/document.rs
 1073 loki-ooxml/src/docx/write/document.rs
 1047 loki-spreadsheet/src/routes/editor/editor_inner.rs
-1002 loki-odf/src/odt/reader/document.rs
 948 loki-vello/src/scene.rs
 892 loki-odf/src/odt/reader/styles.rs
 865 loki-layout/src/resolve.rs
 800 loki-text/src/routes/editor/editor_inner.rs
+751 loki-odf/src/odt/reader/document.rs
 741 loki-layout/src/flow_para.rs
 644 loki-odf/src/package.rs
 611 loki-ooxml/src/docx/mapper/document.rs
