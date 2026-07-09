@@ -56,6 +56,42 @@ fn make_continuous_layout(items: Vec<PositionedItem>) -> DocumentLayout {
 }
 
 #[test]
+fn paint_decoration_every_style_does_not_panic() {
+    use loki_layout::items::DecorationStyle;
+    use loki_layout::{DecorationKind, PositionedDecoration};
+    let styles = [
+        DecorationStyle::Solid,
+        DecorationStyle::Double,
+        DecorationStyle::Dotted,
+        DecorationStyle::Dashed,
+        DecorationStyle::Wave,
+        DecorationStyle::Thick,
+    ];
+    for kind in [DecorationKind::Underline, DecorationKind::Strikethrough] {
+        for style in styles {
+            let mut scene = vello::Scene::new();
+            let deco = PositionedDecoration {
+                x: 10.0,
+                y: 20.0,
+                width: 80.0,
+                thickness: 1.5,
+                kind,
+                style,
+                color: LayoutColor {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 1.0,
+                },
+            };
+            // Two zoom levels exercise the scale path. No panic = pass.
+            crate::decor::paint_decoration(&mut scene, &deco, 1.0);
+            crate::decor::paint_decoration(&mut scene, &deco, 2.5);
+        }
+    }
+}
+
+#[test]
 fn test_paint_empty_layout_does_not_panic() {
     let layout = make_continuous_layout(vec![]);
     let mut scene = vello::Scene::new();

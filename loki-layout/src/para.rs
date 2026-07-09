@@ -57,8 +57,8 @@ pub enum FontVariant {
 
 /// Underline decoration style, mirroring the doc-model enum.
 ///
-/// Parley 0.6 only renders a single solid underline; variant information is
-/// preserved for when the renderer gains multi-style support.
+/// Rendered per-variant (5.2): the emitter carries the variant onto the
+/// `PositionedDecoration` (`para_emit`) and `loki-vello` strokes each style.
 /// TR 29166 §6.2.1. ODF `style:text-underline-style`; OOXML `w:u`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnderlineStyle {
@@ -78,8 +78,8 @@ pub enum UnderlineStyle {
 
 /// Strikethrough decoration style, mirroring the doc-model enum.
 ///
-/// Parley 0.6 only renders a single strikethrough; double style is preserved
-/// for future rendering.
+/// Rendered per-variant (5.2): `Double` maps to a double stroke in
+/// `loki-vello`, `Single` to one line.
 /// TR 29166 §6.2.1. ODF `style:text-line-through-style`;
 /// OOXML `w:strike` / `w:dstrike`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,15 +161,13 @@ pub struct StyleSpan {
     pub color: LayoutColor,
     /// Underline decoration style. `None` = no underline.
     ///
-    /// Parley 0.6 renders all variants identically (single solid underline).
-    /// TODO(underline-style): Parley exposes a single underline decoration;
-    /// Double/Dotted/Dash/Wave variants all render as Single for now.
+    /// The variant is recovered by `para_emit` (via `span_underline`) and
+    /// carried on the `PositionedDecoration` so `loki-vello` strokes it
+    /// per-style — single / double / dotted / dashed / wave / thick (5.2).
     pub underline: Option<UnderlineStyle>,
     /// Strikethrough decoration style. `None` = no strikethrough.
     ///
-    /// Parley 0.6 renders all variants identically (single strikethrough).
-    /// TODO(strikethrough-style): Parley exposes a single strikethrough decoration;
-    /// Double variant renders as Single for now.
+    /// `Double` (`w:dstrike`) renders as a double stroke; `Single` as one (5.2).
     pub strikethrough: Option<StrikethroughStyle>,
     /// Line-height multiplier (e.g. `1.5`). `None` = paragraph default.
     pub line_height: Option<f32>,

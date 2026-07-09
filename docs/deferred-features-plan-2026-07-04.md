@@ -144,7 +144,7 @@ the Watch list). Every task here must update `docs/fidelity-status.md`.
 | Task | Source | Detail | Effort |
 |---|---|---|---|
 | 5.1 | `tab-default` | Honour `DocumentSettings.default_tab_stop_pt` instead of the hardcoded 36 pt (`para.rs:648`). Pairs naturally with 1.1 (`tab_stops` round-trip). | S |
-| 5.2 | `underline-style` / `strikethrough-style` | Double/Dotted/Dash/Wave underline, double strikethrough (all render Single today). Decoration geometry is ours (drawn in `loki-vello`), not Parley-gated. | M |
+| 5.2 | `underline-style` / `strikethrough-style` | **Done ✅ 2026-07-08.** All underline variants (single/double/dotted/dashed/wave/thick) and double strikethrough now render. `PositionedDecoration` gained a `DecorationStyle` (loki-layout `items.rs`); `para_emit` recovers the `w:u` / `w:strike` variant per run (which Parley's own run decoration drops) via `span_underline`/`span_strike` and carries it on the decoration; `loki-vello`'s `paint_decoration` strokes each style (double = two lines, dotted/dashed via kurbo dash patterns, wave reuses the squiggle path, thick = 2× width). Tested: `underline_variant_carries_to_decoration_style` + `double_strikethrough_carries_double_style` (layout) and `paint_decoration_every_style_does_not_panic` (loki-vello). | M |
 | 5.3 | `spell-baseline` | Tighten squiggle to the run underline offset (`para.rs:1619`). | S |
 | 5.4 | `list-picture-bullet` | Picture bullets (fallback is `•`) — image plumbing already exists for block images. | M |
 | 5.5 | `pdf-rotate` | Rotation transform in PDF export (`pdf/src/page.rs:83`); unlocks the "PDF clip/rotate paint" registry row. | M |

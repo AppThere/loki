@@ -14,7 +14,9 @@ use parley::{Cursor, Layout, Selection};
 
 use crate::color::LayoutColor;
 use crate::geometry::LayoutRect;
-use crate::items::{DecorationKind, PositionedDecoration, PositionedItem, PositionedRect};
+use crate::items::{
+    DecorationKind, DecorationStyle, PositionedDecoration, PositionedItem, PositionedRect,
+};
 
 use super::{ResolvedParaProps, StyleSpan};
 
@@ -116,6 +118,7 @@ pub(super) fn emit_spelling_squiggles(
                 width: (bb.x1 - bb.x0) as f32,
                 thickness,
                 kind: DecorationKind::Spelling,
+                style: DecorationStyle::Wave,
                 color: SPELL_SQUIGGLE_COLOR,
             }));
         }

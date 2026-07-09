@@ -220,10 +220,34 @@ pub struct PositionedDecoration {
     pub width: f32,
     /// Thickness of the line in points.
     pub thickness: f32,
-    /// The decoration type.
+    /// The decoration type (which band the line sits in).
     pub kind: DecorationKind,
+    /// How the line is drawn (solid / double / dotted / dashed / wave / thick).
+    pub style: DecorationStyle,
     /// Line color.
     pub color: LayoutColor,
+}
+
+/// How a decoration line is stroked. Orthogonal to [`DecorationKind`] (which
+/// says *where* the line sits): a `w:u`/`style:text-underline-style` value maps
+/// to one of these for underlines, and `w:strike`/`w:dstrike` to `Solid`/
+/// `Double` for strikethroughs. Spelling squiggles are always [`Self::Wave`].
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DecorationStyle {
+    /// A single solid line (the default).
+    #[default]
+    Solid,
+    /// Two parallel solid lines.
+    Double,
+    /// A row of dots.
+    Dotted,
+    /// A row of short dashes.
+    Dashed,
+    /// A sine-like wave (also used for spelling squiggles).
+    Wave,
+    /// A single line at roughly double thickness.
+    Thick,
 }
 
 /// The kind of text decoration.

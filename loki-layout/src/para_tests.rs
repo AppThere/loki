@@ -290,6 +290,74 @@ fn underline_span_emits_decoration() {
 }
 
 #[test]
+fn underline_variant_carries_to_decoration_style() {
+    use crate::items::DecorationStyle;
+    let mut r = test_resources();
+    let text = "Styled underline";
+    for (u, expect) in [
+        (UnderlineStyle::Single, DecorationStyle::Solid),
+        (UnderlineStyle::Double, DecorationStyle::Double),
+        (UnderlineStyle::Dotted, DecorationStyle::Dotted),
+        (UnderlineStyle::Dash, DecorationStyle::Dashed),
+        (UnderlineStyle::Wave, DecorationStyle::Wave),
+        (UnderlineStyle::Thick, DecorationStyle::Thick),
+    ] {
+        let spans = [StyleSpan {
+            underline: Some(u),
+            ..single_span(text, 12.0)
+        }];
+        let result = layout_paragraph(
+            &mut r,
+            text,
+            &spans,
+            &ResolvedParaProps::default(),
+            400.0,
+            1.0,
+            false,
+        );
+        let deco = result
+            .items
+            .iter()
+            .find_map(|item| match item {
+                PositionedItem::Decoration(d) if d.kind == DecorationKind::Underline => Some(d),
+                _ => None,
+            })
+            .expect("underline decoration");
+        assert_eq!(deco.style, expect, "{u:?} should map to {expect:?}");
+    }
+}
+
+#[test]
+fn double_strikethrough_carries_double_style() {
+    use crate::items::DecorationStyle;
+    use crate::para::StrikethroughStyle;
+    let mut r = test_resources();
+    let text = "Struck through";
+    let spans = [StyleSpan {
+        strikethrough: Some(StrikethroughStyle::Double),
+        ..single_span(text, 12.0)
+    }];
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+    let deco = result
+        .items
+        .iter()
+        .find_map(|item| match item {
+            PositionedItem::Decoration(d) if d.kind == DecorationKind::Strikethrough => Some(d),
+            _ => None,
+        })
+        .expect("strikethrough decoration");
+    assert_eq!(deco.style, DecorationStyle::Double);
+}
+
+#[test]
 fn space_before_after_not_in_height() {
     let mut r = test_resources();
     let text = "Spacing test";

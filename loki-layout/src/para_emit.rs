@@ -12,19 +12,47 @@
 //! values; callers that stack a second sub-layout translate the emitted items
 //! vertically afterwards.
 
+use std::ops::Range;
 use std::sync::Arc;
 
 use crate::color::LayoutColor;
 use crate::font::FontResources;
 use crate::geometry::{LayoutPoint, LayoutRect};
 use crate::items::{
-    DecorationKind, GlyphEntry, GlyphSynthesis, PositionedDecoration, PositionedGlyphRun,
-    PositionedItem, PositionedRect,
+    DecorationKind, DecorationStyle, GlyphEntry, GlyphSynthesis, PositionedDecoration,
+    PositionedGlyphRun, PositionedItem, PositionedRect,
 };
 use crate::para::{
-    StyleSpan, VerticalAlign, span_at_offset, span_has_shadow, span_highlight_for_range,
-    span_link_url_for_range, span_vertical_align_for_range,
+    StrikethroughStyle, StyleSpan, UnderlineStyle, VerticalAlign, span_at_offset, span_has_shadow,
+    span_highlight_for_range, span_link_url_for_range, span_vertical_align_for_range,
 };
+
+fn underline_deco_style(u: UnderlineStyle) -> DecorationStyle {
+    match u {
+        UnderlineStyle::Single => DecorationStyle::Solid,
+        UnderlineStyle::Double => DecorationStyle::Double,
+        UnderlineStyle::Dotted => DecorationStyle::Dotted,
+        UnderlineStyle::Dash => DecorationStyle::Dashed,
+        UnderlineStyle::Wave => DecorationStyle::Wave,
+        UnderlineStyle::Thick => DecorationStyle::Thick,
+    }
+}
+
+/// Underline / strikethrough variants (`w:u` / `w:strike`) of the span covering
+/// `r` — the variants Parley's own run decorations drop, recovered for 5.2.
+fn span_underline(spans: &[StyleSpan], r: Range<usize>) -> Option<UnderlineStyle> {
+    spans
+        .iter()
+        .find(|s| s.range.start <= r.start && s.range.end >= r.end)
+        .and_then(|s| s.underline)
+}
+
+fn span_strike(spans: &[StyleSpan], r: Range<usize>) -> Option<StrikethroughStyle> {
+    spans
+        .iter()
+        .find(|s| s.range.start <= r.start && s.range.end >= r.end)
+        .and_then(|s| s.strikethrough)
+}
 
 /// Emits one shaped glyph run at horizontal offset `indent_x`, appending the
 /// highlight, shadow, glyph, and decoration items to `items`.
@@ -223,9 +251,13 @@ pub(crate) fn emit_glyph_run(
         link_url,
     }));
 
-    // Underline decoration.
+    // Underline decoration. Parley supplies the geometry (offset/size) but not
+    // the `w:u` variant, so recover it from our spans by the run's text range.
     if let Some(deco) = &style.underline {
         let m = run.metrics();
+        let deco_style = span_underline(spans, run.text_range())
+            .map(underline_deco_style)
+            .unwrap_or(DecorationStyle::Solid);
         // COMPAT(parley-0.6): RunMetrics offsets follow OpenType / skrifa Y-up
         // convention (negative = below baseline). Negate to convert to screen
         // Y-down (positive = below baseline).
@@ -235,13 +267,18 @@ pub(crate) fn emit_glyph_run(
             width: scaled_advance,
             thickness: deco.size.unwrap_or(m.underline_size),
             kind: DecorationKind::Underline,
+            style: deco_style,
             color: deco.brush,
         }));
     }
 
-    // Strikethrough decoration.
+    // Strikethrough decoration (single, or `w:dstrike` double).
     if let Some(deco) = &style.strikethrough {
         let m = run.metrics();
+        let deco_style = match span_strike(spans, run.text_range()) {
+            Some(StrikethroughStyle::Double) => DecorationStyle::Double,
+            _ => DecorationStyle::Solid,
+        };
         // COMPAT(parley-0.6): same Y-up → Y-down negation as underline.
         items.push(PositionedItem::Decoration(PositionedDecoration {
             x: run_offset + indent_x,
@@ -249,6 +286,7 @@ pub(crate) fn emit_glyph_run(
             width: scaled_advance,
             thickness: deco.size.unwrap_or(m.strikethrough_size),
             kind: DecorationKind::Strikethrough,
+            style: deco_style,
             color: deco.brush,
         }));
     }
