@@ -150,8 +150,11 @@ may not grow, and a file split to ≤300 must be removed from the baseline. So t
 backlog can only shrink. When you split a file below the ceiling, drop its line
 with `scripts/check-file-ceiling.py --update` (review the diff).
 
-The split pass is **in progress** — current backlog is the **31** entries in the
-baseline file. Three techniques (the third added 2026-07-08):
+The split pass is **in progress** — current backlog is the **29** entries in the
+baseline file (a 2026-07-08 pass cut ~20 files: −3600 lines across eleven new
+production submodules + seven inline-test extractions, driving `doc-model`
+`document.rs` and `docx/mapper/props.rs` fully under the ceiling and off the
+baseline). Three techniques (the third added 2026-07-08):
 1. *Inline-test extraction* (safest, no production-code change): move a file's
    `#[cfg(test)] mod tests { … }` into a sibling `<name>_tests.rs` referenced via
    `#[cfg(test)] #[path = "<name>_tests.rs"] mod tests;`. Done 2026-06-21 for
@@ -199,17 +202,16 @@ baseline file. Three techniques (the third added 2026-07-08):
 
 | File | Current lines | Priority |
 |---|---|---|
-| `loki-layout/src/para.rs` | 1979 | High |
-| `loki-layout/src/flow.rs` | 1953 | High |
-| `loki-odf/src/odt/reader/styles.rs` | 1554 | High |
-| `loki-odf/src/odt/reader/document.rs` | 1494 | High |
-| `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1244 | High |
-| `loki-ooxml/src/docx/reader/document.rs` | 1209 | High |
+| `loki-layout/src/para.rs` | 1626 | High |
+| `loki-layout/src/flow.rs` | 1362 | High |
 | `loki-ooxml/src/docx/write/document.rs` | 1073 | High |
-| `loki-layout/src/resolve.rs` | 984 | High |
-| … 27 more (6 over 600, 21 in 300–600) — see `scripts/file-ceiling-baseline.txt` | | |
+| `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1047 | High |
+| `loki-ooxml/src/docx/reader/document.rs` | 1004 | High |
+| `loki-odf/src/odt/reader/styles.rs` | 892 | Med |
+| `loki-layout/src/resolve.rs` | 865 | Med |
+| … 22 more — see `scripts/file-ceiling-baseline.txt` (29 entries after the 2026-07-08 pass) | | |
 
-*(Sizes above are from `scripts/file-ceiling-baseline.txt`, refreshed 2026-07-04;
+*(Sizes above are from `scripts/file-ceiling-baseline.txt`, refreshed 2026-07-08;
 the earlier numbers were stale — several files grew since first baselined.)*
 
 (`odt/mapper/document.rs` (1094 lines) was split into the `odt/mapper/document/`
