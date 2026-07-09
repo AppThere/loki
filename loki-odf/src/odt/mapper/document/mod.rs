@@ -18,9 +18,8 @@ use loki_doc_model::content::annotation::Comment;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::float::FloatWrap;
 use loki_doc_model::document::Document;
-use loki_doc_model::layout::section::Section;
+use loki_doc_model::style::PageStyle;
 use loki_doc_model::style::catalog::StyleCatalog;
-use loki_doc_model::style::{PageStyle, StyleId};
 use loki_primitives::units::Points;
 
 use crate::error::OdfWarning;
@@ -37,12 +36,12 @@ mod frames;
 mod inlines;
 mod meta;
 mod page;
+mod sections;
 
 use blocks::{map_list, map_section, map_table, map_toc};
 use frames::map_graphic_wrap;
 use inlines::map_paragraph;
 use meta::map_meta;
-use page::{resolve_master_page_name, resolve_page_layout_by_name};
 
 // ── Context ────────────────────────────────────────────────────────────────────
 
@@ -172,49 +171,13 @@ pub(crate) fn map_document(
             comments: Vec::new(),
             changed_regions: &changed_regions,
         };
-
-        let mut current_master: Option<String> = initial_master.map(str::to_string);
-        let mut current_blocks: Vec<Block> = Vec::new();
-        let mut sections: Vec<Section> = Vec::new();
-
-        for child in &doc.body_children {
-            // Only paragraphs/headings carry style:master-page-name.
-            let new_master = match child {
-                OdfBodyChild::Paragraph(para) | OdfBodyChild::Heading(para) => para
-                    .style_name
-                    .as_deref()
-                    .and_then(|sn| resolve_master_page_name(sn, &all_styles)),
-                _ => None,
-            };
-
-            // Emit a section break only when the master page actually changes.
-            if let Some(ref nm) = new_master
-                && Some(nm.as_str()) != current_master.as_deref()
-            {
-                let layout =
-                    resolve_page_layout_by_name(stylesheet, current_master.as_deref(), &mut ctx);
-                let mut section =
-                    Section::with_layout_and_blocks(layout, std::mem::take(&mut current_blocks));
-                // The finished section used `current_master` — store it as the
-                // section's page style (ADR-0012 Decision 2's ODF-native mapping).
-                section.page_style = current_master.as_deref().map(StyleId::new);
-                sections.push(section);
-                current_master = Some(nm.clone());
-            }
-
-            if let Some(block) = map_body_child(child, &mut ctx) {
-                current_blocks.push(block);
-                let figs = std::mem::take(&mut ctx.pending_figures);
-                current_blocks.extend(figs);
-            }
-        }
-
-        // Flush the final (or only) section.
-        let layout = resolve_page_layout_by_name(stylesheet, current_master.as_deref(), &mut ctx);
-        let mut section = Section::with_layout_and_blocks(layout, current_blocks);
-        section.page_style = current_master.as_deref().map(StyleId::new);
-        sections.push(section);
-
+        let sections = sections::build_sections(
+            &doc.body_children,
+            stylesheet,
+            &all_styles,
+            initial_master,
+            &mut ctx,
+        );
         (sections, ctx.warnings, ctx.comments)
     };
 
@@ -274,7 +237,10 @@ pub(super) fn map_body_children(
     blocks
 }
 
-fn map_body_child(child: &OdfBodyChild, ctx: &mut OdfMappingContext<'_>) -> Option<Block> {
+pub(super) fn map_body_child(
+    child: &OdfBodyChild,
+    ctx: &mut OdfMappingContext<'_>,
+) -> Option<Block> {
     match child {
         OdfBodyChild::Paragraph(para) | OdfBodyChild::Heading(para) => {
             Some(map_paragraph(para, ctx))

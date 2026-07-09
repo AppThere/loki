@@ -207,7 +207,7 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
                     }
                     b"master-page" => {
                         // Self-closing <style:master-page .../> — no header/footer content.
-                        // TODO(odf-master-page): style:master-page-name transitions not implemented.
+                        // (Master-page transitions are applied in `document/sections.rs`.)
                         let name = local_attr_val(e, b"name").unwrap_or_default();
                         let display_name = local_attr_val(e, b"display-name");
                         let page_layout_name =
