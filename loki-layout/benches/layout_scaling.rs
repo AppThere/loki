@@ -31,6 +31,7 @@ fn bench_layout(c: &mut Criterion) {
     let options = LayoutOptions {
         preserve_for_editing: true,
         spell: None,
+        ..Default::default()
     };
 
     let mut group = c.benchmark_group("layout_document");

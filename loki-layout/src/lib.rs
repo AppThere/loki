@@ -32,6 +32,7 @@ pub mod items;
 mod list_marker;
 mod math;
 pub mod mode;
+mod options;
 pub mod para;
 mod para_band;
 mod para_cache;
@@ -54,6 +55,7 @@ pub use items::{
     PositionedDecoration, PositionedGlyphRun, PositionedImage, PositionedItem, PositionedRect,
 };
 pub use mode::LayoutMode;
+pub use options::{FieldContext, LayoutOptions, SpellState};
 pub use para::{
     Affinity, CursorRect, HitTestResult, ParagraphLayout, ResolvedLineHeight, ResolvedParaProps,
     StyleSpan, layout_paragraph,
@@ -76,56 +78,19 @@ pub const MIN_ROW_HEIGHT: f32 = 0.0;
 /// reachable. See [`result::LayoutPage::comment_items`].
 pub const COMMENT_GUTTER_WIDTH: f32 = 192.0;
 
-/// Options that control the layout pipeline's memory / feature trade-offs.
+/// Fold document-level [`loki_doc_model::settings::DocumentSettings`] into the
+/// caller's [`LayoutOptions`], filling any field the caller left unset.
 ///
-/// Pass to [`layout_document`] or [`flow_section`]. The default (all fields
-/// `false`) is the read-only rendering mode — zero overhead for features the
-/// renderer does not need.
-#[derive(Debug, Clone, Default)]
-pub struct LayoutOptions {
-    /// When `true`, the Parley `Layout` object is retained inside each
-    /// [`ParagraphLayout`] so that [`ParagraphLayout::hit_test_point`] and
-    /// [`ParagraphLayout::cursor_rect`] can be called afterwards.
-    ///
-    /// Has a memory cost proportional to document size. Use `false` (the
-    /// default) for read-only document viewing. Editing sessions pass `true`.
-    pub preserve_for_editing: bool,
-
-    /// Optional spell checker. When `Some`, each paragraph's text is checked and
-    /// misspelled words emit a [`items::DecorationKind::Spelling`] squiggle
-    /// decoration (positioned via the same Parley selection-geometry mechanism
-    /// as the highlight underlay). `None` (the default) adds zero overhead.
-    pub spell: Option<SpellState>,
-}
-
-/// A spell checker plus a cache-invalidation generation, supplied via
-/// [`LayoutOptions::spell`].
-///
-/// The paragraph layout cache is content-addressed; the `generation` folds into
-/// the cache key so that changing the active dictionary or the user's
-/// personal/ignore words (which the checker reflects but the paragraph text does
-/// not) correctly invalidates cached squiggles. The host **must** bump
-/// `generation` whenever it swaps the checker or its word lists change; a fresh
-/// service starts at `1` (0 is reserved for "no spell checking").
-#[derive(Debug, Clone)]
-pub struct SpellState {
-    /// The shared, thread-safe checker queried during layout.
-    pub checker: std::sync::Arc<loki_spell::SpellChecker>,
-    /// Monotonic generation; bump on any change the text alone cannot express.
-    pub generation: u64,
-}
-
-/// Resolved page numbering for field substitution during layout.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FieldContext {
-    /// 1-based page number of the page being laid out (already offset by any
-    /// section restart value).
-    pub page_number: u32,
-    /// Total page count of the document.
-    pub page_count: u32,
-    /// Display format for the PAGE field (OOXML `w:pgNumType @w:fmt`).
-    /// `None` = decimal.
-    pub number_format: Option<loki_doc_model::style::list_style::NumberingScheme>,
+/// Currently only [`LayoutOptions::default_tab_stop_pt`] is derived (from
+/// `DocumentSettings::default_tab_stop_pt`); a caller-supplied value takes
+/// precedence, and a document with no `settings` leaves the built-in fallback in
+/// place. Returns the caller's options unchanged when nothing needs folding.
+fn effective_options(doc: &loki_doc_model::Document, options: &LayoutOptions) -> LayoutOptions {
+    let mut eff = options.clone();
+    if eff.default_tab_stop_pt.is_none() {
+        eff.default_tab_stop_pt = doc.settings.as_ref().map(|s| s.default_tab_stop_pt);
+    }
+    eff
 }
 
 /// Lays out a full document into absolute positions.
@@ -144,6 +109,8 @@ pub fn layout_document(
     display_scale: f32,
     options: &LayoutOptions,
 ) -> DocumentLayout {
+    let effective = effective_options(doc, options);
+    let options = &effective;
     match mode {
         LayoutMode::Paginated => DocumentLayout::Paginated(
             layout_paginated_full(resources, doc, display_scale, options).0,
@@ -222,6 +189,8 @@ pub fn layout_paginated_full(
     display_scale: f32,
     options: &LayoutOptions,
 ) -> (PaginatedLayout, PaginatedReuse) {
+    let effective = effective_options(doc, options);
+    let options = &effective;
     let mode = LayoutMode::Paginated;
     let mut global_page_count = 0;
     // Running base so editing block indices are global across sections (see the

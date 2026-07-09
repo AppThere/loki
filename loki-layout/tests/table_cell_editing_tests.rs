@@ -68,6 +68,7 @@ fn table_cell_paragraphs_carry_cell_editing_path() {
         &LayoutOptions {
             preserve_for_editing: true,
             spell: None,
+            ..Default::default()
         },
     ) else {
         panic!("paginated layout expected");
@@ -136,6 +137,7 @@ fn first_cell_origin_y(align: CellVerticalAlign) -> f32 {
         &LayoutOptions {
             preserve_for_editing: true,
             spell: None,
+            ..Default::default()
         },
     ) else {
         panic!("paginated layout expected");

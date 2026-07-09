@@ -284,9 +284,12 @@ pub struct ResolvedParaProps {
     pub indent_hanging: f32,
     /// List membership for this paragraph. `None` for non-list paragraphs.
     pub list_marker: Option<ResolvedListMarker>,
-    /// Explicit tab stops, sorted ascending by position. Empty = use the
-    /// default 36 pt (0.5 inch) grid. Gap #7.
+    /// Explicit tab stops, sorted ascending by position. Empty = fall back to
+    /// the `default_tab_stop` grid. Gap #7.
     pub tab_stops: Vec<ResolvedTabStop>,
+    /// Tab-stop grid interval (points) used once `tab_stops` is exhausted;
+    /// `36.0` (½ inch) unless `DocumentSettings::default_tab_stop_pt` overrides.
+    pub default_tab_stop: f32,
     /// Break an over-long word that does not fit the available width by
     /// allowing a break at any character (CSS `overflow-wrap: anywhere`).
     /// Set for table-cell content so a long unbreakable word wraps to the
@@ -344,6 +347,7 @@ impl Default for ResolvedParaProps {
             indent_hanging: 0.0,
             list_marker: None,
             tab_stops: Vec::new(),
+            default_tab_stop: 36.0,
             break_long_words: false,
             drop_cap: None,
             wrap_band: None,
@@ -990,6 +994,7 @@ fn layout_paragraph_uncached(
         tabs::compute_tab_plans(
             &para_props.tab_stops,
             para_props.indent_hanging,
+            para_props.default_tab_stop,
             &x_tab,
             &line_tab,
             &x_dec,
@@ -999,15 +1004,12 @@ fn layout_paragraph_uncached(
     };
 
     // ── Drop-cap preparation ──────────────────────────────────────────────────
-    // The dropped initial spans several lines, so it is removed from the body
-    // flow and rendered separately; the first `n_lines` body lines are narrowed
-    // and shifted to clear it. The cap bytes are trimmed from `clean_text`, so
-    // the orig↔clean maps are rebased past them below to keep editor hit-testing
-    // aligned. Read-only paint uses the precise two-pass band split; the editor
-    // (`preserve_for_editing`) renders the same enlarged cap but lays the body
-    // out as a single uniform-narrow layout it can hit-test against (the lines
-    // below the cap are slightly narrow, as documented). Tabs / inline math
-    // disqualify a paragraph (the cap's manual breaking is incompatible).
+    // The dropped initial spans several lines: it is removed from the body flow
+    // and rendered separately, the first `n_lines` body lines narrowed/shifted
+    // to clear it, and its bytes trimmed from `clean_text` (the orig↔clean maps
+    // are rebased below to keep editor hit-testing aligned). Read-only paint
+    // uses the precise two-pass band split; the editor (`preserve_for_editing`)
+    // lays the body out as one uniform-narrow layout it hit-tests against.
     let drop_state: Option<(
         loki_doc_model::style::props::drop_cap::DropCap,
         String,

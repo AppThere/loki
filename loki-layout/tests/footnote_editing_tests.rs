@@ -58,6 +58,7 @@ fn footnote_body_paragraph_carries_note_editing_path() {
         &LayoutOptions {
             preserve_for_editing: true,
             spell: None,
+            ..Default::default()
         },
     ) else {
         panic!("paginated layout expected");

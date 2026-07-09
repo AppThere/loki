@@ -54,6 +54,7 @@ fn collect_samples() -> Vec<(String, AllocStats)> {
     let options = LayoutOptions {
         preserve_for_editing: true,
         spell: None,
+        ..Default::default()
     };
     for &(name, paras) in support::DOC_TIERS {
         let doc = support::build_doc(paras, support::WORDS_PER_PARA);

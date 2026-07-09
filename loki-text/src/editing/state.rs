@@ -101,6 +101,7 @@ pub fn ensure_reflow_layout(
         let options = LayoutOptions {
             preserve_for_editing: true,
             spell: crate::editing::spell::active(),
+            ..Default::default()
         };
         match loki_layout::layout_document(
             &mut resources,
@@ -245,8 +246,7 @@ pub fn apply_mutation_and_relayout(
             // `source` is not stored in the CRDT, so carry it forward. Metadata
             // and the style catalog *are* round-tripped through Loro (read back
             // by `loro_to_document`), so they are intentionally not carried
-            // forward here — the Loro snapshot is the source of truth, which is
-            // what makes style edits undoable.
+            // forward — the Loro snapshot is the source of truth (style edits undoable).
             doc.source = orig.source.clone();
         }
         doc

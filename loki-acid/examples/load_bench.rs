@@ -75,6 +75,7 @@ fn main() {
     let opts = LayoutOptions {
         preserve_for_editing: true,
         spell: None,
+        ..Default::default()
     };
     let pages = {
         let mut fonts = FontResources::new();

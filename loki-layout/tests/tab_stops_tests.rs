@@ -18,8 +18,12 @@ use loki_doc_model::style::props::para_props::ParaProps;
 use loki_doc_model::style::props::tab_stop::{TabAlignment, TabLeader, TabStop};
 use loki_primitives::units::Points;
 
+use loki_doc_model::document::Document;
+use loki_doc_model::settings::DocumentSettings;
+
 use loki_layout::{
-    FlowOutput, FontResources, LayoutMode, LayoutOptions, PositionedItem, flow_section,
+    DocumentLayout, FlowOutput, FontResources, LayoutMode, LayoutOptions, PositionedItem,
+    flow_section, layout_document,
 };
 
 const STOP: f64 = 300.0;
@@ -179,5 +183,101 @@ fn left_tab_unchanged_advances_to_stop() {
     assert!(
         (origin - STOP as f32).abs() < 2.0,
         "left-tab content must begin at the stop ({STOP}); origin = {origin}"
+    );
+}
+
+// ── Default tab-stop grid (feature 5.1) ───────────────────────────────────────
+
+/// A paragraph with **no** explicit tab stops, so a tab falls back to the
+/// document default grid.
+fn plain_tab_para(text: &str) -> StyledParagraph {
+    StyledParagraph {
+        style_id: None,
+        direct_para_props: None,
+        direct_char_props: None,
+        inlines: vec![Inline::Str(text.into())],
+        attr: NodeAttr::default(),
+    }
+}
+
+fn layout_with_opts(para: StyledParagraph, opts: &LayoutOptions) -> Vec<PositionedItem> {
+    let mut r = test_resources();
+    let section = Section::with_layout_and_blocks(wide_layout(), vec![Block::StyledPara(para)]);
+    match flow_section(
+        &mut r,
+        &section,
+        &StyleCatalog::new(),
+        &LayoutMode::Pageless,
+        1.0,
+        opts,
+        &[],
+    ) {
+        FlowOutput::Canvas { items, .. } => items,
+        _ => panic!("expected Canvas output"),
+    }
+}
+
+#[test]
+fn default_tab_stop_falls_back_to_36pt() {
+    // No explicit stops and no document override: the first default-grid stop
+    // greater than the tab's pen position is 36 pt (½ inch).
+    let (origin, _) = post_tab_run(&layout_with_opts(
+        plain_tab_para("A\tB"),
+        &LayoutOptions::default(),
+    ));
+    assert!(
+        (origin - 36.0).abs() < 2.0,
+        "built-in default grid must place the tab at 36 pt; origin = {origin}"
+    );
+}
+
+#[test]
+fn custom_default_tab_stop_sets_the_grid_via_options() {
+    // A 120 pt override moves the fallback grid: the tab now advances to 120 pt
+    // rather than the built-in 36. Exercises the LayoutOptions → flow → tabs wire.
+    let opts = LayoutOptions {
+        default_tab_stop_pt: Some(120.0),
+        ..Default::default()
+    };
+    let (origin, _) = post_tab_run(&layout_with_opts(plain_tab_para("A\tB"), &opts));
+    assert!(
+        (origin - 120.0).abs() < 2.0,
+        "a 120 pt default grid must place the tab at 120 pt; origin = {origin}"
+    );
+}
+
+#[test]
+fn document_settings_default_tab_stop_reaches_layout() {
+    // The document's `DocumentSettings::default_tab_stop_pt` is folded into the
+    // layout options by `layout_document` (the caller passes plain defaults), so
+    // a 144 pt setting lands the tab at 144 pt.
+    let mut doc = Document::new();
+    let mut section = Section::new();
+    section
+        .blocks
+        .push(Block::StyledPara(plain_tab_para("A\tB")));
+    doc.sections = vec![section];
+    doc.settings = Some(DocumentSettings {
+        default_tab_stop_pt: 144.0,
+        ..DocumentSettings::default()
+    });
+
+    let mut r = test_resources();
+    let layout = layout_document(
+        &mut r,
+        &doc,
+        LayoutMode::Reflow {
+            available_width: 600.0,
+        },
+        1.0,
+        &LayoutOptions::default(),
+    );
+    let DocumentLayout::Continuous(cl) = layout else {
+        panic!("Reflow mode must yield a Continuous layout");
+    };
+    let (origin, _) = post_tab_run(&cl.items);
+    assert!(
+        (origin - 144.0).abs() < 2.0,
+        "document default_tab_stop_pt (144) must reach layout; origin = {origin}"
     );
 }

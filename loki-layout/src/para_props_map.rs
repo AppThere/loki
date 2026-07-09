@@ -116,6 +116,9 @@ pub(super) fn map_para_props(p: &ParaProps) -> ResolvedParaProps {
             });
             stops
         },
+        // Built-in fallback; the flow engine overrides from the document's
+        // `DocumentSettings::default_tab_stop_pt` when one is set.
+        default_tab_stop: 36.0,
         // Set by the flow engine for table-cell content; see ResolvedParaProps.
         break_long_words: false,
         // Dropped initial (rendered in the read-only/paint path); see

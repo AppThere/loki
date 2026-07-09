@@ -75,12 +75,15 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     // Inherit the cell-content word-breaking flag from the flow state so a long
     // unbreakable word wraps to the column width instead of overflowing.
     resolved.break_long_words = state.break_long_words;
+    // Document default tab-stop interval (Word `w:defaultTabStop`), when set.
+    if let Some(pt) = state.options.default_tab_stop_pt {
+        resolved.default_tab_stop = pt;
+    }
 
     // ── List level indentation fallback ─────────────────────────────────────
-    // OOXML defines indentation on both the paragraph and its numbering level.
-    // The level's pPr is the authoritative indent when the paragraph's own
-    // pPr carries no indent (both indent_start and indent_hanging are 0.0).
-    // This handles documents where `w:ind` is only on the abstract num level.
+    // The numbering level's pPr is the authoritative indent when the paragraph
+    // carries none (indent_start and indent_hanging both 0.0) — e.g. `w:ind`
+    // only on the abstract num level.
     if let Some(ref lm) = resolved.list_marker
         && resolved.indent_start == 0.0
         && resolved.indent_hanging == 0.0
@@ -96,10 +99,9 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     }
 
     // ── List marker synthesis ────────────────────────────────────────────────
-    // When the paragraph carries list membership, look up the list style,
-    // advance the per-list counter, format the marker string, and prepend it
-    // as an `Inline::Str` followed by a tab. Non-list paragraphs reset
-    // `prev_list_id` so the next list starts fresh.
+    // When the paragraph carries list membership, look up the list style, advance
+    // the per-list counter, format the marker string, and prepend it as an
+    // `Inline::Str` + tab. Non-list paragraphs reset `prev_list_id`.
     let owned_para: Option<StyledParagraph> = if let Some(ref lm) = resolved.list_marker {
         if let Some(list_style) = state.catalog.list_styles.get(&lm.list_id) {
             if let Some(level_def) = list_style.levels.get(lm.level as usize) {
@@ -581,12 +583,11 @@ fn split_and_place_loop(
     // paragraph-local y of the current fragment's top edge.
     let mut frag_start = 0.0f32;
     // Whether the current fragment has already triggered a page flush without
-    // making progress. Guards against an infinite flush loop: when
-    // `space_before > 0`, a fresh page starts at `cursor_y == space_before`
-    // (> 0), so the "flush and retry" arm below would otherwise be taken on
-    // every iteration for a line taller than the available height, pushing an
-    // unbounded number of empty pages. After one unproductive flush, the
-    // force-split arm runs instead.
+    // making progress. Guards against an infinite flush loop: with
+    // `space_before > 0` a fresh page starts at `cursor_y == space_before` (> 0),
+    // so the "flush and retry" arm below would otherwise fire every iteration
+    // for a line taller than the page, pushing unbounded empty pages. After one
+    // unproductive flush, the force-split arm runs instead.
     let mut flushed_without_progress = false;
 
     loop {
@@ -721,9 +722,8 @@ fn emit_fragment(
     // baseline + descent + leading_below; glyphs never reach max_coord, so
     // flooring by up to 1 pt never clips visible ink.  Without this, a
     // fractional max_coord × display-scale rounds up one physical pixel and
-    // leaks the top row of the next line through the clip.
-    // Fragment B uses unrounded split_y for its translation (ty = -split_y)
-    // so there is no corresponding gap at the top of the next page.
+    // leaks the next line's top row through the clip. Fragment B uses unrounded
+    // split_y for its translation (ty = -split_y), so the next page has no gap.
     let clip_height = (split_y - frag_start).floor();
     let clip_rect = LayoutRect::new(0.0, state.cursor_y, state.content_width, clip_height);
     let ty = state.cursor_y - frag_start;

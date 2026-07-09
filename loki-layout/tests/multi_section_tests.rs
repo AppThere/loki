@@ -58,6 +58,7 @@ fn block_index_is_global_across_sections() {
         &LayoutOptions {
             preserve_for_editing: true,
             spell: None,
+            ..Default::default()
         },
     );
 

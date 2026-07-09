@@ -15,19 +15,19 @@ use super::ResolvedTabStop;
 
 // ── Tab stop helpers (gap #7) ─────────────────────────────────────────────────
 
-// TODO(tab-default): use Document.settings.default_tab_stop_pt once
-// DocumentSettings is threaded through layout_document.
-/// Default tab stop interval: 0.5 inch = 36 pt = 720 twips (Word default).
+/// Fallback default tab stop interval: 0.5 inch = 36 pt = 720 twips (Word
+/// default), used when the document does not specify `default_tab_stop_pt`.
 const DEFAULT_TAB_INTERVAL: f32 = 36.0;
 
 /// Return the tab stop a tab at pen position `x` advances to: the first
 /// explicit stop strictly greater than `x`, else a synthesized default-grid
-/// stop (36 pt, left-aligned, no leader). A hanging indent acts as an implicit
-/// first stop.
+/// stop (`default_grid` pt, left-aligned, no leader). A hanging indent acts as
+/// an implicit first stop.
 fn next_tab_stop_resolved(
     stops: &[ResolvedTabStop],
     x: f32,
     indent_hanging: f32,
+    default_grid: f32,
 ) -> ResolvedTabStop {
     if indent_hanging > 0.0 && x < indent_hanging - 0.5 {
         return ResolvedTabStop {
@@ -39,8 +39,14 @@ fn next_tab_stop_resolved(
     if let Some(s) = stops.iter().find(|s| s.position > x + 0.5) {
         *s
     } else {
+        // Guard against a non-positive interval producing a zero-advance loop.
+        let grid = if default_grid > 0.0 {
+            default_grid
+        } else {
+            DEFAULT_TAB_INTERVAL
+        };
         ResolvedTabStop {
-            position: ((x / DEFAULT_TAB_INTERVAL).floor() + 1.0) * DEFAULT_TAB_INTERVAL,
+            position: ((x / grid).floor() + 1.0) * grid,
             alignment: TabAlignment::Left,
             leader: TabLeader::None,
         }
@@ -122,6 +128,7 @@ pub(super) struct TabPlan {
 pub(super) fn compute_tab_plans(
     stops: &[ResolvedTabStop],
     indent_hanging: f32,
+    default_grid: f32,
     x_tab: &[f32],
     line_tab: &[usize],
     x_dec: &[f32],
@@ -133,7 +140,7 @@ pub(super) fn compute_tab_plans(
     let mut shift = 0.0f32;
     for i in 0..n {
         let final_tab_x = x_tab[i] + shift;
-        let stop = next_tab_stop_resolved(stops, final_tab_x, indent_hanging);
+        let stop = next_tab_stop_resolved(stops, final_tab_x, indent_hanging, default_grid);
 
         // Natural boundary of the content following this tab: the next tab, or
         // the end-of-text sentinel for the last tab.
