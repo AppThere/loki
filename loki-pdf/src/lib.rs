@@ -126,6 +126,10 @@ mod tests {
         // The document has text, so a font program must be embedded.
         assert!(has(b"FontFile2"), "font program not embedded");
         assert!(has(b"CIDFontType2"), "descendant font not written");
+        // The font is subsetted: a six-letter tag prefixes the BaseFont name,
+        // and a CIDToGIDMap stream remaps the content's glyph ids.
+        assert!(has(b"+LokiEmbedded"), "font not subsetted (no subset tag)");
+        assert!(has(b"CIDToGIDMap"), "subset CIDToGIDMap not written");
         // PDF/X output intent and conformance marker must be present.
         assert!(has(b"OutputIntent"), "output intent missing");
         assert!(has(b"GTS_PDFX"), "PDF/X marker missing");

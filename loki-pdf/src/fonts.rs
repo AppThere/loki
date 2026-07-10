@@ -6,8 +6,11 @@
 //! Every distinct face used by the layout (keyed by its font-data pointer and
 //! collection index) is embedded as a Type0 → CIDFontType2 program with
 //! `Identity-H` encoding, so the content stream can address glyphs by raw
-//! glyph id. PDF/X requires every font to be embedded; this module fulfils
-//! that by writing the full font program as a `FontFile2` stream.
+//! glyph id. PDF/X requires every font to be embedded; this module fulfils that
+//! by writing a **subsetted** `FontFile2` stream (only the glyphs the document
+//! uses — see [`subset`]) with a `CIDToGIDMap` remapping the content's original
+//! glyph ids to the subset. A face the subsetter cannot handle falls back to the
+//! full program under an un-tagged name, so output is always valid.
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
@@ -16,6 +19,9 @@ use pdf_writer::types::{CidFontType, FontFlags, SystemInfo, UnicodeCmap};
 use pdf_writer::{Finish, Name, Pdf, Ref, Str};
 
 use crate::error::PdfError;
+
+#[path = "fonts_subset.rs"]
+mod subset;
 
 /// Identity registry/ordering used for the descendant CID font.
 const CID_SYSTEM_INFO: SystemInfo = SystemInfo {
@@ -42,6 +48,9 @@ pub struct FaceRefs {
     descriptor: Ref,
     font_file: Ref,
     to_unicode: Ref,
+    /// `CIDToGIDMap` stream (used only when the face is subsetted; the map
+    /// remaps content-stream CIDs to the subset's renumbered gids).
+    cid_to_gid: Ref,
 }
 
 /// Collects the distinct faces used while content streams are built.
@@ -98,7 +107,7 @@ impl FontBank {
         self.faces[idx].used_glyphs.iter().copied().collect()
     }
 
-    /// Allocates the five indirect references each face needs, advancing
+    /// Allocates the six indirect references each face needs, advancing
     /// `next`. Returns them aligned with [`Self::faces`].
     pub fn allocate_refs(&self, next: &mut i32) -> Vec<FaceRefs> {
         self.faces
@@ -115,6 +124,7 @@ impl FontBank {
                     descriptor: take(),
                     font_file: take(),
                     to_unicode: take(),
+                    cid_to_gid: take(),
                 }
             })
             .collect()
@@ -131,11 +141,25 @@ impl FontBank {
 }
 
 fn embed_face(pdf: &mut Pdf, face: &Face, r: &FaceRefs) -> Result<(), PdfError> {
+    // Metrics come from the *original* face — the subset program strips tables
+    // (`cmap`, `OS/2`, …) the metrics readers rely on.
     let ttf = ttf_parser::Face::parse(&face.data, face.font_index)
         .map_err(|e| PdfError::Font(format!("parse: {e:?}")))?;
     let upem = f32::from(ttf.units_per_em().max(1));
     let scale = 1000.0 / upem;
-    let base_font = Name(b"LokiEmbedded");
+
+    // Subset to the used glyphs. On success the program is renumbered and the
+    // `BaseFont` gets the mandatory six-letter subset tag; on failure the full
+    // font is embedded verbatim under the un-tagged name (still valid PDF/X).
+    let (program, remapper) =
+        subset::subset_program(&face.data, face.font_index, &face.used_glyphs);
+    let mut base_font_buf = Vec::with_capacity(20);
+    if remapper.is_some() {
+        base_font_buf.extend_from_slice(&subset::subset_tag(&face.used_glyphs));
+        base_font_buf.push(b'+');
+    }
+    base_font_buf.extend_from_slice(b"LokiEmbedded");
+    let base_font = Name(&base_font_buf);
 
     // Composite (Type0) font.
     pdf.type0_font(r.type0)
@@ -144,15 +168,22 @@ fn embed_face(pdf: &mut Pdf, face: &Face, r: &FaceRefs) -> Result<(), PdfError> 
         .descendant_font(r.cid)
         .to_unicode(r.to_unicode);
 
-    // Descendant CIDFontType2 with Identity CID→GID mapping.
+    // Descendant CIDFontType2. When subsetted, a CIDToGIDMap stream remaps the
+    // content's original glyph ids (CIDs) to the subset's renumbered gids;
+    // otherwise the identity mapping applies. Widths/ToUnicode stay keyed by CID
+    // (= original glyph id), so the content stream needs no changes.
     {
         let mut cid = pdf.cid_font(r.cid);
         cid.subtype(CidFontType::Type2)
             .base_font(base_font)
             .system_info(CID_SYSTEM_INFO)
             .font_descriptor(r.descriptor)
-            .cid_to_gid_map_predefined(Name(b"Identity"))
             .default_width(0.0);
+        if remapper.is_some() {
+            cid.cid_to_gid_map_stream(r.cid_to_gid);
+        } else {
+            cid.cid_to_gid_map_predefined(Name(b"Identity"));
+        }
         let mut widths = cid.widths();
         for &gid in &face.used_glyphs {
             let adv = ttf.glyph_hor_advance(ttf_parser::GlyphId(gid)).unwrap_or(0);
@@ -187,9 +218,16 @@ fn embed_face(pdf: &mut Pdf, face: &Face, r: &FaceRefs) -> Result<(), PdfError> 
         .stem_v(80.0)
         .font_file2(r.font_file);
 
-    // The full font program, embedded uncompressed (Length1 = byte length).
-    pdf.stream(r.font_file, &face.data)
-        .pair(Name(b"Length1"), face.data.len() as i32);
+    // The (subset or full) font program, embedded uncompressed (Length1 = byte
+    // length).
+    pdf.stream(r.font_file, &program)
+        .pair(Name(b"Length1"), program.len() as i32);
+
+    // The CIDToGIDMap stream (only when subsetted; the ref is otherwise unused).
+    if let Some(remapper) = &remapper {
+        let map = subset::cid_to_gid_map(&face.used_glyphs, remapper);
+        pdf.stream(r.cid_to_gid, &map);
+    }
 
     // ToUnicode mapping built from the face's cmap so extracted text is
     // searchable / copyable. Stored uncompressed (no Filter).
