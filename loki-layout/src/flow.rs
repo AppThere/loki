@@ -960,7 +960,7 @@ fn flow_footnotes(state: &mut FlowState) {
     state.cursor_y += SEP_HEIGHT + SEP_GAP;
 
     for note in notes {
-        let mark = format!("{} ", &footnote_mark(note.number));
+        let mark = format!("{} ", footnote_mark(note.number));
         let mut first = true;
         for (body_block, block) in note.blocks.iter().enumerate() {
             // Tag body paragraph(s) so a click into the footnote resolves to the
