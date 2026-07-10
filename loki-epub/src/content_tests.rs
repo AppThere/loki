@@ -44,6 +44,104 @@ fn math_is_emitted_as_mathml_and_flags_the_document() {
 }
 
 #[test]
+fn field_resolves_to_current_value_snapshot() {
+    use loki_doc_model::content::field::{Field, FieldKind};
+    let mut doc = Document::new();
+    let sec = doc.first_section_mut().unwrap();
+    sec.blocks.clear();
+    // A PAGE field has no live value in a page-less EPUB, but its import
+    // snapshot (`current_value`) is emitted as static text.
+    sec.blocks.push(Block::Para(vec![
+        Inline::Str("Page ".into()),
+        Inline::Field(Field::new(FieldKind::PageNumber).with_current_value("7")),
+    ]));
+    let rendered = render_content(&doc);
+    assert!(
+        rendered.body.contains("<span class=\"field\">7</span>"),
+        "body: {}",
+        rendered.body
+    );
+}
+
+#[test]
+fn title_field_resolves_from_metadata() {
+    use loki_doc_model::content::field::{Field, FieldKind};
+    let mut doc = Document::new();
+    doc.meta.title = Some("My Report".into());
+    let sec = doc.first_section_mut().unwrap();
+    sec.blocks.clear();
+    // No snapshot on the field: it resolves from document metadata instead.
+    sec.blocks.push(Block::Para(vec![Inline::Field(Field::new(
+        FieldKind::Title,
+    ))]));
+    let rendered = render_content(&doc);
+    assert!(
+        rendered
+            .body
+            .contains("<span class=\"field\">My Report</span>"),
+        "body: {}",
+        rendered.body
+    );
+}
+
+#[test]
+fn unresolvable_field_renders_nothing() {
+    use loki_doc_model::content::field::{Field, FieldKind};
+    let mut doc = Document::new();
+    let sec = doc.first_section_mut().unwrap();
+    sec.blocks.clear();
+    sec.blocks.push(Block::Para(vec![
+        Inline::Str("x".into()),
+        Inline::Field(Field::new(FieldKind::PageCount)),
+    ]));
+    let rendered = render_content(&doc);
+    assert!(
+        !rendered.body.contains("class=\"field\""),
+        "a field with no value must render nothing: {}",
+        rendered.body
+    );
+}
+
+#[test]
+fn comment_emits_marker_and_aside() {
+    use loki_doc_model::content::annotation::{Comment, CommentRef, CommentRefKind};
+    let mut doc = Document::new();
+    let mut comment = Comment::new("c1").with_plain_body("Please clarify.");
+    comment.author = Some("Reviewer".into());
+    doc.comments.push(comment);
+    let sec = doc.first_section_mut().unwrap();
+    sec.blocks.clear();
+    sec.blocks.push(Block::Para(vec![
+        Inline::Comment(CommentRef::new("c1", CommentRefKind::Start)),
+        Inline::Str("commented text".into()),
+        Inline::Comment(CommentRef::new("c1", CommentRefKind::End)),
+    ]));
+    let rendered = render_content(&doc);
+    // One inline ref marker linking to the aside...
+    assert!(
+        rendered
+            .body
+            .contains("<sup class=\"comment-ref\"><a href=\"#cmt-c1\""),
+        "body: {}",
+        rendered.body
+    );
+    // ...and a single trailing aside with the id, byline, and body.
+    assert!(
+        rendered.body.contains("id=\"cmt-c1\""),
+        "aside id missing: {}",
+        rendered.body
+    );
+    assert!(
+        rendered.body.contains("Reviewer"),
+        "byline: {}",
+        rendered.body
+    );
+    assert!(rendered.body.contains("Please clarify."));
+    // The end anchor must not produce a second marker.
+    assert_eq!(rendered.body.matches("comment-ref").count(), 1);
+}
+
+#[test]
 fn escapes_special_characters() {
     let mut doc = Document::new();
     let sec = doc.first_section_mut().unwrap();

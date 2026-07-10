@@ -9,12 +9,15 @@
 //! table serialisation in [`crate::tables`], and image handling in
 //! [`crate::images`].
 
+use std::collections::HashMap;
+
 use loki_doc_model::Document;
+use loki_doc_model::content::annotation::Comment;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::Inline;
 
 use crate::images::EpubImage;
-use crate::inlines::{heading_level, plain_text};
+use crate::inlines::{FieldEnv, heading_level, plain_text};
 
 /// A single entry in the EPUB table of contents.
 pub struct TocEntry {
@@ -42,13 +45,24 @@ pub struct RenderedContent {
 /// Renders all sections of `doc` into a single XHTML body fragment.
 #[must_use]
 pub fn render_content(doc: &Document) -> RenderedContent {
-    let mut ctx = RenderCtx::default();
+    let mut ctx = RenderCtx {
+        field_env: FieldEnv::from_meta(&doc.meta),
+        comments: doc
+            .comments
+            .iter()
+            .map(|c| (c.id.clone(), c.clone()))
+            .collect(),
+        ..Default::default()
+    };
     let mut body = String::new();
     for section in &doc.sections {
         for block in &section.blocks {
             ctx.render_block(block, &mut body);
         }
     }
+    // Comments have no native EPUB element: each referenced comment is emitted as
+    // an `<aside>` at the end of the body, linked from its inline ref marker.
+    ctx.render_comment_asides(&mut body);
     RenderedContent {
         body,
         toc: ctx.toc,
@@ -69,6 +83,14 @@ pub(crate) struct RenderCtx {
     /// Set once any MathML is emitted, so the content document's manifest item
     /// gets `properties="mathml"` (EPUB 3.3 §5.4.2 / 5.4).
     pub(crate) has_math: bool,
+    /// Static values for metadata-backed fields (Title/Author/Subject), used to
+    /// resolve an [`Inline::Field`] whose `current_value` snapshot is absent.
+    pub(crate) field_env: FieldEnv,
+    /// Comment bodies keyed by id, matched against [`Inline::Comment`] anchors.
+    pub(crate) comments: HashMap<String, Comment>,
+    /// Comment ids in first-reference order — drives the marker numbering and
+    /// the trailing `<aside>` list. Only comments actually anchored appear.
+    pub(crate) comment_seq: Vec<String>,
 }
 
 impl RenderCtx {
@@ -189,6 +211,52 @@ impl RenderCtx {
         }
         out.push_str(&format!("</{tag}>\n"));
     }
+
+    /// Appends one `<aside>` per referenced comment (in first-reference order) to
+    /// the body. Each aside carries the comment id (targeted by its inline ref
+    /// marker), author/date byline, and body paragraphs. A no-op when no comment
+    /// was anchored. Grouped in a `<section epub:type="annotations">`.
+    fn render_comment_asides(&mut self, out: &mut String) {
+        if self.comment_seq.is_empty() {
+            return;
+        }
+        out.push_str("<section epub:type=\"annotations\" role=\"doc-endnotes\">\n");
+        let seq = std::mem::take(&mut self.comment_seq);
+        for (i, id) in seq.iter().enumerate() {
+            let Some(comment) = self.comments.get(id).cloned() else {
+                continue;
+            };
+            out.push_str(&format!(
+                "<aside epub:type=\"annotation\" role=\"doc-footnote\" id=\"cmt-{id}\">\n",
+                id = crate::xml::escape_attr(id)
+            ));
+            let byline = comment_byline(&comment, i + 1);
+            out.push_str(&format!(
+                "<p class=\"comment-byline\">{}</p>\n",
+                crate::xml::escape_text(&byline)
+            ));
+            for block in &comment.body {
+                self.render_block(block, out);
+            }
+            out.push_str("</aside>\n");
+        }
+        out.push_str("</section>\n");
+    }
+}
+
+/// Builds the human-readable byline for a comment aside: `"[n] author — date"`,
+/// omitting the parts that are absent.
+fn comment_byline(comment: &Comment, number: usize) -> String {
+    let mut s = format!("[{number}]");
+    if let Some(author) = &comment.author {
+        s.push(' ');
+        s.push_str(author);
+    }
+    if let Some(date) = &comment.date {
+        s.push_str(" — ");
+        s.push_str(&date.to_rfc3339_opts(chrono::SecondsFormat::Secs, false));
+    }
+    s
 }
 
 #[cfg(test)]
