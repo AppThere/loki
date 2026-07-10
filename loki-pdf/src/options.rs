@@ -61,11 +61,20 @@ impl PdfXLevel {
 /// Describes the printing condition referenced by the PDF/X `OutputIntent`.
 ///
 /// When [`Self::icc_profile`] is provided it is embedded as the
-/// `DestOutputProfile` (the gold standard for certification). When it is
-/// `None`, the output intent references the named printing condition only —
-/// valid when [`Self::condition_identifier`] is a registered characterisation
-/// from the ICC registry. The default targets the widely used FOGRA39
-/// coated-paper condition.
+/// `DestOutputProfile`. **This is required for strict PDF/X-3 and PDF/X-4
+/// conformance** (both mandate an embedded ICC profile in the output intent).
+/// When it is `None`, the output intent references the named printing condition
+/// only — accepted for PDF/X-1a when [`Self::condition_identifier`] is a
+/// registered characterisation from the ICC registry, but *not* a conformant
+/// X-3/X-4 file. The default targets the widely used FOGRA39 coated-paper
+/// condition; supply a matching profile with [`Self::with_icc_profile`] for
+/// certified output.
+///
+/// TODO(pdf-icc-default-profile): no CMYK ICC profile is bundled by default
+/// (embedding one is a licensing/asset decision — profiles carry their own
+/// redistribution terms). Until a profile is bundled, X-3/X-4 callers must
+/// supply one via [`Self::with_icc_profile`]; a build that bundles an approved
+/// profile (e.g. an ECI/FOGRA release) can default `icc_profile` to it.
 #[derive(Debug, Clone)]
 pub struct OutputIntent {
     /// `OutputConditionIdentifier` — a registered condition name (e.g.
@@ -78,8 +87,20 @@ pub struct OutputIntent {
     /// Additional `Info` string.
     pub info: Option<String>,
     /// Optional embedded ICC profile bytes (a 4-component CMYK profile). When
-    /// present it is written as the `DestOutputProfile` stream.
+    /// present it is written as the `DestOutputProfile` stream — required for
+    /// strict PDF/X-3 / X-4 conformance.
     pub icc_profile: Option<Vec<u8>>,
+}
+
+impl OutputIntent {
+    /// Sets the embedded CMYK ICC profile (the `DestOutputProfile`). Use this to
+    /// make the output intent conformant for PDF/X-3 / X-4. The bytes must be a
+    /// 4-component (CMYK) ICC profile matching `condition_identifier`.
+    #[must_use]
+    pub fn with_icc_profile(mut self, profile: Vec<u8>) -> Self {
+        self.icc_profile = Some(profile);
+        self
+    }
 }
 
 impl Default for OutputIntent {
@@ -89,6 +110,7 @@ impl Default for OutputIntent {
             condition: Some("Coated FOGRA39 (ISO 12647-2:2004)".to_string()),
             registry_name: Some("http://www.color.org".to_string()),
             info: Some("Coated FOGRA39 (ISO 12647-2:2004)".to_string()),
+            // See TODO(pdf-icc-default-profile) above — integrator-supplied.
             icc_profile: None,
         }
     }
@@ -122,5 +144,11 @@ mod tests {
         let oi = OutputIntent::default();
         assert_eq!(oi.condition_identifier, "FOGRA39");
         assert!(oi.icc_profile.is_none());
+    }
+
+    #[test]
+    fn with_icc_profile_sets_the_dest_output_profile() {
+        let oi = OutputIntent::default().with_icc_profile(vec![1, 2, 3, 4]);
+        assert_eq!(oi.icc_profile.as_deref(), Some([1, 2, 3, 4].as_slice()));
     }
 }

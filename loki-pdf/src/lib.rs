@@ -135,5 +135,29 @@ mod tests {
         assert!(has(b"GTS_PDFX"), "PDF/X marker missing");
         // X-1a (default) requires a trailer ID.
         assert!(has(b"/ID"), "trailer /ID missing");
+        // Default output intent embeds no ICC profile (integrator-supplied).
+        assert!(
+            !has(b"DestOutputProfile"),
+            "default must not embed a DestOutputProfile"
+        );
+    }
+
+    #[test]
+    fn supplied_icc_profile_is_embedded_as_dest_output_profile() {
+        // When a CMYK ICC profile is supplied it must be embedded and referenced
+        // as the output intent's DestOutputProfile (required for strict X-3/X-4).
+        let opts = PdfXOptions {
+            level: PdfXLevel::X4,
+            output_intent: OutputIntent::default().with_icc_profile(b"FAKE-ICC-PROFILE".to_vec()),
+            ..Default::default()
+        };
+        let mut out = Vec::new();
+        export_document(&sample_doc(), &opts, &mut out).expect("export");
+        let has = |n: &[u8]| out.windows(n.len()).any(|w| w == n);
+        assert!(
+            has(b"DestOutputProfile"),
+            "supplied profile must be referenced as DestOutputProfile"
+        );
+        assert!(has(b"FAKE-ICC-PROFILE"), "profile bytes must be embedded");
     }
 }
