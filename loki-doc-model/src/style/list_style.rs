@@ -52,8 +52,14 @@ impl std::fmt::Display for ListId {
 pub enum BulletChar {
     /// A Unicode bullet character (e.g. `'•'`, `'◦'`, `'▪'`).
     Char(char),
-    /// An image bullet (stored opaquely; image data is in the extension bag).
-    Image,
+    /// A picture bullet — the label is a small image rather than a glyph. The
+    /// `src` is an image reference: a `data:` URI when the importer embedded the
+    /// image, otherwise a package part path. OOXML `w:numPicBullet` /
+    /// `w:lvlPicBulletId`; ODF `text:list-level-style-image` (`xlink:href`).
+    Image {
+        /// Image reference — a `data:` URI or a package part path.
+        src: String,
+    },
 }
 
 /// The numbering scheme for an ordered list level.

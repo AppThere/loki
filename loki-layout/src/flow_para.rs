@@ -50,14 +50,10 @@
 use std::sync::Arc;
 
 use loki_doc_model::content::block::{Block, StyledParagraph};
-use loki_doc_model::content::inline::Inline;
-use loki_doc_model::style::list_style::ListLevelKind;
 
 use crate::geometry::LayoutRect;
 use crate::items::{PositionedImage, PositionedItem};
-use crate::para::{
-    ParagraphLayout, ResolvedParaProps, format_list_marker, layout_paragraph_spelled,
-};
+use crate::para::{ParagraphLayout, ResolvedParaProps, layout_paragraph_spelled};
 use crate::resolve::{emu_to_pt, flatten_paragraph, pts_to_f32, resolve_para_props};
 
 use super::columns_impl::break_column;
@@ -99,47 +95,10 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     }
 
     // ── List marker synthesis ────────────────────────────────────────────────
-    // When the paragraph carries list membership, look up the list style, advance
-    // the per-list counter, format the marker string, and prepend it as an
-    // `Inline::Str` + tab. Non-list paragraphs reset `prev_list_id`.
-    let owned_para: Option<StyledParagraph> = if let Some(ref lm) = resolved.list_marker {
-        if let Some(list_style) = state.catalog.list_styles.get(&lm.list_id) {
-            if let Some(level_def) = list_style.levels.get(lm.level as usize) {
-                let start_value = match &level_def.kind {
-                    ListLevelKind::Numbered { start_value, .. } => *start_value,
-                    _ => 1,
-                };
-                // New-list detection: a different list_id means a new list
-                // is starting, so counters for this id are cleared.
-                if state.prev_list_id.as_ref() != Some(&lm.list_id) {
-                    state.list_counters.remove(&lm.list_id);
-                }
-                state.prev_list_id = Some(lm.list_id.clone());
-                state.advance_counter(&lm.list_id, lm.level, start_value);
-                let counters = state
-                    .list_counters
-                    .get(&lm.list_id)
-                    .copied()
-                    .unwrap_or([1u32; 9]);
-                let marker_text = format_list_marker(&list_style.levels, lm.level, &counters);
-                let mut cloned = para.clone();
-                cloned
-                    .inlines
-                    .insert(0, Inline::Str(format!("{}\t", marker_text)));
-                Some(cloned)
-            } else {
-                state.prev_list_id = None;
-                None
-            }
-        } else {
-            state.prev_list_id = None;
-            None
-        }
-    } else {
-        state.prev_list_id = None;
-        None
-    };
-    let effective_para: &StyledParagraph = owned_para.as_ref().unwrap_or(para);
+    // Prepend the label (bullet / number) as an `Inline::Str` + tab; a picture
+    // bullet instead reports its image `src` for out-of-band placement below.
+    let marker = super::flow_list_marker::synthesize(state, para, &resolved);
+    let effective_para: &StyledParagraph = marker.owned.as_ref().unwrap_or(para);
     // ────────────────────────────────────────────────────────────────────────
 
     let (text, spans, mut images, mut notes) =
@@ -210,6 +169,16 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
         state.options.preserve_for_editing,
         state.options.spell.as_ref(),
     );
+
+    // Picture bullet (feature 5.4): place the label image in the hanging label
+    // box on line 0. Injected into the paragraph's items so it translates with
+    // the paragraph on placement.
+    if let Some(src) = &marker.bullet_src
+        && let Some(item) =
+            super::flow_list_marker::picture_bullet_item(src, &resolved, &para_layout)
+    {
+        para_layout.items.push(item);
+    }
 
     // ── Inline image placement (gap #9) ──────────────────────────────────────
     // TODO(inline-image-flow): Parley has no inline image box support.

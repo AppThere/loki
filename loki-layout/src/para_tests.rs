@@ -1024,11 +1024,15 @@ fn format_marker_display_levels_two_level() {
 }
 
 #[test]
-fn format_marker_picture_bullet_fallback() {
+fn format_marker_picture_bullet_has_no_text() {
+    // A picture bullet emits no marker *text* — the image is placed out-of-band
+    // by the flow engine, so the text label is empty (not the old `•` fallback).
     let levels = vec![ListLevel {
         level: 0,
         kind: ListLevelKind::Bullet {
-            char: BulletChar::Image,
+            char: BulletChar::Image {
+                src: "data:image/png;base64,AAAA".to_string(),
+            },
             font: None,
         },
         indent_start: DocPoints::new(36.0),
@@ -1037,7 +1041,7 @@ fn format_marker_picture_bullet_fallback() {
         tab_stop_after_label: None,
         char_props: Default::default(),
     }];
-    assert_eq!(format_list_marker(&levels, 0, &counters(&[])), "•");
+    assert_eq!(format_list_marker(&levels, 0, &counters(&[])), "");
 }
 
 // ── Counter tracking tests ────────────────────────────────────────────────────

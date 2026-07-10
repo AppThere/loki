@@ -19,6 +19,8 @@ mod comments_impl;
 mod editing;
 #[path = "flow_float.rs"]
 mod float_impl;
+#[path = "flow_list_marker.rs"]
+mod flow_list_marker;
 #[path = "flow_page_fields.rs"]
 mod page_fields;
 #[path = "flow_para.rs"]
@@ -360,10 +362,9 @@ fn run_paginated_loop(
         if let Block::StyledPara(para) = block
             && resolve_para_props(para, state.catalog).keep_with_next
         {
-            // NOTE: `i` is the slice index (chain scanning indexes `blocks`);
-            // editing block indices inside a keep-with-next chain are therefore
-            // not offset by `block_index_base`. This only matters for a
-            // continuous section carrying a kwn chain in the live editor (rare).
+            // NOTE: `i` is the slice index (chain scanning indexes `blocks`), so
+            // editing block indices inside a keep-with-next chain are not offset
+            // by `block_index_base` — only matters for a kwn chain in a live-editor continuous section (rare).
             let consumed = flow_keep_with_next_chain(state, blocks, i);
             i += consumed;
             continue;
@@ -1125,10 +1126,9 @@ fn flow_table(
     rows.extend(&tbl.foot.rows);
 
     // Assign each cell its grid columns, accounting for columns covered by a
-    // `row_span` (vMerge) cell from an earlier row. `cell_cols[row][cell] =
-    // (col_start, col_end)`. Without this, a cell in a row whose leading
-    // column is occupied by a vertical merge above would be placed too far
-    // left (overlapping the merged cell) — the TC-DOCX-005 L-merge bug.
+    // `row_span` (vMerge) cell from an earlier row (`cell_cols[row][cell] =
+    // (col_start, col_end)`). Without it a cell whose leading column is occupied
+    // by a vertical merge above is placed too far left — the TC-DOCX-005 bug.
     let cell_cols = table_geom::assign_cell_columns(&rows, col_widths.len());
 
     // Named style + `w:tblLook` → conditional/banding shading (under direct).

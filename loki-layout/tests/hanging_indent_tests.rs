@@ -217,6 +217,72 @@ fn bullet_continuation_aligns_with_hanging_text_start() {
     );
 }
 
+/// Extend a catalog with a picture-bullet list "p" (image `src`) at the same
+/// geometry as the other lists.
+fn with_picture_bullet(mut catalog: StyleCatalog, src: &str) -> StyleCatalog {
+    catalog.list_styles.insert(
+        ListId::new("p"),
+        ListStyle {
+            id: ListId::new("p"),
+            display_name: None,
+            levels: vec![ListLevel {
+                level: 0,
+                kind: ListLevelKind::Bullet {
+                    char: BulletChar::Image {
+                        src: src.to_string(),
+                    },
+                    font: None,
+                },
+                indent_start: Points::new(INDENT_START),
+                hanging_indent: Points::new(HANGING),
+                label_alignment: LabelAlignment::Left,
+                tab_stop_after_label: None,
+                char_props: Default::default(),
+            }],
+            extensions: ExtensionBag::default(),
+        },
+    );
+    catalog
+}
+
+#[test]
+fn picture_bullet_emits_image_in_the_hanging_label_box() {
+    const SRC: &str = "data:image/png;base64,AAAA";
+    let catalog = with_picture_bullet(list_catalog(), SRC);
+    let items = flow(
+        &catalog,
+        list_para(
+            "This is a fairly long picture-bullet item whose text must wrap \
+             across several lines so the text start is unambiguous.",
+            "p",
+        ),
+    );
+
+    // The picture bullet is emitted as an image carrying the level's src.
+    let img = items
+        .iter()
+        .find_map(|i| match i {
+            PositionedItem::Image(im) => Some(im),
+            _ => None,
+        })
+        .expect("a picture bullet must emit an image");
+    assert_eq!(img.src, SRC);
+
+    // Square, and no wider than the label box (the hanging indent).
+    let (w, h) = (img.rect.size.width, img.rect.size.height);
+    assert!(w > 0.0 && (w - h).abs() < 0.5, "bullet is a positive square");
+    assert!(w <= HANGING as f32 + 0.5, "bullet fits the {HANGING}pt label box");
+
+    // Left edge sits one hanging-indent left of the wrapped text start
+    // (continuation lines begin exactly at `indent_start`).
+    let (_first, continuation_x) = first_and_continuation_x(&glyph_origins(&items));
+    let delta = continuation_x - img.rect.origin.x;
+    assert!(
+        (delta - HANGING as f32).abs() < 2.0,
+        "bullet image should sit one hanging ({HANGING}pt) left of the text; got {delta}pt"
+    );
+}
+
 #[test]
 fn numbered_continuation_aligns_with_hanging_text_start() {
     let catalog = list_catalog();
