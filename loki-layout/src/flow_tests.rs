@@ -306,6 +306,39 @@ fn unequal_columns_place_second_band_at_first_width() {
 }
 
 #[test]
+fn short_multi_column_section_balances_across_columns() {
+    let mut r = test_resources();
+    // Four short paragraphs — well under one column's height, so a fill-first
+    // layout would stack them all in column 0 and leave column 1 empty. Column
+    // balancing (5.10) spreads them so the second column (x ≈ 99) is used too.
+    let paras: Vec<_> = (0..4).map(|i| make_para(&format!("Line {i}"))).collect();
+    let two_col = PageLayout {
+        columns: Some(SectionColumns {
+            count: 2,
+            gap: Points::new(18.0),
+            separator: false,
+            widths: Vec::new(),
+        }),
+        ..tiny_layout()
+    };
+    let (pages, _) = flow_paginated(&mut r, &section_of(paras, two_col));
+    assert_eq!(
+        pages.len(),
+        1,
+        "the short section must fit on a single page"
+    );
+    let xs = glyph_x_origins(&pages[0]);
+    assert!(
+        xs.iter().any(|&x| x < 50.0),
+        "the first column must be used: {xs:?}"
+    );
+    assert!(
+        xs.iter().any(|&x| x >= 99.0),
+        "balancing must spread content into the second column: {xs:?}"
+    );
+}
+
+#[test]
 fn single_column_keeps_content_in_one_band() {
     let mut r = test_resources();
     let paras: Vec<_> = (0..12).map(|i| make_para(&format!("Line {i}"))).collect();

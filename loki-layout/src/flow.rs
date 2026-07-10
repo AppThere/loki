@@ -11,6 +11,8 @@
 //! Paragraph placement, splitting, and keep-with-next chain logic live in
 //! the `para_impl` submodule (`flow_para.rs`).
 
+#[path = "flow_balance.rs"]
+mod balance;
 #[path = "flow_columns.rs"]
 mod columns_impl;
 #[path = "flow_comments.rs"]
@@ -443,6 +445,19 @@ pub fn flow_section(
     options: &LayoutOptions,
     comments: &[loki_doc_model::content::annotation::Comment],
 ) -> FlowOutput {
+    if mode.is_paginated() {
+        // Top-level paginated flow: balances multi-column single-page sections.
+        return balance::flow_paginated_balanced(
+            resources,
+            section,
+            catalog,
+            mode,
+            display_scale,
+            options,
+            comments,
+        );
+    }
+
     let mut state = new_flow_state(
         resources,
         section,
@@ -452,44 +467,28 @@ pub fn flow_section(
         options,
         comments,
     );
-
-    if mode.is_paginated() {
-        // Top-level paginated flow: record checkpoints, never resync.
-        run_paginated_loop(&mut state, &section.blocks, 0, 0, |_, _| false);
-    } else {
-        for (idx, block) in section.blocks.iter().enumerate() {
-            flow_block(&mut state, block, idx);
-        }
-        // Reserve any float left active by the final block (continuous mode).
-        float_impl::reserve_active_float(&mut state);
+    for (idx, block) in section.blocks.iter().enumerate() {
+        flow_block(&mut state, block, idx);
     }
-
+    // Reserve any float left active by the final block (continuous mode).
+    float_impl::reserve_active_float(&mut state);
     flow_footnotes(&mut state);
 
-    if mode.is_paginated() {
-        finish_page(&mut state);
-        FlowOutput::Pages {
-            pages: state.pages,
-            checkpoints: state.checkpoints,
-            warnings: state.warnings,
+    if matches!(mode, LayoutMode::Pageless) {
+        let dx = state.margins.left;
+        for item in &mut state.current_items {
+            item.translate(dx, 0.0);
         }
-    } else {
-        if matches!(mode, LayoutMode::Pageless) {
-            let dx = state.margins.left;
-            for item in &mut state.current_items {
-                item.translate(dx, 0.0);
-            }
-            // Keep paragraph editing origins consistent with the shifted items.
-            for para in &mut state.current_paragraphs {
-                para.origin.0 += dx;
-            }
+        // Keep paragraph editing origins consistent with the shifted items.
+        for para in &mut state.current_paragraphs {
+            para.origin.0 += dx;
         }
-        FlowOutput::Canvas {
-            items: state.current_items,
-            height: state.cursor_y,
-            paragraphs: state.current_paragraphs,
-            warnings: state.warnings,
-        }
+    }
+    FlowOutput::Canvas {
+        items: state.current_items,
+        height: state.cursor_y,
+        paragraphs: state.current_paragraphs,
+        warnings: state.warnings,
     }
 }
 

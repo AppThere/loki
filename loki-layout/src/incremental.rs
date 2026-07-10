@@ -21,13 +21,17 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use loki_doc_model::content::block::Block;
-use loki_doc_model::content::inline::Inline;
 use loki_doc_model::document::Document;
 use loki_doc_model::style::list_style::ListId;
 
 use crate::LayoutOptions;
 use crate::font::FontResources;
 use crate::result::{LayoutPage, PaginatedLayout};
+
+#[path = "incremental_notes.rs"]
+mod notes;
+use notes::block_has_note;
+pub use notes::document_has_notes;
 
 /// Resumable flow state captured at a clean page top.
 ///
@@ -113,68 +117,6 @@ fn section_page_start(checkpoints: &[PageStart], section: usize) -> Option<usize
         .map(|c| c.page_index)
 }
 
-/// `true` if any inline in `inlines` (recursively) is a footnote/endnote.
-fn inlines_have_note(inlines: &[Inline]) -> bool {
-    inlines.iter().any(|i| match i {
-        Inline::Note(..) => true,
-        Inline::Strong(c)
-        | Inline::Emph(c)
-        | Inline::Underline(c)
-        | Inline::Strikeout(c)
-        | Inline::Superscript(c)
-        | Inline::Subscript(c)
-        | Inline::SmallCaps(c)
-        | Inline::Quoted(_, c)
-        | Inline::Span(_, c)
-        | Inline::Cite(_, c) => inlines_have_note(c),
-        Inline::Link(_, c, _) => inlines_have_note(c),
-        Inline::StyledRun(run) => inlines_have_note(&run.content),
-        _ => false,
-    })
-}
-
-/// `true` if `block` (recursively) contains a footnote/endnote.
-pub(crate) fn block_has_note(block: &Block) -> bool {
-    use loki_doc_model::content::table::core::Table;
-    fn table_has_note(t: &Table) -> bool {
-        t.head
-            .rows
-            .iter()
-            .chain(t.foot.rows.iter())
-            .chain(
-                t.bodies
-                    .iter()
-                    .flat_map(|b| b.head_rows.iter().chain(b.body_rows.iter())),
-            )
-            .any(|row| {
-                row.cells
-                    .iter()
-                    .any(|c| c.blocks.iter().any(block_has_note))
-            })
-    }
-    match block {
-        Block::Para(i) | Block::Plain(i) | Block::Heading(_, _, i) => inlines_have_note(i),
-        Block::StyledPara(p) => inlines_have_note(&p.inlines),
-        Block::LineBlock(lines) => lines.iter().any(|l| inlines_have_note(l)),
-        Block::BlockQuote(ch) | Block::Div(_, ch) | Block::Figure(_, _, ch) => {
-            ch.iter().any(block_has_note)
-        }
-        Block::OrderedList(_, items) | Block::BulletList(items) => {
-            items.iter().flatten().any(block_has_note)
-        }
-        Block::Table(t) => table_has_note(t),
-        _ => false,
-    }
-}
-
-/// `true` if any block in `doc` contains a footnote/endnote. Computed once on
-/// the full-layout path (where the cost is already O(document)).
-pub fn document_has_notes(doc: &Document) -> bool {
-    doc.sections
-        .iter()
-        .any(|s| s.blocks.iter().any(block_has_note))
-}
-
 /// Attempts an incremental paginated relayout of `doc` given the previous
 /// document, its layout, and its [`PaginatedReuse`] metadata.
 ///
@@ -216,6 +158,17 @@ pub fn relayout_paginated_incremental(
         // Nothing changed — reuse the previous layout verbatim.
         return Some((prev_layout.clone(), prev_reuse.clone()));
     };
+
+    // Multi-column sections are column-balanced by the full flow, not the resume
+    // path; an edit to one falls back to a full relayout.
+    if doc.sections[sc]
+        .layout
+        .columns
+        .as_ref()
+        .is_some_and(|c| c.count >= 2)
+    {
+        return None;
+    }
 
     let new_blocks = &doc.sections[sc].blocks;
     let old_blocks = &prev_doc.sections[sc].blocks;
@@ -330,14 +283,13 @@ pub fn relayout_paginated_incremental(
     // numbers are unchanged); assign only the fresh middle pages. The exception
     // is a page-count change combined with a header that references the count —
     // then reused NUMPAGES is stale, so re-run the full per-section pass. ──
-    let count_changed = new_total != total_pages;
-    let needs_full_header_pass = count_changed
+    if new_total != total_pages
         && doc
             .sections
             .iter()
-            .any(|s| crate::flow::page_layout_has_page_fields(&s.layout));
-    if needs_full_header_pass {
-        return None; // uncommon: defer to a correct full layout
+            .any(|s| crate::flow::page_layout_has_page_fields(&s.layout))
+    {
+        return None;
     }
     crate::flow::assign_headers_footers(
         &mut middle,
