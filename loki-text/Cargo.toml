@@ -39,6 +39,8 @@ appthere-ui     = { path = "../appthere-ui" }
 loki-app-shell  = { path = "../loki-app-shell" }
 # Cross-platform file picker (crates.io).
 loki-file-access.workspace = true
+# Cross-platform URL opener for Ctrl/Cmd+click on hyperlinks (feature 5.11).
+webbrowser       = "1"
 # Typed error derivation.
 thiserror       = "2"
 # Vello/wgpu integration point for custom GPU paint sources (CustomPaintSource).

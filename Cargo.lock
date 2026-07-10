@@ -4984,6 +4984,7 @@ dependencies = [
  "tracing",
  "unicode-segmentation",
  "vello",
+ "webbrowser",
  "wgpu_context",
 ]
 

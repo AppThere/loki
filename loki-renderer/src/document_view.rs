@@ -236,15 +236,17 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                                 // tile coordinates for the editor to hit-test.
                                 on_tile_click: {
                                     let source = renderer.source.clone();
-                                    move |(i, x, y): (usize, f32, f32)| {
+                                    move |(i, x, y, open_link): (usize, f32, f32, bool)| {
                                         if is_reflow {
+                                            // TODO(link-click-reflow): reflow link-open
+                                            // is a follow-up; place the caret as before.
                                             if let Some((para, byte)) =
                                                 source.reflow_hit_test(i, x, y)
                                             {
                                                 on_reflow_click.call((para, byte));
                                             }
                                         } else {
-                                            on_tile_click.call((i, x, y));
+                                            on_tile_click.call((i, x, y, open_link));
                                         }
                                     }
                                 },

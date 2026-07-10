@@ -215,6 +215,34 @@ pub fn hit_test_page(
     })
 }
 
+/// Open the hyperlink under a paginated-page click, if any (feature 5.11).
+///
+/// `(x_pt, y_pt)` are page-local layout points (as delivered by the page tile).
+/// The paginated hit-test frame is content-area-local, so the page margins are
+/// subtracted before consulting [`PageEditingData::link_at`]. Returns `true`
+/// when a link was found and handed to the OS URL opener — the caller then skips
+/// caret placement.
+pub fn open_hyperlink_at(
+    layout: &PaginatedLayout,
+    page_index: usize,
+    x_pt: f32,
+    y_pt: f32,
+) -> bool {
+    let Some(page) = layout.pages.get(page_index) else {
+        return false;
+    };
+    let Some(editing) = page.editing_data.as_ref() else {
+        return false;
+    };
+    let content_x = x_pt - page.margins.left;
+    let content_y = y_pt - page.margins.top;
+    if let Some(url) = editing.link_at(content_x, content_y) {
+        let _ = webbrowser::open(url);
+        return true;
+    }
+    false
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

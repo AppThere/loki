@@ -33,8 +33,11 @@ pub(crate) struct PageTileProps {
     /// Vertical gap below this tile in CSS px — the page gap in paginated
     /// mode, `0` in reflow mode so bands stitch into a continuous flow.
     pub(crate) gap_px: f64,
-    /// Called with `(page_index, x_pt, y_pt)` in layout points on mouse-down.
-    pub(crate) on_tile_click: EventHandler<(usize, f32, f32)>,
+    /// Called with `(page_index, x_pt, y_pt, open_link_modifier)` in layout
+    /// points on mouse-down. `open_link_modifier` is `true` when Ctrl (or the
+    /// platform Cmd/Meta) was held — the gesture that opens a hyperlink under
+    /// the point (feature 5.11) rather than placing the caret.
+    pub(crate) on_tile_click: EventHandler<(usize, f32, f32, bool)>,
     /// Called with `(page_index, x_pt, y_pt)` on mouse-move while a button is
     /// held (drag-select). No-op for the paginated path (handled at the
     /// container level).
@@ -136,7 +139,10 @@ pub(crate) fn PageTile(props: PageTileProps) -> Element {
                         client_y: c.y as f32,
                     });
                 } else {
-                    on_tile_click.call((page_index, x_pt, y_pt));
+                    // Ctrl / Cmd (Meta) held → the open-hyperlink gesture.
+                    let m = evt.modifiers();
+                    let open_link = m.ctrl() || m.meta();
+                    on_tile_click.call((page_index, x_pt, y_pt, open_link));
                 }
             },
             // Drag-select: while a button is held, extend the selection to the
