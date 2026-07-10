@@ -57,6 +57,7 @@ use std::ops::Range;
 
 use loki_doc_model::content::block::{Block, StyledParagraph};
 use loki_doc_model::content::field::types::{Field, FieldKind};
+use loki_doc_model::content::float::FloatWrap;
 use loki_doc_model::content::inline::{Inline, NoteKind, StyledRun};
 use loki_doc_model::style::catalog::{StyleCatalog, StyleId};
 use loki_doc_model::style::props::border::{Border as DocBorder, BorderStyle as DocBorderStyle};
@@ -702,7 +703,6 @@ fn walk_inlines(
                 );
             }
             // Image (gap #9): collect for post-Parley placement; do not emit text.
-            // TODO(floating-image): check NodeAttr.classes for "floating"; deferred (gap #12).
             // TODO(inline-image-flow): Parley has no inline box support; images placed
             //   as block-level prefix after layout_paragraph returns.
             Inline::Image(attr, alt_inlines, target) => {
@@ -746,7 +746,7 @@ fn walk_inlines(
                         alt,
                         cx_emu,
                         cy_emu,
-                        float: loki_doc_model::content::float::FloatWrap::read(attr),
+                        float: FloatWrap::read_or_class_default(attr),
                     });
                 }
             }
