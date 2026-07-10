@@ -235,18 +235,29 @@ fn write_page_layout(out: &mut String, pl_name: &str, layout: &PageLayout) {
 }
 
 /// Writes a `<style:columns>` element (ODF 1.3 §16.27.10): `fo:column-count`
-/// equal columns with a uniform `fo:column-gap`, and an optional separator line.
+/// columns, a uniform `fo:column-gap`, and an optional separator. Unequal
+/// columns (`cols.widths` matching `count`) add one `<style:column
+/// style:rel-width="N*"/>` per column (share = point width ×100).
 fn write_columns(out: &mut String, cols: &SectionColumns) {
     out.push_str("<style:columns");
     attr(out, "fo:column-count", &cols.count.to_string());
     attr(out, "fo:column-gap", &pt(cols.gap));
-    if cols.separator {
-        out.push('>');
-        out.push_str("<style:column-sep style:width=\"0.5pt\" style:color=\"#000000\"/>");
-        out.push_str("</style:columns>");
-    } else {
+    let unequal = cols.widths.len() == usize::from(cols.count);
+    if !unequal && !cols.separator {
+        out.push_str("/>");
+        return;
+    }
+    out.push('>');
+    for width in cols.widths.iter().filter(|_| unequal) {
+        let share = (width.value() * 100.0).round();
+        out.push_str("<style:column");
+        attr(out, "style:rel-width", &format!("{share:.0}*"));
         out.push_str("/>");
     }
+    if cols.separator {
+        out.push_str("<style:column-sep style:width=\"0.5pt\" style:color=\"#000000\"/>");
+    }
+    out.push_str("</style:columns>");
 }
 
 /// Renders `meta.xml` for `doc` (Dublin Core core properties).

@@ -192,6 +192,7 @@ fn continuous_multi_column_section_flows_into_two_columns_on_shared_page() {
         count: 2,
         gap: Points::new(18.0),
         separator: false,
+        widths: Vec::new(),
     });
 
     let mut doc = Document::new();

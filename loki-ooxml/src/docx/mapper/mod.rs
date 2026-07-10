@@ -198,6 +198,7 @@ pub mod error;
 pub use error::MapperError;
 
 pub(crate) mod document;
+mod document_cols;
 pub(crate) mod drop_cap_merge;
 pub(crate) mod fields;
 pub(crate) mod images;

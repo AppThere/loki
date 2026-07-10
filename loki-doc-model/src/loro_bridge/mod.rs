@@ -105,6 +105,9 @@ fn map_page_layout(layout: &PageLayout, section_map: &LoroMap) -> Result<(), Bri
         cols_map.insert(KEY_COL_COUNT, i64::from(cols.count))?;
         cols_map.insert(KEY_COL_GAP, cols.gap.value())?;
         cols_map.insert(KEY_COL_SEPARATOR, cols.separator)?;
+        if let Some(joined) = decode::encode_col_widths(&cols.widths) {
+            cols_map.insert(KEY_COL_WIDTHS, joined)?;
+        }
     }
 
     map_header_footer_slot(&layout.header, KEY_HEADER, &layout_map)?;

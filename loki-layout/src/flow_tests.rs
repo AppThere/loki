@@ -210,6 +210,7 @@ fn text_flows_down_columns_before_paging() {
             count: 2,
             gap: Points::new(18.0),
             separator: false,
+            widths: Vec::new(),
         }),
         ..tiny_layout()
     };
@@ -248,6 +249,7 @@ fn column_separator_line_is_drawn() {
             count: 2,
             gap: Points::new(18.0),
             separator: true,
+            widths: Vec::new(),
         }),
         ..tiny_layout()
     };
@@ -266,6 +268,40 @@ fn column_separator_line_is_drawn() {
         sep.is_some(),
         "expected a full-height separator near x=90; items: {:?}",
         pages[0].content_items.len()
+    );
+}
+
+#[test]
+fn unequal_columns_place_second_band_at_first_width() {
+    let mut r = test_resources();
+    let paras: Vec<_> = (0..24).map(|i| make_para(&format!("Line {i}"))).collect();
+    // content width 180, gap 18 → widths 120 + 42 (sum 162 + 18 gap = 180). The
+    // second column's left edge therefore sits at x = 120 + 18 = 138, not the
+    // equal-split 99.
+    let two_col = PageLayout {
+        columns: Some(SectionColumns {
+            count: 2,
+            gap: Points::new(18.0),
+            separator: false,
+            widths: vec![Points::new(120.0), Points::new(42.0)],
+        }),
+        ..tiny_layout()
+    };
+    let (pages, _) = flow_paginated(&mut r, &section_of(paras, two_col));
+    let xs = glyph_x_origins(&pages[0]);
+    assert!(
+        xs.iter().any(|&x| x < 50.0),
+        "wide first column (x≈0) must be used: {xs:?}"
+    );
+    // The equal split would start the second column at x = 99; the unequal
+    // widths push it to 120 + 18 = 138, so a run there proves widths were honoured.
+    assert!(
+        xs.iter().any(|&x| x >= 138.0),
+        "narrow second column must start at x≈138 (first width + gap): {xs:?}"
+    );
+    assert!(
+        !xs.iter().any(|&x| (99.0..138.0).contains(&x)),
+        "no column band should begin in the equal-split gap (99..138): {xs:?}"
     );
 }
 

@@ -46,6 +46,7 @@ fn three_columns_with_separator_round_trip() {
         count: 3,
         gap: Points::new(24.0),
         separator: true,
+        widths: Vec::new(),
     });
 
     let cols = round_trip(&doc).sections[0]
@@ -72,6 +73,29 @@ fn two_columns_no_separator_round_trip() {
     assert_eq!(cols.count, 2);
     assert_eq!(cols.gap.value().round(), 18.0);
     assert!(!cols.separator, "no separator was requested");
+}
+
+#[test]
+fn unequal_column_widths_round_trip() {
+    // `w:equalWidth="0"` with an explicit `<w:col w:w=..>` per column: the
+    // per-column widths (points) must survive DOCX export + re-import.
+    let doc = doc_with_columns(SectionColumns {
+        count: 2,
+        gap: Points::new(18.0),
+        separator: false,
+        widths: vec![Points::new(300.0), Points::new(150.0)],
+    });
+
+    let cols = round_trip(&doc).sections[0]
+        .layout
+        .columns
+        .clone()
+        .expect("columns must survive the round-trip");
+
+    assert_eq!(cols.count, 2, "column count");
+    assert_eq!(cols.widths.len(), 2, "both column widths must survive");
+    assert_eq!(cols.widths[0].value().round(), 300.0, "first column width");
+    assert_eq!(cols.widths[1].value().round(), 150.0, "second column width");
 }
 
 #[test]

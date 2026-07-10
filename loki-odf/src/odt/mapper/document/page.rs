@@ -13,7 +13,7 @@ use loki_doc_model::layout::page::{
 use loki_doc_model::style::list_style::NumberingScheme;
 use loki_primitives::units::Points;
 
-use crate::odt::model::document::{OdfMasterPage, OdfPageLayout};
+use crate::odt::model::document::{OdfColumns, OdfMasterPage, OdfPageLayout};
 use crate::odt::model::paragraph::OdfParagraph;
 use crate::odt::model::styles::{OdfStyle, OdfStylesheet};
 use crate::xml_util::parse_length;
@@ -162,19 +162,12 @@ fn convert_page_layout(pl: &OdfPageLayout) -> PageLayout {
     };
 
     // Multi-column layout is only meaningful for two or more columns.
+    let content_width = Points::new((width.value() - ml.value() - mr.value()).max(0.0));
     let columns = pl
         .columns
         .as_ref()
         .filter(|c| c.count >= 2)
-        .map(|c| SectionColumns {
-            count: u8::try_from(c.count.clamp(2, u32::from(u8::MAX))).unwrap_or(2),
-            gap: c
-                .gap
-                .as_deref()
-                .and_then(parse_length)
-                .unwrap_or_else(|| Points::new(18.0)),
-            separator: c.separator,
-        });
+        .map(|c| map_columns(c, content_width));
 
     // `style:num-format` on `style:page-layout-properties` selects the page-number
     // numbering scheme (decimal / roman / alpha); the PAGE field is formatted
@@ -202,4 +195,42 @@ fn convert_page_layout(pl: &OdfPageLayout) -> PageLayout {
         page_number_format,
         ..Default::default()
     }
+}
+
+/// Map an ODF `style:columns` definition to [`SectionColumns`]. Unequal columns
+/// (`style:column @style:rel-width`) distribute `content_width` (minus the
+/// inter-column gaps) proportionally to their relative shares; equal columns
+/// leave `widths` empty for the layout engine to split evenly.
+fn map_columns(c: &OdfColumns, content_width: Points) -> SectionColumns {
+    let count = u8::try_from(c.count.clamp(2, u32::from(u8::MAX))).unwrap_or(2);
+    let gap = c
+        .gap
+        .as_deref()
+        .and_then(parse_length)
+        .unwrap_or_else(|| Points::new(18.0));
+    let widths = column_widths(&c.rel_widths, count, gap, content_width);
+    SectionColumns {
+        count,
+        gap,
+        separator: c.separator,
+        widths,
+    }
+}
+
+/// Distribute `content_width` across `rel_widths` (relative shares), returning
+/// one [`Points`] width per column. Empty unless a share is present for every
+/// column and their sum is positive.
+fn column_widths(rel_widths: &[f32], count: u8, gap: Points, content_width: Points) -> Vec<Points> {
+    if rel_widths.len() != usize::from(count) {
+        return Vec::new();
+    }
+    let total: f64 = rel_widths.iter().map(|s| f64::from(*s)).sum();
+    if total <= 0.0 {
+        return Vec::new();
+    }
+    let inner = (content_width.value() - (f64::from(count) - 1.0) * gap.value()).max(0.0);
+    rel_widths
+        .iter()
+        .map(|s| Points::new(inner * f64::from(*s) / total))
+        .collect()
 }

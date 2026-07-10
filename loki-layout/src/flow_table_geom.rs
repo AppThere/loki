@@ -68,8 +68,9 @@ pub(super) fn measure_cell_height(
         pending_footnotes: Vec::new(),
         current_paragraphs: Vec::new(),
         checkpoints: Vec::new(),
-        // Table cells are always laid out single-column.
+        // Table cells are always laid out single-column (widths unused here).
         columns: 1,
+        column_widths: Vec::new(),
         column_gap: 0.0,
         column_separator: false,
         col_index: 0,
@@ -214,8 +215,9 @@ pub(super) fn flow_cell_blocks(
         pending_footnotes: Vec::new(),
         current_paragraphs: Vec::new(),
         checkpoints: Vec::new(),
-        // Table cells are always laid out single-column.
+        // Table cells are always laid out single-column (widths unused here).
         columns: 1,
+        column_widths: Vec::new(),
         column_gap: 0.0,
         column_separator: false,
         col_index: 0,

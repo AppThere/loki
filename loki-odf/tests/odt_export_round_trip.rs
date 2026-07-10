@@ -660,6 +660,7 @@ fn multi_column_section_round_trips() {
                 count: 3,
                 gap: Points::new(18.0),
                 separator: true,
+                widths: Vec::new(),
             }),
             ..PageLayout::default()
         },
@@ -678,6 +679,46 @@ fn multi_column_section_round_trips() {
     assert_eq!(cols.count, 3, "column count");
     assert_eq!(cols.gap.value().round(), 18.0, "column gap (pt)");
     assert!(cols.separator, "the column separator must survive");
+}
+
+#[test]
+fn unequal_column_widths_round_trip() {
+    use loki_doc_model::layout::page::SectionColumns;
+
+    // A4 (595.28pt) with 72pt L/R margins → content width 451.28. Two columns
+    // in a 2:1 ratio. ODF stores relative `style:column @style:rel-width`, so the
+    // absolute widths are re-derived from the page geometry on import — the
+    // *ratio* is what round-trips, not the exact points.
+    let section = Section::with_layout_and_blocks(
+        PageLayout {
+            page_size: PageSize::a4(),
+            columns: Some(SectionColumns {
+                count: 2,
+                gap: Points::new(18.0),
+                separator: false,
+                widths: vec![Points::new(280.0), Points::new(140.0)],
+            }),
+            ..PageLayout::default()
+        },
+        vec![Block::Para(vec![Inline::Str("Two-column body.".into())])],
+    );
+    let mut doc = Document::new();
+    doc.sections = vec![section];
+
+    let re = round_trip(&doc);
+    let cols = re.sections[0]
+        .layout
+        .columns
+        .clone()
+        .expect("style:columns must survive the round-trip");
+
+    assert_eq!(cols.count, 2, "column count");
+    assert_eq!(cols.widths.len(), 2, "per-column widths survive");
+    let ratio = cols.widths[0].value() / cols.widths[1].value();
+    assert!(
+        (ratio - 2.0).abs() < 0.05,
+        "the 2:1 width ratio must survive (got {ratio})"
+    );
 }
 
 #[test]

@@ -7,8 +7,10 @@
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::Inline;
 use loki_doc_model::document::Document;
+use loki_doc_model::layout::page::SectionColumns;
 use loki_doc_model::loro_bridge::{document_to_loro, loro_to_document};
 use loki_doc_model::{document_column_count, set_document_columns};
+use loki_primitives::units::Points;
 use loro::LoroDoc;
 
 fn doc() -> LoroDoc {
@@ -69,4 +71,31 @@ fn zero_is_clamped_to_one() {
     let loro = doc();
     set_document_columns(&loro, 0).expect("clamped");
     assert_eq!(document_column_count(&loro), 1);
+}
+
+#[test]
+fn unequal_column_widths_round_trip() {
+    // Explicit per-column widths (unequal columns) must survive the Loro
+    // bridge: they are encoded as a `;`-joined string and split back on read.
+    let mut d = Document::new();
+    d.sections[0].blocks = vec![Block::Para(vec![Inline::Str("hi".into())])];
+    d.sections[0].layout.columns = Some(SectionColumns {
+        count: 2,
+        gap: Points::new(18.0),
+        separator: false,
+        widths: vec![Points::new(300.0), Points::new(150.0)],
+    });
+
+    let loro = document_to_loro(&d).expect("to loro");
+    let back = loro_to_document(&loro).expect("rebuild");
+    let widths = &back.sections[0]
+        .layout
+        .columns
+        .as_ref()
+        .expect("columns present")
+        .widths;
+
+    assert_eq!(widths.len(), 2, "both widths survive");
+    assert_eq!(widths[0].value(), 300.0);
+    assert_eq!(widths[1].value(), 150.0);
 }

@@ -182,6 +182,9 @@ pub(crate) struct OdfColumns {
     pub gap: Option<String>,
     /// Whether a `style:column-sep` separator child is present.
     pub separator: bool,
+    /// Relative widths from `style:column @style:rel-width` (the `"N*"` shares),
+    /// one per column, in document order. Empty for equal-width columns.
+    pub rel_widths: Vec<f32>,
 }
 
 /// Properties for the header or footer area of a page layout.

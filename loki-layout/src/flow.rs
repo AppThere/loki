@@ -171,8 +171,12 @@ pub(super) struct FlowState<'a> {
     /// top-level paginated loop (empty in nested flows).
     pub(super) checkpoints: Vec<PageStart>,
     /// Number of text columns (`1` = single); when `> 1`,
-    /// [`content_width`](Self::content_width) is the *column* width.
+    /// [`content_width`](Self::content_width) is the *current* column's width.
     pub(super) columns: u8,
+    /// Per-column widths in points (length `columns`; may be unequal). Column
+    /// x-offsets are the running sum of preceding widths plus `column_gap` per
+    /// gap. `content_width` tracks the current column's entry.
+    pub(super) column_widths: Vec<f32>,
     /// Gap between adjacent columns in points (meaningful only when `columns > 1`).
     pub(super) column_gap: f32,
     /// Whether to draw a separator line between columns.
@@ -249,22 +253,6 @@ impl<'a> FlowState<'a> {
 /// into `count` equal columns separated by `gap`, and the flow fills each column
 /// top-to-bottom before advancing to the next (then the page). Single-column and
 /// non-paginated (reflow/pageless) flows return the full width.
-fn column_layout_for(
-    columns: Option<&loki_doc_model::layout::page::SectionColumns>,
-    full_content_width: f32,
-    paginated: bool,
-) -> (u8, f32, bool, f32) {
-    match columns {
-        Some(c) if c.count >= 2 && paginated => {
-            let n = f32::from(c.count);
-            let gap = pts_to_f32(c.gap);
-            let col_w = ((full_content_width - (n - 1.0) * gap) / n).max(0.0);
-            (c.count, gap, c.separator, col_w)
-        }
-        _ => (1, 0.0, false, full_content_width),
-    }
-}
-
 /// Builds a fresh [`FlowState`] for `section` in `mode`.
 fn new_flow_state<'a>(
     resources: &'a mut FontResources,
@@ -288,8 +276,12 @@ fn new_flow_state<'a>(
         LayoutMode::Reflow { available_width } => *available_width,
         _ => (page_w - margins.horizontal()).max(0.0),
     };
-    let (columns, column_gap, column_separator, content_width) =
-        column_layout_for(pl.columns.as_ref(), full_content_width, mode.is_paginated());
+    let (columns, column_gap, column_separator, column_widths) = columns_impl::column_layout_for(
+        pl.columns.as_ref(),
+        full_content_width,
+        mode.is_paginated(),
+    );
+    let content_width = column_widths[0];
     FlowState {
         resources,
         catalog,
@@ -313,6 +305,7 @@ fn new_flow_state<'a>(
         current_paragraphs: Vec::new(),
         checkpoints: Vec::new(),
         columns,
+        column_widths,
         column_gap,
         column_separator,
         col_index: 0,
@@ -521,12 +514,13 @@ fn begin_continuous_section(state: &mut FlowState, section: &Section) {
     // Resolve the new section's columns against the group's (unchanged) content
     // area width.
     let full_content_width = (state.page_size.width - state.margins.horizontal()).max(0.0);
-    let (columns, column_gap, column_separator, content_width) =
-        column_layout_for(section.layout.columns.as_ref(), full_content_width, true);
+    let (columns, column_gap, column_separator, column_widths) =
+        columns_impl::column_layout_for(section.layout.columns.as_ref(), full_content_width, true);
     state.columns = columns;
     state.column_gap = column_gap;
     state.column_separator = column_separator;
-    state.content_width = content_width;
+    state.content_width = column_widths[0];
+    state.column_widths = column_widths;
 
     // Open the new column band at the current y (mid-page).
     state.col_index = 0;

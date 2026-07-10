@@ -115,20 +115,27 @@ impl Default for PageMargins {
 pub struct SectionColumns {
     /// The number of text columns.
     pub count: u8,
-    /// The gap between columns in points.
+    /// The gap between columns in points (used between every pair of columns).
     pub gap: Points,
     /// Whether a separator line is drawn between columns.
     pub separator: bool,
+    /// Explicit per-column widths in points (OOXML `w:cols w:equalWidth="0"` /
+    /// ODF unequal `style:column` widths). **Empty** = equal columns (the width
+    /// is derived from the content area, `count`, and `gap`). When present its
+    /// length is `count`; the uniform [`gap`](Self::gap) still separates them.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub widths: Vec<Points>,
 }
 
 impl SectionColumns {
-    /// Creates a two-column layout with the standard 18pt gap.
+    /// Creates a two-column layout with the standard 18pt gap (equal widths).
     #[must_use]
     pub fn two_column() -> Self {
         Self {
             count: 2,
             gap: Points::new(18.0),
             separator: false,
+            widths: Vec::new(),
         }
     }
 }

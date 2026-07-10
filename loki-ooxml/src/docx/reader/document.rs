@@ -10,11 +10,11 @@ use quick_xml::{Reader, events::Event};
 
 use crate::docx::model::document::{DocxBodyChild, DocxDocument};
 use crate::docx::model::paragraph::{
-    DocxBorderEdge, DocxCols, DocxDrawing, DocxFramePr, DocxHdrFtrRef, DocxHyperlink, DocxInd,
-    DocxNumPr, DocxPBdr, DocxPPr, DocxParaChild, DocxParagraph, DocxPgMar, DocxPgSz, DocxRFonts,
-    DocxRPr, DocxRun, DocxRunChild, DocxSectPr, DocxSpacing, DocxTab,
+    DocxBorderEdge, DocxDrawing, DocxFramePr, DocxHyperlink, DocxInd, DocxNumPr, DocxPBdr, DocxPPr,
+    DocxParaChild, DocxParagraph, DocxRFonts, DocxRPr, DocxRun, DocxRunChild, DocxSpacing, DocxTab,
 };
 use crate::docx::reader::runs::{parse_fld_simple_runs, parse_hyperlink_runs, parse_tracked_runs};
+use crate::docx::reader::sectpr::parse_sect_pr;
 use crate::docx::reader::util::{attr_val, local_name, parse_emu, toggle_prop};
 use crate::error::{OoxmlError, OoxmlResult};
 use crate::xml_util::event_text;
@@ -618,112 +618,6 @@ fn parse_tabs(reader: &mut Reader<&[u8]>, out: &mut Vec<DocxTab>) -> OoxmlResult
         buf.clear();
     }
     Ok(())
-}
-
-/// Parses a `w:sectPr` element. Called after Start("sectPr") is consumed.
-pub(crate) fn parse_sect_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxSectPr> {
-    let mut sect = DocxSectPr::default();
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
-                match local_name(e.local_name().as_ref()) {
-                    b"pgSz" => {
-                        sect.pg_sz = Some(DocxPgSz {
-                            w: attr_val(e, b"w")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(12240),
-                            h: attr_val(e, b"h")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(15840),
-                            orient: attr_val(e, b"orient"),
-                        });
-                    }
-                    b"pgMar" => {
-                        sect.pg_mar = Some(DocxPgMar {
-                            top: attr_val(e, b"top")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(1440),
-                            bottom: attr_val(e, b"bottom")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(1440),
-                            left: attr_val(e, b"left")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(1440),
-                            right: attr_val(e, b"right")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(1440),
-                            header: attr_val(e, b"header")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(720),
-                            footer: attr_val(e, b"footer")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(720),
-                            gutter: attr_val(e, b"gutter")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(0),
-                        });
-                    }
-                    b"headerReference" => {
-                        if let (Some(hf_type), Some(rel_id)) =
-                            (attr_val(e, b"type"), attr_val(e, b"id"))
-                        {
-                            sect.header_refs.push(DocxHdrFtrRef { hf_type, rel_id });
-                        }
-                    }
-                    b"footerReference" => {
-                        if let (Some(hf_type), Some(rel_id)) =
-                            (attr_val(e, b"type"), attr_val(e, b"id"))
-                        {
-                            sect.footer_refs.push(DocxHdrFtrRef { hf_type, rel_id });
-                        }
-                    }
-                    b"titlePg" => {
-                        // Presence enables first-page variant; w:val="0" disables.
-                        sect.title_page = attr_val(e, b"val")
-                            .is_none_or(|v| !matches!(v.as_str(), "0" | "false" | "off"));
-                    }
-                    b"cols" => {
-                        sect.cols = Some(DocxCols {
-                            num: attr_val(e, b"num")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(1),
-                            space: attr_val(e, b"space")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(720),
-                            sep: attr_val(e, b"sep")
-                                .is_some_and(|v| !matches!(v.as_str(), "0" | "false" | "off")),
-                        });
-                    }
-                    b"pgNumType" => {
-                        // ECMA-376 §17.6.12: @w:fmt is the number format, @w:start
-                        // restarts numbering at the given value for this section.
-                        sect.pg_num_fmt = attr_val(e, b"fmt");
-                        sect.pg_num_start = attr_val(e, b"start").and_then(|v| v.parse().ok());
-                    }
-                    b"type" => {
-                        // ECMA-376 §17.6.22: how this section begins relative to
-                        // the previous one (continuous / nextPage / even / odd).
-                        sect.section_type = attr_val(e, b"val");
-                    }
-                    _ => {}
-                }
-            }
-            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"sectPr" => {
-                break;
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OoxmlError::Xml {
-                    part: "word/document.xml".into(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-    Ok(sect)
 }
 
 /// Parses a `w:drawing` element. Called after Start("drawing") is consumed.

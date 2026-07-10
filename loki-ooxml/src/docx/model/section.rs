@@ -35,12 +35,15 @@ pub struct DocxSectPr {
 /// `w:cols` multi-column section layout (ECMA-376 §17.6.4).
 #[derive(Debug, Clone)]
 pub struct DocxCols {
-    /// `@w:num` — the number of equal-width columns.
+    /// `@w:num` — the number of columns.
     pub num: i32,
     /// `@w:space` — the spacing between columns, in twips.
     pub space: i32,
     /// `@w:sep` — whether a separator line is drawn between columns.
     pub sep: bool,
+    /// Per-column widths in twips from `w:col @w:w` children, present only when
+    /// `@w:equalWidth="0"`. Empty = equal-width columns.
+    pub col_widths: Vec<i32>,
 }
 
 /// `w:pgSz` page size (ECMA-376 §17.6.13).

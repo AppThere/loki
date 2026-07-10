@@ -100,10 +100,19 @@ pub(super) fn apply_preset(current: &PageLayout, preset: PagePreset) -> PageLayo
                     .columns
                     .as_ref()
                     .map_or(Points::new(DEFAULT_COL_GAP_PT), |c| c.gap);
+                // Preserve explicit per-column widths only when they still match
+                // the new column count; otherwise fall back to equal columns.
+                let widths = l
+                    .columns
+                    .as_ref()
+                    .map(|c| c.widths.clone())
+                    .filter(|w| w.len() == usize::from(n))
+                    .unwrap_or_default();
                 Some(SectionColumns {
                     count: n,
                     gap,
                     separator: l.columns.as_ref().is_some_and(|c| c.separator),
+                    widths,
                 })
             };
         }

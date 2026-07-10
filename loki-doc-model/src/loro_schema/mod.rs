@@ -215,3 +215,5 @@ pub const KEY_MARGIN_GUTTER: &str = "gutter";
 pub const KEY_COL_COUNT: &str = "count";
 pub const KEY_COL_GAP: &str = "gap";
 pub const KEY_COL_SEPARATOR: &str = "separator";
+/// Explicit per-column widths (points), `;`-joined; absent = equal columns.
+pub const KEY_COL_WIDTHS: &str = "widths";

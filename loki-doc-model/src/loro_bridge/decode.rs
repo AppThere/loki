@@ -16,6 +16,22 @@ use crate::style::props::tab_stop::{TabAlignment, TabLeader, TabStop};
 use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 
+/// Encode section column widths (points) as a `;`-joined string, or `None`
+/// when empty (equal-width columns need no explicit widths). The read path
+/// splits on `;` and parses each field back to [`Points`].
+pub(super) fn encode_col_widths(widths: &[Points]) -> Option<String> {
+    if widths.is_empty() {
+        return None;
+    }
+    Some(
+        widths
+            .iter()
+            .map(|w| w.value().to_string())
+            .collect::<Vec<_>>()
+            .join(";"),
+    )
+}
+
 // ── CharProps decoders ────────────────────────────────────────────────────────
 
 pub(super) fn decode_underline(s: &str) -> Option<UnderlineStyle> {

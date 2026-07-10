@@ -10,9 +10,7 @@ use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::document::Document;
 use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
-use loki_doc_model::layout::page::{
-    PageLayout, PageMargins, PageOrientation, PageSize, SectionColumns,
-};
+use loki_doc_model::layout::page::{PageLayout, PageMargins, PageOrientation, PageSize};
 use loki_doc_model::layout::section::{Section, SectionStart};
 use loki_doc_model::meta::core::DocumentMeta;
 use loki_doc_model::settings::DocumentSettings;
@@ -115,16 +113,8 @@ fn map_page_layout(sect_pr: Option<&DocxSectPr>) -> PageLayout {
         };
     }
 
-    // Multi-column layout: only meaningful for two or more columns.
-    if let Some(ref cols) = sp.cols
-        && cols.num >= 2
-    {
-        layout.columns = Some(SectionColumns {
-            count: u8::try_from(cols.num.clamp(2, i32::from(u8::MAX))).unwrap_or(2),
-            gap: Points::new(f64::from(cols.space) / 20.0),
-            separator: cols.sep,
-        });
-    }
+    // Multi-column layout, including unequal `w:equalWidth="0"` widths.
+    layout.columns = super::document_cols::map_columns(sp.cols.as_ref());
 
     // Page numbering: format (roman/alpha) and restart value from w:pgNumType.
     layout.page_number_format = sp.pg_num_fmt.as_deref().map(map_page_num_fmt);
