@@ -135,10 +135,10 @@ mod tests {
         assert!(has(b"GTS_PDFX"), "PDF/X marker missing");
         // X-1a (default) requires a trailer ID.
         assert!(has(b"/ID"), "trailer /ID missing");
-        // Default output intent embeds no ICC profile (integrator-supplied).
+        // The default output intent embeds the bundled CC0 CMYK profile.
         assert!(
-            !has(b"DestOutputProfile"),
-            "default must not embed a DestOutputProfile"
+            has(b"DestOutputProfile"),
+            "default must embed the bundled DestOutputProfile"
         );
     }
 
