@@ -98,7 +98,7 @@ pub(crate) fn map_document(
 ) -> (Document, Vec<OdfWarning>) {
     // ── 1. Map stylesheet + list styles ──────────────────────────────────────
     let mut catalog = map_stylesheet(stylesheet);
-    map_list_styles(&stylesheet.list_styles, &mut catalog, doc.version);
+    map_list_styles(&stylesheet.list_styles, &mut catalog, doc.version, images);
 
     // ── 2. Pre-build column-width lookup from table-column styles ────────────────
     let col_style_widths: HashMap<String, Points> = stylesheet

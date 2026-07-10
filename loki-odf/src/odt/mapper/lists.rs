@@ -4,6 +4,8 @@
 //! List-style mapper: converts [`OdfListStyle`]s into
 //! format-neutral [`ListStyle`]s and inserts them into a [`StyleCatalog`].
 
+use std::collections::HashMap;
+
 use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::style::catalog::StyleCatalog;
 use loki_doc_model::style::list_style::{
@@ -19,11 +21,14 @@ use crate::xml_util::parse_length;
 ///
 /// Indentation is mapped using either the ODF 1.2+ label-alignment model
 /// (when [`OdfVersion::supports_label_alignment`] returns `true` and
-/// `label_followed_by` is `Some`) or the legacy ODF 1.1 model.
+/// `label_followed_by` is `Some`) or the legacy ODF 1.1 model. `images`
+/// (package path → (media-type, bytes)) resolves picture-bullet images to
+/// `data:` URIs (feature 5.4).
 pub(crate) fn map_list_styles(
     list_styles: &[OdfListStyle],
     catalog: &mut StyleCatalog,
     version: OdfVersion,
+    images: &HashMap<String, (String, Vec<u8>)>,
 ) {
     for odf_ls in list_styles {
         let id = ListId::new(&odf_ls.name);
@@ -32,7 +37,7 @@ pub(crate) fn map_list_styles(
         for odf_level in &odf_ls.levels {
             let level_num = odf_level.level + 1; // 0-indexed → 1-indexed ODF
 
-            let kind = map_level_kind(&odf_level.kind, level_num);
+            let kind = map_level_kind(&odf_level.kind, level_num, images);
 
             let (indent_start, hanging_indent) = map_indentation(odf_level, version);
 
@@ -70,7 +75,11 @@ pub(crate) fn map_list_styles(
 }
 
 /// Map an [`OdfListLevelKind`] to the format-neutral [`ListLevelKind`].
-fn map_level_kind(kind: &OdfListLevelKind, level_num: u8) -> ListLevelKind {
+fn map_level_kind(
+    kind: &OdfListLevelKind,
+    level_num: u8,
+    images: &HashMap<String, (String, Vec<u8>)>,
+) -> ListLevelKind {
     match kind {
         OdfListLevelKind::Bullet { char, style_name } => {
             let bullet_char = map_bullet_char(char);
@@ -78,6 +87,18 @@ fn map_level_kind(kind: &OdfListLevelKind, level_num: u8) -> ListLevelKind {
             ListLevelKind::Bullet {
                 char: bullet_char,
                 font,
+            }
+        }
+        OdfListLevelKind::Image { href, style_name } => {
+            // Resolve the bullet image to a data URI; fall back to a text bullet
+            // when the image is missing (feature 5.4).
+            let char = match image_data_uri(href, images) {
+                Some(src) => BulletChar::Image { src },
+                None => BulletChar::Char('•'),
+            };
+            ListLevelKind::Bullet {
+                char,
+                font: style_name.clone(),
             }
         }
         OdfListLevelKind::Number {
@@ -114,6 +135,15 @@ fn map_level_kind(kind: &OdfListLevelKind, level_num: u8) -> ListLevelKind {
 /// an empty string.
 fn map_bullet_char(s: &str) -> BulletChar {
     BulletChar::Char(s.chars().next().unwrap_or('•'))
+}
+
+/// Resolve a `Pictures/…` href to a `data:` URI from the package image map, or
+/// `None` when the part is absent.
+fn image_data_uri(href: &str, images: &HashMap<String, (String, Vec<u8>)>) -> Option<String> {
+    use base64::Engine as _;
+    let (media_type, bytes) = images.get(href)?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Some(format!("data:{media_type};base64,{b64}"))
 }
 
 /// Map an ODF `style:num-format` value to [`NumberingScheme`].

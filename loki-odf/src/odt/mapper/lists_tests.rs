@@ -62,7 +62,12 @@ fn bullet_char_bullet() {
         levels: vec![level],
     };
     let mut catalog = StyleCatalog::new();
-    map_list_styles(&[ls], &mut catalog, OdfVersion::V1_1);
+    map_list_styles(
+        &[ls],
+        &mut catalog,
+        OdfVersion::V1_1,
+        &std::collections::HashMap::new(),
+    );
     let style = catalog.list_styles.get(&ListId::new("L1")).unwrap();
     assert_eq!(style.levels.len(), 1);
     match &style.levels[0].kind {
@@ -76,6 +81,71 @@ fn bullet_char_bullet() {
     }
 }
 
+fn image_level(href: &str) -> OdfListLevel {
+    OdfListLevel {
+        level: 0,
+        kind: OdfListLevelKind::Image {
+            href: href.into(),
+            style_name: None,
+        },
+        legacy_space_before: None,
+        legacy_min_label_width: None,
+        legacy_min_label_distance: None,
+        label_followed_by: None,
+        list_tab_stop_position: None,
+        text_indent: None,
+        margin_left: None,
+        text_props: None,
+    }
+}
+
+#[test]
+fn picture_bullet_resolves_to_image_data_uri() {
+    let ls = OdfListStyle {
+        name: "LI".into(),
+        levels: vec![image_level("Pictures/b.png")],
+    };
+    let mut images = std::collections::HashMap::new();
+    images.insert(
+        "Pictures/b.png".to_string(),
+        ("image/png".to_string(), vec![1u8, 2, 3, 4]),
+    );
+    let mut catalog = StyleCatalog::new();
+    map_list_styles(&[ls], &mut catalog, OdfVersion::V1_2, &images);
+    let style = catalog.list_styles.get(&ListId::new("LI")).unwrap();
+    let ListLevelKind::Bullet {
+        char: BulletChar::Image { src },
+        ..
+    } = &style.levels[0].kind
+    else {
+        panic!("expected image bullet, got {:?}", style.levels[0].kind);
+    };
+    assert!(src.starts_with("data:image/png;base64,"), "src={src}");
+}
+
+#[test]
+fn picture_bullet_missing_image_falls_back_to_dot() {
+    let ls = OdfListStyle {
+        name: "LI2".into(),
+        levels: vec![image_level("Pictures/missing.png")],
+    };
+    let mut catalog = StyleCatalog::new();
+    map_list_styles(
+        &[ls],
+        &mut catalog,
+        OdfVersion::V1_2,
+        &std::collections::HashMap::new(),
+    );
+    let style = catalog.list_styles.get(&ListId::new("LI2")).unwrap();
+    assert!(matches!(
+        &style.levels[0].kind,
+        ListLevelKind::Bullet {
+            char: BulletChar::Char('•'),
+            ..
+        }
+    ));
+}
+
 #[test]
 fn bullet_custom_char() {
     let level = bullet_level("-", "0.5cm", "0.25cm");
@@ -84,7 +154,12 @@ fn bullet_custom_char() {
         levels: vec![level],
     };
     let mut catalog = StyleCatalog::new();
-    map_list_styles(&[ls], &mut catalog, OdfVersion::V1_1);
+    map_list_styles(
+        &[ls],
+        &mut catalog,
+        OdfVersion::V1_1,
+        &std::collections::HashMap::new(),
+    );
     let style = catalog.list_styles.get(&ListId::new("L2")).unwrap();
     match &style.levels[0].kind {
         ListLevelKind::Bullet {
@@ -105,7 +180,12 @@ fn number_decimal_with_suffix() {
         levels: vec![level],
     };
     let mut catalog = StyleCatalog::new();
-    map_list_styles(&[ls], &mut catalog, OdfVersion::V1_2);
+    map_list_styles(
+        &[ls],
+        &mut catalog,
+        OdfVersion::V1_2,
+        &std::collections::HashMap::new(),
+    );
     let style = catalog.list_styles.get(&ListId::new("L3")).unwrap();
     match &style.levels[0].kind {
         ListLevelKind::Numbered {
@@ -130,7 +210,12 @@ fn number_lower_alpha() {
         levels: vec![level],
     };
     let mut catalog = StyleCatalog::new();
-    map_list_styles(&[ls], &mut catalog, OdfVersion::V1_2);
+    map_list_styles(
+        &[ls],
+        &mut catalog,
+        OdfVersion::V1_2,
+        &std::collections::HashMap::new(),
+    );
     let style = catalog.list_styles.get(&ListId::new("L4")).unwrap();
     match &style.levels[0].kind {
         ListLevelKind::Numbered { scheme, format, .. } => {
@@ -149,7 +234,12 @@ fn odf12_label_alignment_indentation() {
         levels: vec![level],
     };
     let mut catalog = StyleCatalog::new();
-    map_list_styles(&[ls], &mut catalog, OdfVersion::V1_2);
+    map_list_styles(
+        &[ls],
+        &mut catalog,
+        OdfVersion::V1_2,
+        &std::collections::HashMap::new(),
+    );
     let style = catalog.list_styles.get(&ListId::new("L5")).unwrap();
     let ll = &style.levels[0];
     // margin_left = 1.27cm ≈ 36.0pt
@@ -176,7 +266,12 @@ fn odf11_legacy_indentation() {
         levels: vec![level],
     };
     let mut catalog = StyleCatalog::new();
-    map_list_styles(&[ls], &mut catalog, OdfVersion::V1_1);
+    map_list_styles(
+        &[ls],
+        &mut catalog,
+        OdfVersion::V1_1,
+        &std::collections::HashMap::new(),
+    );
     let style = catalog.list_styles.get(&ListId::new("L6")).unwrap();
     let ll = &style.levels[0];
     let expected_indent = parse_length("0.5cm").unwrap().value();
@@ -223,7 +318,12 @@ fn display_levels_two_format() {
         levels: vec![level],
     };
     let mut catalog = StyleCatalog::new();
-    map_list_styles(&[ls], &mut catalog, OdfVersion::V1_2);
+    map_list_styles(
+        &[ls],
+        &mut catalog,
+        OdfVersion::V1_2,
+        &std::collections::HashMap::new(),
+    );
     let style = catalog.list_styles.get(&ListId::new("L7")).unwrap();
     match &style.levels[0].kind {
         ListLevelKind::Numbered {

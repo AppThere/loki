@@ -155,6 +155,33 @@ fn read_stylesheet_list_style_bullet_level() {
 }
 
 #[test]
+fn read_stylesheet_list_style_image_level() {
+    // A picture-bullet level (feature 5.4), self-closing form — the reader
+    // captures its `xlink:href` into `OdfListLevelKind::Image`.
+    let xml = br#"<?xml version="1.0"?>
+<office:document-styles
+    xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+    xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+    xmlns:xlink="http://www.w3.org/1999/xlink"
+    xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+  <office:styles>
+    <text:list-style style:name="List_Pic">
+      <text:list-level-style-image text:level="1" xlink:href="Pictures/bul.png"/>
+    </text:list-style>
+  </office:styles>
+</office:document-styles>"#;
+
+    let sheet = read_stylesheet(xml, false).unwrap();
+    let lv = &sheet.list_styles[0].levels[0];
+    assert_eq!(lv.level, 0);
+    assert!(
+        matches!(lv.kind, OdfListLevelKind::Image { ref href, .. } if href == "Pictures/bul.png"),
+        "expected image level, got {:?}",
+        lv.kind
+    );
+}
+
+#[test]
 fn read_stylesheet_list_style_number_label_alignment() {
     let xml = br#"<?xml version="1.0"?>
 <office:document-styles

@@ -11,7 +11,7 @@
 #![allow(dropping_references)]
 
 use quick_xml::Reader;
-use quick_xml::events::Event;
+use quick_xml::events::{BytesStart, Event};
 
 use crate::error::{OdfError, OdfResult};
 use crate::odt::model::list_styles::{OdfListLevel, OdfListLevelKind};
@@ -112,6 +112,48 @@ pub(super) fn parse_list_level_props(
     }
 
     Ok(out)
+}
+
+/// The `OdfListLevelKind::Image` (feature 5.4) and 0-based level index for a
+/// `<text:list-level-style-image>` element (`xlink:href` + `text:style-name`).
+fn image_kind_and_level(e: &BytesStart) -> (OdfListLevelKind, u8) {
+    let level = local_attr_val(e, b"level")
+        .and_then(|s| s.parse::<u8>().ok())
+        .unwrap_or(1)
+        .saturating_sub(1);
+    let kind = OdfListLevelKind::Image {
+        href: local_attr_val(e, b"href").unwrap_or_default(),
+        style_name: local_attr_val(e, b"style-name"),
+    };
+    (kind, level)
+}
+
+/// Parse a `<text:list-level-style-image>` element (with children) into an
+/// image-bullet level (feature 5.4).
+pub(super) fn parse_image_level(
+    reader: &mut Reader<&[u8]>,
+    e: &BytesStart,
+) -> OdfResult<OdfListLevel> {
+    let (kind, level) = image_kind_and_level(e);
+    drop(e);
+    parse_list_level_props(reader, b"list-level-style-image", level, kind)
+}
+
+/// Build an image-bullet level from a self-closing `<text:list-level-style-image/>`.
+pub(super) fn image_level_empty(e: &BytesStart) -> OdfListLevel {
+    let (kind, level) = image_kind_and_level(e);
+    OdfListLevel {
+        level,
+        kind,
+        legacy_space_before: None,
+        legacy_min_label_width: None,
+        legacy_min_label_distance: None,
+        label_followed_by: None,
+        list_tab_stop_position: None,
+        text_indent: None,
+        margin_left: None,
+        text_props: None,
+    }
 }
 
 /// Inside a `style:list-level-properties` with `label-alignment` mode, read

@@ -293,10 +293,8 @@ fn parse_style_props(
                         drop(e);
                         skip_element(reader, b"table-column-properties")?;
                     }
-                    // COMPAT(odf): style:table-cell-properties may appear as
-                    // either a self-closing element (Empty event) or with child
-                    // elements (Start/End). Most producers use the self-closing
-                    // form, but handle the Start form for robustness.
+                    // COMPAT(odf): style:table-cell-properties may be self-closing
+                    // (Empty) or have children (Start/End); handle both.
                     b"table-cell-properties" => {
                         cell_props = Some(parse_cell_props_element(e));
                         drop(e);
@@ -486,6 +484,7 @@ fn parse_list_style(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfLi
                         )?;
                         levels.push(level);
                     }
+                    b"list-level-style-image" => levels.push(list::parse_image_level(reader, e)?),
                     b"list-level-style-number" => {
                         let level_num: u8 = local_attr_val(e, b"level")
                             .and_then(|s| s.parse().ok())
@@ -559,6 +558,7 @@ fn parse_list_style(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfLi
                             text_props: None,
                         });
                     }
+                    b"list-level-style-image" => levels.push(list::image_level_empty(e)),
                     b"list-level-style-number" => {
                         let level_num: u8 = local_attr_val(e, b"level")
                             .and_then(|s| s.parse().ok())
