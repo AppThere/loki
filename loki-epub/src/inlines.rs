@@ -75,8 +75,15 @@ impl RenderCtx {
                 self.render_styled_run(run.direct_props.as_deref(), &run.content, out)
             }
             Inline::Span(_, c) | Inline::Cite(_, c) => self.render_inlines(c, out),
+            Inline::Math(_math_type, mathml) => {
+                // EPUB 3.3 renders MathML natively (§5.4). The model stores a
+                // complete, namespaced `<math>` element, so emit it verbatim
+                // (not escaped — it is markup) and flag the content document so
+                // its manifest item declares `properties="mathml"`.
+                out.push_str(mathml);
+                self.has_math = true;
+            }
             Inline::Note(_, _)
-            | Inline::Math(_, _)
             | Inline::RawInline(_, _)
             | Inline::Field(_)
             | Inline::Comment(_)

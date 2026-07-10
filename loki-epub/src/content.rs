@@ -35,6 +35,8 @@ pub struct RenderedContent {
     pub toc: Vec<TocEntry>,
     /// Packaged image resources referenced by the body.
     pub images: Vec<EpubImage>,
+    /// Whether the content embeds MathML (drives the `mathml` manifest property).
+    pub has_math: bool,
 }
 
 /// Renders all sections of `doc` into a single XHTML body fragment.
@@ -51,6 +53,7 @@ pub fn render_content(doc: &Document) -> RenderedContent {
         body,
         toc: ctx.toc,
         images: ctx.images,
+        has_math: ctx.has_math,
     }
 }
 
@@ -63,6 +66,9 @@ pub(crate) struct RenderCtx {
     pub(crate) heading_seq: usize,
     pub(crate) images: Vec<EpubImage>,
     pub(crate) image_seq: usize,
+    /// Set once any MathML is emitted, so the content document's manifest item
+    /// gets `properties="mathml"` (EPUB 3.3 §5.4.2 / 5.4).
+    pub(crate) has_math: bool,
 }
 
 impl RenderCtx {
@@ -186,115 +192,5 @@ impl RenderCtx {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use loki_doc_model::content::attr::NodeAttr;
-
-    #[test]
-    fn paragraph_and_heading() {
-        let mut doc = Document::new();
-        let sec = doc.first_section_mut().unwrap();
-        sec.blocks.clear();
-        sec.blocks.push(Block::Heading(
-            1,
-            NodeAttr::default(),
-            vec![Inline::Str("Title".into())],
-        ));
-        sec.blocks
-            .push(Block::Para(vec![Inline::Str("Body".into())]));
-        let rendered = render_content(&doc);
-        assert!(rendered.body.contains("<h1 id=\"h1\">Title</h1>"));
-        assert!(rendered.body.contains("<p>Body</p>"));
-        assert_eq!(rendered.toc.len(), 1);
-        assert_eq!(rendered.toc[0].text, "Title");
-    }
-
-    #[test]
-    fn escapes_special_characters() {
-        let mut doc = Document::new();
-        let sec = doc.first_section_mut().unwrap();
-        sec.blocks.clear();
-        sec.blocks
-            .push(Block::Para(vec![Inline::Str("a < b & c".into())]));
-        let rendered = render_content(&doc);
-        assert!(rendered.body.contains("a &lt; b &amp; c"));
-    }
-
-    #[test]
-    fn packages_inline_image() {
-        let mut doc = Document::new();
-        let sec = doc.first_section_mut().unwrap();
-        sec.blocks.clear();
-        let target = loki_doc_model::content::inline::LinkTarget::new("data:image/png;base64,SGk=");
-        sec.blocks.push(Block::Para(vec![Inline::Image(
-            NodeAttr::default(),
-            vec![Inline::Str("Alt".into())],
-            target,
-        )]));
-        let rendered = render_content(&doc);
-        assert_eq!(rendered.images.len(), 1);
-        assert_eq!(rendered.images[0].href, "images/img0.png");
-        assert!(
-            rendered
-                .body
-                .contains("<img src=\"images/img0.png\" alt=\"Alt\"/>")
-        );
-    }
-
-    #[test]
-    fn floating_image_emits_css_float() {
-        use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
-
-        let mut doc = Document::new();
-        let sec = doc.first_section_mut().unwrap();
-        sec.blocks.clear();
-        // A left-floating image (text on the right) anchored in a paragraph.
-        let mut attr = NodeAttr::default();
-        FloatWrap {
-            wrap: TextWrap::Square,
-            side: WrapSide::Right,
-            behind_text: false,
-        }
-        .store(&mut attr);
-        let target = loki_doc_model::content::inline::LinkTarget::new("data:image/png;base64,SGk=");
-        sec.blocks.push(Block::Para(vec![
-            Inline::Image(attr, vec![Inline::Str("Alt".into())], target),
-            Inline::Str("Body text wraps beside the float.".into()),
-        ]));
-        let rendered = render_content(&doc);
-        // Text on the right ⇒ the image floats left so the text wraps around it.
-        assert!(
-            rendered.body.contains("float:left"),
-            "expected a CSS float on the wrapped image; got: {}",
-            rendered.body
-        );
-        assert!(rendered.body.contains("Body text wraps beside the float."));
-    }
-
-    #[test]
-    fn behind_text_float_is_not_floated() {
-        use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
-
-        let mut doc = Document::new();
-        let sec = doc.first_section_mut().unwrap();
-        sec.blocks.clear();
-        let mut attr = NodeAttr::default();
-        FloatWrap {
-            wrap: TextWrap::Square,
-            side: WrapSide::Both,
-            behind_text: true,
-        }
-        .store(&mut attr);
-        let target = loki_doc_model::content::inline::LinkTarget::new("data:image/png;base64,SGk=");
-        sec.blocks.push(Block::Para(vec![Inline::Image(
-            attr,
-            vec![Inline::Str("Alt".into())],
-            target,
-        )]));
-        let rendered = render_content(&doc);
-        assert!(
-            !rendered.body.contains("float:"),
-            "behind-text float must stay block-level"
-        );
-    }
-}
+#[path = "content_tests.rs"]
+mod tests;
