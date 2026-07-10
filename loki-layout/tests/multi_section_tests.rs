@@ -119,6 +119,57 @@ fn continuous_section_shares_previous_page() {
 }
 
 #[test]
+fn odd_page_section_inserts_a_blank_filler_when_parity_is_wrong() {
+    use loki_doc_model::layout::SectionStart;
+    use loki_layout::PaginatedLayout;
+
+    // Section 0 fills exactly page 1 (odd). An oddPage section 1 would then start
+    // on page 2 (even) — so a blank filler page is inserted, and section 1 lands
+    // on page 3.
+    let s0 = section(&["Section zero, one page."]);
+    let mut s1 = section(&["Section one starts on an odd page."]);
+    s1.start = SectionStart::OddPage;
+
+    let mut r = resources();
+    let opts = LayoutOptions::default();
+    let mut doc = Document::new();
+    doc.sections = vec![s0.clone(), s1.clone()];
+    let DocumentLayout::Paginated(PaginatedLayout { pages, .. }) =
+        layout_document(&mut r, &doc, LayoutMode::Paginated, 1.0, &opts)
+    else {
+        panic!("Paginated mode must yield a Paginated layout");
+    };
+    assert_eq!(
+        pages.len(),
+        3,
+        "an oddPage break inserts one blank filler page"
+    );
+    assert!(
+        pages[1].content_items.is_empty(),
+        "the middle page is the blank filler"
+    );
+    assert!(
+        !pages[0].content_items.is_empty() && !pages[2].content_items.is_empty(),
+        "the real section pages carry content"
+    );
+
+    // Control: an evenPage section after the same single page starts on page 2
+    // (even) already — no filler, just 2 pages.
+    s1.start = SectionStart::EvenPage;
+    doc.sections = vec![s0, s1];
+    let DocumentLayout::Paginated(PaginatedLayout { pages: even, .. }) =
+        layout_document(&mut r, &doc, LayoutMode::Paginated, 1.0, &opts)
+    else {
+        panic!("Paginated mode must yield a Paginated layout");
+    };
+    assert_eq!(
+        even.len(),
+        2,
+        "an evenPage section already on the right parity needs no filler"
+    );
+}
+
+#[test]
 fn continuous_multi_column_section_flows_into_two_columns_on_shared_page() {
     use loki_doc_model::layout::SectionStart;
     use loki_doc_model::layout::page::SectionColumns;

@@ -33,6 +33,7 @@ mod list_marker;
 mod math;
 pub mod mode;
 mod options;
+mod paginate_blanks;
 pub mod para;
 mod para_band;
 mod para_cache;
@@ -216,7 +217,11 @@ pub fn layout_paginated_full(
     // Pass 1: flow every group's body so the total page count is known before
     // headers/footers are laid out (NUMPAGES fields need the document-wide total).
     // Each group is laid out as one page sequence owned by its first section.
-    let mut flowed: Vec<(&loki_doc_model::Section, Vec<LayoutPage>)> = Vec::new();
+    let mut flowed: Vec<(
+        &loki_doc_model::Section,
+        Vec<LayoutPage>,
+        Option<LayoutPage>,
+    )> = Vec::new();
     // Document-section index of the current group's first section (for checkpoint
     // tagging / incremental).
     let mut primary_section_index = 0usize;
@@ -230,6 +235,18 @@ pub fn layout_paginated_full(
         if first_page_size.is_none() {
             first_page_size = Some(page_size);
         }
+
+        // Even/odd section break: insert a blank filler page (counted now, so the
+        // section's own pages are numbered after it) when the section would
+        // otherwise start on the wrong parity.
+        let leading_blank = if paginate_blanks::needs_blank_before(primary.start, global_page_count)
+        {
+            let bp = paginate_blanks::blank_page(global_page_count + 1, &primary.layout);
+            global_page_count += 1;
+            Some(bp)
+        } else {
+            None
+        };
 
         let FlowOutput::Pages {
             mut pages,
@@ -269,7 +286,7 @@ pub fn layout_paginated_full(
             checkpoints.push(cp);
         }
 
-        flowed.push((primary, pages));
+        flowed.push((primary, pages, leading_blank));
         global_page_count += group_page_count;
         block_base += group_blocks;
         primary_section_index += group.len();
@@ -278,7 +295,11 @@ pub fn layout_paginated_full(
     // Pass 2: headers/footers, with the document-wide page total available for
     // PAGE / NUMPAGES field substitution.
     let mut all_pages = Vec::new();
-    for (section, mut pages) in flowed {
+    for (section, mut pages, blank) in flowed {
+        // Even/odd filler page (no header/footer) precedes the section's pages.
+        if let Some(bp) = blank {
+            all_pages.push(bp);
+        }
         flow::assign_headers_footers(
             &mut pages,
             &section.layout,
