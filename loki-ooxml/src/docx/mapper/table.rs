@@ -163,7 +163,6 @@ fn map_cell(tc: &crate::docx::model::styles::DocxTableCell, ctx: &mut MappingCon
         .flat_map(|child| match child {
             DocxBodyChild::Paragraph(p) => map_paragraph(p, ctx),
             DocxBodyChild::Table(t) => vec![map_table(t, ctx)],
-            DocxBodyChild::Sdt => Vec::new(),
         })
         .collect();
 

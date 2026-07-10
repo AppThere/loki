@@ -26,6 +26,9 @@ pub struct DocxBody {
 }
 
 /// A block-level child of `w:body`.
+///
+/// A block `w:sdt` (content control) has no variant: it is unwrapped at read
+/// time into its `w:sdtContent` children (see `reader/document_sdt.rs`).
 // Enum is short-lived during parsing; boxing would add allocation overhead
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
@@ -34,6 +37,4 @@ pub enum DocxBodyChild {
     Paragraph(DocxParagraph),
     /// A table (`w:tbl`). ECMA-376 §17.4.
     Table(DocxTableModel),
-    /// A structured document tag (`w:sdt`) — stored opaquely for now.
-    Sdt,
 }

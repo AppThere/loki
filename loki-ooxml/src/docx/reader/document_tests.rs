@@ -92,3 +92,41 @@ fn parse_tbl_look_prefers_explicit_attributes() {
     assert!(!look.h_band);
     assert!(look.v_band);
 }
+
+/// A block-level content control (`w:sdt`) wrapping two paragraphs, a nested
+/// content control, and a table — the kind Word emits for cover pages/forms.
+const SDT_DOC: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>Before</w:t></w:r></w:p>
+    <w:sdt>
+      <w:sdtPr><w:alias w:val="Title"/><w:tag w:val="t"/><w:id w:val="1"/></w:sdtPr>
+      <w:sdtContent>
+        <w:p><w:r><w:t>Inside one</w:t></w:r></w:p>
+        <w:sdt>
+          <w:sdtPr><w:id w:val="2"/></w:sdtPr>
+          <w:sdtContent><w:p><w:r><w:t>Nested</w:t></w:r></w:p></w:sdtContent>
+        </w:sdt>
+        <w:tbl><w:tr><w:tc><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+      </w:sdtContent>
+    </w:sdt>
+    <w:p><w:r><w:t>After</w:t></w:r></w:p>
+  </w:body>
+</w:document>"#;
+
+#[test]
+fn block_sdt_content_is_unwrapped_into_the_body() {
+    let doc = parse_document(SDT_DOC).unwrap();
+    let kinds: Vec<&str> = doc
+        .body
+        .children
+        .iter()
+        .map(|c| match c {
+            DocxBodyChild::Paragraph(_) => "p",
+            DocxBodyChild::Table(_) => "tbl",
+        })
+        .collect();
+    // Before + (Inside one, Nested, table from the two controls) + After — every
+    // content control's children are unwrapped in order, nothing dropped.
+    assert_eq!(kinds, ["p", "p", "p", "tbl", "p"]);
+}

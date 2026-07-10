@@ -200,11 +200,11 @@ fn ooxml7_rfonts_ascii_and_cs_stored_separately() {
     );
 }
 
-/// A `<w:sdt>` element between two body paragraphs is silently dropped by the
-/// importer; the surrounding paragraphs must be preserved and the import must
-/// not panic. [MS-DOCX] §2.2 (SDT fallback).
+/// A block-level `<w:sdt>` (content control) between two body paragraphs is
+/// **unwrapped** by the importer (5.9): its `w:sdtContent` children survive as
+/// normal body blocks rather than being dropped. [MS-DOCX] §2.2.
 #[test]
-fn ooxml8_sdt_between_paragraphs_is_ignored_without_panic() {
+fn ooxml8_sdt_content_between_paragraphs_is_unwrapped() {
     use zip::{CompressionMethod, ZipWriter, write::FileOptions};
 
     let mut buf = Vec::new();
@@ -244,9 +244,26 @@ fn ooxml8_sdt_between_paragraphs_is_ignored_without_panic() {
         .flat_map(|s| s.blocks.iter())
         .collect();
 
+    // Before + the unwrapped SDT content paragraph + After — nothing dropped.
     assert_eq!(
         all_blocks.len(),
-        2,
-        "only the two surrounding paragraphs must survive; SDT content is dropped"
+        3,
+        "the SDT content paragraph must be unwrapped, not dropped"
+    );
+    let text: String = all_blocks
+        .iter()
+        .flat_map(|b| match b {
+            Block::Para(inl) | Block::Plain(inl) => inl.clone(),
+            Block::StyledPara(sp) => sp.inlines.clone(),
+            _ => Vec::new(),
+        })
+        .filter_map(|i| match i {
+            loki_doc_model::content::inline::Inline::Str(s) => Some(s),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        text.contains("SDT content paragraph"),
+        "the control's text must survive: {text}"
     );
 }

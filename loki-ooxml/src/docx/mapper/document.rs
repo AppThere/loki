@@ -381,7 +381,6 @@ pub(crate) fn map_document(
                 let block = map_table(t, &mut ctx);
                 current_blocks.push(block);
             }
-            DocxBodyChild::Sdt => {}
         }
     }
 

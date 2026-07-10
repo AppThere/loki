@@ -21,6 +21,8 @@ use crate::xml_util::event_text;
 
 #[path = "document_cell.rs"]
 mod cell;
+#[path = "document_sdt.rs"]
+mod sdt;
 #[path = "document_table.rs"]
 mod table;
 use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
@@ -46,10 +48,8 @@ pub fn parse_document(xml: &[u8]) -> OoxmlResult<DocxDocument> {
                     let tbl = table::parse_table(&mut reader)?;
                     doc.body.children.push(DocxBodyChild::Table(tbl));
                 }
-                b"sdt" if in_body => {
-                    skip_element(&mut reader, b"sdt")?;
-                    doc.body.children.push(DocxBodyChild::Sdt);
-                }
+                // Unwrap the content control's `w:sdtContent` into the body.
+                b"sdt" if in_body => sdt::parse_sdt(&mut reader, &mut doc.body.children)?,
                 b"sectPr" if in_body => {
                     let sect = parse_sect_pr(&mut reader)?;
                     doc.body.final_sect_pr = Some(sect);
