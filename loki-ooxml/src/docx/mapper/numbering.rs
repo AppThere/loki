@@ -71,8 +71,9 @@ fn count_display_levels(lvl_text: &str) -> u8 {
     count
 }
 
-/// Maps a [`DocxLevel`] to a [`ListLevel`].
-fn map_level(lvl: &DocxLevel, start_override: Option<u32>) -> ListLevel {
+/// Maps a [`DocxLevel`] to a [`ListLevel`]. `numbering` supplies the resolved
+/// picture-bullet images (feature 5.4).
+fn map_level(lvl: &DocxLevel, start_override: Option<u32>, numbering: &DocxNumbering) -> ListLevel {
     let indent_start = lvl
         .ppr
         .as_ref()
@@ -93,7 +94,7 @@ fn map_level(lvl: &DocxLevel, start_override: Option<u32>) -> ListLevel {
 
     let start_value = start_override.or(lvl.start).unwrap_or(1);
 
-    let kind = map_level_kind(lvl, start_value, &char_props);
+    let kind = map_level_kind(lvl, start_value, &char_props, numbering);
 
     ListLevel {
         level: lvl.ilvl,
@@ -111,10 +112,24 @@ fn map_level_kind(
     lvl: &DocxLevel,
     start_value: u32,
     char_props: &loki_doc_model::style::props::char_props::CharProps,
+    numbering: &DocxNumbering,
 ) -> ListLevelKind {
     let num_fmt = lvl.num_fmt.as_deref().unwrap_or("decimal");
     let lvl_text = lvl.lvl_text.as_deref();
     let font = char_props.font_name.clone();
+
+    // A picture bullet wins over the text bullet char / numbering format when the
+    // level references a `w:numPicBullet` whose image the importer resolved.
+    if let Some(id) = lvl.lvl_pic_bullet_id
+        && let Some(src) = numbering.pic_bullet_src(id)
+    {
+        return ListLevelKind::Bullet {
+            char: BulletChar::Image {
+                src: src.to_string(),
+            },
+            font,
+        };
+    }
 
     match num_fmt {
         "bullet" => {
@@ -190,19 +205,19 @@ pub(crate) fn map_numbering(
             if let Some(ov) = override_entry {
                 if let Some(ref ov_lvl) = ov.level {
                     // Full level override supplied.
-                    levels.push(map_level(ov_lvl, ov.start_override));
+                    levels.push(map_level(ov_lvl, ov.start_override, numbering));
                     continue;
                 }
                 // Only a start override — use the abstract level with the new start.
                 if let Some(base) = abs.levels.iter().find(|l| l.ilvl == ilvl) {
-                    levels.push(map_level(base, ov.start_override));
+                    levels.push(map_level(base, ov.start_override, numbering));
                     continue;
                 }
             }
 
             // No override: use the abstract level as-is.
             if let Some(base) = abs.levels.iter().find(|l| l.ilvl == ilvl) {
-                levels.push(map_level(base, None));
+                levels.push(map_level(base, None, numbering));
             }
         }
 

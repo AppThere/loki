@@ -9,7 +9,7 @@ use quick_xml::Reader;
 use quick_xml::events::Event;
 
 use crate::docx::model::numbering::{
-    DocxAbstractNum, DocxLevel, DocxLvlOverride, DocxNum, DocxNumbering,
+    DocxAbstractNum, DocxLevel, DocxLvlOverride, DocxNum, DocxNumPicBullet, DocxNumbering,
 };
 use crate::docx::reader::document::{parse_ppr_element, parse_rpr_element};
 use crate::docx::reader::util::{attr_val, local_name};
@@ -42,6 +42,18 @@ pub fn parse_numbering(xml: &[u8]) -> OoxmlResult<DocxNumbering> {
                     let num = parse_num(&mut reader, num_id)?;
                     result.nums.push(num);
                 }
+                b"numPicBullet" => {
+                    let id = attr_val(e, b"numPicBulletId")
+                        .and_then(|v| v.parse::<u32>().ok())
+                        .unwrap_or(0);
+                    if let Some(rel_id) = parse_num_pic_bullet(&mut reader)? {
+                        result.pic_bullets.push(DocxNumPicBullet {
+                            id,
+                            rel_id,
+                            src: None,
+                        });
+                    }
+                }
                 _ => {}
             },
             Ok(Event::Eof) => break,
@@ -56,6 +68,38 @@ pub fn parse_numbering(xml: &[u8]) -> OoxmlResult<DocxNumbering> {
         buf.clear();
     }
     Ok(result)
+}
+
+/// Scan a `<w:numPicBullet>` for its bullet image relationship id — the first
+/// `r:id` on a nested `<v:imagedata>` (or `<a:blip r:embed>`). Returns `None`
+/// if no image reference is found.
+fn parse_num_pic_bullet(reader: &mut Reader<&[u8]>) -> OoxmlResult<Option<String>> {
+    let mut rel_id = None;
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
+                match local_name(e.local_name().as_ref()) {
+                    b"imagedata" => rel_id = rel_id.or_else(|| attr_val(e, b"id")),
+                    b"blip" => rel_id = rel_id.or_else(|| attr_val(e, b"embed")),
+                    _ => {}
+                }
+            }
+            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"numPicBullet" => {
+                break;
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(OoxmlError::Xml {
+                    part: "word/numbering.xml".into(),
+                    source: e,
+                });
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok(rel_id)
 }
 
 fn parse_abstract_num(
@@ -187,6 +231,7 @@ fn parse_level(reader: &mut Reader<&[u8]>, ilvl: u8) -> OoxmlResult<DocxLevel> {
         lvl_jc: None,
         ppr: None,
         rpr: None,
+        lvl_pic_bullet_id: None,
     };
     let mut buf = Vec::new();
 
@@ -200,6 +245,10 @@ fn parse_level(reader: &mut Reader<&[u8]>, ilvl: u8) -> OoxmlResult<DocxLevel> {
                     b"numFmt" => level_out.num_fmt = attr_val(e, b"val"),
                     b"lvlText" => level_out.lvl_text = attr_val(e, b"val"),
                     b"lvlJc" => level_out.lvl_jc = attr_val(e, b"val"),
+                    b"lvlPicBulletId" => {
+                        level_out.lvl_pic_bullet_id =
+                            attr_val(e, b"val").and_then(|v| v.parse::<u32>().ok());
+                    }
                     b"pPr" => {
                         level_out.ppr = Some(parse_ppr_element(reader)?);
                         continue;
@@ -229,55 +278,5 @@ fn parse_level(reader: &mut Reader<&[u8]>, ilvl: u8) -> OoxmlResult<DocxLevel> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    const MINIMAL_NUMBERING: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
-<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:abstractNum w:abstractNumId="0">
-    <w:lvl w:ilvl="0">
-      <w:start w:val="1"/>
-      <w:numFmt w:val="decimal"/>
-      <w:lvlText w:val="%1."/>
-      <w:lvlJc w:val="left"/>
-    </w:lvl>
-    <w:lvl w:ilvl="1">
-      <w:start w:val="1"/>
-      <w:numFmt w:val="bullet"/>
-      <w:lvlText w:val="&#x2022;"/>
-    </w:lvl>
-  </w:abstractNum>
-  <w:num w:numId="1">
-    <w:abstractNumId w:val="0"/>
-  </w:num>
-</w:numbering>"#;
-
-    #[test]
-    fn parses_abstract_num() {
-        let numbering = parse_numbering(MINIMAL_NUMBERING).unwrap();
-        assert_eq!(numbering.abstract_nums.len(), 1);
-        assert_eq!(numbering.abstract_nums[0].levels.len(), 2);
-    }
-
-    #[test]
-    fn decimal_level_zero() {
-        let numbering = parse_numbering(MINIMAL_NUMBERING).unwrap();
-        let lvl = &numbering.abstract_nums[0].levels[0];
-        assert_eq!(lvl.num_fmt.as_deref(), Some("decimal"));
-        assert_eq!(lvl.lvl_text.as_deref(), Some("%1."));
-    }
-
-    #[test]
-    fn resolves_num_to_abstract() {
-        let numbering = parse_numbering(MINIMAL_NUMBERING).unwrap();
-        assert_eq!(numbering.abstract_num_id_for(1), Some(0));
-    }
-
-    #[test]
-    fn three_level_indirection() {
-        let numbering = parse_numbering(MINIMAL_NUMBERING).unwrap();
-        let resolved = numbering.resolve(1).unwrap();
-        let lvl = resolved.level(0).unwrap();
-        assert_eq!(lvl.num_fmt.as_deref(), Some("decimal"));
-    }
-}
+#[path = "numbering_tests.rs"]
+mod tests;

@@ -270,8 +270,14 @@ fn picture_bullet_emits_image_in_the_hanging_label_box() {
 
     // Square, and no wider than the label box (the hanging indent).
     let (w, h) = (img.rect.size.width, img.rect.size.height);
-    assert!(w > 0.0 && (w - h).abs() < 0.5, "bullet is a positive square");
-    assert!(w <= HANGING as f32 + 0.5, "bullet fits the {HANGING}pt label box");
+    assert!(
+        w > 0.0 && (w - h).abs() < 0.5,
+        "bullet is a positive square"
+    );
+    assert!(
+        w <= HANGING as f32 + 0.5,
+        "bullet fits the {HANGING}pt label box"
+    );
 
     // Left edge sits one hanging-indent left of the wrapped text start
     // (continuation lines begin exactly at `indent_start`).

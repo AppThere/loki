@@ -10,11 +10,9 @@
 //! # Example
 //!
 //! ```no_run
-//! use std::fs::File;
 //! use loki_ooxml::docx::import::{DocxImport, DocxImportOptions};
 //! use loki_doc_model::io::DocumentImport;
-//!
-//! let file = File::open("document.docx").unwrap();
+//! let file = std::fs::File::open("document.docx").unwrap();
 //! let doc = DocxImport::import(file, DocxImportOptions::default()).unwrap();
 //! ```
 
@@ -39,22 +37,20 @@ use crate::docx::reader::settings::parse_settings;
 use crate::docx::reader::styles::parse_styles;
 use crate::error::{OoxmlError, OoxmlResult, OoxmlWarning};
 
+#[path = "import_pic_bullets.rs"]
+mod import_pic_bullets;
+
 /// Options controlling DOCX import behaviour.
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct DocxImportOptions {
-    /// When `true`, paragraphs whose style name starts with `"heading"` are
-    /// mapped to [`loki_doc_model::content::block::Block::Heading`] rather
-    /// than [`loki_doc_model::content::block::Block::Paragraph`].
-    ///
-    /// Defaults to `true`.
+    /// When `true` (default), paragraphs whose style name starts with
+    /// `"heading"` map to a `Block::Heading` rather than a plain paragraph.
     pub emit_heading_blocks: bool,
 
-    /// When `true`, images are embedded in the document as data URIs
-    /// (`data:<media-type>;base64,<data>`). When `false`, image parts are
+    /// When `true` (default), images are embedded as data URIs
+    /// (`data:<media-type>;base64,<data>`); when `false`, image parts are
     /// omitted from the output.
-    ///
-    /// Defaults to `true`.
     pub embed_images: bool,
 }
 
@@ -98,9 +94,7 @@ impl DocumentImport for DocxImport {
 }
 
 /// Stateful DOCX importer that preserves [`OoxmlWarning`]s alongside the
-/// imported [`Document`].
-///
-/// Use this type when you need to inspect non-fatal import issues.
+/// imported [`Document`] — use it when you need the non-fatal import issues.
 pub struct DocxImporter {
     options: DocxImportOptions,
 }
@@ -112,20 +106,16 @@ impl DocxImporter {
         Self { options }
     }
 
-    /// Opens the DOCX container and translates it into a [`DocxImportResult`].
-    ///
-    /// Steps:
-    /// 1. Open the OPC/ZIP package.
-    /// 2. Locate the main `officeDocument` part via package relationships.
-    /// 3. Parse XML for document body, styles, numbering, footnotes, endnotes.
-    /// 4. Collect hyperlink targets and (optionally) image bytes.
-    /// 5. Call `map_document` to produce the abstract model.
+    /// Opens the DOCX container and translates it into a [`DocxImportResult`]:
+    /// open the OPC/ZIP package, locate the main `officeDocument` part, parse
+    /// the body/styles/numbering/notes XML, collect hyperlink targets and
+    /// (optionally) image bytes, then call `map_document`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the ZIP container is malformed, if the required
-    /// `officeDocument` relationship is missing, or if any mandatory part
-    /// cannot be parsed.
+    /// Returns an error if the ZIP container is malformed, the required
+    /// `officeDocument` relationship is missing, or a mandatory part fails to
+    /// parse.
     pub fn run(self, reader: impl Read + Seek) -> OoxmlResult<DocxImportResult> {
         let package = Package::open(reader)?;
         let (document, warnings) = parse_and_map_package(&package, &self.options)?;
@@ -186,13 +176,22 @@ pub(crate) fn parse_and_map_package(
     };
     let raw_styles = raw_styles.unwrap_or_default();
 
-    let raw_numbering = resolve_optional_part(
+    let mut raw_numbering = resolve_optional_part(
         package,
         doc_rels,
         REL_NUMBERING,
         doc_part_name.as_str(),
         |bytes, _part| parse_numbering(bytes),
     )?;
+    // Resolve picture-bullet images (via `word/numbering.xml.rels`) to data URIs
+    // so they render (feature 5.4).
+    import_pic_bullets::resolve(
+        package,
+        doc_rels,
+        doc_part_name.as_str(),
+        raw_numbering.as_mut(),
+        options.embed_images,
+    );
 
     let raw_footnotes = resolve_optional_part(
         package,

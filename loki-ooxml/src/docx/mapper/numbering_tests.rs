@@ -4,7 +4,9 @@
 //! Tests for `numbering`.
 
 use super::*;
-use crate::docx::model::numbering::{DocxAbstractNum, DocxLevel, DocxLvlOverride, DocxNum};
+use crate::docx::model::numbering::{
+    DocxAbstractNum, DocxLevel, DocxLvlOverride, DocxNum, DocxNumPicBullet,
+};
 
 fn make_numbering(
     abstract_num_id: u32,
@@ -22,6 +24,7 @@ fn make_numbering(
             abstract_num_id,
             level_overrides: overrides,
         }],
+        pic_bullets: Vec::new(),
     }
 }
 
@@ -34,6 +37,7 @@ fn bullet_level(ilvl: u8, text: &str) -> DocxLevel {
         lvl_jc: None,
         ppr: None,
         rpr: None,
+        lvl_pic_bullet_id: None,
     }
 }
 
@@ -46,6 +50,7 @@ fn decimal_level(ilvl: u8, text: &str) -> DocxLevel {
         lvl_jc: None,
         ppr: None,
         rpr: None,
+        lvl_pic_bullet_id: None,
     }
 }
 
@@ -55,6 +60,55 @@ fn bullet_level_maps_correctly() {
     let mut catalog = StyleCatalog::new();
     let warnings = map_numbering(&numbering, &mut catalog);
     assert!(warnings.is_empty());
+    let ls = catalog.list_styles.get(&ListId::new("1")).unwrap();
+    assert!(matches!(
+        ls.levels[0].kind,
+        ListLevelKind::Bullet {
+            char: BulletChar::Char('•'),
+            ..
+        }
+    ));
+}
+
+#[test]
+fn picture_bullet_level_maps_to_image_bullet() {
+    // A level referencing a numPicBullet whose image the importer resolved maps
+    // to `BulletChar::Image { src }` (feature 5.4).
+    let mut lvl = bullet_level(0, "•");
+    lvl.lvl_pic_bullet_id = Some(0);
+    let mut numbering = make_numbering(0, 1, vec![lvl], vec![]);
+    numbering.pic_bullets.push(DocxNumPicBullet {
+        id: 0,
+        rel_id: "rId7".into(),
+        src: Some("data:image/png;base64,AAAA".into()),
+    });
+    let mut catalog = StyleCatalog::new();
+    map_numbering(&numbering, &mut catalog);
+    let ls = catalog.list_styles.get(&ListId::new("1")).unwrap();
+    let ListLevelKind::Bullet {
+        char: BulletChar::Image { src },
+        ..
+    } = &ls.levels[0].kind
+    else {
+        panic!("expected an image bullet, got {:?}", ls.levels[0].kind);
+    };
+    assert_eq!(src, "data:image/png;base64,AAAA");
+}
+
+#[test]
+fn picture_bullet_without_resolved_src_falls_back_to_text_bullet() {
+    // If the image was not resolved (e.g. images not embedded), the level falls
+    // back to its `w:numFmt="bullet"` text char rather than a blank bullet.
+    let mut lvl = bullet_level(0, "•");
+    lvl.lvl_pic_bullet_id = Some(0);
+    let mut numbering = make_numbering(0, 1, vec![lvl], vec![]);
+    numbering.pic_bullets.push(DocxNumPicBullet {
+        id: 0,
+        rel_id: "rId7".into(),
+        src: None,
+    });
+    let mut catalog = StyleCatalog::new();
+    map_numbering(&numbering, &mut catalog);
     let ls = catalog.list_styles.get(&ListId::new("1")).unwrap();
     assert!(matches!(
         ls.levels[0].kind,
@@ -110,6 +164,7 @@ fn unresolvable_abstract_num_produces_warning() {
             abstract_num_id: 42,
             level_overrides: vec![],
         }],
+        pic_bullets: Vec::new(),
     };
     let mut catalog = StyleCatalog::new();
     let warnings = map_numbering(&numbering, &mut catalog);

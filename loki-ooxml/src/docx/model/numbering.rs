@@ -16,10 +16,38 @@ pub struct DocxNumbering {
     pub abstract_nums: Vec<DocxAbstractNum>,
     /// Numbering instances (`w:num`).
     pub nums: Vec<DocxNum>,
+    /// Picture-bullet definitions (`w:numPicBullet`), each mapping a
+    /// `numPicBulletId` to the relationship id of its image (feature 5.4).
+    pub pic_bullets: Vec<DocxNumPicBullet>,
+}
+
+/// A picture-bullet image reference (`w:numPicBullet`, ECMA-376 §17.9.21).
+///
+/// The image is a `word/numbering.xml.rels` relationship — resolved to a
+/// `data:` URI by the importer and carried into `BulletChar::Image`.
+#[derive(Debug, Clone)]
+pub struct DocxNumPicBullet {
+    /// `@w:numPicBulletId` — referenced by a level's `w:lvlPicBulletId`.
+    pub id: u32,
+    /// Relationship id of the bullet image (`v:imagedata @r:id`).
+    pub rel_id: String,
+    /// The resolved image reference (a `data:` URI), filled by the importer
+    /// from `word/numbering.xml.rels`. `None` until resolved.
+    pub src: Option<String>,
 }
 
 #[allow(dead_code)]
 impl DocxNumbering {
+    /// The resolved image `src` of the picture bullet with the given
+    /// `numPicBulletId`, if defined and resolved by the importer.
+    #[must_use]
+    pub fn pic_bullet_src(&self, id: u32) -> Option<&str> {
+        self.pic_bullets
+            .iter()
+            .find(|p| p.id == id)
+            .and_then(|p| p.src.as_deref())
+    }
+
     /// Resolves a `numId` to the corresponding `abstractNumId`.
     ///
     /// Returns `None` if the `numId` is not found or has no `abstractNumId`.
@@ -119,4 +147,7 @@ pub struct DocxLevel {
     pub ppr: Option<DocxPPr>,
     /// Run properties for the list label.
     pub rpr: Option<DocxRPr>,
+    /// `w:lvlPicBulletId @w:val` — references a `w:numPicBullet` when the label
+    /// is a picture bullet (feature 5.4).
+    pub lvl_pic_bullet_id: Option<u32>,
 }
