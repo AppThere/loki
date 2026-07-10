@@ -569,6 +569,72 @@ fn paragraph_split_produces_clipped_groups_on_multiple_pages() {
 }
 
 #[test]
+fn orphan_control_defers_a_would_be_orphan_paragraph() {
+    use loki_doc_model::style::props::para_props::{LineHeight, ParaProps};
+
+    let mut r = test_resources();
+    // Exact 20 pt lines in tiny_layout's 90 pt content ⇒ 4 lines fit per page.
+    // Three single-line filler paragraphs fill 60 pt, leaving room for exactly
+    // one line — so the multi-line target paragraph's first line would orphan at
+    // the page bottom. With widow/orphan control on (default) the whole target
+    // defers to page 2; with it off (widow_control = 0) the first line stays.
+    let exact = |text: &str| {
+        let mut p = make_para(text);
+        let pp = ParaProps {
+            line_height: Some(LineHeight::Exact(Points::new(20.0))),
+            ..ParaProps::default()
+        };
+        p.direct_para_props = Some(Box::new(pp));
+        p
+    };
+    let mut build = |disable: bool| {
+        let mut blocks: Vec<_> = (0..3).map(|i| exact(&format!("filler {i}"))).collect();
+        let mut target = exact(&"target paragraph body that wraps to several lines ".repeat(3));
+        if disable {
+            let mut pp = target.direct_para_props.take().unwrap();
+            pp.widow_control = Some(0); // OOXML's single toggle disables both
+            target.direct_para_props = Some(pp);
+        }
+        blocks.push(target);
+        let opts = LayoutOptions {
+            preserve_for_editing: true,
+            ..LayoutOptions::default()
+        };
+        let catalog = StyleCatalog::new();
+        match flow_section(
+            &mut r,
+            &section_of(blocks, tiny_layout()),
+            &catalog,
+            &LayoutMode::Paginated,
+            1.0,
+            &opts,
+            &[],
+        ) {
+            FlowOutput::Pages { pages, .. } => pages,
+            _ => panic!("expected paginated pages"),
+        }
+    };
+    // Does the target paragraph (block index 3) place any fragment on page 1?
+    let target_on_page0 = |pages: &[crate::result::LayoutPage]| {
+        pages
+            .first()
+            .and_then(|p| p.editing_data.as_ref())
+            .is_some_and(|e| e.paragraphs.iter().any(|pd| pd.block_index == 3))
+    };
+    let on = build(false);
+    let off = build(true);
+    assert!(on.len() >= 2, "the target must reach page 2");
+    assert!(
+        !target_on_page0(&on),
+        "orphan control must defer the whole target off page 1"
+    );
+    assert!(
+        target_on_page0(&off),
+        "with control off, the target's first line orphans onto page 1"
+    );
+}
+
+#[test]
 fn split_fragment_a_clip_rect_within_page_height() {
     let mut r = test_resources();
     let text = "Lorem ipsum dolor sit amet consectetur adipiscing. ".repeat(8);

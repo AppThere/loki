@@ -8,19 +8,9 @@
 //! is wrapped in a [`PositionedItem::ClippedGroup`] so that full-height
 //! background and border items are clipped correctly.
 //!
-//! # Session 3 pre-audit findings (2026-04-20)
-//!
-//! ## Q1 — indent_hanging coverage (55f489b)
-//! `indent_hanging` is applied in `layout_paragraph` for ALL paragraphs
-//! (not just list items): the glyph-run loop shifts line 0 left by
-//! `indent_hanging` unconditionally when the field is > 0. Non-list paragraphs
-//! with a manually set `indent_hanging` therefore produce the correct first-line
-//! offset. One known gap: `line_w` passed to `break_all_lines` is computed as
-//! `available_width − indent_start − indent_end` for every line, so Parley
-//! wraps line 0 at the same column as continuation lines. The first line
-//! physically starts `indent_hanging` to the left but wraps `indent_hanging` too
-//! early. Fixing this requires per-line width, which Parley 0.6 does not expose;
-//! the inaccuracy is minor (≤ one word per line) and non-blocking for Session 3.
+//! `indent_hanging` shifts line 0 left for all paragraphs (not just list items).
+//! Known minor gap: `line_w` for `break_all_lines` is uniform across lines, so
+//! line 0 wraps `indent_hanging` too early (Parley 0.6 exposes no per-line width).
 //!
 //! ## Q2 — Parley 0.6 bidi API
 //! `BidiLevel` and `BidiResolver` are `pub(crate)` — no public API exists to
@@ -33,19 +23,6 @@
 //! direction) cannot be addressed via `StyleProperty`; the only workaround is
 //! embedding Unicode directional control characters (U+202B RLE / U+200F RLM)
 //! into the text string. Defer to a future Parley version or a separate session.
-//!
-//! ## Q3 — page_break_after hook point
-//! `page_break_after` is absent from `ResolvedParaProps` (only `page_break_before`
-//! is present). The natural hook is in `flow_paragraph` (this file, currently
-//! line 95) immediately after `place_paragraph_layout(state, &resolved, …)`.
-//! Adding it is a 4-line change: add `page_break_after: bool` to
-//! `ResolvedParaProps` (para.rs), forward from `ParaProps` in `map_para_props`
-//! (resolve.rs), and add after `place_paragraph_layout`:
-//! ```text
-//! if resolved.page_break_after && state.mode.is_paginated() {
-//!     finish_page(state);
-//! }
-//! ```
 
 use std::sync::Arc;
 
@@ -59,6 +36,9 @@ use crate::resolve::{emu_to_pt, flatten_paragraph, pts_to_f32, resolve_para_prop
 use super::columns_impl::break_column;
 use super::editing::push_editing_para;
 use super::{FlowState, LayoutWarning, finish_page};
+
+#[path = "flow_widow_orphan.rs"]
+mod widow_orphan;
 
 /// Maximum keep-with-next chain length before truncation (ADR 004 §4).
 const CHAIN_LIMIT: usize = 5;
@@ -653,8 +633,28 @@ fn split_and_place_loop(
                 flushed_without_progress = false;
             }
             Some(k) => {
-                // Emit Fragment A covering para-local [frag_start, split_y).
-                let split_y = para_layout.line_boundaries[k].1;
+                // Widow/orphan control: `None` = defer the whole paragraph
+                // (orphan); `Some(k')` = split there (a widow pulls `k'` back).
+                let split_line = widow_orphan::resolve_split(
+                    &para_layout.line_boundaries,
+                    frag_start,
+                    k,
+                    usize::from(resolved.orphan_min),
+                    usize::from(resolved.widow_min),
+                    state.cursor_y > 0.0,
+                );
+                if split_line.is_none() && !flushed_without_progress {
+                    // Orphan: move the whole paragraph to the next page (mirrors
+                    // the "no lines fit" flush; guarded so the retry at the fresh
+                    // page top splits normally and terminates).
+                    break_column(state);
+                    state.cursor_y += resolved.space_before;
+                    flushed_without_progress = true;
+                    continue;
+                }
+                // Emit Fragment A covering para-local [frag_start, split_y). An
+                // already-flushed orphan falls back to the natural split `k`.
+                let split_y = para_layout.line_boundaries[split_line.unwrap_or(k)].1;
                 emit_fragment(
                     state,
                     para_layout,
@@ -667,8 +667,6 @@ fn split_and_place_loop(
                 break_column(state);
                 frag_start = split_y;
                 flushed_without_progress = false;
-                // space_before is NOT re-applied between split fragments; only
-                // the "no lines fit → flush" branch above re-applies it.
             }
         }
     }

@@ -76,6 +76,12 @@ pub(super) fn map_para_props(p: &ParaProps) -> ResolvedParaProps {
         },
         keep_together: p.keep_together.unwrap_or(false),
         keep_with_next: p.keep_with_next.unwrap_or(false),
+        // Widow/orphan control. Word/LibreOffice default it ON (2 lines); OOXML's
+        // single `w:widowControl` toggle governs both (the mapper sets only
+        // `widow_control`), so each side falls back to the other, then to 2. An
+        // explicit `0` (control turned off) disables it.
+        orphan_min: p.orphan_control.or(p.widow_control).unwrap_or(2),
+        widow_min: p.widow_control.or(p.orphan_control).unwrap_or(2),
         page_break_before: p.page_break_before.unwrap_or(false),
         page_break_after: p.page_break_after.unwrap_or(false),
         // NOTE(bidi): `ParaProps.bidi` (RTL paragraph direction) is not forwarded.

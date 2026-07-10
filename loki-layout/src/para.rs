@@ -273,6 +273,12 @@ pub struct ResolvedParaProps {
     pub keep_together: bool,
     /// Keep this paragraph on the same page as the next.
     pub keep_with_next: bool,
+    /// Orphan control: min of the paragraph's *first* lines allowed alone at a
+    /// page bottom before a split (`2` = Word default, `0` off; see `flow_para`).
+    pub orphan_min: u8,
+    /// Widow control: min of the paragraph's *last* lines allowed alone atop the
+    /// next page (`2` = Word default, `0` off).
+    pub widow_min: u8,
     /// Insert a page break before this paragraph.
     pub page_break_before: bool,
     /// If `true` and layout mode is paginated, force a page break immediately
@@ -290,22 +296,17 @@ pub struct ResolvedParaProps {
     /// Tab-stop grid interval (points) used once `tab_stops` is exhausted;
     /// `36.0` (½ inch) unless `DocumentSettings::default_tab_stop_pt` overrides.
     pub default_tab_stop: f32,
-    /// Break an over-long word that does not fit the available width by
-    /// allowing a break at any character (CSS `overflow-wrap: anywhere`).
-    /// Set for table-cell content so a long unbreakable word wraps to the
-    /// fixed column width (matching Word) instead of overflowing into the
-    /// neighbouring cell. Normal body paragraphs leave this `false`.
+    /// Break an over-long word at any character (CSS `overflow-wrap: anywhere`).
+    /// Set for table-cell content so a long unbreakable word wraps to the fixed
+    /// column width (Word) instead of overflowing; body paragraphs leave `false`.
     pub break_long_words: bool,
-    /// Dropped-initial specification, or `None`. When set (and the paragraph
-    /// qualifies — see [`layout_paragraph`]), the leading character(s) are
-    /// enlarged to span `lines` text rows with the body text flowing beside
-    /// them. Imported from OOXML `w:framePr`/`w:dropCap` and ODF
-    /// `style:drop-cap`.
+    /// Dropped-initial spec, or `None`. When set (and the paragraph qualifies —
+    /// see [`layout_paragraph`]), the leading character(s) span `lines` rows with
+    /// body text beside them. OOXML `w:framePr`/`w:dropCap`, ODF `style:drop-cap`.
     pub drop_cap: Option<loki_doc_model::style::props::drop_cap::DropCap>,
-    /// A leading side band the first lines of this paragraph must clear (a
-    /// floating image the text wraps around). Set by the flow engine; the
-    /// banded layout path narrows the lines beside it and reflows the rest at
-    /// full width. `None` for normal paragraphs.
+    /// A leading side band the first lines must clear (a floating image the text
+    /// wraps around). Set by the flow engine; the banded path narrows the lines
+    /// beside it and reflows the rest at full width. `None` for normal paragraphs.
     pub wrap_band: Option<WrapBand>,
 }
 
@@ -342,6 +343,9 @@ impl Default for ResolvedParaProps {
             padding: LayoutInsets::default(),
             keep_together: false,
             keep_with_next: false,
+            // Word/LibreOffice enable widow/orphan control by default (2 lines).
+            orphan_min: 2,
+            widow_min: 2,
             page_break_before: false,
             page_break_after: false,
             indent_hanging: 0.0,
@@ -717,9 +721,7 @@ pub fn layout_paragraph(
 /// When `spell` is `Some`, misspelled words emit [`DecorationKind::Spelling`]
 /// squiggles. The checker's `generation` folds into the cache key so cached
 /// layouts are reused only while the dictionary/word-lists are unchanged.
-// The sibling `layout_paragraph` already sits at the 7-arg limit; the optional
-// spell checker is one more positional input on the same hot path. Bundling
-// them into a struct would obscure the call sites for no benefit.
+// One arg over the limit: the optional spell checker on the shaping hot path.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn layout_paragraph_spelled(
     resources: &mut FontResources,
@@ -797,9 +799,7 @@ fn prepend_para_box(
 
 /// Lays out a single paragraph using Parley, without consulting or populating
 /// the shaping cache. [`layout_paragraph`] wraps this with memoisation.
-// One more argument than the 7-arg limit: the optional spell checker threads
-// alongside the existing shaping inputs (see `layout_paragraph_spelled`).
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // one arg over: the optional spell checker.
 fn layout_paragraph_uncached(
     resources: &mut FontResources,
     text_content: &str,
@@ -819,10 +819,9 @@ fn layout_paragraph_uncached(
         }
     }
 
-    // ── Inline math (gap) ─────────────────────────────────────────────────────
     // Typeset each `Inline::Math` placeholder span (empty range, `math: Some`)
-    // into its own box. Done before the tab/final passes so its intrinsic size
-    // can size a Parley inline box, reserving inline space for the equation.
+    // into its own box before the tab/final passes, so its intrinsic size can
+    // reserve inline space for the equation.
     let mut math_boxes: Vec<(usize, crate::math::MathRender)> = Vec::new();
     for span in &clean_spans {
         if let Some(mathml) = &span.math {
