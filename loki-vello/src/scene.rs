@@ -515,8 +515,8 @@ pub(crate) fn paint_items(
         match item {
             PositionedItem::GlyphRun(r) => {
                 // Link visual hint (gap #11): paint a translucent blue underlay
-                // behind runs that carry a hyperlink URL.
-                // TODO(link-click): interactive hit-testing deferred.
+                // behind runs that carry a hyperlink URL. Point→URL hit-testing
+                // is available via loki-layout's `link_at` (feature 5.11).
                 if r.link_url.is_some() {
                     paint_link_hint(scene, r, scale, offset);
                 }

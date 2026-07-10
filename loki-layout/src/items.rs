@@ -122,8 +122,10 @@ pub struct PositionedGlyphRun {
     pub synthesis: GlyphSynthesis,
     /// Hyperlink URL if this run is part of a link. `None` for non-link text.
     ///
-    /// TODO(link-click): interactive hit-testing deferred; only a visual hint
-    /// (blue tint underlay) is rendered by `loki-vello`.
+    /// A blue-tint underlay hint is rendered by `loki-vello`, and a point can be
+    /// resolved to its URL via `ContinuousLayout::link_at` /
+    /// `PageEditingData::link_at` (feature 5.11). TODO(link-click): the editor's
+    /// open-on-click gesture (modifier + URL opener) is the remaining wiring.
     pub link_url: Option<String>,
 }
 

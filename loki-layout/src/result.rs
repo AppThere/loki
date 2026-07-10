@@ -228,6 +228,15 @@ impl ContinuousLayout {
         Some((para.block_index, byte))
     }
 
+    /// The hyperlink URL under a canvas-coordinate point, if it lands on a
+    /// hyperlinked glyph run (feature 5.11). `None` over non-link text or empty
+    /// space. Mirrors [`hit_test`](Self::hit_test)'s paragraph search.
+    pub fn link_at(&self, canvas_x: f32, canvas_y: f32) -> Option<&str> {
+        self.paragraphs
+            .iter()
+            .find_map(|p| p.link_at(canvas_x, canvas_y))
+    }
+
     /// Caret rectangle in canvas coordinates for `(block_index, byte_offset)`.
     pub fn cursor_rect_canvas(&self, block_index: usize, byte_offset: usize) -> Option<CursorRect> {
         let para = self.paragraph(block_index)?;
