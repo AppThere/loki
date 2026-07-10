@@ -86,6 +86,7 @@ fn one_para_reflow(text: &str, origin: (f32, f32)) -> RenderLayout {
                 path: vec![],
                 layout: std::sync::Arc::new(para),
                 origin,
+                rotation: None,
             }],
         },
         tile_width_pt: 436.0,

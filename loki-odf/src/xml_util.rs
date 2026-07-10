@@ -97,10 +97,9 @@ pub fn parse_length(s: &str) -> Option<Points> {
         (n, PT_PER_CM)
     } else if let Some(n) = s.strip_suffix("mm") {
         (n, PT_PER_MM)
-    } else if let Some(n) = s.strip_suffix("in") {
-        (n, PT_PER_IN)
     } else {
-        return None;
+        let n = s.strip_suffix("in")?;
+        (n, PT_PER_IN)
     };
 
     let value: f64 = num_str.trim().parse().ok()?;

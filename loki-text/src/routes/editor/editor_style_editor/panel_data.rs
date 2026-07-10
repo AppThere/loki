@@ -221,11 +221,14 @@ fn stored_page_styles(doc: &Document) -> Vec<(StyleId, PageLayout, Vec<usize>)> 
             }
         }
     }
+    // Every `id` in `order` was inserted into `groups`, so `remove` is `Some`;
+    // `filter_map` handles the impossible `None` without a panic (no `expect` in
+    // library code).
     order
         .into_iter()
-        .map(|id| {
-            let (layout, idxs) = groups.remove(&id).expect("id came from `order`");
-            (id, layout, idxs)
+        .filter_map(|id| {
+            let (layout, idxs) = groups.remove(&id)?;
+            Some((id, layout, idxs))
         })
         .collect()
 }
