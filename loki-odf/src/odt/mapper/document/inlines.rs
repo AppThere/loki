@@ -14,13 +14,13 @@ use loki_doc_model::content::field::types::{CrossRefFormat, Field, FieldKind};
 use loki_doc_model::content::inline::{BookmarkKind, Inline, LinkTarget, NoteKind, StyledRun};
 use loki_doc_model::style::catalog::StyleId;
 use loki_doc_model::style::props::char_props::CharProps;
-use loki_doc_model::style::props::revision::{RevisionKind, RevisionMark};
+use loki_doc_model::style::props::revision::RevisionMark;
 
 use crate::limits::MAX_REPEATED_SPACES;
 use crate::odt::model::fields::OdfField;
 use crate::odt::model::notes::{OdfNote, OdfNoteClass};
 use crate::odt::model::paragraph::{OdfHyperlink, OdfParagraph, OdfParagraphChild, OdfSpan};
-use crate::odt::model::revision::{OdfChangeKind, OdfChangedRegion};
+use crate::odt::model::revision::OdfChangeKind;
 
 use super::OdfMappingContext;
 use super::frames::map_frame;
@@ -47,15 +47,29 @@ pub(super) fn map_paragraph(para: &OdfParagraph, ctx: &mut OdfMappingContext<'_>
         Block::Heading(level, attr, inlines)
     } else {
         let style_id = para.style_name.as_deref().map(StyleId::new);
+        // A ¶-mark tracked deletion (an empty-deletion `text:change` point in
+        // this paragraph) lands on the paragraph mark's CharProps slot.
+        let direct_char_props = para_mark_revision(para, ctx).map(|mark| {
+            Box::new(CharProps {
+                revision: Some(mark),
+                ..CharProps::default()
+            })
+        });
         Block::StyledPara(StyledParagraph {
             style_id,
             direct_para_props: None,
-            direct_char_props: None,
+            direct_char_props,
             inlines,
             attr: NodeAttr::default(),
         })
     }
 }
+
+// Revision-mapping helpers (changed-region → RevisionMark, run wrapping,
+// deleted-text re-materialisation, ¶-mark detection).
+#[path = "inlines_revision.rs"]
+mod revision_map;
+use revision_map::{deletion_run, para_mark_revision, region_mark, wrap_revision};
 
 // ── Inlines ────────────────────────────────────────────────────────────────────
 
@@ -74,8 +88,12 @@ pub(super) fn map_inline_children(
             OdfParagraphChild::RevisionEnd { .. } => active = None,
             // A deletion point: re-materialise the removed text (kept in the
             // changed-region table) as a struck run so it renders and re-exports.
+            // An empty deletion region is a ¶-mark deletion — carried on the
+            // paragraph itself by `map_paragraph`, not as a run.
             OdfParagraphChild::RevisionPoint { change_id } => {
-                if let Some(region) = ctx.changed_regions.get(change_id) {
+                if let Some(region) = ctx.changed_regions.get(change_id)
+                    && !(region.kind == OdfChangeKind::Deletion && region.deleted_text.is_empty())
+                {
                     out.push(deletion_run(region));
                 }
             }
@@ -90,55 +108,6 @@ pub(super) fn map_inline_children(
         }
     }
     out
-}
-
-/// Builds a [`RevisionMark`] from a parsed changed-region (author/date verbatim,
-/// so the RFC-3339 text round-trips exactly).
-fn region_mark(region: &OdfChangedRegion) -> RevisionMark {
-    RevisionMark {
-        kind: match region.kind {
-            OdfChangeKind::Insertion => RevisionKind::Insertion,
-            OdfChangeKind::Deletion => RevisionKind::Deletion,
-        },
-        author: region.creator.clone(),
-        date: region.date.clone(),
-        id: Some(region.change_id.clone()),
-    }
-}
-
-/// Wraps an inline in the given revision mark, folding it onto an existing
-/// styled run's direct props or a fresh single-child run otherwise.
-fn wrap_revision(inl: Inline, mark: &RevisionMark) -> Inline {
-    match inl {
-        Inline::StyledRun(mut sr) => {
-            let mut cp = sr.direct_props.map(|b| *b).unwrap_or_default();
-            cp.revision = Some(mark.clone());
-            sr.direct_props = Some(Box::new(cp));
-            Inline::StyledRun(sr)
-        }
-        other => Inline::StyledRun(revision_run(mark.clone(), vec![other])),
-    }
-}
-
-/// Builds the struck run standing in for a tracked deletion's removed text.
-fn deletion_run(region: &OdfChangedRegion) -> Inline {
-    Inline::StyledRun(revision_run(
-        region_mark(region),
-        vec![Inline::Str(region.deleted_text.clone())],
-    ))
-}
-
-/// A `StyledRun` carrying only a revision mark over `content`.
-fn revision_run(mark: RevisionMark, content: Vec<Inline>) -> StyledRun {
-    StyledRun {
-        style_id: None,
-        direct_props: Some(Box::new(CharProps {
-            revision: Some(mark),
-            ..CharProps::default()
-        })),
-        content,
-        attr: NodeAttr::default(),
-    }
 }
 
 fn map_inline(child: &OdfParagraphChild, ctx: &mut OdfMappingContext<'_>) -> Option<Inline> {

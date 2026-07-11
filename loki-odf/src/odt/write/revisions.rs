@@ -10,6 +10,7 @@
 //! once at the start of `office:text`). The `office:change-info` carries
 //! `dc:creator` / `dc:date`, mirroring [`super::inlines`]'s comment writer.
 
+use loki_doc_model::content::block::StyledParagraph;
 use loki_doc_model::content::inline::StyledRun;
 use loki_doc_model::style::props::revision::{RevisionKind, RevisionMark};
 
@@ -123,6 +124,27 @@ pub(super) fn write_styled_run(out: &mut String, sr: &StyledRun, cx: &mut Cx) {
         }
         None => wrap_span(out, span_style(sr, cx).as_deref(), &sr.content, cx),
     }
+}
+
+/// The end-of-paragraph `<text:change/>` milestone for a tracked ¶-mark
+/// deletion on a styled paragraph's `direct_char_props`, or `""` when the
+/// paragraph mark carries no tracked deletion. The registered region stows an
+/// empty `<text:p/>` — the deleted paragraph break, LibreOffice's shape for a
+/// ¶ deletion — which the importer maps back onto the paragraph.
+pub(super) fn para_mark_change(sp: &StyledParagraph, cx: &mut Cx) -> String {
+    let Some(rev) = sp
+        .direct_char_props
+        .as_deref()
+        .and_then(|p| p.revision.as_ref())
+        .filter(|r| r.kind == RevisionKind::Deletion)
+    else {
+        return String::new();
+    };
+    let id = cx.changes.register(rev, Some(String::new()));
+    let mut out = String::from("<text:change");
+    attr(&mut out, "text:change-id", &id);
+    out.push_str("/>");
+    out
 }
 
 /// Resolves the automatic text-style name for a styled run (its direct props, or

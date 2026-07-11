@@ -8,7 +8,7 @@
 use std::io::Cursor;
 
 use loki_doc_model::content::attr::NodeAttr;
-use loki_doc_model::content::block::Block;
+use loki_doc_model::content::block::{Block, StyledParagraph};
 use loki_doc_model::content::inline::{Inline, StyledRun};
 use loki_doc_model::document::Document;
 use loki_doc_model::io::{DocumentExport, DocumentImport};
@@ -110,5 +110,49 @@ fn tracked_insertion_and_deletion_round_trip() {
         )
     );
 
+    assert!(back.has_tracked_changes());
+}
+
+/// A tracked deletion of the *paragraph mark* (¶) — `direct_char_props.revision`
+/// on the block — exports as an end-of-paragraph `text:change` point whose
+/// deletion region stows only the paragraph break (an empty `text:p`), and
+/// re-imports onto the paragraph, not as a struck text run (4a.2 polish tail).
+#[test]
+fn tracked_paragraph_mark_deletion_round_trips() {
+    let mut mark = RevisionMark::new(RevisionKind::Deletion).with_author("Cara");
+    mark.date = Some("2026-07-08T09:00:00Z".to_string());
+    let mut doc = Document::new();
+    doc.sections[0].blocks = vec![
+        Block::StyledPara(StyledParagraph {
+            style_id: None,
+            direct_para_props: None,
+            direct_char_props: Some(Box::new(CharProps {
+                revision: Some(mark),
+                ..CharProps::default()
+            })),
+            inlines: vec![Inline::Str("First".into())],
+            attr: NodeAttr::default(),
+        }),
+        Block::Para(vec![Inline::Str("Second".into())]),
+    ];
+
+    let back = round_trip(&doc);
+
+    let Block::StyledPara(first) = &back.sections[0].blocks[0] else {
+        panic!("first block must stay a styled paragraph");
+    };
+    let rev = first
+        .direct_char_props
+        .as_ref()
+        .and_then(|cp| cp.revision.as_ref())
+        .expect("¶-mark deletion survives on the paragraph");
+    assert_eq!(rev.kind, RevisionKind::Deletion);
+    assert_eq!(rev.author.as_deref(), Some("Cara"));
+    assert_eq!(rev.date.as_deref(), Some("2026-07-08T09:00:00Z"));
+    // The ¶ deletion must not be re-materialised as a struck (empty) text run.
+    assert!(
+        find_revision(&back, RevisionKind::Deletion).is_none(),
+        "no struck run stands in for the paragraph break"
+    );
     assert!(back.has_tracked_changes());
 }
