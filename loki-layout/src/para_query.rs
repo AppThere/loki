@@ -2,11 +2,9 @@
 // Copyright 2026 AppThere Loki contributors
 
 //! Read-only geometry queries on a [`super::ParagraphLayout`]: point hit-test,
-//! line-end offset, caret rect, and selection rects. Split out of `para.rs`
-//! (Phase 7.1). This is the home for the pending Option-B y-range item filter
-//! (deferred-feature 6.3), which reads `ParagraphLayout::line_boundaries` to
-//! skip painting off-viewport content — the module has headroom under the
-//! 300-line ceiling for it, unlike the (baselined) `para.rs`.
+//! line-end offset, caret rect, selection rects, and the Option-B y-range item
+//! filter (`items_in_y_range`, deferred-feature 6.3) used by split-paragraph
+//! fragment emission.
 //!
 //! A child module of `para`, so it reaches `ParagraphLayout`'s private fields
 //! (`parley_layout`, `line_boundaries`, `orig_to_clean`, `clean_to_orig`).
@@ -176,6 +174,53 @@ impl super::ParagraphLayout {
             })
             .collect()
     }
+
+    /// Clones only the items likely to intersect para-local y ∈ `[y0, y1)` —
+    /// the Option-B y-range filter (deferred-feature 6.3). Used when emitting a
+    /// split-paragraph page fragment so each fragment carries roughly its own
+    /// lines' items instead of the whole paragraph's (Option A clips the full
+    /// copy on the GPU; the clip stays, so over-inclusion here is harmless).
+    ///
+    /// The filter is deliberately conservative: each item's vertical extent is
+    /// over-estimated (a glyph run's ink is bounded by ±[`Self::GLYPH_Y_SLOP`]
+    /// font-sizes around its baseline; groups use their clip/content boxes), and
+    /// an item with an unknown extent is always kept — dropping a visible item
+    /// would be a rendering bug, keeping an invisible one only wastes the clip.
+    pub fn items_in_y_range(&self, y0: f32, y1: f32) -> Vec<crate::items::PositionedItem> {
+        use crate::items::PositionedItem as PI;
+        self.items
+            .iter()
+            .filter(|item| {
+                let (top, bottom) = match item {
+                    PI::GlyphRun(r) => (
+                        r.origin.y - r.font_size * Self::GLYPH_Y_SLOP,
+                        r.origin.y + r.font_size * Self::GLYPH_Y_SLOP,
+                    ),
+                    PI::FilledRect(r) | PI::HorizontalRule(r) => {
+                        (r.rect.origin.y, r.rect.origin.y + r.rect.size.height)
+                    }
+                    PI::BorderRect(r) => (r.rect.origin.y, r.rect.origin.y + r.rect.size.height),
+                    PI::Image(r) => (r.rect.origin.y, r.rect.origin.y + r.rect.size.height),
+                    PI::Decoration(d) => (d.y, d.y + d.thickness),
+                    PI::ClippedGroup { clip_rect, .. } => (
+                        clip_rect.origin.y,
+                        clip_rect.origin.y + clip_rect.size.height,
+                    ),
+                    // Unknown extent (rotated content, future variants): keep.
+                    _ => return true,
+                };
+                bottom >= y0 && top < y1
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// How far a glyph run's ink may plausibly extend above/below its baseline,
+    /// in multiples of the font size. Generous on purpose (real ascent+descent
+    /// stay within ~1.5 em even with stacked diacritics): the cost of keeping an
+    /// extra clipped-away run is trivial, the cost of dropping a visible one is
+    /// a rendering bug.
+    const GLYPH_Y_SLOP: f32 = 3.0;
 
     /// Horizontal indent (points) applied to the drawn glyphs of visual line
     /// `line_index`, matching the `indent_x` used when emitting glyph runs: the

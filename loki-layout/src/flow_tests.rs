@@ -568,6 +568,46 @@ fn paragraph_split_produces_clipped_groups_on_multiple_pages() {
     let _ = warnings;
 }
 
+/// Option B (6.3): each split fragment carries only the items near its own
+/// y-range — not a full copy of every paragraph item per page (the pre-filter
+/// behaviour). The clip rect keeps rendering pixel-identical, so this asserts
+/// the item *count* per fragment against the unsplit paragraph's total.
+#[test]
+fn split_fragments_carry_only_their_own_y_range_items() {
+    fn clip_counts(items: &[PositionedItem]) -> Vec<usize> {
+        items
+            .iter()
+            .filter_map(|i| match i {
+                PositionedItem::ClippedGroup { items, .. } => Some(items.len()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    let mut r = test_resources();
+    // ~28 wrapped lines in tiny_layout's 90 pt content area → 4+ pages, so the
+    // middle fragments' kept windows (fragment range ± the conservative glyph
+    // slop) are well under the paragraph's full item count.
+    let text = "Lorem ipsum dolor sit amet consectetur adipiscing. ".repeat(16);
+
+    let unsplit = section_of(vec![make_para(&text)], tiny_layout());
+    let (total_items, _, _) = flow_pageless(&mut r, &unsplit);
+    let total = total_items.len();
+
+    let section = section_of(vec![make_para(&text)], tiny_layout());
+    let (pages, _) = flow_paginated(&mut r, &section);
+    assert!(pages.len() >= 3, "need 3+ pages, got {}", pages.len());
+    for (i, page) in pages.iter().enumerate() {
+        for count in clip_counts(&page.content_items) {
+            assert!(
+                count < total,
+                "page {i} fragment carries {count} of {total} items — the \
+                 y-range filter should keep a strict subset"
+            );
+        }
+    }
+}
+
 #[test]
 fn orphan_control_defers_a_would_be_orphan_paragraph() {
     use loki_doc_model::style::props::para_props::{LineHeight, ParaProps};

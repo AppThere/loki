@@ -679,8 +679,8 @@ fn walk_inlines(
                     notes,
                 );
             }
-            // Link (gap #11): thread the resolved URL into child spans.
-            // TODO(link-click): interactive hit-testing deferred; only visual hint rendered.
+            // Link (gap #11): thread the resolved URL into child spans (hint +
+            // hit-test + Ctrl/Cmd+click open all ride on it; feature 5.11).
             Inline::Link(_, ch, target) => {
                 let url = target.url.as_str();
                 walk_inlines(

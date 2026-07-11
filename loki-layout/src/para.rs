@@ -198,8 +198,8 @@ pub struct StyleSpan {
     /// Hyperlink URL if this run belongs to a link inline. `None` otherwise.
     ///
     /// Set by `resolve.rs` `walk_inlines` when recursing into `Inline::Link`
-    /// children. Used to render a visual link hint and (eventually) hit-test
-    /// regions. TODO(link-click): interactive hit-testing deferred.
+    /// children. Renders the visual link hint and backs `link_at` hit-testing
+    /// + Ctrl/Cmd+click opening (feature 5.11).
     pub link_url: Option<String>,
     /// MathML markup for an [`Inline::Math`][loki_doc_model::content::inline::Inline::Math]
     /// placeholder. When `Some`, this span has an empty `range` marking the
@@ -422,9 +422,9 @@ pub struct ParagraphLayout {
     /// Empty for empty paragraphs.
     ///
     /// Used by `flow_section` to find clean split points at line boundaries.
-    /// `TODO(split-optimise)`: Option B y-range item filter can use this field
-    /// to avoid rendering clipped content to the GPU once the Option A baseline
-    /// is stable and profiled.
+    /// The Option-B y-range item filter (`items_in_y_range`, feature 6.3)
+    /// complements it: each split fragment carries only the items near its
+    /// own y-range instead of a full copy of the paragraph's items.
     pub line_boundaries: Vec<(f32, f32)>,
     /// Parley layout object retained for hit testing and cursor positioning.
     ///
