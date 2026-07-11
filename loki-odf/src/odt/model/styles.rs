@@ -80,13 +80,11 @@ pub(crate) struct OdfStyle {
     pub graphic_wrap: Option<OdfGraphicWrap>,
     /// `true` for styles from `office:automatic-styles`.
     pub is_automatic: bool,
+    /// Properties for `style:family="table"` styles (`style:table-properties`).
+    pub table_props: Option<crate::odt::model::tables::OdfTableProps>,
     /// `style:master-page-name` — for paragraph styles, the master page this
-    /// style transitions to when applied. `None` or empty means no transition.
-    ///
-    // COMPAT(odf): style:master-page-name on a paragraph style signals a
-    // master page transition. The new master page's layout (page size,
-    // margins, headers/footers) applies from that paragraph onward until
-    // the next transition or end of document. ODF 1.3 §16.9.
+    /// style transitions to when applied (its layout applies from that
+    /// paragraph onward — ODF 1.3 §16.9). `None`/empty means no transition.
     pub master_page_name: Option<String>,
 }
 

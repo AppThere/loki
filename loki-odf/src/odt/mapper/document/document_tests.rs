@@ -58,6 +58,7 @@ fn graphic_style(name: &str, wrap: &str) -> OdfStyle {
             wrap: Some(wrap.into()),
             run_through: None,
         }),
+        table_props: None,
         is_automatic: true,
         master_page_name: None,
     }
@@ -297,6 +298,7 @@ fn style_with_mpn(name: &str, mpn: Option<&str>, parent: Option<&str>) -> OdfSty
         col_width: None,
         cell_props: None,
         graphic_wrap: None,
+        table_props: None,
         is_automatic: false,
         master_page_name: mpn.map(String::from),
     }

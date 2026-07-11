@@ -17,8 +17,8 @@ use crate::error::{OdfError, OdfResult};
 use crate::odt::model::document::OdfMasterPage;
 use crate::odt::model::list_styles::{OdfListLevel, OdfListLevelKind, OdfListStyle};
 use crate::odt::model::styles::{
-    OdfCellProps, OdfDefaultStyle, OdfGraphicWrap, OdfParaProps, OdfStyle, OdfStyleFamily,
-    OdfStylesheet, OdfTextProps,
+    OdfCellProps, OdfDefaultStyle, OdfGraphicWrap, OdfStyle, OdfStyleFamily, OdfStylesheet,
+    OdfTextProps,
 };
 use crate::xml_util::local_attr_val;
 
@@ -28,6 +28,10 @@ mod list;
 mod page;
 #[path = "styles_para.rs"]
 mod para_props;
+#[path = "styles_table.rs"]
+mod table_style;
+
+use table_style::ParsedStyleProps;
 
 // ── Public entry point ─────────────────────────────────────────────────────────
 
@@ -91,19 +95,19 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
                         let master_page_name = local_attr_val(e, b"master-page-name");
                         let auto = is_automatic || in_auto;
                         drop(e);
-                        let (para_props, text_props, col_width, cell_props, graphic_wrap) =
-                            parse_style_props(&mut reader, b"style")?;
+                        let props = parse_style_props(&mut reader, b"style")?;
                         let style = OdfStyle {
                             name,
                             display_name,
                             family,
                             parent_name,
                             list_style_name,
-                            para_props,
-                            text_props,
-                            col_width,
-                            cell_props,
-                            graphic_wrap,
+                            para_props: props.para_props,
+                            text_props: props.text_props,
+                            col_width: props.col_width,
+                            cell_props: props.cell_props,
+                            graphic_wrap: props.graphic_wrap,
+                            table_props: props.table_props,
                             is_automatic: auto,
                             master_page_name,
                         };
@@ -118,12 +122,11 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
                             local_attr_val(e, b"family").as_deref().unwrap_or(""),
                         );
                         drop(e);
-                        let (para_props, text_props, _col_width, _cell_props, _graphic_wrap) =
-                            parse_style_props(&mut reader, b"default-style")?;
+                        let props = parse_style_props(&mut reader, b"default-style")?;
                         sheet.default_styles.push(OdfDefaultStyle {
                             family,
-                            para_props,
-                            text_props,
+                            para_props: props.para_props,
+                            text_props: props.text_props,
                         });
                     }
                     b"list-style" => {
@@ -189,6 +192,7 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
                             col_width: None,
                             cell_props: None,
                             graphic_wrap: None,
+                            table_props: None,
                             is_automatic: auto,
                             master_page_name,
                         };
@@ -247,28 +251,11 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
 // ── Style property parsing ─────────────────────────────────────────────────────
 
 /// Read the children of a `style:style` or `style:default-style` element
-/// until the matching end tag, collecting `style:paragraph-properties`,
-/// `style:text-properties`, `style:table-column-properties`, and
-/// `style:table-cell-properties`.
-///
-/// Returns `(para_props, text_props, col_width, cell_props)`.
-#[allow(clippy::type_complexity)] // Pre-existing pattern — structural refactor deferred
-fn parse_style_props(
-    reader: &mut Reader<&[u8]>,
-    end_local: &[u8],
-) -> OdfResult<(
-    Option<OdfParaProps>,
-    Option<OdfTextProps>,
-    Option<String>,
-    Option<OdfCellProps>,
-    Option<OdfGraphicWrap>,
-)> {
+/// until the matching end tag, collecting every `style:*-properties` child
+/// into a [`ParsedStyleProps`].
+fn parse_style_props(reader: &mut Reader<&[u8]>, end_local: &[u8]) -> OdfResult<ParsedStyleProps> {
     let mut buf = Vec::new();
-    let mut para_props: Option<OdfParaProps> = None;
-    let mut text_props: Option<OdfTextProps> = None;
-    let mut col_width: Option<String> = None;
-    let mut cell_props: Option<OdfCellProps> = None;
-    let mut graphic_wrap: Option<OdfGraphicWrap> = None;
+    let mut props = ParsedStyleProps::default();
 
     loop {
         buf.clear();
@@ -280,28 +267,32 @@ fn parse_style_props(
                         let pp = para_props::parse_para_props_element(e);
                         drop(e);
                         let pp = para_props::parse_para_props_with_children(reader, pp)?;
-                        para_props = Some(pp);
+                        props.para_props = Some(pp);
                     }
                     b"text-properties" => {
-                        let tp = parse_text_props_attrs(e);
+                        props.text_props = Some(parse_text_props_attrs(e));
                         drop(e);
                         skip_element(reader, b"text-properties")?;
-                        text_props = Some(tp);
                     }
                     b"table-column-properties" => {
-                        col_width = crate::xml_util::local_attr_val(e, b"column-width");
+                        props.col_width = crate::xml_util::local_attr_val(e, b"column-width");
                         drop(e);
                         skip_element(reader, b"table-column-properties")?;
                     }
                     // COMPAT(odf): style:table-cell-properties may be self-closing
                     // (Empty) or have children (Start/End); handle both.
                     b"table-cell-properties" => {
-                        cell_props = Some(parse_cell_props_element(e));
+                        props.cell_props = Some(parse_cell_props_element(e));
                         drop(e);
                         skip_element(reader, b"table-cell-properties")?;
                     }
+                    b"table-properties" => {
+                        props.table_props = Some(table_style::parse_table_props_element(e));
+                        drop(e);
+                        skip_element(reader, b"table-properties")?;
+                    }
                     b"graphic-properties" => {
-                        graphic_wrap = Some(parse_graphic_wrap_element(e));
+                        props.graphic_wrap = Some(parse_graphic_wrap_element(e));
                         drop(e);
                         skip_element(reader, b"graphic-properties")?;
                     }
@@ -316,19 +307,22 @@ fn parse_style_props(
                 let local = e.local_name().into_inner();
                 match local {
                     b"paragraph-properties" => {
-                        para_props = Some(para_props::parse_para_props_element(e));
+                        props.para_props = Some(para_props::parse_para_props_element(e));
                     }
                     b"text-properties" => {
-                        text_props = Some(parse_text_props_attrs(e));
+                        props.text_props = Some(parse_text_props_attrs(e));
                     }
                     b"table-column-properties" => {
-                        col_width = crate::xml_util::local_attr_val(e, b"column-width");
+                        props.col_width = crate::xml_util::local_attr_val(e, b"column-width");
                     }
                     b"table-cell-properties" => {
-                        cell_props = Some(parse_cell_props_element(e));
+                        props.cell_props = Some(parse_cell_props_element(e));
+                    }
+                    b"table-properties" => {
+                        props.table_props = Some(table_style::parse_table_props_element(e));
                     }
                     b"graphic-properties" => {
-                        graphic_wrap = Some(parse_graphic_wrap_element(e));
+                        props.graphic_wrap = Some(parse_graphic_wrap_element(e));
                     }
                     _ => {}
                 }
@@ -349,7 +343,7 @@ fn parse_style_props(
         }
     }
 
-    Ok((para_props, text_props, col_width, cell_props, graphic_wrap))
+    Ok(props)
 }
 
 /// Build an [`OdfGraphicWrap`] from a `style:graphic-properties` element.
@@ -648,19 +642,19 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                         let list_style_name = local_attr_val(e, b"list-style-name");
                         let master_page_name = local_attr_val(e, b"master-page-name");
                         drop(e);
-                        let (para_props, text_props, col_width, cell_props, graphic_wrap) =
-                            parse_style_props(&mut reader, b"style")?;
+                        let props = parse_style_props(&mut reader, b"style")?;
                         styles.push(OdfStyle {
                             name,
                             display_name,
                             family,
                             parent_name,
                             list_style_name,
-                            para_props,
-                            text_props,
-                            col_width,
-                            cell_props,
-                            graphic_wrap,
+                            para_props: props.para_props,
+                            text_props: props.text_props,
+                            col_width: props.col_width,
+                            cell_props: props.cell_props,
+                            graphic_wrap: props.graphic_wrap,
+                            table_props: props.table_props,
                             is_automatic: true,
                             master_page_name,
                         });
@@ -688,6 +682,7 @@ pub(crate) fn read_auto_styles(xml: &[u8]) -> OdfResult<Vec<OdfStyle>> {
                         col_width: None,
                         cell_props: None,
                         graphic_wrap: None,
+                        table_props: None,
                         is_automatic: true,
                         master_page_name,
                     });

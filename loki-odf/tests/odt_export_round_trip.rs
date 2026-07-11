@@ -913,13 +913,17 @@ fn table_style_banding_resolves_into_per_cell_shading_on_odt_export() {
     );
 }
 
-/// A table's named-style reference (`table:style-name`) survives ODT export →
-/// import: the writer emits the `<style:style style:family="table">` definition
-/// in styles.xml and the reference on the table; import restores `style_name`.
+/// A table's named-style reference (`table:style-name`) **and its
+/// definition** survive ODT export → import: the writer emits the
+/// `<style:style style:family="table">` with its `style:table-properties`
+/// (width / alignment / background) into styles.xml plus the reference on the
+/// table; import restores `style_name` and re-reads the definition into the
+/// catalog's `table_styles` entry (deferred-features 4a.3 tail).
 #[test]
 fn table_style_name_reference_round_trips() {
     use loki_doc_model::content::table::core::Table;
-    use loki_doc_model::style::table_style::{TableProps, TableStyle, TableWidth};
+    use loki_doc_model::style::table_style::{TableAlignment, TableProps, TableStyle, TableWidth};
+    use loki_primitives::color::DocumentColor;
     use loki_primitives::units::Points;
 
     let mut table = Table::grid(2, 2);
@@ -934,6 +938,8 @@ fn table_style_name_reference_round_trips() {
             parent: None,
             table_props: TableProps {
                 width: Some(TableWidth::Absolute(Points::new(340.0))),
+                alignment: Some(TableAlignment::Center),
+                background_color: Some(DocumentColor::from_hex("#CADCFC").unwrap()),
                 ..TableProps::default()
             },
             conditional: Default::default(),
@@ -953,4 +959,62 @@ fn table_style_name_reference_round_trips() {
         })
         .expect("table survives");
     assert_eq!(t.style_name(), Some("Banded"));
+
+    // The definition round-trips into the catalog, not just the reference.
+    let style = back
+        .styles
+        .table_styles
+        .get(&StyleId::new("Banded"))
+        .expect("table style definition re-imported");
+    match style.table_props.width {
+        Some(TableWidth::Absolute(w)) => assert!((w.value() - 340.0).abs() < 0.01),
+        ref other => panic!("expected absolute width, got {other:?}"),
+    }
+    assert_eq!(style.table_props.alignment, Some(TableAlignment::Center));
+    assert_eq!(
+        style
+            .table_props
+            .background_color
+            .as_ref()
+            .and_then(DocumentColor::to_hex)
+            .as_deref(),
+        Some("#CADCFC")
+    );
+}
+
+/// A percent-width table style survives via `style:rel-width`.
+#[test]
+fn table_style_percent_width_round_trips() {
+    use loki_doc_model::content::table::core::Table;
+    use loki_doc_model::style::table_style::{TableProps, TableStyle, TableWidth};
+
+    let mut table = Table::grid(1, 1);
+    table.set_style_name(Some("Half".into()));
+    let mut doc = Document::new();
+    doc.styles.table_styles.insert(
+        StyleId::new("Half"),
+        TableStyle {
+            id: StyleId::new("Half"),
+            display_name: None,
+            parent: None,
+            table_props: TableProps {
+                width: Some(TableWidth::Percent(50.0)),
+                ..TableProps::default()
+            },
+            conditional: Default::default(),
+            extensions: Default::default(),
+        },
+    );
+    doc.sections[0].blocks = vec![Block::Table(Box::new(table))];
+
+    let back = round_trip(&doc);
+    let style = back
+        .styles
+        .table_styles
+        .get(&StyleId::new("Half"))
+        .expect("table style re-imported");
+    match style.table_props.width {
+        Some(TableWidth::Percent(p)) => assert!((p - 50.0).abs() < 0.01),
+        ref other => panic!("expected percent width, got {other:?}"),
+    }
 }
