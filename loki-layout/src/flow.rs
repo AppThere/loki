@@ -25,6 +25,8 @@ mod float_impl;
 mod flow_list_marker;
 #[path = "flow_page_fields.rs"]
 mod page_fields;
+#[path = "flow_para_between.rs"]
+mod para_between;
 #[path = "flow_para.rs"]
 mod para_impl;
 #[path = "flow_table_cells.rs"]
@@ -158,8 +160,7 @@ pub(super) struct FlowState<'a> {
     pub(super) warnings: Vec<LayoutWarning>,
     /// Accumulated horizontal indentation in points.
     pub(super) current_indent: f32,
-    /// Per-list counters: `ListId` → 9-element array (index = level, value =
-    /// current counter; `0` = not yet initialised).
+    /// Per-list counters: `ListId` → per-level counters (`0` = uninitialised).
     pub(super) list_counters: HashMap<ListId, [u32; 9]>,
     /// `ListId` of the most recently placed list item (to detect list changes).
     pub(super) prev_list_id: Option<ListId>,
@@ -169,8 +170,7 @@ pub(super) struct FlowState<'a> {
     pub(super) pending_footnotes: Vec<CollectedNote>,
     /// Paragraph metadata for the current page (block index, layout, origin).
     pub(super) current_paragraphs: Vec<PageParagraphData>,
-    /// Clean-page-top checkpoints for incremental relayout; populated only by the
-    /// top-level paginated loop (empty in nested flows).
+    /// Clean-page-top checkpoints for incremental relayout (top-level only).
     pub(super) checkpoints: Vec<PageStart>,
     /// Number of text columns (`1` = single); when `> 1`,
     /// [`content_width`](Self::content_width) is the *current* column's width.
@@ -179,7 +179,7 @@ pub(super) struct FlowState<'a> {
     /// x-offsets are the running sum of preceding widths plus `column_gap` per
     /// gap. `content_width` tracks the current column's entry.
     pub(super) column_widths: Vec<f32>,
-    /// Gap between adjacent columns in points (meaningful only when `columns > 1`).
+    /// Gap between adjacent columns in points (only when `columns > 1`).
     pub(super) column_gap: f32,
     /// Whether to draw a separator line between columns.
     pub(super) column_separator: bool,
@@ -188,26 +188,25 @@ pub(super) struct FlowState<'a> {
     /// Content-area y where the current column band begins (`0` normally; mid-page
     /// for a `continuous` section break that starts a band below the previous one).
     pub(super) column_top_y: f32,
-    /// First `current_items` index of the current column (shifted to its x offset
-    /// when the column finishes).
+    /// First `current_items` index of the current column (shifted at finish).
     pub(super) column_item_start: usize,
-    /// First `current_paragraphs` index of the current column (parallel to
-    /// `column_item_start`).
+    /// First `current_paragraphs` index of the column (parallel to above).
     pub(super) column_para_start: usize,
     /// Document comments, looked up by id for the gutter panel; empty in nested flows.
     pub(super) comments: &'a [loki_doc_model::content::annotation::Comment],
     /// Comment anchors (`id`, content-local `y`) on the current page, consumed by
     /// [`finish_page`] for the gutter comment panel.
     pub(super) pending_comment_anchors: Vec<(String, f32)>,
-    /// Break over-long words to the available width (CSS `overflow-wrap: anywhere`);
-    /// set while flowing table-cell content so words wrap to the column width.
+    /// Break over-long words to the width (`overflow-wrap: anywhere`); set
+    /// while flowing table-cell content so words wrap to the column width.
     pub(super) break_long_words: bool,
     /// A float taller than its anchoring paragraph whose remaining extent the
-    /// following paragraphs keep wrapping beside. Set by `para_impl::flow_paragraph`;
-    /// cleared by `float_impl::reserve_active_float` and on every page boundary.
+    /// following paragraphs keep wrapping beside; cleared on page boundaries.
     pub(super) active_float: Option<float_impl::ActiveFloat>,
     /// Editing-path context for nested content (see [`editing::NestedEditing`]).
     pub(super) nested_editing: Option<editing::NestedEditing>,
+    /// Between-border override for the paragraph about to flow (gap #26).
+    pub(super) staged_between: Option<para_between::BetweenOverride>,
 }
 
 impl FlowState<'_> {
@@ -319,17 +318,17 @@ fn new_flow_state<'a>(
         break_long_words: false,
         active_float: None,
         nested_editing: None,
+        staged_between: None,
     }
 }
 
 /// Runs the top-level paginated block loop over `blocks[start..]`.
 ///
-/// At every *clean page top* (content cursor at 0, no items placed yet, i.e.
-/// between top-level blocks) it offers the position to `resync`: if `resync`
-/// returns `true` the loop stops and returns `Some(block_index)` (the caller
-/// splices a reused page suffix from there); otherwise the position is recorded
-/// as a [`PageStart`] checkpoint and flowing continues. Returns `None` when the
-/// loop reaches the end of `blocks`.
+/// At every *clean page top* (cursor at 0, nothing placed — i.e. between
+/// top-level blocks) the position is offered to `resync`: `true` stops the
+/// loop and returns `Some(block_index)` (the caller splices a reused page
+/// suffix); otherwise it is recorded as a [`PageStart`] checkpoint and the
+/// flow continues. Returns `None` at the end of `blocks`.
 fn run_paginated_loop(
     state: &mut FlowState,
     blocks: &[Block],
@@ -346,8 +345,7 @@ fn run_paginated_loop(
             }
             state.checkpoints.push(PageStart {
                 page_index: state.pages.len(),
-                // section_index is filled in by `layout_paginated_full`; the
-                // flow does not know its document-global section position.
+                // Filled in by `layout_paginated_full` (flow is section-local).
                 section_index: 0,
                 block_index: block_index_base + i,
                 checkpoint: cp,
@@ -357,13 +355,13 @@ fn run_paginated_loop(
         if let Block::StyledPara(para) = block
             && para_keep_with_next(para, state.catalog)
         {
-            // NOTE: `i` is the slice index (chain scanning indexes `blocks`), so
-            // editing block indices inside a keep-with-next chain are not offset
-            // by `block_index_base` — only matters for a kwn chain in a live-editor continuous section (rare).
+            // NOTE: `i` is the slice index (chain scanning indexes `blocks`);
+            // editing indices in a kwn chain are not offset by `block_index_base`.
             let consumed = flow_keep_with_next_chain(state, blocks, i);
             i += consumed;
             continue;
         }
+        state.staged_between = para_between::stage(blocks, i, state.catalog);
         flow_block(state, block, block_index_base + i);
         i += 1;
     }
@@ -468,6 +466,7 @@ pub fn flow_section(
         comments,
     );
     for (idx, block) in section.blocks.iter().enumerate() {
+        state.staged_between = para_between::stage(&section.blocks, idx, state.catalog);
         flow_block(&mut state, block, idx);
     }
     // Reserve any float left active by the final block (continuous mode).
@@ -673,7 +672,8 @@ pub(super) fn flow_block(state: &mut FlowState, block: &Block, idx: usize) {
 
 /// Flows child blocks at the parent's `idx` (Div/Figure bodies, TOC/index snapshots).
 fn flow_blocks(state: &mut FlowState, blocks: &[Block], idx: usize) {
-    for b in blocks {
+    for (i, b) in blocks.iter().enumerate() {
+        state.staged_between = para_between::stage(blocks, i, state.catalog);
         flow_block(state, b, idx);
     }
 }

@@ -1893,3 +1893,118 @@ mod page_fields {
         assert_eq!(strikes(&plain_items), 0, "no marker on a plain paragraph");
     }
 }
+
+// ── Paragraph between-borders (fidelity gap #26) ─────────────────────────────
+
+fn edge(width: f64) -> Border {
+    Border {
+        style: BorderStyle::Solid,
+        width: Points::new(width),
+        color: None,
+        spacing: None,
+    }
+}
+
+fn bordered_para(text: &str, outer: Option<Border>, between: Option<Border>) -> StyledParagraph {
+    StyledParagraph {
+        direct_para_props: Some(Box::new(ParaProps {
+            border_top: outer.clone(),
+            border_bottom: outer.clone(),
+            border_left: outer.clone(),
+            border_right: outer,
+            border_between: between,
+            ..Default::default()
+        })),
+        ..make_para(text)
+    }
+}
+
+fn border_rects(items: &[PositionedItem]) -> Vec<&crate::items::PositionedBorderRect> {
+    items
+        .iter()
+        .filter_map(|i| match i {
+            PositionedItem::BorderRect(b) => Some(b),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn same_border_group_draws_between_rule_once() {
+    let mut r = test_resources();
+    let outer = edge(1.0);
+    let between = edge(3.0);
+    let section = section_of(
+        vec![
+            bordered_para("first", Some(outer.clone()), Some(between.clone())),
+            bordered_para("second", Some(outer), Some(between)),
+        ],
+        PageLayout::default(),
+    );
+    let (items, _, _) = flow_pageless(&mut r, &section);
+    let rects = border_rects(&items);
+    assert_eq!(rects.len(), 2, "one border box per paragraph");
+    // First member: outer top, between rule as its bottom.
+    let first = rects[0];
+    assert!(
+        first.top.is_some_and(|e| (e.width - 1.0).abs() < 0.01),
+        "first member keeps the outer top edge"
+    );
+    assert!(
+        first.bottom.is_some_and(|e| (e.width - 3.0).abs() < 0.01),
+        "the boundary draws the 3pt between rule, got {:?}",
+        first.bottom
+    );
+    // Second member: no top (already drawn), outer bottom.
+    let second = rects[1];
+    assert!(second.top.is_none(), "group suppresses the second top edge");
+    assert!(
+        second.bottom.is_some_and(|e| (e.width - 1.0).abs() < 0.01),
+        "last member keeps the outer bottom edge"
+    );
+}
+
+#[test]
+fn different_borders_do_not_group() {
+    let mut r = test_resources();
+    let section = section_of(
+        vec![
+            bordered_para("first", Some(edge(1.0)), Some(edge(3.0))),
+            bordered_para("second", Some(edge(2.0)), Some(edge(3.0))),
+        ],
+        PageLayout::default(),
+    );
+    let (items, _, _) = flow_pageless(&mut r, &section);
+    let rects = border_rects(&items);
+    assert_eq!(rects.len(), 2);
+    for rect in rects {
+        assert!(rect.top.is_some(), "ungrouped paragraphs keep their tops");
+        assert!(
+            rect.bottom.is_some_and(|e| (e.width - 3.0).abs() > 0.01),
+            "no between rule is drawn between different groups"
+        );
+    }
+}
+
+#[test]
+fn between_only_group_draws_just_the_boundary_rule() {
+    let mut r = test_resources();
+    let between = edge(3.0);
+    let section = section_of(
+        vec![
+            bordered_para("first", None, Some(between.clone())),
+            bordered_para("second", None, Some(between)),
+        ],
+        PageLayout::default(),
+    );
+    let (items, _, _) = flow_pageless(&mut r, &section);
+    let rects = border_rects(&items);
+    assert_eq!(
+        rects.len(),
+        1,
+        "only the boundary rule paints (second member has no edges left)"
+    );
+    let first = rects[0];
+    assert!(first.top.is_none());
+    assert!(first.bottom.is_some_and(|e| (e.width - 3.0).abs() < 0.01));
+}

@@ -84,6 +84,7 @@ pub(super) fn measure_cell_height(
         break_long_words: true,
         active_float: None,
         nested_editing: None,
+        staged_between: None,
     };
 
     for block in &cell.blocks {
@@ -231,6 +232,7 @@ pub(super) fn flow_cell_blocks(
         break_long_words: true,
         active_float: None,
         nested_editing: None,
+        staged_between: None,
     };
 
     for (bi, block) in blocks.iter().enumerate() {

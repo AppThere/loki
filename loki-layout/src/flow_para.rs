@@ -3,26 +3,19 @@
 
 //! Paragraph placement, splitting, and keep-with-next chain logic.
 //!
-//! Split algorithm (ADR 004 §3): when a paragraph does not fit on the current
-//! page, it is split at the last Parley line boundary that fits. Each fragment
-//! is wrapped in a [`PositionedItem::ClippedGroup`] so that full-height
-//! background and border items are clipped correctly.
-//!
-//! `indent_hanging` shifts line 0 left for all paragraphs (not just list items).
-//! Known minor gap: `line_w` for `break_all_lines` is uniform across lines, so
-//! line 0 wraps `indent_hanging` too early (Parley 0.6 exposes no per-line width).
+//! Split algorithm (ADR 004 §3): a paragraph that does not fit is split at
+//! the last fitting Parley line boundary; each fragment is wrapped in a
+//! [`PositionedItem::ClippedGroup`] so full-height background/border items
+//! clip correctly. `indent_hanging` shifts line 0 left for all paragraphs.
+//! Known minor gap: `line_w` for `break_all_lines` is uniform across lines,
+//! so line 0 wraps `indent_hanging` too early (no per-line width in Parley).
 //!
 //! ## Q2 — Parley 0.6 bidi API
-//! `BidiLevel` and `BidiResolver` are `pub(crate)` — no public API exists to
-//! set a per-paragraph base direction. There is no `StyleProperty` variant for
-//! text direction in Parley 0.6's `StyleProperty` enum
-//! (`FontStack`, `FontSize`, `FontStyle`, `FontWeight`, `Underline`,
-//! `Strikethrough`, `LineHeight`, `WordSpacing`, `LetterSpacing`, `WordBreak`,
-//! `OverflowWrap`, `Locale` — no RTL/bidi entry). Parley runs the Unicode BiDi
-//! algorithm automatically on character class properties. Gap #5 (RTL paragraph
-//! direction) cannot be addressed via `StyleProperty`; the only workaround is
-//! embedding Unicode directional control characters (U+202B RLE / U+200F RLM)
-//! into the text string. Defer to a future Parley version or a separate session.
+//! `BidiLevel`/`BidiResolver` are `pub(crate)` and no `StyleProperty` variant
+//! sets a per-paragraph base direction, so gap #5 (RTL paragraph direction)
+//! cannot be addressed here — Parley runs the Unicode BiDi algorithm from
+//! character classes only. The sole workaround would be embedding directional
+//! controls (U+202B/U+200F) into the text. Defer to a future Parley version.
 
 use std::sync::Arc;
 
@@ -48,8 +41,16 @@ const CHAIN_LIMIT: usize = 5;
 /// Resolve, lay out, and place a single paragraph block.
 pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, block_index: usize) {
     let mut resolved = resolve_para_props(para, state.catalog);
-    // Inherit the cell-content word-breaking flag from the flow state so a long
-    // unbreakable word wraps to the column width instead of overflowing.
+    // Between-border group adjustment (gap #26), staged by the block loop.
+    if let Some(ovr) = state.staged_between.take() {
+        if ovr.suppress_top {
+            resolved.border_top = None;
+        }
+        if let Some(bottom) = ovr.bottom {
+            resolved.border_bottom = bottom;
+        }
+    }
+    // Cell-content word-breaking: long unbreakable words wrap to the column.
     resolved.break_long_words = state.break_long_words;
     // Document default tab-stop interval (Word `w:defaultTabStop`), when set.
     if let Some(pt) = state.options.default_tab_stop_pt {
@@ -58,8 +59,7 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
 
     // ── List level indentation fallback ─────────────────────────────────────
     // The numbering level's pPr is the authoritative indent when the paragraph
-    // carries none (indent_start and indent_hanging both 0.0) — e.g. `w:ind`
-    // only on the abstract num level.
+    // carries none (both indents 0.0) — e.g. `w:ind` only on the abstract num.
     if let Some(ref lm) = resolved.list_marker
         && resolved.indent_start == 0.0
         && resolved.indent_hanging == 0.0
