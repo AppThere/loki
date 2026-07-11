@@ -26,7 +26,7 @@ fn doc_with_grid(rows: usize, cols: usize) -> LoroDoc {
     let mut table = Table::grid(rows, cols);
     for (r, row) in table.bodies[0].body_rows.iter_mut().enumerate() {
         for (c, cell) in row.cells.iter_mut().enumerate() {
-            cell.blocks = vec![Block::Para(vec![Inline::Str(format!("r{r}c{c}").into())])];
+            cell.blocks = vec![Block::Para(vec![Inline::Str(format!("r{r}c{c}"))])];
         }
     }
     let mut doc = Document::new();

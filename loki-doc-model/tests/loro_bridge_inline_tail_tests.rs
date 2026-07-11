@@ -137,8 +137,10 @@ fn quoted_text_keeps_quote_type() {
 
 #[test]
 fn span_keeps_node_attr() {
-    let mut attr = NodeAttr::default();
-    attr.id = Some("term-3".into());
+    let mut attr = NodeAttr {
+        id: Some("term-3".into()),
+        ..Default::default()
+    };
     attr.classes.push("glossary-term".into());
     attr.kv.push(("data-ref".into(), "g3".into()));
     let span = Inline::Span(attr, vec![Inline::Str("spanned".into())]);

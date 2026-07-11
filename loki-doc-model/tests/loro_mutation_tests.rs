@@ -491,8 +491,10 @@ fn split_heading_level_1_is_preserved() {
 fn split_block_with_para_props_inherits_props() {
     use loki_doc_model::style::props::para_props::ParagraphAlignment;
 
-    let mut para_props = ParaProps::default();
-    para_props.alignment = Some(ParagraphAlignment::Center);
+    let para_props = ParaProps {
+        alignment: Some(ParagraphAlignment::Center),
+        ..Default::default()
+    };
 
     let doc = make_doc_with_para_props("centered text", para_props);
     let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
@@ -528,8 +530,10 @@ fn split_block_new_block_props_are_independent() {
     // containers — mutating block 1's text must not change block 0's text.
     use loki_doc_model::style::props::para_props::ParagraphAlignment;
 
-    let mut para_props = ParaProps::default();
-    para_props.alignment = Some(ParagraphAlignment::Right);
+    let para_props = ParaProps {
+        alignment: Some(ParagraphAlignment::Right),
+        ..Default::default()
+    };
 
     let doc = make_doc_with_para_props("right aligned paragraph", para_props);
     let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");
@@ -562,8 +566,10 @@ fn split_block_new_block_props_are_independent() {
 
 #[test]
 fn split_block_with_char_props_inherits_direct_char_props() {
-    let mut char_props = CharProps::default();
-    char_props.bold = Some(true);
+    let char_props = CharProps {
+        bold: Some(true),
+        ..Default::default()
+    };
 
     let doc = make_doc_with_char_props("bold text here", char_props);
     let ldoc = document_to_loro(&doc).expect("document_to_loro succeeded");

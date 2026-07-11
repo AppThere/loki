@@ -375,8 +375,10 @@ fn character_local_value_wins_over_the_document_default() {
         char_style("__DocDefaultChar", None, bold()),
     );
     cat.default_character_style = Some(StyleId::new("__DocDefaultChar"));
-    let mut not_bold = CharProps::default();
-    not_bold.bold = Some(false);
+    let not_bold = CharProps {
+        bold: Some(false),
+        ..Default::default()
+    };
     cat.character_styles
         .insert(StyleId::new("Plain"), char_style("Plain", None, not_bold));
 

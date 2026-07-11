@@ -73,8 +73,10 @@ fn block_quote_roundtrips_natively() {
 
 #[test]
 fn div_roundtrips_attr_and_children() {
-    let mut attr = NodeAttr::default();
-    attr.id = Some("sidebar-1".into());
+    let mut attr = NodeAttr {
+        id: Some("sidebar-1".into()),
+        ..Default::default()
+    };
     attr.classes.push("sidebar".into());
     attr.kv.push(("role".into(), "note".into()));
     let div = Block::Div(attr, vec![para("div body")]);
@@ -85,8 +87,10 @@ fn div_roundtrips_attr_and_children() {
 
 #[test]
 fn figure_roundtrips_caption_and_content() {
-    let mut attr = NodeAttr::default();
-    attr.id = Some("fig-1".into());
+    let attr = NodeAttr {
+        id: Some("fig-1".into()),
+        ..Default::default()
+    };
     let figure = Block::Figure(
         attr,
         Caption {

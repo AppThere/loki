@@ -53,10 +53,12 @@ fn styled_para_with_char(props: CharProps) -> Block {
 /// survive a Loro CRDT round-trip via text marks.
 #[test]
 fn bridge_language_roundtrip() {
-    let mut props = CharProps::default();
-    props.language = Some(LanguageTag::new("en-GB".to_string()));
-    props.language_complex = Some(LanguageTag::new("ar-SA".to_string()));
-    props.language_east_asian = Some(LanguageTag::new("ja-JP".to_string()));
+    let props = CharProps {
+        language: Some(LanguageTag::new("en-GB".to_string())),
+        language_complex: Some(LanguageTag::new("ar-SA".to_string())),
+        language_east_asian: Some(LanguageTag::new("ja-JP".to_string())),
+        ..Default::default()
+    };
 
     let doc = single_block_doc(styled_para_with_char(props));
     let recovered = round_trip(&doc);
@@ -99,19 +101,21 @@ fn bridge_language_roundtrip() {
 /// `ParaProps.border_top` must survive a Loro CRDT round-trip.
 #[test]
 fn bridge_border_roundtrip() {
-    let mut para_props = ParaProps::default();
-    para_props.border_top = Some(Border {
-        style: BorderStyle::Solid,
-        width: Points::new(1.0),
-        color: Some(DocumentColor::from_hex("#FF0000").unwrap()),
-        spacing: None,
-    });
-    para_props.border_bottom = Some(Border {
-        style: BorderStyle::Dashed,
-        width: Points::new(0.5),
-        color: None,
-        spacing: Some(Points::new(2.0)),
-    });
+    let para_props = ParaProps {
+        border_top: Some(Border {
+            style: BorderStyle::Solid,
+            width: Points::new(1.0),
+            color: Some(DocumentColor::from_hex("#FF0000").unwrap()),
+            spacing: None,
+        }),
+        border_bottom: Some(Border {
+            style: BorderStyle::Dashed,
+            width: Points::new(0.5),
+            color: None,
+            spacing: Some(Points::new(2.0)),
+        }),
+        ..Default::default()
+    };
 
     let block = Block::StyledPara(loki_doc_model::content::block::StyledParagraph {
         style_id: None,
@@ -175,22 +179,24 @@ fn bridge_border_roundtrip() {
 fn bridge_border_theme_and_cmyk_colors_roundtrip() {
     use loki_primitives::color::CmykColor;
 
-    let mut para_props = ParaProps::default();
-    para_props.border_top = Some(Border {
-        style: BorderStyle::Solid,
-        width: Points::new(1.5),
-        color: Some(DocumentColor::Theme {
-            slot: ThemeColorSlot::Accent2,
-            tint: 0.25,
+    let para_props = ParaProps {
+        border_top: Some(Border {
+            style: BorderStyle::Solid,
+            width: Points::new(1.5),
+            color: Some(DocumentColor::Theme {
+                slot: ThemeColorSlot::Accent2,
+                tint: 0.25,
+            }),
+            spacing: Some(Points::new(3.0)),
         }),
-        spacing: Some(Points::new(3.0)),
-    });
-    para_props.border_bottom = Some(Border {
-        style: BorderStyle::Double,
-        width: Points::new(2.0),
-        color: Some(DocumentColor::Cmyk(CmykColor::new(0.1, 0.2, 0.3, 0.4))),
-        spacing: None,
-    });
+        border_bottom: Some(Border {
+            style: BorderStyle::Double,
+            width: Points::new(2.0),
+            color: Some(DocumentColor::Cmyk(CmykColor::new(0.1, 0.2, 0.3, 0.4))),
+            spacing: None,
+        }),
+        ..Default::default()
+    };
 
     let block = Block::StyledPara(loki_doc_model::content::block::StyledParagraph {
         style_id: None,
@@ -252,19 +258,21 @@ fn recovered_para_props(doc: &Document) -> ParaProps {
 /// alignment, and leader intact (was written as an unreadable Debug string).
 #[test]
 fn bridge_tab_stops_roundtrip() {
-    let mut para_props = ParaProps::default();
-    para_props.tab_stops = Some(vec![
-        TabStop {
-            position: Points::new(36.0),
-            alignment: TabAlignment::Left,
-            leader: TabLeader::None,
-        },
-        TabStop {
-            position: Points::new(144.5),
-            alignment: TabAlignment::Decimal,
-            leader: TabLeader::Dot,
-        },
-    ]);
+    let para_props = ParaProps {
+        tab_stops: Some(vec![
+            TabStop {
+                position: Points::new(36.0),
+                alignment: TabAlignment::Left,
+                leader: TabLeader::None,
+            },
+            TabStop {
+                position: Points::new(144.5),
+                alignment: TabAlignment::Decimal,
+                leader: TabLeader::Dot,
+            },
+        ]),
+        ..Default::default()
+    };
 
     let doc = single_block_doc(styled_para_with_para(para_props));
     let pp = recovered_para_props(&round_trip(&doc));
@@ -295,8 +303,10 @@ fn bridge_para_background_color_roundtrip() {
         },
         DocumentColor::Transparent,
     ] {
-        let mut para_props = ParaProps::default();
-        para_props.background_color = Some(color.clone());
+        let para_props = ParaProps {
+            background_color: Some(color.clone()),
+            ..Default::default()
+        };
 
         let doc = single_block_doc(styled_para_with_para(para_props));
         let pp = recovered_para_props(&round_trip(&doc));
@@ -315,14 +325,16 @@ fn bridge_para_background_color_roundtrip() {
 /// `padding_top/bottom/left/right` must survive a Loro CRDT round-trip.
 #[test]
 fn bridge_para_fields_roundtrip() {
-    let mut para_props = ParaProps::default();
-    para_props.page_break_before = Some(true);
-    para_props.orphan_control = Some(2);
-    para_props.outline_level = Some(3);
-    para_props.padding_top = Some(Points::new(4.0));
-    para_props.padding_bottom = Some(Points::new(5.0));
-    para_props.padding_left = Some(Points::new(6.0));
-    para_props.padding_right = Some(Points::new(7.0));
+    let para_props = ParaProps {
+        page_break_before: Some(true),
+        orphan_control: Some(2),
+        outline_level: Some(3),
+        padding_top: Some(Points::new(4.0)),
+        padding_bottom: Some(Points::new(5.0)),
+        padding_left: Some(Points::new(6.0)),
+        padding_right: Some(Points::new(7.0)),
+        ..Default::default()
+    };
 
     let block = Block::StyledPara(loki_doc_model::content::block::StyledParagraph {
         style_id: None,

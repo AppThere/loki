@@ -36,8 +36,10 @@ fn document_new_has_one_section() {
 fn document_two_sections_different_sizes() {
     let mut doc = Document::new();
 
-    let mut layout2 = PageLayout::default();
-    layout2.page_size = PageSize::a4();
+    let layout2 = PageLayout {
+        page_size: PageSize::a4(),
+        ..Default::default()
+    };
     let section2 = Section::with_layout_and_blocks(layout2, vec![]);
     doc.sections.push(section2);
 

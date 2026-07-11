@@ -135,8 +135,10 @@ fn test_roundtrip_hello_world_para() {
 fn test_roundtrip_bold_mark() {
     let mut doc = Document::new();
 
-    let mut props = CharProps::default();
-    props.bold = Some(true);
+    let props = CharProps {
+        bold: Some(true),
+        ..Default::default()
+    };
     let run = StyledRun {
         style_id: None,
         direct_props: Some(Box::new(props)),
