@@ -184,6 +184,14 @@ impl RenderLayout {
         self.continuous()?.hit_test(canvas_x, canvas_y)
     }
 
+    /// Hyperlink URL under a point in **canvas** coordinates, or `None` in
+    /// paginated mode / over plain text (feature 5.11, reflow half).
+    pub fn reflow_link_at(&self, canvas_x: f32, canvas_y: f32) -> Option<String> {
+        self.continuous()?
+            .link_at(canvas_x, canvas_y)
+            .map(str::to_owned)
+    }
+
     /// Caret rectangle in **canvas** coordinates for `(block_index,
     /// byte_offset)`, or `None` in paginated mode / when not found.
     pub(crate) fn reflow_cursor_canvas(

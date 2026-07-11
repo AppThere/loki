@@ -157,6 +157,7 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         let gap_px = if is_reflow { 0.0 } else { props.page_gap_px };
         let on_tile_click = props.on_tile_click;
         let on_reflow_click = props.on_reflow_click;
+        let on_open_link = props.on_open_link;
         let on_reflow_drag = props.on_reflow_drag;
         let on_tile_context = props.on_tile_context;
 
@@ -238,8 +239,15 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                                     let source = renderer.source.clone();
                                     move |(i, x, y, open_link): (usize, f32, f32, bool)| {
                                         if is_reflow {
-                                            // TODO(link-click-reflow): reflow link-open
-                                            // is a follow-up; place the caret as before.
+                                            // Ctrl/Cmd+click over a link opens it instead
+                                            // of placing the caret (feature 5.11); the
+                                            // app supplies the actual opener.
+                                            if open_link
+                                                && let Some(url) = source.reflow_link_at(i, x, y)
+                                            {
+                                                on_open_link.call(url);
+                                                return;
+                                            }
                                             if let Some((para, byte)) =
                                                 source.reflow_hit_test(i, x, y)
                                             {

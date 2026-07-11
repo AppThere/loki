@@ -403,6 +403,12 @@ pub(super) fn render_canvas_area(
                                 cs.anchor = Some(pos.clone());
                                 cs.focus = Some(pos);
                             },
+                            // Reflow Ctrl/Cmd+click on a link: DocumentView resolved
+                            // the URL against its continuous layout; open it here so
+                            // the browser dependency stays in the app layer.
+                            on_open_link: move |url: String| {
+                                let _ = webbrowser::open(&url);
+                            },
                             // Reflow drag-select: move only the focus, keeping the
                             // anchor so a range selection grows under the pointer.
                             on_reflow_drag: move |(para, byte): (usize, usize)| {
