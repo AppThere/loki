@@ -22,6 +22,8 @@ use dioxus::prelude::*;
 use dioxus_router::Navigator;
 use loki_i18n::fl;
 
+use super::home_util::push_new_tab;
+use crate::new_document::new_blank_tab;
 use crate::routes::Route;
 use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
@@ -175,11 +177,10 @@ pub fn Shell() -> Element {
                     close_tab(idx, tabs, active_tab, doc_sessions, navigator);
                 },
                 on_new_tab: move |_| {
-                    // Navigate to Home so the user can pick a template or file.
-                    // TODO(tabs): Open a blank document directly once blank-doc
-                    // creation is implemented.
-                    *active_tab.write() = 0;
-                    navigator.push(Route::Home {});
+                    // Open a blank document directly (the Home template
+                    // gallery remains reachable via the Home tab).
+                    let path = push_new_tab(tabs, active_tab, new_blank_tab());
+                    navigator.push(Route::Editor { path });
                 },
             }
 

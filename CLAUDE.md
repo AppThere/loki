@@ -474,7 +474,13 @@ Read in any descendant component:
 let theme = use_theme();
 ```
 
-Only `ThemeVariant::Dark` is implemented. Light theme tokens are deferred.
+Both variants are implemented (4c.4): `ThemePalette::dark()` / `light()` in
+`tokens/palette.rs`; the `COLOR_*` constants remain the dark values, so
+unmigrated components render dark under either variant. Components migrate by
+reading `use_theme().palette()` (Signal-backed — re-colors live on
+`AtThemeContext::toggle`, exposed as the tab-bar theme-toggle button). Shell
+chrome (title/tab/status bars, dialogs) is migrated; deep editor surfaces
+migrate opportunistically.
 
 ### What does NOT belong in `appthere_ui`
 

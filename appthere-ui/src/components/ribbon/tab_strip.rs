@@ -144,8 +144,8 @@ fn AtRibbonTab(
             aria_selected: if is_active { "true" } else { "false" },
             aria_label: aria_label,
             style: format!(
-                // TODO(font): verify Atkinson Hyperlegible Next is registered
-                // and loading correctly — ribbon tab labels should not be in system-ui.
+                // Atkinson registration is locked by loki-layout's
+                // ui_font_registration test (launch-time blob set).
                 "min-width: 64px; padding: 0 {p}px; display: flex; \
                  align-items: center; justify-content: center; \
                  background: {bg}; border: none; cursor: pointer; \

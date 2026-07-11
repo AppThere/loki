@@ -48,6 +48,11 @@ pub fn AtRibbonGroup(
     /// so existing call sites keep their full labelled appearance.
     #[props(default = GroupCollapse::Full)]
     collapse: GroupCollapse,
+    /// Draw the trailing right-side divider. Defaults to `true`; the strip
+    /// container passes `false` for the last rendered group (and for groups
+    /// hosted in the vertical overflow menu) so no divider dangles at an edge.
+    #[props(default = true)]
+    show_divider: bool,
     /// Buttons and controls inside this group.
     children: Element,
 ) -> Element {
@@ -80,12 +85,13 @@ pub fn AtRibbonGroup(
             // deliberate choice, no longer a Blitz limitation.)
             style: format!(
                 "display: flex; flex-direction: column; align-items: center; \
-                 height: 100%; padding: 0 {pad}px; \
-                 border-right: 1px solid {border}; box-sizing: border-box;",
-                // TODO(ribbon): Consider a variant prop to suppress the trailing
-                // divider on the last group in a tab.
-                pad    = lay.pad_px,
-                border = tokens::COLOR_BORDER_CHROME,
+                 height: 100%; padding: 0 {pad}px; {divider} box-sizing: border-box;",
+                pad     = lay.pad_px,
+                divider = if show_divider {
+                    format!("border-right: 1px solid {};", tokens::COLOR_BORDER_CHROME)
+                } else {
+                    String::new()
+                },
             ),
 
             // Button row (fills available height minus optional label row)
@@ -102,9 +108,8 @@ pub fn AtRibbonGroup(
             if lay.show_label {
                 div {
                     style: format!(
-                        // TODO(font): verify Atkinson Hyperlegible Next is
-                        // registered and loading correctly — group labels should
-                        // not be in system-ui.
+                        // Atkinson registration is locked by loki-layout's
+                        // ui_font_registration test (launch-time blob set).
                         "font-family: {font}; font-size: {size}px; color: {fg}; \
                          text-align: center; padding-bottom: 2px; flex-shrink: 0;",
                         font = FONT_FAMILY_UI,
