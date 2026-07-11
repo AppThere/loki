@@ -40,6 +40,10 @@ name = "font_cache_dedup"
 harness = false
 
 [[bench]]
+name = "session_layout_residual"
+harness = false
+
+[[bench]]
 name = "portable_smoke"
 harness = false
 

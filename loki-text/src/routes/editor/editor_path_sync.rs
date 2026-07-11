@@ -71,7 +71,7 @@ pub(super) fn sync_path_and_reset(
 
     let restored = sessions.write().remove(path);
     match restored {
-        Some(session) => restore_session(session, doc_state, sig),
+        Some(session) => restore_session(session, doc_state, sig, *path_signal),
         None => reset_for_fresh_load(doc_state, sig),
     }
 }
@@ -98,21 +98,16 @@ pub(super) fn stash_outgoing(
     if !tabs.peek().iter().any(|t| t.path == old_path) {
         return; // tab closed or Save-As-repointed — do not resurrect on reopen
     }
-    let (document, generation, page_count, paginated_layout, page_width_px, page_height_px) =
-        match doc_state.lock() {
-            Ok(s) => (
-                s.document.clone(),
-                s.generation,
-                s.page_count,
-                s.paginated_layout.clone(),
-                s.page_width_px,
-                s.page_height_px,
-            ),
-            Err(_) => {
-                tracing::error!("doc_state lock poisoned during stash — session dropped");
-                return;
-            }
-        };
+    // The layout is deliberately NOT stashed (memory F3 / plan 6.1): it is
+    // recomputed from `document` on restore, so an inactive tab retains only
+    // the model. The Arc in `DocumentState` drops on the incoming reset/load.
+    let (document, generation) = match doc_state.lock() {
+        Ok(s) => (s.document.clone(), s.generation),
+        Err(_) => {
+            tracing::error!("doc_state lock poisoned during stash — session dropped");
+            return;
+        }
+    };
     sessions.write().insert(
         old_path.to_owned(),
         DocSession {
@@ -120,10 +115,6 @@ pub(super) fn stash_outgoing(
             undo_manager,
             document,
             generation,
-            page_count,
-            paginated_layout,
-            page_width_px,
-            page_height_px,
             cursor: sig.cursor_state.peek().clone(),
             baseline_gen: *sig.baseline_gen.peek(),
             saved_state: sig.saved_state.peek().clone(),
@@ -133,34 +124,46 @@ pub(super) fn stash_outgoing(
     );
 }
 
-/// Write a stashed session back into the live editor state.
+/// Write a stashed session back into the live editor state and kick off the
+/// relayout that replaces the deliberately-unstashed layout (memory F3):
+/// the canvas shows the loading indicator (`total_pages == 0`, exactly like
+/// the fresh-open path) until the worker publishes.
 ///
 /// Called on path change and from the mount hook in `EditorInner` (returning
-/// to a document tab after the editor route was unmounted by Home).
+/// to a document tab after the editor route was unmounted by Home). Both
+/// sites run in component scope, so the relayout task can be spawned here.
 pub(super) fn restore_session(
     session: DocSession,
     doc_state: &Arc<Mutex<DocumentState>>,
     sig: &mut PathSyncSignals,
+    path_signal: Signal<String>,
 ) {
+    let document = session.document.clone();
     if let Ok(mut state) = doc_state.lock() {
         state.document = session.document;
         state.generation = session.generation;
-        state.page_count = session.page_count;
-        state.paginated_layout = session.paginated_layout;
-        state.page_width_px = session.page_width_px;
-        state.page_height_px = session.page_height_px;
+        state.page_count = 0;
+        state.paginated_layout = None;
     } else {
         tracing::error!("doc_state lock poisoned during restore — state may be stale");
     }
     sig.cursor_state.set(session.cursor);
     sig.loro_doc.set(Some(session.loro_doc));
     sig.undo_manager.set(session.undo_manager);
-    sig.total_pages.set(session.page_count as u32);
+    sig.total_pages.set(0);
     sig.current_page.set(1);
     sig.can_undo.set(session.can_undo);
     sig.can_redo.set(session.can_redo);
     sig.baseline_gen.set(session.baseline_gen);
     sig.saved_state.set(session.saved_state);
+
+    super::editor_layout_task::spawn_restore_relayout(
+        Arc::clone(doc_state),
+        document,
+        session.generation,
+        path_signal,
+        sig.total_pages,
+    );
 }
 
 /// Reset all per-document state ahead of a fresh `load_document` pass.

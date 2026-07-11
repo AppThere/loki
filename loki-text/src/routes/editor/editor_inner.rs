@@ -170,7 +170,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     baseline_gen,
                     saved_state,
                 };
-                restore_session(session, &doc_state_restore, &mut sig);
+                restore_session(session, &doc_state_restore, &mut sig, path_signal);
             }
         });
     }
