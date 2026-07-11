@@ -9,6 +9,7 @@ shell-app-name-presentation = Loki Presentation
 shell-home-tab = Home
 shell-tab-bar-aria = Open documents
 shell-new-document-aria = New document
+shell-theme-toggle-aria = Switch between dark and light theme
 shell-close-tab-aria = Close { $title }
 
 # Dirty-tab close confirmation

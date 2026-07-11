@@ -8,10 +8,7 @@
 use dioxus::prelude::*;
 
 use crate::responsive::use_breakpoint;
-use crate::tokens::colors::{
-    COLOR_BORDER_CHROME, COLOR_CONTEXTUAL_TAB, COLOR_SURFACE_3, COLOR_SURFACE_CHROME,
-    COLOR_TEXT_ACCENT, COLOR_TEXT_ON_CHROME_SECONDARY,
-};
+use crate::theme::use_theme;
 use crate::tokens::layout::STATUS_BAR_HEIGHT;
 use crate::tokens::spacing::{RADIUS_SM, SPACE_1, SPACE_2, SPACE_4, TOUCH_MIN};
 use crate::tokens::typography::{FONT_FAMILY_UI, FONT_SIZE_XS, FONT_WEIGHT_MEDIUM};
@@ -33,23 +30,24 @@ use crate::tokens::typography::{FONT_FAMILY_UI, FONT_SIZE_XS, FONT_WEIGHT_MEDIUM
 /// it is the hit area.
 #[component]
 pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
+    let palette = use_theme().palette();
     let mut zoom_hovered = use_signal(|| false);
     let zoom_bg = if zoom_hovered() {
         "#444444"
     } else {
-        COLOR_SURFACE_3
+        palette.surface_3
     };
     let mut view_hovered = use_signal(|| false);
     let view_bg = if view_hovered() {
         "#444444"
     } else {
-        COLOR_SURFACE_3
+        palette.surface_3
     };
     let mut notice_hovered = use_signal(|| false);
     let notice_bg = if notice_hovered() {
         "#444444"
     } else {
-        COLOR_SURFACE_3
+        palette.surface_3
     };
     let show_view_toggle = !props.view_mode_label.is_empty();
     let show_notice = !props.notice_label.is_empty();
@@ -68,8 +66,8 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                  padding: 0 {pad}px; flex-shrink: 0; gap: {gap}px; \
                  font-family: {font};",
                 h      = STATUS_BAR_HEIGHT,
-                bg     = COLOR_SURFACE_CHROME,
-                border = COLOR_BORDER_CHROME,
+                bg     = palette.surface_chrome,
+                border = palette.border_chrome,
                 pad    = SPACE_4,
                 gap    = SPACE_4,
                 font   = FONT_FAMILY_UI,
@@ -84,7 +82,7 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                     style: format!(
                         "font-size: {size}px; color: {fg};",
                         size = FONT_SIZE_XS,
-                        fg   = COLOR_TEXT_ON_CHROME_SECONDARY,
+                        fg   = palette.text_on_chrome_secondary,
                     ),
                     "{props.page_label}"
                 }
@@ -97,7 +95,7 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                     style: format!(
                         "font-size: {size}px; color: {fg};",
                         size = FONT_SIZE_XS,
-                        fg   = COLOR_TEXT_ON_CHROME_SECONDARY,
+                        fg   = palette.text_on_chrome_secondary,
                     ),
                     "{props.word_count_label}"
                 }
@@ -122,9 +120,9 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                              color: {fg}; font-size: {size}px; font-weight: {weight}; \
                              padding: {pv}px {ph}px;",
                             bg     = notice_bg,
-                            border = COLOR_CONTEXTUAL_TAB,
+                            border = palette.contextual_tab,
                             r      = RADIUS_SM,
-                            fg     = COLOR_TEXT_ON_CHROME_SECONDARY,
+                            fg     = palette.text_on_chrome_secondary,
                             size   = FONT_SIZE_XS,
                             weight = FONT_WEIGHT_MEDIUM,
                             pv     = SPACE_1,
@@ -146,7 +144,7 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                     style: format!(
                         "font-size: {size}px; color: {fg};",
                         size = FONT_SIZE_XS,
-                        fg   = COLOR_TEXT_ON_CHROME_SECONDARY,
+                        fg   = palette.text_on_chrome_secondary,
                     ),
                     "{props.language_label}"
                 }
@@ -166,7 +164,7 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                     onmouseleave: move |_| { view_hovered.set(false); },
                     onclick: move |_| { props.on_view_mode_click.call(()); },
                     span {
-                        style: chip_style(view_bg),
+                        style: chip_style(view_bg, palette.text_on_chrome_secondary),
                         "{props.view_mode_label}"
                     }
                 }
@@ -184,7 +182,7 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                 onmouseleave: move |_| { zoom_hovered.set(false); },
                 onclick: move |_| { props.on_zoom_click.call(()); },
                 span {
-                    style: chip_style(zoom_bg),
+                    style: chip_style(zoom_bg, palette.text_on_chrome_secondary),
                     "{props.zoom_percent}%"
                 }
             }
@@ -195,7 +193,7 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                     style: format!(
                         "font-size: {size}px; color: {fg};",
                         size = FONT_SIZE_XS,
-                        fg   = COLOR_TEXT_ACCENT,
+                        fg   = palette.text_accent,
                     ),
                     "{props.collaborator_label}"
                 }
@@ -214,13 +212,13 @@ fn hit_area_style() -> String {
     )
 }
 
-/// Visual chip style for the view-mode / zoom badges (`bg` swaps on hover).
-fn chip_style(bg: &str) -> String {
+/// Visual chip style for the view-mode / zoom badges (`bg` swaps on hover;
+/// `fg` comes from the active theme palette).
+fn chip_style(bg: &str, fg: &str) -> String {
     format!(
         "background: {bg}; border-radius: {r}px; color: {fg}; \
          font-size: {size}px; font-weight: {weight}; padding: {pv}px {ph}px;",
         r = RADIUS_SM,
-        fg = COLOR_TEXT_ON_CHROME_SECONDARY,
         size = FONT_SIZE_XS,
         weight = FONT_WEIGHT_MEDIUM,
         pv = SPACE_1,

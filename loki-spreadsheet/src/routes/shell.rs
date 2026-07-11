@@ -87,6 +87,7 @@ pub fn Shell() -> Element {
                 home_tab_label:     fl!("shell-home-tab"),
                 aria_label:         fl!("shell-tab-bar-aria"),
                 new_tab_aria_label: fl!("shell-new-document-aria"),
+                theme_toggle_aria_label: fl!("shell-theme-toggle-aria"),
                 on_tab_select: move |idx: usize| {
                     *active_tab.write() = idx;
                     if idx == 0 {

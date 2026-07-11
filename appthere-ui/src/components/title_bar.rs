@@ -3,16 +3,14 @@
 //! `AtTitleBar` — application title bar shell component.
 //!
 //! Renders on all platforms. The [`Platform`] prop controls height and
-//! left-padding to avoid overlapping OS window decorations.
+//! left-padding to avoid overlapping OS window decorations. Colors resolve
+//! through [`use_theme`], so the bar re-colors live on a theme toggle.
 
 use dioxus::prelude::*;
 
 use crate::components::platform::Platform;
 use crate::responsive::use_breakpoint;
-use crate::tokens::colors::{
-    COLOR_BORDER_CHROME, COLOR_SURFACE_CHROME, COLOR_TEXT_ACCENT, COLOR_TEXT_ON_CHROME,
-    COLOR_TEXT_ON_CHROME_SECONDARY,
-};
+use crate::theme::use_theme;
 use crate::tokens::layout::{TITLE_BAR_HEIGHT_DEFAULT, TITLE_BAR_HEIGHT_MACOS};
 use crate::tokens::spacing::{
     ICON_SIZE_LG, RADIUS_SM, SPACE_1, SPACE_10, SPACE_2, SPACE_3, TOUCH_MIN,
@@ -32,7 +30,10 @@ use crate::tokens::typography::{
 ///
 /// `[icon | title (center, flex:1) | collaborator badge]`
 ///
-/// The center region acts as a drag target placeholder.
+/// The center region acts as a drag target placeholder. When
+/// [`AtTitleBarProps::on_rename`] is set (and a document is open), the title
+/// is inline-editable: click to place the caret, Enter or focus-out commits
+/// the new name through the callback.
 ///
 /// # Touch target
 ///
@@ -40,17 +41,15 @@ use crate::tokens::typography::{
 /// **Minimum interactive size: 44×44 logical pixels (WCAG 2.5.8).**
 #[component]
 pub fn AtTitleBar(props: AtTitleBarProps) -> Element {
+    let palette = use_theme().palette();
     let bar_height = if props.platform == Platform::MacOs {
         TITLE_BAR_HEIGHT_MACOS
     } else {
         TITLE_BAR_HEIGHT_DEFAULT
     };
 
-    // macOS: leave SPACE_10 (40px) on the left so traffic light buttons are
-    // not obscured by the icon.
-    // TODO(platform): macOS traffic light region — the window decoration
-    // buttons are managed by blitz-shell at the window layer. This component
-    // leaves left padding of SPACE_10 on MacOs to avoid overlapping them.
+    // macOS: leave SPACE_10 (40px) on the left so the traffic-light window
+    // buttons (managed by blitz-shell at the window layer) are not obscured.
     let left_pad = if props.platform == Platform::MacOs {
         SPACE_10
     } else {
@@ -59,7 +58,7 @@ pub fn AtTitleBar(props: AtTitleBarProps) -> Element {
 
     let mut icon_hovered = use_signal(|| false);
     let icon_bg = if icon_hovered() {
-        "#2E2E2E"
+        palette.surface_2
     } else {
         "transparent"
     };
@@ -86,8 +85,8 @@ pub fn AtTitleBar(props: AtTitleBarProps) -> Element {
                  padding: 0 {pr}px 0 {pl}px; flex-shrink: 0; gap: {gap}px; \
                  font-family: {font};",
                 h      = bar_height,
-                bg     = COLOR_SURFACE_CHROME,
-                border = COLOR_BORDER_CHROME,
+                bg     = palette.surface_chrome,
+                border = palette.border_chrome,
                 pr     = SPACE_3,
                 pl     = left_pad,
                 gap    = SPACE_2,
@@ -121,7 +120,7 @@ pub fn AtTitleBar(props: AtTitleBarProps) -> Element {
                          background: {bg};",
                         sz = ICON_SIZE_LG,
                         r  = RADIUS_SM,
-                        bg = "#3D7EFF",
+                        bg = palette.accent_primary,
                     ),
                 }
             }
@@ -130,19 +129,23 @@ pub fn AtTitleBar(props: AtTitleBarProps) -> Element {
             // COMPAT(dioxus-native): Window drag region requires a winit platform
             // event. Implemented as a flex spacer for now; dragging uses OS default
             // behavior until blitz-shell exposes a drag-region API.
-            // TODO(title-edit): Make the title field inline-editable (future pass).
-            span {
-                style: format!(
-                    "flex: 1; font-size: {size}px; font-weight: {weight}; \
-                     color: {fg}; text-align: center; \
-                     overflow: hidden;",
-                    // COMPAT(dioxus-native): text-overflow: ellipsis is unconfirmed —
-                    // verify at runtime.
-                    size   = FONT_SIZE_BODY,
-                    weight = FONT_WEIGHT_SEMIBOLD,
-                    fg     = COLOR_TEXT_ON_CHROME,
-                ),
-                "{title_text}"
+            if let (Some(title), Some(on_rename)) = (&props.document_title, props.on_rename) {
+                // Keyed by the committed title so an external rename reseeds the draft.
+                TitleEditField { key: "{title}", title: title.clone(), on_rename }
+            } else {
+                span {
+                    style: format!(
+                        "flex: 1; font-size: {size}px; font-weight: {weight}; \
+                         color: {fg}; text-align: center; \
+                         overflow: hidden;",
+                        // COMPAT(dioxus-native): text-overflow: ellipsis is unconfirmed —
+                        // verify at runtime.
+                        size   = FONT_SIZE_BODY,
+                        weight = FONT_WEIGHT_SEMIBOLD,
+                        fg     = palette.text_on_chrome,
+                    ),
+                    "{title_text}"
+                }
             }
 
             // ── Right slot: collaborator badge ────────────────────────────────
@@ -151,7 +154,7 @@ pub fn AtTitleBar(props: AtTitleBarProps) -> Element {
                     style: format!(
                         "font-size: {size}px; color: {fg}; flex-shrink: 0;",
                         size = FONT_SIZE_LABEL,
-                        fg   = COLOR_TEXT_ACCENT,
+                        fg   = palette.text_accent,
                     ),
                     "{props.collaborator_label}"
                 }
@@ -167,7 +170,7 @@ pub fn AtTitleBar(props: AtTitleBarProps) -> Element {
                          color: {fg}; flex-shrink: 0;",
                         size   = FONT_SIZE_LABEL,
                         weight = FONT_WEIGHT_BOLD,
-                        fg     = COLOR_TEXT_ON_CHROME_SECONDARY,
+                        fg     = palette.text_on_chrome_secondary,
                     ),
                     "{props.app_name}"
                 }
@@ -175,6 +178,54 @@ pub fn AtTitleBar(props: AtTitleBarProps) -> Element {
 
             // Spacer for symmetry on right when no right-slot content
             div { style: format!("width: {w}px; flex-shrink: 0;", w = SPACE_1) }
+        }
+    }
+}
+
+// ── TitleEditField ────────────────────────────────────────────────────────────
+
+/// The inline-editable center title (ADR-0013: owns its draft signal; the
+/// parent keys it by the committed title so external renames reseed it).
+/// Enter or focus-out commits a non-empty, changed draft via `on_rename`;
+/// Escape resets the draft to the committed title.
+#[component]
+fn TitleEditField(title: String, on_rename: EventHandler<String>) -> Element {
+    let palette = use_theme().palette();
+    let mut draft = use_signal(|| title.clone());
+    let commit = {
+        let title = title.clone();
+        move || {
+            let text = draft.read().trim().to_string();
+            if !text.is_empty() && text != title {
+                on_rename.call(text);
+            }
+        }
+    };
+    let commit_on_enter = commit.clone();
+    let reset_title = title.clone();
+    rsx! {
+        input {
+            r#type: "text",
+            value: "{draft}",
+            "aria-label": "{title}",
+            style: format!(
+                "flex: 1; font-size: {size}px; font-weight: {weight}; \
+                 color: {fg}; text-align: center; overflow: hidden; \
+                 background: transparent; border: none; font-family: {font}; \
+                 min-height: {touch}px;",
+                size   = FONT_SIZE_BODY,
+                weight = FONT_WEIGHT_SEMIBOLD,
+                fg     = palette.text_on_chrome,
+                font   = FONT_FAMILY_UI,
+                touch  = TOUCH_MIN,
+            ),
+            oninput: move |evt| draft.set(evt.value()),
+            onkeydown: move |evt| match evt.key() {
+                Key::Enter => commit_on_enter(),
+                Key::Escape => draft.set(reset_title.clone()),
+                _ => {}
+            },
+            onblur: move |_| commit(),
         }
     }
 }
@@ -206,4 +257,10 @@ pub struct AtTitleBarProps {
 
     /// Callback invoked when the user clicks the app icon area.
     pub on_icon_press: EventHandler<()>,
+
+    /// When set (and a document is open), the center title becomes
+    /// inline-editable; Enter / focus-out commits the new name here.
+    /// `None` keeps the read-only title (existing behavior).
+    #[props(default)]
+    pub on_rename: Option<EventHandler<String>>,
 }
