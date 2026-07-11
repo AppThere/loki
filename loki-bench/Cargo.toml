@@ -29,10 +29,15 @@ thiserror = { workspace = true }
 criterion = "0.8"
 # The workloads the portable benches drive (Spec 06 §6). Dev-deps so they build
 # only for the bench targets, never for the harness library itself.
+appthere-canvas = { path = "../appthere-canvas", features = ["font-cache"] }
 loki-doc-model = { path = "../loki-doc-model" }
 loki-layout = { path = "../loki-layout" }
 loki-ooxml = { path = "../loki-ooxml" }
 loki-odf = { path = "../loki-odf" }
+
+[[bench]]
+name = "font_cache_dedup"
+harness = false
 
 [[bench]]
 name = "portable_smoke"

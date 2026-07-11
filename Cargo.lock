@@ -4435,6 +4435,7 @@ dependencies = [
 name = "loki-bench"
 version = "0.1.0"
 dependencies = [
+ "appthere-canvas",
  "criterion",
  "dhat",
  "loki-doc-model",
