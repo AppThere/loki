@@ -4,6 +4,7 @@
 //! Tests for [`super::merge_drop_cap_frames`].
 
 use super::*;
+use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::StyledParagraph;
 use loki_doc_model::content::inline::Inline;
 use loki_doc_model::style::props::drop_cap::{DropCap, DropCapLength};

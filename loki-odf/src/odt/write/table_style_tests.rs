@@ -4,6 +4,7 @@
 //! Unit tests for the named ODT table-style writer.
 
 use super::*;
+use indexmap::IndexMap;
 use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::style::catalog::StyleId;
 use loki_primitives::color::{DocumentColor, RgbColor};

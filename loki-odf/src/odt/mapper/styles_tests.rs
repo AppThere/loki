@@ -7,6 +7,7 @@ use super::*;
 use crate::odt::model::styles::{
     OdfDefaultStyle, OdfParaProps, OdfStyle, OdfStyleFamily, OdfStylesheet, OdfTextProps,
 };
+use loki_doc_model::style::props::char_props::CharProps;
 
 fn make_para_style(name: &str, parent: Option<&str>, is_auto: bool) -> OdfStyle {
     OdfStyle {
