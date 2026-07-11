@@ -48,10 +48,11 @@ pub use components::ribbon::{
     RibbonTabDesc, RibbonTabIndex,
 };
 pub use components::{
-    next_zoom, AtConfirmDialog, AtConfirmDialogProps, AtDocumentTab, AtDocumentTabData,
-    AtDocumentTabProps, AtHomeTab, AtHomeTabProps, AtPanelHost, AtPanelHostProps, AtStatusBar,
-    AtStatusBarProps, AtTabBar, AtTabBarProps, AtTitleBar, AtTitleBarProps, BuiltinTemplate,
-    PanelPosture, Platform, RecentDocument,
+    next_zoom, use_backdrop, use_provide_backdrop, AtBackdropContext, AtBackdropHost,
+    AtConfirmDialog, AtConfirmDialogProps, AtDocumentTab, AtDocumentTabData, AtDocumentTabProps,
+    AtHomeTab, AtHomeTabProps, AtPanelHost, AtPanelHostProps, AtStatusBar, AtStatusBarProps,
+    AtTabBar, AtTabBarProps, AtTitleBar, AtTitleBarProps, BuiltinTemplate, PanelPosture, Platform,
+    RecentDocument, BACKDROP_Z_INDEX,
 };
 pub use responsive::{
     estimate_group_metrics, group_layout, page_fits, required_page_width, resolve_cascade,

@@ -2,7 +2,10 @@
 
 //! Root application component for loki-presentation.
 
-use appthere_ui::{AtThemeContext, AtViewportWidthSensor, use_provide_responsive, use_safe_area};
+use appthere_ui::{
+    AtBackdropHost, AtThemeContext, AtViewportWidthSensor, use_provide_backdrop,
+    use_provide_responsive, use_safe_area,
+};
 use dioxus::prelude::*;
 
 use crate::recent_documents::RecentDocuments;
@@ -73,6 +76,10 @@ pub fn App() -> Element {
     // AtHomeTab's breakpoint tracks the real window instead of a fallback.
     use_provide_responsive();
 
+    // Window-level dismiss-backdrop context (kept identical to loki-text for
+    // suite consistency; used by ribbon overflow menus and anchored popups).
+    use_provide_backdrop();
+
     // Spell-check service (bundled English; dictionary cache shared across the
     // suite). Provided into context so this app's editor can query spelling and
     // offer corrections. Visible in-shape squiggles are a follow-up in the
@@ -129,7 +136,7 @@ pub fn App() -> Element {
             // high-density displays). Kept identical to loki-text for suite
             // consistency.
             style: format!(
-                "margin: 0; \
+                "margin: 0; position: relative; \
                  padding: {top}px {right}px {bottom}px {left}px; \
                  width: 100vw; height: 100vh; \
                  overflow: hidden; box-sizing: border-box; \
@@ -148,6 +155,9 @@ pub fn App() -> Element {
             AtViewportWidthSensor {}
 
             Router::<Route> {}
+
+            // Window-level dismiss backdrop; renders nothing while unused.
+            AtBackdropHost {}
         }
     }
 }

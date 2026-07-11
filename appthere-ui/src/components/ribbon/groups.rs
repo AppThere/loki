@@ -17,6 +17,7 @@ use dioxus::prelude::*;
 use super::button::AtRibbonIconButton;
 use super::group::AtRibbonGroup;
 use crate::components::icons::{AtIcon, LUCIDE_MORE_HORIZONTAL};
+use crate::components::overlay::use_backdrop;
 use crate::responsive::{use_ribbon_cascade, GroupCollapse, GroupMetrics};
 use crate::tokens;
 
@@ -54,6 +55,31 @@ pub fn AtRibbonGroups(
     let cascade = use_ribbon_cascade(metrics);
     let mut menu_open = use_signal(|| false);
 
+    // Outside-click dismissal: while the menu is open, the app's window-level
+    // backdrop host (when wired — `use_provide_backdrop` + `AtBackdropHost`)
+    // shows a viewport-spanning click-catcher that closes it. Degrades to
+    // toggle-only dismissal in an app without the host.
+    let backdrop = use_backdrop();
+    let mut set_menu_open = move |open: bool| {
+        menu_open.set(open);
+        if let Some(b) = backdrop {
+            if open {
+                b.show(Callback::new(move |()| menu_open.set(false)));
+            } else {
+                b.hide();
+            }
+        }
+    };
+    // Never leave a stale backdrop if this strip unmounts with the menu open
+    // (e.g. a ribbon tab switch).
+    use_drop(move || {
+        if let Some(b) = backdrop {
+            if *menu_open.peek() {
+                b.hide();
+            }
+        }
+    });
+
     // Partition into in-strip groups (with their state) and overflowed groups.
     let overflowed: Vec<&RibbonGroupSpec> = groups
         .iter()
@@ -66,7 +92,7 @@ pub fn AtRibbonGroups(
     // stale-open menu — its "More" button is gone, so it could never be toggled
     // shut. Reconcile in-render; it converges in one frame.
     if !cascade.overflow && *menu_open.peek() {
-        menu_open.set(false);
+        set_menu_open(false);
     }
 
     rsx! {
@@ -96,7 +122,7 @@ pub fn AtRibbonGroups(
                     is_disabled: false,
                     on_click: move |_| {
                         let open = menu_open();
-                        menu_open.set(!open);
+                        set_menu_open(!open);
                     },
                     AtIcon { path_d: LUCIDE_MORE_HORIZONTAL.to_string() }
                 }
@@ -106,15 +132,11 @@ pub fn AtRibbonGroups(
                     // anchored to the More button. `position: absolute` (block-level)
                     // is confirmed working in the current Blitz stack (see CLAUDE.md).
                     //
-                    // Dismissal: the More button toggles it shut, and a resize that
-                    // removes the overflow auto-closes it (above). True
-                    // outside-click-to-dismiss needs a full-viewport backdrop, which
-                    // must be hosted at a positioned window-level ancestor (like the
-                    // editor-root overlay the spell panel uses) — `position: fixed`
-                    // collapses to `absolute` in stylo_taffy, so a backdrop rendered
-                    // here would only cover this small wrapper. TODO(ribbon): host the
-                    // overflow menu in a shared window-level overlay so a backdrop can
-                    // span the viewport.
+                    // Dismissal: outside-click via the window-level backdrop host
+                    // (raised in `set_menu_open`; the menu's z-index 41 sits above
+                    // `BACKDROP_Z_INDEX` 40 so its own controls stay clickable),
+                    // plus the More-button toggle and the auto-close on a widen
+                    // that removes the overflow.
                     div {
                         style: format!(
                             "position: absolute; bottom: 100%; right: 0; z-index: 41; \
