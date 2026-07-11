@@ -53,7 +53,7 @@ fn import_reference_docx_smoke() {
         if let Block::StyledPara(p) = b {
             p.direct_para_props
                 .as_ref()
-                .map_or(false, |pp| pp.list_id.is_some())
+                .is_some_and(|pp| pp.list_id.is_some())
         } else {
             false
         }
@@ -81,7 +81,7 @@ fn import_reference_docx_smoke() {
         if let Block::StyledPara(p) = b {
             p.direct_para_props
                 .as_ref()
-                .map_or(false, |pp| pp.border_top.is_some())
+                .is_some_and(|pp| pp.border_top.is_some())
         } else {
             false
         }
@@ -94,9 +94,9 @@ fn import_reference_docx_smoke() {
     // ── 6. Tab stops present (gap #7) ───────────────────────────────────────
     let has_tab_stops = all_blocks.iter().any(|b| {
         if let Block::StyledPara(p) = b {
-            p.direct_para_props.as_ref().map_or(false, |pp| {
-                pp.tab_stops.as_ref().map_or(false, |ts| ts.len() >= 2)
-            })
+            p.direct_para_props
+                .as_ref()
+                .is_some_and(|pp| pp.tab_stops.as_ref().is_some_and(|ts| ts.len() >= 2))
         } else {
             false
         }
@@ -165,7 +165,7 @@ fn inline_is_bold_styled_run(inline: &Inline) -> bool {
     if let Inline::StyledRun(run) = inline {
         run.direct_props
             .as_ref()
-            .map_or(false, |cp| cp.bold == Some(true))
+            .is_some_and(|cp| cp.bold == Some(true))
     } else {
         false
     }

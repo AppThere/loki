@@ -374,7 +374,7 @@ fn vmerge_3_row_merge() {
     );
 }
 
-/// No merge: table with no vMerge → all cells row_span=1, none removed.
+/// No merge: table with no vMerge → all cells `row_span=1`, none removed.
 #[test]
 fn vmerge_no_merge() {
     let rows = vec![
@@ -512,7 +512,7 @@ fn cell_text_direction_maps_correctly() {
     }
 }
 
-/// col_span + vMerge: a restart cell with col_span=2 spans two grid columns.
+/// `col_span` + vMerge: a restart cell with `col_span=2` spans two grid columns.
 #[test]
 fn vmerge_with_col_span() {
     // 2×1 logical table: row 0 has a 2-wide restart, row 1 has a 2-wide continuation.

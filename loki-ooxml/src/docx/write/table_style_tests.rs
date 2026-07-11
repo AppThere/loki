@@ -33,7 +33,7 @@ fn writes_conditional_regions_and_band_sizes() {
             background_color: Some(rgb(255, 255, 255)),
             ..TableProps::default()
         },
-        conditional: Default::default(),
+        conditional: IndexMap::default(),
         extensions: ExtensionBag::default(),
     };
     style.conditional.insert(
@@ -63,7 +63,7 @@ fn a_style_without_bands_omits_tblpr() {
         display_name: None,
         parent: None,
         table_props: TableProps::default(),
-        conditional: Default::default(),
+        conditional: IndexMap::default(),
         extensions: ExtensionBag::default(),
     };
     let mut catalog = StyleCatalog::new();

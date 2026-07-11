@@ -6,6 +6,10 @@
 //! [`build_reference_docx`] produces a spec-conformant DOCX ZIP exercising
 //! every formatting feature that has a known fidelity gap in the audit.
 
+// Shared by several integration-test crates via `mod helpers;`, each of which
+// uses a different subset — any single test binary sees the rest as dead.
+#![allow(dead_code)]
+
 use std::io::{Cursor, Write};
 use zip::CompressionMethod;
 use zip::write::{FileOptions, ZipWriter};

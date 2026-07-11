@@ -29,7 +29,7 @@ fn field_with_snapshot_emits_separate_and_result() {
     let xml = render(&field);
     assert!(xml.contains(r#"<w:instrText xml:space="preserve"> NUMPAGES </w:instrText>"#));
     assert!(xml.contains(r#"<w:fldChar w:fldCharType="separate"/>"#));
-    assert!(xml.contains("7"));
+    assert!(xml.contains('7'));
 }
 
 #[test]

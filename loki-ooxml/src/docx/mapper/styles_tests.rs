@@ -175,8 +175,8 @@ fn doc_defaults_create_the_default_character_style() {
             id: StyleId::new("Plain"),
             display_name: Some("Plain".into()),
             parent: None,
-            char_props: Default::default(),
-            extensions: Default::default(),
+            char_props: CharProps::default(),
+            extensions: ExtensionBag::default(),
         },
     );
     let r = cat

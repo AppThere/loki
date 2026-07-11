@@ -160,7 +160,7 @@ fn text_default_style_becomes_the_character_default() {
             id: StyleId::new("Plain"),
             display_name: Some("Plain".into()),
             parent: None,
-            char_props: Default::default(),
+            char_props: CharProps::default(),
             extensions: ExtensionBag::default(),
         },
     );

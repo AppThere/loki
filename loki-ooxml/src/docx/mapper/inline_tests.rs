@@ -54,6 +54,8 @@ fn bold_run(text: &str) -> DocxParaChild {
     })
 }
 
+// Test fixture bundle mirroring make_ctx's parameter list.
+#[allow(clippy::type_complexity)]
 fn default_ctx() -> (
     StyleCatalog,
     HashMap<i32, Vec<Block>>,

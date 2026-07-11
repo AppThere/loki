@@ -49,6 +49,8 @@ fn default_opts() -> DocxImportOptions {
     DocxImportOptions::default()
 }
 
+// Test fixture bundle mirroring the mapper's map-parameter list.
+#[allow(clippy::type_complexity)]
 fn empty_maps() -> (
     HashMap<i32, Vec<Block>>,
     HashMap<i32, Vec<Block>>,

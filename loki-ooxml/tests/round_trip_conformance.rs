@@ -198,7 +198,7 @@ fn ooxml4_w14_extension_attributes_ignored_gracefully() {
                 if let Inline::StyledRun(sr) = i {
                     sr.direct_props
                         .as_ref()
-                        .map_or(false, |cp| cp.bold == Some(true))
+                        .is_some_and(|cp| cp.bold == Some(true))
                 } else {
                     false
                 }

@@ -145,15 +145,12 @@ fn test_import_architecture_doc() {
                     has_goals_nongoals = true;
                 }
                 for inline in inlines {
-                    match inline {
-                        Inline::Bookmark(kind, _name) => {
-                            if *kind == loki_doc_model::content::inline::BookmarkKind::Start {
-                                bookmark_start_count += 1;
-                            } else {
-                                bookmark_end_count += 1;
-                            }
+                    if let Inline::Bookmark(kind, _name) = inline {
+                        if *kind == loki_doc_model::content::inline::BookmarkKind::Start {
+                            bookmark_start_count += 1;
+                        } else {
+                            bookmark_end_count += 1;
                         }
-                        _ => {}
                     }
                 }
             }
@@ -166,15 +163,12 @@ fn test_import_architecture_doc() {
                     has_goals_nongoals = true;
                 }
                 for inline in &p.inlines {
-                    match inline {
-                        Inline::Bookmark(kind, _name) => {
-                            if *kind == loki_doc_model::content::inline::BookmarkKind::Start {
-                                bookmark_start_count += 1;
-                            } else {
-                                bookmark_end_count += 1;
-                            }
+                    if let Inline::Bookmark(kind, _name) = inline {
+                        if *kind == loki_doc_model::content::inline::BookmarkKind::Start {
+                            bookmark_start_count += 1;
+                        } else {
+                            bookmark_end_count += 1;
                         }
-                        _ => {}
                     }
                 }
             }

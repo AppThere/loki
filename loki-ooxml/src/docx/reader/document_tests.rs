@@ -211,7 +211,7 @@ fn cell_sdt_paragraphs_are_unwrapped_into_the_cell() {
         .iter()
         .filter_map(|c| match c {
             DocxBodyChild::Paragraph(p) => Some(para_text(p)),
-            _ => None,
+            DocxBodyChild::Table(_) => None,
         })
         .collect();
     assert_eq!(texts, ["In control", "Second", "Plain"]);

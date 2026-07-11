@@ -44,7 +44,7 @@ fn to_omml(mathml: &str, display: bool) -> String {
     String::from_utf8(out).expect("utf8")
 }
 
-/// Asserts that `mathml` survives a MathML → OMML → MathML cycle unchanged.
+/// Asserts that `mathml` survives a `MathML` → OMML → `MathML` cycle unchanged.
 fn assert_stable(mathml: &str, display: bool) {
     let omml = to_omml(mathml, display);
     let (back, back_display) = to_mathml(&omml);

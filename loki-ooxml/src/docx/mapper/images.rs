@@ -167,8 +167,8 @@ mod tests {
 
         let drawing = DocxDrawing {
             rel_id: Some("rId1".into()),
-            cx: Some(914400),
-            cy: Some(685800),
+            cx: Some(914_400),
+            cy: Some(685_800),
             descr: Some("A test image".into()),
             name: Some("img1".into()),
             is_anchor: false,

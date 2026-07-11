@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
+// Casts are of u8-range hex components (0..=255), exactly representable in f32.
+#![allow(clippy::cast_precision_loss)]
+
 use super::*;
 
 // ── hex_color ─────────────────────────────────────────────────────────────
