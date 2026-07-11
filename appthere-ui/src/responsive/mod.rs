@@ -31,6 +31,7 @@ mod breakpoint;
 mod page_fit;
 mod ribbon_collapse;
 mod viewport;
+mod width_sensor;
 
 pub use breakpoint::Breakpoint;
 pub use page_fit::{page_fits, required_page_width, resolve_page_fit, PageFit};
@@ -39,6 +40,7 @@ pub use ribbon_collapse::{
     GroupMetrics, RibbonCascade,
 };
 pub use viewport::{Viewport, DEFAULT_DPI};
+pub use width_sensor::AtViewportWidthSensor;
 
 use dioxus::prelude::*;
 

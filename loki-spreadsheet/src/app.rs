@@ -2,7 +2,7 @@
 
 //! Root application component for loki-spreadsheet.
 
-use appthere_ui::{AtThemeContext, use_safe_area};
+use appthere_ui::{AtThemeContext, AtViewportWidthSensor, use_provide_responsive, use_safe_area};
 use dioxus::prelude::*;
 
 use crate::recent_documents::RecentDocuments;
@@ -67,6 +67,11 @@ fn SafeAreaResizeSensor() -> Element {
 pub fn App() -> Element {
     // Inject the theme context before any shell component renders.
     provide_context(AtThemeContext::default());
+
+    // Shared responsive context (Spec 03 M1 / audit F7a): seeded unmeasured;
+    // the AtViewportWidthSensor below funnels the measured root width in, so
+    // AtHomeTab's breakpoint tracks the real window instead of a fallback.
+    use_provide_responsive();
 
     // Spell-check service (bundled English; dictionary cache shared across the
     // suite). Provided into context so this app's editor can query spelling and
@@ -139,6 +144,8 @@ pub fn App() -> Element {
             // Re-query safe-area insets on resize (orientation change) and while
             // the soft keyboard animates in/out (Android).
             SafeAreaResizeSensor {}
+            // Measure the root width into the responsive context (F7a).
+            AtViewportWidthSensor {}
 
             Router::<Route> {}
         }
