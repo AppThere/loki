@@ -19,8 +19,12 @@ use crate::error::{OoxmlError, OoxmlResult};
 use super::table::parse_table;
 use super::{parse_paragraph, skip_element};
 
-/// Parses a `w:tc` element. Called after Start("tc") is consumed.
-pub(super) fn parse_table_cell(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTableCell> {
+/// Parses a `w:tc` element. Called after Start("tc") is consumed. `depth` is
+/// the enclosing table's nesting depth (see `table::MAX_NESTING_DEPTH`).
+pub(super) fn parse_table_cell(
+    reader: &mut Reader<&[u8]>,
+    depth: usize,
+) -> OoxmlResult<DocxTableCell> {
     let mut cell = DocxTableCell::default();
     let mut buf = Vec::new();
     loop {
@@ -34,8 +38,9 @@ pub(super) fn parse_table_cell(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTa
                     cell.children.push(DocxBodyChild::Paragraph(para));
                 }
                 b"tbl" => {
-                    // Nested table inside this cell (ECMA-376 §17.4.4).
-                    let tbl = parse_table(reader)?;
+                    // Nested table inside this cell (ECMA-376 §17.4.4);
+                    // depth-guarded against stack exhaustion (S-1b).
+                    let tbl = parse_table(reader, depth + 1)?;
                     cell.children.push(DocxBodyChild::Table(tbl));
                 }
                 // Cell-level content control: its `w:sdtContent` paragraphs /

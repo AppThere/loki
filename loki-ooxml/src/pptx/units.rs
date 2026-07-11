@@ -10,10 +10,16 @@ use loki_primitives::color::DocumentColor;
 /// English Metric Units per point (ECMA-376 §20.1.2.1: 914 400 EMU/inch).
 const EMU_PER_PT: f64 = 12700.0;
 
-/// Converts an EMU length to points.
+/// Sanity ceiling on any single EMU length read from a file: 100 metres
+/// (≈ 3.6e9 EMU). Slide and shape geometry beyond this is not a plausible
+/// document — it is malformed or adversarial input that would otherwise flow
+/// unbounded into layout arithmetic (audit-2026-06 S-2).
+const MAX_EMU: i64 = 3_600_000_000;
+
+/// Converts an EMU length to points, clamped to ±[`MAX_EMU`].
 #[allow(clippy::cast_precision_loss)] // document measurements; precision loss is fine
 pub(super) fn emu_to_pt(emu: i64) -> f64 {
-    emu as f64 / EMU_PER_PT
+    emu.clamp(-MAX_EMU, MAX_EMU) as f64 / EMU_PER_PT
 }
 
 /// Converts a `DrawingML` rotation (60 000ths of a degree, clockwise) to degrees.
@@ -114,6 +120,17 @@ mod tests {
         assert!((emu_to_pt(12_700) - 1.0).abs() < 1e-9);
         assert!((rot_to_deg(5_400_000) - 90.0).abs() < 1e-9);
         assert!((font_size_to_pt(1800) - 18.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn absurd_emu_lengths_clamp_instead_of_flowing_into_layout() {
+        // audit-2026-06 S-2: cx="9223372036854775807" must not produce a
+        // near-infinite dimension.
+        assert!(emu_to_pt(i64::MAX).is_finite());
+        assert!((emu_to_pt(i64::MAX) - emu_to_pt(MAX_EMU)).abs() < 1e-9);
+        assert!((emu_to_pt(i64::MIN) - emu_to_pt(-MAX_EMU)).abs() < 1e-9);
+        // In-range values are untouched.
+        assert!((emu_to_pt(914_400) - 72.0).abs() < 1e-9);
     }
 
     #[test]

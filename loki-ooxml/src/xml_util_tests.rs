@@ -106,3 +106,28 @@ fn shading_unknown_texture_falls_back_to_fill() {
     let c = resolve_shading(Some("97BC62"), Some("horzStripe"), Some("000000")).unwrap();
     assert!((c.green() - 0xBC as f32 / 255.0).abs() < 1e-4);
 }
+
+// ── XXE posture (audit-2026-06 S-5) ──────────────────────────────────────────
+
+/// A DOCTYPE-declared external entity must never be fetched or expanded.
+/// quick-xml surfaces `&xxe;` as a `GeneralRef`, and `resolve_general_ref`
+/// resolves only the five predefined XML entities — everything else stays a
+/// literal `&name;`. This test fails if entity/DTD expansion is ever enabled.
+#[test]
+fn external_entities_are_never_resolved() {
+    let xml = br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE w:document [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body><w:p><w:r><w:t>&xxe;</w:t></w:r></w:p></w:body>
+</w:document>"#;
+    let doc = crate::docx::reader::document::parse_document(xml).expect("document parses");
+    let text = format!("{doc:?}");
+    assert!(
+        !text.contains("root:"),
+        "external entity content must never appear in the parsed document"
+    );
+    assert!(
+        text.contains("&xxe;"),
+        "an unresolvable entity reference stays literal, got: {text}"
+    );
+}

@@ -24,11 +24,19 @@ use super::{parse_paragraph, skip_element};
 /// (paragraphs, tables, nested `w:sdt`) to `children`. Called after the
 /// `Start(w:sdt)` event is consumed. Non-content children (`w:sdtPr`,
 /// `w:sdtEndPr`) are ignored — `in_content` gates on `w:sdtContent` so their
-/// inner elements never reach the dispatch.
+/// inner elements never reach the dispatch. `depth` shares the table nesting
+/// budget (`table::MAX_NESTING_DEPTH`) — nested controls recurse, so a
+/// crafted document could otherwise exhaust the stack (audit-2026-06 S-1b).
 pub(super) fn parse_sdt(
     reader: &mut Reader<&[u8]>,
     children: &mut Vec<DocxBodyChild>,
+    depth: usize,
 ) -> OoxmlResult<()> {
+    if depth > table::MAX_NESTING_DEPTH {
+        return Err(OoxmlError::NestingTooDeep {
+            limit: table::MAX_NESTING_DEPTH,
+        });
+    }
     let mut buf = Vec::new();
     let mut in_content = false;
     loop {
@@ -39,9 +47,9 @@ pub(super) fn parse_sdt(
                     children.push(DocxBodyChild::Paragraph(parse_paragraph(reader)?));
                 }
                 b"tbl" if in_content => {
-                    children.push(DocxBodyChild::Table(table::parse_table(reader)?));
+                    children.push(DocxBodyChild::Table(table::parse_table(reader, depth)?));
                 }
-                b"sdt" if in_content => parse_sdt(reader, children)?,
+                b"sdt" if in_content => parse_sdt(reader, children, depth + 1)?,
                 b"sdtPr" | b"sdtEndPr" => {
                     // Skip the control's properties wholesale so their inner
                     // `w:tag`/`w:alias`/binding elements never reach the dispatch.

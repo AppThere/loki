@@ -216,3 +216,68 @@ fn cell_sdt_paragraphs_are_unwrapped_into_the_cell() {
         .collect();
     assert_eq!(texts, ["In control", "Second", "Plain"]);
 }
+
+// ── Nesting-depth guard (audit-2026-06 S-1b) ─────────────────────────────────
+
+/// Builds a document whose body nests `depth` tables inside each other
+/// (`w:tbl` → `w:tr` → `w:tc` → `w:tbl` → …).
+fn nested_table_doc(depth: usize) -> Vec<u8> {
+    let mut xml = String::from(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>"#,
+    );
+    for _ in 0..depth {
+        xml.push_str("<w:tbl><w:tr><w:tc>");
+    }
+    xml.push_str("<w:p><w:r><w:t>deep</w:t></w:r></w:p>");
+    for _ in 0..depth {
+        xml.push_str("</w:tc></w:tr></w:tbl>");
+    }
+    xml.push_str("</w:body></w:document>");
+    xml.into_bytes()
+}
+
+#[test]
+fn two_level_table_nesting_parses() {
+    let doc = parse_document(&nested_table_doc(2)).unwrap();
+    let Some(DocxBodyChild::Table(outer)) = doc.body.children.first() else {
+        panic!("expected outer table");
+    };
+    assert!(
+        matches!(
+            outer.rows[0].cells[0].children.first(),
+            Some(DocxBodyChild::Table(_))
+        ),
+        "inner table must be parsed, not dropped"
+    );
+}
+
+#[test]
+fn excessive_table_nesting_is_rejected_not_stack_overflow() {
+    let err = parse_document(&nested_table_doc(150)).unwrap_err();
+    assert!(
+        matches!(err, OoxmlError::NestingTooDeep { limit: 100 }),
+        "expected NestingTooDeep, got {err:?}"
+    );
+}
+
+#[test]
+fn excessive_sdt_nesting_is_rejected() {
+    let mut xml = String::from(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>"#,
+    );
+    for _ in 0..150 {
+        xml.push_str("<w:sdt><w:sdtContent>");
+    }
+    xml.push_str("<w:p><w:r><w:t>deep</w:t></w:r></w:p>");
+    for _ in 0..150 {
+        xml.push_str("</w:sdtContent></w:sdt>");
+    }
+    xml.push_str("</w:body></w:document>");
+    let err = parse_document(xml.as_bytes()).unwrap_err();
+    assert!(
+        matches!(err, OoxmlError::NestingTooDeep { limit: 100 }),
+        "expected NestingTooDeep, got {err:?}"
+    );
+}

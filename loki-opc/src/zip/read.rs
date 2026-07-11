@@ -201,6 +201,12 @@ fn transcode_utf16_to_utf8(buf: &[u8]) -> Option<Vec<u8>> {
         (0xFF, 0xFE) => false,
         _ => return None,
     };
+    // An odd payload length means the buffer is not valid UTF-16; reject it
+    // rather than silently dropping the trailing byte (audit-2026-06 S-3 —
+    // `chunks_exact` would truncate, potentially masking tampered content).
+    if !(buf.len() - 2).is_multiple_of(2) {
+        return None;
+    }
 
     let u16_data: Vec<u16> = if big_endian {
         buf[2..]
@@ -216,4 +222,29 @@ fn transcode_utf16_to_utf8(buf: &[u8]) -> Option<Vec<u8>> {
 
     let string = String::from_utf16_lossy(&u16_data);
     Some(string.into_bytes())
+}
+
+#[cfg(test)]
+mod transcode_tests {
+    use super::transcode_utf16_to_utf8;
+
+    #[test]
+    fn even_length_le_buffer_transcodes() {
+        // BOM + "AB" in UTF-16LE.
+        let buf = [0xFF, 0xFE, b'A', 0x00, b'B', 0x00];
+        assert_eq!(transcode_utf16_to_utf8(&buf), Some(b"AB".to_vec()));
+    }
+
+    #[test]
+    fn even_length_be_buffer_transcodes() {
+        let buf = [0xFE, 0xFF, 0x00, b'A'];
+        assert_eq!(transcode_utf16_to_utf8(&buf), Some(b"A".to_vec()));
+    }
+
+    #[test]
+    fn odd_payload_length_is_rejected_not_truncated() {
+        // BOM + one valid unit + a dangling trailing byte (audit-2026-06 S-3).
+        let buf = [0xFF, 0xFE, b'A', 0x00, 0x41];
+        assert_eq!(transcode_utf16_to_utf8(&buf), None);
+    }
 }

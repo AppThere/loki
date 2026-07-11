@@ -3,6 +3,17 @@
 
 //! Shared XML parsing utilities for all OOXML part readers.
 //!
+//! # XXE posture (audit-2026-06 S-5)
+//!
+//! Every reader in this crate (and in `loki-opc` / `loki-odf`) parses with
+//! `quick_xml::Reader`, which does **not** resolve external entities or fetch
+//! DTDs — `<!DOCTYPE>` internal subsets are surfaced as opaque events and
+//! non-predefined entity references reach us as `Event::GeneralRef`, which
+//! [`resolve_general_ref`] deliberately resolves against the five predefined
+//! XML entities only (anything else stays literal). Do not enable DTD or
+//! custom-entity expansion without a security review; the posture is locked
+//! by `external_entities_are_never_resolved` in `xml_util_tests.rs`.
+//!
 //! # Why `trim_text(false)` must always be set
 //!
 //! `quick_xml` can strip leading/trailing whitespace from text nodes when
