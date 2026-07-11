@@ -129,8 +129,8 @@ pub(super) fn write_styled_run(out: &mut String, sr: &StyledRun, cx: &mut Cx) {
 /// The end-of-paragraph `<text:change/>` milestone for a tracked ¶-mark
 /// deletion on a styled paragraph's `direct_char_props`, or `""` when the
 /// paragraph mark carries no tracked deletion. The registered region stows an
-/// empty `<text:p/>` — the deleted paragraph break, LibreOffice's shape for a
-/// ¶ deletion — which the importer maps back onto the paragraph.
+/// empty `<text:p/>` — the deleted paragraph break, the shape `LibreOffice`
+/// uses for a ¶ deletion — which the importer maps back onto the paragraph.
 pub(super) fn para_mark_change(sp: &StyledParagraph, cx: &mut Cx) -> String {
     let Some(rev) = sp
         .direct_char_props

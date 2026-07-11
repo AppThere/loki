@@ -158,7 +158,7 @@ fn render_page(
     let mut font_cache = FontDataCache::new();
     paint_layout(
         &mut scene,
-        &layout,
+        layout,
         &mut font_cache,
         (16.0, 16.0),
         1.0,
@@ -186,7 +186,7 @@ fn render_page(
     let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
     let mut renderer = vello::Renderer::new(
-        &device,
+        device,
         vello::RendererOptions {
             antialiasing_support: vello::AaSupport::area_only(),
             num_init_threads: NonZeroUsize::new(1),

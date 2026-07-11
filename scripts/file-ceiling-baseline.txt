@@ -5,20 +5,20 @@
 
 1447 loki-layout/src/para.rs
 1202 loki-layout/src/flow.rs
-1047 loki-spreadsheet/src/routes/editor/editor_inner.rs
+1014 loki-spreadsheet/src/routes/editor/editor_inner.rs
 902 loki-ooxml/src/docx/write/document.rs
-865 loki-layout/src/resolve.rs
+858 loki-layout/src/resolve.rs
 800 loki-text/src/routes/editor/editor_inner.rs
 764 loki-odf/src/odt/reader/styles.rs
 739 loki-ooxml/src/docx/reader/document.rs
-727 loki-vello/src/scene.rs
 710 loki-layout/src/flow_para.rs
+613 loki-vello/src/scene.rs
 586 loki-odf/src/odt/reader/document.rs
 575 loki-ooxml/src/xlsx/import.rs
 466 loki-ooxml/src/xlsx/export.rs
 465 loki-odf/src/ods/import.rs
 460 loki-text/src/routes/editor/editor_canvas.rs
-438 loki-ooxml/src/docx/mapper/document.rs
+437 loki-ooxml/src/docx/mapper/document.rs
 416 loki-ooxml/src/docx/mapper/inline.rs
 410 loki-odf/src/package.rs
 387 loki-ooxml/src/docx/import.rs
@@ -31,4 +31,4 @@
 316 loki-text/src/routes/editor/editor_style.rs
 315 loki-odf/src/odt/model/styles.rs
 314 loki-renderer/src/page_paint_source.rs
-307 loki-ooxml/src/docx/mapper/table.rs
+306 loki-ooxml/src/docx/mapper/table.rs

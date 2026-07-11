@@ -20,11 +20,12 @@ const HANDLE_CIRCLE_RADIUS: f32 = 8.0;
 /// Affine mapping paragraph-local caret/selection coordinates to physical
 /// scene pixels for `para_data`'s paragraph.
 ///
-/// For plain paragraphs this is the familiar `scale · translate(content_origin
-/// + origin)`. For rotated table-cell content it composes the cell's
-/// [`CellRotation`](loki_layout::CellRotation) affine (`page = pivot_page +
-/// Rot(deg)·(local − pivot_local)`, the same transform the content itself is
-/// painted with), so the caret line and selection fills tilt with the text.
+/// For plain paragraphs this is the familiar scale-then-translate of
+/// `content_origin` plus the paragraph origin. For rotated table-cell content
+/// it composes the cell's [`CellRotation`](loki_layout::CellRotation) affine
+/// (`page = pivot_page + Rot(deg)·(local − pivot_local)` — the same transform
+/// the content itself is painted with), so the caret line and selection fills
+/// tilt with the text.
 pub(crate) fn cursor_paint_transform(
     para_data: Option<&PageParagraphData>,
     content_origin: (f32, f32),

@@ -205,17 +205,18 @@ baseline). Three techniques (the third added 2026-07-08):
 
 | File | Current lines | Priority |
 |---|---|---|
-| `loki-layout/src/para.rs` | 1626 | High |
-| `loki-layout/src/flow.rs` | 1362 | High |
-| `loki-ooxml/src/docx/write/document.rs` | 1073 | High |
-| `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1047 | High |
-| `loki-ooxml/src/docx/reader/document.rs` | 1004 | High |
-| `loki-odf/src/odt/reader/styles.rs` | 892 | Med |
-| `loki-layout/src/resolve.rs` | 865 | Med |
-| … 22 more — see `scripts/file-ceiling-baseline.txt` (29 entries after the 2026-07-08 pass) | | |
+| `loki-layout/src/para.rs` | 1447 | High |
+| `loki-layout/src/flow.rs` | 1202 | High |
+| `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1014 | High |
+| `loki-ooxml/src/docx/write/document.rs` | 902 | High |
+| `loki-layout/src/resolve.rs` | 858 | Med |
+| `loki-text/src/routes/editor/editor_inner.rs` | 800 | Med |
+| `loki-odf/src/odt/reader/styles.rs` | 764 | Med |
+| … 22 more — see `scripts/file-ceiling-baseline.txt` (29 entries) | | |
 
-*(Sizes above are from `scripts/file-ceiling-baseline.txt`, refreshed 2026-07-08;
-the earlier numbers were stale — several files grew since first baselined.)*
+*(Sizes above are from `scripts/file-ceiling-baseline.txt`, refreshed 2026-07-11;
+the deferred-features tail pass also ratcheted `loki-vello/src/scene.rs`
+727 → 613 by splitting caret painting into `scene_cursor.rs`.)*
 
 (`odt/mapper/document.rs` (1094 lines) was split into the `odt/mapper/document/`
 directory on 2026-06-26 — each module is now under the ceiling.)

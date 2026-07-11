@@ -43,21 +43,21 @@ All are genuine, mostly upstream-gated (Parley/Blitz/Vello) or deliberately defe
 | Topic | file:line(s) | Defers what |
 |---|---|---|
 | `3b-3` (partial) | `navigation.rs` (many) | ~~Left/right at page edges + `page_index` recompute after split/merge~~ **fixed 2026-07-05** (plan 4b.1: cross-page Left/Right + `page_locate::recompute_page_index` after every mutation/move). Remaining: double-Enter list-exit heuristic (`clear_para_props`) |
-| `loro-bridge` | `loro_bridge/decode.rs` (borders), `table.rs:25` | ~~Non-Rgb colors, comment/bookmark anchors, quote/span attrs~~ **fixed 2026-07-04** (plan Phase 1.4). Remaining: non-Rgb *border* colors (format migration), `Cite` metadata, structural-table CRDT semantics |
+| `loro-bridge` | `table.rs:25` | ~~Non-Rgb colors, comment/bookmark anchors, quote/span attrs~~ **fixed 2026-07-04** (plan Phase 1.4). ~~Non-Rgb *border* colors~~ **fixed 2026-07-11** (v2 border codec, color field last so the total color codec fits; v1 strings still decode). Remaining: `Cite` metadata, structural-table CRDT semantics |
 | `loro-compaction` | `loki-bench/benches/leak_loro_history.rs`; bridge | ~~Compact the CRDT oplog~~ **fixed 2026-07-04** (plan Phase 1.5): `loro_bridge::compact` + save-point wiring in loki-text; bench asserts the flattened curve. On-device validation pending (BM-14) |
 | `omml` | `docx/omml/mod.rs:20` | OMML↔MathML for delimiters, n-ary, matrices, accents |
-| `link-click` | `resolve.rs:689`, `items.rs:125`, `para.rs:203`, `scene.rs:519` | Interactive hyperlink hit-testing (only a visual hint today) |
+| `link-click` | — | ~~Interactive hyperlink hit-testing~~ **fixed 2026-07-09/11** (5.11: hint + hit-test + Ctrl/Cmd+click open in paginated *and* reflow modes; all TODO notes retired) |
 | `shadow` | `para_emit.rs:187`, `para.rs:196`, `scene.rs:93` | True soft text shadow (Vello blur) — hard grey offset copy today |
 | `partial-render` | `scene.rs:148`, `editor_pointer.rs:139` | Viewport clipping / direct `node.scroll_offset` |
 | `inline-image-flow` | `resolve.rs:706`, `flow_para.rs:213` | Parley inline image boxes (images prepended block-level today) |
 | `floating-image` | `resolve.rs:705` | Detect "floating" class for inline images (gap #12) |
 | `underline-style` / `strikethrough-style` | `para.rs:164,170` | Double/Dotted/Dash/Wave underline; double strikethrough (all render Single) |
 | `super-sub` (partial) | `para.rs:177,870` | Native Parley `BaselineShift` (effect already applied — see S-3) |
-| `split-optimise` | `para.rs:409` | Y-range item filter to avoid GPU clipping (Option B; Option A shipped) |
+| `split-optimise` | — | ~~Y-range item filter (Option B)~~ **fixed 2026-07-11** (`ParagraphLayout::items_in_y_range`; each split fragment carries only its own y-range's items, clip retained) |
 | `tab-default` | `para.rs:648` | Honour `DocumentSettings.default_tab_stop_pt` (hardcoded 36pt) |
 | `spell-baseline` | `para.rs:1619` | Tighten squiggle to run underline offset |
 | `list-picture-bullet` | `para.rs:1795` | Picture bullets (falls back to `•`) |
-| `rotated-cell-editing` | `flow.rs:1676` | Editing data for rotated table cells (read-only today) |
+| `rotated-cell-editing` | — | ~~Editing data for rotated table cells~~ **fixed 2026-07-08/11** (hit-test + tilted caret paint + rotation-aware arrow navigation; 4b.5 complete) |
 | `pdf-rotate` | `pdf/src/page.rs:83` | Rotation transform in PDF export |
 | `odf-master-page` | `odf/reader/styles.rs:200` | ODF master-page transitions |
 | `odt-fidelity` | `editor_load.rs:84,88` | Tracked DOCX/ODT import gaps |
