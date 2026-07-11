@@ -13,7 +13,9 @@ use std::collections::HashSet;
 
 use super::cell_ref::{col_to_label, grid_dimensions};
 use super::editor_load::load_document;
-use super::editor_mutate::{mutate_cell, mutate_cell_style, mutate_column_width};
+use super::editor_mutate::{
+    apply_change, mutate_cell, mutate_cell_style, mutate_column_width, sync_undo_redo,
+};
 use super::editor_path_sync::{
     PathSyncSignals, restore_session, stash_outgoing, sync_path_and_reset,
 };
@@ -43,62 +45,6 @@ struct ColResize {
     start_x: f64,
     start_px: f64,
     current_px: f64,
-}
-
-/// Dispatches changes to Loro, commits, deserializes back, and marks the active tab as dirty
-fn apply_change<F>(
-    loro_doc: Signal<Option<loro::LoroDoc>>,
-    mut workbook_snap: Signal<loki_sheet_model::Workbook>,
-    mut tabs: Signal<Vec<crate::tabs::OpenTab>>,
-    active_tab_idx: usize,
-    mutate_fn: F,
-) where
-    F: FnOnce(&loro::LoroDoc) -> Result<(), loro::LoroError>,
-{
-    let ldoc_guard = loro_doc.read();
-    let Some(ldoc) = ldoc_guard.as_ref() else {
-        return;
-    };
-
-    if let Err(e) = mutate_fn(ldoc) {
-        tracing::error!("Failed to mutate LoroDoc: {:?}", e);
-        return;
-    }
-
-    ldoc.commit();
-
-    match loki_sheet_model::loro_bridge::loro_to_workbook(ldoc) {
-        Ok(new_wb) => {
-            workbook_snap.set(new_wb);
-        }
-        Err(e) => {
-            tracing::error!("Failed to sync workbook from LoroDoc: {:?}", e);
-        }
-    }
-
-    if active_tab_idx > 0 {
-        let mut tabs_mut = tabs.write();
-        if let Some(tab) = tabs_mut.get_mut(active_tab_idx - 1) {
-            tab.is_dirty = true;
-        }
-    }
-}
-
-/// Syncs can_undo and can_redo from Loro's UndoManager
-fn sync_undo_redo(
-    loro_doc: Signal<Option<loro::LoroDoc>>,
-    undo_manager: Signal<Option<loro::UndoManager>>,
-    mut can_undo: Signal<bool>,
-    mut can_redo: Signal<bool>,
-) {
-    if let Some(ldoc) = loro_doc.read().as_ref() {
-        ldoc.commit();
-    }
-    let um_guard = undo_manager.read();
-    if let Some(um) = um_guard.as_ref() {
-        can_undo.set(um.can_undo());
-        can_redo.set(um.can_redo());
-    }
 }
 
 /// Spreadsheet editor inner component.
@@ -225,24 +171,39 @@ pub(super) fn EditorInner(path: String) -> Element {
     // ── Column widths & drag-to-resize ─────────────────────────────────────────
     let mut col_resize = use_signal(|| Option::<ColResize>::None);
 
-    // The rendered width (CSS px) of `col`: the live drag width while resizing,
-    // else the document's width, else the default.
+    // Grid zoom (TODO(zoom) resolved, plan 4c.5): the status-bar badge cycles
+    // 50–200%; the factor scales the rendered geometry (column widths, row
+    // heights, header sizes, fonts) while the *document* stores unzoomed pt —
+    // resize commits divide the screen px back out.
+    let mut zoom_percent = use_signal(|| 100u32);
+    let zf = zoom_percent() as f64 / 100.0;
+    let row_h = 26.0 * zf;
+    let head_w = 50.0 * zf;
+    let font_head = 11.0 * zf;
+    let font_cell = 12.0 * zf;
+
+    // The rendered width (screen px) of `col`: the live drag width while
+    // resizing, else the document's width (scaled by zoom), else the default.
     let col_px = move |col: usize| -> f64 {
         if let Some(r) = col_resize()
             && r.col == col
         {
             return r.current_px;
         }
+        let zf = *zoom_percent.read() as f64 / 100.0;
         workbook_snap
             .read()
             .get_sheet(0)
             .and_then(|s| s.column_width(col as u32))
             .map_or(DEFAULT_COL_PX, pt_to_px)
+            * zf
     };
 
-    // Commit a column width (px) to the model through Loro.
+    // Commit a column width (screen px) to the model through Loro, dividing
+    // the zoom back out so the document stores the unzoomed width.
     let commit_col_width = move |col: usize, px: f64| {
-        let pt = px_to_pt(px.clamp(MIN_COL_PX, MAX_COL_PX));
+        let zf = *zoom_percent.peek() as f64 / 100.0;
+        let pt = px_to_pt((px / zf).clamp(MIN_COL_PX, MAX_COL_PX));
         apply_change(loro_doc, workbook_snap, tabs, active_tab_idx, |ldoc| {
             mutate_column_width(ldoc, 0, col as u32, pt)
         });
@@ -262,7 +223,8 @@ pub(super) fn EditorInner(path: String) -> Element {
         }
         drop(wb);
         let px = (max_chars as f64 * 7.5 + 16.0).clamp(MIN_COL_PX, MAX_COL_PX);
-        commit_col_width(col, px);
+        // `commit_col_width` takes *screen* px; the estimate is document px.
+        commit_col_width(col, px * *zoom_percent.peek() as f64 / 100.0);
     };
 
     let ref_text = match active_coords {
@@ -690,7 +652,10 @@ pub(super) fn EditorInner(path: String) -> Element {
                     onmousemove: move |e| {
                         if let Some(mut r) = col_resize() {
                             let x = e.client_coordinates().x;
-                            r.current_px = (r.start_px + (x - r.start_x)).clamp(MIN_COL_PX, MAX_COL_PX);
+                            // Clamp in screen px (the drag space) at the current zoom.
+                            let zf = *zoom_percent.peek() as f64 / 100.0;
+                            r.current_px = (r.start_px + (x - r.start_x))
+                                .clamp(MIN_COL_PX * zf, MAX_COL_PX * zf);
                             col_resize.set(Some(r));
                         }
                     },
@@ -764,7 +729,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                         // Corner Header
                         div {
                             style: format!(
-                                "width: 50px; height: 26px; background: #E1E1E1; \
+                                "width: {head_w}px; height: {row_h}px; background: #E1E1E1; \
                                  border-right: 1px solid {border}; border-bottom: 1px solid {border}; \
                                  box-sizing: border-box; flex-shrink: 0;",
                                 border = tokens::COLOR_BORDER_DEFAULT,
@@ -774,11 +739,11 @@ pub(super) fn EditorInner(path: String) -> Element {
                         for col_idx in 0..num_cols {
                             div {
                                 style: format!(
-                                    "width: {w}px; height: 26px; background: {bg}; \
+                                    "width: {w}px; height: {row_h}px; background: {bg}; \
                                      border-right: 1px solid {border}; border-bottom: 1px solid {border}; \
                                      box-sizing: border-box; \
                                      display: flex; align-items: center; \
-                                     font-size: 11px; font-weight: bold; color: {fg}; \
+                                     font-size: {font_head}px; font-weight: bold; color: {fg}; \
                                      flex-shrink: 0;",
                                     w = col_px(col_idx),
                                     bg = if is_col_selected(col_idx) { "#CADAFC" } else { "#F0F0F0" },
@@ -819,11 +784,11 @@ pub(super) fn EditorInner(path: String) -> Element {
                             // Sticky Row Header
                             div {
                                 style: format!(
-                                    "width: 50px; height: 26px; background: {bg}; \
+                                    "width: {head_w}px; height: {row_h}px; background: {bg}; \
                                      border-right: 1px solid {border}; border-bottom: 1px solid {border}; \
                                      box-sizing: border-box; \
                                      display: flex; align-items: center; justify-content: center; \
-                                     font-size: 11px; font-weight: bold; color: {fg}; \
+                                     font-size: {font_head}px; font-weight: bold; color: {fg}; \
                                      flex-shrink: 0; position: sticky; left: 0; z-index: 5;",
                                     bg = if is_row_selected(row_idx) { "#CADAFC" } else { "#F0F0F0" },
                                     border = tokens::COLOR_BORDER_DEFAULT,
@@ -863,13 +828,13 @@ pub(super) fn EditorInner(path: String) -> Element {
                                     rsx! {
                                         div {
                                             style: format!(
-                                                "width: {w}px; height: 26px; \
+                                                "width: {w}px; height: {row_h}px; \
                                                  border-right: 1px solid {border}; border-bottom: 1px solid {border}; \
                                                  display: flex; align-items: center; \
                                                  padding: 0 6px; box-sizing: border-box; overflow: hidden; \
                                                  flex-shrink: 0; position: relative; \
                                                  background: {bg_color}; cursor: cell; \
-                                                 font-size: 12px; \
+                                                 font-size: {font_cell}px; \
                                                  font-weight: {font_weight}; \
                                                  font-style: {font_style}; \
                                                  text-decoration: {text_decoration}; \
@@ -900,7 +865,7 @@ pub(super) fn EditorInner(path: String) -> Element {
 
                                             if is_edit {
                                                 input {
-                                                    style: "width: 100%; height: 100%; border: none; padding: 0; margin: 0; outline: none; font-size: 12px;",
+                                                    style: format!("width: 100%; height: 100%; border: none; padding: 0; margin: 0; outline: none; font-size: {font_cell}px;"),
                                                     value: "{edit_val}",
                                                     autofocus: true,
                                                     oninput: move |e| {
@@ -1035,12 +1000,14 @@ pub(super) fn EditorInner(path: String) -> Element {
                 page_label:         fl!("editor-sheet-label", current = 1i64, total = 1i64),
                 word_count_label:   "".to_string(),
                 language_label:     fl!("editor-language"),
-                zoom_percent:       100,
+                zoom_percent:       zoom_percent(),
                 collaborator_count: 0,
                 collaborator_label: String::new(),
                 zoom_aria_label:    fl!("editor-zoom-aria"),
-                // TODO(zoom): needs zoom-aware col_px + resize px↔pt (plan 4c.5).
-                on_zoom_click:      |_| {},
+                on_zoom_click:      move |_| {
+                    let next = appthere_ui::next_zoom(*zoom_percent.peek());
+                    zoom_percent.set(next);
+                },
             }
         }
     }

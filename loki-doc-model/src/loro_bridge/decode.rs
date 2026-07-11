@@ -11,7 +11,6 @@ use crate::style::props::char_props::{
 };
 use crate::style::props::para_props::{LineHeight, ParagraphAlignment, Spacing};
 use crate::style::props::tab_stop::{TabAlignment, TabLeader, TabStop};
-use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 
 /// Encode section column widths (points) as a `;`-joined string, or `None`

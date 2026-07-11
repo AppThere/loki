@@ -2,11 +2,67 @@
 // Copyright 2026 AppThere Loki contributors
 
 //! In-place Loro mutations for the spreadsheet CRDT: cell value/formula,
-//! column width, and cell style writes.
-//!
-//! Extracted from `editor_inner.rs` (an oversized file) — see
-//! [`super::editor_inner`] for the dispatch (`apply_change`) that commits and
-//! re-snapshots after each of these mutations.
+//! column width, and cell style writes — plus the dispatch (`apply_change`)
+//! that commits and re-snapshots after each of these mutations and the
+//! undo/redo availability sync. Extracted from `editor_inner.rs` (oversized).
+
+use dioxus::prelude::*;
+
+/// Dispatches changes to Loro, commits, deserializes back, and marks the active tab as dirty
+pub(super) fn apply_change<F>(
+    loro_doc: Signal<Option<loro::LoroDoc>>,
+    mut workbook_snap: Signal<loki_sheet_model::Workbook>,
+    mut tabs: Signal<Vec<crate::tabs::OpenTab>>,
+    active_tab_idx: usize,
+    mutate_fn: F,
+) where
+    F: FnOnce(&loro::LoroDoc) -> Result<(), loro::LoroError>,
+{
+    let ldoc_guard = loro_doc.read();
+    let Some(ldoc) = ldoc_guard.as_ref() else {
+        return;
+    };
+
+    if let Err(e) = mutate_fn(ldoc) {
+        tracing::error!("Failed to mutate LoroDoc: {:?}", e);
+        return;
+    }
+
+    ldoc.commit();
+
+    match loki_sheet_model::loro_bridge::loro_to_workbook(ldoc) {
+        Ok(new_wb) => {
+            workbook_snap.set(new_wb);
+        }
+        Err(e) => {
+            tracing::error!("Failed to sync workbook from LoroDoc: {:?}", e);
+        }
+    }
+
+    if active_tab_idx > 0 {
+        let mut tabs_mut = tabs.write();
+        if let Some(tab) = tabs_mut.get_mut(active_tab_idx - 1) {
+            tab.is_dirty = true;
+        }
+    }
+}
+
+/// Syncs can_undo and can_redo from Loro's UndoManager
+pub(super) fn sync_undo_redo(
+    loro_doc: Signal<Option<loro::LoroDoc>>,
+    undo_manager: Signal<Option<loro::UndoManager>>,
+    mut can_undo: Signal<bool>,
+    mut can_redo: Signal<bool>,
+) {
+    if let Some(ldoc) = loro_doc.read().as_ref() {
+        ldoc.commit();
+    }
+    let um_guard = undo_manager.read();
+    if let Some(um) = um_guard.as_ref() {
+        can_undo.set(um.can_undo());
+        can_redo.set(um.can_redo());
+    }
+}
 
 /// Helper to mutate Loro cells in-place
 pub(super) fn mutate_cell(
