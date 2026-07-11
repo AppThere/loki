@@ -9,12 +9,13 @@
 //! layout time, so accepting/rejecting a change (which clears the mark) reverts
 //! the run to its normal appearance with no stored styling to undo.
 //!
-//! TODO(review-para-mark-render): a tracked deletion of a *paragraph mark* (¶)
-//! — a `StyledParagraph.direct_char_props.revision` — is recorded and resolved
-//! but not yet painted here (no struck ¶ glyph), so it stays invisible until
-//! reviewed. Deferred: it is a paragraph-end decoration touching caret /
-//! hit-test / wrapping and needs interactive visual verification.
+//! A tracked deletion of the *paragraph mark* (¶) — a
+//! `StyledParagraph.direct_char_props.revision` — is surfaced via
+//! [`para_mark_deletion_color`]: the paragraph layout paints a struck,
+//! author-coloured end-of-paragraph marker (`para_underlays`), a paint-only
+//! item so caret placement, hit-testing, and wrapping are untouched.
 
+use loki_doc_model::content::block::StyledParagraph;
 use loki_doc_model::style::props::char_props::CharProps;
 use loki_doc_model::style::props::revision::RevisionKind;
 
@@ -46,6 +47,17 @@ fn author_color(author: Option<&str>) -> LayoutColor {
     };
     let (r, g, b) = AUTHOR_COLORS[idx];
     LayoutColor::new(r, g, b, 1.0)
+}
+
+/// Author colour of a tracked paragraph-mark (¶) deletion recorded on `block`
+/// (`direct_char_props.revision` of kind `Deletion`), or `None`.
+pub(crate) fn para_mark_deletion_color(block: &StyledParagraph) -> Option<LayoutColor> {
+    block
+        .direct_char_props
+        .as_deref()
+        .and_then(|cp| cp.revision.as_ref())
+        .filter(|rev| rev.kind == RevisionKind::Deletion)
+        .map(|rev| author_color(rev.author.as_deref()))
 }
 
 /// Applies tracked-change colouring + decoration to `span` from `props.revision`

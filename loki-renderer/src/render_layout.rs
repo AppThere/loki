@@ -17,16 +17,14 @@ use std::sync::Arc;
 use loki_layout::{ContinuousLayout, CursorRect, PaginatedLayout};
 use loki_vello::{CursorPaint, FontDataCache, SelectionRect};
 
-/// Height of one reflow render tile in layout points.  Chosen so the CSS-pixel
-/// height is an exact integer (768 pt × 96/72 = 1024 px): fractional tile
-/// heights leave a sub-pixel seam where stacked tiles meet.  Tall enough to
-/// keep tile counts low, short enough that a Hot-tier texture (2× scale) stays
-/// well inside common GPU texture limits.
+/// Height of one reflow render tile in layout points. Chosen so the CSS-pixel
+/// height is an exact integer (768 pt × 96/72 = 1024 px — fractional heights
+/// leave a sub-pixel seam between stacked tiles), tall enough to keep tile
+/// counts low, short enough for a 2×-scale texture to fit GPU limits.
 pub const REFLOW_TILE_HEIGHT_PT: f32 = 768.0;
 
-/// Horizontal reading-margin inset in points (24 CSS px each side).  The
-/// reflow layout is computed at `tile width − 2 × inset` and painted shifted
-/// right by this amount, so text never touches the viewport edge.
+/// Horizontal reading-margin inset in points (24 CSS px each side): reflow is
+/// computed at `tile width − 2 × inset` and painted shifted right by it.
 pub const REFLOW_PADDING_PT: f32 = 18.0;
 
 /// Narrowest reflow content width the layout engine is asked for, in points.
@@ -36,28 +34,25 @@ pub const MIN_REFLOW_CONTENT_PT: f32 = 50.0;
 
 /// Widest reflow **tile** (CSS px) — caps the reading measure so the
 /// non-paginated view holds a comfortable line length and **centres** on wide
-/// windows instead of running edge-to-edge (Spec 03 M4 / D5). Below this the
-/// tile tracks the viewport, so narrow screens use their full width. Matches the
-/// HTML reflow fallback's `max-width` so both reflow paths read identically.
+/// windows (Spec 03 M4 / D5); below this the tile tracks the viewport. Matches
+/// the HTML reflow fallback's `max-width` so both paths read identically.
 pub const MAX_REFLOW_TILE_PX: f32 = 820.0;
 
 /// CSS pixels → layout points (72 dpi / 96 dpi).
 pub const PX_TO_PT: f32 = 72.0 / 96.0;
 
 /// The reflow **tile** width (CSS px) for a measured viewport: the viewport
-/// width capped at [`MAX_REFLOW_TILE_PX`]. The renderer centres the tile
-/// (`margin: auto`), so capping it centres the reading column. The single source
-/// of reflow width for paint, hit-testing, and keyboard navigation — they must
-/// agree (Spec 01 A-1), so all derive from this.
+/// width capped at [`MAX_REFLOW_TILE_PX`] (the renderer centres the tile, so
+/// the cap centres the reading column). The single source of reflow width for
+/// paint, hit-testing, and keyboard navigation (Spec 01 A-1).
 #[must_use]
 pub fn reflow_tile_width_px(viewport_width_px: f32) -> f32 {
     viewport_width_px.clamp(0.0, MAX_REFLOW_TILE_PX)
 }
 
-/// The reflow **content** width (the reading measure, in points) for a measured
-/// viewport: the tile minus the [`REFLOW_PADDING_PT`] side insets, floored at
-/// [`MIN_REFLOW_CONTENT_PT`]. Hit-testing and keyboard navigation use this so
-/// they match what was painted.
+/// The reflow **content** width (the reading measure, in points): the tile
+/// minus the [`REFLOW_PADDING_PT`] side insets, floored at
+/// [`MIN_REFLOW_CONTENT_PT`]. Hit-testing and navigation match the paint.
 #[must_use]
 pub fn reflow_content_width_pt(viewport_width_px: f32) -> f32 {
     (reflow_tile_width_px(viewport_width_px) * PX_TO_PT - 2.0 * REFLOW_PADDING_PT)
@@ -182,6 +177,14 @@ impl RenderLayout {
     /// `(block_index, byte_offset)`.  `None` in paginated mode.
     pub fn reflow_hit_test(&self, canvas_x: f32, canvas_y: f32) -> Option<(usize, usize)> {
         self.continuous()?.hit_test(canvas_x, canvas_y)
+    }
+
+    /// Hyperlink URL under a point in **canvas** coordinates, or `None` in
+    /// paginated mode / over plain text (feature 5.11, reflow half).
+    pub fn reflow_link_at(&self, canvas_x: f32, canvas_y: f32) -> Option<String> {
+        self.continuous()?
+            .link_at(canvas_x, canvas_y)
+            .map(str::to_owned)
     }
 
     /// Caret rectangle in **canvas** coordinates for `(block_index,

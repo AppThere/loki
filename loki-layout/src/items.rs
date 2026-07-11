@@ -36,8 +36,9 @@ pub enum PositionedItem {
     ///
     /// `clip_rect` is in page-content-area-local coordinates (same space as
     /// the child items' origins). Used to render paragraph fragments that
-    /// span a page boundary: each fragment carries all paragraph items but
-    /// the clip rect masks lines belonging to the other page.
+    /// span a page boundary: each fragment carries the items near its own
+    /// y-range (`ParagraphLayout::items_in_y_range`, feature 6.3) and the
+    /// clip rect masks anything belonging to the other page.
     ClippedGroup {
         /// Clip rectangle in page-content-area coordinates.
         clip_rect: LayoutRect,
@@ -122,10 +123,10 @@ pub struct PositionedGlyphRun {
     pub synthesis: GlyphSynthesis,
     /// Hyperlink URL if this run is part of a link. `None` for non-link text.
     ///
-    /// A blue-tint underlay hint is rendered by `loki-vello`, and a point can be
-    /// resolved to its URL via `ContinuousLayout::link_at` /
-    /// `PageEditingData::link_at` (feature 5.11). TODO(link-click): the editor's
-    /// open-on-click gesture (modifier + URL opener) is the remaining wiring.
+    /// A blue-tint underlay hint is rendered by `loki-vello`, a point resolves
+    /// to its URL via `ContinuousLayout::link_at` / `PageEditingData::link_at`,
+    /// and Ctrl/Cmd+click opens it in both paginated and reflow modes
+    /// (feature 5.11).
     pub link_url: Option<String>,
 }
 

@@ -48,16 +48,17 @@ pub use components::ribbon::{
     RibbonTabDesc, RibbonTabIndex,
 };
 pub use components::{
-    next_zoom, AtConfirmDialog, AtConfirmDialogProps, AtDocumentTab, AtDocumentTabData,
-    AtDocumentTabProps, AtHomeTab, AtHomeTabProps, AtPanelHost, AtPanelHostProps, AtStatusBar,
-    AtStatusBarProps, AtTabBar, AtTabBarProps, AtTitleBar, AtTitleBarProps, BuiltinTemplate,
-    PanelPosture, Platform, RecentDocument,
+    next_zoom, use_backdrop, use_provide_backdrop, AtBackdropContext, AtBackdropHost,
+    AtConfirmDialog, AtConfirmDialogProps, AtDocumentTab, AtDocumentTabData, AtDocumentTabProps,
+    AtHomeTab, AtHomeTabProps, AtPanelHost, AtPanelHostProps, AtStatusBar, AtStatusBarProps,
+    AtTabBar, AtTabBarProps, AtTitleBar, AtTitleBarProps, BuiltinTemplate, PanelPosture, Platform,
+    RecentDocument, BACKDROP_Z_INDEX,
 };
 pub use responsive::{
     estimate_group_metrics, group_layout, page_fits, required_page_width, resolve_cascade,
     resolve_page_fit, use_breakpoint, use_provide_responsive, use_responsive, use_ribbon_cascade,
-    use_viewport, AtResponsiveContext, Breakpoint, GroupCollapse, GroupLayout, GroupMetrics,
-    PageFit, RibbonCascade, Viewport, DEFAULT_DPI,
+    use_viewport, AtResponsiveContext, AtViewportWidthSensor, Breakpoint, GroupCollapse,
+    GroupLayout, GroupMetrics, PageFit, RibbonCascade, Viewport, DEFAULT_DPI,
 };
 pub use safe_area::{set_safe_area_insets, update_safe_area_insets, use_safe_area, SafeAreaInsets};
 pub use theme::{use_theme, AtThemeContext, ThemeVariant};

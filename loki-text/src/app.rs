@@ -18,7 +18,9 @@
 //! window vertically scrollable.
 
 use appthere_ui::tokens;
-use appthere_ui::{AtThemeContext, use_provide_responsive, use_safe_area};
+use appthere_ui::{
+    AtBackdropHost, AtThemeContext, use_provide_backdrop, use_provide_responsive, use_safe_area,
+};
 use dioxus::prelude::*;
 
 use crate::recent_documents::RecentDocuments;
@@ -100,6 +102,11 @@ pub fn App() -> Element {
     // derived breakpoint via `appthere_ui::use_breakpoint`.
     use_provide_responsive();
 
+    // Window-level dismiss-backdrop context (outside-click-to-close for the
+    // ribbon overflow menu and future anchored popups); AtBackdropHost below
+    // renders the active backdrop inside this positioned root.
+    use_provide_backdrop();
+
     // Spell-check service — starts on the bundled English dictionary so checking
     // works offline. Provided into context for any component (e.g. a future
     // language picker), and installed into the editor's ambient layout state so
@@ -172,8 +179,10 @@ pub fn App() -> Element {
             // areas (notification bar at top, gesture strip at bottom) are filled
             // with the tab-bar chrome color instead of the default white.
             // COMPAT(dioxus-native): box-sizing: border-box confirmed working.
+            // position: relative hosts the window-level dismiss backdrop
+            // (AtBackdropHost) and any future root-anchored overlay.
             style: format!(
-                "margin: 0; \
+                "margin: 0; position: relative; \
                  padding: {top}px {right}px {bottom}px {left}px; \
                  width: 100vw; height: 100vh; \
                  overflow: hidden; box-sizing: border-box; \
@@ -195,6 +204,10 @@ pub fn App() -> Element {
             SafeAreaResizeSensor {}
 
             Router::<Route> {}
+
+            // Window-level dismiss backdrop (e.g. the ribbon overflow menu's
+            // outside-click-to-close). Renders nothing while no popup is open.
+            AtBackdropHost {}
         }
     }
 }

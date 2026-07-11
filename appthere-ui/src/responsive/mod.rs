@@ -31,6 +31,7 @@ mod breakpoint;
 mod page_fit;
 mod ribbon_collapse;
 mod viewport;
+mod width_sensor;
 
 pub use breakpoint::Breakpoint;
 pub use page_fit::{page_fits, required_page_width, resolve_page_fit, PageFit};
@@ -39,6 +40,7 @@ pub use ribbon_collapse::{
     GroupMetrics, RibbonCascade,
 };
 pub use viewport::{Viewport, DEFAULT_DPI};
+pub use width_sensor::AtViewportWidthSensor;
 
 use dioxus::prelude::*;
 
@@ -108,10 +110,11 @@ pub fn use_breakpoint() -> Breakpoint {
 /// avoid thrash — see [`resolve_cascade`]).
 ///
 /// **Resilient:** like [`use_breakpoint`], if no responsive context is present
-/// (an app that has not wired [`use_provide_responsive`], e.g. Presentation /
-/// Spreadsheet) the available width is treated as unbounded, so every group
-/// stays [`GroupCollapse::Full`] — a sane full-chrome ribbon rather than a
-/// broken one.
+/// (an app that has not wired [`use_provide_responsive`]) the available width
+/// is treated as unbounded, so every group stays [`GroupCollapse::Full`] — a
+/// sane full-chrome ribbon rather than a broken one. (All three suite apps now
+/// wire the context; Presentation/Spreadsheet measure via
+/// [`AtViewportWidthSensor`].)
 ///
 /// The hysteresis state (the resolved collapse `level`) lives in a hook-local
 /// signal, so call this once per ribbon content strip.

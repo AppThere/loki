@@ -94,6 +94,30 @@ impl PageParagraphData {
         (self.origin.1, self.origin.1 + self.layout.height)
     }
 
+    /// Visual (post-rotation) vertical extent `[top, bottom]` of this paragraph
+    /// in page content-area coordinates. For an unrotated paragraph this equals
+    /// [`local_y_span`](Self::local_y_span); for rotated table-cell content it
+    /// is the y-extent of the rotated bounding box, so arrow-key navigation can
+    /// aim above/below the paragraph as the user actually sees it
+    /// (deferred-features 4b.5 tail).
+    pub fn visual_y_span(&self) -> (f32, f32) {
+        match self.rotation {
+            None => self.local_y_span(),
+            Some(_) => {
+                let (w, h) = (self.layout.width, self.layout.height);
+                let corners = [(0.0, 0.0), (w, 0.0), (0.0, h), (w, h)];
+                let mut min = f32::INFINITY;
+                let mut max = f32::NEG_INFINITY;
+                for (x, y) in corners {
+                    let (_, py) = self.local_to_page(x, y);
+                    min = min.min(py);
+                    max = max.max(py);
+                }
+                (min, max)
+            }
+        }
+    }
+
     /// The hyperlink URL under a page-coordinate point, if the point lands on a
     /// hyperlinked glyph run in this paragraph (feature 5.11). Inverts the cell
     /// rotation like [`hit_local`](Self::hit_local), then tests each run's box.

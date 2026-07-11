@@ -112,14 +112,9 @@ pub(super) fn flow_row_cells(
             // applies to the RotatedGroup (content-local → page), so a click
             // resolves to the right character in the rotated cell. Pivots mirror
             // `loki-vello` scene.rs cx/cy_local + cx/cy_physical (90/270 branch).
-            //
-            // TODO(rotated-cell-caret): hit-testing (click → offset) and caret
-            // POSITION are rotation-correct via `PageParagraphData::hit_local` /
-            // `local_to_page`. Still upright: the rendered caret *line* (a tilted
-            // caret needs `CursorRect` + the vello caret to carry rotation) and
-            // loki-text's up/down arrow navigation across rotated cells (the
-            // `rect + origin` sites in editing/navigation.rs, which should route
-            // through `local_to_page`). See docs/fidelity-status.md §rotated-cells.
+            // Hit-testing, the caret (painted tilted via `cursor_paint_transform`
+            // in loki-vello), and up/down arrow navigation (`visual_y_span`) are
+            // all rotation-aware. See docs/fidelity-status.md §rotated-cells.
             let rotation = CellRotation {
                 degrees,
                 pivot_local: (cell_height / 2.0, cell_content_width / 2.0),

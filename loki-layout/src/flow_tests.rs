@@ -568,6 +568,46 @@ fn paragraph_split_produces_clipped_groups_on_multiple_pages() {
     let _ = warnings;
 }
 
+/// Option B (6.3): each split fragment carries only the items near its own
+/// y-range — not a full copy of every paragraph item per page (the pre-filter
+/// behaviour). The clip rect keeps rendering pixel-identical, so this asserts
+/// the item *count* per fragment against the unsplit paragraph's total.
+#[test]
+fn split_fragments_carry_only_their_own_y_range_items() {
+    fn clip_counts(items: &[PositionedItem]) -> Vec<usize> {
+        items
+            .iter()
+            .filter_map(|i| match i {
+                PositionedItem::ClippedGroup { items, .. } => Some(items.len()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    let mut r = test_resources();
+    // ~28 wrapped lines in tiny_layout's 90 pt content area → 4+ pages, so the
+    // middle fragments' kept windows (fragment range ± the conservative glyph
+    // slop) are well under the paragraph's full item count.
+    let text = "Lorem ipsum dolor sit amet consectetur adipiscing. ".repeat(16);
+
+    let unsplit = section_of(vec![make_para(&text)], tiny_layout());
+    let (total_items, _, _) = flow_pageless(&mut r, &unsplit);
+    let total = total_items.len();
+
+    let section = section_of(vec![make_para(&text)], tiny_layout());
+    let (pages, _) = flow_paginated(&mut r, &section);
+    assert!(pages.len() >= 3, "need 3+ pages, got {}", pages.len());
+    for (i, page) in pages.iter().enumerate() {
+        for count in clip_counts(&page.content_items) {
+            assert!(
+                count < total,
+                "page {i} fragment carries {count} of {total} items — the \
+                 y-range filter should keep a strict subset"
+            );
+        }
+    }
+}
+
 #[test]
 fn orphan_control_defers_a_would_be_orphan_paragraph() {
     use loki_doc_model::style::props::para_props::{LineHeight, ParaProps};
@@ -1808,5 +1848,48 @@ mod page_fields {
             kinds(&del_items).contains(&DecorationKind::Strikethrough),
             "a deleted run must be struck through"
         );
+    }
+
+    /// A tracked deletion of the paragraph mark (¶) paints a struck marker
+    /// after the last line — exactly one strikethrough decoration (the marker):
+    /// the ¶'s revision must NOT bleed onto the paragraph's runs (which would
+    /// strike the text too), and a plain paragraph paints no marker at all
+    /// (4a.2 para-mark rendering).
+    #[test]
+    fn tracked_para_mark_deletion_renders_struck_marker_without_striking_text() {
+        use loki_doc_model::style::props::char_props::CharProps;
+        use loki_doc_model::style::props::revision::{RevisionKind, RevisionMark};
+
+        let strikes = |items: &[PositionedItem]| {
+            items
+                .iter()
+                .filter(|i| {
+                    matches!(i, PositionedItem::Decoration(d)
+                        if d.kind == DecorationKind::Strikethrough)
+                })
+                .count()
+        };
+
+        let mut r = test_resources();
+        let mut para = make_para("word");
+        para.direct_char_props = Some(Box::new(CharProps {
+            revision: Some(RevisionMark::new(RevisionKind::Deletion)),
+            ..CharProps::default()
+        }));
+        let sec = Section::with_layout_and_blocks(tiny_layout(), vec![Block::StyledPara(para)]);
+        let (items, _, _) = flow_pageless(&mut r, &sec);
+        assert_eq!(
+            strikes(&items),
+            1,
+            "exactly the struck ¶ marker — a second strike means the ¶'s \
+             revision bled onto the text runs"
+        );
+
+        let plain = Section::with_layout_and_blocks(
+            tiny_layout(),
+            vec![Block::StyledPara(make_para("word"))],
+        );
+        let (plain_items, _, _) = flow_pageless(&mut r, &plain);
+        assert_eq!(strikes(&plain_items), 0, "no marker on a plain paragraph");
     }
 }

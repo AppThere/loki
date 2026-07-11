@@ -151,9 +151,12 @@ pub fn navigate_up(focus: &DocumentPosition, layout: &PaginatedLayout) -> Option
     let rect = para_data.layout.cursor_rect(focus.byte_offset)?;
     let margins = &layout.pages.get(focus.page_index)?.margins;
 
-    // Convert paragraph-local → page-canvas-local (what hit_test_page expects).
-    let canvas_x = rect.x + para_data.origin.0 + margins.left;
-    let canvas_y = rect.y + para_data.origin.1 + margins.top;
+    // Convert paragraph-local → page-canvas-local (what hit_test_page expects),
+    // mapping through the cell rotation when the caret is in a rotated cell so
+    // the move aims at the caret's *visual* position (4b.5 tail).
+    let (vis_x, vis_y) = para_data.local_to_page(rect.x, rect.y);
+    let canvas_x = vis_x + margins.left;
+    let canvas_y = vis_y + margins.top;
 
     // Aim for the vertical centre of the line above.
     let target_y = canvas_y - rect.height;
@@ -175,8 +178,9 @@ pub fn navigate_up(focus: &DocumentPosition, layout: &PaginatedLayout) -> Option
     let (prev_pi, prev_para) =
         find_prev_para_data(layout, focus.page_index, focus.paragraph_index)?;
     let prev_margins = &layout.pages[prev_pi].margins;
-    // Hit the last line of the previous paragraph at the same horizontal position.
-    let prev_bottom_content_y = prev_para.origin.1 + prev_para.layout.height - 0.5;
+    // Hit the last line of the previous paragraph at the same horizontal
+    // position (visual span, so a rotated cell's box is aimed at correctly).
+    let prev_bottom_content_y = prev_para.visual_y_span().1 - 0.5;
     let prev_canvas_y = prev_bottom_content_y + prev_margins.top;
     hit_test_page(prev_pi, canvas_x, prev_canvas_y, layout)
 }
@@ -197,8 +201,10 @@ pub fn navigate_down(
     let margins = &layout.pages.get(focus.page_index)?.margins;
     let page = layout.pages.get(focus.page_index)?;
 
-    let canvas_x = rect.x + para_data.origin.0 + margins.left;
-    let canvas_y = rect.y + para_data.origin.1 + margins.top;
+    // As in `navigate_up`: rotation-aware visual caret position (4b.5 tail).
+    let (vis_x, vis_y) = para_data.local_to_page(rect.x, rect.y);
+    let canvas_x = vis_x + margins.left;
+    let canvas_y = vis_y + margins.top;
 
     // Aim for the vertical centre of the line below (1.5 × line height down).
     let target_y = canvas_y + rect.height * 1.5;
@@ -217,8 +223,9 @@ pub fn navigate_down(
     let (next_pi, next_para) =
         find_next_para_data(layout, focus.page_index, focus.paragraph_index)?;
     let next_margins = &layout.pages[next_pi].margins;
-    // Hit slightly inside the first line of the next paragraph.
-    let next_top_content_y = next_para.origin.1 + 0.5;
+    // Hit slightly inside the first line of the next paragraph (visual span,
+    // so a rotated cell's box is aimed at correctly).
+    let next_top_content_y = next_para.visual_y_span().0 + 0.5;
     let next_canvas_y = next_top_content_y + next_margins.top;
     hit_test_page(next_pi, canvas_x, next_canvas_y, layout)
 }

@@ -18,21 +18,11 @@
 //! renders only data URIs (external URLs → grey placeholder). `walk_inlines`
 //! emits a `CollectedImage`, placed post-Parley as a `PositionedImage`.
 //!
-//! ## Q2 — Inline::Link current behaviour
+//! ## Q2 — Inline::Link (implemented via option (b))
 //!
-//! `Inline::Link` is `Link(NodeAttr, Vec<Inline>, LinkTarget)`. The OOXML mapper
-//! (`loki-ooxml/src/docx/mapper/inline.rs:57–64`) resolves `w:hyperlink
-//! r:id` relationship IDs against `ctx.hyperlinks` to produce a resolved HTTP
-//! URL; bookmark-only anchors become `"#anchor_name"`.
-//! `walk_inlines` (`resolve.rs:351`) recurses into display children and discards
-//! the URL — identical to the image arm. No `PositionedItem::Link` variant
-//! exists; hyperlink metadata is completely lost after flattening.
-//! Fixing gap #11 requires either: (a) adding `PositionedItem::Link` with a
-//! URL-annotated byte-range rect produced after glyph layout, or (b) threading
-//! URL metadata through `StyleSpan` and attaching it to glyph runs so the
-//! renderer can emit clickable regions. Option (b) is simpler — `StyleSpan`
-//! already carries per-run metadata; adding `link_url: Option<String>` keeps
-//! the URL co-located with the text run that displays it.
+//! The OOXML mapper resolves `w:hyperlink r:id` to a URL; `StyleSpan.link_url`
+//! carries it onto the run's glyphs, the renderer paints the link hint, and
+//! `PageParagraphData::link_at` hit-tests it (feature 5.11).
 //!
 //! ## Q3 — Image placement model for inline images
 //!
@@ -151,10 +141,8 @@ pub struct CollectedNote {
 }
 
 /// Resolve the effective [`ResolvedParaProps`] for a [`StyledParagraph`].
-///
-/// Resolution order (child wins):
-/// 1. Named style chain via [`StyleCatalog::resolve_para`].
-/// 2. Direct paragraph formatting on the paragraph itself.
+/// Resolution order (child wins): named style chain via
+/// [`StyleCatalog::resolve_para`], then direct formatting on the paragraph.
 pub fn resolve_para_props(block: &StyledParagraph, catalog: &StyleCatalog) -> ResolvedParaProps {
     let mut base: ParaProps = catalog
         .effective_paragraph_style(block.style_id.as_ref())
@@ -163,7 +151,9 @@ pub fn resolve_para_props(block: &StyledParagraph, catalog: &StyleCatalog) -> Re
     if let Some(direct) = &block.direct_para_props {
         base = direct.as_ref().clone().merged_with_parent(&base);
     }
-    para_map::map_para_props(&base)
+    let mut resolved = para_map::map_para_props(&base);
+    resolved.para_mark_deleted_color = crate::revision_style::para_mark_deletion_color(block);
+    resolved
 }
 
 /// Resolve the effective [`StyleSpan`] properties for a [`StyledRun`].
@@ -218,6 +208,9 @@ pub fn flatten_paragraph(
     // styled run) to avoid cloning `CharProps` per formatting span; `base` is a
     // throwaway local, so the mutation is not observable outside this call.
     let mut base = base;
+    // A tracked ¶-mark deletion on `direct_char_props` must not bleed onto the
+    // runs: it belongs to the paragraph mark (struck ¶ marker), not the text.
+    base.revision = None;
     let mut buf = String::new();
     let mut spans: Vec<StyleSpan> = Vec::new();
     let mut images: Vec<CollectedImage> = Vec::new();
@@ -686,8 +679,8 @@ fn walk_inlines(
                     notes,
                 );
             }
-            // Link (gap #11): thread the resolved URL into child spans.
-            // TODO(link-click): interactive hit-testing deferred; only visual hint rendered.
+            // Link (gap #11): thread the resolved URL into child spans (hint +
+            // hit-test + Ctrl/Cmd+click open all ride on it; feature 5.11).
             Inline::Link(_, ch, target) => {
                 let url = target.url.as_str();
                 walk_inlines(

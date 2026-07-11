@@ -9,6 +9,7 @@ pub mod confirm_dialog;
 pub mod document_tab;
 pub mod home_tab;
 pub mod icons;
+pub mod overlay;
 pub mod panel_host;
 pub mod platform;
 pub mod ribbon;
@@ -20,6 +21,9 @@ pub mod zoom;
 pub use confirm_dialog::{AtConfirmDialog, AtConfirmDialogProps};
 pub use document_tab::{AtDocumentTab, AtDocumentTabProps};
 pub use home_tab::{AtHomeTab, AtHomeTabProps, BuiltinTemplate, RecentDocument};
+pub use overlay::{
+    use_backdrop, use_provide_backdrop, AtBackdropContext, AtBackdropHost, BACKDROP_Z_INDEX,
+};
 pub use panel_host::{AtPanelHost, AtPanelHostProps, PanelPosture};
 pub use platform::Platform;
 pub use ribbon::{AtRibbon, AtRibbonGroup, AtRibbonGroupProps, RibbonTabDesc, RibbonTabIndex};

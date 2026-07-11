@@ -15,6 +15,7 @@ use super::auto::AutoStyles;
 use super::inlines::write_inlines;
 use super::media::{MathPart, Media, Rendered};
 use super::page_styles::resolve_page_style_names;
+use super::revisions;
 use super::tables::table;
 use super::xml::{attr, escape};
 
@@ -120,7 +121,7 @@ pub(crate) fn content_xml(doc: &Document) -> Rendered {
 /// Writes a single block element.
 pub(super) fn write_block(out: &mut String, block: &Block, cx: &mut Cx) {
     match block {
-        Block::Para(inl) | Block::Plain(inl) => paragraph(out, None, inl, cx),
+        Block::Para(inl) | Block::Plain(inl) => paragraph(out, None, inl, "", cx),
         Block::Heading(level, _, inl) => {
             let lvl = (*level).clamp(1, 6);
             out.push_str(&format!(
@@ -138,7 +139,7 @@ pub(super) fn write_block(out: &mut String, block: &Block, cx: &mut Cx) {
         Block::BulletList(items) | Block::OrderedList(_, items) => list(out, items, cx),
         Block::DefinitionList(items) => {
             for (term, defs) in items {
-                paragraph(out, None, term, cx);
+                paragraph(out, None, term, "", cx);
                 for blocks in defs {
                     for b in blocks {
                         write_block(out, b, cx);
@@ -194,14 +195,15 @@ fn write_block_with_master(out: &mut String, block: &Block, master: &str, cx: &m
                 &CharProps::default(),
                 master,
             );
-            paragraph(out, Some(&style), inl, cx);
+            paragraph(out, Some(&style), inl, "", cx);
         }
         Block::StyledPara(sp) => {
             let base = sp.style_id.as_ref().map(StyleId::as_str);
             let pp = sp.direct_para_props.as_deref().cloned().unwrap_or_default();
             let cp = sp.direct_char_props.as_deref().cloned().unwrap_or_default();
             let style = cx.auto.para_style_master(base, &pp, &cp, master);
-            paragraph(out, Some(&style), &sp.inlines, cx);
+            let suffix = revisions::para_mark_change(sp, cx);
+            paragraph(out, Some(&style), &sp.inlines, &suffix, cx);
         }
         Block::Heading(level, _, inl) => {
             let lvl = (*level).clamp(1, 6);
@@ -232,10 +234,13 @@ fn write_block_with_master(out: &mut String, block: &Block, master: &str, cx: &m
 }
 
 /// Writes a `<text:p>` with optional automatic style and inline content.
+/// `suffix` is trailing markup appended after the inlines, just before the
+/// closing tag (the ¶-mark tracked-deletion `<text:change/>` milestone).
 fn paragraph(
     out: &mut String,
     style: Option<&str>,
     inl: &[loki_doc_model::content::inline::Inline],
+    suffix: &str,
     cx: &mut Cx,
 ) {
     out.push_str("<text:p");
@@ -244,6 +249,7 @@ fn paragraph(
     }
     out.push('>');
     write_inlines(out, inl, cx);
+    out.push_str(suffix);
     out.push_str("</text:p>");
 }
 
@@ -258,7 +264,10 @@ fn styled_paragraph(out: &mut String, sp: &StyledParagraph, cx: &mut Cx) {
     } else {
         base.map(str::to_string)
     };
-    paragraph(out, name.as_deref(), &sp.inlines, cx);
+    // A tracked ¶-mark deletion emits its `<text:change/>` milestone at the
+    // paragraph end (ODF has no pPr/rPr slot; the region stows the break).
+    let suffix = revisions::para_mark_change(sp, cx);
+    paragraph(out, name.as_deref(), &sp.inlines, &suffix, cx);
 }
 
 /// Writes a `<text:list>` from a list of items (each a block sequence).

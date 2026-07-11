@@ -308,7 +308,7 @@ pub struct DocxHyperlink {
 }
 
 /// An inline drawing from `w:drawing` (ECMA-376 §17.3.3.9).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct DocxDrawing {
     /// The relationship id from `a:blip @r:embed`.
     pub rel_id: Option<String>,

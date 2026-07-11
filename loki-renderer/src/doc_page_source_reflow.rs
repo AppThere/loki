@@ -28,6 +28,22 @@ impl DocPageSource {
         layout.reflow_hit_test(canvas_x, canvas_y)
     }
 
+    /// Hyperlink URL under a tile-local point in the reflow layout, or `None`
+    /// in paginated mode / over plain text. Coordinates as in
+    /// [`Self::reflow_hit_test`].
+    pub fn reflow_link_at(
+        &self,
+        tile_index: usize,
+        tile_x_pt: f32,
+        tile_y_pt: f32,
+    ) -> Option<String> {
+        let guard = self.layout_for_generation(self.current_generation());
+        let (_, layout) = guard.as_ref()?;
+        let canvas_x = tile_x_pt - REFLOW_PADDING_PT;
+        let canvas_y = tile_y_pt + tile_index as f32 * REFLOW_TILE_HEIGHT_PT;
+        layout.reflow_link_at(canvas_x, canvas_y)
+    }
+
     /// The reflow band (tile) index containing the caret for `(block_index,
     /// byte_offset)`, or `None` in paginated mode / when not found.
     ///

@@ -75,8 +75,7 @@ pub fn parse_document(xml: &[u8]) -> OoxmlResult<DocxDocument> {
     Ok(doc)
 }
 
-/// Parses a `w:p` element from the current reader position.
-/// Called when the `Start("p")` event has already been consumed.
+/// Parses a `w:p` element; called after `Start("p")` has been consumed.
 pub(crate) fn parse_paragraph(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxParagraph> {
     let mut para = DocxParagraph::default();
     let mut buf = Vec::new();
@@ -148,6 +147,15 @@ pub(crate) fn parse_paragraph(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxPar
                         depth -= 1; // read_math consumes the element's end tag
                         let (mathml, display) = crate::docx::omml::read_math(reader, e)?;
                         para.children.push(DocxParaChild::Math { mathml, display });
+                        continue;
+                    }
+                    // Inline content control: its `w:sdtContent` runs flow
+                    // through this dispatch (implicit unwrap); skip the chrome
+                    // wholesale so `w:sdtPr` internals never leak here (5.9).
+                    b"sdtPr" | b"sdtEndPr" => {
+                        depth -= 1;
+                        let name = local_name(e.local_name().as_ref()).to_vec();
+                        skip_element(reader, &name)?;
                         continue;
                     }
                     _ => {}
@@ -622,15 +630,7 @@ fn parse_tabs(reader: &mut Reader<&[u8]>, out: &mut Vec<DocxTab>) -> OoxmlResult
 
 /// Parses a `w:drawing` element. Called after Start("drawing") is consumed.
 fn parse_drawing(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxDrawing> {
-    let mut drawing = DocxDrawing {
-        rel_id: None,
-        cx: None,
-        cy: None,
-        descr: None,
-        name: None,
-        is_anchor: false,
-        wrap: None,
-    };
+    let mut drawing = DocxDrawing::default();
     // Wrap mode/side are carried on a `wp:wrap*` child; `behindDoc` lives on the
     // `wp:anchor` element. Collect both, then assemble the `FloatWrap` at the end.
     let mut wrap_mode: Option<TextWrap> = None;

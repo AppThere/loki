@@ -557,13 +557,14 @@ fn split_and_place_loop(
                     state.current_items.push(item);
                 }
             } else {
-                // Continuation fragment: clip to hide content from prior pages.
+                // Continuation fragment: clip to hide content from prior pages,
+                // carrying only the items near its y-range (Option B, 6.3).
                 if let Some(ref al) = arc_layout {
                     push_editing_para(state, block_index, al.clone(), (0.0, ty));
                 }
                 let clip_rect =
                     LayoutRect::new(0.0, state.cursor_y, state.content_width, frag_height);
-                let mut items = para_layout.items.clone();
+                let mut items = para_layout.items_in_y_range(frag_start, para_layout.height);
                 for item in &mut items {
                     item.translate(dx, ty);
                 }
@@ -672,10 +673,9 @@ fn split_and_place_loop(
     }
 }
 
-/// Emit a [`PositionedItem::ClippedGroup`] covering para-local y ∈ `[frag_start, split_y)`.
-///
-/// Items are translated so para-local `frag_start` maps to page `state.cursor_y`.
-/// Advances `state.cursor_y` by the fragment height.
+/// Emit a [`PositionedItem::ClippedGroup`] covering para-local y ∈ `[frag_start, split_y)`;
+/// items translate so `frag_start` maps to `state.cursor_y`, which advances by
+/// the fragment height.
 fn emit_fragment(
     state: &mut FlowState,
     para_layout: &ParagraphLayout,
@@ -697,7 +697,9 @@ fn emit_fragment(
     if let Some(al) = arc_layout {
         push_editing_para(state, block_index, al, (0.0, ty));
     }
-    let mut items = para_layout.items.clone();
+    // Option B (6.3): only the items near this fragment's y-range travel with
+    // it; the clip masks the conservative slop, so rendering is unchanged.
+    let mut items = para_layout.items_in_y_range(frag_start, split_y);
     for item in &mut items {
         item.translate(dx, ty);
     }

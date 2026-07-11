@@ -141,10 +141,9 @@ pub(super) fn render_canvas_area(
     zoom_percent: Signal<u32>,
 ) -> Element {
     rsx! {
-        // Outer wrapper occupies the editor column's flex:1 slot and lays out
-        // the scroll viewport beside a vertical scrollbar, with a horizontal
-        // scrollbar underneath.  Blitz paints no scrollbar chrome, so these are
-        // custom indicators (see editor_scrollbar).
+        // Outer wrapper: the editor column's flex:1 slot — scroll viewport
+        // beside custom scrollbar indicators (Blitz paints no scrollbar
+        // chrome; see editor_scrollbar).
         div {
             style: "flex: 1; min-height: 0; display: flex; flex-direction: column;",
             div {
@@ -363,8 +362,7 @@ pub(super) fn render_canvas_area(
                             page_gap_px: tokens::PAGE_GAP_PX as f64,
                             content_padding_bottom_px: tokens::SPACE_6,
                             // Paginated: hit-test against the editor's paginated
-                            // layout (reflow clicks are hit-tested inside
-                            // DocumentView and arrive via on_reflow_click).
+                            // layout (reflow clicks arrive via on_reflow_click).
                             on_tile_click: move |c: (usize, f32, f32, bool)| {
                                 let (page_index, x_pt, y_pt, open_link) = c;
                                 let layout_opt = {
@@ -372,9 +370,8 @@ pub(super) fn render_canvas_area(
                                     state.paginated_layout.clone()
                                 };
                                 let Some(layout) = layout_opt else { return };
-                                // Ctrl/Cmd+click opens a hyperlink here instead of the caret.
                                 if open_link && open_hyperlink_at(&layout, page_index, x_pt, y_pt) {
-                                    return;
+                                    return; // Ctrl/Cmd+click opened a hyperlink; no caret move.
                                 }
                                 let Some(pos) = hit_test_page(page_index, x_pt, y_pt, &layout)
                                 else {
@@ -394,14 +391,17 @@ pub(super) fn render_canvas_area(
                                 let loro_cursor = loro_doc.read().as_ref().and_then(|ldoc| {
                                     derive_loro_cursor(ldoc, para, byte)
                                 });
-                                // page_index is meaningless in reflow; 0 is a safe
-                                // placeholder (the caret is painted from paragraph/
-                                // byte, not page, in reflow mode).
+                                // page_index is meaningless in reflow (the caret is
+                                // painted from paragraph/byte); 0 is a placeholder.
                                 let pos = DocumentPosition::top_level(0, para, byte);
                                 let mut cs = cursor_state.write();
                                 cs.loro_cursor = loro_cursor;
                                 cs.anchor = Some(pos.clone());
                                 cs.focus = Some(pos);
+                            },
+                            // Reflow Ctrl/Cmd+click on a link (URL already resolved).
+                            on_open_link: move |url: String| {
+                                let _ = webbrowser::open(&url);
                             },
                             // Reflow drag-select: move only the focus, keeping the
                             // anchor so a range selection grows under the pointer.

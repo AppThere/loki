@@ -112,6 +112,13 @@ pub struct DocumentViewProps {
     /// **reflow** mode. This component owns the reflow layout, so it hit-tests
     /// the click itself and reports the resolved document position.
     pub on_reflow_click: EventHandler<(usize, usize)>,
+    /// Called with the resolved hyperlink URL when the user Ctrl/Cmd-clicks a
+    /// link in **reflow** mode (feature 5.11). This component owns the reflow
+    /// layout so it resolves the URL itself; the app decides how to open it
+    /// (keeping the browser/OS dependency out of the render layer). Paginated
+    /// link opens flow through `on_tile_click`'s modifier flag instead.
+    #[props(default)]
+    pub on_open_link: EventHandler<String>,
     /// Called with `(block_index, byte_offset)` while drag-selecting in
     /// **reflow** mode (mouse moved with a button held). The caller extends the
     /// selection focus to this position.
@@ -131,7 +138,27 @@ pub struct DocumentViewProps {
 }
 
 impl PartialEq for DocumentViewProps {
-    fn eq(&self, _other: &Self) -> bool {
-        false // Conservatively always re-render
+    fn eq(&self, other: &Self) -> bool {
+        // Real field comparison (deferred-features plan 6.7; was a hardwired
+        // `false`). `doc` / `paginated_layout` compare by Arc identity — every
+        // mutation republishes a fresh Arc, so pointer equality is the correct
+        // (and cheap) change signal. Event-handler props are deliberately
+        // omitted: Dioxus `EventHandler`s always compare equal by design, and
+        // the closures only capture stable signal handles.
+        Arc::ptr_eq(&self.doc, &other.doc)
+            && match (&self.paginated_layout, &other.paginated_layout) {
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                (None, None) => true,
+                _ => false,
+            }
+            && self.viewport_height_px == other.viewport_height_px
+            && self.viewport_top_px == other.viewport_top_px
+            && self.cursor_pos == other.cursor_pos
+            && self.selection_anchor == other.selection_anchor
+            && self.view_mode == other.view_mode
+            && self.reflow_width_px == other.reflow_width_px
+            && self.zoom == other.zoom
+            && self.page_gap_px == other.page_gap_px
+            && self.content_padding_bottom_px == other.content_padding_bottom_px
     }
 }
