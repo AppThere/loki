@@ -83,7 +83,6 @@ fn startxref_points_at_the_xref_table() {
 
     let idx = pdf.rfind("startxref").expect("missing startxref");
     let offset: usize = pdf[idx + "startxref".len()..]
-        .trim_start()
         .split_whitespace()
         .next()
         .and_then(|n| n.parse().ok())
