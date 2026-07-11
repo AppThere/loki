@@ -9,18 +9,22 @@ use std::collections::HashMap;
 
 use loki_doc_model::style::props::char_props::CharProps;
 use loki_doc_model::style::props::para_props::ParaProps;
+use loki_primitives::color::DocumentColor;
 
 use super::para_props::emit_paragraph_properties;
 use super::props::emit_text_properties;
 
-/// Deduplicates automatic text (`family="text"`) and paragraph
-/// (`family="paragraph"`) styles, assigning stable `T{n}` / `P{n}` names.
+/// Deduplicates automatic text (`family="text"`), paragraph
+/// (`family="paragraph"`), and table-cell (`family="table-cell"`) styles,
+/// assigning stable `T{n}` / `P{n}` / `TC{n}` names.
 #[derive(Default)]
 pub(super) struct AutoStyles {
     /// text-properties element → style name (`T{n}`).
     text: HashMap<String, String>,
     /// (parent, paragraph-properties, text-properties) → style name (`P{n}`).
     para: HashMap<(String, String, String), String>,
+    /// table-cell-properties element → style name (`TC{n}`).
+    cell: HashMap<String, String>,
     /// Rendered `<style:style>` elements, in creation order.
     rendered: Vec<String>,
 }
@@ -116,8 +120,79 @@ impl AutoStyles {
         name
     }
 
+    /// Returns the automatic `family="table-cell"` style name for a cell's
+    /// effective `background` (its direct shading or the resolved table-style
+    /// banding), or `None` when there is none. `fo:background-color` is the
+    /// ODF-native representation of table-style banding, since ODF bakes region
+    /// shading into per-cell styles rather than conditional regions. (Cell
+    /// borders/padding export is future work.)
+    pub(super) fn cell_style(&mut self, background: Option<&DocumentColor>) -> Option<String> {
+        let cell_props = emit_cell_properties(background);
+        if cell_props.is_empty() {
+            return None;
+        }
+        if let Some(name) = self.cell.get(&cell_props) {
+            return Some(name.clone());
+        }
+        let name = format!("TC{}", self.rendered.len() + 1);
+        self.rendered.push(format!(
+            "<style:style style:name=\"{name}\" style:family=\"table-cell\">{cell_props}</style:style>"
+        ));
+        self.cell.insert(cell_props, name.clone());
+        Some(name)
+    }
+
     /// Renders all collected automatic styles as concatenated XML.
     pub(super) fn render(&self) -> String {
         self.rendered.concat()
+    }
+}
+
+/// Serialises a cell's exportable direct properties as a
+/// `<style:table-cell-properties/>` element, or an empty string when none.
+fn emit_cell_properties(background: Option<&DocumentColor>) -> String {
+    let Some(hex) = background.and_then(DocumentColor::to_hex) else {
+        return String::new();
+    };
+    format!("<style:table-cell-properties fo:background-color=\"{hex}\"/>")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use loki_primitives::color::RgbColor;
+
+    fn color(r: u8, g: u8, b: u8) -> DocumentColor {
+        DocumentColor::Rgb(RgbColor::new(
+            f32::from(r) / 255.0,
+            f32::from(g) / 255.0,
+            f32::from(b) / 255.0,
+        ))
+    }
+
+    #[test]
+    fn cell_style_emits_background_and_dedupes() {
+        let mut a = AutoStyles::new();
+        let n1 = a
+            .cell_style(Some(&color(0x44, 0x72, 0xC4)))
+            .expect("shaded cell → style");
+        // Same colour reuses the same style name.
+        let n2 = a.cell_style(Some(&color(0x44, 0x72, 0xC4))).unwrap();
+        assert_eq!(n1, n2);
+        // A different colour gets a distinct name.
+        let n3 = a.cell_style(Some(&color(0xFF, 0x00, 0x00))).unwrap();
+        assert_ne!(n1, n3);
+
+        let xml = a.render();
+        assert!(xml.contains(r#"style:family="table-cell""#));
+        assert!(xml.contains(r##"fo:background-color="#4472C4""##));
+        assert!(xml.contains(r##"fo:background-color="#FF0000""##));
+    }
+
+    #[test]
+    fn a_cell_without_shading_gets_no_style() {
+        let mut a = AutoStyles::new();
+        assert_eq!(a.cell_style(None), None);
+        assert!(a.render().is_empty());
     }
 }

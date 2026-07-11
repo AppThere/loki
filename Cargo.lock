@@ -4499,7 +4499,7 @@ dependencies = [
  "chrono",
  "loki-doc-model",
  "loki-primitives",
- "quick-xml 0.36.2",
+ "quick-xml 0.41.0",
  "thiserror 2.0.18",
  "zip",
 ]
@@ -4601,7 +4601,7 @@ dependencies = [
  "loki-layout",
  "loki-primitives",
  "loki-sheet-model",
- "quick-xml 0.36.2",
+ "quick-xml 0.41.0",
  "thiserror 2.0.18",
  "zip",
 ]
@@ -4623,7 +4623,7 @@ dependencies = [
  "loki-primitives",
  "loki-sheet-model",
  "parley 0.10.0",
- "quick-xml 0.36.2",
+ "quick-xml 0.41.0",
  "read-fonts 0.40.2",
  "thiserror 2.0.18",
  "zip",
@@ -4635,7 +4635,7 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "chrono",
- "quick-xml 0.36.2",
+ "quick-xml 0.41.0",
  "serde",
  "tempfile",
  "thiserror 2.0.18",
@@ -4654,6 +4654,7 @@ dependencies = [
  "loki-layout",
  "loki-primitives",
  "pdf-writer",
+ "subsetter",
  "thiserror 2.0.18",
  "ttf-parser",
 ]
@@ -4984,6 +4985,7 @@ dependencies = [
  "tracing",
  "unicode-segmentation",
  "vello",
+ "webbrowser",
  "wgpu_context",
 ]
 
@@ -5551,9 +5553,9 @@ dependencies = [
 
 [[package]]
 name = "num-bigint"
-version = "0.4.7"
+version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c863e9ab5e7bf9c99ba75e1050f1e4d624ae87ed3532d6238ffbdc7b585dbbe6"
+checksum = "c89e69e7e0f03bea5ef08013795c25018e101932225a656383bd384495ecc367"
 dependencies = [
  "num-integer",
  "num-traits",
@@ -6754,16 +6756,6 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.36.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7649a7b4df05aed9ea7ec6f628c67c9953a43869b8bc50929569b2999d443fe"
-dependencies = [
- "memchr",
- "serde",
-]
-
-[[package]]
-name = "quick-xml"
 version = "0.38.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b66c2058c55a409d601666cffe35f04333cf1013010882cec174a7467cd4e21c"
@@ -6779,6 +6771,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdcc8dd4e2f670d309a5f0e83fe36dfdc05af317008fea29144da1a2ac858e5e"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
+dependencies = [
+ "memchr",
+ "serde",
 ]
 
 [[package]]
@@ -8447,6 +8449,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e9798bfed58797aed51c672aa99810aac30a50d3120ecfdcf28c13784e9a8f1c"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "subsetter"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38803281d1c23166c5ebcb455439a5d2afe711cc909cf88af72448c297756ad6"
+dependencies = [
+ "kurbo 0.13.1",
+ "rustc-hash 2.1.3",
+ "skrifa 0.42.1",
+ "write-fonts",
 ]
 
 [[package]]
@@ -10606,6 +10620,19 @@ name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
+
+[[package]]
+name = "write-fonts"
+version = "0.48.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb731d4c4d93eacc69a1ad2f270f905788a98e4a3438267bcafbe08d3431c8d8"
+dependencies = [
+ "font-types 0.11.3",
+ "indexmap",
+ "kurbo 0.13.1",
+ "log",
+ "read-fonts 0.39.2",
+]
 
 [[package]]
 name = "writeable"

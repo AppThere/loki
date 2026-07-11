@@ -2,7 +2,7 @@
 // Copyright 2026 AppThere Loki contributors
 
 use super::*;
-use crate::docx::model::styles::{DocxStyle, DocxStyleType};
+use crate::docx::model::styles::{DocxStyle, DocxStyleType, DocxTableStyleProps, DocxTblStylePr};
 
 fn make_styles(style_type: DocxStyleType, id: &str, name: &str) -> DocxStyles {
     DocxStyles {
@@ -19,6 +19,7 @@ fn make_styles(style_type: DocxStyleType, id: &str, name: &str) -> DocxStyles {
             link: None,
             ppr: None,
             rpr: None,
+            table: None,
         }],
     }
 }
@@ -50,6 +51,7 @@ fn paragraph_style_with_parent() {
             link: None,
             ppr: None,
             rpr: None,
+            table: None,
         }],
         ..Default::default()
     };
@@ -91,6 +93,34 @@ fn table_style_in_table_catalog() {
             .paragraph_styles
             .contains_key(&StyleId::new("TableGrid"))
     );
+    // Not flagged default → no default table style recorded.
+    assert_eq!(catalog.default_table_style, None);
+}
+
+#[test]
+fn default_flagged_table_style_becomes_the_table_default() {
+    let styles = DocxStyles {
+        default_rpr: None,
+        default_ppr: None,
+        styles: vec![DocxStyle {
+            style_type: DocxStyleType::Table,
+            style_id: "TableNormal".into(),
+            is_default: true,
+            is_custom: false,
+            name: Some("Table Normal".into()),
+            based_on: None,
+            next: None,
+            link: None,
+            ppr: None,
+            rpr: None,
+            table: None,
+        }],
+    };
+    let catalog = map_styles(&styles);
+    assert_eq!(
+        catalog.default_table_style,
+        Some(StyleId::new("TableNormal")),
+    );
 }
 
 #[test]
@@ -111,6 +141,65 @@ fn doc_defaults_create_synthetic_root() {
         .unwrap();
     assert!(root.is_default);
     assert_eq!(root.char_props.bold, Some(true));
+}
+
+#[test]
+fn doc_defaults_create_the_default_character_style() {
+    use crate::docx::model::paragraph::DocxRPr;
+    // The same `w:rPrDefault` also synthesises the character family's `Default`
+    // source (ADR-0012 Decision 1), pointed at by `default_character_style`.
+    let styles = DocxStyles {
+        default_rpr: Some(DocxRPr {
+            bold: Some(true),
+            ..Default::default()
+        }),
+        default_ppr: None,
+        styles: vec![],
+    };
+    let catalog = map_styles(&styles);
+    assert_eq!(
+        catalog.default_character_style,
+        Some(StyleId::new("__DocDefaultChar")),
+    );
+    let def = catalog
+        .character_styles
+        .get(&StyleId::new("__DocDefaultChar"))
+        .expect("synthetic default character style present");
+    assert_eq!(def.char_props.bold, Some(true));
+    // A standalone character style with `bold` unset now resolves the docDefault
+    // as `Default` (was `FormatDefault` before this source existed).
+    let mut cat = catalog;
+    cat.character_styles.insert(
+        StyleId::new("Plain"),
+        CharacterStyle {
+            id: StyleId::new("Plain"),
+            display_name: Some("Plain".into()),
+            parent: None,
+            char_props: Default::default(),
+            extensions: Default::default(),
+        },
+    );
+    let r = cat
+        .resolve_char_chain(&StyleId::new("Plain"), |s| s.char_props.bold)
+        .unwrap();
+    assert_eq!(r.provenance, loki_doc_model::style::Provenance::Default);
+    assert_eq!(r.value, Some(true));
+}
+
+#[test]
+fn no_doc_defaults_leaves_no_default_character_style() {
+    let styles = DocxStyles {
+        default_rpr: None,
+        default_ppr: None,
+        styles: vec![],
+    };
+    let catalog = map_styles(&styles);
+    assert_eq!(catalog.default_character_style, None);
+    assert!(
+        !catalog
+            .character_styles
+            .contains_key(&StyleId::new("__DocDefaultChar"))
+    );
 }
 
 #[test]
@@ -161,6 +250,7 @@ fn explicit_default_paragraph_style_is_preferred() {
             link: None,
             ppr: None,
             rpr: None,
+            table: None,
         }],
     };
     let catalog = map_styles(&styles);
@@ -193,6 +283,7 @@ fn duplicate_style_ids_last_definition_wins() {
                     bold: Some(true),
                     ..Default::default()
                 }),
+                table: None,
             },
             DocxStyle {
                 style_type: DocxStyleType::Paragraph,
@@ -209,6 +300,7 @@ fn duplicate_style_ids_last_definition_wins() {
                     bold: Some(false),
                     ..Default::default()
                 }),
+                table: None,
             },
         ],
     };
@@ -249,6 +341,7 @@ fn missing_normal_style_falls_back_to_doc_defaults() {
                 bold: Some(true),
                 ..Default::default()
             }),
+            table: None,
         }],
     };
     let catalog = map_styles(&styles);
@@ -265,4 +358,70 @@ fn missing_normal_style_falls_back_to_doc_defaults() {
     assert_eq!(resolved.font_size, Some(Points::new(11.0)));
     assert_eq!(resolved.font_name.as_deref(), Some("Calibri"));
     assert_eq!(resolved.bold, Some(true));
+}
+
+/// A table style with band sizes, base shading, and `w:tblStylePr` regions maps
+/// into `TableStyle.table_props` + the `conditional` region map; unknown region
+/// names and unshaded regions are skipped.
+#[test]
+fn table_style_conditional_formatting_maps() {
+    use loki_doc_model::style::table_style::TableRegion;
+
+    let table = DocxTableStyleProps {
+        row_band_size: Some(2),
+        col_band_size: None,
+        base_shd_fill: Some("FFFFFF".into()),
+        conditional: vec![
+            DocxTblStylePr {
+                region: "firstRow".into(),
+                shd_fill: Some("4472C4".into()),
+            },
+            DocxTblStylePr {
+                region: "band1Horz".into(),
+                shd_fill: Some("D9E2F3".into()),
+            },
+            // Unknown region → skipped.
+            DocxTblStylePr {
+                region: "bogusRegion".into(),
+                shd_fill: Some("000000".into()),
+            },
+            // Known region but no shading → skipped.
+            DocxTblStylePr {
+                region: "lastRow".into(),
+                shd_fill: None,
+            },
+        ],
+    };
+    let styles = DocxStyles {
+        default_rpr: None,
+        default_ppr: None,
+        styles: vec![DocxStyle {
+            style_type: DocxStyleType::Table,
+            style_id: "Banded".into(),
+            is_default: false,
+            is_custom: false,
+            name: Some("Banded".into()),
+            based_on: None,
+            next: None,
+            link: None,
+            ppr: None,
+            rpr: None,
+            table: Some(table),
+        }],
+    };
+
+    let catalog = map_styles(&styles);
+    let ts = catalog
+        .table_styles
+        .get(&StyleId::new("Banded"))
+        .expect("table style present");
+
+    assert_eq!(ts.table_props.row_band_size, Some(2));
+    assert_eq!(ts.table_props.col_band_size, None);
+    assert!(ts.table_props.background_color.is_some());
+    // Only the two shaded, known regions survive.
+    assert_eq!(ts.conditional.len(), 2);
+    assert!(ts.conditional.contains_key(&TableRegion::FirstRow));
+    assert!(ts.conditional.contains_key(&TableRegion::Band1Horz));
+    assert!(!ts.conditional.contains_key(&TableRegion::LastRow));
 }

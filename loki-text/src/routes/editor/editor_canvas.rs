@@ -49,6 +49,7 @@ use super::editor_scrollbar::{
 };
 use super::editor_spell::{SpellMenu, resolve_spell_menu};
 use crate::editing::cursor::{CursorState, DocumentPosition};
+use crate::editing::hit_test::open_hyperlink_at;
 use crate::editing::{hit_test::hit_test_page, state::DocumentState, touch::TouchInteractionState};
 use crate::error::LoadError;
 
@@ -149,28 +150,22 @@ pub(super) fn render_canvas_area(
             div {
                 style: "flex: 1; min-height: 0; display: flex; flex-direction: row;",
         div {
-            // COMPAT(dioxus-native): flex: 1 is confirmed working. Requires
-            // height: 100vh on the parent so Taffy can resolve the flex fraction.
-            // tabindex="0" enables keyboard focus for onkeydown to fire.
-            // autofocus ensures the canvas receives keyboard focus immediately
-            // when the editor mounts, so the user can type without clicking first.
+            // COMPAT(dioxus-native): flex: 1 needs height: 100vh on the parent
+            // for Taffy to resolve the fraction. tabindex="0" + autofocus give the
+            // canvas keyboard focus on mount so the user types without clicking.
             //
-            // overflow-x: auto (was hidden) lets the user pan a page that is
-            // wider than the viewport — e.g. a US-Letter page on a narrow phone,
-            // or any page while zoomed in.  The patched Blitz shell synthesises
-            // horizontal touch-drag into a scroll on this container (window.rs),
-            // and `can_x_scroll` is only true when overflow-x is auto/scroll.
+            // overflow-x: auto (was hidden) lets the user pan a page wider than the
+            // viewport (US-Letter on a narrow phone, or while zoomed); the patched
+            // Blitz shell synthesises horizontal touch-drag into a scroll here
+            // (window.rs), and `can_x_scroll` needs overflow-x auto/scroll.
             //
             // COMPAT(dioxus-native): scrollbar-width / scrollbar-color are Stylo
-            // (Firefox CSS engine) properties that blitz-paint 0.2.x does not
-            // paint — Blitz renders no scrollbar chrome at all.  They are kept
-            // as forward-compatible hints; scrolling itself works via touch/wheel
-            // regardless.  A visible scrollbar requires a custom widget.
+            // properties blitz-paint 0.2.x does not paint (no scrollbar chrome);
+            // kept as forward-compatible hints — scrolling works via touch/wheel.
             //
-            // inputmode="text" marks this as a text-editing surface so the
-            // patched Blitz shell raises the Android soft keyboard when the
-            // canvas gains focus (window.rs::update_ime_for_focus).  Without it
-            // the on-screen keyboard never appears on mobile.
+            // inputmode="text" marks this a text surface so the patched Blitz shell
+            // raises the Android soft keyboard on focus (window.rs). Without it the
+            // on-screen keyboard never appears on mobile.
             style: format!(
                 "flex: 1; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: auto; \
                  background: {bg}; padding: {p}px 0; \
@@ -370,12 +365,17 @@ pub(super) fn render_canvas_area(
                             // Paginated: hit-test against the editor's paginated
                             // layout (reflow clicks are hit-tested inside
                             // DocumentView and arrive via on_reflow_click).
-                            on_tile_click: move |(page_index, x_pt, y_pt): (usize, f32, f32)| {
+                            on_tile_click: move |c: (usize, f32, f32, bool)| {
+                                let (page_index, x_pt, y_pt, open_link) = c;
                                 let layout_opt = {
                                     let Ok(state) = doc_state_mousedown.lock() else { return };
                                     state.paginated_layout.clone()
                                 };
                                 let Some(layout) = layout_opt else { return };
+                                // Ctrl/Cmd+click opens a hyperlink here instead of the caret.
+                                if open_link && open_hyperlink_at(&layout, page_index, x_pt, y_pt) {
+                                    return;
+                                }
                                 let Some(pos) = hit_test_page(page_index, x_pt, y_pt, &layout)
                                 else {
                                     return;

@@ -61,7 +61,7 @@ fn no_selection_deletes_nothing() {
     let mut cs = CursorState::new();
     cs.anchor = Some(DocumentPosition::top_level(0, 0, 2));
     cs.focus = cs.anchor.clone(); // point cursor, not a range
-    assert_eq!(delete_selection_in_doc(&loro, &cs), None);
+    assert_eq!(delete_selection_in_doc(&loro, &cs, None), None);
     assert_eq!(get_block_text(&loro, 0), "hello");
 }
 
@@ -73,7 +73,7 @@ fn same_block_selection_collapses_to_range_start() {
         DocumentPosition::top_level(0, 0, 9),
         DocumentPosition::top_level(0, 0, 3),
     );
-    let pos = delete_selection_in_doc(&loro, &cs).unwrap();
+    let pos = delete_selection_in_doc(&loro, &cs, None).unwrap();
     assert_eq!(pos, DocumentPosition::top_level(0, 0, 3));
     assert_eq!(get_block_text(&loro, 0), "helld");
 }
@@ -87,7 +87,7 @@ fn cross_block_selection_keeps_the_start_pages_index() {
         DocumentPosition::top_level(3, 2, 3),
         DocumentPosition::top_level(1, 0, 2),
     );
-    let pos = delete_selection_in_doc(&loro, &cs).unwrap();
+    let pos = delete_selection_in_doc(&loro, &cs, None).unwrap();
     assert_eq!(pos, DocumentPosition::top_level(1, 0, 2));
     assert_eq!(get_block_text(&loro, 0), "fird");
     let rebuilt = loro_to_document(&loro).unwrap();
@@ -108,6 +108,6 @@ fn rejected_cross_container_selection_mutates_nothing() {
             path: vec![PathStep::Cell { cell: 0, block: 0 }],
         },
     );
-    assert_eq!(delete_selection_in_doc(&loro, &cs), None);
+    assert_eq!(delete_selection_in_doc(&loro, &cs, None), None);
     assert_eq!(get_block_text(&loro, 0), "top level");
 }

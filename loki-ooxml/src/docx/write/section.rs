@@ -103,22 +103,34 @@ fn write_hf_refs<W: std::io::Write>(
     }
 }
 
-/// Writes `<w:cols>` for a multi-column section (ECMA-376 §17.6.4): equal-width
-/// columns with a uniform gap. `w:sep` is emitted only when a separator line is
-/// requested.
+/// Writes `<w:cols>` for a multi-column section (ECMA-376 §17.6.4). Equal
+/// columns emit a single self-closing element with `w:equalWidth="1"`; unequal
+/// columns (`layout.columns.widths` present and matching `count`) emit
+/// `w:equalWidth="0"` plus one `<w:col w:w=".."/>` per column. `w:sep` is
+/// emitted only when a separator line is requested.
 fn write_cols<W: std::io::Write>(w: &mut Writer<W>, layout: &PageLayout) {
     let Some(cols) = &layout.columns else {
         return;
     };
     let num = i32::from(cols.count).to_string();
     let space = pts_to_twips(cols.gap.value()).to_string();
+    let unequal = cols.widths.len() == usize::from(cols.count);
     let mut attrs = vec![
         ("w:num", num.as_str()),
         ("w:space", space.as_str()),
-        ("w:equalWidth", "1"),
+        ("w:equalWidth", if unequal { "0" } else { "1" }),
     ];
     if cols.separator {
         attrs.push(("w:sep", "1"));
     }
-    let _ = write_empty(w, "w:cols", &attrs);
+    if !unequal {
+        let _ = write_empty(w, "w:cols", &attrs);
+        return;
+    }
+    let _ = write_start(w, "w:cols", &attrs);
+    for width in &cols.widths {
+        let ww = pts_to_twips(width.value()).to_string();
+        let _ = write_empty(w, "w:col", &[("w:w", ww.as_str())]);
+    }
+    let _ = write_end(w, "w:cols");
 }

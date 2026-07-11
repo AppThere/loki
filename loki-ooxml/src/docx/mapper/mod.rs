@@ -20,7 +20,7 @@
 // |------------------------|-----------------------------|--------------------------|
 // | DocxDocument           | model/document.rs           | body: DocxBody           |
 // | DocxBody               | model/document.rs           | children, final_sect_pr  |
-// | DocxBodyChild          | model/document.rs           | Paragraph | Table | Sdt  |
+// | DocxBodyChild          | model/document.rs           | Paragraph | Table        |
 // | DocxParagraph          | model/paragraph.rs          | ppr, children            |
 // | DocxPPr                | model/paragraph.rs          | style_id, jc, ind,       |
 // |                        |                             | spacing, num_pr,         |
@@ -141,11 +141,11 @@
 // ├──────────────────────────┼────────────────────────────────┼──────────────────┤
 // │ DocxSectPr header/footer │ Implemented — Session 7        │ gap #5 P1        │
 // │ DocxStyle (Numbering)    │ Skipped silently               │ Handled via num. │
-// │ DocxBodyChild::Sdt       │ Skipped                        │ No model equiv.  │
+// │ block w:sdt (control)    │ Unwrapped at read (5.9)        │ content kept     │
 // │ DocxTcPr.v_merge         │ Stubbed row_span = 1           │ Track NYI v0.1.0 │
 // │ DocxSettings             │ even_and_odd_headers wired     │ Session 7        │
 // │ DocxNote (Separator)     │ Filtered out                   │ Not semantic     │
-// │ TrackDel content         │ Dropped                        │ Deleted content  │
+// │ TrackDel/TrackIns        │ Mapped to CharProps.revision   │ Review tab 4a.2  │
 // └──────────────────────────┴────────────────────────────────┴──────────────────┘
 //
 // ── Session 7 audit (2026-04-20) — gap #5: headers and footers ───────────────
@@ -198,6 +198,7 @@ pub mod error;
 pub use error::MapperError;
 
 pub(crate) mod document;
+mod document_cols;
 pub(crate) mod drop_cap_merge;
 pub(crate) mod fields;
 pub(crate) mod images;
@@ -207,6 +208,7 @@ pub(crate) mod paragraph;
 pub(crate) mod props;
 pub(crate) mod styles;
 pub(crate) mod table;
+pub(crate) mod table_look;
 
 // DocxSettings.even_and_odd_headers is now wired through map_document (Session 7).
 // DocxSettings.default_tab_stop and title_pg remain unused pending further work.

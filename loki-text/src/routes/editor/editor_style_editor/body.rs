@@ -19,7 +19,7 @@ use super::super::editor_state::StyleDraft;
 use super::super::editor_style_catalog::{get_catalog_style, new_custom_style_id};
 use super::posture::StylePanelPosture;
 use super::style_to_draft;
-use super::{char_browser, list_browser};
+use super::{char_browser, list_browser, page_browser, tree_nav};
 use crate::editing::state::DocumentState;
 
 /// The panel's left navigation column: inheritance tree + "+ New" + family lists.
@@ -33,12 +33,17 @@ pub(super) fn left_column(
     char_list: Vec<(String, String)>,
     char_selected: Option<String>,
     editing_char_style: Signal<Option<String>>,
+    editing_char_draft: Signal<Option<StyleDraft>>,
     list_list: Vec<(String, String)>,
     list_selected: Option<String>,
     editing_list_style: Signal<Option<String>>,
+    page_list: Vec<(String, String)>,
+    page_selected: Option<String>,
+    editing_page_style: Signal<Option<String>>,
     posture: StylePanelPosture,
 ) -> Element {
     let ds_new = Arc::clone(&doc_state);
+    let ds_char = Arc::clone(&doc_state);
     rsx! {
         div {
             style: format!(
@@ -50,39 +55,44 @@ pub(super) fn left_column(
                 p = tokens::SPACE_2,
             ),
 
-            // Inheritance-tree picker: styles indented by depth so the
-            // parent → child hierarchy is visible (Spec 05 §7).
-            {styles.into_iter().map(|(id, display, depth)| {
-                let is_active = id == active_id;
-                let ds_c = Arc::clone(&doc_state);
-                let id_cap = id.clone();
-                rsx! {
-                    button {
-                        key: "{id}",
-                        style: format!(
-                            "text-align: left; padding: {p}px {p2}px; \
-                             padding-left: {indent}px; {touch} \
-                             border-radius: 3px; border: 1px solid {border}; \
-                             cursor: pointer; font-family: {ff}; \
-                             font-size: {fs}px; background: {bg}; color: {fg};",
-                            p = tokens::SPACE_1, p2 = tokens::SPACE_2,
-                            touch = posture.touch_min_css(),
-                            indent = tokens::SPACE_2 + depth as f32 * tokens::SPACE_3,
-                            border = if is_active { tokens::COLOR_TAB_ACTIVE_INDICATOR } else { tokens::COLOR_BORDER_CHROME },
-                            ff = tokens::FONT_FAMILY_UI,
-                            fs = tokens::FONT_SIZE_LABEL,
-                            bg = if is_active { tokens::COLOR_SURFACE_3 } else { tokens::COLOR_SURFACE_2 },
-                            fg = tokens::COLOR_TEXT_ON_CHROME,
-                        ),
-                        onclick: move |_| {
-                            if let Some(s) = get_catalog_style(&ds_c, &id_cap) {
-                                editing_style_draft.set(Some(style_to_draft(&s)));
-                            }
-                        },
-                        "{display}"
+            // Inheritance-tree picker (Spec 05 §7). At Compact the full indented
+            // tree is impractical, so it degrades to a breadcrumb + drill-down
+            // (§11, M7); Expanded/Medium keep the indented tree.
+            if posture.stack {
+                { tree_nav::compact_tree_nav(Arc::clone(&doc_state), active_id.clone(), editing_style_draft, posture) }
+            } else {
+                {styles.into_iter().map(|(id, display, depth)| {
+                    let is_active = id == active_id;
+                    let ds_c = Arc::clone(&doc_state);
+                    let id_cap = id.clone();
+                    rsx! {
+                        button {
+                            key: "{id}",
+                            style: format!(
+                                "text-align: left; padding: {p}px {p2}px; \
+                                 padding-left: {indent}px; {touch} \
+                                 border-radius: 3px; border: 1px solid {border}; \
+                                 cursor: pointer; font-family: {ff}; \
+                                 font-size: {fs}px; background: {bg}; color: {fg};",
+                                p = tokens::SPACE_1, p2 = tokens::SPACE_2,
+                                touch = posture.touch_min_css(),
+                                indent = tokens::SPACE_2 + depth as f32 * tokens::SPACE_3,
+                                border = if is_active { tokens::COLOR_TAB_ACTIVE_INDICATOR } else { tokens::COLOR_BORDER_CHROME },
+                                ff = tokens::FONT_FAMILY_UI,
+                                fs = tokens::FONT_SIZE_LABEL,
+                                bg = if is_active { tokens::COLOR_SURFACE_3 } else { tokens::COLOR_SURFACE_2 },
+                                fg = tokens::COLOR_TEXT_ON_CHROME,
+                            ),
+                            onclick: move |_| {
+                                if let Some(s) = get_catalog_style(&ds_c, &id_cap) {
+                                    editing_style_draft.set(Some(style_to_draft(&s)));
+                                }
+                            },
+                            "{display}"
+                        }
                     }
-                }
-            })}
+                })}
+            }
 
             button {
                 style: format!(
@@ -116,10 +126,13 @@ pub(super) fn left_column(
             }
 
             // ── Character styles (§9 character family) ─────────────────────────
-            { char_browser::char_list_section(char_list, char_selected, editing_char_style, posture) }
+            { char_browser::char_list_section(ds_char, char_list, char_selected, editing_char_style, editing_char_draft, posture) }
 
             // ── List styles (§9 list family, non-inheriting) ───────────────────
             { list_browser::list_list_section(list_list, list_selected, editing_list_style, posture) }
+
+            // ── Page styles (§9 page family, non-inheriting) ───────────────────
+            { page_browser::page_list_section(page_list, page_selected, editing_page_style, posture) }
         }
     }
 }

@@ -9,10 +9,12 @@ use loki_doc_model::content::inline::Inline;
 use loki_doc_model::style::list_style::NumberingScheme;
 
 use super::meta::parse_datetime;
+use super::page::resolve_master_page_name;
 use crate::odt::model::document::{OdfBodyChild, OdfDocument};
 use crate::odt::model::paragraph::{OdfParagraph, OdfParagraphChild};
 use crate::odt::model::styles::{OdfGraphicWrap, OdfStylesheet};
 use crate::version::OdfVersion;
+use loki_doc_model::style::StyleId;
 
 fn empty_stylesheet() -> OdfStylesheet {
     OdfStylesheet::default()
@@ -452,6 +454,7 @@ fn stylesheet_with_page_num_format(num_format: Option<&str>) -> OdfStylesheet {
     });
     sheet.master_pages.push(OdfMasterPage {
         name: "Standard".into(),
+        display_name: None,
         page_layout_name: "PL1".into(),
         header: None,
         footer: None,
@@ -508,5 +511,144 @@ fn page_num_format_decimal_and_absent_stay_none() {
     assert_eq!(
         page_number_format_of(&stylesheet_with_page_num_format(None)),
         None
+    );
+}
+
+// ── Master-page transitions (5.7) ─────────────────────────────────────────
+
+/// A portrait `PLstd` + landscape `PLland` page layout, a `Standard` and a
+/// `Landscape` master page referencing them, and a `LandscapeStyle` paragraph
+/// style whose `style:master-page-name` points at `Landscape`.
+fn two_master_stylesheet() -> OdfStylesheet {
+    let layout = |name: &str, w: &str, h: &str| OdfPageLayout {
+        name: name.into(),
+        page_width: Some(w.into()),
+        page_height: Some(h.into()),
+        margin_top: None,
+        margin_bottom: None,
+        margin_left: None,
+        margin_right: None,
+        print_orientation: None,
+        num_format: None,
+        columns: None,
+        header_props: None,
+        footer_props: None,
+    };
+    let master = |name: &str, pl: &str| OdfMasterPage {
+        name: name.into(),
+        display_name: None,
+        page_layout_name: pl.into(),
+        header: None,
+        footer: None,
+        header_first: None,
+        footer_first: None,
+        header_even: None,
+        footer_even: None,
+    };
+    let mut sheet = OdfStylesheet::default();
+    sheet.page_layouts.push(layout("PLstd", "8.5in", "11in"));
+    sheet.page_layouts.push(layout("PLland", "11in", "8.5in"));
+    sheet.master_pages.push(master("Standard", "PLstd"));
+    sheet.master_pages.push(master("Landscape", "PLland"));
+    sheet
+        .named_styles
+        .push(style_with_mpn("LandscapeStyle", Some("Landscape"), None));
+    sheet
+}
+
+/// A paragraph whose `style:master-page-name` (via its style) differs from the
+/// running master page starts a **new section** on a **new page**, with the new
+/// master's geometry and the new page-style reference — the ODF equivalent of a
+/// Word section break.
+#[test]
+fn master_page_transition_splits_into_sections() {
+    let sheet = two_master_stylesheet();
+    let first = OdfBodyChild::Paragraph(text_paragraph("On Standard", false, None));
+    let mut second_para = text_paragraph("On Landscape", false, None);
+    second_para.style_name = Some("LandscapeStyle".into());
+    let doc = empty_doc(vec![first, OdfBodyChild::Paragraph(second_para)]);
+
+    let (result, _) = map_document(
+        &doc,
+        &sheet,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+        &options(),
+    );
+
+    assert_eq!(
+        result.sections.len(),
+        2,
+        "the master-page change must split the body into two sections"
+    );
+    // Section 0: the running "Standard" master (portrait), page-style "Standard".
+    assert_eq!(
+        result.sections[0].page_style.as_ref().map(StyleId::as_str),
+        Some("Standard")
+    );
+    let s0 = &result.sections[0].layout.page_size;
+    assert!(
+        s0.width.value() < s0.height.value(),
+        "Standard section is portrait: {s0:?}"
+    );
+    // Section 1: the transitioned "Landscape" master (landscape), new page.
+    assert_eq!(
+        result.sections[1].page_style.as_ref().map(StyleId::as_str),
+        Some("Landscape")
+    );
+    let s1 = &result.sections[1].layout.page_size;
+    assert!(
+        s1.width.value() > s1.height.value(),
+        "Landscape section is landscape: {s1:?}"
+    );
+    assert_eq!(
+        result.sections[1].start,
+        loki_doc_model::layout::section::SectionStart::NewPage,
+        "an ODF master-page transition is always a page break"
+    );
+    // The catalog registered both master pages as named page styles.
+    assert!(
+        result
+            .styles
+            .page_styles
+            .contains_key(&StyleId::new("Standard"))
+    );
+    assert!(
+        result
+            .styles
+            .page_styles
+            .contains_key(&StyleId::new("Landscape"))
+    );
+}
+
+/// A document whose **first** paragraph already declares a master page
+/// different from the document default must NOT produce a spurious empty
+/// leading section — the first paragraph simply sets the opening master page.
+#[test]
+fn leading_master_page_declaration_does_not_emit_empty_section() {
+    let sheet = two_master_stylesheet();
+    let mut first = text_paragraph("Starts on Landscape", false, None);
+    first.style_name = Some("LandscapeStyle".into());
+    let doc = empty_doc(vec![OdfBodyChild::Paragraph(first)]);
+
+    let (result, _) = map_document(
+        &doc,
+        &sheet,
+        None,
+        &HashMap::new(),
+        &HashMap::new(),
+        &options(),
+    );
+
+    assert_eq!(
+        result.sections.len(),
+        1,
+        "a leading master declaration must not create an empty preceding section"
+    );
+    assert_eq!(
+        result.sections[0].page_style.as_ref().map(StyleId::as_str),
+        Some("Landscape"),
+        "the single section adopts the declared master page"
     );
 }

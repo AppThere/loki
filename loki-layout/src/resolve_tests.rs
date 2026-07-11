@@ -349,6 +349,39 @@ fn flatten_image_collects_emu_dimensions() {
 }
 
 #[test]
+fn flatten_class_only_floating_image_is_collected_as_float() {
+    // An image tagged only with the floating class (no wrap keys — e.g. an
+    // anchored DOCX drawing with no wrap child) must be collected as a float,
+    // not inline (5.6). Contrast with a plain inline image (float == None).
+    use loki_doc_model::content::float::{FLOATING_CLASS, TextWrap, WrapSide};
+    let catalog = StyleCatalog::new();
+    let mut attr = NodeAttr::default();
+    attr.classes.push(FLOATING_CLASS.to_string());
+    let target = LinkTarget::new("data:image/png;base64,ABC");
+    let para = empty_para(vec![Inline::Image(attr, vec![], target)]);
+    let (_text, _spans, images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
+    assert_eq!(images.len(), 1);
+    let float = images[0]
+        .float
+        .expect("floating class → collected as a float");
+    assert_eq!(float.wrap, TextWrap::Square);
+    assert_eq!(float.side, WrapSide::Both);
+    assert!(!float.behind_text);
+
+    // A plain inline image (no class, no wrap keys) stays non-floating.
+    let inline = empty_para(vec![Inline::Image(
+        NodeAttr::default(),
+        vec![],
+        LinkTarget::new("data:image/png;base64,ABC"),
+    )]);
+    let (_t, _s, inline_images, _n) = flatten_paragraph(&inline, &catalog, &mut 0u32);
+    assert!(
+        inline_images[0].float.is_none(),
+        "inline image is not a float"
+    );
+}
+
+#[test]
 fn flatten_image_zero_size_does_not_panic() {
     let catalog = StyleCatalog::new();
     let attr = NodeAttr::default(); // no kv — cx_emu/cy_emu default to 0

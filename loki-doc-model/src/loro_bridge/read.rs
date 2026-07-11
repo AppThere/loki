@@ -196,10 +196,18 @@ pub(super) fn reconstruct_page_layout(section_map: &LoroMap) -> PageLayout {
         let count = get_i64_from_map(&cols_map, KEY_COL_COUNT).unwrap_or(1) as u8;
         let gap = get_f64_from_map(&cols_map, KEY_COL_GAP).unwrap_or(18.0);
         let separator = get_bool_from_map(&cols_map, KEY_COL_SEPARATOR).unwrap_or(false);
+        let widths = get_str_from_map(&cols_map, KEY_COL_WIDTHS)
+            .map(|s| {
+                s.split(';')
+                    .filter_map(|w| w.parse::<f64>().ok().map(Points::new))
+                    .collect()
+            })
+            .unwrap_or_default();
         layout.columns = Some(SectionColumns {
             count,
             gap: Points::new(gap),
             separator,
+            widths,
         });
     }
 

@@ -60,12 +60,15 @@ impl PdfXLevel {
 
 /// Describes the printing condition referenced by the PDF/X `OutputIntent`.
 ///
-/// When [`Self::icc_profile`] is provided it is embedded as the
-/// `DestOutputProfile` (the gold standard for certification). When it is
-/// `None`, the output intent references the named printing condition only —
-/// valid when [`Self::condition_identifier`] is a registered characterisation
-/// from the ICC registry. The default targets the widely used FOGRA39
-/// coated-paper condition.
+/// [`Self::icc_profile`] is embedded as the `DestOutputProfile` (an embedded
+/// ICC profile in the output intent is required for strict PDF/X-3 and PDF/X-4).
+/// The default embeds a bundled, **public-domain (CC0)** compact CMYK profile
+/// characterising CGATS TR 001 (the U.S. SWOP coated-web reference — see
+/// `assets/README.md`), so every export carries an embedded CMYK
+/// characterisation out of the box. For certified press output against a
+/// specific condition (e.g. a licensed ISO Coated / FOGRA profile), override it
+/// with [`Self::with_icc_profile`]. Setting it to `None` falls back to
+/// referencing the named condition only (an X-1a-style intent).
 #[derive(Debug, Clone)]
 pub struct OutputIntent {
     /// `OutputConditionIdentifier` — a registered condition name (e.g.
@@ -78,18 +81,34 @@ pub struct OutputIntent {
     /// Additional `Info` string.
     pub info: Option<String>,
     /// Optional embedded ICC profile bytes (a 4-component CMYK profile). When
-    /// present it is written as the `DestOutputProfile` stream.
+    /// present it is written as the `DestOutputProfile` stream — required for
+    /// strict PDF/X-3 / X-4 conformance.
     pub icc_profile: Option<Vec<u8>>,
 }
+
+impl OutputIntent {
+    /// Sets the embedded CMYK ICC profile (the `DestOutputProfile`). Use this to
+    /// make the output intent conformant for PDF/X-3 / X-4. The bytes must be a
+    /// 4-component (CMYK) ICC profile matching `condition_identifier`.
+    #[must_use]
+    pub fn with_icc_profile(mut self, profile: Vec<u8>) -> Self {
+        self.icc_profile = Some(profile);
+        self
+    }
+}
+
+/// The bundled default CMYK output profile: a compact, CC0-licensed profile
+/// characterising CGATS TR 001-1995 (U.S. SWOP). See `assets/README.md`.
+const DEFAULT_CMYK_ICC: &[u8] = include_bytes!("../assets/CGATS001Compat-v2-micro.icc");
 
 impl Default for OutputIntent {
     fn default() -> Self {
         Self {
-            condition_identifier: "FOGRA39".to_string(),
-            condition: Some("Coated FOGRA39 (ISO 12647-2:2004)".to_string()),
+            condition_identifier: "CGATS TR 001".to_string(),
+            condition: Some("CGATS TR 001-1995 (SWOP), coated web".to_string()),
             registry_name: Some("http://www.color.org".to_string()),
-            info: Some("Coated FOGRA39 (ISO 12647-2:2004)".to_string()),
-            icc_profile: None,
+            info: Some("CGATS TR 001 (bundled CC0 compact CMYK profile)".to_string()),
+            icc_profile: Some(DEFAULT_CMYK_ICC.to_vec()),
         }
     }
 }
@@ -118,9 +137,19 @@ mod tests {
     }
 
     #[test]
-    fn default_intent_is_fogra39() {
+    fn default_intent_embeds_bundled_cmyk_profile() {
         let oi = OutputIntent::default();
-        assert_eq!(oi.condition_identifier, "FOGRA39");
-        assert!(oi.icc_profile.is_none());
+        assert_eq!(oi.condition_identifier, "CGATS TR 001");
+        // The bundled CC0 profile is embedded by default and is a valid CMYK
+        // ICC profile (magic 'acsp' at offset 36, data color space 'CMYK').
+        let icc = oi.icc_profile.expect("a default CMYK profile is bundled");
+        assert_eq!(&icc[36..40], b"acsp", "not a valid ICC profile");
+        assert_eq!(&icc[16..20], b"CMYK", "output intent profile must be CMYK");
+    }
+
+    #[test]
+    fn with_icc_profile_sets_the_dest_output_profile() {
+        let oi = OutputIntent::default().with_icc_profile(vec![1, 2, 3, 4]);
+        assert_eq!(oi.icc_profile.as_deref(), Some([1, 2, 3, 4].as_slice()));
     }
 }

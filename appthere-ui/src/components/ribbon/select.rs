@@ -13,11 +13,13 @@
 
 use dioxus::prelude::*;
 
+use crate::responsive::GroupCollapse;
 use crate::tokens::{
     colors::{
         COLOR_BORDER_CHROME, COLOR_SURFACE_3, COLOR_TAB_ACTIVE_INDICATOR, COLOR_TEXT_ON_CHROME,
         COLOR_TEXT_ON_CHROME_SECONDARY,
     },
+    layout::{RIBBON_SELECT_WIDTH_CONDENSED_PX, RIBBON_SELECT_WIDTH_PX},
     spacing::{SPACE_2, TOUCH_MIN},
     typography::{FONT_FAMILY_UI, FONT_SIZE_BODY, FONT_SIZE_LABEL, FONT_WEIGHT_REGULAR},
 };
@@ -60,6 +62,17 @@ pub fn AtRibbonSelect(props: AtRibbonSelectProps) -> Element {
     } else {
         "transparent"
     };
+    // R-13e: shrink in a condensed group. The ambient collapse state is provided
+    // by the enclosing `AtRibbonGroup` as a signal, so reading it here re-sizes
+    // the select reactively when the collapse cascade changes on resize. Absent
+    // (used outside a group) → full width.
+    let condensed = try_consume_context::<Signal<GroupCollapse>>()
+        .is_some_and(|c| *c.read() == GroupCollapse::Condensed);
+    let width = if condensed {
+        RIBBON_SELECT_WIDTH_CONDENSED_PX
+    } else {
+        RIBBON_SELECT_WIDTH_PX
+    };
 
     rsx! {
         button {
@@ -70,7 +83,7 @@ pub fn AtRibbonSelect(props: AtRibbonSelectProps) -> Element {
                  font-family: {ff}; font-size: {fs}px; font-weight: {fw}; \
                  color: {fg}; cursor: pointer; flex-shrink: 0;",
                 gap    = SPACE_2,
-                w      = 180,
+                w      = width,
                 h      = TOUCH_MIN,
                 p      = SPACE_2,
                 bg     = bg_color,

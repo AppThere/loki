@@ -17,6 +17,7 @@ pub mod page_locate;
 pub mod reflow_nav;
 pub mod relayout;
 pub mod saved_state;
+pub mod selected_object;
 pub mod spell;
 pub mod state;
 pub mod touch;

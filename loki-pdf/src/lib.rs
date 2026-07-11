@@ -25,6 +25,7 @@ pub mod image;
 pub mod metadata;
 pub mod options;
 pub mod page;
+mod page_rotate;
 
 use loki_doc_model::Document;
 use loki_layout::{
@@ -125,10 +126,38 @@ mod tests {
         // The document has text, so a font program must be embedded.
         assert!(has(b"FontFile2"), "font program not embedded");
         assert!(has(b"CIDFontType2"), "descendant font not written");
+        // The font is subsetted: a six-letter tag prefixes the BaseFont name,
+        // and a CIDToGIDMap stream remaps the content's glyph ids.
+        assert!(has(b"+LokiEmbedded"), "font not subsetted (no subset tag)");
+        assert!(has(b"CIDToGIDMap"), "subset CIDToGIDMap not written");
         // PDF/X output intent and conformance marker must be present.
         assert!(has(b"OutputIntent"), "output intent missing");
         assert!(has(b"GTS_PDFX"), "PDF/X marker missing");
         // X-1a (default) requires a trailer ID.
         assert!(has(b"/ID"), "trailer /ID missing");
+        // The default output intent embeds the bundled CC0 CMYK profile.
+        assert!(
+            has(b"DestOutputProfile"),
+            "default must embed the bundled DestOutputProfile"
+        );
+    }
+
+    #[test]
+    fn supplied_icc_profile_is_embedded_as_dest_output_profile() {
+        // When a CMYK ICC profile is supplied it must be embedded and referenced
+        // as the output intent's DestOutputProfile (required for strict X-3/X-4).
+        let opts = PdfXOptions {
+            level: PdfXLevel::X4,
+            output_intent: OutputIntent::default().with_icc_profile(b"FAKE-ICC-PROFILE".to_vec()),
+            ..Default::default()
+        };
+        let mut out = Vec::new();
+        export_document(&sample_doc(), &opts, &mut out).expect("export");
+        let has = |n: &[u8]| out.windows(n.len()).any(|w| w == n);
+        assert!(
+            has(b"DestOutputProfile"),
+            "supplied profile must be referenced as DestOutputProfile"
+        );
+        assert!(has(b"FAKE-ICC-PROFILE"), "profile bytes must be embedded");
     }
 }

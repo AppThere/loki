@@ -146,21 +146,32 @@ pub mod loro_schema;
 pub mod settings;
 pub use loro_schema::*;
 pub mod loro_bridge;
-pub use loro_bridge::{BridgeError, IncrementalReader, document_to_loro, loro_to_document};
+pub use loro_bridge::{
+    BridgeError, IncrementalReader, document_to_loro, document_track_changes, loro_to_document,
+    set_track_changes,
+};
 pub mod loro_mutation;
 pub use loro_mutation::{
-    BlockPath, PathStep, delete_selection_at, delete_text_at, get_block_text_at, get_mark_at_path,
-    insert_text_at, mark_text_at,
+    BlockPath, PathStep, accept_reject_para_mark_at, delete_selection_at, delete_text_at,
+    get_block_text_at, get_mark_at_path, insert_text_at, insert_text_tracked_at, mark_text_at,
+    para_mark_at, tracked_delete_selection_at, tracked_grapheme_delete,
 };
 pub use loro_mutation::{
-    MutationError, delete_text, get_block_alignment, get_block_style_name, get_block_text,
-    get_mark_at, insert_text, mark_text, merge_block, merge_block_at, replace_text,
-    set_block_alignment, set_block_style, set_block_type_heading, set_block_type_para, split_block,
+    MutationError, accept_reject_all_revisions, accept_reject_revision_at, clear_block_list,
+    delete_block, delete_text, document_column_count, document_is_landscape, document_margins,
+    document_page_size, get_block_alignment, get_block_alignment_at, get_block_list_id,
+    get_block_style_name, get_block_text, get_mark_at, insert_text, mark_text, merge_block,
+    merge_block_at, rename_page_style, replace_text, revision_at, set_block_alignment,
+    set_block_alignment_at, set_block_style, set_block_type_heading, set_block_type_para,
+    set_document_columns, set_document_margins, set_document_orientation, set_document_page_size,
+    set_page_style_geometry, set_para_mark_deletion, set_para_mark_deletion_at, split_block,
     split_block_at,
 };
 #[cfg(feature = "serde")]
 pub use loro_mutation::{
-    insert_block_after, insert_inline_image, insert_inline_image_at, insert_inline_note_at,
+    delete_table_column, delete_table_row, first_toc_block_index, insert_block_after,
+    insert_inline_image, insert_inline_image_at, insert_inline_note_at, insert_table_column,
+    insert_table_of_contents, insert_table_row, refresh_table_of_contents, table_grid_dims,
 };
 pub mod error;
 pub mod io;
@@ -177,9 +188,13 @@ pub use loki_primitives;
 
 // Type aliases to make common imports more ergonomic
 pub use content::attr::{ExtensionBag, ExtensionKey, NodeAttr};
+pub use content::revision_ops::{
+    DeleteAction, accept_revisions, delete_action, has_revisions, reject_revisions,
+};
 pub use content::{Block, Inline};
 pub use layout::Section;
 pub use meta::DocumentMeta;
+pub use style::props::{RevisionKind, RevisionMark};
 pub use style::{Provenance, Resolved, StyleCatalog, StyleId};
 
 /// Derive-macro re-exports (serde support is feature-gated).

@@ -11,14 +11,19 @@
 mod actions;
 mod body;
 mod char_browser;
+mod char_form;
 mod draft;
 mod family_inspector;
 mod form;
 mod form_font;
 mod list_browser;
+mod page_browser;
+mod page_form;
+mod page_rename;
 mod panel_data;
 mod posture;
 mod provenance;
+mod tree_nav;
 
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -71,7 +76,9 @@ pub(super) fn style_editor_panel(
     doc_state: Arc<Mutex<DocumentState>>,
     mut editing_style_draft: Signal<Option<StyleDraft>>,
     editing_char_style: Signal<Option<String>>,
+    editing_char_draft: Signal<Option<StyleDraft>>,
     editing_list_style: Signal<Option<String>>,
+    editing_page_style: Signal<Option<String>>,
     style_panel_inspect: Signal<bool>,
     breakpoint: Breakpoint,
     font_families: Rc<Vec<String>>,
@@ -97,10 +104,25 @@ pub(super) fn style_editor_panel(
     let list_selected = editing_list_style.read().clone();
     let (list_list, list_selected_rows) =
         panel_data::list_data(&doc_state, list_selected.as_deref());
+    // Page styles (§9 page family) are derived on demand from the sections.
+    let page_selected = editing_page_style.read().clone();
+    let (page_list, page_selected_rows) =
+        panel_data::page_data(&doc_state, page_selected.as_deref());
 
     let styles = catalog_style_tree(&doc_state);
     let active_id = draft.id.clone();
     let ds_left = Arc::clone(&doc_state);
+    // Editable character form (Spec 05 M6): shown alongside the read-only
+    // provenance inspector when a character style is selected.
+    let ds_char_form = Arc::clone(&doc_state);
+    let char_draft = editing_char_draft.read().clone();
+    let char_form_fonts = Rc::clone(&font_families);
+    // Editable page form (Spec 05 M6 page family): the selected page style's name
+    // + current geometry, for the per-page-style preset buttons.
+    let ds_page_form = Arc::clone(&doc_state);
+    let page_edit = page_selected
+        .as_deref()
+        .and_then(|n| panel_data::page_edit_target(&doc_state, n).map(|(l, _)| (n.to_string(), l)));
 
     // Everything the provenance column renders (staged rows, impact preview,
     // new-style parent default, linked character-style rows) — see `panel_data`.
@@ -183,9 +205,13 @@ pub(super) fn style_editor_panel(
                         char_list,
                         char_selected,
                         editing_char_style,
+                        editing_char_draft,
                         list_list,
                         list_selected,
                         editing_list_style,
+                        page_list,
+                        page_selected,
+                        editing_page_style,
                         posture,
                     ) }
 
@@ -233,9 +259,15 @@ pub(super) fn style_editor_panel(
                     }
                 }
 
-                // ── Right: character + list inspectors (read-only; §9) ─────────
+                // ── Right: editable character form (M6) + read-only inspectors ─
                 if show_inspect {
-                    { family_inspector::family_inspector_columns(char_selected_rows, list_selected_rows, posture) }
+                    if let Some(cdraft) = char_draft {
+                        { char_form::char_style_form(ds_char_form, editing_char_draft, cdraft, char_form_fonts, sync) }
+                    }
+                    if let Some((pname, playout)) = page_edit {
+                        { page_form::page_style_form(&ds_page_form, pname, playout, editing_page_style, sync) }
+                    }
+                    { family_inspector::family_inspector_columns(char_selected_rows, list_selected_rows, page_selected_rows, posture) }
                 }
             }
         }

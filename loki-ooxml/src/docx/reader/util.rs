@@ -25,7 +25,9 @@ pub fn local_name(bytes: &[u8]) -> &[u8] {
 pub fn attr_val<'a>(start: &'a BytesStart<'a>, local: &[u8]) -> Option<String> {
     start.attributes().flatten().find_map(|attr| {
         if local_name(attr.key.as_ref()) == local {
-            attr.unescape_value().ok().map(std::borrow::Cow::into_owned)
+            attr.normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                .ok()
+                .map(std::borrow::Cow::into_owned)
         } else {
             None
         }

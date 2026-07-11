@@ -5,7 +5,7 @@
 
 use crate::constants::REL_OFFICE_DOCUMENT;
 use crate::error::{OoxmlError, OoxmlWarning};
-use crate::xml_util::{local_attr_val, local_name};
+use crate::xml_util::{event_text, local_attr_val, local_name};
 use loki_opc::{Package, PartName};
 use loki_sheet_model::{
     Cell, CellAlign, CellStyle, DocumentMeta, NumberFormat, Workbook, Worksheet,
@@ -186,9 +186,9 @@ fn parse_shared_strings(data: &[u8]) -> Result<Vec<String>, OoxmlError> {
                     strings.push(std::mem::take(&mut current_string));
                 }
             }
-            Ok(Event::Text(ref e)) => {
+            Ok(ref ev @ (Event::Text(_) | Event::GeneralRef(_))) => {
                 if in_t {
-                    current_string.push_str(&e.unescape().unwrap_or_default());
+                    current_string.push_str(&event_text(ev).unwrap_or_default());
                 }
             }
             Ok(Event::Eof) => break,
@@ -480,8 +480,8 @@ fn parse_worksheet(
                 };
                 handle_end!(name);
             }
-            Ok(Event::Text(ref e)) => {
-                let text = e.unescape().unwrap_or_default().into_owned();
+            Ok(ref ev @ (Event::Text(_) | Event::GeneralRef(_))) => {
+                let text = event_text(ev).unwrap_or_default();
                 if in_f {
                     current_formula = Some(text);
                 } else if in_v || in_is_t {

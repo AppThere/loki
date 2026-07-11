@@ -11,10 +11,10 @@
 //!
 //! Floating drawings are marked with the [`FLOATING_CLASS`] class on their
 //! [`NodeAttr`]; the wrap detail is carried in `NodeAttr.kv` under reserved
-//! keys (see [`FloatWrap::store`]/[`FloatWrap::read`]). This is the *import*
-//! representation — the layout engine does not yet flow text around floats
-//! (it currently treats all images as block prefixes), so capturing the wrap
-//! mode is the prerequisite for that work.
+//! keys (see [`FloatWrap::store`]/[`FloatWrap::read`]). The layout engine flows
+//! text around side-wrapping floats (`loki-layout`'s `flow_float`); an image
+//! tagged only with [`FLOATING_CLASS`] (no wrap keys) is still treated as
+//! floating via [`FloatWrap::read_or_class_default`].
 
 use crate::content::attr::NodeAttr;
 
@@ -144,6 +144,36 @@ impl FloatWrap {
         }
     }
 
+    /// Like [`read`](Self::read), but falls back to a default wrap when the attr
+    /// is marked with [`FLOATING_CLASS`] yet carries **no** explicit wrap keys.
+    ///
+    /// A producer may tag an image as floating (anchored) without recording a
+    /// wrap mode — e.g. an OOXML `wp:anchor` whose wrap child was absent or
+    /// unrecognised (the DOCX mapper still adds [`FLOATING_CLASS`]). Such an
+    /// image is floating, not inline, so this returns a square wrap on both
+    /// sides (text flows around it) rather than `None`. Returns `None` for a
+    /// genuinely inline attr (no wrap keys and no floating class).
+    #[must_use]
+    pub fn read_or_class_default(attr: &NodeAttr) -> Option<Self> {
+        Self::read(attr).or_else(|| {
+            attr.classes
+                .iter()
+                .any(|c| c == FLOATING_CLASS)
+                .then(Self::class_default)
+        })
+    }
+
+    /// The wrap used for an image marked [`FLOATING_CLASS`] with no explicit
+    /// wrap keys: a square wrap on both sides, in front of the text.
+    #[must_use]
+    fn class_default() -> Self {
+        FloatWrap {
+            wrap: TextWrap::Square,
+            side: WrapSide::Both,
+            behind_text: false,
+        }
+    }
+
     /// Reads a wrap configuration previously stored on `attr`, if any.
     /// Returns `None` when no wrap mode is recorded.
     #[must_use]
@@ -183,6 +213,39 @@ mod tests {
         fw.store(&mut attr);
         assert!(attr.classes.iter().any(|c| c == FLOATING_CLASS));
         assert_eq!(FloatWrap::read(&attr), Some(fw));
+    }
+
+    #[test]
+    fn class_only_attr_reads_as_default_float() {
+        // An anchored image tagged floating but with no wrap keys (e.g. a DOCX
+        // `wp:anchor` with no wrap child) is floating, not inline.
+        let mut attr = NodeAttr::default();
+        attr.classes.push(FLOATING_CLASS.to_string());
+        assert_eq!(FloatWrap::read(&attr), None, "no wrap keys → read is None");
+        let fw = FloatWrap::read_or_class_default(&attr).expect("class marks it floating");
+        assert_eq!(fw.wrap, TextWrap::Square);
+        assert_eq!(fw.side, WrapSide::Both);
+        assert!(!fw.behind_text);
+    }
+
+    #[test]
+    fn inline_attr_reads_or_class_default_is_none() {
+        // No wrap keys and no floating class → genuinely inline.
+        let attr = NodeAttr::default();
+        assert_eq!(FloatWrap::read_or_class_default(&attr), None);
+    }
+
+    #[test]
+    fn explicit_wrap_wins_over_class_default() {
+        // When wrap keys are present, the stored config is returned verbatim.
+        let mut attr = NodeAttr::default();
+        let fw = FloatWrap {
+            wrap: TextWrap::Tight,
+            side: WrapSide::Left,
+            behind_text: false,
+        };
+        fw.store(&mut attr);
+        assert_eq!(FloatWrap::read_or_class_default(&attr), Some(fw));
     }
 
     #[test]

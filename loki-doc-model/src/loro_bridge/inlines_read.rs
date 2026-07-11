@@ -279,6 +279,12 @@ fn read_char_props_from_marks(
         props.language_east_asian = Some(crate::meta::language::LanguageTag::new(s.to_string()));
         any = true;
     }
+    if let Some(LoroValue::String(s)) = attrs.get(MARK_REVISION)
+        && let Some(rev) = crate::style::props::revision::decode(s.as_str())
+    {
+        props.revision = Some(rev);
+        any = true;
+    }
 
     if any { Some(props) } else { None }
 }

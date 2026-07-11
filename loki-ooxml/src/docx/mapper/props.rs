@@ -7,12 +7,9 @@
 //! All OOXML measurements are in twentieths of a point (twips); all model
 //! measurements are in [`loki_primitives::units::Points`].
 
-use loki_doc_model::meta::LanguageTag;
 use loki_doc_model::style::list_style::ListId;
 use loki_doc_model::style::props::border::{Border, BorderStyle};
-use loki_doc_model::style::props::char_props::{
-    CharProps, HighlightColor, StrikethroughStyle, UnderlineStyle, VerticalAlign,
-};
+use loki_doc_model::style::props::char_props::{HighlightColor, UnderlineStyle};
 use loki_doc_model::style::props::drop_cap::{DropCap, DropCapLength};
 use loki_doc_model::style::props::para_props::{
     LineHeight, ParaProps, ParagraphAlignment, Spacing,
@@ -21,14 +18,17 @@ use loki_doc_model::style::props::tab_stop::{TabAlignment, TabLeader, TabStop};
 use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 
-use crate::docx::model::paragraph::{DocxBorderEdge, DocxFramePr, DocxPPr, DocxRPr};
+use crate::docx::model::paragraph::{DocxBorderEdge, DocxFramePr, DocxPPr};
 use crate::xml_util::{hex_color, resolve_shading};
+
+#[path = "props_rpr.rs"]
+mod rpr;
+pub(crate) use rpr::map_rpr;
 
 // ── Internal conversion helpers ───────────────────────────────────────────────
 
 /// Maps `w:framePr` to a [`DropCap`], or `None` when no drop cap is requested
-/// (`w:dropCap` absent, `"none"`, or `"default"`). OOXML carries no explicit
-/// character count, so the length defaults to a single character.
+/// (`w:dropCap` absent/`"none"`/`"default"`); length defaults to one character.
 fn map_frame_pr(fp: &DocxFramePr) -> Option<DropCap> {
     let margin = match fp.drop_cap.as_deref()? {
         "drop" => false,
@@ -73,10 +73,8 @@ fn map_line_height(line: i32, line_rule: Option<&str>) -> LineHeight {
     }
 }
 
-/// Maps a `w:u @w:val` string to [`UnderlineStyle`].
-///
-/// Returns `None` for `"none"` (explicit removal of underline).
-fn map_underline(val: &str) -> Option<UnderlineStyle> {
+/// Maps a `w:u @w:val` string to [`UnderlineStyle`] (`None` removes underline).
+pub(super) fn map_underline(val: &str) -> Option<UnderlineStyle> {
     match val {
         "none" => None,
         "double" => Some(UnderlineStyle::Double),
@@ -91,7 +89,7 @@ fn map_underline(val: &str) -> Option<UnderlineStyle> {
 }
 
 /// Maps a `w:highlight @w:val` string to [`HighlightColor`].
-fn map_highlight(val: &str) -> HighlightColor {
+pub(super) fn map_highlight(val: &str) -> HighlightColor {
     match val {
         "black" => HighlightColor::Black,
         "blue" => HighlightColor::Blue,
@@ -263,320 +261,8 @@ pub(crate) fn map_ppr(ppr: &DocxPPr) -> ParaProps {
 
     props
 }
-
-/// Maps a [`DocxRPr`] (OOXML run properties) to [`CharProps`].
-///
-/// Font sizes are in half-points (`w:sz`); letter spacing in twips (`w:spacing`).
-/// Both are converted to points. Toggle properties map directly as `Option<bool>`.
-pub(crate) fn map_rpr(rpr: &DocxRPr) -> CharProps {
-    // Double strikethrough takes precedence over single.
-    let strikethrough = match (rpr.dstrike, rpr.strike) {
-        (Some(true), _) => Some(StrikethroughStyle::Double),
-        (_, Some(true)) => Some(StrikethroughStyle::Single),
-        _ => None,
-    };
-
-    // w:sz and w:szCs are in half-points.
-    let font_size = rpr.sz.map(|hp| Points::new(f64::from(hp) / 2.0));
-    let font_size_complex = rpr.sz_cs.map(|hp| Points::new(f64::from(hp) / 2.0));
-
-    let (font_name, font_name_complex, font_name_east_asian) = if let Some(ref fonts) = rpr.fonts {
-        (
-            fonts.ascii.clone().or_else(|| fonts.h_ansi.clone()),
-            fonts.cs.clone(),
-            fonts.east_asia.clone(),
-        )
-    } else {
-        (None, None, None)
-    };
-
-    // w:spacing is in twips.
-    let letter_spacing = rpr.spacing.map(|sp| Points::new(f64::from(sp) / 20.0));
-
-    // w:w is a percentage integer (100 = normal).
-    #[allow(clippy::cast_precision_loss)]
-    // Precision loss acceptable: values represent document measurements
-    let scale = rpr.scale.map(|s| s as f32 / 100.0);
-
-    // Run background from `w:shd`, honouring the pattern (`@w:val`): `pctN`
-    // blends `@w:color` over `@w:fill`; `solid`/`clear` map as expected.
-    let background_color = resolve_shading(
-        rpr.shd_fill.as_deref(),
-        rpr.shd_val.as_deref(),
-        rpr.shd_color.as_deref(),
-    )
-    .map(DocumentColor::Rgb);
-
-    CharProps {
-        bold: rpr.bold,
-        italic: rpr.italic,
-        small_caps: rpr.small_caps,
-        all_caps: rpr.all_caps,
-        shadow: rpr.shadow,
-        strikethrough,
-        underline: rpr.underline.as_deref().and_then(map_underline),
-        color: rpr
-            .color
-            .as_deref()
-            .and_then(hex_color)
-            .map(DocumentColor::Rgb),
-        background_color,
-        highlight_color: rpr
-            .highlight
-            .as_deref()
-            .map(map_highlight)
-            .filter(|h| *h != HighlightColor::None),
-        font_size,
-        font_size_complex,
-        font_name,
-        font_name_complex,
-        font_name_east_asian,
-        // w:kern threshold in half-points: 0 = off, >0 = enabled.
-        kerning: rpr.kern.map(|k| k > 0),
-        letter_spacing,
-        scale,
-        language: rpr.lang.as_deref().map(LanguageTag::new),
-        language_complex: rpr.lang_complex.as_deref().map(LanguageTag::new),
-        language_east_asian: rpr.lang_east_asian.as_deref().map(LanguageTag::new),
-        vertical_align: rpr.vert_align.as_deref().and_then(|v| match v {
-            "superscript" => Some(VerticalAlign::Superscript),
-            "subscript" => Some(VerticalAlign::Subscript),
-            _ => None,
-        }),
-        // w:position is a manual baseline rise in half-points (positive = up).
-        baseline_shift: rpr.position.map(|hp| Points::new(f64::from(hp) / 2.0)),
-        outline: rpr.outline,
-        ..Default::default()
-    }
-}
-
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::docx::model::paragraph::{DocxInd, DocxNumPr, DocxSpacing};
-
-    fn ppr_with_jc(jc: &str) -> DocxPPr {
-        DocxPPr {
-            jc: Some(jc.into()),
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn frame_pr_drop_maps_to_drop_cap() {
-        let ppr = DocxPPr {
-            frame_pr: Some(DocxFramePr {
-                drop_cap: Some("drop".into()),
-                lines: Some(3),
-                h_space: Some(40), // twips → 2pt
-            }),
-            ..Default::default()
-        };
-        let dc = map_ppr(&ppr).drop_cap.expect("drop cap present");
-        assert_eq!(dc.lines, 3);
-        assert!(!dc.margin);
-        assert_eq!(dc.distance.value(), 2.0);
-        assert_eq!(dc.length, DropCapLength::Chars(1));
-    }
-
-    #[test]
-    fn frame_pr_margin_is_in_margin() {
-        let ppr = DocxPPr {
-            frame_pr: Some(DocxFramePr {
-                drop_cap: Some("margin".into()),
-                lines: Some(2),
-                h_space: None,
-            }),
-            ..Default::default()
-        };
-        assert!(map_ppr(&ppr).drop_cap.expect("drop cap").margin);
-    }
-
-    #[test]
-    fn frame_pr_none_is_not_a_drop_cap() {
-        let ppr = DocxPPr {
-            frame_pr: Some(DocxFramePr {
-                drop_cap: Some("none".into()),
-                lines: None,
-                h_space: None,
-            }),
-            ..Default::default()
-        };
-        assert!(map_ppr(&ppr).drop_cap.is_none());
-    }
-
-    // ── map_ppr ──────────────────────────────────────────────────────────────
-
-    #[test]
-    fn twip_conversion_720() {
-        let ppr = DocxPPr {
-            ind: Some(DocxInd {
-                left: Some(720),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let props = map_ppr(&ppr);
-        assert_eq!(props.indent_start.unwrap().value(), 36.0);
-    }
-
-    #[test]
-    fn jc_both_maps_to_justify() {
-        assert_eq!(
-            map_ppr(&ppr_with_jc("both")).alignment,
-            Some(ParagraphAlignment::Justify)
-        );
-    }
-
-    #[test]
-    fn jc_distribute_maps_to_justify() {
-        assert_eq!(
-            map_ppr(&ppr_with_jc("distribute")).alignment,
-            Some(ParagraphAlignment::Justify)
-        );
-    }
-
-    #[test]
-    fn jc_center_maps_to_center() {
-        assert_eq!(
-            map_ppr(&ppr_with_jc("center")).alignment,
-            Some(ParagraphAlignment::Center)
-        );
-    }
-
-    #[test]
-    fn line_auto_276_is_multiple_1_15() {
-        let ppr = DocxPPr {
-            spacing: Some(DocxSpacing {
-                line: Some(276),
-                line_rule: Some("auto".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let props = map_ppr(&ppr);
-        if let Some(LineHeight::Multiple(m)) = props.line_height {
-            assert!((m - 1.15_f32).abs() < 0.001, "expected ~1.15, got {m}");
-        } else {
-            panic!("expected LineHeight::Multiple");
-        }
-    }
-
-    #[test]
-    fn line_exact_240_is_12pt() {
-        let ppr = DocxPPr {
-            spacing: Some(DocxSpacing {
-                line: Some(240),
-                line_rule: Some("exact".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let props = map_ppr(&ppr);
-        if let Some(LineHeight::Exact(pts)) = props.line_height {
-            assert_eq!(pts.value(), 12.0);
-        } else {
-            panic!("expected LineHeight::Exact");
-        }
-    }
-
-    #[test]
-    fn outline_lvl_0_becomes_1() {
-        let ppr = DocxPPr {
-            outline_lvl: Some(0),
-            ..Default::default()
-        };
-        assert_eq!(map_ppr(&ppr).outline_level, Some(1));
-    }
-
-    #[test]
-    fn num_id_zero_is_none() {
-        let ppr = DocxPPr {
-            num_pr: Some(DocxNumPr { num_id: 0, ilvl: 0 }),
-            ..Default::default()
-        };
-        let props = map_ppr(&ppr);
-        assert!(props.list_id.is_none());
-    }
-
-    #[test]
-    fn num_id_3_ilvl_1() {
-        let ppr = DocxPPr {
-            num_pr: Some(DocxNumPr { num_id: 3, ilvl: 1 }),
-            ..Default::default()
-        };
-        let props = map_ppr(&ppr);
-        assert_eq!(props.list_id.as_ref().map(|l| l.as_str()), Some("3"));
-        assert_eq!(props.list_level, Some(1));
-    }
-
-    // ── map_rpr ──────────────────────────────────────────────────────────────
-
-    #[test]
-    fn half_point_24_is_12pt() {
-        let rpr = DocxRPr {
-            sz: Some(24),
-            ..Default::default()
-        };
-        let props = map_rpr(&rpr);
-        assert_eq!(props.font_size.unwrap().value(), 12.0);
-    }
-
-    #[test]
-    fn position_maps_to_baseline_shift_in_points() {
-        // w:position is in half-points; +12 = 6 pt up, -12 = 6 pt down.
-        let up = map_rpr(&DocxRPr {
-            position: Some(12),
-            ..Default::default()
-        });
-        assert_eq!(up.baseline_shift.unwrap().value(), 6.0);
-        let down = map_rpr(&DocxRPr {
-            position: Some(-12),
-            ..Default::default()
-        });
-        assert_eq!(down.baseline_shift.unwrap().value(), -6.0);
-        assert!(map_rpr(&DocxRPr::default()).baseline_shift.is_none());
-    }
-
-    #[test]
-    fn bold_none_is_none() {
-        let rpr = DocxRPr {
-            bold: None,
-            ..Default::default()
-        };
-        assert!(map_rpr(&rpr).bold.is_none());
-    }
-
-    #[test]
-    fn bold_some_true() {
-        let rpr = DocxRPr {
-            bold: Some(true),
-            ..Default::default()
-        };
-        assert_eq!(map_rpr(&rpr).bold, Some(true));
-    }
-
-    #[test]
-    fn bold_some_false() {
-        let rpr = DocxRPr {
-            bold: Some(false),
-            ..Default::default()
-        };
-        assert_eq!(map_rpr(&rpr).bold, Some(false));
-    }
-
-    #[test]
-    fn dstrike_takes_precedence_over_strike() {
-        let rpr = DocxRPr {
-            dstrike: Some(true),
-            strike: Some(true),
-            ..Default::default()
-        };
-        assert_eq!(
-            map_rpr(&rpr).strikethrough,
-            Some(StrikethroughStyle::Double)
-        );
-    }
-}
+#[path = "props_tests.rs"]
+mod tests;

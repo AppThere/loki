@@ -38,12 +38,24 @@ pub const KEY_SECTIONS: &str = "sections";
 /// Key for the Document blocks movable list.
 pub const KEY_BLOCKS: &str = "blocks";
 
+/// Key on a section map for its named **page style** reference (ADR-0012
+/// Decision 2). A string — the `StyleId` of the section's page style — or absent
+/// when the section has no named page style.
+pub const KEY_PAGE_STYLE_REF: &str = "page_style";
+
 /// Key for the Document comments map (annotation bodies).
 pub const KEY_COMMENTS: &str = "comments";
 
 /// Key for the comments JSON snapshot inside the comments map. Like metadata
 /// and the style catalog, comments are stored as a lossless `serde` snapshot.
 pub const KEY_COMMENTS_JSON: &str = "comments_json";
+
+/// Key for the Document settings map (`DocumentSettings`, e.g. track-changes).
+pub const KEY_SETTINGS: &str = "settings";
+
+/// Key for the settings JSON snapshot inside the settings map — a lossless
+/// `serde` snapshot, like metadata and comments.
+pub const KEY_SETTINGS_JSON: &str = "settings_json";
 
 /// Key for the Block type discriminator.
 pub const KEY_TYPE: &str = "type";
@@ -163,6 +175,9 @@ pub const PROP_PADDING_LEFT: &str = "padding_left";
 pub const PROP_PADDING_RIGHT: &str = "padding_right";
 pub const PROP_TAB_STOPS: &str = "tab_stops";
 pub const PROP_BACKGROUND_COLOR: &str = "background_color";
+/// Key for a char-props map's tracked-change revision (the paragraph mark's
+/// deletion mark lives here — OOXML `w:pPr/w:rPr/w:del`; Review tab 4a.2).
+pub const PROP_REVISION: &str = "revision";
 
 // -----------------------------------------------------------------------------
 // Section / PageLayout Keys
@@ -200,3 +215,5 @@ pub const KEY_MARGIN_GUTTER: &str = "gutter";
 pub const KEY_COL_COUNT: &str = "count";
 pub const KEY_COL_GAP: &str = "gap";
 pub const KEY_COL_SEPARATOR: &str = "separator";
+/// Explicit per-column widths (points), `;`-joined; absent = equal columns.
+pub const KEY_COL_WIDTHS: &str = "widths";

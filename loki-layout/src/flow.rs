@@ -11,6 +11,8 @@
 //! Paragraph placement, splitting, and keep-with-next chain logic live in
 //! the `para_impl` submodule (`flow_para.rs`).
 
+#[path = "flow_balance.rs"]
+mod balance;
 #[path = "flow_columns.rs"]
 mod columns_impl;
 #[path = "flow_comments.rs"]
@@ -19,8 +21,20 @@ mod comments_impl;
 mod editing;
 #[path = "flow_float.rs"]
 mod float_impl;
+#[path = "flow_list_marker.rs"]
+mod flow_list_marker;
+#[path = "flow_page_fields.rs"]
+mod page_fields;
 #[path = "flow_para.rs"]
 mod para_impl;
+#[path = "flow_table_cells.rs"]
+mod table_cells;
+#[path = "flow_table_geom.rs"]
+mod table_geom;
+#[path = "flow_table_paint.rs"]
+mod table_paint;
+
+pub(crate) use page_fields::page_layout_has_page_fields;
 
 use std::collections::HashMap;
 
@@ -36,14 +50,13 @@ use loki_primitives::units::Points;
 use crate::LayoutOptions;
 use crate::color::LayoutColor;
 use crate::font::FontResources;
-use crate::geometry::{LayoutInsets, LayoutPoint, LayoutRect, LayoutSize};
+use crate::geometry::{LayoutInsets, LayoutRect, LayoutSize};
 use crate::incremental::{FlowCheckpoint, PageStart};
-use crate::items::{PositionedBorderRect, PositionedItem, PositionedRect};
+use crate::items::{PositionedItem, PositionedRect};
 use crate::mode::LayoutMode;
-use crate::resolve::{
-    CollectedNote, convert_border, pts_to_f32, resolve_color, resolve_para_props,
-};
+use crate::resolve::{CollectedNote, pts_to_f32, resolve_para_props};
 use crate::result::{LayoutPage, PageEditingData, PageParagraphData};
+use crate::table_shading::{resolve_table_style, table_look};
 
 use para_impl::{flow_keep_with_next_chain, flow_paragraph};
 
@@ -160,8 +173,12 @@ pub(super) struct FlowState<'a> {
     /// top-level paginated loop (empty in nested flows).
     pub(super) checkpoints: Vec<PageStart>,
     /// Number of text columns (`1` = single); when `> 1`,
-    /// [`content_width`](Self::content_width) is the *column* width.
+    /// [`content_width`](Self::content_width) is the *current* column's width.
     pub(super) columns: u8,
+    /// Per-column widths in points (length `columns`; may be unequal). Column
+    /// x-offsets are the running sum of preceding widths plus `column_gap` per
+    /// gap. `content_width` tracks the current column's entry.
+    pub(super) column_widths: Vec<f32>,
     /// Gap between adjacent columns in points (meaningful only when `columns > 1`).
     pub(super) column_gap: f32,
     /// Whether to draw a separator line between columns.
@@ -238,22 +255,6 @@ impl<'a> FlowState<'a> {
 /// into `count` equal columns separated by `gap`, and the flow fills each column
 /// top-to-bottom before advancing to the next (then the page). Single-column and
 /// non-paginated (reflow/pageless) flows return the full width.
-fn column_layout_for(
-    columns: Option<&loki_doc_model::layout::page::SectionColumns>,
-    full_content_width: f32,
-    paginated: bool,
-) -> (u8, f32, bool, f32) {
-    match columns {
-        Some(c) if c.count >= 2 && paginated => {
-            let n = f32::from(c.count);
-            let gap = pts_to_f32(c.gap);
-            let col_w = ((full_content_width - (n - 1.0) * gap) / n).max(0.0);
-            (c.count, gap, c.separator, col_w)
-        }
-        _ => (1, 0.0, false, full_content_width),
-    }
-}
-
 /// Builds a fresh [`FlowState`] for `section` in `mode`.
 fn new_flow_state<'a>(
     resources: &'a mut FontResources,
@@ -277,8 +278,12 @@ fn new_flow_state<'a>(
         LayoutMode::Reflow { available_width } => *available_width,
         _ => (page_w - margins.horizontal()).max(0.0),
     };
-    let (columns, column_gap, column_separator, content_width) =
-        column_layout_for(pl.columns.as_ref(), full_content_width, mode.is_paginated());
+    let (columns, column_gap, column_separator, column_widths) = columns_impl::column_layout_for(
+        pl.columns.as_ref(),
+        full_content_width,
+        mode.is_paginated(),
+    );
+    let content_width = column_widths[0];
     FlowState {
         resources,
         catalog,
@@ -302,6 +307,7 @@ fn new_flow_state<'a>(
         current_paragraphs: Vec::new(),
         checkpoints: Vec::new(),
         columns,
+        column_widths,
         column_gap,
         column_separator,
         col_index: 0,
@@ -351,10 +357,9 @@ fn run_paginated_loop(
         if let Block::StyledPara(para) = block
             && resolve_para_props(para, state.catalog).keep_with_next
         {
-            // NOTE: `i` is the slice index (chain scanning indexes `blocks`);
-            // editing block indices inside a keep-with-next chain are therefore
-            // not offset by `block_index_base`. This only matters for a
-            // continuous section carrying a kwn chain in the live editor (rare).
+            // NOTE: `i` is the slice index (chain scanning indexes `blocks`), so
+            // editing block indices inside a keep-with-next chain are not offset
+            // by `block_index_base` — only matters for a kwn chain in a live-editor continuous section (rare).
             let consumed = flow_keep_with_next_chain(state, blocks, i);
             i += consumed;
             continue;
@@ -440,6 +445,19 @@ pub fn flow_section(
     options: &LayoutOptions,
     comments: &[loki_doc_model::content::annotation::Comment],
 ) -> FlowOutput {
+    if mode.is_paginated() {
+        // Top-level paginated flow: balances multi-column single-page sections.
+        return balance::flow_paginated_balanced(
+            resources,
+            section,
+            catalog,
+            mode,
+            display_scale,
+            options,
+            comments,
+        );
+    }
+
     let mut state = new_flow_state(
         resources,
         section,
@@ -449,44 +467,28 @@ pub fn flow_section(
         options,
         comments,
     );
-
-    if mode.is_paginated() {
-        // Top-level paginated flow: record checkpoints, never resync.
-        run_paginated_loop(&mut state, &section.blocks, 0, 0, |_, _| false);
-    } else {
-        for (idx, block) in section.blocks.iter().enumerate() {
-            flow_block(&mut state, block, idx);
-        }
-        // Reserve any float left active by the final block (continuous mode).
-        float_impl::reserve_active_float(&mut state);
+    for (idx, block) in section.blocks.iter().enumerate() {
+        flow_block(&mut state, block, idx);
     }
-
+    // Reserve any float left active by the final block (continuous mode).
+    float_impl::reserve_active_float(&mut state);
     flow_footnotes(&mut state);
 
-    if mode.is_paginated() {
-        finish_page(&mut state);
-        FlowOutput::Pages {
-            pages: state.pages,
-            checkpoints: state.checkpoints,
-            warnings: state.warnings,
+    if matches!(mode, LayoutMode::Pageless) {
+        let dx = state.margins.left;
+        for item in &mut state.current_items {
+            item.translate(dx, 0.0);
         }
-    } else {
-        if matches!(mode, LayoutMode::Pageless) {
-            let dx = state.margins.left;
-            for item in &mut state.current_items {
-                item.translate(dx, 0.0);
-            }
-            // Keep paragraph editing origins consistent with the shifted items.
-            for para in &mut state.current_paragraphs {
-                para.origin.0 += dx;
-            }
+        // Keep paragraph editing origins consistent with the shifted items.
+        for para in &mut state.current_paragraphs {
+            para.origin.0 += dx;
         }
-        FlowOutput::Canvas {
-            items: state.current_items,
-            height: state.cursor_y,
-            paragraphs: state.current_paragraphs,
-            warnings: state.warnings,
-        }
+    }
+    FlowOutput::Canvas {
+        items: state.current_items,
+        height: state.cursor_y,
+        paragraphs: state.current_paragraphs,
+        warnings: state.warnings,
     }
 }
 
@@ -511,12 +513,13 @@ fn begin_continuous_section(state: &mut FlowState, section: &Section) {
     // Resolve the new section's columns against the group's (unchanged) content
     // area width.
     let full_content_width = (state.page_size.width - state.margins.horizontal()).max(0.0);
-    let (columns, column_gap, column_separator, content_width) =
-        column_layout_for(section.layout.columns.as_ref(), full_content_width, true);
+    let (columns, column_gap, column_separator, column_widths) =
+        columns_impl::column_layout_for(section.layout.columns.as_ref(), full_content_width, true);
     state.columns = columns;
     state.column_gap = column_gap;
     state.column_separator = column_separator;
-    state.content_width = content_width;
+    state.content_width = column_widths[0];
+    state.column_widths = column_widths;
 
     // Open the new column band at the current y (mid-page).
     state.col_index = 0;
@@ -574,7 +577,7 @@ pub fn flow_section_group(
 
 // ── Block dispatch ────────────────────────────────────────────────────────────
 
-fn flow_block(state: &mut FlowState, block: &Block, idx: usize) {
+pub(super) fn flow_block(state: &mut FlowState, block: &Block, idx: usize) {
     // Only consecutive plain paragraphs continue a cross-paragraph float wrap;
     // any other block clears the float (reserving its remaining height) so it
     // does not overlap the image.
@@ -659,19 +662,19 @@ fn flow_block(state: &mut FlowState, block: &Block, idx: usize) {
             }
             state.current_indent = old_indent;
         }
-        Block::Div(_, blocks) => {
-            for b in blocks {
-                flow_block(state, b, idx);
-            }
-        }
-        Block::Figure(_, _, blocks) => {
-            for b in blocks {
-                flow_block(state, b, idx);
-            }
-        }
+        Block::Div(_, blocks) | Block::Figure(_, _, blocks) => flow_blocks(state, blocks, idx),
         Block::Table(tbl) => flow_table(state, tbl, idx),
         Block::HorizontalRule => flow_hrule(state),
+        Block::TableOfContents(toc) => flow_blocks(state, &toc.body, idx),
+        Block::Index(index) => flow_blocks(state, &index.body, idx),
         _ => {}
+    }
+}
+
+/// Flows child blocks at the parent's `idx` (Div/Figure bodies, TOC/index snapshots).
+fn flow_blocks(state: &mut FlowState, blocks: &[Block], idx: usize) {
+    for b in blocks {
+        flow_block(state, b, idx);
     }
 }
 
@@ -737,17 +740,17 @@ fn layout_blocks_reflow(
     // layout — the blocks are already a per-call clone, so this never
     // mutates the document.
     if let Some(ctx) = field_context {
-        substitute_page_fields(&mut blocks, &ctx);
+        page_fields::substitute_page_fields(&mut blocks, &ctx);
     }
     let synthetic = Section {
         layout: PageLayout::default(),
         blocks,
         start: loki_doc_model::layout::section::SectionStart::default(),
+        page_style: None,
         extensions: ExtensionBag::default(),
     };
     let mode = LayoutMode::Reflow { available_width };
-    // Headers/footers are read-only; always use default (no editing overhead).
-    let options = LayoutOptions::default();
+    let options = LayoutOptions::default(); // headers/footers read-only here
     match flow_section(
         resources,
         &synthetic,
@@ -760,177 +763,6 @@ fn layout_blocks_reflow(
         FlowOutput::Canvas { items, height, .. } => (items, height),
         FlowOutput::Pages { .. } => unreachable!("Reflow mode always returns Canvas"),
     }
-}
-
-/// Visit every inline vector reachable from `blocks` (paragraphs, headings,
-/// list items, table cells, nested containers), calling `f` on each.
-///
-/// Shared traversal for page-field detection and substitution in
-/// headers/footers.
-fn visit_inline_vecs_mut(blocks: &mut [Block], f: &mut impl FnMut(&mut Vec<Inline>)) {
-    use loki_doc_model::content::table::core::Table;
-
-    fn visit_table(table: &mut Table, f: &mut impl FnMut(&mut Vec<Inline>)) {
-        let rows = table
-            .head
-            .rows
-            .iter_mut()
-            .chain(table.foot.rows.iter_mut())
-            .chain(
-                table
-                    .bodies
-                    .iter_mut()
-                    .flat_map(|b| b.head_rows.iter_mut().chain(b.body_rows.iter_mut())),
-            );
-        for row in rows {
-            for cell in &mut row.cells {
-                visit_inline_vecs_mut(&mut cell.blocks, f);
-            }
-        }
-    }
-
-    for block in blocks {
-        match block {
-            Block::Plain(inlines) | Block::Para(inlines) | Block::Heading(_, _, inlines) => {
-                f(inlines)
-            }
-            Block::StyledPara(p) => f(&mut p.inlines),
-            Block::LineBlock(lines) => {
-                for line in lines {
-                    f(line);
-                }
-            }
-            Block::BlockQuote(ch) | Block::Div(_, ch) | Block::Figure(_, _, ch) => {
-                visit_inline_vecs_mut(ch, f)
-            }
-            Block::OrderedList(_, items) | Block::BulletList(items) => {
-                for item in items {
-                    visit_inline_vecs_mut(item, f);
-                }
-            }
-            Block::Table(table) => visit_table(table, f),
-            _ => {}
-        }
-    }
-}
-
-/// `true` when any inline reachable from `inlines` is a PAGE or NUMPAGES
-/// field.
-fn inlines_contain_page_field(inlines: &[Inline]) -> bool {
-    use loki_doc_model::content::field::types::FieldKind;
-    inlines.iter().any(|inline| match inline {
-        Inline::Field(field) => {
-            matches!(field.kind, FieldKind::PageNumber | FieldKind::PageCount)
-        }
-        Inline::Strong(ch)
-        | Inline::Emph(ch)
-        | Inline::Underline(ch)
-        | Inline::Strikeout(ch)
-        | Inline::Superscript(ch)
-        | Inline::Subscript(ch)
-        | Inline::SmallCaps(ch)
-        | Inline::Quoted(_, ch)
-        | Inline::Span(_, ch)
-        | Inline::Cite(_, ch) => inlines_contain_page_field(ch),
-        Inline::Link(_, ch, _) => inlines_contain_page_field(ch),
-        Inline::StyledRun(run) => inlines_contain_page_field(&run.content),
-        _ => false,
-    })
-}
-
-/// `true` when any of `pl`'s header/footer variants contains a PAGE / NUMPAGES
-/// field. Used by incremental relayout: when a header references the page count,
-/// a page-count change invalidates the headers on *reused* pages too, so the
-/// fast path must re-run the header pass over all pages in that case.
-pub(crate) fn page_layout_has_page_fields(pl: &PageLayout) -> bool {
-    [
-        &pl.header,
-        &pl.header_first,
-        &pl.header_even,
-        &pl.footer,
-        &pl.footer_first,
-        &pl.footer_even,
-    ]
-    .into_iter()
-    .flatten()
-    .any(|hf| blocks_contain_page_field(&hf.blocks))
-}
-
-/// `true` when any inline in `blocks` is a PAGE or NUMPAGES field, in which
-/// case the header/footer must be laid out per page rather than once.
-fn blocks_contain_page_field(blocks: &[Block]) -> bool {
-    use loki_doc_model::content::table::core::Table;
-
-    fn table_contains(table: &Table) -> bool {
-        let rows = table.head.rows.iter().chain(table.foot.rows.iter()).chain(
-            table
-                .bodies
-                .iter()
-                .flat_map(|b| b.head_rows.iter().chain(b.body_rows.iter())),
-        );
-        rows.into_iter().any(|row| {
-            row.cells
-                .iter()
-                .any(|c| blocks_contain_page_field(&c.blocks))
-        })
-    }
-
-    blocks.iter().any(|block| match block {
-        Block::Plain(i) | Block::Para(i) | Block::Heading(_, _, i) => inlines_contain_page_field(i),
-        Block::StyledPara(p) => inlines_contain_page_field(&p.inlines),
-        Block::LineBlock(lines) => lines.iter().any(|l| inlines_contain_page_field(l)),
-        Block::BlockQuote(ch) | Block::Div(_, ch) | Block::Figure(_, _, ch) => {
-            blocks_contain_page_field(ch)
-        }
-        Block::OrderedList(_, items) | Block::BulletList(items) => {
-            items.iter().any(|i| blocks_contain_page_field(i))
-        }
-        Block::Table(table) => table_contains(table),
-        _ => false,
-    })
-}
-
-/// Replace every PAGE / NUMPAGES field reachable from `blocks` with a plain
-/// text inline carrying its resolved value from `ctx`.
-fn substitute_page_fields(blocks: &mut [Block], ctx: &crate::FieldContext) {
-    use loki_doc_model::content::field::types::FieldKind;
-
-    fn substitute_inlines(inlines: &mut [Inline], ctx: &crate::FieldContext) {
-        for inline in inlines.iter_mut() {
-            match inline {
-                Inline::Field(field) => {
-                    let value = match field.kind {
-                        // The PAGE field honours the section's number format
-                        // (roman/alpha); NUMPAGES stays decimal.
-                        FieldKind::PageNumber => Some(match ctx.number_format {
-                            Some(scheme) => crate::para::format_counter(ctx.page_number, scheme),
-                            None => ctx.page_number.to_string(),
-                        }),
-                        FieldKind::PageCount => Some(ctx.page_count.to_string()),
-                        _ => None,
-                    };
-                    if let Some(v) = value {
-                        *inline = Inline::Str(v);
-                    }
-                }
-                Inline::Strong(ch)
-                | Inline::Emph(ch)
-                | Inline::Underline(ch)
-                | Inline::Strikeout(ch)
-                | Inline::Superscript(ch)
-                | Inline::Subscript(ch)
-                | Inline::SmallCaps(ch)
-                | Inline::Quoted(_, ch)
-                | Inline::Span(_, ch)
-                | Inline::Cite(_, ch) => substitute_inlines(ch, ctx),
-                Inline::Link(_, ch, _) => substitute_inlines(ch, ctx),
-                Inline::StyledRun(run) => substitute_inlines(&mut run.content, ctx),
-                _ => {}
-            }
-        }
-    }
-
-    visit_inline_vecs_mut(blocks, &mut |inlines| substitute_inlines(inlines, ctx));
 }
 
 /// Populate header/footer items for each page in `pages`.
@@ -958,7 +790,7 @@ pub(crate) fn assign_headers_footers(
     // Lay out a variant once when it has no page fields; `None` marks
     // variants that must be re-laid-out per page.
     let mut lay_static = |hf: &HeaderFooter| -> Option<(Vec<PositionedItem>, f32)> {
-        if blocks_contain_page_field(&hf.blocks) {
+        if page_fields::blocks_contain_page_field(&hf.blocks) {
             None
         } else {
             Some(layout_blocks_reflow(
@@ -1128,7 +960,7 @@ fn flow_footnotes(state: &mut FlowState) {
     state.cursor_y += SEP_HEIGHT + SEP_GAP;
 
     for note in notes {
-        let mark = format!("{} ", &footnote_mark(note.number));
+        let mark = format!("{} ", footnote_mark(note.number));
         let mut first = true;
         for (body_block, block) in note.blocks.iter().enumerate() {
             // Tag body paragraph(s) so a click into the footnote resolves to the
@@ -1234,7 +1066,7 @@ pub(super) fn synthesize_heading_para(
 
 // ── Table layout ─────────────────────────────────────────────────────────────
 
-fn get_items_max_x(items: &[PositionedItem]) -> f32 {
+pub(super) fn get_items_max_x(items: &[PositionedItem]) -> f32 {
     let mut max_x = 0.0f32;
     for item in items {
         let x = match item {
@@ -1271,262 +1103,12 @@ fn get_items_max_x(items: &[PositionedItem]) -> f32 {
     max_x
 }
 
-fn measure_cell_height(
-    resources: &mut FontResources,
-    catalog: &StyleCatalog,
-    display_scale: f32,
-    options: &LayoutOptions,
-    cell: &loki_doc_model::content::table::row::Cell,
-    cell_content_width: f32,
-    idx: usize,
-) -> f32 {
-    use loki_doc_model::content::table::row::CellTextDirection;
-
-    let pad_top = cell.props.padding_top.map(pts_to_f32).unwrap_or(0.0);
-    let pad_bottom = cell.props.padding_bottom.map(pts_to_f32).unwrap_or(0.0);
-
-    let is_rotated = matches!(
-        cell.props.text_direction.as_ref(),
-        Some(CellTextDirection::TbRl | CellTextDirection::TbLr | CellTextDirection::BtLr)
-    );
-
-    let flow_w = if is_rotated {
-        10000.0
-    } else {
-        cell_content_width
-    };
-
-    let mut temp_state = FlowState {
-        resources,
-        catalog,
-        mode: &LayoutMode::Pageless,
-        display_scale,
-        options,
-        cursor_y: 0.0,
-        content_width: flow_w,
-        current_items: Vec::new(),
-        pages: Vec::new(),
-        page_size: LayoutSize::default(),
-        margins: LayoutInsets::default(),
-        page_content_height: 0.0,
-        page_number: 1,
-        warnings: Vec::new(),
-        current_indent: 0.0,
-        list_counters: HashMap::new(),
-        prev_list_id: None,
-        note_counter: 0,
-        pending_footnotes: Vec::new(),
-        current_paragraphs: Vec::new(),
-        checkpoints: Vec::new(),
-        // Table cells are always laid out single-column.
-        columns: 1,
-        column_gap: 0.0,
-        column_separator: false,
-        col_index: 0,
-        column_top_y: 0.0,
-        column_item_start: 0,
-        column_para_start: 0,
-        // Cells never render the comment gutter panel.
-        comments: &[],
-        pending_comment_anchors: Vec::new(),
-        // Cell content: break over-long words to the column width (Word).
-        break_long_words: true,
-        active_float: None,
-        nested_editing: None,
-    };
-
-    for block in &cell.blocks {
-        flow_block(&mut temp_state, block, idx);
-    }
-
-    if is_rotated {
-        let max_x = get_items_max_x(&temp_state.current_items);
-        max_x + pad_top + pad_bottom
-    } else {
-        let content_h = temp_state.cursor_y;
-        content_h + pad_top + pad_bottom
-    }
-}
-
-fn resolve_column_widths(
-    state: &FlowState,
-    tbl: &loki_doc_model::content::table::core::Table,
-) -> Vec<f32> {
-    use loki_doc_model::content::table::col::{ColWidth, TableWidth};
-
-    let col_count = tbl.col_count().max(1);
-    let table_width = match tbl.width.as_ref() {
-        Some(TableWidth::Fixed(w)) => *w,
-        Some(TableWidth::Percent(p)) => state.content_width * (p / 100.0),
-        _ => state.content_width,
-    };
-    let table_width = table_width.max(0.0);
-
-    let mut resolved_widths = vec![0.0f32; col_count];
-    let mut proportional_shares = vec![0.0f32; col_count];
-    let mut total_fixed_width = 0.0f32;
-    let mut total_proportional_shares = 0.0f32;
-
-    for i in 0..col_count {
-        let spec = tbl.col_specs.get(i);
-        let width_spec = spec.map(|s| s.width).unwrap_or(ColWidth::Default);
-        match width_spec {
-            ColWidth::Fixed(pts) => {
-                let w = pts_to_f32(pts);
-                resolved_widths[i] = w;
-                total_fixed_width += w;
-            }
-            ColWidth::Proportional(share) => {
-                proportional_shares[i] = share;
-                total_proportional_shares += share;
-            }
-            ColWidth::Default | _ => {
-                proportional_shares[i] = 1.0;
-                total_proportional_shares += 1.0;
-            }
-        }
-    }
-
-    let remaining_width = (table_width - total_fixed_width).max(0.0);
-    if total_proportional_shares > 0.0 {
-        let share_unit = remaining_width / total_proportional_shares;
-        for i in 0..col_count {
-            let spec = tbl.col_specs.get(i);
-            let width_spec = spec.map(|s| s.width).unwrap_or(ColWidth::Default);
-            match width_spec {
-                ColWidth::Proportional(_) | ColWidth::Default => {
-                    resolved_widths[i] = proportional_shares[i] * share_unit;
-                }
-                _ => {}
-            }
-        }
-    } else if total_fixed_width > 0.0 {
-        // Fixed-layout tables (`w:tblLayout="fixed"`) honour the grid widths
-        // exactly — the table overflows or underfills rather than rescaling.
-        // Autofit tables scale the fixed widths to fill the table width.
-        let fixed_layout = tbl
-            .attr
-            .classes
-            .iter()
-            .any(|c| c == loki_doc_model::content::table::core::TABLE_FIXED_LAYOUT_CLASS);
-        if !fixed_layout {
-            let scale = table_width / total_fixed_width;
-            for w in &mut resolved_widths {
-                *w *= scale;
-            }
-        }
-    } else {
-        let uniform_w = table_width / col_count as f32;
-        resolved_widths.fill(uniform_w);
-    }
-
-    resolved_widths
-}
-
-// Helper to layout cell blocks inside a nested flow state.
-// Helper requires passing all context values to configure the FlowState.
-#[allow(clippy::too_many_arguments)]
-fn flow_cell_blocks(
-    resources: &mut FontResources,
-    catalog: &StyleCatalog,
-    display_scale: f32,
-    options: &LayoutOptions,
-    blocks: &[Block],
-    content_width: f32,
-    starting_indent: f32,
-    starting_y: f32,
-    idx: usize,
-) -> Vec<PositionedItem> {
-    let mut temp_state = FlowState {
-        resources,
-        catalog,
-        mode: &LayoutMode::Pageless,
-        display_scale,
-        options,
-        cursor_y: starting_y,
-        content_width,
-        current_items: Vec::new(),
-        pages: Vec::new(),
-        page_size: LayoutSize::default(),
-        margins: LayoutInsets::default(),
-        page_content_height: 0.0,
-        page_number: 1,
-        warnings: Vec::new(),
-        current_indent: starting_indent,
-        list_counters: HashMap::new(),
-        prev_list_id: None,
-        note_counter: 0,
-        pending_footnotes: Vec::new(),
-        current_paragraphs: Vec::new(),
-        checkpoints: Vec::new(),
-        // Table cells are always laid out single-column.
-        columns: 1,
-        column_gap: 0.0,
-        column_separator: false,
-        col_index: 0,
-        column_top_y: 0.0,
-        column_item_start: 0,
-        column_para_start: 0,
-        // Cells never render the comment gutter panel.
-        comments: &[],
-        pending_comment_anchors: Vec::new(),
-        // Cell content: break over-long words to the column width (Word).
-        break_long_words: true,
-        active_float: None,
-        nested_editing: None,
-    };
-
-    for block in blocks {
-        flow_block(&mut temp_state, block, idx);
-    }
-
-    temp_state.current_items
-}
-
-/// Assign each cell its grid column span `(col_start, col_end)`, accounting for
-/// columns occupied by a `row_span` (vMerge) cell from an earlier row.
-///
-/// Walks rows top-to-bottom, left-to-right: each cell takes the next column not
-/// already covered by a vertical merge from above, then occupies `col_span`
-/// columns. A cell with `row_span > 1` marks its columns covered in the rows it
-/// spans, so cells there skip those columns. Mirrors the OOXML/HTML table grid.
-fn assign_cell_columns(
-    rows: &[&loki_doc_model::content::table::row::Row],
-    col_count: usize,
-) -> Vec<Vec<(usize, usize)>> {
-    let mut covered = vec![vec![false; col_count]; rows.len()];
-    let mut cell_cols: Vec<Vec<(usize, usize)>> = Vec::with_capacity(rows.len());
-    for (row_idx, row) in rows.iter().enumerate() {
-        let mut col = 0usize;
-        let mut row_cols = Vec::with_capacity(row.cells.len());
-        for cell in &row.cells {
-            while col < col_count && covered[row_idx][col] {
-                col += 1;
-            }
-            let col_start = col.min(col_count);
-            let col_end = (col_start + cell.col_span as usize).min(col_count);
-            row_cols.push((col_start, col_end));
-            if cell.row_span > 1 {
-                let last = (row_idx + cell.row_span as usize).min(rows.len());
-                for cov_row in covered.iter_mut().take(last).skip(row_idx + 1) {
-                    cov_row[col_start..col_end].fill(true);
-                }
-            }
-            col = col_end;
-        }
-        cell_cols.push(row_cols);
-    }
-    cell_cols
-}
-
 fn flow_table(
     state: &mut FlowState,
     tbl: &loki_doc_model::content::table::core::Table,
     idx: usize,
 ) {
-    use loki_doc_model::content::table::row::{CellTextDirection, CellVerticalAlign};
-
-    let col_widths = resolve_column_widths(state, tbl);
+    let col_widths = table_geom::resolve_column_widths(state, tbl);
 
     let mut rows = Vec::new();
     rows.extend(&tbl.head.rows);
@@ -1537,69 +1119,17 @@ fn flow_table(
     rows.extend(&tbl.foot.rows);
 
     // Assign each cell its grid columns, accounting for columns covered by a
-    // `row_span` (vMerge) cell from an earlier row. `cell_cols[row][cell] =
-    // (col_start, col_end)`. Without this, a cell in a row whose leading
-    // column is occupied by a vertical merge above would be placed too far
-    // left (overlapping the merged cell) — the TC-DOCX-005 L-merge bug.
-    let cell_cols = assign_cell_columns(&rows, col_widths.len());
+    // `row_span` (vMerge) cell from an earlier row (`cell_cols[row][cell] =
+    // (col_start, col_end)`). Without it a cell whose leading column is occupied
+    // by a vertical merge above is placed too far left — the TC-DOCX-005 bug.
+    let cell_cols = table_geom::assign_cell_columns(&rows, col_widths.len());
 
-    let mut row_heights = vec![0.0f32; rows.len()];
+    // Named style + `w:tblLook` → conditional/banding shading (under direct).
+    let table_style = resolve_table_style(state.catalog, tbl.style_name());
+    let look = table_look(tbl);
+    let (grid_rows, grid_cols) = (rows.len(), col_widths.len());
 
-    // Pass 1: Measure all cells with row_span == 1
-    for (row_idx, row) in rows.iter().enumerate() {
-        for (c_idx, cell) in row.cells.iter().enumerate() {
-            let (col_start, col_end) = cell_cols[row_idx][c_idx];
-            if cell.row_span == 1 {
-                let pad_left = cell.props.padding_left.map(pts_to_f32).unwrap_or(0.0);
-                let pad_right = cell.props.padding_right.map(pts_to_f32).unwrap_or(0.0);
-                let cell_w: f32 = col_widths[col_start..col_end].iter().sum();
-                let cell_content_width = (cell_w - pad_left - pad_right).max(0.0);
-                let h = measure_cell_height(
-                    state.resources,
-                    state.catalog,
-                    state.display_scale,
-                    state.options,
-                    cell,
-                    cell_content_width,
-                    idx,
-                );
-                row_heights[row_idx] = row_heights[row_idx].max(h);
-            }
-        }
-        row_heights[row_idx] = row_heights[row_idx].max(crate::MIN_ROW_HEIGHT);
-    }
-
-    // Pass 2: Distribute spanning cell heights across spanned rows
-    for (row_idx, row) in rows.iter().enumerate() {
-        for (c_idx, cell) in row.cells.iter().enumerate() {
-            let (col_start, col_end) = cell_cols[row_idx][c_idx];
-            if cell.row_span > 1 {
-                let span = cell.row_span as usize;
-                let spanned_height: f32 = row_heights
-                    [row_idx..(row_idx + span).min(row_heights.len())]
-                    .iter()
-                    .sum();
-                let pad_left = cell.props.padding_left.map(pts_to_f32).unwrap_or(0.0);
-                let pad_right = cell.props.padding_right.map(pts_to_f32).unwrap_or(0.0);
-                let cell_w: f32 = col_widths[col_start..col_end].iter().sum();
-                let cell_content_width = (cell_w - pad_left - pad_right).max(0.0);
-                let needed = measure_cell_height(
-                    state.resources,
-                    state.catalog,
-                    state.display_scale,
-                    state.options,
-                    cell,
-                    cell_content_width,
-                    idx,
-                );
-                if needed > spanned_height {
-                    let extra = needed - spanned_height;
-                    let last = (row_idx + span - 1).min(row_heights.len() - 1);
-                    row_heights[last] += extra;
-                }
-            }
-        }
-    }
+    let row_heights = table_paint::measure_row_heights(state, &rows, &cell_cols, &col_widths, idx);
 
     // Pass 3: Place and flow cell blocks. `cell_flat` counts cells in the bridge's
     // flat `KEY_TABLE_CELLS` order so cell paragraphs get a matching `PathStep::Cell`.
@@ -1618,174 +1148,21 @@ fn flow_table(
 
         let original_row_page = state.page_number;
         let original_row_y_start = state.cursor_y;
-        let mut row_y_start = original_row_y_start;
-        let mut row_page = original_row_page;
-
         let table_indent = state.current_indent;
-        let mut cell_starts = Vec::new();
 
-        // Pass 3a: Flow cell content blocks
-        for (c_idx, cell) in row.cells.iter().enumerate() {
-            let (col_start, col_end) = cell_cols[row_idx][c_idx];
-            let old_indent = state.current_indent;
-            let old_width = state.content_width;
-
-            let pad_top = cell.props.padding_top.map(pts_to_f32).unwrap_or(0.0);
-            let pad_bottom = cell.props.padding_bottom.map(pts_to_f32).unwrap_or(0.0);
-            let pad_left = cell.props.padding_left.map(pts_to_f32).unwrap_or(0.0);
-            let pad_right = cell.props.padding_right.map(pts_to_f32).unwrap_or(0.0);
-
-            let cell_w: f32 = col_widths[col_start..col_end].iter().sum();
-            let cell_x = old_indent + col_widths[0..col_start].iter().sum::<f32>();
-            let cell_content_width = (cell_w - pad_left - pad_right).max(0.0);
-
-            let cell_height = if cell.row_span == 1 {
-                row_max_h
-            } else {
-                let span = cell.row_span as usize;
-                row_heights[row_idx..(row_idx + span).min(row_heights.len())]
-                    .iter()
-                    .sum()
-            };
-
-            // If a previous cell caused a page break, update row_y_start to the
-            // top of the new page so this cell doesn't land in the wrong position.
-            if state.page_number != row_page {
-                row_y_start = state.cursor_y;
-                row_page = state.page_number;
-            }
-
-            if state.page_number == original_row_page {
-                state.cursor_y = original_row_y_start + pad_top;
-            } else {
-                state.cursor_y = 0.0 + pad_top;
-            }
-
-            cell_starts.push((state.page_number, state.current_items.len()));
-
-            let rotation_degrees = match cell.props.text_direction.as_ref() {
-                Some(CellTextDirection::TbRl) => Some(90.0_f32),
-                Some(CellTextDirection::TbLr) => Some(270.0_f32),
-                Some(CellTextDirection::BtLr) => Some(270.0_f32),
-                _ => None,
-            };
-
-            let cell_items = if let Some(degrees) = rotation_degrees {
-                // NOTE(cell-rotation): content laid out width/height-swapped,
-                // then RotatedGroup rotates it (fine for text runs).
-                // TODO(rotated-cell-editing): emits no editing data (the caret
-                // needs the same rotation transform) — cells stay read-only.
-                let rotated_content_width = (cell_height - pad_top - pad_bottom).max(0.0);
-                let inner_items = flow_cell_blocks(
-                    state.resources,
-                    state.catalog,
-                    state.display_scale,
-                    state.options,
-                    &cell.blocks,
-                    rotated_content_width,
-                    pad_top,
-                    pad_left,
-                    idx,
-                );
-
-                let max_x = get_items_max_x(&inner_items);
-                let content_visual_height = max_x;
-                let cell_avail_h = (cell_height - pad_top - pad_bottom).max(0.0);
-                let extra_space = (cell_avail_h - content_visual_height).max(0.0);
-                let y_offset = match cell.props.vertical_align {
-                    Some(CellVerticalAlign::Middle) => extra_space / 2.0,
-                    Some(CellVerticalAlign::Bottom) => extra_space,
-                    _ => 0.0,
-                };
-
-                vec![PositionedItem::RotatedGroup {
-                    origin: LayoutPoint {
-                        x: cell_x,
-                        y: row_y_start + y_offset,
-                    },
-                    degrees,
-                    content_width: cell_height,
-                    content_height: cell_content_width,
-                    items: inner_items,
-                }]
-            } else {
-                state.current_indent = cell_x + pad_left;
-                state.content_width = cell_content_width;
-                // Cell content breaks over-long words to the column width (Word).
-                let old_break = state.break_long_words;
-                state.break_long_words = true;
-
-                let cell_para_start = state.current_paragraphs.len();
-                for (bi, block) in cell.blocks.iter().enumerate() {
-                    // Tag cell paragraphs so a click resolves to the live cell.
-                    state.nested_editing = Some(editing::NestedEditing::cell(idx, cell_flat, bi));
-                    flow_block(state, block, idx);
-                }
-                state.nested_editing = None;
-                state.break_long_words = old_break;
-
-                // If it fits on a single page, apply vertical alignment
-                let cell_page_start = cell_starts[c_idx].0;
-                let cell_item_start = cell_starts[c_idx].1;
-                if cell_page_start == state.page_number {
-                    let content_h = (state.cursor_y - (row_y_start + pad_top)).max(0.0);
-                    let cell_avail_h = (cell_height - pad_top - pad_bottom).max(0.0);
-                    let extra_space = (cell_avail_h - content_h).max(0.0);
-                    let y_offset = match cell.props.vertical_align {
-                        Some(CellVerticalAlign::Middle) => extra_space / 2.0,
-                        Some(CellVerticalAlign::Bottom) => extra_space,
-                        _ => 0.0,
-                    };
-                    if y_offset > 0.0 {
-                        for item in &mut state.current_items[cell_item_start..] {
-                            item.translate(0.0, y_offset);
-                        }
-                        // Editing origins must follow their translated glyphs so
-                        // the caret in a v-aligned cell lands on the text.
-                        for para in &mut state.current_paragraphs[cell_para_start..] {
-                            para.origin.1 += y_offset;
-                        }
-                    }
-
-                    // Clip single-page cell content to its box so over-wide
-                    // content can't bleed into neighbours (Word). A cell spilling
-                    // to a later page stays unclipped — see fidelity-status.
-                    if state.current_items.len() > cell_item_start {
-                        let cell_top_y = if state.page_number == original_row_page {
-                            original_row_y_start
-                        } else {
-                            0.0
-                        };
-                        let clip_rect = LayoutRect {
-                            origin: LayoutPoint {
-                                x: cell_x,
-                                y: cell_top_y,
-                            },
-                            size: LayoutSize {
-                                width: cell_w,
-                                height: cell_height,
-                            },
-                        };
-                        let inner: Vec<PositionedItem> =
-                            state.current_items.drain(cell_item_start..).collect();
-                        state.current_items.push(PositionedItem::ClippedGroup {
-                            clip_rect,
-                            items: inner,
-                        });
-                    }
-                }
-
-                Vec::new()
-            };
-
-            for item in cell_items {
-                state.current_items.push(item);
-            }
-
-            state.current_indent = old_indent;
-            state.content_width = old_width;
-            cell_flat += 1;
-        }
+        let cell_starts = table_cells::flow_row_cells(
+            state,
+            row,
+            row_idx,
+            &cell_cols[row_idx],
+            &col_widths,
+            &row_heights,
+            row_max_h,
+            original_row_page,
+            original_row_y_start,
+            idx,
+            &mut cell_flat,
+        );
 
         let row_page_end = state.page_number;
         let row_y_end = if original_row_page == row_page_end {
@@ -1797,152 +1174,24 @@ fn flow_table(
             (row_max_h - first_h - intermediate_h).max(0.0)
         };
 
-        // Helper closures to calculate heights and Y coordinates of cell portions per page
-        let get_cell_height_on_page = |p: usize, cell_page_start: usize, cell_h: f32| -> f32 {
-            if p == cell_page_start {
-                if p == row_page_end {
-                    cell_h
-                } else {
-                    let y_start = if p == original_row_page {
-                        original_row_y_start
-                    } else {
-                        0.0
-                    };
-                    (state.page_content_height - y_start).max(0.0)
-                }
-            } else if p == row_page_end {
-                let start_y = if cell_page_start == original_row_page {
-                    original_row_y_start
-                } else {
-                    0.0
-                };
-                let first_h = (state.page_content_height - start_y).max(0.0);
-                let intermediate_h =
-                    (row_page_end - cell_page_start - 1) as f32 * state.page_content_height;
-                (cell_h - first_h - intermediate_h).max(0.0)
-            } else {
-                state.page_content_height
-            }
-        };
-
-        let get_cell_y_on_page = |p: usize| -> f32 {
-            if p == original_row_page {
-                original_row_y_start
-            } else {
-                0.0
-            }
-        };
-
-        // Pass 3b: Emit background and border decorations for this row's cells
-        for p in original_row_page..=row_page_end {
-            for (c_idx, cell) in row.cells.iter().enumerate().rev() {
-                let cell_page_start = cell_starts[c_idx].0;
-                let cell_item_start = cell_starts[c_idx].1;
-
-                if p < cell_page_start {
-                    continue;
-                }
-
-                let cell_h = if cell.row_span == 1 {
-                    row_max_h
-                } else {
-                    let span = cell.row_span as usize;
-                    row_heights[row_idx..(row_idx + span).min(row_heights.len())]
-                        .iter()
-                        .sum()
-                };
-
-                let h = get_cell_height_on_page(p, cell_page_start, cell_h);
-                if h < 0.0 || (h == 0.0 && cell_h > 0.0) {
-                    continue;
-                }
-
-                let y = get_cell_y_on_page(p);
-                let (col_start, col_end) = cell_cols[row_idx][c_idx];
-                let cell_w: f32 = col_widths[col_start..col_end].iter().sum();
-                let cell_x = table_indent + col_widths[0..col_start].iter().sum::<f32>();
-                let cell_rect = LayoutRect {
-                    origin: LayoutPoint { x: cell_x, y },
-                    size: LayoutSize {
-                        width: cell_w,
-                        height: h,
-                    },
-                };
-
-                let has_borders = cell.props.border_top.is_some()
-                    || cell.props.border_bottom.is_some()
-                    || cell.props.border_left.is_some()
-                    || cell.props.border_right.is_some();
-
-                let is_first = p == cell_page_start;
-                let is_last = p == row_page_end;
-
-                let border_top = if is_first {
-                    cell.props.border_top.as_ref().and_then(convert_border)
-                } else {
-                    None
-                };
-                let border_bottom = if is_last {
-                    cell.props.border_bottom.as_ref().and_then(convert_border)
-                } else {
-                    None
-                };
-                let border_left = cell.props.border_left.as_ref().and_then(convert_border);
-                let border_right = cell.props.border_right.as_ref().and_then(convert_border);
-
-                let insert_idx = if p == cell_page_start {
-                    cell_item_start
-                } else {
-                    0
-                };
-
-                if p == state.page_number {
-                    if has_borders {
-                        state.current_items.insert(
-                            insert_idx,
-                            PositionedItem::BorderRect(PositionedBorderRect {
-                                rect: cell_rect,
-                                top: border_top,
-                                bottom: border_bottom,
-                                left: border_left,
-                                right: border_right,
-                            }),
-                        );
-                    }
-                    if let Some(bg) = cell.props.background_color.as_ref() {
-                        state.current_items.insert(
-                            insert_idx,
-                            PositionedItem::FilledRect(PositionedRect {
-                                rect: cell_rect,
-                                color: resolve_color(Some(bg)),
-                            }),
-                        );
-                    }
-                } else if let Some(page) = state.pages.get_mut(p - 1) {
-                    if has_borders {
-                        page.content_items.insert(
-                            insert_idx,
-                            PositionedItem::BorderRect(PositionedBorderRect {
-                                rect: cell_rect,
-                                top: border_top,
-                                bottom: border_bottom,
-                                left: border_left,
-                                right: border_right,
-                            }),
-                        );
-                    }
-                    if let Some(bg) = cell.props.background_color.as_ref() {
-                        page.content_items.insert(
-                            insert_idx,
-                            PositionedItem::FilledRect(PositionedRect {
-                                rect: cell_rect,
-                                color: resolve_color(Some(bg)),
-                            }),
-                        );
-                    }
-                }
-            }
-        }
+        table_paint::emit_row_cell_decorations(
+            state,
+            row,
+            row_idx,
+            &cell_cols[row_idx],
+            &col_widths,
+            &row_heights,
+            row_max_h,
+            &cell_starts,
+            table_indent,
+            table_style,
+            &look,
+            grid_rows,
+            grid_cols,
+            original_row_page,
+            original_row_y_start,
+            row_page_end,
+        );
 
         state.cursor_y = row_y_end;
     }

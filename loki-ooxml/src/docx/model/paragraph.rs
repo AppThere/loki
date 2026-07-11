@@ -5,6 +5,7 @@
 //!
 //! Mirrors ECMA-376 §17.3.1 (paragraphs) and §17.3.2 (runs).
 
+pub use super::revision::{DocxMarkRevision, DocxRevisionInfo, DocxTrackedChange};
 pub use super::section::{DocxCols, DocxHdrFtrRef, DocxPgMar, DocxPgSz, DocxSectPr};
 
 /// Intermediate model for `w:p` (ECMA-376 §17.3.1.22).
@@ -16,8 +17,7 @@ pub struct DocxParagraph {
     pub children: Vec<DocxParaChild>,
 }
 
-/// A child element of `w:p` beyond `w:pPr`.
-// Run is substantially larger than Hyperlink; boxing would add indirection on every access.
+/// A child element of `w:p` beyond `w:pPr`. (`Run` ≫ `Hyperlink`; boxing would add indirection, so the size is allowed.)
 #[allow(clippy::large_enum_variant, dead_code)]
 #[derive(Debug, Clone)]
 pub enum DocxParaChild {
@@ -30,9 +30,9 @@ pub enum DocxParaChild {
     /// A `w:bookmarkEnd` element (ECMA-376 §17.13.6.1).
     BookmarkEnd { id: String },
     /// A `w:del` tracked deletion (ECMA-376 §17.13.5.14).
-    TrackDel(Vec<DocxRun>),
+    TrackDel(DocxTrackedChange),
     /// A `w:ins` tracked insertion (ECMA-376 §17.13.5.16).
-    TrackIns(Vec<DocxRun>),
+    TrackIns(DocxTrackedChange),
     /// A `w:fldSimple` simple field (ECMA-376 §17.16.19): the `@w:instr`
     /// instruction with the cached result carried as child runs.
     SimpleField {
@@ -98,9 +98,8 @@ pub struct DocxPPr {
     pub shd_val: Option<String>,
     /// Paragraph shading pattern foreground from `w:shd @w:color` (hex).
     pub shd_color: Option<String>,
-    /// Paragraph-mark run properties from `w:pPr/w:rPr`.
-    /// Carries formatting that applies to the paragraph mark itself (e.g. a
-    /// font override that affects the default spacing of an empty paragraph).
+    /// Paragraph-mark run properties from `w:pPr/w:rPr` — formatting that applies
+    /// to the paragraph mark itself (and its tracked ¶ deletion).
     pub ppr_rpr: Option<DocxRPr>,
     /// Text-frame properties from `w:framePr` — carries drop-cap settings.
     pub frame_pr: Option<DocxFramePr>,
@@ -230,6 +229,8 @@ pub enum DocxRunChild {
 pub struct DocxRPr {
     /// `w:rStyle @w:val` — character style id.
     pub style_id: Option<String>,
+    /// `w:ins` / `w:del` on a paragraph mark's rPr (the tracked ¶ itself).
+    pub mark_rev: Option<DocxMarkRevision>,
     /// `w:b` toggle.
     pub bold: Option<bool>,
     /// `w:i` toggle.
@@ -250,8 +251,7 @@ pub struct DocxRPr {
     pub color: Option<String>,
     /// `w:highlight @w:val` — named highlight color.
     pub highlight: Option<String>,
-    /// `w:position @w:val` — manual baseline shift (text rise) in half-points;
-    /// positive raises, negative lowers.
+    /// `w:position @w:val` — baseline shift in half-points (positive raises).
     pub position: Option<i32>,
     /// `w:sz @w:val` — font size in half-points.
     pub sz: Option<i32>,

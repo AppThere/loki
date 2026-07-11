@@ -79,12 +79,32 @@ fn render_item(
             }
             content.restore_state();
         }
-        PositionedItem::RotatedGroup { origin, items, .. } => {
-            // TODO(pdf-rotate): rotation transform is not yet emitted; render
-            // children at the group origin without rotation.
+        PositionedItem::RotatedGroup {
+            origin,
+            degrees,
+            content_width,
+            content_height,
+            items,
+        } => {
+            // Rotate the group by setting a content CTM (see `page_rotate`) and
+            // rendering children with a zero offset — the group's position is
+            // folded into the transform. The CTM is `F·M·F` (F = the per-leaf
+            // y-flip, M = the on-screen rotation) so the placement matches
+            // loki-vello, flipped into PDF's y-up space.
+            let ctm = crate::page_rotate::rotated_group_ctm(
+                ox + origin.x,
+                oy + origin.y,
+                *degrees,
+                *content_width,
+                *content_height,
+                page_h,
+            );
+            content.save_state();
+            content.transform(ctm);
             for child in items {
-                render_item(child, page_h, ox + origin.x, oy + origin.y, banks, content);
+                render_item(child, page_h, 0.0, 0.0, banks, content);
             }
+            content.restore_state();
         }
         _ => {}
     }

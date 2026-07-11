@@ -45,6 +45,7 @@ fn measure_tiers() -> Vec<(String, u64)> {
     let options = LayoutOptions {
         preserve_for_editing: true,
         spell: None,
+        ..Default::default()
     };
     let mut out = Vec::new();
     for &(name, paras) in support::DOC_TIERS {

@@ -51,6 +51,7 @@ fn make_test_layout() -> PaginatedLayout {
             path: Vec::new(),
             layout: Arc::new(para),
             origin: (0.0, 0.0),
+            rotation: None,
         }],
     };
     let page_size = LayoutSize::new(595.0, 842.0);
@@ -403,6 +404,7 @@ fn reflow_para(text: &str, block_index: usize, origin: (f32, f32)) -> PageParagr
         path: Vec::new(),
         layout: Arc::new(para),
         origin,
+        rotation: None,
     }
 }
 

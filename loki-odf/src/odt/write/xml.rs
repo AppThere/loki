@@ -49,10 +49,33 @@ pub(super) fn master_page_name(idx: usize) -> String {
     }
 }
 
-/// The `style:page-layout` name for the section at `idx` (`PL1`, `PL2`, …).
+/// Coerces a page-style id into a valid XML `NCName` for use as a `style:name`.
+///
+/// ODF `style:name` must be an `NCName`: no whitespace or reserved punctuation, and
+/// it may not start with a digit. Common ids (`PageStyle1`, `Standard`, a user's
+/// `Body`) already qualify and pass through unchanged, so they round-trip
+/// exactly; anything else has invalid characters replaced with `_` and a leading
+/// digit prefixed with `_`. An empty id yields an empty string, so the caller
+/// falls back to the positional name.
 #[must_use]
-pub(super) fn page_layout_name(idx: usize) -> String {
-    format!("PL{}", idx + 1)
+pub(super) fn sanitize_ncname(id: &str) -> String {
+    let mut out = String::with_capacity(id.len());
+    for c in id.chars() {
+        if c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.' {
+            out.push(c);
+        } else {
+            out.push('_');
+        }
+    }
+    // NCName cannot begin with a digit, '-' or '.'.
+    if out
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_digit() || c == '-' || c == '.')
+    {
+        out.insert(0, '_');
+    }
+    out
 }
 
 /// Appends ` name="value"` to `out`, escaping the value.

@@ -150,15 +150,22 @@ may not grow, and a file split to ≤300 must be removed from the baseline. So t
 backlog can only shrink. When you split a file below the ceiling, drop its line
 with `scripts/check-file-ceiling.py --update` (review the diff).
 
-The split pass is **in progress** — current backlog is the **35** entries in the
-baseline file. Two techniques:
+The split pass is **in progress** — current backlog is the **29** entries in the
+baseline file (a 2026-07-08 pass cut ~20 files: −3600 lines across eleven new
+production submodules + seven inline-test extractions, driving `doc-model`
+`document.rs` and `docx/mapper/props.rs` fully under the ceiling and off the
+baseline). Three techniques (the third added 2026-07-08):
 1. *Inline-test extraction* (safest, no production-code change): move a file's
    `#[cfg(test)] mod tests { … }` into a sibling `<name>_tests.rs` referenced via
    `#[cfg(test)] #[path = "<name>_tests.rs"] mod tests;`. Done 2026-06-21 for
    `block.rs`, `docx/mapper/{paragraph,numbering,mod,table}.rs`, `odt/import.rs`,
    `odt/mapper/lists.rs`, `layout/result.rs`, `renderer/render_layout.rs`, and
-   2026-06-28 for `editing/hit_test.rs`, `xml_util.rs`, `pdf/src/page.rs` — each
-   was over the ceiling only because of a large inline test module.
+   2026-06-28 for `editing/hit_test.rs`, `xml_util.rs`, `pdf/src/page.rs`, and
+   2026-07-08 for `odt/reader/styles.rs` (1554 → 1298), `odt/reader/document.rs`
+   (1492 → 1002; ~490-line module), `loki-vello/scene.rs` (948 → 727),
+   `loki-odf/package.rs` (644 → 410), and `loki-ooxml/docx/mapper/document.rs`
+   (611 → 448) — each was over the ceiling only because of a large inline
+   test module (or, as with `styles.rs`, partly so).
 2. *Directory split*: convert `foo.rs` → a `foo/` directory with section-cohesive
    submodules, re-export the public entry points from `foo/mod.rs`, and move the
    tests via the same `#[path]` idiom. Give each submodule its **own explicit
@@ -167,22 +174,47 @@ baseline file. Two techniques:
    `odt/mapper/props/` and `odt/mapper/document.rs` →
    `odt/mapper/document/` (`mod`/`inlines`/`frames`/`blocks`/`page`/`meta`; worked
    examples).
+3. *Cohesive-cluster extraction* (for a monolith whose tests are already
+   extracted, so technique 1 doesn't apply): move a self-contained group of
+   functions into a new `<name>_helper.rs` sibling declared via
+   `#[path = "…"] mod <name>;`, accessing the parent's state through `super::`
+   (mark the shared items `pub(super)`). The new file must itself be ≤300.
+   Done 2026-07-08 for `loki-layout/src/flow.rs` (1948 → 1535, two cuts): the
+   four table-geometry helpers → `flow_table_geom.rs` (`table_geom` submodule),
+   and the PAGE/NUMPAGES field cluster → `flow_page_fields.rs` (`page_fields`
+   submodule; a `pub(crate)` item used elsewhere is re-exported from `flow.rs`
+   so its external path stays stable). Also `loki-layout/src/para.rs`
+   (1856 → 1698): the tab-stop cluster → `para_tabs.rs` (`tabs` submodule); and
+   `loki-layout/src/resolve.rs` (978 → 865): the `ParaProps`→`ResolvedParaProps`
+   mapping → `para_props_map.rs` (`para_map` submodule). A fourth variant is
+   *function-internal phase extraction* — a single >300-line function split by
+   moving self-contained phases into helper fns in a sibling module (thread the
+   captured locals as params; `#[allow(clippy::too_many_arguments)]` at the
+   narrowest scope is acceptable, per the `flow_cell_blocks` precedent). Done
+   2026-07-08 for `flow.rs`'s `flow_table` (~420 lines): row-height measurement +
+   cell-decoration passes → `flow_table_paint.rs` (`table_paint` submodule),
+   `flow.rs` 1535 → 1362; and for `para.rs`'s `layout_paragraph_uncached`
+   (~630 lines): the two selection-geometry underlay passes (highlight fills +
+   spelling squiggles) → `para_underlays.rs` (`underlays` submodule),
+   `para.rs` 1698 → 1626; and `flow.rs`'s `flow_table` pass 3a (the per-cell
+   content-flow loop) → `flow_table_cells.rs` (`table_cells` submodule),
+   `flow.rs` 1362 → 1209 (this landed the `rotated-cell-editing` path in a
+   sub-ceiling module, unblocking deferred-feature 4b.5).
 
 (Test files are exempt from the production-line count.)
 
 | File | Current lines | Priority |
 |---|---|---|
-| `loki-layout/src/para.rs` | 1979 | High |
-| `loki-layout/src/flow.rs` | 1953 | High |
-| `loki-odf/src/odt/reader/styles.rs` | 1554 | High |
-| `loki-odf/src/odt/reader/document.rs` | 1494 | High |
-| `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1244 | High |
-| `loki-ooxml/src/docx/reader/document.rs` | 1209 | High |
+| `loki-layout/src/para.rs` | 1626 | High |
+| `loki-layout/src/flow.rs` | 1362 | High |
 | `loki-ooxml/src/docx/write/document.rs` | 1073 | High |
-| `loki-layout/src/resolve.rs` | 984 | High |
-| … 27 more (6 over 600, 21 in 300–600) — see `scripts/file-ceiling-baseline.txt` | | |
+| `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1047 | High |
+| `loki-ooxml/src/docx/reader/document.rs` | 1004 | High |
+| `loki-odf/src/odt/reader/styles.rs` | 892 | Med |
+| `loki-layout/src/resolve.rs` | 865 | Med |
+| … 22 more — see `scripts/file-ceiling-baseline.txt` (29 entries after the 2026-07-08 pass) | | |
 
-*(Sizes above are from `scripts/file-ceiling-baseline.txt`, refreshed 2026-07-04;
+*(Sizes above are from `scripts/file-ceiling-baseline.txt`, refreshed 2026-07-08;
 the earlier numbers were stale — several files grew since first baselined.)*
 
 (`odt/mapper/document.rs` (1094 lines) was split into the `odt/mapper/document/`
@@ -202,6 +234,34 @@ but are **not perfectly round-tripped through the Loro CRDT**.
 | `tab_stops` | **DONE** (2026-07-04) — structured `"pos:Align:Leader;…"` codec (`loro_bridge/decode.rs`) written and read back; tested by `bridge_tab_stops_roundtrip`. Pre-fix Debug strings decode as absent. | — |
 | `background_color` (paragraph) | **DONE** (2026-07-04) — total `DocumentColor` codec (`loro_bridge/color_codec.rs`, covers Rgb/Cmyk/Theme/Transparent) written and read back; tested by `bridge_para_background_color_roundtrip`. | — |
 | `DocumentMeta` / `DublinCoreMeta` | Round-trips **through the Loro CRDT** (`loro_bridge::meta`) **and is written back on export** — core properties + extended Dublin Core reach DOCX (`docProps/core.xml` + `custom.xml`) and ODT (`meta.xml`), tested by `metadata_round_trip.rs` / `extended_dublin_core_round_trips`. Remaining tail (not the Loro bridge): custom user properties, `meta:editing-duration`, and OOXML `docProps/app.xml` are still not written. | Low |
+
+---
+
+## Known tech debt — residual vulnerable transitive `quick-xml` copies (2026-07-08)
+
+This workspace's own `quick-xml` usage (`loki-epub`, `loki-odf`, `loki-ooxml`,
+`loki-opc`) is on `0.41.0`, patched against RUSTSEC-2026-0194 (quadratic-time
+duplicate-attribute check) and RUSTSEC-2026-0195 (unbounded namespace-allocation
+DoS). `cargo audit` still reports both advisories against three *other*,
+transitively-pulled `quick-xml` copies that this workspace does not control —
+each is pinned by an intermediate crate's own manifest to a range that doesn't
+yet reach `0.41`:
+
+| Locked version | Pulled in by | Actual exposure |
+|---|---|---|
+| `0.38.4` | `object_store` (`^0.38.0`, via the `aws` feature — `loki-server-store`'s S3 backend) | Parses XML API responses (list-bucket, multipart) from the configured object-storage endpoint. `object_store` 0.14.0 (latest at audit time) still only requires `quick-xml ^0.40.1`, which is *also* unpatched (fix requires `>=0.41.0`) — no released `object_store` version resolves this yet. |
+| `0.39.4` | `wayland-scanner` → `smithay-client-toolkit` → `winit` → `blitz-shell` (`loki-presentation`) | Build-time codegen only: generates Rust bindings from the (trusted, locally-vendored) Wayland protocol XML. Not exposed to untrusted runtime input. |
+| `0.30.0` | `zbus_xml` → `zbus-lockstep` → `atspi` → `accesskit_unix` → `accesskit_winit` → `blitz-shell` | Parses AT-SPI/D-Bus introspection XML on the local session bus (Linux accessibility stack) — local IPC, not attacker-controlled document content. |
+
+None of these are fixable by bumping our own `Cargo.toml` requirements — each is
+gated behind an upstream crate release that hasn't caught up to `quick-xml`
+0.41 yet. `object_store` is the one with real untrusted-network exposure and is
+worth re-checking most often. Re-run `cargo audit` (or
+`cargo tree -i quick-xml`) periodically and bump `object_store` /
+`wayland-scanner`'s dependents the moment a release satisfies `quick-xml
+>=0.41` — do not silence these via `.cargo/audit.toml` (unlike the
+`rsa`/Marvin-Attack entry there, these three *are* actually compiled and
+reachable).
 
 ---
 

@@ -29,8 +29,21 @@ style-impact-preview = Applying also changes { $count } dependent style(s): { $n
 style-linked-heading = Linked character style · { $name }
 # Character-styles family list heading (§9 character family)
 style-char-family-heading = Character styles
+# Editable character-style form heading (M6 character family, 4a.3)
+style-char-form-heading = Edit character style
+# Compact breadcrumb drill-down heading — the selected style's substyles (M7)
+style-tree-substyles-heading = Substyles
 # List-styles family list heading (§9 list family, non-inheriting)
 style-list-family-heading = List styles
+# Page-styles family (§9 page family, non-inheriting; ADR-0012 Decision 2)
+style-page-family-heading = Page styles
+# Rename field for the selected page style (LibreOffice-style named page styles)
+style-page-name-label = Name
+style-page-rename = Rename
+style-page-size = Size
+style-page-orientation = Orientation
+style-page-margins = Margins
+style-page-columns = Columns
 # One indent level of a list style
 style-list-level-label = Level { $n }
 # A list level's label kind and geometry (non-inheriting; shown read-only)

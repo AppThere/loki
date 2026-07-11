@@ -111,6 +111,7 @@ fn main() {
     let opts = LayoutOptions {
         preserve_for_editing: true,
         spell: None,
+        ..Default::default()
     };
 
     eprintln!(

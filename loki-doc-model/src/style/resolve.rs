@@ -49,28 +49,30 @@ pub struct Resolved<T> {
 }
 
 impl<T> Resolved<T> {
-    fn local(value: T) -> Self {
+    // `pub(crate)` so the per-family resolvers split across sibling modules
+    // (e.g. `resolve_table`) can build results without duplicating the type.
+    pub(crate) fn local(value: T) -> Self {
         Self {
             provenance: Provenance::Local,
             value: Some(value),
         }
     }
 
-    fn inherited(from: StyleId, value: T) -> Self {
+    pub(crate) fn inherited(from: StyleId, value: T) -> Self {
         Self {
             provenance: Provenance::Inherited(from),
             value: Some(value),
         }
     }
 
-    fn from_default(value: T) -> Self {
+    pub(crate) fn from_default(value: T) -> Self {
         Self {
             provenance: Provenance::Default,
             value: Some(value),
         }
     }
 
-    fn format_default() -> Self {
+    pub(crate) fn format_default() -> Self {
         Self {
             provenance: Provenance::FormatDefault,
             value: None,
@@ -191,7 +193,41 @@ impl StyleCatalog {
             }
             cursor = parent.parent.as_ref();
         }
+
+        // Fall through to the document default character style (ADR-0012 Decision
+        // 1 — the per-family `Default` source), when set and not already visited.
+        if let Some(def) = self.default_character_style.as_ref()
+            && !visited.contains(def)
+            && let Some(v) = self.first_in_char_chain(def, &get)
+        {
+            return Some(Resolved::from_default(v));
+        }
+
         Some(Resolved::format_default())
+    }
+
+    /// First local value of a property along a character chain starting at
+    /// `start` (inclusive), cycle/depth-guarded. Backs the character family's
+    /// `Default`-level lookup (mirrors [`first_in_para_chain`](Self::first_in_para_chain)).
+    fn first_in_char_chain<T: Clone>(
+        &self,
+        start: &StyleId,
+        get: &impl Fn(&CharacterStyle) -> Option<T>,
+    ) -> Option<T> {
+        let mut visited = HashSet::new();
+        let mut cursor = Some(start.clone());
+        for _ in 0..MAX_STYLE_CHAIN_DEPTH {
+            let id = cursor?;
+            if !visited.insert(id.clone()) {
+                return None;
+            }
+            let style = self.character_styles.get(&id)?;
+            if let Some(v) = get(style) {
+                return Some(v);
+            }
+            cursor = style.parent.clone();
+        }
+        None
     }
 
     /// The paragraph style's ancestors, nearest-first and **including** `id`
@@ -224,6 +260,37 @@ impl StyleCatalog {
         // A cycle forms iff `child` lies on `new_parent`'s ancestor chain
         // (which includes `new_parent` itself, covering `new_parent == child`).
         self.para_ancestors(new_parent).iter().any(|a| a == child)
+    }
+
+    /// The character style's ancestors, nearest-first and **including** `id`
+    /// itself, stopping at the root or the first repeat (cycle/depth-guarded).
+    /// The character-family analogue of [`para_ancestors`](Self::para_ancestors).
+    #[must_use]
+    pub fn char_ancestors(&self, id: &StyleId) -> Vec<StyleId> {
+        let mut chain = Vec::new();
+        let mut seen = HashSet::new();
+        let mut cursor = Some(id.clone());
+        for _ in 0..=MAX_STYLE_CHAIN_DEPTH {
+            let Some(current) = cursor else { break };
+            if !seen.insert(current.clone()) {
+                break; // cycle
+            }
+            chain.push(current.clone());
+            cursor = self
+                .character_styles
+                .get(&current)
+                .and_then(|s| s.parent.clone());
+        }
+        chain
+    }
+
+    /// Whether making `new_parent` the parent of `child` would create a cycle in
+    /// the character-style tree (the analogue of
+    /// [`para_reparent_cycles`](Self::para_reparent_cycles)). The character-style
+    /// editor must reject these to keep the family a tree (Spec 05 §7).
+    #[must_use]
+    pub fn char_reparent_cycles(&self, child: &StyleId, new_parent: &StyleId) -> bool {
+        self.char_ancestors(new_parent).iter().any(|a| a == child)
     }
 }
 

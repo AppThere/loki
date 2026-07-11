@@ -85,6 +85,113 @@ pub const LUCIDE_TABLE: &str =
 /// down-step baseline with a raised reference tick, evoking a footnote marker.
 pub const LUCIDE_FOOTNOTE: &str = "M4 5h6M4 5v10a3 3 0 0 0 6 0M16 5v6m0-6h4m-4 0-1 1";
 
+/// Lucide `more-horizontal` — three dots. Used for the ribbon overflow ("More")
+/// menu button. Rendered as three round-capped zero-length strokes (Lucide's own
+/// dot idiom), so it needs `stroke-linecap: round` (which [`AtIcon`] sets).
+pub const LUCIDE_MORE_HORIZONTAL: &str = "M5 12h.01M12 12h.01M19 12h.01";
+
+/// Lucide `trash-2` — a waste bin with lid and two vertical bars. Used for the
+/// Table contextual tab's Delete Table action.
+pub const LUCIDE_TRASH_2: &str =
+    "M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6";
+
+// App-custom table-op glyphs (not Lucide): a box for the affected row/column
+// plus a `+` / `−`, drawn in the same 24×24 stroked style as the Lucide set.
+
+/// Insert row below: a horizontal bar with a plus beneath it.
+pub const AT_TABLE_ROW_INSERT: &str = "M4 4h16v6h-16zM12 14v6M9 17h6";
+
+/// Insert row above: a horizontal bar with a plus above it.
+pub const AT_TABLE_ROW_INSERT_ABOVE: &str = "M4 14h16v6h-16zM12 4v6M9 7h6";
+
+/// Delete row: a horizontal bar with a minus below it.
+pub const AT_TABLE_ROW_DELETE: &str = "M4 4h16v6h-16zM9 17h6";
+
+/// Insert column right: a vertical bar with a plus to its right.
+pub const AT_TABLE_COL_INSERT: &str = "M4 4h6v16h-6zM17 9v6M14 12h6";
+
+/// Insert column left: a vertical bar with a plus to its left.
+pub const AT_TABLE_COL_INSERT_LEFT: &str = "M14 4h6v16h-6zM7 9v6M4 12h6";
+
+/// Delete column: a vertical bar with a minus to its right.
+pub const AT_TABLE_COL_DELETE: &str = "M4 4h6v16h-6zM14 12h6";
+
+// App-custom glyphs (not Lucide): an "A" beside an up/down arrow, for the
+// grow/shrink font-size buttons.
+
+/// Increase font size: an "A" with an upward arrow.
+pub const AT_FONT_GROW: &str = "M6 15 10 7 14 15M7.5 12h5M18 8v7M15.5 10.5 18 8 20.5 10.5";
+
+/// Decrease font size: an "A" with a downward arrow.
+pub const AT_FONT_SHRINK: &str = "M6 15 10 7 14 15M7.5 12h5M18 8v7M15.5 12.5 18 15 20.5 12.5";
+
+// App-custom page-orientation glyphs (not Lucide): a tall vs. wide page rect.
+
+/// Portrait orientation: a tall page rectangle.
+pub const AT_PAGE_PORTRAIT: &str = "M7 3h10v18H7z";
+
+/// Landscape orientation: a wide page rectangle.
+pub const AT_PAGE_LANDSCAPE: &str = "M3 7h18v10H3z";
+
+// App-custom margin-preset glyphs (not Lucide): a page rectangle with an inner
+// content rectangle whose inset shows the margin size. Disambiguated by tooltip.
+
+/// Normal margins: a page with a moderate inset content area.
+pub const AT_MARGIN_NORMAL: &str = "M5 3h14v18H5zM8 6h8v12H8z";
+
+/// Narrow margins: a page with a small inset (large content area).
+pub const AT_MARGIN_NARROW: &str = "M5 3h14v18H5zM6.5 4.5h11v15h-11z";
+
+/// Wide margins: a page with a wide horizontal inset (narrow content area).
+pub const AT_MARGIN_WIDE: &str = "M5 3h14v18H5zM9 6h6v12H9z";
+
+// App-custom page-size glyphs (not Lucide): page rectangles of the paper's
+// aspect ratio. Disambiguated by tooltip.
+
+/// A4 paper: a tall, narrow page (≈1:1.41).
+pub const AT_PAGE_A4: &str = "M7 3h10v18H7z";
+
+/// US Letter paper: a slightly wider, shorter page (≈1:1.29).
+pub const AT_PAGE_LETTER: &str = "M6 4h12v16H6z";
+
+// App-custom column-count glyphs (not Lucide): a page with N-1 vertical
+// divider lines.
+
+/// One column: a plain page.
+pub const AT_COLUMNS_ONE: &str = "M5 4h14v16H5z";
+
+/// Two columns: a page split by one vertical divider.
+pub const AT_COLUMNS_TWO: &str = "M5 4h14v16H5zM12 4v16";
+
+/// Three columns: a page split by two vertical dividers.
+pub const AT_COLUMNS_THREE: &str = "M5 4h14v16H5zM9.7 4v16M14.3 4v16";
+
+// App-custom References-tab glyphs (not Lucide).
+
+/// Insert table of contents: stacked outline entries of varying, indented width.
+pub const AT_TOC_INSERT: &str = "M4 5h16M4 10h10M8 15h12M4 20h9";
+
+/// Update table of contents: a clockwise refresh arrow (regenerate the field).
+pub const AT_TOC_UPDATE: &str = "M20 11A8 8 0 1 0 18 16M20 5v6h-6";
+
+// App-custom Review-tab glyphs (not Lucide).
+
+/// Track changes: a pencil writing over a baseline (edits are recorded).
+pub const AT_TRACK_CHANGES: &str = "M4 21h8M14.5 4.5l5 5L9 20l-5 1 1-5z";
+
+/// Accept all changes: a check mark.
+pub const AT_CHANGE_ACCEPT: &str = "M20 6 9 17l-5-5";
+
+/// Reject all changes: a cross.
+pub const AT_CHANGE_REJECT: &str = "M18 6 6 18M6 6l12 12";
+
+/// Accept the change at the caret: a check inside a circle.
+pub const AT_CHANGE_ACCEPT_ONE: &str =
+    "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M8.5 12.5l2.5 2.5 4.5-5.5";
+
+/// Reject the change at the caret: a cross inside a circle.
+pub const AT_CHANGE_REJECT_ONE: &str = "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M15 9l-6 6M9 9l6 6";
+
 // ── AtIcon component ──────────────────────────────────────────────────────────
 
 /// Renders a single Lucide SVG icon.

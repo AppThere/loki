@@ -218,6 +218,7 @@ impl DocPageSource {
                     let options = LayoutOptions {
                         preserve_for_editing: true,
                         spell: crate::spell::active(),
+                        ..Default::default()
                     };
                     match loki_layout::layout_document(
                         resources,
@@ -238,6 +239,7 @@ impl DocPageSource {
                     let options = LayoutOptions {
                         preserve_for_editing: true,
                         spell: crate::spell::active(),
+                        ..Default::default()
                     };
                     let content_width =
                         (available_width_pt - 2.0 * REFLOW_PADDING_PT).max(MIN_REFLOW_CONTENT_PT);

@@ -5,14 +5,163 @@
 
 use super::*;
 use crate::color::LayoutColor;
-use crate::geometry::LayoutRect;
-use crate::items::PositionedRect;
+use crate::geometry::{LayoutPoint, LayoutRect};
+use crate::items::{GlyphEntry, GlyphSynthesis, PositionedGlyphRun, PositionedRect};
+use crate::para::ParagraphLayout;
 
 fn make_filled(x: f32) -> PositionedItem {
     PositionedItem::FilledRect(PositionedRect {
         rect: LayoutRect::new(x, 0.0, 10.0, 10.0),
         color: LayoutColor::BLACK,
     })
+}
+
+#[test]
+fn cell_rotation_forward_inverse_round_trips() {
+    // 90° cell, arbitrary pivots. page_to_local ∘ local_to_page == identity.
+    let rot = CellRotation {
+        degrees: 90.0,
+        pivot_local: (30.0, 8.0),
+        pivot_page: (100.0, 50.0),
+    };
+    for (lx, ly) in [(0.0, 0.0), (12.0, 3.0), (30.0, 8.0), (5.0, 16.0)] {
+        let (px, py) = rot.local_to_page(lx, ly);
+        let (rx, ry) = rot.page_to_local(px, py);
+        assert!(
+            (rx - lx).abs() < 1e-3 && (ry - ly).abs() < 1e-3,
+            "({rx},{ry})"
+        );
+    }
+}
+
+#[test]
+fn cell_rotation_90_maps_local_x_to_page_y() {
+    // Matches the renderer's Rotate(90°) in y-down coords: local +x → page +y.
+    let rot = CellRotation {
+        degrees: 90.0,
+        pivot_local: (0.0, 0.0),
+        pivot_page: (0.0, 0.0),
+    };
+    let (px, py) = rot.local_to_page(10.0, 0.0);
+    assert!(px.abs() < 1e-3 && (py - 10.0).abs() < 1e-3, "({px},{py})");
+}
+
+#[test]
+fn hit_local_inverts_rotation_for_paragraph() {
+    // A rotated paragraph whose content-local origin is (0,0); a page click at
+    // the rotated position of local (7, 2) must invert back to paragraph-local
+    // (7, 2) so ParagraphLayout::hit_test_point sees the right coordinates.
+    let mut p = para("hello", 0, (0.0, 0.0));
+    let rot = CellRotation {
+        degrees: 270.0,
+        pivot_local: (20.0, 5.0),
+        pivot_page: (60.0, 40.0),
+    };
+    p.rotation = Some(rot);
+    let (page_x, page_y) = rot.local_to_page(7.0, 2.0);
+    let (lx, ly) = p.hit_local(page_x, page_y);
+    assert!(
+        (lx - 7.0).abs() < 1e-3 && (ly - 2.0).abs() < 1e-3,
+        "({lx},{ly})"
+    );
+}
+
+/// A paragraph whose single glyph run spans local x∈[5, 35] on a baseline at
+/// y=10 (font 12 → box y∈[0.4, 12.4]), carrying `url` as its link (or none).
+fn link_para(origin: (f32, f32), url: Option<&str>) -> PageParagraphData {
+    let run = PositionedGlyphRun {
+        origin: LayoutPoint { x: 5.0, y: 10.0 },
+        font_data: Arc::new(vec![]),
+        font_index: 0,
+        font_size: 12.0,
+        glyphs: vec![GlyphEntry {
+            id: 1,
+            x: 0.0,
+            y: 0.0,
+            advance: 30.0,
+        }],
+        color: LayoutColor::BLACK,
+        synthesis: GlyphSynthesis::default(),
+        link_url: url.map(String::from),
+    };
+    let layout = ParagraphLayout {
+        height: 16.0,
+        width: 35.0,
+        items: vec![PositionedItem::GlyphRun(run)],
+        first_baseline: 10.0,
+        last_baseline: 10.0,
+        line_boundaries: Vec::new(),
+        parley_layout: None,
+        orig_to_clean: Vec::new(),
+        clean_to_orig: Vec::new(),
+        indent_start: 0.0,
+        indent_hanging: 0.0,
+        drop_lines: 0,
+        drop_shift: 0.0,
+    };
+    PageParagraphData {
+        block_index: 0,
+        path: Vec::new(),
+        layout: Arc::new(layout),
+        origin,
+        rotation: None,
+    }
+}
+
+#[test]
+fn link_at_hits_over_hyperlinked_run() {
+    let p = link_para((100.0, 200.0), Some("https://example.com"));
+    // Page point over the middle of the run: local (10, 6) ∈ box.
+    assert_eq!(p.link_at(110.0, 206.0), Some("https://example.com"));
+}
+
+#[test]
+fn link_at_misses_outside_the_run_box() {
+    let p = link_para((100.0, 200.0), Some("https://example.com"));
+    // Right of the run (local x=40 > 35).
+    assert_eq!(p.link_at(140.0, 206.0), None);
+    // Below the run's box (local y=15 > 12.4) though still inside the paragraph.
+    assert_eq!(p.link_at(110.0, 215.0), None);
+}
+
+#[test]
+fn link_at_none_over_plain_text() {
+    let p = link_para((100.0, 200.0), None);
+    assert_eq!(p.link_at(110.0, 206.0), None);
+}
+
+#[test]
+fn link_at_inverts_cell_rotation() {
+    // A rotated paragraph: a page click at the rotated position of the run's
+    // local centre must still resolve the link.
+    let mut p = link_para((0.0, 0.0), Some("https://rot.example"));
+    let rot = CellRotation {
+        degrees: 90.0,
+        pivot_local: (20.0, 5.0),
+        pivot_page: (60.0, 40.0),
+    };
+    p.rotation = Some(rot);
+    let (px, py) = rot.local_to_page(10.0, 6.0); // local centre of the run box
+    assert_eq!(p.link_at(px, py), Some("https://rot.example"));
+}
+
+#[test]
+fn continuous_and_page_link_at_delegate_to_paragraphs() {
+    let p = link_para((100.0, 200.0), Some("https://both.example"));
+    let cont = ContinuousLayout {
+        content_width: 500.0,
+        total_height: 400.0,
+        items: Vec::new(),
+        paragraphs: vec![p.clone()],
+    };
+    assert_eq!(cont.link_at(110.0, 206.0), Some("https://both.example"));
+    assert_eq!(cont.link_at(1.0, 1.0), None);
+
+    let page = PageEditingData {
+        paragraphs: vec![p],
+    };
+    assert_eq!(page.link_at(110.0, 206.0), Some("https://both.example"));
+    assert_eq!(page.link_at(1.0, 1.0), None);
 }
 
 #[test]
@@ -66,6 +215,7 @@ fn para(text: &str, block_index: usize, origin: (f32, f32)) -> PageParagraphData
         path: Vec::new(),
         layout: Arc::new(layout),
         origin,
+        rotation: None,
     }
 }
 

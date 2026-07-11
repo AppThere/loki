@@ -14,7 +14,10 @@ pub mod block;
 pub mod field;
 pub mod float;
 pub mod inline;
+mod para_mark_merge;
+pub mod revision_ops;
 pub mod table;
+pub mod toc;
 
 pub use attr::{ExtensionBag, ExtensionKey, NodeAttr};
 pub use block::Block;

@@ -22,7 +22,7 @@
 use std::rc::Rc;
 use std::sync::Arc;
 
-use appthere_ui::{AtRibbon, AtStatusBar, RibbonTabDesc, tokens, use_breakpoint};
+use appthere_ui::{AtRibbon, AtStatusBar, tokens, use_breakpoint};
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 use loki_doc_model::get_mark_at;
@@ -41,12 +41,13 @@ use super::editor_metadata_panel::metadata_panel;
 use super::editor_path_sync::{
     PathSyncSignals, restore_session, stash_outgoing, sync_path_and_reset,
 };
-use super::editor_publish::{publish_panel, publish_tab_content};
+use super::editor_publish::publish_panel;
 use super::editor_ribbon::write_tab_content;
 use super::editor_ribbon_insert::insert_tab_content;
+use super::editor_ribbon_publish::publish_tab_content;
 use super::editor_save_banner::save_banner;
 use super::editor_spell::SpellMenu;
-use super::editor_state::{EditorState, use_editor_state};
+use super::editor_state::{EditorState, StyleDraft, use_editor_state};
 use super::editor_style::style_picker_panel;
 use super::editor_style_catalog::available_font_families;
 use super::editor_style_editor::style_editor_panel;
@@ -56,8 +57,7 @@ use crate::tabs::OpenTab;
 use loki_app_shell::spell::SpellService;
 
 // EditorMode removed — the editor is always in edit mode when a document is
-// open. Distraction-free reading is handled by the View ribbon tab (future
-// pass), not by a separate mode.
+// open. Distraction-free reading is the View ribbon tab's job (future pass).
 
 /// Document editor inner component — all editing logic lives here.
 ///
@@ -127,20 +127,18 @@ pub(super) fn EditorInner(path: String) -> Element {
     let spell_hover = use_signal(|| Option::<String>::None);
     // Insert-tab hyperlink panel: `Some(url)` while open (Spec 04 M4).
     let link_draft = use_signal(|| Option::<String>::None);
-    // Character style being browsed in the style panel (Spec 05 M6 character
-    // family): `Some(id)` selects a character style for the read-only inspector.
+    // Character style in the style panel (Spec 05 M6): id → inspector, draft → form.
     let editing_char_style = use_signal(|| Option::<String>::None);
-    // List style being browsed in the style panel (Spec 05 M6 list family):
-    // `Some(id)` selects a list style for the read-only per-level inspector.
+    let editing_char_draft = use_signal(|| Option::<StyleDraft>::None);
+    // List / page styles browsed in the style panel (Spec 05 M6): read-only.
     let editing_list_style = use_signal(|| Option::<String>::None);
-    // Compact style-panel pane (Spec 05 M7 §11): `true` = Inspect, `false` = Edit.
-    // Ignored at Expanded/Medium (both panes visible side-by-side).
+    let editing_page_style = use_signal(|| Option::<String>::None);
+    // Compact style-panel pane (Spec 05 M7 §11): Inspect vs Edit; ignored ≥Medium.
     let style_panel_inspect = use_signal(|| false);
     // Stashed sessions for inactive tabs — unsaved edits survive tab switches.
     let doc_sessions = use_context::<Signal<DocSessions>>();
-    // Document generation considered "clean" (matches the on-disk file).
-    // Captured when the document finishes loading and after each successful
-    // save; the tab is dirty whenever the live generation differs.
+    // Document generation considered "clean" (matches the on-disk file): captured
+    // at load and after each save; the tab is dirty when the live generation differs.
     let mut baseline_gen = use_signal(|| 0_u64);
 
     // ── Session restore at mount ─────────────────────────────────────────────
@@ -514,16 +512,20 @@ pub(super) fn EditorInner(path: String) -> Element {
     });
 
     // ── Viewport-driven effects (Spec 03 M1/M2) ──────────────────────────────
-    //
-    // Seed metrics at mount, choose the renderer by page-fit, and publish the
-    // measured width into the shared responsive context. See `editor_responsive`.
+    // Seed metrics at mount, pick the renderer by zoom-aware page-fit, publish the
+    // measured width + live zoom to the responsive context. See `editor_responsive`.
     super::editor_responsive::use_viewport_effects(
         canvas_mounted,
         scroll_metrics,
         std::sync::Arc::clone(&doc_state),
         view_mode,
         view_mode_user_set,
+        zoom_percent,
     );
+
+    // Contextual ribbon tabs (Spec 04 M5 / plan 4a.2): a Table tab appears while the caret is in a table.
+    let (ribbon_tabs, table_selected) =
+        super::editor_ribbon_table::use_ribbon_tabs(cursor_state, active_ribbon_tab);
 
     let canvas_hovered = use_signal(|| false);
     let page_gap_px = tokens::PAGE_GAP_PX;
@@ -638,7 +640,9 @@ pub(super) fn EditorInner(path: String) -> Element {
                     doc_state_style_editor,
                     editing_style_draft,
                     editing_char_style,
+                    editing_char_draft,
                     editing_list_style,
+                    editing_page_style,
                     style_panel_inspect,
                     use_breakpoint(),
                     Rc::clone(&font_families),
@@ -706,22 +710,12 @@ pub(super) fn EditorInner(path: String) -> Element {
 
             // ── Ribbon (formatting controls) ──────────────────────────────────
             AtRibbon {
-                // Write, Insert, and Publish have controls today; the former
-                // Format/Review/View tabs had no content of their own (they fell
-                // through to Write's controls) and are omitted until they do.
-                tabs: vec![
-                    RibbonTabDesc { label: fl!("ribbon-tab-write"),   is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-insert"),  is_contextual: false, aria_label: None },
-                    RibbonTabDesc { label: fl!("ribbon-tab-publish"), is_contextual: false, aria_label: None },
-                ],
+                // Core tabs + a Table contextual tab (appended by `use_ribbon_tabs` in a table).
+                tabs: ribbon_tabs,
                 active_tab: active_ribbon_tab(),
-                on_tab_select: move |idx| {
-                    active_ribbon_tab.set(idx);
-                },
+                on_tab_select: move |idx| active_ribbon_tab.set(idx),
                 collapsed: ribbon_collapsed(),
-                on_toggle_collapse: move |_| {
-                    ribbon_collapsed.set(!ribbon_collapsed());
-                },
+                on_toggle_collapse: move |_| ribbon_collapsed.set(!ribbon_collapsed()),
                 toggle_aria_label: if ribbon_collapsed() {
                     fl!("ribbon-expand-aria")
                 } else {
@@ -729,12 +723,15 @@ pub(super) fn EditorInner(path: String) -> Element {
                 },
                 tab_content: match active_ribbon_tab() {
                     1 => insert_tab_content(link_draft, insert_ctx.clone()),
-                    2 => publish_tab_content(
-                        &doc_state_publish,
-                        path_signal,
-                        save_message,
-                        is_publish_panel_open,
-                        editing_metadata,
+                    6 if table_selected => super::editor_ribbon_table::table_tab_content(
+                        &doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo,
+                    ),
+                    2 => super::editor_ribbon_layout::layout_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
+                    3 => super::editor_ribbon_references::references_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
+                    4 => super::editor_ribbon_review::review_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
+                    5 => publish_tab_content(
+                        &doc_state_publish, path_signal, save_message,
+                        is_publish_panel_open, editing_metadata,
                     ),
                     _ => write_tab_content(
                     &doc_state_ribbon,

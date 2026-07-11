@@ -4,23 +4,13 @@
 //! Document-level mapper: converts the ODF intermediate representation into
 //! the format-neutral [`loki_doc_model::Document`].
 //!
-//! # Entry point
-//!
-//! [`map_document`] is the top-level conversion function, called by
-//! [`crate::odt::import::OdtImporter::run`] after all XML parts have been
-//! parsed. It coordinates:
-//!
-//! 1. Stylesheet → [`StyleCatalog`] via [`super::styles::map_stylesheet`]
-//! 2. List styles → inserted into the same [`StyleCatalog`]
-//! 3. Body content → [`Block`]s via recursive descent helpers
-//! 4. Active master page → [`PageLayout`]
-//! 5. Metadata → [`DocumentMeta`]
-//!
-//! The recursive-descent helpers are split across sibling modules — [`inlines`]
-//! (paragraphs, runs, fields), [`frames`] (images / objects), [`blocks`] (lists,
-//! tables, sections), [`page`] (page layout), and [`meta`] (document metadata).
-//! Each submodule pulls the shared imports and the [`OdfMappingContext`] in via
-//! `use super::*`.
+//! [`map_document`] is the entry point (called by `OdtImporter::run` after all
+//! XML parts are parsed): it maps the stylesheet + list styles into a
+//! [`StyleCatalog`], the body into [`Block`]s, the active master page into a
+//! page layout, and the metadata into document metadata. The recursive-descent
+//! helpers live in sibling modules — [`inlines`] (paragraphs, runs, fields),
+//! [`frames`] (images / objects), [`blocks`] (lists, tables, sections),
+//! [`page`] (page layout), and [`meta`] (document metadata).
 
 use std::collections::HashMap;
 
@@ -28,7 +18,7 @@ use loki_doc_model::content::annotation::Comment;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::float::FloatWrap;
 use loki_doc_model::document::Document;
-use loki_doc_model::layout::section::Section;
+use loki_doc_model::style::PageStyle;
 use loki_doc_model::style::catalog::StyleCatalog;
 use loki_primitives::units::Points;
 
@@ -37,6 +27,7 @@ use crate::odt::import::OdtImportOptions;
 use crate::odt::mapper::lists::map_list_styles;
 use crate::odt::mapper::styles::map_stylesheet;
 use crate::odt::model::document::{OdfBodyChild, OdfDocument, OdfMeta};
+use crate::odt::model::revision::OdfChangedRegion;
 use crate::odt::model::styles::{OdfCellProps, OdfStyle, OdfStylesheet};
 use crate::xml_util::parse_length;
 
@@ -45,22 +36,19 @@ mod frames;
 mod inlines;
 mod meta;
 mod page;
+mod sections;
 
 use blocks::{map_list, map_section, map_table, map_toc};
 use frames::map_graphic_wrap;
 use inlines::map_paragraph;
 use meta::map_meta;
-use page::{resolve_master_page_name, resolve_page_layout_by_name};
 
 // ── Context ────────────────────────────────────────────────────────────────────
 
 /// State threaded through all mapping helpers during a single
-/// [`map_document`] call.
-///
-/// Holds read-only references to the resolved catalog, image store, and import
-/// options, plus mutable collections for warnings and for floating figures that
-/// were encountered inside inline content and need to be emitted as block-level
-/// siblings after their host paragraph.
+/// [`map_document`] call: read-only references to the resolved catalog, images,
+/// and options, plus mutable collectors for warnings, floating figures, and
+/// comments.
 pub(crate) struct OdfMappingContext<'a> {
     /// The fully-built style catalog (paragraph, character, list styles).
     pub styles: &'a StyleCatalog,
@@ -72,14 +60,11 @@ pub(crate) struct OdfMappingContext<'a> {
     pub objects: &'a HashMap<String, Vec<u8>>,
     /// Import options controlling heading emission, image embedding, etc.
     pub options: &'a OdtImportOptions,
-    /// Column widths from `style:table-column-properties`: style name → points.
-    /// Pre-built from the ODF stylesheet before the mapping pass.
+    /// Column widths from `style:table-column-properties` (pre-built): name → pt.
     pub col_style_widths: &'a HashMap<String, Points>,
-    /// Cell properties from `style:table-cell-properties`: style name → props.
-    /// Pre-built from the ODF stylesheet before the mapping pass.
+    /// Cell properties from `style:table-cell-properties` (pre-built): name → props.
     pub cell_style_props: &'a HashMap<String, OdfCellProps>,
-    /// Frame text-wrap from `style:graphic-properties`: graphic-style name →
-    /// wrap config. Pre-built from the ODF stylesheet before the mapping pass.
+    /// Frame text-wrap from `style:graphic-properties` (pre-built): name → wrap.
     pub frame_wraps: &'a HashMap<String, FloatWrap>,
     /// Non-fatal issues accumulated during mapping.
     pub warnings: Vec<OdfWarning>,
@@ -89,6 +74,8 @@ pub(crate) struct OdfMappingContext<'a> {
     pub pending_figures: Vec<Block>,
     /// Comment bodies collected from `office:annotation` start anchors.
     pub comments: Vec<Comment>,
+    /// Tracked-change regions keyed by `text:id`, matched to body milestones.
+    pub changed_regions: &'a HashMap<String, OdfChangedRegion>,
 }
 
 // ── Public entry point ─────────────────────────────────────────────────────────
@@ -111,7 +98,7 @@ pub(crate) fn map_document(
 ) -> (Document, Vec<OdfWarning>) {
     // ── 1. Map stylesheet + list styles ──────────────────────────────────────
     let mut catalog = map_stylesheet(stylesheet);
-    map_list_styles(&stylesheet.list_styles, &mut catalog, doc.version);
+    map_list_styles(&stylesheet.list_styles, &mut catalog, doc.version, images);
 
     // ── 2. Pre-build column-width lookup from table-column styles ────────────────
     let col_style_widths: HashMap<String, Points> = stylesheet
@@ -141,7 +128,7 @@ pub(crate) fn map_document(
         .filter_map(|s| Some((s.name.clone(), map_graphic_wrap(s.graphic_wrap.as_ref()?)?)))
         .collect();
 
-    // ── 3. Build style lookup for master page resolution ─────────────────────
+    // ── 3. Build style lookup for master-page resolution ─────────────────────
     let all_styles: HashMap<&str, &OdfStyle> = stylesheet
         .named_styles
         .iter()
@@ -157,6 +144,18 @@ pub(crate) fn map_document(
         .or_else(|| stylesheet.master_pages.first())
         .map(|m| m.name.as_str());
 
+    // ── 3b. Collect tracked-change regions (keyed by change id) ──────────────
+    let changed_regions: HashMap<String, OdfChangedRegion> = doc
+        .body_children
+        .iter()
+        .filter_map(|c| match c {
+            OdfBodyChild::TrackedChanges(regions) => Some(regions),
+            _ => None,
+        })
+        .flatten()
+        .map(|r| (r.change_id.clone(), r.clone()))
+        .collect();
+
     // ── 4. Map body, detecting master page transitions → multiple sections ────
     let (sections, warnings, comments) = {
         let mut ctx = OdfMappingContext {
@@ -170,48 +169,38 @@ pub(crate) fn map_document(
             warnings: Vec::new(),
             pending_figures: Vec::new(),
             comments: Vec::new(),
+            changed_regions: &changed_regions,
         };
-
-        let mut current_master: Option<String> = initial_master.map(str::to_string);
-        let mut current_blocks: Vec<Block> = Vec::new();
-        let mut sections: Vec<Section> = Vec::new();
-
-        for child in &doc.body_children {
-            // Only paragraphs/headings carry style:master-page-name.
-            let new_master = match child {
-                OdfBodyChild::Paragraph(para) | OdfBodyChild::Heading(para) => para
-                    .style_name
-                    .as_deref()
-                    .and_then(|sn| resolve_master_page_name(sn, &all_styles)),
-                _ => None,
-            };
-
-            // Emit a section break only when the master page actually changes.
-            if let Some(ref nm) = new_master
-                && Some(nm.as_str()) != current_master.as_deref()
-            {
-                let layout =
-                    resolve_page_layout_by_name(stylesheet, current_master.as_deref(), &mut ctx);
-                sections.push(Section::with_layout_and_blocks(
-                    layout,
-                    std::mem::take(&mut current_blocks),
-                ));
-                current_master = Some(nm.clone());
-            }
-
-            if let Some(block) = map_body_child(child, &mut ctx) {
-                current_blocks.push(block);
-                let figs = std::mem::take(&mut ctx.pending_figures);
-                current_blocks.extend(figs);
-            }
-        }
-
-        // Flush the final (or only) section.
-        let layout = resolve_page_layout_by_name(stylesheet, current_master.as_deref(), &mut ctx);
-        sections.push(Section::with_layout_and_blocks(layout, current_blocks));
-
+        let sections = sections::build_sections(
+            &doc.body_children,
+            stylesheet,
+            &all_styles,
+            initial_master,
+            &mut ctx,
+        );
         (sections, ctx.warnings, ctx.comments)
     };
+
+    // ── 4b. Register ODF master-page names as first-class page styles ─────────
+    // (ADR-0012 Decision 2) so the panel shows real names and they round-trip;
+    // each style's geometry is its first referencing section's layout.
+    for section in &sections {
+        if let Some(id) = &section.page_style {
+            catalog.page_styles.entry(id.clone()).or_insert_with(|| {
+                let mut ps = PageStyle::new(id.clone(), section.layout.clone());
+                // Carry the master page's `style:display-name` only when distinct
+                // from its `style:name` (else leave None; fabricating `Some(id)`
+                // would shadow a later rename).
+                ps.display_name = stylesheet
+                    .master_pages
+                    .iter()
+                    .find(|m| m.name == id.as_str())
+                    .and_then(|m| m.display_name.clone())
+                    .filter(|dn| dn != id.as_str());
+                ps
+            });
+        }
+    }
 
     // ── 5. Map metadata ───────────────────────────────────────────────────────
     let doc_meta = meta.map(map_meta).unwrap_or_default();
@@ -248,7 +237,10 @@ pub(super) fn map_body_children(
     blocks
 }
 
-fn map_body_child(child: &OdfBodyChild, ctx: &mut OdfMappingContext<'_>) -> Option<Block> {
+pub(super) fn map_body_child(
+    child: &OdfBodyChild,
+    ctx: &mut OdfMappingContext<'_>,
+) -> Option<Block> {
     match child {
         OdfBodyChild::Paragraph(para) | OdfBodyChild::Heading(para) => {
             Some(map_paragraph(para, ctx))
@@ -257,6 +249,8 @@ fn map_body_child(child: &OdfBodyChild, ctx: &mut OdfMappingContext<'_>) -> Opti
         OdfBodyChild::Table(table) => Some(map_table(table, ctx)),
         OdfBodyChild::TableOfContent(toc) => Some(map_toc(toc, ctx)),
         OdfBodyChild::Section(section) => Some(map_section(section, ctx)),
+        // The region table produces no block; its content rides the milestones.
+        OdfBodyChild::TrackedChanges(_) => None,
         OdfBodyChild::Other { element } => {
             ctx.warnings.push(OdfWarning::UnrecognisedElement {
                 element: element.clone(),

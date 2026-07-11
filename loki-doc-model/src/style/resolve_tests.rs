@@ -10,6 +10,8 @@ use crate::style::char_style::CharacterStyle;
 use crate::style::para_style::ParagraphStyle;
 use crate::style::props::char_props::CharProps;
 use crate::style::props::para_props::{ParaProps, ParagraphAlignment};
+use crate::style::table_style::{TableProps, TableStyle};
+use loki_primitives::units::Points;
 
 // ── Builders ────────────────────────────────────────────────────────────────
 
@@ -323,6 +325,68 @@ fn character_style_unset_is_format_default() {
     assert_eq!(r.value, None);
 }
 
+#[test]
+fn character_style_falls_through_to_the_document_default_char_style() {
+    // The docDefaults run defaults live in a synthetic default character style;
+    // a property unset along the queried style's own chain resolves to it as
+    // `Default` (ADR-0012 Decision 1 — the character family's `Default` source).
+    let mut cat = StyleCatalog::new();
+    cat.character_styles.insert(
+        StyleId::new("__DocDefaultChar"),
+        char_style("__DocDefaultChar", None, bold()),
+    );
+    cat.default_character_style = Some(StyleId::new("__DocDefaultChar"));
+    cat.character_styles.insert(
+        StyleId::new("Plain"),
+        char_style("Plain", None, CharProps::default()),
+    );
+
+    let r = cat
+        .resolve_char_chain(&StyleId::new("Plain"), |s| s.char_props.bold)
+        .unwrap();
+    assert_eq!(r.provenance, Provenance::Default);
+    assert_eq!(r.value, Some(true));
+}
+
+#[test]
+fn character_reparent_cycle_is_detected() {
+    // A ← B (B based on A). Re-parenting A onto B would close a cycle.
+    let mut cat = StyleCatalog::new();
+    cat.character_styles.insert(
+        StyleId::new("A"),
+        char_style("A", None, CharProps::default()),
+    );
+    cat.character_styles.insert(
+        StyleId::new("B"),
+        char_style("B", Some("A"), CharProps::default()),
+    );
+    assert!(cat.char_reparent_cycles(&StyleId::new("A"), &StyleId::new("B")));
+    // Self-parenting is also a cycle; an unrelated parent is fine.
+    assert!(cat.char_reparent_cycles(&StyleId::new("A"), &StyleId::new("A")));
+    assert!(!cat.char_reparent_cycles(&StyleId::new("B"), &StyleId::new("A")));
+}
+
+#[test]
+fn character_local_value_wins_over_the_document_default() {
+    // A value set on the style itself is `Local`, never the doc default.
+    let mut cat = StyleCatalog::new();
+    cat.character_styles.insert(
+        StyleId::new("__DocDefaultChar"),
+        char_style("__DocDefaultChar", None, bold()),
+    );
+    cat.default_character_style = Some(StyleId::new("__DocDefaultChar"));
+    let mut not_bold = CharProps::default();
+    not_bold.bold = Some(false);
+    cat.character_styles
+        .insert(StyleId::new("Plain"), char_style("Plain", None, not_bold));
+
+    let r = cat
+        .resolve_char_chain(&StyleId::new("Plain"), |s| s.char_props.bold)
+        .unwrap();
+    assert_eq!(r.provenance, Provenance::Local);
+    assert_eq!(r.value, Some(false));
+}
+
 // ── Re-parent cycle guard ────────────────────────────────────────────────────
 
 #[test]
@@ -383,4 +447,86 @@ fn para_ancestors_lists_chain_nearest_first_including_self() {
         cat.para_ancestors(&StyleId::new("C")),
         vec![StyleId::new("C"), StyleId::new("B"), StyleId::new("A")]
     );
+}
+
+// ── Table-style provenance (ADR-0012 Decision 1, table family) ────────────────
+
+fn table_style(id: &str, parent: Option<&str>, props: TableProps) -> TableStyle {
+    TableStyle {
+        id: StyleId::new(id),
+        display_name: None,
+        parent: parent.map(StyleId::new),
+        table_props: props,
+        conditional: Default::default(),
+        extensions: Default::default(),
+    }
+}
+
+fn spacing(pt: f64) -> TableProps {
+    TableProps {
+        cell_spacing: Some(Points::new(pt)),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn table_style_inherits_and_falls_through_to_the_default() {
+    let mut cat = StyleCatalog::new();
+    // TableNormal (the w:default) sets spacing; Grid inherits from Fancy which
+    // sets nothing, and Fancy does not chain to TableNormal → Default level.
+    cat.table_styles.insert(
+        StyleId::new("TableNormal"),
+        table_style("TableNormal", None, spacing(2.0)),
+    );
+    cat.default_table_style = Some(StyleId::new("TableNormal"));
+    cat.table_styles.insert(
+        StyleId::new("Fancy"),
+        table_style("Fancy", None, TableProps::default()),
+    );
+    cat.table_styles.insert(
+        StyleId::new("Grid"),
+        table_style("Grid", Some("Fancy"), TableProps::default()),
+    );
+
+    // Local wins.
+    let r = cat
+        .resolve_table_chain(&StyleId::new("TableNormal"), |s| s.table_props.cell_spacing)
+        .unwrap();
+    assert_eq!(r.provenance, Provenance::Local);
+
+    // Grid → Fancy set nothing; falls through to the default table style.
+    let r = cat
+        .resolve_table_chain(&StyleId::new("Grid"), |s| s.table_props.cell_spacing)
+        .unwrap();
+    assert_eq!(r.provenance, Provenance::Default);
+    assert_eq!(r.value, Some(Points::new(2.0)));
+}
+
+#[test]
+fn table_style_unset_without_default_is_format_default() {
+    let mut cat = StyleCatalog::new();
+    cat.table_styles.insert(
+        StyleId::new("Bare"),
+        table_style("Bare", None, TableProps::default()),
+    );
+    let r = cat
+        .resolve_table_chain(&StyleId::new("Bare"), |s| s.table_props.cell_spacing)
+        .unwrap();
+    assert_eq!(r.provenance, Provenance::FormatDefault);
+    assert_eq!(r.value, None);
+}
+
+#[test]
+fn table_reparent_cycle_is_detected() {
+    let mut cat = StyleCatalog::new();
+    cat.table_styles.insert(
+        StyleId::new("A"),
+        table_style("A", None, TableProps::default()),
+    );
+    cat.table_styles.insert(
+        StyleId::new("B"),
+        table_style("B", Some("A"), TableProps::default()),
+    );
+    assert!(cat.table_reparent_cycles(&StyleId::new("A"), &StyleId::new("B")));
+    assert!(!cat.table_reparent_cycles(&StyleId::new("B"), &StyleId::new("A")));
 }

@@ -8,19 +8,9 @@
 //! is wrapped in a [`PositionedItem::ClippedGroup`] so that full-height
 //! background and border items are clipped correctly.
 //!
-//! # Session 3 pre-audit findings (2026-04-20)
-//!
-//! ## Q1 — indent_hanging coverage (55f489b)
-//! `indent_hanging` is applied in `layout_paragraph` for ALL paragraphs
-//! (not just list items): the glyph-run loop shifts line 0 left by
-//! `indent_hanging` unconditionally when the field is > 0. Non-list paragraphs
-//! with a manually set `indent_hanging` therefore produce the correct first-line
-//! offset. One known gap: `line_w` passed to `break_all_lines` is computed as
-//! `available_width − indent_start − indent_end` for every line, so Parley
-//! wraps line 0 at the same column as continuation lines. The first line
-//! physically starts `indent_hanging` to the left but wraps `indent_hanging` too
-//! early. Fixing this requires per-line width, which Parley 0.6 does not expose;
-//! the inaccuracy is minor (≤ one word per line) and non-blocking for Session 3.
+//! `indent_hanging` shifts line 0 left for all paragraphs (not just list items).
+//! Known minor gap: `line_w` for `break_all_lines` is uniform across lines, so
+//! line 0 wraps `indent_hanging` too early (Parley 0.6 exposes no per-line width).
 //!
 //! ## Q2 — Parley 0.6 bidi API
 //! `BidiLevel` and `BidiResolver` are `pub(crate)` — no public API exists to
@@ -33,36 +23,22 @@
 //! direction) cannot be addressed via `StyleProperty`; the only workaround is
 //! embedding Unicode directional control characters (U+202B RLE / U+200F RLM)
 //! into the text string. Defer to a future Parley version or a separate session.
-//!
-//! ## Q3 — page_break_after hook point
-//! `page_break_after` is absent from `ResolvedParaProps` (only `page_break_before`
-//! is present). The natural hook is in `flow_paragraph` (this file, currently
-//! line 95) immediately after `place_paragraph_layout(state, &resolved, …)`.
-//! Adding it is a 4-line change: add `page_break_after: bool` to
-//! `ResolvedParaProps` (para.rs), forward from `ParaProps` in `map_para_props`
-//! (resolve.rs), and add after `place_paragraph_layout`:
-//! ```text
-//! if resolved.page_break_after && state.mode.is_paginated() {
-//!     finish_page(state);
-//! }
-//! ```
 
 use std::sync::Arc;
 
 use loki_doc_model::content::block::{Block, StyledParagraph};
-use loki_doc_model::content::inline::Inline;
-use loki_doc_model::style::list_style::ListLevelKind;
 
 use crate::geometry::LayoutRect;
 use crate::items::{PositionedImage, PositionedItem};
-use crate::para::{
-    ParagraphLayout, ResolvedParaProps, format_list_marker, layout_paragraph_spelled,
-};
+use crate::para::{ParagraphLayout, ResolvedParaProps, layout_paragraph_spelled};
 use crate::resolve::{emu_to_pt, flatten_paragraph, pts_to_f32, resolve_para_props};
 
 use super::columns_impl::break_column;
 use super::editing::push_editing_para;
 use super::{FlowState, LayoutWarning, finish_page};
+
+#[path = "flow_widow_orphan.rs"]
+mod widow_orphan;
 
 /// Maximum keep-with-next chain length before truncation (ADR 004 §4).
 const CHAIN_LIMIT: usize = 5;
@@ -75,12 +51,15 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     // Inherit the cell-content word-breaking flag from the flow state so a long
     // unbreakable word wraps to the column width instead of overflowing.
     resolved.break_long_words = state.break_long_words;
+    // Document default tab-stop interval (Word `w:defaultTabStop`), when set.
+    if let Some(pt) = state.options.default_tab_stop_pt {
+        resolved.default_tab_stop = pt;
+    }
 
     // ── List level indentation fallback ─────────────────────────────────────
-    // OOXML defines indentation on both the paragraph and its numbering level.
-    // The level's pPr is the authoritative indent when the paragraph's own
-    // pPr carries no indent (both indent_start and indent_hanging are 0.0).
-    // This handles documents where `w:ind` is only on the abstract num level.
+    // The numbering level's pPr is the authoritative indent when the paragraph
+    // carries none (indent_start and indent_hanging both 0.0) — e.g. `w:ind`
+    // only on the abstract num level.
     if let Some(ref lm) = resolved.list_marker
         && resolved.indent_start == 0.0
         && resolved.indent_hanging == 0.0
@@ -96,48 +75,10 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     }
 
     // ── List marker synthesis ────────────────────────────────────────────────
-    // When the paragraph carries list membership, look up the list style,
-    // advance the per-list counter, format the marker string, and prepend it
-    // as an `Inline::Str` followed by a tab. Non-list paragraphs reset
-    // `prev_list_id` so the next list starts fresh.
-    let owned_para: Option<StyledParagraph> = if let Some(ref lm) = resolved.list_marker {
-        if let Some(list_style) = state.catalog.list_styles.get(&lm.list_id) {
-            if let Some(level_def) = list_style.levels.get(lm.level as usize) {
-                let start_value = match &level_def.kind {
-                    ListLevelKind::Numbered { start_value, .. } => *start_value,
-                    _ => 1,
-                };
-                // New-list detection: a different list_id means a new list
-                // is starting, so counters for this id are cleared.
-                if state.prev_list_id.as_ref() != Some(&lm.list_id) {
-                    state.list_counters.remove(&lm.list_id);
-                }
-                state.prev_list_id = Some(lm.list_id.clone());
-                state.advance_counter(&lm.list_id, lm.level, start_value);
-                let counters = state
-                    .list_counters
-                    .get(&lm.list_id)
-                    .copied()
-                    .unwrap_or([1u32; 9]);
-                let marker_text = format_list_marker(&list_style.levels, lm.level, &counters);
-                let mut cloned = para.clone();
-                cloned
-                    .inlines
-                    .insert(0, Inline::Str(format!("{}\t", marker_text)));
-                Some(cloned)
-            } else {
-                state.prev_list_id = None;
-                None
-            }
-        } else {
-            state.prev_list_id = None;
-            None
-        }
-    } else {
-        state.prev_list_id = None;
-        None
-    };
-    let effective_para: &StyledParagraph = owned_para.as_ref().unwrap_or(para);
+    // Prepend the label (bullet / number) as an `Inline::Str` + tab; a picture
+    // bullet instead reports its image `src` for out-of-band placement below.
+    let marker = super::flow_list_marker::synthesize(state, para, &resolved);
+    let effective_para: &StyledParagraph = marker.owned.as_ref().unwrap_or(para);
     // ────────────────────────────────────────────────────────────────────────
 
     let (text, spans, mut images, mut notes) =
@@ -208,6 +149,16 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
         state.options.preserve_for_editing,
         state.options.spell.as_ref(),
     );
+
+    // Picture bullet (feature 5.4): place the label image in the hanging label
+    // box on line 0. Injected into the paragraph's items so it translates with
+    // the paragraph on placement.
+    if let Some(src) = &marker.bullet_src
+        && let Some(item) =
+            super::flow_list_marker::picture_bullet_item(src, &resolved, &para_layout)
+    {
+        para_layout.items.push(item);
+    }
 
     // ── Inline image placement (gap #9) ──────────────────────────────────────
     // TODO(inline-image-flow): Parley has no inline image box support.
@@ -581,12 +532,11 @@ fn split_and_place_loop(
     // paragraph-local y of the current fragment's top edge.
     let mut frag_start = 0.0f32;
     // Whether the current fragment has already triggered a page flush without
-    // making progress. Guards against an infinite flush loop: when
-    // `space_before > 0`, a fresh page starts at `cursor_y == space_before`
-    // (> 0), so the "flush and retry" arm below would otherwise be taken on
-    // every iteration for a line taller than the available height, pushing an
-    // unbounded number of empty pages. After one unproductive flush, the
-    // force-split arm runs instead.
+    // making progress. Guards against an infinite flush loop: with
+    // `space_before > 0` a fresh page starts at `cursor_y == space_before` (> 0),
+    // so the "flush and retry" arm below would otherwise fire every iteration
+    // for a line taller than the page, pushing unbounded empty pages. After one
+    // unproductive flush, the force-split arm runs instead.
     let mut flushed_without_progress = false;
 
     loop {
@@ -683,8 +633,28 @@ fn split_and_place_loop(
                 flushed_without_progress = false;
             }
             Some(k) => {
-                // Emit Fragment A covering para-local [frag_start, split_y).
-                let split_y = para_layout.line_boundaries[k].1;
+                // Widow/orphan control: `None` = defer the whole paragraph
+                // (orphan); `Some(k')` = split there (a widow pulls `k'` back).
+                let split_line = widow_orphan::resolve_split(
+                    &para_layout.line_boundaries,
+                    frag_start,
+                    k,
+                    usize::from(resolved.orphan_min),
+                    usize::from(resolved.widow_min),
+                    state.cursor_y > 0.0,
+                );
+                if split_line.is_none() && !flushed_without_progress {
+                    // Orphan: move the whole paragraph to the next page (mirrors
+                    // the "no lines fit" flush; guarded so the retry at the fresh
+                    // page top splits normally and terminates).
+                    break_column(state);
+                    state.cursor_y += resolved.space_before;
+                    flushed_without_progress = true;
+                    continue;
+                }
+                // Emit Fragment A covering para-local [frag_start, split_y). An
+                // already-flushed orphan falls back to the natural split `k`.
+                let split_y = para_layout.line_boundaries[split_line.unwrap_or(k)].1;
                 emit_fragment(
                     state,
                     para_layout,
@@ -697,8 +667,6 @@ fn split_and_place_loop(
                 break_column(state);
                 frag_start = split_y;
                 flushed_without_progress = false;
-                // space_before is NOT re-applied between split fragments; only
-                // the "no lines fit → flush" branch above re-applies it.
             }
         }
     }
@@ -721,9 +689,8 @@ fn emit_fragment(
     // baseline + descent + leading_below; glyphs never reach max_coord, so
     // flooring by up to 1 pt never clips visible ink.  Without this, a
     // fractional max_coord × display-scale rounds up one physical pixel and
-    // leaks the top row of the next line through the clip.
-    // Fragment B uses unrounded split_y for its translation (ty = -split_y)
-    // so there is no corresponding gap at the top of the next page.
+    // leaks the next line's top row through the clip. Fragment B uses unrounded
+    // split_y for its translation (ty = -split_y), so the next page has no gap.
     let clip_height = (split_y - frag_start).floor();
     let clip_rect = LayoutRect::new(0.0, state.cursor_y, state.content_width, clip_height);
     let ty = state.cursor_y - frag_start;

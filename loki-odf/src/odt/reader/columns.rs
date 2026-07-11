@@ -61,15 +61,26 @@ fn parse_columns(
         .unwrap_or(1);
     let gap = local_attr_val(e, b"column-gap");
     let mut separator = false;
+    let mut rel_widths = Vec::new();
     if !empty {
         let mut buf = Vec::new();
         loop {
             buf.clear();
             match reader.read_event_into(&mut buf) {
-                Ok(Event::Start(ref c) | Event::Empty(ref c))
-                    if c.local_name().into_inner() == b"column-sep" =>
-                {
-                    separator = true;
+                Ok(Event::Start(ref c) | Event::Empty(ref c)) => {
+                    match c.local_name().into_inner() {
+                        b"column-sep" => separator = true,
+                        // `style:column @style:rel-width` carries the `"N*"` share
+                        // for unequal columns; one per column in order.
+                        b"column" => {
+                            if let Some(w) = local_attr_val(c, b"rel-width")
+                                .and_then(|v| v.trim_end_matches('*').parse::<f32>().ok())
+                            {
+                                rel_widths.push(w);
+                            }
+                        }
+                        _ => {}
+                    }
                 }
                 Ok(Event::End(ref c)) if c.local_name().into_inner() == b"columns" => break,
                 Ok(Event::Eof) => break,
@@ -87,5 +98,6 @@ fn parse_columns(
         count,
         gap,
         separator,
+        rel_widths,
     })
 }

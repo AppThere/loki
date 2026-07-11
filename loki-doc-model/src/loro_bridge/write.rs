@@ -280,5 +280,11 @@ pub(super) fn map_char_props_to_map(props: &CharProps, map: &LoroMap) -> Result<
     if let Some(v) = &props.language_east_asian {
         map.insert("language_east_asian", v.as_str())?;
     }
+    // A tracked-change mark on a *block-level* char-props map is the paragraph
+    // mark's revision (OOXML `w:pPr/w:rPr/w:del`); inline-run revisions ride the
+    // text as `MARK_REVISION` instead. Review tab 4a.2.
+    if let Some(v) = &props.revision {
+        map.insert(PROP_REVISION, crate::style::props::revision::encode(v))?;
+    }
     Ok(())
 }

@@ -21,17 +21,13 @@ use crate::docx::model::styles::{
 use super::document::MappingContext;
 use super::paragraph::map_paragraph;
 use super::props::map_border_edge;
+use super::table_look::map_tbl_look;
 
 /// Maps a `w:tbl` to a `Block::Table`.
 ///
-/// ## Vertical merge
-/// A two-pass algorithm resolves `w:vMerge` spans: restart cells receive
-/// the correct `row_span` count and continuation cells are removed from the
-/// output (OOXML §17.4.84).
-///
-/// ## Column widths
-/// `w:tblGrid` widths are converted from twips to points when present;
-/// otherwise `ColWidth::Default` is used.
+/// A two-pass algorithm resolves `w:vMerge` spans (restart cells get the
+/// `row_span` count, continuation cells dropped — §17.4.84); `w:tblGrid` widths
+/// convert twips→points when present, else `ColWidth::Default`.
 pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Block {
     let col_specs = build_col_specs(t);
 
@@ -53,9 +49,8 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
                 .and_then(|p| p.grid_span)
                 .unwrap_or(1)
                 .max(1) as usize;
-            // NOTE: continuation cells are removed from output. The spanning
-            // cell above carries row_span = N covering all removed rows.
-            // loki-layout must account for row_span when placing cell content.
+            // Continuation cells are dropped; the spanning cell above carries
+            // row_span = N covering them (loki-layout honours row_span).
             if !skip_set.contains(&(row_idx, cell_idx)) {
                 let mut cell = map_cell(tc, ctx);
                 cell.row_span = span_map.get(&(row_idx, grid_col)).copied().unwrap_or(1);
@@ -85,8 +80,7 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
 
     let width = map_tbl_width(t);
 
-    // OOXML `w:tblLayout w:type="fixed"` → honour grid column widths exactly
-    // (no autofit rescale). Mark the table so loki-layout skips its rescale.
+    // `w:tblLayout w:type="fixed"` → honour grid widths exactly (no autofit).
     let mut attr = NodeAttr::default();
     if t.tbl_pr
         .as_ref()
@@ -95,6 +89,14 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
     {
         attr.classes
             .push(loki_doc_model::content::table::core::TABLE_FIXED_LAYOUT_CLASS.to_string());
+    }
+    // `w:tblStyle` → the referenced table style, stored in the `"style"` attr.
+    if let Some(id) = t.tbl_pr.as_ref().and_then(|p| p.style_id.clone()) {
+        attr.kv.push(("style".to_string(), id));
+    }
+    // `w:tblLook` → active conditional-style regions, encoded in `"tbllook"`.
+    if let Some(l) = t.tbl_pr.as_ref().and_then(|p| p.tbl_look) {
+        attr.kv.push(("tbllook".to_string(), map_tbl_look(l)));
     }
 
     let table = Table {
@@ -154,15 +156,13 @@ fn build_col_specs(t: &DocxTableModel) -> Vec<ColSpec> {
 fn map_cell(tc: &crate::docx::model::styles::DocxTableCell, ctx: &mut MappingContext<'_>) -> Cell {
     use crate::docx::model::document::DocxBodyChild;
     let col_span = tc.tc_pr.as_ref().and_then(|p| p.grid_span).unwrap_or(1);
-    // Map ordered cell content: paragraphs and nested tables (recursing through
-    // map_table) interleaved in document order.
+    // Ordered cell content: paragraphs + nested tables (recursing map_table).
     let blocks: Vec<Block> = tc
         .children
         .iter()
         .flat_map(|child| match child {
             DocxBodyChild::Paragraph(p) => map_paragraph(p, ctx),
             DocxBodyChild::Table(t) => vec![map_table(t, ctx)],
-            DocxBodyChild::Sdt => Vec::new(),
         })
         .collect();
 
@@ -271,10 +271,9 @@ fn compute_v_merge_spans(
     let num_cols = v_merge_grid.iter().map(Vec::len).max().unwrap_or(0);
 
     let mut span_map: HashMap<(usize, usize), u32> = HashMap::new();
-    // COMPAT(microsoft): w:vMerge with no w:val attribute is a continuation
-    // cell per OOXML §17.4.84, not a restart. Some non-Microsoft producers
-    // incorrectly omit w:vMerge entirely for continuation cells — those will
-    // still render as row_span=1.
+    // COMPAT(microsoft): w:vMerge with no w:val is a continuation cell per
+    // §17.4.84, not a restart. Producers that omit w:vMerge entirely for
+    // continuation cells render those as row_span=1.
     let mut skip_set: HashSet<(usize, usize)> = HashSet::new();
 
     // Pass 2: for each column, find restart cells and count their span.

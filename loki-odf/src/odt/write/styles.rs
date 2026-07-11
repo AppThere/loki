@@ -13,9 +13,10 @@ use loki_doc_model::style::para_style::ParagraphStyle;
 use super::auto::AutoStyles;
 use super::content::{Cx, write_block};
 use super::media::{Media, Rendered};
+use super::page_styles::resolve_page_style_names;
 use super::para_props::emit_paragraph_properties;
 use super::props::emit_text_properties;
-use super::xml::{attr, escape, master_page_name, page_layout_name, pt};
+use super::xml::{attr, escape, pt};
 
 const HEADER: &str = concat!(
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
@@ -35,14 +36,11 @@ const HEADER: &str = concat!(
 /// the master-page header/footer.
 #[must_use]
 pub(crate) fn styles_xml(doc: &Document) -> Rendered {
-    // One page-layout + master-page per section so each section's geometry and
-    // header/footer round-trip. A document with no sections falls back to a
-    // single default master page.
-    let layouts: Vec<PageLayout> = if doc.sections.is_empty() {
-        vec![PageLayout::default()]
-    } else {
-        doc.sections.iter().map(|s| s.layout.clone()).collect()
-    };
+    // One page-layout + master-page per **distinct page style** so each style's
+    // geometry and header/footer round-trip under its stored name. Sections
+    // sharing a page style share a master page; a document with no sections falls
+    // back to a single default master page. See [`resolve_page_style_names`].
+    let names = resolve_page_style_names(doc);
 
     // Render the master-page header/footer content first so its automatic
     // styles (and images) are collected before the automatic-styles section is
@@ -53,25 +51,43 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
         // Comments inside headers/footers are not modelled; use an empty lookup.
         comments: std::collections::HashMap::new(),
         objects: Vec::new(),
+        // Tracked changes inside headers/footers are not modelled.
+        changes: super::revisions::Changes::default(),
+        // Header/footer tables (rare) resolve no banding — empty catalog.
+        table_styles: indexmap::IndexMap::default(),
     };
     let mut masters = String::new();
     let mut page_layouts = String::new();
-    for (idx, layout) in layouts.iter().enumerate() {
-        let mp_name = master_page_name(idx);
-        let pl_name = page_layout_name(idx);
-        masters.push_str(&render_master_page(&mp_name, &pl_name, layout, &mut cx));
-        write_page_layout(&mut page_layouts, &pl_name, layout);
+    for m in &names.masters {
+        masters.push_str(&render_master_page(
+            &m.master,
+            m.display_name.as_deref(),
+            &m.page_layout,
+            &m.layout,
+            &mut cx,
+        ));
+        write_page_layout(&mut page_layouts, &m.page_layout, &m.layout);
     }
 
     let mut out = String::new();
     out.push_str(HEADER);
 
     // ── Named styles (the catalog) ─────────────────────────────────────────
+    // Synthetic internal styles (`__`-prefixed, e.g. `__DocDefault` /
+    // `__DocDefaultChar`) hold the document's `docDefaults` and are not named
+    // styles — skip them here (they belong in `style:default-style`, not
+    // `style:style`).
     out.push_str("<office:styles>");
     for (id, style) in &doc.styles.paragraph_styles {
+        if id.as_str().starts_with("__") {
+            continue;
+        }
         write_paragraph_style(&mut out, id.as_str(), style);
     }
     for (id, style) in &doc.styles.character_styles {
+        if id.as_str().starts_with("__") {
+            continue;
+        }
         out.push_str("<style:style");
         attr(&mut out, "style:name", id.as_str());
         if let Some(name) = &style.display_name {
@@ -85,6 +101,8 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
         out.push_str(&emit_text_properties(&style.char_props));
         out.push_str("</style:style>");
     }
+    // Named table styles (table-level width / alignment / background).
+    super::table_style::write_table_styles(&mut out, &doc.styles);
     out.push_str("</office:styles>");
 
     // ── Automatic styles: page layouts + header/footer styles ──────────────
@@ -108,10 +126,20 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
 
 /// Builds one `<style:master-page>` element (named `mp_name`, referencing
 /// page-layout `pl_name`), rendering each present header/footer variant into
-/// ODF `<style:header…>` / `<style:footer…>`.
-fn render_master_page(mp_name: &str, pl_name: &str, layout: &PageLayout, cx: &mut Cx) -> String {
+/// ODF `<style:header…>` / `<style:footer…>`. A `display_name` distinct from the
+/// name is written as `style:display-name` so a renamed page style round-trips.
+fn render_master_page(
+    mp_name: &str,
+    display_name: Option<&str>,
+    pl_name: &str,
+    layout: &PageLayout,
+    cx: &mut Cx,
+) -> String {
     let mut m = String::from("<style:master-page");
     attr(&mut m, "style:name", mp_name);
+    if let Some(dn) = display_name {
+        attr(&mut m, "style:display-name", dn);
+    }
     attr(&mut m, "style:page-layout-name", pl_name);
     m.push('>');
     write_hf(&mut m, "style:header", layout.header.as_ref(), cx);
@@ -207,18 +235,29 @@ fn write_page_layout(out: &mut String, pl_name: &str, layout: &PageLayout) {
 }
 
 /// Writes a `<style:columns>` element (ODF 1.3 §16.27.10): `fo:column-count`
-/// equal columns with a uniform `fo:column-gap`, and an optional separator line.
+/// columns, a uniform `fo:column-gap`, and an optional separator. Unequal
+/// columns (`cols.widths` matching `count`) add one `<style:column
+/// style:rel-width="N*"/>` per column (share = point width ×100).
 fn write_columns(out: &mut String, cols: &SectionColumns) {
     out.push_str("<style:columns");
     attr(out, "fo:column-count", &cols.count.to_string());
     attr(out, "fo:column-gap", &pt(cols.gap));
-    if cols.separator {
-        out.push('>');
-        out.push_str("<style:column-sep style:width=\"0.5pt\" style:color=\"#000000\"/>");
-        out.push_str("</style:columns>");
-    } else {
+    let unequal = cols.widths.len() == usize::from(cols.count);
+    if !unequal && !cols.separator {
+        out.push_str("/>");
+        return;
+    }
+    out.push('>');
+    for width in cols.widths.iter().filter(|_| unequal) {
+        let share = (width.value() * 100.0).round();
+        out.push_str("<style:column");
+        attr(out, "style:rel-width", &format!("{share:.0}*"));
         out.push_str("/>");
     }
+    if cols.separator {
+        out.push_str("<style:column-sep style:width=\"0.5pt\" style:color=\"#000000\"/>");
+    }
+    out.push_str("</style:columns>");
 }
 
 /// Renders `meta.xml` for `doc` (Dublin Core core properties).

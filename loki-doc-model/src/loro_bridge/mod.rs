@@ -24,6 +24,7 @@ mod meta;
 mod opaque;
 mod props_read;
 mod read;
+mod settings;
 mod styles;
 mod table;
 mod write;
@@ -32,6 +33,7 @@ pub use comments::{read_document_comments, write_document_comments};
 pub use compact::{compact_history, compact_in_place};
 pub use incremental::IncrementalReader;
 pub use meta::{read_document_meta, write_document_meta};
+pub use settings::{document_track_changes, set_track_changes};
 pub use styles::{read_document_styles, write_document_styles};
 
 // Crate-internal block / note writers reused by the mutation layer to insert a
@@ -103,6 +105,9 @@ fn map_page_layout(layout: &PageLayout, section_map: &LoroMap) -> Result<(), Bri
         cols_map.insert(KEY_COL_COUNT, i64::from(cols.count))?;
         cols_map.insert(KEY_COL_GAP, cols.gap.value())?;
         cols_map.insert(KEY_COL_SEPARATOR, cols.separator)?;
+        if let Some(joined) = decode::encode_col_widths(&cols.widths) {
+            cols_map.insert(KEY_COL_WIDTHS, joined)?;
+        }
     }
 
     map_header_footer_slot(&layout.header, KEY_HEADER, &layout_map)?;
@@ -151,6 +156,11 @@ pub fn document_to_loro(doc: &Document) -> Result<LoroDoc, BridgeError> {
         // Page layout (always present — Section.layout is not Option)
         map_page_layout(&section.layout, &sec_map)?;
 
+        // Named page-style reference (ADR-0012 Decision 2), when assigned.
+        if let Some(page_style) = &section.page_style {
+            sec_map.insert(KEY_PAGE_STYLE_REF, page_style.as_str())?;
+        }
+
         // Blocks
         let blocks_list = sec_map.insert_container(KEY_BLOCKS, LoroMovableList::new())?;
         map_blocks_to_list(&section.blocks, &blocks_list)?;
@@ -159,6 +169,10 @@ pub fn document_to_loro(doc: &Document) -> Result<LoroDoc, BridgeError> {
     // Comments (annotation bodies) — JSON snapshot, like metadata.
     let comments_map = loro_doc.get_map(KEY_COMMENTS);
     comments::write_comments(&doc.comments, &comments_map)?;
+
+    // Document settings (track changes, default tab stop) — JSON snapshot.
+    let settings_map = loro_doc.get_map(KEY_SETTINGS);
+    settings::write_settings(doc.settings.as_ref(), &settings_map)?;
 
     Ok(loro_doc)
 }
@@ -199,6 +213,13 @@ pub fn loro_to_document(loro: &LoroDoc) -> Result<Document, BridgeError> {
         // Page layout
         section.layout = reconstruct_page_layout(&sec_map);
 
+        // Named page-style reference (absent → None).
+        section.page_style = sec_map
+            .get(KEY_PAGE_STYLE_REF)
+            .and_then(|v| v.into_value().ok())
+            .and_then(|v| v.into_string().ok())
+            .map(|s| crate::style::catalog::StyleId::new(s.to_string()));
+
         // Blocks
         if let Some(blocks_val) = sec_map.get(KEY_BLOCKS)
             && let Some(blocks_list) = blocks_val
@@ -219,6 +240,10 @@ pub fn loro_to_document(loro: &LoroDoc) -> Result<Document, BridgeError> {
     // Comments (annotation bodies).
     let comments_map: loro::LoroMap = loro.get_map(KEY_COMMENTS);
     doc.comments = comments::read_comments(&comments_map);
+
+    // Document settings (track changes, default tab stop).
+    let settings_map: loro::LoroMap = loro.get_map(KEY_SETTINGS);
+    doc.settings = settings::read_settings(&settings_map);
 
     Ok(doc)
 }

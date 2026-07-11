@@ -63,7 +63,7 @@ fn label_display(kind: &ListLevelKind) -> String {
     match kind {
         ListLevelKind::Bullet { char, .. } => match char {
             BulletChar::Char(c) => format!("Bullet {c}"),
-            BulletChar::Image => "Image bullet".to_string(),
+            BulletChar::Image { .. } => "Image bullet".to_string(),
             _ => "Bullet".to_string(),
         },
         ListLevelKind::Numbered { scheme, .. } => format!("Numbered · {}", scheme_name(*scheme)),

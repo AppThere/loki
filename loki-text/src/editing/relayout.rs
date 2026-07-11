@@ -20,6 +20,7 @@ fn edit_opts() -> LayoutOptions {
     LayoutOptions {
         preserve_for_editing: true,
         spell: crate::editing::spell::active(),
+        ..Default::default()
     }
 }
 

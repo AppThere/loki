@@ -19,7 +19,7 @@ use crate::odt::model::fields::OdfField;
 use crate::odt::model::frames::OdfFrame;
 use crate::odt::model::notes::OdfNoteClass;
 use crate::odt::model::paragraph::{OdfHyperlink, OdfParagraphChild, OdfSpan};
-use crate::xml_util::local_attr_val;
+use crate::xml_util::{local_attr_val, resolve_general_ref, unescape_text};
 
 use super::document::{read_frame_kind, read_note_body, skip_element};
 
@@ -88,12 +88,23 @@ pub(crate) fn read_inline_children(
             Ok(Event::Empty(ref e)) => children.push(inline_from_empty(e)),
             // ── Text nodes ─────────────────────────────────────────────────
             Ok(Event::Text(ref t)) => {
-                let s = t.unescape().map_err(|e| OdfError::Xml {
+                let s = unescape_text(t).map_err(|e| OdfError::Xml {
                     part: "content.xml".to_string(),
                     source: e,
                 })?;
                 if !s.is_empty() {
-                    children.push(OdfParagraphChild::Text(s.into_owned()));
+                    children.push(OdfParagraphChild::Text(s));
+                }
+            }
+            // ── General references (`&quot;`, `&#39;`, …) split out of Text
+            // as their own event since quick-xml 0.41 — see `resolve_general_ref`.
+            Ok(Event::GeneralRef(ref r)) => {
+                let s = resolve_general_ref(r).map_err(|e| OdfError::Xml {
+                    part: "content.xml".to_string(),
+                    source: e,
+                })?;
+                if !s.is_empty() {
+                    children.push(OdfParagraphChild::Text(s));
                 }
             }
             // ── End: the containing element has closed ──────────────────────
@@ -163,6 +174,12 @@ fn read_inline_start_other(
             skip_element(reader)?;
             children.push(OdfParagraphChild::BookmarkEnd { name });
         }
+        // Tracked-change milestones — ODF 1.3 §5.5.7 (also emitted non-empty).
+        b"change-start" | b"change-end" | b"change" => {
+            let child = revision_milestone(e, local);
+            skip_element(reader)?;
+            children.push(child);
+        }
         // ── Text fields ────────────────────────────────────────────────────
         // Field attributes are extracted before the wrapping element (which
         // carries only the field's current display text) is skipped.
@@ -204,6 +221,7 @@ fn inline_from_empty(e: &BytesStart<'_>) -> OdfParagraphChild {
         b"annotation-end" => OdfParagraphChild::AnnotationEnd {
             name: local_attr_val(e, b"name"),
         },
+        b"change-start" | b"change-end" | b"change" => revision_milestone(e, local),
         b"annotation" => OdfParagraphChild::Annotation {
             // Self-closing annotation: a point comment with no body.
             name: local_attr_val(e, b"name"),
@@ -212,6 +230,17 @@ fn inline_from_empty(e: &BytesStart<'_>) -> OdfParagraphChild {
             body: Vec::new(),
         },
         _ => field_from_element(e, local),
+    }
+}
+
+/// Build a tracked-change milestone child (`text:change-start` /
+/// `text:change-end` / `text:change`) from its `text:change-id`. ODF 1.3 §5.5.7.
+fn revision_milestone(e: &BytesStart<'_>, local: &[u8]) -> OdfParagraphChild {
+    let change_id = local_attr_val(e, b"change-id").unwrap_or_default();
+    match local {
+        b"change-start" => OdfParagraphChild::RevisionStart { change_id },
+        b"change-end" => OdfParagraphChild::RevisionEnd { change_id },
+        _ => OdfParagraphChild::RevisionPoint { change_id },
     }
 }
 

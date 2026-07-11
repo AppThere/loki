@@ -120,6 +120,7 @@ fn test_table_row_height_uniformity() {
     }));
 
     let section = Section {
+        page_style: None,
         layout: PageLayout::default(),
         start: Default::default(),
         blocks: vec![table],
@@ -184,6 +185,7 @@ fn test_table_row_span_distribution() {
     }));
 
     let section = Section {
+        page_style: None,
         layout: PageLayout::default(),
         start: Default::default(),
         blocks: vec![table],
@@ -277,6 +279,7 @@ fn test_table_min_row_height() {
     }));
 
     let section = Section {
+        page_style: None,
         layout: PageLayout::default(),
         start: Default::default(),
         blocks: vec![table],
@@ -334,6 +337,7 @@ fn test_table_non_uniform_columns() {
     }));
 
     let section = Section {
+        page_style: None,
         layout: PageLayout::default(),
         start: Default::default(),
         blocks: vec![table],
@@ -426,6 +430,7 @@ fn fixed_columns_overflowing_table_width_are_scaled_down_current_behavior() {
     // 3 columns × 200pt = 600pt of fixed width, but the table declares 300pt.
     let table = fixed_width_table(&[200.0, 200.0, 200.0], 300.0);
     let section = Section {
+        page_style: None,
         layout: PageLayout::default(),
         start: Default::default(),
         blocks: vec![table],
@@ -458,6 +463,7 @@ fn fixed_columns_should_be_honored_like_word() {
             .push(loki_doc_model::content::table::core::TABLE_FIXED_LAYOUT_CLASS.to_string());
     }
     let section = Section {
+        page_style: None,
         layout: PageLayout::default(),
         start: Default::default(),
         blocks: vec![table],
@@ -498,6 +504,7 @@ fn cell_content_is_clipped_to_cell_box() {
         foot: TableFoot::empty(),
     }));
     let section = Section {
+        page_style: None,
         layout: PageLayout::default(),
         start: Default::default(),
         blocks: vec![table],
@@ -551,6 +558,7 @@ fn fixed_columns_underflowing_table_width_are_scaled_up_current_behavior() {
     // 2 columns × 50pt = 100pt fixed, table declares 300pt → scale ×3 → 150 each.
     let table = fixed_width_table(&[50.0, 50.0], 300.0);
     let section = Section {
+        page_style: None,
         layout: PageLayout::default(),
         start: Default::default(),
         blocks: vec![table],
@@ -606,6 +614,7 @@ fn vmerge_gridspan_l_merge_places_cells_correctly() {
         foot: TableFoot::empty(),
     }));
     let section = Section {
+        page_style: None,
         layout: PageLayout::default(),
         start: Default::default(),
         blocks: vec![table],
@@ -678,6 +687,7 @@ fn long_word_wraps_within_narrow_cell() {
         foot: TableFoot::empty(),
     }));
     let section = Section {
+        page_style: None,
         layout: PageLayout::default(),
         start: Default::default(),
         blocks: vec![table],
@@ -770,6 +780,7 @@ fn test_table_cell_vertical_alignment() {
     }));
 
     let section = Section {
+        page_style: None,
         layout: PageLayout::default(),
         start: Default::default(),
         blocks: vec![table],

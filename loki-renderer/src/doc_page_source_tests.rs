@@ -22,6 +22,7 @@ fn paginated(doc: &Document) -> Arc<PaginatedLayout> {
         &LayoutOptions {
             preserve_for_editing: true,
             spell: None,
+            ..Default::default()
         },
     ) {
         DocumentLayout::Paginated(pl) => Arc::new(pl),

@@ -76,6 +76,7 @@ fn entry(block_index: usize, layout: Arc<ParagraphLayout>, y: f32) -> PageParagr
         path: Vec::new(),
         layout,
         origin: (0.0, y),
+        rotation: None,
     }
 }
 

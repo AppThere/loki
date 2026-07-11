@@ -464,6 +464,91 @@ fn multi_section_page_geometry_round_trips() {
 }
 
 #[test]
+fn named_page_styles_round_trip_as_master_pages() {
+    use loki_doc_model::layout::page::PageOrientation;
+    use loki_doc_model::style::PageStyle;
+
+    let body = |t: &str| vec![Block::Para(vec![Inline::Str(t.to_string())])];
+
+    let mut cover = Section::with_layout_and_blocks(
+        PageLayout {
+            page_size: PageSize::a4(),
+            orientation: PageOrientation::Portrait,
+            ..PageLayout::default()
+        },
+        body("Cover section."),
+    );
+    cover.page_style = Some(StyleId::new("Cover"));
+    let mut landscape = Section::with_layout_and_blocks(
+        PageLayout {
+            page_size: PageSize::letter(),
+            orientation: PageOrientation::Landscape,
+            ..PageLayout::default()
+        },
+        body("Wide section."),
+    );
+    landscape.page_style = Some(StyleId::new("WideBody"));
+
+    let mut doc = Document::new();
+    doc.sections = vec![cover, landscape];
+    // The catalog carries the named page styles (as the app populates them).
+    doc.styles.page_styles.insert(
+        StyleId::new("Cover"),
+        PageStyle::new(StyleId::new("Cover"), doc.sections[0].layout.clone()),
+    );
+    // "WideBody" carries a distinct human display name (with a space, so the id
+    // is the NCName and the display name is separate).
+    let mut wide = PageStyle::new(StyleId::new("WideBody"), doc.sections[1].layout.clone());
+    wide.display_name = Some("Wide Body".to_string());
+    doc.styles
+        .page_styles
+        .insert(StyleId::new("WideBody"), wide);
+
+    let re = round_trip(&doc);
+
+    // The stored per-section page-style names survive as ODT master pages.
+    assert_eq!(re.sections.len(), 2, "both sections must survive");
+    assert_eq!(
+        re.sections[0].page_style,
+        Some(StyleId::new("Cover")),
+        "section 0 must keep its page-style name"
+    );
+    assert_eq!(
+        re.sections[1].page_style,
+        Some(StyleId::new("WideBody")),
+        "section 1 must keep its page-style name"
+    );
+    // Import registers them as first-class page styles in the catalog.
+    assert!(re.styles.page_styles.contains_key(&StyleId::new("Cover")));
+    assert!(
+        re.styles
+            .page_styles
+            .contains_key(&StyleId::new("WideBody"))
+    );
+    // The distinct display name survives via `style:display-name`; the style
+    // with no distinct display name leaves it unset (the id is the label).
+    assert_eq!(
+        re.styles
+            .page_styles
+            .get(&StyleId::new("WideBody"))
+            .and_then(|ps| ps.display_name.as_deref()),
+        Some("Wide Body"),
+    );
+    assert_eq!(
+        re.styles
+            .page_styles
+            .get(&StyleId::new("Cover"))
+            .and_then(|ps| ps.display_name.as_deref()),
+        None,
+    );
+    // Geometry still round-trips under the named styles.
+    assert_eq!(
+        re.sections[1].layout.orientation,
+        PageOrientation::Landscape
+    );
+}
+
+#[test]
 fn extended_dublin_core_round_trips() {
     use loki_doc_model::meta::dublin_core::DublinCoreMeta;
 
@@ -575,6 +660,7 @@ fn multi_column_section_round_trips() {
                 count: 3,
                 gap: Points::new(18.0),
                 separator: true,
+                widths: Vec::new(),
             }),
             ..PageLayout::default()
         },
@@ -593,6 +679,46 @@ fn multi_column_section_round_trips() {
     assert_eq!(cols.count, 3, "column count");
     assert_eq!(cols.gap.value().round(), 18.0, "column gap (pt)");
     assert!(cols.separator, "the column separator must survive");
+}
+
+#[test]
+fn unequal_column_widths_round_trip() {
+    use loki_doc_model::layout::page::SectionColumns;
+
+    // A4 (595.28pt) with 72pt L/R margins → content width 451.28. Two columns
+    // in a 2:1 ratio. ODF stores relative `style:column @style:rel-width`, so the
+    // absolute widths are re-derived from the page geometry on import — the
+    // *ratio* is what round-trips, not the exact points.
+    let section = Section::with_layout_and_blocks(
+        PageLayout {
+            page_size: PageSize::a4(),
+            columns: Some(SectionColumns {
+                count: 2,
+                gap: Points::new(18.0),
+                separator: false,
+                widths: vec![Points::new(280.0), Points::new(140.0)],
+            }),
+            ..PageLayout::default()
+        },
+        vec![Block::Para(vec![Inline::Str("Two-column body.".into())])],
+    );
+    let mut doc = Document::new();
+    doc.sections = vec![section];
+
+    let re = round_trip(&doc);
+    let cols = re.sections[0]
+        .layout
+        .columns
+        .clone()
+        .expect("style:columns must survive the round-trip");
+
+    assert_eq!(cols.count, 2, "column count");
+    assert_eq!(cols.widths.len(), 2, "per-column widths survive");
+    let ratio = cols.widths[0].value() / cols.widths[1].value();
+    assert!(
+        (ratio - 2.0).abs() < 0.05,
+        "the 2:1 width ratio must survive (got {ratio})"
+    );
 }
 
 #[test]
@@ -624,4 +750,207 @@ fn text_of_block(block: &Block) -> String {
         })
         .collect::<Vec<_>>()
         .join("")
+}
+
+/// A cell with a background colour must survive ODT export → import: the
+/// writer emits an automatic `table-cell` style carrying `fo:background-color`,
+/// referenced by the cell's `table:style-name`. This is ODF's per-cell
+/// representation of table shading / banding.
+#[test]
+fn cell_background_round_trips_via_table_cell_style() {
+    use loki_doc_model::content::table::core::{Table, TableBody, TableFoot, TableHead};
+    use loki_doc_model::content::table::row::{Cell, CellProps, Row};
+    use loki_primitives::color::{DocumentColor, RgbColor};
+
+    let blue = DocumentColor::Rgb(RgbColor::new(
+        0x44 as f32 / 255.0,
+        0x72 as f32 / 255.0,
+        0xC4 as f32 / 255.0,
+    ));
+
+    // Row 1: shaded cell + plain cell. Row 2: both plain.
+    let shaded = Cell {
+        props: CellProps {
+            background_color: Some(blue),
+            ..CellProps::default()
+        },
+        ..Cell::simple(vec![Block::Para(vec![Inline::Str("hdr".into())])])
+    };
+    let plain = |t: &str| Cell::simple(vec![Block::Para(vec![Inline::Str(t.into())])]);
+    let table = Table {
+        attr: NodeAttr::default(),
+        caption: Default::default(),
+        width: None,
+        col_specs: vec![],
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![
+            Row::new(vec![shaded, plain("b")]),
+            Row::new(vec![plain("c"), plain("d")]),
+        ])],
+        foot: TableFoot::empty(),
+    };
+
+    let mut doc = Document::new();
+    doc.sections[0].blocks = vec![Block::Table(Box::new(table))];
+
+    let back = round_trip(&doc);
+
+    let t = back.sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            Block::Table(t) => Some(t.as_ref()),
+            _ => None,
+        })
+        .expect("table survives");
+    let first_cell = &t.bodies[0].body_rows[0].cells[0];
+    assert_eq!(
+        first_cell
+            .props
+            .background_color
+            .as_ref()
+            .and_then(DocumentColor::to_hex)
+            .as_deref(),
+        Some("#4472C4"),
+        "shaded cell keeps its background"
+    );
+    // The plain neighbour stays unshaded.
+    assert!(
+        t.bodies[0].body_rows[0].cells[1]
+            .props
+            .background_color
+            .is_none()
+    );
+}
+
+/// A table referencing a banded style (with no direct cell shading) exports to
+/// ODT with the banding **resolved into per-cell backgrounds** (ODF's model),
+/// so the header row comes back shaded while the body row does not.
+#[test]
+fn table_style_banding_resolves_into_per_cell_shading_on_odt_export() {
+    use loki_doc_model::content::table::core::{Table, TableBody, TableFoot, TableHead};
+    use loki_doc_model::content::table::row::{Cell, Row};
+    use loki_doc_model::style::table_style::{
+        TableConditionalFormat, TableProps, TableRegion, TableStyle,
+    };
+    use loki_primitives::color::{DocumentColor, RgbColor};
+
+    let blue = DocumentColor::Rgb(RgbColor::new(
+        0x44 as f32 / 255.0,
+        0x72 as f32 / 255.0,
+        0xC4 as f32 / 255.0,
+    ));
+
+    // Style with header-row shading only.
+    let mut style = TableStyle {
+        id: StyleId::new("Banded"),
+        display_name: Some("Banded".into()),
+        parent: None,
+        table_props: TableProps::default(),
+        conditional: Default::default(),
+        extensions: Default::default(),
+    };
+    style.conditional.insert(
+        TableRegion::FirstRow,
+        TableConditionalFormat {
+            background_color: Some(blue.clone()),
+        },
+    );
+
+    // A 2×2 table with no direct cell shading, referencing "Banded".
+    let cell = |t: &str| Cell::simple(vec![Block::Para(vec![Inline::Str(t.into())])]);
+    let mut table = Table {
+        attr: NodeAttr::default(),
+        caption: Default::default(),
+        width: None,
+        col_specs: vec![],
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![
+            Row::new(vec![cell("a"), cell("b")]),
+            Row::new(vec![cell("c"), cell("d")]),
+        ])],
+        foot: TableFoot::empty(),
+    };
+    table.set_style_name(Some("Banded".into()));
+
+    let mut doc = Document::new();
+    doc.styles
+        .table_styles
+        .insert(StyleId::new("Banded"), style);
+    doc.sections[0].blocks = vec![Block::Table(Box::new(table))];
+
+    let back = round_trip(&doc);
+
+    let t = back.sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            Block::Table(t) => Some(t.as_ref()),
+            _ => None,
+        })
+        .expect("table survives");
+    let hex = |c: &Cell| {
+        c.props
+            .background_color
+            .as_ref()
+            .and_then(DocumentColor::to_hex)
+    };
+    // Header row (row 0): both cells shaded blue by the resolved firstRow band.
+    assert_eq!(
+        hex(&t.bodies[0].body_rows[0].cells[0]).as_deref(),
+        Some("#4472C4")
+    );
+    assert_eq!(
+        hex(&t.bodies[0].body_rows[0].cells[1]).as_deref(),
+        Some("#4472C4")
+    );
+    // Body row (row 1): no matching region → no shading.
+    assert!(
+        t.bodies[0].body_rows[1].cells[0]
+            .props
+            .background_color
+            .is_none()
+    );
+}
+
+/// A table's named-style reference (`table:style-name`) survives ODT export →
+/// import: the writer emits the `<style:style style:family="table">` definition
+/// in styles.xml and the reference on the table; import restores `style_name`.
+#[test]
+fn table_style_name_reference_round_trips() {
+    use loki_doc_model::content::table::core::Table;
+    use loki_doc_model::style::table_style::{TableProps, TableStyle, TableWidth};
+    use loki_primitives::units::Points;
+
+    let mut table = Table::grid(2, 2);
+    table.set_style_name(Some("Banded".into()));
+
+    let mut doc = Document::new();
+    doc.styles.table_styles.insert(
+        StyleId::new("Banded"),
+        TableStyle {
+            id: StyleId::new("Banded"),
+            display_name: Some("Banded".into()),
+            parent: None,
+            table_props: TableProps {
+                width: Some(TableWidth::Absolute(Points::new(340.0))),
+                ..TableProps::default()
+            },
+            conditional: Default::default(),
+            extensions: Default::default(),
+        },
+    );
+    doc.sections[0].blocks = vec![Block::Table(Box::new(table))];
+
+    let back = round_trip(&doc);
+
+    let t = back.sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            Block::Table(t) => Some(t.as_ref()),
+            _ => None,
+        })
+        .expect("table survives");
+    assert_eq!(t.style_name(), Some("Banded"));
 }

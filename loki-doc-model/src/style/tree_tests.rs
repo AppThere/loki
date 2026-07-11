@@ -56,6 +56,18 @@ fn children_lists_direct_descendants_only() {
 }
 
 #[test]
+fn breadcrumb_is_root_first_including_self() {
+    let c = tree_catalog();
+    // D's path from the root: A → B → D.
+    assert_eq!(
+        ids(&c.para_breadcrumb(&StyleId::new("D"))),
+        vec!["A", "B", "D"]
+    );
+    // A root style's breadcrumb is just itself.
+    assert_eq!(ids(&c.para_breadcrumb(&StyleId::new("A"))), vec!["A"]);
+}
+
+#[test]
 fn descendants_are_transitive_breadth_first() {
     let c = tree_catalog();
     assert_eq!(

@@ -6,22 +6,25 @@
 //! ECMA-376 §17.2 (document structure), §17.3 (block-level content).
 //! Uses `quick-xml` event reader with `trim_text(false)` per ADR-0002.
 
-use quick_xml::Reader;
-use quick_xml::events::Event;
+use quick_xml::{Reader, events::Event};
 
 use crate::docx::model::document::{DocxBodyChild, DocxDocument};
 use crate::docx::model::paragraph::{
-    DocxBorderEdge, DocxCols, DocxDrawing, DocxFramePr, DocxHdrFtrRef, DocxHyperlink, DocxInd,
-    DocxNumPr, DocxPBdr, DocxPPr, DocxParaChild, DocxParagraph, DocxPgMar, DocxPgSz, DocxRFonts,
-    DocxRPr, DocxRun, DocxRunChild, DocxSectPr, DocxSpacing, DocxTab,
-};
-use crate::docx::model::styles::{
-    DocxCellMargins, DocxTableCell, DocxTableModel, DocxTableRow, DocxTblPr, DocxTblWidth,
-    DocxTcBorders, DocxTcPr, DocxTextDirection, DocxTrPr, DocxVAlign,
+    DocxBorderEdge, DocxDrawing, DocxFramePr, DocxHyperlink, DocxInd, DocxNumPr, DocxPBdr, DocxPPr,
+    DocxParaChild, DocxParagraph, DocxRFonts, DocxRPr, DocxRun, DocxRunChild, DocxSpacing, DocxTab,
 };
 use crate::docx::reader::runs::{parse_fld_simple_runs, parse_hyperlink_runs, parse_tracked_runs};
+use crate::docx::reader::sectpr::parse_sect_pr;
 use crate::docx::reader::util::{attr_val, local_name, parse_emu, toggle_prop};
 use crate::error::{OoxmlError, OoxmlResult};
+use crate::xml_util::event_text;
+
+#[path = "document_cell.rs"]
+mod cell;
+#[path = "document_sdt.rs"]
+mod sdt;
+#[path = "document_table.rs"]
+mod table;
 use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
 
 /// Parses `word/document.xml` bytes into a [`DocxDocument`].
@@ -42,13 +45,11 @@ pub fn parse_document(xml: &[u8]) -> OoxmlResult<DocxDocument> {
                     doc.body.children.push(DocxBodyChild::Paragraph(para));
                 }
                 b"tbl" if in_body => {
-                    let tbl = parse_table(&mut reader)?;
+                    let tbl = table::parse_table(&mut reader)?;
                     doc.body.children.push(DocxBodyChild::Table(tbl));
                 }
-                b"sdt" if in_body => {
-                    skip_element(&mut reader, b"sdt")?;
-                    doc.body.children.push(DocxBodyChild::Sdt);
-                }
+                // Unwrap the content control's `w:sdtContent` into the body.
+                b"sdt" if in_body => sdt::parse_sdt(&mut reader, &mut doc.body.children)?,
                 b"sectPr" if in_body => {
                     let sect = parse_sect_pr(&mut reader)?;
                     doc.body.final_sect_pr = Some(sect);
@@ -125,14 +126,14 @@ pub(crate) fn parse_paragraph(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxPar
                     }
                     b"del" => {
                         depth -= 1;
-                        let runs = parse_tracked_runs(reader, b"del")?;
-                        para.children.push(DocxParaChild::TrackDel(runs));
+                        let change = parse_tracked_runs(reader, e, b"del")?;
+                        para.children.push(DocxParaChild::TrackDel(change));
                         continue;
                     }
                     b"ins" => {
                         depth -= 1;
-                        let runs = parse_tracked_runs(reader, b"ins")?;
-                        para.children.push(DocxParaChild::TrackIns(runs));
+                        let change = parse_tracked_runs(reader, e, b"ins")?;
+                        para.children.push(DocxParaChild::TrackIns(change));
                         continue;
                     }
                     b"fldSimple" => {
@@ -411,6 +412,10 @@ pub(crate) fn parse_rpr_element(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxR
                     b"outline" => {
                         rpr.outline = Some(toggle_prop(attr_val(e, b"val").as_deref()));
                     }
+                    // A tracked ¶ deletion/insertion on a paragraph mark's rPr.
+                    n @ (b"del" | b"ins") => {
+                        rpr.mark_rev = Some(super::runs::parse_mark_revision(n, e));
+                    }
                     _ => {}
                 }
             }
@@ -448,19 +453,19 @@ pub(crate) fn parse_run(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxRun> {
                     let drawing = parse_drawing(reader)?;
                     run.children.push(DocxRunChild::Drawing(drawing));
                 }
-                b"t" => {
+                tag @ (b"t" | b"delText") => {
                     let preserve = attr_val(e, b"space").is_some_and(|v| v == "preserve");
                     let mut text = String::new();
                     let mut tbuf = Vec::new();
                     loop {
                         match reader.read_event_into(&mut tbuf) {
-                            Ok(Event::Text(ref t)) => {
-                                if let Ok(s) = t.unescape() {
+                            Ok(ref ev @ (Event::Text(_) | Event::GeneralRef(_))) => {
+                                if let Ok(s) = event_text(ev) {
                                     text.push_str(&s);
                                 }
                             }
                             Ok(Event::End(ref et))
-                                if local_name(et.local_name().as_ref()) == b"t" =>
+                                if local_name(et.local_name().as_ref()) == tag =>
                             {
                                 break;
                             }
@@ -477,8 +482,8 @@ pub(crate) fn parse_run(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxRun> {
                     let mut tbuf = Vec::new();
                     loop {
                         match reader.read_event_into(&mut tbuf) {
-                            Ok(Event::Text(ref t)) => {
-                                if let Ok(s) = t.unescape() {
+                            Ok(ref ev @ (Event::Text(_) | Event::GeneralRef(_))) => {
+                                if let Ok(s) = event_text(ev) {
                                     text.push_str(&s);
                                 }
                             }
@@ -615,112 +620,6 @@ fn parse_tabs(reader: &mut Reader<&[u8]>, out: &mut Vec<DocxTab>) -> OoxmlResult
     Ok(())
 }
 
-/// Parses a `w:sectPr` element. Called after Start("sectPr") is consumed.
-pub(crate) fn parse_sect_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxSectPr> {
-    let mut sect = DocxSectPr::default();
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
-                match local_name(e.local_name().as_ref()) {
-                    b"pgSz" => {
-                        sect.pg_sz = Some(DocxPgSz {
-                            w: attr_val(e, b"w")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(12240),
-                            h: attr_val(e, b"h")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(15840),
-                            orient: attr_val(e, b"orient"),
-                        });
-                    }
-                    b"pgMar" => {
-                        sect.pg_mar = Some(DocxPgMar {
-                            top: attr_val(e, b"top")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(1440),
-                            bottom: attr_val(e, b"bottom")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(1440),
-                            left: attr_val(e, b"left")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(1440),
-                            right: attr_val(e, b"right")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(1440),
-                            header: attr_val(e, b"header")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(720),
-                            footer: attr_val(e, b"footer")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(720),
-                            gutter: attr_val(e, b"gutter")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(0),
-                        });
-                    }
-                    b"headerReference" => {
-                        if let (Some(hf_type), Some(rel_id)) =
-                            (attr_val(e, b"type"), attr_val(e, b"id"))
-                        {
-                            sect.header_refs.push(DocxHdrFtrRef { hf_type, rel_id });
-                        }
-                    }
-                    b"footerReference" => {
-                        if let (Some(hf_type), Some(rel_id)) =
-                            (attr_val(e, b"type"), attr_val(e, b"id"))
-                        {
-                            sect.footer_refs.push(DocxHdrFtrRef { hf_type, rel_id });
-                        }
-                    }
-                    b"titlePg" => {
-                        // Presence enables first-page variant; w:val="0" disables.
-                        sect.title_page = attr_val(e, b"val")
-                            .is_none_or(|v| !matches!(v.as_str(), "0" | "false" | "off"));
-                    }
-                    b"cols" => {
-                        sect.cols = Some(DocxCols {
-                            num: attr_val(e, b"num")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(1),
-                            space: attr_val(e, b"space")
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(720),
-                            sep: attr_val(e, b"sep")
-                                .is_some_and(|v| !matches!(v.as_str(), "0" | "false" | "off")),
-                        });
-                    }
-                    b"pgNumType" => {
-                        // ECMA-376 §17.6.12: @w:fmt is the number format, @w:start
-                        // restarts numbering at the given value for this section.
-                        sect.pg_num_fmt = attr_val(e, b"fmt");
-                        sect.pg_num_start = attr_val(e, b"start").and_then(|v| v.parse().ok());
-                    }
-                    b"type" => {
-                        // ECMA-376 §17.6.22: how this section begins relative to
-                        // the previous one (continuous / nextPage / even / odd).
-                        sect.section_type = attr_val(e, b"val");
-                    }
-                    _ => {}
-                }
-            }
-            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"sectPr" => {
-                break;
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OoxmlError::Xml {
-                    part: "word/document.xml".into(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-    Ok(sect)
-}
-
 /// Parses a `w:drawing` element. Called after Start("drawing") is consumed.
 fn parse_drawing(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxDrawing> {
     let mut drawing = DocxDrawing {
@@ -808,322 +707,6 @@ fn parse_wrap_text(e: &quick_xml::events::BytesStart<'_>) -> WrapSide {
     }
 }
 
-/// Parses a `w:tbl` element. Called after Start("tbl") is consumed.
-fn parse_table(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTableModel> {
-    let mut tbl = DocxTableModel::default();
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => {
-                match local_name(e.local_name().as_ref()) {
-                    b"tr" => {
-                        let row = parse_table_row(reader)?;
-                        tbl.rows.push(row);
-                    }
-                    b"tblPr" => {
-                        tbl.tbl_pr = Some(parse_tbl_pr(reader)?);
-                    }
-                    _ => {}
-                }
-                // tblGrid and gridCol: handled via Empty event below
-            }
-            Ok(Event::Empty(ref e)) if local_name(e.local_name().as_ref()) == b"gridCol" => {
-                let w: i32 = attr_val(e, b"w").and_then(|v| v.parse().ok()).unwrap_or(0);
-                tbl.col_widths.push(w);
-            }
-            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"tbl" => {
-                break;
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OoxmlError::Xml {
-                    part: "word/document.xml".into(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-    Ok(tbl)
-}
-
-/// Parses a `w:tblPr` element. Called after Start("tblPr") is consumed.
-fn parse_tbl_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTblPr> {
-    let mut pr = DocxTblPr::default();
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e)) => match local_name(e.local_name().as_ref()) {
-                b"tblW" => {
-                    if let (Some(w), Some(w_type)) = (
-                        attr_val(e, b"w").and_then(|v| v.parse::<i32>().ok()),
-                        attr_val(e, b"type"),
-                    ) {
-                        pr.width = Some(DocxTblWidth { w, w_type });
-                    }
-                }
-                b"tblStyle" => {
-                    pr.style_id = attr_val(e, b"val");
-                }
-                b"tblLayout" => {
-                    pr.layout = attr_val(e, b"type");
-                }
-                _ => {}
-            },
-            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"tblPr" => {
-                break;
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OoxmlError::Xml {
-                    part: "word/document.xml".into(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-    Ok(pr)
-}
-
-/// Parses a `w:tr` element. Called after Start("tr") is consumed.
-fn parse_table_row(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTableRow> {
-    let mut row = DocxTableRow::default();
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => match local_name(e.local_name().as_ref()) {
-                b"tc" => {
-                    let cell = parse_table_cell(reader)?;
-                    row.cells.push(cell);
-                }
-                b"trPr" => {
-                    let mut tr_pr = DocxTrPr::default();
-                    let mut tbuf = Vec::new();
-                    loop {
-                        match reader.read_event_into(&mut tbuf) {
-                            Ok(Event::Empty(ref te))
-                                if local_name(te.local_name().as_ref()) == b"tblHeader" =>
-                            {
-                                tr_pr.is_header = true;
-                            }
-                            Ok(Event::End(ref te))
-                                if local_name(te.local_name().as_ref()) == b"trPr" =>
-                            {
-                                break;
-                            }
-                            Ok(Event::Eof) | Err(_) => break,
-                            _ => {}
-                        }
-                        tbuf.clear();
-                    }
-                    row.tr_pr = Some(tr_pr);
-                }
-                _ => {}
-            },
-            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"tr" => {
-                break;
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OoxmlError::Xml {
-                    part: "word/document.xml".into(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-    Ok(row)
-}
-
-/// Parses a `w:tc` element. Called after Start("tc") is consumed.
-fn parse_table_cell(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTableCell> {
-    let mut cell = DocxTableCell::default();
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => match local_name(e.local_name().as_ref()) {
-                b"tcPr" => {
-                    cell.tc_pr = Some(parse_tc_pr(reader)?);
-                }
-                b"p" => {
-                    let para = parse_paragraph(reader)?;
-                    cell.children.push(DocxBodyChild::Paragraph(para));
-                }
-                b"tbl" => {
-                    // Nested table inside this cell (ECMA-376 §17.4.4).
-                    let tbl = parse_table(reader)?;
-                    cell.children.push(DocxBodyChild::Table(tbl));
-                }
-                _ => {}
-            },
-            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"tc" => {
-                break;
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OoxmlError::Xml {
-                    part: "word/document.xml".into(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-    Ok(cell)
-}
-
-/// Parses a `w:tcPr` element. Called after Start("tcPr") is consumed.
-fn parse_tc_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTcPr> {
-    let mut tc_pr = DocxTcPr::default();
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
-                match local_name(e.local_name().as_ref()) {
-                    b"gridSpan" => {
-                        tc_pr.grid_span = attr_val(e, b"val").and_then(|v| v.parse().ok());
-                    }
-                    b"vMerge" => {
-                        use crate::docx::model::styles::DocxVMerge;
-                        tc_pr.v_merge =
-                            Some(if attr_val(e, b"val").as_deref() == Some("restart") {
-                                DocxVMerge::Restart
-                            } else {
-                                DocxVMerge::Continue
-                            });
-                    }
-                    b"shd" => {
-                        tc_pr.shd_fill = attr_val(e, b"fill");
-                        tc_pr.shd_val = attr_val(e, b"val");
-                        tc_pr.shd_color = attr_val(e, b"color");
-                    }
-                    b"tcBorders" => {
-                        tc_pr.tc_borders = Some(parse_tc_borders(reader)?);
-                        // parse_tc_borders consumes until </tcBorders>, so skip
-                        // the fallthrough End event that would match here.
-                        buf.clear();
-                        continue;
-                    }
-                    b"tcMar" => {
-                        tc_pr.tc_margins = Some(parse_tc_margins(reader)?);
-                        buf.clear();
-                        continue;
-                    }
-                    b"vAlign" => {
-                        tc_pr.v_align = match attr_val(e, b"val").as_deref() {
-                            Some("top") => Some(DocxVAlign::Top),
-                            Some("center") => Some(DocxVAlign::Center),
-                            Some("bottom") => Some(DocxVAlign::Bottom),
-                            _ => None,
-                        };
-                    }
-                    b"textDirection" => {
-                        tc_pr.text_direction = match attr_val(e, b"val").as_deref() {
-                            Some("lrTb") => Some(DocxTextDirection::LrTb),
-                            Some("tbRl") => Some(DocxTextDirection::TbRl),
-                            Some("tbLr") => Some(DocxTextDirection::TbLr),
-                            Some("btLr") => Some(DocxTextDirection::BtLr),
-                            _ => None,
-                        };
-                    }
-                    _ => {}
-                }
-            }
-            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"tcPr" => {
-                break;
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OoxmlError::Xml {
-                    part: "word/document.xml".into(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-    Ok(tc_pr)
-}
-
-/// Parses a `w:tcBorders` element. Called after Start("tcBorders") is consumed.
-fn parse_tc_borders(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTcBorders> {
-    let mut borders = DocxTcBorders::default();
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
-                let edge = DocxBorderEdge {
-                    val: attr_val(e, b"val").unwrap_or_default(),
-                    sz: attr_val(e, b"sz").and_then(|v| v.parse().ok()),
-                    color: attr_val(e, b"color"),
-                    space: attr_val(e, b"space").and_then(|v| v.parse().ok()),
-                };
-                match local_name(e.local_name().as_ref()) {
-                    b"top" => borders.top = Some(edge),
-                    b"bottom" => borders.bottom = Some(edge),
-                    b"left" | b"start" => borders.left = Some(edge),
-                    b"right" | b"end" => borders.right = Some(edge),
-                    _ => {}
-                }
-            }
-            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"tcBorders" => {
-                break;
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OoxmlError::Xml {
-                    part: "word/document.xml".into(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-    Ok(borders)
-}
-
-/// Parses a `w:tcMar` element. Called after Start("tcMar") is consumed.
-/// Values are in twips (twentieths of a point); COMPAT(ooxml-dxa): divide by 20 for points.
-fn parse_tc_margins(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxCellMargins> {
-    let mut margins = DocxCellMargins::default();
-    let mut buf = Vec::new();
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
-                let twips: Option<i32> = attr_val(e, b"w").and_then(|v| v.parse().ok());
-                match local_name(e.local_name().as_ref()) {
-                    b"top" => margins.top = twips,
-                    b"bottom" => margins.bottom = twips,
-                    b"left" | b"start" => margins.left = twips,
-                    b"right" | b"end" => margins.right = twips,
-                    _ => {}
-                }
-            }
-            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"tcMar" => {
-                break;
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OoxmlError::Xml {
-                    part: "word/document.xml".into(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-    Ok(margins)
-}
-
 /// Skips all content inside an element until its matching end tag.
 pub(crate) fn skip_element(reader: &mut Reader<&[u8]>, end_tag: &[u8]) -> OoxmlResult<()> {
     let mut depth = 1i32;
@@ -1152,58 +735,5 @@ pub(crate) fn skip_element(reader: &mut Reader<&[u8]>, end_tag: &[u8]) -> OoxmlR
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    const SIMPLE_DOC: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:body>
-    <w:p>
-      <w:pPr><w:pStyle w:val="Heading1"/><w:outlineLvl w:val="0"/></w:pPr>
-      <w:r><w:t>Hello</w:t></w:r>
-    </w:p>
-    <w:p>
-      <w:r><w:t xml:space="preserve">World </w:t></w:r>
-    </w:p>
-    <w:sectPr>
-      <w:pgSz w:w="12240" w:h="15840"/>
-      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"
-               w:header="720" w:footer="720" w:gutter="0"/>
-    </w:sectPr>
-  </w:body>
-</w:document>"#;
-
-    #[test]
-    fn parses_two_paragraphs() {
-        let doc = parse_document(SIMPLE_DOC).unwrap();
-        let paras: Vec<_> = doc
-            .body
-            .children
-            .iter()
-            .filter(|c| matches!(c, DocxBodyChild::Paragraph(_)))
-            .collect();
-        assert_eq!(paras.len(), 2);
-    }
-
-    #[test]
-    fn first_para_has_style() {
-        let doc = parse_document(SIMPLE_DOC).unwrap();
-        if let Some(DocxBodyChild::Paragraph(p)) = doc.body.children.first() {
-            assert_eq!(
-                p.ppr.as_ref().and_then(|ppr| ppr.style_id.as_deref()),
-                Some("Heading1")
-            );
-        } else {
-            panic!("expected paragraph");
-        }
-    }
-
-    #[test]
-    fn final_sect_pr_parsed() {
-        let doc = parse_document(SIMPLE_DOC).unwrap();
-        let sect = doc.body.final_sect_pr.unwrap();
-        let pg_sz = sect.pg_sz.unwrap();
-        assert_eq!(pg_sz.w, 12240);
-        assert_eq!(pg_sz.h, 15840);
-    }
-}
+#[path = "document_tests.rs"]
+mod tests;

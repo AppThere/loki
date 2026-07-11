@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! Block-level structural mutations: split, merge, and insert.
+//! Block-level structural mutations: split and merge. Whole-block insert/delete
+//! live in the sibling [`super::block_edit`] module.
 
-#[cfg(feature = "serde")]
-use crate::content::block::Block;
 use loro::{LoroDoc, LoroMap, LoroMovableList, LoroText};
 
 use crate::loro_schema::{
@@ -217,7 +216,10 @@ pub fn merge_block_at(loro: &LoroDoc, path: &BlockPath) -> Result<usize, Mutatio
 /// `blocks_list`, then removes block `local`. Returns the join offset (the prior
 /// UTF-8 length of block `local - 1`). Callers must ensure `local >= 1`.
 /// `block_index` is used only for error reporting.
-fn merge_block_in_list(
+///
+/// A [`MutationError::TextNotFound`] (block `local` has no text — e.g. a table)
+/// is returned before any mutation, so the caller can skip it cleanly.
+pub(super) fn merge_block_in_list(
     blocks_list: &LoroMovableList,
     local: usize,
     block_index: usize,
@@ -256,32 +258,4 @@ fn list_block_text(
         .and_then(|v| v.into_container().ok())
         .and_then(|c| c.into_text().ok())
         .ok_or(MutationError::TextNotFound(block_index))
-}
-
-/// Inserts `block` as a new top-level block immediately after the block at
-/// `block_index` (within the same section), returning the new block's
-/// document-global index (`block_index + 1`).
-///
-/// The block is written with the bridge's own schema, so it round-trips through
-/// `loro_to_document` and (for a `Block::Table`) its cells become live editable
-/// containers reachable via a `BlockPath`. Used by the editor's Insert → Table
-/// control. Nesting (inserting a block inside a cell/note) is not addressed
-/// here — the cursor's root block is used.
-///
-/// # Errors
-///
-/// - [`MutationError::BlockIndexOutOfRange`] — `block_index` is out of range.
-/// - [`MutationError::Encode`] — the bridge could not serialize `block`.
-/// - [`MutationError::Loro`] — an underlying Loro error.
-#[cfg(feature = "serde")]
-pub fn insert_block_after(
-    loro: &LoroDoc,
-    block_index: usize,
-    block: &Block,
-) -> Result<usize, MutationError> {
-    let (blocks_list, _block_map, local) = get_block_map_and_list(loro, block_index)?;
-    let new_map = blocks_list.insert_container(local + 1, LoroMap::new())?;
-    crate::loro_bridge::map_block(block, &new_map)
-        .map_err(|e| MutationError::Encode(e.to_string()))?;
-    Ok(block_index + 1)
 }

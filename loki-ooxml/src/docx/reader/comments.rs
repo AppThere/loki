@@ -15,6 +15,7 @@ use loki_doc_model::content::inline::Inline;
 
 use crate::docx::reader::util::{attr_val, local_name};
 use crate::error::{OoxmlError, OoxmlResult};
+use crate::xml_util::{resolve_general_ref, unescape_text};
 
 /// Parses `word/comments.xml` into the document's comments.
 ///
@@ -51,7 +52,12 @@ pub(crate) fn parse_comments(xml: &[u8]) -> OoxmlResult<Vec<Comment>> {
                 _ => {}
             },
             Ok(Event::Text(ref t)) if in_text => {
-                if let Ok(s) = t.unescape() {
+                if let Ok(s) = unescape_text(t) {
+                    para_text.push_str(&s);
+                }
+            }
+            Ok(Event::GeneralRef(ref r)) if in_text => {
+                if let Ok(s) = resolve_general_ref(r) {
                     para_text.push_str(&s);
                 }
             }

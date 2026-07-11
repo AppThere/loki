@@ -275,5 +275,12 @@ pub(super) fn apply_char_props_marks(
     if let Some(v) = &props.hyperlink {
         text.mark(start..end, MARK_LINK_URL, v.clone())?;
     }
+    if let Some(v) = &props.revision {
+        text.mark(
+            start..end,
+            MARK_REVISION,
+            crate::style::props::revision::encode(v),
+        )?;
+    }
     Ok(())
 }

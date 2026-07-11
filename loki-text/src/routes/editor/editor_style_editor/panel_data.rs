@@ -8,8 +8,11 @@
 //! preview, the default parent for a new style, and — for the **linked** family
 //! (§9) — the paragraph style's linked character style rows.
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use loki_doc_model::document::Document;
+use loki_doc_model::layout::page::PageLayout;
 use loki_doc_model::style::StyleId;
 
 use super::super::editor_state::StyleDraft;
@@ -18,6 +21,7 @@ use super::super::style_char_inspector::character_inspector_rows;
 use super::super::style_impact::affected_dependents;
 use super::super::style_inspector::{InspectorRow, paragraph_inspector_rows};
 use super::super::style_list_inspector::{ListLevelRow, list_inspector_rows};
+use super::super::style_page_inspector::{PagePropRow, page_inspector_rows};
 use super::draft::draft_to_style;
 use crate::editing::state::DocumentState;
 
@@ -124,6 +128,9 @@ pub(super) fn char_data(
     let mut list: Vec<(String, String)> = catalog
         .character_styles
         .iter()
+        // Hide synthetic internal styles (e.g. `__DocDefaultChar`, the docDefaults
+        // `Default` source) — they resolve provenance, they are not user-selectable.
+        .filter(|(id, _)| !id.as_str().starts_with("__"))
         .map(|(id, s)| {
             let display = s
                 .display_name
@@ -184,4 +191,94 @@ pub(super) fn list_data(
         (!rows.is_empty()).then_some((name, rows))
     });
     (list, selected_rows)
+}
+
+/// The selected page style's `(display name, geometry rows)` for the inspector.
+pub(super) type PageSelection = Option<(String, Vec<PagePropRow>)>;
+
+/// The document's page styles grouped by the **stored** `section.page_style`
+/// reference (ADR-0012 Decision 2), in first-seen section order: `(id,
+/// representative layout, referencing section indices)`.
+///
+/// Grouping by the stored ref (not by layout-equality) makes a page style a
+/// **stable, renamable** identity; the geometry is read from the first
+/// referencing section — the renderer's source of truth — so the panel never
+/// drifts from what's on screen even if the Layout ribbon edited the sections.
+/// Sections with no ref are skipped (`Document::assign_page_styles` gives every
+/// loaded section one).
+fn stored_page_styles(doc: &Document) -> Vec<(StyleId, PageLayout, Vec<usize>)> {
+    let mut order: Vec<StyleId> = Vec::new();
+    let mut groups: HashMap<StyleId, (PageLayout, Vec<usize>)> = HashMap::new();
+    for (i, section) in doc.sections.iter().enumerate() {
+        let Some(id) = section.page_style.as_ref() else {
+            continue;
+        };
+        match groups.get_mut(id) {
+            Some((_, idxs)) => idxs.push(i),
+            None => {
+                order.push(id.clone());
+                groups.insert(id.clone(), (section.layout.clone(), vec![i]));
+            }
+        }
+    }
+    // Every `id` in `order` was inserted into `groups`, so `remove` is `Some`;
+    // `filter_map` handles the impossible `None` without a panic (no `expect` in
+    // library code).
+    order
+        .into_iter()
+        .filter_map(|id| {
+            let (layout, idxs) = groups.remove(&id)?;
+            Some((id, layout, idxs))
+        })
+        .collect()
+}
+
+/// A page style's display name: its catalogued `display_name`, else its id.
+fn page_display_name(doc: &Document, id: &StyleId) -> String {
+    doc.styles
+        .page_styles
+        .get(id)
+        .and_then(|ps| ps.display_name.clone())
+        .unwrap_or_else(|| id.as_str().to_string())
+}
+
+/// The page-styles browser data (§9 page family; non-inheriting, ADR-0012
+/// Decision 2): the `(id, display)` list from the stored page-style references,
+/// and — when `selected` names one — its geometry rows for the inspector.
+pub(super) fn page_data(
+    doc_state: &Arc<Mutex<DocumentState>>,
+    selected: Option<&str>,
+) -> (Vec<CharListEntry>, PageSelection) {
+    let Ok(state) = doc_state.lock() else {
+        return (Vec::new(), None);
+    };
+    let Some(doc) = state.document.as_ref() else {
+        return (Vec::new(), None);
+    };
+    let styles = stored_page_styles(doc);
+    let list: Vec<CharListEntry> = styles
+        .iter()
+        .map(|(id, _, _)| (id.as_str().to_string(), page_display_name(doc, id)))
+        .collect();
+
+    let selected_rows = selected.and_then(|sel| {
+        let (id, layout, _) = styles.iter().find(|(id, _, _)| id.as_str() == sel)?;
+        Some((page_display_name(doc, id), page_inspector_rows(layout)))
+    });
+    (list, selected_rows)
+}
+
+/// The current geometry + target section indices for the page style `name` — what
+/// the edit form needs (via `set_page_style_geometry`). Reads the stored refs, so
+/// targeting is stable across edits. `None` when the document or the style is absent.
+pub(super) fn page_edit_target(
+    doc_state: &Arc<Mutex<DocumentState>>,
+    name: &str,
+) -> Option<(PageLayout, Vec<usize>)> {
+    let state = doc_state.lock().ok()?;
+    let doc = state.document.as_ref()?;
+    stored_page_styles(doc)
+        .into_iter()
+        .find(|(id, _, _)| id.as_str() == name)
+        .map(|(_, layout, idxs)| (layout, idxs))
 }

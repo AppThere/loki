@@ -3,12 +3,36 @@
 
 //! Inline-level XHTML rendering for the EPUB content document.
 
+use loki_doc_model::content::annotation::CommentRefKind;
+use loki_doc_model::content::field::{Field, FieldKind};
 use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
 use loki_doc_model::content::inline::{Inline, QuoteType};
+use loki_doc_model::meta::DocumentMeta;
 use loki_doc_model::style::props::char_props::{CharProps, VerticalAlign};
 
 use crate::content::RenderCtx;
 use crate::xml::{escape_attr, escape_text};
+
+/// Static values for the metadata-backed field kinds, captured once from
+/// [`DocumentMeta`]. An EPUB is reflowable and page-less, so page/date/reference
+/// fields have no static value here — they render from their `current_value`
+/// snapshot (set at import) or not at all.
+#[derive(Default)]
+pub(crate) struct FieldEnv {
+    title: Option<String>,
+    author: Option<String>,
+    subject: Option<String>,
+}
+
+impl FieldEnv {
+    pub(crate) fn from_meta(meta: &DocumentMeta) -> Self {
+        Self {
+            title: meta.title.clone(),
+            author: meta.creator.clone(),
+            subject: meta.subject.clone(),
+        }
+    }
+}
 
 /// Maps a floating image's [`FloatWrap`] to an inline CSS `float` declaration so
 /// the reflowable EPUB flows text around it (the reflow-target equivalent of the
@@ -75,15 +99,73 @@ impl RenderCtx {
                 self.render_styled_run(run.direct_props.as_deref(), &run.content, out)
             }
             Inline::Span(_, c) | Inline::Cite(_, c) => self.render_inlines(c, out),
-            Inline::Note(_, _)
-            | Inline::Math(_, _)
-            | Inline::RawInline(_, _)
-            | Inline::Field(_)
-            | Inline::Comment(_)
-            | Inline::Bookmark(_, _) => {}
+            Inline::Math(_math_type, mathml) => {
+                // EPUB 3.3 renders MathML natively (§5.4). The model stores a
+                // complete, namespaced `<math>` element, so emit it verbatim
+                // (not escaped — it is markup) and flag the content document so
+                // its manifest item declares `properties="mathml"`.
+                out.push_str(mathml);
+                self.has_math = true;
+            }
+            Inline::Field(f) => {
+                // Fields resolve to static text in a reflowable EPUB (no live
+                // page/date context): the `current_value` snapshot, else a
+                // metadata-backed value. Unresolvable fields render as nothing.
+                if let Some(text) = self.field_text(f) {
+                    out.push_str("<span class=\"field\">");
+                    out.push_str(&escape_text(&text));
+                    out.push_str("</span>");
+                }
+            }
+            Inline::Comment(c) => self.render_comment_ref(c, out),
+            Inline::Note(_, _) | Inline::RawInline(_, _) | Inline::Bookmark(_, _) => {}
             // `Inline` is non-exhaustive; future variants render as nothing.
             _ => {}
         }
+    }
+
+    /// Resolves a field to its display text, or `None` when it has no static
+    /// value in a page-less EPUB. Prefers the `current_value` snapshot, then the
+    /// metadata-backed value for Title/Author/Subject.
+    fn field_text(&self, f: &Field) -> Option<String> {
+        if let Some(v) = &f.current_value
+            && !v.is_empty()
+        {
+            return Some(v.clone());
+        }
+        match &f.kind {
+            FieldKind::Title => self.field_env.title.clone(),
+            FieldKind::Author => self.field_env.author.clone(),
+            FieldKind::Subject => self.field_env.subject.clone(),
+            _ => None,
+        }
+    }
+
+    /// Emits an inline reference marker for a comment anchor. Only the start (or
+    /// point) anchor produces a marker — a superscript link to the trailing
+    /// `<aside>` (`content.rs::render_comment_asides`); the end anchor and
+    /// unknown ids render nothing. The comment is registered in `comment_seq` on
+    /// first reference so its number and aside are produced.
+    fn render_comment_ref(
+        &mut self,
+        c: &loki_doc_model::content::annotation::CommentRef,
+        out: &mut String,
+    ) {
+        if matches!(c.kind, CommentRefKind::End) || !self.comments.contains_key(&c.id) {
+            return;
+        }
+        let number = match self.comment_seq.iter().position(|id| id == &c.id) {
+            Some(idx) => idx + 1,
+            None => {
+                self.comment_seq.push(c.id.clone());
+                self.comment_seq.len()
+            }
+        };
+        out.push_str(&format!(
+            "<sup class=\"comment-ref\"><a href=\"#cmt-{id}\" epub:type=\"noteref\" \
+             role=\"doc-noteref\">{number}</a></sup>",
+            id = escape_attr(&c.id)
+        ));
     }
 
     fn render_styled_run(

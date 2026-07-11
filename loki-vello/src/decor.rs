@@ -6,10 +6,12 @@
 //! Translates a [`loki_layout::PositionedDecoration`] into a single Vello
 //! stroke call.
 
+use loki_layout::items::DecorationStyle;
 use loki_layout::{DecorationKind, PositionedDecoration};
 
 /// Paint a text decoration (underline, strikethrough, overline, or the wavy
-/// spelling squiggle).
+/// spelling squiggle) honouring its [`DecorationStyle`] — solid, double,
+/// dotted, dashed, wave, or thick.
 ///
 /// Decorations with zero or negative `width` or `thickness` are silently
 /// skipped.
@@ -19,11 +21,12 @@ pub fn paint_decoration(scene: &mut vello::Scene, item: &PositionedDecoration, s
     }
 
     let brush = crate::color::to_brush(&item.color);
-    let stroke = kurbo::Stroke::new((item.thickness * scale) as f64);
+    let t = (item.thickness * scale).max(0.5) as f64;
 
-    if item.kind == DecorationKind::Spelling {
+    // Spelling squiggles and `Wave` underlines share the wavy path.
+    if item.kind == DecorationKind::Spelling || item.style == DecorationStyle::Wave {
         scene.stroke(
-            &stroke,
+            &kurbo::Stroke::new(t),
             kurbo::Affine::IDENTITY,
             &brush,
             None,
@@ -38,15 +41,42 @@ pub fn paint_decoration(scene: &mut vello::Scene, item: &PositionedDecoration, s
     // (computed in loki-layout/src/para.rs by negating the skrifa Y-up offset).
     // A Vello/Kurbo stroke is centred on the path, so drawing at
     // item.y + thickness/2 fills exactly [item.y, item.y + thickness].
-    let y = item.y + item.thickness / 2.0;
-
     let x0 = (item.x * scale) as f64;
     let x1 = ((item.x + item.width) * scale) as f64;
-    let y_scaled = (y * scale) as f64;
+    let y = ((item.y + item.thickness / 2.0) * scale) as f64;
 
-    let line = kurbo::Line::new((x0, y_scaled), (x1, y_scaled));
+    let line = |scene: &mut vello::Scene, stroke: &kurbo::Stroke, yy: f64| {
+        scene.stroke(
+            stroke,
+            kurbo::Affine::IDENTITY,
+            &brush,
+            None,
+            &kurbo::Line::new((x0, yy), (x1, yy)),
+        );
+    };
 
-    scene.stroke(&stroke, kurbo::Affine::IDENTITY, &brush, None, &line);
+    match item.style {
+        DecorationStyle::Solid => line(scene, &kurbo::Stroke::new(t), y),
+        DecorationStyle::Thick => line(scene, &kurbo::Stroke::new(t * 2.0), y),
+        DecorationStyle::Double => {
+            // Two thin parallel lines; the second sits just below the band.
+            let stroke = kurbo::Stroke::new(t);
+            line(scene, &stroke, y);
+            line(scene, &stroke, y + (t * 2.0).max(1.0));
+        }
+        DecorationStyle::Dotted => {
+            let stroke = kurbo::Stroke::new(t)
+                .with_caps(kurbo::Cap::Round)
+                .with_dashes(0.0, [t, t * 2.0]);
+            line(scene, &stroke, y);
+        }
+        DecorationStyle::Dashed => {
+            let stroke = kurbo::Stroke::new(t).with_dashes(0.0, [t * 3.0, t * 2.0]);
+            line(scene, &stroke, y);
+        }
+        // `Wave` is handled above; enum is non-exhaustive so keep a fallback.
+        _ => line(scene, &kurbo::Stroke::new(t), y),
+    }
 }
 
 /// Builds a wavy path for a spelling squiggle across the decoration's width.

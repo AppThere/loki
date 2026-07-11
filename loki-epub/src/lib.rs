@@ -79,8 +79,13 @@ fn write_epub(doc: &Document, writer: impl Write + Seek) -> Result<(), EpubError
     let rendered = content::render_content(doc);
     let content_doc = wrap_content_document(&title, &rendered.body);
     let nav_doc = nav::build_nav_xhtml(&title, &rendered.toc);
-    let package =
-        package::build_package_opf(&doc.meta, &identifier, &modified_iso, &rendered.images);
+    let package = package::build_package_opf(
+        &doc.meta,
+        &identifier,
+        &modified_iso,
+        &rendered.images,
+        rendered.has_math,
+    );
 
     let mut zip = zip::ZipWriter::new(writer);
 

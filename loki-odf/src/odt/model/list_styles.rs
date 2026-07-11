@@ -87,6 +87,16 @@ pub(crate) enum OdfListLevelKind {
         style_name: Option<String>,
     },
 
+    /// Picture bullet: the label is an image (feature 5.4).
+    ///
+    /// ODF 1.3 §16.32 `text:list-level-style-image`.
+    Image {
+        /// `xlink:href` — the bullet image (a `Pictures/…` package path).
+        href: String,
+        /// `text:style-name` — character style applied to the label.
+        style_name: Option<String>,
+    },
+
     /// No visible label at this level.
     ///
     /// ODF 1.3 §16.34 `text:list-level-style-none`, or a number level

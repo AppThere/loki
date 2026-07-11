@@ -5,11 +5,11 @@
 
 use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::loki_primitives::units::Points;
-use loki_doc_model::style::ParagraphStyle;
 use loki_doc_model::style::catalog::StyleId;
 use loki_doc_model::style::props::char_props::UnderlineStyle;
 use loki_doc_model::style::props::para_props::{LineHeight, ParagraphAlignment, Spacing};
 use loki_doc_model::style::props::{CharProps, ParaProps};
+use loki_doc_model::style::{CharacterStyle, ParagraphStyle};
 
 use super::super::editor_state::StyleDraft;
 
@@ -73,6 +73,88 @@ pub(crate) fn style_to_draft(style: &ParagraphStyle) -> StyleDraft {
         indent_first_str: points_str(pp.indent_first_line),
         indent_hanging_str: points_str(pp.indent_hanging),
         is_custom: style.is_custom,
+    }
+}
+
+/// Converts a catalog `CharacterStyle` to an editable `StyleDraft`.
+///
+/// Reuses [`StyleDraft`] (its character fields are a superset of a character
+/// style's properties); the paragraph-only fields stay empty and are ignored by
+/// [`draft_to_char_style`]. Character styles carry no `next`/alignment/spacing.
+pub(crate) fn char_style_to_draft(style: &CharacterStyle) -> StyleDraft {
+    let cp = &style.char_props;
+    StyleDraft {
+        id: style.id.as_str().to_string(),
+        name: style
+            .display_name
+            .clone()
+            .unwrap_or_else(|| style.id.as_str().to_string()),
+        parent: style
+            .parent
+            .as_ref()
+            .map(|p| p.as_str().to_string())
+            .unwrap_or_default(),
+        font_name: cp.font_name.clone().unwrap_or_default(),
+        font_size_str: cp
+            .font_size
+            .map(|s| format!("{:.0}", s.value()))
+            .unwrap_or_default(),
+        font_weight: cp
+            .font_weight
+            .unwrap_or(if cp.bold == Some(true) { 700 } else { 400 }),
+        italic: cp.italic.unwrap_or(false),
+        underline: cp.underline.is_some(),
+        is_custom: true,
+        ..StyleDraft::default()
+    }
+}
+
+/// Converts a `StyleDraft` back to a `CharacterStyle` for catalog storage.
+///
+/// Only the character properties are read; the paragraph fields are ignored.
+/// Mirrors [`draft_to_style`]'s weight/bold handling (weight is the source of
+/// truth; 400 stores as `None` so the style does not pin every run to Regular).
+pub(crate) fn draft_to_char_style(draft: &StyleDraft) -> CharacterStyle {
+    CharacterStyle {
+        id: StyleId::new(&draft.id),
+        display_name: if draft.name.is_empty() {
+            None
+        } else {
+            Some(draft.name.clone())
+        },
+        parent: if draft.parent.is_empty() {
+            None
+        } else {
+            Some(StyleId::new(&draft.parent))
+        },
+        char_props: CharProps {
+            font_name: if draft.font_name.trim().is_empty() {
+                None
+            } else {
+                Some(draft.font_name.trim().to_string())
+            },
+            bold: Some(draft.font_weight >= 600),
+            font_weight: if draft.font_weight == 400 {
+                None
+            } else {
+                Some(draft.font_weight)
+            },
+            italic: Some(draft.italic),
+            underline: if draft.underline {
+                Some(UnderlineStyle::Single)
+            } else {
+                None
+            },
+            font_size: draft
+                .font_size_str
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|&s| s > 0.0)
+                .map(Points::new),
+            ..Default::default()
+        },
+        extensions: ExtensionBag::default(),
     }
 }
 

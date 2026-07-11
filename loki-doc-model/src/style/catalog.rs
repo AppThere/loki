@@ -13,6 +13,7 @@
 
 use crate::style::char_style::CharacterStyle;
 use crate::style::list_style::ListStyle;
+use crate::style::page_style::PageStyle;
 use crate::style::para_style::ParagraphStyle;
 use crate::style::props::char_props::CharProps;
 use crate::style::props::para_props::ParaProps;
@@ -89,6 +90,13 @@ pub struct StyleCatalog {
     /// Named list styles. ODF `text:list-style`;
     /// OOXML `w:abstractNum`.
     pub list_styles: IndexMap<crate::style::list_style::ListId, ListStyle>,
+    /// Named **page** styles (ADR-0012 Decision 2): each carries the page
+    /// geometry + header/footer master. A **non-inheriting** family — no parent
+    /// chain — so the inspector shows only `Local` / `FormatDefault` and the tree
+    /// view degrades to a flat list. ODF `style:page-layout` + `style:master-page`;
+    /// OOXML maps each to the section properties (`w:sectPr`) that use it.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub page_styles: IndexMap<StyleId, PageStyle>,
     /// The id of the document's **default paragraph style** — the style a
     /// paragraph with no explicit style reference inherits from. OOXML: the
     /// paragraph style with `w:default="1"` (typically `Normal`, rooted at
@@ -100,6 +108,27 @@ pub struct StyleCatalog {
     /// rendering and pagination drift.
     #[cfg_attr(feature = "serde", serde(default))]
     pub default_paragraph_style: Option<StyleId>,
+    /// The id of the document's **default character style** — the character-family
+    /// analogue of [`default_paragraph_style`](Self::default_paragraph_style). A
+    /// standalone [`CharacterStyle`] whose own chain does not set a property falls
+    /// through to this style for it, resolving as [`Provenance::Default`] (Spec 05
+    /// M6, ADR-0012 Decision 1 — the per-family `Default` source).
+    ///
+    /// OOXML: synthesised from `w:docDefaults/w:rPrDefault` (the run defaults);
+    /// ODF: `style:default-style style:family="text"`. `None` means the character
+    /// family has no document default, so a bare property resolves to
+    /// [`Provenance::FormatDefault`] (the previous behaviour).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub default_character_style: Option<StyleId>,
+    /// The id of the document's **default table style** — the table-family
+    /// analogue of the paragraph/character defaults (Spec 05 M6, ADR-0012
+    /// Decision 1). A table style whose own chain does not set a property falls
+    /// through to this style for it, resolving as [`Provenance::Default`].
+    ///
+    /// OOXML: the table style flagged `w:default="1"` (typically `TableNormal`);
+    /// ODF: `style:default-style style:family="table"`. `None` = no table default.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub default_table_style: Option<StyleId>,
 }
 
 impl StyleCatalog {

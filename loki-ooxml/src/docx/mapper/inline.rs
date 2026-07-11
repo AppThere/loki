@@ -16,8 +16,11 @@ use loki_doc_model::content::inline::{
 };
 use loki_doc_model::style::catalog::StyleId;
 use loki_doc_model::style::props::char_props::CharProps;
+use loki_doc_model::style::props::revision::{RevisionKind, RevisionMark};
 
-use crate::docx::model::paragraph::{DocxParaChild, DocxRun, DocxRunChild};
+use crate::docx::model::paragraph::{
+    DocxParaChild, DocxRevisionInfo, DocxRun, DocxRunChild, DocxTrackedChange,
+};
 use crate::error::{NoteKind as WarnNoteKind, OoxmlWarning};
 
 use super::document::MappingContext;
@@ -59,7 +62,7 @@ pub(crate) fn map_inlines(children: &[DocxParaChild], ctx: &mut MappingContext<'
     for child in children {
         match child {
             DocxParaChild::Run(run) => {
-                result.extend(process_run(run, &mut state, ctx));
+                result.extend(process_run(run, &mut state, ctx, None));
             }
             DocxParaChild::Hyperlink(h) => {
                 let url = if let Some(rel_id) = &h.rel_id {
@@ -111,14 +114,17 @@ pub(crate) fn map_inlines(children: &[DocxParaChild], ctx: &mut MappingContext<'
                 };
                 result.push(Inline::Bookmark(BookmarkKind::End, name));
             }
-            DocxParaChild::TrackDel(_) => {
-                // Deleted content is skipped; it is no longer part of the document.
+            DocxParaChild::TrackDel(change) => {
+                extend_tracked(&mut result, change, RevisionKind::Deletion, &mut state, ctx);
             }
-            DocxParaChild::TrackIns(runs) => {
-                // Accepted insertions are treated as normal runs.
-                for run in runs {
-                    result.extend(process_run(run, &mut state, ctx));
-                }
+            DocxParaChild::TrackIns(change) => {
+                extend_tracked(
+                    &mut result,
+                    change,
+                    RevisionKind::Insertion,
+                    &mut state,
+                    ctx,
+                );
             }
             DocxParaChild::CommentRangeStart { id } => {
                 result.push(Inline::Comment(CommentRef::new(
@@ -166,8 +172,37 @@ pub(crate) fn map_inlines(children: &[DocxParaChild], ctx: &mut MappingContext<'
 ///
 /// Returns the resulting inlines, wrapped in a [`StyledRun`] when the run
 /// has an explicit character style or direct formatting properties.
-fn process_run(run: &DocxRun, state: &mut FieldState, ctx: &mut MappingContext<'_>) -> Vec<Inline> {
-    let char_props = run.rpr.as_ref().map(map_rpr);
+/// Maps a tracked change's runs (a `w:ins`/`w:del`), attaching a [`RevisionMark`]
+/// of `kind` (with the change's author/date/id) to every run so it round-trips.
+fn extend_tracked(
+    out: &mut Vec<Inline>,
+    change: &DocxTrackedChange,
+    kind: RevisionKind,
+    state: &mut FieldState,
+    ctx: &mut MappingContext<'_>,
+) {
+    let DocxRevisionInfo { author, date, id } = &change.info;
+    let rev = RevisionMark {
+        kind,
+        author: author.clone(),
+        date: date.clone(),
+        id: id.clone(),
+    };
+    for run in &change.runs {
+        out.extend(process_run(run, state, ctx, Some(&rev)));
+    }
+}
+
+fn process_run(
+    run: &DocxRun,
+    state: &mut FieldState,
+    ctx: &mut MappingContext<'_>,
+    revision: Option<&RevisionMark>,
+) -> Vec<Inline> {
+    let mut char_props = run.rpr.as_ref().map(map_rpr);
+    if let Some(rev) = revision {
+        char_props.get_or_insert_with(CharProps::default).revision = Some(rev.clone());
+    }
     let style_id = run
         .rpr
         .as_ref()
@@ -180,8 +215,9 @@ fn process_run(run: &DocxRun, state: &mut FieldState, ctx: &mut MappingContext<'
         process_run_child(child, state, &mut raw, ctx);
     }
 
-    // Wrap in StyledRun only when there is explicit formatting to preserve.
+    // Wrap in StyledRun to preserve explicit formatting or a tracked-change mark.
     let needs_wrap = style_id.is_some()
+        || revision.is_some()
         || char_props
             .as_ref()
             .is_some_and(|p| p != &CharProps::default());
@@ -202,7 +238,7 @@ fn process_run(run: &DocxRun, state: &mut FieldState, ctx: &mut MappingContext<'
 /// Maps the runs in a hyperlink or similar context, using a fresh field state.
 fn process_run_simple(run: &DocxRun, ctx: &mut MappingContext<'_>) -> Vec<Inline> {
     let mut state = FieldState::Normal;
-    process_run(run, &mut state, ctx)
+    process_run(run, &mut state, ctx, None)
 }
 
 // ── Run child dispatch ─────────────────────────────────────────────────────────
@@ -376,355 +412,5 @@ fn lookup_note(
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::docx::import::DocxImportOptions;
-    use crate::docx::model::paragraph::{DocxHyperlink, DocxRPr};
-    use loki_doc_model::content::block::Block;
-    use loki_doc_model::content::field::types::FieldKind;
-    use loki_doc_model::style::catalog::StyleCatalog;
-    use std::collections::HashMap;
-
-    fn make_ctx<'a>(
-        footnotes: &'a HashMap<i32, Vec<Block>>,
-        endnotes: &'a HashMap<i32, Vec<Block>>,
-        hyperlinks: &'a HashMap<String, String>,
-        images: &'a HashMap<String, loki_opc::PartData>,
-        styles: &'a StyleCatalog,
-        options: &'a DocxImportOptions,
-    ) -> MappingContext<'a> {
-        MappingContext {
-            styles,
-            footnotes,
-            endnotes,
-            hyperlinks,
-            images,
-            options,
-            warnings: Vec::new(),
-            open_bookmarks: Vec::new(),
-        }
-    }
-
-    fn plain_run(text: &str) -> DocxParaChild {
-        DocxParaChild::Run(DocxRun {
-            rpr: None,
-            children: vec![DocxRunChild::Text {
-                text: text.to_string(),
-                preserve: false,
-            }],
-        })
-    }
-
-    fn bold_run(text: &str) -> DocxParaChild {
-        DocxParaChild::Run(DocxRun {
-            rpr: Some(DocxRPr {
-                bold: Some(true),
-                ..Default::default()
-            }),
-            children: vec![DocxRunChild::Text {
-                text: text.to_string(),
-                preserve: false,
-            }],
-        })
-    }
-
-    fn default_ctx() -> (
-        StyleCatalog,
-        HashMap<i32, Vec<Block>>,
-        HashMap<i32, Vec<Block>>,
-        HashMap<String, String>,
-        HashMap<String, loki_opc::PartData>,
-        DocxImportOptions,
-    ) {
-        (
-            StyleCatalog::default(),
-            HashMap::new(),
-            HashMap::new(),
-            HashMap::new(),
-            HashMap::new(),
-            DocxImportOptions::default(),
-        )
-    }
-
-    #[test]
-    fn plain_text_run() {
-        let (styles, fn_m, en_m, hl_m, img_m, opts) = default_ctx();
-        let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
-        let children = vec![plain_run("hello")];
-        let inlines = map_inlines(&children, &mut ctx);
-        assert_eq!(inlines, vec![Inline::Str("hello".into())]);
-    }
-
-    #[test]
-    fn bold_run_produces_styled_run() {
-        let (styles, fn_m, en_m, hl_m, img_m, opts) = default_ctx();
-        let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
-        let children = vec![bold_run("bold text")];
-        let inlines = map_inlines(&children, &mut ctx);
-        assert_eq!(inlines.len(), 1);
-        if let Inline::StyledRun(sr) = &inlines[0] {
-            assert_eq!(sr.direct_props.as_ref().unwrap().bold, Some(true));
-            assert_eq!(sr.content, vec![Inline::Str("bold text".into())]);
-        } else {
-            panic!("expected StyledRun, got {:?}", inlines[0]);
-        }
-    }
-
-    #[test]
-    fn hyperlink_with_url() {
-        let (styles, fn_m, en_m, mut hl_m, img_m, opts) = default_ctx();
-        hl_m.insert("rId1".into(), "https://example.com".into());
-        let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
-        let children = vec![DocxParaChild::Hyperlink(DocxHyperlink {
-            rel_id: Some("rId1".into()),
-            anchor: None,
-            runs: vec![DocxRun {
-                rpr: None,
-                children: vec![DocxRunChild::Text {
-                    text: "click".into(),
-                    preserve: false,
-                }],
-            }],
-        })];
-        let inlines = map_inlines(&children, &mut ctx);
-        assert_eq!(inlines.len(), 1);
-        if let Inline::Link(_, content, target) = &inlines[0] {
-            assert_eq!(target.url, "https://example.com");
-            assert_eq!(content, &vec![Inline::Str("click".into())]);
-        } else {
-            panic!("expected Link");
-        }
-    }
-
-    #[test]
-    fn page_field_assembled() {
-        let (styles, fn_m, en_m, hl_m, img_m, opts) = default_ctx();
-        let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
-        let children = vec![
-            DocxParaChild::Run(DocxRun {
-                rpr: None,
-                children: vec![DocxRunChild::FldChar {
-                    fld_char_type: "begin".into(),
-                }],
-            }),
-            DocxParaChild::Run(DocxRun {
-                rpr: None,
-                children: vec![DocxRunChild::InstrText {
-                    text: " PAGE ".into(),
-                }],
-            }),
-            DocxParaChild::Run(DocxRun {
-                rpr: None,
-                children: vec![DocxRunChild::FldChar {
-                    fld_char_type: "separate".into(),
-                }],
-            }),
-            DocxParaChild::Run(DocxRun {
-                rpr: None,
-                children: vec![DocxRunChild::Text {
-                    text: "42".into(),
-                    preserve: false,
-                }],
-            }),
-            DocxParaChild::Run(DocxRun {
-                rpr: None,
-                children: vec![DocxRunChild::FldChar {
-                    fld_char_type: "end".into(),
-                }],
-            }),
-        ];
-        let inlines = map_inlines(&children, &mut ctx);
-        assert_eq!(inlines.len(), 1);
-        if let Inline::Field(f) = &inlines[0] {
-            assert_eq!(f.kind, FieldKind::PageNumber);
-            assert_eq!(f.current_value.as_deref(), Some("42"));
-        } else {
-            panic!("expected Field, got {:?}", inlines[0]);
-        }
-    }
-
-    #[test]
-    fn simple_field_maps_to_field_inline() {
-        let (styles, fn_m, en_m, hl_m, img_m, opts) = default_ctx();
-        let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
-        let children = vec![DocxParaChild::SimpleField {
-            instr: " PAGE ".into(),
-            runs: vec![DocxRun {
-                rpr: None,
-                children: vec![DocxRunChild::Text {
-                    text: "7".into(),
-                    preserve: false,
-                }],
-            }],
-        }];
-        let inlines = map_inlines(&children, &mut ctx);
-        assert_eq!(inlines.len(), 1);
-        if let Inline::Field(f) = &inlines[0] {
-            assert_eq!(f.kind, FieldKind::PageNumber);
-            assert_eq!(f.current_value.as_deref(), Some("7"));
-        } else {
-            panic!("expected Field, got {:?}", inlines[0]);
-        }
-    }
-
-    #[test]
-    fn empty_simple_field_has_no_current_value() {
-        let (styles, fn_m, en_m, hl_m, img_m, opts) = default_ctx();
-        let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
-        let children = vec![DocxParaChild::SimpleField {
-            instr: " TITLE ".into(),
-            runs: vec![],
-        }];
-        let inlines = map_inlines(&children, &mut ctx);
-        assert_eq!(inlines.len(), 1);
-        if let Inline::Field(f) = &inlines[0] {
-            assert_eq!(f.kind, FieldKind::Title);
-            assert!(f.current_value.is_none());
-        } else {
-            panic!("expected Field");
-        }
-    }
-
-    #[test]
-    fn field_without_separate_has_no_current_value() {
-        let (styles, fn_m, en_m, hl_m, img_m, opts) = default_ctx();
-        let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
-        let children = vec![
-            DocxParaChild::Run(DocxRun {
-                rpr: None,
-                children: vec![DocxRunChild::FldChar {
-                    fld_char_type: "begin".into(),
-                }],
-            }),
-            DocxParaChild::Run(DocxRun {
-                rpr: None,
-                children: vec![DocxRunChild::InstrText {
-                    text: "TITLE".into(),
-                }],
-            }),
-            DocxParaChild::Run(DocxRun {
-                rpr: None,
-                children: vec![DocxRunChild::FldChar {
-                    fld_char_type: "end".into(),
-                }],
-            }),
-        ];
-        let inlines = map_inlines(&children, &mut ctx);
-        if let Inline::Field(f) = &inlines[0] {
-            assert_eq!(f.kind, FieldKind::Title);
-            assert!(f.current_value.is_none());
-        } else {
-            panic!("expected Field");
-        }
-    }
-
-    #[test]
-    fn footnote_ref_with_content() {
-        let (styles, mut fn_m, en_m, hl_m, img_m, opts) = default_ctx();
-        fn_m.insert(1, vec![Block::Para(vec![Inline::Str("note text".into())])]);
-        let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
-        let children = vec![DocxParaChild::Run(DocxRun {
-            rpr: None,
-            children: vec![DocxRunChild::FootnoteRef { id: 1 }],
-        })];
-        let inlines = map_inlines(&children, &mut ctx);
-        assert!(
-            matches!(&inlines[0], Inline::Note(NoteKind::Footnote, blocks) if !blocks.is_empty())
-        );
-    }
-
-    #[test]
-    fn footnote_ref_missing_emits_warning() {
-        let (styles, fn_m, en_m, hl_m, img_m, opts) = default_ctx();
-        let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
-        let children = vec![DocxParaChild::Run(DocxRun {
-            rpr: None,
-            children: vec![DocxRunChild::FootnoteRef { id: 99 }],
-        })];
-        let inlines = map_inlines(&children, &mut ctx);
-        assert!(
-            matches!(&inlines[0], Inline::Note(NoteKind::Footnote, blocks) if blocks.is_empty())
-        );
-        assert_eq!(ctx.warnings.len(), 1);
-        assert!(matches!(
-            &ctx.warnings[0],
-            OoxmlWarning::MissingNoteContent {
-                id: 99,
-                kind: WarnNoteKind::Footnote
-            }
-        ));
-    }
-
-    #[test]
-    fn nested_fields_do_not_panic() {
-        let (styles, fn_m, en_m, hl_m, img_m, opts) = default_ctx();
-        let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
-        // Outer: IF { inner: DATE }
-        let children = vec![
-            DocxParaChild::Run(DocxRun {
-                rpr: None,
-                children: vec![DocxRunChild::FldChar {
-                    fld_char_type: "begin".into(),
-                }],
-            }),
-            DocxParaChild::Run(DocxRun {
-                rpr: None,
-                children: vec![DocxRunChild::InstrText {
-                    text: " IF ".into(),
-                }],
-            }),
-            // Inner field begin (depth 2)
-            DocxParaChild::Run(DocxRun {
-                rpr: None,
-                children: vec![DocxRunChild::FldChar {
-                    fld_char_type: "begin".into(),
-                }],
-            }),
-            DocxParaChild::Run(DocxRun {
-                rpr: None,
-                children: vec![DocxRunChild::InstrText {
-                    text: " DATE ".into(),
-                }],
-            }),
-            DocxParaChild::Run(DocxRun {
-                rpr: None,
-                children: vec![DocxRunChild::FldChar {
-                    fld_char_type: "end".into(),
-                }],
-            }),
-            // Outer field end
-            DocxParaChild::Run(DocxRun {
-                rpr: None,
-                children: vec![DocxRunChild::FldChar {
-                    fld_char_type: "end".into(),
-                }],
-            }),
-        ];
-        let inlines = map_inlines(&children, &mut ctx);
-        // Outer IF field should be assembled (as Raw since we don't know IF)
-        assert_eq!(inlines.len(), 1);
-        assert!(matches!(&inlines[0], Inline::Field(_)));
-    }
-
-    #[test]
-    fn bookmark_start_and_end() {
-        let (styles, fn_m, en_m, hl_m, img_m, opts) = default_ctx();
-        let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
-        let children = vec![
-            DocxParaChild::BookmarkStart {
-                id: "1".into(),
-                name: "myBookmark".into(),
-            },
-            plain_run("text"),
-            DocxParaChild::BookmarkEnd { id: "1".into() },
-        ];
-        let inlines = map_inlines(&children, &mut ctx);
-        assert_eq!(inlines.len(), 3);
-        assert!(
-            matches!(&inlines[0], Inline::Bookmark(BookmarkKind::Start, name) if name == "myBookmark")
-        );
-        assert!(
-            matches!(&inlines[2], Inline::Bookmark(BookmarkKind::End, name) if name == "myBookmark")
-        );
-    }
-}
+#[path = "inline_tests.rs"]
+mod tests;

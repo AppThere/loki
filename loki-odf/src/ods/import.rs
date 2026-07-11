@@ -17,7 +17,7 @@ use crate::limits::{
     MAX_MATERIALIZED_CELLS_TOTAL, MAX_MATERIALIZED_REPEAT, MAX_SHEET_COLS, MAX_SHEET_ROWS,
 };
 use crate::package::OdfPackage;
-use crate::xml_util::local_attr_val;
+use crate::xml_util::{event_text, local_attr_val};
 
 /// Options controlling ODS import behaviour.
 #[derive(Debug, Clone, Default)]
@@ -231,9 +231,9 @@ impl OdsImport {
                         _ => {}
                     }
                 }
-                Ok(Event::Text(ref e)) => {
+                Ok(ref ev @ (Event::Text(_) | Event::GeneralRef(_))) => {
                     if in_p {
-                        if let Ok(text) = e.unescape() {
+                        if let Ok(text) = event_text(ev) {
                             p_text.push_str(&text);
                         }
                     }

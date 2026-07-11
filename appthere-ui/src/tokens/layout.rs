@@ -71,6 +71,27 @@ pub const RIBBON_CONTENT_HEIGHT: f32 = 60.0;
 /// Used by Shell to reserve space and by canvas height calculations.
 pub const RIBBON_TOTAL_HEIGHT: f32 = RIBBON_TAB_STRIP_HEIGHT + RIBBON_CONTENT_HEIGHT;
 
+/// Width (CSS px) the overflow ("More") button occupies in the ribbon content
+/// strip once at least one group has overflowed into its menu. Touch-sized
+/// (WCAG 2.5.8) — the collapse engine (Spec 04 M3 §7) adds this to the strip's
+/// occupied width whenever any group is in the overflow menu.
+pub const RIBBON_OVERFLOW_BUTTON_PX: f32 = 44.0;
+
+/// Dead-band (CSS px) for the ribbon collapse cascade (Spec 04 M3 §7). A group
+/// re-expands only when the less-collapsed layout clears the available width by
+/// this margin, so dragging a window across a fit threshold does not thrash
+/// between collapse states (same principle as [`PAGE_FIT_HYSTERESIS_PX`]).
+pub const RIBBON_COLLAPSE_HYSTERESIS_PX: f32 = 32.0;
+
+/// Full width (CSS px) of a ribbon select control (e.g. the style picker) in the
+/// [`Full`](crate::GroupCollapse::Full) group state.
+pub const RIBBON_SELECT_WIDTH_PX: f32 = 180.0;
+
+/// Narrowed width (CSS px) a ribbon select shrinks to in the
+/// [`Condensed`](crate::GroupCollapse::Condensed) group state (Spec 04 M3 §7,
+/// R-13e select-width handling). Still wide enough to show a short style name.
+pub const RIBBON_SELECT_WIDTH_CONDENSED_PX: f32 = 112.0;
+
 // ── Responsive breakpoints ────────────────────────────────────────────────────
 
 /// Upper bound (exclusive) of the **Compact** window-size class, in CSS px.

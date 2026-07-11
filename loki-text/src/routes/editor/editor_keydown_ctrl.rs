@@ -9,7 +9,8 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 use keyboard_types::{Key, Modifiers};
-use loki_doc_model::loro_mutation::{delete_text_at, get_block_text, get_block_text_at};
+use loki_doc_model::DeleteAction;
+use loki_doc_model::loro_mutation::{get_block_text, get_block_text_at, tracked_grapheme_delete};
 
 use super::editor_formatting;
 use crate::editing::cursor::{CursorState, DocumentPosition, next_grapheme_boundary};
@@ -183,23 +184,26 @@ pub(super) fn handle_delete_key(
         return;
     }
     let next = next_grapheme_boundary(&text, focus.byte_offset);
-    let len = next - focus.byte_offset;
-    {
+    // With track changes on, forward-Delete strikes normal text through instead
+    // of removing it (own insertions are un-typed; struck text is stepped over).
+    let del_rev = doc_state
+        .lock()
+        .ok()
+        .and_then(|s| s.document.as_ref().and_then(|d| d.deletion_revision()));
+    let action = {
         let ldoc_guard = loro_doc.read();
         let Some(ldoc) = ldoc_guard.as_ref() else {
             return;
         };
-        if delete_text_at(ldoc, &focus.block_path(), focus.byte_offset, len).is_err() {
-            return;
-        }
-    }
-    {
-        let ldoc_guard = loro_doc.read();
-        let Some(ldoc) = ldoc_guard.as_ref() else {
+        let path = focus.block_path();
+        let Ok(action) =
+            tracked_grapheme_delete(ldoc, &path, focus.byte_offset, next, del_rev.as_ref())
+        else {
             return;
         };
         apply_mutation_and_relayout(doc_state, ldoc);
-    }
+        action
+    };
     post_mutation_sync(
         doc_state,
         loro_doc,
@@ -208,10 +212,18 @@ pub(super) fn handle_delete_key(
         can_undo,
         can_redo,
     );
-    // The caret byte is unchanged, but forward-deleting text from a
-    // page-spanning paragraph can pull its later lines back a page — re-derive
-    // the caret's page_index from the fresh layout (plan 4b.1).
-    super::editor_keydown_text::set_collapsed_cursor(doc_state, cursor_state, focus);
+    // A hard delete removed the grapheme (caret byte unchanged, page re-derived
+    // per 4b.1); a struck/skipped one leaves it visible, so the caret steps past
+    // it to `next`.
+    let caret = if action == DeleteAction::HardDelete {
+        focus
+    } else {
+        DocumentPosition {
+            byte_offset: next,
+            ..focus
+        }
+    };
+    super::editor_keydown_text::set_collapsed_cursor(doc_state, cursor_state, caret);
 }
 
 /// Syncs cursor generation, `can_undo`, and `can_redo` after any document mutation.

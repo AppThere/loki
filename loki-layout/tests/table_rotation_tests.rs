@@ -84,6 +84,7 @@ fn test_table_cell_rotation() {
     }));
 
     let section = Section {
+        page_style: None,
         layout: PageLayout::default(),
         start: Default::default(),
         blocks: vec![table],

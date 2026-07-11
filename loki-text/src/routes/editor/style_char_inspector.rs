@@ -20,9 +20,10 @@ use super::style_inspector::{InspectorRow, RowProvenance, StyleProperty};
 /// Builds the inspector rows for the character style `id`, in display order.
 ///
 /// Every applicable character property appears with its resolved value and
-/// provenance (Local / Inherited-from / FormatDefault; the character family has
-/// no document default). Returns an empty vector when `id` is not a character
-/// style in the catalog.
+/// provenance (Local / Inherited-from / Default / FormatDefault). The `Default`
+/// level comes from the catalog's `default_character_style` (the document's
+/// `docDefaults` run defaults, ADR-0012 Decision 1) when set. Returns an empty
+/// vector when `id` is not a character style in the catalog.
 #[must_use]
 pub fn character_inspector_rows(catalog: &StyleCatalog, id: &StyleId) -> Vec<InspectorRow> {
     if !catalog.character_styles.contains_key(id) {

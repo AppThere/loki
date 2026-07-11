@@ -27,12 +27,13 @@ use loki_doc_model::content::inline::{Inline, LinkTarget, NoteKind};
 use loki_doc_model::content::table::core::Table;
 use loki_doc_model::loro_schema::MARK_LINK_URL;
 use loki_doc_model::{
-    MutationError, insert_block_after, insert_inline_image_at, insert_inline_note_at, mark_text_at,
+    MutationError, PathStep, insert_block_after, insert_inline_image_at, insert_inline_note_at,
+    mark_text_at,
 };
 use loro::{LoroDoc, LoroValue};
 
 use super::editor_format_range::resolve_format_ranges;
-use crate::editing::cursor::CursorState;
+use crate::editing::cursor::{CursorState, DocumentPosition};
 
 /// EMU per CSS pixel at 96 DPI (1 inch = 914 400 EMU = 96 px). Inserted images
 /// display at their intrinsic pixel size; layout reads `cx_emu`/`cy_emu`.
@@ -152,12 +153,14 @@ pub fn insert_footnote_at_cursor(
 
 /// Inserts a default empty table immediately after the cursor's (root) block.
 ///
-/// Returns the new block's global index, or `None` when there is no cursor. The
-/// table's cells are empty paragraphs the user edits by clicking into them.
+/// Returns the caret position for the table's first cell (so the caller can move
+/// the cursor into it after relayout — plan 4a.5), or `None` when there is no
+/// cursor. The table's cells are empty paragraphs the user edits by clicking or
+/// typing into them.
 pub fn insert_table_after_cursor(
     loro: &LoroDoc,
     cursor: &CursorState,
-) -> Result<Option<usize>, MutationError> {
+) -> Result<Option<DocumentPosition>, MutationError> {
     let Some(focus) = cursor.focus.as_ref() else {
         return Ok(None);
     };
@@ -166,7 +169,22 @@ pub fn insert_table_after_cursor(
         DEFAULT_TABLE_COLS,
     )));
     let new_index = insert_block_after(loro, focus.paragraph_index, &table)?;
-    Ok(Some(new_index))
+    Ok(Some(first_cell_caret(new_index)))
+}
+
+/// The caret at the start of the table's first cell — flat cell 0 (top-left, in
+/// the head→bodies→foot cell order a `Table::grid` produces: no head/foot, so
+/// cell 0 is body row 0, column 0), block 0, byte 0.
+///
+/// `page_index` is `0` — a placeholder the editor replaces by re-deriving it
+/// from the freshly relaid-out layout via `set_collapsed_cursor` (plan 4b.1).
+pub(super) fn first_cell_caret(table_block_index: usize) -> DocumentPosition {
+    DocumentPosition {
+        page_index: 0,
+        paragraph_index: table_block_index,
+        byte_offset: 0,
+        path: vec![PathStep::Cell { cell: 0, block: 0 }],
+    }
 }
 
 #[cfg(test)]

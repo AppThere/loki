@@ -36,6 +36,25 @@ ribbon-style-apply-aria = Apply style: { $name }
 ribbon-group-paragraph = Paragraph
 ribbon-para-props-aria = Edit paragraph style
 ribbon-para-props-heading = Paragraph Properties
+ribbon-group-font = Font
+ribbon-font-grow-aria = Increase font size
+ribbon-font-shrink-aria = Decrease font size
+ribbon-group-font-color = Font colour
+ribbon-color-automatic-aria = Automatic colour
+ribbon-color-red-aria = Red
+ribbon-color-orange-aria = Orange
+ribbon-color-yellow-aria = Yellow
+ribbon-color-green-aria = Green
+ribbon-color-blue-aria = Blue
+ribbon-color-purple-aria = Purple
+ribbon-group-highlight = Highlight
+ribbon-highlight-none-aria = No highlight
+ribbon-highlight-yellow-aria = Yellow highlight
+ribbon-highlight-green-aria = Green highlight
+ribbon-highlight-cyan-aria = Cyan highlight
+ribbon-highlight-magenta-aria = Magenta highlight
+ribbon-highlight-red-aria = Red highlight
+ribbon-group-alignment = Alignment
 ribbon-align-left-aria = Align left
 ribbon-align-centre-aria = Centre
 ribbon-align-right-aria = Align right
@@ -64,6 +83,58 @@ ribbon-group-references = References
 ribbon-insert-table-aria = Insert table
 ribbon-insert-footnote-aria = Insert footnote
 
+# Table contextual tab (Spec 04 M5, plan 4a.2) — shown only while the caret is
+# inside a table.
+ribbon-tab-table = Table
+ribbon-group-table = Table
+ribbon-group-table-rows = Rows & Columns
+ribbon-table-delete-aria = Delete table
+ribbon-table-row-insert-above-aria = Insert row above
+ribbon-table-row-insert-aria = Insert row below
+ribbon-table-row-delete-aria = Delete row
+ribbon-table-col-insert-left-aria = Insert column left
+ribbon-table-col-insert-aria = Insert column right
+ribbon-table-col-delete-aria = Delete column
+
+# Layout tab (Spec 04 M5, plan 4a.2)
+ribbon-tab-layout = Layout
+ribbon-group-orientation = Orientation
+ribbon-orientation-portrait-aria = Portrait
+ribbon-orientation-landscape-aria = Landscape
+ribbon-group-margins = Margins
+ribbon-margin-normal-aria = Normal margins
+ribbon-margin-narrow-aria = Narrow margins
+ribbon-margin-wide-aria = Wide margins
+ribbon-group-page-size = Size
+ribbon-page-a4-aria = A4
+ribbon-page-letter-aria = US Letter
+ribbon-group-columns = Columns
+ribbon-columns-one-aria = One column
+ribbon-columns-two-aria = Two columns
+ribbon-columns-three-aria = Three columns
+
+# References tab (Spec 04 M5, plan 4a.2) — table of contents
+ribbon-tab-references = References
+ribbon-group-toc = Table of Contents
+ribbon-toc-insert-aria = Insert table of contents
+ribbon-toc-update-aria = Update table of contents
+# The heading text of an inserted table of contents (document content).
+references-toc-title = Contents
+
+# Review tab (Spec 04 M5, plan 4a.2) — track changes
+ribbon-tab-review = Review
+ribbon-group-review-track = Tracking
+ribbon-track-changes-aria = Track changes
+ribbon-group-review-changes = Changes
+ribbon-accept-change-aria = Accept change
+ribbon-reject-change-aria = Reject change
+ribbon-accept-all-aria = Accept all changes
+ribbon-reject-all-aria = Reject all changes
+
 # Ribbon collapse toggle
 ribbon-collapse-aria = Collapse ribbon
 ribbon-expand-aria = Expand ribbon
+
+# Ribbon collapse cascade (Spec 04 M3) — the overflow ("More") menu that holds
+# groups the strip is too narrow to show in full.
+ribbon-overflow-aria = More controls

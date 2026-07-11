@@ -290,6 +290,74 @@ fn underline_span_emits_decoration() {
 }
 
 #[test]
+fn underline_variant_carries_to_decoration_style() {
+    use crate::items::DecorationStyle;
+    let mut r = test_resources();
+    let text = "Styled underline";
+    for (u, expect) in [
+        (UnderlineStyle::Single, DecorationStyle::Solid),
+        (UnderlineStyle::Double, DecorationStyle::Double),
+        (UnderlineStyle::Dotted, DecorationStyle::Dotted),
+        (UnderlineStyle::Dash, DecorationStyle::Dashed),
+        (UnderlineStyle::Wave, DecorationStyle::Wave),
+        (UnderlineStyle::Thick, DecorationStyle::Thick),
+    ] {
+        let spans = [StyleSpan {
+            underline: Some(u),
+            ..single_span(text, 12.0)
+        }];
+        let result = layout_paragraph(
+            &mut r,
+            text,
+            &spans,
+            &ResolvedParaProps::default(),
+            400.0,
+            1.0,
+            false,
+        );
+        let deco = result
+            .items
+            .iter()
+            .find_map(|item| match item {
+                PositionedItem::Decoration(d) if d.kind == DecorationKind::Underline => Some(d),
+                _ => None,
+            })
+            .expect("underline decoration");
+        assert_eq!(deco.style, expect, "{u:?} should map to {expect:?}");
+    }
+}
+
+#[test]
+fn double_strikethrough_carries_double_style() {
+    use crate::items::DecorationStyle;
+    use crate::para::StrikethroughStyle;
+    let mut r = test_resources();
+    let text = "Struck through";
+    let spans = [StyleSpan {
+        strikethrough: Some(StrikethroughStyle::Double),
+        ..single_span(text, 12.0)
+    }];
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+    let deco = result
+        .items
+        .iter()
+        .find_map(|item| match item {
+            PositionedItem::Decoration(d) if d.kind == DecorationKind::Strikethrough => Some(d),
+            _ => None,
+        })
+        .expect("strikethrough decoration");
+    assert_eq!(deco.style, DecorationStyle::Double);
+}
+
+#[test]
 fn space_before_after_not_in_height() {
     let mut r = test_resources();
     let text = "Spacing test";
@@ -589,6 +657,66 @@ fn misspelled_word_emits_spelling_squiggle() {
     assert!(sq.width > 0.0, "squiggle has positive width");
     // 'teh' starts after 'hello ', so the squiggle is offset from the left edge.
     assert!(sq.x > 0.0, "squiggle starts past the first word");
+}
+
+#[test]
+fn spelling_squiggle_hugs_the_descender_not_the_line_box() {
+    // With a generous line height the line box extends far below the glyphs.
+    // The squiggle must anchor to the text descender (baseline + descent), not
+    // the line-box bottom — otherwise it floats in the inter-line leading.
+    let mut r = test_resources();
+    let checker =
+        std::sync::Arc::new(loki_spell::SpellChecker::bundled().expect("bundled dictionary loads"));
+    let spell = crate::SpellState {
+        checker,
+        generation: 1,
+    };
+    let props = ResolvedParaProps {
+        line_height: Some(ResolvedLineHeight::MetricsRelative(3.0)),
+        ..ResolvedParaProps::default()
+    };
+    let text = "hello teh world";
+    let spans = [single_span(text, 12.0)];
+    let result = layout_paragraph_spelled(
+        &mut r,
+        text,
+        &spans,
+        &props,
+        400.0,
+        1.0,
+        false,
+        Some(&spell),
+    );
+
+    // The single line's baseline is the glyph run origin y (see para_emit).
+    let baseline = result
+        .items
+        .iter()
+        .find_map(|i| match i {
+            PositionedItem::GlyphRun(g) => Some(g.origin.y),
+            _ => None,
+        })
+        .expect("a glyph run");
+    let sq = result
+        .items
+        .iter()
+        .find_map(|i| match i {
+            PositionedItem::Decoration(d) if d.kind == DecorationKind::Spelling => Some(d),
+            _ => None,
+        })
+        .expect("a squiggle");
+    // Just below the baseline (descender zone, well under one 12 pt em), NOT the
+    // ~2-em drop the old line-box-bottom anchor produced under 3× line height.
+    assert!(
+        sq.y > baseline,
+        "squiggle sits below the baseline: y={} baseline={baseline}",
+        sq.y
+    );
+    assert!(
+        sq.y < baseline + 10.0,
+        "squiggle hugs the descender, not the line-box bottom: y={} baseline={baseline}",
+        sq.y
+    );
 }
 
 #[test]
@@ -896,11 +1024,15 @@ fn format_marker_display_levels_two_level() {
 }
 
 #[test]
-fn format_marker_picture_bullet_fallback() {
+fn format_marker_picture_bullet_has_no_text() {
+    // A picture bullet emits no marker *text* — the image is placed out-of-band
+    // by the flow engine, so the text label is empty (not the old `•` fallback).
     let levels = vec![ListLevel {
         level: 0,
         kind: ListLevelKind::Bullet {
-            char: BulletChar::Image,
+            char: BulletChar::Image {
+                src: "data:image/png;base64,AAAA".to_string(),
+            },
             font: None,
         },
         indent_start: DocPoints::new(36.0),
@@ -909,7 +1041,7 @@ fn format_marker_picture_bullet_fallback() {
         tab_stop_after_label: None,
         char_props: Default::default(),
     }];
-    assert_eq!(format_list_marker(&levels, 0, &counters(&[])), "•");
+    assert_eq!(format_list_marker(&levels, 0, &counters(&[])), "");
 }
 
 // ── Counter tracking tests ────────────────────────────────────────────────────

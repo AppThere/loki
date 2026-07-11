@@ -182,7 +182,13 @@ pub fn hit_test_page(
         .paragraphs
         .iter()
         .rev()
-        .find(|p| p.origin.1 <= content_y && content_y <= p.origin.1 + p.layout.height)
+        .find(|p| {
+            // Covering test in the paragraph's own frame; `hit_local` inverts
+            // an enclosing rotated cell's transform (upright cells: a plain
+            // origin subtraction, identical to the previous behaviour).
+            let (_, ly) = p.hit_local(content_x, content_y);
+            (0.0..=p.layout.height).contains(&ly)
+        })
         .or_else(|| {
             // Prefer the last paragraph for clicks below all content; it covers
             // both the "below last line" and the "empty document" cases.
@@ -190,14 +196,13 @@ pub fn hit_test_page(
         })?;
 
     // ── 6. Map to byte offset within the paragraph ────────────────────────────
-    let x_in_para = content_x - para_data.origin.0;
-    let y_in_para = (content_y - para_data.origin.1).max(0.0);
+    let (x_in_para, y_in_para) = para_data.hit_local(content_x, content_y);
 
     // hit_test_point returns None only when preserve_for_editing is false.
     // In editing mode it always returns Some; fall back to offset 0 defensively.
     let byte_offset = para_data
         .layout
-        .hit_test_point(x_in_para, y_in_para)
+        .hit_test_point(x_in_para, y_in_para.max(0.0))
         .map_or(0, |h| h.byte_offset);
 
     Some(DocumentPosition {
@@ -208,6 +213,34 @@ pub fn hit_test_page(
         // resolves to the right nested paragraph (empty for top-level).
         path: para_data.path.clone(),
     })
+}
+
+/// Open the hyperlink under a paginated-page click, if any (feature 5.11).
+///
+/// `(x_pt, y_pt)` are page-local layout points (as delivered by the page tile).
+/// The paginated hit-test frame is content-area-local, so the page margins are
+/// subtracted before consulting [`PageEditingData::link_at`]. Returns `true`
+/// when a link was found and handed to the OS URL opener — the caller then skips
+/// caret placement.
+pub fn open_hyperlink_at(
+    layout: &PaginatedLayout,
+    page_index: usize,
+    x_pt: f32,
+    y_pt: f32,
+) -> bool {
+    let Some(page) = layout.pages.get(page_index) else {
+        return false;
+    };
+    let Some(editing) = page.editing_data.as_ref() else {
+        return false;
+    };
+    let content_x = x_pt - page.margins.left;
+    let content_y = y_pt - page.margins.top;
+    if let Some(url) = editing.link_at(content_x, content_y) {
+        let _ = webbrowser::open(url);
+        return true;
+    }
+    false
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

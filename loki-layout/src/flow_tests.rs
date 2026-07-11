@@ -3,6 +3,7 @@
 
 //! Unit tests for [`crate::flow`].
 
+use super::page_fields::{blocks_contain_page_field, substitute_page_fields};
 use super::*;
 
 use loki_doc_model::content::attr::{ExtensionBag, NodeAttr};
@@ -24,7 +25,7 @@ use loki_primitives::units::Points;
 
 use crate::LayoutOptions;
 use crate::font::FontResources;
-use crate::items::PositionedItem;
+use crate::items::{DecorationKind, PositionedItem};
 use crate::mode::LayoutMode;
 
 /// Helper: run flow_section in Pageless mode and return (items, height, warnings).
@@ -209,6 +210,7 @@ fn text_flows_down_columns_before_paging() {
             count: 2,
             gap: Points::new(18.0),
             separator: false,
+            widths: Vec::new(),
         }),
         ..tiny_layout()
     };
@@ -247,6 +249,7 @@ fn column_separator_line_is_drawn() {
             count: 2,
             gap: Points::new(18.0),
             separator: true,
+            widths: Vec::new(),
         }),
         ..tiny_layout()
     };
@@ -265,6 +268,73 @@ fn column_separator_line_is_drawn() {
         sep.is_some(),
         "expected a full-height separator near x=90; items: {:?}",
         pages[0].content_items.len()
+    );
+}
+
+#[test]
+fn unequal_columns_place_second_band_at_first_width() {
+    let mut r = test_resources();
+    let paras: Vec<_> = (0..24).map(|i| make_para(&format!("Line {i}"))).collect();
+    // content width 180, gap 18 → widths 120 + 42 (sum 162 + 18 gap = 180). The
+    // second column's left edge therefore sits at x = 120 + 18 = 138, not the
+    // equal-split 99.
+    let two_col = PageLayout {
+        columns: Some(SectionColumns {
+            count: 2,
+            gap: Points::new(18.0),
+            separator: false,
+            widths: vec![Points::new(120.0), Points::new(42.0)],
+        }),
+        ..tiny_layout()
+    };
+    let (pages, _) = flow_paginated(&mut r, &section_of(paras, two_col));
+    let xs = glyph_x_origins(&pages[0]);
+    assert!(
+        xs.iter().any(|&x| x < 50.0),
+        "wide first column (x≈0) must be used: {xs:?}"
+    );
+    // The equal split would start the second column at x = 99; the unequal
+    // widths push it to 120 + 18 = 138, so a run there proves widths were honoured.
+    assert!(
+        xs.iter().any(|&x| x >= 138.0),
+        "narrow second column must start at x≈138 (first width + gap): {xs:?}"
+    );
+    assert!(
+        !xs.iter().any(|&x| (99.0..138.0).contains(&x)),
+        "no column band should begin in the equal-split gap (99..138): {xs:?}"
+    );
+}
+
+#[test]
+fn short_multi_column_section_balances_across_columns() {
+    let mut r = test_resources();
+    // Four short paragraphs — well under one column's height, so a fill-first
+    // layout would stack them all in column 0 and leave column 1 empty. Column
+    // balancing (5.10) spreads them so the second column (x ≈ 99) is used too.
+    let paras: Vec<_> = (0..4).map(|i| make_para(&format!("Line {i}"))).collect();
+    let two_col = PageLayout {
+        columns: Some(SectionColumns {
+            count: 2,
+            gap: Points::new(18.0),
+            separator: false,
+            widths: Vec::new(),
+        }),
+        ..tiny_layout()
+    };
+    let (pages, _) = flow_paginated(&mut r, &section_of(paras, two_col));
+    assert_eq!(
+        pages.len(),
+        1,
+        "the short section must fit on a single page"
+    );
+    let xs = glyph_x_origins(&pages[0]);
+    assert!(
+        xs.iter().any(|&x| x < 50.0),
+        "the first column must be used: {xs:?}"
+    );
+    assert!(
+        xs.iter().any(|&x| x >= 99.0),
+        "balancing must spread content into the second column: {xs:?}"
     );
 }
 
@@ -395,6 +465,7 @@ fn block_taller_than_page_emits_warning() {
 fn heading_block_does_not_panic() {
     let mut r = test_resources();
     let section = Section {
+        page_style: None,
         layout: PageLayout::default(),
         start: Default::default(),
         blocks: vec![Block::Heading(
@@ -495,6 +566,72 @@ fn paragraph_split_produces_clipped_groups_on_multiple_pages() {
     }
     // BlockExceedsPageHeight warning may or may not fire depending on text length.
     let _ = warnings;
+}
+
+#[test]
+fn orphan_control_defers_a_would_be_orphan_paragraph() {
+    use loki_doc_model::style::props::para_props::{LineHeight, ParaProps};
+
+    let mut r = test_resources();
+    // Exact 20 pt lines in tiny_layout's 90 pt content ⇒ 4 lines fit per page.
+    // Three single-line filler paragraphs fill 60 pt, leaving room for exactly
+    // one line — so the multi-line target paragraph's first line would orphan at
+    // the page bottom. With widow/orphan control on (default) the whole target
+    // defers to page 2; with it off (widow_control = 0) the first line stays.
+    let exact = |text: &str| {
+        let mut p = make_para(text);
+        let pp = ParaProps {
+            line_height: Some(LineHeight::Exact(Points::new(20.0))),
+            ..ParaProps::default()
+        };
+        p.direct_para_props = Some(Box::new(pp));
+        p
+    };
+    let mut build = |disable: bool| {
+        let mut blocks: Vec<_> = (0..3).map(|i| exact(&format!("filler {i}"))).collect();
+        let mut target = exact(&"target paragraph body that wraps to several lines ".repeat(3));
+        if disable {
+            let mut pp = target.direct_para_props.take().unwrap();
+            pp.widow_control = Some(0); // OOXML's single toggle disables both
+            target.direct_para_props = Some(pp);
+        }
+        blocks.push(target);
+        let opts = LayoutOptions {
+            preserve_for_editing: true,
+            ..LayoutOptions::default()
+        };
+        let catalog = StyleCatalog::new();
+        match flow_section(
+            &mut r,
+            &section_of(blocks, tiny_layout()),
+            &catalog,
+            &LayoutMode::Paginated,
+            1.0,
+            &opts,
+            &[],
+        ) {
+            FlowOutput::Pages { pages, .. } => pages,
+            _ => panic!("expected paginated pages"),
+        }
+    };
+    // Does the target paragraph (block index 3) place any fragment on page 1?
+    let target_on_page0 = |pages: &[crate::result::LayoutPage]| {
+        pages
+            .first()
+            .and_then(|p| p.editing_data.as_ref())
+            .is_some_and(|e| e.paragraphs.iter().any(|pd| pd.block_index == 3))
+    };
+    let on = build(false);
+    let off = build(true);
+    assert!(on.len() >= 2, "the target must reach page 2");
+    assert!(
+        !target_on_page0(&on),
+        "orphan control must defer the whole target off page 1"
+    );
+    assert!(
+        target_on_page0(&off),
+        "with control off, the target's first line orphans onto page 1"
+    );
 }
 
 #[test]
@@ -1083,6 +1220,7 @@ fn make_table_2x2(cell_props: Option<CellProps>) -> Block {
 fn table_2x2_renders_on_one_page() {
     let mut r = test_resources();
     let section = Section {
+        page_style: None,
         layout: PageLayout::default(),
         start: Default::default(),
         blocks: vec![make_table_2x2(None)],
@@ -1109,6 +1247,7 @@ fn table_cell_background_produces_filled_rect() {
         ..Default::default()
     };
     let section = Section {
+        page_style: None,
         layout: PageLayout::default(),
         start: Default::default(),
         blocks: vec![make_table_2x2(Some(props))],
@@ -1122,6 +1261,173 @@ fn table_cell_background_produces_filled_rect() {
     assert!(
         filled_rects >= 2,
         "2×2 table with bg should produce ≥2 FilledRect items (one per cell in first row), got {filled_rects}"
+    );
+}
+
+/// A rotated cell (vertical text) must now emit editing data: paragraphs
+/// tagged with a `CellRotation` whose transform round-trips a paragraph-local
+/// point to the page and back. This is the 4b.5 unblock — rotated cells are no
+/// longer read-only (before, `flow_cell_blocks` discarded their editing data).
+#[test]
+fn rotated_cell_emits_editing_data_with_rotation() {
+    use loki_doc_model::content::table::row::CellTextDirection;
+
+    let mut r = test_resources();
+    let props = CellProps {
+        text_direction: Some(CellTextDirection::TbRl),
+        ..Default::default()
+    };
+    let section = Section {
+        page_style: None,
+        layout: PageLayout::default(),
+        start: Default::default(),
+        blocks: vec![make_table_2x2(Some(props))],
+        extensions: ExtensionBag::default(),
+    };
+    let catalog = StyleCatalog::new();
+    let opts = LayoutOptions {
+        preserve_for_editing: true,
+        ..Default::default()
+    };
+    let FlowOutput::Canvas { paragraphs, .. } = flow_section(
+        &mut r,
+        &section,
+        &catalog,
+        &LayoutMode::Pageless,
+        1.0,
+        &opts,
+        &[],
+    ) else {
+        panic!("expected Canvas output");
+    };
+
+    let rotated: Vec<_> = paragraphs.iter().filter(|p| p.rotation.is_some()).collect();
+    assert!(
+        !rotated.is_empty(),
+        "rotated cells must emit editing paragraphs (got {} paras, none rotated)",
+        paragraphs.len()
+    );
+    for p in &rotated {
+        let rot = p.rotation.expect("filtered to Some");
+        assert_eq!(rot.degrees, 90.0, "TbRl → 90°");
+        // hit_local must invert the cell rotation: a page point at the rotated
+        // position of paragraph-local (3, 1) maps back to (3, 1).
+        let (page_x, page_y) = p.local_to_page(3.0, 1.0);
+        let (lx, ly) = p.hit_local(page_x, page_y);
+        assert!(
+            (lx - 3.0).abs() < 1e-2 && (ly - 1.0).abs() < 1e-2,
+            "hit_local round-trip failed: ({lx}, {ly})"
+        );
+    }
+}
+
+/// A table referencing a style with first-row banding shading (and no direct
+/// cell shading) should paint that shading — proof the flow engine now
+/// consults the table style, not just direct `CellProps`.
+#[test]
+fn table_style_banding_shades_the_header_row() {
+    use appthere_color::RgbColor;
+    use loki_doc_model::style::catalog::StyleId;
+    use loki_doc_model::style::table_style::{TableConditionalFormat, TableRegion, TableStyle};
+
+    let mut catalog = StyleCatalog::new();
+    let mut style = TableStyle {
+        id: StyleId::new("Banded"),
+        display_name: None,
+        parent: None,
+        table_props: Default::default(),
+        conditional: Default::default(),
+        extensions: ExtensionBag::default(),
+    };
+    style.conditional.insert(
+        TableRegion::FirstRow,
+        TableConditionalFormat {
+            background_color: Some(DocumentColor::Rgb(RgbColor::new(0.0, 0.0, 1.0))),
+        },
+    );
+    catalog.table_styles.insert(StyleId::new("Banded"), style);
+
+    // A 2×2 table with no direct cell shading, referencing "Banded".
+    let Block::Table(mut table) = make_table_2x2(None) else {
+        unreachable!("make_table_2x2 builds a Block::Table")
+    };
+    table.set_style_name(Some("Banded".into()));
+
+    let section = Section {
+        page_style: None,
+        layout: PageLayout::default(),
+        start: Default::default(),
+        blocks: vec![Block::Table(table)],
+        extensions: ExtensionBag::default(),
+    };
+    let mut r = test_resources();
+    let (items, _, _) = flow_with_catalog(&mut r, &section, &catalog);
+    let filled = items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::FilledRect(_)))
+        .count();
+    // Under Word's default look, firstRow shades both header cells; the
+    // second (body) row has no matching region → exactly the 2 header cells.
+    assert_eq!(
+        filled, 2,
+        "header row's 2 cells should be shaded by the style, got {filled}"
+    );
+}
+
+/// The same banded style, but the table's `w:tblLook` disables the first-row
+/// region → the header shading must be suppressed. Proof the flow engine reads
+/// the instance's encoded look, not just the style's default.
+#[test]
+fn table_look_disabling_first_row_suppresses_style_shading() {
+    use appthere_color::RgbColor;
+    use loki_doc_model::style::catalog::StyleId;
+    use loki_doc_model::style::table_style::{
+        TableConditionalFormat, TableLook, TableRegion, TableStyle,
+    };
+
+    let mut catalog = StyleCatalog::new();
+    let mut style = TableStyle {
+        id: StyleId::new("Banded"),
+        display_name: None,
+        parent: None,
+        table_props: Default::default(),
+        conditional: Default::default(),
+        extensions: ExtensionBag::default(),
+    };
+    style.conditional.insert(
+        TableRegion::FirstRow,
+        TableConditionalFormat {
+            background_color: Some(DocumentColor::Rgb(RgbColor::new(0.0, 0.0, 1.0))),
+        },
+    );
+    catalog.table_styles.insert(StyleId::new("Banded"), style);
+
+    let Block::Table(mut table) = make_table_2x2(None) else {
+        unreachable!("make_table_2x2 builds a Block::Table")
+    };
+    table.set_style_name(Some("Banded".into()));
+    let look = TableLook {
+        first_row: false,
+        ..TableLook::default()
+    };
+    table.set_table_look_code(Some(look.encode_attr()));
+
+    let section = Section {
+        page_style: None,
+        layout: PageLayout::default(),
+        start: Default::default(),
+        blocks: vec![Block::Table(table)],
+        extensions: ExtensionBag::default(),
+    };
+    let mut r = test_resources();
+    let (items, _, _) = flow_with_catalog(&mut r, &section, &catalog);
+    let filled = items
+        .iter()
+        .filter(|i| matches!(i, PositionedItem::FilledRect(_)))
+        .count();
+    assert_eq!(
+        filled, 0,
+        "firstRow off in the look → no shading, got {filled}"
     );
 }
 
@@ -1143,6 +1449,7 @@ fn table_cell_borders_produce_border_rect() {
         ..Default::default()
     };
     let section = Section {
+        page_style: None,
         layout: PageLayout::default(),
         start: Default::default(),
         blocks: vec![make_table_2x2(Some(props))],
@@ -1417,6 +1724,89 @@ mod page_fields {
             below_min_x < left_edge + 5.0,
             "text below the float must reclaim full width; \
              min x = {below_min_x}, float left = {left_edge}"
+        );
+    }
+
+    /// A generated table of contents flows its cached body exactly like the same
+    /// paragraphs at the top level — before this the layout dropped the block
+    /// entirely (the `_ => {}` catch-all), so an inserted or imported TOC was
+    /// invisible.
+    #[test]
+    fn table_of_contents_flows_its_body_like_top_level_paragraphs() {
+        use loki_doc_model::content::block::TableOfContentsBlock;
+
+        let mut r = test_resources();
+        let entries = || {
+            vec![
+                Block::StyledPara(make_para("Introduction")),
+                Block::StyledPara(make_para("Details")),
+                Block::StyledPara(make_para("Conclusion")),
+            ]
+        };
+        let plain = Section::with_layout_and_blocks(tiny_layout(), entries());
+        let wrapped = Section::with_layout_and_blocks(
+            tiny_layout(),
+            vec![Block::TableOfContents(TableOfContentsBlock {
+                title: None,
+                body: entries(),
+                attr: NodeAttr::default(),
+            })],
+        );
+
+        let (plain_items, _, _) = flow_pageless(&mut r, &plain);
+        let (toc_items, _, _) = flow_pageless(&mut r, &wrapped);
+        assert!(!plain_items.is_empty(), "sanity: plain paragraphs render");
+        assert_eq!(
+            toc_items.len(),
+            plain_items.len(),
+            "a TOC must render its body identically to top-level paragraphs"
+        );
+    }
+
+    /// A tracked run renders its change decoration: an insertion is underlined,
+    /// a deletion is struck through (Review tab, 4a.2 render slice).
+    #[test]
+    fn tracked_runs_render_insertion_underline_and_deletion_strikethrough() {
+        use loki_doc_model::content::inline::StyledRun;
+        use loki_doc_model::style::props::char_props::CharProps;
+        use loki_doc_model::style::props::revision::{RevisionKind, RevisionMark};
+
+        let tracked = |kind: RevisionKind| {
+            Block::Para(vec![Inline::StyledRun(StyledRun {
+                style_id: None,
+                direct_props: Some(Box::new(CharProps {
+                    revision: Some(RevisionMark::new(kind)),
+                    ..CharProps::default()
+                })),
+                content: vec![Inline::Str("word".into())],
+                attr: NodeAttr::default(),
+            })])
+        };
+        let kinds = |items: &[PositionedItem]| -> Vec<DecorationKind> {
+            items
+                .iter()
+                .filter_map(|i| match i {
+                    PositionedItem::Decoration(d) => Some(d.kind),
+                    _ => None,
+                })
+                .collect()
+        };
+
+        let mut r = test_resources();
+        let ins =
+            Section::with_layout_and_blocks(tiny_layout(), vec![tracked(RevisionKind::Insertion)]);
+        let (ins_items, _, _) = flow_pageless(&mut r, &ins);
+        assert!(
+            kinds(&ins_items).contains(&DecorationKind::Underline),
+            "an inserted run must be underlined"
+        );
+
+        let del =
+            Section::with_layout_and_blocks(tiny_layout(), vec![tracked(RevisionKind::Deletion)]);
+        let (del_items, _, _) = flow_pageless(&mut r, &del);
+        assert!(
+            kinds(&del_items).contains(&DecorationKind::Strikethrough),
+            "a deleted run must be struck through"
         );
     }
 }

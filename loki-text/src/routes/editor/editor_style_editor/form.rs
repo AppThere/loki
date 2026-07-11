@@ -26,7 +26,7 @@ use crate::editing::state::{DocumentState, apply_mutation_and_relayout};
 
 /// A label + text input row whose value is written back to a draft field via
 /// `set`. `width_css` controls the input width (e.g. `"flex: 1"`).
-fn field_row(
+pub(super) fn field_row(
     label: String,
     value: String,
     width_css: &str,
@@ -54,7 +54,7 @@ fn field_row(
 }
 
 /// Italic / underline toggle buttons (bold is handled by the weight selector).
-fn iu_buttons(
+pub(super) fn iu_buttons(
     mut editing_style_draft: Signal<Option<StyleDraft>>,
     italic: bool,
     underline: bool,

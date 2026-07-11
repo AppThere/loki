@@ -8,6 +8,9 @@
 //! `<office:document>/<office:body>/<office:text>` and OOXML's
 //! `w:document/w:body`.
 
+#[path = "document_paper.rs"]
+mod paper;
+
 use crate::io::source::DocumentSource;
 use crate::layout::section::Section;
 use crate::meta::core::DocumentMeta;
@@ -120,7 +123,7 @@ impl Document {
         use crate::content::block::Block;
         use crate::layout::page::PageLayout;
         let layout = PageLayout {
-            page_size: default_page_size_for_locale(),
+            page_size: paper::default_page_size_for_locale(),
             ..PageLayout::default()
         };
         let section = Section::with_layout_and_blocks(layout, vec![Block::Para(vec![])]);
@@ -282,159 +285,6 @@ impl Default for Document {
 
 /// Returns the appropriate default page size for the running locale.
 ///
-/// Reads `LC_PAPER`, `LC_ALL`, `LANGUAGE`, and `LANG` environment variables
-/// (in priority order).  Returns US Letter for regions that use it; A4 for
-/// all others.  Falls back to A4 if no locale can be determined.
-fn default_page_size_for_locale() -> crate::layout::page::PageSize {
-    use crate::layout::page::PageSize;
-    for var in &["LC_PAPER", "LC_ALL", "LANGUAGE", "LANG"] {
-        if let Ok(val) = std::env::var(var) {
-            let upper = val.to_uppercase();
-            if upper.is_empty() {
-                continue;
-            }
-            if uses_letter_paper(&upper) {
-                return PageSize::letter();
-            }
-            return PageSize::a4();
-        }
-    }
-    PageSize::a4()
-}
-
-/// Returns `true` when `locale_upper` (an uppercased locale string) indicates
-/// a region that uses US Letter paper by convention.
-fn uses_letter_paper(locale_upper: &str) -> bool {
-    const LETTER_REGIONS: &[&str] = &[
-        "_US", "_CA", "_MX", "_PH", "_CO", "_CL", "_VE", "_BO", "_SV", "_GT", "_HN", "_NI", "_CR",
-        "_DO", "_PR",
-    ];
-    LETTER_REGIONS.iter().any(|r| locale_upper.contains(r))
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::content::block::Block;
-    use crate::layout::page::{PageLayout, PageSize};
-
-    fn hr() -> Block {
-        Block::HorizontalRule
-    }
-
-    fn make_doc_with_sections(blocks_per_section: &[usize]) -> Document {
-        let mut doc = Document::new();
-        doc.sections.clear();
-        for &count in blocks_per_section {
-            let blocks = (0..count).map(|_| hr()).collect();
-            doc.sections.push(Section::with_layout_and_blocks(
-                PageLayout::default(),
-                blocks,
-            ));
-        }
-        doc
-    }
-
-    #[test]
-    fn document_new_has_one_section() {
-        let doc = Document::new();
-        assert_eq!(doc.sections.len(), 1);
-        assert!(doc.meta.title.is_none());
-        assert!(doc.source.is_none());
-    }
-
-    #[test]
-    fn document_two_sections_different_sizes() {
-        let mut doc = Document::new();
-
-        let mut layout2 = PageLayout::default();
-        layout2.page_size = PageSize::a4();
-        let section2 = Section::with_layout_and_blocks(layout2, vec![]);
-        doc.sections.push(section2);
-
-        assert_eq!(doc.sections.len(), 2);
-        assert_ne!(
-            doc.sections[0].layout.page_size,
-            doc.sections[1].layout.page_size,
-        );
-    }
-
-    // ── section_count / section_at ────────────────────────────────────────────
-
-    #[test]
-    fn section_count_empty_document() {
-        let doc = make_doc_with_sections(&[]);
-        assert_eq!(doc.section_count(), 0);
-        assert!(doc.section_at(0).is_none());
-    }
-
-    #[test]
-    fn section_at_single_section() {
-        let doc = make_doc_with_sections(&[2]);
-        assert_eq!(doc.sections().len(), 1);
-        assert!(doc.section_at(0).is_some());
-        assert!(doc.section_at(1).is_none());
-    }
-
-    #[test]
-    fn sections_mut_allows_modification() {
-        let mut doc = make_doc_with_sections(&[1]);
-        doc.sections_mut()[0].blocks.push(hr());
-        assert_eq!(doc.section_at(0).unwrap().blocks.len(), 2);
-    }
-
-    // ── block_count_flat / block_at_flat ──────────────────────────────────────
-
-    #[test]
-    fn block_count_flat_empty_document() {
-        let doc = make_doc_with_sections(&[]);
-        assert_eq!(doc.block_count_flat(), 0);
-        assert!(doc.block_at_flat(0).is_none());
-    }
-
-    #[test]
-    fn block_at_flat_single_section_three_blocks() {
-        let doc = make_doc_with_sections(&[3]);
-        assert_eq!(doc.block_count_flat(), 3);
-        assert!(doc.block_at_flat(2).is_some());
-        assert!(doc.block_at_flat(3).is_none());
-    }
-
-    #[test]
-    fn block_at_flat_two_sections_two_blocks_each() {
-        let doc = make_doc_with_sections(&[2, 2]);
-        assert_eq!(doc.block_count_flat(), 4);
-        // flat index 2 is the first block of the second section
-        assert!(doc.block_at_flat(2).is_some());
-        assert!(doc.block_at_flat(4).is_none());
-    }
-
-    // ── flat_index_to_section_block ───────────────────────────────────────────
-
-    #[test]
-    fn flat_index_to_section_block_first_block() {
-        let doc = make_doc_with_sections(&[2, 2]);
-        assert_eq!(doc.flat_index_to_section_block(0), Some((0, 0)));
-    }
-
-    #[test]
-    fn flat_index_to_section_block_crosses_section_boundary() {
-        let doc = make_doc_with_sections(&[2, 2]);
-        assert_eq!(doc.flat_index_to_section_block(2), Some((1, 0)));
-    }
-
-    #[test]
-    fn flat_index_to_section_block_out_of_range() {
-        let doc = make_doc_with_sections(&[2, 2]);
-        assert!(doc.flat_index_to_section_block(4).is_none());
-    }
-
-    // ── blocks_flat ──────────────────────────────────────────────────────────
-
-    #[test]
-    fn blocks_flat_yields_all_blocks_in_order() {
-        let doc = make_doc_with_sections(&[2, 3]);
-        let count = doc.blocks_flat().count();
-        assert_eq!(count, 5);
-    }
-}
+#[path = "document_tests.rs"]
+mod tests;

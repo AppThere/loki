@@ -29,10 +29,15 @@
 
 mod breakpoint;
 mod page_fit;
+mod ribbon_collapse;
 mod viewport;
 
 pub use breakpoint::Breakpoint;
 pub use page_fit::{page_fits, required_page_width, resolve_page_fit, PageFit};
+pub use ribbon_collapse::{
+    estimate_group_metrics, group_layout, resolve_cascade, GroupCollapse, GroupLayout,
+    GroupMetrics, RibbonCascade,
+};
 pub use viewport::{Viewport, DEFAULT_DPI};
 
 use dioxus::prelude::*;
@@ -95,4 +100,43 @@ pub fn use_breakpoint() -> Breakpoint {
         Some(ctx) => *ctx.breakpoint.read(),
         None => Breakpoint::Expanded,
     }
+}
+
+/// Resolves the width-driven ribbon collapse cascade (Spec 04 M3 §7) for the
+/// given per-group `metrics`, reactively against the measured viewport width and
+/// hysteretically (the previously-resolved level is retained across resizes to
+/// avoid thrash — see [`resolve_cascade`]).
+///
+/// **Resilient:** like [`use_breakpoint`], if no responsive context is present
+/// (an app that has not wired [`use_provide_responsive`], e.g. Presentation /
+/// Spreadsheet) the available width is treated as unbounded, so every group
+/// stays [`GroupCollapse::Full`] — a sane full-chrome ribbon rather than a
+/// broken one.
+///
+/// The hysteresis state (the resolved collapse `level`) lives in a hook-local
+/// signal, so call this once per ribbon content strip.
+#[must_use]
+pub fn use_ribbon_cascade(metrics: Vec<GroupMetrics>) -> RibbonCascade {
+    let ctx = try_consume_context::<AtResponsiveContext>();
+    // No context → unbounded width → nothing collapses (full-chrome default).
+    let read_width = move || ctx.map_or(f32::MAX, |c| c.viewport.read().inner_width_px);
+    let mut level = use_signal(|| 0usize);
+
+    // Advance the hysteretic level whenever the measured width changes. Reading
+    // the viewport inside the effect subscribes it to width updates.
+    {
+        let metrics = metrics.clone();
+        use_effect(move || {
+            let prev = *level.peek();
+            let next = resolve_cascade(&metrics, read_width(), prev).level;
+            if next != prev {
+                level.set(next);
+            }
+        });
+    }
+
+    // Build the returned cascade from the settled level and the current width;
+    // resolution is idempotent at a fixed width, so this agrees with the effect.
+    let settled = *level.read();
+    resolve_cascade(&metrics, read_width(), settled)
 }

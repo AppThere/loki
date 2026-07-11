@@ -14,23 +14,30 @@ use crate::xml::escape_attr;
 ///
 /// `identifier` and `modified_iso` are forwarded to [`build_metadata`]; the
 /// manifest lists the fixed content/nav/style items plus one item per packaged
-/// image, and the spine references the single content document.
+/// image, and the spine references the single content document. When `has_math`
+/// is `true` the content item declares `properties="mathml"` (EPUB 3.3 §5.4).
 #[must_use]
 pub fn build_package_opf(
     meta: &DocumentMeta,
     identifier: &str,
     modified_iso: &str,
     images: &[EpubImage],
+    has_math: bool,
 ) -> String {
     let metadata = build_metadata(meta, identifier, modified_iso);
     let image_items = build_image_items(images);
+    let content_props = if has_math {
+        " properties=\"mathml\""
+    } else {
+        ""
+    };
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
          <package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" \
          unique-identifier=\"pub-id\" xml:lang=\"en\">\n\
          {metadata}  <manifest>\n\
          <item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>\n\
-         <item id=\"content\" href=\"content.xhtml\" media-type=\"application/xhtml+xml\"/>\n\
+         <item id=\"content\" href=\"content.xhtml\" media-type=\"application/xhtml+xml\"{content_props}/>\n\
          <item id=\"style\" href=\"style.css\" media-type=\"text/css\"/>\n\
          {image_items}  </manifest>\n\
          <spine>\n\
@@ -72,13 +79,28 @@ mod tests {
             media_type: "image/png".into(),
             bytes: vec![1, 2, 3],
         }];
-        let opf = build_package_opf(&meta, "urn:uuid:1", "2026-01-01T00:00:00Z", &images);
+        let opf = build_package_opf(&meta, "urn:uuid:1", "2026-01-01T00:00:00Z", &images, false);
         assert!(opf.contains("version=\"3.0\""));
         assert!(opf.contains("unique-identifier=\"pub-id\""));
         assert!(opf.contains("properties=\"nav\""));
         assert!(opf.contains("<itemref idref=\"content\"/>"));
         assert!(
             opf.contains("<item id=\"img0\" href=\"images/img0.png\" media-type=\"image/png\"/>")
+        );
+        // Without math the content item carries no `mathml` property.
+        assert!(!opf.contains("properties=\"mathml\""));
+    }
+
+    #[test]
+    fn content_item_declares_mathml_when_present() {
+        let meta = DocumentMeta::default();
+        let opf = build_package_opf(&meta, "urn:uuid:1", "2026-01-01T00:00:00Z", &[], true);
+        assert!(
+            opf.contains(
+                "<item id=\"content\" href=\"content.xhtml\" \
+                 media-type=\"application/xhtml+xml\" properties=\"mathml\"/>"
+            ),
+            "content item must declare the mathml property: {opf}"
         );
     }
 }

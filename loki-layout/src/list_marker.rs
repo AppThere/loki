@@ -32,11 +32,14 @@ pub fn format_list_marker(list_levels: &[ListLevel], level: u8, counters: &[u32;
             ..
         } => c.to_string(),
         ListLevelKind::Bullet {
-            char: BulletChar::Image,
+            char: BulletChar::Image { .. },
             ..
         } => {
-            // TODO(list-picture-bullet): picture bullets not yet supported; render as •
-            "•".to_string()
+            // A picture bullet has no text glyph; the flow engine places the
+            // image out-of-band (see `flow_para`). Emit no marker text so the
+            // label box is not double-filled. Callers that only need a text
+            // marker (e.g. plain-text export) fall back to `•` themselves.
+            String::new()
         }
         ListLevelKind::Numbered { format, .. } => {
             format_numbered_label(list_levels, format, counters)

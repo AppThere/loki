@@ -26,33 +26,65 @@
 //!
 //! All `byte_offset` and `len` parameters are **UTF-8 byte positions**.
 
+mod align;
 mod block;
+mod block_edit;
 mod nested;
 #[cfg(feature = "serde")]
 mod objects;
+mod page;
+mod page_style;
+mod para_mark;
+mod revision;
 mod selection;
 mod style;
-mod text;
-
 #[cfg(feature = "serde")]
-pub use self::block::insert_block_after;
+mod table_ops;
+mod text;
+mod text_containers;
+#[cfg(feature = "serde")]
+mod toc;
+
+pub use self::align::{
+    get_block_alignment, get_block_alignment_at, set_block_alignment, set_block_alignment_at,
+};
 pub use self::block::{merge_block, merge_block_at, split_block, split_block_at};
+pub use self::block_edit::delete_block;
+#[cfg(feature = "serde")]
+pub use self::block_edit::insert_block_after;
 pub use self::nested::{
     BlockPath, PathStep, delete_text_at, get_block_text_at, get_mark_at_path, insert_text_at,
-    mark_text_at,
+    insert_text_tracked_at, mark_text_at,
 };
 #[cfg(feature = "serde")]
 pub use self::objects::{insert_inline_image_at, insert_inline_note_at};
-pub use self::selection::delete_selection_at;
+pub use self::page::{
+    document_column_count, document_is_landscape, document_margins, document_page_size,
+    set_document_columns, set_document_margins, set_document_orientation, set_document_page_size,
+};
+pub use self::page_style::{rename_page_style, set_page_style_geometry};
+pub use self::para_mark::{
+    accept_reject_para_mark_at, para_mark_at, set_para_mark_deletion, set_para_mark_deletion_at,
+};
+pub use self::revision::{
+    accept_reject_all_revisions, accept_reject_revision_at, revision_at, tracked_grapheme_delete,
+};
+pub use self::selection::{delete_selection_at, tracked_delete_selection_at};
 pub use self::style::{
-    get_block_alignment, get_block_style_name, set_block_alignment, set_block_style,
+    clear_block_list, get_block_list_id, get_block_style_name, set_block_style,
     set_block_type_heading, set_block_type_para,
+};
+#[cfg(feature = "serde")]
+pub use self::table_ops::{
+    delete_table_column, delete_table_row, insert_table_column, insert_table_row, table_grid_dims,
 };
 #[cfg(feature = "serde")]
 pub use self::text::insert_inline_image;
 pub use self::text::{
     delete_text, get_block_text, get_mark_at, insert_text, mark_text, replace_text,
 };
+#[cfg(feature = "serde")]
+pub use self::toc::{first_toc_block_index, insert_table_of_contents, refresh_table_of_contents};
 
 use loro::{LoroDoc, LoroList, LoroMap, LoroMovableList, LoroText};
 
@@ -95,6 +127,11 @@ pub enum MutationError {
     /// Nothing is mutated.
     #[error("Selection endpoints are in different containers")]
     CrossContainerSelection,
+    /// A structural table mutation was attempted on a table shape it does not
+    /// support — merged (spanning) cells, head/foot rows, more than one body, a
+    /// ragged grid, or an index out of range. Nothing is mutated.
+    #[error("Unsupported table structure: {0}")]
+    UnsupportedTableStructure(String),
 }
 
 impl From<loro::LoroError> for MutationError {
@@ -106,7 +143,7 @@ impl From<loro::LoroError> for MutationError {
 // ── Shared internal helpers ───────────────────────────────────────────────────
 
 /// Resolves section `s`'s blocks movable list, if present.
-fn section_blocks_list(sections: &LoroList, s: usize) -> Option<LoroMovableList> {
+pub(super) fn section_blocks_list(sections: &LoroList, s: usize) -> Option<LoroMovableList> {
     let section = sections.get(s)?.into_container().ok()?.into_map().ok()?;
     section
         .get(KEY_BLOCKS)?

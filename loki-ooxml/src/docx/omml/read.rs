@@ -10,6 +10,7 @@ use quick_xml::events::{BytesStart, Event};
 use super::{MATHML_NS, XmlNode, escape_xml};
 use crate::docx::reader::util::local_name;
 use crate::error::{OoxmlError, OoxmlResult};
+use crate::xml_util::{resolve_general_ref, unescape_text};
 
 /// Reads the math element whose `Start` event (`start`) has just been consumed
 /// by the paragraph reader, returning `(mathml, is_display)`.
@@ -63,7 +64,12 @@ pub(super) fn read_node(reader: &mut Reader<&[u8]>, tag: &str) -> OoxmlResult<Xm
                 });
             }
             Ok(Event::Text(ref t)) => {
-                if let Ok(s) = t.unescape() {
+                if let Ok(s) = unescape_text(t) {
+                    node.text.push_str(&s);
+                }
+            }
+            Ok(Event::GeneralRef(ref r)) => {
+                if let Ok(s) = resolve_general_ref(r) {
                     node.text.push_str(&s);
                 }
             }

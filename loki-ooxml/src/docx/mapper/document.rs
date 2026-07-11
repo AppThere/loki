@@ -10,9 +10,7 @@ use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::document::Document;
 use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
-use loki_doc_model::layout::page::{
-    PageLayout, PageMargins, PageOrientation, PageSize, SectionColumns,
-};
+use loki_doc_model::layout::page::{PageLayout, PageMargins, PageOrientation, PageSize};
 use loki_doc_model::layout::section::{Section, SectionStart};
 use loki_doc_model::meta::core::DocumentMeta;
 use loki_doc_model::settings::DocumentSettings;
@@ -70,10 +68,8 @@ fn map_section_start(section_type: Option<&str>) -> SectionStart {
     }
 }
 
-/// Converts a [`DocxSectPr`] to a [`PageLayout`].
-///
-/// Falls back to A4 portrait with 72pt margins when no `w:sectPr` is
-/// present (the OOXML default assumption for simple documents).
+/// Converts a [`DocxSectPr`] to a [`PageLayout`]. Falls back to A4 portrait with
+/// 72pt margins when no `w:sectPr` is present (the OOXML default for simple docs).
 fn map_page_layout(sect_pr: Option<&DocxSectPr>) -> PageLayout {
     let Some(sp) = sect_pr else {
         return PageLayout {
@@ -117,16 +113,8 @@ fn map_page_layout(sect_pr: Option<&DocxSectPr>) -> PageLayout {
         };
     }
 
-    // Multi-column layout: only meaningful for two or more columns.
-    if let Some(ref cols) = sp.cols
-        && cols.num >= 2
-    {
-        layout.columns = Some(SectionColumns {
-            count: u8::try_from(cols.num.clamp(2, i32::from(u8::MAX))).unwrap_or(2),
-            gap: Points::new(f64::from(cols.space) / 20.0),
-            separator: cols.sep,
-        });
-    }
+    // Multi-column layout, including unequal `w:equalWidth="0"` widths.
+    layout.columns = super::document_cols::map_columns(sp.cols.as_ref());
 
     // Page numbering: format (roman/alpha) and restart value from w:pgNumType.
     layout.page_number_format = sp.pg_num_fmt.as_deref().map(map_page_num_fmt);
@@ -384,6 +372,7 @@ pub(crate) fn map_document(
                             &mut current_blocks,
                         )),
                         start: map_section_start(sp.section_type.as_deref()),
+                        page_style: None,
                         extensions: ExtensionBag::default(),
                     });
                 }
@@ -392,7 +381,6 @@ pub(crate) fn map_document(
                 let block = map_table(t, &mut ctx);
                 current_blocks.push(block);
             }
-            DocxBodyChild::Sdt => {}
         }
     }
 
@@ -413,6 +401,7 @@ pub(crate) fn map_document(
                 .as_ref()
                 .and_then(|sp| sp.section_type.as_deref()),
         ),
+        page_style: None,
         extensions: ExtensionBag::default(),
     });
 
@@ -421,11 +410,11 @@ pub(crate) fn map_document(
     // ── 6. Metadata ────────────────────────────────────────────────────────
     let meta = map_meta(core_props);
 
-    let doc_settings = raw_settings.and_then(|s| {
-        #[allow(clippy::cast_precision_loss)] // twips are small values; f32 precision is sufficient
-        s.default_tab_stop.map(|twips| DocumentSettings {
-            default_tab_stop_pt: twips as f32 / 20.0,
-        })
+    let tab = raw_settings.and_then(|s| s.default_tab_stop);
+    #[allow(clippy::cast_precision_loss)] // twips are small; f32 precision is sufficient
+    let doc_settings = tab.map(|twips| DocumentSettings {
+        default_tab_stop_pt: twips as f32 / 20.0,
+        ..DocumentSettings::default()
     });
 
     let document = Document {
@@ -444,168 +433,5 @@ pub(crate) fn map_document(
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::docx::model::document::{DocxBody, DocxDocument};
-    use crate::docx::model::paragraph::{DocxPPr, DocxParagraph, DocxPgMar, DocxPgSz, DocxSectPr};
-    use crate::docx::model::styles::DocxStyles;
-    use loki_doc_model::layout::page::PageSize;
-
-    fn empty_doc() -> DocxDocument {
-        DocxDocument {
-            body: DocxBody {
-                children: vec![],
-                final_sect_pr: None,
-            },
-        }
-    }
-
-    #[test]
-    fn section_type_maps_to_section_start() {
-        assert_eq!(
-            map_section_start(Some("continuous")),
-            SectionStart::Continuous
-        );
-        assert_eq!(map_section_start(Some("evenPage")), SectionStart::EvenPage);
-        assert_eq!(map_section_start(Some("oddPage")), SectionStart::OddPage);
-        assert_eq!(map_section_start(Some("nextPage")), SectionStart::NewPage);
-        // Absent / unknown → the default (nextPage).
-        assert_eq!(map_section_start(None), SectionStart::NewPage);
-    }
-
-    fn sect_pr_a4() -> DocxSectPr {
-        DocxSectPr {
-            pg_sz: Some(DocxPgSz {
-                w: 11906,
-                h: 16838,
-                orient: None,
-            }),
-            pg_mar: Some(DocxPgMar {
-                top: 1440,
-                bottom: 1440,
-                left: 1440,
-                right: 1440,
-                header: 720,
-                footer: 720,
-                gutter: 0,
-            }),
-            header_refs: vec![],
-            footer_refs: vec![],
-            title_page: false,
-            cols: None,
-            pg_num_fmt: None,
-            pg_num_start: None,
-            section_type: None,
-        }
-    }
-
-    fn run_map(
-        doc: &DocxDocument,
-        final_sect: Option<DocxSectPr>,
-    ) -> (Document, Vec<OoxmlWarning>) {
-        let mut d = doc.clone();
-        d.body.final_sect_pr = final_sect;
-        map_document(
-            &d,
-            &DocxStyles::default(),
-            None,
-            None,
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-            None,
-            None,
-            &DocxImportOptions::default(),
-        )
-    }
-
-    #[test]
-    fn single_section_produced_for_no_section_breaks() {
-        let (doc, _) = run_map(&empty_doc(), Some(sect_pr_a4()));
-        assert_eq!(doc.sections.len(), 1);
-    }
-
-    #[test]
-    fn two_sections_when_mid_document_sect_pr() {
-        let sect_pr = sect_pr_a4();
-        let para_with_break = DocxBodyChild::Paragraph(DocxParagraph {
-            ppr: Some(DocxPPr {
-                sect_pr: Some(sect_pr_a4()),
-                ..Default::default()
-            }),
-            children: vec![],
-        });
-        let doc = DocxDocument {
-            body: DocxBody {
-                children: vec![para_with_break],
-                final_sect_pr: None,
-            },
-        };
-        let (mapped, _) = map_document(
-            &doc,
-            &DocxStyles::default(),
-            None,
-            None,
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-            None,
-            None,
-            &DocxImportOptions::default(),
-        );
-        assert_eq!(mapped.sections.len(), 2);
-    }
-
-    #[test]
-    fn a4_defaults_when_no_sect_pr() {
-        let (doc, _) = run_map(&empty_doc(), None);
-        assert_eq!(doc.sections.len(), 1);
-        let sz = &doc.sections[0].layout.page_size;
-        // A4: 595.28 × 841.89 pt
-        assert!((sz.width.value() - PageSize::a4().width.value()).abs() < 0.1);
-    }
-
-    #[test]
-    fn core_props_title_mapped() {
-        let mut cp = loki_opc::CoreProperties::default();
-        cp.title = Some("My Document".into());
-        let doc = DocxDocument {
-            body: DocxBody {
-                children: vec![],
-                final_sect_pr: None,
-            },
-        };
-        let (mapped, _) = map_document(
-            &doc,
-            &DocxStyles::default(),
-            None,
-            None,
-            None,
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-            &HashMap::new(),
-            None,
-            Some(&cp),
-            &DocxImportOptions::default(),
-        );
-        assert_eq!(mapped.meta.title.as_deref(), Some("My Document"));
-    }
-
-    #[test]
-    fn landscape_orientation_detected() {
-        let mut sp = sect_pr_a4();
-        if let Some(ref mut pg_sz) = sp.pg_sz {
-            pg_sz.orient = Some("landscape".into());
-        }
-        let (doc, _) = run_map(&empty_doc(), Some(sp));
-        assert_eq!(
-            doc.sections[0].layout.orientation,
-            PageOrientation::Landscape
-        );
-    }
-}
+#[path = "document_tests.rs"]
+mod tests;

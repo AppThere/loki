@@ -102,10 +102,12 @@ pub struct DocumentViewProps {
     /// mode are unaffected.
     #[props(default = 1.0)]
     pub zoom: f64,
-    /// Called with `(page_index, x_pt, y_pt)` in layout points when the user
-    /// clicks a page tile in **paginated** mode. The caller performs the hit test
-    /// and updates cursor state.
-    pub on_tile_click: EventHandler<(usize, f32, f32)>,
+    /// Called with `(page_index, x_pt, y_pt, open_link_modifier)` in layout
+    /// points when the user clicks a page tile in **paginated** mode. The caller
+    /// performs the hit test and updates cursor state; when `open_link_modifier`
+    /// is `true` (Ctrl/Cmd held) it opens a hyperlink under the point instead
+    /// (feature 5.11).
+    pub on_tile_click: EventHandler<(usize, f32, f32, bool)>,
     /// Called with `(block_index, byte_offset)` when the user clicks in
     /// **reflow** mode. This component owns the reflow layout, so it hit-tests
     /// the click itself and reports the resolved document position.

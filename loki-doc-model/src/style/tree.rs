@@ -27,6 +27,18 @@ impl StyleCatalog {
             .collect()
     }
 
+    /// The breadcrumb path to paragraph style `id`: its ancestor chain in
+    /// **root-first** order, ending at `id` itself (e.g. `[Normal, Body, Quote]`).
+    /// The Compact tree view degrades to this breadcrumb + a drill-down into
+    /// [`para_children`](Self::para_children) (Spec 05 §7/§11, M7). Cycle-guarded
+    /// via [`para_ancestors`](Self::para_ancestors).
+    #[must_use]
+    pub fn para_breadcrumb(&self, id: &StyleId) -> Vec<StyleId> {
+        let mut chain = self.para_ancestors(id);
+        chain.reverse();
+        chain
+    }
+
     /// All transitive descendants of paragraph style `id` (breadth-first, nearest
     /// generation first), excluding `id` itself. Cycle- and depth-guarded.
     #[must_use]

@@ -20,10 +20,13 @@
 //! the head of the last. Word's behaviour falls out naturally: the surviving
 //! paragraph keeps the *first* block's style.
 
-use loro::{ContainerTrait, LoroDoc};
+use loro::{ContainerTrait, LoroDoc, LoroText, LoroValue, TextDelta};
 
 use super::nested::{BlockPath, PathStep, resolve_block_list, text_for_path};
 use super::{MutationError, delete_text_at, merge_block_at};
+use crate::content::revision_ops::{DeleteAction, delete_action};
+use crate::loro_schema::MARK_REVISION;
+use crate::style::props::revision::{RevisionMark, decode, encode};
 
 /// The block index of `path`'s leaf within its container (the root index for
 /// a top-level path, the leaf step's block index for a nested one).
@@ -74,6 +77,35 @@ fn same_container(a: &BlockPath, b: &BlockPath) -> bool {
     }
 }
 
+/// A selection's two endpoints in document order within one container. Each is a
+/// `(path, byte_offset, leaf_index)` triple with a validated char-boundary offset.
+type Ordered<'p> = ((&'p BlockPath, usize, usize), (&'p BlockPath, usize, usize));
+
+/// Validates the two endpoints share a container and normalizes them into
+/// document order (returning each with its leaf block index).
+///
+/// The byte offsets are validated against the actual block text lengths BEFORE
+/// any mutation: a stale offset (e.g. a concurrent remote edit that shortened a
+/// paragraph) is rejected up front instead of surfacing mid-way through a
+/// multi-block delete and leaving the document half-applied.
+fn normalize_selection<'p>(
+    loro: &LoroDoc,
+    a: (&'p BlockPath, usize),
+    b: (&'p BlockPath, usize),
+) -> Result<Ordered<'p>, MutationError> {
+    if !same_container(a.0, b.0) {
+        return Err(MutationError::CrossContainerSelection);
+    }
+    let ((sp, sb), (ep, eb)) = if (leaf_index(a.0), a.1) <= (leaf_index(b.0), b.1) {
+        (a, b)
+    } else {
+        (b, a)
+    };
+    validate_offset(loro, sp, sb)?;
+    validate_offset(loro, ep, eb)?;
+    Ok(((sp, sb, leaf_index(sp)), (ep, eb, leaf_index(ep))))
+}
+
 /// Deletes the text between two positions (in either order), collapsing any
 /// blocks the range spans. Returns the collapsed cursor position — the
 /// ordered start endpoint.
@@ -94,28 +126,8 @@ pub fn delete_selection_at(
     a: (&BlockPath, usize),
     b: (&BlockPath, usize),
 ) -> Result<(BlockPath, usize), MutationError> {
-    if !same_container(a.0, b.0) {
-        return Err(MutationError::CrossContainerSelection);
-    }
-    // Normalize the endpoints into document order within the container.
-    let ((start_path, start_byte), (end_path, end_byte)) =
-        if (leaf_index(a.0), a.1) <= (leaf_index(b.0), b.1) {
-            (a, b)
-        } else {
-            (b, a)
-        };
-    let start_leaf = leaf_index(start_path);
-    let end_leaf = leaf_index(end_path);
-
-    // Validate the byte offsets against the actual block text lengths BEFORE
-    // any mutation. Without this, a stale offset (e.g. a concurrent remote edit
-    // that shortened a paragraph) would only surface when the final
-    // `delete_text_at` runs — after every `merge_block_at` has already mutated
-    // the document, leaving it half-applied — and `join + end_byte - start_byte`
-    // could underflow `usize`. Validating start against its (full) block also
-    // guarantees `start_byte <= join`, so that subtraction cannot underflow.
-    validate_offset(loro, start_path, start_byte)?;
-    validate_offset(loro, end_path, end_byte)?;
+    let ((start_path, start_byte, start_leaf), (end_path, end_byte, end_leaf)) =
+        normalize_selection(loro, a, b)?;
 
     // Single-block selection: one plain text deletion.
     if start_leaf == end_leaf {
@@ -148,4 +160,114 @@ pub fn delete_selection_at(
     }
     delete_text_at(loro, start_path, start_byte, join + end_byte - start_byte)?;
     Ok((start_path.clone(), start_byte))
+}
+
+/// Deletes the selection under **track changes** (Review tab, 4a.2): instead of
+/// removing text, each selected run is struck through (a `MARK_REVISION`
+/// deletion) — except the author's own tracked insertions, which are
+/// hard-deleted (un-typed), and already-struck text, which is skipped
+/// ([`delete_action`]). Block boundaries are **preserved** (no merge), so the
+/// paragraph marks between selected blocks survive; deleting a paragraph mark
+/// itself is not modelled (`TODO(review-selection-delete)`).
+///
+/// With `deletion` = `None` (tracking off) this is exactly
+/// [`delete_selection_at`]. Returns the collapsed cursor at the selection start.
+///
+/// # Errors
+///
+/// Same as [`delete_selection_at`] (cross-container / stale-offset / non-text
+/// block inside the range are all rejected before any mutation).
+pub fn tracked_delete_selection_at(
+    loro: &LoroDoc,
+    a: (&BlockPath, usize),
+    b: (&BlockPath, usize),
+    deletion: Option<&RevisionMark>,
+) -> Result<(BlockPath, usize), MutationError> {
+    let Some(mark) = deletion else {
+        return delete_selection_at(loro, a, b);
+    };
+    let ((start_path, start_byte, start_leaf), (end_path, end_byte, end_leaf)) =
+        normalize_selection(loro, a, b)?;
+
+    // Single-block selection: strike its `[start_byte, end_byte)`.
+    if start_leaf == end_leaf {
+        let text = text_for_path(loro, start_path)?;
+        strike_range(&text, start_byte, end_byte, mark)?;
+        return Ok((start_path.clone(), start_byte));
+    }
+
+    // Validate the whole range up front (same list, every block has text) so an
+    // unsupported block inside the selection rejects before any mutation.
+    let (start_list, _) = resolve_block_list(loro, start_path)?;
+    let (end_list, _) = resolve_block_list(loro, end_path)?;
+    if start_list.id() != end_list.id() {
+        return Err(MutationError::CrossContainerSelection);
+    }
+    for leaf in start_leaf..=end_leaf {
+        text_for_path(loro, &with_leaf(start_path, leaf))?;
+    }
+
+    // Strike each block's slice: the first block's tail, every middle block in
+    // full, and the last block's head. No merge, so the paragraph marks stay.
+    for leaf in start_leaf..=end_leaf {
+        let text = text_for_path(loro, &with_leaf(start_path, leaf))?;
+        let (lo, hi) = if leaf == start_leaf {
+            (start_byte, text.len_utf8())
+        } else if leaf == end_leaf {
+            (0, end_byte)
+        } else {
+            (0, text.len_utf8())
+        };
+        strike_range(&text, lo, hi, mark)?;
+    }
+    Ok((start_path.clone(), start_byte))
+}
+
+/// Strikes the run segments intersecting `[range_start, range_end)` in one text
+/// container as tracked deletions, applying [`delete_action`] per segment: the
+/// author's own tracked insertion is hard-deleted, an already-struck deletion is
+/// left alone, and everything else is marked struck with `mark`. Ops are applied
+/// back-to-front so a hard delete never shifts an earlier segment's offset.
+fn strike_range(
+    text: &LoroText,
+    range_start: usize,
+    range_end: usize,
+    mark: &RevisionMark,
+) -> Result<(), MutationError> {
+    // Collect (lo, hi, action) for each marked segment before mutating.
+    let mut ops: Vec<(usize, usize, DeleteAction)> = Vec::new();
+    let mut byte_pos = 0usize;
+    for delta in text.to_delta() {
+        if let TextDelta::Insert { insert, attributes } = delta {
+            let (seg_start, seg_end) = (byte_pos, byte_pos + insert.len());
+            byte_pos = seg_end;
+            let (lo, hi) = (seg_start.max(range_start), seg_end.min(range_end));
+            if lo >= hi {
+                continue;
+            }
+            let existing = attributes
+                .as_ref()
+                .and_then(|a| a.get(MARK_REVISION))
+                .and_then(|v| match v {
+                    LoroValue::String(s) => decode(s.as_str()),
+                    _ => None,
+                })
+                .map(|m| m.kind);
+            let action = delete_action(existing, true);
+            if !matches!(action, DeleteAction::Skip) {
+                ops.push((lo, hi, action));
+            }
+        }
+    }
+    let encoded = encode(mark);
+    for (lo, hi, action) in ops.into_iter().rev() {
+        match action {
+            DeleteAction::HardDelete => text.delete_utf8(lo, hi - lo)?,
+            DeleteAction::MarkDeleted => {
+                text.mark_utf8(lo..hi, MARK_REVISION, LoroValue::from(encoded.clone()))?;
+            }
+            DeleteAction::Skip => {}
+        }
+    }
+    Ok(())
 }

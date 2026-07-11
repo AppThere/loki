@@ -9,6 +9,7 @@
 
 use crate::content::attr::ExtensionBag;
 use crate::meta::LanguageTag;
+use crate::style::props::revision::RevisionMark;
 use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 
@@ -208,6 +209,15 @@ pub struct CharProps {
     /// ODF: `text:a href`. OOXML: `w:hyperlink r:id`.
     pub hyperlink: Option<String>,
 
+    // ── Tracked changes ───────────────────────────────────────────────────
+    /// A live tracked-change (revision) mark: the run was inserted or deleted
+    /// under track-changes (Review tab). Run-level metadata, **not** a style
+    /// property — it is never inherited through the style chain (omitted from
+    /// [`merged_with_parent`]). OOXML `w:ins`/`w:del`; ODF change regions.
+    ///
+    /// [`merged_with_parent`]: Self::merged_with_parent
+    pub revision: Option<RevisionMark>,
+
     // ── Extensions ────────────────────────────────────────────────────────
     /// Format-specific properties not representable in the above fields.
     pub extensions: ExtensionBag,
@@ -260,34 +270,5 @@ impl CharProps {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_has_all_none() {
-        let cp = CharProps::default();
-        assert!(cp.font_name.is_none());
-        assert!(cp.bold.is_none());
-        assert!(cp.color.is_none());
-    }
-
-    #[test]
-    fn merge_child_wins_for_some() {
-        let parent = CharProps {
-            font_name: Some("Times New Roman".into()),
-            bold: Some(false),
-            font_size: Some(Points::new(12.0)),
-            ..Default::default()
-        };
-        let child = CharProps {
-            font_name: Some("Arial".into()),
-            bold: Some(true),
-            ..Default::default()
-        };
-        let merged = child.merged_with_parent(&parent);
-        assert_eq!(merged.font_name.as_deref(), Some("Arial"));
-        assert_eq!(merged.bold, Some(true));
-        // font_size inherited from parent
-        assert_eq!(merged.font_size, Some(Points::new(12.0)));
-    }
-}
+#[path = "char_props_tests.rs"]
+mod tests;

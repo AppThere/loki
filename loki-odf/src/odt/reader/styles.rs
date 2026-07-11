@@ -14,16 +14,20 @@ use quick_xml::Reader;
 use quick_xml::events::Event;
 
 use crate::error::{OdfError, OdfResult};
-use crate::odt::model::document::{OdfHeaderFooterProps, OdfMasterPage, OdfPageLayout};
+use crate::odt::model::document::OdfMasterPage;
 use crate::odt::model::list_styles::{OdfListLevel, OdfListLevelKind, OdfListStyle};
-use crate::odt::model::paragraph::OdfParagraph;
 use crate::odt::model::styles::{
-    OdfCellProps, OdfDefaultStyle, OdfDropCap, OdfGraphicWrap, OdfParaProps, OdfStyle,
-    OdfStyleFamily, OdfStylesheet, OdfTabStop, OdfTextProps,
+    OdfCellProps, OdfDefaultStyle, OdfGraphicWrap, OdfParaProps, OdfStyle, OdfStyleFamily,
+    OdfStylesheet, OdfTextProps,
 };
-use crate::odt::reader::columns::parse_plp_columns;
-use crate::odt::reader::document::read_paragraph;
 use crate::xml_util::local_attr_val;
+
+#[path = "styles_list.rs"]
+mod list;
+#[path = "styles_page.rs"]
+mod page;
+#[path = "styles_para.rs"]
+mod para_props;
 
 // ── Public entry point ─────────────────────────────────────────────────────────
 
@@ -131,15 +135,21 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
                     b"page-layout" => {
                         let name = local_attr_val(e, b"name").unwrap_or_default();
                         drop(e);
-                        let layout = parse_page_layout(&mut reader, name)?;
+                        let layout = page::parse_page_layout(&mut reader, name)?;
                         sheet.page_layouts.push(layout);
                     }
                     b"master-page" => {
                         let name = local_attr_val(e, b"name").unwrap_or_default();
+                        let display_name = local_attr_val(e, b"display-name");
                         let page_layout_name =
                             local_attr_val(e, b"page-layout-name").unwrap_or_default();
                         drop(e);
-                        let master = parse_master_page(&mut reader, name, page_layout_name)?;
+                        let master = page::parse_master_page(
+                            &mut reader,
+                            name,
+                            display_name,
+                            page_layout_name,
+                        )?;
                         sheet.master_pages.push(master);
                     }
                     _ => {
@@ -197,20 +207,16 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
                     }
                     b"master-page" => {
                         // Self-closing <style:master-page .../> — no header/footer content.
-                        // TODO(odf-master-page): style:master-page-name transitions not implemented.
+                        // (Master-page transitions are applied in `document/sections.rs`.)
                         let name = local_attr_val(e, b"name").unwrap_or_default();
+                        let display_name = local_attr_val(e, b"display-name");
                         let page_layout_name =
                             local_attr_val(e, b"page-layout-name").unwrap_or_default();
-                        sheet.master_pages.push(OdfMasterPage {
+                        sheet.master_pages.push(OdfMasterPage::header_footer_less(
                             name,
+                            display_name,
                             page_layout_name,
-                            header: None,
-                            footer: None,
-                            header_first: None,
-                            footer_first: None,
-                            header_even: None,
-                            footer_even: None,
-                        });
+                        ));
                     }
                     _ => {}
                 }
@@ -271,9 +277,9 @@ fn parse_style_props(
                 let local = e.local_name().into_inner().to_vec();
                 match local.as_slice() {
                     b"paragraph-properties" => {
-                        let pp = parse_para_props_element(e);
+                        let pp = para_props::parse_para_props_element(e);
                         drop(e);
-                        let pp = parse_para_props_with_children(reader, pp)?;
+                        let pp = para_props::parse_para_props_with_children(reader, pp)?;
                         para_props = Some(pp);
                     }
                     b"text-properties" => {
@@ -287,10 +293,8 @@ fn parse_style_props(
                         drop(e);
                         skip_element(reader, b"table-column-properties")?;
                     }
-                    // COMPAT(odf): style:table-cell-properties may appear as
-                    // either a self-closing element (Empty event) or with child
-                    // elements (Start/End). Most producers use the self-closing
-                    // form, but handle the Start form for robustness.
+                    // COMPAT(odf): style:table-cell-properties may be self-closing
+                    // (Empty) or have children (Start/End); handle both.
                     b"table-cell-properties" => {
                         cell_props = Some(parse_cell_props_element(e));
                         drop(e);
@@ -312,7 +316,7 @@ fn parse_style_props(
                 let local = e.local_name().into_inner();
                 match local {
                     b"paragraph-properties" => {
-                        para_props = Some(parse_para_props_element(e));
+                        para_props = Some(para_props::parse_para_props_element(e));
                     }
                     b"text-properties" => {
                         text_props = Some(parse_text_props_attrs(e));
@@ -412,139 +416,9 @@ fn parse_cell_props_element(e: &quick_xml::events::BytesStart<'_>) -> OdfCellPro
     props
 }
 
-/// Build an [`OdfParaProps`] from the attributes of a
-/// `style:paragraph-properties` element.
-fn parse_para_props_element(e: &quick_xml::events::BytesStart<'_>) -> OdfParaProps {
-    OdfParaProps {
-        margin_top: local_attr_val(e, b"margin-top"),
-        margin_bottom: local_attr_val(e, b"margin-bottom"),
-        margin_left: local_attr_val(e, b"margin-left"),
-        margin_right: local_attr_val(e, b"margin-right"),
-        text_indent: local_attr_val(e, b"text-indent"),
-        line_height: local_attr_val(e, b"line-height"),
-        line_height_at_least: local_attr_val(e, b"line-height-at-least"),
-        text_align: local_attr_val(e, b"text-align"),
-        keep_together: local_attr_val(e, b"keep-together"),
-        keep_with_next: local_attr_val(e, b"keep-with-next"),
-        widows: local_attr_val(e, b"widows").and_then(|s| s.parse().ok()),
-        orphans: local_attr_val(e, b"orphans").and_then(|s| s.parse().ok()),
-        break_before: local_attr_val(e, b"break-before"),
-        break_after: local_attr_val(e, b"break-after"),
-        border: local_attr_val(e, b"border"),
-        border_top: local_attr_val(e, b"border-top"),
-        border_bottom: local_attr_val(e, b"border-bottom"),
-        border_left: local_attr_val(e, b"border-left"),
-        border_right: local_attr_val(e, b"border-right"),
-        padding: local_attr_val(e, b"padding"),
-        background_color: local_attr_val(e, b"background-color"),
-        tab_stops: Vec::new(),
-        writing_mode: local_attr_val(e, b"writing-mode"),
-        drop_cap: None,
-    }
-}
-
-/// Continue reading children of `style:paragraph-properties` (for tab stops),
-/// returning when the matching end tag is found.
-fn parse_para_props_with_children(
-    reader: &mut Reader<&[u8]>,
-    mut pp: OdfParaProps,
-) -> OdfResult<OdfParaProps> {
-    let mut buf = Vec::new();
-
-    loop {
-        buf.clear();
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => {
-                let local = e.local_name().into_inner().to_vec();
-                if local == b"tab-stops" {
-                    drop(e);
-                    pp.tab_stops = parse_tab_stops(reader)?;
-                } else {
-                    drop(e);
-                    skip_element(reader, &local)?;
-                }
-            }
-            Ok(Event::Empty(ref e)) => match e.local_name().into_inner() {
-                b"tab-stop" => {
-                    let position = local_attr_val(e, b"position").unwrap_or_default();
-                    let tab_type = local_attr_val(e, b"type");
-                    let leader_style = local_attr_val(e, b"leader-style");
-                    pp.tab_stops.push(OdfTabStop {
-                        position,
-                        tab_type,
-                        leader_style,
-                    });
-                }
-                b"drop-cap" => {
-                    pp.drop_cap = Some(OdfDropCap {
-                        lines: local_attr_val(e, b"lines"),
-                        length: local_attr_val(e, b"length"),
-                        distance: local_attr_val(e, b"distance"),
-                    });
-                }
-                _ => {}
-            },
-            Ok(Event::End(ref e)) => {
-                if e.local_name().into_inner() == b"paragraph-properties" {
-                    break;
-                }
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OdfError::Xml {
-                    part: "styles.xml".to_string(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-    }
-
-    Ok(pp)
-}
-
-/// Parse `style:tab-stops` children until `</style:tab-stops>`.
-fn parse_tab_stops(reader: &mut Reader<&[u8]>) -> OdfResult<Vec<OdfTabStop>> {
-    let mut buf = Vec::new();
-    let mut stops = Vec::new();
-
-    loop {
-        buf.clear();
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e)) => {
-                if e.local_name().into_inner() == b"tab-stop" {
-                    let position = local_attr_val(e, b"position").unwrap_or_default();
-                    let tab_type = local_attr_val(e, b"type");
-                    let leader_style = local_attr_val(e, b"leader-style");
-                    stops.push(OdfTabStop {
-                        position,
-                        tab_type,
-                        leader_style,
-                    });
-                }
-            }
-            Ok(Event::End(ref e)) => {
-                if e.local_name().into_inner() == b"tab-stops" {
-                    break;
-                }
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OdfError::Xml {
-                    part: "styles.xml".to_string(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-    }
-
-    Ok(stops)
-}
-
 /// Build an [`OdfTextProps`] from the attributes of a
 /// `style:text-properties` element.
-fn parse_text_props_attrs(e: &quick_xml::events::BytesStart<'_>) -> OdfTextProps {
+pub(super) fn parse_text_props_attrs(e: &quick_xml::events::BytesStart<'_>) -> OdfTextProps {
     OdfTextProps {
         font_name: local_attr_val(e, b"font-name"),
         font_family: local_attr_val(e, b"font-family"),
@@ -599,7 +473,7 @@ fn parse_list_style(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfLi
                         let bullet_char = local_attr_val(e, b"bullet-char").unwrap_or_default();
                         let style_name = local_attr_val(e, b"style-name");
                         drop(e);
-                        let level = parse_list_level_props(
+                        let level = list::parse_list_level_props(
                             reader,
                             b"list-level-style-bullet",
                             level_num.saturating_sub(1),
@@ -610,6 +484,7 @@ fn parse_list_style(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfLi
                         )?;
                         levels.push(level);
                     }
+                    b"list-level-style-image" => levels.push(list::parse_image_level(reader, e)?),
                     b"list-level-style-number" => {
                         let level_num: u8 = local_attr_val(e, b"level")
                             .and_then(|s| s.parse().ok())
@@ -624,7 +499,7 @@ fn parse_list_style(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfLi
                             .unwrap_or(1);
                         let style_name = local_attr_val(e, b"style-name");
                         drop(e);
-                        let level = parse_list_level_props(
+                        let level = list::parse_list_level_props(
                             reader,
                             b"list-level-style-number",
                             level_num.saturating_sub(1),
@@ -644,7 +519,7 @@ fn parse_list_style(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfLi
                             .and_then(|s| s.parse().ok())
                             .unwrap_or(1);
                         drop(e);
-                        let level = parse_list_level_props(
+                        let level = list::parse_list_level_props(
                             reader,
                             b"list-level-style-none",
                             level_num.saturating_sub(1),
@@ -683,6 +558,7 @@ fn parse_list_style(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfLi
                             text_props: None,
                         });
                     }
+                    b"list-level-style-image" => levels.push(list::image_level_empty(e)),
                     b"list-level-style-number" => {
                         let level_num: u8 = local_attr_val(e, b"level")
                             .and_then(|s| s.parse().ok())
@@ -736,416 +612,6 @@ fn parse_list_style(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfLi
     }
 
     Ok(OdfListStyle { name, levels })
-}
-
-/// Parse the children of a `text:list-level-style-*` element:
-/// `style:list-level-properties` and optionally `style:text-properties`.
-fn parse_list_level_props(
-    reader: &mut Reader<&[u8]>,
-    end_local: &[u8],
-    level: u8,
-    kind: OdfListLevelKind,
-) -> OdfResult<OdfListLevel> {
-    let mut buf = Vec::new();
-    let mut out = OdfListLevel {
-        level,
-        kind,
-        legacy_space_before: None,
-        legacy_min_label_width: None,
-        legacy_min_label_distance: None,
-        label_followed_by: None,
-        list_tab_stop_position: None,
-        text_indent: None,
-        margin_left: None,
-        text_props: None,
-    };
-
-    loop {
-        buf.clear();
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => {
-                let local = e.local_name().into_inner().to_vec();
-                match local.as_slice() {
-                    b"list-level-properties" => {
-                        let mode = local_attr_val(e, b"list-level-position-and-space-mode");
-                        if mode.as_deref() == Some("label-alignment") {
-                            // read child style:list-level-label-alignment
-                            drop(e);
-                            parse_label_alignment_child(reader, &mut out)?;
-                        } else {
-                            // legacy ODF 1.1 attrs directly on the element
-                            out.legacy_space_before = local_attr_val(e, b"space-before");
-                            out.legacy_min_label_width = local_attr_val(e, b"min-label-width");
-                            out.legacy_min_label_distance =
-                                local_attr_val(e, b"min-label-distance");
-                            drop(e);
-                            skip_element(reader, b"list-level-properties")?;
-                        }
-                    }
-                    b"text-properties" => {
-                        let tp = parse_text_props_attrs(e);
-                        drop(e);
-                        skip_element(reader, b"text-properties")?;
-                        out.text_props = Some(tp);
-                    }
-                    _ => {
-                        drop(e);
-                        skip_element(reader, &local)?;
-                    }
-                }
-            }
-            Ok(Event::Empty(ref e)) => {
-                let local = e.local_name().into_inner().to_vec();
-                match local.as_slice() {
-                    b"list-level-properties" => {
-                        let mode = local_attr_val(e, b"list-level-position-and-space-mode");
-                        if mode.as_deref() != Some("label-alignment") {
-                            out.legacy_space_before = local_attr_val(e, b"space-before");
-                            out.legacy_min_label_width = local_attr_val(e, b"min-label-width");
-                            out.legacy_min_label_distance =
-                                local_attr_val(e, b"min-label-distance");
-                        }
-                        // label-alignment on an empty element has no child
-                        // to read; nothing extra to do.
-                    }
-                    b"text-properties" => {
-                        out.text_props = Some(parse_text_props_attrs(e));
-                    }
-                    _ => {}
-                }
-            }
-            Ok(Event::End(ref e)) => {
-                if e.local_name().into_inner() == end_local {
-                    break;
-                }
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OdfError::Xml {
-                    part: "styles.xml".to_string(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-    }
-
-    Ok(out)
-}
-
-/// Inside a `style:list-level-properties` with `label-alignment` mode, read
-/// the `style:list-level-label-alignment` child element for positioning attrs.
-fn parse_label_alignment_child(
-    reader: &mut Reader<&[u8]>,
-    level: &mut OdfListLevel,
-) -> OdfResult<()> {
-    let mut buf = Vec::new();
-
-    loop {
-        buf.clear();
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Empty(ref e)) => {
-                if e.local_name().into_inner() == b"list-level-label-alignment" {
-                    level.label_followed_by = local_attr_val(e, b"label-followed-by");
-                    level.list_tab_stop_position = local_attr_val(e, b"list-tab-stop-position");
-                    level.text_indent = local_attr_val(e, b"text-indent");
-                    level.margin_left = local_attr_val(e, b"margin-left");
-                }
-            }
-            Ok(Event::Start(ref e)) => {
-                if e.local_name().into_inner() == b"list-level-label-alignment" {
-                    level.label_followed_by = local_attr_val(e, b"label-followed-by");
-                    level.list_tab_stop_position = local_attr_val(e, b"list-tab-stop-position");
-                    level.text_indent = local_attr_val(e, b"text-indent");
-                    level.margin_left = local_attr_val(e, b"margin-left");
-                    drop(e);
-                    skip_element(reader, b"list-level-label-alignment")?;
-                } else {
-                    let local = e.local_name().into_inner().to_vec();
-                    drop(e);
-                    skip_element(reader, &local)?;
-                }
-            }
-            Ok(Event::End(ref e)) => {
-                if e.local_name().into_inner() == b"list-level-properties" {
-                    break;
-                }
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OdfError::Xml {
-                    part: "styles.xml".to_string(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-    }
-
-    Ok(())
-}
-
-// ── Page layout parsing ────────────────────────────────────────────────────────
-
-/// Parse a `style:page-layout` element (Start event already consumed).
-fn parse_page_layout(reader: &mut Reader<&[u8]>, name: String) -> OdfResult<OdfPageLayout> {
-    let mut buf = Vec::new();
-    let mut layout = OdfPageLayout {
-        name,
-        page_width: None,
-        page_height: None,
-        margin_top: None,
-        margin_bottom: None,
-        margin_left: None,
-        margin_right: None,
-        print_orientation: None,
-        num_format: None,
-        columns: None,
-        header_props: None,
-        footer_props: None,
-    };
-
-    loop {
-        buf.clear();
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => {
-                let local = e.local_name().into_inner().to_vec();
-                match local.as_slice() {
-                    b"page-layout-properties" => {
-                        layout.page_width = local_attr_val(e, b"page-width");
-                        layout.page_height = local_attr_val(e, b"page-height");
-                        layout.margin_top = local_attr_val(e, b"margin-top");
-                        layout.margin_bottom = local_attr_val(e, b"margin-bottom");
-                        layout.margin_left = local_attr_val(e, b"margin-left");
-                        layout.margin_right = local_attr_val(e, b"margin-right");
-                        layout.print_orientation = local_attr_val(e, b"print-orientation");
-                        layout.num_format = local_attr_val(e, b"num-format");
-                        drop(e);
-                        // Scan children for `style:columns` rather than skipping.
-                        layout.columns = parse_plp_columns(reader)?;
-                    }
-                    b"header-style" => {
-                        drop(e);
-                        layout.header_props =
-                            Some(parse_header_footer_style(reader, b"header-style")?);
-                    }
-                    b"footer-style" => {
-                        drop(e);
-                        layout.footer_props =
-                            Some(parse_header_footer_style(reader, b"footer-style")?);
-                    }
-                    _ => {
-                        drop(e);
-                        skip_element(reader, &local)?;
-                    }
-                }
-            }
-            Ok(Event::Empty(ref e)) => {
-                let local = e.local_name().into_inner();
-                if local == b"page-layout-properties" {
-                    layout.page_width = local_attr_val(e, b"page-width");
-                    layout.page_height = local_attr_val(e, b"page-height");
-                    layout.margin_top = local_attr_val(e, b"margin-top");
-                    layout.margin_bottom = local_attr_val(e, b"margin-bottom");
-                    layout.margin_left = local_attr_val(e, b"margin-left");
-                    layout.margin_right = local_attr_val(e, b"margin-right");
-                    layout.print_orientation = local_attr_val(e, b"print-orientation");
-                    layout.num_format = local_attr_val(e, b"num-format");
-                }
-            }
-            Ok(Event::End(ref e)) => {
-                if e.local_name().into_inner() == b"page-layout" {
-                    break;
-                }
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OdfError::Xml {
-                    part: "styles.xml".to_string(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-    }
-
-    Ok(layout)
-}
-
-/// Parse the `style:header-footer-properties` child of a
-/// `style:header-style` / `style:footer-style` element.
-fn parse_header_footer_style(
-    reader: &mut Reader<&[u8]>,
-    end_local: &[u8],
-) -> OdfResult<OdfHeaderFooterProps> {
-    let mut buf = Vec::new();
-    let mut props = OdfHeaderFooterProps {
-        min_height: None,
-        margin: None,
-    };
-
-    loop {
-        buf.clear();
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e) | Event::Empty(ref e)) => {
-                if e.local_name().into_inner() == b"header-footer-properties" {
-                    props.min_height = local_attr_val(e, b"min-height");
-                    props.margin = local_attr_val(e, b"margin");
-                    if matches!(reader.read_event_into(&mut buf), Ok(Event::End(_))) {}
-                }
-            }
-            Ok(Event::End(ref e)) => {
-                if e.local_name().into_inner() == end_local {
-                    break;
-                }
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OdfError::Xml {
-                    part: "styles.xml".to_string(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-    }
-
-    Ok(props)
-}
-
-// ── Master page parsing ────────────────────────────────────────────────────────
-
-/// Parse a `style:master-page` element (Start event already consumed).
-///
-/// Handles all six header/footer variants:
-/// - `style:header` / `style:footer` — default (odd/right-page)
-/// - `style:header-first` / `style:footer-first` — first page only
-/// - `style:header-left` / `style:footer-left` — even/left pages
-///
-/// ODF 1.3 §16.9.
-fn parse_master_page(
-    reader: &mut Reader<&[u8]>,
-    name: String,
-    page_layout_name: String,
-) -> OdfResult<OdfMasterPage> {
-    let mut buf = Vec::new();
-    let mut header: Option<Vec<OdfParagraph>> = None;
-    let mut footer: Option<Vec<OdfParagraph>> = None;
-    let mut header_first: Option<Vec<OdfParagraph>> = None;
-    let mut footer_first: Option<Vec<OdfParagraph>> = None;
-    let mut header_even: Option<Vec<OdfParagraph>> = None;
-    let mut footer_even: Option<Vec<OdfParagraph>> = None;
-
-    loop {
-        buf.clear();
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => {
-                let local = e.local_name().into_inner().to_vec();
-                match local.as_slice() {
-                    b"header" => {
-                        drop(e);
-                        header = Some(parse_header_footer_paras(reader, b"header")?);
-                    }
-                    b"footer" => {
-                        drop(e);
-                        footer = Some(parse_header_footer_paras(reader, b"footer")?);
-                    }
-                    b"header-first" => {
-                        drop(e);
-                        header_first = Some(parse_header_footer_paras(reader, b"header-first")?);
-                    }
-                    b"footer-first" => {
-                        drop(e);
-                        footer_first = Some(parse_header_footer_paras(reader, b"footer-first")?);
-                    }
-                    b"header-left" => {
-                        drop(e);
-                        header_even = Some(parse_header_footer_paras(reader, b"header-left")?);
-                    }
-                    b"footer-left" => {
-                        drop(e);
-                        footer_even = Some(parse_header_footer_paras(reader, b"footer-left")?);
-                    }
-                    _ => {
-                        drop(e);
-                        skip_element(reader, &local)?;
-                    }
-                }
-            }
-            Ok(Event::End(ref e)) => {
-                if e.local_name().into_inner() == b"master-page" {
-                    break;
-                }
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OdfError::Xml {
-                    part: "styles.xml".to_string(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-    }
-
-    Ok(OdfMasterPage {
-        name,
-        page_layout_name,
-        header,
-        footer,
-        header_first,
-        footer_first,
-        header_even,
-        footer_even,
-    })
-}
-
-/// Collect paragraphs inside a `style:header`, `style:footer`, or their
-/// `-first` / `-left` variants.
-///
-/// Delegates to [`read_paragraph`] (the same full inline parser used for body
-/// content), so spans, fields (`text:page-number`, `text:date`, etc.), links,
-/// and notes are all captured correctly.
-fn parse_header_footer_paras(
-    reader: &mut Reader<&[u8]>,
-    end_local: &[u8],
-) -> OdfResult<Vec<OdfParagraph>> {
-    let mut buf = Vec::new();
-    let mut paras = Vec::new();
-
-    loop {
-        buf.clear();
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => {
-                let local = e.local_name().into_inner().to_vec();
-                match local.as_slice() {
-                    b"p" | b"h" => {
-                        let para = read_paragraph(reader, e)?;
-                        paras.push(para);
-                    }
-                    _ => {
-                        drop(e);
-                        skip_element(reader, &local)?;
-                    }
-                }
-            }
-            Ok(Event::End(ref e)) => {
-                if e.local_name().into_inner() == end_local {
-                    break;
-                }
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OdfError::Xml {
-                    part: "styles.xml".to_string(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-    }
-
-    Ok(paras)
 }
 
 // ── Auto-styles fast reader (content.xml) ─────────────────────────────────────
@@ -1294,261 +760,5 @@ pub(crate) fn skip_element(reader: &mut Reader<&[u8]>, end_local: &[u8]) -> OdfR
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn read_stylesheet_named_style_with_props() {
-        let xml = br#"<?xml version="1.0"?>
-<office:document-styles
-    xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
-    xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
-    xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
-    xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
-  <office:styles>
-    <style:style style:name="Text_20_Body" style:family="paragraph"
-                 style:display-name="Text Body">
-      <style:paragraph-properties fo:margin-top="0.2cm" fo:margin-bottom="0.2cm"/>
-      <style:text-properties fo:font-size="12pt" fo:font-weight="bold"/>
-    </style:style>
-  </office:styles>
-</office:document-styles>"#;
-
-        let sheet = read_stylesheet(xml, false).unwrap();
-        assert_eq!(sheet.named_styles.len(), 1);
-        let s = &sheet.named_styles[0];
-        assert_eq!(s.name, "Text_20_Body");
-        assert_eq!(s.display_name.as_deref(), Some("Text Body"));
-        assert_eq!(s.family, OdfStyleFamily::Paragraph);
-        assert!(!s.is_automatic);
-
-        let pp = s.para_props.as_ref().unwrap();
-        assert_eq!(pp.margin_top.as_deref(), Some("0.2cm"));
-        assert_eq!(pp.margin_bottom.as_deref(), Some("0.2cm"));
-
-        let tp = s.text_props.as_ref().unwrap();
-        assert_eq!(tp.font_size.as_deref(), Some("12pt"));
-        assert_eq!(tp.font_weight.as_deref(), Some("bold"));
-    }
-
-    #[test]
-    fn read_stylesheet_page_layout_num_format() {
-        // `style:num-format` on `style:page-layout-properties` carries the
-        // page-number numbering scheme.
-        let xml = br#"<?xml version="1.0"?>
-<office:document-styles
-    xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
-    xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
-    xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0">
-  <office:automatic-styles>
-    <style:page-layout style:name="Mpm1">
-      <style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm"
-          style:num-format="i" style:print-orientation="portrait"/>
-    </style:page-layout>
-  </office:automatic-styles>
-</office:document-styles>"#;
-
-        let sheet = read_stylesheet(xml, false).unwrap();
-        assert_eq!(sheet.page_layouts.len(), 1);
-        let pl = &sheet.page_layouts[0];
-        assert_eq!(pl.name, "Mpm1");
-        assert_eq!(pl.num_format.as_deref(), Some("i"));
-        assert_eq!(pl.page_width.as_deref(), Some("21cm"));
-    }
-
-    #[test]
-    fn read_stylesheet_drop_cap() {
-        let xml = br#"<?xml version="1.0"?>
-<office:document-styles
-    xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
-    xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
-    xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0">
-  <office:styles>
-    <style:style style:name="Drop" style:family="paragraph">
-      <style:paragraph-properties>
-        <style:drop-cap style:lines="3" style:length="2" style:distance="0.2cm"/>
-      </style:paragraph-properties>
-    </style:style>
-  </office:styles>
-</office:document-styles>"#;
-
-        let sheet = read_stylesheet(xml, false).unwrap();
-        let dc = sheet.named_styles[0]
-            .para_props
-            .as_ref()
-            .unwrap()
-            .drop_cap
-            .as_ref()
-            .expect("drop cap parsed");
-        assert_eq!(dc.lines.as_deref(), Some("3"));
-        assert_eq!(dc.length.as_deref(), Some("2"));
-        assert_eq!(dc.distance.as_deref(), Some("0.2cm"));
-    }
-
-    #[test]
-    fn read_stylesheet_graphic_wrap() {
-        let xml = br#"<?xml version="1.0"?>
-<office:document-styles
-    xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
-    xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0">
-  <office:automatic-styles>
-    <style:style style:name="fr1" style:family="graphic">
-      <style:graphic-properties style:wrap="left" style:run-through="foreground"/>
-    </style:style>
-  </office:automatic-styles>
-</office:document-styles>"#;
-
-        let sheet = read_stylesheet(xml, false).unwrap();
-        let gw = sheet.auto_styles[0]
-            .graphic_wrap
-            .as_ref()
-            .expect("graphic wrap parsed");
-        assert_eq!(gw.wrap.as_deref(), Some("left"));
-        assert_eq!(gw.run_through.as_deref(), Some("foreground"));
-    }
-
-    #[test]
-    fn read_stylesheet_list_style_bullet_level() {
-        let xml = br#"<?xml version="1.0"?>
-<office:document-styles
-    xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
-    xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
-    xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
-  <office:styles>
-    <text:list-style style:name="List_Bullet">
-      <text:list-level-style-bullet text:level="1" text:bullet-char="-">
-        <style:list-level-properties
-            text:list-level-position-and-space-mode="label-alignment">
-          <style:list-level-label-alignment
-              text:label-followed-by="listtab"
-              text:list-tab-stop-position="0.635cm"
-              fo:text-indent="-0.635cm"
-              fo:margin-left="0.635cm"/>
-        </style:list-level-properties>
-      </text:list-level-style-bullet>
-    </text:list-style>
-  </office:styles>
-</office:document-styles>"#;
-
-        let sheet = read_stylesheet(xml, false).unwrap();
-        assert_eq!(sheet.list_styles.len(), 1);
-        let ls = &sheet.list_styles[0];
-        assert_eq!(ls.name, "List_Bullet");
-        assert_eq!(ls.levels.len(), 1);
-
-        let lv = &ls.levels[0];
-        assert_eq!(lv.level, 0);
-        assert!(matches!(lv.kind, OdfListLevelKind::Bullet { ref char, .. } if char == "-"));
-        assert_eq!(lv.label_followed_by.as_deref(), Some("listtab"));
-        assert_eq!(lv.list_tab_stop_position.as_deref(), Some("0.635cm"));
-        assert_eq!(lv.text_indent.as_deref(), Some("-0.635cm"));
-        assert_eq!(lv.margin_left.as_deref(), Some("0.635cm"));
-    }
-
-    #[test]
-    fn read_stylesheet_list_style_number_label_alignment() {
-        let xml = br#"<?xml version="1.0"?>
-<office:document-styles
-    xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
-    xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
-    xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
-  <office:styles>
-    <text:list-style style:name="Numbered_List">
-      <text:list-level-style-number text:level="1"
-          style:num-format="1" style:num-suffix="." text:start-value="1">
-        <style:list-level-properties
-            text:list-level-position-and-space-mode="label-alignment">
-          <style:list-level-label-alignment
-              text:label-followed-by="listtab"
-              text:list-tab-stop-position="1.27cm"
-              fo:text-indent="-0.635cm"
-              fo:margin-left="1.27cm"/>
-        </style:list-level-properties>
-      </text:list-level-style-number>
-    </text:list-style>
-  </office:styles>
-</office:document-styles>"#;
-
-        let sheet = read_stylesheet(xml, false).unwrap();
-        let ls = &sheet.list_styles[0];
-        let lv = &ls.levels[0];
-        assert!(
-            matches!(lv.kind, OdfListLevelKind::Number { ref num_format, .. }
-                if num_format.as_deref() == Some("1"))
-        );
-        assert_eq!(lv.label_followed_by.as_deref(), Some("listtab"));
-        assert_eq!(lv.margin_left.as_deref(), Some("1.27cm"));
-    }
-
-    #[test]
-    fn read_auto_styles_returns_automatic_styles() {
-        let xml = br#"<?xml version="1.0"?>
-<office:document-content
-    xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
-    xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
-    xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
-    xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
-    office:version="1.3">
-  <office:automatic-styles>
-    <style:style style:name="P1" style:family="paragraph"
-                 style:parent-style-name="Default_20_Paragraph_20_Style">
-      <style:paragraph-properties fo:margin-left="0.5cm"/>
-      <style:text-properties fo:font-size="10pt"/>
-    </style:style>
-    <style:style style:name="T1" style:family="text"/>
-  </office:automatic-styles>
-  <office:body>
-    <office:text/>
-  </office:body>
-</office:document-content>"#;
-
-        let styles = read_auto_styles(xml).unwrap();
-        assert_eq!(styles.len(), 2);
-
-        let p1 = &styles[0];
-        assert_eq!(p1.name, "P1");
-        assert_eq!(p1.family, OdfStyleFamily::Paragraph);
-        assert!(p1.is_automatic);
-        assert_eq!(
-            p1.parent_name.as_deref(),
-            Some("Default_20_Paragraph_20_Style")
-        );
-        let pp = p1.para_props.as_ref().unwrap();
-        assert_eq!(pp.margin_left.as_deref(), Some("0.5cm"));
-        let tp = p1.text_props.as_ref().unwrap();
-        assert_eq!(tp.font_size.as_deref(), Some("10pt"));
-
-        let t1 = &styles[1];
-        assert_eq!(t1.name, "T1");
-        assert_eq!(t1.family, OdfStyleFamily::Text);
-        assert!(t1.is_automatic);
-        assert!(t1.para_props.is_none());
-    }
-
-    #[test]
-    fn read_stylesheet_list_style_legacy_positioning() {
-        let xml = br#"<?xml version="1.0"?>
-<office:document-styles
-    xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
-    xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
-    xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
-  <office:styles>
-    <text:list-style style:name="ODF11_List">
-      <text:list-level-style-bullet text:level="1" text:bullet-char="-">
-        <style:list-level-properties
-            text:space-before="0.25cm"
-            text:min-label-width="0.4cm"
-            text:min-label-distance="0.1cm"/>
-      </text:list-level-style-bullet>
-    </text:list-style>
-  </office:styles>
-</office:document-styles>"#;
-
-        let sheet = read_stylesheet(xml, false).unwrap();
-        let lv = &sheet.list_styles[0].levels[0];
-        assert_eq!(lv.legacy_space_before.as_deref(), Some("0.25cm"));
-        assert_eq!(lv.legacy_min_label_width.as_deref(), Some("0.4cm"));
-        assert_eq!(lv.legacy_min_label_distance.as_deref(), Some("0.1cm"));
-        assert!(lv.label_followed_by.is_none());
-    }
-}
+#[path = "styles_tests.rs"]
+mod tests;

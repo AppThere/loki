@@ -27,6 +27,7 @@ fn main() {
     let options = LayoutOptions {
         preserve_for_editing: true,
         spell: None,
+        ..Default::default()
     };
 
     let mut worst = AllocStats::default();

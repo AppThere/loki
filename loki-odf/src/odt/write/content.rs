@@ -14,8 +14,9 @@ use loki_doc_model::style::props::para_props::ParaProps;
 use super::auto::AutoStyles;
 use super::inlines::write_inlines;
 use super::media::{MathPart, Media, Rendered};
+use super::page_styles::resolve_page_style_names;
 use super::tables::table;
-use super::xml::{attr, escape, master_page_name};
+use super::xml::{attr, escape};
 
 const HEADER: &str = concat!(
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
@@ -42,6 +43,13 @@ pub(super) struct Cx {
         std::collections::HashMap<String, loki_doc_model::content::annotation::Comment>,
     /// Embedded formula objects collected from `Inline::Math` runs.
     pub(super) objects: Vec<MathPart>,
+    /// Tracked-change regions collected from revision runs, flushed as the
+    /// `text:tracked-changes` table at the start of `office:text`.
+    pub(super) changes: super::revisions::Changes,
+    /// Table styles (banding/conditional regions) resolved into per-cell
+    /// shading at table-export time — ODF's per-cell representation.
+    pub(super) table_styles:
+        indexmap::IndexMap<loki_doc_model::style::StyleId, loki_doc_model::style::TableStyle>,
 }
 
 /// Renders the whole `content.xml` for `doc`, collecting any embedded images.
@@ -56,13 +64,18 @@ pub(crate) fn content_xml(doc: &Document) -> Rendered {
             .map(|c| (c.id.clone(), c.clone()))
             .collect(),
         objects: Vec::new(),
+        changes: super::revisions::Changes::default(),
+        table_styles: doc.styles.table_styles.clone(),
     };
+    // The section→master-page names, honouring the stored `page_style` refs so a
+    // named page style round-trips (must agree with `styles.xml`).
+    let names = resolve_page_style_names(doc);
     let mut body = String::new();
     for (idx, section) in doc.sections.iter().enumerate() {
         // Sections after the first trigger a page-geometry change by attaching
         // `style:master-page-name` to their first paragraph (ODF has no explicit
         // section element). The first section uses the initial master page.
-        let master = (idx > 0).then(|| master_page_name(idx));
+        let master = (idx > 0).then(|| names.section_master[idx].clone());
         match (master.as_deref(), section.blocks.first()) {
             (Some(mp), Some(first)) => {
                 write_block_with_master(&mut body, first, mp, &mut cx);
@@ -93,6 +106,8 @@ pub(crate) fn content_xml(doc: &Document) -> Rendered {
     out.push_str(&cx.auto.render());
     out.push_str("</office:automatic-styles>");
     out.push_str("<office:body><office:text>");
+    // The tracked-change table precedes the body content (ODF 1.3 §5.5.3).
+    out.push_str(&cx.changes.render());
     out.push_str(&body);
     out.push_str("</office:text></office:body></office:document-content>");
     Rendered {

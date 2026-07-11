@@ -123,6 +123,26 @@ pub(crate) enum OdfParagraphChild {
         name: Option<String>,
     },
 
+    /// A tracked-insertion range start (`text:change-start`). ODF 1.3 §5.5.7.1.
+    /// Its `change_id` keys into the `text:tracked-changes` region table.
+    RevisionStart {
+        /// `text:change-id` — matches a changed-region entry.
+        change_id: String,
+    },
+
+    /// A tracked-insertion range end (`text:change-end`). ODF 1.3 §5.5.7.2.
+    RevisionEnd {
+        /// `text:change-id` — matches the corresponding `RevisionStart`.
+        change_id: String,
+    },
+
+    /// A tracked-deletion point (`text:change`). ODF 1.3 §5.5.7.3. The removed
+    /// content lives in the changed-region table keyed by `change_id`.
+    RevisionPoint {
+        /// `text:change-id` — matches a changed-region entry.
+        change_id: String,
+    },
+
     /// Any inline element not specifically modelled above.
     Other,
 }

@@ -13,16 +13,17 @@ use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_i18n::fl;
 
-use super::panel_data::{CharSelection, ListSelection};
+use super::panel_data::{CharSelection, ListSelection, PageSelection};
 use super::posture::StylePanelPosture;
 use super::provenance::CharRowsSection;
 
-/// Renders the character and list read-only inspector columns, each present only
-/// when its family has a selection. Both sit to the right of the paragraph
-/// provenance column (or stack full-width beneath it at Compact, per `posture`).
+/// Renders the character, list, and page read-only inspector columns, each
+/// present only when its family has a selection. All sit to the right of the
+/// paragraph provenance column (or stack full-width beneath it at Compact).
 pub(super) fn family_inspector_columns(
     char_selected_rows: CharSelection,
     list_selected_rows: ListSelection,
+    page_selected_rows: PageSelection,
     posture: StylePanelPosture,
 ) -> Element {
     rsx! {
@@ -73,6 +74,45 @@ pub(super) fn family_inspector_columns(
                                     alignment = lvl.alignment
                                 )
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Page inspector (read-only; §9 page family, non-inheriting) ──────
+        if let Some((name, rows)) = page_selected_rows {
+            div {
+                style: column_style(posture),
+                div {
+                    style: format!(
+                        "font-size: {fs}px; font-weight: {fw}; color: {fg}; margin-bottom: {mb}px;",
+                        fs = tokens::FONT_SIZE_LABEL,
+                        fw = tokens::FONT_WEIGHT_MEDIUM,
+                        fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
+                        mb = tokens::SPACE_1,
+                    ),
+                    { name }
+                }
+                for row in rows.into_iter() {
+                    div {
+                        key: "page-{row.label_key}",
+                        style: format!("display: flex; flex-direction: row; justify-content: space-between; gap: {}px; margin-bottom: 2px;", tokens::SPACE_2),
+                        span {
+                            style: format!(
+                                "font-size: {fs}px; color: {fg};",
+                                fs = tokens::FONT_SIZE_LABEL,
+                                fg = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
+                            ),
+                            { fl!(row.label_key) }
+                        }
+                        span {
+                            style: format!(
+                                "font-size: {fs}px; color: {fg};",
+                                fs = tokens::FONT_SIZE_LABEL,
+                                fg = tokens::COLOR_TEXT_ON_CHROME,
+                            ),
+                            { row.value }
                         }
                     }
                 }

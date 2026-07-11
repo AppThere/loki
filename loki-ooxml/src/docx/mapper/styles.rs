@@ -9,9 +9,14 @@ use loki_doc_model::style::char_style::CharacterStyle;
 use loki_doc_model::style::para_style::ParagraphStyle;
 use loki_doc_model::style::props::char_props::CharProps;
 use loki_doc_model::style::props::para_props::ParaProps;
-use loki_doc_model::style::table_style::{TableProps, TableStyle};
+use loki_doc_model::style::table_style::{
+    TableConditionalFormat, TableProps, TableRegion, TableStyle,
+};
+use loki_primitives::color::DocumentColor;
 
-use crate::docx::model::styles::{DocxStyleType, DocxStyles};
+use indexmap::IndexMap;
+
+use crate::docx::model::styles::{DocxStyleType, DocxStyles, DocxTableStyleProps};
 
 use super::props::{map_ppr, map_rpr};
 
@@ -21,8 +26,8 @@ use super::props::{map_ppr, map_rpr};
 /// `ParagraphStyle` with id `"__DocDefault"` and `is_default = true`;
 /// it serves as the root of the inheritance chain.
 ///
-/// Table and numbering styles are mapped minimally (table styles are
-/// inserted with default properties; numbering styles are skipped silently).
+/// Table styles carry band sizes, base cell shading, and `w:tblStylePr`
+/// conditional (banding/region) shading; numbering styles are skipped silently.
 pub(crate) fn map_styles(styles: &DocxStyles) -> StyleCatalog {
     let mut catalog = StyleCatalog::new();
 
@@ -43,6 +48,27 @@ pub(crate) fn map_styles(styles: &DocxStyles) -> StyleCatalog {
         catalog
             .paragraph_styles
             .insert(StyleId::new("__DocDefault"), default_style);
+    }
+
+    // Synthesise the document's **default character style** from the same
+    // `w:rPrDefault` run defaults (ADR-0012 Decision 1 — the character family's
+    // `Default` source), so a standalone character style resolves docDefaults
+    // properties as `Provenance::Default` instead of `FormatDefault`. Distinct
+    // from the paragraph `__DocDefault` because the character resolver walks the
+    // `character_styles` catalog, not the paragraph one.
+    if let Some(rpr) = styles.default_rpr.as_ref() {
+        let id = StyleId::new("__DocDefaultChar");
+        catalog.character_styles.insert(
+            id.clone(),
+            CharacterStyle {
+                id: id.clone(),
+                display_name: None,
+                parent: None,
+                char_props: map_rpr(rpr),
+                extensions: ExtensionBag::default(),
+            },
+        );
+        catalog.default_character_style = Some(id);
     }
 
     for style in &styles.styles {
@@ -78,15 +104,27 @@ pub(crate) fn map_styles(styles: &DocxStyles) -> StyleCatalog {
                 catalog.character_styles.insert(id, s);
             }
             DocxStyleType::Table => {
-                // Map with minimal properties; detailed table-style mapping
-                // is deferred to a future session.
+                // Band sizes + base cell shading + `w:tblStylePr` conditional
+                // (banding/region) shading; `w:tblLook` selects the active
+                // regions per table instance (not yet imported).
+                let (table_props, conditional) = style
+                    .table
+                    .as_ref()
+                    .map(map_table_style_props)
+                    .unwrap_or_default();
                 let s = TableStyle {
                     id: id.clone(),
                     display_name: style.name.clone(),
                     parent: style.based_on.as_deref().map(StyleId::new),
-                    table_props: TableProps::default(),
+                    table_props,
+                    conditional,
                     extensions: ExtensionBag::default(),
                 };
+                // The table style flagged `w:default="1"` (e.g. TableNormal) is
+                // the table family's `Default` source (ADR-0012 Decision 1).
+                if style.is_default {
+                    catalog.default_table_style = Some(id.clone());
+                }
                 // COMPAT(microsoft): duplicate styleId — last definition wins,
                 // matching Microsoft Word's behavior per §2.7.3.17.
                 catalog.table_styles.insert(id, s);
@@ -152,6 +190,59 @@ pub(crate) fn map_styles(styles: &DocxStyles) -> StyleCatalog {
         });
 
     catalog
+}
+
+/// Map an OOXML `w:tblStylePr @w:type` region string to a [`TableRegion`].
+fn map_table_region(region: &str) -> Option<TableRegion> {
+    Some(match region {
+        "wholeTable" => TableRegion::WholeTable,
+        "firstRow" => TableRegion::FirstRow,
+        "lastRow" => TableRegion::LastRow,
+        "firstCol" => TableRegion::FirstColumn,
+        "lastCol" => TableRegion::LastColumn,
+        "band1Horz" => TableRegion::Band1Horz,
+        "band2Horz" => TableRegion::Band2Horz,
+        "band1Vert" => TableRegion::Band1Vert,
+        "band2Vert" => TableRegion::Band2Vert,
+        "nwCell" => TableRegion::NwCell,
+        "neCell" => TableRegion::NeCell,
+        "swCell" => TableRegion::SwCell,
+        "seCell" => TableRegion::SeCell,
+        _ => return None,
+    })
+}
+
+/// A shading fill hex (no `#`) → `DocumentColor`. `auto`/absent → `None`.
+fn shd_color(fill: Option<&str>) -> Option<DocumentColor> {
+    crate::xml_util::resolve_shading(fill, None, None).map(DocumentColor::Rgb)
+}
+
+/// Build [`TableProps`] and the conditional-region map from parsed table-style
+/// data. Regions with no resolvable shading are skipped.
+fn map_table_style_props(
+    t: &DocxTableStyleProps,
+) -> (TableProps, IndexMap<TableRegion, TableConditionalFormat>) {
+    let table_props = TableProps {
+        background_color: shd_color(t.base_shd_fill.as_deref()),
+        row_band_size: t.row_band_size,
+        col_band_size: t.col_band_size,
+        ..TableProps::default()
+    };
+    let mut conditional = IndexMap::new();
+    for c in &t.conditional {
+        if let (Some(region), Some(bg)) = (
+            map_table_region(&c.region),
+            shd_color(c.shd_fill.as_deref()),
+        ) {
+            conditional.insert(
+                region,
+                TableConditionalFormat {
+                    background_color: Some(bg),
+                },
+            );
+        }
+    }
+    (table_props, conditional)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

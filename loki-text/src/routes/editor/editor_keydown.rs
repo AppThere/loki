@@ -11,11 +11,10 @@ use loki_doc_model::loro_mutation::{get_block_text, get_block_text_at};
 use loki_renderer::ViewMode;
 use loki_renderer::render_layout::reflow_content_width_pt;
 
+use super::editor_keydown_backspace::handle_backspace_key;
 use super::editor_keydown_ctrl::{handle_ctrl_keys, handle_delete_key};
 use super::editor_keydown_enter::handle_enter_key;
-use super::editor_keydown_text::{
-    SelectionRemoval, handle_backspace_key, handle_character_key, remove_selection,
-};
+use super::editor_keydown_text::{SelectionRemoval, handle_character_key, remove_selection};
 use super::editor_scrollbar::ScrollMetrics;
 
 use crate::editing::cursor::CursorState;

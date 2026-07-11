@@ -5,11 +5,13 @@
 //! element (`w:hyperlink`, `w:del`/`w:ins`, `w:fldSimple`).
 
 use quick_xml::Reader;
-use quick_xml::events::Event;
+use quick_xml::events::{BytesStart, Event};
 
-use crate::docx::model::paragraph::DocxRun;
+use crate::docx::model::paragraph::{
+    DocxMarkRevision, DocxRevisionInfo, DocxRun, DocxTrackedChange,
+};
 use crate::docx::reader::document::parse_run;
-use crate::docx::reader::util::local_name;
+use crate::docx::reader::util::{attr_val, local_name};
 use crate::error::{OoxmlError, OoxmlResult};
 
 /// Consumes runs inside a `w:hyperlink` element.
@@ -17,12 +19,34 @@ pub(crate) fn parse_hyperlink_runs(reader: &mut Reader<&[u8]>) -> OoxmlResult<Ve
     collect_runs(reader, b"hyperlink")
 }
 
-/// Consumes runs inside a `w:del` or `w:ins` element.
+/// Consumes a `w:del` / `w:ins` tracked change: its `w:author`/`w:date`/`w:id`
+/// attributes (from `start`) plus the wrapped runs.
 pub(crate) fn parse_tracked_runs(
     reader: &mut Reader<&[u8]>,
+    start: &BytesStart<'_>,
     end_tag: &[u8],
-) -> OoxmlResult<Vec<DocxRun>> {
-    collect_runs(reader, end_tag)
+) -> OoxmlResult<DocxTrackedChange> {
+    let info = DocxRevisionInfo {
+        author: attr_val(start, b"author"),
+        date: attr_val(start, b"date"),
+        id: attr_val(start, b"id"),
+    };
+    let runs = collect_runs(reader, end_tag)?;
+    Ok(DocxTrackedChange { info, runs })
+}
+
+/// Reads a `w:del` / `w:ins` element that marks a **paragraph mark** deleted /
+/// inserted (a child of `w:pPr/w:rPr`), from its (empty) element. `local` is the
+/// element's local name (`b"del"` / `b"ins"`).
+pub(crate) fn parse_mark_revision(local: &[u8], e: &BytesStart<'_>) -> DocxMarkRevision {
+    DocxMarkRevision {
+        is_deletion: local == b"del",
+        info: DocxRevisionInfo {
+            author: attr_val(e, b"author"),
+            date: attr_val(e, b"date"),
+            id: attr_val(e, b"id"),
+        },
+    }
 }
 
 /// Consumes the cached-result runs inside a `w:fldSimple` element.

@@ -3,9 +3,8 @@
 
 //! Renderer-agnostic layout engine for the Loki suite.
 //!
-//! `loki-layout` takes a [`loki_doc_model::Document`] and produces a layout
-//! result containing absolute positions for all content elements. It has no
-//! GPU dependencies and is fully testable without a display.
+//! `loki-layout` turns a [`loki_doc_model::Document`] into absolute positions
+//! for all content — no GPU dependencies, fully testable without a display.
 //!
 //! # Layout Modes
 //!
@@ -33,6 +32,8 @@ pub mod items;
 mod list_marker;
 mod math;
 pub mod mode;
+mod options;
+mod paginate_blanks;
 pub mod para;
 mod para_band;
 mod para_cache;
@@ -40,7 +41,8 @@ mod para_drop_cap;
 mod para_emit;
 pub mod resolve;
 pub mod result;
-
+mod revision_style;
+mod table_shading;
 pub use color::LayoutColor;
 pub use error::{LayoutError, LayoutResult};
 pub use flow::{FlowOutput, LayoutWarning, flow_section};
@@ -54,6 +56,7 @@ pub use items::{
     PositionedDecoration, PositionedGlyphRun, PositionedImage, PositionedItem, PositionedRect,
 };
 pub use mode::LayoutMode;
+pub use options::{FieldContext, LayoutOptions, SpellState};
 pub use para::{
     Affinity, CursorRect, HitTestResult, ParagraphLayout, ResolvedLineHeight, ResolvedParaProps,
     StyleSpan, layout_paragraph,
@@ -63,7 +66,7 @@ pub use resolve::{
     resolve_color, resolve_para_props,
 };
 pub use result::{
-    ContinuousLayout, DocumentLayout, LayoutPage, PageEditingData, PageParagraphData,
+    CellRotation, ContinuousLayout, DocumentLayout, LayoutPage, PageEditingData, PageParagraphData,
     PaginatedLayout,
 };
 
@@ -76,56 +79,19 @@ pub const MIN_ROW_HEIGHT: f32 = 0.0;
 /// reachable. See [`result::LayoutPage::comment_items`].
 pub const COMMENT_GUTTER_WIDTH: f32 = 192.0;
 
-/// Options that control the layout pipeline's memory / feature trade-offs.
+/// Fold document-level [`loki_doc_model::settings::DocumentSettings`] into the
+/// caller's [`LayoutOptions`], filling any field the caller left unset.
 ///
-/// Pass to [`layout_document`] or [`flow_section`]. The default (all fields
-/// `false`) is the read-only rendering mode — zero overhead for features the
-/// renderer does not need.
-#[derive(Debug, Clone, Default)]
-pub struct LayoutOptions {
-    /// When `true`, the Parley `Layout` object is retained inside each
-    /// [`ParagraphLayout`] so that [`ParagraphLayout::hit_test_point`] and
-    /// [`ParagraphLayout::cursor_rect`] can be called afterwards.
-    ///
-    /// Has a memory cost proportional to document size. Use `false` (the
-    /// default) for read-only document viewing. Editing sessions pass `true`.
-    pub preserve_for_editing: bool,
-
-    /// Optional spell checker. When `Some`, each paragraph's text is checked and
-    /// misspelled words emit a [`items::DecorationKind::Spelling`] squiggle
-    /// decoration (positioned via the same Parley selection-geometry mechanism
-    /// as the highlight underlay). `None` (the default) adds zero overhead.
-    pub spell: Option<SpellState>,
-}
-
-/// A spell checker plus a cache-invalidation generation, supplied via
-/// [`LayoutOptions::spell`].
-///
-/// The paragraph layout cache is content-addressed; the `generation` folds into
-/// the cache key so that changing the active dictionary or the user's
-/// personal/ignore words (which the checker reflects but the paragraph text does
-/// not) correctly invalidates cached squiggles. The host **must** bump
-/// `generation` whenever it swaps the checker or its word lists change; a fresh
-/// service starts at `1` (0 is reserved for "no spell checking").
-#[derive(Debug, Clone)]
-pub struct SpellState {
-    /// The shared, thread-safe checker queried during layout.
-    pub checker: std::sync::Arc<loki_spell::SpellChecker>,
-    /// Monotonic generation; bump on any change the text alone cannot express.
-    pub generation: u64,
-}
-
-/// Resolved page numbering for field substitution during layout.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FieldContext {
-    /// 1-based page number of the page being laid out (already offset by any
-    /// section restart value).
-    pub page_number: u32,
-    /// Total page count of the document.
-    pub page_count: u32,
-    /// Display format for the PAGE field (OOXML `w:pgNumType @w:fmt`).
-    /// `None` = decimal.
-    pub number_format: Option<loki_doc_model::style::list_style::NumberingScheme>,
+/// Currently only [`LayoutOptions::default_tab_stop_pt`] is derived (from
+/// `DocumentSettings::default_tab_stop_pt`); a caller-supplied value takes
+/// precedence, and a document with no `settings` leaves the built-in fallback in
+/// place. Returns the caller's options unchanged when nothing needs folding.
+fn effective_options(doc: &loki_doc_model::Document, options: &LayoutOptions) -> LayoutOptions {
+    let mut eff = options.clone();
+    if eff.default_tab_stop_pt.is_none() {
+        eff.default_tab_stop_pt = doc.settings.as_ref().map(|s| s.default_tab_stop_pt);
+    }
+    eff
 }
 
 /// Lays out a full document into absolute positions.
@@ -144,6 +110,8 @@ pub fn layout_document(
     display_scale: f32,
     options: &LayoutOptions,
 ) -> DocumentLayout {
+    let effective = effective_options(doc, options);
+    let options = &effective;
     match mode {
         LayoutMode::Paginated => DocumentLayout::Paginated(
             layout_paginated_full(resources, doc, display_scale, options).0,
@@ -222,6 +190,8 @@ pub fn layout_paginated_full(
     display_scale: f32,
     options: &LayoutOptions,
 ) -> (PaginatedLayout, PaginatedReuse) {
+    let effective = effective_options(doc, options);
+    let options = &effective;
     let mode = LayoutMode::Paginated;
     let mut global_page_count = 0;
     // Running base so editing block indices are global across sections (see the
@@ -247,7 +217,11 @@ pub fn layout_paginated_full(
     // Pass 1: flow every group's body so the total page count is known before
     // headers/footers are laid out (NUMPAGES fields need the document-wide total).
     // Each group is laid out as one page sequence owned by its first section.
-    let mut flowed: Vec<(&loki_doc_model::Section, Vec<LayoutPage>)> = Vec::new();
+    let mut flowed: Vec<(
+        &loki_doc_model::Section,
+        Vec<LayoutPage>,
+        Option<LayoutPage>,
+    )> = Vec::new();
     // Document-section index of the current group's first section (for checkpoint
     // tagging / incremental).
     let mut primary_section_index = 0usize;
@@ -261,6 +235,18 @@ pub fn layout_paginated_full(
         if first_page_size.is_none() {
             first_page_size = Some(page_size);
         }
+
+        // Even/odd section break: insert a blank filler page (counted now, so the
+        // section's own pages are numbered after it) when the section would
+        // otherwise start on the wrong parity.
+        let leading_blank = if paginate_blanks::needs_blank_before(primary.start, global_page_count)
+        {
+            let bp = paginate_blanks::blank_page(global_page_count + 1, &primary.layout);
+            global_page_count += 1;
+            Some(bp)
+        } else {
+            None
+        };
 
         let FlowOutput::Pages {
             mut pages,
@@ -300,7 +286,7 @@ pub fn layout_paginated_full(
             checkpoints.push(cp);
         }
 
-        flowed.push((primary, pages));
+        flowed.push((primary, pages, leading_blank));
         global_page_count += group_page_count;
         block_base += group_blocks;
         primary_section_index += group.len();
@@ -309,7 +295,11 @@ pub fn layout_paginated_full(
     // Pass 2: headers/footers, with the document-wide page total available for
     // PAGE / NUMPAGES field substitution.
     let mut all_pages = Vec::new();
-    for (section, mut pages) in flowed {
+    for (section, mut pages, blank) in flowed {
+        // Even/odd filler page (no header/footer) precedes the section's pages.
+        if let Some(bp) = blank {
+            all_pages.push(bp);
+        }
         flow::assign_headers_footers(
             &mut pages,
             &section.layout,

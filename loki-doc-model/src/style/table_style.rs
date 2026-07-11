@@ -10,6 +10,7 @@
 use crate::content::attr::ExtensionBag;
 use crate::style::catalog::StyleId;
 use crate::style::props::border::Border;
+use indexmap::IndexMap;
 use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
 
@@ -65,6 +66,144 @@ pub struct TableProps {
     pub border: Option<Border>,
     /// Background color of the table.
     pub background_color: Option<DocumentColor>,
+    /// Number of rows in each horizontal band. OOXML
+    /// `w:tblStyleRowBandSize`; `None` = the default of 1.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub row_band_size: Option<u32>,
+    /// Number of columns in each vertical band. OOXML
+    /// `w:tblStyleColBandSize`; `None` = the default of 1.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub col_band_size: Option<u32>,
+}
+
+/// A conditional region of a table that a style can format differently.
+///
+/// OOXML `w:tblStylePr w:type="…"` (TR 29166 §7.2.4). The twelve
+/// non-`WholeTable` variants correspond one-to-one with the OOXML
+/// `w:cnfStyle`/`w:tblLook` region flags. ODF has no direct equivalent;
+/// LibreOffice synthesises these from separate cell styles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum TableRegion {
+    /// The base formatting applied to every cell (`wholeTable`).
+    WholeTable,
+    /// The header row (`firstRow`).
+    FirstRow,
+    /// The total/footer row (`lastRow`).
+    LastRow,
+    /// The leading column (`firstCol`).
+    FirstColumn,
+    /// The trailing column (`lastCol`).
+    LastColumn,
+    /// Odd horizontal bands (`band1Horz`).
+    Band1Horz,
+    /// Even horizontal bands (`band2Horz`).
+    Band2Horz,
+    /// Odd vertical bands (`band1Vert`).
+    Band1Vert,
+    /// Even vertical bands (`band2Vert`).
+    Band2Vert,
+    /// The top-left corner cell (`nwCell`).
+    NwCell,
+    /// The top-right corner cell (`neCell`).
+    NeCell,
+    /// The bottom-left corner cell (`swCell`).
+    SwCell,
+    /// The bottom-right corner cell (`seCell`).
+    SeCell,
+}
+
+/// The formatting a table style applies to one [`TableRegion`].
+///
+/// Only cell shading is modeled today; borders and character formatting
+/// are future work (Spec 05, 4a.3). OOXML `w:tblStylePr` child props.
+#[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct TableConditionalFormat {
+    /// Cell background (shading) for cells in this region.
+    pub background_color: Option<DocumentColor>,
+}
+
+/// Which conditional regions of a table style are active for one table
+/// instance.
+///
+/// OOXML `w:tblLook` (TR 29166 §7.2.4). Each flag enables the matching
+/// [`TableRegion`] family; when a banding flag is off, the band regions
+/// are suppressed and cells fall through to `WholeTable`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct TableLook {
+    /// Apply special formatting to the header row.
+    pub first_row: bool,
+    /// Apply special formatting to the total/footer row.
+    pub last_row: bool,
+    /// Apply special formatting to the leading column.
+    pub first_column: bool,
+    /// Apply special formatting to the trailing column.
+    pub last_column: bool,
+    /// Apply row-banding (horizontal stripes).
+    pub horizontal_banding: bool,
+    /// Apply column-banding (vertical stripes).
+    pub vertical_banding: bool,
+}
+
+impl Default for TableLook {
+    /// Word's default `w:tblLook` of `04A0`: header row, first column, and
+    /// row banding on; footer row, last column, and column banding off.
+    fn default() -> Self {
+        Self {
+            first_row: true,
+            last_row: false,
+            first_column: true,
+            last_column: false,
+            horizontal_banding: true,
+            vertical_banding: false,
+        }
+    }
+}
+
+impl TableLook {
+    /// Encode the six region flags as a compact six-character `0`/`1` string in
+    /// the order first-row, last-row, first-column, last-column, horizontal
+    /// banding, vertical banding — for storage on a table instance's
+    /// [`NodeAttr`]. Format-neutral (independent of the OOXML `w:tblLook`
+    /// bitmask layout, which the DOCX mapper owns).
+    ///
+    /// [`NodeAttr`]: crate::content::attr::NodeAttr
+    #[must_use]
+    pub fn encode_attr(&self) -> String {
+        let bit = |on: bool| if on { '1' } else { '0' };
+        [
+            bit(self.first_row),
+            bit(self.last_row),
+            bit(self.first_column),
+            bit(self.last_column),
+            bit(self.horizontal_banding),
+            bit(self.vertical_banding),
+        ]
+        .iter()
+        .collect()
+    }
+
+    /// Decode a string produced by [`Self::encode_attr`]. Returns `None` unless
+    /// the input is exactly six `0`/`1` characters.
+    #[must_use]
+    pub fn decode_attr(s: &str) -> Option<Self> {
+        let b = s.as_bytes();
+        if b.len() != 6 || b.iter().any(|&c| c != b'0' && c != b'1') {
+            return None;
+        }
+        let on = |i: usize| b[i] == b'1';
+        Some(Self {
+            first_row: on(0),
+            last_row: on(1),
+            first_column: on(2),
+            last_column: on(3),
+            horizontal_banding: on(4),
+            vertical_banding: on(5),
+        })
+    }
 }
 
 /// A named table style.
@@ -87,6 +226,12 @@ pub struct TableStyle {
     /// Table-level formatting properties.
     pub table_props: TableProps,
 
+    /// Conditional (region-specific) formatting. Keyed by [`TableRegion`];
+    /// an absent region inherits from `WholeTable` (or nothing). OOXML
+    /// `w:tblStylePr`.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub conditional: IndexMap<TableRegion, TableConditionalFormat>,
+
     /// Format-specific extension data.
     pub extensions: ExtensionBag,
 }
@@ -102,9 +247,48 @@ mod tests {
             display_name: Some("Table Grid".into()),
             parent: None,
             table_props: TableProps::default(),
+            conditional: IndexMap::new(),
             extensions: ExtensionBag::default(),
         };
         assert!(style.table_props.width.is_none());
         assert!(style.table_props.border.is_none());
+        assert!(style.conditional.is_empty());
+    }
+
+    #[test]
+    fn default_table_look_matches_word_04a0() {
+        let look = TableLook::default();
+        assert!(look.first_row);
+        assert!(look.first_column);
+        assert!(look.horizontal_banding);
+        assert!(!look.last_row);
+        assert!(!look.last_column);
+        assert!(!look.vertical_banding);
+    }
+
+    #[test]
+    fn table_look_attr_round_trips() {
+        for look in [
+            TableLook::default(),
+            TableLook {
+                first_row: false,
+                last_row: true,
+                first_column: false,
+                last_column: true,
+                horizontal_banding: false,
+                vertical_banding: true,
+            },
+        ] {
+            assert_eq!(TableLook::decode_attr(&look.encode_attr()), Some(look));
+        }
+        assert_eq!(TableLook::default().encode_attr(), "101010");
+    }
+
+    #[test]
+    fn table_look_decode_rejects_malformed() {
+        assert_eq!(TableLook::decode_attr(""), None);
+        assert_eq!(TableLook::decode_attr("10101"), None);
+        assert_eq!(TableLook::decode_attr("1010102"), None);
+        assert_eq!(TableLook::decode_attr("10101x"), None);
     }
 }
