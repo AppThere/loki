@@ -2008,3 +2008,56 @@ fn between_only_group_draws_just_the_boundary_rule() {
     assert!(first.top.is_none());
     assert!(first.bottom.is_some_and(|e| (e.width - 3.0).abs() < 0.01));
 }
+
+// ── Mirrored margins (gap #27, `w:mirrorMargins`) ─────────────────────────────
+
+#[test]
+fn mirror_margins_swaps_even_page_margins_end_to_end() {
+    let mut r = test_resources();
+    // Enough text to spill onto a second page at a small page size.
+    let paras: Vec<StyledParagraph> = (0..40)
+        .map(|i| make_para(&format!("Paragraph number {i} with some words in it")))
+        .collect();
+    let layout_props = PageLayout {
+        page_size: PageSize {
+            width: Points::new(300.0),
+            height: Points::new(200.0),
+        },
+        margins: PageMargins {
+            top: Points::new(10.0),
+            bottom: Points::new(10.0),
+            left: Points::new(50.0),
+            right: Points::new(20.0),
+            header: Points::new(0.0),
+            footer: Points::new(0.0),
+            gutter: Points::new(0.0),
+        },
+        ..PageLayout::default()
+    };
+    let section = section_of(paras, layout_props);
+    let catalog = StyleCatalog::new();
+    let options = LayoutOptions {
+        mirror_margins: true,
+        ..LayoutOptions::default()
+    };
+    let out = flow_section(
+        &mut r,
+        &section,
+        &catalog,
+        &LayoutMode::Paginated,
+        1.0,
+        &options,
+        &[],
+    );
+    let FlowOutput::Pages { pages, .. } = out else {
+        panic!("paginated mode returns pages");
+    };
+    assert!(pages.len() >= 2, "need two pages, got {}", pages.len());
+    // Recto (odd) keeps left=50/right=20; verso (even) swaps to 20/50.
+    assert_eq!(pages[0].margins.left, 50.0);
+    assert_eq!(pages[0].margins.right, 20.0);
+    assert_eq!(pages[1].margins.left, 20.0);
+    assert_eq!(pages[1].margins.right, 50.0);
+    // Content width is identical on both pages (left + right constant).
+    assert_eq!(pages[0].margins.horizontal(), pages[1].margins.horizontal());
+}

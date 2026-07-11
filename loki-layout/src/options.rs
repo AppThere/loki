@@ -34,6 +34,13 @@ pub struct LayoutOptions {
     /// built-in 36 pt (½ inch). Applied when a paragraph runs out of explicit
     /// tab stops.
     pub default_tab_stop_pt: Option<f32>,
+
+    /// Mirror the left/right margins on even (verso) pages (Word
+    /// `w:mirrorMargins`, gap #27). Folded in from
+    /// `DocumentSettings::mirror_margins` by `layout_document`; the content
+    /// width is unchanged (left + right is constant), only the content
+    /// area's horizontal position swaps.
+    pub mirror_margins: bool,
 }
 
 /// A spell checker plus a cache-invalidation generation, supplied via

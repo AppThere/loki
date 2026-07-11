@@ -782,3 +782,32 @@ fn test_hyperlink_missing_relationship() {
 
     assert_eq!(link.url, "#rId99");
 }
+
+/// `w:mirrorMargins` survives import → export → re-import (gap #27): the
+/// mapper folds it into `DocumentSettings`, and the writer re-emits the
+/// settings part whenever the flag is set.
+#[test]
+fn mirror_margins_round_trips() {
+    use loki_doc_model::io::DocumentExport;
+    use loki_doc_model::settings::DocumentSettings;
+    use loki_ooxml::DocxExport;
+
+    let mut doc = loki_doc_model::Document::new_blank();
+    doc.settings = Some(DocumentSettings {
+        mirror_margins: true,
+        ..DocumentSettings::default()
+    });
+
+    let mut out = Cursor::new(Vec::new());
+    DocxExport::export(&doc, &mut out, ()).expect("export succeeds");
+    let back = DocxImporter::new(DocxImportOptions::default())
+        .run(Cursor::new(out.into_inner()))
+        .expect("exported DOCX re-imports");
+
+    let settings = back
+        .document
+        .settings
+        .as_ref()
+        .expect("settings part round-trips");
+    assert!(settings.mirror_margins, "w:mirrorMargins must survive");
+}

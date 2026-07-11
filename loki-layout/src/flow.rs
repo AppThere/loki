@@ -8,8 +8,7 @@
 //! and uses [`PositionedItem::ClippedGroup`] to render each page fragment
 //! correctly. Page objects are built directly (no re-binning pass).
 //!
-//! Paragraph placement, splitting, and keep-with-next chain logic live in
-//! the `para_impl` submodule (`flow_para.rs`).
+//! Paragraph placement/splitting logic lives in `para_impl` (`flow_para.rs`).
 
 #[path = "flow_balance.rs"]
 mod balance;
@@ -66,10 +65,8 @@ use para_impl::{flow_keep_with_next_chain, flow_paragraph};
 
 /// Output of [`flow_section`], discriminated by layout mode.
 pub enum FlowOutput {
-    /// Returned when `mode.is_paginated()`.
-    ///
-    /// Item origins in each page are relative to the page content-area
-    /// top-left `(0, 0)` — no further translation is needed by the caller.
+    /// Returned when `mode.is_paginated()`. Item origins are relative to the
+    /// page content-area top-left `(0, 0)` — no further translation needed.
     Pages {
         /// Completed pages with content items in page-local coordinates.
         pages: Vec<LayoutPage>,
@@ -85,8 +82,8 @@ pub enum FlowOutput {
         items: Vec<PositionedItem>,
         /// Total canvas height in points.
         height: f32,
-        /// Per-paragraph editing data (canvas-local origins). Empty unless
-        /// `preserve_for_editing` is set. Used for reflow hit-testing/cursor.
+        /// Per-paragraph editing data (canvas-local; reflow hit-testing).
+        /// Empty unless `preserve_for_editing` is set.
         paragraphs: Vec<crate::result::PageParagraphData>,
         /// Non-fatal warnings collected during layout.
         warnings: Vec<LayoutWarning>,
@@ -162,11 +159,11 @@ pub(super) struct FlowState<'a> {
     pub(super) current_indent: f32,
     /// Per-list counters: `ListId` → per-level counters (`0` = uninitialised).
     pub(super) list_counters: HashMap<ListId, [u32; 9]>,
-    /// `ListId` of the most recently placed list item (to detect list changes).
+    /// `ListId` of the most recently placed list item (detects list changes).
     pub(super) prev_list_id: Option<ListId>,
-    /// Footnote/endnote counter for the current section (bumped by `walk_inlines`).
+    /// Footnote/endnote counter for the section (bumped by `walk_inlines`);
+    /// collected notes render via `flow_footnotes`.
     pub(super) note_counter: u32,
-    /// Footnotes/endnotes collected this section, rendered by `flow_footnotes`.
     pub(super) pending_footnotes: Vec<CollectedNote>,
     /// Paragraph metadata for the current page (block index, layout, origin).
     pub(super) current_paragraphs: Vec<PageParagraphData>,
@@ -681,8 +678,7 @@ fn flow_blocks(state: &mut FlowState, blocks: &[Block], idx: usize) {
 // ── Page management ───────────────────────────────────────────────────────────
 
 pub(super) fn finish_page(state: &mut FlowState) {
-    // Position the final column's content, draw separators for the columns that
-    // were used, then reset the column tracker so the next page starts at 0.
+    // Position + separate the used columns, then reset for the next page.
     columns_impl::position_current_column(state);
     columns_impl::emit_column_separators(state);
     state.col_index = 0;
@@ -696,7 +692,11 @@ pub(super) fn finish_page(state: &mut FlowState) {
     let page = LayoutPage {
         page_number: state.page_number,
         page_size: state.page_size,
-        margins: state.margins,
+        margins: crate::paginate_blanks::mirrored_margins(
+            state.margins,
+            state.page_number,
+            state.options.mirror_margins,
+        ),
         content_items: std::mem::take(&mut state.current_items),
         header_items: vec![],
         footer_items: vec![],

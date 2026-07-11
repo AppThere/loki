@@ -3,7 +3,7 @@
 
 //! Tests for even/odd section-break blank-page insertion.
 
-use super::{blank_page, needs_blank_before};
+use super::{blank_page, mirrored_margins, needs_blank_before};
 use loki_doc_model::layout::page::PageLayout;
 use loki_doc_model::layout::section::SectionStart;
 
@@ -50,4 +50,23 @@ fn blank_page_is_empty_and_non_editing() {
     assert!(page.footer_items.is_empty());
     assert!(page.editing_data.is_none());
     assert!(page.page_size.width > 0.0 && page.page_size.height > 0.0);
+}
+
+// ── Mirrored margins (gap #27) ────────────────────────────────────────────────
+
+#[test]
+fn mirrored_margins_swap_on_even_pages_only() {
+    let margins = crate::geometry::LayoutInsets {
+        top: 10.0,
+        right: 20.0,
+        bottom: 30.0,
+        left: 40.0,
+    };
+    let odd = mirrored_margins(margins, 1, true);
+    assert_eq!((odd.left, odd.right), (40.0, 20.0), "recto keeps margins");
+    let even = mirrored_margins(margins, 2, true);
+    assert_eq!((even.left, even.right), (20.0, 40.0), "verso swaps");
+    assert_eq!((even.top, even.bottom), (10.0, 30.0), "vertical untouched");
+    let off = mirrored_margins(margins, 2, false);
+    assert_eq!((off.left, off.right), (40.0, 20.0), "off = unchanged");
 }

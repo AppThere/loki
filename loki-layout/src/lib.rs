@@ -82,15 +82,15 @@ pub const COMMENT_GUTTER_WIDTH: f32 = 192.0;
 /// Fold document-level [`loki_doc_model::settings::DocumentSettings`] into the
 /// caller's [`LayoutOptions`], filling any field the caller left unset.
 ///
-/// Currently only [`LayoutOptions::default_tab_stop_pt`] is derived (from
-/// `DocumentSettings::default_tab_stop_pt`); a caller-supplied value takes
-/// precedence, and a document with no `settings` leaves the built-in fallback in
-/// place. Returns the caller's options unchanged when nothing needs folding.
+/// Derives `default_tab_stop_pt` and `mirror_margins`; a caller-supplied
+/// value takes precedence, and a document with no `settings` leaves the
+/// built-in fallbacks in place.
 fn effective_options(doc: &loki_doc_model::Document, options: &LayoutOptions) -> LayoutOptions {
     let mut eff = options.clone();
     if eff.default_tab_stop_pt.is_none() {
         eff.default_tab_stop_pt = doc.settings.as_ref().map(|s| s.default_tab_stop_pt);
     }
+    eff.mirror_margins |= doc.settings.as_ref().is_some_and(|s| s.mirror_margins);
     eff
 }
 

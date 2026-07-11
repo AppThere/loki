@@ -68,8 +68,8 @@ fn map_section_start(section_type: Option<&str>) -> SectionStart {
     }
 }
 
-/// Converts a [`DocxSectPr`] to a [`PageLayout`]. Falls back to A4 portrait with
-/// 72pt margins when no `w:sectPr` is present (the OOXML default for simple docs).
+/// Converts a [`DocxSectPr`] to a [`PageLayout`]; A4 portrait, 72pt margins
+/// when no `w:sectPr` is present (the OOXML default for simple documents).
 fn map_page_layout(sect_pr: Option<&DocxSectPr>) -> PageLayout {
     let Some(sp) = sect_pr else {
         return PageLayout {
@@ -82,9 +82,8 @@ fn map_page_layout(sect_pr: Option<&DocxSectPr>) -> PageLayout {
 
     if let Some(ref pg_sz) = sp.pg_sz {
         let is_landscape = pg_sz.orient.as_deref() == Some("landscape");
-        // Some producers store landscape pages with portrait w/h values (w < h)
-        // and rely on orient="landscape" to indicate the swap. Normalise so that
-        // page_size.width is always the wider dimension for landscape pages.
+        // Some producers store landscape pages with portrait w/h and rely on
+        // orient="landscape"; normalise so width is the wider dimension.
         let (w, h) = if is_landscape && pg_sz.w < pg_sz.h {
             (pg_sz.h, pg_sz.w)
         } else {
@@ -113,7 +112,6 @@ fn map_page_layout(sect_pr: Option<&DocxSectPr>) -> PageLayout {
         };
     }
 
-    // Multi-column layout, including unequal `w:equalWidth="0"` widths.
     layout.columns = super::document_cols::map_columns(sp.cols.as_ref());
 
     // Page numbering: format (roman/alpha) and restart value from w:pgNumType.
@@ -411,9 +409,11 @@ pub(crate) fn map_document(
     let meta = map_meta(core_props);
 
     let tab = raw_settings.and_then(|s| s.default_tab_stop);
+    let mirror = raw_settings.is_some_and(|s| s.mirror_margins);
     #[allow(clippy::cast_precision_loss)] // twips are small; f32 precision is sufficient
-    let doc_settings = tab.map(|twips| DocumentSettings {
-        default_tab_stop_pt: twips as f32 / 20.0,
+    let doc_settings = (tab.is_some() || mirror).then(|| DocumentSettings {
+        default_tab_stop_pt: tab.map_or(36.0, |twips| twips as f32 / 20.0),
+        mirror_margins: mirror,
         ..DocumentSettings::default()
     });
 

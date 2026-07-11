@@ -38,6 +38,10 @@ pub fn parse_settings(xml: &[u8]) -> OoxmlResult<DocxSettings> {
                         result.title_pg = attr_val(e, b"val")
                             .is_none_or(|v| !matches!(v.as_str(), "0" | "false" | "off"));
                     }
+                    b"mirrorMargins" => {
+                        result.mirror_margins = attr_val(e, b"val")
+                            .is_none_or(|v| !matches!(v.as_str(), "0" | "false" | "off"));
+                    }
                     _ => {}
                 }
             }
@@ -63,6 +67,7 @@ mod tests {
 <w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:defaultTabStop w:val="720"/>
   <w:evenAndOddHeaders/>
+  <w:mirrorMargins/>
 </w:settings>"#;
 
     #[test]
@@ -75,6 +80,17 @@ mod tests {
     fn parses_even_and_odd_headers() {
         let settings = parse_settings(MINIMAL_SETTINGS).unwrap();
         assert!(settings.even_and_odd_headers);
+    }
+
+    #[test]
+    fn parses_mirror_margins() {
+        let settings = parse_settings(MINIMAL_SETTINGS).unwrap();
+        assert!(settings.mirror_margins);
+        let off = parse_settings(
+            br#"<w:settings xmlns:w="http://x"><w:mirrorMargins w:val="0"/></w:settings>"#,
+        )
+        .unwrap();
+        assert!(!off.mirror_margins);
     }
 
     #[test]

@@ -29,6 +29,13 @@ pub struct DocumentSettings {
     /// Default `false`. OOXML `w:trackChanges`; ODF `text:track-changes`.
     #[cfg_attr(feature = "serde", serde(default))]
     pub track_changes: bool,
+
+    /// Mirrored margins for facing pages (OOXML `w:mirrorMargins`,
+    /// ECMA-376 §17.15.1.55): on even (verso) pages the left/right margins
+    /// swap, so the inside margin faces the binding on both pages of a
+    /// spread. Default `false`.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub mirror_margins: bool,
 }
 
 impl Default for DocumentSettings {
@@ -36,6 +43,7 @@ impl Default for DocumentSettings {
         Self {
             default_tab_stop_pt: 36.0,
             track_changes: false,
+            mirror_margins: false,
         }
     }
 }

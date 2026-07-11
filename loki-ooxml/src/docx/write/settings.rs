@@ -3,10 +3,10 @@
 
 //! Writer for `word/settings.xml`.
 //!
-//! Only the settings needed for round-trip fidelity are emitted. Currently
-//! that is `w:evenAndOddHeaders` (ECMA-376 §17.10.1), which is what enables
-//! even-page headers/footers — without it, `even`-typed header/footer
-//! references are ignored by Word and by our own importer.
+//! Only the settings needed for round-trip fidelity are emitted:
+//! `w:evenAndOddHeaders` (ECMA-376 §17.10.1, enables even-page
+//! headers/footers) and `w:mirrorMargins` (§17.15.1.55, facing-page margin
+//! mirroring — gap #27).
 
 use loki_opc::Package;
 use loki_opc::part::{PartData, PartName};
@@ -20,14 +20,22 @@ use crate::error::OoxmlError;
 const MT_SETTINGS: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml";
 
-/// Builds a minimal `word/settings.xml` carrying `<w:evenAndOddHeaders/>`.
-fn write_settings_xml() -> Vec<u8> {
+/// Builds a minimal `word/settings.xml` carrying the requested flags.
+fn write_settings_xml(even_odd: bool, mirror_margins: bool) -> Vec<u8> {
+    let mut body = String::new();
+    if even_odd {
+        body.push_str("<w:evenAndOddHeaders/>");
+    }
+    if mirror_margins {
+        body.push_str("<w:mirrorMargins/>");
+    }
     format!(
         concat!(
             "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n",
-            "<w:settings xmlns:w=\"{ns}\"><w:evenAndOddHeaders/></w:settings>"
+            "<w:settings xmlns:w=\"{ns}\">{body}</w:settings>"
         ),
         ns = NS_W,
+        body = body,
     )
     .into_bytes()
 }
@@ -35,17 +43,19 @@ fn write_settings_xml() -> Vec<u8> {
 /// Adds `word/settings.xml` to `pkg`: the part, its content-type override, and
 /// a document relationship (using the caller-supplied `r_id`).
 ///
-/// Call only when the document needs `w:evenAndOddHeaders` (i.e. it has an
-/// even-page header or footer); without this part those references are ignored.
+/// Call only when the document needs at least one flag; without this part
+/// even-header references and margin mirroring are ignored by consumers.
 pub(super) fn wire_settings(
     pkg: &mut Package,
     doc_part: &PartName,
     r_id: String,
+    even_odd: bool,
+    mirror_margins: bool,
 ) -> Result<(), OoxmlError> {
     let settings_part = PartName::new("/word/settings.xml").map_err(OoxmlError::Opc)?;
     pkg.set_part(
         settings_part.clone(),
-        PartData::new(write_settings_xml(), MT_SETTINGS),
+        PartData::new(write_settings_xml(even_odd, mirror_margins), MT_SETTINGS),
     );
     pkg.part_relationships_mut(doc_part)
         .add(Relationship {
