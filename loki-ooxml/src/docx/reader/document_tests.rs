@@ -130,3 +130,89 @@ fn block_sdt_content_is_unwrapped_into_the_body() {
     // content control's children are unwrapped in order, nothing dropped.
     assert_eq!(kinds, ["p", "p", "p", "tbl", "p"]);
 }
+
+/// Plain text of every run in a paragraph, concatenated in order.
+fn para_text(p: &crate::docx::model::paragraph::DocxParagraph) -> String {
+    use crate::docx::model::paragraph::{DocxParaChild, DocxRunChild};
+    p.children
+        .iter()
+        .filter_map(|c| match c {
+            DocxParaChild::Run(r) => Some(r),
+            _ => None,
+        })
+        .flat_map(|r| &r.children)
+        .filter_map(|c| match c {
+            DocxRunChild::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// An *inline* content control (`w:sdt` inside `w:p`) — its runs must survive
+/// into the paragraph, and the control's own `w:sdtPr` chrome (which carries a
+/// `w:rPr` and placeholder machinery) must not leak anything (5.9 tail).
+#[test]
+fn inline_sdt_runs_are_unwrapped_into_the_paragraph() {
+    let xml: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:r><w:t xml:space="preserve">Before </w:t></w:r>
+      <w:sdt>
+        <w:sdtPr>
+          <w:rPr><w:b/></w:rPr>
+          <w:alias w:val="Field"/>
+          <w:placeholder><w:docPart w:val="Placeholder"/></w:placeholder>
+        </w:sdtPr>
+        <w:sdtContent><w:r><w:t>controlled</w:t></w:r></w:sdtContent>
+      </w:sdt>
+      <w:r><w:t xml:space="preserve"> after</w:t></w:r>
+    </w:p>
+  </w:body>
+</w:document>"#;
+    let doc = parse_document(xml).unwrap();
+    let Some(DocxBodyChild::Paragraph(p)) = doc.body.children.first() else {
+        panic!("expected paragraph");
+    };
+    assert_eq!(para_text(p), "Before controlled after");
+}
+
+/// A *cell-level* content control (`w:sdt` inside `w:tc`) — its paragraphs
+/// must survive into the cell (5.9 tail).
+#[test]
+fn cell_sdt_paragraphs_are_unwrapped_into_the_cell() {
+    let xml: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:tbl>
+      <w:tr>
+        <w:tc>
+          <w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr>
+          <w:sdt>
+            <w:sdtPr><w:id w:val="7"/></w:sdtPr>
+            <w:sdtContent>
+              <w:p><w:r><w:t>In control</w:t></w:r></w:p>
+              <w:p><w:r><w:t>Second</w:t></w:r></w:p>
+            </w:sdtContent>
+          </w:sdt>
+          <w:p><w:r><w:t>Plain</w:t></w:r></w:p>
+        </w:tc>
+      </w:tr>
+    </w:tbl>
+  </w:body>
+</w:document>"#;
+    let doc = parse_document(xml).unwrap();
+    let Some(DocxBodyChild::Table(t)) = doc.body.children.first() else {
+        panic!("expected table");
+    };
+    let cell = &t.rows[0].cells[0];
+    let texts: Vec<String> = cell
+        .children
+        .iter()
+        .filter_map(|c| match c {
+            DocxBodyChild::Paragraph(p) => Some(para_text(p)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(texts, ["In control", "Second", "Plain"]);
+}

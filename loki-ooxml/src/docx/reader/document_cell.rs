@@ -16,8 +16,8 @@ use crate::docx::model::styles::{
 use crate::docx::reader::util::{attr_val, local_name};
 use crate::error::{OoxmlError, OoxmlResult};
 
-use super::parse_paragraph;
 use super::table::parse_table;
+use super::{parse_paragraph, skip_element};
 
 /// Parses a `w:tc` element. Called after Start("tc") is consumed.
 pub(super) fn parse_table_cell(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTableCell> {
@@ -37,6 +37,13 @@ pub(super) fn parse_table_cell(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTa
                     // Nested table inside this cell (ECMA-376 §17.4.4).
                     let tbl = parse_table(reader)?;
                     cell.children.push(DocxBodyChild::Table(tbl));
+                }
+                // Cell-level content control: its `w:sdtContent` paragraphs /
+                // tables flow through this dispatch (implicit unwrap); skip the
+                // chrome so `w:sdtPr` internals never leak here (5.9).
+                b"sdtPr" | b"sdtEndPr" => {
+                    let name = local_name(e.local_name().as_ref()).to_vec();
+                    skip_element(reader, &name)?;
                 }
                 _ => {}
             },
