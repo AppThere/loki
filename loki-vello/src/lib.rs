@@ -35,11 +35,13 @@ pub mod glyph;
 pub mod image;
 pub mod rect;
 pub mod scene;
+pub mod scene_cursor;
 
 pub use band::{content_max_x, paint_continuous_band};
 pub use error::{VelloError, VelloResult};
 pub use font_cache::FontDataCache;
 pub use scene::{
     CursorPaint, SelectionHandle, SelectionHandleKind, SelectionRect, paint_continuous,
-    paint_cursor, paint_layout, paint_paginated, paint_single_page,
+    paint_layout, paint_paginated, paint_single_page,
 };
+pub use scene_cursor::paint_cursor;
