@@ -3,9 +3,7 @@
 
 //! Codec helpers: string encode/decode functions shared between the Loro
 //! bridge write path (`write.rs`) and read path (`props_read.rs`, `inlines.rs`).
-//!
-//! Split from `inlines.rs` and `read.rs` to keep individual files under the
-//! 300-line ceiling.
+//! Split from `inlines.rs` / `read.rs` to hold the 300-line ceiling.
 
 use crate::style::props::border::{Border, BorderStyle};
 use crate::style::props::char_props::{
@@ -224,11 +222,10 @@ pub(super) fn decode_tab_stops(s: &str) -> Option<Vec<TabStop>> {
 
 // ── Border codec ─────────────────────────────────────────────────────────────
 
-/// Encode a [`Border`] as a compact `"Style:width_pt:color:spacing_pt"` string.
-///
-/// TODO(loro-bridge): non-Rgb border colors (Theme/Cmyk) collapse to `auto`
-/// here — the colon-delimited format cannot carry the `color_codec` encodings
-/// (they contain `:`), so lifting this needs a format migration.
+/// Encode a [`Border`] as `"Style:width_pt:spacing_pt:color"` (v2): the color
+/// comes **last** so the total [`super::color_codec`] encodings — which contain
+/// `:` themselves — fit unescaped, and Theme/Cmyk/Transparent border colors
+/// survive the CRDT (formerly collapsed to `auto` = no explicit color).
 pub(super) fn encode_border(b: &Border) -> String {
     let style = match b.style {
         BorderStyle::None => "None",
@@ -245,19 +242,22 @@ pub(super) fn encode_border(b: &Border) -> String {
     let color = b
         .color
         .as_ref()
-        .and_then(|c| c.to_hex())
+        .map(super::color_codec::encode_document_color)
         .unwrap_or_else(|| "auto".to_string());
     let spacing = b.spacing.map_or(0.0, |s| s.value());
-    format!("{}:{}:{}:{}", style, b.width.value(), color, spacing)
+    format!("{}:{}:{}:{}", style, b.width.value(), spacing, color)
 }
 
-/// Decode a border string produced by [`encode_border`].
+/// Decode a border string in either layout: v2 (`Style:width:spacing:color`,
+/// color last and possibly colon-carrying) or the pre-migration v1
+/// (`Style:width:color:spacing`, color `auto`/`#RRGGBB` only). Unambiguous —
+/// v2's third field is always a number, v1's never is.
 pub(super) fn decode_border(s: &str) -> Option<Border> {
     let mut parts = s.splitn(4, ':');
     let style_str = parts.next()?;
     let width_str = parts.next()?;
-    let color_str = parts.next()?;
-    let spacing_str = parts.next()?;
+    let third = parts.next()?;
+    let fourth = parts.next()?;
 
     let style = match style_str {
         "None" => BorderStyle::None,
@@ -273,12 +273,15 @@ pub(super) fn decode_border(s: &str) -> Option<Border> {
         _ => return None,
     };
     let width: f64 = width_str.parse().ok()?;
+    let (spacing, color_str) = match third.parse::<f64>() {
+        Ok(sp) => (sp, fourth),
+        Err(_) => (fourth.parse().ok()?, third),
+    };
     let color = if color_str == "auto" {
         None
     } else {
-        DocumentColor::from_hex(color_str).ok()
+        super::color_codec::decode_document_color(color_str)
     };
-    let spacing: f64 = spacing_str.parse().ok()?;
     Some(Border {
         style,
         width: Points::new(width),
@@ -290,3 +293,7 @@ pub(super) fn decode_border(s: &str) -> Option<Border> {
         },
     })
 }
+
+#[cfg(test)]
+#[path = "decode_tests.rs"]
+mod tests;

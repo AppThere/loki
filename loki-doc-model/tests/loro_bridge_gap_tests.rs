@@ -168,6 +168,60 @@ fn bridge_border_roundtrip() {
     );
 }
 
+/// Non-Rgb border colors (Theme / Cmyk) must survive the CRDT — formerly they
+/// collapsed to `auto` because the v1 border string could not carry the
+/// colon-delimited total color codec (loro-bridge tail, format migrated to v2).
+#[test]
+fn bridge_border_theme_and_cmyk_colors_roundtrip() {
+    use loki_primitives::color::CmykColor;
+
+    let mut para_props = ParaProps::default();
+    para_props.border_top = Some(Border {
+        style: BorderStyle::Solid,
+        width: Points::new(1.5),
+        color: Some(DocumentColor::Theme {
+            slot: ThemeColorSlot::Accent2,
+            tint: 0.25,
+        }),
+        spacing: Some(Points::new(3.0)),
+    });
+    para_props.border_bottom = Some(Border {
+        style: BorderStyle::Double,
+        width: Points::new(2.0),
+        color: Some(DocumentColor::Cmyk(CmykColor::new(0.1, 0.2, 0.3, 0.4))),
+        spacing: None,
+    });
+
+    let block = Block::StyledPara(loki_doc_model::content::block::StyledParagraph {
+        style_id: None,
+        direct_para_props: Some(Box::new(para_props)),
+        direct_char_props: None,
+        inlines: vec![Inline::Str("themed borders".into())],
+        attr: NodeAttr::default(),
+    });
+    let recovered = round_trip(&single_block_doc(block));
+
+    let pp = match &recovered.sections[0].blocks[0] {
+        Block::StyledPara(p) => p.direct_para_props.as_deref().expect("para props"),
+        other => panic!("expected StyledPara, got {other:?}"),
+    };
+    match pp.border_top.as_ref().and_then(|b| b.color.as_ref()) {
+        Some(DocumentColor::Theme { slot, tint }) => {
+            assert_eq!(*slot, ThemeColorSlot::Accent2);
+            assert!((tint - 0.25).abs() < 1e-6);
+        }
+        other => panic!("theme border color must survive, got {other:?}"),
+    }
+    let top = pp.border_top.as_ref().unwrap();
+    assert!((top.spacing.map_or(0.0, |s| s.value()) - 3.0).abs() < 0.001);
+    match pp.border_bottom.as_ref().and_then(|b| b.color.as_ref()) {
+        Some(DocumentColor::Cmyk(c)) => {
+            assert!((c.cyan() - 0.1).abs() < 1e-4 && (c.key() - 0.4).abs() < 1e-4);
+        }
+        other => panic!("cmyk border color must survive, got {other:?}"),
+    }
+}
+
 // ── bridge_tab_stops_roundtrip ────────────────────────────────────────────────
 
 fn styled_para_with_para(props: ParaProps) -> Block {
