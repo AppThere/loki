@@ -132,5 +132,8 @@ pub(super) fn map_para_props(p: &ParaProps) -> ResolvedParaProps {
         drop_cap: p.drop_cap,
         // Float wrap band is injected by the flow engine, not the model.
         wrap_band: None,
+        // Set by `resolve_para_props` from the block's `direct_char_props`
+        // revision (`ParaProps` does not carry the paragraph mark's CharProps).
+        para_mark_deleted_color: None,
     }
 }

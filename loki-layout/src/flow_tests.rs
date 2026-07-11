@@ -1809,4 +1809,47 @@ mod page_fields {
             "a deleted run must be struck through"
         );
     }
+
+    /// A tracked deletion of the paragraph mark (¶) paints a struck marker
+    /// after the last line — exactly one strikethrough decoration (the marker):
+    /// the ¶'s revision must NOT bleed onto the paragraph's runs (which would
+    /// strike the text too), and a plain paragraph paints no marker at all
+    /// (4a.2 para-mark rendering).
+    #[test]
+    fn tracked_para_mark_deletion_renders_struck_marker_without_striking_text() {
+        use loki_doc_model::style::props::char_props::CharProps;
+        use loki_doc_model::style::props::revision::{RevisionKind, RevisionMark};
+
+        let strikes = |items: &[PositionedItem]| {
+            items
+                .iter()
+                .filter(|i| {
+                    matches!(i, PositionedItem::Decoration(d)
+                        if d.kind == DecorationKind::Strikethrough)
+                })
+                .count()
+        };
+
+        let mut r = test_resources();
+        let mut para = make_para("word");
+        para.direct_char_props = Some(Box::new(CharProps {
+            revision: Some(RevisionMark::new(RevisionKind::Deletion)),
+            ..CharProps::default()
+        }));
+        let sec = Section::with_layout_and_blocks(tiny_layout(), vec![Block::StyledPara(para)]);
+        let (items, _, _) = flow_pageless(&mut r, &sec);
+        assert_eq!(
+            strikes(&items),
+            1,
+            "exactly the struck ¶ marker — a second strike means the ¶'s \
+             revision bled onto the text runs"
+        );
+
+        let plain = Section::with_layout_and_blocks(
+            tiny_layout(),
+            vec![Block::StyledPara(make_para("word"))],
+        );
+        let (plain_items, _, _) = flow_pageless(&mut r, &plain);
+        assert_eq!(strikes(&plain_items), 0, "no marker on a plain paragraph");
+    }
 }

@@ -83,6 +83,55 @@ pub(super) fn emit_highlight_underlays(
     }
 }
 
+/// Emit a struck, author-coloured end-of-paragraph marker when the paragraph's
+/// ¶ carries a tracked deletion (Review tab, 4a.2 para-mark rendering).
+///
+/// Not a shaped ¶ glyph: two short stems + a strikethrough segment placed just
+/// after the last line's text — paint-only items, so caret placement,
+/// hit-testing, and text wrapping are untouched (the constraint that deferred
+/// this). Accepting/rejecting the change clears the mark and the marker
+/// disappears with the next layout.
+pub(super) fn emit_para_mark_deletion(
+    items: &mut Vec<PositionedItem>,
+    layout: &Layout<LayoutColor>,
+    para_props: &ResolvedParaProps,
+    drop_lines: usize,
+    drop_shift: f32,
+) {
+    let Some(color) = para_props.para_mark_deleted_color else {
+        return;
+    };
+    let line_count = layout.lines().count();
+    let Some(line) = layout.lines().last() else {
+        return;
+    };
+    let m = line.metrics();
+    let indent = line_indent(para_props, line_count - 1, drop_lines, drop_shift);
+    // Marker box after the line's text: ~0.5 em wide, stems rising ~0.6 of the
+    // ascent from the baseline, struck through the middle in the author colour.
+    let em = (m.ascent + m.descent).max(1.0);
+    let x0 = m.advance + indent + em * 0.15;
+    let width = em * 0.5;
+    let stem_h = m.ascent * 0.6;
+    let stem_w = (em * 0.06).clamp(0.6, 1.2);
+    for stem_x in [x0 + width * 0.25, x0 + width * 0.65] {
+        items.push(PositionedItem::FilledRect(PositionedRect {
+            rect: LayoutRect::new(stem_x, m.baseline - stem_h, stem_w, stem_h),
+            color,
+        }));
+    }
+    items.push(PositionedItem::Decoration(PositionedDecoration {
+        x: x0,
+        // `y` is the TOP of the decoration band (see loki-vello `decor.rs`).
+        y: m.baseline - stem_h * 0.5 - stem_w / 2.0,
+        width,
+        thickness: stem_w,
+        kind: DecorationKind::Strikethrough,
+        style: DecorationStyle::Solid,
+        color,
+    }));
+}
+
 /// Emit a `DecorationKind::Spelling` wave under each misspelled word the
 /// supplied checker flags in `clean_text`. Thickness scales with line height;
 /// the wave is anchored just below the text descender (the run underline zone),

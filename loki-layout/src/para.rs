@@ -255,7 +255,7 @@ pub struct ResolvedParaProps {
     /// First-line additional indent in points.
     pub indent_first_line: f32,
     /// Paragraph-level line-height specification, or `None` to use Parley's
-    /// natural font metrics (always correct for body text).
+    /// natural font metrics.
     pub line_height: Option<ResolvedLineHeight>,
     /// Optional paragraph background fill.
     pub background_color: Option<LayoutColor>,
@@ -296,18 +296,19 @@ pub struct ResolvedParaProps {
     /// Tab-stop grid interval (points) used once `tab_stops` is exhausted;
     /// `36.0` (½ inch) unless `DocumentSettings::default_tab_stop_pt` overrides.
     pub default_tab_stop: f32,
-    /// Break an over-long word at any character (CSS `overflow-wrap: anywhere`).
-    /// Set for table-cell content so a long unbreakable word wraps to the fixed
-    /// column width (Word) instead of overflowing; body paragraphs leave `false`.
+    /// Break an over-long word at any character (`overflow-wrap: anywhere`);
+    /// set for table-cell content so it wraps to the fixed column width (Word).
     pub break_long_words: bool,
     /// Dropped-initial spec, or `None`. When set (and the paragraph qualifies —
     /// see [`layout_paragraph`]), the leading character(s) span `lines` rows with
     /// body text beside them. OOXML `w:framePr`/`w:dropCap`, ODF `style:drop-cap`.
     pub drop_cap: Option<loki_doc_model::style::props::drop_cap::DropCap>,
-    /// A leading side band the first lines must clear (a floating image the text
-    /// wraps around). Set by the flow engine; the banded path narrows the lines
-    /// beside it and reflows the rest at full width. `None` for normal paragraphs.
+    /// A leading side band the first lines must clear (a floating image the
+    /// text wraps around). Set by the flow engine; `None` for normal paragraphs.
     pub wrap_band: Option<WrapBand>,
+    /// Author colour of a tracked paragraph-mark (¶) deletion on this block —
+    /// paints a struck end-of-paragraph marker (Review, 4a.2). `None` = none.
+    pub para_mark_deleted_color: Option<LayoutColor>,
 }
 
 /// A side band (a floating object) the first lines of a paragraph wrap around.
@@ -355,6 +356,7 @@ impl Default for ResolvedParaProps {
             break_long_words: false,
             drop_cap: None,
             wrap_band: None,
+            para_mark_deleted_color: None,
         }
     }
 }
@@ -1200,10 +1202,8 @@ fn layout_paragraph_uncached(
 
     let mut items: Vec<PositionedItem> = Vec::new();
     let mut line_index: usize = 0;
-    // Track the lowest point reached by any inline equation. Its baseline is on
-    // the text baseline, so a deep denominator can hang below the line's own
-    // descent; we grow the paragraph height to cover it so the next block does
-    // not overlap it.
+    // Track the lowest point reached by any inline equation: a deep denominator
+    // can hang below the line's descent; grow the paragraph height to cover it.
     let mut content_bottom = total_height;
 
     // OOXML lineRule="exact" (ODF fixed line height): the line box is a fixed
@@ -1234,6 +1234,7 @@ fn layout_paragraph_uncached(
         drop_lines,
         drop_shift,
     );
+    underlays::emit_para_mark_deletion(&mut items, &layout, para_props, drop_lines, drop_shift);
 
     for line in layout.lines() {
         // Index into `items` where this line's emitted items begin (used to wrap
