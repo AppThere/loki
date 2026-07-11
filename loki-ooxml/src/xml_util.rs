@@ -13,10 +13,7 @@
 //! immediately after constructing the reader.
 
 use appthere_color::RgbColor;
-use loki_primitives::units::Points;
 use quick_xml::events::{BytesRef, BytesStart, BytesText, Event};
-
-use crate::constants::{EMUS_PER_PT, HALF_POINTS_PER_PT, TWIPS_PER_PT};
 
 /// Decodes and XML-entity-unescapes a text node's content.
 ///
@@ -116,48 +113,35 @@ pub fn local_attr_val(e: &BytesStart<'_>, local: &[u8]) -> Option<String> {
     })
 }
 
-/// Parses an OOXML toggle-property `@w:val` string to a `bool`.
-///
-/// Toggle properties follow ECMA-376 §17.7.3: the element being present
-/// with no `@w:val` or `@w:val="1"/"true"/"on"` means `true`;
-/// `@w:val="0"/"false"/"off"` means `false`.
-///
-/// This function is for callers that have already retrieved the attribute
-/// value. Use [`crate::docx::reader::util::toggle_prop`] when the attribute
-/// may be absent (returns `Option<bool>` instead).
+/// Single-pass variant of [`local_attr_val`] for hot loops that need several
+/// attributes of the same element: returns the values of the `N` requested
+/// local attribute names after one scan of the attribute list, instead of one
+/// full scan per attribute. First occurrence wins, matching
+/// [`local_attr_val`]. Used by the XLSX sheet reader's per-cell `<c>` handling.
 #[must_use]
-#[allow(dead_code)]
-pub fn bool_attr(val: &str) -> bool {
-    !matches!(val, "0" | "false" | "off")
-}
-
-/// Converts a twips integer to [`Points`].
-///
-/// 20 twips = 1 point (ECMA-376 §17.18.100).
-#[must_use]
-#[allow(dead_code)]
-pub fn twips_to_points(twips: i32) -> Points {
-    Points::new(f64::from(twips) / TWIPS_PER_PT)
-}
-
-/// Converts a half-points integer to [`Points`].
-///
-/// 2 half-points = 1 point (ECMA-376 §17.18.98). Used by `w:sz`/`w:szCs`.
-#[must_use]
-#[allow(dead_code)]
-pub fn half_points_to_points(hp: i32) -> Points {
-    Points::new(f64::from(hp) / HALF_POINTS_PER_PT)
-}
-
-/// Converts an EMU (English Metric Unit) integer to [`Points`].
-///
-/// 12 700 EMUs = 1 point; 914 400 EMUs = 1 inch (ECMA-376 §22.9.2.1).
-#[must_use]
-#[allow(dead_code)]
-pub fn emu_to_points(emu: i64) -> Points {
-    #[allow(clippy::cast_precision_loss)]
-    // Precision loss acceptable: values represent document measurements
-    Points::new(emu as f64 / EMUS_PER_PT)
+// Sole caller today is behind the (non-default) `xlsx` feature.
+#[cfg_attr(not(feature = "xlsx"), allow(dead_code))]
+pub fn local_attr_vals<const N: usize>(
+    e: &BytesStart<'_>,
+    locals: [&[u8]; N],
+) -> [Option<String>; N] {
+    let mut out = [const { None }; N];
+    for attr in e.attributes().flatten() {
+        let key_bytes = attr.key.as_ref();
+        let key_local = key_bytes
+            .iter()
+            .position(|&b| b == b':')
+            .map_or(key_bytes, |pos| &key_bytes[pos + 1..]);
+        if let Some(i) = locals.iter().position(|l| *l == key_local)
+            && out[i].is_none()
+        {
+            out[i] = attr
+                .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                .ok()
+                .map(std::borrow::Cow::into_owned);
+        }
+    }
+    out
 }
 
 /// Parses a 6-character hexadecimal OOXML color string to an [`RgbColor`].

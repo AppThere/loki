@@ -54,7 +54,7 @@ use crate::geometry::{LayoutInsets, LayoutRect, LayoutSize};
 use crate::incremental::{FlowCheckpoint, PageStart};
 use crate::items::{PositionedItem, PositionedRect};
 use crate::mode::LayoutMode;
-use crate::resolve::{CollectedNote, pts_to_f32, resolve_para_props};
+use crate::resolve::{CollectedNote, para_map::para_keep_with_next, pts_to_f32};
 use crate::result::{LayoutPage, PageEditingData, PageParagraphData};
 use crate::table_shading::{resolve_table_style, table_look};
 
@@ -355,7 +355,7 @@ fn run_paginated_loop(
         }
         let block = &blocks[i];
         if let Block::StyledPara(para) = block
-            && resolve_para_props(para, state.catalog).keep_with_next
+            && para_keep_with_next(para, state.catalog)
         {
             // NOTE: `i` is the slice index (chain scanning indexes `blocks`), so
             // editing block indices inside a keep-with-next chain are not offset

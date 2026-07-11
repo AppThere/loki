@@ -5,6 +5,8 @@
 //! Split out of `resolve.rs` (Phase 7.1); `resolve_para_props` (in
 //! `resolve.rs`) calls `map_para_props`.
 
+use loki_doc_model::content::block::StyledParagraph;
+use loki_doc_model::style::catalog::{MAX_STYLE_CHAIN_DEPTH, StyleCatalog};
 use loki_doc_model::style::list_style::ListId;
 use loki_doc_model::style::props::para_props::{
     LineHeight as DocLineHeight, ParaProps, ParagraphAlignment, Spacing,
@@ -25,6 +27,37 @@ fn resolve_spacing(s: Option<Spacing>) -> f32 {
         Some(Spacing::Exact(pts)) => pts_to_f32(pts),
         _ => 0.0,
     }
+}
+
+/// Cheap probe for a paragraph's effective `keep_with_next` flag.
+///
+/// Mirrors the child-wins resolution of `resolve_para_props` (direct
+/// formatting first, then the named-style parent chain) but reads only this
+/// one flag. The paginated flow loop calls this once per paragraph just to
+/// decide whether to enter keep-with-next chain scanning, so it must not pay
+/// the full `ParaProps` clone + merge + map that `resolve_para_props` does —
+/// paragraphs that do enter a chain (rare) are fully resolved afterwards.
+pub(crate) fn para_keep_with_next(block: &StyledParagraph, catalog: &StyleCatalog) -> bool {
+    if let Some(v) = block
+        .direct_para_props
+        .as_ref()
+        .and_then(|d| d.keep_with_next)
+    {
+        return v;
+    }
+    let mut id = catalog.effective_paragraph_style(block.style_id.as_ref());
+    // `..=` so the walk covers the starting style plus MAX parents, matching
+    // the cyclic-chain truncation of `StyleCatalog::resolve_para`.
+    for _ in 0..=MAX_STYLE_CHAIN_DEPTH {
+        let Some(style) = id.and_then(|sid| catalog.paragraph_styles.get(sid)) else {
+            break;
+        };
+        if let Some(v) = style.para_props.keep_with_next {
+            return v;
+        }
+        id = style.parent.as_ref();
+    }
+    false
 }
 
 /// Map a [`ParaProps`] record to the layout [`ResolvedParaProps`].

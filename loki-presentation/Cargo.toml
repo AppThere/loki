@@ -18,19 +18,11 @@ path = "src/main.rs"
 [dependencies]
 # Dioxus Native (Blitz renderer) with client-side router.
 dioxus          = { version = "=0.7.9", features = ["native", "router"] }
-# Format-neutral document model.
-loki-doc-model  = { path = "../loki-doc-model" }
 # OOXML import/export.
 loki-ooxml      = { path = "../loki-ooxml", features = ["pptx"] }
-# ODF import/export.
-loki-odf        = { path = "../loki-odf" }
 # Presentation document model + shared vector-graphics model.
 loki-presentation-model = { path = "../loki-presentation-model" }
 loki-graphics   = { path = "../loki-graphics" }
-# Layout engine.
-loki-layout     = { path = "../loki-layout" }
-# In-workspace Vello GPU rendering backend.
-loki-vello      = { path = "../loki-vello" }
 # Shared AppThere design tokens and UI components.
 appthere-ui     = { path = "../appthere-ui" }
 loki-app-shell  = { path = "../loki-app-shell" }
@@ -40,32 +32,10 @@ loki-fonts.workspace = true
 loki-file-access.workspace = true
 # Typed error derivation.
 thiserror       = "2"
-# Vello/wgpu integration point for custom GPU paint sources.
-anyrender_vello  = "0.6.2"
-# wgpu device + queue handle.
-wgpu_context     = "0.1.2"
-# Async event tracing.
-tracing          = "0.1"
-# Vello scene builder.
-vello           = "0.6"
-# Peniko brush / fill types.
-peniko          = "0.5"
-# Kurbo geometry primitives.
-kurbo           = "0.12"
 # Font config.
 fontique        = { version = "0.10", features = ["fontconfig-dlopen"] }
-loro = "1.11.1"
-# Unicode segmentation.
-unicode-segmentation = "1"
-# Platform-specific paths.
-dirs = "6"
-# Serialisation.
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 # Fluent i18n.
 loki-i18n = { path = "../loki-i18n" }
-# Cache page renderer.
-loki-renderer = { path = "../loki-renderer" }
 
 [package.metadata.android]
 package = "com.appthere.loki.presentation"

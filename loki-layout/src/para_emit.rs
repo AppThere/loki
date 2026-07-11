@@ -22,10 +22,7 @@ use crate::items::{
     DecorationKind, DecorationStyle, GlyphEntry, GlyphSynthesis, PositionedDecoration,
     PositionedGlyphRun, PositionedItem, PositionedRect,
 };
-use crate::para::{
-    StrikethroughStyle, StyleSpan, UnderlineStyle, VerticalAlign, span_at_offset, span_has_shadow,
-    span_highlight_for_range, span_link_url_for_range, span_vertical_align_for_range,
-};
+use crate::para::{StrikethroughStyle, StyleSpan, UnderlineStyle, VerticalAlign, span_at_offset};
 
 fn underline_deco_style(u: UnderlineStyle) -> DecorationStyle {
     match u {
@@ -38,20 +35,12 @@ fn underline_deco_style(u: UnderlineStyle) -> DecorationStyle {
     }
 }
 
-/// Underline / strikethrough variants (`w:u` / `w:strike`) of the span covering
-/// `r` — the variants Parley's own run decorations drop, recovered for 5.2.
-fn span_underline(spans: &[StyleSpan], r: Range<usize>) -> Option<UnderlineStyle> {
+/// The first span fully containing `r` — resolved once per glyph run and read
+/// field-by-field by every per-run attribute lookup in [`emit_glyph_run`].
+fn span_covering_range(spans: &[StyleSpan], r: Range<usize>) -> Option<&StyleSpan> {
     spans
         .iter()
         .find(|s| s.range.start <= r.start && s.range.end >= r.end)
-        .and_then(|s| s.underline)
-}
-
-fn span_strike(spans: &[StyleSpan], r: Range<usize>) -> Option<StrikethroughStyle> {
-    spans
-        .iter()
-        .find(|s| s.range.start <= r.start && s.range.end >= r.end)
-        .and_then(|s| s.strikethrough)
 }
 
 /// Emits one shaped glyph run at horizontal offset `indent_x`, appending the
@@ -111,39 +100,68 @@ pub(crate) fn emit_glyph_run(
     // run covers the whole run (exactly the coalescing case we must fix). When it
     // does not (Parley split the run on a real style change), we fall back to the
     // caller's per-run `scale` and no extra rise — unchanged behaviour.
-    let glyph_text_offsets: Vec<usize> = run
-        .visual_clusters()
-        .flat_map(|c| {
-            let start = c.text_range().start;
-            c.glyphs().map(move |_| start)
-        })
-        .collect();
-    let raw_glyphs: Vec<parley::Glyph> = glyph_run.glyphs().collect();
-    let aligned = glyph_text_offsets.len() == raw_glyphs.len();
-    // (scale, rise) per glyph.
-    let per_glyph: Vec<(f32, f32)> = raw_glyphs
+    //
+    // The cluster/glyph/per-glyph vectors below exist only to detect and serve
+    // the per-glyph case, so they are built only when some span actually
+    // carries a scale or baseline shift — three avoided heap allocations per
+    // glyph run on the common no-`w:w`/no-`w:position` path. The per-glyph
+    // path accumulates scaled advances (a scaled sub-run stretches, a raised
+    // neighbour in the SAME run keeps its size); the uniform fast path
+    // reproduces the previous geometry exactly.
+    let has_per_glyph = spans
         .iter()
-        .enumerate()
-        .map(|(i, _)| {
-            if aligned {
-                let s = span_at_offset(spans, glyph_text_offsets[i]);
-                (
-                    s.and_then(|sp| sp.scale).unwrap_or(scale),
-                    s.and_then(|sp| sp.baseline_shift).unwrap_or(0.0),
-                )
-            } else {
-                (scale, 0.0)
+        .any(|s| s.scale.is_some() || s.baseline_shift.is_some());
+    let (glyphs, scaled_advance): (Vec<GlyphEntry>, f32) = 'geom: {
+        if has_per_glyph {
+            let glyph_text_offsets: Vec<usize> = run
+                .visual_clusters()
+                .flat_map(|c| {
+                    let start = c.text_range().start;
+                    c.glyphs().map(move |_| start)
+                })
+                .collect();
+            let raw_glyphs: Vec<parley::Glyph> = glyph_run.glyphs().collect();
+            let aligned = glyph_text_offsets.len() == raw_glyphs.len();
+            // (scale, rise) per glyph.
+            let per_glyph: Vec<(f32, f32)> = raw_glyphs
+                .iter()
+                .enumerate()
+                .map(|(i, _)| {
+                    if aligned {
+                        let s = span_at_offset(spans, glyph_text_offsets[i]);
+                        (
+                            s.and_then(|sp| sp.scale).unwrap_or(scale),
+                            s.and_then(|sp| sp.baseline_shift).unwrap_or(0.0),
+                        )
+                    } else {
+                        (scale, 0.0)
+                    }
+                })
+                .collect();
+            let uniform = per_glyph
+                .iter()
+                .all(|&(sc, rise)| (sc - scale).abs() < f32::EPSILON && rise == 0.0);
+            if !uniform {
+                let mut pen = 0.0f32;
+                let glyphs = raw_glyphs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, g)| {
+                        let (sc, rise) = per_glyph[i];
+                        let entry = GlyphEntry {
+                            id: g.id as u16,
+                            x: pen + g.x * sc,
+                            // `rise` raises the glyph (screen-y is down, so subtract).
+                            y: g.y - rise,
+                            advance: g.advance * sc,
+                        };
+                        pen += g.advance * sc;
+                        entry
+                    })
+                    .collect();
+                break 'geom (glyphs, pen);
             }
-        })
-        .collect();
-    let uniform = per_glyph
-        .iter()
-        .all(|&(sc, rise)| (sc - scale).abs() < f32::EPSILON && rise == 0.0);
-
-    // Fast (uniform) path reproduces the previous geometry exactly; the per-glyph
-    // path accumulates scaled advances so a 150 %-scaled sub-run stretches while a
-    // raised/lowered neighbour in the SAME glyph run keeps its size and rises.
-    let (glyphs, scaled_advance): (Vec<GlyphEntry>, f32) = if uniform {
+        }
         let glyphs = glyph_run
             .positioned_glyphs()
             .map(|g| GlyphEntry {
@@ -154,30 +172,11 @@ pub(crate) fn emit_glyph_run(
             })
             .collect();
         (glyphs, glyph_run.advance() * scale)
-    } else {
-        let mut pen = 0.0f32;
-        let glyphs = raw_glyphs
-            .iter()
-            .enumerate()
-            .map(|(i, g)| {
-                let (sc, rise) = per_glyph[i];
-                let entry = GlyphEntry {
-                    id: g.id as u16,
-                    x: pen + g.x * sc,
-                    // `rise` raises the glyph (screen-y is down, so subtract).
-                    y: g.y - rise,
-                    advance: g.advance * sc,
-                };
-                pen += g.advance * sc;
-                entry
-            })
-            .collect();
-        (glyphs, pen)
     };
 
-    let text_range = run.text_range();
+    let covering_span = span_covering_range(spans, run.text_range());
 
-    let link_url = span_link_url_for_range(spans, text_range.clone());
+    let link_url = covering_span.and_then(|s| s.link_url.clone());
 
     // ── Vertical offset for super/subscript (gap #3) ──────────────────────────
     // Parley does not expose baseline-shift, so font size is reduced to 58 % in
@@ -185,7 +184,8 @@ pub(crate) fn emit_glyph_run(
     // actually appears above/below the baseline.
     // Superscript: raise by 35 % of the original (pre-reduction) font size.
     // Subscript:   lower by 20 % of the original font size.
-    let va_offset = span_vertical_align_for_range(spans, text_range.clone())
+    let va_offset = covering_span
+        .and_then(|s| s.vertical_align.map(|va| (va, s.font_size)))
         .map(|(va, orig_size)| match va {
             VerticalAlign::Superscript => -orig_size * 0.35,
             VerticalAlign::Subscript => orig_size * 0.20,
@@ -196,7 +196,7 @@ pub(crate) fn emit_glyph_run(
     // Emit a filled rect sized to the run's ink extent BEFORE the glyph run so
     // the background renders below the text. Only on the banded path; the main
     // path handles highlights via a selection-geometry pass (robust to coalescing).
-    if emit_highlight && let Some(hl_color) = span_highlight_for_range(spans, text_range.clone()) {
+    if emit_highlight && let Some(hl_color) = covering_span.and_then(|s| s.highlight_color) {
         let m = run.metrics();
         items.push(PositionedItem::FilledRect(PositionedRect {
             rect: LayoutRect::new(
@@ -214,7 +214,7 @@ pub(crate) fn emit_glyph_run(
     // as a hard shadow behind the main run.
     // TODO(shadow): replace with Vello blur filter for soft shadow once
     // scene.rs blur pipeline is verified stable (see TODO in scene.rs).
-    if span_has_shadow(spans, text_range.clone()) {
+    if covering_span.is_some_and(|s| s.shadow) {
         items.push(PositionedItem::GlyphRun(PositionedGlyphRun {
             origin: LayoutPoint {
                 x: run_offset + indent_x + 0.5,
@@ -255,7 +255,8 @@ pub(crate) fn emit_glyph_run(
     // the `w:u` variant, so recover it from our spans by the run's text range.
     if let Some(deco) = &style.underline {
         let m = run.metrics();
-        let deco_style = span_underline(spans, run.text_range())
+        let deco_style = covering_span
+            .and_then(|s| s.underline)
             .map(underline_deco_style)
             .unwrap_or(DecorationStyle::Solid);
         // COMPAT(parley-0.6): RunMetrics offsets follow OpenType / skrifa Y-up
@@ -275,7 +276,7 @@ pub(crate) fn emit_glyph_run(
     // Strikethrough decoration (single, or `w:dstrike` double).
     if let Some(deco) = &style.strikethrough {
         let m = run.metrics();
-        let deco_style = match span_strike(spans, run.text_range()) {
+        let deco_style = match covering_span.and_then(|s| s.strikethrough) {
             Some(StrikethroughStyle::Double) => DecorationStyle::Double,
             _ => DecorationStyle::Solid,
         };

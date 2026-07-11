@@ -1378,8 +1378,6 @@ pub use crate::list_marker::format_list_marker;
 
 // ── Private helpers for span → glyph-run lookups ──────────────────────────────
 
-/// Returns the highlight colour for the first span fully containing
-/// `text_range`, or `None` if no such span has a highlight.
 /// Returns the span whose byte range contains `offset`, or `None` if no span
 /// covers it. Empty (zero-width) spans never match. Used by per-glyph emission
 /// to resolve each glyph's scale / baseline shift.
@@ -1389,16 +1387,6 @@ pub(crate) fn span_at_offset(spans: &[StyleSpan], offset: usize) -> Option<&Styl
         .find(|s| s.range.start <= offset && offset < s.range.end)
 }
 
-pub(crate) fn span_highlight_for_range(
-    spans: &[StyleSpan],
-    text_range: Range<usize>,
-) -> Option<LayoutColor> {
-    spans
-        .iter()
-        .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
-        .and_then(|s| s.highlight_color)
-}
-
 /// Returns the horizontal text scale for the first span fully containing
 /// `text_range`, or `None` when the run is unscaled (100 %).
 pub(crate) fn span_scale_for_range(spans: &[StyleSpan], text_range: Range<usize>) -> Option<f32> {
@@ -1406,40 +1394,6 @@ pub(crate) fn span_scale_for_range(spans: &[StyleSpan], text_range: Range<usize>
         .iter()
         .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
         .and_then(|s| s.scale)
-}
-
-/// Returns the link URL for the first span fully containing `text_range`,
-/// or `None` if no span in that range carries a link URL.
-pub(crate) fn span_link_url_for_range(
-    spans: &[StyleSpan],
-    text_range: Range<usize>,
-) -> Option<String> {
-    spans
-        .iter()
-        .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
-        .and_then(|s| s.link_url.clone())
-}
-
-/// Returns `true` if the first span fully containing `text_range` has
-/// `shadow = true`.
-pub(crate) fn span_has_shadow(spans: &[StyleSpan], text_range: Range<usize>) -> bool {
-    spans
-        .iter()
-        .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
-        .is_some_and(|s| s.shadow)
-}
-
-/// Returns the vertical alignment and original (pre-reduction) font size for
-/// the first span fully containing `text_range`, or `None` if no vertical
-/// alignment is set on that span.
-pub(crate) fn span_vertical_align_for_range(
-    spans: &[StyleSpan],
-    text_range: Range<usize>,
-) -> Option<(VerticalAlign, f32)> {
-    spans
-        .iter()
-        .find(|s| s.range.start <= text_range.start && s.range.end >= text_range.end)
-        .and_then(|s| s.vertical_align.map(|va| (va, s.font_size)))
 }
 
 #[cfg(test)]

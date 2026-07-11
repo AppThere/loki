@@ -5,7 +5,7 @@
 
 use crate::constants::REL_OFFICE_DOCUMENT;
 use crate::error::{OoxmlError, OoxmlWarning};
-use crate::xml_util::{event_text, local_attr_val, local_name};
+use crate::xml_util::{event_text, local_attr_val, local_attr_vals, local_name};
 use loki_opc::{Package, PartName};
 use loki_sheet_model::{
     Cell, CellAlign, CellStyle, DocumentMeta, NumberFormat, Workbook, Worksheet,
@@ -376,9 +376,11 @@ fn parse_worksheet(
             let e = $e;
             match local_name(e) {
                 b"c" => {
-                    current_ref = local_attr_val(e, b"r");
-                    current_type = local_attr_val(e, b"t");
-                    current_style_idx = local_attr_val(e, b"s").and_then(|s| s.parse::<usize>().ok());
+                    // One scan of the attribute list per cell instead of three.
+                    let [r, t, s] = local_attr_vals(e, [b"r", b"t", b"s"]);
+                    current_ref = r;
+                    current_type = t;
+                    current_style_idx = s.and_then(|s| s.parse::<usize>().ok());
                     current_formula = None;
                     current_value.clear();
                 }
@@ -548,28 +550,25 @@ fn rels_by_type<'a>(
 // ── Coordinate Conversion Helpers ──────────────────────────────────────────
 
 fn cell_ref_to_coord(cell_ref: &str) -> Option<(u32, u32)> {
-    let mut chars = cell_ref.chars().peekable();
-    let mut col_str = String::new();
-    while let Some(&c) = chars.peek() {
-        if c.is_ascii_alphabetic() {
-            col_str.push(c.to_ascii_uppercase());
-            chars.next();
-        } else {
-            break;
-        }
-    }
-    let row_str: String = chars.collect();
-    if col_str.is_empty() || row_str.is_empty() {
+    // Allocation-free split of "AB12" into column letters and row digits —
+    // this runs once per cell on import. The leading letters are single-byte
+    // ASCII, so `split` always lands on a char boundary; a non-digit tail
+    // (or a non-ASCII byte) simply fails the row parse, as before.
+    let bytes = cell_ref.as_bytes();
+    let split = bytes
+        .iter()
+        .position(|b| !b.is_ascii_alphabetic())
+        .unwrap_or(bytes.len());
+    if split == 0 || split == bytes.len() {
         return None;
     }
-    let row = row_str.parse::<u32>().ok()?.checked_sub(1)?;
-
     let mut col: u32 = 0;
-    for c in col_str.chars() {
+    for &b in &bytes[..split] {
         col = col
             .checked_mul(26)?
-            .checked_add((c as u32) - ('A' as u32) + 1)?;
+            .checked_add(u32::from(b.to_ascii_uppercase() - b'A') + 1)?;
     }
-    col = col.checked_sub(1)?;
+    let col = col.checked_sub(1)?;
+    let row = cell_ref[split..].parse::<u32>().ok()?.checked_sub(1)?;
     Some((row, col))
 }

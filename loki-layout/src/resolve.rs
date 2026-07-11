@@ -66,7 +66,7 @@ use crate::para::{
 };
 
 #[path = "para_props_map.rs"]
-mod para_map;
+pub(crate) mod para_map;
 
 // ── Public API ────────────────────────────────────────────────────────────────
 

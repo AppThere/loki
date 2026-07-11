@@ -47,15 +47,6 @@ pub fn toggle_prop(val_opt: Option<&str>) -> bool {
     }
 }
 
-/// Parses an integer twips value from an attribute string.
-///
-/// Returns `None` if the attribute is absent or not a valid integer.
-#[must_use]
-#[allow(dead_code)]
-pub fn parse_twips(s: &str) -> Option<i32> {
-    s.parse::<i32>().ok()
-}
-
 /// Parses an i64 EMU value from an attribute string.
 #[must_use]
 pub fn parse_emu(s: &str) -> Option<i64> {
@@ -84,10 +75,5 @@ mod tests {
     #[test]
     fn toggle_one_is_true() {
         assert!(toggle_prop(Some("1")));
-    }
-
-    #[test]
-    fn twips_720_to_i32() {
-        assert_eq!(parse_twips("720"), Some(720));
     }
 }

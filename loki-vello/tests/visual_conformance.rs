@@ -197,8 +197,8 @@ fn render_page(
 
     renderer
         .render_to_texture(
-            &device,
-            &queue,
+            device,
+            queue,
             &scene,
             &texture_view,
             &vello::RenderParams {
@@ -288,10 +288,10 @@ fn test_visual_conformance() {
     if let Ok(entries) = fs::read_dir(&docs_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if let Some(ext) = path.extension() {
-                if ext == "docx" || ext == "odt" {
-                    files.push(path);
-                }
+            if let Some(ext) = path.extension()
+                && (ext == "docx" || ext == "odt")
+            {
+                files.push(path);
             }
         }
     }

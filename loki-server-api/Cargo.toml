@@ -16,7 +16,6 @@ async-trait = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 axum = { workspace = true }
 tracing = { workspace = true }
-base64 = { workspace = true }
 loki-model = { workspace = true }
 loki-crypto = { workspace = true }
 loki-server-auth = { workspace = true }

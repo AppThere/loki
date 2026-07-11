@@ -334,7 +334,7 @@ pub(super) fn flow_keep_with_next_chain(
 
     loop {
         let has_kwn = if let Block::StyledPara(p) = &blocks[chain_end] {
-            resolve_para_props(p, state.catalog).keep_with_next
+            crate::resolve::para_map::para_keep_with_next(p, state.catalog)
         } else {
             false
         };

@@ -16,7 +16,7 @@ use std::sync::Arc;
 #[derive(Default)]
 pub struct FontDataCache {
     entries: HashMap<(usize, u32), peniko::FontData>,
-    coords: HashMap<(usize, u32), Vec<read_fonts::types::F2Dot14>>,
+    coords: HashMap<(usize, u32), Vec<i16>>,
 }
 
 #[cfg(feature = "font-cache")]
@@ -40,19 +40,19 @@ impl FontDataCache {
         })
     }
 
-    /// Returns the cached normalized coordinates (defaulting to zero) for the font's axes.
-    pub fn get_coords(
-        &mut self,
-        data: &Arc<Vec<u8>>,
-        font_index: u32,
-    ) -> &[read_fonts::types::F2Dot14] {
+    /// Returns the cached normalized coordinates (defaulting to zero) for the
+    /// font's axes, in `F2Dot14` bit representation — the form
+    /// `DrawGlyphs::normalized_coords` consumes, so per-glyph-run callers need
+    /// no conversion allocation.
+    pub fn get_coords(&mut self, data: &Arc<Vec<u8>>, font_index: u32) -> &[i16] {
         let key = (Arc::as_ptr(data) as usize, font_index);
         self.coords.entry(key).or_insert_with(|| {
             if let Ok(font_ref) = read_fonts::FontRef::from_index(data, font_index) {
                 use read_fonts::TableProvider;
                 if let Ok(fvar) = font_ref.fvar() {
                     if let Ok(axes) = fvar.axes() {
-                        return vec![read_fonts::types::F2Dot14::default(); axes.len()];
+                        // Default (all-zero) normalized position on every axis.
+                        return vec![0i16; axes.len()];
                     }
                 }
             }
