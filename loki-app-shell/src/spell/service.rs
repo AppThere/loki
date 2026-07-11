@@ -19,6 +19,9 @@ use loki_spell::{
 pub struct SpellSnapshot {
     /// The shared, thread-safe checker.
     pub checker: Arc<SpellChecker>,
+    /// Normalized BCP-47 tag of the active dictionary, so hosts can register
+    /// the checker for per-run language routing (gap #30).
+    pub language: String,
     /// Monotonic generation of the active dictionary.
     pub generation: u64,
 }
@@ -78,6 +81,7 @@ impl SpellService {
         let inner = self.read();
         inner.enabled.then(|| SpellSnapshot {
             checker: Arc::clone(&inner.checker),
+            language: inner.language.clone(),
             generation: inner.generation,
         })
     }

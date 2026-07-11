@@ -9,7 +9,6 @@
 //! [`crate::para::layout_paragraph`].
 //!
 //! # Session 4 pre-audit findings (2026-04-20)
-//!
 //! ## Q1 — Inline::Image data resolution (implemented)
 //!
 //! `Image(NodeAttr, Vec<Inline>, LinkTarget)` carries the src in `LinkTarget.url`
@@ -17,13 +16,11 @@
 //! `cx_emu`/`cy_emu` in `NodeAttr.kv`; alt text is the `Vec<Inline>`. `loki-vello`
 //! renders only data URIs (external URLs → grey placeholder). `walk_inlines`
 //! emits a `CollectedImage`, placed post-Parley as a `PositionedImage`.
-//!
 //! ## Q2 — Inline::Link (implemented via option (b))
 //!
 //! The OOXML mapper resolves `w:hyperlink r:id` to a URL; `StyleSpan.link_url`
 //! carries it onto the run's glyphs, the renderer paints the link hint, and
 //! `PageParagraphData::link_at` hit-tests it (feature 5.11).
-//!
 //! ## Q3 — Image placement model for inline images
 //!
 //! Inline images in OOXML are inline drawings (`<wp:inline>`) sized in EMUs.
@@ -295,6 +292,7 @@ fn effective_run_char_props(
 //   scale              → StyleSpan.scale                (gap #14, P2)
 //
 //   kerning            → StyleSpan.kerning (gap #23, P3; shaper toggle, default OFF)
+//   language           → StyleSpan.language (gap #30, P3; spell-check routing)
 //
 // Fields SILENTLY DROPPED (out of scope for Group 1):
 //   font_name_complex    — complex-script font (BiDi)
@@ -302,7 +300,7 @@ fn effective_run_char_props(
 //   font_size_complex    — complex-script font size
 //   background_color     — per-run background (distinct from highlight)
 //   outline              — hollow text effect
-//   language / language_complex / language_east_asian — locale (gap #30, P3)
+//   language_complex / language_east_asian — script-specific locale variants
 //   hyperlink            — URL (gap #11, P1 — handled at Inline level)
 
 /// Convert a [`CharProps`] snapshot to a [`StyleSpan`] covering `range`.
@@ -386,6 +384,8 @@ fn char_props_to_style_span(props: &CharProps, range: Range<usize>) -> StyleSpan
             .baseline_shift
             .map(pts_to_f32)
             .filter(|&s| s.abs() > f32::EPSILON),
+        // Language tag (gap #30): routes per-run spell checking.
+        language: props.language.as_ref().map(|t| t.as_str().into()),
     };
     crate::revision_style::apply(&mut span, props);
     span

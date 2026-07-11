@@ -194,6 +194,9 @@ fn refresh_and_relayout(
     service: &SpellService,
 ) {
     loki_renderer::spell::set_active(service.snapshot().map(|snap| loki_layout::SpellState {
+        // Active dictionary registered under its own tag → per-run routing
+        // skips runs tagged with languages we have no dictionary for (gap #30).
+        checkers: std::iter::once((snap.language, snap.checker.clone())).collect(),
         checker: snap.checker,
         generation: snap.generation,
     }));

@@ -41,6 +41,7 @@ fn layout_para(
             scale: None,
             kerning: None,
             baseline_shift: None,
+            language: None,
         }],
         &ResolvedParaProps::default(),
         400.0,
@@ -212,6 +213,7 @@ fn make_two_para_layout(text0: &str, text1: &str) -> PaginatedLayout {
         scale: None,
         kerning: None,
         baseline_shift: None,
+        language: None,
     };
     let para0 = layout_paragraph(
         &mut resources,

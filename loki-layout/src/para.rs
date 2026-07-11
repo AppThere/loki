@@ -31,9 +31,8 @@ mod tabs;
 #[path = "para_underlays.rs"]
 mod underlays;
 
-/// Vertical text position for superscript / subscript runs.
-///
-/// Mirrors [`loki_doc_model::style::props::char_props::VerticalAlign`].
+/// Vertical text position for superscript / subscript runs. Mirrors
+/// [`loki_doc_model::style::props::char_props::VerticalAlign`].
 /// TR 29166 §6.2.1. ODF `style:text-position`; OOXML `w:vertAlign`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerticalAlign {
@@ -43,10 +42,8 @@ pub enum VerticalAlign {
     Subscript,
 }
 
-/// Caps variant for a text run.
-///
-/// TR 29166 §6.2.1. ODF `fo:font-variant` / `fo:text-transform`;
-/// OOXML `w:smallCaps` / `w:caps`.
+/// Caps variant for a text run. TR 29166 §6.2.1.
+/// ODF `fo:font-variant` / `fo:text-transform`; OOXML `w:smallCaps` / `w:caps`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FontVariant {
     /// Render lowercase letters as small capitals.
@@ -55,10 +52,9 @@ pub enum FontVariant {
     AllCaps,
 }
 
-/// Underline decoration style, mirroring the doc-model enum.
-///
-/// Rendered per-variant (5.2): the emitter carries the variant onto the
-/// `PositionedDecoration` (`para_emit`) and `loki-vello` strokes each style.
+/// Underline decoration style, mirroring the doc-model enum. Rendered
+/// per-variant (5.2): the emitter carries the variant onto the
+/// `PositionedDecoration` and `loki-vello` strokes each style.
 /// TR 29166 §6.2.1. ODF `style:text-underline-style`; OOXML `w:u`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnderlineStyle {
@@ -76,10 +72,8 @@ pub enum UnderlineStyle {
     Thick,
 }
 
-/// Strikethrough decoration style, mirroring the doc-model enum.
-///
-/// Rendered per-variant (5.2): `Double` maps to a double stroke in
-/// `loki-vello`, `Single` to one line.
+/// Strikethrough decoration style, mirroring the doc-model enum. Rendered
+/// per-variant (5.2): `Double` maps to a double stroke, `Single` to one line.
 /// TR 29166 §6.2.1. ODF `style:text-line-through-style`;
 /// OOXML `w:strike` / `w:dstrike`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -236,6 +230,11 @@ pub struct StyleSpan {
     ///
     /// [`vertical_align`]: Self::vertical_align
     pub baseline_shift: Option<f32>,
+
+    /// BCP-47 language tag of this run (OOXML `w:lang`, ODF
+    /// `fo:language`/`fo:country`), carried for per-run spell-check routing
+    /// (gap #30) — see [`crate::SpellState::checker_for`]. `None` = untagged.
+    pub language: Option<std::sync::Arc<str>>,
 }
 
 /// Resolved paragraph-level properties passed to [`layout_paragraph`].
@@ -1229,6 +1228,7 @@ fn layout_paragraph_uncached(
         &mut items,
         &layout,
         &clean_text,
+        &clean_spans,
         spell,
         para_props,
         drop_lines,

@@ -173,6 +173,7 @@ mod tests {
             scale: None,
             kerning: None,
             baseline_shift: None,
+            language: None,
         }
     }
 
@@ -250,6 +251,13 @@ mod tests {
         bold.bold = true;
         lay(&mut r, base, &[bold], 400.0);
         assert_eq!(r.para_cache.len(), 4, "different style span must miss");
+
+        // Different run language (gap #30): squiggle routing depends on it, so
+        // it must participate in the key (covered by the Debug fold).
+        let mut tagged = span(base);
+        tagged.language = Some("fr-FR".into());
+        lay(&mut r, base, &[tagged], 400.0);
+        assert_eq!(r.para_cache.len(), 5, "different language must miss");
     }
 
     #[test]

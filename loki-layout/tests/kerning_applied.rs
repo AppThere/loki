@@ -42,6 +42,7 @@ fn carlito_span(text: &str, font_size: f32, kerning: Option<bool>) -> StyleSpan 
         scale: None,
         kerning,
         baseline_shift: None,
+        language: None,
     }
 }
 
