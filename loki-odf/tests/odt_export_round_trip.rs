@@ -1018,3 +1018,71 @@ fn table_style_percent_width_round_trips() {
         ref other => panic!("expected percent width, got {other:?}"),
     }
 }
+
+/// 5.10: the document-wide defaults survive export as `<style:default-style>`
+/// elements — the paragraph family from the catalog's `is_default` style and
+/// the text family from `default_character_style` — and read back as the
+/// synthetic `__Default` / `__DefaultChar` entries. Before this, the defaults
+/// were silently dropped (the named-style writer skips synthetic styles), so a
+/// re-opened document lost its base font and size.
+#[test]
+fn default_styles_round_trip() {
+    use loki_doc_model::style::char_style::CharacterStyle;
+
+    let mut doc = sample_doc();
+    // A text-family default alongside sample_doc's default "Normal" (Times 12).
+    let ch_id = StyleId::new("__DefaultChar");
+    doc.styles.character_styles.insert(
+        ch_id.clone(),
+        CharacterStyle {
+            id: ch_id.clone(),
+            display_name: None,
+            parent: None,
+            char_props: CharProps {
+                italic: Some(true),
+                ..Default::default()
+            },
+            extensions: Default::default(),
+        },
+    );
+    doc.styles.default_character_style = Some(ch_id);
+
+    let mut buf = Cursor::new(Vec::new());
+    OdtExport::export(&doc, &mut buf, OdtExportOptions::default()).expect("export");
+    let back = OdtImport::import(Cursor::new(buf.into_inner()), OdtImportOptions::default())
+        .expect("import");
+
+    let default = back
+        .styles
+        .paragraph_styles
+        .values()
+        .find(|s| s.is_default)
+        .expect("a default paragraph style must survive the round trip");
+    assert_eq!(
+        default.char_props.font_name.as_deref(),
+        Some("Times New Roman"),
+        "the default base font must round-trip"
+    );
+    assert_eq!(
+        default.char_props.font_size.map(|p| p.value()),
+        Some(12.0),
+        "the default base size must round-trip"
+    );
+    assert_eq!(
+        back.styles.default_paragraph_style.as_ref(),
+        Some(&default.id),
+        "the catalog default wiring must point at the imported default style"
+    );
+
+    let ch = back
+        .styles
+        .default_character_style
+        .as_ref()
+        .and_then(|id| back.styles.character_styles.get(id))
+        .expect("the text-family default must survive the round trip");
+    assert_eq!(
+        ch.char_props.italic,
+        Some(true),
+        "the text-family default's properties must round-trip"
+    );
+}

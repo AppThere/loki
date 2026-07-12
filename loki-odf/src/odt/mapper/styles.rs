@@ -60,6 +60,10 @@ pub(crate) fn map_stylesheet(sheet: &OdfStylesheet) -> StyleCatalog {
             catalog
                 .paragraph_styles
                 .insert(StyleId::new("__Default"), style);
+            // Wire the catalog default so unstyled paragraphs resolve the
+            // document base font via `effective_paragraph_style` (the ODF
+            // analogue of the OOXML `w:default="1"` wiring).
+            catalog.default_paragraph_style = Some(StyleId::new("__Default"));
         } else if ds.family == OdfStyleFamily::Text {
             // `style:default-style style:family="text"` is the character family's
             // `Default` source (ADR-0012 Decision 1) — the ODF symmetry of OOXML's

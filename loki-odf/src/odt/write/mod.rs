@@ -7,8 +7,10 @@
 
 mod auto;
 mod content;
+mod default_style;
 mod inlines;
 mod media;
+mod meta;
 mod page_styles;
 mod para_props;
 mod props;
@@ -20,4 +22,5 @@ mod xml;
 
 pub(crate) use content::content_xml;
 pub(crate) use media::{MathPart, MediaPart};
-pub(crate) use styles::{meta_xml, styles_xml};
+pub(crate) use meta::meta_xml;
+pub(crate) use styles::styles_xml;
