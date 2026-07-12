@@ -360,81 +360,17 @@ fn layout_paragraph_uncached(
         })
         .collect();
 
-    let tab_plans: Vec<tabs::TabPlan> = if tab_char_positions.is_empty() {
-        vec![]
-    } else {
-        let n = tab_char_positions.len();
-        let mut probe = resources.layout_cx.ranged_builder(
-            &mut resources.font_cx,
-            &clean_text,
-            display_scale,
-            true,
-        );
-        push_para_styles(&mut probe, para_props, &clean_spans);
-        for (idx, &pos) in tab_char_positions.iter().enumerate() {
-            probe.push_inline_box(InlineBox {
-                id: idx as u64,
-                kind: InlineBoxKind::InFlow,
-                index: pos,
-                width: 0.0,
-                height: 0.0,
-            });
-            if let Some(dpos) = decimal_positions[idx] {
-                probe.push_inline_box(InlineBox {
-                    id: DEC_ID_BASE + idx as u64,
-                    kind: InlineBoxKind::InFlow,
-                    index: dpos,
-                    width: 0.0,
-                    height: 0.0,
-                });
-            }
-        }
-        probe.push_inline_box(InlineBox {
-            id: END_ID,
-            kind: InlineBoxKind::InFlow,
-            index: clean_text.len(),
-            width: 0.0,
-            height: 0.0,
-        });
-        push_math_inline_boxes(&mut probe, &math_boxes);
-        let mut probe_layout = probe.build(&clean_text);
-        probe_layout.break_all_lines(Some(line_w));
-
-        let mut x_tab = vec![0.0f32; n];
-        let mut line_tab = vec![usize::MAX; n];
-        let mut x_dec = vec![f32::NAN; n];
-        let mut x_end = 0.0f32;
-        let mut line_end = usize::MAX;
-        for (li, line) in probe_layout.lines().enumerate() {
-            for item in line.items() {
-                if let PositionedLayoutItem::InlineBox(pib) = item {
-                    let id = pib.id;
-                    if (id as usize) < n {
-                        x_tab[id as usize] = pib.x;
-                        line_tab[id as usize] = li;
-                    } else if (DEC_ID_BASE..END_ID).contains(&id) {
-                        let i = (id - DEC_ID_BASE) as usize;
-                        if i < n {
-                            x_dec[i] = pib.x;
-                        }
-                    } else if id == END_ID {
-                        x_end = pib.x;
-                        line_end = li;
-                    }
-                }
-            }
-        }
-        tabs::compute_tab_plans(
-            &para_props.tab_stops,
-            para_props.indent_hanging,
-            para_props.default_tab_stop,
-            &x_tab,
-            &line_tab,
-            &x_dec,
-            x_end,
-            line_end,
-        )
-    };
+    let tab_plans: Vec<tabs::TabPlan> = tabs::measure_tab_plans(
+        resources,
+        &clean_text,
+        &clean_spans,
+        para_props,
+        display_scale,
+        line_w,
+        &math_boxes,
+        &tab_char_positions,
+        &decimal_positions,
+    );
 
     // ── Drop-cap preparation ──────────────────────────────────────────────────
     // The dropped initial spans several lines: it is removed from the body flow
