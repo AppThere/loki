@@ -16,7 +16,7 @@ use super::media::{Media, Rendered};
 use super::page_styles::resolve_page_style_names;
 use super::para_props::emit_paragraph_properties;
 use super::props::emit_text_properties;
-use super::xml::{attr, escape, pt};
+use super::xml::{attr, pt};
 
 const HEADER: &str = concat!(
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
