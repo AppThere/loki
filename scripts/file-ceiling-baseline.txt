@@ -7,5 +7,4 @@
 834 loki-layout/src/para.rs
 800 loki-text/src/routes/editor/editor_inner.rs
 721 loki-layout/src/flow.rs
-665 loki-layout/src/resolve.rs
 460 loki-text/src/routes/editor/editor_canvas.rs
