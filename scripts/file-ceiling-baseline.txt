@@ -8,6 +8,5 @@
 800 loki-text/src/routes/editor/editor_inner.rs
 721 loki-layout/src/flow.rs
 665 loki-layout/src/resolve.rs
-599 loki-odf/src/odt/reader/styles.rs
 522 loki-layout/src/flow_para.rs
 460 loki-text/src/routes/editor/editor_canvas.rs

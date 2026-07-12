@@ -12,10 +12,46 @@
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
-use super::{ParsedStyleProps, para_props, parse_text_props_attrs, skip_element, table_style};
+use super::{ParsedStyleProps, para_props, skip_element, table_style};
 use crate::error::{OdfError, OdfResult};
-use crate::odt::model::styles::{OdfCellProps, OdfGraphicWrap};
+use crate::odt::model::styles::{OdfCellProps, OdfGraphicWrap, OdfTextProps};
 use crate::xml_util::local_attr_val;
+
+/// Parse the attributes of a `style:text-properties` element into an
+/// [`OdfTextProps`]. Shared by the style-props reader and the list-style reader
+/// (re-exported from `styles.rs` as `parse_text_props_attrs`).
+pub(super) fn parse_text_props_attrs(e: &quick_xml::events::BytesStart<'_>) -> OdfTextProps {
+    OdfTextProps {
+        font_name: local_attr_val(e, b"font-name"),
+        font_family: local_attr_val(e, b"font-family"),
+        font_size: local_attr_val(e, b"font-size"),
+        font_weight: local_attr_val(e, b"font-weight"),
+        font_style: local_attr_val(e, b"font-style"),
+        text_underline_style: local_attr_val(e, b"text-underline-style"),
+        text_underline_type: local_attr_val(e, b"text-underline-type"),
+        text_line_through_style: local_attr_val(e, b"text-line-through-style"),
+        font_variant: local_attr_val(e, b"font-variant"),
+        text_transform: local_attr_val(e, b"text-transform"),
+        color: local_attr_val(e, b"color"),
+        background_color: local_attr_val(e, b"background-color"),
+        text_shadow: local_attr_val(e, b"text-shadow"),
+        language: local_attr_val(e, b"language"),
+        country: local_attr_val(e, b"country"),
+        text_position: local_attr_val(e, b"text-position"),
+        letter_spacing: local_attr_val(e, b"letter-spacing"),
+        font_size_complex: local_attr_val(e, b"font-size-complex"),
+        font_name_complex: local_attr_val(e, b"font-name-complex"),
+        font_name_asian: local_attr_val(e, b"font-name-asian"),
+        text_outline: local_attr_val(e, b"text-outline").map(|v| v != "false"),
+        word_spacing: local_attr_val(e, b"word-spacing"),
+        letter_kerning: local_attr_val(e, b"letter-kerning").map(|v| v == "true"),
+        text_scale: local_attr_val(e, b"text-scale"),
+        language_complex: local_attr_val(e, b"language-complex"),
+        country_complex: local_attr_val(e, b"country-complex"),
+        language_asian: local_attr_val(e, b"language-asian"),
+        country_asian: local_attr_val(e, b"country-asian"),
+    }
+}
 
 /// Read the children of a `style:style` or `style:default-style` element
 /// until the matching end tag, collecting every `style:*-properties` child
