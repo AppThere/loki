@@ -14,7 +14,6 @@
 540 loki-ooxml/src/docx/write/document.rs
 540 loki-ooxml/src/docx/reader/document.rs
 522 loki-layout/src/flow_para.rs
-466 loki-ooxml/src/xlsx/export.rs
 465 loki-odf/src/ods/import.rs
 460 loki-text/src/routes/editor/editor_canvas.rs
 437 loki-ooxml/src/docx/mapper/document.rs
