@@ -4654,7 +4654,6 @@ dependencies = [
  "image",
  "loki-doc-model",
  "loki-layout",
- "loki-primitives",
  "pdf-writer",
  "subsetter",
  "thiserror 2.0.18",

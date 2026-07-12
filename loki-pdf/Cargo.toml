@@ -11,7 +11,6 @@ categories = ["encoding", "text-processing"]
 [dependencies]
 loki-doc-model = { path = "../loki-doc-model" }
 loki-layout = { path = "../loki-layout" }
-loki-primitives = { path = "../loki-primitives" }
 thiserror = "2"
 pdf-writer = "0.15"
 ttf-parser = "0.25"
