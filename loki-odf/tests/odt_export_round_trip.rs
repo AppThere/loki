@@ -854,6 +854,7 @@ fn table_style_banding_resolves_into_per_cell_shading_on_odt_export() {
         TableRegion::FirstRow,
         TableConditionalFormat {
             background_color: Some(blue.clone()),
+            char_props: loki_doc_model::style::props::char_props::CharProps::default(),
         },
     );
 

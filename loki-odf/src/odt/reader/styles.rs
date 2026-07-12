@@ -16,8 +16,7 @@ use crate::error::{OdfError, OdfResult};
 use crate::odt::model::document::OdfMasterPage;
 use crate::odt::model::list_styles::{OdfListLevel, OdfListLevelKind, OdfListStyle};
 use crate::odt::model::styles::{
-    OdfCellProps, OdfDefaultStyle, OdfGraphicWrap, OdfStyle, OdfStyleFamily, OdfStylesheet,
-    OdfTextProps,
+    OdfDefaultStyle, OdfStyle, OdfStyleFamily, OdfStylesheet, OdfTextProps,
 };
 use crate::xml_util::local_attr_val;
 
@@ -27,9 +26,12 @@ mod list;
 mod page;
 #[path = "styles_para.rs"]
 mod para_props;
+#[path = "styles_props.rs"]
+mod props;
 #[path = "styles_table.rs"]
 mod table_style;
 
+use props::parse_style_props;
 use table_style::ParsedStyleProps;
 
 // ── Public entry point ─────────────────────────────────────────────────────────
@@ -246,168 +248,6 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
     }
 
     Ok(sheet)
-}
-
-// ── Style property parsing ─────────────────────────────────────────────────────
-
-/// Read the children of a `style:style` or `style:default-style` element
-/// until the matching end tag, collecting every `style:*-properties` child
-/// into a [`ParsedStyleProps`].
-fn parse_style_props(reader: &mut Reader<&[u8]>, end_local: &[u8]) -> OdfResult<ParsedStyleProps> {
-    let mut buf = Vec::new();
-    let mut props = ParsedStyleProps::default();
-
-    loop {
-        buf.clear();
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => {
-                let local = e.local_name().into_inner().to_vec();
-                match local.as_slice() {
-                    b"paragraph-properties" => {
-                        let pp = para_props::parse_para_props_element(e);
-                        drop(e);
-                        let pp = para_props::parse_para_props_with_children(reader, pp)?;
-                        props.para_props = Some(pp);
-                    }
-                    b"text-properties" => {
-                        props.text_props = Some(parse_text_props_attrs(e));
-                        drop(e);
-                        skip_element(reader, b"text-properties")?;
-                    }
-                    b"table-column-properties" => {
-                        props.col_width = crate::xml_util::local_attr_val(e, b"column-width");
-                        drop(e);
-                        skip_element(reader, b"table-column-properties")?;
-                    }
-                    // COMPAT(odf): style:table-cell-properties may be self-closing
-                    // (Empty) or have children (Start/End); handle both.
-                    b"table-cell-properties" => {
-                        props.cell_props = Some(parse_cell_props_element(e));
-                        drop(e);
-                        skip_element(reader, b"table-cell-properties")?;
-                    }
-                    b"table-properties" => {
-                        props.table_props = Some(table_style::parse_table_props_element(e));
-                        drop(e);
-                        skip_element(reader, b"table-properties")?;
-                    }
-                    b"graphic-properties" => {
-                        props.graphic_wrap = Some(parse_graphic_wrap_element(e));
-                        drop(e);
-                        skip_element(reader, b"graphic-properties")?;
-                    }
-                    _ => {
-                        let local = local.clone();
-                        drop(e);
-                        skip_element(reader, &local)?;
-                    }
-                }
-            }
-            Ok(Event::Empty(ref e)) => {
-                let local = e.local_name().into_inner();
-                match local {
-                    b"paragraph-properties" => {
-                        props.para_props = Some(para_props::parse_para_props_element(e));
-                    }
-                    b"text-properties" => {
-                        props.text_props = Some(parse_text_props_attrs(e));
-                    }
-                    b"table-column-properties" => {
-                        props.col_width = crate::xml_util::local_attr_val(e, b"column-width");
-                    }
-                    b"table-cell-properties" => {
-                        props.cell_props = Some(parse_cell_props_element(e));
-                    }
-                    b"table-properties" => {
-                        props.table_props = Some(table_style::parse_table_props_element(e));
-                    }
-                    b"graphic-properties" => {
-                        props.graphic_wrap = Some(parse_graphic_wrap_element(e));
-                    }
-                    _ => {}
-                }
-            }
-            Ok(Event::End(ref e)) => {
-                if e.local_name().into_inner() == end_local {
-                    break;
-                }
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                return Err(OdfError::Xml {
-                    part: "styles.xml".to_string(),
-                    source: e,
-                });
-            }
-            _ => {}
-        }
-    }
-
-    Ok(props)
-}
-
-/// Build an [`OdfGraphicWrap`] from a `style:graphic-properties` element.
-fn parse_graphic_wrap_element(e: &quick_xml::events::BytesStart<'_>) -> OdfGraphicWrap {
-    OdfGraphicWrap {
-        wrap: local_attr_val(e, b"wrap"),
-        run_through: local_attr_val(e, b"run-through"),
-    }
-}
-
-/// Build an [`OdfCellProps`] from the attributes of a
-/// `style:table-cell-properties` element.
-///
-/// ODF shorthand `fo:padding` sets all four edges; individual edge attributes
-/// (`fo:padding-top` etc.) take precedence over the shorthand.
-/// Same logic applies to `fo:border` vs per-edge border attributes.
-fn parse_cell_props_element(e: &quick_xml::events::BytesStart<'_>) -> OdfCellProps {
-    // Apply fo:padding shorthand to all edges first.
-    let padding_all = local_attr_val(e, b"padding");
-    let mut props = OdfCellProps {
-        padding_top: padding_all.clone(),
-        padding_bottom: padding_all.clone(),
-        padding_left: padding_all.clone(),
-        padding_right: padding_all,
-        vertical_align: local_attr_val(e, b"vertical-align"),
-        writing_mode: local_attr_val(e, b"writing-mode"),
-        background_color: local_attr_val(e, b"background-color"),
-        ..Default::default()
-    };
-    // Per-edge padding overrides shorthand.
-    if let Some(v) = local_attr_val(e, b"padding-top") {
-        props.padding_top = Some(v);
-    }
-    if let Some(v) = local_attr_val(e, b"padding-bottom") {
-        props.padding_bottom = Some(v);
-    }
-    if let Some(v) = local_attr_val(e, b"padding-left") {
-        props.padding_left = Some(v);
-    }
-    if let Some(v) = local_attr_val(e, b"padding-right") {
-        props.padding_right = Some(v);
-    }
-
-    // Apply fo:border shorthand to all edges first.
-    let border_all = local_attr_val(e, b"border");
-    props.border_top.clone_from(&border_all);
-    props.border_bottom.clone_from(&border_all);
-    props.border_left.clone_from(&border_all);
-    props.border_right = border_all;
-    // Per-edge border overrides shorthand.
-    if let Some(v) = local_attr_val(e, b"border-top") {
-        props.border_top = Some(v);
-    }
-    if let Some(v) = local_attr_val(e, b"border-bottom") {
-        props.border_bottom = Some(v);
-    }
-    if let Some(v) = local_attr_val(e, b"border-left") {
-        props.border_left = Some(v);
-    }
-    if let Some(v) = local_attr_val(e, b"border-right") {
-        props.border_right = Some(v);
-    }
-
-    props
 }
 
 /// Build an [`OdfTextProps`] from the attributes of a
