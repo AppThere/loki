@@ -7,7 +7,7 @@ use super::*;
 use crate::docx::import::DocxImportOptions;
 use crate::docx::model::document::DocxBodyChild;
 use crate::docx::model::paragraph::DocxParagraph;
-use crate::docx::model::styles::{DocxTableCell, DocxTableRow, DocxTcPr, DocxTrPr};
+use crate::docx::model::styles::{DocxTableCell, DocxTableRow, DocxTcPr, DocxTrPr, DocxVMerge};
 use loki_doc_model::content::block::Block;
 use loki_doc_model::style::catalog::StyleCatalog;
 use loki_opc::PartData;

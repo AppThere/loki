@@ -22,4 +22,3 @@
 316 loki-text/src/routes/editor/editor_style.rs
 314 loki-renderer/src/page_paint_source.rs
 312 loki-odf/src/odt/model/styles.rs
-306 loki-ooxml/src/docx/mapper/table.rs
