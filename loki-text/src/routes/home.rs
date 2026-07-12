@@ -9,7 +9,7 @@
 //! All user-visible strings come from `loki_i18n::fl!()` — no hardcoded
 //! English literals.
 
-use appthere_ui::{AtConfirmDialog, AtHomeTab, BuiltinTemplate, RecentDocument};
+use appthere_ui::{AtConfirmDialog, AtHomeTab, RecentDocument};
 use dioxus::prelude::*;
 use loki_file_access::{FileAccessToken, FilePicker, PickOptions, PickerError, SaveOptions};
 use loki_i18n::fl;
@@ -25,56 +25,9 @@ use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
 use crate::utils::display_title_from_path;
 
-// ── MIME types accepted by the file picker ────────────────────────────────────
-
-const MIME_TYPES: &[&str] = &[
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.oasis.opendocument.text",
-    // Templates — opened as fresh, detached documents.
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.template", // .dotx
-    "application/vnd.ms-word.template.macroEnabled.12",                        // .dotm
-    "application/vnd.oasis.opendocument.text-template",                        // .ott
-];
-
-// ── Template data ─────────────────────────────────────────────────────────────
-
-// Gallery card 0 is the plain Blank document; cards 1..=5 are the bundled
-// templates, in the same order as the `on_template_select` match below.
-fn make_templates() -> Vec<BuiltinTemplate> {
-    let dotx = || fl!("home-template-format-dotx");
-    vec![
-        BuiltinTemplate {
-            name: fl!("home-template-blank"),
-            description: fl!("home-template-blank-description"),
-            format_label: fl!("home-template-blank-format"),
-        },
-        BuiltinTemplate {
-            name: fl!("home-template-markdown"),
-            description: fl!("home-template-markdown-description"),
-            format_label: dotx(),
-        },
-        BuiltinTemplate {
-            name: fl!("home-template-apa"),
-            description: fl!("home-template-apa-description"),
-            format_label: dotx(),
-        },
-        BuiltinTemplate {
-            name: fl!("home-template-mla"),
-            description: fl!("home-template-mla-description"),
-            format_label: dotx(),
-        },
-        BuiltinTemplate {
-            name: fl!("home-template-screenplay"),
-            description: fl!("home-template-screenplay-description"),
-            format_label: dotx(),
-        },
-        BuiltinTemplate {
-            name: fl!("home-template-resume"),
-            description: fl!("home-template-resume-description"),
-            format_label: dotx(),
-        },
-    ]
-}
+#[path = "home_templates.rs"]
+mod templates;
+use templates::{MIME_TYPES, make_templates};
 
 // ── Home ──────────────────────────────────────────────────────────────────────
 

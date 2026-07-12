@@ -17,7 +17,6 @@
 410 loki-odf/src/package.rs
 387 loki-ooxml/src/docx/import.rs
 367 loki-odf/src/odt/reader/document.rs
-331 loki-text/src/routes/home.rs
 325 loki-layout/src/incremental.rs
 324 loki-layout/src/lib.rs
 316 loki-text/src/routes/editor/editor_style.rs
