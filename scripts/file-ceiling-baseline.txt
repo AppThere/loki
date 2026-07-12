@@ -15,6 +15,5 @@
 460 loki-text/src/routes/editor/editor_canvas.rs
 410 loki-odf/src/package.rs
 387 loki-ooxml/src/docx/import.rs
-384 loki-vello/src/scene.rs
 367 loki-odf/src/odt/reader/document.rs
 314 loki-renderer/src/page_paint_source.rs
