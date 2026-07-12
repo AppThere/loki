@@ -22,6 +22,8 @@ mod editing;
 mod float_impl;
 #[path = "flow_list_marker.rs"]
 mod flow_list_marker;
+#[path = "flow_group.rs"]
+mod group;
 #[path = "flow_page_fields.rs"]
 mod page_fields;
 #[path = "flow_para_between.rs"]
@@ -35,6 +37,7 @@ mod table_geom;
 #[path = "flow_table_paint.rs"]
 mod table_paint;
 
+pub use group::flow_section_group;
 pub(crate) use page_fields::page_layout_has_page_fields;
 
 use std::collections::HashMap;
@@ -204,6 +207,10 @@ pub(super) struct FlowState<'a> {
     pub(super) nested_editing: Option<editing::NestedEditing>,
     /// Between-border override for the paragraph about to flow (gap #26).
     pub(super) staged_between: Option<para_between::BetweenOverride>,
+    /// Newest block observed to start a fresh page, with its pre-block resume
+    /// snapshot — the last-page balancing seed (`flow_balance`; multi-column
+    /// flows only). `None`d when a block spans several page advances.
+    pub(super) tail_candidate: Option<PageStart>,
 }
 
 impl FlowState<'_> {
@@ -316,6 +323,7 @@ fn new_flow_state<'a>(
         active_float: None,
         nested_editing: None,
         staged_between: None,
+        tail_candidate: None,
     }
 }
 
@@ -335,20 +343,29 @@ fn run_paginated_loop(
 ) -> Option<usize> {
     let mut i = start;
     while i < blocks.len() {
+        // Balancing probe (`flow_balance`, multi-column only): snapshot before
+        // the block; if exactly one page flushes while it flows, this block is
+        // the candidate start of the newest page (verified before use).
+        let probe = (state.columns > 1).then(|| (state.snapshot_checkpoint(), state.pages.len()));
         if state.cursor_y == 0.0 && state.current_items.is_empty() {
             let cp = state.snapshot_checkpoint();
             if resync(i, &cp) {
                 return Some(i);
             }
-            state.checkpoints.push(PageStart {
+            let ps = PageStart {
                 page_index: state.pages.len(),
                 // Filled in by `layout_paginated_full` (flow is section-local).
                 section_index: 0,
                 block_index: block_index_base + i,
                 checkpoint: cp,
-            });
+            };
+            // A clean page top is a proven candidate — it supersedes the
+            // previous block's flush-derived guess.
+            state.tail_candidate = Some(ps.clone());
+            state.checkpoints.push(ps);
         }
         let block = &blocks[i];
+        let block_i = i;
         if let Block::StyledPara(para) = block
             && para_keep_with_next(para, state.catalog)
         {
@@ -356,11 +373,26 @@ fn run_paginated_loop(
             // editing indices in a kwn chain are not offset by `block_index_base`.
             let consumed = flow_keep_with_next_chain(state, blocks, i);
             i += consumed;
-            continue;
+        } else {
+            state.staged_between = para_between::stage(blocks, i, state.catalog);
+            flow_block(state, block, block_index_base + i);
+            i += 1;
         }
-        state.staged_between = para_between::stage(blocks, i, state.catalog);
-        flow_block(state, block, block_index_base + i);
-        i += 1;
+        if let Some((mut cp, pages_before)) = probe {
+            if state.pages.len() == pages_before + 1 {
+                // The flush bumped the page number after the snapshot; the
+                // page this block starts carries the next number.
+                cp.page_number += 1;
+                state.tail_candidate = Some(PageStart {
+                    page_index: state.pages.len(),
+                    section_index: 0,
+                    block_index: block_index_base + block_i,
+                    checkpoint: cp,
+                });
+            } else if state.pages.len() > pages_before {
+                state.tail_candidate = None; // block spans pages — no clean seed
+            }
+        }
     }
     // Reserve any float left active by the final block so the section's height
     // accounts for it.
@@ -522,53 +554,6 @@ fn begin_continuous_section(state: &mut FlowState, section: &Section) {
     state.column_top_y = state.cursor_y;
     state.column_item_start = state.current_items.len();
     state.column_para_start = state.current_paragraphs.len();
-}
-
-/// Flows a **group** of sections that share pages: the first section starts the
-/// page sequence, and every subsequent (`continuous`) member continues on the
-/// same page, switching column layout mid-page via [`begin_continuous_section`].
-/// Page geometry and headers/footers come from the group's first section.
-///
-/// Paginated mode only — the non-paginated (reflow/pageless) path flows each
-/// section independently (continuous-scroll has no pages to share). Editing
-/// block indices are group-local; the caller globalises them per section.
-pub fn flow_section_group(
-    resources: &mut FontResources,
-    sections: &[&Section],
-    catalog: &StyleCatalog,
-    mode: &LayoutMode,
-    display_scale: f32,
-    options: &LayoutOptions,
-    comments: &[loki_doc_model::content::annotation::Comment],
-) -> FlowOutput {
-    debug_assert!(mode.is_paginated(), "flow_section_group is paginated-only");
-    let primary = sections[0];
-    let mut state = new_flow_state(
-        resources,
-        primary,
-        catalog,
-        mode,
-        display_scale,
-        options,
-        comments,
-    );
-
-    let mut block_base = 0usize;
-    for (i, section) in sections.iter().enumerate() {
-        if i > 0 {
-            begin_continuous_section(&mut state, section);
-        }
-        run_paginated_loop(&mut state, &section.blocks, 0, block_base, |_, _| false);
-        block_base += section.blocks.len();
-    }
-
-    flow_footnotes(&mut state);
-    finish_page(&mut state);
-    FlowOutput::Pages {
-        pages: state.pages,
-        checkpoints: state.checkpoints,
-        warnings: state.warnings,
-    }
 }
 
 // ── Block dispatch ────────────────────────────────────────────────────────────

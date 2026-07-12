@@ -338,6 +338,115 @@ fn short_multi_column_section_balances_across_columns() {
     );
 }
 
+/// 5.10 multi-page: only the *last* page of a multi-page two-column section is
+/// balanced. Earlier (full) pages keep their fill-first packing, the page
+/// count is preserved, and no paragraph is lost or duplicated.
+#[test]
+fn multi_page_two_column_section_balances_only_the_last_page() {
+    let mut r = test_resources();
+    let paras: Vec<_> = (0..14).map(|i| make_para(&format!("Line {i}"))).collect();
+    let n = paras.len();
+    let two_col = PageLayout {
+        columns: Some(SectionColumns {
+            count: 2,
+            gap: Points::new(18.0),
+            separator: false,
+            widths: Vec::new(),
+        }),
+        ..tiny_layout()
+    };
+    let (pages, _) = flow_paginated(&mut r, &section_of(paras, two_col));
+    assert!(
+        pages.len() >= 2,
+        "section must span multiple pages, got {}",
+        pages.len()
+    );
+    // Content preserved: every short paragraph is exactly one glyph run.
+    let runs: usize = pages.iter().map(|p| glyph_x_origins(p).len()).sum();
+    assert_eq!(runs, n, "no paragraph may be lost or duplicated");
+    // The short tail on the last page is spread across both columns …
+    let xs = glyph_x_origins(pages.last().expect("at least one page"));
+    assert!(
+        xs.iter().any(|&x| x < 50.0),
+        "last page must use column one: {xs:?}"
+    );
+    assert!(
+        xs.iter().any(|&x| x >= 99.0),
+        "last-page tail must be balanced into the second column: {xs:?}"
+    );
+    // … while the full first page already used both columns (fill-first).
+    let xs0 = glyph_x_origins(&pages[0]);
+    assert!(
+        xs0.iter().any(|&x| x >= 99.0),
+        "a full first page uses both columns: {xs0:?}"
+    );
+}
+
+/// The production paginated path (`layout_paginated_full`) flows every group
+/// through [`flow_section_group`]; a single-section group must route through
+/// the balanced flow (previously only direct `flow_section` callers balanced).
+#[test]
+fn single_section_group_routes_through_column_balancing() {
+    let mut r = test_resources();
+    let paras: Vec<_> = (0..4).map(|i| make_para(&format!("Line {i}"))).collect();
+    let two_col = PageLayout {
+        columns: Some(SectionColumns {
+            count: 2,
+            gap: Points::new(18.0),
+            separator: false,
+            widths: Vec::new(),
+        }),
+        ..tiny_layout()
+    };
+    let section = section_of(paras, two_col);
+    let out = flow_section_group(
+        &mut r,
+        &[&section],
+        &StyleCatalog::new(),
+        &LayoutMode::Paginated,
+        1.0,
+        &LayoutOptions::default(),
+        &[],
+    );
+    let FlowOutput::Pages { pages, .. } = out else {
+        unreachable!("paginated group returns Pages");
+    };
+    assert_eq!(pages.len(), 1, "the short section fits one page");
+    let xs = glyph_x_origins(&pages[0]);
+    assert!(
+        xs.iter().any(|&x| x >= 99.0),
+        "the group path must balance a single-section group: {xs:?}"
+    );
+}
+
+/// A last page that starts mid-paragraph has no clean-top checkpoint to resume
+/// from: the tail keeps its natural fill-first packing (documented limitation)
+/// without panicking or losing content.
+#[test]
+fn last_page_starting_mid_paragraph_keeps_fill_first() {
+    let mut r = test_resources();
+    let long = make_para(&"word ".repeat(220));
+    let two_col = PageLayout {
+        columns: Some(SectionColumns {
+            count: 2,
+            gap: Points::new(18.0),
+            separator: false,
+            widths: Vec::new(),
+        }),
+        ..tiny_layout()
+    };
+    let (pages, _) = flow_paginated(&mut r, &section_of(vec![long], two_col));
+    assert!(
+        pages.len() >= 2,
+        "the long paragraph must span pages, got {}",
+        pages.len()
+    );
+    assert!(
+        pages.iter().all(|p| !p.content_items.is_empty()),
+        "every page keeps its content"
+    );
+}
+
 #[test]
 fn single_column_keeps_content_in_one_band() {
     let mut r = test_resources();
