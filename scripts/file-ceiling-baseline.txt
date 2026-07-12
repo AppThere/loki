@@ -11,7 +11,6 @@
 613 loki-vello/src/scene.rs
 599 loki-odf/src/odt/reader/styles.rs
 586 loki-odf/src/odt/reader/document.rs
-574 loki-ooxml/src/xlsx/import.rs
 540 loki-ooxml/src/docx/write/document.rs
 540 loki-ooxml/src/docx/reader/document.rs
 522 loki-layout/src/flow_para.rs
