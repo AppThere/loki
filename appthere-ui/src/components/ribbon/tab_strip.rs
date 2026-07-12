@@ -10,8 +10,22 @@ use dioxus::prelude::*;
 
 use crate::components::ribbon::RibbonTabDesc;
 use crate::components::ribbon::RibbonTabIndex;
+use crate::responsive::{use_breakpoint, Breakpoint};
 use crate::tokens;
 use crate::tokens::FONT_FAMILY_UI;
+
+/// The tab-strip height for a breakpoint (Spec 04 M6, R-14): the touch-first
+/// Compact class gets full [`tokens::TOUCH_MIN`] targets (WCAG 2.5.8);
+/// pointer-first classes keep the desktop-density
+/// [`tokens::RIBBON_TAB_STRIP_HEIGHT`], matching the shell tab-bar convention.
+#[must_use]
+pub fn tab_strip_height(breakpoint: Breakpoint) -> f32 {
+    if breakpoint == Breakpoint::Compact {
+        tokens::TOUCH_MIN
+    } else {
+        tokens::RIBBON_TAB_STRIP_HEIGHT
+    }
+}
 
 // ── AtRibbonTabStrip ──────────────────────────────────────────────────────────
 
@@ -22,11 +36,11 @@ use crate::tokens::FONT_FAMILY_UI;
 ///
 /// # Touch target
 ///
-/// Individual [`AtRibbonTab`] components fill the strip height
-/// ([`tokens::RIBBON_TAB_STRIP_HEIGHT`] = 36 px), which is below the WCAG
-/// 2.5.8 minimum of 44 px.  This matches the existing tab bar convention in
-/// the AppThere shell; a future design pass should increase the strip height
-/// to 44 px or add invisible padding to meet the requirement.
+/// Individual [`AtRibbonTab`] components fill the strip height. At the
+/// touch-first Compact breakpoint the strip is [`tokens::TOUCH_MIN`] (44 px)
+/// tall, meeting WCAG 2.5.8 (Spec 04 M6, R-14); pointer-first breakpoints
+/// keep the desktop-density 36 px ([`tokens::RIBBON_TAB_STRIP_HEIGHT`]),
+/// matching the shell tab-bar convention.
 #[component]
 pub fn AtRibbonTabStrip(
     /// Ordered list of tabs to display (core tabs first, then contextual).
@@ -43,6 +57,8 @@ pub fn AtRibbonTabStrip(
     /// Should be `fl!("ribbon-collapse-aria")` or `fl!("ribbon-expand-aria")`.
     toggle_aria_label: String,
 ) -> Element {
+    // Touch posture (R-14): resilient — no responsive context reads Expanded.
+    let strip_h = tab_strip_height(use_breakpoint());
     rsx! {
         div {
             role: "tablist",
@@ -53,7 +69,7 @@ pub fn AtRibbonTabStrip(
                  align-items: stretch; overflow-x: auto; \
                  background: {bg}; border-bottom: 1px solid {border}; \
                  flex-shrink: 0;",
-                h      = tokens::RIBBON_TAB_STRIP_HEIGHT,
+                h      = strip_h,
                 bg     = tokens::COLOR_SURFACE_2,
                 border = tokens::COLOR_BORDER_CHROME,
             ),
@@ -72,7 +88,7 @@ pub fn AtRibbonTabStrip(
             div { style: "flex: 1;" }
 
             // Collapse / expand toggle.
-            // Minimum touch target: RIBBON_TAB_STRIP_HEIGHT × min-width 44 px.
+            // Minimum touch target: strip height × min-width 44 px.
             button {
                 aria_label: toggle_aria_label,
                 style: format!(
@@ -81,7 +97,7 @@ pub fn AtRibbonTabStrip(
                      color: {fg}; font-size: 11px; flex-shrink: 0; \
                      display: flex; align-items: center; justify-content: center;",
                     touch = tokens::TOUCH_MIN,
-                    h     = tokens::RIBBON_TAB_STRIP_HEIGHT,
+                    h     = strip_h,
                     p     = tokens::SPACE_2,
                     fg    = tokens::COLOR_TEXT_ON_CHROME_SECONDARY,
                 ),
@@ -100,8 +116,8 @@ pub fn AtRibbonTabStrip(
 ///
 /// # Touch target
 ///
-/// Fills the strip height (36 px) — see [`AtRibbonTabStrip`] for the known
-/// WCAG 2.5.8 limitation.
+/// Fills the strip height — 44 px ([`tokens::TOUCH_MIN`]) at the touch-first
+/// Compact breakpoint, 36 px at pointer-first ones (see [`AtRibbonTabStrip`]).
 #[component]
 fn AtRibbonTab(
     desc: RibbonTabDesc,
@@ -163,5 +179,26 @@ fn AtRibbonTab(
             onclick: move |_| on_select.call(index),
             "{desc.label}"
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// R-14: touch-first Compact gets WCAG 2.5.8 targets; pointer-first
+    /// classes keep desktop density.
+    #[test]
+    fn compact_strip_is_touch_sized_and_others_keep_desktop_density() {
+        assert_eq!(tab_strip_height(Breakpoint::Compact), tokens::TOUCH_MIN);
+        assert_eq!(
+            tab_strip_height(Breakpoint::Medium),
+            tokens::RIBBON_TAB_STRIP_HEIGHT
+        );
+        assert_eq!(
+            tab_strip_height(Breakpoint::Expanded),
+            tokens::RIBBON_TAB_STRIP_HEIGHT
+        );
+        assert!(tab_strip_height(Breakpoint::Compact) >= 44.0, "WCAG 2.5.8");
     }
 }

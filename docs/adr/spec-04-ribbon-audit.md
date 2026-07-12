@@ -435,7 +435,7 @@ paragraphs (the substantive `flow.rs`/`flow_table` work).
 | **M3 — Collapse cascade** | ⚠️ needs new engine | Build the width-driven engine: per-group priority + condensed/overflow reps + overflow menu (`position: absolute`) + hysteresis (mirror `page_fit`). **The substantive build.** R-13e select-width handled in *condensed*. |
 | **M4 — Render-gate + Insert tab** | ✅ capability table (§4) + create paths (§5) | Add the **Insert** tab with controls for the 5 Create-ready objects only; commit the §4 table. No math/shape controls. |
 | **M5 — Remaining tabs + contextual** | ⚠️ needs selection signal (RB-5) | Add Layout/References/Review from existing features; add a `selected_object: Signal<Option<…>>` in `EditorState`, set it from pointer hit-tests, drive Table/Picture contextual tabs via `is_contextual`. |
-| **M6 — Touch posture** | ✅ `TOUCH_MIN`, breakpoint | Bump tab strip to `TOUCH_MIN` at Compact (R-14); condensed select sizing (R-13e); bottom-ribbon placement *optional* (RB-11). |
+| **M6 — Touch posture** | ✅ **Implemented 2026-07-12** | R-14 built: the tab strip renders at `TOUCH_MIN` (44 px) at Compact via `tab_strip_height` (pointer-first classes keep 36 px). R-13e was already covered by the M3 cascade (`AtRibbonSelect` condensed width). RB-11 bottom placement deliberately not built (optional per this audit; the collapse cascade covers Compact). |
 
 ---
 
