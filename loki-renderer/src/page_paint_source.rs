@@ -16,14 +16,14 @@
 
 use std::sync::{Arc, Mutex};
 
-use anyrender_vello::wgpu::{
-    Extent3d, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor,
-};
 use anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle};
 use vello::{AaConfig, RenderParams, Scene};
 
 use crate::doc_page_source::DocPageSource;
 use crate::document_view::RendererSelection;
+
+#[path = "page_paint_render.rs"]
+mod render;
 
 /// Set once, when the first page tile is rendered, to attribute Vello's one-time
 /// pipeline warm-up to the open-path timing log (see the render path below).
@@ -168,56 +168,19 @@ impl CustomPaintSource for LokiPageSource {
         }
 
         // Step 6: allocate new GPU texture.
-        // COMPAT(blitz): Rgba8Unorm + STORAGE_BINDING|TEXTURE_BINDING matches
-        // the format expected by anyrender_vello register_texture.
-        let texture = device.create_texture(&anyrender_vello::wgpu::TextureDescriptor {
-            label: Some("loki-page"),
-            size: Extent3d {
-                width: w_phys,
-                height: h_phys,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::STORAGE_BINDING
-                | TextureUsages::TEXTURE_BINDING
-                | TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        let view = texture.create_view(&TextureViewDescriptor::default());
+        let (texture, view) = render::allocate_page_texture(device, w_phys, h_phys);
 
         // Step 6: build Vello scene for this page.
         let render_scale = scale as f32 * (96.0 / 72.0) * self.source.zoom();
 
-        // Compute cursor paint data in a scoped block so the layout guard is
-        // dropped before the second layout_for_generation call below.
-        let cursor_paint = {
-            current_sel.and_then(|sel| {
-                let cp = sel.focus;
-                if cp.page_index != self.page_index {
-                    return None;
-                }
-                let guard = self.source.layout_for_generation(current_generation);
-                // Reflow layouts carry no editing data — no cursor is painted.
-                let layout = guard.as_ref()?.1.as_paginated()?;
-                let page = layout.pages.get(self.page_index)?;
-                let editing_data = page.editing_data.as_ref()?;
-                let para_data = editing_data
-                    .paragraphs
-                    .iter()
-                    .find(|p| p.block_index == cp.paragraph_index)?;
-                let cursor_rect = para_data.layout.cursor_rect(cp.byte_offset);
-                Some(loki_vello::CursorPaint {
-                    cursor_rect,
-                    selection_rects: vec![],
-                    selection_handles: vec![],
-                    paragraph_index: cp.paragraph_index,
-                })
-                // guard drops here, before layout_for_generation is called again
-            })
-        };
+        // Compute cursor paint data (scoped so its layout guard is dropped
+        // before the second layout_for_generation call below).
+        let cursor_paint = render::page_cursor_paint(
+            &self.source,
+            self.page_index,
+            current_generation,
+            current_sel,
+        );
 
         // Reflow caret + selection, as (block_index, byte_offset) pairs;
         // paint_tile paints them on whichever band tile they fall in (paginated
