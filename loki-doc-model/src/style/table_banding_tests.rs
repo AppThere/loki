@@ -26,6 +26,7 @@ fn style_with(regions: &[(TableRegion, DocumentColor)]) -> TableStyle {
             *region,
             TableConditionalFormat {
                 background_color: Some(color.clone()),
+                char_props: Default::default(),
             },
         );
     }
@@ -283,4 +284,48 @@ fn cnf_mask_resolves_regions_without_position() {
     // A mask claiming no shaded region falls back to the base shading (none).
     let cnf = TableCnf::decode_attr("000000000000").unwrap();
     assert_eq!(resolve_cell_shading_cnf(&style, &cnf), None);
+}
+
+/// 4a.3: region character formatting merges low→high precedence — the
+/// firstRow rPr overrides the wholeTable rPr per property, and untouched
+/// properties fall through.
+#[test]
+fn region_char_props_merge_by_precedence() {
+    use crate::style::props::char_props::CharProps;
+    use crate::style::table_banding::resolve_cell_char_props;
+    use loki_primitives::units::Points;
+
+    let mut style = style_with(&[]);
+    style.conditional.insert(
+        TableRegion::WholeTable,
+        TableConditionalFormat {
+            background_color: None,
+            char_props: CharProps {
+                font_size: Some(Points::new(10.0)),
+                italic: Some(true),
+                ..Default::default()
+            },
+        },
+    );
+    style.conditional.insert(
+        TableRegion::FirstRow,
+        TableConditionalFormat {
+            background_color: None,
+            char_props: CharProps {
+                font_size: Some(Points::new(20.0)),
+                bold: Some(true),
+                ..Default::default()
+            },
+        },
+    );
+    let look = TableLook::default();
+    // Header cell: firstRow size wins, wholeTable italic falls through.
+    let hdr = resolve_cell_char_props(&style, &look, 0, 0, 3, 3).expect("header chars");
+    assert_eq!(hdr.font_size, Some(Points::new(20.0)));
+    assert_eq!(hdr.bold, Some(true));
+    assert_eq!(hdr.italic, Some(true), "wholeTable property falls through");
+    // Body cell: only wholeTable applies.
+    let body = resolve_cell_char_props(&style, &look, 2, 1, 3, 3).expect("body chars");
+    assert_eq!(body.font_size, Some(Points::new(10.0)));
+    assert_eq!(body.bold, None);
 }

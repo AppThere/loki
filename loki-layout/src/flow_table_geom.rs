@@ -21,6 +21,7 @@ use crate::result::PageParagraphData;
 
 use super::{FlowState, editing, flow_block, get_items_max_x};
 
+#[allow(clippy::too_many_arguments)] // the flow_cell_blocks precedent
 pub(super) fn measure_cell_height(
     resources: &mut FontResources,
     catalog: &StyleCatalog,
@@ -29,6 +30,7 @@ pub(super) fn measure_cell_height(
     cell: &loki_doc_model::content::table::row::Cell,
     cell_content_width: f32,
     idx: usize,
+    cell_chars: Option<&loki_doc_model::style::props::char_props::CharProps>,
 ) -> f32 {
     use loki_doc_model::content::table::row::CellTextDirection;
 
@@ -86,6 +88,7 @@ pub(super) fn measure_cell_height(
         nested_editing: None,
         staged_between: None,
         tail_candidate: None,
+        cell_char_defaults: cell_chars.cloned(),
     };
 
     for block in &cell.blocks {
@@ -194,6 +197,7 @@ pub(super) fn flow_cell_blocks(
     starting_y: f32,
     idx: usize,
     cell_flat: usize,
+    cell_chars: Option<&loki_doc_model::style::props::char_props::CharProps>,
 ) -> (Vec<PositionedItem>, Vec<PageParagraphData>) {
     let mut temp_state = FlowState {
         resources,
@@ -235,6 +239,7 @@ pub(super) fn flow_cell_blocks(
         nested_editing: None,
         staged_between: None,
         tail_candidate: None,
+        cell_char_defaults: cell_chars.cloned(),
     };
 
     for (bi, block) in blocks.iter().enumerate() {

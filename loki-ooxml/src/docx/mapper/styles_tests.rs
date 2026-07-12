@@ -375,20 +375,24 @@ fn table_style_conditional_formatting_maps() {
             DocxTblStylePr {
                 region: "firstRow".into(),
                 shd_fill: Some("4472C4".into()),
+                rpr: None,
             },
             DocxTblStylePr {
                 region: "band1Horz".into(),
                 shd_fill: Some("D9E2F3".into()),
+                rpr: None,
             },
             // Unknown region → skipped.
             DocxTblStylePr {
                 region: "bogusRegion".into(),
                 shd_fill: Some("000000".into()),
+                rpr: None,
             },
             // Known region but no shading → skipped.
             DocxTblStylePr {
                 region: "lastRow".into(),
                 shd_fill: None,
+                rpr: None,
             },
         ],
     };

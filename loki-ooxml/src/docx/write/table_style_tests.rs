@@ -41,6 +41,7 @@ fn writes_conditional_regions_and_band_sizes() {
         TableRegion::FirstRow,
         TableConditionalFormat {
             background_color: Some(rgb(0x44, 0x72, 0xC4)),
+            char_props: Default::default(),
         },
     );
     let mut catalog = StyleCatalog::new();

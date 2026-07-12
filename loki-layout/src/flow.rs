@@ -32,8 +32,12 @@ mod para_between;
 mod para_impl;
 #[path = "flow_table_cells.rs"]
 mod table_cells;
+#[path = "flow_table_chars.rs"]
+mod table_chars;
 #[path = "flow_table_geom.rs"]
 mod table_geom;
+#[path = "flow_table_main.rs"]
+mod table_main;
 #[path = "flow_table_paint.rs"]
 mod table_paint;
 
@@ -60,7 +64,6 @@ use crate::items::{PositionedItem, PositionedRect};
 use crate::mode::LayoutMode;
 use crate::resolve::{CollectedNote, para_map::para_keep_with_next, pts_to_f32};
 use crate::result::{LayoutPage, PageEditingData, PageParagraphData};
-use crate::table_shading::{resolve_table_style, table_look};
 
 use para_impl::{flow_keep_with_next_chain, flow_paragraph};
 
@@ -211,6 +214,9 @@ pub(super) struct FlowState<'a> {
     /// snapshot — the last-page balancing seed (`flow_balance`; multi-column
     /// flows only). `None`d when a block spans several page advances.
     pub(super) tail_candidate: Option<PageStart>,
+    /// Table-region character defaults for the cell currently flowing (4a.3);
+    /// merged under the paragraph chain by `flatten_paragraph_with_base`.
+    pub(super) cell_char_defaults: Option<loki_doc_model::style::props::char_props::CharProps>,
 }
 
 impl FlowState<'_> {
@@ -324,6 +330,7 @@ fn new_flow_state<'a>(
         nested_editing: None,
         staged_between: None,
         tail_candidate: None,
+        cell_char_defaults: None,
     }
 }
 
@@ -644,7 +651,7 @@ pub(super) fn flow_block(state: &mut FlowState, block: &Block, idx: usize) {
             state.current_indent = old_indent;
         }
         Block::Div(_, blocks) | Block::Figure(_, _, blocks) => flow_blocks(state, blocks, idx),
-        Block::Table(tbl) => flow_table(state, tbl, idx),
+        Block::Table(tbl) => table_main::flow_table(state, tbl, idx),
         Block::HorizontalRule => flow_hrule(state),
         Block::TableOfContents(toc) => flow_blocks(state, &toc.body, idx),
         Block::Index(index) => flow_blocks(state, &index.body, idx),
@@ -1086,100 +1093,6 @@ pub(super) fn get_items_max_x(items: &[PositionedItem]) -> f32 {
         }
     }
     max_x
-}
-
-fn flow_table(
-    state: &mut FlowState,
-    tbl: &loki_doc_model::content::table::core::Table,
-    idx: usize,
-) {
-    let col_widths = table_geom::resolve_column_widths(state, tbl);
-
-    let mut rows = Vec::new();
-    rows.extend(&tbl.head.rows);
-    for body in &tbl.bodies {
-        rows.extend(&body.head_rows);
-        rows.extend(&body.body_rows);
-    }
-    rows.extend(&tbl.foot.rows);
-
-    // Assign each cell its grid columns, accounting for columns covered by a
-    // `row_span` (vMerge) cell from an earlier row (`cell_cols[row][cell] =
-    // (col_start, col_end)`). Without it a cell whose leading column is occupied
-    // by a vertical merge above is placed too far left — the TC-DOCX-005 bug.
-    let cell_cols = table_geom::assign_cell_columns(&rows, col_widths.len());
-
-    // Named style + `w:tblLook` → conditional/banding shading (under direct).
-    let table_style = resolve_table_style(state.catalog, tbl.style_name());
-    let look = table_look(tbl);
-    let (grid_rows, grid_cols) = (rows.len(), col_widths.len());
-
-    let row_heights = table_paint::measure_row_heights(state, &rows, &cell_cols, &col_widths, idx);
-
-    // Pass 3: Place and flow cell blocks. `cell_flat` counts cells in the bridge's
-    // flat `KEY_TABLE_CELLS` order so cell paragraphs get a matching `PathStep::Cell`.
-    let mut cell_flat = 0usize;
-    for (row_idx, row) in rows.iter().enumerate() {
-        let row_max_h = row_heights[row_idx];
-
-        if state.mode.is_paginated() {
-            let remaining_h = state.page_content_height - state.cursor_y;
-            if row_max_h > remaining_h && row_max_h <= state.page_content_height {
-                // A whole row that fits in a band but not the remaining space
-                // moves to the next column (or page).
-                columns_impl::break_column(state);
-            }
-        }
-
-        let original_row_page = state.page_number;
-        let original_row_y_start = state.cursor_y;
-        let table_indent = state.current_indent;
-
-        let cell_starts = table_cells::flow_row_cells(
-            state,
-            row,
-            row_idx,
-            &cell_cols[row_idx],
-            &col_widths,
-            &row_heights,
-            row_max_h,
-            original_row_page,
-            original_row_y_start,
-            idx,
-            &mut cell_flat,
-        );
-
-        let row_page_end = state.page_number;
-        let row_y_end = if original_row_page == row_page_end {
-            original_row_y_start + row_max_h
-        } else {
-            let first_h = (state.page_content_height - original_row_y_start).max(0.0);
-            let intermediate_h =
-                (row_page_end - original_row_page - 1) as f32 * state.page_content_height;
-            (row_max_h - first_h - intermediate_h).max(0.0)
-        };
-
-        table_paint::emit_row_cell_decorations(
-            state,
-            row,
-            row_idx,
-            &cell_cols[row_idx],
-            &col_widths,
-            &row_heights,
-            row_max_h,
-            &cell_starts,
-            table_indent,
-            table_style,
-            &look,
-            grid_rows,
-            grid_cols,
-            original_row_page,
-            original_row_y_start,
-            row_page_end,
-        );
-
-        state.cursor_y = row_y_end;
-    }
 }
 
 #[cfg(test)]

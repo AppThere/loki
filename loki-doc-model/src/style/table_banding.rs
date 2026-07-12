@@ -15,6 +15,7 @@
 //! shading falls through to the next region that does, rather than blocking
 //! it.
 
+use crate::style::props::char_props::CharProps;
 use crate::style::table_style::{TableLook, TableProps, TableRegion, TableStyle};
 use loki_primitives::color::DocumentColor;
 
@@ -95,6 +96,65 @@ pub fn resolve_cell_shading_cnf(
         }
     }
     style.table_props.background_color.clone()
+}
+
+/// Resolve the character formatting a table style contributes to the cell at
+/// `(row, col)` (4a.3): applicable regions merge **low-to-high precedence**
+/// (`WholeTable` first), so a higher-precedence region's properties override
+/// a band's, which override the whole-table's — per-property, Word's model.
+/// `None` when no applicable region defines character formatting.
+#[must_use]
+pub fn resolve_cell_char_props(
+    style: &TableStyle,
+    look: &TableLook,
+    row: usize,
+    col: usize,
+    rows: usize,
+    cols: usize,
+) -> Option<CharProps> {
+    if rows == 0 || cols == 0 || row >= rows || col >= cols {
+        return None;
+    }
+    let h = horiz_band(look, &style.table_props, row, rows);
+    let v = vert_band(look, &style.table_props, col, cols);
+    merge_region_chars(style, |region| {
+        region_applies(region, look, row, col, rows, cols, h, v)
+    })
+}
+
+/// [`resolve_cell_char_props`] with membership taken from an explicit
+/// `w:cnfStyle` mask (authoritative when present — see
+/// [`crate::style::table_cnf::TableCnf`]).
+#[must_use]
+pub fn resolve_cell_char_props_cnf(
+    style: &TableStyle,
+    cnf: &crate::style::table_cnf::TableCnf,
+) -> Option<CharProps> {
+    merge_region_chars(style, |region| cnf.contains(region))
+}
+
+/// Merges the char props of every applicable region, lowest precedence first.
+fn merge_region_chars(
+    style: &TableStyle,
+    applies: impl Fn(TableRegion) -> bool,
+) -> Option<CharProps> {
+    let mut acc: Option<CharProps> = None;
+    for region in PRECEDENCE.iter().rev() {
+        if !applies(*region) {
+            continue;
+        }
+        if let Some(f) = style.conditional.get(region) {
+            if f.char_props == CharProps::default() {
+                continue;
+            }
+            acc = Some(match acc {
+                // Higher-precedence region (later iteration) wins per property.
+                Some(lower) => f.char_props.clone().merged_with_parent(&lower),
+                None => f.char_props.clone(),
+            });
+        }
+    }
+    acc
 }
 
 /// The horizontal band a row belongs to, or `None` if row banding is off

@@ -1492,6 +1492,7 @@ fn table_style_banding_shades_the_header_row() {
         TableRegion::FirstRow,
         TableConditionalFormat {
             background_color: Some(DocumentColor::Rgb(RgbColor::new(0.0, 0.0, 1.0))),
+            char_props: Default::default(),
         },
     );
     catalog.table_styles.insert(StyleId::new("Banded"), style);
@@ -1547,6 +1548,7 @@ fn table_look_disabling_first_row_suppresses_style_shading() {
         TableRegion::FirstRow,
         TableConditionalFormat {
             background_color: Some(DocumentColor::Rgb(RgbColor::new(0.0, 0.0, 1.0))),
+            char_props: Default::default(),
         },
     );
     catalog.table_styles.insert(StyleId::new("Banded"), style);
@@ -2169,4 +2171,72 @@ fn mirror_margins_swaps_even_page_margins_end_to_end() {
     assert_eq!(pages[1].margins.right, 50.0);
     // Content width is identical on both pages (left + right constant).
     assert_eq!(pages[0].margins.horizontal(), pages[1].margins.horizontal());
+}
+
+/// 4a.3: table-region character formatting reaches the cell glyphs — a style
+/// whose firstRow region carries `w:rPr` (here font-size 20 pt) renders the
+/// header row's runs at that size while body rows keep the 12 pt default,
+/// and the measure/flow passes agree (no clipped header).
+#[test]
+fn table_region_char_formatting_reaches_header_glyphs() {
+    use loki_doc_model::style::catalog::StyleId;
+    use loki_doc_model::style::props::char_props::CharProps;
+    use loki_doc_model::style::table_style::{TableConditionalFormat, TableRegion, TableStyle};
+    use loki_primitives::units::Points;
+
+    let mut catalog = StyleCatalog::new();
+    let mut style = TableStyle {
+        id: StyleId::new("HdrBig"),
+        display_name: None,
+        parent: None,
+        table_props: Default::default(),
+        conditional: Default::default(),
+        extensions: ExtensionBag::default(),
+    };
+    style.conditional.insert(
+        TableRegion::FirstRow,
+        TableConditionalFormat {
+            background_color: None,
+            char_props: CharProps {
+                font_size: Some(Points::new(20.0)),
+                bold: Some(true),
+                ..Default::default()
+            },
+        },
+    );
+    catalog.table_styles.insert(StyleId::new("HdrBig"), style);
+
+    let Block::Table(mut table) = make_table_2x2(None) else {
+        unreachable!()
+    };
+    table.set_style_name(Some("HdrBig".into()));
+    let section = Section {
+        page_style: None,
+        layout: PageLayout::default(),
+        start: Default::default(),
+        blocks: vec![Block::Table(table)],
+        extensions: ExtensionBag::default(),
+    };
+    let mut r = test_resources();
+    let (items, _, _) = flow_with_catalog(&mut r, &section, &catalog);
+
+    fn run_sizes(items: &[PositionedItem], out: &mut Vec<f32>) {
+        for i in items {
+            match i {
+                PositionedItem::GlyphRun(g) => out.push(g.font_size),
+                PositionedItem::ClippedGroup { items, .. } => run_sizes(items, out),
+                _ => {}
+            }
+        }
+    }
+    let mut sizes = Vec::new();
+    run_sizes(&items, &mut sizes);
+    assert!(
+        sizes.iter().any(|&s| (s - 20.0).abs() < 0.1),
+        "header runs render at the region's 20 pt: {sizes:?}"
+    );
+    assert!(
+        sizes.iter().any(|&s| (s - 12.0).abs() < 0.1),
+        "body runs keep the 12 pt default: {sizes:?}"
+    );
 }

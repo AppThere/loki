@@ -84,6 +84,9 @@ pub struct DocxTblStylePr {
     pub region: String,
     /// Cell shading fill from this region's `w:tcPr/w:shd @w:fill`.
     pub shd_fill: Option<String>,
+    /// Character formatting from this region's `w:rPr` (4a.3 — e.g. the
+    /// bold header row of a built-in banded style).
+    pub rpr: Option<super::paragraph::DocxRPr>,
 }
 
 /// Intermediate model for a table (`w:tbl`).

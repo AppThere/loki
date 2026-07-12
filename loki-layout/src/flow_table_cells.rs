@@ -30,6 +30,7 @@ pub(super) fn flow_row_cells(
     original_row_y_start: f32,
     idx: usize,
     cell_flat: &mut usize,
+    char_row: Option<&[Option<loki_doc_model::style::props::char_props::CharProps>]>,
 ) -> Vec<(usize, usize)> {
     use loki_doc_model::content::table::row::{CellTextDirection, CellVerticalAlign};
 
@@ -40,6 +41,10 @@ pub(super) fn flow_row_cells(
         let (col_start, col_end) = cell_cols_row[c_idx];
         let old_indent = state.current_indent;
         let old_width = state.content_width;
+        // 4a.3: region character defaults for this cell (restored at the end
+        // of the iteration, like indent/width).
+        let cell_chars = char_row.and_then(|r| r.get(c_idx)).and_then(Option::as_ref);
+        state.cell_char_defaults = cell_chars.cloned();
 
         let pad_top = cell.props.padding_top.map(pts_to_f32).unwrap_or(0.0);
         let pad_bottom = cell.props.padding_bottom.map(pts_to_f32).unwrap_or(0.0);
@@ -96,6 +101,7 @@ pub(super) fn flow_row_cells(
                 pad_left,
                 idx,
                 *cell_flat,
+                cell_chars,
             );
 
             let max_x = get_items_max_x(&inner_items);
@@ -213,6 +219,7 @@ pub(super) fn flow_row_cells(
         }
 
         state.current_indent = old_indent;
+        state.cell_char_defaults = None;
         state.content_width = old_width;
         *cell_flat += 1;
     }

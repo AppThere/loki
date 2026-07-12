@@ -10,12 +10,9 @@
 //! Known minor gap: `line_w` for `break_all_lines` is uniform across lines,
 //! so line 0 wraps `indent_hanging` too early (no per-line width in Parley).
 //!
-//! ## Q2 — Parley 0.6 bidi API
-//! `BidiLevel`/`BidiResolver` are `pub(crate)` and no `StyleProperty` variant
-//! sets a per-paragraph base direction, so gap #5 (RTL paragraph direction)
-//! cannot be addressed here — Parley runs the Unicode BiDi algorithm from
-//! character classes only. The sole workaround would be embedding directional
-//! controls (U+202B/U+200F) into the text. Defer to a future Parley version.
+//! Parley bidi note (gap #5): `BidiLevel`/`BidiResolver` are `pub(crate)` and
+//! no `StyleProperty` sets a per-paragraph base direction — RTL direction is
+//! deferred to a future Parley (workaround would be U+202B/U+200F controls).
 
 use std::sync::Arc;
 
@@ -24,7 +21,7 @@ use loki_doc_model::content::block::{Block, StyledParagraph};
 use crate::geometry::LayoutRect;
 use crate::items::{PositionedImage, PositionedItem};
 use crate::para::{ParagraphLayout, ResolvedParaProps, layout_paragraph_spelled};
-use crate::resolve::{emu_to_pt, flatten_paragraph, pts_to_f32, resolve_para_props};
+use crate::resolve::{emu_to_pt, pts_to_f32, resolve_para_props};
 
 use super::columns_impl::break_column;
 use super::editing::push_editing_para;
@@ -81,8 +78,12 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     let effective_para: &StyledParagraph = marker.owned.as_ref().unwrap_or(para);
     // ────────────────────────────────────────────────────────────────────────
 
-    let (text, spans, mut images, mut notes) =
-        flatten_paragraph(effective_para, state.catalog, &mut state.note_counter);
+    let (text, spans, mut images, mut notes) = crate::resolve::flatten_paragraph_with_base(
+        effective_para,
+        state.catalog,
+        &mut state.note_counter,
+        state.cell_char_defaults.as_ref(),
+    );
     // Tag each note with its owning block + per-block order (see flow_footnotes).
     for (i, note) in notes.iter_mut().enumerate() {
         note.owner_block_index = block_index;
@@ -90,11 +91,9 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     }
     state.pending_footnotes.extend(notes);
 
-    // ── Floating image wrap (gap #12) ────────────────────────────────────────
-    // Reserve a side band so the paragraph's text wraps beside a square/tight/
-    // through float; the float image itself is emitted after text layout. The
-    // floated image is removed from the inline/block image set so it is not also
-    // stacked above the text.
+    // ── Floating image wrap (gap #12): reserve a side band so text wraps
+    // beside the float (emitted after text layout; removed from the
+    // inline/block set so it is not also stacked above the text).
     let float_plan = super::float_impl::plan_float(&images, state.content_width);
     // Band geometry shared by this paragraph's own float (below) and the
     // `ActiveFloat` it may leave for following paragraphs.
@@ -161,9 +160,8 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     }
 
     // ── Inline image placement (gap #9) ──────────────────────────────────────
-    // TODO(inline-image-flow): Parley has no inline image box support.
-    // Images are prepended as a block-level prefix before paragraph text;
-    // all existing items are shifted down to make room.
+    // TODO(inline-image-flow): no Parley inline image boxes; images are a
+    // block-level prefix and existing items shift down to make room.
     let mut total_image_height = 0.0f32;
     let mut image_items: Vec<PositionedItem> = Vec::new();
     for img in &images {
@@ -194,10 +192,8 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
         para_layout.items = image_items;
     }
 
-    // Emit the floating image beside the wrapped text. Its height is NOT forced
-    // onto the paragraph: a float taller than its text becomes an `ActiveFloat`
-    // (below) so the *following* paragraphs wrap beside its remaining extent
-    // rather than starting below it.
+    // Emit the float beside the wrapped text; a float taller than its text
+    // becomes an `ActiveFloat` so *following* paragraphs wrap its remainder.
     if let Some((_, placement)) = float_plan {
         para_layout.items.push(placement.item);
     }
@@ -409,8 +405,12 @@ fn build_chain_layouts<'s>(
             if let Some(para) = effective_para {
                 let resolved = resolve_para_props(&para, state.catalog);
                 let mut temp_counter = state.note_counter;
-                let (text, spans, _images, _notes) =
-                    flatten_paragraph(&para, state.catalog, &mut temp_counter);
+                let (text, spans, _images, _notes) = crate::resolve::flatten_paragraph_with_base(
+                    &para,
+                    state.catalog,
+                    &mut temp_counter,
+                    state.cell_char_defaults.as_ref(),
+                );
                 let layout = layout_paragraph_spelled(
                     state.resources,
                     &text,

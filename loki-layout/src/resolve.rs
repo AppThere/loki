@@ -8,37 +8,11 @@
 //! [`StyleCatalog`] and produce the flattened representations consumed by
 //! [`crate::para::layout_paragraph`].
 //!
-//! # Session 4 pre-audit findings (2026-04-20)
-//! ## Q1 — Inline::Image data resolution (implemented)
-//!
-//! `Image(NodeAttr, Vec<Inline>, LinkTarget)` carries the src in `LinkTarget.url`
-//! (a `data:` URI when `embed_images`, else an unresolved rel ID) and
-//! `cx_emu`/`cy_emu` in `NodeAttr.kv`; alt text is the `Vec<Inline>`. `loki-vello`
-//! renders only data URIs (external URLs → grey placeholder). `walk_inlines`
-//! emits a `CollectedImage`, placed post-Parley as a `PositionedImage`.
-//! ## Q2 — Inline::Link (implemented via option (b))
-//!
-//! The OOXML mapper resolves `w:hyperlink r:id` to a URL; `StyleSpan.link_url`
-//! carries it onto the run's glyphs, the renderer paints the link hint, and
-//! `PageParagraphData::link_at` hit-tests it (feature 5.11).
-//! ## Q3 — Image placement model for inline images
-//!
-//! Inline images in OOXML are inline drawings (`<wp:inline>`) sized in EMUs.
-//! Parley has no concept of inline image boxes; it lays out text only. The
-//! practical placement strategy is: at `walk_inlines` time, when an
-//! `Inline::Image` is encountered, emit a `PositionedImage` with its origin
-//! relative to the paragraph top-left and dimensions converted from EMUs
-//! (1 EMU = 1/914400 inch = 1/12700 pt). Because Parley has already been built
-//! by the time the glyph-run loop runs, the image must be placed either
-//! (a) before the paragraph text (treating the image as a block-level
-//! interruption — crude but functional for most docs), or (b) using Parley's
-//! inline-box callback if the API exposes it in a future version. For v0.1,
-//! option (a) is used: collect images encountered during `walk_inlines` with
-//! their EMU dimensions; after `layout_paragraph` returns, prepend
-//! `PositionedItem::Image` entries to the paragraph's item list at `cursor_y`.
-//! Floating drawings (`NodeAttr.classes` contains `"floating"`) are placed as
-//! absolute overlays at `(0, 0)` within the page content area — also deferred
-//! to a follow-up session (gap #12 partial).
+//! Inline images have no Parley inline-box representation: `walk_inlines`
+//! collects each `Inline::Image` (src / EMU dimensions / alt / float wrap) as
+//! a [`CollectedImage`] and the flow engine places it after text layout —
+//! block-interruption placement for inline drawings, `flow_float` for
+//! floating ones. Links ride [`StyleSpan::link_url`] (feature 5.11).
 
 use std::ops::Range;
 
@@ -193,10 +167,35 @@ pub fn flatten_paragraph(
     Vec<CollectedImage>,
     Vec<CollectedNote>,
 ) {
+    flatten_paragraph_with_base(block, catalog, note_counter, None)
+}
+
+/// [`flatten_paragraph`] with table-region character defaults (4a.3):
+/// `region_base` is the cell's merged `w:tblStylePr/w:rPr`. Word precedence:
+/// docDefaults < region < named styles < direct. The resolved chain folds
+/// docDefaults in, so an *unstyled* paragraph (chain == docDefaults) merges
+/// the region **over** it, a *styled* one **under** it (approximation for
+/// the rare styled cell); direct formatting still wins in both.
+pub fn flatten_paragraph_with_base(
+    block: &StyledParagraph,
+    catalog: &StyleCatalog,
+    note_counter: &mut u32,
+    region_base: Option<&CharProps>,
+) -> (
+    String,
+    Vec<StyleSpan>,
+    Vec<CollectedImage>,
+    Vec<CollectedNote>,
+) {
     let base: CharProps = catalog
         .effective_paragraph_style(block.style_id.as_ref())
         .and_then(|id| catalog.resolve_char(id))
         .unwrap_or_default();
+    let base = match region_base {
+        Some(region) if block.style_id.is_none() => region.clone().merged_with_parent(&base),
+        Some(region) => base.merged_with_parent(region),
+        None => base,
+    };
     let base = match &block.direct_char_props {
         Some(direct) => direct.as_ref().clone().merged_with_parent(&base),
         None => base,

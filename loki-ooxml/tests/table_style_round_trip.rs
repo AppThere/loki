@@ -85,6 +85,7 @@ fn table_style_banding_and_tbllook_round_trip() {
         TableRegion::FirstRow,
         TableConditionalFormat {
             background_color: Some(blue),
+            char_props: Default::default(),
         },
     );
 
@@ -194,4 +195,54 @@ fn cnf_style_mask_round_trips() {
         Some("100100001000")
     );
     assert_eq!(t.bodies[0].body_rows[0].cells[1].cnf_code(), None);
+}
+
+/// 4a.3: a table style's region character formatting (`w:tblStylePr/w:rPr`)
+/// survives a DOCX round-trip through the catalog.
+#[test]
+fn region_char_formatting_round_trips() {
+    use loki_doc_model::style::catalog::StyleId;
+    use loki_doc_model::style::props::char_props::CharProps;
+    use loki_doc_model::style::table_style::{TableConditionalFormat, TableRegion, TableStyle};
+    use loki_primitives::units::Points;
+
+    let mut doc = Document::new();
+    let mut style = TableStyle {
+        id: StyleId::new("HdrBold"),
+        display_name: None,
+        parent: None,
+        table_props: Default::default(),
+        conditional: Default::default(),
+        extensions: Default::default(),
+    };
+    style.conditional.insert(
+        TableRegion::FirstRow,
+        TableConditionalFormat {
+            background_color: None,
+            char_props: CharProps {
+                bold: Some(true),
+                font_size: Some(Points::new(14.0)),
+                ..Default::default()
+            },
+        },
+    );
+    doc.styles
+        .table_styles
+        .insert(StyleId::new("HdrBold"), style);
+    let mut table = Table::grid(2, 2);
+    table.set_style_name(Some("HdrBold".into()));
+    doc.sections[0].blocks = vec![Block::Table(Box::new(table))];
+
+    let back = export_import(&doc);
+    let style = back
+        .styles
+        .table_styles
+        .get(&StyleId::new("HdrBold"))
+        .expect("table style survives");
+    let hdr = style
+        .conditional
+        .get(&TableRegion::FirstRow)
+        .expect("firstRow region survives without shading");
+    assert_eq!(hdr.char_props.bold, Some(true));
+    assert_eq!(hdr.char_props.font_size, Some(Points::new(14.0)));
 }

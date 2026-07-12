@@ -29,6 +29,7 @@ fn styled(id: &str, region: TableRegion, color: DocumentColor) -> TableStyle {
         region,
         TableConditionalFormat {
             background_color: Some(color),
+            char_props: Default::default(),
         },
     );
     style

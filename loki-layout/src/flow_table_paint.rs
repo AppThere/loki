@@ -24,6 +24,7 @@ pub(super) fn measure_row_heights(
     cell_cols: &[Vec<(usize, usize)>],
     col_widths: &[f32],
     idx: usize,
+    char_grid: Option<&Vec<Vec<Option<loki_doc_model::style::props::char_props::CharProps>>>>,
 ) -> Vec<f32> {
     let mut row_heights = vec![0.0f32; rows.len()];
 
@@ -44,6 +45,7 @@ pub(super) fn measure_row_heights(
                     cell,
                     cell_content_width,
                     idx,
+                    cell_chars(char_grid, row_idx, c_idx),
                 );
                 row_heights[row_idx] = row_heights[row_idx].max(h);
             }
@@ -73,6 +75,7 @@ pub(super) fn measure_row_heights(
                     cell,
                     cell_content_width,
                     idx,
+                    cell_chars(char_grid, row_idx, c_idx),
                 );
                 if needed > spanned_height {
                     let extra = needed - spanned_height;
@@ -252,4 +255,15 @@ pub(super) fn emit_row_cell_decorations(
             }
         }
     }
+}
+
+/// The 4a.3 region character defaults for one cell of the grid, if any.
+fn cell_chars(
+    grid: Option<&Vec<Vec<Option<loki_doc_model::style::props::char_props::CharProps>>>>,
+    row: usize,
+    cell: usize,
+) -> Option<&loki_doc_model::style::props::char_props::CharProps> {
+    grid.and_then(|g| g.get(row))
+        .and_then(|r| r.get(cell))
+        .and_then(Option::as_ref)
 }
