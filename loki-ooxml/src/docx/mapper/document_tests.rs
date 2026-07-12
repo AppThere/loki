@@ -7,7 +7,8 @@ use super::*;
 use crate::docx::model::document::{DocxBody, DocxDocument};
 use crate::docx::model::paragraph::{DocxPPr, DocxParagraph, DocxPgMar, DocxPgSz, DocxSectPr};
 use crate::docx::model::styles::DocxStyles;
-use loki_doc_model::layout::page::PageSize;
+use loki_doc_model::layout::page::{PageOrientation, PageSize};
+use loki_doc_model::layout::section::SectionStart;
 
 fn empty_doc() -> DocxDocument {
     DocxDocument {
