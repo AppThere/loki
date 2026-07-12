@@ -20,7 +20,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use loki_doc_model::content::block::Block;
 use loki_doc_model::document::Document;
 use loki_doc_model::style::list_style::ListId;
 
@@ -28,6 +27,9 @@ use crate::LayoutOptions;
 use crate::font::FontResources;
 use crate::result::{LayoutPage, PaginatedLayout};
 
+#[path = "incremental_diff.rs"]
+mod diff;
+use diff::{blocks_equal_from, common_prefix_len, common_suffix_len, section_page_start};
 #[path = "incremental_notes.rs"]
 mod notes;
 use notes::block_has_note;
@@ -68,29 +70,6 @@ pub struct PageStart {
     pub(crate) checkpoint: FlowCheckpoint,
 }
 
-/// Length of the longest common prefix of `old` and `new` (the index of the
-/// first differing block). Works across length changes (block insert/delete).
-pub(crate) fn common_prefix_len(old: &[Block], new: &[Block]) -> usize {
-    let max = old.len().min(new.len());
-    (0..max).take_while(|&i| old[i] == new[i]).count()
-}
-
-/// Length of the longest common suffix of `old` and `new` that does not overlap
-/// the common prefix. Used to bound the changed region for block insert/delete.
-pub(crate) fn common_suffix_len(old: &[Block], new: &[Block], prefix: usize) -> usize {
-    let max = old.len().min(new.len()) - prefix;
-    (0..max)
-        .take_while(|&i| old[old.len() - 1 - i] == new[new.len() - 1 - i])
-        .count()
-}
-
-/// Returns `true` when `old[from..]` and `new[from..]` are element-wise equal —
-/// i.e. every block from `from` onward is unchanged. Used to license suffix
-/// reuse: equal trailing blocks + an equal checkpoint ⇒ identical trailing pages.
-pub(crate) fn blocks_equal_from(old: &[Block], new: &[Block], from: usize) -> bool {
-    old.len() == new.len() && old[from..] == new[from..]
-}
-
 /// Pages produced by resuming a paginated flow; see [`crate::flow::flow_section_resume`].
 pub(crate) struct ResumedFlow {
     pub(crate) pages: Vec<LayoutPage>,
@@ -107,14 +86,6 @@ pub struct PaginatedReuse {
     /// section end, so a content change can renumber/repaginate the tail —
     /// incremental reuse is disabled when this is set.
     pub has_footnotes: bool,
-}
-
-/// Global page index where `section` begins, from its block-0 checkpoint.
-fn section_page_start(checkpoints: &[PageStart], section: usize) -> Option<usize> {
-    checkpoints
-        .iter()
-        .find(|c| c.section_index == section && c.block_index == 0)
-        .map(|c| c.page_index)
 }
 
 /// Attempts an incremental paginated relayout of `doc` given the previous
