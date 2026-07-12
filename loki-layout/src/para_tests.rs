@@ -4,7 +4,8 @@
 //! Unit tests for [`crate::para`].
 
 use super::*;
-use crate::items::{BorderStyle, DecorationKind, PositionedGlyphRun, PositionedItem};
+use crate::color::LayoutColor;
+use crate::items::{BorderEdge, BorderStyle, DecorationKind, PositionedGlyphRun, PositionedItem};
 use loki_doc_model::style::list_style::{
     BulletChar, LabelAlignment, ListLevel, ListLevelKind, NumberingScheme,
 };

@@ -3,11 +3,11 @@
 # these may not GROW, and must be removed once split to <= 300 lines.
 # Regenerate with: scripts/check-file-ceiling.py --update
 
-1401 loki-layout/src/para.rs
 1100 loki-layout/src/flow.rs
 1014 loki-spreadsheet/src/routes/editor/editor_inner.rs
 902 loki-ooxml/src/docx/write/document.rs
 857 loki-layout/src/resolve.rs
+834 loki-layout/src/para.rs
 800 loki-text/src/routes/editor/editor_inner.rs
 759 loki-odf/src/odt/reader/styles.rs
 739 loki-ooxml/src/docx/reader/document.rs
