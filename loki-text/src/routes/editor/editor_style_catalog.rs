@@ -100,6 +100,38 @@ pub(super) fn commit_char_style_to_loro(
     loro.commit();
 }
 
+/// Persists an edited `TableStyle` into the catalog through Loro — the table
+/// family's analogue of [`commit_char_style_to_loro`] (Spec 05 M6, 4a.3).
+pub(super) fn commit_table_style_to_loro(
+    loro: &loro::LoroDoc,
+    doc_state: &Arc<Mutex<DocumentState>>,
+    style: loki_doc_model::style::table_style::TableStyle,
+) {
+    let mut catalog = doc_state
+        .lock()
+        .ok()
+        .and_then(|s| s.document.as_ref().map(|d| d.styles.clone()))
+        .unwrap_or_default();
+    catalog.table_styles.insert(style.id.clone(), style);
+    if let Err(e) = loki_doc_model::loro_bridge::write_document_styles(loro, &catalog) {
+        tracing::warn!("failed to persist style catalog to Loro: {e}");
+    }
+    loro.commit();
+}
+
+/// Returns a clone of the catalog **table** style with the given id, or `None`.
+pub(super) fn get_catalog_table_style(
+    doc_state: &Arc<Mutex<DocumentState>>,
+    style_id: &str,
+) -> Option<loki_doc_model::style::table_style::TableStyle> {
+    let state = doc_state.lock().ok()?;
+    let doc = state.document.as_ref()?;
+    doc.styles
+        .table_styles
+        .get(&loki_doc_model::style::StyleId::new(style_id))
+        .cloned()
+}
+
 /// Returns a clone of the catalog **character** style with the given id, or `None`.
 pub(super) fn get_catalog_char_style(
     doc_state: &Arc<Mutex<DocumentState>>,

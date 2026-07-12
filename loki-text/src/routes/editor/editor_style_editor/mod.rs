@@ -11,6 +11,13 @@
 mod actions;
 mod body;
 mod char_browser;
+mod draft_table;
+
+/// `use_signal` initialiser for the table draft (keeps the draft type private
+/// to this module — `editor_inner` only threads the signal through).
+pub(super) fn table_draft_none() -> Option<draft_table::TableStyleDraft> {
+    None
+}
 mod char_form;
 mod draft;
 mod family_inspector;
@@ -23,6 +30,8 @@ mod page_rename;
 mod panel_data;
 mod posture;
 mod provenance;
+mod table_browser;
+mod table_form;
 mod tree_nav;
 
 use std::rc::Rc;
@@ -77,6 +86,8 @@ pub(super) fn style_editor_panel(
     mut editing_style_draft: Signal<Option<StyleDraft>>,
     editing_char_style: Signal<Option<String>>,
     editing_char_draft: Signal<Option<StyleDraft>>,
+    editing_table_style: Signal<Option<String>>,
+    editing_table_draft: Signal<Option<draft_table::TableStyleDraft>>,
     editing_list_style: Signal<Option<String>>,
     editing_page_style: Signal<Option<String>>,
     style_panel_inspect: Signal<bool>,
@@ -101,6 +112,10 @@ pub(super) fn style_editor_panel(
     let char_selected = editing_char_style.read().clone();
     let (char_list, char_selected_rows) =
         panel_data::char_data(&doc_state, char_selected.as_deref());
+    let table_selected = editing_table_style.read().clone();
+    let table_list = table_browser::table_data(&doc_state);
+    let ds_table_form = Arc::clone(&doc_state);
+    let table_draft = editing_table_draft.read().clone();
     let list_selected = editing_list_style.read().clone();
     let (list_list, list_selected_rows) =
         panel_data::list_data(&doc_state, list_selected.as_deref());
@@ -206,6 +221,10 @@ pub(super) fn style_editor_panel(
                         char_selected,
                         editing_char_style,
                         editing_char_draft,
+                        table_list,
+                        table_selected,
+                        editing_table_style,
+                        editing_table_draft,
                         list_list,
                         list_selected,
                         editing_list_style,
@@ -263,6 +282,9 @@ pub(super) fn style_editor_panel(
                 if show_inspect {
                     if let Some(cdraft) = char_draft {
                         { char_form::char_style_form(ds_char_form, editing_char_draft, cdraft, char_form_fonts, sync) }
+                    }
+                    if let Some(tdraft) = table_draft {
+                        { table_form::table_style_form(ds_table_form, editing_table_draft, tdraft, sync) }
                     }
                     if let Some((pname, playout)) = page_edit {
                         { page_form::page_style_form(&ds_page_form, pname, playout, editing_page_style, sync) }
