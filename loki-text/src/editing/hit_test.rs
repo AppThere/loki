@@ -56,6 +56,7 @@ pub fn reflow_hit_test_window(
     client_y: f32,
     canvas_origin: (f32, f32),
     scroll_offset: f32,
+    type_scale: f32,
     layout: &ContinuousLayout,
 ) -> Option<(usize, usize)> {
     let canvas_x_px = client_x - canvas_origin.0;
@@ -63,8 +64,12 @@ pub fn reflow_hit_test_window(
     if canvas_y_px < 0.0 {
         return None;
     }
-    let canvas_x = canvas_x_px * PX_TO_PT - REFLOW_PADDING_PT;
-    let canvas_y = canvas_y_px * PX_TO_PT;
+    // The reflow band is painted at the responsive type scale (Spec 03 M4),
+    // so one layout point covers `type_scale` more CSS pixels than PX_TO_PT
+    // alone accounts for — divide it back out to reach canvas coordinates.
+    let scale = type_scale.max(f32::EPSILON);
+    let canvas_x = canvas_x_px * PX_TO_PT / scale - REFLOW_PADDING_PT;
+    let canvas_y = canvas_y_px * PX_TO_PT / scale;
     layout.hit_test(canvas_x, canvas_y)
 }
 

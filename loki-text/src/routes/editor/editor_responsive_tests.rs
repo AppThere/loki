@@ -73,3 +73,15 @@ fn hysteresis_holds_the_current_mode_near_the_boundary() {
         "stays reflow: 860 < 842 + 48",
     );
 }
+
+/// Spec 03 M4 drift lock: `loki-renderer` cannot depend on `appthere-ui`, so
+/// its Compact threshold for the reflow type scale is a duplicated constant —
+/// this test (in the one crate that sees both) pins them together.
+#[test]
+fn type_scale_threshold_matches_the_breakpoint() {
+    assert_eq!(
+        loki_renderer::render_layout::REFLOW_COMPACT_MAX_PX,
+        appthere_ui::tokens::layout::BREAKPOINT_COMPACT_MAX_PX,
+        "reflow type-scale threshold drifted from the shared Compact breakpoint"
+    );
+}

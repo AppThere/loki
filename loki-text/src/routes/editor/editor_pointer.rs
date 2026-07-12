@@ -10,7 +10,9 @@ use loki_doc_model::loro_bridge::derive_loro_cursor;
 use loki_doc_model::loro_mutation::get_block_text;
 
 use loki_renderer::ViewMode;
-use loki_renderer::render_layout::{reflow_content_width_pt, reflow_tile_width_px};
+use loki_renderer::render_layout::{
+    reflow_layout_content_width_pt, reflow_tile_width_px, reflow_type_scale,
+};
 
 use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::hit_test::{hit_test_document, reflow_hit_test_window};
@@ -32,14 +34,22 @@ fn reflow_tap_position(
     if client_width_px <= 1.0 {
         return None;
     }
-    let content_w = reflow_content_width_pt(client_width_px);
+    let content_w = reflow_layout_content_width_pt(client_width_px);
     let layout = ensure_reflow_layout(doc_state, content_w)?;
     // Reflow tiles are capped to a reading measure and centred in the viewport
-    // (`margin: auto` on paint); the hit-test origin uses the same tile width so
+    // (`margin: auto` on paint); the hit-test origin uses the same tile width
+    // (unchanged by the type scale — layout width and paint zoom cancel) so
     // clicks land on the painted glyphs (Spec 03 M4).
     let x_off = viewport.centred_origin_x(reflow_tile_width_px(client_width_px));
     let origin = (x_off, tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6);
-    reflow_hit_test_window(client_pos.0, client_pos.1, origin, scroll_offset, &layout)
+    reflow_hit_test_window(
+        client_pos.0,
+        client_pos.1,
+        origin,
+        scroll_offset,
+        reflow_type_scale(client_width_px),
+        &layout,
+    )
 }
 
 // EditorMode removed — the editor is always in edit mode when a document is

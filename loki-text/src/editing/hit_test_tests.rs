@@ -431,7 +431,7 @@ fn reflow_tap_resolves_to_second_paragraph() {
     // REFLOW_PADDING_PT (removed inside the helper).
     let client_y = pt_to_px(h0 + 2.0);
     let client_x = pt_to_px(REFLOW_PADDING_PT + 5.0);
-    let (block, _byte) = reflow_hit_test_window(client_x, client_y, (0.0, 0.0), 0.0, &cl)
+    let (block, _byte) = reflow_hit_test_window(client_x, client_y, (0.0, 0.0), 0.0, 1.0, &cl)
         .expect("reflow hit lands a position");
     assert_eq!(block, 1, "tap in the second paragraph resolves to block 1");
 }
@@ -442,13 +442,28 @@ fn reflow_tap_in_first_paragraph_resolves_to_block_0() {
     let client_y = pt_to_px(2.0); // near the top
     let client_x = pt_to_px(REFLOW_PADDING_PT + 5.0);
     let (block, _) =
-        reflow_hit_test_window(client_x, client_y, (0.0, 0.0), 0.0, &cl).expect("reflow hit");
+        reflow_hit_test_window(client_x, client_y, (0.0, 0.0), 0.0, 1.0, &cl).expect("reflow hit");
     assert_eq!(block, 0);
+}
+
+/// Spec 03 M4: at the Compact type scale the painted band is `scale`× larger,
+/// so the same *canvas* position sits at `scale`× the CSS coordinates — the
+/// scaled hit-test must resolve it to the same block as the unscaled one.
+#[test]
+fn reflow_tap_maps_through_the_type_scale() {
+    let cl = two_para_continuous();
+    let h0 = cl.paragraphs[0].layout.height;
+    let scale = 1.125_f32;
+    let client_y = pt_to_px(h0 + 2.0) * scale;
+    let client_x = pt_to_px(REFLOW_PADDING_PT + 5.0) * scale;
+    let (block, _) = reflow_hit_test_window(client_x, client_y, (0.0, 0.0), 0.0, scale, &cl)
+        .expect("scaled reflow hit lands a position");
+    assert_eq!(block, 1, "scaled tap resolves to the same paragraph");
 }
 
 #[test]
 fn reflow_tap_above_canvas_top_is_none() {
     let cl = two_para_continuous();
     // origin.y above the tap ⇒ canvas_y < 0 ⇒ no position.
-    assert!(reflow_hit_test_window(10.0, 10.0, (0.0, 100.0), 0.0, &cl).is_none());
+    assert!(reflow_hit_test_window(10.0, 10.0, (0.0, 100.0), 0.0, 1.0, &cl).is_none());
 }
