@@ -125,7 +125,7 @@ fn emit_padding(s: &mut String, pp: &ParaProps) {
 }
 
 /// Appends a border attribute as the ODF `"width style color"` shorthand.
-fn border_attr(s: &mut String, name: &str, border: Option<&Border>) {
+pub(super) fn border_attr(s: &mut String, name: &str, border: Option<&Border>) {
     if let Some(b) = border {
         let style = match b.style {
             BorderStyle::None => {

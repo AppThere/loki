@@ -135,7 +135,7 @@ fn resolve_backgrounds(
 
 fn table_cell(out: &mut String, cell: &Cell, background: Option<&DocumentColor>, cx: &mut Cx) {
     out.push_str("<table:table-cell");
-    if let Some(style) = cx.auto.cell_style(background) {
+    if let Some(style) = cx.auto.cell_style(&cell.props, background) {
         attr(out, "table:style-name", &style);
     }
     if cell.col_span > 1 {

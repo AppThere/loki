@@ -1086,3 +1086,79 @@ fn default_styles_round_trip() {
         "the text-family default's properties must round-trip"
     );
 }
+
+/// 4a.3: direct cell borders and padding round-trip through the per-cell
+/// automatic `table-cell` style — export previously baked only the
+/// background, dropping borders and padding a DOCX-imported (or edited)
+/// table carried.
+#[test]
+fn cell_borders_and_padding_round_trip_via_cell_style() {
+    use loki_doc_model::content::table::core::{Table, TableBody, TableFoot, TableHead};
+    use loki_doc_model::content::table::row::{Cell, CellProps, Row};
+    use loki_doc_model::style::props::border::{Border, BorderStyle};
+    use loki_primitives::color::DocumentColor;
+
+    let bordered = Cell {
+        props: CellProps {
+            border_top: Some(Border::solid(
+                Points::new(1.0),
+                DocumentColor::from_hex("#FF0000").unwrap(),
+            )),
+            border_left: Some(Border {
+                style: BorderStyle::Dashed,
+                width: Points::new(0.5),
+                color: None,
+                spacing: None,
+            }),
+            padding_top: Some(Points::new(4.0)),
+            padding_right: Some(Points::new(6.0)),
+            ..CellProps::default()
+        },
+        ..Cell::simple(vec![Block::Para(vec![Inline::Str("x".into())])])
+    };
+    let plain = Cell::simple(vec![Block::Para(vec![Inline::Str("y".into())])]);
+    let table = Table {
+        attr: NodeAttr::default(),
+        caption: Default::default(),
+        width: None,
+        col_specs: vec![],
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![Row::new(vec![bordered, plain])])],
+        foot: TableFoot::empty(),
+    };
+    let mut doc = Document::new();
+    doc.sections[0].blocks = vec![Block::Table(Box::new(table))];
+
+    let back = round_trip(&doc);
+    let t = back.sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            Block::Table(t) => Some(t.as_ref()),
+            _ => None,
+        })
+        .expect("table survives");
+    let cell = &t.bodies[0].body_rows[0].cells[0];
+
+    let top = cell.props.border_top.as_ref().expect("top border survives");
+    assert_eq!(top.style, BorderStyle::Solid);
+    assert!((top.width.value() - 1.0).abs() < 0.05);
+    assert_eq!(
+        top.color
+            .as_ref()
+            .and_then(DocumentColor::to_hex)
+            .as_deref(),
+        Some("#FF0000")
+    );
+    assert_eq!(
+        cell.props.border_left.as_ref().map(|b| b.style),
+        Some(BorderStyle::Dashed)
+    );
+    assert!((cell.props.padding_top.expect("padding-top").value() - 4.0).abs() < 0.05);
+    assert!((cell.props.padding_right.expect("padding-right").value() - 6.0).abs() < 0.05);
+    let plain_back = &t.bodies[0].body_rows[0].cells[1];
+    assert!(
+        plain_back.props.border_top.is_none(),
+        "plain cell stays clean"
+    );
+}

@@ -126,3 +126,53 @@ fn table_style_banding_and_tbllook_round_trip() {
         TableLook::decode_attr(t.table_look_code().expect("tbllook present")).expect("decodes");
     assert_eq!(back_look, look);
 }
+
+/// 4a.3: direct cell borders and padding survive a DOCX round-trip — export
+/// previously dropped `w:tcBorders` entirely (the reader parsed them all
+/// along), so a bordered cell came back borderless.
+#[test]
+fn cell_borders_and_padding_round_trip() {
+    use loki_doc_model::style::props::border::{Border, BorderStyle};
+    use loki_primitives::color::DocumentColor;
+    use loki_primitives::units::Points;
+
+    let mut table = Table::grid(1, 2);
+    let cell = &mut table.bodies[0].body_rows[0].cells[0];
+    cell.props.border_top = Some(Border::solid(
+        Points::new(1.0),
+        DocumentColor::from_hex("#FF0000").unwrap(),
+    ));
+    cell.props.border_bottom = Some(Border {
+        style: BorderStyle::Dotted,
+        width: Points::new(0.5),
+        color: None,
+        spacing: None,
+    });
+    cell.props.padding_left = Some(Points::new(9.0));
+    let mut doc = Document::new();
+    doc.sections[0].blocks = vec![Block::Table(Box::new(table))];
+
+    let back = export_import(&doc);
+    let cell = &first_table(&back).expect("table").bodies[0].body_rows[0].cells[0];
+
+    let top = cell.props.border_top.as_ref().expect("top border survives");
+    assert_eq!(top.style, BorderStyle::Solid);
+    assert!((top.width.value() - 1.0).abs() < 0.01, "1pt width survives");
+    assert_eq!(
+        top.color
+            .as_ref()
+            .and_then(DocumentColor::to_hex)
+            .as_deref(),
+        Some("#FF0000")
+    );
+    let bottom = cell.props.border_bottom.as_ref().expect("bottom survives");
+    assert_eq!(bottom.style, BorderStyle::Dotted);
+    assert!((cell.props.padding_left.expect("padding survives").value() - 9.0).abs() < 0.05);
+    // The neighbouring plain cell stays clean.
+    assert!(
+        first_table(&back).unwrap().bodies[0].body_rows[0].cells[1]
+            .props
+            .border_top
+            .is_none()
+    );
+}

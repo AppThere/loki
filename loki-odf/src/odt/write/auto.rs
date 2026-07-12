@@ -121,13 +121,18 @@ impl AutoStyles {
     }
 
     /// Returns the automatic `family="table-cell"` style name for a cell's
-    /// effective `background` (its direct shading or the resolved table-style
-    /// banding), or `None` when there is none. `fo:background-color` is the
-    /// ODF-native representation of table-style banding, since ODF bakes region
-    /// shading into per-cell styles rather than conditional regions. (Cell
-    /// borders/padding export is future work.)
-    pub(super) fn cell_style(&mut self, background: Option<&DocumentColor>) -> Option<String> {
-        let cell_props = emit_cell_properties(background);
+    /// direct formatting (`props`: borders and padding, 4a.3) plus its
+    /// effective `background` (direct shading or the resolved table-style
+    /// banding), or `None` when there is none of either. `fo:background-color`
+    /// is the ODF-native representation of table-style banding, since ODF
+    /// bakes region shading into per-cell styles rather than conditional
+    /// regions.
+    pub(super) fn cell_style(
+        &mut self,
+        props: &loki_doc_model::content::table::row::CellProps,
+        background: Option<&DocumentColor>,
+    ) -> Option<String> {
+        let cell_props = emit_cell_properties(props, background);
         if cell_props.is_empty() {
             return None;
         }
@@ -148,13 +153,44 @@ impl AutoStyles {
     }
 }
 
-/// Serialises a cell's exportable direct properties as a
-/// `<style:table-cell-properties/>` element, or an empty string when none.
-fn emit_cell_properties(background: Option<&DocumentColor>) -> String {
-    let Some(hex) = background.and_then(DocumentColor::to_hex) else {
+/// Serialises a cell's exportable direct properties — background, borders,
+/// and padding (4a.3) — as a `<style:table-cell-properties/>` element, or an
+/// empty string when the cell carries none.
+fn emit_cell_properties(
+    props: &loki_doc_model::content::table::row::CellProps,
+    background: Option<&DocumentColor>,
+) -> String {
+    let mut s = String::new();
+    if let Some(hex) = background.and_then(DocumentColor::to_hex) {
+        attr_str(&mut s, "fo:background-color", &hex);
+    }
+    super::para_props::border_attr(&mut s, "fo:border-top", props.border_top.as_ref());
+    super::para_props::border_attr(&mut s, "fo:border-bottom", props.border_bottom.as_ref());
+    super::para_props::border_attr(&mut s, "fo:border-left", props.border_left.as_ref());
+    super::para_props::border_attr(&mut s, "fo:border-right", props.border_right.as_ref());
+    for (name, pad) in [
+        ("fo:padding-top", props.padding_top),
+        ("fo:padding-bottom", props.padding_bottom),
+        ("fo:padding-left", props.padding_left),
+        ("fo:padding-right", props.padding_right),
+    ] {
+        if let Some(p) = pad {
+            attr_str(&mut s, name, &format!("{}pt", p.value()));
+        }
+    }
+    if s.is_empty() {
         return String::new();
-    };
-    format!("<style:table-cell-properties fo:background-color=\"{hex}\"/>")
+    }
+    format!("<style:table-cell-properties{s}/>")
+}
+
+/// Appends ` name="value"` (value pre-escaped / numeric).
+fn attr_str(s: &mut String, name: &str, value: &str) {
+    s.push(' ');
+    s.push_str(name);
+    s.push_str("=\"");
+    s.push_str(value);
+    s.push('"');
 }
 
 #[cfg(test)]
@@ -174,13 +210,17 @@ mod tests {
     fn cell_style_emits_background_and_dedupes() {
         let mut a = AutoStyles::new();
         let n1 = a
-            .cell_style(Some(&color(0x44, 0x72, 0xC4)))
+            .cell_style(&Default::default(), Some(&color(0x44, 0x72, 0xC4)))
             .expect("shaded cell → style");
         // Same colour reuses the same style name.
-        let n2 = a.cell_style(Some(&color(0x44, 0x72, 0xC4))).unwrap();
+        let n2 = a
+            .cell_style(&Default::default(), Some(&color(0x44, 0x72, 0xC4)))
+            .unwrap();
         assert_eq!(n1, n2);
         // A different colour gets a distinct name.
-        let n3 = a.cell_style(Some(&color(0xFF, 0x00, 0x00))).unwrap();
+        let n3 = a
+            .cell_style(&Default::default(), Some(&color(0xFF, 0x00, 0x00)))
+            .unwrap();
         assert_ne!(n1, n3);
 
         let xml = a.render();
@@ -192,7 +232,7 @@ mod tests {
     #[test]
     fn a_cell_without_shading_gets_no_style() {
         let mut a = AutoStyles::new();
-        assert_eq!(a.cell_style(None), None);
+        assert_eq!(a.cell_style(&Default::default(), None), None);
         assert!(a.render().is_empty());
     }
 }
