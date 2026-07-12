@@ -40,6 +40,9 @@ struct Inner {
     enabled: bool,
     store: DictionaryStore,
     catalog: Catalog,
+    /// Where the personal dictionary persists (`None` disables persistence —
+    /// no data dir, or a test that must not touch the user profile).
+    personal_dict_path: Option<std::path::PathBuf>,
 }
 
 impl SpellService {
@@ -50,7 +53,19 @@ impl SpellService {
     /// Only fails if the embedded dictionary or catalog is corrupt (a build
     /// defect), so callers can treat an error as fatal-or-disable.
     pub fn bootstrap() -> SpellResult<Self> {
+        Self::bootstrap_with_personal_dict(super::personal_dict::default_path())
+    }
+
+    /// [`Self::bootstrap`] with an explicit personal-dictionary location
+    /// (`None` disables persistence). Persisted words are replayed into the
+    /// fresh checker so they stay correct across restarts (5.10).
+    fn bootstrap_with_personal_dict(
+        personal_dict_path: Option<std::path::PathBuf>,
+    ) -> SpellResult<Self> {
         let checker = Arc::new(SpellChecker::bundled()?);
+        for word in super::personal_dict::load(personal_dict_path.as_deref()) {
+            checker.add_word(&word);
+        }
         let catalog = Catalog::builtin()?;
         let root = super::dictionaries_dir().unwrap_or_else(|| "dictionaries".into());
         let inner = Inner {
@@ -60,6 +75,7 @@ impl SpellService {
             enabled: true,
             store: DictionaryStore::new(root),
             catalog,
+            personal_dict_path,
         };
         Ok(Self {
             inner: Arc::new(RwLock::new(inner)),
@@ -129,6 +145,11 @@ impl SpellService {
         let mut inner = self.write();
         inner.checker.add_word(word);
         inner.generation += 1;
+        // Persist the full list so the word survives a restart (5.10).
+        super::personal_dict::save(
+            inner.personal_dict_path.as_deref(),
+            &inner.checker.personal_words(),
+        );
     }
 
     /// Ignores `word` for this session and bumps the generation (see
@@ -190,6 +211,11 @@ impl SpellService {
             SpellChecker::new(&aff, &dic)?
         };
         let mut inner = self.write();
+        // Replay the personal words into the fresh checker — the in-memory
+        // list is the truth (it includes adds whose save may have failed).
+        for word in inner.checker.personal_words() {
+            checker.add_word(&word);
+        }
         inner.checker = Arc::new(checker);
         inner.generation += 1;
         inner.language = locale::normalize(tag);

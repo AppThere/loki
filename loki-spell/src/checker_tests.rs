@@ -93,3 +93,16 @@ fn bundled_dictionary_loads_and_checks_real_words() {
         "expected 'the' as a suggestion for 'teh'"
     );
 }
+
+#[test]
+fn personal_words_lists_added_words_sorted_without_ignores() {
+    let c = tiny_checker();
+    c.add_word("Zebra");
+    c.add_word("apple");
+    c.ignore_word("session-only");
+    assert_eq!(
+        c.personal_words(),
+        vec!["apple".to_string(), "zebra".to_string()],
+        "lowercased, sorted, ignores excluded"
+    );
+}

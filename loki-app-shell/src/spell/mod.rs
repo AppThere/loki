@@ -14,6 +14,7 @@
 //! spell checking works offline and on first run before any download.
 
 mod fetcher;
+mod personal_dict;
 mod service;
 
 pub use fetcher::ReqwestFetcher;

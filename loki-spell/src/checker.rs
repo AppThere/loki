@@ -133,6 +133,21 @@ impl SpellChecker {
             .insert(word.to_lowercase());
     }
 
+    /// The user's personal-dictionary words (lowercased), sorted for stable
+    /// persistence. The host saves this list and replays it through
+    /// [`Self::add_word`] on the next load or dictionary switch — session
+    /// ignores ([`Self::ignore_word`]) are deliberately not included.
+    #[must_use]
+    pub fn personal_words(&self) -> Vec<String> {
+        let overrides = self
+            .overrides
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
+        let mut words: Vec<String> = overrides.personal.iter().cloned().collect();
+        words.sort();
+        words
+    }
+
     /// Ignores `word` (case-insensitively) for the remainder of the session.
     ///
     /// Takes `&self` for the same shared-`Arc` reason as [`Self::add_word`].
