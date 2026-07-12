@@ -13,4 +13,3 @@
 540 loki-ooxml/src/docx/reader/document.rs
 522 loki-layout/src/flow_para.rs
 460 loki-text/src/routes/editor/editor_canvas.rs
-410 loki-odf/src/package.rs
