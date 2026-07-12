@@ -19,7 +19,6 @@
 416 loki-ooxml/src/docx/mapper/inline.rs
 410 loki-odf/src/package.rs
 387 loki-ooxml/src/docx/import.rs
-365 loki-odf/src/ods/export.rs
 331 loki-text/src/routes/home.rs
 331 loki-text/src/editing/state.rs
 328 loki-ooxml/src/docx/model/paragraph.rs
