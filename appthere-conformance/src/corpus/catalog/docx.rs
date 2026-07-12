@@ -3,8 +3,8 @@
 
 //! DOCX acid cases (TEST_PLAN.md §1).
 
-use super::{Format::Docx, TestCase, tc};
-use crate::severity::Severity::{P0, P1, P2};
+use crate::corpus::Severity::{P0, P1, P2};
+use crate::corpus::{Format::Docx, TestCase, tc};
 
 /// The 38 DOCX test cases.
 pub(super) const CASES: &[TestCase] = &[

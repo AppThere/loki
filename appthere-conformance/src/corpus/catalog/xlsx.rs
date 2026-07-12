@@ -3,8 +3,8 @@
 
 //! XLSX acid cases (TEST_PLAN.md §2).
 
-use super::{Format::Xlsx, TestCase, tc};
-use crate::severity::Severity::{P0, P1, P2};
+use crate::corpus::Severity::{P0, P1, P2};
+use crate::corpus::{Format::Xlsx, TestCase, tc};
 
 /// The 30 XLSX test cases.
 pub(super) const CASES: &[TestCase] = &[

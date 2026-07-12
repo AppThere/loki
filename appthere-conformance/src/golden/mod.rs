@@ -22,9 +22,11 @@ use std::path::PathBuf;
 pub mod calibration;
 mod ciede;
 pub mod diff;
+pub mod discovery;
 
 pub use calibration::{CALIBRATED_MAX_DELTA_E, CALIBRATED_MIN_SSIM};
 pub use diff::{DiffError, Tolerance, compare_pages, emit_heatmap};
+pub use discovery::{candidate_for, golden_pages, load_png};
 
 /// A perceptual score for one tiled region of a page.
 #[derive(Clone, Copy, Debug, PartialEq)]

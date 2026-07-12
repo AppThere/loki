@@ -23,17 +23,21 @@
 //!
 //! ## Status (Spec 02 milestones)
 //!
-//! This is the **M1 skeleton + M2 schema axis**. The schema axis is complete and
-//! tested; the round-trip first-divergence differ is implemented; the visual axis
-//! is trait + types pending M5. Promotion of `loki-acid`'s catalog / SSIM /
-//! golden-discovery into [`golden`] and the per-format model-equality impls are
-//! the next passes. A consuming app (Loki Text first) supplies a fixture corpus,
-//! a [`roundtrip::NormalizedModel`] impl, an importer/exporter pair, and (later)
-//! a CPU render entry point, and gets all three axes — the crate holds no
-//! Text-specific assumptions.
+//! All three axes are built (M2 schema, M3 round-trip differ + adapters, M5
+//! visual differ/calibration/rasterizer), and the shared corpus layer
+//! ([`corpus`], Spec 02 B-8/B-9) is promoted from `loki-acid`: the `TC-*`
+//! catalog, severity/format vocabulary, the [`corpus::Fixture`] /
+//! [`corpus::Consumer`] traits, the on-disk corpus manifest
+//! ([`corpus::manifest`], feature × format × axis with per-fixture reference
+//! and tolerance records), and golden/candidate discovery
+//! ([`golden::discovery`]). A consuming app supplies a fixture corpus, a
+//! [`roundtrip::NormalizedModel`] impl, an importer/exporter pair, and a CPU
+//! render entry point, and gets all three axes — the crate holds no
+//! Text-specific assumptions (`loki-acid` is the first consumer).
 
 #![forbid(unsafe_code)]
 
+pub mod corpus;
 pub mod golden;
 #[cfg(feature = "doc-model")]
 pub mod model;
@@ -43,6 +47,9 @@ pub mod schema;
 #[cfg(feature = "sheet-model")]
 pub mod sheet;
 
+pub use corpus::{
+    Axis, Consumer, Fixture, FixtureMeta, Format, Reference, Severity, TestCase, ToleranceOverride,
+};
 pub use raster::{CONFORMANCE_DPI, PdfRasterizer, RasterError};
 pub use roundtrip::{CanonicalEntry, Divergence, NormalizedModel, first_divergence};
 pub use schema::xmllint::XmllintValidator;

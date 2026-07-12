@@ -10,8 +10,8 @@
 //! depend on gradients, SmartArt, charts, animations, or grouped-shape child
 //! transforms still await a PowerPoint-authored deck and a golden render.
 
-use super::{Format::Pptx, TestCase, tc};
-use crate::severity::Severity::{P0, P1, P2};
+use crate::corpus::Severity::{P0, P1, P2};
+use crate::corpus::{Format::Pptx, TestCase, tc};
 
 /// The 29 PPTX test cases.
 pub(super) const CASES: &[TestCase] = &[

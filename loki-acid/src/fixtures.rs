@@ -6,8 +6,10 @@
 //! Fixtures are embedded with `include_bytes!` so the harness is self-contained
 //! and reproducible regardless of the working directory.
 
+use std::borrow::Cow;
 use std::io::Cursor;
 
+use appthere_conformance::corpus::{self, Axis, FixtureMeta, Severity};
 use loki_doc_model::Document;
 use loki_doc_model::io::DocumentImport;
 use loki_odf::{OdsImport, OdsImportOptions, OdtImport, OdtImportOptions};
@@ -118,25 +120,86 @@ impl Fixture {
     /// Returns `Err` describing the failure, including the documented
     /// "no importer yet" case for ODP/ODG.
     pub fn import(self) -> Result<Imported, String> {
-        let cursor = Cursor::new(self.bytes());
-        match self {
-            Fixture::Docx => DocxImport::import(cursor, DocxImportOptions::default())
-                .map(|d| Imported::Document(Box::new(d)))
-                .map_err(|e| e.to_string()),
-            Fixture::Odt => OdtImport::import(cursor, OdtImportOptions::default())
-                .map(|d| Imported::Document(Box::new(d)))
-                .map_err(|e| e.to_string()),
-            Fixture::Xlsx => XlsxImport::import(cursor, XlsxImportOptions::default())
-                .map(|w| Imported::Workbook(Box::new(w)))
-                .map_err(|e| e.to_string()),
-            Fixture::Ods => OdsImport::import(cursor, OdsImportOptions::default())
-                .map(|w| Imported::Workbook(Box::new(w)))
-                .map_err(|e| e.to_string()),
-            Fixture::Pptx => PptxImport::import(cursor, PptxImportOptions::default())
-                .map(|p| Imported::Presentation(Box::new(p)))
-                .map_err(|e| e.to_string()),
-            Fixture::Odp | Fixture::Odg => Err("no importer yet for this ODF format".to_string()),
+        import_bytes(self, self.bytes())
+    }
+}
+
+/// The acid corpus's [`corpus::Fixture`] impl: each embedded acid document is
+/// one composite fixture. Round-trip/schema axes apply only where an importer
+/// exists; the visual axis always applies (the corpus exists to be rendered).
+impl corpus::Fixture for Fixture {
+    fn meta(&self) -> FixtureMeta {
+        const WITH_IMPORTER: &[Axis] = &[Axis::Schema, Axis::RoundTrip, Axis::Visual];
+        const VISUAL_ONLY: &[Axis] = &[Axis::Visual];
+        FixtureMeta {
+            id: crate::golden::fixture_stem(*self),
+            format: self.format(),
+            feature: "ACID composite (all catalogued constructs for this format)",
+            severity: Severity::P0,
+            axes: if self.has_importer() {
+                WITH_IMPORTER
+            } else {
+                VISUAL_ONLY
+            },
+            // Goldens are produced manually from the canonical authority; no
+            // pinned version is recorded yet (see README golden workflow).
+            reference: None,
+            tolerance_override: None,
         }
+    }
+
+    fn bytes(&self) -> Cow<'_, [u8]> {
+        Cow::Borrowed(Fixture::bytes(*self))
+    }
+}
+
+/// The acid corpus's [`corpus::Consumer`]: dispatches each fixture to the
+/// suite importer for its format. The corpus is import-fidelity only, so
+/// `export` reports that limitation rather than pretending.
+pub struct AcidConsumer;
+
+impl corpus::Consumer for AcidConsumer {
+    type Model = Imported;
+
+    fn import(&self, fixture: &dyn corpus::Fixture) -> Result<Imported, String> {
+        let meta = fixture.meta();
+        let all = Fixture::all()
+            .iter()
+            .find(|f| f.format() == meta.format)
+            .ok_or_else(|| format!("no acid fixture for {:?}", meta.format))?;
+        // Import the *supplied* bytes (not the embedded copy), so the consumer
+        // also works for on-disk corpus fixtures of the same formats.
+        import_bytes(*all, &fixture.bytes())
+    }
+
+    fn export(&self, _model: &Imported, format: corpus::Format) -> Result<Vec<u8>, String> {
+        Err(format!(
+            "the acid corpus is import-fidelity only; export for {format:?} \
+             is exercised by the per-crate conformance round-trip suites"
+        ))
+    }
+}
+
+/// Imports `bytes` with the importer for `fixture`'s format.
+fn import_bytes(fixture: Fixture, bytes: &[u8]) -> Result<Imported, String> {
+    let cursor = Cursor::new(bytes);
+    match fixture {
+        Fixture::Docx => DocxImport::import(cursor, DocxImportOptions::default())
+            .map(|d| Imported::Document(Box::new(d)))
+            .map_err(|e| e.to_string()),
+        Fixture::Odt => OdtImport::import(cursor, OdtImportOptions::default())
+            .map(|d| Imported::Document(Box::new(d)))
+            .map_err(|e| e.to_string()),
+        Fixture::Xlsx => XlsxImport::import(cursor, XlsxImportOptions::default())
+            .map(|w| Imported::Workbook(Box::new(w)))
+            .map_err(|e| e.to_string()),
+        Fixture::Ods => OdsImport::import(cursor, OdsImportOptions::default())
+            .map(|w| Imported::Workbook(Box::new(w)))
+            .map_err(|e| e.to_string()),
+        Fixture::Pptx => PptxImport::import(cursor, PptxImportOptions::default())
+            .map(|p| Imported::Presentation(Box::new(p)))
+            .map_err(|e| e.to_string()),
+        Fixture::Odp | Fixture::Odg => Err("no importer yet for this ODF format".to_string()),
     }
 }
 
@@ -149,6 +212,35 @@ mod tests {
         for &f in Fixture::all() {
             assert!(!f.bytes().is_empty(), "{} is empty", f.asset_name());
         }
+    }
+
+    /// The shared `Fixture`/`Consumer` traits (Spec 02 B-8) drive the acid
+    /// corpus end-to-end: metadata, axis applicability, import dispatch, and
+    /// the honestly-unsupported export.
+    #[test]
+    fn shared_traits_drive_the_acid_corpus() {
+        use appthere_conformance::corpus::Consumer as _;
+
+        let consumer = AcidConsumer;
+        let docx = Fixture::Docx;
+        let meta = corpus::Fixture::meta(&docx);
+        assert_eq!(meta.format, corpus::Format::Docx);
+        assert!(
+            meta.axes.contains(&Axis::RoundTrip),
+            "importer ⇒ round-trip"
+        );
+
+        let model = consumer.import(&docx).expect("docx imports via the trait");
+        assert!(matches!(model, Imported::Document(_)));
+        assert!(
+            consumer.export(&model, corpus::Format::Docx).is_err(),
+            "the acid corpus is import-only; export must say so, not pretend"
+        );
+
+        // No ODP importer yet: visual-only axes, documented import failure.
+        let odp = Fixture::Odp;
+        assert_eq!(corpus::Fixture::meta(&odp).axes, &[Axis::Visual]);
+        assert!(consumer.import(&odp).is_err());
     }
 
     #[test]
