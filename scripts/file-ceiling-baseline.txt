@@ -10,7 +10,6 @@
 665 loki-layout/src/resolve.rs
 613 loki-vello/src/scene.rs
 599 loki-odf/src/odt/reader/styles.rs
-586 loki-odf/src/odt/reader/document.rs
 540 loki-ooxml/src/docx/write/document.rs
 540 loki-ooxml/src/docx/reader/document.rs
 522 loki-layout/src/flow_para.rs
@@ -19,6 +18,7 @@
 416 loki-ooxml/src/docx/mapper/inline.rs
 410 loki-odf/src/package.rs
 387 loki-ooxml/src/docx/import.rs
+367 loki-odf/src/odt/reader/document.rs
 331 loki-text/src/routes/home.rs
 331 loki-text/src/editing/state.rs
 328 loki-ooxml/src/docx/model/paragraph.rs
