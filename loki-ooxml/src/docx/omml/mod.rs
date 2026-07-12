@@ -15,12 +15,17 @@
 //! construct set: text runs (`m:r`/`m:t` ⇄ `<mi>`/`<mn>`/`<mo>`), fractions
 //! (`m:f` ⇄ `<mfrac>`), super/subscripts (`m:sSup`/`m:sSub`/`m:sSubSup` ⇄
 //! `<msup>`/`<msub>`/`<msubsup>`), and radicals (`m:rad` ⇄ `<msqrt>`/`<mroot>`).
-//! Unrecognised elements pass their content through (best effort). Delimiters,
-//! matrices, n-ary operators, and accents are not yet mapped.
-//! TODO(omml): extend the construct set (delimiters, n-ary, matrices).
+//! delimiters (`m:d` ⇄ `<mfenced>`), n-ary operators (`m:nary` ⇄
+//! `<munderover>`/`<msubsup>` &c. with an `<mo>` operator base), matrices
+//! (`m:m` ⇄ `<mtable>`), accents (`m:acc` ⇄ `<mover accent="true">`), and
+//! limits (`m:limLow`/`m:limUpp` ⇄ `<munder>`/`<mover>`) — see `read_structs`
+//! / `write_structs` (5.8). Unrecognised elements pass their content through
+//! (best effort).
 
 mod read;
+mod read_structs;
 mod write;
+mod write_structs;
 
 pub(crate) use read::read_math;
 pub(crate) use write::write_omath;
@@ -42,12 +47,24 @@ pub(crate) struct XmlNode {
     pub text: String,
     /// Child elements, in document order.
     pub children: Vec<XmlNode>,
+    /// Attributes as `(local name, unescaped value)` pairs, in document order
+    /// (OMML property values like `m:chr m:val="…"` and `MathML` attributes
+    /// like `open`/`accent` live here).
+    pub attrs: Vec<(String, String)>,
 }
 
 impl XmlNode {
     /// Returns the first direct child with the given local `tag`, if any.
     pub fn child(&self, tag: &str) -> Option<&XmlNode> {
         self.children.iter().find(|c| c.tag == tag)
+    }
+
+    /// Returns the value of the attribute with the given local `name`, if any.
+    pub fn attr(&self, name: &str) -> Option<&str> {
+        self.attrs
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
     }
 }
 

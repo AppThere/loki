@@ -16,13 +16,17 @@
 //! (`msqrt`/`mroot`), and fenced expressions (`mfenced`, or a row wrapped in
 //! matching fence operators). Radical signs and delimiters **stretch** to their
 //! content via uniform glyph scaling (an approximation of true extensible
-//! glyphs — the sign also widens). Unknown elements lay out their children as a
-//! row. This is still a first-pass typesetter: it does not balance spacing per
-//! the full TeX `mathspacing` table, or handle matrices / n-ary operators.
+//! glyphs — the sign also widens). Under/over scripts, accents, and matrices
+//! (`munder`/`mover`/`munderover`, `mover accent="true"`, `mtable` — 5.8) are
+//! stacked by the `stacks` module, which also honours `mfenced`'s fence
+//! attributes. Unknown elements lay out their children as a row. This is
+//! still a first-pass typesetter: it does not balance spacing per the full
+//! TeX `mathspacing` table.
 
 mod compose;
 mod parse;
 mod shape;
+mod stacks;
 
 use crate::color::LayoutColor;
 use crate::font::FontResources;
@@ -167,13 +171,14 @@ fn layout_node(
             let index = child(1).map(|c| layout_node(resources, c, small, color, scale));
             compose::radical(resources, radicand, index, font_size, color, scale)
         }
-        // A fenced expression: lay out the children, then wrap in stretchy
-        // delimiters. `<mfenced>` open/close attributes are not retained by the
-        // parser, so the default parentheses are used.
-        "mfenced" => {
-            let content = row(resources, &node.children, font_size, color, scale);
-            compose::delimiters(resources, "(", content, ")", font_size, color, scale)
+        // A fenced expression: children (with separators) wrapped in stretchy
+        // delimiters, honouring the open/close/separators attributes (5.8).
+        "mfenced" => stacks::fenced(resources, node, font_size, color, scale),
+        // Under/over limits and accents; matrices (5.8).
+        "munder" | "mover" | "munderover" => {
+            stacks::under_over(resources, node, font_size, color, scale)
         }
+        "mtable" => stacks::table(resources, node, font_size, color, scale),
         // math, mrow, mstyle, semantics, mpadded, and unknowns: lay out children
         // as a horizontal row.
         _ => row(resources, &node.children, font_size, color, scale),

@@ -161,3 +161,72 @@ fn baseline_is_at_ascent() {
         }
     }
 }
+
+// ── Stacked constructs (5.8) ─────────────────────────────────────────────────
+
+#[test]
+fn munderover_stacks_limits_above_and_below() {
+    let base = render(&format!("<math xmlns=\"{NS}\"><mo>\u{2211}</mo></math>"));
+    let r = render(&format!(
+        "<math xmlns=\"{NS}\"><munderover><mo>\u{2211}</mo><mi>i</mi><mi>n</mi>\
+         </munderover></math>"
+    ));
+    assert_eq!(count_glyph_runs(&r.items), 3, "operator + both limits");
+    assert!(
+        r.ascent > base.ascent && r.descent > base.descent,
+        "limits must extend above and below the bare operator \
+         ({} > {} and {} > {})",
+        r.ascent,
+        base.ascent,
+        r.descent,
+        base.descent
+    );
+}
+
+#[test]
+fn accented_mover_hugs_the_base() {
+    let base = render(&format!("<math xmlns=\"{NS}\"><mi>x</mi></math>"));
+    let r = render(&format!(
+        "<math xmlns=\"{NS}\"><mover accent=\"true\"><mi>x</mi>\
+         <mo>\u{0302}</mo></mover></math>"
+    ));
+    assert_eq!(count_glyph_runs(&r.items), 2, "base + accent");
+    assert!(r.ascent > base.ascent, "accent sits above the base");
+    assert!(
+        (r.descent - base.descent).abs() < 0.5,
+        "an over-only construct must not grow the descent"
+    );
+}
+
+#[test]
+fn matrix_lays_out_a_grid() {
+    let cell = render(&format!("<math xmlns=\"{NS}\"><mi>a</mi></math>"));
+    let r = render(&format!(
+        "<math xmlns=\"{NS}\"><mtable><mtr><mtd><mi>a</mi></mtd>\
+         <mtd><mi>b</mi></mtd></mtr><mtr><mtd><mi>c</mi></mtd>\
+         <mtd><mi>d</mi></mtd></mtr></mtable></math>"
+    ));
+    assert_eq!(count_glyph_runs(&r.items), 4, "four cells");
+    assert!(
+        r.width > cell.width * 2.0,
+        "two columns plus the gap exceed twice one cell"
+    );
+    assert!(
+        r.ascent + r.descent > (cell.ascent + cell.descent) * 2.0,
+        "two rows plus the gap exceed twice one row's height"
+    );
+    assert!(
+        r.ascent > 0.0 && r.descent > 0.0,
+        "the grid is centred on the math axis, not sitting on the baseline"
+    );
+}
+
+#[test]
+fn mfenced_honours_fence_and_separator_attributes() {
+    let r = render(&format!(
+        "<math xmlns=\"{NS}\"><mfenced open=\"[\" close=\"]\" \
+         separators=\";\"><mi>a</mi><mi>b</mi></mfenced></math>"
+    ));
+    // Two fences + two children + one separator.
+    assert_eq!(count_glyph_runs(&r.items), 5);
+}

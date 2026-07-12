@@ -140,3 +140,127 @@ fn compound_sum_expression() {
     );
     assert_stable(&mathml, false);
 }
+
+// ── Structured constructs (5.8) ──────────────────────────────────────────────
+
+/// `m:d` with no `m:dPr` resolves the OMML default parentheses.
+#[test]
+fn delimiters_default_parentheses() {
+    let omml = "<m:oMath><m:d><m:e><m:r><m:t>x</m:t></m:r></m:e></m:d></m:oMath>";
+    let (mathml, display) = to_mathml(omml);
+    assert!(!display);
+    assert_eq!(
+        mathml,
+        format!(
+            "<math xmlns=\"{NS}\"><mfenced open=\"(\" close=\")\" \
+             separators=\"|\"><mi>x</mi></mfenced></math>"
+        )
+    );
+    assert_stable(&mathml, false);
+}
+
+/// Explicit bracket characters and two separated arguments round-trip.
+#[test]
+fn delimiters_custom_brackets_and_separator() {
+    let omml = "<m:oMath><m:d><m:dPr><m:begChr m:val=\"[\"/><m:sepChr m:val=\";\"/>\
+                <m:endChr m:val=\"]\"/></m:dPr>\
+                <m:e><m:r><m:t>a</m:t></m:r></m:e>\
+                <m:e><m:r><m:t>b</m:t></m:r></m:e></m:d></m:oMath>";
+    let (mathml, _) = to_mathml(omml);
+    assert_eq!(
+        mathml,
+        format!(
+            "<math xmlns=\"{NS}\"><mfenced open=\"[\" close=\"]\" \
+             separators=\";\"><mi>a</mi><mi>b</mi></mfenced></math>"
+        )
+    );
+    assert_stable(&mathml, false);
+}
+
+/// An n-ary sum with under/over limits and an operand: the operator becomes a
+/// `<munderover>` with an `<mo>` base, the operand a following sibling.
+#[test]
+fn nary_sum_with_limits_and_operand() {
+    let omml = "<m:oMath><m:nary><m:naryPr><m:chr m:val=\"\u{2211}\"/>\
+                <m:limLoc m:val=\"undOvr\"/></m:naryPr>\
+                <m:sub><m:r><m:t>i</m:t></m:r></m:sub>\
+                <m:sup><m:r><m:t>n</m:t></m:r></m:sup>\
+                <m:e><m:r><m:t>i</m:t></m:r></m:e></m:nary></m:oMath>";
+    let (mathml, _) = to_mathml(omml);
+    assert_eq!(
+        mathml,
+        format!(
+            "<math xmlns=\"{NS}\"><munderover><mo>\u{2211}</mo><mi>i</mi>\
+             <mi>n</mi></munderover><mi>i</mi></math>"
+        )
+    );
+    assert_stable(&mathml, false);
+}
+
+/// An integral defaults its operator (`∫`) and side-set (`subSup`) placement
+/// maps to `<msubsup>`; a hidden upper limit degrades to `<msub>`.
+#[test]
+fn nary_integral_subsup_and_hidden_limit() {
+    let omml = "<m:oMath><m:nary><m:naryPr><m:limLoc m:val=\"subSup\"/>\
+                <m:supHide m:val=\"1\"/></m:naryPr>\
+                <m:sub><m:r><m:t>0</m:t></m:r></m:sub><m:sup/>\
+                <m:e><m:r><m:t>f</m:t></m:r></m:e></m:nary></m:oMath>";
+    let (mathml, _) = to_mathml(omml);
+    assert_eq!(
+        mathml,
+        format!(
+            "<math xmlns=\"{NS}\"><msub><mo>\u{222B}</mo><mn>0</mn></msub>\
+             <mi>f</mi></math>"
+        )
+    );
+    assert_stable(&mathml, false);
+}
+
+/// A 2×2 matrix maps to `<mtable>`/`<mtr>`/`<mtd>` and round-trips.
+#[test]
+fn matrix_two_by_two() {
+    let omml = "<m:oMath><m:m><m:mr>\
+                <m:e><m:r><m:t>a</m:t></m:r></m:e><m:e><m:r><m:t>b</m:t></m:r></m:e>\
+                </m:mr><m:mr>\
+                <m:e><m:r><m:t>c</m:t></m:r></m:e><m:e><m:r><m:t>d</m:t></m:r></m:e>\
+                </m:mr></m:m></m:oMath>";
+    let (mathml, _) = to_mathml(omml);
+    assert_eq!(
+        mathml,
+        format!(
+            "<math xmlns=\"{NS}\"><mtable><mtr><mtd><mi>a</mi></mtd>\
+             <mtd><mi>b</mi></mtd></mtr><mtr><mtd><mi>c</mi></mtd>\
+             <mtd><mi>d</mi></mtd></mtr></mtable></math>"
+        )
+    );
+    assert_stable(&mathml, false);
+}
+
+/// An accent (x-hat) maps to `<mover accent="true">` and round-trips; the
+/// default accent character is the combining circumflex.
+#[test]
+fn accent_hat_over_identifier() {
+    let omml = "<m:oMath><m:acc><m:e><m:r><m:t>x</m:t></m:r></m:e></m:acc></m:oMath>";
+    let (mathml, _) = to_mathml(omml);
+    assert_eq!(
+        mathml,
+        format!(
+            "<math xmlns=\"{NS}\"><mover accent=\"true\"><mi>x</mi>\
+             <mo>\u{0302}</mo></mover></math>"
+        )
+    );
+    assert_stable(&mathml, false);
+}
+
+/// A limit (`lim` under an expression) maps `m:limLow` ⇄ `<munder>`.
+#[test]
+fn lim_low_under() {
+    let omml = "<m:oMath><m:limLow><m:e><m:r><m:t>lim</m:t></m:r></m:e>\
+                <m:lim><m:r><m:t>n</m:t></m:r></m:lim></m:limLow></m:oMath>";
+    let (mathml, _) = to_mathml(omml);
+    assert_eq!(
+        mathml,
+        format!("<math xmlns=\"{NS}\"><munder><mi>lim</mi><mi>n</mi></munder></math>")
+    );
+    assert_stable(&mathml, false);
+}
