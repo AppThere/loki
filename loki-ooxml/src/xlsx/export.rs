@@ -8,7 +8,7 @@ use crate::error::OoxmlError;
 use loki_opc::Package;
 use loki_opc::part::{PartData, PartName};
 use loki_opc::relationships::{Relationship, TargetMode};
-use loki_sheet_model::{Cell, CellAlign, CellStyle, NumberFormat, Workbook, Worksheet};
+use loki_sheet_model::Workbook;
 use std::collections::HashMap;
 use std::io::{Seek, Write};
 

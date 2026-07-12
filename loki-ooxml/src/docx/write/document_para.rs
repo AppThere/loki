@@ -95,6 +95,20 @@ pub(super) fn write_para_props_inline<W: std::io::Write>(
 ) {
     use loki_doc_model::style::props::para_props::ParagraphAlignment;
 
+    // `w:bidi` (right-to-left paragraph, §17.3.1.6) is a CT_OnOff toggle and
+    // precedes `w:jc`/`w:ind`/`w:spacing` in the CT_PPr schema. The reader maps
+    // it to `ParaProps.bidi`; emit it here so the direction survives export
+    // (previously imported but silently dropped on write).
+    match pp.bidi {
+        Some(true) => {
+            let _ = write_empty(w, "w:bidi", &[]);
+        }
+        Some(false) => {
+            let _ = write_empty(w, "w:bidi", &wval("false"));
+        }
+        None => {}
+    }
+
     if let Some(align) = pp.alignment {
         let jc = match align {
             ParagraphAlignment::Right => "right",

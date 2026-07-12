@@ -13,7 +13,9 @@ use quick_xml::Writer;
 use loki_doc_model::content::inline::{Inline, NoteKind, StyledRun};
 
 use super::RunProps;
-use super::drawing::{inlines_to_string, write_bookmark, write_inline_drawing};
+use super::drawing::{
+    inlines_to_string, write_anchor_drawing, write_bookmark, write_inline_drawing,
+};
 use crate::docx::write::collector::ExportCollector;
 use crate::docx::write::run_props::emit_char_props;
 use crate::docx::write::xml::{write_empty, write_end, write_start, wval};
@@ -131,11 +133,20 @@ fn write_inline<W: std::io::Write>(
         }
         Inline::Field(field) => crate::docx::write::fields::write_field(w, field, props),
         Inline::Comment(c) => crate::docx::write::comments::write_comment_ref(w, c),
-        Inline::Image(_, inlines, target) => {
+        Inline::Image(attr, inlines, target) => {
             if let Some(r_id) = collector.add_image(&target.url) {
                 // Default: 1 inch = 914400 EMU.
                 let alt = inlines_to_string(inlines);
-                let _ = write_inline_drawing(w, &r_id, 914_400, 914_400, &alt);
+                // A floating image (wrap keys or the `floating` class on its
+                // node attributes) exports as `wp:anchor` so the wrap mode
+                // survives; otherwise it is a plain inline picture.
+                if let Some(wrap) =
+                    loki_doc_model::content::float::FloatWrap::read_or_class_default(attr)
+                {
+                    write_anchor_drawing(w, &r_id, 914_400, 914_400, &alt, wrap);
+                } else {
+                    let _ = write_inline_drawing(w, &r_id, 914_400, 914_400, &alt);
+                }
             } else {
                 write_text_run(w, "[Image]", props);
             }

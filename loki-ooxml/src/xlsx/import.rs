@@ -5,14 +5,11 @@
 
 use crate::constants::REL_OFFICE_DOCUMENT;
 use crate::error::{OoxmlError, OoxmlWarning};
-use crate::xml_util::{event_text, local_attr_val, local_attr_vals, local_name};
+use crate::xml_util::{event_text, local_attr_val, local_name};
 use loki_opc::{Package, PartName};
-use loki_sheet_model::{
-    Cell, CellAlign, CellStyle, DocumentMeta, NumberFormat, Workbook, Worksheet,
-};
+use loki_sheet_model::{DocumentMeta, Workbook, Worksheet};
 use quick_xml::Reader;
 use quick_xml::events::Event;
-use std::collections::HashMap;
 use std::io::{Read, Seek};
 
 #[path = "import_styles.rs"]

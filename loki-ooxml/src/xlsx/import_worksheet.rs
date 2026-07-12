@@ -149,7 +149,13 @@ pub(super) fn parse_worksheet(
             Ok(ref ev @ (Event::Text(_) | Event::GeneralRef(_))) => {
                 let text = event_text(ev).unwrap_or_default();
                 if in_f {
-                    current_formula = Some(text);
+                    // Accumulate: a formula containing an XML-escaped char
+                    // (`&gt;`, `&lt;`, `&amp;`, `&quot;` — common in logical /
+                    // comparison formulas) arrives as several Text/GeneralRef
+                    // events. Overwriting would keep only the final fragment.
+                    current_formula
+                        .get_or_insert_with(String::new)
+                        .push_str(&text);
                 } else if in_v || in_is_t {
                     current_value.push_str(&text);
                 }
