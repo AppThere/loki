@@ -119,9 +119,8 @@ pub(crate) enum OdfStyleFamily {
     Unknown,
 }
 
-/// Default style applied when no explicit style is set for a family.
-///
-/// ODF 1.3 §14.3 `style:default-style`.
+/// Default style applied when no explicit style is set for a family
+/// (ODF 1.3 §14.3 `style:default-style`).
 #[derive(Debug, Clone)]
 pub(crate) struct OdfDefaultStyle {
     /// The element family this default applies to.
@@ -130,12 +129,12 @@ pub(crate) struct OdfDefaultStyle {
     pub para_props: Option<OdfParaProps>,
     /// Default text properties for this family.
     pub text_props: Option<OdfTextProps>,
+    /// Default table properties (4a.3).
+    pub table_props: Option<crate::odt::model::tables::OdfTableProps>,
 }
 
-/// Paragraph formatting properties (`style:paragraph-properties`).
-///
-/// All length values are stored as raw ODF attribute strings (e.g. `"2.5cm"`)
-/// so that formatting is preserved verbatim. ODF 1.3 §17.6.
+/// Paragraph formatting properties (`style:paragraph-properties`); lengths
+/// stay raw ODF attribute strings (e.g. `"2.5cm"`). ODF 1.3 §17.6.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct OdfParaProps {
     /// `fo:margin-top` — space above the paragraph.

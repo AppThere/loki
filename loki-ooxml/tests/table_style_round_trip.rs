@@ -176,3 +176,22 @@ fn cell_borders_and_padding_round_trip() {
             .is_none()
     );
 }
+
+/// 4a.3: the explicit `w:cnfStyle` region mask survives a DOCX round-trip on
+/// the cell attr, so re-exported Word tables keep their authoritative region
+/// stamps (and the shading resolver keeps preferring them).
+#[test]
+fn cnf_style_mask_round_trips() {
+    let mut table = Table::grid(2, 2);
+    table.bodies[0].body_rows[0].cells[0].set_cnf_code(Some("100100001000".into()));
+    let mut doc = Document::new();
+    doc.sections[0].blocks = vec![Block::Table(Box::new(table))];
+
+    let back = export_import(&doc);
+    let t = first_table(&back).expect("table");
+    assert_eq!(
+        t.bodies[0].body_rows[0].cells[0].cnf_code(),
+        Some("100100001000")
+    );
+    assert_eq!(t.bodies[0].body_rows[0].cells[1].cnf_code(), None);
+}

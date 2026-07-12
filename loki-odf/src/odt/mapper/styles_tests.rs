@@ -115,6 +115,7 @@ fn default_style_inserted_as_default() {
                 ..Default::default()
             }),
             text_props: None,
+            table_props: None,
         }],
         ..Default::default()
     };
@@ -138,6 +139,7 @@ fn text_default_style_becomes_the_character_default() {
                 font_weight: Some("bold".into()),
                 ..Default::default()
             }),
+            table_props: None,
         }],
         ..Default::default()
     };
@@ -273,4 +275,36 @@ fn table_style_rel_width_and_defaults_map() {
     // "margins" and unknown alignments render left; a bad hex is dropped.
     assert_eq!(mapped.alignment, Some(TableAlignment::Left));
     assert!(mapped.background_color.is_none());
+}
+
+/// 4a.3: `style:default-style style:family="table"` becomes the catalog's
+/// table-family `Default` source (`__DefaultTable`), completing ADR-0012's
+/// per-family defaults on the ODF side.
+#[test]
+fn table_default_style_becomes_the_table_default() {
+    use crate::odt::model::tables::OdfTableProps;
+    use loki_doc_model::style::table_style::TableAlignment;
+
+    let sheet = OdfStylesheet {
+        default_styles: vec![OdfDefaultStyle {
+            family: OdfStyleFamily::Table,
+            para_props: None,
+            text_props: None,
+            table_props: Some(OdfTableProps {
+                align: Some("center".into()),
+                ..Default::default()
+            }),
+        }],
+        ..Default::default()
+    };
+    let catalog = map_stylesheet(&sheet);
+    assert_eq!(
+        catalog.default_table_style,
+        Some(StyleId::new("__DefaultTable"))
+    );
+    let def = catalog
+        .table_styles
+        .get(&StyleId::new("__DefaultTable"))
+        .expect("synthesised table default");
+    assert_eq!(def.table_props.alignment, Some(TableAlignment::Center));
 }

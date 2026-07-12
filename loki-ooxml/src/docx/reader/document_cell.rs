@@ -94,6 +94,9 @@ fn parse_tc_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTcPr> {
                         tc_pr.shd_val = attr_val(e, b"val");
                         tc_pr.shd_color = attr_val(e, b"color");
                     }
+                    b"cnfStyle" => {
+                        tc_pr.cnf_style = attr_val(e, b"val");
+                    }
                     b"tcBorders" => {
                         tc_pr.tc_borders = Some(parse_tc_borders(reader)?);
                         // parse_tc_borders consumes until </tcBorders>, so skip

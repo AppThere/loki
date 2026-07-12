@@ -125,8 +125,11 @@ fn write_table_cell<W: std::io::Write>(
 ) {
     let _ = write_start(w, "w:tc", &[]);
 
-    // Cell properties.
+    // Cell properties. `w:cnfStyle` is the first CT_TcPr child.
     let _ = write_start(w, "w:tcPr", &[]);
+    if let Some(code) = cell.cnf_code() {
+        let _ = write_empty(w, "w:cnfStyle", &wval(code));
+    }
     if cell.col_span > 1 {
         let span_s = cell.col_span.to_string();
         let _ = write_empty(w, "w:gridSpan", &wval(&span_s));

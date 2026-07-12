@@ -204,6 +204,8 @@ pub enum DocxTextDirection {
 /// Table cell properties from `w:tcPr` (ECMA-376 §17.4.70).
 #[derive(Debug, Clone, Default)]
 pub struct DocxTcPr {
+    /// Explicit conditional-format mask from `w:cnfStyle @w:val` (§17.4.7).
+    pub cnf_style: Option<String>,
     /// Column span from `w:gridSpan @w:val`.
     pub grid_span: Option<u32>,
     /// Vertical merge from `w:vMerge`.

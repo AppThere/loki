@@ -87,6 +87,29 @@ pub(crate) fn map_stylesheet(sheet: &OdfStylesheet) -> StyleCatalog {
                 },
             );
             catalog.default_character_style = Some(id);
+        } else if ds.family == OdfStyleFamily::Table {
+            // `style:default-style style:family="table"` (4a.3): the table
+            // family's `Default` source (ADR-0012 Decision 1) — the ODF
+            // analogue of OOXML's `w:default="1"` table style. Synthesise a
+            // `__DefaultTable` entry and point the catalog default at it.
+            let props = ds
+                .table_props
+                .as_ref()
+                .map(map_table_style_props)
+                .unwrap_or_default();
+            let id = StyleId::new("__DefaultTable");
+            catalog.table_styles.insert(
+                id.clone(),
+                TableStyle {
+                    id: id.clone(),
+                    display_name: None,
+                    parent: None,
+                    table_props: props,
+                    conditional: IndexMap::new(),
+                    extensions: ExtensionBag::default(),
+                },
+            );
+            catalog.default_table_style = Some(id);
         }
     }
 

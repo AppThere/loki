@@ -23,15 +23,12 @@ use super::paragraph::map_paragraph;
 use super::props::map_border_edge;
 use super::table_look::map_tbl_look;
 
-/// Maps a `w:tbl` to a `Block::Table`.
-///
-/// A two-pass algorithm resolves `w:vMerge` spans (restart cells get the
-/// `row_span` count, continuation cells dropped — §17.4.84); `w:tblGrid` widths
-/// convert twips→points when present, else `ColWidth::Default`.
+/// Maps a `w:tbl` to a `Block::Table`. Two passes resolve `w:vMerge` spans
+/// (restart cells get `row_span`, continuations dropped — §17.4.84);
+/// `w:tblGrid` widths convert twips→points, else `ColWidth::Default`.
 pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Block {
     let col_specs = build_col_specs(t);
 
-    // Pre-compute row spans and the set of continuation cells to remove.
     let (span_map, skip_set) = compute_v_merge_spans(&t.rows);
 
     let mut head_rows: Vec<Row> = Vec::new();
@@ -49,8 +46,7 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
                 .and_then(|p| p.grid_span)
                 .unwrap_or(1)
                 .max(1) as usize;
-            // Continuation cells are dropped; the spanning cell above carries
-            // row_span = N covering them (loki-layout honours row_span).
+            // Continuations dropped; the spanning cell carries row_span=N.
             if !skip_set.contains(&(row_idx, cell_idx)) {
                 let mut cell = map_cell(tc, ctx);
                 cell.row_span = span_map.get(&(row_idx, grid_col)).copied().unwrap_or(1);
@@ -80,7 +76,6 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
 
     let width = map_tbl_width(t);
 
-    // `w:tblLayout w:type="fixed"` → honour grid widths exactly (no autofit).
     let mut attr = NodeAttr::default();
     if t.tbl_pr
         .as_ref()
@@ -112,10 +107,8 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
     Block::Table(Box::new(table))
 }
 
-/// Converts `w:tblW` to [`TableWidth`].
-///
-/// COMPAT(microsoft): w:tblW @w:type="pct" uses fiftieths of a percent,
-/// not hundredths — divide by 50 to get 0.0–100.0 range.
+/// Converts `w:tblW` to [`TableWidth`]. COMPAT(microsoft): @w:type="pct" is
+/// fiftieths of a percent — divide by 50 for the 0.0–100.0 range.
 #[allow(clippy::cast_precision_loss)] // twip values are small; f32 precision is sufficient
 fn map_tbl_width(t: &DocxTableModel) -> Option<TableWidth> {
     let w = t.tbl_pr.as_ref()?.width.as_ref()?;
@@ -167,9 +160,14 @@ fn map_cell(tc: &crate::docx::model::styles::DocxTableCell, ctx: &mut MappingCon
         .collect();
 
     let mut props = CellProps::default();
+    // w:cnfStyle mask (4a.3) rides the cell attr for the shading resolver.
+    let cnf = tc
+        .tc_pr
+        .as_ref()
+        .and_then(|p| p.cnf_style.clone())
+        .filter(|c| loki_doc_model::style::table_cnf::TableCnf::decode_attr(c).is_some());
     if let Some(tc_pr) = tc.tc_pr.as_ref() {
-        // Cell background from `w:shd`, honouring the pattern (`@w:val`):
-        // `pctN` blends `@w:color` over `@w:fill`; `solid`/`clear` as expected.
+        // `w:shd` background; `pctN` patterns blend @w:color over @w:fill.
         if let Some(rgb) = crate::xml_util::resolve_shading(
             tc_pr.shd_fill.as_deref(),
             tc_pr.shd_val.as_deref(),
@@ -207,14 +205,16 @@ fn map_cell(tc: &crate::docx::model::styles::DocxTableCell, ctx: &mut MappingCon
         });
     }
 
-    Cell {
+    let mut cell = Cell {
         attr: NodeAttr::default(),
         alignment: ColAlignment::Default,
         row_span: 1, // overridden by map_table after compute_v_merge_spans
         col_span,
         blocks,
         props,
-    }
+    };
+    cell.set_cnf_code(cnf);
+    cell
 }
 
 // ── vMerge two-pass algorithm ─────────────────────────────────────────────────

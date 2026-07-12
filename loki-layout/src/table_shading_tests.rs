@@ -97,3 +97,28 @@ fn table_look_reads_the_encoded_attr_or_defaults() {
     styled_tbl.set_table_look_code(Some(want.encode_attr()));
     assert_eq!(table_look(&styled_tbl), want);
 }
+
+/// 4a.3: an explicit `w:cnfStyle` mask is authoritative — a cell physically
+/// in row 1 that Word stamped `firstRow` still takes the header shading, and
+/// a malformed mask falls back to the positional derivation.
+#[test]
+fn cnf_mask_beats_positional_derivation() {
+    use crate::table_shading::cell_style_shading_cnf;
+    let style = styled("S", TableRegion::FirstRow, rgb(9, 9, 9));
+    let look = TableLook::default();
+    // Row 1 positionally gets no header shading …
+    assert_eq!(
+        cell_style_shading_cnf(Some(&style), &look, None, 1, 0, 3, 3),
+        None
+    );
+    // … but the explicit firstRow mask claims it.
+    assert_eq!(
+        cell_style_shading_cnf(Some(&style), &look, Some("100000000000"), 1, 0, 3, 3),
+        Some(rgb(9, 9, 9))
+    );
+    // Malformed mask → positional fallback (row 0 IS the header).
+    assert_eq!(
+        cell_style_shading_cnf(Some(&style), &look, Some("bogus"), 0, 0, 3, 3),
+        Some(rgb(9, 9, 9))
+    );
+}

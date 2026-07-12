@@ -72,6 +72,31 @@ pub fn resolve_cell_shading(
     style.table_props.background_color.clone()
 }
 
+/// Resolve the background color a table style contributes to a cell whose
+/// region membership is stated **explicitly** by a `w:cnfStyle` mask (4a.3)
+/// rather than derived positionally. Word stamps the mask per cell; when
+/// present it is authoritative, so it wins over the positional derivation
+/// (and needs no `TableLook` — the mask already reflects the active look).
+#[must_use]
+pub fn resolve_cell_shading_cnf(
+    style: &TableStyle,
+    cnf: &crate::style::table_cnf::TableCnf,
+) -> Option<DocumentColor> {
+    for region in PRECEDENCE {
+        if !cnf.contains(region) {
+            continue;
+        }
+        if let Some(color) = style
+            .conditional
+            .get(&region)
+            .and_then(|f| f.background_color.as_ref())
+        {
+            return Some(color.clone());
+        }
+    }
+    style.table_props.background_color.clone()
+}
+
 /// The horizontal band a row belongs to, or `None` if row banding is off
 /// or the row is a header/footer row (excluded from banding).
 fn horiz_band(

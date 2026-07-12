@@ -196,6 +196,7 @@ fn attr_str(s: &mut String, name: &str, value: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use loki_doc_model::content::table::row::CellProps;
     use loki_primitives::color::RgbColor;
 
     fn color(r: u8, g: u8, b: u8) -> DocumentColor {
@@ -210,16 +211,16 @@ mod tests {
     fn cell_style_emits_background_and_dedupes() {
         let mut a = AutoStyles::new();
         let n1 = a
-            .cell_style(&Default::default(), Some(&color(0x44, 0x72, 0xC4)))
+            .cell_style(&CellProps::default(), Some(&color(0x44, 0x72, 0xC4)))
             .expect("shaded cell → style");
         // Same colour reuses the same style name.
         let n2 = a
-            .cell_style(&Default::default(), Some(&color(0x44, 0x72, 0xC4)))
+            .cell_style(&CellProps::default(), Some(&color(0x44, 0x72, 0xC4)))
             .unwrap();
         assert_eq!(n1, n2);
         // A different colour gets a distinct name.
         let n3 = a
-            .cell_style(&Default::default(), Some(&color(0xFF, 0x00, 0x00)))
+            .cell_style(&CellProps::default(), Some(&color(0xFF, 0x00, 0x00)))
             .unwrap();
         assert_ne!(n1, n3);
 
@@ -232,7 +233,7 @@ mod tests {
     #[test]
     fn a_cell_without_shading_gets_no_style() {
         let mut a = AutoStyles::new();
-        assert_eq!(a.cell_style(&Default::default(), None), None);
+        assert_eq!(a.cell_style(&CellProps::default(), None), None);
         assert!(a.render().is_empty());
     }
 }

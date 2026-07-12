@@ -11,7 +11,7 @@ use loki_doc_model::style::{TableLook, TableStyle};
 use crate::geometry::{LayoutPoint, LayoutRect, LayoutSize};
 use crate::items::{PositionedBorderRect, PositionedItem, PositionedRect};
 use crate::resolve::{convert_border, pts_to_f32, resolve_color};
-use crate::table_shading::cell_style_shading;
+use crate::table_shading::cell_style_shading_cnf;
 
 use super::{FlowState, table_geom};
 
@@ -185,9 +185,18 @@ pub(super) fn emit_row_cell_decorations(
                 || cell.props.border_left.is_some()
                 || cell.props.border_right.is_some();
 
-            // Direct cell shading wins, else the table style's banding.
+            // Direct cell shading wins, else the table style's banding — via
+            // the cell's explicit w:cnfStyle mask when it carries one (4a.3).
             let cell_bg = cell.props.background_color.clone().or_else(|| {
-                cell_style_shading(table_style, look, row_idx, col_start, grid_rows, grid_cols)
+                cell_style_shading_cnf(
+                    table_style,
+                    look,
+                    cell.cnf_code(),
+                    row_idx,
+                    col_start,
+                    grid_rows,
+                    grid_cols,
+                )
             });
 
             let is_first = p == cell_page_start;

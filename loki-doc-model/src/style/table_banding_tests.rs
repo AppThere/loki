@@ -260,3 +260,27 @@ fn out_of_range_indices_yield_none() {
     assert_eq!(resolve_cell_shading(&style, &look, 0, 4, 4, 4), None);
     assert_eq!(resolve_cell_shading(&style, &look, 0, 0, 0, 0), None);
 }
+
+/// 4a.3: an explicit `w:cnfStyle` mask resolves regions directly — no
+/// positional/look derivation — with the same precedence order.
+#[test]
+fn cnf_mask_resolves_regions_without_position() {
+    use crate::style::table_cnf::TableCnf;
+    let style = style_with(&[
+        (TableRegion::FirstRow, rgb(1, 0, 0)),
+        (TableRegion::Band1Horz, rgb(0, 1, 0)),
+    ]);
+    // firstRow + band1Horz mask: firstRow outranks the band.
+    let cnf = TableCnf::decode_attr("100000100000").unwrap();
+    assert_eq!(
+        resolve_cell_shading_cnf(&style, &cnf),
+        Some(rgb(1, 0, 0)),
+        "firstRow wins by precedence"
+    );
+    // band1Horz-only mask picks the band shading.
+    let cnf = TableCnf::decode_attr("000000100000").unwrap();
+    assert_eq!(resolve_cell_shading_cnf(&style, &cnf), Some(rgb(0, 1, 0)));
+    // A mask claiming no shaded region falls back to the base shading (none).
+    let cnf = TableCnf::decode_attr("000000000000").unwrap();
+    assert_eq!(resolve_cell_shading_cnf(&style, &cnf), None);
+}

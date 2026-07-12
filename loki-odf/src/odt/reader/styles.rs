@@ -3,8 +3,7 @@
 
 //! Reader for `styles.xml` and the `office:automatic-styles` section of
 //! `content.xml`.  Returns an [`OdfStylesheet`].  ODF 1.3 §14–§16.
-// Functions in this module are consumed by the document reader added in the
-// next session; suppress premature dead-code lints.
+// Some functions here are consumed by the document reader; suppress dead-code.
 #![allow(dead_code)]
 // `drop(ref_binding)` is a deliberate NLL-boundary hint and does nothing at
 // runtime; silence the compiler's suggestion to use `let _ = ...` instead.
@@ -127,6 +126,7 @@ pub(crate) fn read_stylesheet(xml: &[u8], is_automatic: bool) -> OdfResult<OdfSt
                             family,
                             para_props: props.para_props,
                             text_props: props.text_props,
+                            table_props: props.table_props,
                         });
                     }
                     b"list-style" => {
