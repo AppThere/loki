@@ -23,6 +23,8 @@ dhat = "0.3"
 # Typed errors for baseline-file parsing (workspace convention: thiserror, no anyhow).
 thiserror = { workspace = true }
 
+loki-primitives = { path = "../loki-primitives" }
+
 [dev-dependencies]
 # Statistical timed-bench harness — variance-robust, suits the noisy local
 # environment (Spec 06 §10).
@@ -97,6 +99,10 @@ harness = false
 
 [[bench]]
 name = "leak_loro_history"
+harness = false
+
+[[bench]]
+name = "portable_span_density"
 harness = false
 
 [package.metadata.docs.rs]
