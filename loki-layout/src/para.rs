@@ -281,28 +281,11 @@ fn layout_paragraph_uncached(
     }
 
     if clean_text.is_empty() {
-        if !preserve_for_editing {
-            return ParagraphLayout {
-                height: 0.0,
-                width: 0.0,
-                items: vec![],
-                first_baseline: 0.0,
-                last_baseline: 0.0,
-                line_boundaries: vec![],
-                parley_layout: None,
-                orig_to_clean,
-                clean_to_orig,
-                indent_start: para_props.indent_start,
-                indent_hanging: para_props.indent_hanging,
-                drop_lines: 0,
-                drop_shift: 0.0,
-            };
-        }
-        // Build a phantom single-space layout so cursor_rect can return a
-        // properly-sized caret for empty paragraphs.  The space forces Parley
-        // to produce one line with the paragraph's resolved font metrics.
-        // height/line_boundaries are left at zero so empty paragraphs do not
-        // affect vertical flow — they remain un-clickable but navigable.
+        // An empty paragraph still occupies one line (its resolved line height)
+        // and draws its border/background box — matching Word, where a blank
+        // paragraph takes vertical space and an empty paragraph with a bottom
+        // border is a horizontal rule. Shape a phantom single space (no ink) for
+        // the metrics, and keep it for the editor's caret.
         let mut builder =
             resources
                 .layout_cx
@@ -310,19 +293,32 @@ fn layout_paragraph_uncached(
         push_para_styles(&mut builder, para_props, &[]);
         let mut phantom = builder.build(" ");
         phantom.break_all_lines(Some(available_width));
+        let line_h = phantom.height();
         let first_baseline = phantom
             .lines()
             .next()
             .map(|l| l.metrics().baseline)
             .unwrap_or(0.0);
+        let line_boundaries: Vec<(f32, f32)> = phantom
+            .lines()
+            .map(|l| {
+                let m = l.metrics();
+                (m.block_min_coord, m.block_max_coord)
+            })
+            .collect();
+        // The border/rule spans the full content column (indent to indent).
+        let content_w =
+            (available_width - para_props.indent_start - para_props.indent_end).max(0.0);
+        let mut items = Vec::new();
+        prepend_para_box(&mut items, para_props, content_w, line_h);
         return ParagraphLayout {
-            height: 0.0,
-            width: 0.0,
-            items: vec![],
+            height: line_h,
+            width: content_w,
+            items,
             first_baseline,
             last_baseline: first_baseline,
-            line_boundaries: vec![],
-            parley_layout: Some(Arc::new(phantom)),
+            line_boundaries,
+            parley_layout: preserve_for_editing.then(|| Arc::new(phantom)),
             orig_to_clean,
             clean_to_orig,
             indent_start: para_props.indent_start,

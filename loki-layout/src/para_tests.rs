@@ -438,7 +438,10 @@ fn line_boundaries_populated_for_multiline_paragraph() {
 }
 
 #[test]
-fn empty_paragraph_has_no_line_boundaries() {
+fn empty_paragraph_occupies_one_line() {
+    // Word gives an empty paragraph one line of height (and it can carry a
+    // border — an empty paragraph with a bottom border is a horizontal rule),
+    // so it must occupy exactly one line, not collapse to zero.
     let mut r = test_resources();
     let result = layout_paragraph(
         &mut r,
@@ -449,9 +452,43 @@ fn empty_paragraph_has_no_line_boundaries() {
         1.0,
         false,
     );
+    assert_eq!(
+        result.line_boundaries.len(),
+        1,
+        "empty paragraph must occupy exactly one line"
+    );
     assert!(
-        result.line_boundaries.is_empty(),
-        "empty paragraph must have no line boundaries"
+        result.height > 0.0,
+        "empty paragraph must take one line's height, got {}",
+        result.height
+    );
+}
+
+#[test]
+fn empty_paragraph_with_bottom_border_emits_a_rule() {
+    // Word's horizontal-rule idiom: an empty paragraph carrying only a bottom
+    // border must emit a border rect spanning the content column.
+    let mut r = test_resources();
+    let edge = BorderEdge {
+        color: LayoutColor::BLACK,
+        width: 1.0,
+        style: BorderStyle::Solid,
+    };
+    let props = ResolvedParaProps {
+        border_bottom: Some(edge),
+        ..Default::default()
+    };
+    let result = layout_paragraph(&mut r, "", &[], &props, 400.0, 1.0, false);
+    let border = result.items.iter().find_map(|i| match i {
+        PositionedItem::BorderRect(b) => Some(b),
+        _ => None,
+    });
+    let b = border.expect("empty bordered paragraph must emit a border rect");
+    assert!(b.bottom.is_some(), "the bottom edge must be set");
+    assert!(
+        b.rect.size.width > 300.0,
+        "the rule must span the content column (~400), got {}",
+        b.rect.size.width
     );
 }
 
