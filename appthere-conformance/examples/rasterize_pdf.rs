@@ -2,8 +2,10 @@
 // Copyright 2026 AppThere Loki contributors
 
 //! CLI wrapper over the pinned PDF→PNG rasterizer (Spec 02 D3), used by
-//! `scripts/generate-odf-goldens.sh` so golden generation goes through the
-//! exact same stage as every other rasterization.
+//! `scripts/generate-odf-goldens.sh` (scripted LibreOffice path) and
+//! `scripts/generate-office-goldens.sh` (ingest a PDF printed from
+//! Word/Excel/LibreOffice) so golden generation goes through the exact same
+//! stage as every other rasterization.
 //!
 //! Usage: `cargo run -p appthere-conformance --example rasterize_pdf -- <pdf> <out_dir> <stem>`
 
