@@ -4730,6 +4730,7 @@ dependencies = [
  "loki-fonts",
  "loki-layout",
  "loki-odf",
+ "loki-ooxml",
  "thiserror 2.0.18",
  "vello_cpu 0.0.9",
 ]

@@ -22,8 +22,22 @@ pub const LIBREOFFICE_24_2: Reference = Reference {
     version: "24.2",
 };
 
+/// The Microsoft Word reference for the OOXML/DOCX visual goldens. The exact
+/// build is recorded per golden in its `GENERATION.txt` (Word can't be
+/// automated headlessly, so its goldens are captured manually via
+/// `scripts/generate-office-goldens.sh`); this names the authority.
+pub const MICROSOFT_365: Reference = Reference {
+    app: "Microsoft 365 Word",
+    version: "manual capture (see GENERATION.txt)",
+};
+
 /// All three axes apply (the common case for the visual baseline fixtures).
 const ALL_AXES: &[Axis] = &[Axis::Schema, Axis::RoundTrip, Axis::Visual];
+
+/// The visual axis only — for fixtures whose reference is Microsoft Word (the
+/// visual authority for OOXML) and whose round-trip/schema axes have not yet
+/// been vetted against these specific documents.
+const VISUAL_ONLY: &[Axis] = &[Axis::Visual];
 
 /// The committed on-disk corpus. Every entry's document must exist under
 /// [`fixtures_root`]; entries carrying [`Axis::Visual`] also have a golden
@@ -56,6 +70,28 @@ pub const MANIFEST: &[FixtureMeta] = &[
         severity: Severity::P1,
         axes: ALL_AXES,
         reference: Some(LIBREOFFICE_24_2),
+        tolerance_override: None,
+    },
+    // OOXML/DOCX visual fixtures. References come from Microsoft Word (the
+    // OOXML authority) and are captured manually — the golden dirs currently
+    // hold a PENDING.txt (see it for the capture steps), so the DOCX
+    // visual-golden test is a documented no-op until the page PNGs land.
+    FixtureMeta {
+        id: "acid-docx",
+        format: Format::Docx,
+        feature: "ACID rendering stress suite (line spacing, tables, lists, tabs, fields)",
+        severity: Severity::P0,
+        axes: VISUAL_ONLY,
+        reference: Some(MICROSOFT_365),
+        tolerance_override: None,
+    },
+    FixtureMeta {
+        id: "iris-blueprint",
+        format: Format::Docx,
+        feature: "Real-world structured document (headings, bullet lists, shaded/bordered callout tables)",
+        severity: Severity::P1,
+        axes: VISUAL_ONLY,
+        reference: Some(MICROSOFT_365),
         tolerance_override: None,
     },
 ];
