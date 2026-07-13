@@ -308,3 +308,70 @@ fn numbered_continuation_aligns_with_hanging_text_start() {
          marker; got {delta}pt"
     );
 }
+
+/// Extend a catalog with a wide-glyph bullet list "w" (U+25CF BLACK CIRCLE, the
+/// Google-Docs export bullet) at the same geometry as the other lists.
+fn with_wide_bullet(mut catalog: StyleCatalog) -> StyleCatalog {
+    catalog.list_styles.insert(
+        ListId::new("w"),
+        ListStyle {
+            id: ListId::new("w"),
+            display_name: None,
+            levels: vec![ListLevel {
+                level: 0,
+                kind: ListLevelKind::Bullet {
+                    char: BulletChar::Char('\u{25CF}'),
+                    font: None,
+                },
+                indent_start: Points::new(INDENT_START),
+                hanging_indent: Points::new(HANGING),
+                label_alignment: LabelAlignment::Left,
+                tab_stop_after_label: None,
+                char_props: Default::default(),
+            }],
+            extensions: ExtensionBag::default(),
+        },
+    );
+    catalog
+}
+
+/// The first line's **text** (not its marker) must start where the continuation
+/// lines start — Word aligns wrapped lines under the text start. This is the
+/// user-visible bug the older assertions missed: they compared the continuation
+/// x against the *marker* x, so first-line text drifting right of
+/// `indent_start` (a marker-tab overshooting to the default 36pt grid) passed.
+#[test]
+fn first_line_text_aligns_with_continuation_lines() {
+    for list in ["b", "w", "d"] {
+        let catalog = with_wide_bullet(list_catalog());
+        let items = flow(
+            &catalog,
+            list_para(
+                "This is a fairly long list item whose text must wrap across \
+                 several lines so both line starts are measurable.",
+                list,
+            ),
+        );
+        let origins = glyph_origins(&items);
+        let min_y = origins
+            .iter()
+            .map(|(_, y)| *y)
+            .fold(f32::INFINITY, f32::min);
+        // First line: the marker run is the leftmost; the text run(s) follow it.
+        let mut line0: Vec<f32> = origins
+            .iter()
+            .filter(|(_, y)| (*y - min_y).abs() < 1.0)
+            .map(|(x, _)| *x)
+            .collect();
+        line0.sort_by(f32::total_cmp);
+        assert!(line0.len() >= 2, "list {list}: expected marker + text runs");
+        let first_text_x = line0[1];
+        let (_, continuation_x) = first_and_continuation_x(&origins);
+        let delta = first_text_x - continuation_x;
+        assert!(
+            delta.abs() < 2.0,
+            "list {list}: first-line text ({first_text_x}) must align with \
+             continuation lines ({continuation_x}); delta = {delta}pt"
+        );
+    }
+}

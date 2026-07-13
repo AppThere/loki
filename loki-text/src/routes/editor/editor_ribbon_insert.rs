@@ -16,6 +16,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use super::editor_state::SaveStatus;
 use appthere_ui::{
     AtIcon, AtRibbonGroups, AtRibbonIconButton, LUCIDE_FOOTNOTE, LUCIDE_IMAGE, LUCIDE_LINK,
     LUCIDE_TABLE, RibbonGroupSpec, estimate_group_metrics,
@@ -48,7 +49,7 @@ pub(super) struct InsertCtx {
     /// Whether redo is available.
     pub can_redo: Signal<bool>,
     /// Status-banner sink for success / error feedback.
-    pub save_message: Signal<Option<String>>,
+    pub save_message: Signal<Option<SaveStatus>>,
 }
 
 /// Builds the Insert tab ribbon content element.
@@ -219,9 +220,9 @@ fn run_insert(
             if let Some(pos) = target {
                 set_collapsed_cursor(&ctx.doc_state, ctx.cursor_state, pos);
             }
-            save_message.set(Some(success));
+            save_message.set(Some(SaveStatus::ok(success)));
         }
-        Err(true) => save_message.set(Some(fl!("editor-insert-no-cursor"))),
-        Err(false) => save_message.set(Some(fl!("editor-insert-failed"))),
+        Err(true) => save_message.set(Some(SaveStatus::error(fl!("editor-insert-no-cursor")))),
+        Err(false) => save_message.set(Some(SaveStatus::error(fl!("editor-insert-failed")))),
     }
 }

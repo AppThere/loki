@@ -142,10 +142,19 @@ pub fn layout_paginated_full(
     // first section and at every section that does *not* start `continuous`. A
     // `continuous` section continues on the previous group's last page (sharing
     // its page geometry + headers/footers), only switching column layout.
+    //
+    // Exception (Word fidelity): a `continuous` break that *changes the page
+    // size or orientation* cannot share the previous page — Word promotes it to
+    // a page break so the new geometry can take effect. Without this, e.g. an
+    // A4 continuous section after a Letter section is laid out on the Letter
+    // page (wrong geometry, one page short).
     let mut groups: Vec<Vec<&loki_doc_model::Section>> = Vec::new();
     for section in &doc.sections {
         match groups.last_mut() {
-            Some(last) if section.start == loki_doc_model::layout::SectionStart::Continuous => {
+            Some(last)
+                if section.start == loki_doc_model::layout::SectionStart::Continuous
+                    && section.layout.page_size == last[0].layout.page_size =>
+            {
                 last.push(section);
             }
             _ => groups.push(vec![section]),

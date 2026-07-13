@@ -78,7 +78,7 @@ pub fn apply_mutation_and_relayout(
         )
     };
     let laid_out = {
-        let mut fr = fr_arc.lock().unwrap_or_else(|e| e.into_inner());
+        let mut fr = fr_arc.lock();
         let prev = match (&prev_doc, &prev_layout, &prev_reuse) {
             (Some(d), Some(l), Some(r)) => Some((d.as_ref(), l.as_ref(), r)),
             _ => None,

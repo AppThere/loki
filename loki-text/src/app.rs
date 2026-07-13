@@ -107,6 +107,13 @@ pub fn App() -> Element {
     // renders the active backdrop inside this positioned root.
     use_provide_backdrop();
 
+    // Start the document font warm-up (system-font scan + family-index build)
+    // on a background thread now, so it overlaps the Home screen instead of
+    // stalling the first document open. On Windows the DirectWrite enumeration
+    // is the dominant first-open cost; the editor consumes this handle via
+    // context and only ever blocks on it from worker threads.
+    use_context_provider(loki_layout::SharedFontResources::warm_up);
+
     // Spell-check service — starts on the bundled English dictionary so checking
     // works offline. Provided into context for any component (e.g. a future
     // language picker), and installed into the editor's ambient layout state so
@@ -205,6 +212,13 @@ pub fn App() -> Element {
 
             // Re-query safe-area insets on resize (Android orientation change).
             SafeAreaResizeSensor {}
+
+            // Persist the window size across sessions (debounced; desktop only
+            // in effect — Android windows are fullscreen and the geometry file
+            // simply never resolves there).
+            appthere_ui::AtWindowSizeSensor {
+                on_size: |size: (f64, f64)| crate::window_state::persist_geometry_debounced(size),
+            }
 
             Router::<Route> {}
 

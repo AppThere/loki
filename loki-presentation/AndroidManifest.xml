@@ -11,7 +11,7 @@
         android:targetSdkVersion="34" />
 
     <application
-        android:label="Loki Presentation"
+        android:label="Loki Slides"
         android:hasCode="false">
 
         <!--
@@ -21,7 +21,7 @@
         -->
         <activity
             android:name="android.app.NativeActivity"
-            android:label="Loki Presentation"
+            android:label="Loki Slides"
             android:exported="true"
             android:configChanges="orientation|keyboardHidden|screenSize">
             <meta-data

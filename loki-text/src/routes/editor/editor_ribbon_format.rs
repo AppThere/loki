@@ -1,25 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The Write tab's inline-formatting and paragraph-alignment ribbon groups.
+//! The Write tab's inline-formatting ribbon group.
 //!
 //! Extracted from `editor_ribbon` so `write_tab_content` stays under the
-//! 300-line ceiling. Both groups apply their mutation to the live document,
-//! relayout, and sync undo/redo — the same path keyboard shortcuts use.
+//! 300-line ceiling. The group applies its mutation to the live document,
+//! relayouts, and syncs undo/redo — the same path keyboard shortcuts use.
 
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::{
-    AT_FONT_GROW, AT_FONT_SHRINK, AtIcon, AtRibbonIconButton, LUCIDE_ALIGN_CENTER,
-    LUCIDE_ALIGN_JUSTIFY, LUCIDE_ALIGN_LEFT, LUCIDE_ALIGN_RIGHT, LUCIDE_BOLD, LUCIDE_ITALIC,
-    LUCIDE_STRIKETHROUGH, LUCIDE_SUBSCRIPT, LUCIDE_SUPERSCRIPT, LUCIDE_UNDERLINE, RibbonGroupSpec,
-    estimate_group_metrics,
+    AtIcon, AtRibbonIconButton, LUCIDE_BOLD, LUCIDE_ITALIC, LUCIDE_STRIKETHROUGH, LUCIDE_SUBSCRIPT,
+    LUCIDE_SUPERSCRIPT, LUCIDE_UNDERLINE, RibbonGroupSpec, estimate_group_metrics,
 };
 use dioxus::prelude::*;
 use loki_i18n::fl;
 use loro::LoroDoc;
 
-use super::editor_alignment::apply_alignment;
-use super::editor_font_size::adjust_font_size;
 use super::editor_formatting;
 use super::editor_keydown_ctrl::post_mutation_sync;
 use crate::editing::cursor::CursorState;
@@ -157,100 +153,6 @@ pub(super) fn inline_format_group(
                 },
                 AtIcon { path_d: LUCIDE_SUBSCRIPT.to_string() }
             }
-        },
-    }
-}
-
-/// The Font group — grow / shrink the selection's font size by one step.
-pub(super) fn font_group(
-    doc_state: &Arc<Mutex<DocumentState>>,
-    ctx: RibbonEditCtx,
-    priority: u8,
-) -> RibbonGroupSpec {
-    let ds_grow = Arc::clone(doc_state);
-    let ds_shrink = Arc::clone(doc_state);
-    let loro = ctx.loro_doc;
-    let cursor = ctx.cursor_state;
-    RibbonGroupSpec {
-        metrics: estimate_group_metrics(priority, 2, true),
-        label: Some(fl!("ribbon-group-font")),
-        aria_label: fl!("ribbon-group-font"),
-        content: rsx! {
-            AtRibbonIconButton {
-                aria_label:  fl!("ribbon-font-grow-aria"),
-                is_active:   false,
-                is_disabled: false,
-                on_click: move |_| {
-                    if let Some(ldoc) = loro.read().as_ref()
-                        && adjust_font_size(ldoc, &cursor.read(), true).is_ok()
-                    {
-                        ctx.finish(&ds_grow, ldoc);
-                    }
-                },
-                AtIcon { path_d: AT_FONT_GROW.to_string() }
-            }
-            AtRibbonIconButton {
-                aria_label:  fl!("ribbon-font-shrink-aria"),
-                is_active:   false,
-                is_disabled: false,
-                on_click: move |_| {
-                    if let Some(ldoc) = loro.read().as_ref()
-                        && adjust_font_size(ldoc, &cursor.read(), false).is_ok()
-                    {
-                        ctx.finish(&ds_shrink, ldoc);
-                    }
-                },
-                AtIcon { path_d: AT_FONT_SHRINK.to_string() }
-            }
-        },
-    }
-}
-
-/// One alignment button. `value` is the para-props alignment (`"Left"`, …).
-fn align_button(
-    doc_state: &Arc<Mutex<DocumentState>>,
-    ctx: RibbonEditCtx,
-    current: &str,
-    value: &'static str,
-    aria: String,
-    icon: &'static str,
-) -> Element {
-    let ds = Arc::clone(doc_state);
-    let loro = ctx.loro_doc;
-    let cursor = ctx.cursor_state;
-    rsx! {
-        AtRibbonIconButton {
-            aria_label:  aria,
-            is_active:   current == value,
-            is_disabled: false,
-            on_click: move |_| {
-                if let Some(ldoc) = loro.read().as_ref()
-                    && apply_alignment(ldoc, &cursor.read(), value).is_ok()
-                {
-                    ctx.finish(&ds, ldoc);
-                }
-            },
-            AtIcon { path_d: icon.to_string() }
-        }
-    }
-}
-
-/// The Paragraph alignment group (left / centre / right / justify).
-pub(super) fn alignment_group(
-    doc_state: &Arc<Mutex<DocumentState>>,
-    ctx: RibbonEditCtx,
-    current_align: String,
-    priority: u8,
-) -> RibbonGroupSpec {
-    RibbonGroupSpec {
-        metrics: estimate_group_metrics(priority, 4, true),
-        label: Some(fl!("ribbon-group-alignment")),
-        aria_label: fl!("ribbon-group-alignment"),
-        content: rsx! {
-            {align_button(doc_state, ctx, &current_align, "Left", fl!("ribbon-align-left-aria"), LUCIDE_ALIGN_LEFT)}
-            {align_button(doc_state, ctx, &current_align, "Center", fl!("ribbon-align-centre-aria"), LUCIDE_ALIGN_CENTER)}
-            {align_button(doc_state, ctx, &current_align, "Right", fl!("ribbon-align-right-aria"), LUCIDE_ALIGN_RIGHT)}
-            {align_button(doc_state, ctx, &current_align, "Justify", fl!("ribbon-align-justify-aria"), LUCIDE_ALIGN_JUSTIFY)}
         },
     }
 }

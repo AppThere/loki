@@ -12,8 +12,8 @@ use std::sync::{Arc, Mutex};
 use loki_doc_model::document::Document;
 use loki_doc_model::loro_bridge::IncrementalReader;
 use loki_layout::{
-    ContinuousLayout, DocumentLayout, FontResources, LayoutMode, LayoutOptions, PaginatedLayout,
-    PaginatedReuse,
+    ContinuousLayout, DocumentLayout, LayoutMode, LayoutOptions, PaginatedLayout, PaginatedReuse,
+    SharedFontResources,
 };
 
 use super::relayout::{LaidOut, page_metrics, relayout_paginated};
@@ -44,8 +44,10 @@ pub struct DocumentState {
     /// Page height in CSS px from the current layout (A4 fallback: 1123 px).
     pub page_height_px: f32,
     /// Shared Parley font + shaping context — one per editor to avoid the
-    /// ≈20 MB font-scan cost on every mutation.
-    pub shared_font_resources: Arc<Mutex<FontResources>>,
+    /// ≈20 MB font-scan cost on every mutation. The handle is warm-up-aware:
+    /// the system-font scan runs on a background thread (started at app
+    /// launch), so constructing `DocumentState` never blocks on it.
+    pub shared_font_resources: SharedFontResources,
     /// Lazily-computed reflow layout for reflow-mode navigation, keyed by
     /// `(generation, content-width key)`.  Recomputed when stale.  Separate from
     /// the renderer's copy; only built when the user navigates in reflow mode.
@@ -61,8 +63,16 @@ pub struct DocumentState {
 }
 
 impl DocumentState {
-    /// Creates a fresh state with no document loaded.
+    /// Creates a fresh state with no document loaded, starting its own
+    /// background font warm-up. Prefer [`DocumentState::with_fonts`] with the
+    /// app-wide handle so the scan overlaps app startup instead.
     pub fn new() -> Self {
+        Self::with_fonts(SharedFontResources::warm_up())
+    }
+
+    /// Creates a fresh state sharing an existing (possibly still warming)
+    /// font context. Never blocks on the system-font scan.
+    pub fn with_fonts(fonts: SharedFontResources) -> Self {
         Self {
             document: None,
             generation: 0,
@@ -70,7 +80,7 @@ impl DocumentState {
             paginated_layout: None,
             page_width_px: appthere_ui::tokens::PAGE_WIDTH_PX,
             page_height_px: appthere_ui::tokens::PAGE_HEIGHT_PX,
-            shared_font_resources: Arc::new(Mutex::new(FontResources::new())),
+            shared_font_resources: fonts,
             reflow_cache: None,
             incremental: None,
             layout_reuse: None,
@@ -98,10 +108,7 @@ pub fn ensure_reflow_layout(
         return Some(layout.clone());
     }
     let layout = {
-        let mut resources = state
-            .shared_font_resources
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut resources = state.shared_font_resources.lock();
         let options = LayoutOptions {
             preserve_for_editing: true,
             spell: crate::editing::spell::active(),
@@ -161,15 +168,14 @@ pub fn seed_layout_from_document(doc_state: &Arc<Mutex<DocumentState>>, doc: &Do
 /// worker thread; publish the result on the main thread with
 /// [`publish_seed_layout`]. Both [`FontResources`] and the returned layout are
 /// `Send`, which is what makes the off-main-thread open path possible.
-pub(crate) fn compute_seed_layout(
-    font_resources: &Arc<Mutex<FontResources>>,
-    doc: &Document,
-) -> LaidOut {
+pub(crate) fn compute_seed_layout(font_resources: &SharedFontResources, doc: &Document) -> LaidOut {
     // Open-path timing (the worker thread). Logged under `loki_text::open` so the
     // CPU layout cost of opening a document is visible on-device:
     //   RUST_LOG=loki_text::open=info cargo run -p loki-text --release
     let started = std::time::Instant::now();
-    let mut fr = font_resources.lock().unwrap_or_else(|e| e.into_inner());
+    // Blocks until the background font warm-up finishes — this runs on the
+    // open-path worker thread, so the UI keeps painting meanwhile.
+    let mut fr = font_resources.lock();
     let lock_ms = started.elapsed().as_secs_f64() * 1000.0;
     // New document: drop the previous document's memoised paragraph layouts so
     // the shaping cache does not accumulate across loads.

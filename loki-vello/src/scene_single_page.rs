@@ -100,6 +100,32 @@ pub fn paint_single_page(
     // Cursor and selection highlights — painted after content so they appear
     // on top of glyphs.
     if let Some(cp) = cursor_paint {
+        // Multi-paragraph selection spans: each span is transformed by its own
+        // paragraph's per-page origin (and rotation), so selections spanning
+        // paragraphs or page-split fragments highlight correctly.
+        for span in &cp.selection_spans {
+            let span_para = page.editing_data.as_ref().and_then(|ed| {
+                ed.paragraphs
+                    .iter()
+                    .find(|p| p.block_index == span.paragraph_index)
+            });
+            if span_para.is_none() {
+                continue;
+            }
+            let t = crate::scene_cursor::cursor_paint_transform(span_para, content_origin, scale);
+            crate::scene_cursor::paint_cursor_transformed(
+                scene,
+                &CursorRect {
+                    x: 0.0,
+                    y: 0.0,
+                    height: 0.0,
+                },
+                &span.rects,
+                &span.handles,
+                t,
+            );
+        }
+
         // The cursor rect and selection rects are in paragraph-local coordinates.
         // Find the paragraph fragment on this page that matches the global
         // paragraph_index, and use its origin.

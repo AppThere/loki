@@ -16,7 +16,7 @@
       FilePickerActivity is compiled into classes.dex and injected by the build script.
     -->
     <application
-        android:label="Loki"
+        android:label="Loki Text"
         android:hasCode="true">
 
         <!--
@@ -25,7 +25,7 @@
         -->
         <activity
             android:name="android.app.NativeActivity"
-            android:label="Loki"
+            android:label="Loki Text"
             android:exported="true"
             android:configChanges="orientation|keyboardHidden|screenSize">
             <meta-data

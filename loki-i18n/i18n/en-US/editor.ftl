@@ -41,18 +41,15 @@ editor-action-add-bullet = Add bullet
 editor-placeholder-title = Title
 editor-placeholder-subtitle = Subtitle
 
-# Font warning banner
+# Font substitution — status-bar chip (the indicator) + detail panel
 editor-font-substitution-title = Font Substitution
 editor-font-substitution-message = Some fonts in this document are not available and were substituted. Layout and formatting might differ from Office 365.
-editor-font-substitution-download = Download original fonts:
-editor-font-dismiss = Dismiss
-# Compact chip + recovery indicator (one concise line)
+# Status-bar indicator chip; clicking it opens the detail panel
 editor-font-substitution-chip = { $count ->
     [one] 1 font substituted
    *[other] { $count } fonts substituted
 }
-editor-font-substitution-details = Details
-editor-font-substitution-collapse = Hide
+editor-font-substitution-close = Close
 # Per-substitution card / row
 editor-font-substitution-requested = Requested
 editor-font-substitution-substitute = Substitute

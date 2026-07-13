@@ -41,7 +41,7 @@ pub use band::{content_max_x, paint_continuous_band};
 pub use error::{VelloError, VelloResult};
 pub use font_cache::FontDataCache;
 pub use scene::{
-    CursorPaint, SelectionHandle, SelectionHandleKind, SelectionRect, paint_continuous,
-    paint_layout, paint_paginated, paint_single_page,
+    CursorPaint, SelectionHandle, SelectionHandleKind, SelectionRect, SelectionSpan,
+    paint_continuous, paint_layout, paint_paginated, paint_single_page,
 };
 pub use scene_cursor::paint_cursor;

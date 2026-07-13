@@ -8,6 +8,7 @@
 
 use dioxus::prelude::*;
 
+use super::editor_state::SaveStatus;
 use crate::editing::cursor::CursorState;
 use crate::editing::saved_state::SavedStateHandle;
 use crate::new_document::is_untitled;
@@ -19,6 +20,9 @@ use crate::tabs::OpenTab;
 /// Dirty = the live generation differs from the clean baseline AND the
 /// undo-stack clean checkpoint disagrees (undoing to the save point clears
 /// dirty; plan 4b.3); untitled docs are always dirty until the first Save As.
+///
+/// Also clears a lingering *success* status chip the moment the document goes
+/// dirty — a stale "Document saved" must never sit over unsaved edits.
 pub(super) fn use_dirty_tracking(
     cursor_state: Signal<CursorState>,
     path_signal: Signal<String>,
@@ -26,6 +30,7 @@ pub(super) fn use_dirty_tracking(
     saved_state: Signal<SavedStateHandle>,
     mut is_dirty: Signal<bool>,
     mut tabs: Signal<Vec<OpenTab>>,
+    mut save_message: Signal<Option<SaveStatus>>,
 ) {
     use_effect(move || {
         let live_gen = cursor_state.read().document_generation;
@@ -35,6 +40,14 @@ pub(super) fn use_dirty_tracking(
         let dirty = is_untitled(&path) || (live_gen != base && !undo_clean);
         if *is_dirty.peek() != dirty {
             is_dirty.set(dirty); // guard avoids a needless ribbon re-render
+        }
+        if dirty
+            && save_message
+                .peek()
+                .as_ref()
+                .is_some_and(|status| !status.is_error)
+        {
+            save_message.set(None);
         }
         // Only take a write guard when a tab's flag actually changes. A bare
         // `tabs.write()` marks the shared tabs signal dirty and re-renders the

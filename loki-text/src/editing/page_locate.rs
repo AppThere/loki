@@ -30,17 +30,27 @@ use super::cursor::DocumentPosition;
 #[path = "page_locate_tests.rs"]
 mod tests;
 
+/// Geometry tolerance for the content-band fit checks (points).
+const BAND_EPSILON: f32 = 0.5;
+
 /// Returns `pos` with its `page_index` re-derived from `layout`.
 ///
 /// When the position's paragraph is found on exactly one page, that page
 /// wins. When it spans several pages (a split paragraph), the page whose
-/// content band contains the byte offset's line-centre wins; if no band
-/// matches (degenerate geometry), the first page holding the paragraph is
-/// used. When the paragraph is not in the layout at all (e.g. the layout is
-/// momentarily stale), `pos` is returned unchanged.
+/// content band **fully contains** the byte offset's line wins — the split
+/// engine moves a non-fitting line entirely to the next page, so only the
+/// page that actually renders the line satisfies this. (A centre-only check
+/// mis-attributed the first line after a page break to the *previous* page
+/// whenever that page ended with more than half a line of slack, painting
+/// the caret near the bottom of the wrong page.) If no page fully contains
+/// the line (degenerate geometry, e.g. a line taller than the band), the
+/// line-centre rule decides; failing that, the first page holding the
+/// paragraph is used. When the paragraph is not in the layout at all (e.g.
+/// the layout is momentarily stale), `pos` is returned unchanged.
 #[must_use]
 pub fn recompute_page_index(layout: &PaginatedLayout, pos: &DocumentPosition) -> DocumentPosition {
     let mut first_holder: Option<usize> = None;
+    let mut center_match: Option<usize> = None;
     let mut visible: Option<usize> = None;
 
     for (pi, page) in layout.pages.iter().enumerate() {
@@ -55,15 +65,19 @@ pub fn recompute_page_index(layout: &PaginatedLayout, pos: &DocumentPosition) ->
             continue;
         };
         first_holder.get_or_insert(pi);
-        if visible.is_none()
-            && let Some(rect) = para.layout.cursor_rect(pos.byte_offset)
-        {
-            // Content-band check: the line's centre, in page-content
-            // coordinates (origin is already content-relative).
-            let y_center = rect.y + rect.height / 2.0 + para.origin.1;
+        if let Some(rect) = para.layout.cursor_rect(pos.byte_offset) {
+            // Line extent in page-content coordinates (the per-page origin is
+            // already content-relative).
+            let y_top = rect.y + para.origin.1;
+            let y_bottom = y_top + rect.height;
             let content_h = page.page_size.height - page.margins.top - page.margins.bottom;
-            if y_center >= 0.0 && y_center < content_h {
+            if y_top >= -BAND_EPSILON && y_bottom <= content_h + BAND_EPSILON {
                 visible = Some(pi);
+            } else if center_match.is_none() {
+                let y_center = y_top + rect.height / 2.0;
+                if y_center >= 0.0 && y_center < content_h {
+                    center_match = Some(pi);
+                }
             }
         }
         if visible.is_some() {
@@ -71,10 +85,11 @@ pub fn recompute_page_index(layout: &PaginatedLayout, pos: &DocumentPosition) ->
         }
     }
 
-    let new_page = match (visible, first_holder) {
-        (Some(pi), _) => pi,
-        (None, Some(pi)) => pi,
-        (None, None) => pos.page_index,
+    let new_page = match (visible, center_match, first_holder) {
+        (Some(pi), _, _) => pi,
+        (None, Some(pi), _) => pi,
+        (None, None, Some(pi)) => pi,
+        (None, None, None) => pos.page_index,
     };
     if new_page == pos.page_index {
         return pos.clone();

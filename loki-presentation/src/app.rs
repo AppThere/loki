@@ -8,6 +8,12 @@ use appthere_ui::{
 };
 use dioxus::prelude::*;
 
+/// The product name shown in the OS window title bar.
+pub const WINDOW_TITLE: &str = "Loki Slides";
+
+/// Relative window-geometry persistence path under the platform data dir.
+pub const GEOMETRY_FILE: &str = "AppThere/Loki/window_presentation.json";
+
 use crate::recent_documents::RecentDocuments;
 use crate::routes::Route;
 use crate::tabs::OpenTab;
@@ -153,6 +159,13 @@ pub fn App() -> Element {
             SafeAreaResizeSensor {}
             // Measure the root width into the responsive context (F7a).
             AtViewportWidthSensor {}
+            // Persist the window size across sessions (debounced; desktop only
+            // in effect — Android windows are fullscreen).
+            appthere_ui::AtWindowSizeSensor {
+                on_size: |size: (f64, f64)| {
+                    loki_app_shell::window_geometry::save_debounced(GEOMETRY_FILE, size)
+                },
+            }
 
             Router::<Route> {}
 

@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! Font-substitution warning UI (Spec 03 M3 / D3).
+//! Font-substitution detail panel (Spec 03 M3 / D3, inverted 2026-07).
 //!
-//! Compact-by-default, expand-on-demand, dismissible (recovery lives in the
-//! status bar), and **breakpoint-aware**: the expanded view is a compact table
-//! on Expanded width and a vertical stack of cards on Compact — never a
-//! full-width band that wraps (the named offender). Blitz-clean: no
-//! `position: fixed`, no `box-shadow` (elevation via border/background), no CSS
-//! custom properties. All strings via `fl!()`.
+//! The *indicator* is the status-bar chip ("N fonts substituted"), shown
+//! whenever the layout engine recorded substitutions — there is no banner.
+//! Clicking the chip opens this panel above the ribbon with the full
+//! requested→substitute table; clicking Close (or the chip again) hides it.
+//! **Breakpoint-aware**: a compact table on Expanded width and a vertical
+//! stack of cards on Compact — never a full-width band that wraps. Blitz-
+//! clean: no `position: fixed`, no `box-shadow` (elevation via border/
+//! background), no CSS custom properties. All strings via `fl!()`.
 //!
 //! Owns only the warning *UI*; the substitution engine is Spec 02's.
 
@@ -195,22 +197,24 @@ fn item_row(item: &Sub) -> Element {
     }
 }
 
-/// The font-substitution warning. Renders nothing when there are no
-/// substitutions or it has been dismissed (recovery is via the status bar).
+/// The font-substitution detail panel. Renders nothing when there are no
+/// substitutions or while closed; the status-bar chip toggles `open`.
+///
+/// The Close button inherits the ribbon-button touch-target convention: its
+/// padded hit area meets the 44×44 logical-pixel minimum (WCAG 2.5.8) through
+/// the surrounding header row height plus padding.
 #[component]
-pub(super) fn FontWarning(
+pub(super) fn FontSubstitutionPanel(
     substitutions: HashMap<String, Option<String>>,
-    dismiss: Signal<bool>,
+    open: Signal<bool>,
 ) -> Element {
-    let mut expanded = use_signal(|| false);
-    let mut dismiss = dismiss;
+    let mut open = open;
     let compact = use_breakpoint().is_compact();
 
-    if substitutions.is_empty() || dismiss() {
+    if substitutions.is_empty() || !open() {
         return rsx! {};
     }
     let items = build_items(&substitutions);
-    let count = items.len() as i64;
 
     let container = format!(
         "display: flex; flex-direction: column; gap: {gap}px; padding: {pv}px {ph}px; \
@@ -238,45 +242,30 @@ pub(super) fn FontWarning(
 
     rsx! {
         div { style: "{container}",
-            // Header row — compact chip when collapsed, title when expanded.
+            // Header row — title + close.
             div {
                 style: "display: flex; flex-direction: row; align-items: center; gap: 8px;",
                 span {
                     style: format!("color: {}; font-weight: bold;", tokens::COLOR_CONTEXTUAL_TAB),
-                    if expanded() {
-                        "⚠ {fl!(\"editor-font-substitution-title\")}"
-                    } else {
-                        "⚠ {fl!(\"editor-font-substitution-chip\", count = count)}"
-                    }
+                    "⚠ {fl!(\"editor-font-substitution-title\")}"
                 }
                 div { style: "flex: 1;" }
                 button {
                     style: "{btn}",
-                    onclick: move |_| { let v = expanded(); expanded.set(!v); },
-                    if expanded() {
-                        {fl!("editor-font-substitution-collapse")}
-                    } else {
-                        {fl!("editor-font-substitution-details")}
-                    }
-                }
-                button {
-                    style: "{btn}",
-                    onclick: move |_| { dismiss.set(true); },
-                    {fl!("editor-font-dismiss")}
+                    onclick: move |_| { open.set(false); },
+                    {fl!("editor-font-substitution-close")}
                 }
             }
-            // Expanded body — card stack (Compact) or table (Expanded).
-            if expanded() {
-                span {
-                    style: format!("font-size: {}px; color: {};", tokens::FONT_SIZE_LABEL, tokens::COLOR_TEXT_ON_CHROME_SECONDARY),
-                    {fl!("editor-font-substitution-message")}
-                }
-                div {
-                    style: "display: flex; flex-direction: column; gap: 6px;",
-                    for item in items.iter() {
-                        div { key: "{item.requested}",
-                            if compact { {item_card(item)} } else { {item_row(item)} }
-                        }
+            // Detail body — card stack (Compact) or table (Expanded).
+            span {
+                style: format!("font-size: {}px; color: {};", tokens::FONT_SIZE_LABEL, tokens::COLOR_TEXT_ON_CHROME_SECONDARY),
+                {fl!("editor-font-substitution-message")}
+            }
+            div {
+                style: "display: flex; flex-direction: column; gap: 6px;",
+                for item in items.iter() {
+                    div { key: "{item.requested}",
+                        if compact { {item_card(item)} } else { {item_row(item)} }
                     }
                 }
             }

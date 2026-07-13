@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 
-use super::editor_state::StyleDraft;
+use super::editor_state::{ColorPickerTarget, SaveStatus, StyleDraft};
 use crate::editing::cursor::CursorState;
 use crate::editing::saved_state::SavedStateHandle;
 use crate::editing::state::DocumentState;
@@ -31,10 +31,11 @@ pub(super) struct PathSyncSignals {
     pub current_page: Signal<u32>,
     pub can_undo: Signal<bool>,
     pub can_redo: Signal<bool>,
-    pub dismiss_font_warning: Signal<bool>,
+    pub font_panel_open: Signal<bool>,
     pub is_style_picker_open: Signal<bool>,
+    pub open_color_picker: Signal<Option<ColorPickerTarget>>,
     pub editing_style_draft: Signal<Option<StyleDraft>>,
-    pub save_message: Signal<Option<String>>,
+    pub save_message: Signal<Option<SaveStatus>>,
     pub baseline_gen: Signal<u64>,
     pub saved_state: Signal<SavedStateHandle>,
 }
@@ -64,8 +65,9 @@ pub(super) fn sync_path_and_reset(
     stash_outgoing(&current, doc_state, tabs, &mut sessions, sig);
 
     // Transient UI state never carries across documents.
-    sig.dismiss_font_warning.set(false);
+    sig.font_panel_open.set(false);
     sig.is_style_picker_open.set(false);
+    sig.open_color_picker.set(None);
     sig.editing_style_draft.set(None);
     sig.save_message.set(None);
 

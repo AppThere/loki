@@ -80,6 +80,45 @@ impl Default for StyleDraft {
     }
 }
 
+/// A transient status line (save/export/insert results, style-edit errors).
+///
+/// Successes surface as an auto-clearing status-bar chip (cleared after a few
+/// seconds, or immediately once the document is edited again, so a stale
+/// "Document saved" can never sit over a dirty document). Errors keep the
+/// persistent banner so failures are not silently hidden.
+#[derive(Clone, PartialEq)]
+pub(super) struct SaveStatus {
+    pub text: String,
+    pub is_error: bool,
+}
+
+impl SaveStatus {
+    /// A success/info status — shown as the auto-clearing status-bar chip.
+    pub fn ok(text: String) -> Self {
+        Self {
+            text,
+            is_error: false,
+        }
+    }
+
+    /// An error status — shown in the persistent banner until dismissed.
+    pub fn error(text: String) -> Self {
+        Self {
+            text,
+            is_error: true,
+        }
+    }
+}
+
+/// Which colour the docked colour-picker panel is editing (`None` = closed).
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum ColorPickerTarget {
+    /// Text (font) colour — hex mark values, custom entry enabled.
+    Text,
+    /// Highlight — named `HighlightColor` variants only.
+    Highlight,
+}
+
 /// All per-document signals for the editor, grouped for ergonomic initialisation.
 pub(super) struct EditorState {
     pub doc_state: Arc<Mutex<DocumentState>>,
@@ -138,14 +177,22 @@ pub(super) struct EditorState {
     /// a clean *titled* document has nothing to save. Untitled documents stay
     /// dirty (Save routes to Save As), so their Save button stays enabled.
     pub is_dirty: Signal<bool>,
-    /// Last save result message (`None` = nothing to show).
-    pub save_message: Signal<Option<String>>,
+    /// Last transient status (`None` = nothing to show). See [`SaveStatus`]
+    /// for how successes vs errors are surfaced.
+    pub save_message: Signal<Option<SaveStatus>>,
     /// Monotonic counter bumped by the Ctrl+S handler. `EditorInner` watches it
     /// and runs the save (or Save As for untitled documents) — the keydown
     /// handler has no access to the tab/recents context, so it signals instead.
     pub save_request: Signal<u32>,
-    /// Index of the active ribbon tab (0 = Home … Publish is the last).
+    /// Index of the active ribbon tab (0 = Write, 1 = Format, … Publish is
+    /// the last core tab; the Table contextual tab follows).
     pub active_ribbon_tab: Signal<usize>,
+    /// Which colour the docked picker panel is editing (`None` = closed).
+    pub open_color_picker: Signal<Option<ColorPickerTarget>>,
+    /// Recent Format-tab font-colour picks (hex, most recent first).
+    pub recent_text_colors: Signal<Vec<String>>,
+    /// Recent Format-tab highlight picks (variant names, most recent first).
+    pub recent_highlights: Signal<Vec<String>>,
     /// Whether the Publish-tab PDF/X export panel is open above the ribbon.
     pub is_publish_panel_open: Signal<bool>,
     /// Selected PDF/X conformance level for export.
@@ -160,8 +207,14 @@ pub(super) struct EditorState {
 /// of `EditorInner`.  Hook call order is preserved because `EditorInner`
 /// always calls this as its first hook operation.
 pub(super) fn use_editor_state() -> EditorState {
-    let doc_state: Arc<Mutex<DocumentState>> =
-        use_hook(|| Arc::new(Mutex::new(DocumentState::new())));
+    // Share the app-wide font handle (warm-up started at launch in `App`) so
+    // mounting the editor never pays — or waits for — the system-font scan.
+    // The fallback covers tests/hosts that mount the editor without `App`.
+    let doc_state: Arc<Mutex<DocumentState>> = use_hook(|| {
+        let fonts = try_consume_context::<loki_layout::SharedFontResources>()
+            .unwrap_or_else(loki_layout::SharedFontResources::warm_up);
+        Arc::new(Mutex::new(DocumentState::with_fonts(fonts)))
+    });
 
     // Synchronously read page_count in case doc_state is already populated
     // (covers tab-switch-back where the document was previously loaded).
@@ -209,6 +262,9 @@ pub(super) fn use_editor_state() -> EditorState {
         save_message: use_signal(|| None),
         save_request: use_signal(|| 0_u32),
         active_ribbon_tab: use_signal(|| 0_usize),
+        open_color_picker: use_signal(|| None),
+        recent_text_colors: use_signal(Vec::new),
+        recent_highlights: use_signal(Vec::new),
         is_publish_panel_open: use_signal(|| false),
         pdf_level: use_signal(super::editor_publish::PdfXLevelChoice::default),
         editing_metadata: use_signal(|| None),

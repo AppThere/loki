@@ -200,16 +200,11 @@ pub(super) fn get_catalog_style(
 /// Returns the font families available for layout (system + bundled +
 /// document-embedded), sorted, for the style editor's font picker.
 ///
-/// Enumerates the editor's shared Fontique collection. Intended to be called
-/// once (memoised) per editor rather than per render.
-pub(super) fn available_font_families(doc_state: &Arc<Mutex<DocumentState>>) -> Vec<String> {
-    let Ok(state) = doc_state.lock() else {
-        return vec![];
-    };
-    let Ok(mut fr) = state.shared_font_resources.lock() else {
-        return vec![];
-    };
-    fr.available_font_families()
+/// Blocks until the background font warm-up finishes, so call it from a
+/// worker thread (the editor fills its `font_families` signal that way)
+/// rather than on the render path.
+pub(super) fn available_font_families(fonts: &loki_layout::SharedFontResources) -> Vec<String> {
+    fonts.lock().available_font_families()
 }
 
 /// Returns `(style_id, display_name, depth)` for all catalog paragraph styles in

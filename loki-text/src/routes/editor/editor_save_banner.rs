@@ -1,18 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Transient save-status banner shown below the panels, above the ribbon.
+//! Transient status surfaces for save/export/insert results.
 //!
-//! Extracted from `editor_inner` (which is over the 300-line ceiling) so adding
-//! the spelling panels there is net line-neutral.
+//! Successes render as an auto-clearing chip in the status bar (wired in
+//! `editor_inner`; the auto-clear lives in [`use_save_status_autoclear`]).
+//! Errors render here as a persistent banner below the panels, above the
+//! ribbon, dismissed manually — failures must not silently vanish.
+
+use std::time::Duration;
 
 use appthere_ui::tokens;
 use dioxus::prelude::*;
 
-/// Renders the save-status banner when `save_message` is `Some`, with a close
-/// button that clears it.
-pub(super) fn save_banner(mut save_message: Signal<Option<String>>) -> Element {
-    let Some(msg) = save_message.read().clone() else {
-        return rsx! {};
+use super::editor_state::SaveStatus;
+
+/// How long a success chip stays before clearing itself.
+const AUTO_CLEAR_MS: u64 = 4000;
+
+/// Renders the error banner when `save_message` holds an error, with a close
+/// button that clears it. Successes are the status-bar chip, not this banner.
+pub(super) fn save_banner(mut save_message: Signal<Option<SaveStatus>>) -> Element {
+    let msg = match save_message.read().as_ref() {
+        Some(status) if status.is_error => status.text.clone(),
+        _ => return rsx! {},
     };
     rsx! {
         div {
@@ -44,4 +54,44 @@ pub(super) fn save_banner(mut save_message: Signal<Option<String>>) -> Element {
             }
         }
     }
+}
+
+/// The status-bar chip label: the current *success* status text, or empty
+/// (which hides the chip). Errors render in the banner instead.
+pub(super) fn save_status_chip_label(save_message: Signal<Option<SaveStatus>>) -> String {
+    save_message
+        .read()
+        .as_ref()
+        .filter(|status| !status.is_error)
+        .map(|status| status.text.clone())
+        .unwrap_or_default()
+}
+
+/// Clears a *success* status a few seconds after it appears (errors persist
+/// until dismissed). A worker thread sleeps and signals back through a oneshot
+/// — the same cross-thread yield pattern as the open-path layout task — and
+/// the clear is skipped if a newer status replaced this one meanwhile.
+pub(super) fn use_save_status_autoclear(mut save_message: Signal<Option<SaveStatus>>) {
+    use_effect(move || {
+        let Some(status) = save_message.read().clone() else {
+            return;
+        };
+        if status.is_error {
+            return;
+        }
+        let (tx, rx) = futures_channel::oneshot::channel();
+        let spawned = std::thread::Builder::new()
+            .name("loki-status-clear".into())
+            .spawn(move || {
+                std::thread::sleep(Duration::from_millis(AUTO_CLEAR_MS));
+                let _ = tx.send(());
+            });
+        if spawned.is_ok() {
+            spawn(async move {
+                if rx.await.is_ok() && save_message.peek().as_ref() == Some(&status) {
+                    save_message.set(None);
+                }
+            });
+        }
+    });
 }

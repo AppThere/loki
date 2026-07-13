@@ -15,6 +15,7 @@
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use super::super::editor_state::SaveStatus;
 use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_doc_model::style::StyleId;
@@ -110,7 +111,7 @@ fn apply_button(
                             .is_some_and(|cat| cat.char_reparent_cycles(&child, &new_parent));
                         if cycles {
                             let mut save_message = sync.save_message;
-                            save_message.set(Some(fl!("style-reparent-cycle")));
+                            save_message.set(Some(SaveStatus::error(fl!("style-reparent-cycle"))));
                             return;
                         }
                     }

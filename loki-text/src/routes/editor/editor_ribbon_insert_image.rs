@@ -9,6 +9,7 @@
 
 use std::io::Read;
 
+use super::editor_state::SaveStatus;
 use dioxus::prelude::*;
 use loki_file_access::{FileAccessToken, FilePicker, PickOptions};
 use loki_i18n::fl;
@@ -56,15 +57,17 @@ pub(super) fn spawn_pick_and_insert_image(ctx: InsertCtx) {
                 let bytes = match read_token_bytes(&token) {
                     Ok(b) => b,
                     Err(e) => {
-                        save_message.set(Some(fl!(
+                        save_message.set(Some(SaveStatus::error(fl!(
                             "editor-insert-image-error",
                             reason = e.to_string()
-                        )));
+                        ))));
                         return;
                     }
                 };
                 let Some(image) = image_inline_from_bytes(&bytes) else {
-                    save_message.set(Some(fl!("editor-insert-image-unsupported")));
+                    save_message.set(Some(SaveStatus::error(fl!(
+                        "editor-insert-image-unsupported"
+                    ))));
                     return;
                 };
                 let outcome = {
@@ -93,17 +96,22 @@ pub(super) fn spawn_pick_and_insert_image(ctx: InsertCtx) {
                             ctx.can_undo,
                             ctx.can_redo,
                         );
-                        save_message.set(Some(fl!("editor-insert-image-success")));
+                        save_message.set(Some(SaveStatus::ok(fl!("editor-insert-image-success"))));
                     }
-                    Some(false) => save_message.set(Some(fl!("editor-insert-image-no-cursor"))),
-                    None => save_message.set(Some(fl!("editor-insert-image-error", reason = "—"))),
+                    Some(false) => save_message.set(Some(SaveStatus::error(fl!(
+                        "editor-insert-image-no-cursor"
+                    )))),
+                    None => save_message.set(Some(SaveStatus::error(fl!(
+                        "editor-insert-image-error",
+                        reason = "—"
+                    )))),
                 }
             }
             Ok(None) => { /* user cancelled — no-op */ }
-            Err(e) => save_message.set(Some(fl!(
+            Err(e) => save_message.set(Some(SaveStatus::error(fl!(
                 "editor-insert-image-error",
                 reason = e.to_string()
-            ))),
+            )))),
         }
     });
 }

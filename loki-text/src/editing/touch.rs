@@ -31,6 +31,9 @@ pub enum TouchPhase {
     /// Touch has been stationary for at least [`LONG_PRESS_MS`] — word
     /// selection active.
     LongPress,
+    /// Touch started on a selection handle — every move drags the selection
+    /// focus (the fixed end was normalised into the anchor at grab time).
+    HandleDrag,
 }
 
 /// Tracks the state of an in-progress touch interaction.
@@ -82,7 +85,9 @@ impl TouchInteractionState {
             TouchPhase::Scroll { .. } => {
                 self.phase = TouchPhase::Scroll { last_y: new_pos.1 };
             }
-            TouchPhase::LongPress => {}
+            // Sticky phases: a long press stays a long press; a handle drag
+            // stays a handle drag regardless of distance or duration.
+            TouchPhase::LongPress | TouchPhase::HandleDrag => {}
         }
         false
     }

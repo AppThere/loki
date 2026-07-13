@@ -61,8 +61,8 @@ pub(super) fn write_tab_content(
     let ds_undo = Arc::clone(doc_state);
     let ds_redo = Arc::clone(doc_state);
 
-    // The inline-formatting and alignment groups are extracted to
-    // `editor_ribbon_format` (ceiling). They share these live handles + states.
+    // The inline-formatting group is extracted to `editor_ribbon_format`
+    // (ceiling). It shares these live handles + states.
     let edit_ctx = super::editor_ribbon_format::RibbonEditCtx {
         loro_doc,
         cursor_state,
@@ -78,25 +78,11 @@ pub(super) fn write_tab_content(
         superscript: superscript_active,
         subscript: subscript_active,
     };
-    // Alignment of the caret's paragraph, for the alignment group's active state.
-    let current_align = loro_doc
-        .read()
-        .as_ref()
-        .map(|ldoc| super::editor_alignment::current_alignment(ldoc, &cursor_state.read()))
-        .unwrap_or_else(|| "Left".to_string());
-    // Direct text colour / highlight at the caret, for the swatch groups' active state.
-    let current_color = loro_doc
-        .read()
-        .as_ref()
-        .and_then(|ldoc| super::editor_text_color::current_text_color(ldoc, &cursor_state.read()));
-    let current_highlight = loro_doc.read().as_ref().and_then(|ldoc| {
-        super::editor_highlight_color::current_highlight(ldoc, &cursor_state.read())
-    });
 
     // Collapse priorities (higher = kept full longer, Spec 04 M3 §7): the core
-    // editing controls (Inline, Alignment, Font, Styles) stay full the longest;
-    // the wide colour-swatch groups overflow first (they also reclaim the most
-    // strip width per overflow).
+    // editing controls (Inline, Styles) stay full the longest. Font/highlight
+    // colour live on the Format tab; paragraph alignment lives in the
+    // paragraph style editor.
     let document = RibbonGroupSpec {
         metrics: estimate_group_metrics(4, 3, true),
         label: Some(fl!("ribbon-group-document")),
@@ -239,11 +225,7 @@ pub(super) fn write_tab_content(
                 history,
                 styles,
                 paragraph,
-                super::editor_ribbon_format::font_group(doc_state, edit_ctx, 6),
                 super::editor_ribbon_format::inline_format_group(doc_state, edit_ctx, inline_state, 8),
-                super::editor_ribbon_color::font_color_group(doc_state, edit_ctx, current_color, 1),
-                super::editor_ribbon_color::highlight_group(doc_state, edit_ctx, current_highlight, 0),
-                super::editor_ribbon_format::alignment_group(doc_state, edit_ctx, current_align, 7),
             ],
         }
     }

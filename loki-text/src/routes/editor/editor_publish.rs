@@ -11,6 +11,7 @@
 use std::io::{Cursor, Write};
 use std::sync::{Arc, Mutex};
 
+use super::editor_state::SaveStatus;
 use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_doc_model::io::DocumentExport;
@@ -54,7 +55,7 @@ impl From<PdfXLevelChoice> for PdfXLevel {
 pub(super) fn publish_panel(
     doc_state: Arc<Mutex<DocumentState>>,
     path_signal: Signal<String>,
-    save_message: Signal<Option<String>>,
+    save_message: Signal<Option<SaveStatus>>,
     mut is_publish_panel_open: Signal<bool>,
     mut pdf_level: Signal<PdfXLevelChoice>,
 ) -> Element {
@@ -130,12 +131,15 @@ pub(super) fn run_export(
     doc_state: &Arc<Mutex<DocumentState>>,
     format: PublishFormat,
     cur_path: &str,
-    mut save_message: Signal<Option<String>>,
+    mut save_message: Signal<Option<SaveStatus>>,
 ) {
     let doc = match doc_state.lock().ok().and_then(|s| s.document.clone()) {
         Some(d) => d,
         None => {
-            save_message.set(Some(fl!("publish-export-error", reason = "no document")));
+            save_message.set(Some(SaveStatus::error(fl!(
+                "publish-export-error",
+                reason = "no document"
+            ))));
             return;
         }
     };
@@ -156,23 +160,34 @@ pub(super) fn run_export(
                 let bytes = match serialize(&doc, format) {
                     Ok(b) => b,
                     Err(e) => {
-                        save_message.set(Some(fl!("publish-export-error", reason = e)));
+                        save_message.set(Some(SaveStatus::error(fl!(
+                            "publish-export-error",
+                            reason = e
+                        ))));
                         return;
                     }
                 };
                 match token.open_write() {
                     Ok(mut w) => match w.write_all(&bytes) {
-                        Ok(()) => save_message.set(Some(fl!("publish-export-success"))),
-                        Err(e) => save_message
-                            .set(Some(fl!("publish-export-error", reason = e.to_string()))),
+                        Ok(()) => {
+                            save_message.set(Some(SaveStatus::ok(fl!("publish-export-success"))))
+                        }
+                        Err(e) => save_message.set(Some(SaveStatus::error(fl!(
+                            "publish-export-error",
+                            reason = e.to_string()
+                        )))),
                     },
-                    Err(e) => {
-                        save_message.set(Some(fl!("publish-export-error", reason = e.to_string())))
-                    }
+                    Err(e) => save_message.set(Some(SaveStatus::error(fl!(
+                        "publish-export-error",
+                        reason = e.to_string()
+                    )))),
                 }
             }
-            Ok(None) => save_message.set(Some(fl!("publish-export-cancelled"))),
-            Err(e) => save_message.set(Some(fl!("publish-export-error", reason = e.to_string()))),
+            Ok(None) => save_message.set(Some(SaveStatus::ok(fl!("publish-export-cancelled")))),
+            Err(e) => save_message.set(Some(SaveStatus::error(fl!(
+                "publish-export-error",
+                reason = e.to_string()
+            )))),
         }
     });
 }

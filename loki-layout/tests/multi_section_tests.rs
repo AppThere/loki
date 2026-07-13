@@ -188,6 +188,9 @@ fn continuous_multi_column_section_flows_into_two_columns_on_shared_page() {
         .collect();
     let mut s1 = section(&lines);
     s1.start = SectionStart::Continuous;
+    // Same page geometry as s0 — a *size-changing* continuous break is promoted
+    // to a page break (Word fidelity), which is not what this test exercises.
+    s1.layout.page_size.height = Points::new(220.0);
     s1.layout.columns = Some(SectionColumns {
         count: 2,
         gap: Points::new(18.0),
@@ -228,5 +231,85 @@ fn continuous_multi_column_section_flows_into_two_columns_on_shared_page() {
     assert!(
         max_x > 200.0,
         "expected a second-column glyph run far from the left edge, got max x = {max_x}"
+    );
+}
+
+/// Word fidelity: a `continuous` section break that changes the page size is
+/// promoted to a page break — the new section starts its own page carrying its
+/// own geometry (an A4 continuous section after Letter must not be laid out on
+/// the Letter page). Regression test for the ACID document's missing page.
+#[test]
+fn continuous_break_with_new_page_size_starts_its_own_page() {
+    use loki_doc_model::layout::{PageLayout, PageSize, SectionStart};
+
+    let letter_layout = PageLayout {
+        page_size: PageSize::letter(),
+        ..PageLayout::default()
+    };
+    let a4_layout = PageLayout {
+        page_size: PageSize::a4(),
+        ..PageLayout::default()
+    };
+
+    let mut s1 = section(&["letter body"]);
+    s1.layout = letter_layout;
+    let mut s2 = section(&["a4 body"]);
+    s2.layout = a4_layout;
+    s2.start = SectionStart::Continuous;
+
+    let mut doc = Document::new();
+    doc.sections = vec![s1, s2];
+
+    let mut r = resources();
+    let DocumentLayout::Paginated(paginated) = layout_document(
+        &mut r,
+        &doc,
+        LayoutMode::Paginated,
+        1.0,
+        &LayoutOptions::default(),
+    ) else {
+        panic!("Paginated mode must yield a Paginated layout");
+    };
+    assert!(
+        paginated.pages.len() >= 2,
+        "the size-changing continuous section must start a new page (got {})",
+        paginated.pages.len()
+    );
+    let last = paginated.pages.last().expect("at least one page");
+    assert!(
+        (last.page_size.width - 595.28).abs() < 0.5 && (last.page_size.height - 841.89).abs() < 0.5,
+        "the new page must carry the A4 geometry, got {:?}",
+        last.page_size
+    );
+}
+
+/// The counterpart: a genuine continuous section (same page size) still shares
+/// the previous section's page — the Word-fidelity exception must not regress
+/// ordinary continuous column changes.
+#[test]
+fn continuous_break_with_same_page_size_still_shares_the_page() {
+    use loki_doc_model::layout::SectionStart;
+
+    let s1 = section(&["intro"]);
+    let mut s2 = section(&["continues on the same page"]);
+    s2.start = SectionStart::Continuous;
+
+    let mut doc = Document::new();
+    doc.sections = vec![s1, s2];
+
+    let mut r = resources();
+    let DocumentLayout::Paginated(paginated) = layout_document(
+        &mut r,
+        &doc,
+        LayoutMode::Paginated,
+        1.0,
+        &LayoutOptions::default(),
+    ) else {
+        panic!("Paginated mode must yield a Paginated layout");
+    };
+    assert_eq!(
+        paginated.pages.len(),
+        1,
+        "a same-geometry continuous section shares the page"
     );
 }

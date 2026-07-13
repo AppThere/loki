@@ -47,7 +47,7 @@ target_sdk_version = 34
 compile_sdk_version = 34
 
 [package.metadata.android.application]
-label = "Loki Presentation"
+label = "Loki Slides"
 
 [package.metadata.android.signing.release]
 path = "../target/android-pkg/signing.keystore"
@@ -62,3 +62,9 @@ log = "0.4"
 [dev-dependencies]
 # Used by slide_view tests to construct DocumentColor values.
 loki-primitives = { path = "../loki-primitives" }
+
+# macOS/desktop bundling (cargo-bundle): gives the bundled app its product
+# name in the menubar/Dock (an unbundled `cargo run` shows the binary name).
+[package.metadata.bundle]
+name = "Loki Slides"
+identifier = "com.appthere.loki.slides"

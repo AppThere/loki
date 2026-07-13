@@ -241,6 +241,14 @@ pub fn Home() -> Element {
         // home area (AtHomeTab sizes itself to the viewport minus tab bar).
         div {
             style: "position: relative;",
+
+            // Width source for the responsive context while Home is the active
+            // route — the editor's scroll-container funnel only exists once a
+            // document is open, so without this the Home screen stays stuck at
+            // the unmeasured (Compact) layout until then. Unmounts with Home,
+            // so it never competes with the editor's funnel.
+            appthere_ui::AtViewportWidthSensor {}
+
             AtHomeTab {
                 templates:              make_templates(),
             recent_documents:       recent_list,

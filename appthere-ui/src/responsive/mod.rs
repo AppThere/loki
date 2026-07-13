@@ -30,6 +30,7 @@
 mod breakpoint;
 mod page_fit;
 mod ribbon_collapse;
+mod size_sensor;
 mod viewport;
 mod width_sensor;
 
@@ -39,6 +40,7 @@ pub use ribbon_collapse::{
     estimate_group_metrics, group_layout, resolve_cascade, GroupCollapse, GroupLayout,
     GroupMetrics, RibbonCascade,
 };
+pub use size_sensor::AtWindowSizeSensor;
 pub use viewport::{Viewport, DEFAULT_DPI};
 pub use width_sensor::AtViewportWidthSensor;
 
