@@ -101,13 +101,10 @@ pub(crate) fn emit_glyph_run(
     // does not (Parley split the run on a real style change), we fall back to the
     // caller's per-run `scale` and no extra rise — unchanged behaviour.
     //
-    // The cluster/glyph/per-glyph vectors below exist only to detect and serve
-    // the per-glyph case, so they are built only when some span actually
-    // carries a scale or baseline shift — three avoided heap allocations per
-    // glyph run on the common no-`w:w`/no-`w:position` path. The per-glyph
-    // path accumulates scaled advances (a scaled sub-run stretches, a raised
-    // neighbour in the SAME run keeps its size); the uniform fast path
-    // reproduces the previous geometry exactly.
+    // The cluster/glyph vectors below are built only when some span carries a
+    // scale or baseline shift (three avoided heap allocations on the common
+    // no-`w:w`/no-`w:position` path). The per-glyph path accumulates scaled
+    // advances; the uniform fast path reproduces the previous geometry exactly.
     let has_per_glyph = spans
         .iter()
         .any(|s| s.scale.is_some() || s.baseline_shift.is_some());
@@ -229,6 +226,7 @@ pub(crate) fn emit_glyph_run(
                 bold: synthesis.embolden(),
                 italic: synthesis.skew().is_some(),
             },
+            normalized_coords: run.normalized_coords().to_vec(),
             link_url: None, // shadows don't carry link metadata
         }));
     }
@@ -248,6 +246,8 @@ pub(crate) fn emit_glyph_run(
             bold: synthesis.embolden(),
             italic: synthesis.skew().is_some(),
         },
+        // VF instance (e.g. Arimo wght=700 for bold Arial); empty for static faces.
+        normalized_coords: run.normalized_coords().to_vec(),
         link_url,
     }));
 

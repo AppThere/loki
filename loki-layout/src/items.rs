@@ -121,6 +121,14 @@ pub struct PositionedGlyphRun {
     pub color: LayoutColor,
     /// Synthesis flags (bold/italic synthesis).
     pub synthesis: GlyphSynthesis,
+    /// Normalized variation coordinates (F2Dot14 raw i16, one per fvar axis)
+    /// for this run's selected face, as resolved by Parley. Non-empty only for
+    /// variable fonts — e.g. the bundled Arimo (Arial substitute) is a `wght`
+    /// variable font, so a bold run carries its `wght=700` coordinate here.
+    /// Both painters must apply these; rendering the default (all-zero) master
+    /// instead paints regular-weight glyphs with bold advances (gap: bold Arial
+    /// looked "wide but not bold").
+    pub normalized_coords: Vec<i16>,
     /// Hyperlink URL if this run is part of a link. `None` for non-link text.
     ///
     /// A blue-tint underlay hint is rendered by `loki-vello`, a point resolves

@@ -58,15 +58,16 @@ pub fn paint_glyph_run(
             y: g.y * scale,
         });
 
-    // Cached in F2Dot14 bit form, so no per-run conversion allocation.
-    let coords = font_cache.get_coords(&run.font_data, run.font_index);
-
+    // The run's variable-font instance (F2Dot14 raw i16), as resolved by
+    // Parley — e.g. Arimo `wght=700` for bold Arial. Empty for static faces
+    // (skrifa then uses the default master). Rendering the default instead
+    // paints regular-weight glyphs with bold advances.
     scene
         .draw_glyphs(&font)
         .font_size(run.font_size * scale)
         .transform(transform)
         .glyph_transform(None)
-        .normalized_coords(coords)
+        .normalized_coords(&run.normalized_coords)
         .brush(&brush)
         .hint(false)
         .draw(peniko::Fill::NonZero, glyphs);

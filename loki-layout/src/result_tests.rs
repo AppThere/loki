@@ -82,6 +82,7 @@ fn link_para(origin: (f32, f32), url: Option<&str>) -> PageParagraphData {
         }],
         color: LayoutColor::BLACK,
         synthesis: GlyphSynthesis::default(),
+        normalized_coords: Vec::new(),
         link_url: url.map(String::from),
     };
     let layout = ParagraphLayout {

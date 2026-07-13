@@ -128,6 +128,7 @@ fn test_translate_item_glyph_run() {
         glyphs: vec![],
         color: LayoutColor::BLACK,
         synthesis: GlyphSynthesis::default(),
+        normalized_coords: Vec::new(),
         link_url: None,
     });
     translate_item(&mut item, 5.0, 3.0);
