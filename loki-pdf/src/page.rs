@@ -155,12 +155,14 @@ fn render_run(
     if drawn.is_empty() {
         return;
     }
-    // TODO(pdf-vf-instance): `run.normalized_coords` (the variable-font instance,
-    // e.g. Arimo `wght=700` for bold Arial) is not applied here — the face is
-    // embedded/subsetted at its default master, so variable-font bold exports at
-    // regular weight. The on-screen painters honour the coords; PDF needs the
-    // subsetter to instance the outlines (or embed the named instance).
-    let resource = bank.use_face(&run.font_data, run.font_index, drawn.iter().map(|g| g.id));
+    // The run's variable-font instance (e.g. Arimo `wght=700` for bold Arial)
+    // is embedded as its own instanced subset, so bold Arial exports bold.
+    let resource = bank.use_face(
+        &run.font_data,
+        run.font_index,
+        &run.normalized_coords,
+        drawn.iter().map(|g| g.id),
+    );
 
     let cmyk: Cmyk = layout_to_cmyk(run.color);
     content.set_fill_cmyk(cmyk.c, cmyk.m, cmyk.y, cmyk.k);

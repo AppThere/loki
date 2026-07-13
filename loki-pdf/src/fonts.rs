@@ -36,6 +36,11 @@ pub struct Face {
     pub resource: String,
     data: Arc<Vec<u8>>,
     font_index: u32,
+    /// Normalized variable-font coordinates (F2Dot14 i16, one per fvar axis)
+    /// for this instance — e.g. Arimo `wght=700` for bold Arial. Empty for a
+    /// static face or the default master. Runs with different coordinates are
+    /// distinct faces, each embedded as its own instanced subset.
+    coords: Vec<i16>,
     used_glyphs: BTreeSet<u16>,
 }
 
@@ -57,7 +62,7 @@ pub struct FaceRefs {
 #[derive(Default)]
 pub struct FontBank {
     faces: Vec<Face>,
-    index_by_key: HashMap<(usize, u32), usize>,
+    index_by_key: HashMap<(usize, u32, Vec<i16>), usize>,
 }
 
 impl FontBank {
@@ -67,19 +72,32 @@ impl FontBank {
         Self::default()
     }
 
-    /// Registers `data`/`font_index` (if new), records the glyph ids as used,
-    /// and returns the resource name to reference in the content stream.
-    pub fn use_face<I>(&mut self, data: &Arc<Vec<u8>>, font_index: u32, glyphs: I) -> String
+    /// Registers `data`/`font_index`/`coords` (if new), records the glyph ids as
+    /// used, and returns the resource name to reference in the content stream.
+    /// A given `data`+`font_index` at different variable-font `coords` (e.g.
+    /// regular vs bold Arimo) registers as **separate** instanced faces.
+    pub fn use_face<I>(
+        &mut self,
+        data: &Arc<Vec<u8>>,
+        font_index: u32,
+        coords: &[i16],
+        glyphs: I,
+    ) -> String
     where
         I: IntoIterator<Item = u16>,
     {
-        let key = (Arc::as_ptr(data) as *const u8 as usize, font_index);
+        let key = (
+            Arc::as_ptr(data) as *const u8 as usize,
+            font_index,
+            coords.to_vec(),
+        );
         let idx = *self.index_by_key.entry(key).or_insert_with(|| {
             let resource = format!("F{}", self.faces.len());
             self.faces.push(Face {
                 resource,
                 data: Arc::clone(data),
                 font_index,
+                coords: coords.to_vec(),
                 used_glyphs: BTreeSet::new(),
             });
             self.faces.len() - 1
@@ -143,16 +161,24 @@ impl FontBank {
 fn embed_face(pdf: &mut Pdf, face: &Face, r: &FaceRefs) -> Result<(), PdfError> {
     // Metrics come from the *original* face — the subset program strips tables
     // (`cmap`, `OS/2`, …) the metrics readers rely on.
-    let ttf = ttf_parser::Face::parse(&face.data, face.font_index)
+    let mut ttf = ttf_parser::Face::parse(&face.data, face.font_index)
         .map_err(|e| PdfError::Font(format!("parse: {e:?}")))?;
+    // Instance the metrics face at this run's variable-font coordinates, so
+    // widths / bbox / ascent reflect e.g. the bold master, not the default.
+    let vars = subset::variation_coords(&ttf, &face.coords);
+    for &(tag, value) in &vars {
+        ttf.set_variation(tag, value);
+    }
     let upem = f32::from(ttf.units_per_em().max(1));
     let scale = 1000.0 / upem;
 
-    // Subset to the used glyphs. On success the program is renumbered and the
-    // `BaseFont` gets the mandatory six-letter subset tag; on failure the full
-    // font is embedded verbatim under the un-tagged name (still valid PDF/X).
+    // Subset to the used glyphs, instancing the outlines at `vars` (so bold
+    // Arimo embeds bold glyphs, not the default master with bold advances). On
+    // success the program is renumbered and the `BaseFont` gets the mandatory
+    // six-letter subset tag; on failure the full font is embedded verbatim under
+    // the un-tagged name (still valid PDF/X).
     let (program, remapper) =
-        subset::subset_program(&face.data, face.font_index, &face.used_glyphs);
+        subset::subset_program(&face.data, face.font_index, &face.used_glyphs, &vars);
     let mut base_font_buf = Vec::with_capacity(20);
     if remapper.is_some() {
         base_font_buf.extend_from_slice(&subset::subset_tag(&face.used_glyphs));

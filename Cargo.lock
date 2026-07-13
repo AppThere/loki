@@ -4653,6 +4653,7 @@ dependencies = [
  "flate2",
  "image",
  "loki-doc-model",
+ "loki-fonts",
  "loki-layout",
  "pdf-writer",
  "subsetter",

@@ -12,22 +12,63 @@
 
 use std::collections::BTreeSet;
 
-use subsetter::GlyphRemapper;
+use subsetter::{GlyphRemapper, Tag};
 
-/// Subsets `data` to the used glyph ids. Returns the reduced font program and
-/// the [`GlyphRemapper`] (old gid → new gid). On any subsetting failure (e.g. a
-/// CFF2 or malformed face the subsetter rejects) it falls back to the full font
-/// program and `None`, so export still produces a valid, fully-embedded font.
+/// Convert a face's normalized F2Dot14 coordinates (one per `fvar` axis, in
+/// axis order) to user-space `(tag, value)` pairs via the font's `fvar`. Empty
+/// when the face is static or at the default master. The inverse of
+/// normalization (piecewise-linear, `avar` ignored) — exact at the axis
+/// endpoints, which is where a bold instance (`wght` at its max) sits.
+pub(super) fn variation_coords(
+    ttf: &ttf_parser::Face,
+    normalized: &[i16],
+) -> Vec<(ttf_parser::Tag, f32)> {
+    if normalized.iter().all(|&c| c == 0) {
+        return Vec::new();
+    }
+    ttf.variation_axes()
+        .into_iter()
+        .zip(normalized.iter().copied())
+        .filter_map(|(axis, coord)| {
+            let n = f32::from(coord) / 16384.0;
+            (n != 0.0).then(|| {
+                let user = if n >= 0.0 {
+                    axis.def_value + n * (axis.max_value - axis.def_value)
+                } else {
+                    axis.def_value + n * (axis.def_value - axis.min_value)
+                };
+                (axis.tag, user)
+            })
+        })
+        .collect()
+}
+
+/// Subsets `data` to the used glyph ids, optionally **instancing** a variable
+/// font at `variations` (user-space `(fvar tag, value)` pairs, e.g. `wght=700`
+/// for bold Arimo). Returns the reduced program and the [`GlyphRemapper`] (old
+/// gid → new gid). On any subsetting failure (e.g. a CFF2 or malformed face the
+/// subsetter rejects) it falls back to the full font program and `None`, so
+/// export still produces a valid, fully-embedded font.
 pub(super) fn subset_program(
     data: &[u8],
     index: u32,
     used: &BTreeSet<u16>,
+    variations: &[(ttf_parser::Tag, f32)],
 ) -> (Vec<u8>, Option<GlyphRemapper>) {
     let mut remapper = GlyphRemapper::new();
     for &gid in used {
         remapper.remap(gid);
     }
-    match subsetter::subset(data, index, &remapper) {
+    let result = if variations.is_empty() {
+        subsetter::subset(data, index, &remapper)
+    } else {
+        let coords: Vec<(Tag, f32)> = variations
+            .iter()
+            .map(|(tag, value)| (Tag::new(&tag.0.to_be_bytes()), *value))
+            .collect();
+        subsetter::subset_with_variations(data, index, &coords, &remapper)
+    };
+    match result {
         Ok(program) => (program, Some(remapper)),
         Err(_) => (data.to_vec(), None),
     }
