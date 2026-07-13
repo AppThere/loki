@@ -14,8 +14,6 @@ pub(super) fn flow_table(
     tbl: &loki_doc_model::content::table::core::Table,
     idx: usize,
 ) {
-    let col_widths = table_geom::resolve_column_widths(state, tbl);
-
     let mut rows = Vec::new();
     rows.extend(&tbl.head.rows);
     for body in &tbl.bodies {
@@ -28,7 +26,10 @@ pub(super) fn flow_table(
     // `row_span` (vMerge) cell from an earlier row (`cell_cols[row][cell] =
     // (col_start, col_end)`). Without it a cell whose leading column is occupied
     // by a vertical merge above is placed too far left — the TC-DOCX-005 bug.
-    let cell_cols = table_geom::assign_cell_columns(&rows, col_widths.len());
+    // Resolved before column widths because autofit measures per-column content.
+    let cell_cols = table_geom::assign_cell_columns(&rows, tbl.col_count().max(1));
+
+    let col_widths = table_geom::resolve_column_widths(state, tbl, &rows, &cell_cols);
 
     // Named style + `w:tblLook` → conditional/banding shading (under direct).
     let table_style = resolve_table_style(state.catalog, tbl.style_name());

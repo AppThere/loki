@@ -6,16 +6,12 @@
 //! assignment (vertical-merge coverage). Split out of `flow.rs` (Phase 7.1);
 //! the main `flow_table` orchestrator stays in `flow.rs` and calls these.
 
-use std::collections::HashMap;
-
 use loki_doc_model::StyleCatalog;
 use loki_doc_model::content::block::Block;
 
 use crate::LayoutOptions;
 use crate::font::FontResources;
-use crate::geometry::{LayoutInsets, LayoutSize};
 use crate::items::PositionedItem;
-use crate::mode::LayoutMode;
 use crate::resolve::pts_to_f32;
 use crate::result::PageParagraphData;
 
@@ -48,48 +44,17 @@ pub(super) fn measure_cell_height(
         cell_content_width
     };
 
-    let mut temp_state = FlowState {
+    let mut temp_state = super::table_autofit::cell_flow_state(
         resources,
         catalog,
-        mode: &LayoutMode::Pageless,
         display_scale,
         options,
-        cursor_y: 0.0,
-        content_width: flow_w,
-        current_items: Vec::new(),
-        pages: Vec::new(),
-        page_size: LayoutSize::default(),
-        margins: LayoutInsets::default(),
-        page_content_height: 0.0,
-        page_number: 1,
-        warnings: Vec::new(),
-        current_indent: 0.0,
-        list_counters: HashMap::new(),
-        prev_list_id: None,
-        note_counter: 0,
-        pending_footnotes: Vec::new(),
-        current_paragraphs: Vec::new(),
-        checkpoints: Vec::new(),
-        // Table cells are always laid out single-column (widths unused here).
-        columns: 1,
-        column_widths: Vec::new(),
-        column_gap: 0.0,
-        column_separator: false,
-        col_index: 0,
-        column_top_y: 0.0,
-        column_item_start: 0,
-        column_para_start: 0,
-        // Cells never render the comment gutter panel.
-        comments: &[],
-        pending_comment_anchors: Vec::new(),
+        flow_w,
+        0.0,
         // Cell content: break over-long words to the column width (Word).
-        break_long_words: true,
-        active_float: None,
-        nested_editing: None,
-        staged_between: None,
-        tail_candidate: None,
-        cell_char_defaults: cell_chars.cloned(),
-    };
+        true,
+        cell_chars,
+    );
 
     for block in &cell.blocks {
         flow_block(&mut temp_state, block, idx);
@@ -105,8 +70,10 @@ pub(super) fn measure_cell_height(
 }
 
 pub(super) fn resolve_column_widths(
-    state: &FlowState,
+    state: &mut FlowState,
     tbl: &loki_doc_model::content::table::core::Table,
+    rows: &[&loki_doc_model::content::table::row::Row],
+    cell_cols: &[Vec<(usize, usize)>],
 ) -> Vec<f32> {
     use loki_doc_model::content::table::col::{ColWidth, TableWidth};
 
@@ -167,9 +134,17 @@ pub(super) fn resolve_column_widths(
             .any(|c| c == loki_doc_model::content::table::core::TABLE_FIXED_LAYOUT_CLASS);
         if !fixed_layout {
             let scale = table_width / total_fixed_width;
-            for w in &mut resolved_widths {
-                *w *= scale;
-            }
+            let scaled: Vec<f32> = resolved_widths.iter().map(|w| w * scale).collect();
+            // Word autofit: honour the scaled preferred widths, but guarantee
+            // each column at least its minimum content width so a too-narrow
+            // preferred width can't force one-character-per-line wrapping.
+            resolved_widths = super::table_autofit::autofit_column_widths(
+                state,
+                rows,
+                cell_cols,
+                &scaled,
+                table_width,
+            );
         }
     } else {
         let uniform_w = table_width / col_count as f32;
@@ -199,48 +174,18 @@ pub(super) fn flow_cell_blocks(
     cell_flat: usize,
     cell_chars: Option<&loki_doc_model::style::props::char_props::CharProps>,
 ) -> (Vec<PositionedItem>, Vec<PageParagraphData>) {
-    let mut temp_state = FlowState {
+    let mut temp_state = super::table_autofit::cell_flow_state(
         resources,
         catalog,
-        mode: &LayoutMode::Pageless,
         display_scale,
         options,
-        cursor_y: starting_y,
         content_width,
-        current_items: Vec::new(),
-        pages: Vec::new(),
-        page_size: LayoutSize::default(),
-        margins: LayoutInsets::default(),
-        page_content_height: 0.0,
-        page_number: 1,
-        warnings: Vec::new(),
-        current_indent: starting_indent,
-        list_counters: HashMap::new(),
-        prev_list_id: None,
-        note_counter: 0,
-        pending_footnotes: Vec::new(),
-        current_paragraphs: Vec::new(),
-        checkpoints: Vec::new(),
-        // Table cells are always laid out single-column (widths unused here).
-        columns: 1,
-        column_widths: Vec::new(),
-        column_gap: 0.0,
-        column_separator: false,
-        col_index: 0,
-        column_top_y: 0.0,
-        column_item_start: 0,
-        column_para_start: 0,
-        // Cells never render the comment gutter panel.
-        comments: &[],
-        pending_comment_anchors: Vec::new(),
+        starting_indent,
         // Cell content: break over-long words to the column width (Word).
-        break_long_words: true,
-        active_float: None,
-        nested_editing: None,
-        staged_between: None,
-        tail_candidate: None,
-        cell_char_defaults: cell_chars.cloned(),
-    };
+        true,
+        cell_chars,
+    );
+    temp_state.cursor_y = starting_y;
 
     for (bi, block) in blocks.iter().enumerate() {
         // Tag cell paragraphs so a click in the rotated cell resolves to it.

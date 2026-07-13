@@ -32,6 +32,8 @@ mod page_fields;
 mod para_between;
 #[path = "flow_para.rs"]
 mod para_impl;
+#[path = "flow_table_autofit.rs"]
+mod table_autofit;
 #[path = "flow_table_cells.rs"]
 mod table_cells;
 #[path = "flow_table_chars.rs"]
