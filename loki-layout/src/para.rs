@@ -61,7 +61,10 @@ fn clean_text_and_spans(
 
     for c in text.chars() {
         let c_len = c.len_utf8();
-        let keep = c == '\t' || c == '\n' || (!c.is_control() && c != '\u{feff}');
+        // Drop `\t`: a tab is pure positioning (an inline box). Left in, it
+        // shapes to a `.notdef` (fonts lacking a tab glyph, e.g. Arimo) whose
+        // advance stacks on the box and overshoots the stop; byte maps anyway.
+        let keep = c == '\n' || (!c.is_control() && c != '\u{feff}');
         if keep {
             for i in 0..c_len {
                 orig_to_clean[orig_idx + i] = clean_idx + i;
@@ -329,25 +332,22 @@ fn layout_paragraph_uncached(
         };
     }
 
-    // NOTE(indent-hanging-width): Parley 0.6 does not expose per-line width
-    // control. The first line of a hanging-indent paragraph wraps at the same
-    // `line_w` as subsequent lines, meaning it gets `indent_hanging` px less
-    // space than it should. Fix requires Parley to expose per-line measure.
-    // Tracked: fidelity audit gap #8 (partial).
+    // NOTE(indent-hanging-width): Parley 0.6 exposes no per-line width control,
+    // so a hanging-indent paragraph's first line wraps at the same `line_w` as
+    // the rest, getting `indent_hanging` px less space. Fidelity gap #8 (partial).
     let line_w = (available_width - para_props.indent_start - para_props.indent_end).max(0.0);
 
     // ── Tab stop expansion (gap #7) ───────────────────────────────────────────
-    // Parley 0.8 has no native tab stop API. Two-pass approach:
-    //   Pass 1 (probe): zero-width InlineBoxes at each \t → measure x-positions.
-    //   Pass 2 (final): InlineBoxes sized to advance to the next tab stop.
-    let tab_char_positions: Vec<usize> = clean_text
+    // Parley has no native tab-stop API. Two passes: (1) probe with zero-width
+    // InlineBoxes to measure x-positions; (2) final boxes sized to the next stop.
+    // `\t` is excluded from `clean_text`; map each tab to its following clean offset (box site).
+    let tab_char_positions: Vec<usize> = text_content
         .char_indices()
         .filter(|(_, c)| *c == '\t')
-        .map(|(i, _)| i)
+        .map(|(i, _)| orig_to_clean[i])
         .collect();
 
-    // Byte offset of the first decimal separator after each tab (before the
-    // next tab / end), for Decimal-aligned stops.
+    // First decimal separator in each tab's following content (for Decimal stops); `t` points at it.
     let decimal_positions: Vec<Option<usize>> = tab_char_positions
         .iter()
         .enumerate()
@@ -356,7 +356,7 @@ fn layout_paragraph_uncached(
                 .get(i + 1)
                 .copied()
                 .unwrap_or(clean_text.len());
-            clean_text[t + 1..end].find('.').map(|rel| t + 1 + rel)
+            clean_text[t..end].find('.').map(|rel| t + rel)
         })
         .collect();
 
