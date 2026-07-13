@@ -80,7 +80,7 @@ target_sdk_version = 34
 compile_sdk_version = 34
 
 [package.metadata.android.application]
-label = "Loki"
+label = "Loki Text"
 
 # cargo-apk requires a signing config for release builds.
 # scripts/build-android.ps1 copies the Android Studio debug keystore to this
@@ -98,3 +98,9 @@ android-activity = { workspace = true }
 blitz-shell = "0.2.3"
 android_logger = "0.15"
 log = "0.4"
+
+# macOS/desktop bundling (cargo-bundle): gives the bundled app its product
+# name in the menubar/Dock (an unbundled `cargo run` shows the binary name).
+[package.metadata.bundle]
+name = "Loki Text"
+identifier = "com.appthere.loki.text"

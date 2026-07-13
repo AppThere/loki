@@ -216,7 +216,7 @@ fn force_full_relayout(
     };
     let Some(doc) = doc else { return };
     let laid_out = {
-        let mut fr = fr_arc.lock().unwrap_or_else(|e| e.into_inner());
+        let mut fr = fr_arc.lock();
         // `None` previous → full pass, so every paragraph re-checks under the new
         // generation rather than reusing cached pages.
         relayout_paginated(&mut fr, &doc, None)

@@ -125,6 +125,13 @@ pub const AT_FONT_GROW: &str = "M6 15 10 7 14 15M7.5 12h5M18 8v7M15.5 10.5 18 8 
 /// Decrease font size: an "A" with a downward arrow.
 pub const AT_FONT_SHRINK: &str = "M6 15 10 7 14 15M7.5 12h5M18 8v7M15.5 12.5 18 15 20.5 12.5";
 
+/// Lucide `baseline` — an "A" over a baseline rule. Font-colour picker trigger.
+pub const LUCIDE_BASELINE: &str = "M4 20h16M6 16 12 4 18 16M8 12h8";
+
+/// Lucide `highlighter` — a marker pen. Highlight-colour picker trigger.
+pub const LUCIDE_HIGHLIGHTER: &str =
+    "M9 11l-6 6v3h9l3-3M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4";
+
 // App-custom page-orientation glyphs (not Lucide): a tall vs. wide page rect.
 
 /// Portrait orientation: a tall page rectangle.

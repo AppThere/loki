@@ -13,6 +13,9 @@ use crate::tokens::layout::STATUS_BAR_HEIGHT;
 use crate::tokens::spacing::{RADIUS_SM, SPACE_1, SPACE_2, SPACE_4, TOUCH_MIN};
 use crate::tokens::typography::{FONT_FAMILY_UI, FONT_SIZE_XS, FONT_WEIGHT_MEDIUM};
 
+#[path = "status_bar_chips.rs"]
+mod chips;
+
 // ── AtStatusBar ───────────────────────────────────────────────────────────────
 
 /// Bottom application status bar.
@@ -43,7 +46,7 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
     } else {
         palette.surface_3
     };
-    let mut notice_hovered = use_signal(|| false);
+    let notice_hovered = use_signal(|| false);
     let notice_bg = if notice_hovered() {
         "#444444"
     } else {
@@ -101,36 +104,27 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                 }
             }
 
-            // Optional status notice chip (e.g. recover a dismissed warning).
-            // Border + background only — no box-shadow (Blitz constraint).
-            // Hit area: full bar height × ≥ TOUCH_MIN wide (see component doc).
+            // Optional status notice chip (e.g. recover a dismissed warning) and
+            // the transient status chip ("Document saved") — split into
+            // `status_bar_chips.rs` for the 300-line ceiling.
             if show_notice {
-                button {
-                    "aria-label": props.notice_aria_label.clone(),
-                    style: format!(
-                        "{hit} background: transparent; border: none; cursor: pointer;",
-                        hit = hit_area_style(),
-                    ),
-                    onmouseenter: move |_| { notice_hovered.set(true); },
-                    onmouseleave: move |_| { notice_hovered.set(false); },
-                    onclick: move |_| { props.on_notice_click.call(()); },
-                    span {
-                        style: format!(
-                            "background: {bg}; border: 1px solid {border}; border-radius: {r}px; \
-                             color: {fg}; font-size: {size}px; font-weight: {weight}; \
-                             padding: {pv}px {ph}px;",
-                            bg     = notice_bg,
-                            border = palette.contextual_tab,
-                            r      = RADIUS_SM,
-                            fg     = palette.text_on_chrome_secondary,
-                            size   = FONT_SIZE_XS,
-                            weight = FONT_WEIGHT_MEDIUM,
-                            pv     = SPACE_1,
-                            ph     = SPACE_2,
-                        ),
-                        "⚠ {props.notice_label}"
-                    }
-                }
+                {chips::notice_chip(
+                    props.notice_label.clone(),
+                    props.notice_aria_label.clone(),
+                    notice_bg,
+                    &palette,
+                    hit_area_style(),
+                    notice_hovered,
+                    props.on_notice_click,
+                )}
+            }
+            if !props.status_note_label.is_empty() {
+                {chips::status_note_chip(
+                    props.status_note_label.clone(),
+                    &palette,
+                    hit_area_style(),
+                    props.on_status_note_click,
+                )}
             }
 
             // Flex spacer — pushes right-side content to the far right
@@ -288,4 +282,16 @@ pub struct AtStatusBarProps {
     /// Callback invoked when the notice chip is clicked.
     #[props(default)]
     pub on_notice_click: Callback<()>,
+
+    /// Optional transient status chip (e.g. "Document saved"). Empty (the
+    /// default) hides it. The app owns the message's lifetime — auto-clearing
+    /// and clear-on-edit live in the caller; clicking the chip dismisses it.
+    ///
+    /// Touch target: ≥ `TOUCH_MIN` wide × full bar height.
+    #[props(default)]
+    pub status_note_label: String,
+
+    /// Callback invoked when the status chip is clicked (dismiss).
+    #[props(default)]
+    pub on_status_note_click: Callback<()>,
 }

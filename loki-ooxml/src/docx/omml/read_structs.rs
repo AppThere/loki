@@ -50,10 +50,10 @@ pub(super) fn delim(node: &XmlNode) -> String {
 pub(super) fn nary(node: &XmlNode) -> String {
     let chr = pr_val(node, "naryPr", "chr").unwrap_or("\u{222B}");
     let und_ovr = pr_val(node, "naryPr", "limLoc").unwrap_or("undOvr") != "subSup";
-    let sub = limit_arg(node, "sub", pr_flag(node, "naryPr", "subHide"));
-    let sup = limit_arg(node, "sup", pr_flag(node, "naryPr", "supHide"));
+    let lower = limit_arg(node, "sub", pr_flag(node, "naryPr", "subHide"));
+    let upper = limit_arg(node, "sup", pr_flag(node, "naryPr", "supHide"));
     let op = format!("<mo>{}</mo>", escape_xml(chr));
-    let script = match (sub, sup) {
+    let script = match (lower, upper) {
         (Some(s), Some(p)) if und_ovr => format!("<munderover>{op}{s}{p}</munderover>"),
         (Some(s), Some(p)) => format!("<msubsup>{op}{s}{p}</msubsup>"),
         (Some(s), None) if und_ovr => format!("<munder>{op}{s}</munder>"),

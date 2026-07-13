@@ -10,6 +10,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use super::super::editor_state::SaveStatus;
 use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_i18n::fl;
@@ -64,11 +65,14 @@ pub(super) fn delete_button(
                             sync.can_undo,
                             sync.can_redo,
                         );
-                        save_message.set(Some(fl!("style-delete-success", count = n as i64)));
+                        save_message.set(Some(SaveStatus::ok(fl!(
+                            "style-delete-success",
+                            count = n as i64
+                        ))));
                         editing_style_draft.set(None); // close the panel; the style is gone
                     }
                     Some(Err(DeleteError::Builtin)) => {
-                        save_message.set(Some(fl!("style-delete-builtin")));
+                        save_message.set(Some(SaveStatus::error(fl!("style-delete-builtin"))));
                     }
                     _ => {}
                 }

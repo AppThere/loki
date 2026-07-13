@@ -214,21 +214,21 @@ fn underline_solid_maps_to_single() {
 
 #[test]
 fn text_position_super_and_sub() {
-    let sup = OdfTextProps {
+    let superscript = OdfTextProps {
         text_position: Some("super".into()),
         ..Default::default()
     };
     assert_eq!(
-        map_text_props(&sup).vertical_align,
+        map_text_props(&superscript).vertical_align,
         Some(VerticalAlign::Superscript)
     );
 
-    let sub = OdfTextProps {
+    let subscript = OdfTextProps {
         text_position: Some("sub".into()),
         ..Default::default()
     };
     assert_eq!(
-        map_text_props(&sub).vertical_align,
+        map_text_props(&subscript).vertical_align,
         Some(VerticalAlign::Subscript)
     );
 }

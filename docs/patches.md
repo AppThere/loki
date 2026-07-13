@@ -14,6 +14,34 @@ temporary and has a documented removal condition.
 
 ## Active patches
 
+### loki-file-access — 0.1.3 (git `main` @ `d2b7bc5`)
+
+**Source:** `patches/loki-file-access/` (local), vendored 2026-07-13 from
+[appthere/loki-file-access](https://github.com/appthere/loki-file-access)
+commit `d2b7bc5`. Wired via
+`[patch."https://github.com/appthere/loki-file-access"]` in the root
+`Cargo.toml`.
+
+**Android Save As fix (PATCH(loki)).** `pick_save` treated a
+`takePersistableUriPermission` failure as fatal (`?`), **after**
+`ACTION_CREATE_DOCUMENT` had already created the target document — providers
+that grant no persistable permission on create results throw
+`SecurityException`, so Save As stranded a freshly-created **blank** file and
+surfaced an error while the write itself would have succeeded (and plain Save,
+which never re-creates, kept working). The patch:
+
+- makes the persistable grant **best-effort** (`tracing::warn!` + continue —
+  the session grant from the create result is sufficient for the write;
+  persistence only affects reopening after an app restart);
+- clears the pending JNI exception on that failure so subsequent JNI calls on
+  the thread keep working;
+- queries the created document's **real display name** (the user may rename in
+  the create dialog) instead of trusting `suggested_name` — the name drives
+  format detection on export.
+
+**Removal condition:** upstream `loki-file-access` ships the equivalent fix;
+then drop the `[patch]` entry and `patches/loki-file-access/`.
+
 ### dioxus-native-dom — 0.7.9
 
 **Version pin:** the whole dioxus family is pinned to `=0.7.9` in the root

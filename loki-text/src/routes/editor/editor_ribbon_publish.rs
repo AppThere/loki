@@ -10,6 +10,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use super::editor_state::SaveStatus;
 use appthere_ui::{
     AtRibbonGroups, AtRibbonIconButton, RibbonGroupSpec, estimate_group_metrics, tokens,
 };
@@ -24,7 +25,7 @@ use crate::editing::state::DocumentState;
 pub(super) fn publish_tab_content(
     doc_state: &Arc<Mutex<DocumentState>>,
     path_signal: Signal<String>,
-    save_message: Signal<Option<String>>,
+    save_message: Signal<Option<SaveStatus>>,
     mut is_publish_panel_open: Signal<bool>,
     mut editing_metadata: Signal<Option<MetaDraft>>,
 ) -> Element {

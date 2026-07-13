@@ -5,6 +5,7 @@
 //! All components are application-agnostic — they must not reference any
 //! application-specific route enum, document model, or business logic.
 
+pub mod color_picker;
 pub mod confirm_dialog;
 pub mod document_tab;
 pub mod home_tab;
@@ -19,6 +20,9 @@ pub mod template_browser;
 pub mod title_bar;
 pub mod zoom;
 
+pub use color_picker::{
+    AtColorPickerLabels, AtColorPickerPanel, AtColorPickerTrigger, AtColorSwatch,
+};
 pub use confirm_dialog::{AtConfirmDialog, AtConfirmDialogProps};
 pub use document_tab::{AtDocumentTab, AtDocumentTabProps};
 pub use home_tab::{AtHomeTab, AtHomeTabProps, BuiltinTemplate, RecentDocument};

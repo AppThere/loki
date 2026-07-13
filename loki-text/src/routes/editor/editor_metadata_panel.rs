@@ -8,6 +8,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use super::editor_state::SaveStatus;
 use appthere_ui::{tokens, use_viewport};
 use dioxus::prelude::*;
 use loki_i18n::fl;
@@ -52,7 +53,7 @@ pub(super) struct MetaPanelSync {
 pub(super) fn metadata_panel(
     doc_state: Arc<Mutex<DocumentState>>,
     mut editing_metadata: Signal<Option<MetaDraft>>,
-    mut save_message: Signal<Option<String>>,
+    mut save_message: Signal<Option<SaveStatus>>,
     sync: MetaPanelSync,
 ) -> Element {
     let draft = match editing_metadata.read().clone() {
@@ -160,7 +161,7 @@ pub(super) fn metadata_panel(
                                     sync.can_undo,
                                     sync.can_redo,
                                 );
-                                save_message.set(Some(fl!("metadata-saved")));
+                                save_message.set(Some(SaveStatus::ok(fl!("metadata-saved"))));
                             }
                         }
                         editing_metadata.set(None);

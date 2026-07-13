@@ -19,7 +19,6 @@
 //! 3. All per-document state is reset synchronously when path changes so the
 //!    reset happens before `use_resource` evaluates.
 
-use std::rc::Rc;
 use std::sync::Arc;
 
 use appthere_ui::{AtRibbon, AtStatusBar, tokens, use_breakpoint};
@@ -49,7 +48,6 @@ use super::editor_save_banner::save_banner;
 use super::editor_spell::SpellMenu;
 use super::editor_state::{EditorState, StyleDraft, use_editor_state};
 use super::editor_style::style_picker_panel;
-use super::editor_style_catalog::available_font_families;
 use super::editor_style_editor::style_editor_panel;
 use crate::error::LoadError;
 use crate::sessions::DocSessions;
@@ -67,8 +65,10 @@ pub(super) fn EditorInner(path: String) -> Element {
     // ── Path signal: bridge from prop-space to signal-space ──────────────────
     let mut path_signal: Signal<String> = use_signal(|| path.clone());
 
-    // ── Font warning dismiss state ───────────────────────────────────────────
-    let mut dismiss_font_warning = use_signal(|| false);
+    // ── Font-substitution detail panel open state ────────────────────────────
+    // Closed by default; the status-bar chip (shown whenever substitutions
+    // exist) toggles it.
+    let mut font_panel_open = use_signal(|| false);
 
     // ── Ribbon collapse state ────────────────────────────────────────────────
     let mut ribbon_collapsed = use_signal(|| false);
@@ -109,6 +109,9 @@ pub(super) fn EditorInner(path: String) -> Element {
         save_message,
         save_request,
         mut active_ribbon_tab,
+        open_color_picker,
+        recent_text_colors,
+        recent_highlights,
         is_publish_panel_open,
         pdf_level,
         editing_metadata,
@@ -140,6 +143,25 @@ pub(super) fn EditorInner(path: String) -> Element {
     // "Clean" generation (matches disk), captured at load/save; tab is dirty when live gen differs.
     let mut baseline_gen = use_signal(|| 0_u64);
 
+    // The per-document signals reset or restored on tab switch, bundled for the
+    // three handover sites below (every field is a `Copy` signal).
+    let path_sync_signals = move || PathSyncSignals {
+        cursor_state,
+        loro_doc,
+        undo_manager,
+        total_pages,
+        current_page,
+        can_undo,
+        can_redo,
+        font_panel_open,
+        is_style_picker_open,
+        open_color_picker,
+        editing_style_draft,
+        save_message,
+        baseline_gen,
+        saved_state,
+    };
+
     // ── Session restore at mount ─────────────────────────────────────────────
     //
     // Navigating Editor → Home unmounts this component (different routes), so
@@ -154,21 +176,7 @@ pub(super) fn EditorInner(path: String) -> Element {
             let initial_path = path_signal.peek().clone();
             let restored = sessions_at_mount.write().remove(&initial_path);
             if let Some(session) = restored {
-                let mut sig = PathSyncSignals {
-                    cursor_state,
-                    loro_doc,
-                    undo_manager,
-                    total_pages,
-                    current_page,
-                    can_undo,
-                    can_redo,
-                    dismiss_font_warning,
-                    is_style_picker_open,
-                    editing_style_draft,
-                    save_message,
-                    baseline_gen,
-                    saved_state,
-                };
+                let mut sig = path_sync_signals();
                 restore_session(session, &doc_state_restore, &mut sig, path_signal);
             }
         });
@@ -185,21 +193,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         let mut sessions_at_drop = doc_sessions;
         use_drop(move || {
             let path = path_signal.peek().clone();
-            let mut sig = PathSyncSignals {
-                cursor_state,
-                loro_doc,
-                undo_manager,
-                total_pages,
-                current_page,
-                can_undo,
-                can_redo,
-                dismiss_font_warning,
-                is_style_picker_open,
-                editing_style_draft,
-                save_message,
-                baseline_gen,
-                saved_state,
-            };
+            let mut sig = path_sync_signals();
             stash_outgoing(
                 &path,
                 &doc_state_drop,
@@ -221,21 +215,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         &doc_state,
         tabs,
         doc_sessions,
-        &mut PathSyncSignals {
-            cursor_state,
-            loro_doc,
-            undo_manager,
-            total_pages,
-            current_page,
-            can_undo,
-            can_redo,
-            dismiss_font_warning,
-            is_style_picker_open,
-            editing_style_draft,
-            save_message,
-            baseline_gen,
-            saved_state,
-        },
+        &mut path_sync_signals(),
     );
 
     // Current paragraph style name, from signals — updates in the same render cycle as the cursor.
@@ -268,14 +248,9 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_render = Arc::clone(&doc_state);
     let doc_state_scroll = Arc::clone(&doc_state);
 
-    // Enumerate the available font families once per editor (system + bundled +
-    // document-embedded), memoised for the style editor's font picker. Scanning
-    // the Fontique collection on every render would be wasteful; the trade-off
-    // is that faces embedded after mount are not reflected until reopen.
-    let font_families: Rc<Vec<String>> = {
-        let ds = Arc::clone(&doc_state);
-        use_hook(move || Rc::new(available_font_families(&ds)))
-    };
+    // Font-family enumeration for the style editor's picker — async so the
+    // mount never blocks on the background system-font warm-up.
+    let font_families = super::editor_fonts::use_font_families(&doc_state);
 
     // ── Document load — reactive on path_signal ───────────────────────────────
     let document_load: Resource<(String, Result<Document, LoadError>)> = use_resource(move || {
@@ -460,6 +435,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         crate::editing::word_count::use_word_count_label(Arc::clone(&doc_state), cursor_state);
 
     // Unsaved-changes (dirty) tracking → tab indicator + ribbon Save state.
+    // Also clears a lingering success chip the moment the document goes dirty.
     super::editor_dirty::use_dirty_tracking(
         cursor_state,
         path_signal,
@@ -467,7 +443,10 @@ pub(super) fn EditorInner(path: String) -> Element {
         saved_state,
         is_dirty,
         tabs,
+        save_message,
     );
+    // Success statuses ("Document saved", …) clear themselves after a moment.
+    super::editor_save_banner::use_save_status_autoclear(save_message);
 
     // ── Save As / Save as Template (extracted flows: editor_save_callbacks) ──
     let save_as = super::editor_save_callbacks::use_save_as_callback(
@@ -541,19 +520,9 @@ pub(super) fn EditorInner(path: String) -> Element {
         )
     };
 
-    // Font substitutions reported by the layout engine (requested → substitute).
-    // The redesigned warning UI lives in `editor_font_warning`; recovery (after
-    // dismiss) is the status-bar notice chip below.
-    let font_substitutions = doc_state
-        .lock()
-        .ok()
-        .and_then(|s| {
-            s.shared_font_resources
-                .lock()
-                .ok()
-                .map(|fr| fr.substitutions.clone())
-        })
-        .unwrap_or_default();
+    // Font substitutions reported by the layout engine (requested → substitute):
+    // the status-bar chip is the indicator; the detail panel opens from it.
+    let font_substitutions = super::editor_fonts::font_substitutions(&doc_state);
     let font_sub_count = font_substitutions.len() as i64;
 
     rsx! {
@@ -603,13 +572,28 @@ pub(super) fn EditorInner(path: String) -> Element {
                 zoom_percent,
             )}
 
-            // ── Font-substitution warning (Spec 03 M3) ────────────────────────
-            // Compact-by-default, expand-on-demand, breakpoint-aware (table vs.
-            // card stack). Renders nothing when empty or dismissed; recovery is
-            // the status-bar notice chip below.
-            super::editor_font_warning::FontWarning {
+            // ── Font-substitution detail panel (Spec 03 M3, inverted) ─────────
+            // The indicator is the status-bar chip below; this panel opens on
+            // demand from that chip. Breakpoint-aware (table vs. card stack);
+            // renders nothing while closed or when there are no substitutions.
+            super::editor_font_warning::FontSubstitutionPanel {
                 substitutions: font_substitutions.clone(),
-                dismiss: dismiss_font_warning,
+                open: font_panel_open,
+            }
+
+            // ── Colour-picker panel (inline, above ribbon) ────────────────────
+            // Opened by the Format tab's Font colour / Highlight triggers.
+            if let Some(target) = open_color_picker() {
+                {super::editor_color_panel::color_picker_panel(
+                    &doc_state_ribbon,
+                    target,
+                    open_color_picker,
+                    super::editor_ribbon_format::RibbonEditCtx {
+                        loro_doc, cursor_state, undo_manager, can_undo, can_redo,
+                    },
+                    recent_text_colors,
+                    recent_highlights,
+                )}
             }
 
             // ── Paragraph style picker panel (inline, above ribbon) ───────────
@@ -645,7 +629,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     editing_page_style,
                     style_panel_inspect,
                     use_breakpoint(),
-                    Rc::clone(&font_families),
+                    font_families(),
                     super::editor_style_editor::StyleEditorSync {
                         loro_doc,
                         cursor_state,
@@ -705,7 +689,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                 )}
             }
 
-            // ── Save message banner ───────────────────────────────────────────
+            // ── Save/export error banner (successes are the status chip) ─────
             {save_banner(save_message)}
 
             // ── Ribbon (formatting controls) ──────────────────────────────────
@@ -722,14 +706,17 @@ pub(super) fn EditorInner(path: String) -> Element {
                     fl!("ribbon-collapse-aria")
                 },
                 tab_content: match active_ribbon_tab() {
-                    1 => insert_tab_content(link_draft, insert_ctx.clone()),
-                    6 if table_selected => super::editor_ribbon_table::table_tab_content(
+                    1 => super::editor_ribbon_span::format_tab_content(
+                        loro_doc, cursor_state, open_color_picker,
+                    ),
+                    2 => insert_tab_content(link_draft, insert_ctx.clone()),
+                    7 if table_selected => super::editor_ribbon_table::table_tab_content(
                         &doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo,
                     ),
-                    2 => super::editor_ribbon_layout::layout_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
-                    3 => super::editor_ribbon_references::references_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
-                    4 => super::editor_ribbon_review::review_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
-                    5 => publish_tab_content(
+                    3 => super::editor_ribbon_layout::layout_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
+                    4 => super::editor_ribbon_references::references_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
+                    5 => super::editor_ribbon_review::review_tab_content(&doc_state_ribbon, loro_doc, cursor_state, undo_manager, can_undo, can_redo),
+                    6 => publish_tab_content(
                         &doc_state_publish, path_signal, save_message,
                         is_publish_panel_open, editing_metadata,
                     ),
@@ -786,14 +773,26 @@ pub(super) fn EditorInner(path: String) -> Element {
                     };
                     view_mode.set(next);
                 },
-                // Recover a dismissed font-substitution warning (Spec 03 M3).
-                notice_label: if dismiss_font_warning() && font_sub_count > 0 {
+                // Font-substitution indicator (Spec 03 M3, inverted): the chip
+                // is the always-on signal that fonts were substituted; clicking
+                // it toggles the detail panel above the ribbon.
+                notice_label: if font_sub_count > 0 {
                     fl!("editor-font-substitution-chip", count = font_sub_count)
                 } else {
                     String::new()
                 },
                 notice_aria_label: fl!("editor-font-substitution-title"),
-                on_notice_click:    move |_| { dismiss_font_warning.set(false); },
+                on_notice_click:    move |_| {
+                    let v = *font_panel_open.peek();
+                    font_panel_open.set(!v);
+                },
+                // Transient success chip ("Document saved", …). Auto-clears
+                // (use_save_status_autoclear) and clears on dirty; click = dismiss.
+                status_note_label: super::editor_save_banner::save_status_chip_label(save_message),
+                on_status_note_click: {
+                    let mut save_message = save_message;
+                    move |_| save_message.set(None)
+                },
             }
         }
     }

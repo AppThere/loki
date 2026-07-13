@@ -156,3 +156,45 @@ fn split_paragraph_picks_the_page_showing_the_bytes_line() {
     let last = recompute_page_index(&layout, &DocumentPosition::top_level(0, 0, text.len()));
     assert_eq!(last.page_index, 1);
 }
+
+#[test]
+fn first_line_after_a_page_break_resolves_to_the_new_page() {
+    // Regression: the split engine moves a line that does not fit page 0
+    // entirely onto page 1, leaving up to a line of slack at page 0's bottom.
+    // With more than half a line of slack, the old line-CENTRE band check
+    // still claimed the line for page 0 and the caret painted on the previous
+    // page. The line must resolve to the page that actually renders it.
+    let text = "alpha beta gamma delta epsilon zeta eta theta iota kappa";
+    let p = para(text, 60.0); // narrow → many lines
+    // Find a mid-paragraph line boundary: the line top of the middle byte.
+    let mid = text.len() / 2;
+    let mid_rect = p.cursor_rect(mid).expect("mid rect");
+    let line_top = mid_rect.y;
+    let line_h = mid_rect.height;
+    assert!(line_top > 0.0, "test premise: mid byte is not on line 0");
+
+    // Page 0 shows lines [0, line_top) and then 80% of a line of slack —
+    // the mid line itself did NOT fit and went to page 1.
+    let slack = 0.8 * line_h;
+    let layout = PaginatedLayout {
+        page_size: LayoutSize::new(595.0, PAGE_H),
+        pages: vec![
+            page(
+                vec![entry(0, Arc::clone(&p), CONTENT_H - line_top - slack)],
+                1,
+            ),
+            page(vec![entry(0, Arc::clone(&p), -line_top)], 2),
+        ],
+    };
+
+    // A caret on the moved line must paint on page 1, not page 0.
+    let fixed = recompute_page_index(&layout, &DocumentPosition::top_level(0, 0, mid));
+    assert_eq!(
+        fixed.page_index, 1,
+        "the first line after the break renders on page 1"
+    );
+
+    // And a caret on page 0's own last line stays on page 0.
+    let first = recompute_page_index(&layout, &DocumentPosition::top_level(1, 0, 0));
+    assert_eq!(first.page_index, 0);
+}

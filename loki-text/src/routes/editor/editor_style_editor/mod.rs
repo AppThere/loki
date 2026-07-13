@@ -37,6 +37,7 @@ mod tree_nav;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use super::editor_state::SaveStatus;
 use appthere_ui::responsive::Breakpoint;
 use appthere_ui::tokens;
 use dioxus::prelude::*;
@@ -71,7 +72,7 @@ pub(super) struct StyleEditorSync {
     /// Whether redo is available.
     pub can_redo: Signal<bool>,
     /// Status-banner sink for feedback (e.g. a rejected cyclic re-parent).
-    pub save_message: Signal<Option<String>>,
+    pub save_message: Signal<Option<SaveStatus>>,
 }
 
 /// Renders the inline style catalog editor panel.

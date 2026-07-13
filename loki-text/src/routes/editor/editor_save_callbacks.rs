@@ -12,6 +12,7 @@ use loki_file_access::{FilePicker, SaveOptions};
 use loki_i18n::fl;
 
 use super::editor_save::{export_document_to_token, export_template_to_token};
+use super::editor_state::SaveStatus;
 use crate::editing::state::DocumentState;
 use crate::recent_documents::RecentDocuments;
 use crate::routes::Route;
@@ -31,7 +32,7 @@ const DOTX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordproce
 /// an untitled document.
 pub(super) fn use_save_as_callback(
     doc_state: Arc<Mutex<DocumentState>>,
-    save_message: Signal<Option<String>>,
+    save_message: Signal<Option<SaveStatus>>,
     baseline_gen: Signal<u64>,
     path_signal: Signal<String>,
 ) -> Callback<()> {
@@ -71,19 +72,25 @@ pub(super) fn use_save_as_callback(
                         }
                         recent.write().record(new_path.clone(), new_title);
                         recent.read().save();
-                        save_message.set(Some(fl!("editor-save-success")));
+                        save_message.set(Some(SaveStatus::ok(fl!("editor-save-success"))));
                         // Navigate to the saved file; the editor reloads it and
                         // re-establishes a clean baseline.
                         baseline_gen.set(0);
                         nav.push(Route::Editor { path: new_path });
                     }
                     Err(e) => {
-                        save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
+                        save_message.set(Some(SaveStatus::error(fl!(
+                            "editor-save-error",
+                            reason = e.to_string()
+                        ))));
                     }
                 },
                 Ok(None) => { /* user cancelled — no-op */ }
                 Err(e) => {
-                    save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
+                    save_message.set(Some(SaveStatus::error(fl!(
+                        "editor-save-error",
+                        reason = e.to_string()
+                    ))));
                 }
             }
         });
@@ -95,7 +102,7 @@ pub(super) fn use_save_as_callback(
 /// repoint the tab — the template is a separate artifact.
 pub(super) fn use_save_as_template_callback(
     doc_state: Arc<Mutex<DocumentState>>,
-    save_message: Signal<Option<String>>,
+    save_message: Signal<Option<SaveStatus>>,
     path_signal: Signal<String>,
 ) -> Callback<()> {
     use_callback(move |_: ()| {
@@ -111,14 +118,19 @@ pub(super) fn use_save_as_template_callback(
             match picker.pick_file_to_save(opts).await {
                 Ok(Some(token)) => {
                     let msg = match export_template_to_token(&token, &doc_state) {
-                        Ok(()) => fl!("editor-save-template-success"),
-                        Err(e) => fl!("editor-save-error", reason = e.to_string()),
+                        Ok(()) => SaveStatus::ok(fl!("editor-save-template-success")),
+                        Err(e) => {
+                            SaveStatus::error(fl!("editor-save-error", reason = e.to_string()))
+                        }
                     };
                     save_message.set(Some(msg));
                 }
                 Ok(None) => { /* user cancelled — no-op */ }
                 Err(e) => {
-                    save_message.set(Some(fl!("editor-save-error", reason = e.to_string())));
+                    save_message.set(Some(SaveStatus::error(fl!(
+                        "editor-save-error",
+                        reason = e.to_string()
+                    ))));
                 }
             }
         });
@@ -138,7 +150,7 @@ pub(super) struct CtrlSCtx {
     pub saved_state: Signal<crate::editing::saved_state::SavedStateHandle>,
     pub can_undo: Signal<bool>,
     pub can_redo: Signal<bool>,
-    pub save_message: Signal<Option<String>>,
+    pub save_message: Signal<Option<SaveStatus>>,
 }
 
 /// The Ctrl+S save effect: the keydown handler bumps `save_request`; the save
@@ -189,9 +201,9 @@ pub(super) fn use_ctrl_s_save(ctx: CtrlSCtx) {
                     can_redo,
                     &doc_state,
                 );
-                fl!("editor-save-success")
+                SaveStatus::ok(fl!("editor-save-success"))
             }
-            Err(e) => fl!("editor-save-error", reason = e.to_string()),
+            Err(e) => SaveStatus::error(fl!("editor-save-error", reason = e.to_string())),
         };
         save_message.set(Some(msg));
     });

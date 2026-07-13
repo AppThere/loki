@@ -21,6 +21,7 @@ pub mod routes;
 pub mod sessions;
 pub mod tabs;
 pub mod utils;
+pub mod window_state;
 
 // Android NativeActivity entry point. Shared body lives in
 // `loki_app_shell::android_main!` so the three suite binaries don't each carry a

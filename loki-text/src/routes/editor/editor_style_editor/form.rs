@@ -10,6 +10,7 @@
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use super::super::editor_state::SaveStatus;
 use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_i18n::fl;
@@ -228,7 +229,7 @@ pub(super) fn style_form(
                                 .is_some_and(|cat| cat.para_reparent_cycles(&child, &new_parent));
                             if cycles {
                                 let mut save_message = sync.save_message;
-                                save_message.set(Some(fl!("style-reparent-cycle")));
+                                save_message.set(Some(SaveStatus::error(fl!("style-reparent-cycle"))));
                                 return;
                             }
                         }

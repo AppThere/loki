@@ -64,7 +64,24 @@ pub struct SelectionRect {
     pub height: f32,
 }
 
-/// Cursor and selection highlight data for a single paragraph on one page.
+/// One paragraph's slice of a (possibly multi-paragraph) range selection.
+///
+/// Rects and handle tips are in that paragraph's local coordinates; the
+/// painter looks up the paragraph's per-page origin (and rotation) and
+/// transforms each span independently, so a selection spanning paragraphs —
+/// or a paragraph split across pages — highlights correctly on every page.
+#[derive(Debug, Clone)]
+pub struct SelectionSpan {
+    /// Global index of the paragraph block this span belongs to.
+    pub paragraph_index: usize,
+    /// Highlight rects for the selected range within this paragraph.
+    pub rects: Vec<SelectionRect>,
+    /// Selection handles anchored in this paragraph (mobile only; empty on
+    /// desktop).
+    pub handles: Vec<SelectionHandle>,
+}
+
+/// Cursor and selection highlight data for one page.
 ///
 /// All rects are in paragraph-local coordinates (points, origin at the
 /// paragraph's `(0, 0)` top-left). The painter applies the paragraph origin
@@ -74,8 +91,9 @@ pub struct CursorPaint {
     /// Visual cursor rect, or `None` when the cursor has no position in this
     /// paragraph.
     pub cursor_rect: Option<CursorRect>,
-    /// Zero or more selection highlight rects.  Empty when no range selection
-    /// is active.
+    /// Zero or more selection highlight rects for the caret's own paragraph
+    /// (single-paragraph path; multi-paragraph selections use
+    /// [`CursorPaint::selection_spans`]).
     pub selection_rects: Vec<SelectionRect>,
     /// Selection handles for mobile (iOS/Android) long-press word selection.
     ///
@@ -83,6 +101,9 @@ pub struct CursorPaint {
     /// Empty on desktop — handles are guarded by `#[cfg(target_os)]` in the
     /// caller.
     pub selection_handles: Vec<SelectionHandle>,
+    /// Per-paragraph selection highlight spans for this page (empty when the
+    /// selection is collapsed).
+    pub selection_spans: Vec<SelectionSpan>,
     /// Global index of the paragraph block that this data belongs to.
     /// Used by the painter to look up the paragraph's page-local origin.
     pub paragraph_index: usize,

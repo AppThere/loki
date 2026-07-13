@@ -4,6 +4,8 @@
 # The ribbon's primary tab is "Write" (renamed from "Home" — Spec 04 D1 — to
 # resolve the collision with the application Home *screen*).
 ribbon-tab-write = Write
+# Span-level (character) formatting: font colour and highlight pickers.
+ribbon-tab-format = Format
 
 # Inline formatting group (Write tab)
 ribbon-group-inline = Inline formatting
@@ -36,11 +38,17 @@ ribbon-style-apply-aria = Apply style: { $name }
 ribbon-group-paragraph = Paragraph
 ribbon-para-props-aria = Edit paragraph style
 ribbon-para-props-heading = Paragraph Properties
-ribbon-group-font = Font
-ribbon-font-grow-aria = Increase font size
-ribbon-font-shrink-aria = Decrease font size
+
+# Format tab — Font colour and Highlight pickers
 ribbon-group-font-color = Font colour
-ribbon-color-automatic-aria = Automatic colour
+ribbon-font-color-picker-aria = Font colour
+ribbon-highlight-picker-aria = Highlight colour
+ribbon-color-clear = Automatic
+ribbon-highlight-clear = No highlight
+ribbon-color-recent = Recent
+ribbon-color-custom = Custom
+ribbon-color-apply = Apply
+ribbon-color-close-aria = Close colour picker
 ribbon-color-red-aria = Red
 ribbon-color-orange-aria = Orange
 ribbon-color-yellow-aria = Yellow
@@ -48,17 +56,22 @@ ribbon-color-green-aria = Green
 ribbon-color-blue-aria = Blue
 ribbon-color-purple-aria = Purple
 ribbon-group-highlight = Highlight
-ribbon-highlight-none-aria = No highlight
 ribbon-highlight-yellow-aria = Yellow highlight
 ribbon-highlight-green-aria = Green highlight
 ribbon-highlight-cyan-aria = Cyan highlight
 ribbon-highlight-magenta-aria = Magenta highlight
+ribbon-highlight-blue-aria = Blue highlight
 ribbon-highlight-red-aria = Red highlight
-ribbon-group-alignment = Alignment
-ribbon-align-left-aria = Align left
-ribbon-align-centre-aria = Centre
-ribbon-align-right-aria = Align right
-ribbon-align-justify-aria = Justify
+ribbon-highlight-dark-blue-aria = Dark blue highlight
+ribbon-highlight-dark-cyan-aria = Dark cyan highlight
+ribbon-highlight-dark-green-aria = Dark green highlight
+ribbon-highlight-dark-magenta-aria = Dark magenta highlight
+ribbon-highlight-dark-red-aria = Dark red highlight
+ribbon-highlight-dark-yellow-aria = Dark yellow highlight
+ribbon-highlight-dark-gray-aria = Dark grey highlight
+ribbon-highlight-light-gray-aria = Light grey highlight
+ribbon-highlight-black-aria = Black highlight
+ribbon-highlight-white-aria = White highlight
 
 # Style editor panel
 ribbon-style-editor-heading = Edit Style

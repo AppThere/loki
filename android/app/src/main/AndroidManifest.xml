@@ -13,14 +13,14 @@
       Gradle compiles and dexes it automatically (no manual javac/d8 step).
     -->
     <application
-        android:label="Loki"
+        android:label="Loki Text"
         android:hasCode="true"
         android:allowBackup="true">
 
         <!-- Main app entry point: the Rust cdylib libloki_text.so. -->
         <activity
             android:name="android.app.NativeActivity"
-            android:label="Loki"
+            android:label="Loki Text"
             android:exported="true"
             android:configChanges="orientation|keyboardHidden|screenSize">
             <meta-data

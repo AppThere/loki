@@ -59,6 +59,18 @@ zeroize = { version = "1", features = ["derive"] }
 jsonwebtoken = "9"
 base64 = "0.22"
 
+# PATCH: Android Save As — `pick_save` treated a takePersistableUriPermission
+# failure (SecurityException from providers that grant no persistable
+# permission on ACTION_CREATE_DOCUMENT results) as fatal, AFTER the OS had
+# already created the (blank) document: Save As stranded a 0-byte file and
+# errored while plain Save worked. The patch makes the persistable grant
+# best-effort (warn + continue; the session grant suffices for the write),
+# clears the pending JNI exception, and queries the real display name (the
+# user may rename in the create dialog; the name drives format detection).
+# Remove when upstream loki-file-access ships the fix. See docs/patches.md.
+[patch."https://github.com/appthere/loki-file-access"]
+loki-file-access = { path = "patches/loki-file-access" }
+
 [patch.crates-io]
 # PATCH: vendors dioxus-native-dom to avoid runtime unimplemented!() panics in
 # HtmlEventConverter (composition, touch, scroll, etc.) — remove when upstream

@@ -9,15 +9,15 @@
 //!
 //! All editing logic lives in [`editor_inner::EditorInner`].
 
-mod editor_alignment;
 mod editor_canvas;
 mod editor_canvas_loading;
+mod editor_color_panel;
 mod editor_compact;
 mod editor_dirty;
 mod editor_docked_panels;
 mod editor_error_view;
-mod editor_font_size;
 mod editor_font_warning;
+mod editor_fonts;
 mod editor_format_range;
 mod editor_formatting;
 mod editor_highlight_color;
@@ -47,6 +47,7 @@ mod editor_ribbon_layout;
 mod editor_ribbon_publish;
 mod editor_ribbon_references;
 mod editor_ribbon_review;
+mod editor_ribbon_span;
 mod editor_ribbon_table;
 mod editor_ribbon_table_delete;
 mod editor_ribbon_table_ops;

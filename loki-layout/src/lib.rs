@@ -26,6 +26,7 @@ pub mod color;
 pub mod error;
 pub mod flow;
 pub mod font;
+pub mod font_handle;
 pub mod geometry;
 pub mod incremental;
 pub mod items;
@@ -48,6 +49,7 @@ pub use color::LayoutColor;
 pub use error::{LayoutError, LayoutResult};
 pub use flow::{FlowOutput, LayoutWarning, flow_section};
 pub use font::FontResources;
+pub use font_handle::SharedFontResources;
 pub use geometry::{LayoutInsets, LayoutPoint, LayoutRect, LayoutSize};
 pub use incremental::{
     FlowCheckpoint, PageStart, PaginatedReuse, document_has_notes, relayout_paginated_incremental,
