@@ -36,6 +36,7 @@ mod editor_metadata;
 mod editor_metadata_panel;
 mod editor_path_sync;
 mod editor_pointer;
+mod editor_pointer_touch;
 mod editor_publish;
 mod editor_responsive;
 mod editor_ribbon;

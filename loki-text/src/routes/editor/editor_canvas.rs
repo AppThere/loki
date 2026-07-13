@@ -31,7 +31,6 @@
 use std::sync::Arc;
 
 use appthere_ui::tokens;
-use dioxus::html::input_data::MouseButton;
 use dioxus::prelude::*;
 use loki_app_shell::spell::SpellService;
 use loki_doc_model::document::Document;
@@ -41,8 +40,9 @@ use loki_renderer::{DocumentView, RendererCursorPos, TileContext, ViewMode};
 use super::editor_canvas_loading::loading_view;
 use super::editor_error_view::EditorErrorView;
 use super::editor_keydown::make_keydown_handler;
-use super::editor_pointer::{
-    make_mousemove_handler, make_touchend_handler, make_touchmove_handler,
+use super::editor_pointer::{make_mousedown_handler, make_mousemove_handler, make_mouseup_handler};
+use super::editor_pointer_touch::{
+    make_touchend_handler, make_touchmove_handler, make_touchstart_handler,
 };
 use super::editor_scrollbar::{
     CanvasMounted, ScrollMetrics, ThumbDrag, horizontal_scrollbar, vertical_scrollbar,
@@ -114,8 +114,8 @@ pub(super) fn render_canvas_area(
     doc_state_keydown: std::sync::Arc<std::sync::Mutex<DocumentState>>,
     doc_state_render: std::sync::Arc<std::sync::Mutex<DocumentState>>,
     doc_state_scroll: std::sync::Arc<std::sync::Mutex<DocumentState>>,
-    mut is_dragging: Signal<bool>,
-    mut drag_origin: Signal<Option<(f32, f32)>>,
+    is_dragging: Signal<bool>,
+    drag_origin: Signal<Option<(f32, f32)>>,
     touch_state: Signal<Option<TouchInteractionState>>,
     mut scroll_offset: Signal<f32>,
     mut scroll_metrics: Signal<ScrollMetrics>,
@@ -228,17 +228,7 @@ pub(super) fn render_canvas_area(
                 }
             },
 
-            // Outer div records drag origin for the LEFT button only. Right-click
-            // is handled per-tile (`on_tile_context` on `DocumentView`), which has
-            // accurate `element_coordinates`; ignore it here so it does not start a
-            // spurious drag.
-            onmousedown: move |evt: MouseEvent| {
-                if evt.trigger_button() == Some(MouseButton::Secondary) {
-                    return;
-                }
-                let c = evt.client_coordinates();
-                drag_origin.set(Some((c.x as f32, c.y as f32)));
-            },
+            onmousedown: make_mousedown_handler(drag_origin),
 
             onmousemove: make_mousemove_handler(
                 doc_state_mousemove,
@@ -252,20 +242,18 @@ pub(super) fn render_canvas_area(
                 zoom_percent,
             ),
 
-            onmouseup: move |_| {
-                is_dragging.set(false);
-                drag_origin.set(None);
-            },
+            onmouseup: make_mouseup_handler(is_dragging, drag_origin),
 
-            ontouchstart: move |evt: TouchEvent| {
-                let touches = evt.touches();
-                let Some(first) = touches.first() else { return };
-                let c = first.client_coordinates();
-                touch_state.clone().set(Some(TouchInteractionState::new(
-                    0,
-                    (c.x as f32, c.y as f32),
-                )));
-            },
+            ontouchstart: make_touchstart_handler(
+                std::sync::Arc::clone(&doc_state_touch),
+                touch_state,
+                cursor_state,
+                scroll_offset,
+                scroll_metrics,
+                view_mode,
+                zoom_percent,
+                page_gap_px,
+            ),
 
             ontouchmove: make_touchmove_handler(
                 doc_state_touch,

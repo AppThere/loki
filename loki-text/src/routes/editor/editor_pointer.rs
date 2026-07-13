@@ -1,30 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Mouse and touch event handler factories for the document canvas.
+//! Mouse event handler factories for the document canvas (touch handlers
+//! live in `editor_pointer_touch.rs`).
 
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::tokens;
+use dioxus::html::input_data::MouseButton;
 use dioxus::prelude::*;
-use loki_doc_model::loro_bridge::derive_loro_cursor;
-use loki_doc_model::loro_mutation::get_block_text;
 
 use loki_renderer::ViewMode;
 use loki_renderer::render_layout::{
     reflow_layout_content_width_pt, reflow_tile_width_px, reflow_type_scale,
 };
 
-use crate::editing::cursor::{CursorState, DocumentPosition};
+use crate::editing::cursor::CursorState;
 use crate::editing::hit_test::{hit_test_document, reflow_hit_test_window};
 use crate::editing::state::{DocumentState, ensure_reflow_layout};
-use crate::editing::touch::{TouchInteractionState, TouchPhase, word_boundaries_at};
 use crate::editing::viewport::Viewport;
 use crate::routes::editor::editor_scrollbar::ScrollMetrics;
 
 /// Resolves a window-relative tap to a reflow document position, using the same
 /// continuous layout width as the painted view. Returns `None` outside reflow
 /// mode or when the canvas has not been measured yet.
-fn reflow_tap_position(
+pub(super) fn reflow_tap_position(
     doc_state: &Arc<Mutex<DocumentState>>,
     client_pos: (f32, f32),
     viewport: Viewport,
@@ -127,169 +126,29 @@ pub(super) fn make_mousemove_handler(
     }
 }
 
-/// Builds the `ontouchmove` handler for touch drag and long-press word selection.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn make_touchmove_handler(
-    doc_state: Arc<Mutex<DocumentState>>,
-    mut touch_state: Signal<Option<TouchInteractionState>>,
-    scroll_offset: Signal<f32>,
-    loro_doc: Signal<Option<loro::LoroDoc>>,
-    mut cursor_state: Signal<CursorState>,
-    page_gap_px: f32,
-    view_mode: Signal<ViewMode>,
-    scroll_metrics: Signal<ScrollMetrics>,
-    zoom_percent: Signal<u32>,
-) -> impl FnMut(TouchEvent) {
-    move |evt: TouchEvent| {
-        let Some(mut ts) = touch_state() else { return };
-        let touches = evt.touches();
-        let Some(first) = touches.first() else { return };
-        let c = first.client_coordinates();
-        let new_pos = (c.x as f32, c.y as f32);
-        let became_scroll = ts.update_move(new_pos);
-        if became_scroll {
-            if let TouchPhase::Scroll { last_y } = ts.phase {
-                // The scroll container is driven by blitz-shell's native scroll
-                // mechanism; we update scroll_offset here so hit_test_document
-                // stays accurate.
-                // TODO(partial-render): replace with direct node.scroll_offset
-                // once Blitz exposes it.
-                let _ = last_y;
-            }
-        } else if ts.phase == TouchPhase::LongPress {
-            let start = ts.start_pos;
-            // Resolve the long-press to a (page, paragraph, byte) position via the
-            // view mode's hit-test path (reflow has no paginated layout).
-            let resolved: Option<(usize, usize, usize)> = if view_mode() == ViewMode::Reflow {
-                reflow_tap_position(
-                    &doc_state,
-                    start,
-                    Viewport::new(scroll_metrics.peek().client_width),
-                    scroll_offset(),
-                )
-                .map(|(para, byte)| (0, para, byte))
-            } else {
-                let (layout_opt, page_width_px, page_height_px) = {
-                    let Ok(state) = doc_state.lock() else { return };
-                    (
-                        state.paginated_layout.clone(),
-                        state.page_width_px,
-                        state.page_height_px,
-                    )
-                };
-                layout_opt.and_then(|layout| {
-                    let zoom = zoom_percent() as f32 / 100.0;
-                    let viewport = Viewport::new(scroll_metrics.peek().client_width);
-                    let x_off = viewport.centred_origin_x(page_width_px * zoom);
-                    let origin = (x_off, tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6);
-                    hit_test_document(
-                        start.0,
-                        start.1,
-                        origin,
-                        scroll_offset(),
-                        &layout,
-                        page_width_px,
-                        page_height_px,
-                        page_gap_px,
-                        zoom,
-                    )
-                    .map(|p| (p.page_index, p.paragraph_index, p.byte_offset))
-                })
-            };
-            if let Some((page, para, byte)) = resolved {
-                let ldoc_guard = loro_doc.read();
-                if let Some(ldoc) = ldoc_guard.as_ref() {
-                    let text = get_block_text(ldoc, para);
-                    if let Some((ws, we)) = word_boundaries_at(&text, byte) {
-                        let mut cs = cursor_state.write();
-                        cs.anchor = Some(DocumentPosition::top_level(page, para, ws));
-                        cs.focus = Some(DocumentPosition::top_level(page, para, we));
-                    }
-                }
-            }
+/// Builds the `onmousedown` handler: records the drag origin for the LEFT
+/// button only. Right-click is handled per-tile (`on_tile_context` on
+/// `DocumentView`), which has accurate `element_coordinates`; it is ignored
+/// here so it does not start a spurious drag.
+pub(super) fn make_mousedown_handler(
+    mut drag_origin: Signal<Option<(f32, f32)>>,
+) -> impl FnMut(MouseEvent) {
+    move |evt: MouseEvent| {
+        if evt.trigger_button() == Some(MouseButton::Secondary) {
+            return;
         }
-        touch_state.set(Some(ts));
+        let c = evt.client_coordinates();
+        drag_origin.set(Some((c.x as f32, c.y as f32)));
     }
 }
 
-/// Builds the `ontouchend` handler for tap cursor placement.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn make_touchend_handler(
-    doc_state: Arc<Mutex<DocumentState>>,
-    mut touch_state: Signal<Option<TouchInteractionState>>,
-    scroll_offset: Signal<f32>,
-    loro_doc: Signal<Option<loro::LoroDoc>>,
-    mut cursor_state: Signal<CursorState>,
-    page_gap_px: f32,
-    view_mode: Signal<ViewMode>,
-    scroll_metrics: Signal<ScrollMetrics>,
-    zoom_percent: Signal<u32>,
-) -> impl FnMut(TouchEvent) {
-    move |_evt: TouchEvent| {
-        let Some(ts) = touch_state() else { return };
-        match ts.phase {
-            // Reflow mode has no paginated layout: hit-test the continuous flow.
-            TouchPhase::Indeterminate | TouchPhase::Tap if view_mode() == ViewMode::Reflow => {
-                if let Some((para, byte)) = reflow_tap_position(
-                    &doc_state,
-                    ts.start_pos,
-                    Viewport::new(scroll_metrics.peek().client_width),
-                    scroll_offset(),
-                ) {
-                    let loro_cursor = loro_doc
-                        .read()
-                        .as_ref()
-                        .and_then(|ldoc| derive_loro_cursor(ldoc, para, byte));
-                    let pos = DocumentPosition::top_level(0, para, byte);
-                    let mut cs = cursor_state.write();
-                    cs.loro_cursor = loro_cursor;
-                    cs.anchor = Some(pos.clone());
-                    cs.focus = Some(pos);
-                }
-            }
-            TouchPhase::Indeterminate | TouchPhase::Tap => {
-                // Short tap — place cursor via the same hit-test path as a mouse click.
-                let (layout_opt, page_width_px, page_height_px) = {
-                    let Ok(state) = doc_state.lock() else {
-                        touch_state.set(None);
-                        return;
-                    };
-                    (
-                        state.paginated_layout.clone(),
-                        state.page_width_px,
-                        state.page_height_px,
-                    )
-                };
-                if let Some(layout) = layout_opt {
-                    let zoom = zoom_percent() as f32 / 100.0;
-                    let viewport = Viewport::new(scroll_metrics.peek().client_width);
-                    let x_off = viewport.centred_origin_x(page_width_px * zoom);
-                    let origin = (x_off, tokens::TOOLBAR_HEIGHT_TOP + tokens::SPACE_6);
-                    if let Some(pos) = hit_test_document(
-                        ts.start_pos.0,
-                        ts.start_pos.1,
-                        origin,
-                        scroll_offset(),
-                        &layout,
-                        page_width_px,
-                        page_height_px,
-                        page_gap_px,
-                        zoom,
-                    ) {
-                        let loro_cursor = loro_doc.read().as_ref().and_then(|ldoc| {
-                            derive_loro_cursor(ldoc, pos.paragraph_index, pos.byte_offset)
-                        });
-                        let mut cs = cursor_state.write();
-                        cs.loro_cursor = loro_cursor;
-                        cs.anchor = Some(pos.clone());
-                        cs.focus = Some(pos);
-                    }
-                }
-            }
-            // Scroll and long-press states are already handled incrementally
-            // in ontouchmove.
-            TouchPhase::Scroll { .. } | TouchPhase::LongPress => {}
-        }
-        touch_state.set(None);
+/// Builds the `onmouseup` handler: ends a drag-selection gesture.
+pub(super) fn make_mouseup_handler(
+    mut is_dragging: Signal<bool>,
+    mut drag_origin: Signal<Option<(f32, f32)>>,
+) -> impl FnMut(MouseEvent) {
+    move |_evt: MouseEvent| {
+        is_dragging.set(false);
+        drag_origin.set(None);
     }
 }
