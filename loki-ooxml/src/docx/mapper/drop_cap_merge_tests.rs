@@ -4,6 +4,7 @@
 //! Tests for [`super::merge_drop_cap_frames`].
 
 use super::*;
+use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::StyledParagraph;
 use loki_doc_model::content::inline::Inline;
 use loki_doc_model::style::props::drop_cap::{DropCap, DropCapLength};
@@ -20,7 +21,7 @@ fn para(text: &str, drop_cap: Option<DropCap>) -> Block {
         direct_para_props,
         direct_char_props: None,
         inlines: vec![Inline::Str(text.into())],
-        attr: Default::default(),
+        attr: NodeAttr::default(),
     })
 }
 
@@ -88,13 +89,16 @@ fn body_retains_its_own_paragraph_props() {
         direct_para_props: None,
         direct_char_props: None,
         inlines: vec![Inline::Str("ropped.".into())],
-        attr: Default::default(),
+        attr: NodeAttr::default(),
     });
     let blocks = vec![para("D", Some(drop_cap())), body];
     let out = merge_drop_cap_frames(blocks);
     let Block::StyledPara(p) = &out[0] else {
         panic!("expected StyledPara");
     };
-    assert_eq!(p.style_id.as_ref().map(|s| s.as_str()), Some("BodyStyle"));
+    assert_eq!(
+        p.style_id.as_ref().map(loki_doc_model::StyleId::as_str),
+        Some("BodyStyle")
+    );
     assert!(p.direct_para_props.as_ref().unwrap().drop_cap.is_some());
 }

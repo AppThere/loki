@@ -5,10 +5,7 @@
 use dioxus::prelude::*;
 use loki_i18n::fl;
 
-use crate::tokens::colors::{
-    COLOR_TAB_ACTIVE_BG, COLOR_TAB_ACTIVE_INDICATOR, COLOR_TAB_INACTIVE_HOVER,
-    COLOR_TEXT_ON_CHROME, COLOR_TEXT_ON_CHROME_SECONDARY,
-};
+use crate::theme::use_theme;
 use crate::tokens::layout::TAB_BAR_HEIGHT;
 use crate::tokens::spacing::{RADIUS_SM, SPACE_1, SPACE_3, TOUCH_MIN};
 use crate::tokens::typography::{FONT_FAMILY_UI, FONT_SIZE_LABEL, FONT_WEIGHT_MEDIUM};
@@ -52,13 +49,14 @@ fn truncate_tab_title(title: &str) -> String {
 /// satisfies WCAG 2.5.8 for the composite interaction target.
 #[component]
 pub fn AtDocumentTab(props: AtDocumentTabProps) -> Element {
+    let palette = use_theme().palette();
     let mut close_hovered = use_signal(|| false);
     let mut tab_hovered = use_signal(|| false);
 
     let tab_bg = if props.is_active {
-        COLOR_TAB_ACTIVE_BG
+        palette.tab_active_bg
     } else if tab_hovered() {
-        COLOR_TAB_INACTIVE_HOVER
+        palette.tab_inactive_hover
     } else {
         "transparent"
     };
@@ -82,7 +80,7 @@ pub fn AtDocumentTab(props: AtDocumentTabProps) -> Element {
     }
 
     let active_border = if props.is_active {
-        format!("border-bottom: 2px solid {COLOR_TAB_ACTIVE_INDICATOR};")
+        format!("border-bottom: 2px solid {};", palette.tab_active_indicator)
     } else {
         String::new()
     };
@@ -124,9 +122,9 @@ pub fn AtDocumentTab(props: AtDocumentTabProps) -> Element {
                     size   = FONT_SIZE_LABEL,
                     weight = FONT_WEIGHT_MEDIUM,
                     fg     = if props.is_active {
-                        COLOR_TEXT_ON_CHROME
+                        palette.text_on_chrome
                     } else {
-                        COLOR_TEXT_ON_CHROME_SECONDARY
+                        palette.text_on_chrome_secondary
                     },
                     font   = FONT_FAMILY_UI,
                 ),
@@ -144,7 +142,7 @@ pub fn AtDocumentTab(props: AtDocumentTabProps) -> Element {
                      padding: 0;",
                     bg = close_bg,
                     r  = RADIUS_SM,
-                    fg = COLOR_TEXT_ON_CHROME_SECONDARY,
+                    fg = palette.text_on_chrome_secondary,
                 ),
                 onmouseenter: move |_| { close_hovered.set(true); },
                 onmouseleave: move |_| { close_hovered.set(false); },

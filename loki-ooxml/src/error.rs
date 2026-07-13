@@ -65,6 +65,15 @@ pub enum OoxmlError {
     /// An attribute value that was expected to be a valid UTF-8 string was not.
     #[error("UTF-8 decode error: {0}")]
     Utf8(#[from] std::str::Utf8Error),
+
+    /// Element nesting (tables in cells, content controls in content
+    /// controls) exceeded the recursion limit — the document is malformed or
+    /// adversarial (audit-2026-06 `S-1b`: stack-exhaustion `DoS` guard).
+    #[error("element nesting exceeds the limit of {limit}")]
+    NestingTooDeep {
+        /// The maximum allowed nesting depth.
+        limit: usize,
+    },
 }
 
 /// Convenience result alias for loki-ooxml operations.

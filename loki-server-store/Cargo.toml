@@ -8,7 +8,6 @@ repository = "https://github.com/appthere/loki"
 
 [dependencies]
 thiserror = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
@@ -16,7 +15,6 @@ async-trait = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt"] }
 sqlx = { workspace = true }
 object_store = { workspace = true }
-tracing = { workspace = true }
 loki-model = { workspace = true }
 loki-crypto = { workspace = true }
 loki-server-audit = { workspace = true }

@@ -39,6 +39,7 @@ fn span(text: &str) -> StyleSpan {
         scale: None,
         kerning: None,
         baseline_shift: None,
+        language: None,
     }
 }
 

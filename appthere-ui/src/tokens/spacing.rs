@@ -96,16 +96,16 @@ mod tests {
 
     #[test]
     fn radius_scale_is_strictly_increasing() {
-        assert!(RADIUS_SM < RADIUS_MD);
-        assert!(RADIUS_MD < RADIUS_LG);
-        assert!(RADIUS_LG < RADIUS_XL);
-        assert!(RADIUS_XL < RADIUS_FULL);
+        const { assert!(RADIUS_SM < RADIUS_MD) };
+        const { assert!(RADIUS_MD < RADIUS_LG) };
+        const { assert!(RADIUS_LG < RADIUS_XL) };
+        const { assert!(RADIUS_XL < RADIUS_FULL) };
     }
 
     #[test]
     fn icon_sizes_are_strictly_increasing() {
-        assert!(ICON_SIZE_SM < ICON_SIZE_MD);
-        assert!(ICON_SIZE_MD < ICON_SIZE_LG);
-        assert!(ICON_SIZE_LG < ICON_SIZE_XL);
+        const { assert!(ICON_SIZE_SM < ICON_SIZE_MD) };
+        const { assert!(ICON_SIZE_MD < ICON_SIZE_LG) };
+        const { assert!(ICON_SIZE_LG < ICON_SIZE_XL) };
     }
 }

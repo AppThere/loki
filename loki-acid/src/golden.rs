@@ -46,33 +46,22 @@ pub fn fixture_stem(fixture: Fixture) -> &'static str {
 }
 
 /// Returns the sorted golden page PNGs present for `fixture` (possibly empty).
+/// Delegates to the shared discovery (promoted to `appthere-conformance`,
+/// Spec 02 B-8) with this crate's roots.
 #[must_use]
 pub fn golden_pages(fixture: Fixture) -> Vec<PathBuf> {
-    let dir = goldens_dir().join(fixture_stem(fixture));
-    let mut pages: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("png")))
-        .collect();
-    pages.sort();
-    pages
+    appthere_conformance::golden::golden_pages(&goldens_dir(), fixture_stem(fixture))
 }
 
 /// Maps a golden page path to the matching Loki render path under `renders/`.
 #[must_use]
 pub fn render_for(golden: &Path) -> Option<PathBuf> {
-    let file = golden.file_name()?;
-    let stem = golden.parent()?.file_name()?;
-    Some(renders_dir().join(stem).join(file))
+    appthere_conformance::golden::candidate_for(&renders_dir(), golden)
 }
 
 /// Loads a PNG as an RGBA image.
 pub fn load_png(path: &Path) -> Result<RgbaImage, String> {
-    image::open(path)
-        .map(|img| img.to_rgba8())
-        .map_err(|e| format!("{}: {e}", path.display()))
+    appthere_conformance::golden::load_png(path)
 }
 
 #[cfg(test)]

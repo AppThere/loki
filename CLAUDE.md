@@ -205,7 +205,7 @@ baseline). Three techniques (the third added 2026-07-08):
 
 | File | Current lines | Priority |
 |---|---|---|
-| `loki-layout/src/para.rs` | 1447 | High |
+| `loki-layout/src/para.rs` | 1401 | High |
 | `loki-layout/src/flow.rs` | 1202 | High |
 | `loki-spreadsheet/src/routes/editor/editor_inner.rs` | 1014 | High |
 | `loki-ooxml/src/docx/write/document.rs` | 902 | High |
@@ -256,7 +256,9 @@ yet reach `0.41`:
 
 None of these are fixable by bumping our own `Cargo.toml` requirements — each is
 gated behind an upstream crate release that hasn't caught up to `quick-xml`
-0.41 yet. `object_store` is the one with real untrusted-network exposure and is
+0.41 yet. Re-checked 2026-07-11: still true — `object_store` 0.14.0 (latest)
+still requires `quick-xml ^0.40.1`. (The same pass fixed the unrelated
+RUSTSEC-2026-0204 by bumping `crossbeam-epoch` 0.9.18 → 0.9.20 in the lockfile.) `object_store` is the one with real untrusted-network exposure and is
 worth re-checking most often. Re-run `cargo audit` (or
 `cargo tree -i quick-xml`) periodically and bump `object_store` /
 `wayland-scanner`'s dependents the moment a release satisfies `quick-xml
@@ -472,7 +474,13 @@ Read in any descendant component:
 let theme = use_theme();
 ```
 
-Only `ThemeVariant::Dark` is implemented. Light theme tokens are deferred.
+Both variants are implemented (4c.4): `ThemePalette::dark()` / `light()` in
+`tokens/palette.rs`; the `COLOR_*` constants remain the dark values, so
+unmigrated components render dark under either variant. Components migrate by
+reading `use_theme().palette()` (Signal-backed — re-colors live on
+`AtThemeContext::toggle`, exposed as the tab-bar theme-toggle button). Shell
+chrome (title/tab/status bars, dialogs) is migrated; deep editor surfaces
+migrate opportunistically.
 
 ### What does NOT belong in `appthere_ui`
 

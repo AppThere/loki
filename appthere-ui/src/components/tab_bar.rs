@@ -12,11 +12,7 @@
 use dioxus::prelude::*;
 
 use crate::components::document_tab::AtDocumentTab;
-use crate::tokens::colors::{
-    COLOR_BORDER_CHROME, COLOR_SURFACE_CHROME, COLOR_TAB_ACTIVE_BG, COLOR_TAB_ACTIVE_INDICATOR,
-    COLOR_TAB_INACTIVE_HOVER, COLOR_TEXT_ACCENT, COLOR_TEXT_ON_CHROME,
-    COLOR_TEXT_ON_CHROME_SECONDARY,
-};
+use crate::theme::use_theme;
 use crate::tokens::layout::TAB_BAR_HEIGHT;
 use crate::tokens::spacing::{SPACE_2, SPACE_3, TOUCH_MIN};
 use crate::tokens::typography::{FONT_FAMILY_UI, FONT_SIZE_LABEL, FONT_WEIGHT_SEMIBOLD};
@@ -44,25 +40,33 @@ pub struct AtDocumentTabData {
 /// **Minimum interactive size: 44×44 logical pixels (WCAG 2.5.8).**
 #[component]
 pub fn AtTabBar(props: AtTabBarProps) -> Element {
+    let mut theme = use_theme();
+    let palette = theme.palette();
     let mut home_hovered = use_signal(|| false);
     let mut new_tab_hovered = use_signal(|| false);
+    let mut theme_hovered = use_signal(|| false);
 
     let home_is_active = props.active_index == 0;
     let home_bg = if home_is_active {
-        COLOR_TAB_ACTIVE_BG
+        palette.tab_active_bg
     } else if home_hovered() {
-        COLOR_TAB_INACTIVE_HOVER
+        palette.tab_inactive_hover
     } else {
         "transparent"
     };
     let home_border = if home_is_active {
-        format!("border-bottom: 2px solid {COLOR_TAB_ACTIVE_INDICATOR};")
+        format!("border-bottom: 2px solid {};", palette.tab_active_indicator)
     } else {
         String::new()
     };
 
     let new_tab_bg = if new_tab_hovered() {
-        COLOR_TAB_INACTIVE_HOVER
+        palette.tab_inactive_hover
+    } else {
+        "transparent"
+    };
+    let theme_bg = if theme_hovered() {
+        palette.tab_inactive_hover
     } else {
         "transparent"
     };
@@ -82,8 +86,8 @@ pub fn AtTabBar(props: AtTabBarProps) -> Element {
                 // (e.g. min-height: TOUCH_MIN on tab items).
                 // scrollbar-width: none is unconfirmed — verify at runtime.
                 h      = TAB_BAR_HEIGHT,
-                bg     = COLOR_SURFACE_CHROME,
-                border = COLOR_BORDER_CHROME,
+                bg     = palette.surface_chrome,
+                border = palette.border_chrome,
                 font   = FONT_FAMILY_UI,
             ),
 
@@ -116,9 +120,9 @@ pub fn AtTabBar(props: AtTabBarProps) -> Element {
                         size   = FONT_SIZE_LABEL,
                         weight = FONT_WEIGHT_SEMIBOLD,
                         fg     = if home_is_active {
-                            COLOR_TEXT_ON_CHROME
+                            palette.text_on_chrome
                         } else {
-                            COLOR_TEXT_ON_CHROME_SECONDARY
+                            palette.text_on_chrome_secondary
                         },
                     ),
                     "{props.home_tab_label}"
@@ -161,7 +165,7 @@ pub fn AtTabBar(props: AtTabBarProps) -> Element {
                      display: flex; align-items: center; justify-content: center; \
                      padding: 0 {p}px;",
                     bg    = new_tab_bg,
-                    fg    = COLOR_TEXT_ACCENT,
+                    fg    = palette.text_accent,
                     touch = TOUCH_MIN,
                     p     = SPACE_2,
                 ),
@@ -169,6 +173,32 @@ pub fn AtTabBar(props: AtTabBarProps) -> Element {
                 onmouseleave: move |_| { new_tab_hovered.set(false); },
                 onclick: move |_| { props.on_new_tab.call(()); },
                 "+"
+            }
+
+            // ── Theme toggle (Dark ⇄ Light) ───────────────────────────────────
+            // Rendered only when the app supplies an aria label (i18n rule:
+            // display strings are props). Self-contained: flips the shared
+            // AtThemeContext signal, so every palette-reading component
+            // re-colors live. 44 px touch target (WCAG 2.5.8).
+            if !props.theme_toggle_aria_label.is_empty() {
+                button {
+                    "aria-label": props.theme_toggle_aria_label,
+                    style: format!(
+                        "background: {bg}; border: none; \
+                         color: {fg}; font-size: 14px; cursor: pointer; \
+                         width: 32px; height: {touch}px; flex-shrink: 0; \
+                         display: flex; align-items: center; justify-content: center; \
+                         padding: 0 {p}px;",
+                        bg    = theme_bg,
+                        fg    = palette.text_on_chrome_secondary,
+                        touch = TOUCH_MIN,
+                        p     = SPACE_2,
+                    ),
+                    onmouseenter: move |_| { theme_hovered.set(true); },
+                    onmouseleave: move |_| { theme_hovered.set(false); },
+                    onclick: move |_| { theme.toggle(); },
+                    "◐"
+                }
             }
         }
     }
@@ -196,4 +226,8 @@ pub struct AtTabBarProps {
     pub on_new_tab: EventHandler<()>,
     /// Aria label for the new-tab button.
     pub new_tab_aria_label: String,
+    /// Aria label for the Dark ⇄ Light theme toggle. Empty (the default)
+    /// hides the toggle, so existing call sites are unchanged.
+    #[props(default)]
+    pub theme_toggle_aria_label: String,
 }

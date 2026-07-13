@@ -27,7 +27,7 @@ fn insert(cat: &mut StyleCatalog, s: CharacterStyle) {
     cat.character_styles.insert(s.id.clone(), s);
 }
 
-fn row<'a>(rows: &'a [InspectorRow], p: StyleProperty) -> &'a InspectorRow {
+fn row(rows: &[InspectorRow], p: StyleProperty) -> &InspectorRow {
     rows.iter()
         .find(|r| r.property == p)
         .unwrap_or_else(|| panic!("missing row for {p:?}"))

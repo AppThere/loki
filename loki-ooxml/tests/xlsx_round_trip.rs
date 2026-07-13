@@ -208,10 +208,10 @@ fn test_xlsx_round_trip_basic() {
 
         // Let's verify each cell
         for (coord, original_cell) in &original_sheet.cells {
-            let imported_cell = imported_sheet.cells.get(coord).expect(&format!(
-                "Cell at {:?} should exist in imported sheet",
-                coord
-            ));
+            let imported_cell = imported_sheet
+                .cells
+                .get(coord)
+                .unwrap_or_else(|| panic!("Cell at {:?} should exist in imported sheet", coord));
 
             assert_eq!(
                 imported_cell.value, original_cell.value,

@@ -42,6 +42,7 @@ fn para(text: &str, width: f32) -> Arc<ParagraphLayout> {
             scale: None,
             kerning: None,
             baseline_shift: None,
+            language: None,
         }],
         &ResolvedParaProps::default(),
         width,

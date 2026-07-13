@@ -4,6 +4,7 @@
 //! Tests for `mod`.
 
 use super::*;
+use loki_doc_model::content::block::Block;
 use loki_opc::relationships::{Relationship, TargetMode};
 use loki_opc::{PartData, PartName};
 
@@ -54,7 +55,6 @@ fn round_trip_minimal_document() {
     let blocks = &doc.sections[0].blocks;
     assert!(!blocks.is_empty(), "paragraph should be present");
 
-    use loki_doc_model::content::block::Block;
     assert!(
         matches!(blocks[0], Block::StyledPara(_)),
         "first block should be StyledPara, got {:?}",

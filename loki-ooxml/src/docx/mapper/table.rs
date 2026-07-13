@@ -3,8 +3,6 @@
 
 //! Table mapper: `w:tbl` → `Block::Table`.
 
-use std::collections::{HashMap, HashSet};
-
 use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::table::col::{ColAlignment, ColSpec, ColWidth, TableWidth};
@@ -14,24 +12,23 @@ use loki_doc_model::content::table::row::{
 };
 use loki_primitives::units::Points;
 
-use crate::docx::model::styles::{
-    DocxTableModel, DocxTableRow, DocxTextDirection, DocxVAlign, DocxVMerge,
-};
+use crate::docx::model::styles::{DocxTableModel, DocxTextDirection, DocxVAlign};
 
 use super::document::MappingContext;
 use super::paragraph::map_paragraph;
 use super::props::map_border_edge;
 use super::table_look::map_tbl_look;
 
-/// Maps a `w:tbl` to a `Block::Table`.
-///
-/// A two-pass algorithm resolves `w:vMerge` spans (restart cells get the
-/// `row_span` count, continuation cells dropped — §17.4.84); `w:tblGrid` widths
-/// convert twips→points when present, else `ColWidth::Default`.
+#[path = "table_vmerge.rs"]
+mod vmerge;
+use vmerge::compute_v_merge_spans;
+
+/// Maps a `w:tbl` to a `Block::Table`. Two passes resolve `w:vMerge` spans
+/// (restart cells get `row_span`, continuations dropped — §17.4.84);
+/// `w:tblGrid` widths convert twips→points, else `ColWidth::Default`.
 pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Block {
     let col_specs = build_col_specs(t);
 
-    // Pre-compute row spans and the set of continuation cells to remove.
     let (span_map, skip_set) = compute_v_merge_spans(&t.rows);
 
     let mut head_rows: Vec<Row> = Vec::new();
@@ -49,8 +46,7 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
                 .and_then(|p| p.grid_span)
                 .unwrap_or(1)
                 .max(1) as usize;
-            // Continuation cells are dropped; the spanning cell above carries
-            // row_span = N covering them (loki-layout honours row_span).
+            // Continuations dropped; the spanning cell carries row_span=N.
             if !skip_set.contains(&(row_idx, cell_idx)) {
                 let mut cell = map_cell(tc, ctx);
                 cell.row_span = span_map.get(&(row_idx, grid_col)).copied().unwrap_or(1);
@@ -80,7 +76,6 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
 
     let width = map_tbl_width(t);
 
-    // `w:tblLayout w:type="fixed"` → honour grid widths exactly (no autofit).
     let mut attr = NodeAttr::default();
     if t.tbl_pr
         .as_ref()
@@ -112,10 +107,8 @@ pub(crate) fn map_table(t: &DocxTableModel, ctx: &mut MappingContext<'_>) -> Blo
     Block::Table(Box::new(table))
 }
 
-/// Converts `w:tblW` to [`TableWidth`].
-///
-/// COMPAT(microsoft): w:tblW @w:type="pct" uses fiftieths of a percent,
-/// not hundredths — divide by 50 to get 0.0–100.0 range.
+/// Converts `w:tblW` to [`TableWidth`]. COMPAT(microsoft): @w:type="pct" is
+/// fiftieths of a percent — divide by 50 for the 0.0–100.0 range.
 #[allow(clippy::cast_precision_loss)] // twip values are small; f32 precision is sufficient
 fn map_tbl_width(t: &DocxTableModel) -> Option<TableWidth> {
     let w = t.tbl_pr.as_ref()?.width.as_ref()?;
@@ -167,9 +160,14 @@ fn map_cell(tc: &crate::docx::model::styles::DocxTableCell, ctx: &mut MappingCon
         .collect();
 
     let mut props = CellProps::default();
+    // w:cnfStyle mask (4a.3) rides the cell attr for the shading resolver.
+    let cnf = tc
+        .tc_pr
+        .as_ref()
+        .and_then(|p| p.cnf_style.clone())
+        .filter(|c| loki_doc_model::style::table_cnf::TableCnf::decode_attr(c).is_some());
     if let Some(tc_pr) = tc.tc_pr.as_ref() {
-        // Cell background from `w:shd`, honouring the pattern (`@w:val`):
-        // `pctN` blends `@w:color` over `@w:fill`; `solid`/`clear` as expected.
+        // `w:shd` background; `pctN` patterns blend @w:color over @w:fill.
         if let Some(rgb) = crate::xml_util::resolve_shading(
             tc_pr.shd_fill.as_deref(),
             tc_pr.shd_val.as_deref(),
@@ -207,97 +205,19 @@ fn map_cell(tc: &crate::docx::model::styles::DocxTableCell, ctx: &mut MappingCon
         });
     }
 
-    Cell {
+    let mut cell = Cell {
         attr: NodeAttr::default(),
         alignment: ColAlignment::Default,
         row_span: 1, // overridden by map_table after compute_v_merge_spans
         col_span,
         blocks,
         props,
-    }
+    };
+    cell.set_cnf_code(cnf);
+    cell
 }
 
 // ── vMerge two-pass algorithm ─────────────────────────────────────────────────
-
-/// Computes `row_span` values for all vertically-merged cells in a table.
-///
-/// Returns:
-/// - `span_map`: `(row_idx, grid_col)` → `row_span` for every `Restart` cell.
-///   The key uses the cell's *starting* grid column (accounting for
-///   `w:gridSpan` of preceding cells in the same row).
-/// - `skip_set`: `(row_idx, cell_idx)` pairs that are `Continue` cells and
-///   should be omitted from the output row.
-///
-/// OOXML §17.4.84: `w:vMerge` with no `w:val` is a continuation cell.
-///
-/// # Algorithm
-///
-/// **Pass 1** — build a `v_merge_grid[row][grid_col]` by expanding each cell
-/// by its `w:gridSpan` so that multi-column cells fill multiple grid slots
-/// with the same vMerge state.
-///
-/// **Pass 2** — for each grid column, scan down; on every `Restart` cell,
-/// count consecutive `Continue` cells below and record the span length.
-/// Each counted `Continue` cell is added to `skip_set`.
-#[allow(clippy::type_complexity)] // Pre-existing pattern — structural refactor deferred
-fn compute_v_merge_spans(
-    rows: &[DocxTableRow],
-) -> (HashMap<(usize, usize), u32>, HashSet<(usize, usize)>) {
-    // Pass 1: expand cells into a flat grid indexed by grid column.
-    let mut v_merge_grid: Vec<Vec<Option<DocxVMerge>>> = Vec::with_capacity(rows.len());
-    let mut cell_idx_grid: Vec<Vec<usize>> = Vec::with_capacity(rows.len());
-
-    for row in rows {
-        let mut v_merge_row: Vec<Option<DocxVMerge>> = Vec::new();
-        let mut cell_idx_row: Vec<usize> = Vec::new();
-        for (cell_idx, cell) in row.cells.iter().enumerate() {
-            let v_merge = cell.tc_pr.as_ref().and_then(|p| p.v_merge);
-            let col_span = cell
-                .tc_pr
-                .as_ref()
-                .and_then(|p| p.grid_span)
-                .unwrap_or(1)
-                .max(1) as usize;
-            for _ in 0..col_span {
-                v_merge_row.push(v_merge);
-                cell_idx_row.push(cell_idx);
-            }
-        }
-        v_merge_grid.push(v_merge_row);
-        cell_idx_grid.push(cell_idx_row);
-    }
-
-    let num_rows = v_merge_grid.len();
-    let num_cols = v_merge_grid.iter().map(Vec::len).max().unwrap_or(0);
-
-    let mut span_map: HashMap<(usize, usize), u32> = HashMap::new();
-    // COMPAT(microsoft): w:vMerge with no w:val is a continuation cell per
-    // §17.4.84, not a restart. Producers that omit w:vMerge entirely for
-    // continuation cells render those as row_span=1.
-    let mut skip_set: HashSet<(usize, usize)> = HashSet::new();
-
-    // Pass 2: for each column, find restart cells and count their span.
-    for col in 0..num_cols {
-        for row in 0..num_rows {
-            if v_merge_grid[row].get(col).copied() == Some(Some(DocxVMerge::Restart)) {
-                let mut span = 1u32;
-                let mut r = row + 1;
-                while r < num_rows
-                    && v_merge_grid[r].get(col).copied() == Some(Some(DocxVMerge::Continue))
-                {
-                    if let Some(&cell_idx) = cell_idx_grid[r].get(col) {
-                        skip_set.insert((r, cell_idx));
-                    }
-                    span += 1;
-                    r += 1;
-                }
-                span_map.insert((row, col), span);
-            }
-        }
-    }
-
-    (span_map, skip_set)
-}
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

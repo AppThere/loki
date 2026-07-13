@@ -7,8 +7,8 @@
 //! `loki_doc_model::content::inline::Inline::Math`) into a lightweight element
 //! tree. A hand-rolled scanner is used instead of pulling an XML crate into the
 //! otherwise dependency-light `loki-layout`; the input is always well-formed,
-//! compact MathML produced by the importers. Only structure and token text are
-//! retained — attributes are skipped.
+//! compact MathML produced by the importers. Structure, token text, and
+//! attributes (`mfenced` fences, `mover` accents — 5.8) are retained.
 
 /// A parsed MathML element.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -19,6 +19,18 @@ pub(super) struct MNode {
     pub text: String,
     /// Child elements, in document order.
     pub children: Vec<MNode>,
+    /// Attributes as `(local name, unescaped value)` pairs.
+    pub attrs: Vec<(String, String)>,
+}
+
+impl MNode {
+    /// Returns the value of the attribute with the given local `name`, if any.
+    pub fn attr(&self, name: &str) -> Option<&str> {
+        self.attrs
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    }
 }
 
 /// Parses a MathML string, returning the first element (the `<math>` root), or
@@ -60,9 +72,10 @@ impl Parser<'_> {
     fn parse_element(&mut self) -> Option<MNode> {
         self.pos += 1; // consume '<'
         let name = self.read_name();
-        let self_closing = self.skip_attrs();
+        let (attrs, self_closing) = self.read_attrs();
         let mut node = MNode {
             tag: local(&name),
+            attrs,
             ..Default::default()
         };
         if self_closing {
@@ -101,34 +114,70 @@ impl Parser<'_> {
         String::from_utf8_lossy(&self.b[start..self.pos]).into_owned()
     }
 
-    /// Skips attributes up to the end of the start tag. Returns `true` for a
-    /// self-closing (`/>`) tag. Handles quoted attribute values.
-    fn skip_attrs(&mut self) -> bool {
-        let mut quote: Option<u8> = None;
+    /// Reads attributes up to the end of the start tag, returning them as
+    /// `(local name, unescaped value)` pairs plus `true` for a self-closing
+    /// (`/>`) tag. A malformed/valueless attribute is recorded with an empty
+    /// value and scanning continues.
+    fn read_attrs(&mut self) -> (Vec<(String, String)>, bool) {
+        let mut attrs = Vec::new();
         while self.pos < self.b.len() {
-            let c = self.b[self.pos];
-            match quote {
-                Some(q) => {
-                    if c == q {
-                        quote = None;
+            match self.b[self.pos] {
+                b' ' | b'\t' | b'\n' | b'\r' => self.pos += 1,
+                b'>' => {
+                    self.pos += 1;
+                    return (attrs, false);
+                }
+                b'/' if self.b.get(self.pos + 1) == Some(&b'>') => {
+                    self.pos += 2;
+                    return (attrs, true);
+                }
+                _ => {
+                    let name = self.read_attr_name();
+                    let value = if self.b.get(self.pos) == Some(&b'=') {
+                        self.pos += 1;
+                        self.read_attr_value()
+                    } else {
+                        String::new()
+                    };
+                    if !name.is_empty() {
+                        attrs.push((local(&name), unescape(&value)));
                     }
                 }
-                None => match c {
-                    b'"' | b'\'' => quote = Some(c),
-                    b'>' => {
-                        self.pos += 1;
-                        return false;
-                    }
-                    b'/' if self.b.get(self.pos + 1) == Some(&b'>') => {
-                        self.pos += 2;
-                        return true;
-                    }
-                    _ => {}
-                },
             }
-            self.pos += 1;
         }
-        false
+        (attrs, false)
+    }
+
+    /// Reads an attribute name (until `=`, whitespace, `/`, or `>`).
+    fn read_attr_name(&mut self) -> String {
+        let start = self.pos;
+        while self.pos < self.b.len() {
+            match self.b[self.pos] {
+                b'=' | b' ' | b'\t' | b'\n' | b'\r' | b'/' | b'>' => break,
+                _ => self.pos += 1,
+            }
+        }
+        String::from_utf8_lossy(&self.b[start..self.pos]).into_owned()
+    }
+
+    /// Reads a quoted attribute value (the `=` already consumed); an unquoted
+    /// value reads to the next whitespace or tag end.
+    fn read_attr_value(&mut self) -> String {
+        match self.b.get(self.pos) {
+            Some(&q @ (b'"' | b'\'')) => {
+                self.pos += 1;
+                let start = self.pos;
+                while self.pos < self.b.len() && self.b[self.pos] != q {
+                    self.pos += 1;
+                }
+                let v = String::from_utf8_lossy(&self.b[start..self.pos]).into_owned();
+                if self.pos < self.b.len() {
+                    self.pos += 1; // closing quote
+                }
+                v
+            }
+            _ => self.read_attr_name(),
+        }
     }
 
     /// Reads character data up to the next `<` (or end of input).

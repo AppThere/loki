@@ -16,7 +16,6 @@ anyrender_vello   = "0.6.2"
 tracing           = "0.1"
 wgpu              = "26"
 vello             = "0.6"
-tokio             = { version = "1", features = ["time", "sync"] }
 
 [dev-dependencies]
 pollster = "0.4"

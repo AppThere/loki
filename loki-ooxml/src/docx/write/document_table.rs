@@ -125,8 +125,11 @@ fn write_table_cell<W: std::io::Write>(
 ) {
     let _ = write_start(w, "w:tc", &[]);
 
-    // Cell properties.
+    // Cell properties. `w:cnfStyle` is the first CT_TcPr child.
     let _ = write_start(w, "w:tcPr", &[]);
+    if let Some(code) = cell.cnf_code() {
+        let _ = write_empty(w, "w:cnfStyle", &wval(code));
+    }
     if cell.col_span > 1 {
         let span_s = cell.col_span.to_string();
         let _ = write_empty(w, "w:gridSpan", &wval(&span_s));
@@ -135,6 +138,31 @@ fn write_table_cell<W: std::io::Write>(
         let _ = write_empty(w, "w:vMerge", &wval("restart"));
     }
     let props = &cell.props;
+    // Direct cell borders (`w:tcBorders`, 4a.3) — CT_TcPr order puts them
+    // before shading and margins. (The reader has parsed these all along;
+    // export silently dropped them until this pass.)
+    let has_borders = props.border_top.is_some()
+        || props.border_bottom.is_some()
+        || props.border_left.is_some()
+        || props.border_right.is_some();
+    if has_borders {
+        let _ = write_start(w, "w:tcBorders", &[]);
+        // CT_TcBorders sequence: top, left, bottom, right.
+        write_tc_border_edge(w, "w:top", props.border_top.as_ref());
+        write_tc_border_edge(w, "w:left", props.border_left.as_ref());
+        write_tc_border_edge(w, "w:bottom", props.border_bottom.as_ref());
+        write_tc_border_edge(w, "w:right", props.border_right.as_ref());
+        let _ = write_end(w, "w:tcBorders");
+    }
+    // Background color (shading) — before w:tcMar per CT_TcPr.
+    if let Some(color) = &props.background_color {
+        let hex = color_to_hex(color);
+        let _ = write_empty(
+            w,
+            "w:shd",
+            &[("w:val", "clear"), ("w:color", "auto"), ("w:fill", &hex)],
+        );
+    }
     // Padding (margins).
     let has_padding = props.padding_top.is_some()
         || props.padding_bottom.is_some()
@@ -160,7 +188,7 @@ fn write_table_cell<W: std::io::Write>(
         }
         let _ = write_end(w, "w:tcMar");
     }
-    // Vertical alignment.
+    // Vertical alignment — last of the emitted CT_TcPr children.
     if let Some(va) = props.vertical_align {
         use loki_doc_model::content::table::row::CellVerticalAlign;
         let v = match va {
@@ -169,15 +197,6 @@ fn write_table_cell<W: std::io::Write>(
             _ => "top",
         };
         let _ = write_empty(w, "w:vAlign", &wval(v));
-    }
-    // Background color (shading).
-    if let Some(color) = &props.background_color {
-        let hex = color_to_hex(color);
-        let _ = write_empty(
-            w,
-            "w:shd",
-            &[("w:val", "clear"), ("w:color", "auto"), ("w:fill", &hex)],
-        );
     }
     let _ = write_end(w, "w:tcPr");
 
@@ -190,4 +209,49 @@ fn write_table_cell<W: std::io::Write>(
     }
 
     let _ = write_end(w, "w:tc");
+}
+
+/// Writes one `w:tcBorders` edge from a model [`Border`]: style → `w:val`,
+/// width in points → `w:sz` (eighth-points), colour → hex (or `auto`).
+/// `BorderStyle::None` writes `w:val="nil"` (an explicit no-border, distinct
+/// from an absent edge, which inherits the table style).
+fn write_tc_border_edge<W: std::io::Write>(
+    w: &mut Writer<W>,
+    tag: &str,
+    border: Option<&loki_doc_model::style::props::border::Border>,
+) {
+    use loki_doc_model::style::props::border::BorderStyle;
+    let Some(b) = border else { return };
+    if b.style == BorderStyle::None {
+        let _ = write_empty(w, tag, &wval("nil"));
+        return;
+    }
+    let val = match b.style {
+        BorderStyle::Dashed => "dashed",
+        BorderStyle::Dotted => "dotted",
+        BorderStyle::Double => "double",
+        BorderStyle::Inset => "inset",
+        BorderStyle::Outset => "outset",
+        BorderStyle::Wave => "wave",
+        // Groove/Ridge have no OOXML equivalent (threeDEmboss/threeDEngrave
+        // are visually different); Solid and future variants map to single.
+        _ => "single",
+    };
+    // Eighth-points, clamped to OOXML's valid 2..=96 w:sz range.
+    #[allow(clippy::cast_possible_truncation)] // clamped to 2..=96 above the cast
+    let sz = ((b.width.value() * 8.0).round().clamp(2.0, 96.0) as i32).to_string();
+    let color = b
+        .color
+        .as_ref()
+        .map_or_else(|| "auto".to_string(), color_to_hex);
+    let _ = write_empty(
+        w,
+        tag,
+        &[
+            ("w:val", val),
+            ("w:sz", &sz),
+            ("w:space", "0"),
+            ("w:color", &color),
+        ],
+    );
 }

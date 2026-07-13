@@ -204,6 +204,7 @@ fn para(text: &str, block_index: usize, origin: (f32, f32)) -> PageParagraphData
             scale: None,
             kerning: None,
             baseline_shift: None,
+            language: None,
         }],
         &ResolvedParaProps::default(),
         400.0,

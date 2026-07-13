@@ -20,8 +20,10 @@ fn section_with(size: PageSize) -> Section {
 
 #[test]
 fn new_wraps_a_layout_with_no_display_name() {
-    let mut layout = PageLayout::default();
-    layout.orientation = PageOrientation::Landscape;
+    let layout = PageLayout {
+        orientation: PageOrientation::Landscape,
+        ..Default::default()
+    };
     let ps = PageStyle::new(StyleId::new("Landscape"), layout.clone());
     assert_eq!(ps.id, StyleId::new("Landscape"));
     assert_eq!(ps.display_name, None);

@@ -3,6 +3,9 @@
 
 //! Unit tests for the DOCX props mapper (`super`). Extracted from props.rs (Phase 7.1 inline-test extraction).
 
+// Tests assert exact-representable point values converted from integer twips.
+#![allow(clippy::float_cmp)]
+
 use super::*;
 use crate::docx::model::paragraph::{DocxInd, DocxNumPr, DocxRPr, DocxSpacing};
 use loki_doc_model::style::props::char_props::StrikethroughStyle;
@@ -158,7 +161,13 @@ fn num_id_3_ilvl_1() {
         ..Default::default()
     };
     let props = map_ppr(&ppr);
-    assert_eq!(props.list_id.as_ref().map(|l| l.as_str()), Some("3"));
+    assert_eq!(
+        props
+            .list_id
+            .as_ref()
+            .map(loki_doc_model::style::ListId::as_str),
+        Some("3")
+    );
     assert_eq!(props.list_level, Some(1));
 }
 

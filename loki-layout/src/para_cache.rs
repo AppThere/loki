@@ -83,6 +83,19 @@ impl ParaCache {
     }
 }
 
+/// `fmt::Write` sink that feeds formatted bytes straight into a [`Hasher`], so
+/// Debug-formatting the style structs for [`para_key`] costs no heap `String`.
+/// This runs once per paragraph per layout pass — including cache *hits* — so
+/// the allocation it avoids was paid on every keystroke for every paragraph.
+struct HashWriter<'a, H: Hasher>(&'a mut H);
+
+impl<H: Hasher> std::fmt::Write for HashWriter<'_, H> {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        self.0.write(s.as_bytes());
+        Ok(())
+    }
+}
+
 /// Computes the cache key for one [`crate::para::layout_paragraph`] call.
 ///
 /// CACHE KEY INVARIANT: this must incorporate *every* input that can change the
@@ -112,10 +125,8 @@ pub(crate) fn para_key(
     spell_generation.hash(&mut hasher);
 
     // Debug-format the style structs so the key tracks struct evolution without
-    // manual per-field maintenance.
-    let mut buf = String::new();
-    let _ = write!(buf, "{style_spans:?}|{para_props:?}");
-    buf.hash(&mut hasher);
+    // manual per-field maintenance, streaming the bytes into the hasher.
+    let _ = write!(HashWriter(&mut hasher), "{style_spans:?}|{para_props:?}");
 
     hasher.finish()
 }
@@ -162,6 +173,7 @@ mod tests {
             scale: None,
             kerning: None,
             baseline_shift: None,
+            language: None,
         }
     }
 
@@ -239,6 +251,13 @@ mod tests {
         bold.bold = true;
         lay(&mut r, base, &[bold], 400.0);
         assert_eq!(r.para_cache.len(), 4, "different style span must miss");
+
+        // Different run language (gap #30): squiggle routing depends on it, so
+        // it must participate in the key (covered by the Debug fold).
+        let mut tagged = span(base);
+        tagged.language = Some("fr-FR".into());
+        lay(&mut r, base, &[tagged], 400.0);
+        assert_eq!(r.para_cache.len(), 5, "different language must miss");
     }
 
     #[test]

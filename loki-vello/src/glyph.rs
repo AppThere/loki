@@ -58,15 +58,15 @@ pub fn paint_glyph_run(
             y: g.y * scale,
         });
 
+    // Cached in F2Dot14 bit form, so no per-run conversion allocation.
     let coords = font_cache.get_coords(&run.font_data, run.font_index);
-    let coords_i16: Vec<i16> = coords.iter().map(|c| c.to_bits()).collect();
 
     scene
         .draw_glyphs(&font)
         .font_size(run.font_size * scale)
         .transform(transform)
         .glyph_transform(None)
-        .normalized_coords(&coords_i16)
+        .normalized_coords(coords)
         .brush(&brush)
         .hint(false)
         .draw(peniko::Fill::NonZero, glyphs);

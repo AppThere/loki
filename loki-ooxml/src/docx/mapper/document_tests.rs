@@ -7,7 +7,8 @@ use super::*;
 use crate::docx::model::document::{DocxBody, DocxDocument};
 use crate::docx::model::paragraph::{DocxPPr, DocxParagraph, DocxPgMar, DocxPgSz, DocxSectPr};
 use crate::docx::model::styles::DocxStyles;
-use loki_doc_model::layout::page::PageSize;
+use loki_doc_model::layout::page::{PageOrientation, PageSize};
+use loki_doc_model::layout::section::SectionStart;
 
 fn empty_doc() -> DocxDocument {
     DocxDocument {
@@ -84,7 +85,7 @@ fn single_section_produced_for_no_section_breaks() {
 
 #[test]
 fn two_sections_when_mid_document_sect_pr() {
-    let sect_pr = sect_pr_a4();
+    let _sect_pr = sect_pr_a4();
     let para_with_break = DocxBodyChild::Paragraph(DocxParagraph {
         ppr: Some(DocxPPr {
             sect_pr: Some(sect_pr_a4()),
@@ -126,8 +127,10 @@ fn a4_defaults_when_no_sect_pr() {
 
 #[test]
 fn core_props_title_mapped() {
-    let mut cp = loki_opc::CoreProperties::default();
-    cp.title = Some("My Document".into());
+    let cp = loki_opc::CoreProperties {
+        title: Some("My Document".into()),
+        ..Default::default()
+    };
     let doc = DocxDocument {
         body: DocxBody {
             children: vec![],

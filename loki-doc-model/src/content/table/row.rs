@@ -103,6 +103,26 @@ pub struct Cell {
 }
 
 impl Cell {
+    /// The cell's encoded `w:cnfStyle` region mask (ECMA-376 §17.4.7), if
+    /// the importer recorded one — see `style::table_cnf::TableCnf`. Stored
+    /// as an opaque code in the cell attr (`"cnf"`), the `"tbllook"` idiom.
+    #[must_use]
+    pub fn cnf_code(&self) -> Option<&str> {
+        self.attr
+            .kv
+            .iter()
+            .find(|(k, _)| k == "cnf")
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// Sets (or, with `None`, clears) the encoded `w:cnfStyle` mask.
+    pub fn set_cnf_code(&mut self, code: Option<String>) {
+        self.attr.kv.retain(|(k, _)| k != "cnf");
+        if let Some(code) = code {
+            self.attr.kv.push(("cnf".to_string(), code));
+        }
+    }
+
     /// Creates a simple cell spanning one row and one column.
     #[must_use]
     pub fn simple(blocks: Vec<Block>) -> Self {

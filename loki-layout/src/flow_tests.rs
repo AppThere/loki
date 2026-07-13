@@ -338,6 +338,115 @@ fn short_multi_column_section_balances_across_columns() {
     );
 }
 
+/// 5.10 multi-page: only the *last* page of a multi-page two-column section is
+/// balanced. Earlier (full) pages keep their fill-first packing, the page
+/// count is preserved, and no paragraph is lost or duplicated.
+#[test]
+fn multi_page_two_column_section_balances_only_the_last_page() {
+    let mut r = test_resources();
+    let paras: Vec<_> = (0..14).map(|i| make_para(&format!("Line {i}"))).collect();
+    let n = paras.len();
+    let two_col = PageLayout {
+        columns: Some(SectionColumns {
+            count: 2,
+            gap: Points::new(18.0),
+            separator: false,
+            widths: Vec::new(),
+        }),
+        ..tiny_layout()
+    };
+    let (pages, _) = flow_paginated(&mut r, &section_of(paras, two_col));
+    assert!(
+        pages.len() >= 2,
+        "section must span multiple pages, got {}",
+        pages.len()
+    );
+    // Content preserved: every short paragraph is exactly one glyph run.
+    let runs: usize = pages.iter().map(|p| glyph_x_origins(p).len()).sum();
+    assert_eq!(runs, n, "no paragraph may be lost or duplicated");
+    // The short tail on the last page is spread across both columns …
+    let xs = glyph_x_origins(pages.last().expect("at least one page"));
+    assert!(
+        xs.iter().any(|&x| x < 50.0),
+        "last page must use column one: {xs:?}"
+    );
+    assert!(
+        xs.iter().any(|&x| x >= 99.0),
+        "last-page tail must be balanced into the second column: {xs:?}"
+    );
+    // … while the full first page already used both columns (fill-first).
+    let xs0 = glyph_x_origins(&pages[0]);
+    assert!(
+        xs0.iter().any(|&x| x >= 99.0),
+        "a full first page uses both columns: {xs0:?}"
+    );
+}
+
+/// The production paginated path (`layout_paginated_full`) flows every group
+/// through [`flow_section_group`]; a single-section group must route through
+/// the balanced flow (previously only direct `flow_section` callers balanced).
+#[test]
+fn single_section_group_routes_through_column_balancing() {
+    let mut r = test_resources();
+    let paras: Vec<_> = (0..4).map(|i| make_para(&format!("Line {i}"))).collect();
+    let two_col = PageLayout {
+        columns: Some(SectionColumns {
+            count: 2,
+            gap: Points::new(18.0),
+            separator: false,
+            widths: Vec::new(),
+        }),
+        ..tiny_layout()
+    };
+    let section = section_of(paras, two_col);
+    let out = flow_section_group(
+        &mut r,
+        &[&section],
+        &StyleCatalog::new(),
+        &LayoutMode::Paginated,
+        1.0,
+        &LayoutOptions::default(),
+        &[],
+    );
+    let FlowOutput::Pages { pages, .. } = out else {
+        unreachable!("paginated group returns Pages");
+    };
+    assert_eq!(pages.len(), 1, "the short section fits one page");
+    let xs = glyph_x_origins(&pages[0]);
+    assert!(
+        xs.iter().any(|&x| x >= 99.0),
+        "the group path must balance a single-section group: {xs:?}"
+    );
+}
+
+/// A last page that starts mid-paragraph has no clean-top checkpoint to resume
+/// from: the tail keeps its natural fill-first packing (documented limitation)
+/// without panicking or losing content.
+#[test]
+fn last_page_starting_mid_paragraph_keeps_fill_first() {
+    let mut r = test_resources();
+    let long = make_para(&"word ".repeat(220));
+    let two_col = PageLayout {
+        columns: Some(SectionColumns {
+            count: 2,
+            gap: Points::new(18.0),
+            separator: false,
+            widths: Vec::new(),
+        }),
+        ..tiny_layout()
+    };
+    let (pages, _) = flow_paginated(&mut r, &section_of(vec![long], two_col));
+    assert!(
+        pages.len() >= 2,
+        "the long paragraph must span pages, got {}",
+        pages.len()
+    );
+    assert!(
+        pages.iter().all(|p| !p.content_items.is_empty()),
+        "every page keeps its content"
+    );
+}
+
 #[test]
 fn single_column_keeps_content_in_one_band() {
     let mut r = test_resources();
@@ -1383,6 +1492,7 @@ fn table_style_banding_shades_the_header_row() {
         TableRegion::FirstRow,
         TableConditionalFormat {
             background_color: Some(DocumentColor::Rgb(RgbColor::new(0.0, 0.0, 1.0))),
+            char_props: Default::default(),
         },
     );
     catalog.table_styles.insert(StyleId::new("Banded"), style);
@@ -1438,6 +1548,7 @@ fn table_look_disabling_first_row_suppresses_style_shading() {
         TableRegion::FirstRow,
         TableConditionalFormat {
             background_color: Some(DocumentColor::Rgb(RgbColor::new(0.0, 0.0, 1.0))),
+            char_props: Default::default(),
         },
     );
     catalog.table_styles.insert(StyleId::new("Banded"), style);
@@ -1892,4 +2003,240 @@ mod page_fields {
         let (plain_items, _, _) = flow_pageless(&mut r, &plain);
         assert_eq!(strikes(&plain_items), 0, "no marker on a plain paragraph");
     }
+}
+
+// ── Paragraph between-borders (fidelity gap #26) ─────────────────────────────
+
+fn edge(width: f64) -> Border {
+    Border {
+        style: BorderStyle::Solid,
+        width: Points::new(width),
+        color: None,
+        spacing: None,
+    }
+}
+
+fn bordered_para(text: &str, outer: Option<Border>, between: Option<Border>) -> StyledParagraph {
+    StyledParagraph {
+        direct_para_props: Some(Box::new(ParaProps {
+            border_top: outer.clone(),
+            border_bottom: outer.clone(),
+            border_left: outer.clone(),
+            border_right: outer,
+            border_between: between,
+            ..Default::default()
+        })),
+        ..make_para(text)
+    }
+}
+
+fn border_rects(items: &[PositionedItem]) -> Vec<&crate::items::PositionedBorderRect> {
+    items
+        .iter()
+        .filter_map(|i| match i {
+            PositionedItem::BorderRect(b) => Some(b),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn same_border_group_draws_between_rule_once() {
+    let mut r = test_resources();
+    let outer = edge(1.0);
+    let between = edge(3.0);
+    let section = section_of(
+        vec![
+            bordered_para("first", Some(outer.clone()), Some(between.clone())),
+            bordered_para("second", Some(outer), Some(between)),
+        ],
+        PageLayout::default(),
+    );
+    let (items, _, _) = flow_pageless(&mut r, &section);
+    let rects = border_rects(&items);
+    assert_eq!(rects.len(), 2, "one border box per paragraph");
+    // First member: outer top, between rule as its bottom.
+    let first = rects[0];
+    assert!(
+        first.top.is_some_and(|e| (e.width - 1.0).abs() < 0.01),
+        "first member keeps the outer top edge"
+    );
+    assert!(
+        first.bottom.is_some_and(|e| (e.width - 3.0).abs() < 0.01),
+        "the boundary draws the 3pt between rule, got {:?}",
+        first.bottom
+    );
+    // Second member: no top (already drawn), outer bottom.
+    let second = rects[1];
+    assert!(second.top.is_none(), "group suppresses the second top edge");
+    assert!(
+        second.bottom.is_some_and(|e| (e.width - 1.0).abs() < 0.01),
+        "last member keeps the outer bottom edge"
+    );
+}
+
+#[test]
+fn different_borders_do_not_group() {
+    let mut r = test_resources();
+    let section = section_of(
+        vec![
+            bordered_para("first", Some(edge(1.0)), Some(edge(3.0))),
+            bordered_para("second", Some(edge(2.0)), Some(edge(3.0))),
+        ],
+        PageLayout::default(),
+    );
+    let (items, _, _) = flow_pageless(&mut r, &section);
+    let rects = border_rects(&items);
+    assert_eq!(rects.len(), 2);
+    for rect in rects {
+        assert!(rect.top.is_some(), "ungrouped paragraphs keep their tops");
+        assert!(
+            rect.bottom.is_some_and(|e| (e.width - 3.0).abs() > 0.01),
+            "no between rule is drawn between different groups"
+        );
+    }
+}
+
+#[test]
+fn between_only_group_draws_just_the_boundary_rule() {
+    let mut r = test_resources();
+    let between = edge(3.0);
+    let section = section_of(
+        vec![
+            bordered_para("first", None, Some(between.clone())),
+            bordered_para("second", None, Some(between)),
+        ],
+        PageLayout::default(),
+    );
+    let (items, _, _) = flow_pageless(&mut r, &section);
+    let rects = border_rects(&items);
+    assert_eq!(
+        rects.len(),
+        1,
+        "only the boundary rule paints (second member has no edges left)"
+    );
+    let first = rects[0];
+    assert!(first.top.is_none());
+    assert!(first.bottom.is_some_and(|e| (e.width - 3.0).abs() < 0.01));
+}
+
+// ── Mirrored margins (gap #27, `w:mirrorMargins`) ─────────────────────────────
+
+#[test]
+fn mirror_margins_swaps_even_page_margins_end_to_end() {
+    let mut r = test_resources();
+    // Enough text to spill onto a second page at a small page size.
+    let paras: Vec<StyledParagraph> = (0..40)
+        .map(|i| make_para(&format!("Paragraph number {i} with some words in it")))
+        .collect();
+    let layout_props = PageLayout {
+        page_size: PageSize {
+            width: Points::new(300.0),
+            height: Points::new(200.0),
+        },
+        margins: PageMargins {
+            top: Points::new(10.0),
+            bottom: Points::new(10.0),
+            left: Points::new(50.0),
+            right: Points::new(20.0),
+            header: Points::new(0.0),
+            footer: Points::new(0.0),
+            gutter: Points::new(0.0),
+        },
+        ..PageLayout::default()
+    };
+    let section = section_of(paras, layout_props);
+    let catalog = StyleCatalog::new();
+    let options = LayoutOptions {
+        mirror_margins: true,
+        ..LayoutOptions::default()
+    };
+    let out = flow_section(
+        &mut r,
+        &section,
+        &catalog,
+        &LayoutMode::Paginated,
+        1.0,
+        &options,
+        &[],
+    );
+    let FlowOutput::Pages { pages, .. } = out else {
+        panic!("paginated mode returns pages");
+    };
+    assert!(pages.len() >= 2, "need two pages, got {}", pages.len());
+    // Recto (odd) keeps left=50/right=20; verso (even) swaps to 20/50.
+    assert_eq!(pages[0].margins.left, 50.0);
+    assert_eq!(pages[0].margins.right, 20.0);
+    assert_eq!(pages[1].margins.left, 20.0);
+    assert_eq!(pages[1].margins.right, 50.0);
+    // Content width is identical on both pages (left + right constant).
+    assert_eq!(pages[0].margins.horizontal(), pages[1].margins.horizontal());
+}
+
+/// 4a.3: table-region character formatting reaches the cell glyphs — a style
+/// whose firstRow region carries `w:rPr` (here font-size 20 pt) renders the
+/// header row's runs at that size while body rows keep the 12 pt default,
+/// and the measure/flow passes agree (no clipped header).
+#[test]
+fn table_region_char_formatting_reaches_header_glyphs() {
+    use loki_doc_model::style::catalog::StyleId;
+    use loki_doc_model::style::props::char_props::CharProps;
+    use loki_doc_model::style::table_style::{TableConditionalFormat, TableRegion, TableStyle};
+    use loki_primitives::units::Points;
+
+    let mut catalog = StyleCatalog::new();
+    let mut style = TableStyle {
+        id: StyleId::new("HdrBig"),
+        display_name: None,
+        parent: None,
+        table_props: Default::default(),
+        conditional: Default::default(),
+        extensions: ExtensionBag::default(),
+    };
+    style.conditional.insert(
+        TableRegion::FirstRow,
+        TableConditionalFormat {
+            background_color: None,
+            char_props: CharProps {
+                font_size: Some(Points::new(20.0)),
+                bold: Some(true),
+                ..Default::default()
+            },
+        },
+    );
+    catalog.table_styles.insert(StyleId::new("HdrBig"), style);
+
+    let Block::Table(mut table) = make_table_2x2(None) else {
+        unreachable!()
+    };
+    table.set_style_name(Some("HdrBig".into()));
+    let section = Section {
+        page_style: None,
+        layout: PageLayout::default(),
+        start: Default::default(),
+        blocks: vec![Block::Table(table)],
+        extensions: ExtensionBag::default(),
+    };
+    let mut r = test_resources();
+    let (items, _, _) = flow_with_catalog(&mut r, &section, &catalog);
+
+    fn run_sizes(items: &[PositionedItem], out: &mut Vec<f32>) {
+        for i in items {
+            match i {
+                PositionedItem::GlyphRun(g) => out.push(g.font_size),
+                PositionedItem::ClippedGroup { items, .. } => run_sizes(items, out),
+                _ => {}
+            }
+        }
+    }
+    let mut sizes = Vec::new();
+    run_sizes(&items, &mut sizes);
+    assert!(
+        sizes.iter().any(|&s| (s - 20.0).abs() < 0.1),
+        "header runs render at the region's 20 pt: {sizes:?}"
+    );
+    assert!(
+        sizes.iter().any(|&s| (s - 12.0).abs() < 0.1),
+        "body runs keep the 12 pt default: {sizes:?}"
+    );
 }

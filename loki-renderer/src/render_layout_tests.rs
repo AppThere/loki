@@ -69,6 +69,7 @@ fn one_para_reflow(text: &str, origin: (f32, f32)) -> RenderLayout {
             scale: None,
             kerning: None,
             baseline_shift: None,
+            language: None,
         }],
         &ResolvedParaProps::default(),
         400.0,
@@ -153,17 +154,59 @@ fn wide_viewport_caps_the_measure_so_it_can_centre() {
     // The measure no longer grows with the window — the "cramped"/edge-to-edge
     // bug (R-6) cannot recur on a wide window.
     assert_eq!(
-        reflow_content_width_pt(1600.0),
-        reflow_content_width_pt(3000.0)
+        reflow_layout_content_width_pt(1600.0),
+        reflow_layout_content_width_pt(3000.0)
     );
 }
 
 #[test]
 fn content_width_is_tile_minus_insets_and_floored() {
-    // Content = tile(px)·PX_TO_PT − 2·padding, in points.
+    // Content = tile(px)·PX_TO_PT − 2·padding, in points (wide ⇒ scale 1.0).
     let expect = MAX_REFLOW_TILE_PX * PX_TO_PT - 2.0 * REFLOW_PADDING_PT;
-    assert!((reflow_content_width_pt(2000.0) - expect).abs() < 1e-3);
+    assert!((reflow_layout_content_width_pt(2000.0) - expect).abs() < 1e-3);
     // A degenerate (tiny) viewport floors at the engine minimum, never negative.
-    assert_eq!(reflow_content_width_pt(1.0), MIN_REFLOW_CONTENT_PT);
-    assert_eq!(reflow_content_width_pt(0.0), MIN_REFLOW_CONTENT_PT);
+    assert_eq!(reflow_layout_content_width_pt(1.0), MIN_REFLOW_CONTENT_PT);
+    assert_eq!(reflow_layout_content_width_pt(0.0), MIN_REFLOW_CONTENT_PT);
+}
+
+// ── Spec 03 M4: responsive type scale ────────────────────────────────────────
+
+#[test]
+fn compact_widths_scale_type_and_wider_widths_do_not() {
+    assert_eq!(reflow_type_scale(375.0), REFLOW_COMPACT_TYPE_SCALE);
+    assert_eq!(reflow_type_scale(599.9), REFLOW_COMPACT_TYPE_SCALE);
+    assert_eq!(reflow_type_scale(600.0), 1.0, "Medium starts at 600 px");
+    assert_eq!(reflow_type_scale(1200.0), 1.0);
+    // An unmeasured viewport must not flash scaled type on the first frame.
+    assert_eq!(reflow_type_scale(0.0), 1.0);
+    assert_eq!(reflow_type_scale(1.0), 1.0);
+}
+
+#[test]
+fn type_scale_keeps_the_on_screen_tile_width_unchanged() {
+    // The layout width is divided by the scale and the tile is painted at
+    // `zoom = scale`, so their product — the on-screen CSS width — must equal
+    // the unscaled tile width on both sides of the breakpoint.
+    const PTS_TO_CSS_PX: f32 = 96.0 / 72.0;
+    for width_px in [375.0_f32, 599.0, 600.0, 820.0, 1400.0] {
+        let painted =
+            reflow_layout_tile_width_pt(width_px) * PTS_TO_CSS_PX * reflow_type_scale(width_px);
+        assert!(
+            (painted - reflow_tile_width_px(width_px)).abs() < 1e-3,
+            "{width_px}: painted {painted} != tile {}",
+            reflow_tile_width_px(width_px)
+        );
+    }
+}
+
+#[test]
+fn compact_layout_measure_narrows_by_the_scale() {
+    // Larger type on the same tile ⇒ fewer points of measure — that is the
+    // point (Compact is not a shrunk Expanded).
+    let compact = reflow_layout_content_width_pt(599.0);
+    let unscaled = 599.0 * PX_TO_PT - 2.0 * REFLOW_PADDING_PT;
+    assert!(
+        compact < unscaled,
+        "compact measure {compact} must be narrower than the unscaled {unscaled}"
+    );
 }

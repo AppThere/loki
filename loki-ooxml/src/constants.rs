@@ -74,16 +74,3 @@ pub const REL_HEADER: &str =
 /// OPC relationship type for the footer part (ECMA-376 §17.10).
 pub const REL_FOOTER: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer";
-
-/// Twips per point: 20 twips = 1 point (ECMA-376 §17.18.100).
-pub const TWIPS_PER_PT: f64 = 20.0;
-
-/// EMUs per point: 12700 EMUs = 1 point (ECMA-376 §22.9.2.1).
-pub const EMUS_PER_PT: f64 = 12700.0;
-
-/// Half-points per point: 2 half-points = 1 point (ECMA-376 §17.18.98).
-pub const HALF_POINTS_PER_PT: f64 = 2.0;
-
-/// Single-spacing multiplier for `w:line` in `auto` lineRule: 240 = 1×.
-/// ECMA-376 §17.3.1.33.
-pub const LINE_RULE_SINGLE: f64 = 240.0;

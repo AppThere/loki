@@ -23,16 +23,27 @@ dhat = "0.3"
 # Typed errors for baseline-file parsing (workspace convention: thiserror, no anyhow).
 thiserror = { workspace = true }
 
+loki-primitives = { path = "../loki-primitives" }
+
 [dev-dependencies]
 # Statistical timed-bench harness — variance-robust, suits the noisy local
 # environment (Spec 06 §10).
 criterion = "0.8"
 # The workloads the portable benches drive (Spec 06 §6). Dev-deps so they build
 # only for the bench targets, never for the harness library itself.
+appthere-canvas = { path = "../appthere-canvas", features = ["font-cache"] }
 loki-doc-model = { path = "../loki-doc-model" }
 loki-layout = { path = "../loki-layout" }
 loki-ooxml = { path = "../loki-ooxml" }
 loki-odf = { path = "../loki-odf" }
+
+[[bench]]
+name = "font_cache_dedup"
+harness = false
+
+[[bench]]
+name = "session_layout_residual"
+harness = false
 
 [[bench]]
 name = "portable_smoke"
@@ -88,6 +99,10 @@ harness = false
 
 [[bench]]
 name = "leak_loro_history"
+harness = false
+
+[[bench]]
+name = "portable_span_density"
 harness = false
 
 [package.metadata.docs.rs]

@@ -9,6 +9,7 @@ use zip::CompressionMethod;
 use zip::write::{FileOptions, ZipWriter};
 
 use super::*;
+use crate::constants::{ENTRY_MIMETYPE, MIME_ODT};
 use crate::version::OdfVersion;
 
 /// Build a minimal in-memory ODF ZIP with the given entries.
@@ -163,32 +164,6 @@ fn detect_version_unknown_falls_back_to_v1_3() {
     let (v, absent) = OdfPackage::detect_version(&content).unwrap();
     assert_eq!(v, OdfVersion::V1_3);
     assert!(!absent);
-}
-
-// ── infer_media_type covers standard extensions ───────────────────────
-
-#[test]
-fn infer_media_type_png() {
-    assert_eq!(infer_media_type("Pictures/img.png"), "image/png");
-}
-
-#[test]
-fn infer_media_type_jpeg() {
-    assert_eq!(infer_media_type("Pictures/photo.jpg"), "image/jpeg");
-    assert_eq!(infer_media_type("Pictures/photo.jpeg"), "image/jpeg");
-}
-
-#[test]
-fn infer_media_type_svg() {
-    assert_eq!(infer_media_type("Pictures/logo.svg"), "image/svg+xml");
-}
-
-#[test]
-fn infer_media_type_unknown() {
-    assert_eq!(
-        infer_media_type("Pictures/file.tiff"),
-        "application/octet-stream"
-    );
 }
 
 fn encode_utf16(s: &str, be: bool) -> Vec<u8> {

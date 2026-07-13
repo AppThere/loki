@@ -56,8 +56,7 @@ use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
 use loki_app_shell::spell::SpellService;
 
-// EditorMode removed — the editor is always in edit mode when a document is
-// open. Distraction-free reading is the View ribbon tab's job (future pass).
+// EditorMode removed — always edit mode; distraction-free reading is the View tab (future pass).
 
 /// Document editor inner component — all editing logic lives here.
 ///
@@ -117,8 +116,7 @@ pub(super) fn EditorInner(path: String) -> Element {
 
     // ── Tab/recents context for Save As and the unsaved-changes indicator ────
     let tabs = use_context::<Signal<Vec<OpenTab>>>();
-    // Spell-check service (provided at the app root). Drives the right-click
-    // suggestions panel and the language picker.
+    // Spell-check service (app-root context): right-click suggestions panel + language picker.
     let spell_service = use_context::<SpellService>();
     let spell_menu = use_signal(|| Option::<SpellMenu>::None);
     let is_language_panel_open = use_signal(|| false);
@@ -130,6 +128,8 @@ pub(super) fn EditorInner(path: String) -> Element {
     // Character style in the style panel (Spec 05 M6): id → inspector, draft → form.
     let editing_char_style = use_signal(|| Option::<String>::None);
     let editing_char_draft = use_signal(|| Option::<StyleDraft>::None);
+    let editing_table_style = use_signal(|| Option::<String>::None);
+    let editing_table_draft = use_signal(super::editor_style_editor::table_draft_none);
     // List / page styles browsed in the style panel (Spec 05 M6): read-only.
     let editing_list_style = use_signal(|| Option::<String>::None);
     let editing_page_style = use_signal(|| Option::<String>::None);
@@ -137,8 +137,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     let style_panel_inspect = use_signal(|| false);
     // Stashed sessions for inactive tabs — unsaved edits survive tab switches.
     let doc_sessions = use_context::<Signal<DocSessions>>();
-    // Document generation considered "clean" (matches the on-disk file): captured
-    // at load and after each save; the tab is dirty when the live generation differs.
+    // "Clean" generation (matches disk), captured at load/save; tab is dirty when live gen differs.
     let mut baseline_gen = use_signal(|| 0_u64);
 
     // ── Session restore at mount ─────────────────────────────────────────────
@@ -170,7 +169,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                     baseline_gen,
                     saved_state,
                 };
-                restore_session(session, &doc_state_restore, &mut sig);
+                restore_session(session, &doc_state_restore, &mut sig, path_signal);
             }
         });
     }
@@ -239,8 +238,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         },
     );
 
-    // Compute the current paragraph style name directly from signals so it is
-    // always up-to-date in the same render cycle as cursor movement.
+    // Current paragraph style name, from signals — updates in the same render cycle as the cursor.
     let current_style_name = {
         let cs = cursor_state.read();
         let ldoc = loro_doc.read();
@@ -641,6 +639,8 @@ pub(super) fn EditorInner(path: String) -> Element {
                     editing_style_draft,
                     editing_char_style,
                     editing_char_draft,
+                    editing_table_style,
+                    editing_table_draft,
                     editing_list_style,
                     editing_page_style,
                     style_panel_inspect,

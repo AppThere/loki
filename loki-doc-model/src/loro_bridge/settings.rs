@@ -109,6 +109,7 @@ mod tests {
             Some(&DocumentSettings {
                 default_tab_stop_pt: 18.0,
                 track_changes: false,
+                mirror_margins: true,
             }),
             &map,
         )
@@ -118,5 +119,6 @@ mod tests {
         let back = read_settings(&doc.get_map(KEY_SETTINGS)).expect("settings present");
         assert!(back.track_changes);
         assert_eq!(back.default_tab_stop_pt, 18.0, "tab stop preserved");
+        assert!(back.mirror_margins, "mirror margins preserved");
     }
 }

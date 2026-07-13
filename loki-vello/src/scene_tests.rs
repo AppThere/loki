@@ -10,6 +10,7 @@ use loki_layout::{
     PositionedRect,
 };
 
+use super::items::translate_item;
 use super::*;
 use crate::font_cache::FontDataCache;
 

@@ -67,14 +67,12 @@ fn collect_bookmark_ids(xml: &str) -> Vec<(String, u32)> {
                         "bookmarkEnd"
                     };
                     for attr in e.attributes().flatten() {
-                        if local_name(attr.key.as_ref()) == b"id" {
-                            if let Ok(val) =
+                        if local_name(attr.key.as_ref()) == b"id"
+                            && let Ok(val) =
                                 attr.normalized_value(quick_xml::XmlVersion::Implicit1_0)
-                            {
-                                if let Ok(id) = val.parse::<u32>() {
-                                    pairs.push((elem_name.to_string(), id));
-                                }
-                            }
+                            && let Ok(id) = val.parse::<u32>()
+                        {
+                            pairs.push((elem_name.to_string(), id));
                         }
                     }
                 }

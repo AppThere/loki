@@ -7,6 +7,10 @@
 //! intermediate model type.  All readers set `trim_text(false)` so that
 //! significant whitespace inside `text:span` and similar elements is
 //! preserved verbatim.
+//!
+//! XXE posture (audit-2026-06 S-5): every reader parses with
+//! `quick_xml::Reader`, which does not resolve external entities or fetch
+//! DTDs. Do not enable DTD/entity expansion without a security review.
 
 pub(crate) mod annotations;
 pub(crate) mod columns;

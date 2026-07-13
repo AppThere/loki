@@ -3,9 +3,16 @@
 //! In-memory editing sessions for inactive document tabs.
 //!
 //! When the user switches away from a document tab, `EditorInner` stashes the
-//! live CRDT and layout state here instead of discarding it; switching back
+//! live CRDT and model state here instead of discarding it; switching back
 //! restores the session so unsaved edits survive tab switches.  Closing a tab
 //! drops its session (see `routes/shell.rs`).
+//!
+//! The **layout is deliberately not stashed** (memory-audit F3 / plan 6.1):
+//! a preserved `PaginatedLayout` pins Parley layouts + byte maps for every
+//! paragraph (~MBs per inactive tab). Restore recomputes it from the stashed
+//! [`Document`] on the open path's worker thread instead — O(1) inactive-tab
+//! memory, matching the model-only pattern of the spreadsheet/presentation
+//! session maps.
 //!
 //! The map is provided as `Signal<DocSessions>` in Dioxus context at the
 //! [`crate::app::App`] root.  Sessions exist only for *inactive* tabs — the
@@ -15,7 +22,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use loki_doc_model::document::Document;
-use loki_layout::PaginatedLayout;
 
 use crate::editing::cursor::CursorState;
 
@@ -29,18 +35,10 @@ pub struct DocSession {
     pub loro_doc: loro::LoroDoc,
     /// Undo history paired with `loro_doc`.
     pub undo_manager: Option<loro::UndoManager>,
-    /// Post-mutation document snapshot (shared with the renderer).
+    /// Post-mutation document snapshot — the relayout-on-restore input.
     pub document: Option<Arc<Document>>,
     /// Mutation counter from `DocumentState`.
     pub generation: u64,
-    /// Page count from the stashed layout.
-    pub page_count: usize,
-    /// Paginated layout for hit-testing, restored as-is.
-    pub paginated_layout: Option<Arc<PaginatedLayout>>,
-    /// Page dimensions in CSS px.
-    pub page_width_px: f32,
-    /// Page dimensions in CSS px.
-    pub page_height_px: f32,
     /// Cursor/selection state, including the mirrored document generation.
     pub cursor: CursorState,
     /// Document generation considered clean (matches the on-disk file).

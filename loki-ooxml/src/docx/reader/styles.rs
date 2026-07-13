@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! Reader for `word/styles.xml` → [`DocxStyles`].
-//!
-//! ECMA-376 §17.7 (document styles).
+//! Reader for `word/styles.xml` → [`DocxStyles`]. ECMA-376 §17.7.
 
 use quick_xml::Reader;
 use quick_xml::events::Event;
@@ -17,9 +15,7 @@ use crate::error::{OoxmlError, OoxmlResult};
 use super::document::parse_ppr_element;
 use super::document::parse_rpr_element;
 
-/// Parses `word/styles.xml` bytes into a [`DocxStyles`] model.
-///
-/// ECMA-376 §17.7.4.18.
+/// Parses `word/styles.xml` bytes into a [`DocxStyles`] model (§17.7.4.18).
 // Function body is a single large match over XML events; splitting would reduce readability.
 #[allow(clippy::too_many_lines)]
 pub fn parse_styles(xml: &[u8]) -> OoxmlResult<DocxStyles> {
@@ -112,7 +108,17 @@ pub fn parse_styles(xml: &[u8]) -> OoxmlResult<DocxStyles> {
                         if let Ok(rpr) = parse_rpr_element(&mut reader)
                             && let Some(ref mut s) = current_style
                         {
-                            s.rpr = Some(rpr);
+                            // Inside w:tblStylePr the rPr belongs to the
+                            // REGION (4a.3; it used to clobber style rpr).
+                            if current_region.is_some() {
+                                if let Some(t) = s.table.as_mut()
+                                    && let Some(last) = t.conditional.last_mut()
+                                {
+                                    last.rpr = Some(rpr);
+                                }
+                            } else {
+                                s.rpr = Some(rpr);
+                            }
                         }
                     }
                     b"tblStyleRowBandSize" if in_style => {
@@ -132,6 +138,7 @@ pub fn parse_styles(xml: &[u8]) -> OoxmlResult<DocxStyles> {
                             t.conditional.push(DocxTblStylePr {
                                 region,
                                 shd_fill: None,
+                                rpr: None,
                             });
                         }
                     }

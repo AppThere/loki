@@ -32,8 +32,6 @@ loki-pdf        = { path = "../loki-pdf" }
 loki-epub       = { path = "../loki-epub" }
 # Layout engine — converts Document to DocumentLayout for scene painting.
 loki-layout     = { path = "../loki-layout" }
-# In-workspace Vello GPU rendering backend.
-loki-vello      = { path = "../loki-vello" }
 # Shared AppThere design tokens and UI components.
 appthere-ui     = { path = "../appthere-ui" }
 loki-app-shell  = { path = "../loki-app-shell" }
@@ -43,18 +41,8 @@ loki-file-access.workspace = true
 webbrowser       = "1"
 # Typed error derivation.
 thiserror       = "2"
-# Vello/wgpu integration point for custom GPU paint sources (CustomPaintSource).
-anyrender_vello  = "0.6.2"
-# wgpu device + queue handle passed to CustomPaintSource::resume().
-wgpu_context     = "0.1.2"
-# Async event tracing — used for warn!/error! in document_source.
+# Async event tracing — used for warn!/error!.
 tracing          = "0.1"
-# Vello scene builder — used in WgpuSurface to paint the blank A4 rect.
-vello           = "0.6"
-# Peniko brush / fill types (re-used directly so the API surface is explicit).
-peniko          = "0.5"
-# Kurbo geometry primitives (Rect, Stroke, Affine) for scene construction.
-kurbo           = "0.12"
 # Force fontconfig-dlopen on fontique so it uses the same dlopen path as
 # fontique v0.6 (pulled in by blitz-dom), which activates
 # yeslogic-fontconfig-sys/dlopen for the whole workspace.  Without this,
@@ -66,11 +54,6 @@ loro = "1.11.1"
 futures-channel = "0.3"
 # Unicode grapheme cluster segmentation for correct backspace/delete behaviour.
 unicode-segmentation = "1"
-# Platform-specific data/config directory paths for recent-documents persistence.
-dirs = "6"
-# JSON serialisation for recent-documents file.
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 # Image decoding for Insert → Image (intrinsic pixel dimensions).
 image = "0.25"
 # Base64 encoding for embedding inserted images as data URIs.

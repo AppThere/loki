@@ -34,6 +34,10 @@ pub(super) fn left_column(
     char_selected: Option<String>,
     editing_char_style: Signal<Option<String>>,
     editing_char_draft: Signal<Option<StyleDraft>>,
+    table_list: Vec<(String, String)>,
+    table_selected: Option<String>,
+    editing_table_style: Signal<Option<String>>,
+    editing_table_draft: Signal<Option<super::draft_table::TableStyleDraft>>,
     list_list: Vec<(String, String)>,
     list_selected: Option<String>,
     editing_list_style: Signal<Option<String>>,
@@ -127,6 +131,9 @@ pub(super) fn left_column(
 
             // ── Character styles (§9 character family) ─────────────────────────
             { char_browser::char_list_section(ds_char, char_list, char_selected, editing_char_style, editing_char_draft, posture) }
+
+            // ── Table styles (§9 table family, 4a.3) ───────────────────────────
+            { super::table_browser::table_list_section(Arc::clone(&doc_state), table_list, table_selected, editing_table_style, editing_table_draft, posture) }
 
             // ── List styles (§9 list family, non-inheriting) ───────────────────
             { list_browser::list_list_section(list_list, list_selected, editing_list_style, posture) }

@@ -53,7 +53,7 @@ fn import_reference_docx_smoke() {
         if let Block::StyledPara(p) = b {
             p.direct_para_props
                 .as_ref()
-                .map_or(false, |pp| pp.list_id.is_some())
+                .is_some_and(|pp| pp.list_id.is_some())
         } else {
             false
         }
@@ -81,7 +81,7 @@ fn import_reference_docx_smoke() {
         if let Block::StyledPara(p) = b {
             p.direct_para_props
                 .as_ref()
-                .map_or(false, |pp| pp.border_top.is_some())
+                .is_some_and(|pp| pp.border_top.is_some())
         } else {
             false
         }
@@ -94,9 +94,9 @@ fn import_reference_docx_smoke() {
     // ── 6. Tab stops present (gap #7) ───────────────────────────────────────
     let has_tab_stops = all_blocks.iter().any(|b| {
         if let Block::StyledPara(p) = b {
-            p.direct_para_props.as_ref().map_or(false, |pp| {
-                pp.tab_stops.as_ref().map_or(false, |ts| ts.len() >= 2)
-            })
+            p.direct_para_props
+                .as_ref()
+                .is_some_and(|pp| pp.tab_stops.as_ref().is_some_and(|ts| ts.len() >= 2))
         } else {
             false
         }
@@ -165,7 +165,7 @@ fn inline_is_bold_styled_run(inline: &Inline) -> bool {
     if let Inline::StyledRun(run) = inline {
         run.direct_props
             .as_ref()
-            .map_or(false, |cp| cp.bold == Some(true))
+            .is_some_and(|cp| cp.bold == Some(true))
     } else {
         false
     }
@@ -781,4 +781,33 @@ fn test_hyperlink_missing_relationship() {
         .expect("hyperlink inline must be present");
 
     assert_eq!(link.url, "#rId99");
+}
+
+/// `w:mirrorMargins` survives import → export → re-import (gap #27): the
+/// mapper folds it into `DocumentSettings`, and the writer re-emits the
+/// settings part whenever the flag is set.
+#[test]
+fn mirror_margins_round_trips() {
+    use loki_doc_model::io::DocumentExport;
+    use loki_doc_model::settings::DocumentSettings;
+    use loki_ooxml::DocxExport;
+
+    let mut doc = loki_doc_model::Document::new_blank();
+    doc.settings = Some(DocumentSettings {
+        mirror_margins: true,
+        ..DocumentSettings::default()
+    });
+
+    let mut out = Cursor::new(Vec::new());
+    DocxExport::export(&doc, &mut out, ()).expect("export succeeds");
+    let back = DocxImporter::new(DocxImportOptions::default())
+        .run(Cursor::new(out.into_inner()))
+        .expect("exported DOCX re-imports");
+
+    let settings = back
+        .document
+        .settings
+        .as_ref()
+        .expect("settings part round-trips");
+    assert!(settings.mirror_margins, "w:mirrorMargins must survive");
 }

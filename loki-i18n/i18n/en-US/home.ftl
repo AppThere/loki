@@ -65,3 +65,7 @@ home-delete-confirm-title = Delete file
 home-delete-confirm-message = Permanently delete "{ $title }"? This cannot be undone.
 home-delete-confirm-confirm = Delete
 home-delete-confirm-cancel = Cancel
+
+# Template browser dialog (Browse templates… card)
+home-browse-dialog-title = All templates
+home-browse-dialog-cancel = Close

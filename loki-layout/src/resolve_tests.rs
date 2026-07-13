@@ -645,7 +645,7 @@ fn char_style_self_referential_parent_terminates() {
             extensions: ExtensionBag::default(),
         },
     );
-    let props = resolve_char_style_chain(&catalog, &StyleId::new("Loop"));
+    let props = char_span::resolve_char_style_chain(&catalog, &StyleId::new("Loop"));
     assert_eq!(props.bold, Some(true));
     assert!(props.italic.is_none());
 }

@@ -61,3 +61,25 @@ pub(crate) fn blank_page(page_number: usize, pl: &PageLayout) -> LayoutPage {
 #[cfg(test)]
 #[path = "paginate_blanks_tests.rs"]
 mod tests;
+
+/// The margins for the page being finished: under `mirror_margins` (Word
+/// `w:mirrorMargins`, gap #27) even (verso) pages swap left/right so the
+/// inside margin faces the binding on both pages of a spread. Content width
+/// is unchanged — only the content area's horizontal position moves.
+/// Parity is section-local page numbering, which matches the document-wide
+/// parity whenever sections start on odd pages (the common case).
+pub(crate) fn mirrored_margins(
+    margins: crate::geometry::LayoutInsets,
+    page_number: usize,
+    mirror: bool,
+) -> crate::geometry::LayoutInsets {
+    if mirror && page_number.is_multiple_of(2) {
+        crate::geometry::LayoutInsets {
+            left: margins.right,
+            right: margins.left,
+            ..margins
+        }
+    } else {
+        margins
+    }
+}

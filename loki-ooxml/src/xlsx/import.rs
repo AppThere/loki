@@ -7,13 +7,18 @@ use crate::constants::REL_OFFICE_DOCUMENT;
 use crate::error::{OoxmlError, OoxmlWarning};
 use crate::xml_util::{event_text, local_attr_val, local_name};
 use loki_opc::{Package, PartName};
-use loki_sheet_model::{
-    Cell, CellAlign, CellStyle, DocumentMeta, NumberFormat, Workbook, Worksheet,
-};
+use loki_sheet_model::{DocumentMeta, Workbook, Worksheet};
 use quick_xml::Reader;
 use quick_xml::events::Event;
-use std::collections::HashMap;
 use std::io::{Read, Seek};
+
+#[path = "import_styles.rs"]
+mod styles;
+#[path = "import_worksheet.rs"]
+mod worksheet;
+
+use styles::parse_styles;
+use worksheet::parse_worksheet;
 
 /// Options controlling XLSX import behaviour.
 #[derive(Debug, Clone, Default)]
@@ -205,304 +210,6 @@ fn parse_shared_strings(data: &[u8]) -> Result<Vec<String>, OoxmlError> {
     Ok(strings)
 }
 
-fn parse_styles(data: &[u8]) -> Result<Vec<CellStyle>, OoxmlError> {
-    let mut reader = Reader::from_reader(data);
-    reader.config_mut().trim_text(false);
-    let mut buf = Vec::new();
-
-    let mut custom_num_formats = HashMap::new();
-    let mut fonts = Vec::new();
-    let mut cell_xfs = Vec::new();
-
-    let mut in_cell_xfs = false;
-    let mut in_font = false;
-    let mut current_font = CellStyle::default();
-
-    macro_rules! handle_start {
-        ($e:expr) => {{
-            let e = $e;
-            match local_name(e) {
-                b"numFmt" => {
-                    if let (Some(id_str), Some(code)) = (local_attr_val(e, b"numFmtId"), local_attr_val(e, b"formatCode")) {
-                        if let Ok(id) = id_str.parse::<u32>() {
-                            let code_lower = code.to_lowercase();
-                            let fmt = if code_lower.contains('%') {
-                                NumberFormat::Percent
-                            } else if code_lower.contains('$') || code_lower.contains('£') || code_lower.contains('€') || code_lower.contains('¥') {
-                                NumberFormat::Currency
-                            } else {
-                                NumberFormat::General
-                            };
-                            custom_num_formats.insert(id, fmt);
-                        }
-                    }
-                }
-                b"font" => {
-                    current_font = CellStyle::default();
-                    in_font = true;
-                }
-                b"b" => {
-                    if in_font {
-                        current_font.bold = true;
-                    }
-                }
-                b"i" => {
-                    if in_font {
-                        current_font.italic = true;
-                    }
-                }
-                b"u" => {
-                    if in_font {
-                        current_font.underline = true;
-                    }
-                }
-                b"cellXfs" => {
-                    in_cell_xfs = true;
-                }
-                b"xf" => {
-                    if in_cell_xfs {
-                        let font_id = local_attr_val(e, b"fontId")
-                            .and_then(|s| s.parse::<usize>().ok())
-                            .unwrap_or(0);
-                        let num_fmt_id = local_attr_val(e, b"numFmtId")
-                            .and_then(|s| s.parse::<u32>().ok())
-                            .unwrap_or(0);
-
-                        let mut style = CellStyle::default();
-                        style.bold = fonts.get(font_id).map(|f: &CellStyle| f.bold).unwrap_or(false);
-                        style.italic = fonts.get(font_id).map(|f: &CellStyle| f.italic).unwrap_or(false);
-                        style.underline = fonts.get(font_id).map(|f: &CellStyle| f.underline).unwrap_or(false);
-
-                        let num_fmt = match num_fmt_id {
-                            9 | 10 => NumberFormat::Percent,
-                            5 | 6 | 7 | 8 | 44 => NumberFormat::Currency,
-                            id => custom_num_formats.get(&id).cloned().unwrap_or(NumberFormat::General),
-                        };
-                        style.num_format = num_fmt;
-
-                        cell_xfs.push(style);
-                    }
-                }
-                b"alignment" if in_cell_xfs => {
-                    if let Some(last_xf) = cell_xfs.last_mut()
-                        && let Some(horiz) = local_attr_val(e, b"horizontal")
-                    {
-                        last_xf.align = match horiz.as_str() {
-                            "center" => CellAlign::Center,
-                            "right" => CellAlign::Right,
-                            _ => CellAlign::Left,
-                        };
-                    }
-                }
-                _ => {}
-            }
-        }};
-    }
-
-    macro_rules! handle_end {
-        ($name:expr) => {{
-            match $name {
-                b"font" => {
-                    fonts.push(std::mem::take(&mut current_font));
-                    in_font = false;
-                }
-                b"cellXfs" => {
-                    in_cell_xfs = false;
-                }
-                _ => {}
-            }
-        }};
-    }
-
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => handle_start!(e),
-            Ok(Event::End(ref e)) => {
-                let name_bytes = e.local_name().into_inner();
-                let name = if let Some(pos) = name_bytes.iter().position(|&b| b == b':') {
-                    &name_bytes[pos + 1..]
-                } else {
-                    name_bytes
-                };
-                handle_end!(name);
-            }
-            Ok(Event::Empty(ref e)) => {
-                handle_start!(e);
-                let name_bytes = e.local_name().into_inner();
-                let name = if let Some(pos) = name_bytes.iter().position(|&b| b == b':') {
-                    &name_bytes[pos + 1..]
-                } else {
-                    name_bytes
-                };
-                handle_end!(name);
-            }
-            Ok(Event::Eof) => break,
-            Err(source) => {
-                return Err(OoxmlError::Xml {
-                    part: "xl/styles.xml".to_owned(),
-                    source,
-                });
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-
-    Ok(cell_xfs)
-}
-
-fn parse_worksheet(
-    data: &[u8],
-    shared_strings: &[String],
-    styles: &[CellStyle],
-) -> Result<Worksheet, OoxmlError> {
-    let mut worksheet = Worksheet::new("Sheet");
-    let mut reader = Reader::from_reader(data);
-    reader.config_mut().trim_text(false);
-    let mut buf = Vec::new();
-
-    let mut current_ref = None;
-    let mut current_type = None;
-    let mut current_style_idx = None;
-    let mut current_formula = None;
-    let mut current_value = String::new();
-
-    let mut in_f = false;
-    let mut in_v = false;
-    let mut in_is_t = false;
-
-    macro_rules! handle_start {
-        ($e:expr) => {{
-            let e = $e;
-            match local_name(e) {
-                b"c" => {
-                    current_ref = local_attr_val(e, b"r");
-                    current_type = local_attr_val(e, b"t");
-                    current_style_idx = local_attr_val(e, b"s").and_then(|s| s.parse::<usize>().ok());
-                    current_formula = None;
-                    current_value.clear();
-                }
-                b"col" => {
-                    // <col min="1" max="3" width="12.5" customWidth="1"/> — widths
-                    // are in character units; 1-based, inclusive range.
-                    let min = local_attr_val(e, b"min").and_then(|s| s.parse::<u32>().ok());
-                    let max = local_attr_val(e, b"max").and_then(|s| s.parse::<u32>().ok());
-                    let width = local_attr_val(e, b"width").and_then(|s| s.parse::<f64>().ok());
-                    if let (Some(min), Some(max), Some(width)) = (min, max, width) {
-                        let pt = xlsx_char_width_to_pt(width);
-                        let lo = min.saturating_sub(1);
-                        // Cap the span so a "to the last column" range can't bloat the map.
-                        let hi = max.saturating_sub(1).min(lo.saturating_add(1023));
-                        for c in lo..=hi {
-                            worksheet.set_column_width(c, pt);
-                        }
-                    }
-                }
-                b"f" => {
-                    in_f = true;
-                }
-                b"v" => {
-                    in_v = true;
-                }
-                b"t" => {
-                    in_is_t = true;
-                }
-                _ => {}
-            }
-        }};
-    }
-
-    macro_rules! handle_end {
-        ($name:expr) => {{
-            match $name {
-                b"c" => {
-                    if let Some(r_str) = &current_ref {
-                        if let Some((row, col)) = cell_ref_to_coord(r_str) {
-                            let final_value = if current_type.as_deref() == Some("s") {
-                                if let Ok(idx) = current_value.parse::<usize>() {
-                                    shared_strings.get(idx).cloned().unwrap_or_default()
-                                } else {
-                                    current_value.clone()
-                                }
-                            } else {
-                                current_value.clone()
-                            };
-
-                            let style = current_style_idx.and_then(|idx| styles.get(idx).cloned());
-
-                            worksheet.cells.insert(
-                                (row, col),
-                                Cell {
-                                    value: final_value,
-                                    formula: current_formula.clone(),
-                                    style,
-                                },
-                            );
-                        }
-                    }
-                    current_ref = None;
-                    current_type = None;
-                    current_style_idx = None;
-                }
-                b"f" => {
-                    in_f = false;
-                }
-                b"v" => {
-                    in_v = false;
-                }
-                b"t" => {
-                    in_is_t = false;
-                }
-                _ => {}
-            }
-        }};
-    }
-
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => handle_start!(e),
-            Ok(Event::End(ref e)) => {
-                let name_bytes = e.local_name().into_inner();
-                let name = if let Some(pos) = name_bytes.iter().position(|&b| b == b':') {
-                    &name_bytes[pos + 1..]
-                } else {
-                    name_bytes
-                };
-                handle_end!(name);
-            }
-            Ok(Event::Empty(ref e)) => {
-                handle_start!(e);
-                let name_bytes = e.local_name().into_inner();
-                let name = if let Some(pos) = name_bytes.iter().position(|&b| b == b':') {
-                    &name_bytes[pos + 1..]
-                } else {
-                    name_bytes
-                };
-                handle_end!(name);
-            }
-            Ok(ref ev @ (Event::Text(_) | Event::GeneralRef(_))) => {
-                let text = event_text(ev).unwrap_or_default();
-                if in_f {
-                    current_formula = Some(text);
-                } else if in_v || in_is_t {
-                    current_value.push_str(&text);
-                }
-            }
-            Ok(Event::Eof) => break,
-            Err(source) => {
-                return Err(OoxmlError::Xml {
-                    part: "sheet.xml".to_owned(),
-                    source,
-                });
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-
-    Ok(worksheet)
-}
-
 // ── Column width conversion ──────────────────────────────────────────────────
 //
 // XLSX column width is in "character" units of the Normal-style font. Using the
@@ -548,28 +255,25 @@ fn rels_by_type<'a>(
 // ── Coordinate Conversion Helpers ──────────────────────────────────────────
 
 fn cell_ref_to_coord(cell_ref: &str) -> Option<(u32, u32)> {
-    let mut chars = cell_ref.chars().peekable();
-    let mut col_str = String::new();
-    while let Some(&c) = chars.peek() {
-        if c.is_ascii_alphabetic() {
-            col_str.push(c.to_ascii_uppercase());
-            chars.next();
-        } else {
-            break;
-        }
-    }
-    let row_str: String = chars.collect();
-    if col_str.is_empty() || row_str.is_empty() {
+    // Allocation-free split of "AB12" into column letters and row digits —
+    // this runs once per cell on import. The leading letters are single-byte
+    // ASCII, so `split` always lands on a char boundary; a non-digit tail
+    // (or a non-ASCII byte) simply fails the row parse, as before.
+    let bytes = cell_ref.as_bytes();
+    let split = bytes
+        .iter()
+        .position(|b| !b.is_ascii_alphabetic())
+        .unwrap_or(bytes.len());
+    if split == 0 || split == bytes.len() {
         return None;
     }
-    let row = row_str.parse::<u32>().ok()?.checked_sub(1)?;
-
     let mut col: u32 = 0;
-    for c in col_str.chars() {
+    for &b in &bytes[..split] {
         col = col
             .checked_mul(26)?
-            .checked_add((c as u32) - ('A' as u32) + 1)?;
+            .checked_add(u32::from(b.to_ascii_uppercase() - b'A') + 1)?;
     }
-    col = col.checked_sub(1)?;
+    let col = col.checked_sub(1)?;
+    let row = cell_ref[split..].parse::<u32>().ok()?.checked_sub(1)?;
     Some((row, col))
 }

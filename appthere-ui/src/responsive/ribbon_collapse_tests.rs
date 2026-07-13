@@ -186,7 +186,8 @@ fn condensed_layout_drops_the_label_and_tightens() {
     assert_eq!(lay.pad_px, SPACE_1);
     assert_eq!(lay.gap_px, 0.0);
     assert!(!lay.show_label, "the label drops to reclaim width");
-    assert!(SPACE_1 < SPACE_2, "condensed padding is tighter than full");
+    // Compile-time token-scale sanity: condensed padding is tighter than full.
+    const { assert!(SPACE_1 < SPACE_2) };
 }
 
 #[test]

@@ -4,6 +4,7 @@
 //! Unit tests for the named ODT table-style writer.
 
 use super::*;
+use indexmap::IndexMap;
 use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::style::catalog::StyleId;
 use loki_primitives::color::{DocumentColor, RgbColor};
@@ -18,7 +19,7 @@ fn style_with(props: TableProps) -> StyleCatalog {
             display_name: Some("Banded".into()),
             parent: None,
             table_props: props,
-            conditional: Default::default(),
+            conditional: IndexMap::default(),
             extensions: ExtensionBag::default(),
         },
     );
@@ -76,7 +77,7 @@ fn synthetic_styles_are_skipped() {
             display_name: None,
             parent: None,
             table_props: TableProps::default(),
-            conditional: Default::default(),
+            conditional: IndexMap::default(),
             extensions: ExtensionBag::default(),
         },
     );

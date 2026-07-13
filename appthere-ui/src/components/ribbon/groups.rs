@@ -95,15 +95,23 @@ pub fn AtRibbonGroups(
         set_menu_open(false);
     }
 
+    // The last in-strip group suppresses its trailing divider when nothing
+    // follows it (no "More" button) — no divider dangles at the strip edge.
+    let last_rendered = cascade
+        .states
+        .iter()
+        .rposition(|s| *s != GroupCollapse::Overflow);
+
     rsx! {
         // In-strip groups, each at its resolved collapse state.
-        for (spec, state) in groups.iter().zip(cascade.states.iter()) {
+        for (idx, (spec, state)) in groups.iter().zip(cascade.states.iter()).enumerate() {
             if *state != GroupCollapse::Overflow {
                 AtRibbonGroup {
                     key: "{spec.aria_label}",
                     label: spec.label.clone(),
                     aria_label: spec.aria_label.clone(),
                     collapse: *state,
+                    show_divider: cascade.overflow || last_rendered != Some(idx),
                     {spec.content.clone()}
                 }
             }
@@ -149,13 +157,15 @@ pub fn AtRibbonGroups(
                             border = tokens::COLOR_BORDER_CHROME,
                             radius = tokens::RADIUS_MD,
                         ),
-                        // Overflowed groups render in Full form inside the menu.
+                        // Overflowed groups render in Full form inside the
+                        // menu — stacked vertically, so no right divider.
                         for spec in overflowed.iter() {
                             AtRibbonGroup {
                                 key: "{spec.aria_label}",
                                 label: spec.label.clone(),
                                 aria_label: spec.aria_label.clone(),
                                 collapse: GroupCollapse::Full,
+                                show_divider: false,
                                 {spec.content.clone()}
                             }
                         }

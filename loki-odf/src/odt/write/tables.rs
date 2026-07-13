@@ -6,7 +6,8 @@
 use loki_doc_model::content::table::row::Cell;
 use loki_doc_model::content::table::{Row, Table};
 use loki_doc_model::style::catalog::StyleId;
-use loki_doc_model::style::{TableLook, resolve_cell_shading};
+use loki_doc_model::style::table_banding::resolve_cell_shading_cnf;
+use loki_doc_model::style::{TableCnf, TableLook, resolve_cell_shading};
 use loki_primitives::color::DocumentColor;
 
 use super::content::{Cx, write_block};
@@ -124,7 +125,19 @@ fn resolve_backgrounds(
                 .map(|(ci, cell)| {
                     cell.props.background_color.clone().or_else(|| {
                         style.and_then(|s| {
-                            resolve_cell_shading(s, &look, r, cell_cols[r][ci], n_rows, col_count)
+                            // An explicit w:cnfStyle mask (4a.3) beats the
+                            // positional derivation, matching the paint path.
+                            match cell.cnf_code().and_then(TableCnf::decode_attr) {
+                                Some(cnf) => resolve_cell_shading_cnf(s, &cnf),
+                                None => resolve_cell_shading(
+                                    s,
+                                    &look,
+                                    r,
+                                    cell_cols[r][ci],
+                                    n_rows,
+                                    col_count,
+                                ),
+                            }
                         })
                     })
                 })
@@ -135,7 +148,7 @@ fn resolve_backgrounds(
 
 fn table_cell(out: &mut String, cell: &Cell, background: Option<&DocumentColor>, cx: &mut Cx) {
     out.push_str("<table:table-cell");
-    if let Some(style) = cx.auto.cell_style(background) {
+    if let Some(style) = cx.auto.cell_style(&cell.props, background) {
         attr(out, "table:style-name", &style);
     }
     if cell.col_span > 1 {

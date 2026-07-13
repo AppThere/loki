@@ -30,6 +30,7 @@ fn bare_span() -> StyleSpan {
         math: None,
         scale: None,
         baseline_shift: None,
+        language: None,
     }
 }
 

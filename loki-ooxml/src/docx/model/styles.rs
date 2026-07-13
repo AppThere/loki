@@ -32,7 +32,6 @@ pub enum DocxStyleType {
 }
 
 /// A single style definition from `w:style` (ECMA-376 §17.7.4.17).
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct DocxStyle {
     /// `@w:type` — paragraph, character, table, or numbering.
@@ -84,12 +83,14 @@ pub struct DocxTblStylePr {
     pub region: String,
     /// Cell shading fill from this region's `w:tcPr/w:shd @w:fill`.
     pub shd_fill: Option<String>,
+    /// Character formatting from this region's `w:rPr` (4a.3 — e.g. the
+    /// bold header row of a built-in banded style).
+    pub rpr: Option<super::paragraph::DocxRPr>,
 }
 
 /// Intermediate model for a table (`w:tbl`).
 /// Placeholder for table parsing — used in `DocxBodyChild`.
 /// ECMA-376 §17.4.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct DocxTableModel {
     /// Table properties from `w:tblPr`.
@@ -101,7 +102,6 @@ pub struct DocxTableModel {
 }
 
 /// Table properties from `w:tblPr` (ECMA-376 §17.4.60).
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct DocxTblPr {
     /// Style id from `w:tblStyle @w:val`.
@@ -120,7 +120,6 @@ pub struct DocxTblPr {
 // The six flags mirror the OOXML `w:tblLook` bit fields one-for-one — a
 // struct of bools is the faithful representation.
 #[allow(clippy::struct_excessive_bools)]
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DocxTblLook {
     /// Apply the header-row (`firstRow`) conditional format.
@@ -138,7 +137,6 @@ pub struct DocxTblLook {
 }
 
 /// Table width specification from `w:tblW` (ECMA-376 §17.4.63).
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct DocxTblWidth {
     /// `@w:w` — width value.
@@ -204,6 +202,8 @@ pub enum DocxTextDirection {
 /// Table cell properties from `w:tcPr` (ECMA-376 §17.4.70).
 #[derive(Debug, Clone, Default)]
 pub struct DocxTcPr {
+    /// Explicit conditional-format mask from `w:cnfStyle @w:val` (§17.4.7).
+    pub cnf_style: Option<String>,
     /// Column span from `w:gridSpan @w:val`.
     pub grid_span: Option<u32>,
     /// Vertical merge from `w:vMerge`.

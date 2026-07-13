@@ -66,3 +66,18 @@ pub(crate) struct OdfTableCell {
     /// nested `Block::Table`, interleaved with sibling paragraphs.
     pub content: Vec<OdfBodyChild>,
 }
+
+/// `style:table-properties` of a `style:family="table"` style — the
+/// table-level geometry the exporter writes (`write/table_style.rs`) and the
+/// importer reads back into a catalog `TableStyle`. Raw ODF attribute strings.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct OdfTableProps {
+    /// `style:width` — absolute table width (e.g. `"340pt"`, `"12cm"`).
+    pub width: Option<String>,
+    /// `style:rel-width` — relative table width (e.g. `"50%"`).
+    pub rel_width: Option<String>,
+    /// `table:align` — `"left"`, `"center"`, `"right"`, or `"margins"`.
+    pub align: Option<String>,
+    /// `fo:background-color` — `"#RRGGBB"`.
+    pub background_color: Option<String>,
+}

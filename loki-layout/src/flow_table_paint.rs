@@ -11,7 +11,7 @@ use loki_doc_model::style::{TableLook, TableStyle};
 use crate::geometry::{LayoutPoint, LayoutRect, LayoutSize};
 use crate::items::{PositionedBorderRect, PositionedItem, PositionedRect};
 use crate::resolve::{convert_border, pts_to_f32, resolve_color};
-use crate::table_shading::cell_style_shading;
+use crate::table_shading::cell_style_shading_cnf;
 
 use super::{FlowState, table_geom};
 
@@ -24,6 +24,7 @@ pub(super) fn measure_row_heights(
     cell_cols: &[Vec<(usize, usize)>],
     col_widths: &[f32],
     idx: usize,
+    char_grid: Option<&Vec<Vec<Option<loki_doc_model::style::props::char_props::CharProps>>>>,
 ) -> Vec<f32> {
     let mut row_heights = vec![0.0f32; rows.len()];
 
@@ -44,6 +45,7 @@ pub(super) fn measure_row_heights(
                     cell,
                     cell_content_width,
                     idx,
+                    cell_chars(char_grid, row_idx, c_idx),
                 );
                 row_heights[row_idx] = row_heights[row_idx].max(h);
             }
@@ -73,6 +75,7 @@ pub(super) fn measure_row_heights(
                     cell,
                     cell_content_width,
                     idx,
+                    cell_chars(char_grid, row_idx, c_idx),
                 );
                 if needed > spanned_height {
                     let extra = needed - spanned_height;
@@ -185,9 +188,18 @@ pub(super) fn emit_row_cell_decorations(
                 || cell.props.border_left.is_some()
                 || cell.props.border_right.is_some();
 
-            // Direct cell shading wins, else the table style's banding.
+            // Direct cell shading wins, else the table style's banding — via
+            // the cell's explicit w:cnfStyle mask when it carries one (4a.3).
             let cell_bg = cell.props.background_color.clone().or_else(|| {
-                cell_style_shading(table_style, look, row_idx, col_start, grid_rows, grid_cols)
+                cell_style_shading_cnf(
+                    table_style,
+                    look,
+                    cell.cnf_code(),
+                    row_idx,
+                    col_start,
+                    grid_rows,
+                    grid_cols,
+                )
             });
 
             let is_first = p == cell_page_start;
@@ -243,4 +255,15 @@ pub(super) fn emit_row_cell_decorations(
             }
         }
     }
+}
+
+/// The 4a.3 region character defaults for one cell of the grid, if any.
+fn cell_chars(
+    grid: Option<&Vec<Vec<Option<loki_doc_model::style::props::char_props::CharProps>>>>,
+    row: usize,
+    cell: usize,
+) -> Option<&loki_doc_model::style::props::char_props::CharProps> {
+    grid.and_then(|g| g.get(row))
+        .and_then(|r| r.get(cell))
+        .and_then(Option::as_ref)
 }

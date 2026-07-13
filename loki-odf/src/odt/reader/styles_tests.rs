@@ -5,6 +5,8 @@
 //! `styles.rs` (Phase 7.1 inline-test extraction; no production-code change).
 
 use super::*;
+use crate::odt::model::list_styles::OdfListLevelKind;
+use crate::odt::model::styles::OdfStyleFamily;
 
 #[test]
 fn read_stylesheet_named_style_with_props() {

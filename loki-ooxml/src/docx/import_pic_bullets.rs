@@ -30,10 +30,10 @@ pub(super) fn resolve(
         return;
     }
     let Some(doc_rels) = doc_rels else { return };
-    let Some(rel) = super::rels_by_type(doc_rels, REL_NUMBERING).next() else {
+    let Some(rel) = super::package::rels_by_type(doc_rels, REL_NUMBERING).next() else {
         return;
     };
-    let Ok(num_part) = super::resolve_part_name(doc_part_name, &rel.target) else {
+    let Ok(num_part) = super::package::resolve_part_name(doc_part_name, &rel.target) else {
         return;
     };
     let Some(num_rels) = package.part_relationships(&num_part) else {
@@ -43,7 +43,8 @@ pub(super) fn resolve(
         let Some(img_rel) = num_rels.iter().find(|r| r.id == pb.rel_id) else {
             continue;
         };
-        let Ok(img_name) = super::resolve_part_name(num_part.as_str(), &img_rel.target) else {
+        let Ok(img_name) = super::package::resolve_part_name(num_part.as_str(), &img_rel.target)
+        else {
             continue;
         };
         if let Some(part) = package.part(&img_name) {

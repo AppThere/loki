@@ -182,6 +182,7 @@ mod tests {
                 scale: None,
                 kerning: None,
                 baseline_shift: None,
+                language: None,
             }],
             &ResolvedParaProps::default(),
             400.0,

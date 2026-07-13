@@ -23,41 +23,13 @@ use loki_vello::{CursorPaint, FontDataCache, SelectionRect};
 /// counts low, short enough for a 2×-scale texture to fit GPU limits.
 pub const REFLOW_TILE_HEIGHT_PT: f32 = 768.0;
 
-/// Horizontal reading-margin inset in points (24 CSS px each side): reflow is
-/// computed at `tile width − 2 × inset` and painted shifted right by it.
-pub const REFLOW_PADDING_PT: f32 = 18.0;
-
-/// Narrowest reflow content width the layout engine is asked for, in points.
-/// Guards against degenerate layouts while the viewport width is still being
-/// measured.
-pub const MIN_REFLOW_CONTENT_PT: f32 = 50.0;
-
-/// Widest reflow **tile** (CSS px) — caps the reading measure so the
-/// non-paginated view holds a comfortable line length and **centres** on wide
-/// windows (Spec 03 M4 / D5); below this the tile tracks the viewport. Matches
-/// the HTML reflow fallback's `max-width` so both paths read identically.
-pub const MAX_REFLOW_TILE_PX: f32 = 820.0;
-
-/// CSS pixels → layout points (72 dpi / 96 dpi).
-pub const PX_TO_PT: f32 = 72.0 / 96.0;
-
-/// The reflow **tile** width (CSS px) for a measured viewport: the viewport
-/// width capped at [`MAX_REFLOW_TILE_PX`] (the renderer centres the tile, so
-/// the cap centres the reading column). The single source of reflow width for
-/// paint, hit-testing, and keyboard navigation (Spec 01 A-1).
-#[must_use]
-pub fn reflow_tile_width_px(viewport_width_px: f32) -> f32 {
-    viewport_width_px.clamp(0.0, MAX_REFLOW_TILE_PX)
-}
-
-/// The reflow **content** width (the reading measure, in points): the tile
-/// minus the [`REFLOW_PADDING_PT`] side insets, floored at
-/// [`MIN_REFLOW_CONTENT_PT`]. Hit-testing and navigation match the paint.
-#[must_use]
-pub fn reflow_content_width_pt(viewport_width_px: f32) -> f32 {
-    (reflow_tile_width_px(viewport_width_px) * PX_TO_PT - 2.0 * REFLOW_PADDING_PT)
-        .max(MIN_REFLOW_CONTENT_PT)
-}
+#[path = "reflow_metrics.rs"]
+mod reflow_metrics;
+pub use reflow_metrics::{
+    MAX_REFLOW_TILE_PX, MIN_REFLOW_CONTENT_PT, PX_TO_PT, REFLOW_COMPACT_MAX_PX,
+    REFLOW_COMPACT_TYPE_SCALE, REFLOW_PADDING_PT, reflow_layout_content_width_pt,
+    reflow_layout_tile_width_pt, reflow_tile_width_px, reflow_type_scale,
+};
 
 // ── RenderMode ────────────────────────────────────────────────────────────────
 

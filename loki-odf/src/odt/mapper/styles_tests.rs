@@ -7,6 +7,7 @@ use super::*;
 use crate::odt::model::styles::{
     OdfDefaultStyle, OdfParaProps, OdfStyle, OdfStyleFamily, OdfStylesheet, OdfTextProps,
 };
+use loki_doc_model::style::props::char_props::CharProps;
 
 fn make_para_style(name: &str, parent: Option<&str>, is_auto: bool) -> OdfStyle {
     OdfStyle {
@@ -20,6 +21,7 @@ fn make_para_style(name: &str, parent: Option<&str>, is_auto: bool) -> OdfStyle 
         col_width: None,
         cell_props: None,
         graphic_wrap: None,
+        table_props: None,
         is_automatic: is_auto,
         master_page_name: None,
     }
@@ -40,6 +42,7 @@ fn make_text_style(name: &str) -> OdfStyle {
         col_width: None,
         cell_props: None,
         graphic_wrap: None,
+        table_props: None,
         is_automatic: false,
         master_page_name: None,
     }
@@ -112,6 +115,7 @@ fn default_style_inserted_as_default() {
                 ..Default::default()
             }),
             text_props: None,
+            table_props: None,
         }],
         ..Default::default()
     };
@@ -135,6 +139,7 @@ fn text_default_style_becomes_the_character_default() {
                 font_weight: Some("bold".into()),
                 ..Default::default()
             }),
+            table_props: None,
         }],
         ..Default::default()
     };
@@ -160,7 +165,7 @@ fn text_default_style_becomes_the_character_default() {
             id: StyleId::new("Plain"),
             display_name: Some("Plain".into()),
             parent: None,
-            char_props: Default::default(),
+            char_props: CharProps::default(),
             extensions: ExtensionBag::default(),
         },
     );
@@ -185,6 +190,7 @@ fn unknown_family_skipped() {
             col_width: None,
             cell_props: None,
             graphic_wrap: None,
+            table_props: None,
             is_automatic: false,
             master_page_name: None,
         }],
@@ -212,4 +218,93 @@ fn insertion_order_preserved() {
     for (i, name) in names.iter().enumerate() {
         assert_eq!(keys[i].as_str(), *name);
     }
+}
+
+// ── Table family (4a.3: definition import) ───────────────────────────────────
+
+#[test]
+fn table_family_style_maps_definition_into_catalog() {
+    let sheet = OdfStylesheet {
+        named_styles: vec![OdfStyle {
+            name: "Banded".into(),
+            display_name: Some("Banded Grid".into()),
+            family: OdfStyleFamily::Table,
+            parent_name: None,
+            list_style_name: None,
+            para_props: None,
+            text_props: None,
+            col_width: None,
+            cell_props: None,
+            graphic_wrap: None,
+            table_props: Some(OdfTableProps {
+                width: Some("340pt".into()),
+                rel_width: None,
+                align: Some("center".into()),
+                background_color: Some("#CADCFC".into()),
+            }),
+            is_automatic: false,
+            master_page_name: None,
+        }],
+        ..Default::default()
+    };
+    let catalog = map_stylesheet(&sheet);
+    let style = catalog
+        .table_styles
+        .get(&StyleId::new("Banded"))
+        .expect("table style mapped");
+    assert_eq!(style.display_name.as_deref(), Some("Banded Grid"));
+    match style.table_props.width {
+        Some(TableWidth::Absolute(w)) => assert!((w.value() - 340.0).abs() < 0.01),
+        ref other => panic!("expected absolute width, got {other:?}"),
+    }
+    assert_eq!(style.table_props.alignment, Some(TableAlignment::Center));
+    assert!(style.table_props.background_color.is_some());
+    assert!(style.conditional.is_empty());
+}
+
+#[test]
+fn table_style_rel_width_and_defaults_map() {
+    let props = OdfTableProps {
+        width: None,
+        rel_width: Some("50%".into()),
+        align: Some("margins".into()),
+        background_color: Some("not-a-color".into()),
+    };
+    let mapped = map_table_style_props(&props);
+    assert!(matches!(mapped.width, Some(TableWidth::Percent(p)) if (p - 50.0).abs() < 0.01));
+    // "margins" and unknown alignments render left; a bad hex is dropped.
+    assert_eq!(mapped.alignment, Some(TableAlignment::Left));
+    assert!(mapped.background_color.is_none());
+}
+
+/// 4a.3: `style:default-style style:family="table"` becomes the catalog's
+/// table-family `Default` source (`__DefaultTable`), completing ADR-0012's
+/// per-family defaults on the ODF side.
+#[test]
+fn table_default_style_becomes_the_table_default() {
+    use crate::odt::model::tables::OdfTableProps;
+    use loki_doc_model::style::table_style::TableAlignment;
+
+    let sheet = OdfStylesheet {
+        default_styles: vec![OdfDefaultStyle {
+            family: OdfStyleFamily::Table,
+            para_props: None,
+            text_props: None,
+            table_props: Some(OdfTableProps {
+                align: Some("center".into()),
+                ..Default::default()
+            }),
+        }],
+        ..Default::default()
+    };
+    let catalog = map_stylesheet(&sheet);
+    assert_eq!(
+        catalog.default_table_style,
+        Some(StyleId::new("__DefaultTable"))
+    );
+    let def = catalog
+        .table_styles
+        .get(&StyleId::new("__DefaultTable"))
+        .expect("synthesised table default");
+    assert_eq!(def.table_props.alignment, Some(TableAlignment::Center));
 }

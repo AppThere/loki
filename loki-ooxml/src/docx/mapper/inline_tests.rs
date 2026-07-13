@@ -5,9 +5,10 @@
 
 use super::*;
 use crate::docx::import::DocxImportOptions;
-use crate::docx::model::paragraph::{DocxHyperlink, DocxRPr};
+use crate::docx::model::paragraph::{DocxHyperlink, DocxRPr, DocxRun, DocxRunChild};
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::field::types::FieldKind;
+use loki_doc_model::content::inline::NoteKind;
 use loki_doc_model::style::catalog::StyleCatalog;
 use std::collections::HashMap;
 
@@ -54,6 +55,8 @@ fn bold_run(text: &str) -> DocxParaChild {
     })
 }
 
+// Test fixture bundle mirroring make_ctx's parameter list.
+#[allow(clippy::type_complexity)]
 fn default_ctx() -> (
     StyleCatalog,
     HashMap<i32, Vec<Block>>,

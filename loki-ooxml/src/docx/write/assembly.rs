@@ -118,6 +118,7 @@ pub(crate) fn assemble_docx_kind(
         .iter()
         .any(|s| s.layout.header_even.is_some() || s.layout.footer_even.is_some());
 
+    let mirror_margins = doc.settings.as_ref().is_some_and(|s| s.mirror_margins);
     let has_comments = !doc.comments.is_empty();
     let comments_bytes =
         has_comments.then(|| crate::docx::write::comments::write_comments_xml(&doc.comments));
@@ -192,6 +193,7 @@ pub(crate) fn assemble_docx_kind(
             footnotes: has_footnotes,
             endnotes: has_endnotes,
             even_odd: needs_even_odd,
+            mirror_margins,
             comments: has_comments,
         },
     )?;

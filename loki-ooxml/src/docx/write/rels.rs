@@ -94,9 +94,9 @@ pub(super) fn add_document_relationships(
     }
 
     // Settings (reserve an rId now that all H/F + media relationships exist).
-    if has.even_odd {
+    if has.even_odd || has.mirror_margins {
         let r_id = collector.reserve_r_id();
-        wire_settings(pkg, doc_part, r_id)?;
+        wire_settings(pkg, doc_part, r_id, has.even_odd, has.mirror_margins)?;
     }
     if has.comments {
         let r_id = collector.reserve_r_id();
@@ -123,5 +123,6 @@ pub(super) struct AuxParts {
     pub footnotes: bool,
     pub endnotes: bool,
     pub even_odd: bool,
+    pub mirror_margins: bool,
     pub comments: bool,
 }

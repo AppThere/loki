@@ -11,6 +11,11 @@
 //! Digital signatures (§10) are currently out of scope for v0.1.0. Signature parts
 //! and their references are treated functionally as opaque sets and must not be edited.
 //! Modifying these features directly will raise an `OpcError::DigitalSignaturesNotSupported`.
+//!
+//! # XXE posture (audit-2026-06 S-5)
+//! All XML in this crate is parsed with `quick_xml::Reader`, which does not
+//! resolve external entities or fetch DTDs. Do not enable DTD/entity
+//! expansion without a security review.
 
 #![forbid(unsafe_code)]
 #![warn(unsafe_op_in_unsafe_fn)]

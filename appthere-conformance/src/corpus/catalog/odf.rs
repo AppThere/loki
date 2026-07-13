@@ -6,8 +6,8 @@
 //! ODF has no Microsoft-canonical render: diff against LibreOffice *and* check
 //! the ODF round-trip (re-export and compare the targeted XML elements).
 
-use super::{Format::Odg, Format::Odp, Format::Ods, Format::Odt, TestCase, tc};
-use crate::severity::Severity::{P0, P1, P2};
+use crate::corpus::Severity::{P0, P1, P2};
+use crate::corpus::{Format::Odg, Format::Odp, Format::Ods, Format::Odt, TestCase, tc};
 
 /// ODT (14) + ODP (9) + ODG (9) + ODS (10) test cases.
 pub(super) const CASES: &[TestCase] = &[

@@ -16,7 +16,7 @@ use super::media::{Media, Rendered};
 use super::page_styles::resolve_page_style_names;
 use super::para_props::emit_paragraph_properties;
 use super::props::emit_text_properties;
-use super::xml::{attr, escape, pt};
+use super::xml::{attr, pt};
 
 const HEADER: &str = concat!(
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
@@ -78,6 +78,7 @@ pub(crate) fn styles_xml(doc: &Document) -> Rendered {
     // styles — skip them here (they belong in `style:default-style`, not
     // `style:style`).
     out.push_str("<office:styles>");
+    super::default_style::write_default_styles(&mut out, &doc.styles);
     for (id, style) in &doc.styles.paragraph_styles {
         if id.as_str().starts_with("__") {
             continue;
@@ -258,43 +259,4 @@ fn write_columns(out: &mut String, cols: &SectionColumns) {
         out.push_str("<style:column-sep style:width=\"0.5pt\" style:color=\"#000000\"/>");
     }
     out.push_str("</style:columns>");
-}
-
-/// Renders `meta.xml` for `doc` (Dublin Core core properties).
-#[must_use]
-pub(crate) fn meta_xml(doc: &Document) -> String {
-    let mut out = String::from(concat!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
-        "<office:document-meta",
-        " xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\"",
-        " xmlns:dc=\"http://purl.org/dc/elements/1.1/\"",
-        " xmlns:meta=\"urn:oasis:names:tc:opendocument:xmlns:meta:1.0\"",
-        " office:version=\"1.3\"><office:meta>",
-    ));
-    let m = &doc.meta;
-    {
-        let mut el = |tag: &str, val: &Option<String>| {
-            if let Some(v) = val {
-                out.push_str(&format!("<{tag}>{}</{tag}>", escape(v)));
-            }
-        };
-        el("dc:title", &m.title);
-        el("dc:creator", &m.creator);
-        el("meta:initial-creator", &m.creator);
-        el("dc:subject", &m.subject);
-        el("dc:description", &m.description);
-        el("meta:keyword", &m.keywords);
-    }
-    // Extended Dublin Core has no native office:meta element; carry each field
-    // as a meta:user-defined entry under its reserved dcmi: name so it
-    // round-trips.
-    for (name, value) in m.dublin_core.to_named_pairs() {
-        out.push_str(&format!(
-            "<meta:user-defined meta:name=\"{}\">{}</meta:user-defined>",
-            escape(&name),
-            escape(&value),
-        ));
-    }
-    out.push_str("</office:meta></office:document-meta>");
-    out
 }

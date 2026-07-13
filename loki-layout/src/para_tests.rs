@@ -4,7 +4,8 @@
 //! Unit tests for [`crate::para`].
 
 use super::*;
-use crate::items::{BorderStyle, DecorationKind, PositionedGlyphRun, PositionedItem};
+use crate::color::LayoutColor;
+use crate::items::{BorderEdge, BorderStyle, DecorationKind, PositionedGlyphRun, PositionedItem};
 use loki_doc_model::style::list_style::{
     BulletChar, LabelAlignment, ListLevel, ListLevelKind, NumberingScheme,
 };
@@ -50,6 +51,7 @@ fn single_span(text: &str, font_size: f32) -> StyleSpan {
         scale: None,
         kerning: None,
         baseline_shift: None,
+        language: None,
     }
 }
 
@@ -629,6 +631,7 @@ fn misspelled_word_emits_spelling_squiggle() {
         std::sync::Arc::new(loki_spell::SpellChecker::bundled().expect("bundled dictionary loads"));
     let spell = crate::SpellState {
         checker,
+        checkers: Default::default(),
         generation: 1,
     };
     let text = "hello teh world";
@@ -659,6 +662,100 @@ fn misspelled_word_emits_spelling_squiggle() {
     assert!(sq.x > 0.0, "squiggle starts past the first word");
 }
 
+/// Counts `DecorationKind::Spelling` items in a spelled layout of `text` with
+/// the given spans and spell state (shared by the gap #30 routing tests).
+fn spelling_squiggle_count(text: &str, spans: &[StyleSpan], spell: &crate::SpellState) -> usize {
+    let mut r = test_resources();
+    let result = layout_paragraph_spelled(
+        &mut r,
+        text,
+        spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+        Some(spell),
+    );
+    result
+        .items
+        .iter()
+        .filter(
+            |i| matches!(i, PositionedItem::Decoration(d) if d.kind == DecorationKind::Spelling),
+        )
+        .count()
+}
+
+/// Gap #30: with per-language checkers registered, a run tagged with a
+/// language no checker covers is *skipped* — foreign text is not blanketed in
+/// false squiggles — while untagged runs and runs resolving through the
+/// BCP-47 fallback chain (`en-GB` → `en`) are still checked.
+#[test]
+fn spelling_skips_runs_tagged_with_an_unavailable_language() {
+    let checker =
+        std::sync::Arc::new(loki_spell::SpellChecker::bundled().expect("bundled dictionary loads"));
+    let spell = crate::SpellState {
+        checkers: std::iter::once(("en".to_string(), checker.clone())).collect(),
+        checker,
+        generation: 1,
+    };
+    let text = "helllo craezy bonjjour";
+    let spans = [
+        // Untagged → default checker.
+        StyleSpan {
+            range: 0..7,
+            ..single_span(text, 12.0)
+        },
+        // en-GB resolves to the registered "en" checker via the fallback chain.
+        StyleSpan {
+            range: 7..14,
+            language: Some("en-GB".into()),
+            ..single_span(text, 12.0)
+        },
+        // fr-FR resolves to no checker → skipped, no false squiggle.
+        StyleSpan {
+            range: 14..22,
+            language: Some("fr-FR".into()),
+            ..single_span(text, 12.0)
+        },
+    ];
+    assert_eq!(
+        spelling_squiggle_count(text, &spans, &spell),
+        2,
+        "the two English misspellings squiggle; the French run is skipped"
+    );
+}
+
+/// Gap #30: with an empty `checkers` map (single-dictionary mode — the
+/// pre-routing behaviour) every run is checked with the default checker,
+/// language tags or not.
+#[test]
+fn spelling_single_dictionary_mode_checks_tagged_runs_too() {
+    let checker =
+        std::sync::Arc::new(loki_spell::SpellChecker::bundled().expect("bundled dictionary loads"));
+    let spell = crate::SpellState {
+        checker,
+        checkers: Default::default(),
+        generation: 1,
+    };
+    let text = "helllo bonjjour";
+    let spans = [
+        StyleSpan {
+            range: 0..7,
+            ..single_span(text, 12.0)
+        },
+        StyleSpan {
+            range: 7..15,
+            language: Some("fr-FR".into()),
+            ..single_span(text, 12.0)
+        },
+    ];
+    assert_eq!(
+        spelling_squiggle_count(text, &spans, &spell),
+        2,
+        "single-dictionary mode keeps checking everything (legacy behaviour)"
+    );
+}
+
 #[test]
 fn spelling_squiggle_hugs_the_descender_not_the_line_box() {
     // With a generous line height the line box extends far below the glyphs.
@@ -669,6 +766,7 @@ fn spelling_squiggle_hugs_the_descender_not_the_line_box() {
         std::sync::Arc::new(loki_spell::SpellChecker::bundled().expect("bundled dictionary loads"));
     let spell = crate::SpellState {
         checker,
+        checkers: Default::default(),
         generation: 1,
     };
     let props = ResolvedParaProps {

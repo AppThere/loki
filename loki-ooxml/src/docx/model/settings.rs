@@ -14,4 +14,6 @@ pub struct DocxSettings {
     pub even_and_odd_headers: bool,
     /// `w:titlePg` — whether a different first-page header/footer is used.
     pub title_pg: bool,
+    /// `w:mirrorMargins` — swap left/right margins on even (verso) pages.
+    pub mirror_margins: bool,
 }

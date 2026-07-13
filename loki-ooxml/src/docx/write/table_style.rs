@@ -96,6 +96,14 @@ fn emit_tbl_style_pr<W: Write>(
         return;
     };
     let _ = write_start(w, "w:tblStylePr", &[("w:type", name)]);
+    // CT_TblStylePr order: rPr before tcPr. Region character formatting
+    // (4a.3) reuses the run-props writer, so it stays symmetric with the
+    // reader's parse_rpr_element.
+    if fmt.char_props != loki_doc_model::style::props::char_props::CharProps::default() {
+        let _ = write_start(w, "w:rPr", &[]);
+        super::run_props::emit_char_props(w, &fmt.char_props);
+        let _ = write_end(w, "w:rPr");
+    }
     if let Some(bg) = &fmt.background_color {
         write_cell_shd(w, bg);
     }

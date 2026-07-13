@@ -9,7 +9,7 @@ use keyboard_types::Modifiers;
 use loki_doc_model::loro_mutation::{get_block_text, get_block_text_at};
 
 use loki_renderer::ViewMode;
-use loki_renderer::render_layout::reflow_content_width_pt;
+use loki_renderer::render_layout::reflow_layout_content_width_pt;
 
 use super::editor_keydown_backspace::handle_backspace_key;
 use super::editor_keydown_ctrl::{handle_ctrl_keys, handle_delete_key};
@@ -167,7 +167,7 @@ pub(super) fn make_keydown_handler(
                     if width_px <= 1.0 {
                         return;
                     }
-                    let content_w = reflow_content_width_pt(width_px);
+                    let content_w = reflow_layout_content_width_pt(width_px);
                     let Some(layout) = ensure_reflow_layout(&doc_state, content_w) else {
                         return;
                     };

@@ -4,6 +4,7 @@
 //! Unit tests for the table-style writer.
 
 use super::*;
+use indexmap::IndexMap;
 use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::style::catalog::StyleId;
 use loki_primitives::color::RgbColor;
@@ -33,13 +34,14 @@ fn writes_conditional_regions_and_band_sizes() {
             background_color: Some(rgb(255, 255, 255)),
             ..TableProps::default()
         },
-        conditional: Default::default(),
+        conditional: IndexMap::default(),
         extensions: ExtensionBag::default(),
     };
     style.conditional.insert(
         TableRegion::FirstRow,
         TableConditionalFormat {
             background_color: Some(rgb(0x44, 0x72, 0xC4)),
+            char_props: loki_doc_model::style::props::char_props::CharProps::default(),
         },
     );
     let mut catalog = StyleCatalog::new();
@@ -63,7 +65,7 @@ fn a_style_without_bands_omits_tblpr() {
         display_name: None,
         parent: None,
         table_props: TableProps::default(),
-        conditional: Default::default(),
+        conditional: IndexMap::default(),
         extensions: ExtensionBag::default(),
     };
     let mut catalog = StyleCatalog::new();

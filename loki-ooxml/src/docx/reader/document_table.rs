@@ -15,8 +15,20 @@ use crate::error::{OoxmlError, OoxmlResult};
 
 use super::cell;
 
-/// Parses a `w:tbl` element. Called after Start("tbl") is consumed.
-pub(super) fn parse_table(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTableModel> {
+/// Maximum table/content-control nesting depth accepted from a file. Nested
+/// tables recurse (`parse_table` → row → cell → `parse_table`), so without a
+/// cap a crafted document can exhaust the stack (audit-2026-06 S-1b). Matches
+/// `loki-odf`'s `MAX_NESTING_DEPTH`; real documents rarely exceed ~5.
+pub(super) const MAX_NESTING_DEPTH: usize = 100;
+
+/// Parses a `w:tbl` element. Called after Start("tbl") is consumed. `depth`
+/// counts enclosing tables/content controls; the top-level caller passes 0.
+pub(super) fn parse_table(reader: &mut Reader<&[u8]>, depth: usize) -> OoxmlResult<DocxTableModel> {
+    if depth > MAX_NESTING_DEPTH {
+        return Err(OoxmlError::NestingTooDeep {
+            limit: MAX_NESTING_DEPTH,
+        });
+    }
     let mut tbl = DocxTableModel::default();
     let mut buf = Vec::new();
     loop {
@@ -24,7 +36,7 @@ pub(super) fn parse_table(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTableMo
             Ok(Event::Start(ref e)) => {
                 match local_name(e.local_name().as_ref()) {
                     b"tr" => {
-                        let row = parse_table_row(reader)?;
+                        let row = parse_table_row(reader, depth)?;
                         tbl.rows.push(row);
                     }
                     b"tblPr" => {
@@ -121,14 +133,14 @@ pub(super) fn parse_tbl_look(e: &quick_xml::events::BytesStart<'_>) -> DocxTblLo
 }
 
 /// Parses a `w:tr` element. Called after Start("tr") is consumed.
-fn parse_table_row(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTableRow> {
+fn parse_table_row(reader: &mut Reader<&[u8]>, depth: usize) -> OoxmlResult<DocxTableRow> {
     let mut row = DocxTableRow::default();
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => match local_name(e.local_name().as_ref()) {
                 b"tc" => {
-                    let cell = cell::parse_table_cell(reader)?;
+                    let cell = cell::parse_table_cell(reader, depth)?;
                     row.cells.push(cell);
                 }
                 b"trPr" => {

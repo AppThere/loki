@@ -22,7 +22,7 @@ pub(crate) fn read_math(
     start: &BytesStart,
 ) -> OoxmlResult<(String, bool)> {
     let root_tag = local_tag(start.name().as_ref());
-    let node = read_node(reader, &root_tag)?;
+    let node = read_node(reader, &root_tag, attrs_of(start))?;
     let display = root_tag == "oMathPara";
     let omath = if display {
         node.child("oMath").cloned().unwrap_or(node)
@@ -41,13 +41,34 @@ fn local_tag(name: &[u8]) -> String {
     String::from_utf8_lossy(local_name(name)).into_owned()
 }
 
+/// Collects a start tag's attributes as `(local name, unescaped value)` pairs.
+pub(super) fn attrs_of(e: &BytesStart) -> Vec<(String, String)> {
+    e.attributes()
+        .flatten()
+        .map(|a| {
+            let key = local_tag(a.key.as_ref());
+            let val = a
+                .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                .map(std::borrow::Cow::into_owned)
+                .unwrap_or_default();
+            (key, val)
+        })
+        .collect()
+}
+
 /// Reads the children of an element named `tag` (whose `Start` was already
-/// consumed) until the matching `End`, returning the assembled node.
+/// consumed) until the matching `End`, returning the assembled node carrying
+/// the start tag's `attrs`.
 ///
 /// Shared by the OMML reader and the MathML-string parser used on export.
-pub(super) fn read_node(reader: &mut Reader<&[u8]>, tag: &str) -> OoxmlResult<XmlNode> {
+pub(super) fn read_node(
+    reader: &mut Reader<&[u8]>,
+    tag: &str,
+    attrs: Vec<(String, String)>,
+) -> OoxmlResult<XmlNode> {
     let mut node = XmlNode {
         tag: tag.to_string(),
+        attrs,
         ..Default::default()
     };
     let mut buf = Vec::new();
@@ -55,11 +76,13 @@ pub(super) fn read_node(reader: &mut Reader<&[u8]>, tag: &str) -> OoxmlResult<Xm
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => {
                 let ctag = local_tag(e.name().as_ref());
-                node.children.push(read_node(reader, &ctag)?);
+                let cattrs = attrs_of(e);
+                node.children.push(read_node(reader, &ctag, cattrs)?);
             }
             Ok(Event::Empty(ref e)) => {
                 node.children.push(XmlNode {
                     tag: local_tag(e.name().as_ref()),
+                    attrs: attrs_of(e),
                     ..Default::default()
                 });
             }
@@ -139,8 +162,24 @@ fn convert(node: &XmlNode) -> Option<String> {
                 Some(format!("<mroot>{base}{}</mroot>", wrapper(node, "deg")))
             }
         }
+        // Structured constructs (5.8) live in `read_structs`.
+        "d" => Some(super::read_structs::delim(node)),
+        "nary" => Some(super::read_structs::nary(node)),
+        "m" => Some(super::read_structs::matrix(node)),
+        "acc" => Some(super::read_structs::accent(node)),
+        "limLow" => Some(format!(
+            "<munder>{}{}</munder>",
+            wrapper(node, "e"),
+            wrapper(node, "lim")
+        )),
+        "limUpp" => Some(format!(
+            "<mover>{}{}</mover>",
+            wrapper(node, "e"),
+            wrapper(node, "lim")
+        )),
         // Property and text-leaf elements carry no standalone math content.
-        "rPr" | "fPr" | "sSupPr" | "sSubPr" | "sSubSupPr" | "radPr" | "ctrlPr" | "t" => None,
+        "rPr" | "fPr" | "sSupPr" | "sSubPr" | "sSubSupPr" | "radPr" | "ctrlPr" | "t" | "dPr"
+        | "naryPr" | "mPr" | "accPr" | "limLowPr" | "limUppPr" => None,
         // Unknown container: emit its content (best effort).
         _ => {
             let inner = seq(&node.children).concat();
@@ -150,13 +189,13 @@ fn convert(node: &XmlNode) -> Option<String> {
 }
 
 /// Converts a sequence of nodes, dropping the ones with no math content.
-fn seq(nodes: &[XmlNode]) -> Vec<String> {
+pub(super) fn seq(nodes: &[XmlNode]) -> Vec<String> {
     nodes.iter().filter_map(convert).collect()
 }
 
 /// Converts the content of `parent`'s child named `tag` into a single `MathML`
 /// argument, wrapping multiple elements in an `<mrow>`.
-fn wrapper(parent: &XmlNode, tag: &str) -> String {
+pub(super) fn wrapper(parent: &XmlNode, tag: &str) -> String {
     let parts = parent
         .child(tag)
         .map(|c| seq(&c.children))
@@ -166,7 +205,7 @@ fn wrapper(parent: &XmlNode, tag: &str) -> String {
 
 /// Groups `parts` into a single `MathML` element: a lone element is returned as
 /// is; zero or several are wrapped in `<mrow>`.
-fn mrow(parts: Vec<String>) -> String {
+pub(super) fn mrow(parts: Vec<String>) -> String {
     match parts.len() {
         0 => "<mrow/>".to_string(),
         1 => parts.into_iter().next().unwrap_or_default(),

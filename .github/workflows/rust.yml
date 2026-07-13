@@ -34,6 +34,9 @@ jobs:
     - name: File-ceiling gate (300-line ratchet)
       # Spec 01 audit A-2. New files <= 300 lines; baselined debt may not grow.
       run: python3 scripts/check-file-ceiling.py
+    - name: Suppression ratchet (`let _ =` swallows + `#[allow]`)
+      # Audit Q-3/Q-4. Per-file counts may only shrink; new files start at 0/0.
+      run: python3 scripts/check-suppressions.py
     - name: TODO-format gate (TODO(<topic>) tags)
       # Spec 01 audit A-11. No bare TODO / FIXME / HACK / XXX in production code.
       run: python3 scripts/check-todo-format.py

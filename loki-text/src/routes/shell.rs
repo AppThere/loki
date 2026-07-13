@@ -22,6 +22,8 @@ use dioxus::prelude::*;
 use dioxus_router::Navigator;
 use loki_i18n::fl;
 
+use super::home_util::push_new_tab;
+use crate::new_document::new_blank_tab;
 use crate::routes::Route;
 use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
@@ -29,6 +31,10 @@ use crate::tabs::OpenTab;
 /// Closes the tab at 1-based tab-bar index `idx`: drops its stashed editing
 /// session (so a later reopen loads fresh from disk instead of resurrecting
 /// discarded unsaved edits) and fixes up the active tab / route.
+/// The active-tab / navigation arithmetic is the shared, unit-tested
+/// [`loki_app_shell::tabs::resolve_tab_close`] decision (deduplicated across the
+/// three app shells — plan 7.2); this wrapper applies its outcome to the app's
+/// signals, session map, and router.
 fn close_tab(
     idx: usize,
     mut tabs: Signal<Vec<OpenTab>>,
@@ -36,44 +42,41 @@ fn close_tab(
     mut doc_sessions: Signal<DocSessions>,
     navigator: Navigator,
 ) {
-    let vec_idx = idx - 1;
-    // Guard: idx is captured at event time; a rapid second close (or a close
-    // confirmed after the list changed) must not index out of bounds.
-    if vec_idx >= tabs.read().len() {
-        return;
-    }
-    let current_active = *active_tab.read();
+    use loki_app_shell::tabs::TabCloseNav;
 
+    // Guard (idx captured at event time) lives in `resolve_tab_close`: a stale
+    // or Home index yields `None` → no-op.
+    let Some(outcome) =
+        loki_app_shell::tabs::resolve_tab_close(idx, *active_tab.read(), tabs.read().len())
+    else {
+        return;
+    };
+
+    let vec_idx = idx - 1;
     let closed_path = tabs.read().get(vec_idx).map(|t| t.path.clone());
     if let Some(p) = closed_path {
         doc_sessions.write().remove(&p);
     }
-
     tabs.write().remove(vec_idx);
-    let new_len = tabs.read().len();
+    *active_tab.write() = outcome.new_active;
 
-    if new_len == 0 {
+    match outcome.nav {
         // No documents remain — go Home.
-        *active_tab.write() = 0;
-        navigator.push(Route::Home {});
-    } else if idx == current_active {
-        // Closed the active tab — activate the nearest remaining tab.
-        // Prefer the tab to the left; fall back to the first tab.
-        let new_active = if vec_idx > 0 { idx - 1 } else { 1 };
-        *active_tab.write() = new_active;
-        if let Some(tab) = tabs.read().get(new_active - 1) {
-            navigator.push(Route::Editor {
-                path: tab.path.clone(),
-            });
+        TabCloseNav::Home => {
+            navigator.push(Route::Home {});
         }
-    } else if idx < current_active {
-        // Closed a tab to the LEFT of the active tab — the Vec shifted so the
-        // active document's index decrements by 1. Do NOT navigate: the
-        // displayed document is unchanged.
-        *active_tab.write() = current_active - 1;
+        // Closed the active tab — navigate to the newly-activated neighbour.
+        TabCloseNav::Editor(i) => {
+            if let Some(tab) = tabs.read().get(i) {
+                navigator.push(Route::Editor {
+                    path: tab.path.clone(),
+                });
+            }
+        }
+        // Closed a tab beside the active one — index adjusted, displayed
+        // document unchanged, no navigation.
+        TabCloseNav::Stay => {}
     }
-    // Closing a tab to the RIGHT of the active tab: no index change and no
-    // navigation — displayed document is unchanged.
 }
 
 /// Persistent application shell.
@@ -147,6 +150,7 @@ pub fn Shell() -> Element {
                 home_tab_label:     fl!("shell-home-tab"),
                 aria_label:         fl!("shell-tab-bar-aria"),
                 new_tab_aria_label: fl!("shell-new-document-aria"),
+                theme_toggle_aria_label: fl!("shell-theme-toggle-aria"),
                 on_tab_select: move |idx: usize| {
                     *active_tab.write() = idx;
                     if idx == 0 {
@@ -174,11 +178,10 @@ pub fn Shell() -> Element {
                     close_tab(idx, tabs, active_tab, doc_sessions, navigator);
                 },
                 on_new_tab: move |_| {
-                    // Navigate to Home so the user can pick a template or file.
-                    // TODO(tabs): Open a blank document directly once blank-doc
-                    // creation is implemented.
-                    *active_tab.write() = 0;
-                    navigator.push(Route::Home {});
+                    // Open a blank document directly (the Home template
+                    // gallery remains reachable via the Home tab).
+                    let path = push_new_tab(tabs, active_tab, new_blank_tab());
+                    navigator.push(Route::Editor { path });
                 },
             }
 

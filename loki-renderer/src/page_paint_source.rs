@@ -11,22 +11,19 @@
 //! 2. Otherwise unregisters the old texture, re-renders via Vello, and
 //!    registers the fresh texture with Blitz.
 //!
-//! Every mounted tile renders at full resolution. Tile virtualization (see
-//! `DocumentView`) only mounts pages within ~one screen of the viewport, so
-//! texture memory is bounded by mounting rather than by a resolution-tiering
-//! cache.
+//! Every mounted tile renders at full resolution; virtualization only mounts
+//! pages near the viewport, so texture memory is bounded by mounting.
 
 use std::sync::{Arc, Mutex};
 
-use anyrender_vello::wgpu::{
-    Extent3d, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor,
-};
 use anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle};
-use loki_vello::FontDataCache;
 use vello::{AaConfig, RenderParams, Scene};
 
 use crate::doc_page_source::DocPageSource;
 use crate::document_view::RendererSelection;
+
+#[path = "page_paint_render.rs"]
+mod render;
 
 /// Set once, when the first page tile is rendered, to attribute Vello's one-time
 /// pipeline warm-up to the open-path timing log (see the render path below).
@@ -40,17 +37,13 @@ pub(crate) struct LokiPageSource {
     source: Arc<DocPageSource>,
     /// 0-based page index this source renders.
     page_index: usize,
-    /// Shared Vello renderer — created by the first page source to resume.
-    ///
-    // COMPAT(loki): first page source to resume creates the shared renderer.
-    // Subsequent page sources find it populated and skip creation.
+    // COMPAT(loki): the first page source to resume creates the shared Vello
+    // renderer; subsequent sources find it populated and skip creation.
     renderer: Arc<Mutex<Option<vello::Renderer>>>,
     /// wgpu device from the last `resume()`.
     device: Option<anyrender_vello::wgpu::Device>,
     /// wgpu queue from the last `resume()`.
     wgpu_queue: Option<anyrender_vello::wgpu::Queue>,
-    /// Font glyph cache — persisted across frames to avoid re-scanning fonts.
-    font_cache: FontDataCache,
     /// Currently registered Blitz texture handle.
     texture_handle: Option<TextureHandle>,
     /// Document generation at which `texture_handle` was rendered.
@@ -59,8 +52,7 @@ pub(crate) struct LokiPageSource {
     texture_size: (u32, u32),
     /// Shared cursor position written by PageTile on every Dioxus render.
     cursor_holder: Arc<Mutex<Option<RendererSelection>>>,
-    /// Cursor position at which `texture_handle` was rendered — used to
-    /// invalidate the reuse guard when the cursor moves.
+    /// Cursor at last render — invalidates the reuse guard on cursor moves.
     cursor_at_render: Option<RendererSelection>,
 }
 
@@ -77,7 +69,6 @@ impl LokiPageSource {
             renderer,
             device: None,
             wgpu_queue: None,
-            font_cache: FontDataCache::new(),
             texture_handle: None,
             texture_generation: 0,
             texture_size: (0, 0),
@@ -177,56 +168,19 @@ impl CustomPaintSource for LokiPageSource {
         }
 
         // Step 6: allocate new GPU texture.
-        // COMPAT(blitz): Rgba8Unorm + STORAGE_BINDING|TEXTURE_BINDING matches
-        // the format expected by anyrender_vello register_texture.
-        let texture = device.create_texture(&anyrender_vello::wgpu::TextureDescriptor {
-            label: Some("loki-page"),
-            size: Extent3d {
-                width: w_phys,
-                height: h_phys,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::STORAGE_BINDING
-                | TextureUsages::TEXTURE_BINDING
-                | TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        let view = texture.create_view(&TextureViewDescriptor::default());
+        let (texture, view) = render::allocate_page_texture(device, w_phys, h_phys);
 
         // Step 6: build Vello scene for this page.
         let render_scale = scale as f32 * (96.0 / 72.0) * self.source.zoom();
 
-        // Compute cursor paint data in a scoped block so the layout guard is
-        // dropped before the second layout_for_generation call below.
-        let cursor_paint = {
-            current_sel.and_then(|sel| {
-                let cp = sel.focus;
-                if cp.page_index != self.page_index {
-                    return None;
-                }
-                let guard = self.source.layout_for_generation(current_generation);
-                // Reflow layouts carry no editing data — no cursor is painted.
-                let layout = guard.as_ref()?.1.as_paginated()?;
-                let page = layout.pages.get(self.page_index)?;
-                let editing_data = page.editing_data.as_ref()?;
-                let para_data = editing_data
-                    .paragraphs
-                    .iter()
-                    .find(|p| p.block_index == cp.paragraph_index)?;
-                let cursor_rect = para_data.layout.cursor_rect(cp.byte_offset);
-                Some(loki_vello::CursorPaint {
-                    cursor_rect,
-                    selection_rects: vec![],
-                    selection_handles: vec![],
-                    paragraph_index: cp.paragraph_index,
-                })
-                // guard drops here, before layout_for_generation is called again
-            })
-        };
+        // Compute cursor paint data (scoped so its layout guard is dropped
+        // before the second layout_for_generation call below).
+        let cursor_paint = render::page_cursor_paint(
+            &self.source,
+            self.page_index,
+            current_generation,
+            current_sel,
+        );
 
         // Reflow caret + selection, as (block_index, byte_offset) pairs;
         // paint_tile paints them on whichever band tile they fall in (paginated
@@ -244,15 +198,24 @@ impl CustomPaintSource for LokiPageSource {
         let layout_guard = self.source.layout_for_generation(current_generation);
         let (_, layout) = layout_guard.as_ref()?;
         let mut scene = Scene::new();
+        // One FontDataCache per document, shared across all page tiles via
+        // DocPageSource (memory F5 / BM-9) — tiles no longer each clone the
+        // face bytes. Tiles render serially, so the lock is uncontended.
+        let mut font_cache = self
+            .source
+            .font_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         layout.paint_tile(
             &mut scene,
-            &mut self.font_cache,
+            &mut font_cache,
             self.page_index,
             render_scale,
             cursor_paint.as_ref(),
             reflow_cursor,
             reflow_selection,
         );
+        drop(font_cache);
         drop(layout_guard);
         let scene_ms = paint_start.elapsed().as_secs_f64() * 1000.0;
         let render_start = std::time::Instant::now();

@@ -115,6 +115,9 @@ pub fn App() -> Element {
         Ok(service) => {
             crate::editing::spell::set_active(service.snapshot().map(|snap| {
                 loki_layout::SpellState {
+                    // Registering the active dictionary under its own tag lets
+                    // layout skip runs tagged with other languages (gap #30).
+                    checkers: std::iter::once((snap.language, snap.checker.clone())).collect(),
                     checker: snap.checker,
                     generation: snap.generation,
                 }

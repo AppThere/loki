@@ -15,7 +15,7 @@ use dioxus::prelude::*;
 #[cfg(any(not(target_os = "android"), android_gpu))]
 use crate::page_tile::PageTile;
 #[cfg(any(not(target_os = "android"), android_gpu))]
-use crate::render_layout::{PX_TO_PT, RenderMode, reflow_tile_width_px};
+use crate::render_layout::{RenderMode, reflow_layout_tile_width_pt, reflow_type_scale};
 use crate::renderer_state::RendererState;
 
 // The HTML-flow fallback is only used on the Android CPU path; GPU targets
@@ -74,18 +74,20 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         // formatting fidelity), presented as zero-gap virtual tiles.
         let render_mode = if props.view_mode == ViewMode::Reflow && props.reflow_width_px > 1.0 {
             RenderMode::Reflow {
-                available_width_pt: reflow_tile_width_px(props.reflow_width_px as f32) * PX_TO_PT,
+                available_width_pt: reflow_layout_tile_width_pt(props.reflow_width_px as f32),
             }
         } else {
             RenderMode::Paginated
         };
         renderer.source.set_render_mode(render_mode);
-        // Zoom applies to paginated tiles only; reflow "zoom" would be a
-        // layout-width change, so it stays at 1.0 there.
+        // Paginated tiles zoom with the user's zoom control. Reflow tiles paint
+        // at the responsive type scale (Spec 03 M4): the layout width above is
+        // divided by the same factor, so the on-screen tile width is unchanged
+        // while Compact type renders larger.
         let zoom = if render_mode == RenderMode::Paginated {
             props.zoom.max(0.25)
         } else {
-            1.0
+            f64::from(reflow_type_scale(props.reflow_width_px as f32))
         };
         renderer.source.set_zoom(zoom as f32);
         // Single canonical layout: in paginated mode reuse the layout the editor

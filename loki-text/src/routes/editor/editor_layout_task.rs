@@ -24,10 +24,11 @@
 
 use std::sync::{Arc, Mutex};
 
+use dioxus::prelude::*;
 use futures_channel::oneshot;
 use loki_doc_model::document::Document;
 
-use crate::editing::relayout::LaidOut;
+use crate::editing::relayout::{LaidOut, page_metrics};
 use crate::editing::state::{DocumentState, compute_seed_layout};
 
 /// Lays out `doc` on a worker thread and resolves to `(doc, layout)`.
@@ -59,6 +60,72 @@ pub(super) async fn compute_layout_off_main_thread(
         })
         .ok()?;
     rx.await.ok()
+}
+
+/// Recomputes the layout a restored session deliberately did not stash
+/// (memory F3 / plan 6.1) on the same worker thread as the open path, then
+/// publishes it — guarded against both a tab switch and an edit racing the
+/// worker. No-op when the session had no document snapshot (nothing ever
+/// loaded; the fresh-load path covers it).
+pub(super) fn spawn_restore_relayout(
+    doc_state: Arc<Mutex<DocumentState>>,
+    document: Option<Arc<Document>>,
+    expected_gen: u64,
+    path_signal: Signal<String>,
+    total_pages: Signal<u32>,
+) {
+    let Some(doc) = document else { return };
+    let expected_path = path_signal.peek().clone();
+    spawn(async move {
+        let fr_arc = {
+            let Ok(state) = doc_state.lock() else { return };
+            state.shared_font_resources.clone()
+        };
+        let (tx, rx) = oneshot::channel();
+        let worker = std::thread::Builder::new()
+            .name("loki-restore-layout".into())
+            .spawn(move || {
+                let layout = compute_seed_layout(&fr_arc, &doc);
+                let _ = tx.send(layout);
+            });
+        if worker.is_err() {
+            return;
+        }
+        let Ok(laid) = rx.await else { return };
+        // Another tab took over while the worker ran — discard.
+        if *path_signal.peek() != expected_path {
+            return;
+        }
+        if let Some(pages) = publish_restore_layout(&doc_state, laid, expected_gen) {
+            let mut total_pages = total_pages;
+            total_pages.set(pages as u32);
+        }
+    });
+}
+
+/// Publishes a restore relayout unless an edit already produced a newer
+/// layout (`apply_mutation_and_relayout` bumps the generation, and its layout
+/// supersedes this one — returns `None` then). Leaves `document` untouched —
+/// the restore already set it, so no extra `Document` clone is paid. Returns
+/// the published page count.
+fn publish_restore_layout(
+    doc_state: &Arc<Mutex<DocumentState>>,
+    laid: LaidOut,
+    expected_gen: u64,
+) -> Option<usize> {
+    let mut state = doc_state.lock().ok()?;
+    if state.generation != expected_gen {
+        return None; // an edit relaid out meanwhile — its layout wins
+    }
+    let (page_count, page_width_px, page_height_px) = page_metrics(&laid.layout);
+    state.paginated_layout = Some(Arc::new(laid.layout));
+    state.layout_reuse = Some(laid.reuse);
+    state.page_count = page_count;
+    state.page_width_px = page_width_px;
+    state.page_height_px = page_height_px;
+    state.incremental = None;
+    state.generation = state.generation.wrapping_add(1);
+    Some(page_count)
 }
 
 #[cfg(test)]
@@ -93,5 +160,41 @@ mod tests {
         assert_eq!(state.page_count, pages);
         assert!(state.paginated_layout.is_some());
         assert!(state.document.is_some());
+    }
+
+    /// The restore publish replaces the deliberately-unstashed layout when the
+    /// generation is untouched (memory F3 / plan 6.1) …
+    #[test]
+    fn restore_publish_lands_when_generation_matches() {
+        let doc_state = Arc::new(Mutex::new(DocumentState::new()));
+        let fonts = doc_state.lock().unwrap().shared_font_resources.clone();
+        doc_state.lock().unwrap().generation = 7;
+
+        let doc = Document::new_blank();
+        let laid = compute_seed_layout(&fonts, &doc);
+        let pages = publish_restore_layout(&doc_state, laid, 7);
+        assert!(pages.is_some_and(|p| p >= 1), "publish must land");
+
+        let state = doc_state.lock().unwrap();
+        assert!(state.paginated_layout.is_some());
+        assert_eq!(state.generation, 8, "publish bumps the generation");
+    }
+
+    /// … and yields to an edit that raced the worker (its relayout, published
+    /// under a newer generation, must not be clobbered by the stale restore).
+    #[test]
+    fn restore_publish_yields_to_a_racing_edit() {
+        let doc_state = Arc::new(Mutex::new(DocumentState::new()));
+        let fonts = doc_state.lock().unwrap().shared_font_resources.clone();
+        // The edit bumped the generation past the restore's expectation.
+        doc_state.lock().unwrap().generation = 8;
+
+        let doc = Document::new_blank();
+        let laid = compute_seed_layout(&fonts, &doc);
+        assert!(publish_restore_layout(&doc_state, laid, 7).is_none());
+
+        let state = doc_state.lock().unwrap();
+        assert!(state.paginated_layout.is_none(), "stale restore discarded");
+        assert_eq!(state.generation, 8, "generation untouched");
     }
 }

@@ -19,6 +19,8 @@ sheet-model = ["dep:loki-sheet-model"]
 
 [dependencies]
 thiserror = { workspace = true }
+# The corpus vocabulary (catalog cases, fixture metadata) serializes into reports.
+serde = { version = "1", features = ["derive"] }
 # Round-trip the candidate XML through a temp file for `xmllint` validation.
 tempfile = "3"
 # PNG decode/encode for the visual-goldens differ and heatmap emission.

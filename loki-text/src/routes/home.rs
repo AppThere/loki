@@ -9,13 +9,14 @@
 //! All user-visible strings come from `loki_i18n::fl!()` — no hardcoded
 //! English literals.
 
-use appthere_ui::{AtConfirmDialog, AtHomeTab, BuiltinTemplate, RecentDocument};
+use appthere_ui::{AtConfirmDialog, AtHomeTab, RecentDocument};
 use dioxus::prelude::*;
 use loki_file_access::{FileAccessToken, FilePicker, PickOptions, PickerError, SaveOptions};
 use loki_i18n::fl;
 
 use super::home_util::{
-    close_tab_for_path, is_template_name, push_new_tab, push_or_switch_tab, suggested_copy_name,
+    TemplateBrowserHost, close_tab_for_path, is_template_name, push_new_tab, push_or_switch_tab,
+    suggested_copy_name,
 };
 use crate::new_document::{new_blank_tab, new_import_tab, new_template_tab};
 use crate::recent_documents::RecentDocuments;
@@ -24,56 +25,9 @@ use crate::sessions::DocSessions;
 use crate::tabs::OpenTab;
 use crate::utils::display_title_from_path;
 
-// ── MIME types accepted by the file picker ────────────────────────────────────
-
-const MIME_TYPES: &[&str] = &[
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.oasis.opendocument.text",
-    // Templates — opened as fresh, detached documents.
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.template", // .dotx
-    "application/vnd.ms-word.template.macroEnabled.12",                        // .dotm
-    "application/vnd.oasis.opendocument.text-template",                        // .ott
-];
-
-// ── Template data ─────────────────────────────────────────────────────────────
-
-// Gallery card 0 is the plain Blank document; cards 1..=5 are the bundled
-// templates, in the same order as the `on_template_select` match below.
-fn make_templates() -> Vec<BuiltinTemplate> {
-    let dotx = || fl!("home-template-format-dotx");
-    vec![
-        BuiltinTemplate {
-            name: fl!("home-template-blank"),
-            description: fl!("home-template-blank-description"),
-            format_label: fl!("home-template-blank-format"),
-        },
-        BuiltinTemplate {
-            name: fl!("home-template-markdown"),
-            description: fl!("home-template-markdown-description"),
-            format_label: dotx(),
-        },
-        BuiltinTemplate {
-            name: fl!("home-template-apa"),
-            description: fl!("home-template-apa-description"),
-            format_label: dotx(),
-        },
-        BuiltinTemplate {
-            name: fl!("home-template-mla"),
-            description: fl!("home-template-mla-description"),
-            format_label: dotx(),
-        },
-        BuiltinTemplate {
-            name: fl!("home-template-screenplay"),
-            description: fl!("home-template-screenplay-description"),
-            format_label: dotx(),
-        },
-        BuiltinTemplate {
-            name: fl!("home-template-resume"),
-            description: fl!("home-template-resume-description"),
-            format_label: dotx(),
-        },
-    ]
-}
+#[path = "home_templates.rs"]
+mod templates;
+use templates::{MIME_TYPES, make_templates};
 
 // ── Home ──────────────────────────────────────────────────────────────────────
 
@@ -93,12 +47,11 @@ pub fn Home() -> Element {
     // Holds the last file-picker error message, if any.
     let pick_error: Signal<Option<String>> = use_signal(|| None);
 
-    // ── on_template_select ────────────────────────────────────────────────────
-    //
-    // Index 0 = "Blank" — opens a new blank document.
-    // All other indices are deferred (templates not yet implemented).
+    // True while the template-browser overlay is open (Browse… card).
+    let mut browsing_templates = use_signal(|| false);
+
+    // ── on_template_select ── index 0 = Blank, 1..=5 = bundled templates ─────
     let on_template_select = move |idx: usize| {
-        // Order must match `make_templates`: 0 = Blank, 1..=5 = bundled templates.
         let tab = match idx {
             0 => new_blank_tab(),
             1 => new_template_tab("markdown", fl!("home-template-markdown")),
@@ -293,8 +246,7 @@ pub fn Home() -> Element {
             recent_documents:       recent_list,
             templates_label:        fl!("home-templates-heading"),
             recent_label:           fl!("home-recent-heading"),
-            // Empty string hides the Browse card until template browsing is implemented.
-            browse_label:           String::new(),
+            browse_label:           fl!("home-browse-templates"),
             open_file_label:        fl!("home-open-file"),
             empty_recent_label:     fl!("home-no-recent"),
             recent_menu_aria_label: fl!("home-recent-menu-aria"),
@@ -303,14 +255,15 @@ pub fn Home() -> Element {
             recent_open_copy_label: fl!("home-recent-menu-open-copy"),
                 pick_error:             pick_error,
                 on_template_select:     on_template_select,
-                // TODO(browse-templates): open a template browser dialog.
-                on_browse_templates:    |_| {},
+                on_browse_templates:    move |_| browsing_templates.set(true),
                 on_recent_open:         on_recent_open,
                 on_open_file:           on_open_file,
                 on_recent_remove:       on_recent_remove,
                 on_recent_delete:       on_recent_delete,
                 on_recent_open_copy:    on_recent_open_copy,
             }
+
+            TemplateBrowserHost { browsing: browsing_templates, on_select: on_template_select }
 
             // ── Delete confirmation (ADR-0013 boundary mount) ─────────────────
             {pending_delete.read().clone().map(|(path, title)| rsx! {

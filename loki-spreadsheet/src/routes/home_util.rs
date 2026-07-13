@@ -15,24 +15,16 @@ use crate::utils::display_title_from_path;
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Push `path` as a new open tab, or switch to its existing tab if already open.
+///
+/// Thin `Signal` wrapper over the shared [`loki_app_shell::tabs::open_or_switch`]
+/// logic (deduplicated across the three app shells — plan 7.2).
 pub(super) fn push_or_switch_tab(
     mut tabs: Signal<Vec<OpenTab>>,
     mut active_tab: Signal<usize>,
     path: String,
 ) {
     let title = display_title_from_path(&path);
-    let existing = tabs.read().iter().position(|t| t.path == path);
-    if let Some(idx) = existing {
-        *active_tab.write() = idx + 1;
-    } else {
-        tabs.write().push(OpenTab {
-            title,
-            path,
-            is_dirty: false,
-            is_discarded: false,
-        });
-        *active_tab.write() = tabs.read().len(); // new tab is last; +1 for Home
-    }
+    *active_tab.write() = loki_app_shell::tabs::open_or_switch(&mut tabs.write(), path, title);
 }
 
 /// Close any open tab whose `path` matches `path`, resetting the active tab to
@@ -44,20 +36,17 @@ pub(super) fn push_or_switch_tab(
 /// stashed from an earlier tab switch, would otherwise leak the whole
 /// `LoroDoc`/workbook in the map — and a later file created at the same token
 /// key would restore the deleted workbook's content instead of loading fresh.
+/// Tab bookkeeping is the shared [`loki_app_shell::tabs::close_by_path`] logic.
 pub(super) fn close_tab_for_path(
     mut tabs: Signal<Vec<OpenTab>>,
     mut active_tab: Signal<usize>,
     mut sessions: Signal<DocSessions>,
     path: &str,
 ) {
-    let removed = tabs.read().iter().position(|t| t.path == path);
-    if let Some(idx) = removed {
-        tabs.write().remove(idx);
-        // active_tab is 1-based (index 0 = Home). Reset to Home if the active
-        // selection pointed at or past the removed tab to avoid a stale index.
-        if *active_tab.read() > idx {
-            *active_tab.write() = 0;
-        }
+    let active = *active_tab.read();
+    let new_active = loki_app_shell::tabs::close_by_path(&mut tabs.write(), active, path);
+    if new_active != active {
+        *active_tab.write() = new_active;
     }
     // Drop the stashed session regardless of whether a tab was open — a session
     // can outlive its tab (stashed on tab switch, then the tab closed).

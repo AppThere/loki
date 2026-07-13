@@ -64,3 +64,13 @@ style-provenance-local = Local
 style-provenance-inherited = Inherited · { $ancestor }
 style-provenance-default = Default
 style-provenance-engine = Auto
+
+# ── Table family (Spec 05 M6, 4a.3) ─────────────────────────────────────────
+style-table-family-heading = Table styles
+style-table-form-heading = Edit table style
+style-table-row-band-label = Row bands
+style-table-col-band-label = Column bands
+style-table-align-unset = Auto
+style-table-align-left = Left
+style-table-align-center = Center
+style-table-align-right = Right

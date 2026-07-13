@@ -12,5 +12,4 @@ path = "src/lib.rs"
 
 [dependencies]
 dioxus     = { workspace = true }
-thiserror  = { workspace = true }
 loki-i18n  = { path = "../loki-i18n" }

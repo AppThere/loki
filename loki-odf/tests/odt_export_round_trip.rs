@@ -854,6 +854,7 @@ fn table_style_banding_resolves_into_per_cell_shading_on_odt_export() {
         TableRegion::FirstRow,
         TableConditionalFormat {
             background_color: Some(blue.clone()),
+            char_props: loki_doc_model::style::props::char_props::CharProps::default(),
         },
     );
 
@@ -913,13 +914,17 @@ fn table_style_banding_resolves_into_per_cell_shading_on_odt_export() {
     );
 }
 
-/// A table's named-style reference (`table:style-name`) survives ODT export →
-/// import: the writer emits the `<style:style style:family="table">` definition
-/// in styles.xml and the reference on the table; import restores `style_name`.
+/// A table's named-style reference (`table:style-name`) **and its
+/// definition** survive ODT export → import: the writer emits the
+/// `<style:style style:family="table">` with its `style:table-properties`
+/// (width / alignment / background) into styles.xml plus the reference on the
+/// table; import restores `style_name` and re-reads the definition into the
+/// catalog's `table_styles` entry (deferred-features 4a.3 tail).
 #[test]
 fn table_style_name_reference_round_trips() {
     use loki_doc_model::content::table::core::Table;
-    use loki_doc_model::style::table_style::{TableProps, TableStyle, TableWidth};
+    use loki_doc_model::style::table_style::{TableAlignment, TableProps, TableStyle, TableWidth};
+    use loki_primitives::color::DocumentColor;
     use loki_primitives::units::Points;
 
     let mut table = Table::grid(2, 2);
@@ -934,6 +939,8 @@ fn table_style_name_reference_round_trips() {
             parent: None,
             table_props: TableProps {
                 width: Some(TableWidth::Absolute(Points::new(340.0))),
+                alignment: Some(TableAlignment::Center),
+                background_color: Some(DocumentColor::from_hex("#CADCFC").unwrap()),
                 ..TableProps::default()
             },
             conditional: Default::default(),
@@ -953,4 +960,206 @@ fn table_style_name_reference_round_trips() {
         })
         .expect("table survives");
     assert_eq!(t.style_name(), Some("Banded"));
+
+    // The definition round-trips into the catalog, not just the reference.
+    let style = back
+        .styles
+        .table_styles
+        .get(&StyleId::new("Banded"))
+        .expect("table style definition re-imported");
+    match style.table_props.width {
+        Some(TableWidth::Absolute(w)) => assert!((w.value() - 340.0).abs() < 0.01),
+        ref other => panic!("expected absolute width, got {other:?}"),
+    }
+    assert_eq!(style.table_props.alignment, Some(TableAlignment::Center));
+    assert_eq!(
+        style
+            .table_props
+            .background_color
+            .as_ref()
+            .and_then(DocumentColor::to_hex)
+            .as_deref(),
+        Some("#CADCFC")
+    );
+}
+
+/// A percent-width table style survives via `style:rel-width`.
+#[test]
+fn table_style_percent_width_round_trips() {
+    use loki_doc_model::content::table::core::Table;
+    use loki_doc_model::style::table_style::{TableProps, TableStyle, TableWidth};
+
+    let mut table = Table::grid(1, 1);
+    table.set_style_name(Some("Half".into()));
+    let mut doc = Document::new();
+    doc.styles.table_styles.insert(
+        StyleId::new("Half"),
+        TableStyle {
+            id: StyleId::new("Half"),
+            display_name: None,
+            parent: None,
+            table_props: TableProps {
+                width: Some(TableWidth::Percent(50.0)),
+                ..TableProps::default()
+            },
+            conditional: Default::default(),
+            extensions: Default::default(),
+        },
+    );
+    doc.sections[0].blocks = vec![Block::Table(Box::new(table))];
+
+    let back = round_trip(&doc);
+    let style = back
+        .styles
+        .table_styles
+        .get(&StyleId::new("Half"))
+        .expect("table style re-imported");
+    match style.table_props.width {
+        Some(TableWidth::Percent(p)) => assert!((p - 50.0).abs() < 0.01),
+        ref other => panic!("expected percent width, got {other:?}"),
+    }
+}
+
+/// 5.10: the document-wide defaults survive export as `<style:default-style>`
+/// elements — the paragraph family from the catalog's `is_default` style and
+/// the text family from `default_character_style` — and read back as the
+/// synthetic `__Default` / `__DefaultChar` entries. Before this, the defaults
+/// were silently dropped (the named-style writer skips synthetic styles), so a
+/// re-opened document lost its base font and size.
+#[test]
+fn default_styles_round_trip() {
+    use loki_doc_model::style::char_style::CharacterStyle;
+
+    let mut doc = sample_doc();
+    // A text-family default alongside sample_doc's default "Normal" (Times 12).
+    let ch_id = StyleId::new("__DefaultChar");
+    doc.styles.character_styles.insert(
+        ch_id.clone(),
+        CharacterStyle {
+            id: ch_id.clone(),
+            display_name: None,
+            parent: None,
+            char_props: CharProps {
+                italic: Some(true),
+                ..Default::default()
+            },
+            extensions: Default::default(),
+        },
+    );
+    doc.styles.default_character_style = Some(ch_id);
+
+    let mut buf = Cursor::new(Vec::new());
+    OdtExport::export(&doc, &mut buf, OdtExportOptions::default()).expect("export");
+    let back = OdtImport::import(Cursor::new(buf.into_inner()), OdtImportOptions::default())
+        .expect("import");
+
+    let default = back
+        .styles
+        .paragraph_styles
+        .values()
+        .find(|s| s.is_default)
+        .expect("a default paragraph style must survive the round trip");
+    assert_eq!(
+        default.char_props.font_name.as_deref(),
+        Some("Times New Roman"),
+        "the default base font must round-trip"
+    );
+    assert_eq!(
+        default.char_props.font_size.map(|p| p.value()),
+        Some(12.0),
+        "the default base size must round-trip"
+    );
+    assert_eq!(
+        back.styles.default_paragraph_style.as_ref(),
+        Some(&default.id),
+        "the catalog default wiring must point at the imported default style"
+    );
+
+    let ch = back
+        .styles
+        .default_character_style
+        .as_ref()
+        .and_then(|id| back.styles.character_styles.get(id))
+        .expect("the text-family default must survive the round trip");
+    assert_eq!(
+        ch.char_props.italic,
+        Some(true),
+        "the text-family default's properties must round-trip"
+    );
+}
+
+/// 4a.3: direct cell borders and padding round-trip through the per-cell
+/// automatic `table-cell` style — export previously baked only the
+/// background, dropping borders and padding a DOCX-imported (or edited)
+/// table carried.
+#[test]
+fn cell_borders_and_padding_round_trip_via_cell_style() {
+    use loki_doc_model::content::table::core::{Table, TableBody, TableFoot, TableHead};
+    use loki_doc_model::content::table::row::{Cell, CellProps, Row};
+    use loki_doc_model::style::props::border::{Border, BorderStyle};
+    use loki_primitives::color::DocumentColor;
+
+    let bordered = Cell {
+        props: CellProps {
+            border_top: Some(Border::solid(
+                Points::new(1.0),
+                DocumentColor::from_hex("#FF0000").unwrap(),
+            )),
+            border_left: Some(Border {
+                style: BorderStyle::Dashed,
+                width: Points::new(0.5),
+                color: None,
+                spacing: None,
+            }),
+            padding_top: Some(Points::new(4.0)),
+            padding_right: Some(Points::new(6.0)),
+            ..CellProps::default()
+        },
+        ..Cell::simple(vec![Block::Para(vec![Inline::Str("x".into())])])
+    };
+    let plain = Cell::simple(vec![Block::Para(vec![Inline::Str("y".into())])]);
+    let table = Table {
+        attr: NodeAttr::default(),
+        caption: Default::default(),
+        width: None,
+        col_specs: vec![],
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![Row::new(vec![bordered, plain])])],
+        foot: TableFoot::empty(),
+    };
+    let mut doc = Document::new();
+    doc.sections[0].blocks = vec![Block::Table(Box::new(table))];
+
+    let back = round_trip(&doc);
+    let t = back.sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            Block::Table(t) => Some(t.as_ref()),
+            _ => None,
+        })
+        .expect("table survives");
+    let cell = &t.bodies[0].body_rows[0].cells[0];
+
+    let top = cell.props.border_top.as_ref().expect("top border survives");
+    assert_eq!(top.style, BorderStyle::Solid);
+    assert!((top.width.value() - 1.0).abs() < 0.05);
+    assert_eq!(
+        top.color
+            .as_ref()
+            .and_then(DocumentColor::to_hex)
+            .as_deref(),
+        Some("#FF0000")
+    );
+    assert_eq!(
+        cell.props.border_left.as_ref().map(|b| b.style),
+        Some(BorderStyle::Dashed)
+    );
+    assert!((cell.props.padding_top.expect("padding-top").value() - 4.0).abs() < 0.05);
+    assert!((cell.props.padding_right.expect("padding-right").value() - 6.0).abs() < 0.05);
+    let plain_back = &t.bodies[0].body_rows[0].cells[1];
+    assert!(
+        plain_back.props.border_top.is_none(),
+        "plain cell stays clean"
+    );
 }

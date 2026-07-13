@@ -116,13 +116,19 @@ pub enum TableRegion {
 
 /// The formatting a table style applies to one [`TableRegion`].
 ///
-/// Only cell shading is modeled today; borders and character formatting
-/// are future work (Spec 05, 4a.3). OOXML `w:tblStylePr` child props.
+/// Cell shading and character formatting are modeled (4a.3); region borders
+/// remain future work. OOXML `w:tblStylePr` child props.
 #[derive(Debug, Clone, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TableConditionalFormat {
     /// Cell background (shading) for cells in this region.
     pub background_color: Option<DocumentColor>,
+    /// Character formatting for runs in this region (`w:tblStylePr/w:rPr` —
+    /// e.g. a bold header row). Applied at layout in Word's precedence:
+    /// docDefaults < table region < named styles < direct formatting.
+    /// `serde(default)` for catalogs stored before 4a.3.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub char_props: crate::style::props::char_props::CharProps,
 }
 
 /// Which conditional regions of a table style are active for one table

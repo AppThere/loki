@@ -34,6 +34,13 @@ pub struct LayoutOptions {
     /// built-in 36 pt (½ inch). Applied when a paragraph runs out of explicit
     /// tab stops.
     pub default_tab_stop_pt: Option<f32>,
+
+    /// Mirror the left/right margins on even (verso) pages (Word
+    /// `w:mirrorMargins`, gap #27). Folded in from
+    /// `DocumentSettings::mirror_margins` by `layout_document`; the content
+    /// width is unchanged (left + right is constant), only the content
+    /// area's horizontal position swaps.
+    pub mirror_margins: bool,
 }
 
 /// A spell checker plus a cache-invalidation generation, supplied via
@@ -47,10 +54,105 @@ pub struct LayoutOptions {
 /// service starts at `1` (0 is reserved for "no spell checking").
 #[derive(Debug, Clone)]
 pub struct SpellState {
-    /// The shared, thread-safe checker queried during layout.
+    /// The shared, thread-safe checker queried during layout. Used for text
+    /// with no language tag, and — when [`Self::checkers`] is empty — for all
+    /// text (single-dictionary mode).
     pub checker: std::sync::Arc<loki_spell::SpellChecker>,
+    /// Per-language checkers keyed by *normalized* BCP-47 tag
+    /// (`loki_spell::locale::normalize` — lowercase, `-` separators), resolved
+    /// via the locale fallback chain (gap #30). When non-empty, a run tagged
+    /// with a language that resolves to **no** entry is *skipped* rather than
+    /// checked against the wrong dictionary — so foreign-language runs are not
+    /// blanketed in false squiggles (matching LibreOffice). The host should
+    /// register the default checker under its own language tag.
+    pub checkers: std::collections::HashMap<String, std::sync::Arc<loki_spell::SpellChecker>>,
     /// Monotonic generation; bump on any change the text alone cannot express.
     pub generation: u64,
+}
+
+impl SpellState {
+    /// The checker for a run tagged `language` (`None` = untagged text).
+    ///
+    /// Untagged text always uses the default [`Self::checker`]. Tagged text
+    /// resolves through the fallback chain (`fr-CA` → `fr-ca`, `fr`) against
+    /// [`Self::checkers`]; on a miss it falls back to the default checker in
+    /// single-dictionary mode (empty map — the pre-gap-#30 behaviour) and to
+    /// `None` (skip checking) in multi-dictionary mode.
+    #[must_use]
+    pub fn checker_for(
+        &self,
+        language: Option<&str>,
+    ) -> Option<&std::sync::Arc<loki_spell::SpellChecker>> {
+        let Some(language) = language else {
+            return Some(&self.checker);
+        };
+        for tag in loki_spell::locale::fallback_chain(language) {
+            if let Some(checker) = self.checkers.get(&tag) {
+                return Some(checker);
+            }
+        }
+        self.checkers.is_empty().then_some(&self.checker)
+    }
+}
+
+#[cfg(test)]
+mod spell_state_tests {
+    use std::sync::Arc;
+
+    use super::SpellState;
+
+    fn state(tags: &[&str]) -> SpellState {
+        let checker = Arc::new(loki_spell::SpellChecker::bundled().expect("bundled loads"));
+        SpellState {
+            checkers: tags
+                .iter()
+                .map(|t| ((*t).to_string(), Arc::clone(&checker)))
+                .collect(),
+            checker,
+            generation: 1,
+        }
+    }
+
+    #[test]
+    fn untagged_text_uses_the_default_checker() {
+        let s = state(&["fr"]);
+        assert!(
+            s.checker_for(None)
+                .is_some_and(|c| Arc::ptr_eq(c, &s.checker))
+        );
+    }
+
+    #[test]
+    fn tagged_text_resolves_through_the_fallback_chain() {
+        let s = state(&["fr"]);
+        assert!(
+            s.checker_for(Some("fr-CA")).is_some(),
+            "fr-CA falls back to fr"
+        );
+        assert!(
+            s.checker_for(Some("FR_ca")).is_some(),
+            "normalization applies"
+        );
+    }
+
+    #[test]
+    fn unmatched_tag_skips_in_multi_dictionary_mode() {
+        let s = state(&["fr"]);
+        assert!(
+            s.checker_for(Some("de-DE")).is_none(),
+            "no de dictionary → skip"
+        );
+    }
+
+    #[test]
+    fn unmatched_tag_falls_back_in_single_dictionary_mode() {
+        let s = state(&[]);
+        assert!(
+            s.checker_for(Some("de-DE"))
+                .is_some_and(|c| Arc::ptr_eq(c, &s.checker)),
+            "empty map keeps the legacy check-everything behaviour"
+        );
+    }
 }
 
 /// Resolved page numbering for field substitution during layout.

@@ -15,10 +15,12 @@
 
 pub mod colors;
 pub mod layout;
+pub mod palette;
 pub mod spacing;
 pub mod typography;
 
 pub use colors::*;
 pub use layout::*;
+pub use palette::ThemePalette;
 pub use spacing::*;
 pub use typography::*;

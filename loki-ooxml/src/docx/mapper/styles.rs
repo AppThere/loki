@@ -218,7 +218,8 @@ fn shd_color(fill: Option<&str>) -> Option<DocumentColor> {
 }
 
 /// Build [`TableProps`] and the conditional-region map from parsed table-style
-/// data. Regions with no resolvable shading are skipped.
+/// data. Regions carrying neither shading nor character formatting are
+/// skipped.
 fn map_table_style_props(
     t: &DocxTableStyleProps,
 ) -> (TableProps, IndexMap<TableRegion, TableConditionalFormat>) {
@@ -230,17 +231,25 @@ fn map_table_style_props(
     };
     let mut conditional = IndexMap::new();
     for c in &t.conditional {
-        if let (Some(region), Some(bg)) = (
-            map_table_region(&c.region),
-            shd_color(c.shd_fill.as_deref()),
-        ) {
-            conditional.insert(
-                region,
-                TableConditionalFormat {
-                    background_color: Some(bg),
-                },
-            );
+        let Some(region) = map_table_region(&c.region) else {
+            continue;
+        };
+        let background_color = shd_color(c.shd_fill.as_deref());
+        let char_props = c
+            .rpr
+            .as_ref()
+            .map(super::props::map_rpr)
+            .unwrap_or_default();
+        if background_color.is_none() && char_props == CharProps::default() {
+            continue;
         }
+        conditional.insert(
+            region,
+            TableConditionalFormat {
+                background_color,
+                char_props,
+            },
+        );
     }
     (table_props, conditional)
 }
