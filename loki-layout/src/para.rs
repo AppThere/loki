@@ -198,15 +198,19 @@ pub(crate) fn layout_paragraph_spelled(
 }
 
 /// Prepends the paragraph's border and background-fill rects to `items` (so
-/// they render beneath the text). The box spans the full indented width and the
-/// paragraph height. Background is inserted last so it sits behind the border.
+/// they render beneath the text). The box spans the **content column** — from
+/// the start indent to the end indent, for the paragraph's full height —
+/// matching Word, where a paragraph border/shading fills the column rather than
+/// hugging the text ink. `available_width` is the paragraph's available width
+/// (before indents). Background is inserted last so it sits behind the border.
 fn prepend_para_box(
     items: &mut Vec<PositionedItem>,
     para_props: &ResolvedParaProps,
-    width: f32,
+    available_width: f32,
     height: f32,
 ) {
-    let bw = width + para_props.indent_start + para_props.indent_end;
+    let x = para_props.indent_start;
+    let w = (available_width - para_props.indent_start - para_props.indent_end).max(0.0);
     let has_border = para_props.border_top.is_some()
         || para_props.border_right.is_some()
         || para_props.border_bottom.is_some()
@@ -215,7 +219,7 @@ fn prepend_para_box(
         items.insert(
             0,
             PositionedItem::BorderRect(PositionedBorderRect {
-                rect: LayoutRect::new(0.0, 0.0, bw, height),
+                rect: LayoutRect::new(x, 0.0, w, height),
                 top: para_props.border_top,
                 right: para_props.border_right,
                 bottom: para_props.border_bottom,
@@ -227,7 +231,7 @@ fn prepend_para_box(
         items.insert(
             0,
             PositionedItem::FilledRect(PositionedRect {
-                rect: LayoutRect::new(0.0, 0.0, bw, height),
+                rect: LayoutRect::new(x, 0.0, w, height),
                 color: bg,
             }),
         );
@@ -310,7 +314,7 @@ fn layout_paragraph_uncached(
         let content_w =
             (available_width - para_props.indent_start - para_props.indent_end).max(0.0);
         let mut items = Vec::new();
-        prepend_para_box(&mut items, para_props, content_w, line_h);
+        prepend_para_box(&mut items, para_props, available_width, line_h);
         return ParagraphLayout {
             height: line_h,
             width: content_w,
@@ -507,7 +511,7 @@ fn layout_paragraph_uncached(
             }
             content_bottom = content_bottom.max(p.bottom);
         }
-        prepend_para_box(&mut items, para_props, body.width, body.height);
+        prepend_para_box(&mut items, para_props, available_width, body.height);
         return ParagraphLayout {
             height: content_bottom,
             width: body.width,
@@ -708,7 +712,7 @@ fn layout_paragraph_uncached(
         content_bottom = content_bottom.max(p.bottom);
     }
 
-    prepend_para_box(&mut items, para_props, total_width, total_height);
+    prepend_para_box(&mut items, para_props, available_width, total_height);
 
     let parley_layout = if preserve_for_editing {
         Some(Arc::new(layout))

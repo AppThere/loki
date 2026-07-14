@@ -526,6 +526,52 @@ fn border_follows_background() {
 }
 
 #[test]
+fn paragraph_border_spans_the_content_column() {
+    // A bordered paragraph fills the content column — from the start indent to
+    // the end indent — not just the (~short) text ink, matching Word.
+    let mut r = test_resources();
+    let text = "Short.";
+    let edge = BorderEdge {
+        color: LayoutColor::BLACK,
+        width: 1.0,
+        style: BorderStyle::Solid,
+    };
+    let props = ResolvedParaProps {
+        border_bottom: Some(edge),
+        indent_start: 30.0,
+        indent_end: 20.0,
+        ..Default::default()
+    };
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &[single_span(text, 12.0)],
+        &props,
+        400.0,
+        1.0,
+        false,
+    );
+    let b = result
+        .items
+        .iter()
+        .find_map(|i| match i {
+            PositionedItem::BorderRect(b) => Some(b),
+            _ => None,
+        })
+        .expect("border rect");
+    assert!(
+        (b.rect.origin.x - 30.0).abs() < 0.5,
+        "border must start at the start indent (30), got {}",
+        b.rect.origin.x
+    );
+    assert!(
+        (b.rect.size.width - 350.0).abs() < 0.5,
+        "border must span the column (400-30-20=350), not the short text ink; got {}",
+        b.rect.size.width
+    );
+}
+
+#[test]
 fn superscript_span_uses_smaller_font() {
     // A span with vertical_align=Superscript should use font_size * 0.58.
     // We verify by checking that the layout of a superscript run produces a
