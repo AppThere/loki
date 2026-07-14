@@ -1878,6 +1878,90 @@ mod page_fields {
         );
     }
 
+    /// A `wrapNone` float reserves no space: Word flows the text at full column
+    /// width and the object overlaps it. So the anchoring paragraph's text must
+    /// start at the column edge (not shifted to clear a band), and the following
+    /// paragraph must not be pushed down by the image height.
+    #[test]
+    fn wrap_none_float_overlaps_text_without_reserving_space() {
+        use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
+        use loki_doc_model::content::inline::LinkTarget;
+
+        fn wrap_none_image(cx_emu: u64, cy_emu: u64) -> Inline {
+            let mut attr = NodeAttr::default();
+            attr.kv.push(("cx_emu".into(), cx_emu.to_string()));
+            attr.kv.push(("cy_emu".into(), cy_emu.to_string()));
+            FloatWrap {
+                wrap: TextWrap::None,
+                side: WrapSide::Both,
+                behind_text: false,
+            }
+            .store(&mut attr);
+            Inline::Image(attr, vec![], LinkTarget::new("data:image/png;base64,AAAA"))
+        }
+
+        let mut r = test_resources();
+        // 1 in × 1 in (72 × 72 pt) wrapNone float in a multi-line paragraph.
+        let body = "The quick brown fox jumps over the lazy dog. ".repeat(6);
+        let anchor = StyledParagraph {
+            style_id: None,
+            direct_para_props: None,
+            direct_char_props: None,
+            inlines: vec![wrap_none_image(914_400, 914_400), Inline::Str(body.into())],
+            attr: NodeAttr::default(),
+        };
+        let follower = make_para("Follower paragraph after the anchor.");
+        let section = section_of(vec![anchor, follower], PageLayout::default());
+
+        let (items, _h, _w) = flow_pageless(&mut r, &section);
+
+        let img = items
+            .iter()
+            .find_map(|i| match i {
+                PositionedItem::Image(im) => Some(im),
+                _ => None,
+            })
+            .expect("wrapNone float image emitted");
+        assert!((img.rect.size.height - 72.0).abs() < 1.0, "1 in tall float");
+        let left_edge = img.rect.origin.x;
+
+        let glyphs: Vec<(f32, f32)> = items
+            .iter()
+            .filter_map(|i| match i {
+                PositionedItem::GlyphRun(g) => Some((g.origin.y, g.origin.x)),
+                _ => None,
+            })
+            .collect();
+
+        // Lines within the float's vertical extent are NOT shifted right — the
+        // text overlaps the image (full-width flow), unlike a Square wrap.
+        let beside_min_x = glyphs
+            .iter()
+            .filter(|(y, _)| *y > 5.0 && *y < 60.0)
+            .map(|(_, x)| *x)
+            .fold(f32::INFINITY, f32::min);
+        assert!(
+            beside_min_x < left_edge + 5.0,
+            "wrapNone text must overlap the float, not clear a band; \
+             min x = {beside_min_x}, float left = {left_edge}"
+        );
+
+        // The image reserved no vertical space: the anchor text starts at the
+        // top (it was not shifted down by a block image), and the whole anchor +
+        // follower fits well within the 72 pt the image would otherwise occupy —
+        // block-stacking would push the follower to y ≳ (anchor lines × 12 + 72).
+        let min_y = glyphs.iter().map(|(y, _)| *y).fold(f32::INFINITY, f32::min);
+        let max_y = glyphs.iter().map(|(y, _)| *y).fold(0.0_f32, f32::max);
+        assert!(
+            min_y < 20.0,
+            "anchor text must start at the top, not below the image (min y = {min_y})"
+        );
+        assert!(
+            max_y < 90.0,
+            "no paragraph may be pushed past a reserved 72 pt band (max y = {max_y})"
+        );
+    }
+
     /// A generated table of contents flows its cached body exactly like the same
     /// paragraphs at the top level — before this the layout dropped the block
     /// entirely (the `_ => {}` catch-all), so an inserted or imported TOC was

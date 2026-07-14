@@ -46,21 +46,25 @@ fn top_and_bottom_float_is_not_side_wrapped() {
 }
 
 #[test]
-fn non_behind_wrap_none_is_side_wrapped() {
-    // A margin-anchored `wrapNone` image that is not behind text reserves its
-    // space in Word, so Loki wraps text beside it.
-    let images = vec![img(
-        1.0,
-        1.0,
-        Some(FloatWrap {
-            wrap: TextWrap::None,
-            side: WrapSide::Both,
-            behind_text: false,
-        }),
-    )];
-    let (idx, p) = plan_float(&images, 468.0).expect("wrapNone (front) wraps");
-    assert_eq!(idx, 0);
-    assert!(p.indent_start_delta > 0.0, "default left float, text right");
+fn wrap_none_is_not_side_wrapped() {
+    // Word reserves no space for a `wrapNone` object — the text flows at full
+    // width and the image overlaps it. So `plan_float` declines it (the caller
+    // emits it as an overlay instead), whether it is in front of or behind text.
+    for behind_text in [false, true] {
+        let images = vec![img(
+            1.0,
+            1.0,
+            Some(FloatWrap {
+                wrap: TextWrap::None,
+                side: WrapSide::Both,
+                behind_text,
+            }),
+        )];
+        assert!(
+            plan_float(&images, 468.0).is_none(),
+            "wrapNone never reserves a wrap band (behind_text={behind_text})"
+        );
+    }
 }
 
 #[test]

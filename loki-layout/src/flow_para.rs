@@ -15,6 +15,7 @@
 //! deferred to a future Parley (workaround would be U+202B/U+200F controls).
 
 use loki_doc_model::content::block::StyledParagraph;
+use loki_doc_model::content::float::{TextWrap, WrapSide};
 
 use crate::geometry::LayoutRect;
 use crate::items::{PositionedImage, PositionedItem};
@@ -169,12 +170,35 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     // block-level prefix and existing items shift down to make room.
     let mut total_image_height = 0.0f32;
     let mut image_items: Vec<PositionedItem> = Vec::new();
+    // Overlay floats (`wrapNone`): Word reserves no space for them, so instead
+    // of stacking above the text they float at a side-anchored position over
+    // the full-width text (or under it when `behind_text`). Collected here and
+    // emitted after the block images so they overlap rather than displace.
+    let mut overlay_items: Vec<(bool, PositionedItem)> = Vec::new();
     for img in &images {
         if img.cx_emu == 0 && img.cy_emu == 0 {
             continue; // zero-size image — skip without crashing
         }
         let w = emu_to_pt(img.cx_emu);
         let h = emu_to_pt(img.cy_emu);
+        if let Some(f) = img.float.filter(|f| f.wrap == TextWrap::None) {
+            // Anchor to the same side `plan_float` would have chosen: text on
+            // the left (`side=Left`) means the object sits on the right.
+            let x = if matches!(f.side, WrapSide::Left) {
+                (state.content_width - w).max(0.0)
+            } else {
+                0.0
+            };
+            overlay_items.push((
+                f.behind_text,
+                PositionedItem::Image(PositionedImage {
+                    rect: LayoutRect::new(x, 0.0, w, h),
+                    src: img.src.clone(),
+                    alt: img.alt.clone(),
+                }),
+            ));
+            continue;
+        }
         image_items.push(PositionedItem::Image(PositionedImage {
             rect: LayoutRect::new(0.0, total_image_height, w, h),
             src: img.src.clone(),
@@ -201,6 +225,17 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     // becomes an `ActiveFloat` so *following* paragraphs wrap its remainder.
     if let Some((_, placement)) = float_plan {
         para_layout.items.push(placement.item);
+    }
+
+    // Emit overlay (`wrapNone`) floats last: behind-text ones go under the
+    // whole paragraph (drawn first), in-front ones over the text (drawn last).
+    // Neither reserves vertical space nor shifts the text.
+    for (behind, item) in overlay_items {
+        if behind {
+            para_layout.items.insert(0, item);
+        } else {
+            para_layout.items.push(item);
+        }
     }
 
     // The paragraph's content top in page coordinates (where the float image's

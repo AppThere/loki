@@ -16,11 +16,12 @@
 //! taller than its anchoring paragraph, the remaining extent is recorded as an
 //! [`ActiveFloat`] on the flow state so the *following* paragraphs continue to
 //! wrap beside it until the float bottom is cleared (cross-paragraph wrap).
-//! `Square`, `Tight`, `Through`, and non-behind `None` modes wrap on one side
-//! (the tight contour is approximated by the bounding box; a margin-anchored
-//! `wrapNone` image reserves its space in Word, so text flows beside rather than
-//! under it). `TopAndBottom` and behind-text floats fall through to the
-//! block-stacked image path. Cross-paragraph wrap is bounded to a single page
+//! `Square`, `Tight`, and `Through` modes wrap on one side (the tight contour
+//! is approximated by the bounding box). `wrapNone` never reserves space —
+//! Word flows the text at full column width and the object floats over (or,
+//! `behindDoc`, under) it; the caller emits those as overlays via
+//! [`crate::flow_para`], not as bands. `TopAndBottom` and behind-text floats
+//! fall through to the block-stacked image path. Cross-paragraph wrap is bounded to a single page
 //! and to consecutive plain paragraphs; a table/list/rule (or page break) below
 //! the float reserves its remaining height instead of wrapping. OOXML
 //! `wp:anchor` wrap children; ODF `style:wrap`.
@@ -92,13 +93,13 @@ pub(crate) fn plan_float(
 ) -> Option<(usize, FloatPlacement)> {
     let (idx, img, fw) = images.iter().enumerate().find_map(|(i, img)| {
         let f = img.float?;
-        // Side-wrapping modes flow text beside the object. `None` is included
-        // when the float is not behind the text: Word reserves space for a
-        // margin-anchored `wrapNone` image (text flows beside, not under it),
-        // matching the reference. A behind-text float never displaces text.
+        // Side-wrapping modes flow text beside the object. `wrapNone` is NOT one:
+        // Word reserves no space for it — the text flows the full column width and
+        // the image overlaps (drawn over/under it). The caller handles `wrapNone`
+        // as an overlay; a behind-text float never displaces text either.
         let side_wraps = matches!(
             f.wrap,
-            TextWrap::Square | TextWrap::Tight | TextWrap::Through | TextWrap::None
+            TextWrap::Square | TextWrap::Tight | TextWrap::Through
         );
         (side_wraps && !f.behind_text).then_some((i, img, f))
     })?;
