@@ -110,3 +110,8 @@ fn acid_docx_matches_its_golden() {
 fn iris_blueprint_matches_its_golden() {
     compare_fixture("iris-blueprint");
 }
+
+#[test]
+fn acid2_docx_matches_its_golden() {
+    compare_fixture("acid2-docx");
+}

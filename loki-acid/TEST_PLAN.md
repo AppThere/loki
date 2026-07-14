@@ -207,6 +207,38 @@ see the ODF note in each ODF section).
 
 ---
 
+## 8. ACID 2 — combined-feature archetypes (`acid2-docx.docx`)
+
+Where §1's `acid_docx` isolates one construct per section, **ACID 2** stresses how
+features behave *together* in believable documents — the interaction bugs that
+break real files on open. It is **hand-authored OOXML**, packaged from reviewable
+parts under `loki-acid/assets/acid2/` by
+`cargo run -p loki-acid --example gen_acid2_docx` (mirrored into the conformance
+corpus). Being synthetic rather than Word-authored is deliberate: it can exercise
+constructs Loki cannot yet *emit*. Canonical render = Microsoft 365's render of
+this same file (visual axis; golden capture PENDING). Deliberately CJK-free, so no
+`ja` line-segmentation caveat.
+
+| Page | Archetype | Combines |
+|----|---------|----------|
+| 1 | Report — cover | Title/Subtitle styles, theme colours, `caps`+letter-spacing, accent rule, `DATE` field |
+| 2 | Report — TOC | `TOC` field, dot-leader right tabs, page numbers |
+| 3 | Report — body | Heading hierarchy (`keepNext`), justified text, multi-level list, shaded **table** with `vMerge`+`gridSpan`+`tblHeader`, captioned **figure** (`SEQ`), footnotes, block quote, `REF` cross-reference |
+| 4 | Résumé | Right-tab dates, small caps, section-rule headings, external hyperlinks, bullet hierarchy, tight spacing |
+| 5 | Newsletter | Balanced **two columns**, **drop cap**, square-wrapped **floating image**, pull-quote box, theme colours |
+| 6 | Invoice / contract | Fixed-layout bordered table, legal clause numbering, **tracked changes** (`w:ins`/`w:del`), a **comment**, signature lines |
+| 7 | Appendix | Isolated feature-matrix cells: run decorations & effects, decimal-tab dot leaders, `vMerge` + pattern/solid shading, floating text box, special spaces/hyphens; section carries `pgBorders` + `lnNumType` |
+
+**Bugs surfaced & fixed (2026-07-14):** empty-style-span layout panic (tab-only
+styled run); `keepNext` caption dropping its following table; `keepNext` figure
+paragraph dropping its inline image. **Gaps surfaced (open):** table-style borders,
+in-cell decimal tabs, `wps` text boxes, page borders, line numbering, pattern
+shading, text effects, character borders, `noBreakHyphen`/`softHyphen`, inline-image
+justification, cross-section header/footer inheritance. See §10 of
+[`docs/fidelity-status.md`](../docs/fidelity-status.md).
+
+---
+
 ## Diff-harness hints
 
 - **Page-count drift is the canary.** TC-DOCX-001/027 and any font-substitution case

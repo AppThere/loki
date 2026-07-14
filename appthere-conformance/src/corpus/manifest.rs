@@ -94,6 +94,20 @@ pub const MANIFEST: &[FixtureMeta] = &[
         reference: Some(MICROSOFT_365),
         tolerance_override: None,
     },
+    // ACID 2 — realistic archetypes (report, résumé, newsletter, invoice) that
+    // combine features densely, plus an isolated feature-matrix appendix. Unlike
+    // acid-docx it is hand-authored OOXML (see `loki-acid`'s `gen_acid2_docx`),
+    // so it can exercise constructs Loki cannot yet emit. Golden is Word's render
+    // of this same file; visual test is a no-op until the page PNGs land.
+    FixtureMeta {
+        id: "acid2-docx",
+        format: Format::Docx,
+        feature: "ACID 2 combined-feature archetypes (report/résumé/newsletter/invoice) + feature-matrix appendix",
+        severity: Severity::P0,
+        axes: VISUAL_ONLY,
+        reference: Some(MICROSOFT_365),
+        tolerance_override: None,
+    },
 ];
 
 /// The corpus root: `appthere-conformance/fixtures/`.

@@ -44,6 +44,17 @@ pub(crate) fn flow_keep_with_next_chain(
         if !has_kwn || chain_end + 1 >= blocks.len() {
             break;
         }
+        // Only extend the chain into a block this function can actually lay out
+        // and place. A non-paragraph block (table, rule, nested list) must flow
+        // through the normal `flow_block` dispatch — pulling it into the chain
+        // would place it as a zero-height empty paragraph and silently drop its
+        // content. This is what dropped a table that immediately followed its
+        // `keepNext` caption (the ubiquitous "Table N" caption pattern).
+        // TODO(kwn-table): keep a caption *visually* with its table across a
+        //   page break too — needs real table measurement inside the chain.
+        if !is_chain_compatible(&blocks[chain_end + 1]) {
+            break;
+        }
         natural_len += 1;
         chain_end += 1;
     }
@@ -85,6 +96,19 @@ pub(crate) fn flow_keep_with_next_chain(
 
 // ── Private helpers ───────────────────────────────────────────────────────────
 
+/// Whether a block can be laid out as a member of a keep-with-next chain.
+///
+/// Mirrors the conversion in [`build_chain_layouts`]: only paragraph-like blocks
+/// have a Parley layout the chain can measure and place. Other blocks (tables,
+/// rules, lists) flow through the normal dispatch instead, so the chain must not
+/// absorb them.
+fn is_chain_compatible(block: &Block) -> bool {
+    matches!(
+        block,
+        Block::StyledPara(_) | Block::Heading(..) | Block::Para(_) | Block::Plain(_)
+    )
+}
+
 /// Speculatively lay out blocks `start..=end` and return `(resolved, layout)` pairs.
 fn build_chain_layouts<'s>(
     state: &mut FlowState<'s>,
@@ -112,13 +136,13 @@ fn build_chain_layouts<'s>(
             if let Some(para) = effective_para {
                 let resolved = resolve_para_props(&para, state.catalog);
                 let mut temp_counter = state.note_counter;
-                let (text, spans, _images, _notes) = crate::resolve::flatten_paragraph_with_base(
+                let (text, spans, images, _notes) = crate::resolve::flatten_paragraph_with_base(
                     &para,
                     state.catalog,
                     &mut temp_counter,
                     state.cell_char_defaults.as_ref(),
                 );
-                let layout = layout_paragraph_spelled(
+                let mut layout = layout_paragraph_spelled(
                     state.resources,
                     &text,
                     &spans,
@@ -128,6 +152,11 @@ fn build_chain_layouts<'s>(
                     state.options.preserve_for_editing,
                     state.options.spell.as_ref(),
                 );
+                // Block-stack any inline images (a captioned figure with
+                // `keepNext` on its image paragraph would otherwise vanish —
+                // the chain path formerly discarded the collected images).
+                let overlay = super::stack_block_images(&mut layout, &images, state.content_width);
+                super::apply_overlay_images(&mut layout, overlay);
                 (resolved, layout)
             } else {
                 // Non-text block (HR, table, etc.): contribute zero height.

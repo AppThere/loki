@@ -912,3 +912,57 @@ fn test_table_cell_vertical_alignment() {
         y1
     );
 }
+
+/// REGRESSION: a `keep_with_next` paragraph (the ubiquitous "Table N" caption)
+/// immediately followed by a table must not drop the table. The keep-with-next
+/// chain used to absorb the table as a zero-height empty paragraph, silently
+/// discarding every cell — so a shaded cell emitted no `FilledRect` at all.
+#[test]
+fn keep_next_caption_does_not_drop_the_following_table() {
+    use appthere_color::RgbColor;
+    use loki_doc_model::content::table::col::TableWidth;
+    use loki_doc_model::style::props::para_props::ParaProps;
+
+    let mut r = test_resources();
+    let bg = Some(DocumentColor::Rgb(RgbColor::new(0.2, 0.4, 0.8)));
+
+    let mut caption = make_para("Table 1. Caption");
+    caption.direct_para_props = Some(Box::new(ParaProps {
+        keep_with_next: Some(true),
+        ..Default::default()
+    }));
+
+    let cell = make_cell_tall(vec!["CellText"], bg, 1);
+    let table = Block::Table(Box::new(Table {
+        attr: loki_doc_model::content::attr::NodeAttr::default(),
+        caption: Default::default(),
+        width: Some(TableWidth::Fixed(200.0)),
+        col_specs: vec![ColSpec {
+            alignment: ColAlignment::Default,
+            width: ColWidth::Fixed(loki_primitives::units::Points::new(200.0)),
+        }],
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![Row::new(vec![cell])])],
+        foot: TableFoot::empty(),
+    }));
+
+    let section = Section {
+        page_style: None,
+        layout: PageLayout::default(),
+        start: Default::default(),
+        blocks: vec![Block::StyledPara(caption), table],
+        extensions: ExtensionBag::default(),
+    };
+    let (items, _) = flow_pageless(&mut r, &section);
+    let mut flat = Vec::new();
+    flatten(&items, &mut flat);
+
+    let has_cell_fill = flat
+        .iter()
+        .any(|i| matches!(i, PositionedItem::FilledRect(_)));
+    assert!(
+        has_cell_fill,
+        "the table following a keep_with_next caption must render (its shaded \
+         cell should emit a FilledRect); items = {flat:?}"
+    );
+}

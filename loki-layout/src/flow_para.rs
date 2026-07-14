@@ -166,16 +166,71 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     }
 
     // ── Inline image placement (gap #9) ──────────────────────────────────────
-    // TODO(inline-image-flow): no Parley inline image boxes; images are a
-    // block-level prefix and existing items shift down to make room.
+    // Block-stack the non-floating images and collect any `wrapNone` overlays.
+    let overlay_items = stack_block_images(&mut para_layout, &images, state.content_width);
+
+    // Emit the float beside the wrapped text; a float taller than its text
+    // becomes an `ActiveFloat` so *following* paragraphs wrap its remainder.
+    if let Some((_, placement)) = float_plan {
+        para_layout.items.push(placement.item);
+    }
+
+    // Emit overlay (`wrapNone`) floats last: behind-text ones go under the
+    // whole paragraph (drawn first), in-front ones over the text (drawn last).
+    // Neither reserves vertical space nor shifts the text.
+    apply_overlay_images(&mut para_layout, overlay_items);
+
+    // The paragraph's content top in page coordinates (where the float image's
+    // own top sits), captured before placement may advance/split the cursor.
+    let para_top = state.cursor_y;
+    let page_before = state.page_number;
+
+    place_paragraph_layout(state, &resolved, para_layout, block_index);
+
+    // Maintain the cross-paragraph float band.
+    if state.page_number != page_before {
+        // The paragraph crossed a page; wrap does not span pages.
+        state.active_float = None;
+    } else if let Some((inset, height, shift_text)) = own_float {
+        // A float taller than its anchoring paragraph keeps wrapping below.
+        let bottom_y = para_top + height;
+        state.active_float =
+            (bottom_y > state.cursor_y + 0.5).then_some(super::float_impl::ActiveFloat {
+                bottom_y,
+                inset,
+                shift_text,
+            });
+    } else if let Some(af) = &state.active_float {
+        // Inherited float: drop it once this paragraph reaches its bottom.
+        if state.cursor_y >= af.bottom_y - 0.5 {
+            state.active_float = None;
+        }
+    }
+
+    if resolved.page_break_after && state.mode.is_paginated() {
+        finish_page(state);
+    }
+}
+
+/// Block-stacks a paragraph's non-floating images above its text (gap #9) and
+/// returns any `wrapNone` overlays for the caller to emit after floats.
+///
+/// TODO(inline-image-flow): Parley has no inline image boxes, so images are a
+/// block-level prefix — existing items shift down to make room. Shared by
+/// [`flow_paragraph`] and the keep-with-next chain (`flow_para_chain`) so an
+/// image in a `keepNext` paragraph (e.g. a captioned figure) is not dropped.
+pub(super) fn stack_block_images(
+    para_layout: &mut ParagraphLayout,
+    images: &[crate::resolve::CollectedImage],
+    content_width: f32,
+) -> Vec<(bool, PositionedItem)> {
     let mut total_image_height = 0.0f32;
     let mut image_items: Vec<PositionedItem> = Vec::new();
     // Overlay floats (`wrapNone`): Word reserves no space for them, so instead
     // of stacking above the text they float at a side-anchored position over
-    // the full-width text (or under it when `behind_text`). Collected here and
-    // emitted after the block images so they overlap rather than displace.
+    // the full-width text (or under it when `behind_text`).
     let mut overlay_items: Vec<(bool, PositionedItem)> = Vec::new();
-    for img in &images {
+    for img in images {
         if img.cx_emu == 0 && img.cy_emu == 0 {
             continue; // zero-size image — skip without crashing
         }
@@ -185,7 +240,7 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
             // Anchor to the same side `plan_float` would have chosen: text on
             // the left (`side=Left`) means the object sits on the right.
             let x = if matches!(f.side, WrapSide::Left) {
-                (state.content_width - w).max(0.0)
+                (content_width - w).max(0.0)
             } else {
                 0.0
             };
@@ -220,52 +275,21 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
         image_items.append(&mut para_layout.items);
         para_layout.items = image_items;
     }
+    overlay_items
+}
 
-    // Emit the float beside the wrapped text; a float taller than its text
-    // becomes an `ActiveFloat` so *following* paragraphs wrap its remainder.
-    if let Some((_, placement)) = float_plan {
-        para_layout.items.push(placement.item);
-    }
-
-    // Emit overlay (`wrapNone`) floats last: behind-text ones go under the
-    // whole paragraph (drawn first), in-front ones over the text (drawn last).
-    // Neither reserves vertical space nor shifts the text.
+/// Emits `wrapNone` overlay images: behind-text ones under the whole paragraph
+/// (drawn first), in-front ones over the text (drawn last). Neither reserves
+/// vertical space nor shifts the text.
+pub(super) fn apply_overlay_images(
+    para_layout: &mut ParagraphLayout,
+    overlay_items: Vec<(bool, PositionedItem)>,
+) {
     for (behind, item) in overlay_items {
         if behind {
             para_layout.items.insert(0, item);
         } else {
             para_layout.items.push(item);
         }
-    }
-
-    // The paragraph's content top in page coordinates (where the float image's
-    // own top sits), captured before placement may advance/split the cursor.
-    let para_top = state.cursor_y;
-    let page_before = state.page_number;
-
-    place_paragraph_layout(state, &resolved, para_layout, block_index);
-
-    // Maintain the cross-paragraph float band.
-    if state.page_number != page_before {
-        // The paragraph crossed a page; wrap does not span pages.
-        state.active_float = None;
-    } else if let Some((inset, height, shift_text)) = own_float {
-        // A float taller than its anchoring paragraph keeps wrapping below.
-        let bottom_y = para_top + height;
-        state.active_float =
-            (bottom_y > state.cursor_y + 0.5).then_some(super::float_impl::ActiveFloat {
-                bottom_y,
-                inset,
-                shift_text,
-            });
-    } else if let Some(af) = &state.active_float {
-        // Inherited float: drop it once this paragraph reaches its bottom.
-        if state.cursor_y >= af.bottom_y - 0.5 {
-            state.active_float = None;
-        }
-    }
-
-    if resolved.page_break_after && state.mode.is_paginated() {
-        finish_page(state);
     }
 }

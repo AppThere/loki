@@ -1011,6 +1011,43 @@ fn keep_with_next_chain_fits_on_current_page_no_flush() {
     assert_eq!(pages.len(), 1, "chain fits on one page, expected 1 page");
 }
 
+/// REGRESSION: an inline image in a `keep_with_next` paragraph (a captioned
+/// figure whose image paragraph is kept with its caption) must not be dropped.
+/// The keep-with-next chain formerly discarded the collected images, so the
+/// figure vanished while its caption remained.
+#[test]
+fn keep_with_next_paragraph_keeps_its_inline_image() {
+    use loki_doc_model::content::inline::LinkTarget;
+
+    let mut r = test_resources();
+    let mut attr = NodeAttr::default();
+    attr.kv.push(("cx_emu".into(), "914400".into())); // 1 in
+    attr.kv.push(("cy_emu".into(), "914400".into()));
+    let image_para = StyledParagraph {
+        style_id: None,
+        direct_para_props: Some(Box::new(ParaProps {
+            keep_with_next: Some(true),
+            ..Default::default()
+        })),
+        direct_char_props: None,
+        inlines: vec![Inline::Image(
+            attr,
+            vec![],
+            LinkTarget::new("data:image/png;base64,AAAA"),
+        )],
+        attr: NodeAttr::default(),
+    };
+    let caption = make_para("Figure 1. Caption.");
+    let section = section_of(vec![image_para, caption], PageLayout::default());
+
+    let (items, _h, _w) = flow_pageless(&mut r, &section);
+    let has_image = items.iter().any(|i| matches!(i, PositionedItem::Image(_)));
+    assert!(
+        has_image,
+        "an inline image in a keep_with_next paragraph must not be dropped"
+    );
+}
+
 #[test]
 fn keep_with_next_chain_pushed_to_next_page() {
     let mut r = test_resources();
@@ -1907,7 +1944,7 @@ mod page_fields {
             style_id: None,
             direct_para_props: None,
             direct_char_props: None,
-            inlines: vec![wrap_none_image(914_400, 914_400), Inline::Str(body.into())],
+            inlines: vec![wrap_none_image(914_400, 914_400), Inline::Str(body)],
             attr: NodeAttr::default(),
         };
         let follower = make_para("Follower paragraph after the anchor.");

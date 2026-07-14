@@ -28,3 +28,5 @@ loki-presentation-model = { path = "../loki-presentation-model" }
 loki-primitives = { path = "../loki-primitives" }
 # The `render_acid_pdf` example renders fixtures to PDF for visual comparison.
 loki-pdf = { path = "../loki-pdf" }
+# The `gen_acid2_docx` example packages hand-authored OOXML parts into a DOCX.
+loki-opc = { path = "../loki-opc" }

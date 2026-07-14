@@ -268,6 +268,45 @@ fn background_color_is_first_item() {
     );
 }
 
+/// REGRESSION: a run that is only a tab (excluded from the Parley text, gap #8)
+/// carrying its own char props — e.g. an underlined signature-line tab — remaps
+/// to a zero-length style span. Parley asserts `start < end` on every span, so
+/// the empty span must be dropped; otherwise layout panics.
+#[test]
+fn tab_only_styled_run_does_not_panic() {
+    let mut r = test_resources();
+    let text = "a\tb"; // bytes: a=0, \t=1, b=2
+    let spans = [
+        StyleSpan {
+            range: 0..1,
+            ..single_span("a", 12.0)
+        },
+        StyleSpan {
+            range: 1..2, // the tab, with a distinct (underlined) style
+            underline: Some(UnderlineStyle::Single),
+            ..single_span("t", 12.0)
+        },
+        StyleSpan {
+            range: 2..3,
+            ..single_span("b", 12.0)
+        },
+    ];
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+    // The point is that layout returned at all (no panic); it also shaped "ab".
+    assert!(
+        result.height > 0.0,
+        "layout with a tab-only styled run must succeed"
+    );
+}
+
 #[test]
 fn underline_span_emits_decoration() {
     let mut r = test_resources();

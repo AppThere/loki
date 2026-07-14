@@ -74,6 +74,14 @@ pub(crate) fn push_para_styles(
             continue;
         }
         let r = span.range.clone();
+        // A span whose shaped text is empty — e.g. a run that is only a tab
+        // (tabs are excluded from the Parley text, gap #8) carrying its own
+        // char props, as in an underlined signature-line tab — remaps to a
+        // zero-length range. Parley asserts `start < end` on every style span,
+        // so drop empties here (matching the guard in `para_underlays`).
+        if r.start >= r.end {
+            continue;
+        }
         // For super/subscript (gap #3), reduce font size to 58 %. The shift is
         // applied in `para_emit` (`va_offset`) — TODO(super-sub): no native API.
         let effective_font_size = if span.vertical_align.is_some() {
