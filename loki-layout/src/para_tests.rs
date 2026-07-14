@@ -708,6 +708,56 @@ fn exact_line_height_clips_each_line() {
 }
 
 #[test]
+fn exact_line_clip_is_anchored_by_body_text_not_a_raised_run() {
+    // The exact-line clip box must be anchored by the body run's descent, so a
+    // raised super/subscript (or over-tall run) can't inflate the line's
+    // aggregate descent and push the box down over the body text's tops. The
+    // box's extent above the baseline must match with or without the raised run.
+    fn clip_top(p: &ParagraphLayout) -> f32 {
+        p.items
+            .iter()
+            .find_map(|i| match i {
+                PositionedItem::ClippedGroup { clip_rect, .. } => Some(clip_rect.y()),
+                _ => None,
+            })
+            .expect("exact line height wraps items in a clip group")
+    }
+    let mut r = test_resources();
+    let props = ResolvedParaProps {
+        line_height: Some(ResolvedLineHeight::Exact(12.0)),
+        ..Default::default()
+    };
+
+    // Body text only (11pt).
+    let plain = layout_paragraph(
+        &mut r,
+        "Body",
+        &[single_span("Body", 11.0)],
+        &props,
+        400.0,
+        1.0,
+        false,
+    );
+    let plain_above = plain.first_baseline - clip_top(&plain);
+
+    // Same body plus a large raised superscript.
+    let text = "Body BIG";
+    let mut body = single_span(text, 11.0);
+    body.range = 0..5;
+    let mut sup = single_span(text, 28.0);
+    sup.range = 5..8;
+    sup.vertical_align = Some(VerticalAlign::Superscript);
+    let raised = layout_paragraph(&mut r, text, &[body, sup], &props, 400.0, 1.0, false);
+    let raised_above = raised.first_baseline - clip_top(&raised);
+
+    assert!(
+        (plain_above - raised_above).abs() < 0.5,
+        "the exact clip box's extent above the baseline must be body-anchored \
+         and unchanged by a raised run; plain={plain_above} raised={raised_above}"
+    );
+}
+
+#[test]
 fn misspelled_word_emits_spelling_squiggle() {
     let mut r = test_resources();
     let checker =

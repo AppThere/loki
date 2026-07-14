@@ -574,10 +574,9 @@ fn layout_paragraph_uncached(
     // can hang below the line's descent; grow the paragraph height to cover it.
     let mut content_bottom = total_height;
 
-    // OOXML lineRule="exact" (ODF fixed line height): the line box is a fixed
-    // height and content taller than it is clipped — unlike "atLeast", which
-    // grows. Each line's items are wrapped in a clip layer sized to the exact
-    // line box so over-tall glyphs / inline objects are cut off as in Word.
+    // OOXML lineRule="exact" (ODF fixed line height): each line's items are
+    // wrapped in a clip layer sized to the fixed line box, so content taller than
+    // it is cut off (unlike "atLeast", which grows the line) — as in Word.
     let exact_line_pts = match para_props.line_height {
         Some(ResolvedLineHeight::Exact(pts)) => Some(pts),
         _ => None,
@@ -622,9 +621,11 @@ fn layout_paragraph_uncached(
             indent_x += drop_shift;
         }
         let line_baseline = line.metrics().baseline;
-        // Extra horizontal offset accumulated from horizontally-scaled (w:w)
-        // runs earlier on this line, so later items shift right by the width the
-        // scaling added instead of overlapping. Reset per line.
+        // Descent of the line's first (body) run, used to anchor the exact-line
+        // clip box (below) so a raised/over-tall run can't inflate it.
+        let mut primary_descent: Option<f32> = None;
+        // Extra horizontal offset from horizontally-scaled (w:w) runs earlier on
+        // this line, so later items shift right instead of overlapping.
         let mut extra_x = 0.0f32;
         for item in line.items() {
             // Math inline box: emit the typeset equation's draw items, offset to
@@ -660,6 +661,9 @@ fn layout_paragraph_uncached(
             let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
                 continue;
             };
+            if primary_descent.is_none() {
+                primary_descent = Some(glyph_run.run().metrics().descent);
+            }
             let scale =
                 span_scale_for_range(&clean_spans, glyph_run.run().text_range()).unwrap_or(1.0);
             // Reserve the extra width the run rendered (scaling, per-glyph or
@@ -676,21 +680,17 @@ fn layout_paragraph_uncached(
             );
         }
         if let Some(pts) = exact_line_pts {
-            // Clip this line's items to its fixed-height box. The clip is wide
-            // horizontally (exact governs the vertical extent only; horizontal
-            // overflow is handled by margins/wrapping, as in Word) and exactly
-            // `pts` tall.
-            //
-            // Word anchors the exact line box at the BOTTOM of the text: the box
-            // bottom sits at the baseline + descent and the top is `pts` above
-            // it, so when the font is taller than `pts` the ascenders (and a
-            // raised superscript) are clipped while descenders are preserved —
-            // the well-known "tops cut off" behaviour of small exact spacing.
-            // (A symmetric/centered box would instead clip descenders too, which
-            // does not match Word.) Consecutive boxes still tile exactly because
-            // Parley advances the baseline by `pts`.
+            // Clip this line's items to its fixed `pts`-tall box (wide
+            // horizontally; exact governs only the vertical extent, as in Word).
+            // Bottom-anchor at `baseline + descent` (top `pts` above) so the body
+            // text fills the box while a raised superscript / over-tall element is
+            // clipped at the top. Anchor on the *body* (first) run's descent, not
+            // the line's aggregate: a tall raised run would otherwise inflate it
+            // and push the box down over the body text's tops (the "small text
+            // tops cut off" bug). Boxes tile — Parley advances the baseline by `pts`.
             let lm = line.metrics();
-            let top = lm.baseline + lm.descent - pts;
+            let descent = primary_descent.unwrap_or(lm.descent);
+            let top = lm.baseline + descent - pts;
             let clipped: Vec<PositionedItem> = items.split_off(line_item_start);
             items.push(PositionedItem::ClippedGroup {
                 clip_rect: LayoutRect::new(-line_w, top, line_w * 3.0, pts),
