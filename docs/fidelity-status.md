@@ -551,3 +551,27 @@ partial cases) + 6 end-to-end tests (`tests/repair.rs`). Detection is surfaced
 three ways: the `loki-headless repair` CLI, the `loki-text` open-time banner, and
 the
 `analyze_docx`/`repair_docx` public API for embedders.
+---
+
+## 13. Macros & Scripting (VBA / StarBasic)
+
+Full design: [`docs/adr/LOKI_MACRO_SCRIPTING_SPEC.md`](adr/LOKI_MACRO_SCRIPTING_SPEC.md)
+(ratified v1). Security-first: macros are **disabled by default** and Loki does
+not execute any macro code yet. **Phase 1 (preservation & detection) is
+implemented**; execution (interpreter, capability broker, trust store) is
+deferred to later phases and has **no code surface** today.
+
+| Layer | Status | Notes |
+| :--- | :---: | :--- |
+| **Payload model** | Yes | `loki_doc_model::io::macros::MacroPayload` (`PreservedPart` bytes + `MacroPayloadKind::{OoxmlVba, OdfBasic}`) attaches to the provenance layer (`DocumentSource.macros`), **not** the Loro CRDT. Content-addressed `payload_hash()` (order-independent, length-prefixed SHA-256) is the future trust-store key. |
+| **DOCX VBA** | Yes | Import collects `word/vbaProject.bin` (+ `vbaData.xml`) via the MS `vbaProject` relationship; export re-emits verbatim for `DocxKind::MacroEnabled{Document,Template}` (`DocxMacroEnabledExport`) and **strips** for plain `.docx`/`.dotx` (Office extension semantics). VBA bytes are never parsed or executed. |
+| **XLSX VBA** | Yes | `xl/vbaProject.bin` collected by the same `crate::vba` collector; `XlsxImport::run` returns it in `XlsxImportResult.macros`; `XlsxExport::export_with_macros` re-emits as `.xlsm` (macro-enabled content type). |
+| **ODF Basic/Scripts** | Yes | `OdfPackage` collects the `Basic/` and `Scripts/` subtrees manifest-driven (preserving each entry's declared media type + directory entries); `OdtImporter`/`OdtExport` and `OdsImport::run`/`OdsExport::export_with_macros` round-trip them verbatim via the shared `script_write` helper. |
+| **Conversion** | Yes | `loki-convert` preserves same-family ODF paths (ODT→ODT, ODS→ODS) and emits a **"macros dropped"** warning for any target that cannot carry the payload (spec §3.5). |
+| **UI notice** | Yes | `appthere_ui::AtInfobar` (non-modal strip) + `macros.ftl` i18n domain. `loki-text` shows a passive "This document contains macros. Macros are disabled." infobar (`editor_macro_notice`) when the opened document carries a payload; dismissable. No enable/execute action exists in Phase 1. |
+| **Execution** | No | Deferred (spec Phases 2–7): pure-Rust tree-walking interpreter (`loki-basic`, no JIT — iOS-safe), capability broker, trust store, "never" list. Not started; servers/headless never link it. |
+
+Round-trip preservation is covered by byte-identical goldens in `loki-ooxml`
+(`docx::vba_tests`, `xlsx::vba_tests`), `loki-odf`
+(`tests/macro_round_trip.rs`), and a dropped-macros-warning test in
+`loki-convert`.

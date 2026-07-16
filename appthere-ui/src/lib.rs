@@ -52,7 +52,8 @@ pub use components::{
     next_zoom, use_backdrop, use_provide_backdrop, AtBackdropContext, AtBackdropHost,
     AtColorPickerLabels, AtColorPickerPanel, AtColorPickerTrigger, AtColorSwatch, AtConfirmDialog,
     AtConfirmDialogProps, AtDocumentTab, AtDocumentTabData, AtDocumentTabProps, AtHomeTab,
-    AtHomeTabProps, AtPanelHost, AtPanelHostProps, AtStatusBar, AtStatusBarProps, AtTabBar,
+    AtHomeTabProps, AtInfobar, AtInfobarProps, AtPanelHost, AtPanelHostProps, AtStatusBar,
+    AtStatusBarProps, AtTabBar,
     AtTabBarProps, AtTemplateBrowser, AtTemplateBrowserProps, AtTitleBar, AtTitleBarProps,
     BuiltinTemplate, PanelPosture, Platform, RecentDocument, BACKDROP_Z_INDEX,
 };

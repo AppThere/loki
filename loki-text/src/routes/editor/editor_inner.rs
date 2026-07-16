@@ -582,6 +582,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                 substitutions: font_substitutions.clone(),
                 open: font_panel_open,
             }
+            super::editor_macro_notice::MacroNoticeBar { present: super::editor_macro_notice::macros_present(&doc_state_ribbon) }
 
             // ── Colour-picker panel (inline, above ribbon) ────────────────────
             // Opened by the Format tab's Font colour / Highlight triggers.
