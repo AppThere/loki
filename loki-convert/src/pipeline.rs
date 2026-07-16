@@ -6,6 +6,7 @@ use std::io::Cursor;
 
 use loki_doc_model::document::Document;
 use loki_doc_model::io::DocumentExport;
+use loki_doc_model::io::macros::{MacroPayload, MacroPayloadKind};
 use loki_epub::{EpubExport, EpubOptions};
 use loki_odf::odt::import::OdtImporter;
 use loki_odf::{OdsExport, OdsImport, OdsImportOptions, OdtExport, OdtImportOptions};
@@ -64,20 +65,31 @@ pub fn convert(
             } else {
                 TextSource::Odt
             };
-            let (mut doc, warnings) = import_text(text_source, input)?;
+            let (mut doc, mut warnings) = import_text(text_source, input)?;
             if let Some(title) = &options.title {
                 doc.meta.title = Some(title.clone());
+            }
+            // Macros survive only the identity ODT→ODT path (OdtExport re-emits
+            // the Basic library); every other text target is a macro-free
+            // representation, so warn instead of dropping silently (spec §3.5).
+            let macros_preserved = source == Format::Odt && target == Format::Odt;
+            if let Some(w) = macros_dropped_warning(doc.source.as_ref().and_then(|s| s.macros.as_ref()), macros_preserved) {
+                warnings.push(w);
             }
             let bytes = export_text(&doc, source, target, options)?;
             Ok(ConvertOutput { bytes, warnings })
         }
         Format::Xlsx | Format::Ods => {
-            let workbook = import_sheet(source, input)?;
-            let bytes = export_sheet(&workbook, target)?;
-            Ok(ConvertOutput {
-                bytes,
-                warnings: Vec::new(),
-            })
+            let (workbook, macros) = import_sheet(source, input)?;
+            // ODS→ODS re-emits the Basic library; every other sheet target is
+            // macro-free (spec §3.5).
+            let preserve = source == Format::Ods && target == Format::Ods;
+            let mut warnings = Vec::new();
+            if let Some(w) = macros_dropped_warning(macros.as_ref(), preserve) {
+                warnings.push(w);
+            }
+            let bytes = export_sheet(&workbook, target, macros.as_ref().filter(|_| preserve))?;
+            Ok(ConvertOutput { bytes, warnings })
         }
         // unsupported_reason() already rejected every other source; this arm
         // exists only to keep the match exhaustive without panicking.
@@ -152,21 +164,51 @@ fn export_text(
     Ok(cursor.into_inner())
 }
 
-fn import_sheet(source: Format, input: &[u8]) -> Result<Workbook, ConvertError> {
+fn import_sheet(
+    source: Format,
+    input: &[u8],
+) -> Result<(Workbook, Option<MacroPayload>), ConvertError> {
     let cursor = Cursor::new(input);
     match source {
-        Format::Ods => Ok(OdsImport::import(cursor, OdsImportOptions::default())?),
+        Format::Ods => {
+            let r = OdsImport::run(cursor, OdsImportOptions::default())?;
+            Ok((r.workbook, r.macros))
+        }
         // The caller only passes Xlsx or Ods; default to the XLSX importer.
-        _ => Ok(XlsxImport::import(cursor, XlsxImportOptions::default())?),
+        _ => {
+            let r = XlsxImport::run(cursor, XlsxImportOptions::default())?;
+            Ok((r.workbook, r.macros))
+        }
     }
 }
 
-fn export_sheet(workbook: &Workbook, target: Format) -> Result<Vec<u8>, ConvertError> {
+fn export_sheet(
+    workbook: &Workbook,
+    target: Format,
+    macros: Option<&MacroPayload>,
+) -> Result<Vec<u8>, ConvertError> {
     let mut cursor = Cursor::new(Vec::new());
     match target {
-        Format::Ods => OdsExport::export(workbook, &mut cursor)?,
+        Format::Ods => OdsExport::export_with_macros(workbook, &mut cursor, macros)?,
         // The matrix admits only Xlsx | Ods here.
-        _ => XlsxExport::export(workbook, &mut cursor)?,
+        _ => XlsxExport::export_with_macros(workbook, &mut cursor, macros)?,
     }
     Ok(cursor.into_inner())
+}
+
+/// Builds the spec §3.5 "macros dropped" warning when a source carried a macro
+/// payload that the chosen conversion target cannot preserve. Returns `None`
+/// when there were no macros, or when the target re-emits them.
+fn macros_dropped_warning(macros: Option<&MacroPayload>, preserved: bool) -> Option<String> {
+    let payload = macros?;
+    if preserved || payload.is_empty() {
+        return None;
+    }
+    let kind = match payload.kind {
+        MacroPayloadKind::OoxmlVba => "VBA",
+        MacroPayloadKind::OdfBasic => "StarBasic",
+    };
+    Some(format!(
+        "macros dropped: the source's {kind} macro payload cannot be carried into the target format"
+    ))
 }

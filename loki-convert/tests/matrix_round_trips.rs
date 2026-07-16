@@ -155,3 +155,45 @@ fn profile_on_non_pdf_target_is_rejected() {
     let err = convert(Format::Docx, &docx, Format::Odt, &options).unwrap_err();
     assert!(matches!(err, ConvertError::ProfileWithoutPdfTarget));
 }
+
+/// A macro-enabled `.docm` converted to a macro-free target warns that the
+/// VBA payload was dropped, rather than dropping it silently (spec §3.5).
+#[test]
+fn dropping_macros_on_conversion_warns() {
+    use loki_doc_model::io::macros::{MacroPayload, MacroPayloadKind, PreservedPart};
+    use loki_doc_model::io::source::DocumentSource;
+    use loki_ooxml::DocxMacroEnabledExport;
+
+    let mut doc = Document::new();
+    if let Some(section) = doc.sections.first_mut() {
+        section
+            .blocks
+            .push(Block::Para(vec![Inline::Str("body".into())]));
+    }
+    let mut source = DocumentSource::new("ooxml");
+    source.macros = Some(MacroPayload::new(
+        MacroPayloadKind::OoxmlVba,
+        vec![PreservedPart::new(
+            "/word/vbaProject.bin",
+            Some("application/vnd.ms-office.vbaProject".into()),
+            b"\xd0\xcf\x11\xe0FAKE".to_vec(),
+        )],
+    ));
+    doc.source = Some(source);
+
+    let mut docm = Cursor::new(Vec::new());
+    DocxMacroEnabledExport::export(&doc, &mut docm, ()).expect("docm");
+
+    let out = convert(
+        Format::Docx,
+        &docm.into_inner(),
+        Format::Odt,
+        &ConvertOptions::default(),
+    )
+    .expect("convert");
+    assert!(
+        out.warnings.iter().any(|w| w.contains("macros dropped")),
+        "expected a macros-dropped warning, got: {:?}",
+        out.warnings
+    );
+}
