@@ -38,6 +38,14 @@ pub struct AtInfobarProps {
     /// `action_label`.
     #[props(default)]
     pub on_action: Option<EventHandler<()>>,
+    /// Label for an optional secondary action (e.g. "View macros…"), shown left
+    /// of the primary action. When `None`, no secondary button is shown.
+    #[props(default)]
+    pub secondary_label: Option<String>,
+    /// Invoked when the secondary action is clicked. Ignored without
+    /// `secondary_label`.
+    #[props(default)]
+    pub on_secondary: Option<EventHandler<()>>,
     /// Accessible label for the dismiss (×) control. When `None`, the infobar
     /// is not dismissable and no × is shown.
     #[props(default)]
@@ -96,6 +104,19 @@ pub fn AtInfobar(props: AtInfobarProps) -> Element {
             span {
                 style: format!("flex: 1; color: {fg};", fg = COLOR_TEXT_ON_CHROME),
                 {props.message.clone()}
+            }
+
+            // Optional secondary action (left of the primary).
+            if let Some(label) = props.secondary_label.clone() {
+                button {
+                    style: button_style.clone(),
+                    onclick: move |_| {
+                        if let Some(cb) = &props.on_secondary {
+                            cb.call(());
+                        }
+                    },
+                    {label}
+                }
             }
 
             // Optional primary action.

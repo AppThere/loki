@@ -29,17 +29,7 @@ use std::path::PathBuf;
 /// Suite-wide directory caching downloaded dictionaries (shared by all apps so a
 /// language downloaded in one is available in the others).
 pub(crate) fn dictionaries_dir() -> Option<PathBuf> {
-    data_root().map(|d| d.join("AppThere").join("Loki").join("dictionaries"))
-}
-
-// On Android CPU the cfg-gated return is always taken; the desktop fallback is
-// unreachable on that target but reachable on desktop/GPU.
-#[allow(unreachable_code)]
-fn data_root() -> Option<PathBuf> {
-    #[cfg(target_os = "android")]
-    return crate::recent_documents::android_data_dir();
-
-    dirs::data_dir()
+    crate::app_data::suite_dir().map(|d| d.join("dictionaries"))
 }
 
 /// Detects the host locale as a BCP-47 tag (e.g. `"en-US"`), falling back to

@@ -557,9 +557,10 @@ the
 
 Full design: [`docs/adr/LOKI_MACRO_SCRIPTING_SPEC.md`](adr/LOKI_MACRO_SCRIPTING_SPEC.md)
 (ratified v1). Security-first: macros are **disabled by default** and Loki does
-not execute any macro code yet. **Phase 1 (preservation & detection) is
-implemented**; execution (interpreter, capability broker, trust store) is
-deferred to later phases and has **no code surface** today.
+not execute any macro code yet. **Phases 1–4 are implemented** (preservation &
+detection, interpreter core, source extraction & viewer, and the trust +
+capability infrastructure); **actual macro execution (Phase 5) is not started** —
+there is still no code path that runs a macro.
 
 | Layer | Status | Notes |
 | :--- | :---: | :--- |
@@ -571,9 +572,12 @@ deferred to later phases and has **no code surface** today.
 | **VBA source extraction** | Yes | **Phase 3 landed**: `loki-vba` reads module **source only** from `vbaProject.bin` — MS-OVBA decompression (bomb-guarded), CFB walk + `dir`-stream parse, code-page decode. Compiled p-code (`PerformanceCache`/`_VBA_PROJECT`) is never parsed or run (spec §4.4, T5); a source-wiped-but-p-code-present module raises a "VBA stomping" tamper warning and reads as empty. Malformed input degrades to a typed error. Fuzzed (`loki-vba/fuzz/` + smoke tests). |
 | **`StarBasic` source extraction** | Yes | `loki_odf::basic` parses the preserved `Basic/` XML modules (name + source) for the viewer; library indexes/dialogs skipped. |
 | **Read-only viewer** | Yes | **Phase 3 landed**: the macros infobar gains a "View macros…" action (`editor_macro_viewer`) opening a read-only, monospace source panel (module tabs + selected source), surfacing the tamper warning — "visibility before executability" (spec §9.6). Source is extracted on demand. |
-| **UI notice** | Yes | `appthere_ui::AtInfobar` (non-modal strip) + `macros.ftl` i18n domain. `loki-text` shows a passive "This document contains macros. Macros are disabled." infobar (`editor_macro_notice`) when the opened document carries a payload; dismissable. Still **no enable/execute action** — viewing only. |
+| **UI notice** | Yes | `appthere_ui::AtInfobar` (non-modal strip) + `macros.ftl` i18n domain. `loki-text` shows a passive, trust-state-aware infobar (`editor_macro_notice`) when the opened document carries a payload: "macros disabled" with **Enable options…** (opens the trust dialog) + **View macros…**, switching to a "session"/"trusted" note with **Document security…** once enabled. Dismissable. Records the decision only — still no execution. |
 | **Interpreter core** | Partial | **Phase 2 landed**: `loki-basic` — a pure, `forbid(unsafe_code)`, no-JIT tree-walking interpreter shared by both dialects. Lexer + recursive-descent parser (full statement/expression/declaration grammar), `Variant` value model (VBA coercions, overflow-as-error, `Like`), and an evaluator with `Sub`/`Function`/`Property`, `ByRef` copy-in/out, control flow, `On Error`/`Resume`, recursion, `Dim` arrays, and ~40 pure built-ins. Fuel-metered end-to-end (every step + loop iteration), 256-deep call cap. Zero I/O deps and no server linkage — enforced by `scripts/check-loki-basic-pure.py` (CI). Parser/lexer panic-freedom fuzzed (`loki-basic/fuzz/` + in-tree smoke tests). ~120 unit/integration tests. |
-| **Execution surface (in-app)** | No | Deferred (spec Phases 4–5): the capability broker (`Host` impl), trust store, object-model facades, and the "never"-list refusals live in `loki-macro-host` and are **not started**. `loki-basic` with an empty host is a pure calculator; nothing wires it into the apps yet, and servers/headless never link it. |
+| **Trust store** | Yes | **Phase 4 landed**: `loki_macro_host::TrustStore` — per-user, local, JSON-persisted, keyed by the macro-payload hash (spec §2.4). A fresh store trusts nothing and nothing in a document can influence its own trust (threat T10, tested); session-only trust never reaches disk; a corrupt store degrades to empty. `MacroService` (provided into context like `SpellService`) wraps it with per-document session state. |
+| **Capability broker** | Yes | **Phase 4 landed**: `loki_macro_host::CapabilityBroker` implements the `loki-basic` `Host` (fuel + shared cancel flag, spec §8) and gates a closed `Capability` catalog (§5.2) via a pure `evaluate()` decision surface — `DocRead` baseline, sensitive caps prompt, `Network` refused in v1, grant scopes Deny/Once/Session/AlwaysForDocument honoured, immediate revocation, UDF context compute-only (§6.3). Capability matrix + T10 tests green (40 unit tests). Not yet driven by a live run — that is Phase 5. |
+| **Security UI** | Yes | **Phase 4 landed**: `appthere_ui` macro-security dialogs render in a reserved-accent, badged anti-spoof frame app chrome never uses (spec §5.5, T7): `AtMacroTrustDialog` (three §2.3 choices) + `AtPermissionPrompt` (first-use capability prompt, Deny default). `loki-text`'s `editor_macro_security_panel` shows per-document trust state, granted capabilities with revoke, the auto-run-on-open opt-in (§5.6), and "forget this document" (§9.4). |
+| **Execution surface (in-app)** | No | Deferred (spec **Phase 5**): the object-model facades and the `HostRequest` execution surface that turns a `CapabilityBroker` decision into an actual document effect are **not started**. The trust store, capability broker, and the "never"-list refusal posture exist (Phase 4) but nothing invokes a macro. `loki-basic` with an empty host is a pure calculator; servers/headless never link the interpreter. |
 
 Round-trip preservation is covered by byte-identical goldens in `loki-ooxml`
 (`docx::vba_tests`, `xlsx::vba_tests`), `loki-odf`

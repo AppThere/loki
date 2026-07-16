@@ -82,7 +82,6 @@
 0 1 appthere-ui/src/tokens/palette.rs
 0 1 appthere-ui/src/tokens/spacing.rs
 0 1 appthere-ui/src/tokens/typography.rs
-0 1 loki-app-shell/src/spell/mod.rs
 1 0 loki-basic/fuzz/fuzz_targets/interp.rs
 1 0 loki-basic/fuzz/fuzz_targets/lex.rs
 0 1 loki-basic/src/ast/decl.rs

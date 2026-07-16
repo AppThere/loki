@@ -13,14 +13,10 @@
 use std::path::{Path, PathBuf};
 
 /// The real location: `<data dir>/AppThere/Loki/personal-dictionary.json`
-/// (Android-aware via `data_root`). `None` when the platform reports no data
-/// directory — persistence is then disabled for the session.
+/// (Android-aware via `app_data::suite_dir`). `None` when the platform reports
+/// no data directory — persistence is then disabled for the session.
 pub(super) fn default_path() -> Option<PathBuf> {
-    super::data_root().map(|d| {
-        d.join("AppThere")
-            .join("Loki")
-            .join("personal-dictionary.json")
-    })
+    crate::app_data::suite_dir().map(|d| d.join("personal-dictionary.json"))
 }
 
 /// Loads the persisted word list; empty on a missing/unreadable/invalid file

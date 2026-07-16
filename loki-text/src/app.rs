@@ -134,6 +134,16 @@ pub fn App() -> Element {
         Err(err) => tracing::warn!("spell check unavailable: {err}"),
     }
 
+    // Macro-security service — the local trust store + capability broker (macro
+    // spec Phase 4). Provided into context so the editor's macro infobar and
+    // Document Security panel can read/record trust decisions. Loaded from the
+    // suite data dir (keyed by macro-payload hash, §2.4); a corrupt store
+    // degrades to empty so it never blocks opening. There is still no execution
+    // surface — this only governs *whether* macros would be allowed to run.
+    provide_context(loki_macro_host::MacroService::bootstrap(
+        loki_app_shell::app_data::macro_trust_store_path(),
+    ));
+
     // Open-document tab list. Index 0 of the Vec = document tab 1 (tab bar
     // index 1, because index 0 is the always-present Home tab).
     let tabs: Signal<Vec<OpenTab>> = use_signal(Vec::new);

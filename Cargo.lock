@@ -4959,6 +4959,7 @@ dependencies = [
  "loki-fonts",
  "loki-i18n",
  "loki-layout",
+ "loki-macro-host",
  "loki-odf",
  "loki-ooxml",
  "loki-pdf",

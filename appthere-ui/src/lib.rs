@@ -55,8 +55,8 @@ pub use components::{
     AtHomeTabProps, AtInfobar, AtInfobarProps, AtMacroTrustDialog, AtMacroTrustDialogProps,
     AtPanelHost, AtPanelHostProps, AtPermissionPrompt, AtPermissionPromptProps, AtStatusBar,
     AtStatusBarProps, AtTabBar, AtTabBarProps, AtTemplateBrowser, AtTemplateBrowserProps,
-    AtTitleBar, AtTitleBarProps, BuiltinTemplate, PanelPosture, Platform, RecentDocument,
-    BACKDROP_Z_INDEX,
+    AtTitleBar, AtTitleBarProps, BuiltinTemplate, MacroGrantChoice, MacroTrustChoice, PanelPosture,
+    Platform, RecentDocument, BACKDROP_Z_INDEX,
 };
 pub use responsive::{
     estimate_group_metrics, group_layout, page_fits, required_page_width, resolve_cascade,

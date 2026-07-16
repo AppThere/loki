@@ -22,6 +22,7 @@
 // tokens are emitted into the *caller*, so this crate stays `forbid(unsafe_code)`.
 mod android;
 
+pub mod app_data;
 pub mod new_document;
 pub mod recent_documents;
 pub mod spell;

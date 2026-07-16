@@ -26,6 +26,9 @@ loki-ooxml      = { path = "../loki-ooxml" }
 loki-odf        = { path = "../loki-odf" }
 # VBA source extraction (source only, never p-code) for the read-only macro viewer.
 loki-vba        = { path = "../loki-vba" }
+# Macro trust store + capability broker (macro spec Phase 4). Provided into
+# context like SpellService; the app maps trust/permission choices onto it.
+loki-macro-host = { path = "../loki-macro-host" }
 # Bundled document templates (Markdown, APA, MLA, Screenplay, Resume).
 loki-templates  = { path = "../loki-templates" }
 # PDF / PDF-X export for the Publish ribbon tab.
