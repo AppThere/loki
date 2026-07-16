@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! StarBasic / script-library preservation for ODF packages (spec §3, Phase 1).
+//! `StarBasic` / script-library preservation for ODF packages (spec §3, Phase 1).
 //!
-//! ODF stores macros as a `Basic/` library subtree (StarBasic) and/or a
+//! ODF stores macros as a `Basic/` library subtree (`StarBasic`) and/or a
 //! `Scripts/` subtree (other script providers), each file declared in
 //! `META-INF/manifest.xml`. Loki does **not** execute these in Phase 1; it
 //! preserves them byte-for-byte so a load→edit→save cycle no longer silently

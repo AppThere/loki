@@ -75,7 +75,7 @@ pub struct OdfPackage {
     /// version is assumed to be [`OdfVersion::V1_1`].
     pub version_was_absent: bool,
 
-    /// Preserved StarBasic / script-library payload, if the package declared
+    /// Preserved `StarBasic` / script-library payload, if the package declared
     /// one (`Basic/` and/or `Scripts/`). Not executed in Phase 1; retained so
     /// export can re-emit it verbatim (spec §3).
     pub macros: Option<MacroPayload>,

@@ -29,7 +29,7 @@ impl OdsExport {
         Self::export_with_macros(workbook, writer, None)
     }
 
-    /// Export a [`Workbook`], re-emitting a preserved StarBasic/script payload
+    /// Export a [`Workbook`], re-emitting a preserved `StarBasic`/script payload
     /// when `macros` is `Some` (spec §3.3). `None` drops any prior macros.
     pub fn export_with_macros(
         workbook: &Workbook,

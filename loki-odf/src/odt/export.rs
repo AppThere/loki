@@ -56,7 +56,9 @@ impl DocumentExport for OdtExport {
         //    the body and the master-page header/footer, plus any embedded
         //    formula objects).
         zip.start_file(ENTRY_MANIFEST, deflated)?;
-        zip.write_all(manifest(&content.media, &styles.media, &content.objects, scripts).as_bytes())?;
+        zip.write_all(
+            manifest(&content.media, &styles.media, &content.objects, scripts).as_bytes(),
+        )?;
 
         // 3. the three XML parts.
         zip.start_file(ENTRY_CONTENT, deflated)?;

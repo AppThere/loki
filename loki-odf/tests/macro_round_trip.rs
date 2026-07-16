@@ -10,8 +10,8 @@
 use std::io::{Cursor, Write};
 
 use loki_doc_model::io::macros::MacroPayloadKind;
-use loki_odf::{OdtExport, OdtImport};
 use loki_doc_model::io::{DocumentExport, DocumentImport};
+use loki_odf::{OdtExport, OdtImport};
 use zip::CompressionMethod;
 use zip::write::{FileOptions, ZipWriter};
 
@@ -54,7 +54,8 @@ fn build_odt_with_basic() -> Vec<u8> {
     let deflated = FileOptions::<()>::default().compression_method(CompressionMethod::Deflated);
 
     zip.start_file("mimetype", stored).unwrap();
-    zip.write_all(b"application/vnd.oasis.opendocument.text").unwrap();
+    zip.write_all(b"application/vnd.oasis.opendocument.text")
+        .unwrap();
     zip.start_file("META-INF/manifest.xml", deflated).unwrap();
     zip.write_all(MANIFEST).unwrap();
     zip.start_file("content.xml", deflated).unwrap();
@@ -63,7 +64,8 @@ fn build_odt_with_basic() -> Vec<u8> {
     zip.write_all(STYLES).unwrap();
     zip.start_file("Basic/script-lc.xml", deflated).unwrap();
     zip.write_all(SCRIPT_LC).unwrap();
-    zip.start_file("Basic/Standard/Module1.xml", deflated).unwrap();
+    zip.start_file("Basic/Standard/Module1.xml", deflated)
+        .unwrap();
     zip.write_all(MODULE1).unwrap();
     zip.finish().unwrap();
     buf
@@ -71,8 +73,8 @@ fn build_odt_with_basic() -> Vec<u8> {
 
 #[test]
 fn import_preserves_basic_library() {
-    let doc = OdtImport::import(Cursor::new(build_odt_with_basic()), Default::default())
-        .expect("import");
+    let doc =
+        OdtImport::import(Cursor::new(build_odt_with_basic()), Default::default()).expect("import");
     let macros = doc
         .source
         .as_ref()
@@ -88,19 +90,24 @@ fn import_preserves_basic_library() {
     assert_eq!(module.bytes, MODULE1);
 
     // Directory entries are preserved (manifest-only, empty bytes).
-    assert!(macros.parts.iter().any(|p| p.name == "Basic/" && p.bytes.is_empty()));
+    assert!(
+        macros
+            .parts
+            .iter()
+            .any(|p| p.name == "Basic/" && p.bytes.is_empty())
+    );
 }
 
 #[test]
 fn export_reemits_basic_library_verbatim() {
-    let doc = OdtImport::import(Cursor::new(build_odt_with_basic()), Default::default())
-        .expect("import");
+    let doc =
+        OdtImport::import(Cursor::new(build_odt_with_basic()), Default::default()).expect("import");
 
     let mut out = Cursor::new(Vec::new());
     OdtExport::export(&doc, &mut out, Default::default()).expect("export");
 
-    let reimported = OdtImport::import(Cursor::new(out.into_inner()), Default::default())
-        .expect("reimport");
+    let reimported =
+        OdtImport::import(Cursor::new(out.into_inner()), Default::default()).expect("reimport");
     let macros = reimported
         .source
         .as_ref()
@@ -115,8 +122,8 @@ fn export_reemits_basic_library_verbatim() {
     assert_eq!(module.bytes, MODULE1, "StarBasic source must be verbatim");
 
     // Stable payload hash across the round-trip (future trust-store key).
-    let original = OdtImport::import(Cursor::new(build_odt_with_basic()), Default::default())
-        .unwrap();
+    let original =
+        OdtImport::import(Cursor::new(build_odt_with_basic()), Default::default()).unwrap();
     assert_eq!(
         original.source.unwrap().macros.unwrap().payload_hash(),
         macros.payload_hash(),

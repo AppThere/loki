@@ -4,7 +4,7 @@
 //! Preserved macro/script payloads (provenance layer).
 //!
 //! Real-world office documents carry executable content: VBA projects in
-//! OOXML macro-enabled formats (`.docm`/`.xlsm`/…) and StarBasic script
+//! OOXML macro-enabled formats (`.docm`/`.xlsm`/…) and `StarBasic` script
 //! libraries in ODF packages. Loki does **not** execute these in Phase 1;
 //! it *preserves* them byte-for-byte so a load→edit→save cycle no longer
 //! silently destroys them.
@@ -26,7 +26,7 @@ use sha2::{Digest, Sha256};
 pub enum MacroPayloadKind {
     /// OOXML VBA project (`vbaProject.bin` + `vbaData.xml`), CFB-encoded.
     OoxmlVba,
-    /// ODF StarBasic/Basic script libraries (`Basic/`, `Scripts/`,
+    /// ODF `StarBasic`/Basic script libraries (`Basic/`, `Scripts/`,
     /// `<office:scripts>` bindings).
     OdfBasic,
 }

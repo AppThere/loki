@@ -88,7 +88,9 @@ mod tests {
     fn manifest_lists_all_entries_including_dirs() {
         let m = script_manifest_entries(&payload());
         assert!(m.contains("full-path=\"Basic/\""));
-        assert!(m.contains("full-path=\"Basic/Standard/Module1.xml\" manifest:media-type=\"text/xml\""));
+        assert!(
+            m.contains("full-path=\"Basic/Standard/Module1.xml\" manifest:media-type=\"text/xml\"")
+        );
     }
 
     #[test]

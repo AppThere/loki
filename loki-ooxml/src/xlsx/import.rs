@@ -275,4 +275,3 @@ fn rels_by_type<'a>(
     rels.iter()
         .filter(move |r| r.rel_type == trans_owned || r.rel_type == strict_owned)
 }
-

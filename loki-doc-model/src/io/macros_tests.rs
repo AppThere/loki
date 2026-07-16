@@ -4,7 +4,11 @@
 use super::*;
 
 fn part(name: &str, bytes: &[u8]) -> PreservedPart {
-    PreservedPart::new(name, Some("application/octet-stream".into()), bytes.to_vec())
+    PreservedPart::new(
+        name,
+        Some("application/octet-stream".into()),
+        bytes.to_vec(),
+    )
 }
 
 #[test]
@@ -17,19 +21,31 @@ fn empty_payload_reports_empty() {
 fn hash_is_order_independent() {
     let a = MacroPayload::new(
         MacroPayloadKind::OoxmlVba,
-        vec![part("/word/vbaProject.bin", b"AAA"), part("/word/vbaData.xml", b"BBB")],
+        vec![
+            part("/word/vbaProject.bin", b"AAA"),
+            part("/word/vbaData.xml", b"BBB"),
+        ],
     );
     let b = MacroPayload::new(
         MacroPayloadKind::OoxmlVba,
-        vec![part("/word/vbaData.xml", b"BBB"), part("/word/vbaProject.bin", b"AAA")],
+        vec![
+            part("/word/vbaData.xml", b"BBB"),
+            part("/word/vbaProject.bin", b"AAA"),
+        ],
     );
     assert_eq!(a.payload_hash(), b.payload_hash());
 }
 
 #[test]
 fn hash_changes_when_bytes_change() {
-    let a = MacroPayload::new(MacroPayloadKind::OoxmlVba, vec![part("/word/vbaProject.bin", b"AAA")]);
-    let b = MacroPayload::new(MacroPayloadKind::OoxmlVba, vec![part("/word/vbaProject.bin", b"AAB")]);
+    let a = MacroPayload::new(
+        MacroPayloadKind::OoxmlVba,
+        vec![part("/word/vbaProject.bin", b"AAA")],
+    );
+    let b = MacroPayload::new(
+        MacroPayloadKind::OoxmlVba,
+        vec![part("/word/vbaProject.bin", b"AAB")],
+    );
     assert_ne!(a.payload_hash(), b.payload_hash());
 }
 

@@ -55,7 +55,8 @@ fn build_docm() -> Vec<u8> {
         "rels",
         "application/vnd.openxmlformats-package.relationships+xml",
     );
-    pkg.content_type_map_mut().add_default("xml", "application/xml");
+    pkg.content_type_map_mut()
+        .add_default("xml", "application/xml");
     pkg.content_type_map_mut().add_override(
         &doc_part,
         "application/vnd.ms-word.document.macroEnabled.main+xml",
@@ -145,17 +146,15 @@ fn macro_enabled_export_preserves_project_bytes() {
         .iter()
         .find(|p| p.name.ends_with("vbaProject.bin"))
         .expect("vbaProject.bin");
-    assert_eq!(project.bytes, FAKE_VBA, "VBA project bytes must be verbatim");
+    assert_eq!(
+        project.bytes, FAKE_VBA,
+        "VBA project bytes must be verbatim"
+    );
 
     // The payload hash (trust-store key) is stable across the round-trip.
     let original = import_doc(&build_docm());
     assert_eq!(
-        original
-            .source
-            .unwrap()
-            .macros
-            .unwrap()
-            .payload_hash(),
+        original.source.unwrap().macros.unwrap().payload_hash(),
         macros.payload_hash(),
     );
 }

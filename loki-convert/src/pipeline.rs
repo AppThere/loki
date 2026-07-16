@@ -73,7 +73,10 @@ pub fn convert(
             // the Basic library); every other text target is a macro-free
             // representation, so warn instead of dropping silently (spec §3.5).
             let macros_preserved = source == Format::Odt && target == Format::Odt;
-            if let Some(w) = macros_dropped_warning(doc.source.as_ref().and_then(|s| s.macros.as_ref()), macros_preserved) {
+            if let Some(w) = macros_dropped_warning(
+                doc.source.as_ref().and_then(|s| s.macros.as_ref()),
+                macros_preserved,
+            ) {
                 warnings.push(w);
             }
             let bytes = export_text(&doc, source, target, options)?;

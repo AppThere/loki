@@ -81,7 +81,9 @@ fn build_xlsm() -> Vec<u8> {
     wb_rels
         .add(Relationship {
             id: "rId1".into(),
-            rel_type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet".into(),
+            rel_type:
+                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"
+                    .into(),
             target: "worksheets/sheet1.xml".into(),
             target_mode: TargetMode::Internal,
         })
@@ -102,8 +104,8 @@ fn build_xlsm() -> Vec<u8> {
 
 #[test]
 fn import_collects_xlsm_vba_payload() {
-    let result = XlsxImport::run(Cursor::new(build_xlsm()), XlsxImportOptions::default())
-        .expect("import");
+    let result =
+        XlsxImport::run(Cursor::new(build_xlsm()), XlsxImportOptions::default()).expect("import");
     let macros = result.macros.expect("macro payload preserved");
     assert_eq!(macros.kind, MacroPayloadKind::OoxmlVba);
     let project = macros
@@ -116,8 +118,8 @@ fn import_collects_xlsm_vba_payload() {
 
 #[test]
 fn macro_enabled_export_preserves_project_bytes() {
-    let imported = XlsxImport::run(Cursor::new(build_xlsm()), XlsxImportOptions::default())
-        .expect("import");
+    let imported =
+        XlsxImport::run(Cursor::new(build_xlsm()), XlsxImportOptions::default()).expect("import");
     let macros = imported.macros.clone().expect("macros present");
 
     let mut out = Cursor::new(Vec::new());
@@ -137,8 +139,8 @@ fn macro_enabled_export_preserves_project_bytes() {
 
 #[test]
 fn plain_export_strips_macros() {
-    let imported = XlsxImport::run(Cursor::new(build_xlsm()), XlsxImportOptions::default())
-        .expect("import");
+    let imported =
+        XlsxImport::run(Cursor::new(build_xlsm()), XlsxImportOptions::default()).expect("import");
 
     let mut out = Cursor::new(Vec::new());
     XlsxExport::export(&imported.workbook, &mut out).expect("export");
