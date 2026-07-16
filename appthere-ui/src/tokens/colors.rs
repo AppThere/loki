@@ -75,6 +75,13 @@ pub const COLOR_TAB_INACTIVE_HOVER: &str = "#363636";
 /// Amber — contextual ribbon tab accent (Format, Table, Image, etc.).
 pub const COLOR_CONTEXTUAL_TAB: &str = "#E0A030";
 
+/// Reserved violet accent for **macro-originated UI** — the badged frame of
+/// macro permission prompts and macro-shown dialogs (macro spec §5.5, threat
+/// T7). Deliberately distinct from every chrome/tab accent so a macro dialog
+/// can never visually impersonate app chrome. Do **not** reuse this for any
+/// app-chrome surface.
+pub const COLOR_MACRO_BADGE: &str = "#B15CD1";
+
 // ── State overlays ────────────────────────────────────────────────────────────
 
 /// CSS opacity value for disabled-state elements.

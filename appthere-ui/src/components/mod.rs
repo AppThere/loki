@@ -11,6 +11,7 @@ pub mod document_tab;
 pub mod home_tab;
 pub mod icons;
 pub mod infobar;
+pub mod macro_security;
 pub mod overlay;
 pub mod panel_host;
 pub mod platform;
@@ -28,6 +29,10 @@ pub use confirm_dialog::{AtConfirmDialog, AtConfirmDialogProps};
 pub use document_tab::{AtDocumentTab, AtDocumentTabProps};
 pub use home_tab::{AtHomeTab, AtHomeTabProps, BuiltinTemplate, RecentDocument};
 pub use infobar::{AtInfobar, AtInfobarProps};
+pub use macro_security::{
+    AtMacroTrustDialog, AtMacroTrustDialogProps, AtPermissionPrompt, AtPermissionPromptProps,
+    MacroDialogFrame, MacroDialogFrameProps, MacroGrantChoice, MacroTrustChoice,
+};
 pub use overlay::{
     use_backdrop, use_provide_backdrop, AtBackdropContext, AtBackdropHost, BACKDROP_Z_INDEX,
 };
