@@ -9,6 +9,7 @@
 //! keyword-agnostic); keyword matches are case-insensitive.
 
 mod decl;
+mod decl_shared;
 mod expr;
 mod stmt;
 mod stmt_block;

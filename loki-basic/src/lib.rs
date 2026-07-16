@@ -5,6 +5,21 @@
 #![warn(missing_docs)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
+// A numeric interpreter converts between BASIC's numeric domains constantly
+// (Integer/Long/Double ↔ i64/f64). These conversions are deliberate and, where
+// truncation would be observable, guarded by explicit range checks (`to_i16`/
+// `to_i32` via `try_from`) or documented saturation. Blanket-allow the noisy
+// numeric-cast pedantic lints rather than pepper the arithmetic with attributes.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap
+)]
+// Exact float comparisons here are deliberate: divide-by-zero and is-zero
+// guards test against exactly `0.0`. Value equality (the BASIC `=` operator)
+// uses `partial_cmp`, not `==`, so it is unaffected.
+#![allow(clippy::float_cmp)]
 
 //! `loki-basic` — a pure, tree-walking BASIC interpreter for the Loki suite.
 //!
@@ -38,6 +53,9 @@ pub mod error;
 pub mod host;
 pub mod lexer;
 pub mod parser;
+pub mod value;
+
+pub use value::Value;
 
 pub use dialect::Dialect;
 pub use error::{BasicError, RuntimeError, Span};
