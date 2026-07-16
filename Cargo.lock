@@ -4960,6 +4960,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "loki-vba"
+version = "0.1.0"
+dependencies = [
+ "cfb",
+ "encoding_rs",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "loki-vello"
 version = "0.1.0"
 dependencies = [

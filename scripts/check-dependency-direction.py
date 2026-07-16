@@ -38,6 +38,8 @@ LAYERS: dict[str, float] = {
     # L2 io/serde + content
     "loki-opc": 2, "loki-odf": 2, "loki-ooxml": 2, "loki-epub": 2,
     "loki-templates": 2,
+    # L2 macro source reader (leaf: external cfb/encoding_rs only; macro spec Phase 3)
+    "loki-vba": 2,
     # L3 layout
     "loki-layout": 3,
     # L3b exporter-above-layout
