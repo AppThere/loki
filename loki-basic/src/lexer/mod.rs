@@ -10,6 +10,7 @@
 //! does not need them; declared types use the `As` form).
 
 mod number;
+mod scan;
 mod token;
 
 pub use token::{Token, TokenKind};
@@ -79,6 +80,16 @@ impl<'a> Lexer<'a> {
     /// Byte offset of the current position (or end-of-source at EOF).
     pub(super) fn offset(&self) -> usize {
         self.chars.get(self.i).map_or(self.len, |&(o, _)| o)
+    }
+
+    /// The current character-index cursor (for continuation lookahead).
+    pub(super) fn cursor(&self) -> usize {
+        self.i
+    }
+
+    /// The character at character-index `j`, if any.
+    pub(super) fn char_at(&self, j: usize) -> Option<char> {
+        self.chars.get(j).map(|&(_, c)| c)
     }
 
     /// Consumes one trailing type-suffix char (`% ! # @ $`, or `&` when it is a
@@ -256,63 +267,6 @@ impl<'a> Lexer<'a> {
             }
         };
         Ok(Token::new(kind, Span::new(start, self.offset())))
-    }
-
-    // ── Whitespace / continuation / comment skipping ────────────────────────
-
-    fn skip_inline_ws_and_continuations(&mut self) {
-        loop {
-            match self.peek() {
-                Some(' ' | '\t') => {
-                    self.bump();
-                }
-                // A `_` that is followed only by optional inline whitespace and
-                // then a line break is a line continuation: swallow it and the
-                // break so the next token joins this logical line.
-                Some('_') if self.is_line_continuation() => {
-                    self.consume_line_continuation();
-                }
-                _ => break,
-            }
-        }
-    }
-
-    fn is_line_continuation(&self) -> bool {
-        // Look past the `_` for inline whitespace, then require a line break/EOF.
-        let mut j = self.i + 1;
-        while let Some(&(_, c)) = self.chars.get(j) {
-            match c {
-                ' ' | '\t' => j += 1,
-                '\n' | '\r' => return true,
-                _ => return false,
-            }
-        }
-        true // trailing `_` at EOF
-    }
-
-    fn consume_line_continuation(&mut self) {
-        self.bump(); // '_'
-        while matches!(self.peek(), Some(' ' | '\t')) {
-            self.bump();
-        }
-        match self.peek() {
-            Some('\r') => {
-                self.bump();
-                if self.peek() == Some('\n') {
-                    self.bump();
-                }
-            }
-            Some('\n') => {
-                self.bump();
-            }
-            _ => {}
-        }
-    }
-
-    fn skip_to_line_end(&mut self) {
-        while !matches!(self.peek(), Some('\n' | '\r') | None) {
-            self.bump();
-        }
     }
 }
 

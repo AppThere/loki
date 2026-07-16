@@ -32,10 +32,12 @@
 //! broker, trust store, and object-model facades live in `loki-macro-host`
 //! (later phases) and are **not** part of this crate.
 
+pub mod ast;
 pub mod dialect;
 pub mod error;
 pub mod host;
 pub mod lexer;
+pub mod parser;
 
 pub use dialect::Dialect;
 pub use error::{BasicError, RuntimeError, Span};
