@@ -201,8 +201,11 @@ impl OdtImporter {
         warnings.append(&mut mapper_warnings);
 
         // Set provenance (version detected above overrides any version the
-        // mapper may have computed from the body XML).
-        document.source = Some(DocumentSource::new("odf").with_version(source_version.as_str()));
+        // mapper may have computed from the body XML). Preserve any macro/script
+        // libraries so a round-trip does not strip them (spec §3, Phase 1).
+        let mut source = DocumentSource::new("odf").with_version(source_version.as_str());
+        source.macros = package.macros;
+        document.source = Some(source);
 
         Ok(OdtImportResult {
             document,

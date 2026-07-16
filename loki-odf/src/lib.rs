@@ -58,6 +58,7 @@ pub(crate) mod limits;
 pub mod ods;
 pub mod odt;
 pub mod package;
+pub(crate) mod script_write;
 pub mod version;
 pub(crate) mod xml_util;
 

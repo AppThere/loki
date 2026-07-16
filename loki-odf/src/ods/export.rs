@@ -3,6 +3,7 @@
 
 //! ODS exporter.
 
+use loki_doc_model::io::macros::MacroPayload;
 use loki_sheet_model::Workbook;
 use std::io::{Seek, Write};
 use zip::{CompressionMethod, ZipWriter, write::FileOptions};
@@ -25,6 +26,17 @@ pub struct OdsExport;
 impl OdsExport {
     /// Export a [`Workbook`] to an ODS writer.
     pub fn export(workbook: &Workbook, writer: impl Write + Seek) -> Result<(), OdfError> {
+        Self::export_with_macros(workbook, writer, None)
+    }
+
+    /// Export a [`Workbook`], re-emitting a preserved StarBasic/script payload
+    /// when `macros` is `Some` (spec §3.3). `None` drops any prior macros.
+    pub fn export_with_macros(
+        workbook: &Workbook,
+        writer: impl Write + Seek,
+        macros: Option<&MacroPayload>,
+    ) -> Result<(), OdfError> {
+        let scripts = crate::script_write::odf_script_payload(macros);
         let mut zip = ZipWriter::new(writer);
 
         // 1. mimetype (stored, uncompressed)
@@ -36,7 +48,7 @@ impl OdsExport {
 
         // 2. META-INF/manifest.xml
         zip.start_file(ENTRY_MANIFEST, deflated)?;
-        zip.write_all(generate_manifest().as_bytes())?;
+        zip.write_all(generate_manifest(scripts).as_bytes())?;
 
         // 3. styles.xml
         zip.start_file(ENTRY_STYLES, deflated)?;
@@ -46,20 +58,31 @@ impl OdsExport {
         zip.start_file(ENTRY_CONTENT, deflated)?;
         zip.write_all(generate_content(workbook).as_bytes())?;
 
+        // 5. preserved macro/script libraries (Basic/, Scripts/), verbatim.
+        if let Some(payload) = scripts {
+            crate::script_write::write_script_parts(&mut zip, payload)?;
+        }
+
         zip.finish()?;
 
         Ok(())
     }
 }
 
-fn generate_manifest() -> String {
-    r#"<?xml version="1.0" encoding="UTF-8"?>
+fn generate_manifest(scripts: Option<&MacroPayload>) -> String {
+    let mut m = String::from(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.3">
   <manifest:file-entry manifest:full-path="/" manifest:version="1.3" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/>
   <manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
   <manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/>
-</manifest:manifest>
-"#.to_string()
+"#,
+    );
+    if let Some(payload) = scripts {
+        m.push_str(&crate::script_write::script_manifest_entries(payload));
+    }
+    m.push_str("</manifest:manifest>\n");
+    m
 }
 
 fn generate_styles() -> String {

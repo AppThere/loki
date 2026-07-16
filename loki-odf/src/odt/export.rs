@@ -11,6 +11,7 @@ use std::io::{Seek, Write};
 
 use loki_doc_model::document::Document;
 use loki_doc_model::io::DocumentExport;
+use loki_doc_model::io::macros::MacroPayload;
 use zip::{CompressionMethod, ZipWriter, write::FileOptions};
 
 use crate::constants::{
@@ -38,6 +39,9 @@ impl DocumentExport for OdtExport {
     fn export(doc: &Document, writer: impl Write + Seek, _options: Self::Options) -> OdfResult<()> {
         let content = content_xml(doc);
         let styles = styles_xml(doc);
+        let scripts = crate::script_write::odf_script_payload(
+            doc.source.as_ref().and_then(|s| s.macros.as_ref()),
+        );
 
         let mut zip = ZipWriter::new(writer);
 
@@ -52,7 +56,7 @@ impl DocumentExport for OdtExport {
         //    the body and the master-page header/footer, plus any embedded
         //    formula objects).
         zip.start_file(ENTRY_MANIFEST, deflated)?;
-        zip.write_all(manifest(&content.media, &styles.media, &content.objects).as_bytes())?;
+        zip.write_all(manifest(&content.media, &styles.media, &content.objects, scripts).as_bytes())?;
 
         // 3. the three XML parts.
         zip.start_file(ENTRY_CONTENT, deflated)?;
@@ -77,6 +81,11 @@ impl DocumentExport for OdtExport {
             zip.write_all(obj.content_xml.as_bytes())?;
         }
 
+        // 6. preserved macro/script libraries (Basic/, Scripts/), verbatim.
+        if let Some(payload) = scripts {
+            crate::script_write::write_script_parts(&mut zip, payload)?;
+        }
+
         zip.finish()?;
         Ok(())
     }
@@ -85,7 +94,12 @@ impl DocumentExport for OdtExport {
 /// Builds `META-INF/manifest.xml`, listing the fixed parts, every image
 /// (from the body and the master-page header/footer), and every embedded
 /// formula object sub-document.
-fn manifest(body_media: &[MediaPart], styles_media: &[MediaPart], objects: &[MathPart]) -> String {
+fn manifest(
+    body_media: &[MediaPart],
+    styles_media: &[MediaPart],
+    objects: &[MathPart],
+    scripts: Option<&MacroPayload>,
+) -> String {
     let mut m = String::from(concat!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
         "<manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\"",
@@ -112,6 +126,10 @@ fn manifest(body_media: &[MediaPart], styles_media: &[MediaPart], objects: &[Mat
              manifest:media-type=\"text/xml\"/>",
             obj.dir
         ));
+    }
+    // Preserved macro/script library entries (spec §3.3).
+    if let Some(payload) = scripts {
+        m.push_str(&crate::script_write::script_manifest_entries(payload));
     }
     m.push_str("</manifest:manifest>");
     m

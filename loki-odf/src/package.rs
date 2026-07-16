@@ -25,6 +25,11 @@ use crate::version::OdfVersion;
 mod read;
 use read::{collect_images, collect_objects, read_entry, validate_mimetype};
 
+#[path = "package_scripts.rs"]
+mod scripts;
+use loki_doc_model::io::macros::MacroPayload;
+use scripts::collect_scripts;
+
 /// Contents of an opened ODF package.
 ///
 /// Holds the raw bytes of each standard part so that callers can parse them
@@ -69,6 +74,11 @@ pub struct OdfPackage {
     /// An absent attribute is valid for ODF 1.1 documents; in that case the
     /// version is assumed to be [`OdfVersion::V1_1`].
     pub version_was_absent: bool,
+
+    /// Preserved StarBasic / script-library payload, if the package declared
+    /// one (`Basic/` and/or `Scripts/`). Not executed in Phase 1; retained so
+    /// export can re-emit it verbatim (spec §3).
+    pub macros: Option<MacroPayload>,
 }
 
 impl OdfPackage {
@@ -100,14 +110,12 @@ impl OdfPackage {
         // ── 1. Validate mimetype entry ─────────────────────────────────────
         let mimetype = validate_mimetype(&mut archive, &mut total_decompressed)?;
 
-        // ── 2. Require META-INF/manifest.xml ──────────────────────────────
-        {
-            let _ = archive
-                .by_name(ENTRY_MANIFEST)
-                .map_err(|_| OdfError::MissingPart {
-                    part: ENTRY_MANIFEST.into(),
-                })?;
-        }
+        // ── 2. Require META-INF/manifest.xml (and keep its bytes for the
+        //       script-library collector in step 6c) ────────────────────────
+        let manifest = read_entry(&mut archive, ENTRY_MANIFEST, &mut total_decompressed)?
+            .ok_or_else(|| OdfError::MissingPart {
+                part: ENTRY_MANIFEST.into(),
+            })?;
 
         // ── 3. Read content.xml (required) ────────────────────────────────
         let content = read_entry(&mut archive, ENTRY_CONTENT, &mut total_decompressed)?
@@ -129,6 +137,9 @@ impl OdfPackage {
         // ── 6b. Collect embedded object sub-documents (e.g. formulas) ─────
         let objects = collect_objects(&mut archive, &mut total_decompressed)?;
 
+        // ── 6c. Preserve macro/script libraries (Basic/, Scripts/) ────────
+        let macros = collect_scripts(&mut archive, &manifest, &mut total_decompressed)?;
+
         // ── 7. Detect version from content.xml ────────────────────────────
         let (version, version_was_absent) = Self::detect_version(&content)?;
 
@@ -142,6 +153,7 @@ impl OdfPackage {
             images,
             objects,
             version_was_absent,
+            macros,
         })
     }
 

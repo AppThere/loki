@@ -3,6 +3,7 @@
 
 //! ODS importer.
 
+use loki_doc_model::io::macros::MacroPayload;
 use loki_sheet_model::{Cell, DocumentMeta, Workbook, Worksheet};
 use quick_xml::Reader;
 use quick_xml::events::Event;
@@ -28,6 +29,10 @@ pub struct OdsImportOptions {}
 pub struct OdsImportResult {
     /// The imported workbook model.
     pub workbook: Workbook,
+    /// Preserved StarBasic / script payload, if present. Not executed in
+    /// Phase 1; retained so a macro-carrying re-export does not strip it
+    /// (spec §3).
+    pub macros: Option<MacroPayload>,
 }
 
 /// Unit struct that implements ODS spreadsheet import.
@@ -35,10 +40,21 @@ pub struct OdsImport;
 
 impl OdsImport {
     /// Imports an ODS file and returns the workbook.
+    ///
+    /// Discards any preserved macro payload; use [`OdsImport::run`] to keep it.
     pub fn import(
         reader: impl Read + Seek,
-        _options: OdsImportOptions,
+        options: OdsImportOptions,
     ) -> Result<Workbook, OdfError> {
+        Self::run(reader, options).map(|r| r.workbook)
+    }
+
+    /// Imports an ODS file, returning the workbook plus any preserved macro
+    /// payload.
+    pub fn run(
+        reader: impl Read + Seek,
+        _options: OdsImportOptions,
+    ) -> Result<OdsImportResult, OdfError> {
         let package = OdfPackage::open(reader)?;
 
         // 1. Parse ODS styles
@@ -254,9 +270,12 @@ impl OdsImport {
             sheets.push(Worksheet::new("Sheet1"));
         }
 
-        Ok(Workbook {
-            meta: DocumentMeta::default(),
-            sheets,
+        Ok(OdsImportResult {
+            workbook: Workbook {
+                meta: DocumentMeta::default(),
+                sheets,
+            },
+            macros: package.macros,
         })
     }
 }
