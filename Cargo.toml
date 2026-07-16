@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["loki-doc-model","loki-sheet-model","loki-opc","loki-primitives","loki-ooxml","loki-odf","loki-layout","loki-vello","appthere-ui","loki-app-shell","loki-text","loki-spreadsheet","loki-presentation","loki-render-cache","loki-render-cpu","loki-renderer","loki-i18n","appthere-canvas","loki-fonts","loki-graphics","loki-presentation-model","loki-epub","loki-pdf","loki-acid","loki-templates","loki-spell","appthere-conformance","loki-bench","loki-model","loki-crypto","loki-server-audit","loki-server-store","loki-server-collab","loki-server-auth","loki-server-api","loki-server","loki-convert","loki-print","loki-headless","loki-basic","loki-vba"]
+members = ["loki-doc-model","loki-sheet-model","loki-opc","loki-primitives","loki-ooxml","loki-odf","loki-layout","loki-vello","appthere-ui","loki-app-shell","loki-text","loki-spreadsheet","loki-presentation","loki-render-cache","loki-render-cpu","loki-renderer","loki-i18n","appthere-canvas","loki-fonts","loki-graphics","loki-presentation-model","loki-epub","loki-pdf","loki-acid","loki-templates","loki-spell","appthere-conformance","loki-bench","loki-model","loki-crypto","loki-server-audit","loki-server-store","loki-server-collab","loki-server-auth","loki-server-api","loki-server","loki-convert","loki-print","loki-headless","loki-basic","loki-vba","loki-macro-host"]
 
 [workspace.dependencies]
 # Shared across appthere-ui and any other workspace member that needs Dioxus.

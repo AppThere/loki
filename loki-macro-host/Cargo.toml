@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "loki-macro-host"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Macro trust store, capability broker, and host services for the Loki suite — deny-by-default macro security (macro spec Phase 4)"
+repository = "https://github.com/appthere/loki"
+keywords = ["macro", "security", "capability", "trust", "loki"]
+categories = ["gui"]
+
+# Layer L5 (ADR-0009): consumes the interpreter core and the neutral document
+# models; consumed only by the client app binaries, never by any server or
+# headless crate (macro spec §10, enforced by scripts/check-loki-basic-pure.py).
+# The capability broker is the *only* thing that grants a macro any authority
+# (macro spec §4.3, §5): the interpreter has none of its own.
+[dependencies]
+loki-basic = { path = "../loki-basic" }
+loki-doc-model = { path = "../loki-doc-model" }
+loki-sheet-model = { path = "../loki-sheet-model" }
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

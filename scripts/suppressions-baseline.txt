@@ -161,5 +161,7 @@
 0 1 loki-text/src/routes/editor/editor_style_editor/mod.rs
 0 1 loki-text/src/routes/editor/style_char_inspector.rs
 0 1 loki-text/src/routes/editor/style_inspector.rs
+1 0 loki-vba/fuzz/fuzz_targets/decompress.rs
+1 0 loki-vba/fuzz/fuzz_targets/read.rs
 0 1 loki-vba/src/lib.rs
 1 0 loki-vello/src/scene_items.rs

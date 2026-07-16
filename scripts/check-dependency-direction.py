@@ -49,6 +49,8 @@ LAYERS: dict[str, float] = {
     "loki-renderer": 4, "loki-render-cpu": 4,
     # L5 ui / app-shell
     "appthere-ui": 5, "loki-app-shell": 5,
+    # L5 macro trust store + capability broker + host services (macro spec Phase 4)
+    "loki-macro-host": 5,
     # L6 app binaries
     "loki-text": 6, "loki-spreadsheet": 6, "loki-presentation": 6,
     # ── Server subsystem (backend; web-server spec ADRs C012–C028) ──────────
