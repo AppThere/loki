@@ -24,6 +24,8 @@ loki-doc-model  = { path = "../loki-doc-model" }
 loki-ooxml      = { path = "../loki-ooxml" }
 # ODT/ODF import — converts OpenDocument Text files to loki_doc_model::Document.
 loki-odf        = { path = "../loki-odf" }
+# VBA source extraction (source only, never p-code) for the read-only macro viewer.
+loki-vba        = { path = "../loki-vba" }
 # Bundled document templates (Markdown, APA, MLA, Screenplay, Resume).
 loki-templates  = { path = "../loki-templates" }
 # PDF / PDF-X export for the Publish ribbon tab.

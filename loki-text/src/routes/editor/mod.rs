@@ -33,6 +33,7 @@ mod editor_language_panel;
 mod editor_layout_task;
 mod editor_load;
 mod editor_macro_notice;
+mod editor_macro_viewer;
 mod editor_metadata;
 mod editor_metadata_panel;
 mod editor_path_sync;

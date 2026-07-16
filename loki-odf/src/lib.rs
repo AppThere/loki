@@ -52,6 +52,7 @@
 #![allow(clippy::single_match)]
 #![allow(clippy::if_not_else)]
 
+pub mod basic;
 pub mod constants;
 pub mod error;
 pub(crate) mod limits;

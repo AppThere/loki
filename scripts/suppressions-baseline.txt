@@ -51,6 +51,7 @@
 0 3 loki-text/src/error.rs
 2 1 loki-text/src/routes/editor/editor_ribbon.rs
 0 2 loki-app-shell/src/android.rs
+2 0 loki-basic/fuzz/fuzz_targets/parse.rs
 2 0 loki-i18n/src/loader.rs
 0 2 loki-layout/src/flow_table_geom.rs
 0 2 loki-layout/src/para.rs
@@ -82,7 +83,10 @@
 0 1 appthere-ui/src/tokens/spacing.rs
 0 1 appthere-ui/src/tokens/typography.rs
 0 1 loki-app-shell/src/spell/mod.rs
+1 0 loki-basic/fuzz/fuzz_targets/interp.rs
+1 0 loki-basic/fuzz/fuzz_targets/lex.rs
 0 1 loki-basic/src/ast/decl.rs
+1 0 loki-basic/src/interp/exec_dim.rs
 0 1 loki-basic/src/lexer/mod.rs
 1 0 loki-basic/src/parser/decl_shared.rs
 1 0 loki-basic/src/parser/mod.rs
@@ -157,4 +161,5 @@
 0 1 loki-text/src/routes/editor/editor_style_editor/mod.rs
 0 1 loki-text/src/routes/editor/style_char_inspector.rs
 0 1 loki-text/src/routes/editor/style_inspector.rs
+0 1 loki-vba/src/lib.rs
 1 0 loki-vello/src/scene_items.rs

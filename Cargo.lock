@@ -4952,6 +4952,7 @@ dependencies = [
  "loki-pdf",
  "loki-renderer",
  "loki-templates",
+ "loki-vba",
  "loro",
  "thiserror 2.0.18",
  "tracing",

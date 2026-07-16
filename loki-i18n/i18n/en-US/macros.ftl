@@ -8,8 +8,20 @@ macros-infobar-disabled = This document contains macros. Macros are disabled.
 macros-infobar-action = Enable options…
 macros-infobar-dismiss = Dismiss macro notice
 
+macros-view-action = View macros…
+
 # Status-bar chip shown after the infobar is dismissed (or on later opens).
 macros-status-chip = Macros disabled
+
+# Read-only macro source viewer (Phase 3 — visibility before executability).
+macros-viewer-title = Macros (read-only)
+macros-viewer-close = Close
+macros-viewer-empty = No readable macro source was found in this document.
+macros-viewer-unreadable = The macro project could not be read. It is preserved in the file but cannot be shown.
+macros-viewer-tamper =
+    This project appears tampered: some modules have no readable source but
+    carry compiled code (possible "VBA stomping"). Loki never runs compiled
+    code, so nothing hidden can execute — but treat this document with caution.
 
 # Trust dialog — the three choices from macro spec §2.3.
 macros-trust-title = Enable macros for this document?
