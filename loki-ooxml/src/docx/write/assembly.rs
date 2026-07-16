@@ -37,14 +37,24 @@ const MT_DOCUMENT: &str =
 /// identical to a `.docx`; only this override differs.
 const MT_TEMPLATE: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml";
+/// Main-part content type for a macro-enabled document (`.docm`).
+const MT_DOCUMENT_MACRO: &str = "application/vnd.ms-word.document.macroEnabled.main+xml";
+/// Main-part content type for a macro-enabled template (`.dotm`).
+const MT_TEMPLATE_MACRO: &str = "application/vnd.ms-word.template.macroEnabled.main+xml";
 
-/// Whether to assemble a regular document (`.docx`) or a template (`.dotx`).
+/// Which DOCX flavour to assemble. The macro-enabled kinds re-emit a preserved
+/// VBA payload (spec §3.3); the plain kinds strip it, matching Office's
+/// extension semantics (`.docx`/`.dotx` cannot carry macros).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DocxKind {
     /// A normal document part (`document.main+xml`).
     Document,
     /// A template part (`template.main+xml`).
     Template,
+    /// A macro-enabled document part (`.docm`).
+    MacroEnabledDocument,
+    /// A macro-enabled template part (`.dotm`).
+    MacroEnabledTemplate,
 }
 
 impl DocxKind {
@@ -53,7 +63,17 @@ impl DocxKind {
         match self {
             DocxKind::Document => MT_DOCUMENT,
             DocxKind::Template => MT_TEMPLATE,
+            DocxKind::MacroEnabledDocument => MT_DOCUMENT_MACRO,
+            DocxKind::MacroEnabledTemplate => MT_TEMPLATE_MACRO,
         }
+    }
+
+    /// Whether this kind may carry a preserved VBA payload.
+    fn is_macro_enabled(self) -> bool {
+        matches!(
+            self,
+            DocxKind::MacroEnabledDocument | DocxKind::MacroEnabledTemplate
+        )
     }
 }
 const MT_STYLES: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml";
@@ -244,6 +264,15 @@ pub(crate) fn assemble_docx_kind(
             _ => continue,
         };
         ct.add_default(ext, mime);
+    }
+
+    // ── Preserved VBA payload (spec §3.3) ─────────────────────────────────
+    // Re-emit only for a macro-enabled kind; a plain `.docx`/`.dotx` save
+    // deliberately drops the payload (Office extension semantics).
+    if kind.is_macro_enabled()
+        && let Some(payload) = doc.source.as_ref().and_then(|s| s.macros.as_ref())
+    {
+        crate::vba::emit(&mut pkg, &doc_part, payload, || collector.reserve_r_id())?;
     }
 
     // ── Step 5: Canonicalise child order, then write ZIP ──────────────────

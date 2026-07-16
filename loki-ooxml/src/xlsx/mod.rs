@@ -5,3 +5,7 @@
 
 pub mod export;
 pub mod import;
+
+#[cfg(test)]
+#[path = "vba_tests.rs"]
+mod vba_tests;

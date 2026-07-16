@@ -48,6 +48,10 @@ pub mod constants;
 pub mod error;
 pub(crate) mod xml_util;
 
+// VBA macro-payload preservation, shared by DOCX and XLSX (spec §3, Phase 1).
+#[cfg(any(feature = "docx", feature = "xlsx"))]
+pub(crate) mod vba;
+
 #[cfg(feature = "docx")]
 pub mod docx;
 
@@ -60,7 +64,9 @@ pub mod pptx;
 pub use error::{NoteKind, OoxmlError, OoxmlResult, OoxmlWarning};
 
 #[cfg(feature = "docx")]
-pub use docx::export::{DocxExport, DocxTemplateExport};
+pub use docx::export::{
+    DocxExport, DocxMacroEnabledExport, DocxMacroEnabledTemplateExport, DocxTemplateExport,
+};
 #[cfg(feature = "docx")]
 pub use docx::import::{DocxImport, DocxImportOptions, DocxImportResult};
 #[cfg(feature = "docx")]

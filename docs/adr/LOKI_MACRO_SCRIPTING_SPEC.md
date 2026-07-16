@@ -2,7 +2,7 @@
 
 # AppThere Loki — Safe Macro Scripting Spec (VBA & StarBasic)
 
-**Status:** Draft — awaiting approval (v0.1, 2026-07-16)
+**Status:** Ratified (v1, 2026-07-16) — open decisions D1–D5 accepted as recommended
 **Series:** AppThere Client, ADRs M001–M012
 **Companions:** ADR-0002 (version-preserving round-trip), ADR-0009 (target
 layering), `LOKI_HEADLESS_SERVER_SPEC.md` (C021–C028 — headless policy §10)
@@ -615,17 +615,17 @@ phases can be dropped or reordered without stranding earlier ones.
 
 ---
 
-## 15. Open decisions for approval
+## 15. Open decisions — resolved (2026-07-16)
 
-Recommendations marked ✦; everything else in this spec follows from them.
+All five decisions were accepted as recommended:
 
-| # | Decision | Options | ✦ Recommendation |
-|---|---|---|---|
-| D1 | iOS ships execution? | (a) preserve+viewer only; (b) full engine behind `macro-exec` flag, decide at App Review | ✦ (b) — build the flag either way (§11), attempt review with execution on |
-| D2 | `Network` capability | never / v2 with per-host prompts | ✦ v2 at earliest, own spec addendum; refuse in v1 (§5.2) |
-| D3 | UserForms | never / later native-widget subset | ✦ later subset (phase ≥8); many benign macros use simple forms, but MS-OFORMS parsing is a big attack surface — not v1 |
-| D4 | Trust-store sync across user's devices | local-only / sync via server | ✦ local-only v1; syncing trust is a security decision with collab-server implications |
-| D5 | Presentation-app object model | phase 6 / indefinite defer | ✦ defer until the app matures; payload preservation covers `.pptm`/ODP scripts from phase 1 |
+| # | Decision | Resolution |
+|---|---|---|
+| D1 | iOS ships execution? | **Accepted:** full engine behind the `macro-exec` build flag; attempt App Review with execution enabled, fall back to preserve+viewer-only if required (§11) |
+| D2 | `Network` capability | **Accepted:** refused in v1 (§5.2); v2 at earliest, and only with its own spec addendum |
+| D3 | UserForms | **Accepted:** deferred native-widget subset (phase ≥8), not v1 |
+| D4 | Trust-store sync across user's devices | **Accepted:** local-only in v1 |
+| D5 | Presentation-app object model | **Accepted:** deferred until the app matures; payload preservation still covers presentation-family scripts where the formats are supported |
 
 ---
 

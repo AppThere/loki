@@ -6,6 +6,7 @@
 use crate::constants::REL_OFFICE_DOCUMENT;
 use crate::error::{OoxmlError, OoxmlWarning};
 use crate::xml_util::{event_text, local_attr_val, local_name};
+use loki_doc_model::io::macros::MacroPayload;
 use loki_opc::{Package, PartName};
 use loki_sheet_model::{DocumentMeta, Workbook, Worksheet};
 use quick_xml::Reader;
@@ -31,6 +32,10 @@ pub struct XlsxImportResult {
     pub workbook: Workbook,
     /// Non-fatal warnings.
     pub warnings: Vec<OoxmlWarning>,
+    /// Preserved VBA macro payload (`.xlsm`/`.xltm`), if present. Not
+    /// executed in Phase 1; retained so a macro-enabled re-export does not
+    /// strip it (spec §3).
+    pub macros: Option<MacroPayload>,
 }
 
 /// Unit struct that implements XLSX spreadsheet import.
@@ -38,10 +43,22 @@ pub struct XlsxImport;
 
 impl XlsxImport {
     /// Imports an XLSX file and returns the workbook.
+    ///
+    /// Discards warnings and any preserved macro payload; use
+    /// [`XlsxImport::run`] to retrieve them.
     pub fn import(
         reader: impl Read + Seek,
-        _options: XlsxImportOptions,
+        options: XlsxImportOptions,
     ) -> Result<Workbook, OoxmlError> {
+        Self::run(reader, options).map(|r| r.workbook)
+    }
+
+    /// Imports an XLSX file, returning the workbook plus warnings and any
+    /// preserved VBA macro payload.
+    pub fn run(
+        reader: impl Read + Seek,
+        _options: XlsxImportOptions,
+    ) -> Result<XlsxImportResult, OoxmlError> {
         let package = Package::open(reader)?;
 
         // 1. Locate the workbook (main document part)
@@ -118,9 +135,16 @@ impl XlsxImport {
             sheets.push(Worksheet::new("Sheet1"));
         }
 
-        Ok(Workbook {
-            meta: DocumentMeta::default(),
-            sheets,
+        // Preserve any VBA macro payload (spec §3, Phase 1).
+        let macros = crate::vba::collect(&package, &workbook_part_name);
+
+        Ok(XlsxImportResult {
+            workbook: Workbook {
+                meta: DocumentMeta::default(),
+                sheets,
+            },
+            warnings: Vec::new(),
+            macros,
         })
     }
 }
@@ -252,28 +276,3 @@ fn rels_by_type<'a>(
         .filter(move |r| r.rel_type == trans_owned || r.rel_type == strict_owned)
 }
 
-// ── Coordinate Conversion Helpers ──────────────────────────────────────────
-
-fn cell_ref_to_coord(cell_ref: &str) -> Option<(u32, u32)> {
-    // Allocation-free split of "AB12" into column letters and row digits —
-    // this runs once per cell on import. The leading letters are single-byte
-    // ASCII, so `split` always lands on a char boundary; a non-digit tail
-    // (or a non-ASCII byte) simply fails the row parse, as before.
-    let bytes = cell_ref.as_bytes();
-    let split = bytes
-        .iter()
-        .position(|b| !b.is_ascii_alphabetic())
-        .unwrap_or(bytes.len());
-    if split == 0 || split == bytes.len() {
-        return None;
-    }
-    let mut col: u32 = 0;
-    for &b in &bytes[..split] {
-        col = col
-            .checked_mul(26)?
-            .checked_add(u32::from(b.to_ascii_uppercase() - b'A') + 1)?;
-    }
-    let col = col.checked_sub(1)?;
-    let row = cell_ref[split..].parse::<u32>().ok()?.checked_sub(1)?;
-    Some((row, col))
-}

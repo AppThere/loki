@@ -7,6 +7,8 @@
 //! records which format and version it came from. This allows exporters
 //! to make format-version-aware decisions.
 
+use crate::io::macros::MacroPayload;
+
 /// Provenance of a document loaded from a file.
 ///
 /// Populated by format-specific importers (`loki-odf`, `loki-ooxml`).
@@ -34,6 +36,14 @@ pub struct DocumentSource {
     ///
     /// ODF: `meta:generator`. OOXML: `AppVersion` in `app.xml`.
     pub generator: Option<String>,
+
+    /// Preserved macro/script payload, if the source file carried one.
+    ///
+    /// Populated by importers for macro-enabled OOXML and ODF-with-Basic
+    /// documents. Loki does not execute this in Phase 1; it is retained so
+    /// exporters can re-emit it verbatim (spec §3), avoiding the silent
+    /// macro loss that a fresh-package export would otherwise cause.
+    pub macros: Option<MacroPayload>,
 }
 
 impl DocumentSource {
@@ -44,6 +54,7 @@ impl DocumentSource {
             format: format.into(),
             version: None,
             generator: None,
+            macros: None,
         }
     }
 
@@ -58,6 +69,13 @@ impl DocumentSource {
     #[must_use]
     pub fn with_generator(mut self, generator: impl Into<String>) -> Self {
         self.generator = Some(generator.into());
+        self
+    }
+
+    /// Builder: attach a preserved macro/script payload.
+    #[must_use]
+    pub fn with_macros(mut self, macros: MacroPayload) -> Self {
+        self.macros = Some(macros);
         self
     }
 }

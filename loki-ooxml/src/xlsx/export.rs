@@ -5,12 +5,19 @@
 
 use crate::constants::REL_OFFICE_DOCUMENT;
 use crate::error::OoxmlError;
+use loki_doc_model::io::macros::MacroPayload;
 use loki_opc::Package;
 use loki_opc::part::{PartData, PartName};
 use loki_opc::relationships::{Relationship, TargetMode};
 use loki_sheet_model::Workbook;
 use std::collections::HashMap;
 use std::io::{Seek, Write};
+
+/// Main-part content type for a normal workbook (`.xlsx`).
+const MT_WORKBOOK: &str =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml";
+/// Main-part content type for a macro-enabled workbook (`.xlsm`).
+const MT_WORKBOOK_MACRO: &str = "application/vnd.ms-excel.sheet.macroEnabled.main+xml";
 
 #[path = "export_xml.rs"]
 mod xml;
@@ -24,8 +31,27 @@ pub struct XlsxExport;
 
 impl XlsxExport {
     /// Exports a workbook model and writes the XLSX ZIP bytes to the writer.
-    #[allow(clippy::too_many_lines)]
     pub fn export(workbook: &Workbook, writer: impl Write + Seek) -> Result<(), OoxmlError> {
+        Self::export_with_macros(workbook, writer, None)
+    }
+
+    /// Exports a workbook, re-emitting a preserved VBA payload as a
+    /// macro-enabled workbook (`.xlsm`) when `macros` is `Some` (spec §3.3).
+    ///
+    /// When `macros` is `None` the output is a plain `.xlsx` and any macros
+    /// the workbook once carried are deliberately dropped, matching Office's
+    /// extension semantics.
+    #[allow(clippy::too_many_lines)]
+    pub fn export_with_macros(
+        workbook: &Workbook,
+        writer: impl Write + Seek,
+        macros: Option<&MacroPayload>,
+    ) -> Result<(), OoxmlError> {
+        let main_ct = if macros.is_some() {
+            MT_WORKBOOK_MACRO
+        } else {
+            MT_WORKBOOK
+        };
         let mut pkg = Package::new();
 
         // 1. Gather all unique non-default styles used in the workbook
@@ -65,10 +91,7 @@ impl XlsxExport {
         let workbook_xml = generate_workbook_xml(workbook);
         pkg.set_part(
             workbook_part.clone(),
-            PartData::new(
-                workbook_xml.into_bytes(),
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
-            ),
+            PartData::new(workbook_xml.into_bytes(), main_ct),
         );
 
         // Styles XML
@@ -164,10 +187,7 @@ impl XlsxExport {
             "application/vnd.openxmlformats-package.relationships+xml",
         );
         ct.add_default("xml", "application/xml");
-        ct.add_override(
-            &workbook_part,
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
-        );
+        ct.add_override(&workbook_part, main_ct);
         ct.add_override(
             &styles_part,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml",
@@ -187,7 +207,15 @@ impl XlsxExport {
             );
         }
 
-        // 7. Write ZIP
+        // 7. Re-emit preserved VBA payload (spec §3.3). vbaProject.bin is wired
+        //    from the workbook part; the fresh rId sits above the sheet rIds
+        //    (styles=rId1, sharedStrings=rId2, sheets=rId3..).
+        if let Some(payload) = macros {
+            let vba_rel_id = format!("rId{}", workbook.sheets.len() + 3);
+            crate::vba::emit(&mut pkg, &workbook_part, payload, || vba_rel_id.clone())?;
+        }
+
+        // 8. Write ZIP
         pkg.write(writer).map_err(OoxmlError::Opc)
     }
 }

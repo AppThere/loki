@@ -49,6 +49,46 @@ impl DocumentExport for DocxTemplateExport {
     }
 }
 
+/// Unit struct that implements [`DocumentExport`] for a **macro-enabled**
+/// Word document (`.docm`).
+///
+/// Structurally a `.docx`, but the main part carries the macro-enabled
+/// content type and any VBA payload preserved on `doc.source.macros` is
+/// re-emitted verbatim (spec §3.3). Saving a macro-carrying document through
+/// the plain [`DocxExport`] instead deliberately strips the macros, matching
+/// Office's extension semantics.
+pub struct DocxMacroEnabledExport;
+
+impl DocumentExport for DocxMacroEnabledExport {
+    type Error = OoxmlError;
+    type Options = ();
+
+    fn export(
+        doc: &Document,
+        writer: impl Write + Seek,
+        _options: Self::Options,
+    ) -> Result<(), Self::Error> {
+        assemble_docx_kind(doc, writer, DocxKind::MacroEnabledDocument)
+    }
+}
+
+/// Unit struct that implements [`DocumentExport`] for a **macro-enabled**
+/// Word template (`.dotm`).
+pub struct DocxMacroEnabledTemplateExport;
+
+impl DocumentExport for DocxMacroEnabledTemplateExport {
+    type Error = OoxmlError;
+    type Options = ();
+
+    fn export(
+        doc: &Document,
+        writer: impl Write + Seek,
+        _options: Self::Options,
+    ) -> Result<(), Self::Error> {
+        assemble_docx_kind(doc, writer, DocxKind::MacroEnabledTemplate)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
