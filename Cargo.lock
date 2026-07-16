@@ -4435,6 +4435,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "loki-basic"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "loki-bench"
 version = "0.1.0"
 dependencies = [

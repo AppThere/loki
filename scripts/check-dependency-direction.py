@@ -33,6 +33,8 @@ LAYERS: dict[str, float] = {
     "loki-graphics": 0,
     # L1 model
     "loki-doc-model": 1, "loki-sheet-model": 1, "loki-presentation-model": 1,
+    # L1 macro interpreter core (leaf: no internal deps; macro spec Phase 2)
+    "loki-basic": 1,
     # L2 io/serde + content
     "loki-opc": 2, "loki-odf": 2, "loki-ooxml": 2, "loki-epub": 2,
     "loki-templates": 2,

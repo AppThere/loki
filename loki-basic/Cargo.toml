@@ -1,0 +1,23 @@
+[package]
+name = "loki-basic"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Pure tree-walking BASIC interpreter (VBA + StarBasic dialects) for the Loki suite — no JIT, no I/O, capability-gated via a host trait"
+repository = "https://github.com/appthere/loki"
+keywords = ["basic", "vba", "interpreter", "macro", "loki"]
+categories = ["parser-implementations", "compilers"]
+
+# No internal dependencies and no I/O crates by design (macro spec §4.3, §12):
+# the interpreter has zero ambient authority. Every observable effect is routed
+# through the `Host` trait, so the core links nothing that can touch the outside
+# world. Enforced by `scripts/check-loki-basic-pure.py` (CI).
+
+[dependencies]
+thiserror = "2"
+
+[dev-dependencies]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
