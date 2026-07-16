@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+# cargo-fuzz harness for loki-vba (macro spec §12, T9 — parser hardening).
+#
+# Detached from the main workspace (own empty [workspace] table) so ordinary
+# `cargo build --workspace` and CI never build it. Run with:
+#   cargo +nightly fuzz run decompress   (or `read`)
+[package]
+name = "loki-vba-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+loki-vba = { path = ".." }
+
+[[bin]]
+name = "decompress"
+path = "fuzz_targets/decompress.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "read"
+path = "fuzz_targets/read.rs"
+test = false
+doc = false

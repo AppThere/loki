@@ -51,6 +51,11 @@ def first_party_crates() -> dict[str, Path]:
         text = manifest.read_text(encoding="utf-8", errors="replace")
         if not PACKAGE.search(text):
             continue
+        # cargo-fuzz harnesses are detached bin-only crates (no src/lib.rs or
+        # main.rs) whose fuzz targets carry `#![no_main]`; they are not first-
+        # party library/binary roots and are exempt from the unsafe policy.
+        if "cargo-fuzz = true" in text:
+            continue
         m = NAME.search(text)
         if m:
             crates[m.group(1)] = manifest.parent
