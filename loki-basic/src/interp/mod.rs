@@ -14,6 +14,7 @@ mod env;
 mod eval;
 mod exec;
 mod exec_block;
+mod exec_dim;
 
 use std::collections::HashMap;
 

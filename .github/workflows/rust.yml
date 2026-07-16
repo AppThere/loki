@@ -43,6 +43,10 @@ jobs:
     - name: Dependency-direction gate (acyclic, downhill-only)
       # Spec 01 audit A-13 / ADR-0009. Fails on any uphill internal edge.
       run: python3 scripts/check-dependency-direction.py
+    - name: Macro-interpreter purity gate (no I/O deps; not server-linked)
+      # Macro spec §4.3/§10/§12: loki-basic links only its tiny allow-list and
+      # no server/headless crate links the interpreter.
+      run: python3 scripts/check-loki-basic-pure.py
     - name: Viewport-dimension guard (no assumed screen sizes)
       # Spec 01 audit A-1. No bare 1280-class literals in editor input/viewport paths.
       run: python3 scripts/check-no-hardcoded-viewport-dims.py
