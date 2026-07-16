@@ -59,6 +59,12 @@ impl Array {
         self.dims.len()
     }
 
+    /// The elements in row-major order (for `For Each`).
+    #[must_use]
+    pub fn values(&self) -> &[Value] {
+        &self.data
+    }
+
     /// The inclusive lower bound of dimension `d` (1-based, VBA `LBound`).
     #[must_use]
     pub fn lbound(&self, d: usize) -> Option<i32> {

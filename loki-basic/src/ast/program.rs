@@ -93,6 +93,15 @@ pub enum ProcKind {
     PropertySet,
 }
 
+impl ProcKind {
+    /// Whether this kind yields a value via its name (`Function`/`Property
+    /// Get`).
+    #[must_use]
+    pub fn returns_value(self) -> bool {
+        matches!(self, ProcKind::Function | ProcKind::PropertyGet)
+    }
+}
+
 /// Procedure/variable visibility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Visibility {

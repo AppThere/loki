@@ -51,10 +51,12 @@ pub mod ast;
 pub mod dialect;
 pub mod error;
 pub mod host;
+pub mod interp;
 pub mod lexer;
 pub mod parser;
 pub mod value;
 
+pub use interp::Interp;
 pub use value::Value;
 
 pub use dialect::Dialect;

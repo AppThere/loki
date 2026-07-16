@@ -163,6 +163,19 @@ impl RuntimeError {
     pub fn cancelled() -> Self {
         Self::new(1006, "Macro cancelled").untrappable()
     }
+
+    /// The internal `End`/`Stop` halt sentinel — unwinds all execution. Not a
+    /// real error; the public entry point maps it to a clean stop.
+    #[must_use]
+    pub fn halt() -> Self {
+        Self::new(i32::MIN, "halt").untrappable()
+    }
+
+    /// Whether this is the halt sentinel.
+    #[must_use]
+    pub fn is_halt(&self) -> bool {
+        self.number == i32::MIN
+    }
 }
 
 impl From<RuntimeError> for BasicError {
