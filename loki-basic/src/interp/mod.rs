@@ -10,13 +10,15 @@
 
 mod builtins;
 mod call;
+mod dialog;
 mod env;
 mod eval;
 mod exec;
 mod exec_block;
 mod exec_dim;
+mod refused;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::{Item, Module, ModuleOptions, Procedure, TypeRef, VarDecl};
 use crate::error::{BasicError, RuntimeError};
@@ -61,6 +63,9 @@ pub struct Interp<'m, H: Host> {
     options: ModuleOptions,
     host: H,
     call_depth: usize,
+    /// `Declare … Lib` names (lowercased), refused with a named feature-refusal
+    /// when called (FFI is on the "never" list, spec §7).
+    foreign_decls: HashSet<String>,
 }
 
 impl<'m, H: Host> Interp<'m, H> {
@@ -81,6 +86,7 @@ impl<'m, H: Host> Interp<'m, H> {
             options: module.options,
             host,
             call_depth: 0,
+            foreign_decls: HashSet::new(),
         };
         interp.index_items()?;
         Ok(interp)
@@ -105,10 +111,25 @@ impl<'m, H: Host> Interp<'m, H> {
                         self.globals.insert(env::key(&d.name), v);
                     }
                 }
-                Item::Type(_) | Item::ForeignDecl { .. } => {}
+                Item::ForeignDecl { name } => {
+                    self.foreign_decls.insert(env::key(name));
+                }
+                Item::Type(_) => {}
             }
         }
         Ok(())
+    }
+
+    /// Whether `name` is a `Declare … Lib` (FFI) procedure, which is refused
+    /// when called (spec §7).
+    pub(super) fn is_foreign(&self, name: &str) -> bool {
+        self.foreign_decls.contains(&env::key(name))
+    }
+
+    /// Access to the interpreter's host (mutable) — used by dialog/effect
+    /// dispatch.
+    pub(super) fn host_mut(&mut self) -> &mut H {
+        &mut self.host
     }
 
     fn index_enum(&mut self, e: &crate::ast::EnumDef) -> Result<(), BasicError> {
@@ -147,6 +168,12 @@ impl<'m, H: Host> Interp<'m, H> {
     /// Access to the host (e.g. to read remaining fuel after a run).
     pub fn host(&self) -> &H {
         &self.host
+    }
+
+    /// Consumes the interpreter, returning the host — so an embedder (or a test)
+    /// can inspect the effects a run recorded.
+    pub fn into_host(self) -> H {
+        self.host
     }
 
     // ── Fuel ────────────────────────────────────────────────────────────────

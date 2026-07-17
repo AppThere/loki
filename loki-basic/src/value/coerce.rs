@@ -42,7 +42,7 @@ impl Value {
                     Ok(parse_number(t)? != 0.0)
                 }
             }
-            Value::Null | Value::Array(_) => Err(RuntimeError::type_mismatch()),
+            Value::Null | Value::Array(_) | Value::Object(_) => Err(RuntimeError::type_mismatch()),
         }
     }
 
@@ -60,7 +60,7 @@ impl Value {
             Value::Long(l) => Ok(f64::from(*l)),
             Value::Double(d) | Value::Date(d) => Ok(*d),
             Value::Str(s) => parse_number(s.trim()),
-            Value::Null | Value::Array(_) => Err(RuntimeError::type_mismatch()),
+            Value::Null | Value::Array(_) | Value::Object(_) => Err(RuntimeError::type_mismatch()),
         }
     }
 
@@ -107,7 +107,7 @@ impl Value {
             Value::Long(l) => Ok(l.to_string()),
             Value::Double(d) | Value::Date(d) => Ok(format_number(*d)),
             Value::Str(s) => Ok(s.clone()),
-            Value::Null | Value::Array(_) => Err(RuntimeError::type_mismatch()),
+            Value::Null | Value::Array(_) | Value::Object(_) => Err(RuntimeError::type_mismatch()),
         }
     }
 
@@ -118,7 +118,7 @@ impl Value {
             Value::Empty | Value::Bool(_) | Value::Int(_) => Some(NumKind::Integer),
             Value::Long(_) => Some(NumKind::Long),
             Value::Double(_) | Value::Date(_) => Some(NumKind::Double),
-            Value::Str(_) | Value::Null | Value::Array(_) => None,
+            Value::Str(_) | Value::Null | Value::Array(_) | Value::Object(_) => None,
         }
     }
 }

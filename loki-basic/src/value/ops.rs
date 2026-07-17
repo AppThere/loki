@@ -26,6 +26,11 @@ pub fn binary_op(
     rhs: &Value,
     compare_text: bool,
 ) -> Result<Value, RuntimeError> {
+    // `Is` compares object identity (and `Nothing`), so it must run *before* the
+    // Null short-circuit — `obj Is Nothing` returns a Boolean, not Null.
+    if op == BinOp::Is {
+        return ops_logic::is_identity(lhs, rhs);
+    }
     // `&` treats Null as ""; everything else propagates Null.
     if op != BinOp::Concat && (lhs.is_null() || rhs.is_null()) {
         return Ok(Value::Null);
@@ -46,7 +51,8 @@ pub fn binary_op(
             ops_logic::logical(op, lhs, rhs)
         }
         BinOp::Like => ops_logic::like(lhs, rhs, compare_text),
-        BinOp::Is => Err(RuntimeError::type_mismatch()),
+        // Handled above, before the Null short-circuit.
+        BinOp::Is => ops_logic::is_identity(lhs, rhs),
     }
 }
 

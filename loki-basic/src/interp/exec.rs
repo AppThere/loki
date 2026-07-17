@@ -136,7 +136,14 @@ impl<H: Host> Interp<'_, H> {
                 }
                 Ok(())
             }
+            // `obj.Prop = value` — property assignment on a host object.
+            Expr::Member { object, name } => {
+                let recv = self.eval_receiver(object, frame)?;
+                self.host_mut().set_member(recv, name, value)
+            }
             Expr::Call { callee, args } => {
+                // `obj.Prop(i) = value` — an indexed/default property put is not
+                // supported in v1 (Phase 6); fall through to error below.
                 let Expr::Var(name) = &**callee else {
                     return Err(RuntimeError::new(424, "Object required"));
                 };
@@ -165,7 +172,20 @@ impl<H: Host> Interp<'_, H> {
                     }
                     return Ok(());
                 }
-                return Err(RuntimeError::new(424, "Object required"));
+                // `obj.Method arg1, arg2` as a statement — dispatch to the host
+                // (its result, if any, is discarded).
+                self.eval(expr, frame)?;
+                return Ok(());
+            }
+            self.eval(expr, frame)?;
+            return Ok(());
+        }
+        // A bare `obj.Method` statement with no args (member call, no parens).
+        if let Expr::Member { object, name } = expr {
+            // `Err.Clear` (no parens) is a method, not a property read.
+            if self.is_err_receiver(object, frame) {
+                super::eval::call_err_method(name, &[], frame)?;
+                return Ok(());
             }
             self.eval(expr, frame)?;
             return Ok(());

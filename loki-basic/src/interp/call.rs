@@ -21,6 +21,22 @@ impl<H: Host> Interp<'_, H> {
         args: &[Argument],
         frame: &mut Frame,
     ) -> Result<Value, RuntimeError> {
+        // `object.Method(args)` — a host method call (or indexed property).
+        if let Expr::Member { object, name } = callee {
+            // The built-in `Err` object's methods (`Clear`/`Raise`).
+            if self.is_err_receiver(object, frame) {
+                let vals = self.eval_arg_values(args, frame)?;
+                return super::eval::call_err_method(name, &vals, frame);
+            }
+            // A refused method (e.g. `Application.OnTime`) is refused wherever it
+            // appears, not left to the host (spec §7, defence in depth).
+            if super::refused::is_refused(name) {
+                return Err(RuntimeError::feature_refused(name));
+            }
+            let recv = self.eval_receiver(object, frame)?;
+            let vals = self.eval_arg_values(args, frame)?;
+            return self.host.get_member(recv, name, &vals);
+        }
         let Expr::Var(name) = callee else {
             return Err(RuntimeError::new(424, "Object required"));
         };
@@ -41,7 +57,33 @@ impl<H: Host> Interp<'_, H> {
         if super::builtins::is_builtin(name) {
             return self.call_builtin(name, args, frame);
         }
+        if super::dialog::is_dialog(name) {
+            return self.call_dialog(name, args, frame);
+        }
+        // The "never" list (spec §7): refused, named, and untrappable. Checked
+        // before the "not defined" fallback so a refusal is unmistakable.
+        if super::refused::is_refused(name) || self.is_foreign(name) {
+            return Err(RuntimeError::feature_refused(name));
+        }
         Err(RuntimeError::new(35, "Sub or Function not defined"))
+    }
+
+    /// Evaluates positional call arguments to values (`Empty` for omitted
+    /// slots), for host method dispatch. Named arguments are passed positionally
+    /// after any leading positional ones (the host resolves names it knows).
+    pub(super) fn eval_arg_values(
+        &mut self,
+        args: &[Argument],
+        frame: &mut Frame,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let mut vals = Vec::with_capacity(args.len());
+        for a in args {
+            match &a.value {
+                Some(e) => vals.push(self.eval(e, frame)?),
+                None => vals.push(Value::Empty),
+            }
+        }
+        Ok(vals)
     }
 
     /// Invokes `proc` with pre-evaluated argument values (public entry / zero-arg

@@ -172,12 +172,24 @@ fn on_error_goto_handler() {
 
 #[test]
 fn err_object_number() {
+    // Phase 5 wired the built-in `Err` object: after a trapped division by zero
+    // (error 11), `Err.Number` reads back the code.
     let src =
         "Function F()\n On Error Resume Next\n Dim x\n x = 1 / 0\n F = Err.Number\nEnd Function";
-    // Err.Number is an object member; the object model is a later phase, so this
-    // currently errors — assert it does not silently succeed with a wrong value.
-    // (Placeholder until Err is exposed; see interp eval Member handling.)
-    let _ = src;
+    assert_eq!(run(src, "F", vec![]), Value::Int(11));
+}
+
+#[test]
+fn err_clear_resets_number() {
+    let src = "Function F()\n On Error Resume Next\n Dim x\n x = 1 / 0\n Err.Clear\n \
+               F = Err.Number\nEnd Function";
+    assert_eq!(run(src, "F", vec![]), Value::Int(0));
+}
+
+#[test]
+fn err_raise_is_trappable() {
+    let src = "Function F()\n On Error Resume Next\n Err.Raise 457\n F = Err.Number\nEnd Function";
+    assert_eq!(run(src, "F", vec![]), Value::Int(457));
 }
 
 #[test]

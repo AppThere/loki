@@ -19,6 +19,8 @@ mod ops_logic;
 pub use array::Array;
 pub use ops::{binary_op, unary_op};
 
+use crate::host::ObjectRef;
+
 /// A dynamically-typed BASIC value (a `Variant`).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum Value {
@@ -41,6 +43,11 @@ pub enum Value {
     Date(f64),
     /// An array (value-typed: assignment copies).
     Array(Array),
+    /// A reference to a host object (spec §4.3). The interpreter treats it as an
+    /// opaque handle: it flows through variables, `Set`, and `With`, compares by
+    /// identity for `Is`, and dispatches member access back to the host. It has
+    /// no numeric or string value (coercing one is a type mismatch).
+    Object(ObjectRef),
 }
 
 impl Value {
@@ -81,6 +88,13 @@ impl Value {
             Value::Str(_) => "String",
             Value::Date(_) => "Date",
             Value::Array(_) => "Variant()",
+            Value::Object(_) => "Object",
         }
+    }
+
+    /// `true` if this value is a host-object reference.
+    #[must_use]
+    pub fn is_object(&self) -> bool {
+        matches!(self, Value::Object(_))
     }
 }

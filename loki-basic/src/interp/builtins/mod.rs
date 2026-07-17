@@ -72,6 +72,7 @@ const NAMES: &[&str] = &[
     "isempty",
     "isnull",
     "isarray",
+    "isobject",
     "typename",
     "iif",
 ];
@@ -113,8 +114,8 @@ fn dispatch(name: &str, a: &[Value]) -> Result<Value, RuntimeError> {
         | "space" | "string" | "chr" | "asc" | "instr" | "instrrev" | "replace" | "strreverse" => {
             strings::call(name, a)
         }
-        "lbound" | "ubound" | "isnumeric" | "isempty" | "isnull" | "isarray" | "typename"
-        | "iif" => info::call(name, a),
+        "lbound" | "ubound" | "isnumeric" | "isempty" | "isnull" | "isarray" | "isobject"
+        | "typename" | "iif" => info::call(name, a),
         _ => Err(RuntimeError::new(35, "Sub or Function not defined")),
     }
 }

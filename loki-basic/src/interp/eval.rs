@@ -7,7 +7,7 @@ use super::Interp;
 use super::env::{Frame, key};
 use crate::ast::Expr;
 use crate::error::RuntimeError;
-use crate::host::Host;
+use crate::host::{Host, ObjectRef};
 use crate::value::{Value, binary_op, unary_op};
 
 impl<H: Host> Interp<'_, H> {
@@ -38,12 +38,51 @@ impl<H: Host> Interp<'_, H> {
                 binary_op(*op, &a, &b, frame.compare_text)
             }
             Expr::Call { callee, args } => self.eval_call(callee, args, frame),
-            Expr::Member { .. } | Expr::New(_) | Expr::WithContext => {
-                // The object model (members, `New`, `With` receivers) arrives in
-                // a later phase; until then these have no value.
-                Err(RuntimeError::new(424, "Object required"))
+            Expr::Member { object, name } => {
+                // The built-in `Err` object (`Err.Number`/`Err.Description`) is
+                // interpreter state, not a host object.
+                if self.is_err_receiver(object, frame) {
+                    return Ok(eval_err_property(name, frame));
+                }
+                // A refused member name (spec §7) is refused wherever it appears.
+                if super::refused::is_refused(name) {
+                    return Err(RuntimeError::feature_refused(name));
+                }
+                // Property read: resolve the receiver to a host object, then ask
+                // the host for the member value (no args → property get).
+                let recv = self.eval_receiver(object, frame)?;
+                self.host.get_member(recv, name, &[])
             }
+            // `New` constructs an object. User class modules are Phase 6; an
+            // external ProgID is on the "never" list (spec §7). Either way v1
+            // refuses, named, so the author sees why.
+            Expr::New(class) => Err(RuntimeError::feature_refused(&format!("New {class}"))),
+            Expr::WithContext => frame
+                .with_stack
+                .last()
+                .cloned()
+                .ok_or_else(|| RuntimeError::new(91, "Object variable not set")),
         }
+    }
+
+    /// Evaluates a member receiver expression to a host object handle, mapping a
+    /// non-object to VBA error 424 ("Object required").
+    pub(super) fn eval_receiver(
+        &mut self,
+        object: &Expr,
+        frame: &mut Frame,
+    ) -> Result<ObjectRef, RuntimeError> {
+        let v = self.eval(object, frame)?;
+        as_object(&v)
+    }
+
+    /// Whether `object` denotes the built-in `Err` object (and is not shadowed by
+    /// a user variable of that name).
+    pub(super) fn is_err_receiver(&self, object: &Expr, frame: &Frame) -> bool {
+        matches!(object, Expr::Var(o)
+            if o.eq_ignore_ascii_case("Err")
+                && frame.get(o).is_none()
+                && self.const_or_global(o).is_none())
     }
 
     /// Resolves a bare name: local variable, constant, module global, or a
@@ -59,6 +98,16 @@ impl<H: Host> Interp<'_, H> {
             && proc.kind.returns_value()
         {
             return self.invoke_with_values(proc, Vec::new());
+        }
+        // An object-model root the host exposes (`Application`, `ActiveDocument`,
+        // `ThisComponent`, …). Checked after locals/consts/procs so a user
+        // variable of the same name always wins.
+        if let Some(obj) = self.host.get_root(name) {
+            return Ok(Value::Object(obj));
+        }
+        // A refused "never"-list identifier used as a bare value.
+        if super::refused::is_refused(name) {
+            return Err(RuntimeError::feature_refused(name));
         }
         // Undeclared: `Option Explicit` rejects; otherwise auto-vivify to Empty.
         if self.explicit() {
@@ -97,6 +146,51 @@ impl<H: Host> Interp<'_, H> {
             indices.push(self.eval(e, frame)?.to_i32()?);
         }
         Ok(indices)
+    }
+}
+
+/// Reads a property of the built-in `Err` object.
+pub(super) fn eval_err_property(name: &str, frame: &Frame) -> Value {
+    match name.to_ascii_lowercase().as_str() {
+        "number" => Value::from_i64_fit(i64::from(frame.err.number)),
+        "description" => Value::Str(frame.err.description.clone()),
+        "source" => Value::Str(String::new()),
+        _ => Value::Empty,
+    }
+}
+
+/// Invokes a method of the built-in `Err` object (`Clear` / `Raise`).
+pub(super) fn call_err_method(
+    name: &str,
+    args: &[Value],
+    frame: &mut Frame,
+) -> Result<Value, RuntimeError> {
+    match name.to_ascii_lowercase().as_str() {
+        "clear" => {
+            frame.err.clear();
+            Ok(Value::Empty)
+        }
+        "raise" => {
+            let number = args.first().cloned().unwrap_or(Value::Empty).to_i32()?;
+            let desc = match args.get(2) {
+                Some(Value::Empty) | None => "Application-defined error".to_string(),
+                Some(v) => v.to_basic_string()?,
+            };
+            Err(RuntimeError::new(number, desc))
+        }
+        _ => Err(RuntimeError::new(
+            438,
+            "Object doesn't support this property or method",
+        )),
+    }
+}
+
+/// Maps a value to a host object handle, or VBA error 424 ("Object required")
+/// for a non-object (including `Nothing`/`Null`).
+pub(super) fn as_object(v: &Value) -> Result<ObjectRef, RuntimeError> {
+    match v {
+        Value::Object(r) => Ok(*r),
+        _ => Err(RuntimeError::new(424, "Object required")),
     }
 }
 

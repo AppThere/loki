@@ -15,6 +15,7 @@ pub(super) fn call(name: &str, a: &[Value]) -> Result<Value, RuntimeError> {
         "isempty" => Ok(Value::Bool(matches!(arg(a, 0), Value::Empty))),
         "isnull" => Ok(Value::Bool(matches!(arg(a, 0), Value::Null))),
         "isarray" => Ok(Value::Bool(matches!(arg(a, 0), Value::Array(_)))),
+        "isobject" => Ok(Value::Bool(arg(a, 0).is_object())),
         "typename" => Ok(Value::Str(arg(a, 0).type_name().to_string())),
         "iif" => iif(a),
         _ => Err(RuntimeError::invalid_call()),
@@ -44,7 +45,7 @@ fn is_numeric(v: &Value) -> bool {
     match v {
         Value::Int(_) | Value::Long(_) | Value::Double(_) | Value::Date(_) | Value::Bool(_) => true,
         Value::Str(s) => s.trim().parse::<f64>().is_ok(),
-        Value::Empty | Value::Null | Value::Array(_) => false,
+        Value::Empty | Value::Null | Value::Array(_) | Value::Object(_) => false,
     }
 }
 

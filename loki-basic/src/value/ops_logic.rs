@@ -73,6 +73,28 @@ pub(super) fn logical(op: BinOp, lhs: &Value, rhs: &Value) -> Result<Value, Runt
     Ok(Value::from_i64_fit(r))
 }
 
+/// The `Is` operator: object-reference identity (spec §4.3). `Nothing` (an
+/// object-less reference) is modelled by `Null`, so `obj Is Nothing` compares an
+/// object handle against "no object". Two objects are equal iff their handles
+/// match; two "nothings" are equal; an object and nothing differ. Comparing a
+/// non-object with `Is` is a type mismatch (VBA requires object operands).
+pub(super) fn is_identity(lhs: &Value, rhs: &Value) -> Result<Value, RuntimeError> {
+    let l = as_ref_id(lhs)?;
+    let r = as_ref_id(rhs)?;
+    Ok(Value::Bool(l == r))
+}
+
+/// Maps an object-or-nothing operand to an optional handle (`None` = `Nothing`),
+/// or a type mismatch for a non-object, non-`Nothing` operand.
+fn as_ref_id(v: &Value) -> Result<Option<u32>, RuntimeError> {
+    match v {
+        Value::Object(r) => Ok(Some(r.0)),
+        // `Nothing`/`Null` model an object-less reference.
+        Value::Null | Value::Empty => Ok(None),
+        _ => Err(RuntimeError::type_mismatch()),
+    }
+}
+
 /// The `Not` unary operator: boolean negation, else bitwise complement.
 pub(super) fn not(v: &Value) -> Result<Value, RuntimeError> {
     if let Value::Bool(b) = v {

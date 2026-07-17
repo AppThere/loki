@@ -61,4 +61,4 @@ pub use value::Value;
 
 pub use dialect::Dialect;
 pub use error::{BasicError, RuntimeError, Span};
-pub use host::{FuelVerdict, Host};
+pub use host::{DialogKind, DialogRequest, FuelVerdict, Host, ObjectRef};
