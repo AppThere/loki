@@ -31,11 +31,15 @@
 pub mod broker;
 pub mod capability;
 pub mod error;
+pub mod exec;
+pub mod runtime;
 pub mod service;
 pub mod trust;
 
 pub use broker::{CapabilityBroker, GrantSet};
 pub use capability::{Capability, CapabilityDecision, GrantScope, RunContext};
 pub use error::MacroHostError;
+pub use exec::{DenyBackend, DialogOutcome, DocEdit, EditBatch, ExecutionHost, MacroBackend};
+pub use runtime::{MacroRunError, MacroRuntime, RunOutcome, RunRequest};
 pub use service::{CapabilityState, DocumentSecurity, MacroService};
 pub use trust::{PersistedGrant, TrustDecision, TrustRecord, TrustStore};
