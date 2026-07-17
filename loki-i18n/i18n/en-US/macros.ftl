@@ -97,3 +97,21 @@ macros-security-forget = Forget this document
 macros-security-manage-title = Trusted documents
 macros-security-manage-empty = No documents are trusted on this device.
 macros-security-manage-forget = Forget
+
+# Macro runner (Tools ▸ Macros, Phase 5). v1 uses capabilities granted in
+# Document Security; it does not prompt mid-run.
+macros-run-open-action = Run a macro…
+macros-run-title = Run a macro
+macros-run-close = Close
+macros-run-action = Run
+macros-run-none = No runnable procedures were found in this document.
+macros-run-done = Macro finished.
+macros-run-done-edited = Macro finished — the document was changed (undo with ⌘Z / Ctrl+Z).
+macros-run-refused =
+    The macro tried to use a feature Loki never allows (for example running a
+    program or reading a file by path). It was stopped.
+macros-run-denied =
+    The macro needs a permission you haven't granted. Grant it in Document
+    Security and run again.
+macros-run-stopped = The macro was stopped: it ran too long or was cancelled.
+macros-run-unreadable = The macro could not be run.

@@ -9,11 +9,10 @@
 //! Macros are **disabled by default** for documents the user did not author
 //! (spec §2). From the infobar the user can open the trust dialog
 //! ([`AtMacroTrustDialog`]) to enable them, view the source read-only, or (once
-//! enabled) open the Document Security panel to manage capability grants.
-//!
-//! There is still **no execution surface** — Phase 4 records the *decision*
-//! (via the ambient [`MacroService`]); Phase 5 wires actual execution. Nothing
-//! here runs a macro.
+//! enabled) open the Document Security panel — which offers **Run a macro…**,
+//! mounting the runner ([`super::editor_macro_runner`], Phase 5). Execution
+//! itself is gated by the ambient [`MacroService`] and applied as one undo
+//! entry; this module only orchestrates the surfaces.
 //!
 //! Source extraction for the viewer is on-demand; the per-frame cost of the
 //! infobar is a cheap presence check, and this component is memoised on the
@@ -53,6 +52,21 @@ pub(super) struct ViewerModule {
 pub(super) struct MacroView {
     pub(super) modules: Vec<ViewerModule>,
     pub(super) tamper: Option<String>,
+}
+
+/// Clones out the document's macro payload under a short lock, or `None` when no
+/// macro-carrying document is loaded. Used by the runner to resolve grants.
+pub(super) fn payload_of(doc_state: &Arc<Mutex<DocumentState>>) -> Option<MacroPayload> {
+    let guard = doc_state.try_lock().ok()?;
+    let payload = guard
+        .document
+        .as_ref()?
+        .source
+        .as_ref()?
+        .macros
+        .as_ref()?
+        .clone();
+    (!payload.is_empty()).then_some(payload)
 }
 
 /// Clones out the macro payload and document title under a single short lock, or
@@ -133,12 +147,13 @@ fn extract_basic(payload: &MacroPayload) -> MacroView {
 /// Touch targets: all controls meet the 44×44 logical-pixel minimum (WCAG
 /// 2.5.8) via [`AtInfobar`] and the panel/dialog control sizing.
 #[component]
-pub(super) fn MacroNoticeBar(ctx: MacroCtx) -> Element {
+pub(super) fn MacroNoticeBar(ctx: MacroCtx, loro_doc: Signal<Option<loro::LoroDoc>>) -> Element {
     let svc = use_context::<MacroService>();
     let mut dismissed = use_signal(|| false);
     let mut view = use_signal(|| None::<MacroView>);
     let mut trust_open = use_signal(|| false);
     let mut panel_open = use_signal(|| false);
+    let mut runner = use_signal(|| None::<MacroView>);
 
     let Some((payload, title)) = read_doc(&ctx.0) else {
         return rsx! {};
@@ -146,6 +161,10 @@ pub(super) fn MacroNoticeBar(ctx: MacroCtx) -> Element {
     let decision = svc.decision_for(&payload);
     let enabled = decision.is_enabled();
     let project = project_name(&payload);
+    let dialect = match payload.kind {
+        MacroPayloadKind::OoxmlVba => loki_macro_host::Dialect::Vba,
+        MacroPayloadKind::OdfBasic => loki_macro_host::Dialect::StarBasic,
+    };
 
     // Infobar message + primary action depend on the current trust state.
     let (message, primary) = match decision {
@@ -164,6 +183,7 @@ pub(super) fn MacroNoticeBar(ctx: MacroCtx) -> Element {
     let svc_choice = svc.clone();
     let payload_choice = payload.clone();
     let view_payload = payload.clone();
+    let runner_payload = payload.clone();
 
     rsx! {
         if !dismissed() {
@@ -204,7 +224,22 @@ pub(super) fn MacroNoticeBar(ctx: MacroCtx) -> Element {
             super::editor_macro_security_panel::MacroSecurityPanel {
                 payload: payload.clone(),
                 title: title.clone(),
+                can_run: enabled,
+                on_run: move |()| {
+                    panel_open.set(false);
+                    runner.set(Some(extract_view(&runner_payload)));
+                },
                 on_close: move |()| panel_open.set(false),
+            }
+        }
+
+        if let Some(v) = runner() {
+            super::editor_macro_runner::MacroRunnerPanel {
+                ctx: ctx.clone(),
+                loro_doc,
+                view: v,
+                dialect,
+                on_close: move |()| runner.set(None),
             }
         }
 

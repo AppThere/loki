@@ -36,6 +36,11 @@ pub mod runtime;
 pub mod service;
 pub mod trust;
 
+/// Re-exported so consumers can name the dialect for [`runtime::MacroRuntime`]
+/// and implement [`exec::MacroBackend`] without depending on `loki-basic`
+/// directly.
+pub use loki_basic::{Dialect, DialogKind, DialogRequest};
+
 pub use broker::{CapabilityBroker, GrantSet};
 pub use capability::{Capability, CapabilityDecision, GrantScope, RunContext};
 pub use error::MacroHostError;
