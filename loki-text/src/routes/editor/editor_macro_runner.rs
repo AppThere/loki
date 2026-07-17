@@ -1,33 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! The in-app macro runner panel (Tools ▸ Macros — macro spec §9.3, Phase 5).
+//! The in-app macro runner panel (Tools ▸ Macros — macro spec §9.3).
 //!
-//! Lists the runnable procedures in the (already-enabled) document's macro
-//! modules and runs a chosen one against the live document via
-//! [`super::editor_macro_run`]. Rendered in-flow above the ribbon like the
-//! read-only viewer. All strings via `fl!()`; every control meets the 44×44
-//! logical-pixel touch target (WCAG 2.5.8).
-//!
-//! v1 uses the capabilities the user has already granted in Document Security
-//! (no mid-run prompts); see [`super::editor_macro_run`] for the posture.
+//! Lists an enabled document's runnable procedures and runs a chosen one on a
+//! **worker thread** so a long or misbehaving run never freezes the UI. The
+//! interpreter's first-use capability prompts (§5.4) and dialogs (§5.5) round-
+//! trip to the UI thread through [`super::editor_macro_bridge`] and render in
+//! the anti-spoof frame; an always-available **Stop** trips the run's cancel
+//! flag (§8). On a clean finish the edits apply as **one undo entry**
+//! ([`super::editor_macro_apply`]). Orchestration lives in
+//! [`super::editor_macro_runner_ops`].
+
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use appthere_ui::tokens;
 use dioxus::prelude::*;
 use loki_i18n::fl;
-use loki_macro_host::{Dialect, MacroRuntime, MacroService};
+use loki_macro_host::Dialect;
 
-use super::editor_macro_notice::{MacroCtx, MacroView};
-use super::editor_macro_run::{RunMessages, RunReport, run_macro};
-
-/// One runnable procedure: which module it lives in and its name.
-#[derive(Clone, PartialEq)]
-struct ProcEntry {
-    module: String,
-    source: String,
-    proc: String,
-    dialect: Dialect,
-}
+use super::editor_macro_bridge::{PendingPrompt, UiReply};
+use super::editor_macro_notice::{MacroCtx, MacroView, payload_of};
+use super::editor_macro_prompt::{MacroPromptView, PromptKind};
+use super::editor_macro_run::RunReport;
+use super::editor_macro_runner_ops::{
+    RunState, answer_prompt, btn_style, collect_procs, report_style, start_run, stop_run,
+};
 
 /// The macro runner panel.
 #[component]
@@ -36,13 +35,25 @@ pub(super) fn MacroRunnerPanel(
     loro_doc: Signal<Option<loro::LoroDoc>>,
     view: MacroView,
     dialect: Dialect,
+    project: String,
+    doc_title: String,
     on_close: EventHandler<()>,
 ) -> Element {
-    let svc = use_context::<MacroService>();
-    let mut report = use_signal(|| None::<RunReport>);
+    let svc = use_context::<loki_macro_host::MacroService>();
+    let state = RunState {
+        report: use_signal(|| None::<RunReport>),
+        running: use_signal(|| false),
+        pending: use_signal(|| None::<PendingPrompt>),
+        cancel: use_signal(|| None::<Arc<AtomicBool>>),
+    };
+    let RunState {
+        report,
+        running,
+        pending,
+        cancel,
+    } = state;
 
     let procs = collect_procs(&view, dialect);
-
     let container = format!(
         "display: flex; flex-direction: column; gap: {gap}px; padding: {pv}px {ph}px; \
          background: {bg}; border-top: 1px solid {border}; border-bottom: 1px solid {border}; \
@@ -58,6 +69,7 @@ pub(super) fn MacroRunnerPanel(
 
     rsx! {
         div { style: "{container}",
+            // Header: title + Stop (while running) + Close.
             div {
                 style: "display: flex; flex-direction: row; align-items: center; gap: 8px;",
                 span {
@@ -65,6 +77,13 @@ pub(super) fn MacroRunnerPanel(
                     {fl!("macros-run-title")}
                 }
                 div { style: "flex: 1;" }
+                if running() {
+                    button {
+                        style: btn_style(true),
+                        onclick: move |_| stop_run(cancel, pending),
+                        {fl!("macros-run-stop")}
+                    }
+                }
                 button {
                     style: btn_style(false),
                     onclick: move |_| on_close.call(()),
@@ -82,22 +101,20 @@ pub(super) fn MacroRunnerPanel(
             for entry in procs {
                 {
                     let ctx_run = ctx.clone();
-                    let entry_run = entry.clone();
                     let svc_run = svc.clone();
+                    let entry_run = entry.clone();
                     rsx! {
                         div {
                             key: "{entry.module}:{entry.proc}",
                             style: "display: flex; flex-direction: row; align-items: center; gap: 8px;",
                             span {
-                                style: format!("flex: 1; font-size: {}px; font-family: {};", tokens::FONT_SIZE_LABEL, tokens::FONT_FAMILY_UI),
+                                style: format!("flex: 1; font-size: {}px;", tokens::FONT_SIZE_LABEL),
                                 "{entry.module} · {entry.proc}"
                             }
                             button {
                                 style: btn_style(true),
-                                onclick: move |_| {
-                                    let rep = do_run(&ctx_run, loro_doc, &svc_run, &entry_run);
-                                    report.set(Some(rep));
-                                },
+                                disabled: running(),
+                                onclick: move |_| start_run(&ctx_run, loro_doc, &svc_run, dialect, &entry_run, state),
                                 {fl!("macros-run-action")}
                             }
                         }
@@ -105,106 +122,32 @@ pub(super) fn MacroRunnerPanel(
                 }
             }
 
-            // Result of the most recent run.
             if let Some(rep) = report() {
-                div {
-                    style: format!(
-                        "margin-top: 4px; padding: {p}px {p2}px; border-left: 3px solid {c}; \
-                         font-size: {s}px; color: {fg}; display: flex; flex-direction: column; gap: 4px;",
-                        p = tokens::SPACE_1, p2 = tokens::SPACE_2,
-                        c = if rep.ok { tokens::COLOR_TAB_ACTIVE_INDICATOR } else { tokens::COLOR_STATUS_ERROR_BORDER },
-                        s = tokens::FONT_SIZE_LABEL, fg = tokens::COLOR_TEXT_ON_CHROME,
-                    ),
-                    span { "{rep.message}" }
-                    for line in rep.dialog_log.iter() {
-                        span {
-                            style: format!("font-size: {}px; color: {};", tokens::FONT_SIZE_XS, tokens::COLOR_TEXT_ON_CHROME_SECONDARY),
-                            "🗩 {line}"
-                        }
+                div { style: report_style(rep.ok), "{rep.message}" }
+            }
+        }
+
+        // Live capability prompt / dialog from the running macro.
+        if pending.read().is_some() {
+            {
+                let kind = pending
+                    .read()
+                    .as_ref()
+                    .map(|p| PromptKind::from_request(p.request()))
+                    .expect("pending is Some");
+                let svc_answer = svc.clone();
+                let payload_answer = payload_of(&ctx.0);
+                rsx! {
+                    MacroPromptView {
+                        kind,
+                        project: project.clone(),
+                        doc_title: doc_title.clone(),
+                        on_answer: move |reply: UiReply| {
+                            answer_prompt(&svc_answer, payload_answer.as_ref(), pending, reply);
+                        },
                     }
                 }
             }
         }
     }
-}
-
-/// Collects the runnable procedures across all readable modules.
-fn collect_procs(view: &MacroView, dialect: Dialect) -> Vec<ProcEntry> {
-    let mut out = Vec::new();
-    for module in &view.modules {
-        if let Ok(names) = MacroRuntime::list_procedures(&module.source, dialect) {
-            for proc in names {
-                out.push(ProcEntry {
-                    module: module.name.clone(),
-                    source: module.source.clone(),
-                    proc,
-                    dialect,
-                });
-            }
-        }
-    }
-    out
-}
-
-/// Runs `entry` against the live document, returning a report to display.
-fn do_run(
-    ctx: &MacroCtx,
-    loro_doc: Signal<Option<loro::LoroDoc>>,
-    svc: &MacroService,
-    entry: &ProcEntry,
-) -> RunReport {
-    let messages = run_messages();
-    let doc_state = ctx.0.clone();
-    let Some(payload) = super::editor_macro_notice::payload_of(&doc_state) else {
-        return RunReport::failed(messages.unreadable);
-    };
-    let guard = loro_doc.read();
-    let Some(loro) = guard.as_ref() else {
-        return RunReport::failed(messages.unreadable);
-    };
-    run_macro(
-        &doc_state,
-        loro,
-        svc,
-        &payload,
-        super::editor_macro_run::MacroCode {
-            source: &entry.source,
-            dialect: entry.dialect,
-            proc: &entry.proc,
-        },
-        &messages,
-    )
-}
-
-/// Resolved i18n strings for run outcomes.
-fn run_messages() -> RunMessages {
-    RunMessages {
-        done: fl!("macros-run-done"),
-        done_edited: fl!("macros-run-done-edited"),
-        refused: fl!("macros-run-refused"),
-        denied: fl!("macros-run-denied"),
-        stopped: fl!("macros-run-stopped"),
-        unreadable: fl!("macros-run-unreadable"),
-    }
-}
-
-fn btn_style(accent: bool) -> String {
-    let border = if accent {
-        tokens::COLOR_MACRO_BADGE
-    } else {
-        tokens::COLOR_BORDER_CHROME
-    };
-    format!(
-        "min-height: {th}px; padding: {pv}px {ph}px; background: {bg}; \
-         border: 1px solid {border}; border-radius: {r}px; color: {fg}; \
-         font-size: {size}px; cursor: pointer; flex-shrink: 0;",
-        th = tokens::TOUCH_MIN,
-        pv = tokens::SPACE_1,
-        ph = tokens::SPACE_2,
-        bg = tokens::COLOR_SURFACE_3,
-        border = border,
-        r = tokens::RADIUS_SM,
-        fg = tokens::COLOR_TEXT_ON_CHROME,
-        size = tokens::FONT_SIZE_LABEL,
-    )
 }

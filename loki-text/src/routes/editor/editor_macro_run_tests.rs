@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
+//! Tests for the UI-thread run helpers: `make_run_request` reads the document
+//! and grants; `apply_and_report` applies a finished run's batch as one undo
+//! entry and builds the report. The interpreter itself is exercised inline (no
+//! worker thread needed for these — the bridge has its own threaded tests).
+
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use loki_doc_model::content::block::Block;
@@ -9,9 +15,9 @@ use loki_doc_model::document::Document;
 use loki_doc_model::get_block_text;
 use loki_doc_model::io::macros::{MacroPayload, MacroPayloadKind, PreservedPart};
 use loki_doc_model::loro_bridge::document_to_loro;
-use loki_macro_host::{Capability, Dialect, MacroService};
+use loki_macro_host::{Capability, Dialect, GrantSet, MacroRuntime, MacroService};
 
-use super::{MacroCode, RunMessages, run_macro};
+use super::{RunMessages, apply_and_report, make_run_request};
 use crate::editing::state::DocumentState;
 
 fn messages() -> RunMessages {
@@ -36,7 +42,6 @@ fn payload() -> MacroPayload {
     )
 }
 
-/// Builds a document-state + live Loro doc seeded with `paras`.
 fn fixture(paras: &[&str]) -> (Arc<Mutex<DocumentState>>, loro::LoroDoc) {
     let mut doc = Document::new();
     doc.sections[0].blocks = paras
@@ -49,119 +54,105 @@ fn fixture(paras: &[&str]) -> (Arc<Mutex<DocumentState>>, loro::LoroDoc) {
     (Arc::new(Mutex::new(ds)), loro)
 }
 
-#[test]
-fn read_only_macro_runs_without_editing() {
-    let (ds, loro) = fixture(&["Hello world"]);
-    let svc = MacroService::in_memory();
-    let src = "Function Main() As String\n Main = ActiveDocument.Text\nEnd Function";
-    let r = run_macro(
-        &ds,
-        &loro,
-        &svc,
-        &payload(),
-        MacroCode {
-            source: src,
-            dialect: Dialect::Vba,
-            proc: "Main",
-        },
-        &messages(),
-    );
-    assert!(r.ok);
-    assert!(!r.applied, "a DocRead-only macro makes no edits");
-    assert_eq!(r.message, "done");
+/// A pre-resolved backend that grants whatever is in `allow` (for tests that run
+/// the interpreter inline without the bridge's worker thread).
+struct GrantBackend {
+    allow: Vec<Capability>,
+}
+impl loki_macro_host::MacroBackend for GrantBackend {
+    fn prompt_capability(&mut self, cap: Capability) -> loki_macro_host::GrantScope {
+        if self.allow.contains(&cap) {
+            loki_macro_host::GrantScope::AllowSession
+        } else {
+            loki_macro_host::GrantScope::Deny
+        }
+    }
+    fn show_dialog(
+        &mut self,
+        _req: &loki_macro_host::DialogRequest,
+    ) -> loki_macro_host::DialogOutcome {
+        loki_macro_host::DialogOutcome::Button(1)
+    }
 }
 
 #[test]
-fn refused_macro_is_reported_and_makes_no_edits() {
-    let (ds, loro) = fixture(&["body"]);
-    let svc = MacroService::in_memory();
-    let src = "Sub Main()\n Shell \"calc.exe\"\nEnd Sub";
-    let r = run_macro(
-        &ds,
-        &loro,
-        &svc,
-        &payload(),
-        MacroCode {
-            source: src,
-            dialect: Dialect::Vba,
-            proc: "Main",
-        },
-        &messages(),
-    );
-    assert!(!r.ok);
-    assert_eq!(r.message, "refused");
-    assert!(!r.applied);
-}
-
-#[test]
-fn ungranted_docwrite_is_denied_and_makes_no_edits() {
-    let (ds, loro) = fixture(&["keep"]);
-    let svc = MacroService::in_memory(); // no DocWrite grant
-    let src = "Sub Main()\n ActiveDocument.AppendText \"NO\"\nEnd Sub";
-    let r = run_macro(
-        &ds,
-        &loro,
-        &svc,
-        &payload(),
-        MacroCode {
-            source: src,
-            dialect: Dialect::Vba,
-            proc: "Main",
-        },
-        &messages(),
-    );
-    assert!(!r.ok);
-    assert_eq!(r.message, "denied");
-    assert!(!r.applied);
-    assert_eq!(get_block_text(&loro, 0), "keep", "document untouched");
-}
-
-#[test]
-fn granted_docwrite_applies_edits_end_to_end() {
-    let (ds, loro) = fixture(&["Hello"]);
+fn make_run_request_reads_title_body_and_grants() {
+    let (ds, _loro) = fixture(&["Hello", "world"]);
     let svc = MacroService::in_memory();
     let p = payload();
     svc.grant_always(&p, Capability::DocWrite).expect("grant");
+    let cancel = Arc::new(AtomicBool::new(false));
+    let req = make_run_request(&ds, &svc, &p, cancel);
+    assert_eq!(req.text, "Hello\nworld");
+    assert!(req.grants.contains(Capability::DocWrite));
+}
+
+#[test]
+fn apply_and_report_applies_a_batch_as_one_undo_entry() {
+    let (ds, loro) = fixture(&["Hello"]);
+    let svc = MacroService::in_memory();
+    let p = payload();
+    let cancel = Arc::new(AtomicBool::new(false));
+    let mut req = make_run_request(&ds, &svc, &p, cancel);
+    // Pre-grant DocWrite so the inline run needs no prompt.
+    let mut grants = GrantSet::new();
+    grants.allow(Capability::DocWrite);
+    req = req.with_grants(grants);
 
     let src = "Sub Main()\n ActiveDocument.AppendText \" world\"\nEnd Sub";
-    let r = run_macro(
-        &ds,
-        &loro,
-        &svc,
-        &p,
-        MacroCode {
-            source: src,
-            dialect: Dialect::Vba,
-            proc: "Main",
+    let outcome = MacroRuntime::run(
+        src,
+        Dialect::Vba,
+        "Main",
+        req,
+        GrantBackend {
+            allow: vec![Capability::DocWrite],
         },
-        &messages(),
     );
-    assert!(r.ok, "granted run should finish: {r:?}");
-    assert!(r.applied);
-    assert_eq!(r.message, "done-edited");
-    // The edit reached the live Loro document.
+    let report = apply_and_report(&ds, &loro, outcome, &messages());
+    assert!(report.ok && report.applied);
+    assert_eq!(report.message, "done-edited");
     assert_eq!(get_block_text(&loro, 0), "Hello world");
 }
 
 #[test]
-fn dialog_text_is_collected_into_the_log() {
+fn apply_and_report_maps_a_refusal() {
     let (ds, loro) = fixture(&["x"]);
     let svc = MacroService::in_memory();
     let p = payload();
-    svc.grant_always(&p, Capability::UiDialog).expect("grant");
-    let src = "Sub Main()\n MsgBox \"hello from macro\"\nEnd Sub";
-    let r = run_macro(
-        &ds,
-        &loro,
-        &svc,
-        &p,
-        MacroCode {
-            source: src,
-            dialect: Dialect::Vba,
-            proc: "Main",
-        },
-        &messages(),
+    let cancel = Arc::new(AtomicBool::new(false));
+    let req = make_run_request(&ds, &svc, &p, cancel);
+    let src = "Sub Main()\n Shell \"calc.exe\"\nEnd Sub";
+    let outcome = MacroRuntime::run(
+        src,
+        Dialect::Vba,
+        "Main",
+        req,
+        GrantBackend { allow: vec![] },
     );
-    assert!(r.ok);
-    assert_eq!(r.dialog_log, vec!["hello from macro".to_string()]);
+    let report = apply_and_report(&ds, &loro, outcome, &messages());
+    assert!(!report.ok && !report.applied);
+    assert_eq!(report.message, "refused");
+    assert_eq!(get_block_text(&loro, 0), "x", "document untouched");
+}
+
+#[test]
+fn apply_and_report_maps_a_denial() {
+    let (ds, loro) = fixture(&["keep"]);
+    let svc = MacroService::in_memory();
+    let p = payload(); // no DocWrite grant
+    let cancel = Arc::new(AtomicBool::new(false));
+    let req = make_run_request(&ds, &svc, &p, cancel);
+    let src = "Sub Main()\n ActiveDocument.AppendText \"NO\"\nEnd Sub";
+    let outcome = MacroRuntime::run(
+        src,
+        Dialect::Vba,
+        "Main",
+        req,
+        GrantBackend { allow: vec![] },
+    );
+    let report = apply_and_report(&ds, &loro, outcome, &messages());
+    assert_eq!(report.message, "denied");
+    assert!(!report.applied);
+    assert_eq!(get_block_text(&loro, 0), "keep");
 }

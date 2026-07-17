@@ -1,47 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! The synchronous, capability-pre-resolved macro runner (macro spec §5, §6,
-//! Phase 5 — in-app).
+//! Shared, UI-thread-side helpers for the interactive macro runner (macro spec
+//! §5, §6).
 //!
-//! A run reads the document body, executes a **named** procedure against the
-//! [`loki_macro_host`] execution engine using the capabilities the user has
-//! already granted for the document (Document Security, §5.4), and applies the
-//! resulting edits as **one undo entry** ([`super::editor_macro_apply`]).
-//!
-//! v1 posture (deliberate, so the runner ships without an un-verifiable async
-//! UI): capabilities are **pre-resolved** from the trust record — the runner
-//! does not prompt mid-run. A capability the macro needs but the user has not
-//! granted surfaces as a trappable "permission denied", and the report tells the
-//! user to grant it in Document Security and re-run. Macro-shown dialogs are
-//! collected into an output log rather than rendered as blocking modals;
-//! `InputBox` returns its default. Interactive first-use prompts, live modal
-//! dialogs, and a worker-thread Stop are the follow-on (they need the async UI
-//! round-trip). Execution is bounded by fuel (§8), so a synchronous run cannot
-//! hang the UI.
+//! The runner ([`super::editor_macro_runner`]) executes the interpreter on a
+//! worker thread (so a long run never freezes the UI and Stop stays live) with
+//! the [`super::editor_macro_bridge`] backend for live capability prompts and
+//! dialogs. These helpers are the parts that must run on the UI thread — reading
+//! the document body and applying the resulting [`super::editor_macro_apply`]
+//! batch as **one undo entry** — plus the request/report plumbing. They are
+//! Dioxus-free so they can be unit-tested against a bare `DocumentState`.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 
-use loki_macro_host::{
-    Dialect, DialogOutcome, MacroBackend, MacroRunError, MacroRuntime, MacroService, RunRequest,
-};
+use loki_macro_host::{MacroRunError, MacroService, RunOutcome, RunRequest};
 
 use crate::editing::state::DocumentState;
 
-/// Fuel budget for a synchronous in-app run (spec §8). Generous for document
-/// automation, but bounded so the UI thread always returns.
-const RUN_FUEL: u64 = 5_000_000;
+/// Fuel budget for an in-app run (spec §8). Generous for document automation,
+/// but bounded so a runaway macro is always stopped.
+pub(super) const RUN_FUEL: u64 = 5_000_000;
 
 /// The result of a run, for display.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct RunReport {
     /// Whether the macro finished cleanly.
     pub(super) ok: bool,
-    /// A short outcome message key-family already resolved to display text.
+    /// The outcome message, already resolved to display text.
     pub(super) message: String,
-    /// Lines the macro tried to show via `MsgBox`/`InputBox` (spec §5.5) —
-    /// collected rather than shown as blocking modals in v1.
-    pub(super) dialog_log: Vec<String>,
     /// Whether document edits were applied (one undo entry).
     pub(super) applied: bool,
 }
@@ -53,99 +42,8 @@ impl RunReport {
         Self {
             ok: false,
             message,
-            dialog_log: Vec::new(),
             applied: false,
         }
-    }
-}
-
-/// A backend for the synchronous runner: it never prompts (v1 uses pre-resolved
-/// grants only) and collects dialog text instead of showing modals.
-pub(super) struct RunnerBackend {
-    log: Arc<Mutex<Vec<String>>>,
-}
-
-impl RunnerBackend {
-    fn new(log: Arc<Mutex<Vec<String>>>) -> Self {
-        Self { log }
-    }
-}
-
-impl MacroBackend for RunnerBackend {
-    // `prompt_capability` intentionally uses the default (deny): v1 does not
-    // prompt mid-run; the user pre-grants in Document Security.
-
-    fn show_dialog(&mut self, req: &loki_macro_host::DialogRequest) -> DialogOutcome {
-        if let Ok(mut log) = self.log.lock() {
-            log.push(req.prompt.clone());
-        }
-        match req.kind {
-            // Auto-acknowledge a message (vbOK); return the default for input.
-            loki_macro_host::DialogKind::Message => DialogOutcome::Button(1),
-            loki_macro_host::DialogKind::Input => {
-                DialogOutcome::Text(req.default.clone().unwrap_or_default())
-            }
-        }
-    }
-}
-
-/// Identifies which macro procedure to run (source, dialect, procedure name).
-#[derive(Debug, Clone, Copy)]
-pub(super) struct MacroCode<'a> {
-    /// The module source to parse.
-    pub(super) source: &'a str,
-    /// The dialect (VBA / `StarBasic`).
-    pub(super) dialect: Dialect,
-    /// The procedure name to invoke.
-    pub(super) proc: &'a str,
-}
-
-/// Runs `code.proc` against the live document, applying any edits as one undo
-/// entry. `messages` maps each outcome to display text (so this stays
-/// i18n-agnostic — the caller passes resolved strings).
-pub(super) fn run_macro(
-    doc_state: &Arc<Mutex<DocumentState>>,
-    loro: &loro::LoroDoc,
-    svc: &MacroService,
-    payload: &loki_doc_model::io::macros::MacroPayload,
-    code: MacroCode<'_>,
-    messages: &RunMessages,
-) -> RunReport {
-    let (title, text) = read_document(doc_state);
-    let grants = svc.grant_set_for(payload);
-    let log = Arc::new(Mutex::new(Vec::new()));
-    let backend = RunnerBackend::new(Arc::clone(&log));
-
-    let req = RunRequest::new(title, text, RUN_FUEL).with_grants(grants);
-    let outcome = MacroRuntime::run(code.source, code.dialect, code.proc, req, backend);
-    let dialog_log = log.lock().map(|l| l.clone()).unwrap_or_default();
-
-    match outcome.result {
-        Ok(()) => {
-            let applied = if outcome.batch.is_empty() {
-                false
-            } else {
-                // Apply the whole batch as one undo entry (spec §6.2).
-                super::editor_macro_apply::apply_edit_batch(doc_state, loro, &outcome.batch)
-                    .unwrap_or(false)
-            };
-            RunReport {
-                ok: true,
-                message: if applied {
-                    messages.done_edited.clone()
-                } else {
-                    messages.done.clone()
-                },
-                dialog_log,
-                applied,
-            }
-        }
-        Err(err) => RunReport {
-            ok: false,
-            message: describe_error(&err, messages),
-            dialog_log,
-            applied: false,
-        },
     }
 }
 
@@ -158,6 +56,56 @@ pub(super) struct RunMessages {
     pub(super) denied: String,
     pub(super) stopped: String,
     pub(super) unreadable: String,
+}
+
+/// Builds the [`RunRequest`] for a run of `payload`'s macros: the document
+/// title + body (read side), the capabilities resolved from the trust record,
+/// the fuel budget, and the shared `cancel` flag driving Stop.
+pub(super) fn make_run_request(
+    doc_state: &Arc<Mutex<DocumentState>>,
+    svc: &MacroService,
+    payload: &loki_doc_model::io::macros::MacroPayload,
+    cancel: Arc<AtomicBool>,
+) -> RunRequest {
+    let (title, text) = read_document(doc_state);
+    let grants = svc.grant_set_for(payload);
+    RunRequest::new(title, text, RUN_FUEL)
+        .with_grants(grants)
+        .with_cancel(cancel)
+}
+
+/// Applies a finished run's edits (on the UI thread) and builds the report. On a
+/// clean run with edits, the whole batch applies as one undo entry (spec §6.2).
+pub(super) fn apply_and_report(
+    doc_state: &Arc<Mutex<DocumentState>>,
+    loro: &loro::LoroDoc,
+    outcome: RunOutcome,
+    messages: &RunMessages,
+) -> RunReport {
+    match outcome.result {
+        Ok(()) => {
+            let applied = if outcome.batch.is_empty() {
+                false
+            } else {
+                super::editor_macro_apply::apply_edit_batch(doc_state, loro, &outcome.batch)
+                    .unwrap_or(false)
+            };
+            RunReport {
+                ok: true,
+                message: if applied {
+                    messages.done_edited.clone()
+                } else {
+                    messages.done.clone()
+                },
+                applied,
+            }
+        }
+        Err(err) => RunReport {
+            ok: false,
+            message: describe_error(&err, messages),
+            applied: false,
+        },
+    }
 }
 
 fn describe_error(err: &MacroRunError, m: &RunMessages) -> String {

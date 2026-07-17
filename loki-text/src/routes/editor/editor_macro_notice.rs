@@ -239,6 +239,8 @@ pub(super) fn MacroNoticeBar(ctx: MacroCtx, loro_doc: Signal<Option<loro::LoroDo
                 loro_doc,
                 view: v,
                 dialect,
+                project: project.clone(),
+                doc_title: title.clone(),
                 on_close: move |()| runner.set(None),
             }
         }

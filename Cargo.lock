@@ -4950,6 +4950,7 @@ dependencies = [
  "dioxus",
  "fontique 0.10.0",
  "futures-channel",
+ "futures-util",
  "image",
  "log",
  "loki-app-shell",

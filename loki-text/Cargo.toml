@@ -57,6 +57,8 @@ fontique        = { version = "0.10", features = ["fontconfig-dlopen"] }
 loro = "1.11.1"
 # oneshot channel used to await the off-main-thread document-open layout.
 futures-channel = "0.3"
+# StreamExt::next for draining the macro-runner prompt channel on the UI thread.
+futures-util = { version = "0.3", default-features = false }
 # Unicode grapheme cluster segmentation for correct backspace/delete behaviour.
 unicode-segmentation = "1"
 # Image decoding for Insert → Image (intrinsic pixel dimensions).
