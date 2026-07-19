@@ -34,6 +34,7 @@ mod editor_layout_task;
 mod editor_load;
 mod editor_macro_apply;
 mod editor_macro_bridge;
+mod editor_macro_extract;
 mod editor_macro_notice;
 mod editor_macro_prompt;
 mod editor_macro_run;

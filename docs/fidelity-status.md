@@ -556,17 +556,27 @@ the
 ## 13. Macros & Scripting (VBA / StarBasic)
 
 Full design: [`docs/adr/LOKI_MACRO_SCRIPTING_SPEC.md`](adr/LOKI_MACRO_SCRIPTING_SPEC.md)
-(ratified v1). Security-first: macros are **disabled by default** and Loki does
-not execute any macro code from an opened document yet. **Phases 1–5 (engine)
-are implemented**: preservation & detection, the interpreter core, source
-extraction & viewer, the trust + capability infrastructure, and the **execution
-engine** — a capability-gated `Host`, the object-model facade, the "never"
-list, and `MacroRuntime` (explicit-run, one-undo-batch). The exit criteria are
-green in tests, and the **in-app Tools ▸ Macros runner** now drives it: an
-enabled document runs a chosen procedure on a worker thread, with live
-capability prompts / dialogs, an always-available Stop, and edits applied as
-one undo entry. Remaining Phase 5 tail: rich-text/multi-section document
-writes and the spreadsheet object model (the runner's object model is
+(ratified v1). Security-first: macros are **disabled by default** for documents
+the user did not author. **Phases 1–6 (engine) are implemented**: preservation &
+detection, the interpreter core, source extraction & viewer, the trust +
+capability infrastructure, the **execution engine** (a capability-gated `Host`,
+the object-model facade, the "never" list, `MacroRuntime`), and **events +
+UDFs** — token-gated auto-run and compute-only spreadsheet functions. The exit
+criteria are green in tests, and the **in-app Tools ▸ Macros runner** drives it:
+an enabled document runs a chosen procedure on a worker thread, with live
+capability prompts / dialogs, an always-available Stop, and edits applied as one
+undo entry.
+
+**Phase 6 auto-run is off unless the user opts in per document.** On-open
+handlers (`Document_Open`, `AutoOpen`, …) fire **only** when the document is
+already trusted *and* the user set the separate `auto_run_open` opt-in — enforced
+at the type level: `AutoRunToken` has no public constructor, `run_event` requires
+one, and only `MacroService::authorize_auto_run` mints it (trusted + flag),
+re-checked at fire time in `loki-text`. The T1 corpus asserts nothing fires
+without the flag. Remaining Phase 6 tail (documented, not yet built):
+button/control-assigned macros, class modules, `Find`, and live spreadsheet
+recalc wiring of `eval_udf`. Prior tail also open: rich-text/multi-section
+document writes and the spreadsheet object model (the runner's object model is
 plain-text v1).
 
 | Layer | Status | Notes |
@@ -587,6 +597,8 @@ plain-text v1).
 | **Execution engine + facade** | Yes | **Phase 5 landed**: `loki_macro_host::{ExecutionHost, MacroRuntime}`. `ExecutionHost` is the `Host` impl that gates every effect (`gate()`): reads baseline, writes/dialogs/print prompt via a `MacroBackend` seam, refusals untrappable. Object-model facade v1 (§6.1): `Application` + `ActiveDocument`→`Document` (`Name`/`Text`/`Content`/`ParagraphCount` read; `AppendText`/`InsertText`/`TypeText`/`Text=` write; `PrintOut`). Every `DocWrite` accumulates into one `EditBatch` = one undo entry (§6.2). `MacroRuntime::run` executes a **named** procedure only — no auto-open/event discovery, closing T1 by construction (§5.6). Exit-criteria tests green: "never" table inert through the host, auto-open never fires, denied `DocWrite` trappable + no edits, granted multi-write = one batch, infinite loop fuel-stopped (`loki-macro-host/tests/runtime_tests.rs`). |
 | **Security UI** | Yes | **Phase 4 landed**: `appthere_ui` macro-security dialogs render in a reserved-accent, badged anti-spoof frame app chrome never uses (spec §5.5, T7): `AtMacroTrustDialog` (three §2.3 choices) + `AtPermissionPrompt` (first-use capability prompt, Deny default). `loki-text`'s `editor_macro_security_panel` shows per-document trust state, granted capabilities with revoke, the auto-run-on-open opt-in (§5.6), and "forget this document" (§9.4). |
 | **In-app runner (Tools ▸ Macros)** | Yes | **Phase 5 landed**: an enabled document's Document Security panel offers **Run a macro…**, opening `editor_macro_runner` — it lists the runnable procedures (`MacroRuntime::list_procedures`) and runs a chosen one on a **worker thread** (`editor_macro_runner_ops`) so a long/misbehaving run never freezes the UI. Edits apply through the editor's Loro path committed **once** (`editor_macro_apply`) = exactly **one undo entry** (⌘Z), tested end-to-end against a `LoroDoc`. **Interactive async layer landed**: first-use capability prompts (`AtPermissionPrompt`) and `MsgBox`/`InputBox` dialogs render **live** in the anti-spoof frame (`editor_macro_prompt`), round-tripping worker↔UI through `editor_macro_bridge` (a `futures` prompt channel + per-request blocking reply); an always-available **Stop** trips the run's cancel flag and unblocks any pending prompt (§8). Grants the user allows persist to the trust record. The bridge is proven with threaded tests (grant/deny/dialog/Stop-cancels-loop/Stop-during-prompt). **Follow-on:** rich-text/per-run formatting + multi-section writes (the object model is plain-text: `AppendText` extends the last paragraph, `.Text=` replaces the body) and the spreadsheet object model. Servers/headless never link the interpreter. |
+| **Auto-run events (§5.6)** | Yes | **Phase 6 landed**: on-open handlers fire **only** for a trusted document with the explicit `auto_run_open` opt-in. Enforced by construction — `loki_macro_host::AutoRunToken` has **no public constructor**, `MacroRuntime::run_event` requires a `&AutoRunToken`, and only `MacroService::authorize_auto_run` mints one (`decision.is_enabled() && auto_run_open`). `loki_macro_host::events` recognises the handler names (`Document_Open`/`AutoOpen`/`Workbook_Open`/… → `EventPhase::Open`, plus Close/Save). `loki-text` re-checks the token at fire time: `editor_macro_notice`'s `use_effect` (keyed per payload-hash, re-runs on document load) authorizes then mounts the runner with `auto_fire`, and `editor_macro_runner_ops::launch` aborts silently if `authorize_auto_run` returns `None`. The T1 corpus (`loki-macro-host/tests/events_udf_tests.rs`) asserts disabled/session-only/trusted-without-flag **never** authorize, and revoking the flag or keeping-disabled revokes. **Tail:** button/control-assigned macros and class modules (`Find`) are not yet wired. |
+| **Spreadsheet UDFs (§6.3)** | Core | **Phase 6 landed (engine)**: `MacroRuntime::eval_udf(source, dialect, func, args) -> UdfOutcome` runs a `Function` **compute-only** through a `CapabilityBroker::for_udf` broker that denies **every** capability — not even `DocRead` — with tight per-call fuel (`UDF_FUEL = 200_000`) and no continue option, so recalc is unattended. Any object-model access, dialog, "never"-list call, runtime error, or runaway loop yields `UdfOutcome::Macro` → the cell shows `#MACRO!`; a pure computation yields `UdfOutcome::Value`. Tested (`events_udf_tests.rs`: pure value, builtins compute, `ActiveDocument`/`MsgBox`/`Shell`/infinite-loop/unparseable → `#MACRO!`). **Tail:** live wiring into `loki-spreadsheet`'s recalc engine is not yet done (the compute core is format-agnostic and ready). |
 
 Round-trip preservation is covered by byte-identical goldens in `loki-ooxml`
 (`docx::vba_tests`, `xlsx::vba_tests`), `loki-odf`

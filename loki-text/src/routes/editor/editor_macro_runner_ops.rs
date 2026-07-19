@@ -16,7 +16,7 @@ use appthere_ui::tokens;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 use loki_i18n::fl;
-use loki_macro_host::{Dialect, GrantScope, MacroRuntime, MacroService};
+use loki_macro_host::{AutoRunToken, Dialect, GrantScope, MacroRuntime, MacroService};
 
 use super::editor_macro_bridge::{
     BridgeBackend, PendingPrompt, UiReply, UiRequest, prompt_channel,
@@ -41,8 +41,8 @@ pub(super) struct RunState {
     pub(super) cancel: Signal<Option<Arc<AtomicBool>>>,
 }
 
-/// Starts a run of `entry` on a worker thread, rendering prompts/dialogs and
-/// applying the result on the UI thread when it finishes.
+/// Starts a **user-invoked** run of `entry` (the normal path — no auto-run
+/// token needed; the document is already enabled).
 pub(super) fn start_run(
     ctx: &MacroCtx,
     loro_doc: Signal<Option<loro::LoroDoc>>,
@@ -50,6 +50,36 @@ pub(super) fn start_run(
     dialect: Dialect,
     entry: &ProcEntry,
     state: RunState,
+) {
+    launch(ctx, loro_doc, svc, dialect, entry, state, false);
+}
+
+/// Starts an **auto-run** of `entry` (an on-open handler). Fires only if the
+/// document still authorizes auto-run (spec §5.6) — the same gate that mints the
+/// [`AutoRunToken`] `run_event` requires, re-checked at fire time.
+pub(super) fn start_auto_run(
+    ctx: &MacroCtx,
+    loro_doc: Signal<Option<loro::LoroDoc>>,
+    svc: &MacroService,
+    dialect: Dialect,
+    entry: &ProcEntry,
+    state: RunState,
+) {
+    launch(ctx, loro_doc, svc, dialect, entry, state, true);
+}
+
+/// Launches a run on a worker thread, rendering prompts/dialogs and applying the
+/// result on the UI thread when it finishes. `auto` fires an on-open event
+/// handler through the token-gated `run_event`; it aborts silently if the
+/// document no longer authorizes auto-run.
+fn launch(
+    ctx: &MacroCtx,
+    loro_doc: Signal<Option<loro::LoroDoc>>,
+    svc: &MacroService,
+    dialect: Dialect,
+    entry: &ProcEntry,
+    state: RunState,
+    auto: bool,
 ) {
     let RunState {
         mut report,
@@ -62,8 +92,19 @@ pub(super) fn start_run(
     }
     let doc_state = ctx.0.clone();
     let Some(payload) = payload_of(&doc_state) else {
-        report.set(Some(RunReport::failed(fl!("macros-run-unreadable"))));
+        if !auto {
+            report.set(Some(RunReport::failed(fl!("macros-run-unreadable"))));
+        }
         return;
+    };
+    // Auto-run must re-clear the gate at fire time (T1) — the token proves it.
+    let token: Option<AutoRunToken> = if auto {
+        match svc.authorize_auto_run(&payload) {
+            Some(t) => Some(t),
+            None => return, // no longer authorized — fire nothing
+        }
+    } else {
+        None
     };
     let flag = Arc::new(AtomicBool::new(false));
     let request = make_run_request(&doc_state, svc, &payload, Arc::clone(&flag));
@@ -77,11 +118,18 @@ pub(super) fn start_run(
         .name("loki-macro-run".into())
         .spawn(move || {
             let backend = BridgeBackend::new(req_tx, worker_flag);
-            let outcome = MacroRuntime::run(&source, dialect, &proc, request, backend);
+            let outcome = match token {
+                Some(tok) => {
+                    MacroRuntime::run_event(&source, dialect, &proc, request, backend, &tok)
+                }
+                None => MacroRuntime::run(&source, dialect, &proc, request, backend),
+            };
             let _keep = result_tx.send(outcome);
         });
     if spawned.is_err() {
-        report.set(Some(RunReport::failed(fl!("macros-run-unreadable"))));
+        if !auto {
+            report.set(Some(RunReport::failed(fl!("macros-run-unreadable"))));
+        }
         return;
     }
 
@@ -166,6 +214,15 @@ pub(super) fn collect_procs(view: &MacroView, dialect: Dialect) -> Vec<ProcEntry
         }
     }
     out
+}
+
+/// The runnable on-open auto-run handlers (`Document_Open`, `AutoOpen`, …)
+/// among `view`'s modules — the candidates for auto-firing (spec §5.6).
+pub(super) fn auto_open_entries(view: &MacroView, dialect: Dialect) -> Vec<ProcEntry> {
+    collect_procs(view, dialect)
+        .into_iter()
+        .filter(|e| loki_macro_host::is_auto_open(&e.proc))
+        .collect()
 }
 
 /// Resolved i18n strings for run outcomes.

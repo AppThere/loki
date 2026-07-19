@@ -126,7 +126,11 @@ pub struct RunOutcome {
 /// opt-in. [`MacroRuntime::run_event`] requires a `&AutoRunToken`, so an app
 /// cannot fire an on-open/-close/-save handler without first passing that gate.
 /// This is the type-level enforcement of "nothing fires without the flag" (T1).
-#[derive(Debug)]
+///
+/// It is a zero-size marker; `Copy` so the app can pass it to a worker thread.
+/// Copying does not weaken the gate — you still had to pass
+/// [`crate::MacroService::authorize_auto_run`] to obtain one.
+#[derive(Debug, Clone, Copy)]
 pub struct AutoRunToken {
     _seal: (),
 }

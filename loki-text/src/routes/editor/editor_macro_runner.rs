@@ -25,10 +25,15 @@ use super::editor_macro_notice::{MacroCtx, MacroView, payload_of};
 use super::editor_macro_prompt::{MacroPromptView, PromptKind};
 use super::editor_macro_run::RunReport;
 use super::editor_macro_runner_ops::{
-    RunState, answer_prompt, btn_style, collect_procs, report_style, start_run, stop_run,
+    RunState, answer_prompt, auto_open_entries, btn_style, collect_procs, report_style,
+    start_auto_run, start_run, stop_run,
 };
 
 /// The macro runner panel.
+///
+/// When `auto_fire` is set (the document authorized on-open auto-run, spec §5.6),
+/// the panel fires the first on-open handler once on mount — the authorization
+/// is re-checked inside [`start_auto_run`].
 #[component]
 pub(super) fn MacroRunnerPanel(
     ctx: MacroCtx,
@@ -37,6 +42,7 @@ pub(super) fn MacroRunnerPanel(
     dialect: Dialect,
     project: String,
     doc_title: String,
+    #[props(default)] auto_fire: bool,
     on_close: EventHandler<()>,
 ) -> Element {
     let svc = use_context::<loki_macro_host::MacroService>();
@@ -52,6 +58,21 @@ pub(super) fn MacroRunnerPanel(
         pending,
         cancel,
     } = state;
+
+    // Auto-fire the first on-open handler exactly once (spec §5.6). `use_hook`
+    // runs on the initial mount only; `start_auto_run` re-clears the auth gate.
+    {
+        let ctx_auto = ctx.clone();
+        let svc_auto = svc.clone();
+        let view_auto = view.clone();
+        use_hook(move || {
+            if auto_fire
+                && let Some(entry) = auto_open_entries(&view_auto, dialect).into_iter().next()
+            {
+                start_auto_run(&ctx_auto, loro_doc, &svc_auto, dialect, &entry, state);
+            }
+        });
+    }
 
     let procs = collect_procs(&view, dialect);
     let container = format!(

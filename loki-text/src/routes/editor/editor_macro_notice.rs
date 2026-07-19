@@ -94,52 +94,6 @@ fn project_name(payload: &MacroPayload) -> String {
     }
 }
 
-/// Extracts the macro source for the viewer, dispatching by payload kind.
-fn extract_view(payload: &MacroPayload) -> MacroView {
-    match payload.kind {
-        MacroPayloadKind::OoxmlVba => extract_vba(payload),
-        MacroPayloadKind::OdfBasic => extract_basic(payload),
-    }
-}
-
-fn extract_vba(payload: &MacroPayload) -> MacroView {
-    let bytes = payload
-        .parts
-        .iter()
-        .find(|p| p.name.ends_with("vbaProject.bin"))
-        .map(|p| p.bytes.as_slice());
-    match bytes.and_then(|b| loki_vba::VbaProject::read(b).ok()) {
-        Some(project) => MacroView {
-            modules: project
-                .modules
-                .into_iter()
-                .map(|m| ViewerModule {
-                    name: m.name,
-                    source: m.source,
-                })
-                .collect(),
-            tamper: project.tamper,
-        },
-        None => MacroView {
-            modules: Vec::new(),
-            tamper: Some(fl!("macros-viewer-unreadable")),
-        },
-    }
-}
-
-fn extract_basic(payload: &MacroPayload) -> MacroView {
-    MacroView {
-        modules: loki_odf::basic::extract_basic_modules(payload)
-            .into_iter()
-            .map(|m| ViewerModule {
-                name: m.name,
-                source: m.source,
-            })
-            .collect(),
-        tamper: None,
-    }
-}
-
 /// The passive macro infobar plus the trust dialog, Document Security panel, and
 /// read-only viewer it can open. Always mounted; renders nothing unless the
 /// document carries macros.
@@ -154,6 +108,32 @@ pub(super) fn MacroNoticeBar(ctx: MacroCtx, loro_doc: Signal<Option<loro::LoroDo
     let mut trust_open = use_signal(|| false);
     let mut panel_open = use_signal(|| false);
     let mut runner = use_signal(|| None::<MacroView>);
+    let mut runner_auto = use_signal(|| false);
+
+    // Auto-run on-open handlers when a newly-opened document authorizes it
+    // (spec §5.6). Reads `loro_doc` so the effect re-runs when a document loads;
+    // guarded per payload-hash so it fires at most once per document. Firing is
+    // gated by `authorize_auto_run` (trusted + `auto_run_open`); the runner's
+    // `start_auto_run` re-checks the token, so nothing fires without the flag.
+    {
+        let ctx_auto = ctx.clone();
+        let svc_auto = svc.clone();
+        let mut fired = use_signal(|| None::<[u8; 32]>);
+        use_effect(move || {
+            let _loaded = loro_doc.read().is_some();
+            if let Some(payload) = payload_of(&ctx_auto.0) {
+                let key = payload.payload_hash();
+                if fired() != Some(key) && svc_auto.authorize_auto_run(&payload).is_some() {
+                    let v = super::editor_macro_extract::extract_view(&payload);
+                    if !v.modules.is_empty() {
+                        fired.set(Some(key));
+                        runner.set(Some(v));
+                        runner_auto.set(true);
+                    }
+                }
+            }
+        });
+    }
 
     let Some((payload, title)) = read_doc(&ctx.0) else {
         return rsx! {};
@@ -198,7 +178,9 @@ pub(super) fn MacroNoticeBar(ctx: MacroCtx, loro_doc: Signal<Option<loro::LoroDo
                     }
                 },
                 secondary_label: fl!("macros-view-action"),
-                on_secondary: move |()| view.set(Some(extract_view(&view_payload))),
+                on_secondary: move |()| {
+                    view.set(Some(super::editor_macro_extract::extract_view(&view_payload)))
+                },
                 dismiss_label: fl!("macros-infobar-dismiss"),
                 on_dismiss: move |()| dismissed.set(true),
             }
@@ -227,7 +209,8 @@ pub(super) fn MacroNoticeBar(ctx: MacroCtx, loro_doc: Signal<Option<loro::LoroDo
                 can_run: enabled,
                 on_run: move |()| {
                     panel_open.set(false);
-                    runner.set(Some(extract_view(&runner_payload)));
+                    runner_auto.set(false);
+                    runner.set(Some(super::editor_macro_extract::extract_view(&runner_payload)));
                 },
                 on_close: move |()| panel_open.set(false),
             }
@@ -241,7 +224,11 @@ pub(super) fn MacroNoticeBar(ctx: MacroCtx, loro_doc: Signal<Option<loro::LoroDo
                 dialect,
                 project: project.clone(),
                 doc_title: title.clone(),
-                on_close: move |()| runner.set(None),
+                auto_fire: runner_auto(),
+                on_close: move |()| {
+                    runner.set(None);
+                    runner_auto.set(false);
+                },
             }
         }
 
