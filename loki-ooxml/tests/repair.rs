@@ -43,6 +43,81 @@ fn dirty_docx() -> Vec<u8> {
     buf.into_inner()
 }
 
+const MT_SETTINGS: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml";
+const MT_FOOTNOTES: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml";
+
+/// Builds a `.docx` whose `settings.xml` declares a `<w:endnotePr>` referencing
+/// separator notes, but the package has **no** `endnotes.xml` to back them
+/// (`footnotePr` *is* backed by `footnotes.xml`). Word reports an error in the
+/// Endnotes stream; Loki opens it. Exercises the cross-part note-separator check.
+fn dangling_endnote_pr_docx() -> Vec<u8> {
+    let doc = br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hi</w:t></w:r></w:p></w:body></w:document>"#;
+    let settings = br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr><w:endnotePr><w:endnote w:id="-1"/><w:endnote w:id="0"/></w:endnotePr></w:settings>"#;
+    let footnotes = br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote><w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote></w:footnotes>"#;
+
+    let mut pkg = Package::new();
+    let mut add = |path: &str, bytes: &[u8], mt: &str| {
+        let pn = PartName::new(path).unwrap();
+        pkg.set_part(pn.clone(), PartData::new(bytes.to_vec(), mt));
+        pkg.content_type_map_mut().add_override(&pn, mt);
+    };
+    add("/word/document.xml", doc, MT_DOC);
+    add("/word/settings.xml", settings, MT_SETTINGS);
+    add("/word/footnotes.xml", footnotes, MT_FOOTNOTES);
+
+    pkg.relationships_mut()
+        .add(Relationship {
+            id: "rId1".into(),
+            rel_type: REL_OFFICE_DOC.into(),
+            target: "word/document.xml".into(),
+            target_mode: TargetMode::Internal,
+        })
+        .unwrap();
+    let ct = pkg.content_type_map_mut();
+    ct.add_default(
+        "rels",
+        "application/vnd.openxmlformats-package.relationships+xml",
+    );
+    ct.add_default("xml", "application/xml");
+    let mut buf = Cursor::new(Vec::new());
+    pkg.write(&mut buf).unwrap();
+    buf.into_inner()
+}
+
+#[test]
+fn analyze_detects_dangling_endnote_pr_but_not_the_backed_footnote_pr() {
+    let report = analyze_docx(&dangling_endnote_pr_docx()).expect("analyze");
+    assert_eq!(report.findings.len(), 1, "only the endnotePr dangles");
+    assert_eq!(report.findings[0].part, "word/settings.xml");
+    assert_eq!(report.findings[0].container, "w:endnotePr");
+    assert!(!report.repaired);
+}
+
+#[test]
+fn repair_removes_dangling_endnote_pr_refs_and_keeps_footnote_pr() {
+    let (fixed, report) = repair_docx(&dangling_endnote_pr_docx()).expect("repair");
+    assert_eq!(report.findings.len(), 1);
+    assert!(report.repaired);
+    // Re-analysis is clean, and the footnotePr (backed by footnotes.xml) survived.
+    assert!(analyze_docx(&fixed).expect("re-analyze").is_clean());
+    let pkg = Package::open(Cursor::new(&fixed)).expect("reopen");
+    let settings = pkg
+        .part(&PartName::new("/word/settings.xml").unwrap())
+        .expect("settings present");
+    let settings = String::from_utf8_lossy(&settings.bytes);
+    assert!(
+        settings.contains("<w:footnote "),
+        "footnotePr refs preserved: {settings}"
+    );
+    assert!(
+        !settings.contains("<w:endnote "),
+        "dangling endnote refs removed: {settings}"
+    );
+    DocxImport::import(Cursor::new(&fixed), Default::default()).expect("repaired imports");
+}
+
 #[test]
 fn analyze_detects_out_of_order_ppr() {
     let report = analyze_docx(&dirty_docx()).expect("analyze");

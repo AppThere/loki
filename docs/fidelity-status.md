@@ -320,11 +320,11 @@ Coverage of the engine, dictionary, layout, and service layers is ~45 unit/integ
 
 ## 12. DOCX Word-Compatibility Repair (`loki-ooxml::repair`)
 
-Microsoft Word enforces two constraints strictly that a tolerant, name-matching
-reader (Loki, LibreOffice) ignores — so a `.docx` that opens fine in Loki can
-still trip Word's "Word found unreadable content — recover?" prompt. Both are
-the dominant "Loki opens it, Word won't" asymmetries, and both hand-authored
-files and some tool exporters emit them routinely:
+Microsoft Word enforces several constraints strictly that a tolerant,
+name-matching reader (Loki, LibreOffice) ignores — so a `.docx` that opens fine
+in Loki can still trip Word's "Word found unreadable content — recover?" prompt.
+These are the dominant "Loki opens it, Word won't" asymmetries, and both
+hand-authored files and some tool exporters emit them routinely:
 
 1. **Schema child order.** OOXML complex types are `xsd:sequence`s, so Word
    rejects a file whose `w:pPr` / `w:rPr` / `w:sectPr` / `w:tcPr` / … children
@@ -333,27 +333,36 @@ files and some tool exporters emit them routinely:
    `mc:Ignorable` attribute must resolve to an in-scope `xmlns:` declaration
    (ISO/IEC 29500-3 §10.1.1); a dangling prefix (e.g. `mc:Ignorable="w14"` with
    no `xmlns:w14`) is fatal to Word but silently ignored by tolerant readers.
-   *This was the real cause of the ACID 2 fixture failing to open in Word — a
-   `styles.xml` that listed `w14` in `mc:Ignorable` without declaring it.*
+   *This was one cause of the ACID 2 fixture failing in Word — a `styles.xml`
+   that listed `w14` in `mc:Ignorable` without declaring it.*
+3. **Dangling note-separator references.** A `<w:footnotePr>`/`<w:endnotePr>` in
+   `settings.xml` may reference the separator notes (`w:id="-1"`/`"0"`) that
+   live in `footnotes.xml`/`endnotes.xml`; if that part (or the referenced id)
+   is absent, Word reports an error in the Footnotes/Endnotes stream. A
+   **cross-part** check — the offending element and the missing part are
+   different parts. *This was the last ACID 2 blocker — a spurious `endnotePr`
+   with no `endnotes.xml`.*
 
 | Capability | Status | Notes |
 | :--- | :---: | :--- |
-| **Detect** | Yes | `loki_ooxml::analyze_docx(&[u8]) -> RepairReport` walks every `WordprocessingML` part and reports each out-of-order container **and** each undeclared `mc:Ignorable` prefix (part, element/`mc:Ignorable`, offending child/prefix list). Non-destructive. |
-| **Repair** | Yes | `loki_ooxml::repair_docx(&[u8]) -> (Vec<u8>, RepairReport)` reorders children into the ECMA-376 sequence (`repair/order.rs`, covering `pPr`/`rPr`/`sectPr`/`tcPr`/`tblPr`/`trPr`/`lvl`/`style`/`abstractNum`) **and** strips undeclared prefixes from `mc:Ignorable` (`repair/mce.rs`; when that empties the attribute it is dropped). Both are **lossless** — ordering only permutes element children, and an undeclared prefix could never have bound anything; attributes, text, entities, comments, and constructs Loki cannot model are preserved verbatim (the `mc:Ignorable` rewrite is byte-surgery on just that one value). Backed by a tiny purpose-built XML DOM (`repair/dom.rs`). Conservative: a container holding a foreign element (`mc:AlternateContent`, `w14:*`) or a comment is left untouched. |
+| **Detect** | Yes | `loki_ooxml::analyze_docx(&[u8]) -> RepairReport` walks every `WordprocessingML` part and reports each out-of-order container, each undeclared `mc:Ignorable` prefix, and each dangling footnote/endnote separator reference (part, container, offending detail). Non-destructive. |
+| **Repair** | Yes | `loki_ooxml::repair_docx(&[u8]) -> (Vec<u8>, RepairReport)` reorders children into the ECMA-376 sequence (`repair/order.rs`, covering `pPr`/`rPr`/`sectPr`/`tcPr`/`tblPr`/`trPr`/`lvl`/`style`/`abstractNum`), strips undeclared prefixes from `mc:Ignorable` (`repair/mce.rs`; empties → attribute dropped), and drops dangling note-separator references from `settings.xml` (`repair/notes.rs`, driven by a package-wide `NoteContext`; empties → a valid empty `<w:…Pr>`). All three are **lossless** — ordering only permutes element children, an undeclared prefix could never have bound anything, and a reference that resolves to nothing conveys nothing; attributes, text, entities, comments, and constructs Loki cannot model are preserved verbatim (`mc:Ignorable` rewriting is byte-surgery on just that one value). Backed by a tiny purpose-built XML DOM (`repair/dom.rs`). Conservative: a container holding a foreign element (`mc:AlternateContent`, `w14:*`) or a comment is left untouched. |
 | **CLI** | Yes | `loki-headless repair --in doc.docx [--check | --out fixed.docx]` — `--check` reports problems; `--out` writes a repaired copy. The headless "repair a malformed document with Loki" path. |
 | **In-editor banner (`loki-text`)** | Yes | On opening a DOCX, a background effect runs `analyze_docx` on the file bytes (`editor_load::analyze_open_docx`); if problems are found, an amber attention banner (`editor_repair_banner::RepairBanner`, mirroring the font-substitution panel, ADR-0013) appears above the ribbon: *"This document has N issues that can stop it opening in Microsoft Word."* with **Repair** / **Dismiss**. Repair runs `repair_docx` on the file and writes the fixed bytes back in place (`editor_save::repair_document_file`) — lossless, no model round-trip (the tolerant reader already loaded a correct model), reusing the same single-write path as Save; success shows in the status chip. Strings in `editor.ftl` (`editor-repair-*`). |
 | **Export canonicalisation** | Yes | Loki's own `DocxExport` did **not** emit all `pPr`/`rPr` children in schema order (e.g. `w:jc` before `w:spacing`, `w:color` after `w:sz`), so files Loki *saved* could themselves trip Word's repair prompt. The export assembly now runs the same canonicalisation pass as its final step (`docx/write/assembly.rs` → `repair::canonicalize_package`), so every DOCX Loki writes is schema-ordered. Regression-locked by `loki_export_is_word_schema_clean` (`tests/repair.rs`). |
 | **Package core-properties content type** | Yes | The OPC writer (`loki-opc`) emitted `/docProps/core.xml` and its relationship but **never registered its content-type Override**, so the part fell through to the generic `application/xml` default. Word rejects the whole package as unreadable when the core-properties relationship targets a part not typed `…core-properties+xml` — a **package-integrity** check it runs before parsing any content, so the document simply won't open. This affected **every** DOCX Loki wrote (they all set core metadata). `zip::write::write_package_to_zip` now adds the Override whenever core properties are present (`MEDIA_TYPE_CORE_PROPERTIES`). Regression-locked by `core_properties_part_is_typed_correctly` (`loki-opc/tests/package_tests.rs`). |
-| **Note separator ↔ backing part** | Partial | A `<w:footnotePr>`/`<w:endnotePr>` block in `settings.xml` references the special separator notes (`w:id="-1"`/`"0"`) that live in `footnotes.xml`/`endnotes.xml`. If that part is absent, Word reports an error in "Footnotes"/"Endnotes" on open (the fixture carried a spurious `<w:endnotePr>` with no `endnotes.xml`). This is an **OPC cross-part** invariant `analyze_docx` does not yet model — detection/repair for arbitrary files is a follow-up. The fixture is guarded directly by `note_separator_refs_have_a_backing_part` (`loki-acid/tests/acid2_word_valid.rs`). |
+| **Note separator ↔ backing part** | Yes | Now a first-class repair axis (`repair/notes.rs`, above): `analyze_docx`/`repair_docx` detect and drop `<w:footnotePr>`/`<w:endnotePr>` separator references in `settings.xml` that have no backing `footnotes.xml`/`endnotes.xml` part (or reference an id the part lacks), while preserving every reference that *does* resolve and every other setting. So the CLI and the in-editor banner catch this class on arbitrary files, not just the fixture. End-to-end tested by `analyze_detects_dangling_endnote_pr_but_not_the_backed_footnote_pr` + `repair_removes_dangling_endnote_pr_refs_and_keeps_footnote_pr` (`tests/repair.rs`); the fixture is additionally guarded by `note_separator_refs_have_a_backing_part` (`loki-acid/tests/acid2_word_valid.rs`). |
 | **ACID 2 fixture** | Yes | The hand-authored `acid2-docx` parts are authored for readability, not schema order; `gen_acid2_docx` normalises them through `repair_docx` at build time so the committed fixture opens in Word. It also declares `xmlns:w14` alongside `mc:Ignorable="w14"` in `styles.xml` (matching Word), carries the correct core-properties content type (the loki-opc fix above), and dropped a spurious `<w:endnotePr>` that referenced a non-existent `endnotes.xml`. Each Word-reject cause was found by diffing the package against a real Word-authored file and confirmed with a calibrated OPC validator that passes the Word file cleanly. Guarded by `committed_fixture_has_no_ordering_violations` (WML axes) + `note_separator_refs_have_a_backing_part` (`loki-acid/tests/acid2_word_valid.rs`). |
 
-**Scope.** The two axes above (schema child order + undeclared `mc:Ignorable`
-prefixes) — the dominant Word-vs-tolerant asymmetries. Other corruption classes
-(dangling relationships, missing content-type overrides, malformed XML) are a
-different error class already surfaced by the OPC/import layer; extending
-`repair` to offer fixes for those is a natural follow-up. Tested by 14 unit
-tests (`repair/repair_tests.rs`, incl. entity/whitespace preservation, byte-exact
-round-trip of already-clean input, and the `mc:Ignorable` strip/keep/drop cases)
-+ 4 end-to-end tests (`tests/repair.rs`). Detection is surfaced three ways: the
-`loki-headless repair` CLI, the `loki-text` open-time banner, and the
+**Scope.** The three axes above (schema child order, undeclared `mc:Ignorable`
+prefixes, dangling note-separator references) — the dominant Word-vs-tolerant
+asymmetries. Other corruption classes (dangling relationships, missing
+content-type overrides, malformed XML) are a different error class already
+surfaced by the OPC/import layer; extending `repair` to offer fixes for those is
+a natural follow-up. Tested by 19 unit tests (`repair/repair_tests.rs`, incl.
+entity/whitespace preservation, byte-exact round-trip of already-clean input,
+the `mc:Ignorable` strip/keep/drop cases, and the note-separator remove/keep/
+partial cases) + 6 end-to-end tests (`tests/repair.rs`). Detection is surfaced
+three ways: the `loki-headless repair` CLI, the `loki-text` open-time banner, and
+the
 `analyze_docx`/`repair_docx` public API for embedders.

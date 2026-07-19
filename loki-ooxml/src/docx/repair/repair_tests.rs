@@ -207,3 +207,102 @@ fn ignorable_prefix_declared_on_ancestor_resolves() {
     let (_out, f) = run_mce(xml, true);
     assert!(f.is_empty(), "ancestor-declared prefix resolves");
 }
+
+// ── note-separator (cross-part) repair ───────────────────────────────────────
+
+/// Runs the note-separator fix on a `settings.xml` fragment with a synthetic
+/// [`NoteContext`] (`None` = part absent; `Some(ids)` = part with those ids).
+fn run_notes(
+    xml: &str,
+    footnotes: Option<&[&str]>,
+    endnotes: Option<&[&str]>,
+    apply: bool,
+) -> (String, Vec<RepairFinding>) {
+    let to_set = |v: &[&str]| v.iter().map(ToString::to_string).collect();
+    let ctx = notes::NoteContext {
+        footnotes: footnotes.map(to_set),
+        endnotes: endnotes.map(to_set),
+    };
+    let mut nodes = dom::parse(xml.as_bytes()).expect("parse");
+    let mut findings = Vec::new();
+    notes::fix_note_separators(&mut nodes, "word/settings.xml", &ctx, apply, &mut findings);
+    (
+        String::from_utf8(dom::serialize(&nodes)).expect("utf8"),
+        findings,
+    )
+}
+
+const SETTINGS_BOTH: &str = concat!(
+    r#"<w:settings xmlns:w="w">"#,
+    r#"<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>"#,
+    r#"<w:endnotePr><w:endnote w:id="-1"/><w:endnote w:id="0"/></w:endnotePr>"#,
+    r#"</w:settings>"#,
+);
+
+#[test]
+fn endnote_refs_without_backing_part_are_removed() {
+    // The real ACID2 bug: endnotePr references separators but there is no
+    // endnotes.xml. footnotePr is backed by footnotes.xml and must survive.
+    let (out, f) = run_notes(SETTINGS_BOTH, Some(&["-1", "0"]), None, true);
+    assert_eq!(f.len(), 1, "one violation (the endnotePr)");
+    assert_eq!(f[0].container, "w:endnotePr");
+    assert!(!out.contains("w:endnote "), "endnote refs removed: {out}");
+    assert!(
+        out.contains(r#"<w:footnote w:id="-1"/>"#) && out.contains(r#"<w:footnote w:id="0"/>"#),
+        "footnote refs preserved: {out}"
+    );
+    // The now-empty endnotePr block remains a valid element.
+    assert!(out.contains("<w:endnotePr>"), "empty block kept: {out}");
+}
+
+#[test]
+fn refs_with_a_matching_backing_part_are_untouched() {
+    // Both parts present and containing the separator ids → nothing to fix,
+    // byte-for-byte preservation.
+    let (out, f) = run_notes(SETTINGS_BOTH, Some(&["-1", "0"]), Some(&["-1", "0"]), true);
+    assert!(f.is_empty(), "all refs resolve → no finding");
+    assert_eq!(out, SETTINGS_BOTH, "clean input unchanged");
+}
+
+#[test]
+fn only_the_unresolved_ref_is_removed() {
+    // Part exists but is missing one referenced id → drop only that reference.
+    let xml = concat!(
+        r#"<w:settings xmlns:w="w"><w:endnotePr>"#,
+        r#"<w:endnote w:id="-1"/><w:endnote w:id="0"/><w:endnote w:id="7"/>"#,
+        r#"</w:endnotePr></w:settings>"#,
+    );
+    let (out, f) = run_notes(xml, None, Some(&["-1", "0"]), true);
+    assert_eq!(f.len(), 1);
+    assert!(f[0].detail.contains('7'), "names the dangling id: {out}");
+    assert!(!out.contains(r#"w:id="7""#), "id 7 removed: {out}");
+    assert!(
+        out.contains(r#"w:id="-1""#) && out.contains(r#"w:id="0""#),
+        "resolvable refs kept: {out}"
+    );
+}
+
+#[test]
+fn notes_analyze_only_reports_but_does_not_edit() {
+    let (out, f) = run_notes(SETTINGS_BOTH, Some(&["-1", "0"]), None, false);
+    assert_eq!(f.len(), 1, "still reported");
+    assert!(
+        out.contains(r#"<w:endnote w:id="-1"/>"#),
+        "NOT edited: {out}"
+    );
+}
+
+#[test]
+fn note_fix_ignores_non_settings_parts() {
+    // The same element names can appear in footnotes.xml itself; the fix must
+    // only touch settings.xml.
+    let xml = r#"<w:footnotes xmlns:w="w"><w:footnote w:id="-1"/></w:footnotes>"#;
+    let ctx = notes::NoteContext {
+        footnotes: None,
+        endnotes: None,
+    };
+    let mut nodes = dom::parse(xml.as_bytes()).expect("parse");
+    let mut findings = Vec::new();
+    notes::fix_note_separators(&mut nodes, "word/footnotes.xml", &ctx, true, &mut findings);
+    assert!(findings.is_empty(), "non-settings part untouched");
+}

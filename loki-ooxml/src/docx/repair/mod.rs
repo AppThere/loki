@@ -4,7 +4,7 @@
 //! DOCX repair: detect and fix defects that make a document unreadable in
 //! Microsoft Word while a tolerant reader (Loki, `LibreOffice`) opens it fine.
 //!
-//! Two axes, both of which Word enforces strictly and tolerant readers ignore:
+//! Three axes, all of which Word enforces strictly and tolerant readers ignore:
 //!
 //! 1. **Schema child order** ([`order`]). OOXML complex types are
 //!    `xsd:sequence`s, so Word rejects a file whose `w:pPr`/`w:rPr`/`w:sectPr`/…
@@ -13,14 +13,21 @@
 //!    `mc:Ignorable` must resolve to an in-scope `xmlns:` declaration; an
 //!    unresolvable prefix is fatal to Word. [`mce::fix_ignorable_tree`] strips
 //!    the dangling prefix(es).
+//! 3. **Dangling note-separator references** ([`notes`]). A
+//!    `<w:footnotePr>`/`<w:endnotePr>` in `settings.xml` may reference the
+//!    separator notes in `footnotes.xml`/`endnotes.xml`; if that part is absent,
+//!    Word reports an error in the notes stream. This is a **cross-part** check
+//!    (the offending element and the missing part are different parts), so it is
+//!    driven by a [`NoteContext`] built from the whole package.
 //!
-//! Both produce the classic "Word found unreadable content" repair prompt, and
-//! both are **lossless**: ordering only permutes element children (never
-//! touches attributes or text), and stripping an undeclared `mc:Ignorable`
-//! prefix removes a token that could never have bound anything. Constructs Loki
-//! itself cannot model survive untouched.
+//! All three produce the classic "Word found unreadable content" repair prompt,
+//! and all are **lossless**: ordering only permutes element children (never
+//! touches attributes or text), stripping an undeclared `mc:Ignorable` prefix
+//! removes a token that could never have bound anything, and dropping a
+//! note-separator reference that resolves to nothing conveys no information.
+//! Constructs Loki itself cannot model survive untouched.
 //!
-//! Scope: these two axes (the dominant Word-vs-tolerant asymmetries). Other
+//! Scope: these three axes (the dominant Word-vs-tolerant asymmetries). Other
 //! corruption classes (dangling relationships, missing content types) are out
 //! of scope here — the OPC layer already validates those on open.
 
@@ -33,9 +40,28 @@ use crate::error::OoxmlError;
 
 mod dom;
 mod mce;
+mod notes;
 mod order;
 
 use dom::{Elem, Node};
+use notes::NoteContext;
+
+/// Builds the cross-part [`NoteContext`] for a package: the separator-note ids
+/// each notes part contains, or `None` when the part is absent. Consulted by the
+/// note-separator repair so it can tell a resolvable reference from a dangling
+/// one.
+fn build_note_context(pkg: &Package) -> NoteContext {
+    let ids = |path: &str, note: &str| {
+        PartName::new(path)
+            .ok()
+            .and_then(|n| pkg.part(&n))
+            .map(|d| notes::collect_note_ids(&d.bytes, note))
+    };
+    NoteContext {
+        footnotes: ids("/word/footnotes.xml", "footnote"),
+        endnotes: ids("/word/endnotes.xml", "endnote"),
+    }
+}
 
 /// The position of a child `local` name in a schema order table, if present.
 fn schema_index(order: &[&str], local: &str) -> Option<usize> {
@@ -114,6 +140,7 @@ pub(crate) fn canonicalize_package(pkg: &mut Package) -> RepairReport {
         .cloned()
         .collect();
 
+    let note_ctx = build_note_context(pkg);
     let mut findings = Vec::new();
     for name in names {
         let Some(part) = pkg.part(&name) else {
@@ -121,7 +148,7 @@ pub(crate) fn canonicalize_package(pkg: &mut Package) -> RepairReport {
         };
         let (bytes, media_type) = (part.bytes.clone(), part.media_type.clone());
         let display = name.as_str().trim_start_matches('/').to_string();
-        if let Some(repaired) = repair_part(&display, &bytes, true, &mut findings) {
+        if let Some(repaired) = repair_part(&display, &bytes, &note_ctx, true, &mut findings) {
             pkg.set_part(name, PartData::new(repaired, media_type));
         }
     }
@@ -138,6 +165,7 @@ pub(crate) fn canonicalize_package(pkg: &mut Package) -> RepairReport {
 fn repair_part(
     display: &str,
     bytes: &[u8],
+    note_ctx: &NoteContext,
     apply: bool,
     findings: &mut Vec<RepairFinding>,
 ) -> Option<Vec<u8>> {
@@ -145,6 +173,7 @@ fn repair_part(
     let before = findings.len();
     reorder_tree(&mut nodes, display, apply, findings);
     mce::fix_ignorable_tree(&mut nodes, display, apply, findings);
+    notes::fix_note_separators(&mut nodes, display, note_ctx, apply, findings);
     (apply && findings.len() > before).then(|| dom::serialize(&nodes))
 }
 
@@ -158,11 +187,18 @@ fn process(docx_bytes: &[u8], apply: bool) -> Result<(Vec<u8>, RepairReport), Oo
             .filter(|n| is_wml_part(n.as_str()))
             .cloned()
             .collect();
+        let note_ctx = build_note_context(&pkg);
         let mut findings = Vec::new();
         for name in names {
             if let Some(part) = pkg.part(&name) {
                 let display = name.as_str().trim_start_matches('/').to_string();
-                let _ = repair_part(&display, &part.bytes.clone(), false, &mut findings);
+                let _ = repair_part(
+                    &display,
+                    &part.bytes.clone(),
+                    &note_ctx,
+                    false,
+                    &mut findings,
+                );
             }
         }
         return Ok((
