@@ -111,6 +111,22 @@ impl MacroService {
             .is_some_and(|r| r.auto_run_open)
     }
 
+    /// Returns an [`AutoRunToken`] **iff** on-open events are authorized for
+    /// `payload` — the document is persistently trusted *and* the user set the
+    /// separate `auto_run_open` opt-in (spec §5.6). The token is the only key to
+    /// [`crate::MacroRuntime::run_event`], so nothing can fire on open without
+    /// this gate returning `Some` (threat T1). A session-only or disabled
+    /// document (no persistent record) never authorizes auto-run.
+    #[must_use]
+    pub fn authorize_auto_run(
+        &self,
+        payload: &MacroPayload,
+    ) -> Option<crate::runtime::AutoRunToken> {
+        let inner = self.read();
+        let rec = inner.store.get(&payload.payload_hash())?;
+        (rec.decision.is_enabled() && rec.auto_run_open).then(crate::runtime::AutoRunToken::new)
+    }
+
     // ── Trust decisions (spec §2.3) ───────────────────────────────────────────
 
     /// Records the sticky "Keep disabled" choice (persisted so later opens show

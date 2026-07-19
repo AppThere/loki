@@ -17,10 +17,14 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use loki_basic::{BasicError, Dialect, Interp, parser::Parser};
+use loki_basic::{BasicError, Dialect, Interp, Value, parser::Parser};
 
 use crate::broker::{CapabilityBroker, GrantSet};
-use crate::exec::{EditBatch, ExecutionHost, MacroBackend};
+use crate::exec::{DenyBackend, EditBatch, ExecutionHost, MacroBackend};
+
+/// Fuel budget for a single UDF call (spec §6.3, §8) — tight, with no continue
+/// option: recalc is unattended, so a UDF must be fast or fail.
+const UDF_FUEL: u64 = 200_000;
 
 /// Inputs for a single macro run.
 pub struct RunRequest {
@@ -114,6 +118,27 @@ pub struct RunOutcome {
     pub printed: bool,
 }
 
+/// Proof that an auto-run event was authorized (macro spec §5.6).
+///
+/// This type has **no public constructor** — the only way to obtain one is
+/// [`crate::MacroService::authorize_auto_run`], which returns `Some` **only**
+/// when the document is trusted *and* the user set the separate `auto_run_open`
+/// opt-in. [`MacroRuntime::run_event`] requires a `&AutoRunToken`, so an app
+/// cannot fire an on-open/-close/-save handler without first passing that gate.
+/// This is the type-level enforcement of "nothing fires without the flag" (T1).
+#[derive(Debug)]
+pub struct AutoRunToken {
+    _seal: (),
+}
+
+impl AutoRunToken {
+    /// Mints a token. Crate-private so only [`crate::MacroService`] (which
+    /// checks the flag) can create one.
+    pub(crate) fn new() -> Self {
+        Self { _seal: () }
+    }
+}
+
 /// Runs explicitly-invoked macros against a document facade.
 pub struct MacroRuntime;
 
@@ -163,6 +188,23 @@ impl MacroRuntime {
         }
     }
 
+    /// Fires an **auto-run event handler** (`Document_Open`, `AutoOpen`, …).
+    ///
+    /// Identical to [`Self::run`] except it requires an [`AutoRunToken`] — proof
+    /// the caller passed [`crate::MacroService::authorize_auto_run`], which only
+    /// yields a token for a trusted document with the `auto_run_open` opt-in
+    /// (spec §5.6). Without the flag there is no token, so no event fires (T1).
+    pub fn run_event<B: MacroBackend>(
+        source: &str,
+        dialect: Dialect,
+        proc: &str,
+        req: RunRequest,
+        backend: B,
+        _authorized: &AutoRunToken,
+    ) -> RunOutcome {
+        Self::run(source, dialect, proc, req, backend)
+    }
+
     /// Lists the runnable procedure names (`Sub`/`Function`) in `source`, for the
     /// Tools ▸ Macros picker. Returns a parse error if the module is unreadable.
     ///
@@ -178,6 +220,41 @@ impl MacroRuntime {
                 _ => None,
             })
             .collect())
+    }
+}
+
+/// The result of evaluating a spreadsheet user-defined function (spec §6.3).
+#[derive(Debug, Clone, PartialEq)]
+pub enum UdfOutcome {
+    /// The function computed a value.
+    Value(Value),
+    /// The function failed — a runtime error, a refused feature, an exhausted
+    /// budget, or **any** attempt to reach the outside world (a UDF has zero
+    /// capabilities and cannot prompt). The cell shows `#MACRO!`.
+    Macro,
+}
+
+impl MacroRuntime {
+    /// Evaluates a spreadsheet UDF: runs `func` from `source` with `args`,
+    /// **compute-only** (spec §6.3). The function gets zero capabilities — not
+    /// even `DocRead` — so any object-model access, dialog, or "never"-list call
+    /// fails and the cell shows `#MACRO!`. Tight per-call fuel with no continue
+    /// option (recalc is unattended); an infinite loop is stopped, not hung.
+    #[must_use]
+    pub fn eval_udf(source: &str, dialect: Dialect, func: &str, args: Vec<Value>) -> UdfOutcome {
+        let Ok(module) = Parser::parse_module(source, dialect) else {
+            return UdfOutcome::Macro;
+        };
+        // A UDF broker denies every effect and cannot prompt (compute-only).
+        let broker = CapabilityBroker::for_udf(UDF_FUEL);
+        let host = ExecutionHost::new(broker, DenyBackend, String::new(), String::new());
+        let Ok(mut interp) = Interp::new(&module, host) else {
+            return UdfOutcome::Macro;
+        };
+        match interp.call(func, args) {
+            Ok(value) => UdfOutcome::Value(value),
+            Err(_) => UdfOutcome::Macro,
+        }
     }
 }
 

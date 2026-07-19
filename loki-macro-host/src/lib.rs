@@ -31,20 +31,22 @@
 pub mod broker;
 pub mod capability;
 pub mod error;
+pub mod events;
 pub mod exec;
 pub mod runtime;
 pub mod service;
 pub mod trust;
 
-/// Re-exported so consumers can name the dialect for [`runtime::MacroRuntime`]
-/// and implement [`exec::MacroBackend`] without depending on `loki-basic`
-/// directly.
-pub use loki_basic::{Dialect, DialogKind, DialogRequest};
+/// Re-exported so consumers can name the dialect for [`runtime::MacroRuntime`],
+/// implement [`exec::MacroBackend`], and pass/receive interpreter values
+/// (UDF args/results) without depending on `loki-basic` directly.
+pub use loki_basic::{Dialect, DialogKind, DialogRequest, Value};
 
 pub use broker::{CapabilityBroker, GrantSet};
 pub use capability::{Capability, CapabilityDecision, GrantScope, RunContext};
 pub use error::MacroHostError;
+pub use events::{EventPhase, auto_open_handlers, handler_phase, is_auto_open};
 pub use exec::{DenyBackend, DialogOutcome, DocEdit, EditBatch, ExecutionHost, MacroBackend};
-pub use runtime::{MacroRunError, MacroRuntime, RunOutcome, RunRequest};
+pub use runtime::{AutoRunToken, MacroRunError, MacroRuntime, RunOutcome, RunRequest, UdfOutcome};
 pub use service::{CapabilityState, DocumentSecurity, MacroService};
 pub use trust::{PersistedGrant, TrustDecision, TrustRecord, TrustStore};
