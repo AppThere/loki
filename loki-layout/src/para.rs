@@ -24,6 +24,8 @@ mod build;
 mod layout_types;
 #[path = "para_query.rs"]
 mod query;
+#[path = "para_tab_underline.rs"]
+mod tab_underline;
 #[path = "para_tabs.rs"]
 mod tabs;
 #[path = "para_types.rs"]
@@ -639,22 +641,20 @@ fn layout_paragraph_uncached(
                             prim.translate(pib.x + indent_x + extra_x, pib.y);
                             items.push(prim);
                         }
-                        // The box top is at `pib.y` and its baseline at
-                        // `pib.y + ascent`; the descent hangs below that.
+                        // Box top at `pib.y`, baseline `+ ascent`, descent below.
                         content_bottom = content_bottom.max(pib.y + render.ascent + render.descent);
                     }
                 } else if (pib.id as usize) < tab_char_positions.len() {
-                    // Tab inline box: draw the stop's leader (if any) across the
-                    // gap the box opened.
-                    if let Some(plan) = tab_plans.get(pib.id as usize) {
-                        tabs::emit_tab_leader(
-                            &mut items,
-                            plan.leader,
-                            pib.x + indent_x + extra_x,
-                            pib.x + indent_x + extra_x + pib.width,
-                            line_baseline,
-                        );
-                    }
+                    // Tab box: stop leader + any underlined tab run's rule (gap #8).
+                    tab_underline::emit_tab_box(
+                        &mut items,
+                        &clean_spans,
+                        tab_char_positions.get(pib.id as usize).copied(),
+                        tab_plans.get(pib.id as usize).map(|p| p.leader),
+                        pib.x + indent_x + extra_x,
+                        pib.width,
+                        line_baseline,
+                    );
                 }
                 continue;
             }

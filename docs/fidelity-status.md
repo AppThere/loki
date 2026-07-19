@@ -297,6 +297,15 @@ field still `InResult` at a paragraph's end now flushes its accumulated snapshot
 imported ACID2 TOC now shows all four entries ("1. Introduction …" through "2.1
 Per-feature scores") with dot leaders and right-aligned page numbers; tested by
 `open_field_flushes_its_result_at_paragraph_end`.
+**Underlined-tab signature lines** now render: a run that is only a `\t` carrying
+`w:u` (`<w:r><w:rPr><w:u w:val="single"/></w:rPr><w:tab/></w:r>`) draws its
+underline across the whole tab gap in Word, but Loki excludes `\t` from the Parley
+text (gap #8), collapsing the run to a zero-length span that Parley never strokes.
+The flow engine now recovers the underline from the spans (`para_tab_underline`)
+and emits a `DecorationKind::Underline` across the tab box it opened — covering
+both a standalone signature tab and a tab embedded in a longer underlined run. The
+invoice's two signature rules (above "Authorised signature" / "Date") now match
+Word's; tested by the `para::tab_underline` module tests.
 
 **Gaps it currently surfaces** (candidate golden-diff regions; not yet fixed):
 floating text boxes (`wps` shapes with text) not rendered;

@@ -24,7 +24,7 @@ use crate::items::{
 };
 use crate::para::{StrikethroughStyle, StyleSpan, UnderlineStyle, VerticalAlign, span_at_offset};
 
-fn underline_deco_style(u: UnderlineStyle) -> DecorationStyle {
+pub(crate) fn underline_deco_style(u: UnderlineStyle) -> DecorationStyle {
     match u {
         UnderlineStyle::Single => DecorationStyle::Solid,
         UnderlineStyle::Double => DecorationStyle::Double,
