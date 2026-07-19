@@ -346,12 +346,25 @@ selection geometry as the highlight underlay (`para_underlays`). The appendix's
 red-boxed "char-border" run now matches Word; tested by `maps_character_border` /
 `none_valued_bdr_is_dropped`. (Import + render only — `TODO(char-border-export)`:
 not yet written back on DOCX/ODF export nor round-tripped through the Loro bridge.)
+**A footnote referenced from a keep-with-next paragraph** is no longer dropped,
+and footnotes now render **per page** at the foot of the page carrying their
+reference (matching Word) rather than dumped at the section end. Two fixes: the
+keep-with-next chain (`flow_para_chain`) formerly discarded the notes its
+speculative layout collected — it now threads a running note counter and hands
+each placed block's notes to `pending_footnotes` (`keep_with_next_paragraph_keeps_its_footnote`);
+and `finish_page` (`flow_tail::flow_page_footnotes`) lays out that page's
+footnotes in a measured, bottom-aligned band, with pagination disabled for the
+self-contained band (no spurious overflow page). The report's two footnotes now
+sit together at the foot of page 3 and the fixture stays 7 pages. **Deferred
+refinement:** the band is bottom-aligned but its height is not *reserved* from
+the content area up-front, so on a completely full page the notes can extend past
+the text margin instead of pushing content down; multi-column and non-paginated
+(reflow) footnotes keep the section-end fallback.
 
 **Gaps it currently surfaces** (candidate golden-diff regions; not yet fixed):
 floating text boxes (`wps` shapes with text) not rendered;
-a footnote referenced from a
-keep-with-next paragraph is dropped (and Loki does not reserve page-bottom
-footnote space); line/cross `w:shd` textures are flattened to a solid tint (the
+footnote space is not reserved from the content area (see above);
+line/cross `w:shd` textures are flattened to a solid tint (the
 hatch lines are not drawn); run
 text effects (emboss/imprint/shadow) not rendered;
 a block-stacked inline image is

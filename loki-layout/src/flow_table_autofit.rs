@@ -60,6 +60,7 @@ pub(super) fn cell_flow_state<'a>(
         page_size: LayoutSize::default(),
         margins: LayoutInsets::default(),
         page_content_height: 0.0,
+        rendering_footnotes: false,
         page_number: 1,
         warnings: Vec::new(),
         current_indent: starting_indent,

@@ -69,6 +69,7 @@ pub(super) fn new_flow_state<'a>(
         page_size: LayoutSize::new(page_w, page_h),
         margins,
         page_content_height: (page_h - margins.vertical()).max(0.0),
+        rendering_footnotes: false,
         page_number: 1,
         warnings: Vec::new(),
         current_indent: 0.0,

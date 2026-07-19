@@ -1049,6 +1049,43 @@ fn keep_with_next_paragraph_keeps_its_inline_image() {
 }
 
 #[test]
+fn keep_with_next_paragraph_keeps_its_footnote() {
+    use loki_doc_model::content::inline::NoteKind;
+
+    let mut r = test_resources();
+    // A keep-with-next paragraph whose text carries a footnote reference. The
+    // chain path used to discard the collected note, dropping the body entirely.
+    let note_body = vec![Block::StyledPara(make_para("Note body text."))];
+    let ref_para = StyledParagraph {
+        style_id: None,
+        direct_para_props: Some(Box::new(ParaProps {
+            keep_with_next: Some(true),
+            ..Default::default()
+        })),
+        direct_char_props: None,
+        inlines: vec![
+            Inline::Str("See".into()),
+            Inline::Note(NoteKind::Footnote, note_body),
+        ],
+        attr: NodeAttr::default(),
+    };
+    let follow = make_para("Following paragraph.");
+    let section = section_of(vec![ref_para, follow], PageLayout::default());
+
+    let (pages, _) = flow_paginated(&mut r, &section);
+    // The footnote separator rule is emitted only when a note body renders.
+    let has_note = pages.iter().any(|p| {
+        p.content_items
+            .iter()
+            .any(|i| matches!(i, PositionedItem::HorizontalRule(_)))
+    });
+    assert!(
+        has_note,
+        "a footnote referenced from a keep-with-next paragraph must render, not be dropped"
+    );
+}
+
+#[test]
 fn keep_with_next_chain_pushed_to_next_page() {
     let mut r = test_resources();
     // para0 has large space_after to fill most of the tiny page.

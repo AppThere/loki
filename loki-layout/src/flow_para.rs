@@ -90,7 +90,8 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
         &mut state.note_counter,
         state.cell_char_defaults.as_ref(),
     );
-    // Tag each note with its owning block + per-block order (see flow_footnotes).
+    // Tag each note with its owning block + per-block order. The notes render at
+    // the foot of the page carrying their reference — see `flow_tail`.
     for (i, note) in notes.iter_mut().enumerate() {
         note.owner_block_index = block_index;
         note.note_in_block = i;

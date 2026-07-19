@@ -173,10 +173,18 @@ pub(super) struct FlowState<'a> {
     pub(super) list_counters: HashMap<ListId, [u32; 9]>,
     /// `ListId` of the most recently placed list item (detects list changes).
     pub(super) prev_list_id: Option<ListId>,
-    /// Footnote/endnote counter for the section (bumped by `walk_inlines`);
-    /// collected notes render via `flow_footnotes`.
+    /// Footnote/endnote counter for the section (bumped by `walk_inlines`).
     pub(super) note_counter: u32,
+    /// Footnotes whose reference has been placed on the **current page**, laid
+    /// out at their bottom by `finish_page`. Their height is reserved from
+    /// [`page_content_height`](Self::page_content_height) as each is collected,
+    /// so body content stops above the footnote band (per-page placement,
+    /// matching Word — a footnote sits at the foot of the page carrying its
+    /// reference, not dumped at the section end).
     pub(super) pending_footnotes: Vec<CollectedNote>,
+    /// Re-entrancy guard: `true` while `finish_page` is laying out the footnote
+    /// band, so a nested page flush during that work does not recurse.
+    pub(super) rendering_footnotes: bool,
     /// Paragraph metadata for the current page (block index, layout, origin).
     pub(super) current_paragraphs: Vec<PageParagraphData>,
     /// Clean-page-top checkpoints for incremental relayout (top-level only).
