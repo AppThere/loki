@@ -323,6 +323,13 @@ numbering mechanism): Word's first appendix line is numbered **2** vs Loki's **1
 ECMA-376 `@w:start` semantics, first line = `start`); and the callout paragraph
 wraps to 3 lines in Loki vs 2 in Word (an independent line-wrapping difference),
 so both happen to end at line 18.
+**`w:noBreakHyphen` / `w:softHyphen`** now render: the run reader maps
+`w:noBreakHyphen` → U+2011 NON-BREAKING HYPHEN (always visible) and
+`w:softHyphen` → U+00AD SOFT HYPHEN (shown only when the line breaks there), so
+"non-breaking-hyphen" renders its hyphen like Word; the optional hyphen stays
+invisible when — as in Loki's wider line — the text does not break at it (Word
+shows it only because its narrower line happens to break there). Tested by
+`no_break_hyphen_becomes_u2011` / `soft_hyphen_becomes_u00ad`.
 
 **Gaps it currently surfaces** (candidate golden-diff regions; not yet fixed):
 floating text boxes (`wps` shapes with text) not rendered;
@@ -330,7 +337,7 @@ a footnote referenced from a
 keep-with-next paragraph is dropped (and Loki does not reserve page-bottom
 footnote space); pattern/gradient cell shading approximated as flat/blank; run
 text effects (emboss/imprint/shadow) and character borders (`w:bdr`) not rendered;
-`w:noBreakHyphen`/`w:softHyphen` produce no glyph; a block-stacked inline image is
+a block-stacked inline image is
 left-aligned rather than honouring the paragraph's `w:jc`; header/footer
 references are not **inherited** across section breaks (the fixture declares them
 per-section as a workaround).
