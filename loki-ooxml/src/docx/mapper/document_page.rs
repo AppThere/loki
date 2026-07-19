@@ -13,7 +13,8 @@ use std::collections::HashMap;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
 use loki_doc_model::layout::page::{
-    PageBorders, PageLayout, PageMargins, PageOrientation, PageSize,
+    LineNumberRestart, LineNumbering, PageBorders, PageLayout, PageMargins, PageOrientation,
+    PageSize,
 };
 use loki_doc_model::layout::section::SectionStart;
 use loki_doc_model::style::list_style::NumberingScheme;
@@ -91,7 +92,30 @@ fn map_page_layout(sect_pr: Option<&DocxSectPr>) -> PageLayout {
         .map(map_pg_borders)
         .filter(|b| !b.is_empty());
 
+    layout.line_numbering = sp.ln_num_type.as_ref().map(map_ln_num_type);
+
     layout
+}
+
+/// Maps a parsed `w:lnNumType` to the doc-model [`LineNumbering`], applying
+/// Word's defaults (`countBy=1`, `start=1`, `restart="newPage"`) and converting
+/// `@w:distance` from twips to points.
+fn map_ln_num_type(t: &crate::docx::model::section::DocxLnNumType) -> LineNumbering {
+    let restart = match t.restart.as_deref() {
+        Some("newSection") => LineNumberRestart::NewSection,
+        Some("continuous") => LineNumberRestart::Continuous,
+        // "newPage", absent, or unknown → the default.
+        _ => LineNumberRestart::NewPage,
+    };
+    LineNumbering {
+        count_by: t.count_by.filter(|&n| n > 0).unwrap_or(1),
+        start: t.start.unwrap_or(1),
+        restart,
+        distance: t
+            .distance
+            .filter(|&d| d > 0)
+            .map(|d| Points::new(f64::from(d) / 20.0)),
+    }
 }
 
 /// Maps a parsed `w:pgBorders` set to the doc-model [`PageBorders`], dropping
@@ -195,44 +219,5 @@ pub(super) fn map_page_layout_with_hf(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::docx::model::paragraph::DocxBorderEdge;
-    use crate::docx::model::section::DocxPgBorders;
-
-    fn edge() -> DocxBorderEdge {
-        DocxBorderEdge {
-            val: "single".into(),
-            sz: Some(8),
-            color: Some("4472C4".into()),
-            space: Some(24),
-        }
-    }
-
-    #[test]
-    fn maps_page_borders_onto_the_layout() {
-        let sect = DocxSectPr {
-            pg_borders: Some(DocxPgBorders {
-                top: Some(edge()),
-                bottom: Some(edge()),
-                left: Some(edge()),
-                right: Some(edge()),
-                offset_from_text: false,
-            }),
-            ..Default::default()
-        };
-        let layout = map_page_layout(Some(&sect));
-        let pb = layout.page_border.expect("page border mapped");
-        assert!(pb.top.is_some() && pb.left.is_some() && pb.bottom.is_some() && pb.right.is_some());
-        assert!(!pb.offset_from_text);
-    }
-
-    #[test]
-    fn all_none_edges_map_to_no_border() {
-        let sect = DocxSectPr {
-            pg_borders: Some(DocxPgBorders::default()),
-            ..Default::default()
-        };
-        assert!(map_page_layout(Some(&sect)).page_border.is_none());
-    }
-}
+#[path = "document_page_tests.rs"]
+mod tests;

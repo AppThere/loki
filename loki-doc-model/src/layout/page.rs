@@ -38,6 +38,48 @@ impl PageBorders {
     }
 }
 
+/// When the line-number counter restarts (OOXML `w:lnNumType @w:restart`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum LineNumberRestart {
+    /// Restart at the top of every page (`@w:restart="newPage"`, the default).
+    #[default]
+    NewPage,
+    /// Restart at the start of every section (`@w:restart="newSection"`).
+    NewSection,
+    /// Never restart — number continuously across the document
+    /// (`@w:restart="continuous"`).
+    Continuous,
+}
+
+/// Line numbering displayed in the margin for a section (`w:lnNumType`,
+/// ECMA-376 §17.6.8). ODF: `text:linenumbering-configuration`.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct LineNumbering {
+    /// Print a number every `count_by` lines (`@w:countBy`); e.g. `1` numbers
+    /// every line, `5` every fifth. `0`/absent is treated as `1`.
+    pub count_by: u32,
+    /// The first line number (`@w:start`); defaults to `1`.
+    pub start: i32,
+    /// When the counter restarts (`@w:restart`).
+    pub restart: LineNumberRestart,
+    /// Distance from the numbers to the text, in points (`@w:distance`). `None`
+    /// = automatic (the renderer picks a default gutter offset).
+    pub distance: Option<Points>,
+}
+
+impl Default for LineNumbering {
+    fn default() -> Self {
+        Self {
+            count_by: 1,
+            start: 1,
+            restart: LineNumberRestart::default(),
+            distance: None,
+        }
+    }
+}
+
 /// Page orientation.
 ///
 /// TR 29166 §7.2.8. ODF `style:print-orientation`; OOXML inferred from
@@ -203,6 +245,9 @@ pub struct PageLayout {
     /// `None` = no page border.
     #[cfg_attr(feature = "serde", serde(default))]
     pub page_border: Option<PageBorders>,
+    /// Margin line numbering for the section (`w:lnNumType`). `None` = off.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub line_numbering: Option<LineNumbering>,
     /// Format-specific extension data.
     pub extensions: ExtensionBag,
 }

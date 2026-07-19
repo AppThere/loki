@@ -71,6 +71,13 @@ pub(super) fn split_and_place_loop(
                     .current_items
                     .push(PositionedItem::ClippedGroup { clip_rect, items });
             }
+            super::super::line_numbers::emit(
+                state,
+                para_layout,
+                ty,
+                frag_start,
+                para_layout.height,
+            );
             state.cursor_y += frag_height;
             return;
         }
@@ -205,5 +212,6 @@ fn emit_fragment(
     state
         .current_items
         .push(PositionedItem::ClippedGroup { clip_rect, items });
+    super::super::line_numbers::emit(state, para_layout, ty, frag_start, split_y);
     state.cursor_y += clip_height;
 }

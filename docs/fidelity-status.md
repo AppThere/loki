@@ -306,10 +306,27 @@ and emits a `DecorationKind::Underline` across the tab box it opened — coverin
 both a standalone signature tab and a tab embedded in a longer underlined run. The
 invoice's two signature rules (above "Authorised signature" / "Date") now match
 Word's; tested by the `para::tab_underline` module tests.
+**Margin line numbering (`w:lnNumType`)** now renders: the DOCX reader parses
+`w:lnNumType` (`@w:countBy`/`@w:start`/`@w:restart`/`@w:distance`), the mapper
+carries it as `PageLayout.line_numbering`, and the flow engine
+(`flow_line_numbers`) prints a right-aligned number in the left margin beside each
+body line of the section — advancing a per-section counter that resets each page
+for `restart="newPage"`, selecting lines via `count_by`, and skipping tables and
+header/footer lines (Word's own defaults). Emitted as content items at a negative
+content-local x (the painters composite content offset by the left margin with no
+content clip). All emission is gated behind the section actually carrying line
+numbering, so every other document is byte-for-byte unchanged. The appendix now
+shows numbers down its margin like Word's; tested by the `flow::line_numbers`
+module tests plus reader/mapper tests. **Two residual differences** (not the
+numbering mechanism): Word's first appendix line is numbered **2** vs Loki's **1**
+(Word appears to count the preceding section-break paragraph — Loki follows the
+ECMA-376 `@w:start` semantics, first line = `start`); and the callout paragraph
+wraps to 3 lines in Loki vs 2 in Word (an independent line-wrapping difference),
+so both happen to end at line 18.
 
 **Gaps it currently surfaces** (candidate golden-diff regions; not yet fixed):
 floating text boxes (`wps` shapes with text) not rendered;
-line numbering (`w:lnNumType`) not rendered; a footnote referenced from a
+a footnote referenced from a
 keep-with-next paragraph is dropped (and Loki does not reserve page-bottom
 footnote space); pattern/gradient cell shading approximated as flat/blank; run
 text effects (emboss/imprint/shadow) and character borders (`w:bdr`) not rendered;

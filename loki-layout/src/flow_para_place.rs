@@ -68,6 +68,7 @@ pub(super) fn place_paragraph_layout(
             if state.options.preserve_for_editing {
                 push_editing_para(state, block_index, Arc::new(para_layout.clone()), (0.0, dy));
             }
+            super::super::line_numbers::emit(state, &para_layout, dy, 0.0, para_layout.height);
             for mut item in para_layout.items {
                 item.translate(dx, dy);
                 state.current_items.push(item);

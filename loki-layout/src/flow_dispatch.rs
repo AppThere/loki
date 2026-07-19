@@ -162,6 +162,10 @@ pub(crate) fn finish_page(state: &mut FlowState) {
     state.page_number += 1;
     state.current_paragraphs.clear();
     state.cursor_y = 0.0;
+    // Restart margin line numbering at the top of the new page (`newPage`).
+    if let Some(ln) = &mut state.line_num {
+        ln.restart_for_page();
+    }
     // Cross-paragraph float wrap does not continue onto the next page.
     state.active_float = None;
 }

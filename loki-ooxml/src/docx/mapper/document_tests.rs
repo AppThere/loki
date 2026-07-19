@@ -56,6 +56,7 @@ fn sect_pr_a4() -> DocxSectPr {
         pg_num_start: None,
         section_type: None,
         pg_borders: None,
+        ln_num_type: None,
     }
 }
 

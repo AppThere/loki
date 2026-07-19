@@ -94,6 +94,10 @@ pub(super) fn new_flow_state<'a>(
         staged_between: None,
         tail_candidate: None,
         cell_char_defaults: None,
+        line_num: pl
+            .line_numbering
+            .as_ref()
+            .map(super::line_numbers::LineNumberState::new),
     }
 }
 

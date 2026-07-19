@@ -32,6 +32,22 @@ pub struct DocxSectPr {
     pub section_type: Option<String>,
     /// Page borders from `w:pgBorders` (ECMA-376 §17.6.10).
     pub pg_borders: Option<DocxPgBorders>,
+    /// Margin line numbering from `w:lnNumType` (ECMA-376 §17.6.8).
+    pub ln_num_type: Option<DocxLnNumType>,
+}
+
+/// `w:lnNumType` — margin line numbering (ECMA-376 §17.6.8). Attribute values
+/// are raw; the mapper applies defaults and unit conversion.
+#[derive(Debug, Clone, Default)]
+pub struct DocxLnNumType {
+    /// `@w:countBy` — print a number every N lines. `None` = every line.
+    pub count_by: Option<u32>,
+    /// `@w:start` — the first line number. `None` = `1`.
+    pub start: Option<i32>,
+    /// `@w:restart` — `newPage` (default) / `newSection` / `continuous`.
+    pub restart: Option<String>,
+    /// `@w:distance` — gutter between numbers and text, in twips. `None` = auto.
+    pub distance: Option<i32>,
 }
 
 /// `w:pgBorders` — decorative border drawn around each page (ECMA-376 §17.6.10).

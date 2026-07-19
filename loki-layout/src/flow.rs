@@ -26,6 +26,8 @@ mod flow_list_marker;
 mod group;
 #[path = "flow_headers.rs"]
 mod headers;
+#[path = "flow_line_numbers.rs"]
+mod line_numbers;
 #[path = "flow_page_fields.rs"]
 mod page_fields;
 #[path = "flow_para_between.rs"]
@@ -221,6 +223,9 @@ pub(super) struct FlowState<'a> {
     /// Table-region character defaults for the cell currently flowing (4a.3);
     /// merged under the paragraph chain by `flatten_paragraph_with_base`.
     pub(super) cell_char_defaults: Option<loki_doc_model::style::props::char_props::CharProps>,
+    /// Active margin line-numbering state for the section (`w:lnNumType`), or
+    /// `None` when the section has no line numbering (the common case).
+    pub(super) line_num: Option<line_numbers::LineNumberState>,
 }
 
 impl FlowState<'_> {

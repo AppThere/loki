@@ -13,7 +13,7 @@ use quick_xml::{Reader, events::Event};
 use crate::docx::model::paragraph::{
     DocxBorderEdge, DocxCols, DocxHdrFtrRef, DocxPgMar, DocxPgSz, DocxSectPr,
 };
-use crate::docx::model::section::DocxPgBorders;
+use crate::docx::model::section::{DocxLnNumType, DocxPgBorders};
 use crate::docx::reader::util::{attr_val, local_name};
 use crate::error::{OoxmlError, OoxmlResult};
 
@@ -114,6 +114,15 @@ pub(crate) fn parse_sect_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxSectP
                         let offset_from_text =
                             attr_val(e, b"offsetFrom").as_deref() == Some("text");
                         sect.pg_borders = Some(parse_pg_borders(reader, offset_from_text)?);
+                    }
+                    b"lnNumType" => {
+                        // ECMA-376 §17.6.8: margin line numbering (attribute-only).
+                        sect.ln_num_type = Some(DocxLnNumType {
+                            count_by: attr_val(e, b"countBy").and_then(|v| v.parse().ok()),
+                            start: attr_val(e, b"start").and_then(|v| v.parse().ok()),
+                            restart: attr_val(e, b"restart"),
+                            distance: attr_val(e, b"distance").and_then(|v| v.parse().ok()),
+                        });
                     }
                     _ => {}
                 }
@@ -223,5 +232,17 @@ mod tests {
         </w:sectPr>"#;
         let pb = parse(xml).pg_borders.expect("pg_borders");
         assert!(pb.offset_from_text);
+    }
+
+    #[test]
+    fn parses_line_numbering() {
+        let xml = r#"<w:sectPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+          <w:lnNumType w:countBy="1" w:start="1" w:restart="newPage"/>
+        </w:sectPr>"#;
+        let ln = parse(xml).ln_num_type.expect("lnNumType parsed");
+        assert_eq!(ln.count_by, Some(1));
+        assert_eq!(ln.start, Some(1));
+        assert_eq!(ln.restart.as_deref(), Some("newPage"));
+        assert_eq!(ln.distance, None);
     }
 }
