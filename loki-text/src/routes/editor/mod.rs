@@ -38,6 +38,7 @@ mod editor_path_sync;
 mod editor_pointer;
 mod editor_pointer_touch;
 mod editor_publish;
+mod editor_repair_banner;
 mod editor_responsive;
 mod editor_ribbon;
 mod editor_ribbon_color;

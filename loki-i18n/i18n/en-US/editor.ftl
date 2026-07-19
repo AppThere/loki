@@ -66,6 +66,21 @@ editor-save-error = Could not save: { $reason }
 editor-save-untitled-hint = Use File → Save As to save new documents
 editor-dismiss-aria = Dismiss
 
+# Word-compatibility repair banner (shown when an opened DOCX has out-of-order
+# OOXML that can stop Microsoft Word opening it; Loki opens it regardless)
+editor-repair-title = Compatibility problem
+editor-repair-message = { $count ->
+    [one] This document has 1 issue that can stop it opening in Microsoft Word.
+   *[other] This document has { $count } issues that can stop it opening in Microsoft Word.
+}
+editor-repair-action = Repair
+editor-repair-dismiss = Dismiss
+editor-repair-done = { $count ->
+    [one] Repaired 1 compatibility issue
+   *[other] Repaired { $count } compatibility issues
+}
+editor-repair-error = Could not repair: { $reason }
+
 # Style picker / style editor chrome
 editor-tab-close-aria = Close tab
 editor-style-picker-close-aria = Close style picker

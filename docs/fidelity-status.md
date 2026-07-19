@@ -331,7 +331,8 @@ hand-authored files and some tool exporters emit it routinely.
 | :--- | :---: | :--- |
 | **Detect** | Yes | `loki_ooxml::analyze_docx(&[u8]) -> RepairReport` walks every `WordprocessingML` part and reports each out-of-order container (part, element, offending child list). Non-destructive. |
 | **Repair** | Yes | `loki_ooxml::repair_docx(&[u8]) -> (Vec<u8>, RepairReport)` reorders children into the ECMA-376 sequence — a **lossless** transform (only element order changes; attributes, text, entities, comments, and constructs Loki cannot model are preserved verbatim). Backed by a tiny purpose-built XML DOM (`repair/dom.rs`) + the canonical order tables (`repair/order.rs`, covering `pPr`/`rPr`/`sectPr`/`tcPr`/`tblPr`/`trPr`/`lvl`/`style`/`abstractNum`). Conservative: a container holding a foreign element (`mc:AlternateContent`, `w14:*`) or a comment is left untouched. |
-| **CLI** | Yes | `loki-headless repair --in doc.docx [--check | --out fixed.docx]` — `--check` reports problems; `--out` writes a repaired copy. The user-facing "repair a malformed document with Loki" path. |
+| **CLI** | Yes | `loki-headless repair --in doc.docx [--check | --out fixed.docx]` — `--check` reports problems; `--out` writes a repaired copy. The headless "repair a malformed document with Loki" path. |
+| **In-editor banner (`loki-text`)** | Yes | On opening a DOCX, a background effect runs `analyze_docx` on the file bytes (`editor_load::analyze_open_docx`); if problems are found, an amber attention banner (`editor_repair_banner::RepairBanner`, mirroring the font-substitution panel, ADR-0013) appears above the ribbon: *"This document has N issues that can stop it opening in Microsoft Word."* with **Repair** / **Dismiss**. Repair runs `repair_docx` on the file and writes the fixed bytes back in place (`editor_save::repair_document_file`) — lossless, no model round-trip (the tolerant reader already loaded a correct model), reusing the same single-write path as Save; success shows in the status chip. Strings in `editor.ftl` (`editor-repair-*`). |
 | **Export canonicalisation** | Yes | Loki's own `DocxExport` did **not** emit all `pPr`/`rPr` children in schema order (e.g. `w:jc` before `w:spacing`, `w:color` after `w:sz`), so files Loki *saved* could themselves trip Word's repair prompt. The export assembly now runs the same canonicalisation pass as its final step (`docx/write/assembly.rs` → `repair::canonicalize_package`), so every DOCX Loki writes is schema-ordered. Regression-locked by `loki_export_is_word_schema_clean` (`tests/repair.rs`). |
 | **ACID 2 fixture** | Yes | The hand-authored `acid2-docx` parts are authored for readability, not schema order; `gen_acid2_docx` normalises them through `repair_docx` at build time so the committed fixture opens in Word. Guarded by `committed_fixture_has_no_ordering_violations` (`loki-acid/tests/acid2_word_valid.rs`). |
 
@@ -341,6 +342,6 @@ error class already surfaced by the OPC/import layer; extending `repair` to
 offer fixes for those is a natural follow-up. Tested by 9 unit tests
 (`repair/repair_tests.rs`, incl. entity/whitespace preservation and byte-exact
 round-trip of already-clean input) + 4 end-to-end tests (`tests/repair.rs`).
-**App integration (`loki-text` "offer to fix" prompt on open) is pending** — the
-detection/repair engine and CLI exist; wiring a document-open banner in the
-editor UI is the remaining step.
+Detection is surfaced three ways: the `loki-headless repair` CLI, the
+`loki-text` open-time banner, and the `analyze_docx`/`repair_docx` public API
+for embedders.
