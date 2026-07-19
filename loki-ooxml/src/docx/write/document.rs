@@ -30,6 +30,8 @@ mod inlines;
 mod para;
 #[path = "document_table.rs"]
 mod table;
+#[path = "document_textbox.rs"]
+mod textbox;
 
 use blocks::{write_code_block, write_horizontal_rule, write_line_block, write_list_item};
 pub(super) use inlines::write_text_run;

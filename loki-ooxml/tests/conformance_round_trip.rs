@@ -144,6 +144,148 @@ fn docx_round_trip_preserves_secondary_run_formatting() {
     }
 }
 
+/// Emboss, imprint, and character-border (`w:bdr`) direct run formatting must
+/// survive import-export-import. Each used to export with the field silently
+/// dropped (import + render only), so a run carrying *only* one of these would
+/// collapse to a plain run and merge with its neighbours — the same class of
+/// loss the secondary-formatting regression above guards. Now `emit_char_props`
+/// writes `<w:emboss>`/`<w:imprint>`/`<w:bdr>` symmetrically with the reader.
+#[test]
+fn docx_round_trip_preserves_emboss_imprint_and_char_border() {
+    use loki_doc_model::style::props::border::{Border, BorderStyle};
+    use loki_primitives::color::DocumentColor;
+
+    let embossed = CharProps {
+        emboss: Some(true),
+        ..Default::default()
+    };
+    let imprinted = CharProps {
+        imprint: Some(true),
+        ..Default::default()
+    };
+    let bordered = CharProps {
+        character_border: Some(Border {
+            style: BorderStyle::Solid,
+            width: Points::new(1.0),
+            color: Some(DocumentColor::from_hex("#C00000").expect("valid hex")),
+            spacing: Some(Points::new(1.0)),
+        }),
+        ..Default::default()
+    };
+
+    let seed = doc(vec![Block::Para(vec![
+        styled_run("embossed", embossed),
+        Inline::Str(" ".to_string()),
+        styled_run("imprinted", imprinted),
+        Inline::Str(" ".to_string()),
+        styled_run("boxed", bordered),
+        Inline::Str(" plain tail.".to_string()),
+    ])]);
+
+    if let Some(d) = round_trip_divergence(&seed) {
+        panic!(
+            "emboss/imprint/char-border diverged at `{}`:\n  first import: {:?}\n  re-import:    {:?}",
+            d.path, d.left, d.right
+        );
+    }
+}
+
+/// Flattens a block's inline content, seeing through the `StyledPara` wrapper
+/// the importer produces for a bare paragraph as well as plain `Para`/`Plain`.
+fn block_inlines(b: &Block) -> Vec<Inline> {
+    match b {
+        Block::Para(inl) | Block::Plain(inl) => inl.clone(),
+        Block::StyledPara(sp) => sp.inlines.clone(),
+        _ => vec![],
+    }
+}
+
+/// A floating `wps` text box (`Inline::TextBox`) must survive
+/// import-export-import: the export writes a `w:drawing`/`wp:anchor` whose
+/// `wps:wsp` graphicData carries the shape fill/border and a `w:txbxContent`
+/// body, and re-import reconstructs the same `TextBox` (geometry, fill, border,
+/// interior paragraph text). Used to be import + render only — the box was
+/// silently dropped on export.
+#[test]
+fn docx_round_trip_preserves_floating_text_box() {
+    use loki_doc_model::content::inline::Inline;
+
+    // Build a TextBox exactly as the mapper does: geometry + fill/border on the
+    // attr, a floating (square) wrap class, one interior paragraph.
+    let mut attr = NodeAttr::default();
+    attr.kv.push(("cx_emu".to_string(), "1828800".to_string()));
+    attr.kv.push(("cy_emu".to_string(), "731520".to_string()));
+    attr.kv
+        .push(("textbox-fill".to_string(), "FDF0E6".to_string()));
+    attr.kv
+        .push(("textbox-line".to_string(), "ED7D31".to_string()));
+    attr.classes.push("floating".to_string());
+    let text_box = Inline::TextBox(
+        attr,
+        vec![Block::Para(vec![Inline::Str("Sidebar body.".to_string())])],
+    );
+
+    let seed = doc(vec![Block::Para(vec![
+        text_box,
+        Inline::Str("Body copy beside the box.".to_string()),
+    ])]);
+
+    let a = import(export(&seed));
+
+    // The re-imported model must still carry a TextBox with the fill/border and
+    // the interior text — assert directly (not only via divergence) so a silent
+    // downgrade to a plain image or dropped box fails loudly.
+    let found = a
+        .sections
+        .iter()
+        .flat_map(|s| s.blocks.iter())
+        .flat_map(block_inlines)
+        .find_map(|i| match i {
+            Inline::TextBox(at, blocks) => Some((at, blocks)),
+            _ => None,
+        });
+    let (at, blocks) = found.expect("re-imported model still has a TextBox");
+    assert!(
+        at.kv
+            .iter()
+            .any(|(k, v)| k == "textbox-fill" && v == "FDF0E6"),
+        "fill survived: {:?}",
+        at.kv
+    );
+    assert!(
+        at.kv
+            .iter()
+            .any(|(k, v)| k == "textbox-line" && v == "ED7D31"),
+        "border survived: {:?}",
+        at.kv
+    );
+    assert!(
+        at.kv.iter().any(|(k, v)| k == "cx_emu" && v == "1828800"),
+        "geometry survived: {:?}",
+        at.kv
+    );
+    let inner: String = blocks
+        .iter()
+        .flat_map(block_inlines)
+        .filter_map(|i| match i {
+            Inline::Str(s) => Some(s),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        inner.contains("Sidebar body."),
+        "interior text survived: {inner:?}"
+    );
+
+    // And the whole thing must be import-export-import *stable*.
+    if let Some(d) = round_trip_divergence(&seed) {
+        panic!(
+            "text-box round-trip diverged at `{}`:\n  first import: {:?}\n  re-import:    {:?}",
+            d.path, d.left, d.right
+        );
+    }
+}
+
 /// The comprehensive reference fixture (headers, footnotes, hyperlinks, images,
 /// …) under the same import-export-import comparison.
 ///

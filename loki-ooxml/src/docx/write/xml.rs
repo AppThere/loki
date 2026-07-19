@@ -15,6 +15,7 @@ pub(super) const NS_WP: &str =
     "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 pub(super) const NS_A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
 pub(super) const NS_PIC: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+pub(super) const NS_WPS: &str = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape";
 
 pub(super) const REL_HYPERLINK: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";

@@ -344,8 +344,13 @@ mapper carries it as `CharProps.character_border` (a `Border`), and the layout
 draws a border box around the run — one box per visual line via the same Parley
 selection geometry as the highlight underlay (`para_underlays`). The appendix's
 red-boxed "char-border" run now matches Word; tested by `maps_character_border` /
-`none_valued_bdr_is_dropped`. (Import + render only — `TODO(char-border-export)`:
-not yet written back on DOCX/ODF export nor round-tripped through the Loro bridge.)
+`none_valued_bdr_is_dropped`. **DOCX export (2026-07-19):** `emit_char_props`
+now writes `w:bdr` back (style → `w:val`, width → `w:sz` eighth-points, spacing →
+`w:space`, colour → hex/`auto`) symmetric with the reader, so a run's character
+border survives an export→re-import — tested by `character_border_is_emitted`
+(unit) and `docx_round_trip_preserves_emboss_imprint_and_char_border`
+(import-export-import). **Still pending:** ODF export and the Loro-bridge
+round-trip (`TODO(char-border-export)` now scoped to those two).
 **A footnote referenced from a keep-with-next paragraph** is no longer dropped,
 and footnotes now render **per page** at the foot of the page carrying their
 reference (matching Word) rather than dumped at the section end. Two fixes: the
@@ -371,8 +376,12 @@ nothing; pushing the emboss/imprint body grey as the Parley **brush** both
 colours the body and keeps the runs from coalescing past their span. Parsed
 (`w:emboss`/`w:imprint` toggles) → `CharProps.emboss/imprint` → `StyleSpan` →
 `para_emit`. The appendix's "shadow emboss imprint" now render distinctly; tested
-by `parses_emboss_imprint_shadow` / `maps_emboss_and_imprint`. (Import + render
-only; export/round-trip deferred.)
+by `parses_emboss_imprint_shadow` / `maps_emboss_and_imprint`. **DOCX export
+(2026-07-19):** `emit_char_props` writes `w:emboss`/`w:imprint` toggles back, so
+both survive an export→re-import (`w:shadow` already round-tripped) — tested by
+`emboss_and_imprint_are_emitted` (unit) and
+`docx_round_trip_preserves_emboss_imprint_and_char_border`. ODF export + the
+Loro-bridge round-trip remain deferred.
 
 **Floating text boxes** (`wps` shapes with text) — **rendered (2026-07-19).** A
 DrawingML `wps:wsp` shape carrying `w:txbxContent` is now imported end-to-end: the
@@ -391,9 +400,18 @@ reusing the same wrap machinery as a floating image (`plan_textbox` runs ahead o
 carries an anchored right-floating sidebar box that visually verifies: the box paints
 with its orange border + peach fill in the right column and the two-column body copy
 wraps square on its left. Tested: `parses_wps_text_box` (reader),
-`text_box_drawing_maps_to_inline_text_box` (mapper). **Still pending:** DOCX/ODT
-re-export of the text box (import + render only); absolute anchor offsets
-(`wp:positionH`/`positionV`) fall back to the wrap-side band as with floating images.
+`text_box_drawing_maps_to_inline_text_box` (mapper). **DOCX export (2026-07-19):**
+`Inline::TextBox` now writes back a `w:drawing`/`wp:anchor` whose `a:graphicData`
+is a `wps:wsp` shape carrying the fill (`a:solidFill`), border (`a:ln`), wrap, and
+a `w:txbxContent` body (the interior blocks via the shared block writer) — the
+reverse of `parse_txbx_content` (`docx/write/document_textbox.rs`). The box
+round-trips: geometry, fill, border, and interior text all survive
+export→re-import, verified by `docx_round_trip_preserves_floating_text_box`
+(asserts the re-imported `TextBox` directly *and* import-export-import stability).
+**Still pending:** ODT re-export of the text box; a `w:txbxContent` body carrying
+a **table** (only `w:p` bodies round-trip today — the reader's `parse_txbx_content`
+handles paragraphs only); absolute anchor offsets (`wp:positionH`/`positionV`)
+fall back to the wrap-side band as with floating images.
 
 **Gaps it currently surfaces** (candidate golden-diff regions; not yet fixed):
 footnote space is not reserved from the content area (see above);
