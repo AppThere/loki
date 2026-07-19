@@ -14,7 +14,7 @@
 
 use loki_basic::{RuntimeError, Value};
 
-use super::{APP, DOC, DocEdit, ExecutionHost, MacroBackend};
+use super::{APP, DOC, DocEdit, ExecutionHost, FIND, MacroBackend, REPLACEMENT, SELECTION, find};
 use crate::capability::Capability;
 
 /// Property read (`args` empty) or method call (`args` non-empty) on a facade
@@ -29,6 +29,9 @@ pub(super) fn get_member<B: MacroBackend>(
     match obj {
         APP => application_member(&member),
         DOC => document_member(host, &member, args),
+        SELECTION => find::selection_member(host, &member, args),
+        FIND => find::find_member(host, &member, args),
+        REPLACEMENT => find::replacement_member(host, &member, args),
         _ => Err(no_member()),
     }
 }
@@ -48,6 +51,24 @@ pub(super) fn set_member<B: MacroBackend>(
             let s = value.to_basic_string()?;
             host.doc_mut().text = s.clone();
             host.doc_mut().batch.edits.push(DocEdit::SetText(s));
+            Ok(())
+        }
+        // `Find`/`Replacement` search parameters — no document content is
+        // touched by *setting* them (the search runs at `Execute`).
+        (FIND, "text") => {
+            host.doc_mut().find.text = value.to_basic_string()?;
+            Ok(())
+        }
+        (FIND, "matchcase") => {
+            host.doc_mut().find.match_case = value.to_bool()?;
+            Ok(())
+        }
+        (FIND, "wholeword") => {
+            host.doc_mut().find.whole_word = value.to_bool()?;
+            Ok(())
+        }
+        (REPLACEMENT, "text") => {
+            host.doc_mut().find.replacement = Some(value.to_basic_string()?);
             Ok(())
         }
         _ => Err(no_member()),
@@ -85,6 +106,9 @@ fn document_member<B: MacroBackend>(
             host.gate(Capability::DocRead)?;
             Ok(Value::Str(host.doc().text.clone()))
         }
+        // `Document.Range` → the whole-document range (for `.Find`). Returning
+        // the object handle reads no content, so it needs no capability.
+        "range" => Ok(Value::Object(super::SELECTION)),
         "paragraphcount" => {
             host.gate(Capability::DocRead)?;
             let n = host.doc().text.lines().count().max(1);

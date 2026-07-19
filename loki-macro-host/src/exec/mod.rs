@@ -20,9 +20,11 @@
 
 mod edit;
 mod facade;
+mod find;
 
 pub use edit::{DocEdit, EditBatch};
 
+use find::FindState;
 use loki_basic::{DialogRequest, FuelVerdict, Host, ObjectRef, RuntimeError, Value};
 
 use crate::broker::CapabilityBroker;
@@ -32,6 +34,12 @@ use crate::capability::{Capability, CapabilityDecision, GrantScope};
 pub(crate) const APP: ObjectRef = ObjectRef(1);
 /// The active-document object handle.
 pub(crate) const DOC: ObjectRef = ObjectRef(2);
+/// The `Selection`/`Range` object handle (a whole-document text range, §6.1).
+pub(crate) const SELECTION: ObjectRef = ObjectRef(3);
+/// The `Find` object handle (`Selection.Find`, phase 6).
+pub(crate) const FIND: ObjectRef = ObjectRef(4);
+/// The `Find.Replacement` object handle (phase 6).
+pub(crate) const REPLACEMENT: ObjectRef = ObjectRef(5);
 
 /// The outcome of showing a macro dialog (spec §5.5).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,6 +92,9 @@ pub(crate) struct DocFacade {
     pub(crate) batch: EditBatch,
     /// Whether the macro requested a print (spec §5.2 `Print`).
     pub(crate) printed: bool,
+    /// The `Find`/`Replacement` search state (phase 6). A singleton backing the
+    /// stateless `FIND`/`REPLACEMENT` handles.
+    pub(crate) find: FindState,
 }
 
 /// The [`loki_basic::Host`] a macro runs against.
@@ -105,6 +116,7 @@ impl<B: MacroBackend> ExecutionHost<B> {
                 text,
                 batch: EditBatch::new(),
                 printed: false,
+                find: FindState::default(),
             },
         }
     }
@@ -158,6 +170,7 @@ impl<B: MacroBackend> Host for ExecutionHost<B> {
             "application" | "thisapplication" => Some(APP),
             "activedocument" | "thisdocument" | "thiscomponent" | "activeworkbook"
             | "thisworkbook" => Some(DOC),
+            "selection" | "range" => Some(SELECTION),
             _ => None,
         }
     }
