@@ -7,7 +7,10 @@ use std::collections::HashSet;
 
 use loki_sheet_model::{CellAlign, CellStyle, NumberFormat, Workbook};
 
-use super::formula::{FormulaError, evaluate_cell, evaluate_formula, format_evaluated_value};
+use super::formula::udf::UdfResolver;
+use super::formula::{
+    CellValue, FormulaError, evaluate_cell, evaluate_formula, format_evaluated_value,
+};
 
 /// Build a single-sheet workbook from `(row, col, value, formula)` tuples.
 fn wb(cells: &[(u32, u32, &str, Option<&str>)]) -> Workbook {
@@ -21,16 +24,60 @@ fn wb(cells: &[(u32, u32, &str, Option<&str>)]) -> Workbook {
     wb
 }
 
-/// Evaluate a bare expression against a workbook.
+/// Evaluate a bare expression against a workbook to a number (the common case).
 fn eval(expr: &str, workbook: &Workbook) -> Result<f64, FormulaError> {
     let mut visited = HashSet::new();
-    evaluate_formula(expr, workbook, &mut visited)
+    match evaluate_formula(expr, workbook, &mut visited, None) {
+        Ok(CellValue::Num(n)) => Ok(n),
+        Ok(CellValue::Text(_)) => Err(FormulaError::Value),
+        Err(e) => Err(e),
+    }
 }
 
 /// Evaluate a cell to its displayed string.
 fn display(row: usize, col: usize, workbook: &Workbook) -> String {
     let mut visited = HashSet::new();
-    evaluate_cell(row, col, workbook, &mut visited)
+    evaluate_cell(row, col, workbook, &mut visited, None)
+}
+
+/// Evaluate a bare expression with a UDF resolver in scope, to its display value.
+fn eval_udf(expr: &str, workbook: &Workbook, udf: &UdfResolver) -> String {
+    let mut visited = HashSet::new();
+    match evaluate_formula(expr, workbook, &mut visited, Some(udf)) {
+        Ok(CellValue::Num(n)) => {
+            // Mirror the display path's integer trimming for round numbers.
+            if n == n.trunc() {
+                format!("{}", n as i64)
+            } else {
+                format!("{n}")
+            }
+        }
+        Ok(CellValue::Text(s)) => s,
+        Err(e) => e.code().to_string(),
+    }
+}
+
+/// A VBA resolver defining a few compute-only test UDFs.
+fn vba_udfs() -> UdfResolver {
+    let source = "\
+Function Doubler(x)
+    Doubler = x * 2
+End Function
+Function Greeting()
+    Greeting = \"hi\"
+End Function
+Function Peek()
+    Peek = ActiveDocument.Text
+End Function
+Function Spin()
+    Do While True
+    Loop
+End Function";
+    UdfResolver::from_modules(
+        loki_basic::Dialect::Vba,
+        vec![("Mod1".into(), source.into())],
+    )
+    .expect("resolver builds")
 }
 
 // ── Arithmetic & precedence ─────────────────────────────────────────────────────
@@ -217,6 +264,55 @@ fn error_propagates_through_references() {
 fn plain_cell_displays_raw_value() {
     let w = wb(&[(0, 0, "hello", None)]);
     assert_eq!(display(0, 0, &w), "hello");
+}
+
+// ── User-defined functions (macro spec §6.3) ──────────────────────────────────────
+
+#[test]
+fn udf_computes_a_numeric_result() {
+    let w = wb(&[(0, 0, "21", None)]);
+    let udf = vba_udfs();
+    assert_eq!(eval_udf("Doubler(A1)", &w, &udf), "42");
+    // A UDF result composes with arithmetic (numeric context).
+    assert_eq!(eval_udf("Doubler(A1)+1", &w, &udf), "43");
+}
+
+#[test]
+fn udf_returning_text_displays_the_text() {
+    let w = Workbook::new();
+    let udf = vba_udfs();
+    assert_eq!(eval_udf("Greeting()", &w, &udf), "hi");
+}
+
+#[test]
+fn udf_touching_the_document_is_macro_error() {
+    // Compute-only: any object-model access yields #MACRO!.
+    let w = Workbook::new();
+    let udf = vba_udfs();
+    assert_eq!(eval_udf("Peek()", &w, &udf), "#MACRO!");
+}
+
+#[test]
+fn a_runaway_udf_is_macro_error_not_a_hang() {
+    let w = Workbook::new();
+    let udf = vba_udfs();
+    // Fuel-bounded: the infinite loop is stopped and surfaces as #MACRO!.
+    assert_eq!(eval_udf("Spin()", &w, &udf), "#MACRO!");
+}
+
+#[test]
+fn unknown_udf_name_is_name_error_even_with_a_resolver() {
+    let w = Workbook::new();
+    let udf = vba_udfs();
+    assert_eq!(eval_udf("NoSuchFunc(1)", &w, &udf), "#NAME?");
+}
+
+#[test]
+fn builtins_are_not_shadowed_by_the_resolver() {
+    // SUM stays the built-in even when a resolver is present.
+    let w = wb(&[(0, 0, "2", None), (1, 0, "3", None)]);
+    let udf = vba_udfs();
+    assert_eq!(eval_udf("SUM(A1:A2)", &w, &udf), "5");
 }
 
 #[test]

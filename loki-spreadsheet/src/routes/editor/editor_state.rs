@@ -5,6 +5,8 @@
 
 use dioxus::prelude::*;
 
+use super::formula::UdfResolver;
+
 /// All per-document signals for the spreadsheet editor, grouped for ergonomic initialisation.
 pub(super) struct EditorState {
     pub workbook_snap: Signal<loki_sheet_model::Workbook>,
@@ -14,6 +16,10 @@ pub(super) struct EditorState {
     pub can_redo: Signal<bool>,
     pub selected_cell: Signal<Option<(usize, usize)>>,
     pub editing_cell: Signal<Option<(usize, usize)>>,
+    /// The open workbook's compute-only user-defined functions (macro spec
+    /// §6.3), built from the preserved macro payload; `None` when the document
+    /// has no readable macro procedures.
+    pub udf_resolver: Signal<Option<UdfResolver>>,
 }
 
 /// Initialises and returns all per-document editing signals.
@@ -26,5 +32,6 @@ pub(super) fn use_editor_state() -> EditorState {
         can_redo: use_signal(|| false),
         selected_cell: use_signal(|| Some((0, 0))),
         editing_cell: use_signal(|| None),
+        udf_resolver: use_signal(|| None),
     }
 }
