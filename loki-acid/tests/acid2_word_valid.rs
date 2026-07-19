@@ -2,10 +2,13 @@
 // Copyright 2026 AppThere Loki contributors
 
 //! Guards that the committed ACID 2 fixture opens in schema-strict Microsoft
-//! Word — i.e. its `WordprocessingML` parts are in the required `xsd:sequence`
-//! order. The `gen_acid2_docx` generator normalises this via
+//! Word. [`analyze_docx`] checks both Word-vs-tolerant asymmetries: the
+//! `WordprocessingML` parts must be in the required `xsd:sequence` order, and
+//! every `mc:Ignorable` prefix must resolve to a declared namespace (an
+//! undeclared `w14` in `styles.xml` once made Word reject this file while Loki
+//! opened it fine). The `gen_acid2_docx` generator normalises ordering via
 //! `loki_ooxml::repair_docx`; if the fixture is regenerated without that step
-//! (or hand-edited), this test fails with the specific violations.
+//! (or hand-edited into either defect), this test fails with the specifics.
 
 use loki_ooxml::analyze_docx;
 

@@ -129,3 +129,81 @@ fn comment_nodes_are_preserved_and_block_reorder() {
     assert!(f.is_empty(), "comment present → skip reorder");
     assert!(out.contains("<!-- note -->"), "comment preserved: {out}");
 }
+
+// ── mc:Ignorable (undeclared-prefix) repair ──────────────────────────────────
+
+/// Parse → mc:Ignorable fix → serialize; return (output, findings).
+fn run_mce(xml: &str, apply: bool) -> (String, Vec<RepairFinding>) {
+    let mut nodes = dom::parse(xml.as_bytes()).expect("parse");
+    let mut findings = Vec::new();
+    mce::fix_ignorable_tree(&mut nodes, "test.xml", apply, &mut findings);
+    (
+        String::from_utf8(dom::serialize(&nodes)).expect("utf8"),
+        findings,
+    )
+}
+
+#[test]
+fn undeclared_ignorable_prefix_is_stripped_declared_one_kept() {
+    // The real ACID2 bug: `mc:Ignorable="w14"` with no `xmlns:w14`. Here w15 is
+    // declared and must survive; w14 is not and must be removed.
+    let xml = concat!(
+        r#"<w:styles xmlns:w="w" xmlns:mc="mc" "#,
+        r#"xmlns:w15="w15" mc:Ignorable="w14 w15"/>"#,
+    );
+    let (out, f) = run_mce(xml, true);
+    assert_eq!(f.len(), 1, "one violation");
+    assert_eq!(f[0].container, "mc:Ignorable");
+    assert!(
+        f[0].detail.contains("w14"),
+        "names the dropped prefix: {out}"
+    );
+    assert!(out.contains(r#"mc:Ignorable="w15""#), "w14 stripped: {out}");
+    assert!(!out.contains("w14"), "no trace of w14 remains: {out}");
+}
+
+#[test]
+fn fully_declared_ignorable_is_untouched_and_clean() {
+    // Matches Word's own output (and the fixed ACID2 styles.xml): the prefix is
+    // declared, so there is nothing to fix and the bytes are preserved exactly.
+    let xml = r#"<w:styles xmlns:w="w" xmlns:mc="mc" xmlns:w14="w14" mc:Ignorable="w14"/>"#;
+    let (out, f) = run_mce(xml, true);
+    assert!(f.is_empty(), "declared prefix → no finding");
+    assert_eq!(out, xml, "clean input serializes byte-for-byte");
+}
+
+#[test]
+fn stripping_the_only_prefix_removes_the_whole_attribute() {
+    // Nothing left to ignore → drop `mc:Ignorable` entirely, without leaving a
+    // doubled space, and preserve the surrounding attributes byte-for-byte.
+    let xml = r#"<w:styles xmlns:w="w" xmlns:mc="mc" mc:Ignorable="w14"/>"#;
+    let (out, f) = run_mce(xml, true);
+    assert_eq!(f.len(), 1);
+    assert!(!out.contains("mc:Ignorable"), "attribute dropped: {out}");
+    assert!(out.contains(r#"xmlns:mc="mc""#), "other attrs kept: {out}");
+    assert!(!out.contains("  "), "no doubled whitespace: {out}");
+}
+
+#[test]
+fn ignorable_analyze_only_reports_but_does_not_edit() {
+    let xml = r#"<w:styles xmlns:w="w" xmlns:mc="mc" mc:Ignorable="w14"/>"#;
+    let (out, f) = run_mce(xml, false); // apply = false
+    assert_eq!(f.len(), 1, "still reported");
+    assert!(
+        out.contains(r#"mc:Ignorable="w14""#),
+        "value NOT changed: {out}"
+    );
+}
+
+#[test]
+fn ignorable_prefix_declared_on_ancestor_resolves() {
+    // Scope threading: a prefix declared on the root covers `mc:Ignorable` on a
+    // descendant, so it must NOT be flagged.
+    let xml = concat!(
+        r#"<w:document xmlns:w="w" xmlns:mc="mc" xmlns:w14="w14">"#,
+        r#"<w:body mc:Ignorable="w14"/>"#,
+        r#"</w:document>"#,
+    );
+    let (_out, f) = run_mce(xml, true);
+    assert!(f.is_empty(), "ancestor-declared prefix resolves");
+}

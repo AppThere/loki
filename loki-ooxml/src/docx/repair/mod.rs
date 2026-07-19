@@ -1,20 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! DOCX repair: detect and fix schema **child-ordering** violations that make a
-//! document unreadable in Microsoft Word while a tolerant reader (Loki,
-//! `LibreOffice`) opens it fine.
+//! DOCX repair: detect and fix defects that make a document unreadable in
+//! Microsoft Word while a tolerant reader (Loki, `LibreOffice`) opens it fine.
 //!
-//! OOXML complex types are `xsd:sequence`s, so Word rejects a file whose
-//! `w:pPr`/`w:rPr`/`w:sectPr`/… children appear out of order (the classic
-//! "Word found unreadable content" repair prompt). Hand-authored files and some
-//! tool exporters emit these routinely. [`analyze_docx`] reports the
-//! violations; [`repair_docx`] rewrites the offending parts into the required
-//! order — a **lossless** transform that only reorders element children (never
-//! touches attributes or text), so nothing the reader models is lost, and
-//! constructs Loki itself cannot model survive untouched.
+//! Two axes, both of which Word enforces strictly and tolerant readers ignore:
 //!
-//! Scope: the ordering axis (the dominant Word-vs-tolerant asymmetry). Other
+//! 1. **Schema child order** ([`order`]). OOXML complex types are
+//!    `xsd:sequence`s, so Word rejects a file whose `w:pPr`/`w:rPr`/`w:sectPr`/…
+//!    children appear out of order. [`fix_container`] reorders them.
+//! 2. **Undeclared `mc:Ignorable` prefixes** ([`mce`]). Every prefix listed in
+//!    `mc:Ignorable` must resolve to an in-scope `xmlns:` declaration; an
+//!    unresolvable prefix is fatal to Word. [`mce::fix_ignorable_tree`] strips
+//!    the dangling prefix(es).
+//!
+//! Both produce the classic "Word found unreadable content" repair prompt, and
+//! both are **lossless**: ordering only permutes element children (never
+//! touches attributes or text), and stripping an undeclared `mc:Ignorable`
+//! prefix removes a token that could never have bound anything. Constructs Loki
+//! itself cannot model survive untouched.
+//!
+//! Scope: these two axes (the dominant Word-vs-tolerant asymmetries). Other
 //! corruption classes (dangling relationships, missing content types) are out
 //! of scope here — the OPC layer already validates those on open.
 
@@ -26,6 +32,7 @@ use loki_opc::part::{PartData, PartName};
 use crate::error::OoxmlError;
 
 mod dom;
+mod mce;
 mod order;
 
 use dom::{Elem, Node};
@@ -137,6 +144,7 @@ fn repair_part(
     let mut nodes = dom::parse(bytes).ok()?;
     let before = findings.len();
     reorder_tree(&mut nodes, display, apply, findings);
+    mce::fix_ignorable_tree(&mut nodes, display, apply, findings);
     (apply && findings.len() > before).then(|| dom::serialize(&nodes))
 }
 

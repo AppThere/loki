@@ -320,28 +320,38 @@ Coverage of the engine, dictionary, layout, and service layers is ~45 unit/integ
 
 ## 12. DOCX Word-Compatibility Repair (`loki-ooxml::repair`)
 
-OOXML complex types are `xsd:sequence`s, so Microsoft Word rejects (or shows
-the "Word found unreadable content — recover?" prompt for) a `.docx` whose
-`w:pPr` / `w:rPr` / `w:sectPr` / `w:tcPr` / … children appear **out of schema
-order** — even though a tolerant, name-matching reader (Loki, LibreOffice) opens
-it fine. This is the dominant "Loki opens it, Word won't" asymmetry, and both
-hand-authored files and some tool exporters emit it routinely.
+Microsoft Word enforces two constraints strictly that a tolerant, name-matching
+reader (Loki, LibreOffice) ignores — so a `.docx` that opens fine in Loki can
+still trip Word's "Word found unreadable content — recover?" prompt. Both are
+the dominant "Loki opens it, Word won't" asymmetries, and both hand-authored
+files and some tool exporters emit them routinely:
+
+1. **Schema child order.** OOXML complex types are `xsd:sequence`s, so Word
+   rejects a file whose `w:pPr` / `w:rPr` / `w:sectPr` / `w:tcPr` / … children
+   appear out of order.
+2. **Undeclared `mc:Ignorable` prefixes.** Every prefix listed in an
+   `mc:Ignorable` attribute must resolve to an in-scope `xmlns:` declaration
+   (ISO/IEC 29500-3 §10.1.1); a dangling prefix (e.g. `mc:Ignorable="w14"` with
+   no `xmlns:w14`) is fatal to Word but silently ignored by tolerant readers.
+   *This was the real cause of the ACID 2 fixture failing to open in Word — a
+   `styles.xml` that listed `w14` in `mc:Ignorable` without declaring it.*
 
 | Capability | Status | Notes |
 | :--- | :---: | :--- |
-| **Detect** | Yes | `loki_ooxml::analyze_docx(&[u8]) -> RepairReport` walks every `WordprocessingML` part and reports each out-of-order container (part, element, offending child list). Non-destructive. |
-| **Repair** | Yes | `loki_ooxml::repair_docx(&[u8]) -> (Vec<u8>, RepairReport)` reorders children into the ECMA-376 sequence — a **lossless** transform (only element order changes; attributes, text, entities, comments, and constructs Loki cannot model are preserved verbatim). Backed by a tiny purpose-built XML DOM (`repair/dom.rs`) + the canonical order tables (`repair/order.rs`, covering `pPr`/`rPr`/`sectPr`/`tcPr`/`tblPr`/`trPr`/`lvl`/`style`/`abstractNum`). Conservative: a container holding a foreign element (`mc:AlternateContent`, `w14:*`) or a comment is left untouched. |
+| **Detect** | Yes | `loki_ooxml::analyze_docx(&[u8]) -> RepairReport` walks every `WordprocessingML` part and reports each out-of-order container **and** each undeclared `mc:Ignorable` prefix (part, element/`mc:Ignorable`, offending child/prefix list). Non-destructive. |
+| **Repair** | Yes | `loki_ooxml::repair_docx(&[u8]) -> (Vec<u8>, RepairReport)` reorders children into the ECMA-376 sequence (`repair/order.rs`, covering `pPr`/`rPr`/`sectPr`/`tcPr`/`tblPr`/`trPr`/`lvl`/`style`/`abstractNum`) **and** strips undeclared prefixes from `mc:Ignorable` (`repair/mce.rs`; when that empties the attribute it is dropped). Both are **lossless** — ordering only permutes element children, and an undeclared prefix could never have bound anything; attributes, text, entities, comments, and constructs Loki cannot model are preserved verbatim (the `mc:Ignorable` rewrite is byte-surgery on just that one value). Backed by a tiny purpose-built XML DOM (`repair/dom.rs`). Conservative: a container holding a foreign element (`mc:AlternateContent`, `w14:*`) or a comment is left untouched. |
 | **CLI** | Yes | `loki-headless repair --in doc.docx [--check | --out fixed.docx]` — `--check` reports problems; `--out` writes a repaired copy. The headless "repair a malformed document with Loki" path. |
 | **In-editor banner (`loki-text`)** | Yes | On opening a DOCX, a background effect runs `analyze_docx` on the file bytes (`editor_load::analyze_open_docx`); if problems are found, an amber attention banner (`editor_repair_banner::RepairBanner`, mirroring the font-substitution panel, ADR-0013) appears above the ribbon: *"This document has N issues that can stop it opening in Microsoft Word."* with **Repair** / **Dismiss**. Repair runs `repair_docx` on the file and writes the fixed bytes back in place (`editor_save::repair_document_file`) — lossless, no model round-trip (the tolerant reader already loaded a correct model), reusing the same single-write path as Save; success shows in the status chip. Strings in `editor.ftl` (`editor-repair-*`). |
 | **Export canonicalisation** | Yes | Loki's own `DocxExport` did **not** emit all `pPr`/`rPr` children in schema order (e.g. `w:jc` before `w:spacing`, `w:color` after `w:sz`), so files Loki *saved* could themselves trip Word's repair prompt. The export assembly now runs the same canonicalisation pass as its final step (`docx/write/assembly.rs` → `repair::canonicalize_package`), so every DOCX Loki writes is schema-ordered. Regression-locked by `loki_export_is_word_schema_clean` (`tests/repair.rs`). |
-| **ACID 2 fixture** | Yes | The hand-authored `acid2-docx` parts are authored for readability, not schema order; `gen_acid2_docx` normalises them through `repair_docx` at build time so the committed fixture opens in Word. Guarded by `committed_fixture_has_no_ordering_violations` (`loki-acid/tests/acid2_word_valid.rs`). |
+| **ACID 2 fixture** | Yes | The hand-authored `acid2-docx` parts are authored for readability, not schema order; `gen_acid2_docx` normalises them through `repair_docx` at build time so the committed fixture opens in Word. The `styles.xml` now declares `xmlns:w14` alongside `mc:Ignorable="w14"` (matching Word's own output). Guarded by `committed_fixture_has_no_ordering_violations` (`loki-acid/tests/acid2_word_valid.rs`), which runs `analyze_docx` (both axes). |
 
-**Scope.** The ordering axis only. Other corruption classes (dangling
-relationships, missing content-type overrides, malformed XML) are a different
-error class already surfaced by the OPC/import layer; extending `repair` to
-offer fixes for those is a natural follow-up. Tested by 9 unit tests
-(`repair/repair_tests.rs`, incl. entity/whitespace preservation and byte-exact
-round-trip of already-clean input) + 4 end-to-end tests (`tests/repair.rs`).
-Detection is surfaced three ways: the `loki-headless repair` CLI, the
-`loki-text` open-time banner, and the `analyze_docx`/`repair_docx` public API
-for embedders.
+**Scope.** The two axes above (schema child order + undeclared `mc:Ignorable`
+prefixes) — the dominant Word-vs-tolerant asymmetries. Other corruption classes
+(dangling relationships, missing content-type overrides, malformed XML) are a
+different error class already surfaced by the OPC/import layer; extending
+`repair` to offer fixes for those is a natural follow-up. Tested by 14 unit
+tests (`repair/repair_tests.rs`, incl. entity/whitespace preservation, byte-exact
+round-trip of already-clean input, and the `mc:Ignorable` strip/keep/drop cases)
++ 4 end-to-end tests (`tests/repair.rs`). Detection is surfaced three ways: the
+`loki-headless repair` CLI, the `loki-text` open-time banner, and the
+`analyze_docx`/`repair_docx` public API for embedders.
