@@ -371,6 +371,7 @@ fn table_style_conditional_formatting_maps() {
         row_band_size: Some(2),
         col_band_size: None,
         base_shd_fill: Some("FFFFFF".into()),
+        tbl_borders: None,
         conditional: vec![
             DocxTblStylePr {
                 region: "firstRow".into(),

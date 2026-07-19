@@ -6,8 +6,9 @@
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
+use crate::docx::model::paragraph::DocxBorderEdge;
 use crate::docx::model::styles::{
-    DocxStyle, DocxStyleType, DocxStyles, DocxTableStyleProps, DocxTblStylePr,
+    DocxStyle, DocxStyleType, DocxStyles, DocxTableStyleProps, DocxTblBorders, DocxTblStylePr,
 };
 use crate::docx::reader::util::{attr_val, local_name};
 use crate::error::{OoxmlError, OoxmlResult};
@@ -142,6 +143,13 @@ pub fn parse_styles(xml: &[u8]) -> OoxmlResult<DocxStyles> {
                             });
                         }
                     }
+                    b"tblBorders" if in_style && current_region.is_none() => {
+                        if let Ok(borders) = parse_tbl_borders(&mut reader)
+                            && let Some(t) = table_props_mut(&mut current_style)
+                        {
+                            t.tbl_borders = Some(borders);
+                        }
+                    }
                     b"tcPr" if in_style => in_tcpr = true,
                     b"shd" if in_style && in_tcpr => {
                         let fill = attr_val(e, b"fill");
@@ -192,108 +200,45 @@ fn table_props_mut(style: &mut Option<DocxStyle>) -> Option<&mut DocxTableStyleP
     style.as_mut().and_then(|s| s.table.as_mut())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const MINIMAL_STYLES: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
-<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:style w:type="paragraph" w:styleId="Normal" w:default="1">
-    <w:name w:val="Normal"/>
-  </w:style>
-  <w:style w:type="paragraph" w:styleId="Heading1">
-    <w:name w:val="heading 1"/>
-    <w:basedOn w:val="Normal"/>
-    <w:pPr><w:outlineLvl w:val="0"/></w:pPr>
-    <w:rPr><w:b/><w:sz w:val="32"/></w:rPr>
-  </w:style>
-  <w:style w:type="character" w:styleId="DefaultParagraphFont" w:default="1">
-    <w:name w:val="Default Paragraph Font"/>
-  </w:style>
-</w:styles>"#;
-
-    #[test]
-    fn parses_normal_style() {
-        let styles = parse_styles(MINIMAL_STYLES).unwrap();
-        assert!(
-            styles
-                .styles
-                .iter()
-                .any(|s| s.style_id == "Normal" && s.is_default)
-        );
+/// Parses a `w:tblBorders` element (six edges incl. interior gridlines).
+/// Called after its Start event; consumes through the matching End.
+fn parse_tbl_borders(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxTblBorders> {
+    let mut borders = DocxTblBorders::default();
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
+                let edge = DocxBorderEdge {
+                    val: attr_val(e, b"val").unwrap_or_default(),
+                    sz: attr_val(e, b"sz").and_then(|v| v.parse().ok()),
+                    color: attr_val(e, b"color"),
+                    space: attr_val(e, b"space").and_then(|v| v.parse().ok()),
+                };
+                match local_name(e.local_name().as_ref()) {
+                    b"top" => borders.top = Some(edge),
+                    b"bottom" => borders.bottom = Some(edge),
+                    b"left" | b"start" => borders.left = Some(edge),
+                    b"right" | b"end" => borders.right = Some(edge),
+                    b"insideH" => borders.inside_h = Some(edge),
+                    b"insideV" => borders.inside_v = Some(edge),
+                    _ => {}
+                }
+            }
+            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"tblBorders" => break,
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(OoxmlError::Xml {
+                    part: "word/styles.xml".into(),
+                    source: e,
+                });
+            }
+            _ => {}
+        }
+        buf.clear();
     }
-
-    #[test]
-    fn parses_heading1_based_on() {
-        let styles = parse_styles(MINIMAL_STYLES).unwrap();
-        let h1 = styles
-            .styles
-            .iter()
-            .find(|s| s.style_id == "Heading1")
-            .unwrap();
-        assert_eq!(h1.based_on.as_deref(), Some("Normal"));
-    }
-
-    #[test]
-    fn parses_character_style() {
-        let styles = parse_styles(MINIMAL_STYLES).unwrap();
-        assert!(
-            styles
-                .styles
-                .iter()
-                .any(|s| s.style_type == DocxStyleType::Character)
-        );
-    }
-
-    const TABLE_STYLE: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
-<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:style w:type="table" w:styleId="Banded">
-    <w:name w:val="Banded"/>
-    <w:tblPr>
-      <w:tblStyleRowBandSize w:val="2"/>
-      <w:tblStyleColBandSize w:val="1"/>
-    </w:tblPr>
-    <w:tcPr><w:shd w:val="clear" w:fill="FFFFFF"/></w:tcPr>
-    <w:tblStylePr w:type="firstRow">
-      <w:rPr><w:b/></w:rPr>
-      <w:tcPr><w:shd w:val="clear" w:fill="4472C4"/></w:tcPr>
-    </w:tblStylePr>
-    <w:tblStylePr w:type="band1Horz">
-      <w:tcPr><w:shd w:val="clear" w:fill="D9E2F3"/></w:tcPr>
-    </w:tblStylePr>
-  </w:style>
-</w:styles>"#;
-
-    #[test]
-    fn parses_table_style_banding() {
-        let styles = parse_styles(TABLE_STYLE).unwrap();
-        let t = styles
-            .styles
-            .iter()
-            .find(|s| s.style_id == "Banded")
-            .and_then(|s| s.table.as_ref())
-            .expect("table props parsed");
-        assert_eq!(t.row_band_size, Some(2));
-        assert_eq!(t.col_band_size, Some(1));
-        assert_eq!(t.base_shd_fill.as_deref(), Some("FFFFFF"));
-        assert_eq!(t.conditional.len(), 2);
-        let first_row = t
-            .conditional
-            .iter()
-            .find(|c| c.region == "firstRow")
-            .unwrap();
-        assert_eq!(first_row.shd_fill.as_deref(), Some("4472C4"));
-        let band = t
-            .conditional
-            .iter()
-            .find(|c| c.region == "band1Horz")
-            .unwrap();
-        assert_eq!(band.shd_fill.as_deref(), Some("D9E2F3"));
-    }
-
-    #[test]
-    fn non_table_style_has_no_table_props() {
-        let styles = parse_styles(MINIMAL_STYLES).unwrap();
-        assert!(styles.styles.iter().all(|s| s.table.is_none()));
-    }
+    Ok(borders)
 }
+
+#[cfg(test)]
+#[path = "styles_tests.rs"]
+mod tests;

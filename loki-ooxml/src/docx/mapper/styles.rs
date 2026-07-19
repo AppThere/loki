@@ -9,6 +9,7 @@ use loki_doc_model::style::char_style::CharacterStyle;
 use loki_doc_model::style::para_style::ParagraphStyle;
 use loki_doc_model::style::props::char_props::CharProps;
 use loki_doc_model::style::props::para_props::ParaProps;
+use loki_doc_model::style::table_borders::TableBorders;
 use loki_doc_model::style::table_style::{
     TableConditionalFormat, TableProps, TableRegion, TableStyle,
 };
@@ -223,10 +224,16 @@ fn shd_color(fill: Option<&str>) -> Option<DocumentColor> {
 fn map_table_style_props(
     t: &DocxTableStyleProps,
 ) -> (TableProps, IndexMap<TableRegion, TableConditionalFormat>) {
+    let borders = t
+        .tbl_borders
+        .as_ref()
+        .map(map_tbl_borders)
+        .filter(|b| !b.is_empty());
     let table_props = TableProps {
         background_color: shd_color(t.base_shd_fill.as_deref()),
         row_band_size: t.row_band_size,
         col_band_size: t.col_band_size,
+        borders,
         ..TableProps::default()
     };
     let mut conditional = IndexMap::new();
@@ -252,6 +259,26 @@ fn map_table_style_props(
         );
     }
     (table_props, conditional)
+}
+
+/// Maps a parsed `w:tblBorders` set to the doc-model [`TableBorders`], dropping
+/// edges that are absent or explicitly `none`/`nil` (they draw nothing).
+fn map_tbl_borders(b: &crate::docx::model::styles::DocxTblBorders) -> TableBorders {
+    use crate::docx::model::paragraph::DocxBorderEdge;
+    use loki_doc_model::style::props::border::BorderStyle;
+    let edge = |e: &Option<DocxBorderEdge>| {
+        e.as_ref()
+            .map(super::props::map_border_edge)
+            .filter(|bd| bd.style != BorderStyle::None)
+    };
+    TableBorders {
+        top: edge(&b.top),
+        left: edge(&b.left),
+        bottom: edge(&b.bottom),
+        right: edge(&b.right),
+        inside_h: edge(&b.inside_h),
+        inside_v: edge(&b.inside_v),
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

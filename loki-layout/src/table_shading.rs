@@ -9,7 +9,7 @@
 
 use loki_doc_model::StyleCatalog;
 use loki_doc_model::content::table::core::Table;
-use loki_doc_model::style::{StyleId, TableLook, TableStyle, resolve_cell_shading};
+use loki_doc_model::style::{CellEdges, StyleId, TableLook, TableStyle, resolve_cell_shading};
 use loki_primitives::color::DocumentColor;
 
 /// The named table style a table references, if any, resolved against the
@@ -63,6 +63,25 @@ pub fn cell_style_shading_cnf(
             .and_then(|s| loki_doc_model::style::table_banding::resolve_cell_shading_cnf(s, &cnf));
     }
     cell_style_shading(style, look, row, col, rows, cols)
+}
+
+/// The `(top, right, bottom, left)` borders a table style contributes to the
+/// cell at `(row, col)` in a `rows`×`cols` grid — an outer edge on the table
+/// boundary, otherwise the interior gridline for that axis. Each edge is `None`
+/// where the style leaves it unset, so a caller can fall back to it only when a
+/// direct cell border is absent. This is how a *Table Grid* style paints a full
+/// grid even though the cells carry no explicit borders.
+pub fn cell_style_borders(
+    style: Option<&TableStyle>,
+    row: usize,
+    col: usize,
+    rows: usize,
+    cols: usize,
+) -> CellEdges {
+    style
+        .and_then(|s| s.table_props.borders.as_ref())
+        .map(|b| b.edges_for(row, col, rows, cols))
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

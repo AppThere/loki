@@ -78,6 +78,49 @@ fn no_style_means_no_shading() {
 }
 
 #[test]
+fn cell_style_borders_resolve_the_grid_from_a_table_grid_style() {
+    use loki_doc_model::style::TableBorders;
+    use loki_doc_model::style::props::border::{Border, BorderStyle};
+
+    let hair = Some(Border {
+        style: BorderStyle::Solid,
+        width: loki_primitives::units::Points::new(0.5),
+        color: None,
+        spacing: None,
+    });
+    let mut style = styled("Grid", TableRegion::FirstRow, rgb(1, 2, 3));
+    style.table_props.borders = Some(TableBorders {
+        top: hair.clone(),
+        left: hair.clone(),
+        bottom: hair.clone(),
+        right: hair.clone(),
+        inside_h: hair.clone(),
+        inside_v: hair.clone(),
+    });
+
+    // Every cell of a Table-Grid table gets all four edges (outer or interior),
+    // so the whole grid is drawn.
+    for (row, col) in [(0, 0), (1, 1), (2, 2)] {
+        let (t, r, b, l) = cell_style_borders(Some(&style), row, col, 3, 3);
+        assert!(
+            t.is_some() && r.is_some() && b.is_some() && l.is_some(),
+            "cell ({row},{col}) should have all four grid edges"
+        );
+    }
+
+    // No style, or a style without a border set → no edges.
+    assert_eq!(
+        cell_style_borders(None, 0, 0, 3, 3),
+        (None, None, None, None)
+    );
+    let plain = styled("Plain", TableRegion::FirstRow, rgb(1, 2, 3));
+    assert_eq!(
+        cell_style_borders(Some(&plain), 0, 0, 3, 3),
+        (None, None, None, None)
+    );
+}
+
+#[test]
 fn table_look_reads_the_encoded_attr_or_defaults() {
     use loki_doc_model::content::table::core::Table;
 

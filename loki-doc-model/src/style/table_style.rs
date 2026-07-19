@@ -10,6 +10,7 @@
 use crate::content::attr::ExtensionBag;
 use crate::style::catalog::StyleId;
 use crate::style::props::border::Border;
+use crate::style::table_borders::TableBorders;
 use indexmap::IndexMap;
 use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
@@ -64,6 +65,12 @@ pub struct TableProps {
     pub cell_spacing: Option<Points>,
     /// Default outside border for all table edges.
     pub border: Option<Border>,
+    /// The six-sided table border set (`w:tblBorders`): the four outer edges
+    /// plus the interior horizontal/vertical gridlines. This is what a built-in
+    /// style like *Table Grid* uses to draw a full grid; [`border`] only covers
+    /// the outer edges. `None` inherits.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub borders: Option<TableBorders>,
     /// Background color of the table.
     pub background_color: Option<DocumentColor>,
     /// Number of rows in each horizontal band. OOXML
@@ -243,58 +250,5 @@ pub struct TableStyle {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn table_style_default_props() {
-        let style = TableStyle {
-            id: StyleId("TableGrid".into()),
-            display_name: Some("Table Grid".into()),
-            parent: None,
-            table_props: TableProps::default(),
-            conditional: IndexMap::new(),
-            extensions: ExtensionBag::default(),
-        };
-        assert!(style.table_props.width.is_none());
-        assert!(style.table_props.border.is_none());
-        assert!(style.conditional.is_empty());
-    }
-
-    #[test]
-    fn default_table_look_matches_word_04a0() {
-        let look = TableLook::default();
-        assert!(look.first_row);
-        assert!(look.first_column);
-        assert!(look.horizontal_banding);
-        assert!(!look.last_row);
-        assert!(!look.last_column);
-        assert!(!look.vertical_banding);
-    }
-
-    #[test]
-    fn table_look_attr_round_trips() {
-        for look in [
-            TableLook::default(),
-            TableLook {
-                first_row: false,
-                last_row: true,
-                first_column: false,
-                last_column: true,
-                horizontal_banding: false,
-                vertical_banding: true,
-            },
-        ] {
-            assert_eq!(TableLook::decode_attr(&look.encode_attr()), Some(look));
-        }
-        assert_eq!(TableLook::default().encode_attr(), "101010");
-    }
-
-    #[test]
-    fn table_look_decode_rejects_malformed() {
-        assert_eq!(TableLook::decode_attr(""), None);
-        assert_eq!(TableLook::decode_attr("10101"), None);
-        assert_eq!(TableLook::decode_attr("1010102"), None);
-        assert_eq!(TableLook::decode_attr("10101x"), None);
-    }
-}
+#[path = "table_style_tests.rs"]
+mod tests;
