@@ -225,6 +225,14 @@ pub(super) fn auto_open_entries(view: &MacroView, dialect: Dialect) -> Vec<ProcE
         .collect()
 }
 
+/// The runnable procedure named `name` (case-insensitive) among `view`'s modules
+/// — the target of a MACROBUTTON click (spec §6).
+pub(super) fn entry_by_name(view: &MacroView, dialect: Dialect, name: &str) -> Option<ProcEntry> {
+    collect_procs(view, dialect)
+        .into_iter()
+        .find(|e| e.proc.eq_ignore_ascii_case(name))
+}
+
 /// Resolved i18n strings for run outcomes.
 fn run_messages() -> RunMessages {
     RunMessages {

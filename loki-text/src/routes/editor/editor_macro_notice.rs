@@ -101,7 +101,12 @@ fn project_name(payload: &MacroPayload) -> String {
 /// Touch targets: all controls meet the 44×44 logical-pixel minimum (WCAG
 /// 2.5.8) via [`AtInfobar`] and the panel/dialog control sizing.
 #[component]
-pub(super) fn MacroNoticeBar(ctx: MacroCtx, loro_doc: Signal<Option<loro::LoroDoc>>) -> Element {
+pub(super) fn MacroNoticeBar(
+    ctx: MacroCtx,
+    loro_doc: Signal<Option<loro::LoroDoc>>,
+    // `macro_run_request`: a proc name set by a MACROBUTTON click (spec §6).
+    macro_run_request: Signal<Option<String>>,
+) -> Element {
     let svc = use_context::<MacroService>();
     let mut dismissed = use_signal(|| false);
     let mut view = use_signal(|| None::<MacroView>);
@@ -109,6 +114,7 @@ pub(super) fn MacroNoticeBar(ctx: MacroCtx, loro_doc: Signal<Option<loro::LoroDo
     let mut panel_open = use_signal(|| false);
     let mut runner = use_signal(|| None::<MacroView>);
     let mut runner_auto = use_signal(|| false);
+    let mut run_proc = use_signal(|| None::<String>);
 
     // Auto-run on-open handlers when a newly-opened document authorizes it
     // (spec §5.6). Reads `loro_doc` so the effect re-runs when a document loads;
@@ -131,6 +137,33 @@ pub(super) fn MacroNoticeBar(ctx: MacroCtx, loro_doc: Signal<Option<loro::LoroDo
                         runner_auto.set(true);
                     }
                 }
+            }
+        });
+    }
+
+    // Dispatch a MACROBUTTON click (spec §6): when the document's macros are
+    // enabled, open the runner on the named procedure through the normal gated
+    // path; when disabled, prompt to enable first — a document the user has not
+    // trusted never runs a macro from a click.
+    {
+        let ctx_click = ctx.clone();
+        let svc_click = svc.clone();
+        let mut request = macro_run_request;
+        use_effect(move || {
+            if let Some(name) = request() {
+                if let Some(payload) = payload_of(&ctx_click.0) {
+                    if svc_click.decision_for(&payload).is_enabled() {
+                        let v = super::editor_macro_extract::extract_view(&payload);
+                        if !v.modules.is_empty() {
+                            runner_auto.set(false);
+                            run_proc.set(Some(name));
+                            runner.set(Some(v));
+                        }
+                    } else {
+                        trust_open.set(true);
+                    }
+                }
+                request.set(None);
             }
         });
     }
@@ -225,9 +258,11 @@ pub(super) fn MacroNoticeBar(ctx: MacroCtx, loro_doc: Signal<Option<loro::LoroDo
                 project: project.clone(),
                 doc_title: title.clone(),
                 auto_fire: runner_auto(),
+                run_proc: run_proc(),
                 on_close: move |()| {
                     runner.set(None);
                     runner_auto.set(false);
+                    run_proc.set(None);
                 },
             }
         }

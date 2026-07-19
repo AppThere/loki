@@ -49,7 +49,7 @@ use super::editor_scrollbar::{
 };
 use super::editor_spell::{SpellMenu, resolve_spell_menu};
 use crate::editing::cursor::{CursorState, DocumentPosition};
-use crate::editing::hit_test::open_hyperlink_at;
+use crate::editing::hit_test::{link_at_point, open_or_run};
 use crate::editing::{hit_test::hit_test_page, state::DocumentState, touch::TouchInteractionState};
 use crate::error::LoadError;
 
@@ -139,6 +139,9 @@ pub(super) fn render_canvas_area(
     spell_menu: Signal<Option<SpellMenu>>,
     doc_state_context: Arc<std::sync::Mutex<DocumentState>>,
     zoom_percent: Signal<u32>,
+    // `macro_run_request`: set to the proc name when a MACROBUTTON (`loki-macro:`
+    // link) is clicked, so `editor_macro_notice` dispatches a gated run (§6).
+    macro_run_request: Signal<Option<String>>,
 ) -> Element {
     rsx! {
         // Outer wrapper: the editor column's flex:1 slot — scroll viewport
@@ -358,8 +361,11 @@ pub(super) fn render_canvas_area(
                                     state.paginated_layout.clone()
                                 };
                                 let Some(layout) = layout_opt else { return };
-                                if open_link && open_hyperlink_at(&layout, page_index, x_pt, y_pt) {
-                                    return; // Ctrl/Cmd+click opened a hyperlink; no caret move.
+                                if open_link
+                                    && let Some(url) = link_at_point(&layout, page_index, x_pt, y_pt)
+                                {
+                                    open_or_run(&url, macro_run_request);
+                                    return; // Ctrl/Cmd+click hit a link/button; no caret move.
                                 }
                                 let Some(pos) = hit_test_page(page_index, x_pt, y_pt, &layout)
                                 else {
@@ -389,7 +395,7 @@ pub(super) fn render_canvas_area(
                             },
                             // Reflow Ctrl/Cmd+click on a link (URL already resolved).
                             on_open_link: move |url: String| {
-                                let _ = webbrowser::open(&url);
+                                open_or_run(&url, macro_run_request);
                             },
                             // Reflow drag-select: move only the focus, keeping the
                             // anchor so a range selection grows under the pointer.

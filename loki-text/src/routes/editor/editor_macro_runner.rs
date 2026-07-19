@@ -25,8 +25,8 @@ use super::editor_macro_notice::{MacroCtx, MacroView, payload_of};
 use super::editor_macro_prompt::{MacroPromptView, PromptKind};
 use super::editor_macro_run::RunReport;
 use super::editor_macro_runner_ops::{
-    RunState, answer_prompt, auto_open_entries, btn_style, collect_procs, report_style,
-    start_auto_run, start_run, stop_run,
+    RunState, answer_prompt, auto_open_entries, btn_style, collect_procs, entry_by_name,
+    report_style, start_auto_run, start_run, stop_run,
 };
 
 /// The macro runner panel.
@@ -43,6 +43,9 @@ pub(super) fn MacroRunnerPanel(
     project: String,
     doc_title: String,
     #[props(default)] auto_fire: bool,
+    // `run_proc`: when set (a MACROBUTTON click, spec §6), run this named
+    // procedure once on mount through the normal gated path (doc already enabled).
+    #[props(default)] run_proc: Option<String>,
     on_close: EventHandler<()>,
 ) -> Element {
     let svc = use_context::<loki_macro_host::MacroService>();
@@ -59,17 +62,22 @@ pub(super) fn MacroRunnerPanel(
         cancel,
     } = state;
 
-    // Auto-fire the first on-open handler exactly once (spec §5.6). `use_hook`
-    // runs on the initial mount only; `start_auto_run` re-clears the auth gate.
+    // Fire once on mount: an on-open handler (auto-run, spec §5.6, token-gated) or
+    // a MACROBUTTON's named procedure (§6, normal gated path). `use_hook` runs on
+    // the initial mount only.
     {
         let ctx_auto = ctx.clone();
         let svc_auto = svc.clone();
         let view_auto = view.clone();
         use_hook(move || {
-            if auto_fire
-                && let Some(entry) = auto_open_entries(&view_auto, dialect).into_iter().next()
+            if auto_fire {
+                if let Some(entry) = auto_open_entries(&view_auto, dialect).into_iter().next() {
+                    start_auto_run(&ctx_auto, loro_doc, &svc_auto, dialect, &entry, state);
+                }
+            } else if let Some(name) = run_proc
+                && let Some(entry) = entry_by_name(&view_auto, dialect, &name)
             {
-                start_auto_run(&ctx_auto, loro_doc, &svc_auto, dialect, &entry, state);
+                start_run(&ctx_auto, loro_doc, &svc_auto, dialect, &entry, state);
             }
         });
     }

@@ -138,6 +138,8 @@ pub(super) fn EditorInner(path: String) -> Element {
     let editing_page_style = use_signal(|| Option::<String>::None);
     // Compact style-panel pane (Spec 05 M7 §11): Inspect vs Edit; ignored ≥Medium.
     let style_panel_inspect = use_signal(|| false);
+    // Proc name requested by a MACROBUTTON click, consumed by MacroNoticeBar (§6).
+    let macro_run_request = use_signal(|| Option::<String>::None);
     // Stashed sessions for inactive tabs — unsaved edits survive tab switches.
     let doc_sessions = use_context::<Signal<DocSessions>>();
     // "Clean" generation (matches disk), captured at load/save; tab is dirty when live gen differs.
@@ -255,10 +257,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     // ── Document load — reactive on path_signal ───────────────────────────────
     let document_load: Resource<(String, Result<Document, LoadError>)> = use_resource(move || {
         let p = path_signal();
-        async move {
-            let res = load_document(p.clone());
-            (p, res)
-        }
+        async move { (p.clone(), load_document(p)) }
     });
 
     // Repair banner: self-contained hook (detection + state + mount).
@@ -572,6 +571,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                 spell_menu,
                 doc_state_spell_ctx,
                 zoom_percent,
+                macro_run_request,
             )}
 
             // ── Font-substitution detail panel (Spec 03 M3, inverted) ─────────
@@ -582,7 +582,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                 substitutions: font_substitutions.clone(),
                 open: font_panel_open,
             }
-            super::editor_macro_notice::MacroNoticeBar { ctx: super::editor_macro_notice::MacroCtx(doc_state_ribbon.clone()), loro_doc }
+            super::editor_macro_notice::MacroNoticeBar { ctx: super::editor_macro_notice::MacroCtx(doc_state_ribbon.clone()), loro_doc, macro_run_request }
 
             // ── Colour-picker panel (inline, above ribbon) ────────────────────
             // Opened by the Format tab's Font colour / Highlight triggers.

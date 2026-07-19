@@ -209,4 +209,14 @@ mod tests {
             panic!("expected Raw variant");
         }
     }
+
+    #[test]
+    fn macro_button_yields_macro_link_others_none() {
+        let btn = FieldKind::MacroButton {
+            macro_name: "RunReport".into(),
+            display: "Run".into(),
+        };
+        assert_eq!(btn.macro_link().as_deref(), Some("loki-macro:RunReport"));
+        assert_eq!(FieldKind::PageNumber.macro_link(), None);
+    }
 }
