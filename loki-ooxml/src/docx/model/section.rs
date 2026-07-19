@@ -30,6 +30,20 @@ pub struct DocxSectPr {
     /// (`continuous`, `nextPage`, `evenPage`, `oddPage`). `None` = `nextPage`
     /// (ECMA-376 §17.6.22).
     pub section_type: Option<String>,
+    /// Page borders from `w:pgBorders` (ECMA-376 §17.6.10).
+    pub pg_borders: Option<DocxPgBorders>,
+}
+
+/// `w:pgBorders` — decorative border drawn around each page (ECMA-376 §17.6.10).
+#[derive(Debug, Clone, Default)]
+pub struct DocxPgBorders {
+    pub top: Option<super::paragraph::DocxBorderEdge>,
+    pub bottom: Option<super::paragraph::DocxBorderEdge>,
+    pub left: Option<super::paragraph::DocxBorderEdge>,
+    pub right: Option<super::paragraph::DocxBorderEdge>,
+    /// `@w:offsetFrom` — `"text"` insets each edge from the text area; the
+    /// default `"page"` (or absent) insets from the physical page edge.
+    pub offset_from_text: bool,
 }
 
 /// `w:cols` multi-column section layout (ECMA-376 §17.6.4).

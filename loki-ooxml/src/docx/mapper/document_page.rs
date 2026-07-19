@@ -12,7 +12,9 @@ use std::collections::HashMap;
 
 use loki_doc_model::content::block::Block;
 use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
-use loki_doc_model::layout::page::{PageLayout, PageMargins, PageOrientation, PageSize};
+use loki_doc_model::layout::page::{
+    PageBorders, PageLayout, PageMargins, PageOrientation, PageSize,
+};
 use loki_doc_model::layout::section::SectionStart;
 use loki_doc_model::style::list_style::NumberingScheme;
 use loki_primitives::units::Points;
@@ -83,7 +85,31 @@ fn map_page_layout(sect_pr: Option<&DocxSectPr>) -> PageLayout {
     layout.page_number_format = sp.pg_num_fmt.as_deref().map(map_page_num_fmt);
     layout.page_number_start = sp.pg_num_start;
 
+    layout.page_border = sp
+        .pg_borders
+        .as_ref()
+        .map(map_pg_borders)
+        .filter(|b| !b.is_empty());
+
     layout
+}
+
+/// Maps a parsed `w:pgBorders` set to the doc-model [`PageBorders`], dropping
+/// edges that are absent or explicitly `none`/`nil`.
+fn map_pg_borders(b: &crate::docx::model::section::DocxPgBorders) -> PageBorders {
+    use loki_doc_model::style::props::border::BorderStyle;
+    let edge = |e: &Option<crate::docx::model::paragraph::DocxBorderEdge>| {
+        e.as_ref()
+            .map(crate::docx::mapper::props::map_border_edge)
+            .filter(|bd| bd.style != BorderStyle::None)
+    };
+    PageBorders {
+        top: edge(&b.top),
+        left: edge(&b.left),
+        bottom: edge(&b.bottom),
+        right: edge(&b.right),
+        offset_from_text: b.offset_from_text,
+    }
 }
 
 /// Maps an OOXML `w:pgNumType @w:fmt` token to a [`NumberingScheme`].
@@ -166,4 +192,47 @@ pub(super) fn map_page_layout_with_hf(
     }
 
     layout
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::docx::model::paragraph::DocxBorderEdge;
+    use crate::docx::model::section::DocxPgBorders;
+
+    fn edge() -> DocxBorderEdge {
+        DocxBorderEdge {
+            val: "single".into(),
+            sz: Some(8),
+            color: Some("4472C4".into()),
+            space: Some(24),
+        }
+    }
+
+    #[test]
+    fn maps_page_borders_onto_the_layout() {
+        let sect = DocxSectPr {
+            pg_borders: Some(DocxPgBorders {
+                top: Some(edge()),
+                bottom: Some(edge()),
+                left: Some(edge()),
+                right: Some(edge()),
+                offset_from_text: false,
+            }),
+            ..Default::default()
+        };
+        let layout = map_page_layout(Some(&sect));
+        let pb = layout.page_border.expect("page border mapped");
+        assert!(pb.top.is_some() && pb.left.is_some() && pb.bottom.is_some() && pb.right.is_some());
+        assert!(!pb.offset_from_text);
+    }
+
+    #[test]
+    fn all_none_edges_map_to_no_border() {
+        let sect = DocxSectPr {
+            pg_borders: Some(DocxPgBorders::default()),
+            ..Default::default()
+        };
+        assert!(map_page_layout(Some(&sect)).page_border.is_none());
+    }
 }

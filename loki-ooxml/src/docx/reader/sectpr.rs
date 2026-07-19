@@ -10,7 +10,10 @@
 
 use quick_xml::{Reader, events::Event};
 
-use crate::docx::model::paragraph::{DocxCols, DocxHdrFtrRef, DocxPgMar, DocxPgSz, DocxSectPr};
+use crate::docx::model::paragraph::{
+    DocxBorderEdge, DocxCols, DocxHdrFtrRef, DocxPgMar, DocxPgSz, DocxSectPr,
+};
+use crate::docx::model::section::DocxPgBorders;
 use crate::docx::reader::util::{attr_val, local_name};
 use crate::error::{OoxmlError, OoxmlResult};
 
@@ -107,6 +110,11 @@ pub(crate) fn parse_sect_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxSectP
                         // ECMA-376 §17.6.22: section start (continuous/next/even/odd).
                         sect.section_type = attr_val(e, b"val");
                     }
+                    b"pgBorders" => {
+                        let offset_from_text =
+                            attr_val(e, b"offsetFrom").as_deref() == Some("text");
+                        sect.pg_borders = Some(parse_pg_borders(reader, offset_from_text)?);
+                    }
                     _ => {}
                 }
             }
@@ -125,4 +133,95 @@ pub(crate) fn parse_sect_pr(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxSectP
         buf.clear();
     }
     Ok(sect)
+}
+
+/// Parses a `w:pgBorders` element (four page edges). Called after its Start
+/// event; consumes through the matching End. `@w:space` is in points here.
+fn parse_pg_borders(
+    reader: &mut Reader<&[u8]>,
+    offset_from_text: bool,
+) -> OoxmlResult<DocxPgBorders> {
+    let mut borders = DocxPgBorders {
+        offset_from_text,
+        ..Default::default()
+    };
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Empty(ref e) | Event::Start(ref e)) => {
+                let edge = DocxBorderEdge {
+                    val: attr_val(e, b"val").unwrap_or_default(),
+                    sz: attr_val(e, b"sz").and_then(|v| v.parse().ok()),
+                    color: attr_val(e, b"color"),
+                    space: attr_val(e, b"space").and_then(|v| v.parse().ok()),
+                };
+                match local_name(e.local_name().as_ref()) {
+                    b"top" => borders.top = Some(edge),
+                    b"bottom" => borders.bottom = Some(edge),
+                    b"left" => borders.left = Some(edge),
+                    b"right" => borders.right = Some(edge),
+                    _ => {}
+                }
+            }
+            Ok(Event::End(ref e)) if local_name(e.local_name().as_ref()) == b"pgBorders" => break,
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(OoxmlError::Xml {
+                    part: "word/document.xml".into(),
+                    source: e,
+                });
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok(borders)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Runs `parse_sect_pr` over a `w:sectPr` fragment (advancing past its
+    /// opening tag first, which the caller normally consumes).
+    fn parse(xml: &str) -> DocxSectPr {
+        let mut reader = Reader::from_reader(xml.as_bytes());
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf).unwrap() {
+                Event::Start(ref e) if local_name(e.local_name().as_ref()) == b"sectPr" => break,
+                Event::Eof => panic!("no sectPr"),
+                _ => {}
+            }
+        }
+        parse_sect_pr(&mut reader).unwrap()
+    }
+
+    #[test]
+    fn parses_page_borders() {
+        let xml = r#"<w:sectPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+          <w:pgSz w:w="12240" w:h="15840"/>
+          <w:pgBorders w:offsetFrom="page">
+            <w:top w:val="single" w:sz="8" w:space="24" w:color="4472C4"/>
+            <w:left w:val="single" w:sz="8" w:space="24" w:color="4472C4"/>
+            <w:bottom w:val="single" w:sz="8" w:space="24" w:color="4472C4"/>
+            <w:right w:val="single" w:sz="8" w:space="24" w:color="4472C4"/>
+          </w:pgBorders>
+        </w:sectPr>"#;
+        let pb = parse(xml).pg_borders.expect("pg_borders parsed");
+        assert!(pb.top.is_some() && pb.left.is_some() && pb.bottom.is_some() && pb.right.is_some());
+        assert!(!pb.offset_from_text, "offsetFrom=page → not from text");
+        let top = pb.top.as_ref().unwrap();
+        assert_eq!(top.space, Some(24));
+        assert_eq!(top.sz, Some(8));
+    }
+
+    #[test]
+    fn offset_from_text_is_captured() {
+        let xml = r#"<w:sectPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+          <w:pgBorders w:offsetFrom="text"><w:top w:val="single" w:sz="4" w:space="1"/></w:pgBorders>
+        </w:sectPr>"#;
+        let pb = parse(xml).pg_borders.expect("pg_borders");
+        assert!(pb.offset_from_text);
+    }
 }

@@ -12,7 +12,31 @@
 use crate::content::attr::ExtensionBag;
 use crate::layout::header_footer::HeaderFooter;
 use crate::style::list_style::NumberingScheme;
+use crate::style::props::border::Border;
 use loki_primitives::units::Points;
+
+/// A decorative border drawn around each page of a section (`w:pgBorders`,
+/// ECMA-376 §17.6.10). ODF: `style:page-layout` border properties.
+#[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PageBorders {
+    pub top: Option<Border>,
+    pub left: Option<Border>,
+    pub bottom: Option<Border>,
+    pub right: Option<Border>,
+    /// `true` when `@w:offsetFrom="text"` (each edge is inset from the text/margin
+    /// area). `false` (the default `="page"`) insets from the physical page edge.
+    /// Each edge's inset distance is carried in its [`Border::spacing`] (points).
+    pub offset_from_text: bool,
+}
+
+impl PageBorders {
+    /// `true` when no edge is set.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.top.is_none() && self.left.is_none() && self.bottom.is_none() && self.right.is_none()
+    }
+}
 
 /// Page orientation.
 ///
@@ -175,6 +199,10 @@ pub struct PageLayout {
     /// Page-number restart value for this section (OOXML `w:pgNumType @w:start`).
     /// `None` = continue numbering from the previous section.
     pub page_number_start: Option<u32>,
+    /// Decorative border drawn around each page of the section (`w:pgBorders`).
+    /// `None` = no page border.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub page_border: Option<PageBorders>,
     /// Format-specific extension data.
     pub extensions: ExtensionBag,
 }

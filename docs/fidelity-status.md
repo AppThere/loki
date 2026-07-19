@@ -274,12 +274,23 @@ tab-only styled run — see **Tab Stops**), and two **keep-with-next** content-d
 bugs (a `keepNext` caption dropping its following table; a `keepNext` figure
 paragraph dropping its inline image — see **keep-with-next**).
 
+**Fixed against this golden** (2026-07-19): `Calibri Light` (heading/title face)
+now resolves to the bundled metric-compatible **Carlito** so headings/titles wrap
+like Word (and the exported PDF shrank ~11 MB → ~345 KB with a clean embed);
+**table-style (`w:tblStyle`) borders** now render (the *Table Grid* grid, incl.
+interior `insideH`/`insideV`); and **page borders (`w:pgBorders`)** now render —
+the DOCX reader parses `w:pgBorders` (four edges + `@w:offsetFrom`), the mapper
+carries it as `PageLayout.page_border`, and `flow_headers` emits a page-local
+border rect around each page of the section (scoped correctly: only the appendix
+section draws its frame). Tested by `parses_page_borders`/`maps_page_borders_*`.
+
 **Gaps it currently surfaces** (candidate golden-diff regions; not yet fixed):
-table-style (`w:tblStyle`) borders not applied; decimal tab stops *inside* table
+decimal tab stops *inside* table
 cells don't advance; floating text boxes (`wps` shapes with text) not rendered;
-page borders (`w:pgBorders`) and line numbering (`w:lnNumType`) not rendered;
-pattern/gradient cell shading approximated as flat/blank; run text effects
-(emboss/imprint/shadow) and character borders (`w:bdr`) not rendered;
+line numbering (`w:lnNumType`) not rendered; a footnote referenced from a
+keep-with-next paragraph is dropped (and Loki does not reserve page-bottom
+footnote space); pattern/gradient cell shading approximated as flat/blank; run
+text effects (emboss/imprint/shadow) and character borders (`w:bdr`) not rendered;
 `w:noBreakHyphen`/`w:softHyphen` produce no glyph; a block-stacked inline image is
 left-aligned rather than honouring the paragraph's `w:jc`; header/footer
 references are not **inherited** across section breaks (the fixture declares them
