@@ -141,6 +141,7 @@ pub(super) fn compute_tab_plans(
     x_dec: &[f32],
     x_end: f32,
     line_end: usize,
+    line_w: f32,
 ) -> Vec<TabPlan> {
     let n = x_tab.len();
     let mut plans = Vec::with_capacity(n);
@@ -178,7 +179,23 @@ pub(super) fn compute_tab_plans(
             _ => 0.0,
         };
 
-        let width = (stop.position - offset - final_tab_x).max(0.0);
+        let mut width = (stop.position - offset - final_tab_x).max(0.0);
+
+        // Keep aligned column content (decimal/right/centre — atomic runs like a
+        // currency amount) within `line_w`: a stop near the line end (e.g. a
+        // decimal stop in a narrow cell) would otherwise expand the tab past the
+        // edge, so Parley wraps the run to the next line and loses the
+        // alignment. Cap the expansion so the run's right edge lands at the edge
+        // (right-aligned there). Left tabs are excluded — their content is
+        // flowing text that *should* wrap.
+        let aligned = matches!(
+            stop.alignment,
+            TabAlignment::Decimal | TabAlignment::Right | TabAlignment::Center
+        );
+        if content_w > 0.0 && aligned {
+            width = width.min((line_w - final_tab_x - content_w).max(0.0));
+        }
+
         plans.push(TabPlan {
             width,
             leader: stop.leader,
@@ -276,5 +293,6 @@ pub(super) fn measure_tab_plans(
         &x_dec,
         x_end,
         line_end,
+        line_w,
     )
 }

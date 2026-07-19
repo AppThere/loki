@@ -1732,3 +1732,30 @@ fn line_end_offset_read_only_returns_none() {
         "line_end_offset must return None in read-only mode"
     );
 }
+
+#[test]
+fn decimal_tab_clamps_to_line_when_content_would_overflow() {
+    use loki_doc_model::style::props::tab_stop::{TabAlignment, TabLeader};
+    let stops = vec![ResolvedTabStop {
+        position: 126.0,
+        alignment: TabAlignment::Decimal,
+        leader: TabLeader::None,
+    }];
+    // Leading tab at x=0; the amount's decimal sits 34.4 in, its run ends at
+    // 53.4. On a narrow line (133) the natural decimal expansion (126-34.4=91.6)
+    // would push the run to 145 > 133 and Parley would wrap it, losing the
+    // alignment — so it clamps to right-align the run against the edge.
+    let narrow = tabs::compute_tab_plans(&stops, 0.0, 36.0, &[0.0], &[0], &[34.4], 53.4, 0, 133.0);
+    assert!(
+        (narrow[0].width - (133.0 - 53.4)).abs() < 0.2,
+        "narrow line clamps to the edge: {}",
+        narrow[0].width
+    );
+    // On a wide line (468) the run fits, so the full decimal expansion is kept.
+    let wide = tabs::compute_tab_plans(&stops, 0.0, 36.0, &[0.0], &[0], &[34.4], 53.4, 0, 468.0);
+    assert!(
+        (wide[0].width - (126.0 - 34.4)).abs() < 0.2,
+        "wide line is unclamped (true decimal align): {}",
+        wide[0].width
+    );
+}

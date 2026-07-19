@@ -283,10 +283,15 @@ the DOCX reader parses `w:pgBorders` (four edges + `@w:offsetFrom`), the mapper
 carries it as `PageLayout.page_border`, and `flow_headers` emits a page-local
 border rect around each page of the section (scoped correctly: only the appendix
 section draws its frame). Tested by `parses_page_borders`/`maps_page_borders_*`.
+**Decimal (and right/centre) tab alignment inside narrow table cells** now holds:
+`compute_tab_plans` caps the tab expansion so an aligned "column" run (e.g. a
+currency amount whose decimal stop sits near the cell edge) right-aligns against
+the line end instead of overflowing → wrapping → losing its alignment (Parley
+wraps atomic runs that exceed `line_w`). The invoice amounts now align in a
+column like Word's; tested by `decimal_tab_clamps_to_line_when_content_would_overflow`.
 
 **Gaps it currently surfaces** (candidate golden-diff regions; not yet fixed):
-decimal tab stops *inside* table
-cells don't advance; floating text boxes (`wps` shapes with text) not rendered;
+floating text boxes (`wps` shapes with text) not rendered;
 line numbering (`w:lnNumType`) not rendered; a footnote referenced from a
 keep-with-next paragraph is dropped (and Loki does not reserve page-bottom
 footnote space); pattern/gradient cell shading approximated as flat/blank; run
