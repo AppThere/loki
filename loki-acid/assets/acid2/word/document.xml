@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- NOTE: child elements here are authored for readability, NOT in strict
+     CT_PPr/CT_RPr/… schema order. The gen_acid2_docx generator runs
+     loki_ooxml::repair_docx over the packaged bytes, which reorders them into
+     the ECMA-376 sequence Word requires. Don't hand-sort this file. -->
 <w:document
     xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
     xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"

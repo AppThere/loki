@@ -230,9 +230,25 @@ fn main() {
     core.creator = Some("AppThere Loki".into());
     core.subject = Some("Rendering parity stress test".into());
 
-    // ── Write the fixture + mirror it into the conformance corpus ───────────
+    // ── Normalise for Word, then write + mirror into the conformance corpus ──
+    // The reviewable source parts under `assets/acid2/` are authored in a
+    // convenient order, which is NOT necessarily the strict `xsd:sequence` order
+    // that Microsoft Word enforces on open (tolerant readers like Loki accept
+    // any order). Run Loki's own DOCX repair pass over the packaged bytes so the
+    // emitted fixture is schema-ordered and opens cleanly in Word — and so this
+    // generator dogfoods `loki_ooxml::repair_docx`.
+    let mut buf = std::io::Cursor::new(Vec::new());
+    pkg.write(&mut buf).expect("serialize package");
+    let (bytes, report) = loki_ooxml::repair_docx(&buf.into_inner()).expect("repair");
+    if !report.is_clean() {
+        println!(
+            "normalised {} out-of-order container(s) for Word compatibility",
+            report.findings.len()
+        );
+    }
+
     let asset = manifest.join("assets/acid2-docx.docx");
-    pkg.write_path(&asset).expect("write docx");
+    std::fs::write(&asset, &bytes).expect("write docx");
     let mirror = manifest.join("../appthere-conformance/fixtures/docx/acid2-docx.docx");
     std::fs::copy(&asset, &mirror).expect("mirror into fixtures");
 

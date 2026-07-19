@@ -315,3 +315,32 @@ with the `loki-i18n` multi-locale plan.
 | **Personal dictionary persistence** | Yes | Done (5.10, 2026-07-12): the personal word list persists as a JSON array at `<data dir>/AppThere/Loki/personal-dictionary.json` (Android-aware; `spell/personal_dict.rs`, mirroring the `recent_documents` load-or-empty / silent-write-failure pattern). `SpellService::bootstrap` replays the persisted words into the fresh checker, `add_word` saves the full list (`SpellChecker::personal_words()`, new), and `activate_language` replays the **in-memory** list into the newly parsed checker (the memory list is the truth — it includes adds whose save failed). Session `ignore_word` entries are deliberately not persisted. The path is injectable so tests never touch the user profile. Tested by `personal_word_survives_activate_language`, `personal_word_survives_a_restart`, the `personal_dict` unit tests, and `personal_words_lists_added_words_sorted_without_ignores` (`loki-spell`). |
 
 Coverage of the engine, dictionary, layout, and service layers is ~45 unit/integration tests (incl. a real load of the bundled `en` dictionary and a layout pass asserting squiggle emission).
+
+---
+
+## 12. DOCX Word-Compatibility Repair (`loki-ooxml::repair`)
+
+OOXML complex types are `xsd:sequence`s, so Microsoft Word rejects (or shows
+the "Word found unreadable content — recover?" prompt for) a `.docx` whose
+`w:pPr` / `w:rPr` / `w:sectPr` / `w:tcPr` / … children appear **out of schema
+order** — even though a tolerant, name-matching reader (Loki, LibreOffice) opens
+it fine. This is the dominant "Loki opens it, Word won't" asymmetry, and both
+hand-authored files and some tool exporters emit it routinely.
+
+| Capability | Status | Notes |
+| :--- | :---: | :--- |
+| **Detect** | Yes | `loki_ooxml::analyze_docx(&[u8]) -> RepairReport` walks every `WordprocessingML` part and reports each out-of-order container (part, element, offending child list). Non-destructive. |
+| **Repair** | Yes | `loki_ooxml::repair_docx(&[u8]) -> (Vec<u8>, RepairReport)` reorders children into the ECMA-376 sequence — a **lossless** transform (only element order changes; attributes, text, entities, comments, and constructs Loki cannot model are preserved verbatim). Backed by a tiny purpose-built XML DOM (`repair/dom.rs`) + the canonical order tables (`repair/order.rs`, covering `pPr`/`rPr`/`sectPr`/`tcPr`/`tblPr`/`trPr`/`lvl`/`style`/`abstractNum`). Conservative: a container holding a foreign element (`mc:AlternateContent`, `w14:*`) or a comment is left untouched. |
+| **CLI** | Yes | `loki-headless repair --in doc.docx [--check | --out fixed.docx]` — `--check` reports problems; `--out` writes a repaired copy. The user-facing "repair a malformed document with Loki" path. |
+| **Export canonicalisation** | Yes | Loki's own `DocxExport` did **not** emit all `pPr`/`rPr` children in schema order (e.g. `w:jc` before `w:spacing`, `w:color` after `w:sz`), so files Loki *saved* could themselves trip Word's repair prompt. The export assembly now runs the same canonicalisation pass as its final step (`docx/write/assembly.rs` → `repair::canonicalize_package`), so every DOCX Loki writes is schema-ordered. Regression-locked by `loki_export_is_word_schema_clean` (`tests/repair.rs`). |
+| **ACID 2 fixture** | Yes | The hand-authored `acid2-docx` parts are authored for readability, not schema order; `gen_acid2_docx` normalises them through `repair_docx` at build time so the committed fixture opens in Word. Guarded by `committed_fixture_has_no_ordering_violations` (`loki-acid/tests/acid2_word_valid.rs`). |
+
+**Scope.** The ordering axis only. Other corruption classes (dangling
+relationships, missing content-type overrides, malformed XML) are a different
+error class already surfaced by the OPC/import layer; extending `repair` to
+offer fixes for those is a natural follow-up. Tested by 9 unit tests
+(`repair/repair_tests.rs`, incl. entity/whitespace preservation and byte-exact
+round-trip of already-clean input) + 4 end-to-end tests (`tests/repair.rs`).
+**App integration (`loki-text` "offer to fix" prompt on open) is pending** — the
+detection/repair engine and CLI exist; wiring a document-open banner in the
+editor UI is the remaining step.

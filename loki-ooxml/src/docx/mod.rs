@@ -23,4 +23,5 @@ pub mod mapper;
 pub(crate) mod model;
 pub(crate) mod omml;
 pub(crate) mod reader;
+pub mod repair;
 pub(crate) mod write;

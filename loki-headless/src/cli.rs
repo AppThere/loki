@@ -22,8 +22,25 @@ pub enum Command {
     Render(ConvertArgs),
     /// Render a document to PDF and dispatch it to an IPP printer.
     Print(PrintArgs),
+    /// Detect and fix schema problems that stop a DOCX opening in Microsoft
+    /// Word (out-of-order elements a tolerant reader accepts but Word rejects).
+    Repair(RepairArgs),
     /// List the supported conversion pairs.
     Formats,
+}
+
+#[derive(Debug, Args)]
+pub struct RepairArgs {
+    /// Input `.docx` file to check or repair.
+    #[arg(long = "in", value_name = "FILE")]
+    pub input: PathBuf,
+    /// Output `.docx` file for the repaired document. Omit with nothing else to
+    /// just report; the file is only written when this is given.
+    #[arg(long = "out", value_name = "FILE")]
+    pub output: Option<PathBuf>,
+    /// Only report problems; never write an output file.
+    #[arg(long)]
+    pub check: bool,
 }
 
 #[derive(Debug, Args)]

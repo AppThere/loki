@@ -11,7 +11,9 @@ thiserror = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 loki-convert = { workspace = true }
 loki-print = { workspace = true }
+# The `repair` subcommand detects/fixes DOCX schema-ordering problems.
+loki-ooxml = { path = "../loki-ooxml", features = ["docx"] }
 
 [dev-dependencies]
 loki-doc-model = { path = "../loki-doc-model" }
-loki-ooxml = { path = "../loki-ooxml" }
+loki-ooxml = { path = "../loki-ooxml", features = ["docx"] }
