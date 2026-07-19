@@ -95,6 +95,21 @@ pub enum FieldKind {
         format: CrossRefFormat,
     },
 
+    /// A Word `MACROBUTTON` field — a control-assigned macro (macro spec §6).
+    ///
+    /// Clicking it is meant to run `macro_name`. The document only carries the
+    /// **assignment**; execution is gated by the same trust rules as any macro
+    /// (disabled by default for documents the user did not author, spec §2), so
+    /// modelling the button never implies running it. `display` is the button's
+    /// visible label. OOXML: `MACROBUTTON <macro> <display>`. ODF has no direct
+    /// equivalent.
+    MacroButton {
+        /// The assigned macro/procedure name.
+        macro_name: String,
+        /// The button's visible label text.
+        display: String,
+    },
+
     /// A field whose instruction string cannot be mapped to a known kind.
     ///
     /// Stored verbatim for lossless round-trips within the same format.

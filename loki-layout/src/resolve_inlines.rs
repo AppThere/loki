@@ -187,6 +187,9 @@ pub(super) fn field_display_text(f: &Field) -> String {
         }
         FieldKind::WordCount => String::new(),
         FieldKind::CrossReference { .. } => String::new(),
+        // A MACROBUTTON renders its visible label (macro spec §6); the macro is
+        // never run from layout.
+        FieldKind::MacroButton { display, .. } => display.clone(),
         FieldKind::Raw { .. } => String::new(),
         _ => String::new(),
     }

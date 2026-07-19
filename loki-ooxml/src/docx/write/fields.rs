@@ -81,6 +81,16 @@ fn field_instruction(kind: &FieldKind) -> String {
             CrossRefFormat::Page => format!("PAGEREF {target}"),
             _ => format!("REF {target}"),
         },
+        FieldKind::MacroButton {
+            macro_name,
+            display,
+        } => {
+            if display.is_empty() {
+                format!("MACROBUTTON {macro_name}")
+            } else {
+                format!("MACROBUTTON {macro_name} {display}")
+            }
+        }
         FieldKind::Raw { instruction } => instruction.clone(),
         // `FieldKind` is `#[non_exhaustive]`; an unknown future variant has no
         // known instruction string and is skipped by the caller.
