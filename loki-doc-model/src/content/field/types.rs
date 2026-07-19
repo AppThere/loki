@@ -12,6 +12,13 @@
 
 use crate::content::attr::ExtensionBag;
 
+/// The pseudo-URL scheme an editor uses to route a `MACROBUTTON` click to the
+/// trust-gated macro runner (macro spec §6). A layout run for a
+/// [`FieldKind::MacroButton`] carries `"<scheme><macro name>"` as its link URL;
+/// the editor recognises the scheme in its hyperlink click path and dispatches
+/// the run **instead of** opening a browser. It is never a real URL.
+pub const MACRO_LINK_SCHEME: &str = "loki-macro:";
+
 /// The display format for a cross-reference field.
 ///
 /// TR 29166 §5.2.19. ODF `text:reference-format`;
@@ -144,6 +151,21 @@ pub struct Field {
 
     /// Format-specific extension data.
     pub extensions: ExtensionBag,
+}
+
+impl FieldKind {
+    /// The macro-runner link target for a `MACROBUTTON` (`loki-macro:<name>`),
+    /// or `None` for any other field kind. Used by the layout to tag the button's
+    /// run so the editor's click path can route it to the gated runner (§6).
+    #[must_use]
+    pub fn macro_link(&self) -> Option<String> {
+        match self {
+            FieldKind::MacroButton { macro_name, .. } => {
+                Some(format!("{MACRO_LINK_SCHEME}{macro_name}"))
+            }
+            _ => None,
+        }
+    }
 }
 
 impl Field {

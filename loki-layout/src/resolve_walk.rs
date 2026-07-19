@@ -233,7 +233,12 @@ pub(super) fn walk_inlines(
             Inline::Field(f) => {
                 let text = field_display_text(f);
                 if !text.is_empty() {
-                    push_text(buf, spans, &text, effective, active_link_url);
+                    // A MACROBUTTON is clickable: tag its run with the macro-scheme
+                    // target so the editor's link hit-test routes the click to the
+                    // trust-gated runner (macro spec §6), instead of a browser open.
+                    let macro_link = f.kind.macro_link();
+                    let link = macro_link.as_deref().or(active_link_url);
+                    push_text(buf, spans, &text, effective, link);
                 }
             }
             // Note (gap #2): emit a superscript reference mark and collect the body.
