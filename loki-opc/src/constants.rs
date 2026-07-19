@@ -26,3 +26,10 @@ pub const REL_DIGITAL_SIGNATURE: &str =
 /// Media type for relationships (`.rels`) parts.
 pub const MEDIA_TYPE_RELATIONSHIPS: &str =
     "application/vnd.openxmlformats-package.relationships+xml";
+
+/// Media type (content type) for the core-properties part. The part targeted by
+/// the core-properties relationship **must** carry this content type; a
+/// schema-strict consumer (Microsoft Word) rejects the whole package if it
+/// falls through to the generic `application/xml` default instead.
+pub const MEDIA_TYPE_CORE_PROPERTIES: &str =
+    "application/vnd.openxmlformats-package.core-properties+xml";
