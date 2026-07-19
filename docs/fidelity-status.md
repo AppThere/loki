@@ -330,12 +330,22 @@ so both happen to end at line 18.
 invisible when — as in Loki's wider line — the text does not break at it (Word
 shows it only because its narrower line happens to break there). Tested by
 `no_break_hyphen_becomes_u2011` / `soft_hyphen_becomes_u00ad`.
+**Line/cross `w:shd` texture patterns** (`diagStripe`, `horzStripe`,
+`diagCross`, `thin*`, …) now render as a flat tint of the pattern's `@w:color`
+over `@w:fill` at the pattern's approximate ink coverage, instead of dropping to
+the (often white) fill and rendering blank — `resolve_shading` gained a
+`texture_coverage` table. The appendix's "diagonal stripe" cell now shows an
+orange tint like Word's (Loki paints flat fills, so the hatch lines themselves
+are still an approximation); tested by `shading_texture_pattern_blends_color_over_fill`
+and `shading_thin_texture_is_lighter_than_bold`. (`pctN` shading already blended
+— the "25% pattern" cell matched Word.)
 
 **Gaps it currently surfaces** (candidate golden-diff regions; not yet fixed):
 floating text boxes (`wps` shapes with text) not rendered;
 a footnote referenced from a
 keep-with-next paragraph is dropped (and Loki does not reserve page-bottom
-footnote space); pattern/gradient cell shading approximated as flat/blank; run
+footnote space); line/cross `w:shd` textures are flattened to a solid tint (the
+hatch lines are not drawn); run
 text effects (emboss/imprint/shadow) and character borders (`w:bdr`) not rendered;
 a block-stacked inline image is
 left-aligned rather than honouring the paragraph's `w:jc`; header/footer

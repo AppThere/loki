@@ -102,8 +102,28 @@ fn shading_nil_is_none() {
 }
 
 #[test]
-fn shading_unknown_texture_falls_back_to_fill() {
-    let c = resolve_shading(Some("97BC62"), Some("horzStripe"), Some("000000")).unwrap();
+fn shading_texture_pattern_blends_color_over_fill() {
+    // A line/cross texture is flattened to a tint of the foreground over fill.
+    // diagStripe ≈ 50 % of orange (ED7D31) over white (FFFFFF).
+    let c = resolve_shading(Some("FFFFFF"), Some("diagStripe"), Some("ED7D31")).unwrap();
+    let expect = |fg: f32| 1.0 * 0.5 + fg * 0.5;
+    assert!((c.red() - expect(0xED as f32 / 255.0)).abs() < 1e-4);
+    assert!((c.green() - expect(0x7D as f32 / 255.0)).abs() < 1e-4);
+    // Lighter than the solid foreground (a visible-but-tinted stripe).
+    assert!(c.blue() > 0x31 as f32 / 255.0);
+}
+
+#[test]
+fn shading_thin_texture_is_lighter_than_bold() {
+    let thin = resolve_shading(Some("FFFFFF"), Some("thinDiagStripe"), Some("000000")).unwrap();
+    let bold = resolve_shading(Some("FFFFFF"), Some("diagStripe"), Some("000000")).unwrap();
+    // Less ink → closer to white → higher channel value.
+    assert!(thin.red() > bold.red());
+}
+
+#[test]
+fn shading_unknown_value_falls_back_to_fill() {
+    let c = resolve_shading(Some("97BC62"), Some("someFutureVal"), Some("000000")).unwrap();
     assert!((c.green() - 0xBC as f32 / 255.0).abs() < 1e-4);
 }
 

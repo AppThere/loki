@@ -210,9 +210,35 @@ pub fn resolve_shading(
             let fg = color_rgb.unwrap_or_else(|| RgbColor::new(0.0, 0.0, 0.0));
             Some(blend_rgb(bg, fg, frac))
         }
-        // `clear`, texture patterns, or unknown → background fill only.
+        // Line/cross texture patterns (`diagStripe`, `horzStripe`, `diagCross`,
+        // …): Loki paints flat fills, so approximate the pattern as a tint of the
+        // foreground `@w:color` over `@w:fill` at the pattern's rough ink
+        // coverage — closer to Word than dropping the colour entirely.
+        v if texture_coverage(v).is_some() => {
+            let frac = texture_coverage(v)?;
+            let bg = fill_rgb.unwrap_or_else(|| RgbColor::new(1.0, 1.0, 1.0));
+            let fg = color_rgb.unwrap_or_else(|| RgbColor::new(0.0, 0.0, 0.0));
+            Some(blend_rgb(bg, fg, frac))
+        }
+        // `clear` or unknown → background fill only.
         _ => fill_rgb,
     }
+}
+
+/// Approximate ink coverage (`0.0..1.0`) of a `w:shd` line/cross texture
+/// pattern, used to flatten it to a solid tint. `None` for non-texture values
+/// (`clear`, `solid`, `pctN`, unknown). Densities are eyeballed to Word:
+/// `thin*` variants are lighter, cross hatches a touch denser than single
+/// stripes.
+fn texture_coverage(val: &str) -> Option<f32> {
+    let cov = match val {
+        "horzStripe" | "vertStripe" | "diagStripe" | "reverseDiagStripe" => 0.5,
+        "horzCross" | "diagCross" => 0.6,
+        "thinHorzStripe" | "thinVertStripe" | "thinDiagStripe" | "thinReverseDiagStripe" => 0.25,
+        "thinHorzCross" | "thinDiagCross" => 0.35,
+        _ => return None,
+    };
+    Some(cov)
 }
 
 /// Linearly blends `fg` over `bg` at coverage `t` in `[0, 1]`.
