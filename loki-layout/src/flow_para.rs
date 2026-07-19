@@ -101,7 +101,11 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     // ── Floating image wrap (gap #12): reserve a side band so text wraps
     // beside the float (emitted after text layout; removed from the
     // inline/block set so it is not also stacked above the text).
-    let float_plan = super::float_impl::plan_float(&images, state.content_width);
+    let cw = state.content_width;
+    // A floating text box (a `wps` shape) is planned first — it flows its own
+    // interior content and renders a box; otherwise plan an image float.
+    let float_plan = super::textbox_impl::plan_textbox(state, &images, cw)
+        .or_else(|| super::float_impl::plan_float(&images, cw));
     // Band geometry shared by this paragraph's own float (below) and the
     // `ActiveFloat` it may leave for following paragraphs.
     let own_float: Option<(f32, f32, bool)> = float_plan.as_ref().map(|(_, p)| {

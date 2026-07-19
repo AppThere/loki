@@ -48,6 +48,8 @@ mod table_main;
 mod table_paint;
 #[path = "flow_tail.rs"]
 mod tail;
+#[path = "flow_textbox.rs"]
+mod textbox_impl;
 
 pub use group::flow_section_group;
 pub(crate) use headers::assign_headers_footers;

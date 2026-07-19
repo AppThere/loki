@@ -64,7 +64,7 @@ pub(crate) fn reserve_active_float(state: &mut super::FlowState) {
 }
 
 /// Default gap between a float and the wrapped text, in points (~0.13").
-const FLOAT_WRAP_GAP: f32 = 9.0;
+pub(super) const FLOAT_WRAP_GAP: f32 = 9.0;
 
 /// A planned float placement for one paragraph.
 pub(crate) struct FloatPlacement {
@@ -92,6 +92,11 @@ pub(crate) fn plan_float(
     content_width: f32,
 ) -> Option<(usize, FloatPlacement)> {
     let (idx, img, fw) = images.iter().enumerate().find_map(|(i, img)| {
+        // Text boxes are planned by `flow_textbox` (they render a box, not a
+        // picture); skip them here.
+        if img.textbox.is_some() {
+            return None;
+        }
         let f = img.float?;
         // Side-wrapping modes flow text beside the object. `wrapNone` is NOT one:
         // Word reserves no space for it — the text flows the full column width and

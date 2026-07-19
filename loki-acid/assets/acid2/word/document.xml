@@ -8,7 +8,8 @@
     xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
     xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
     xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
-    xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+    xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"
+    xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
   <w:body>
 
     <!-- ============================================================ -->
@@ -248,7 +249,37 @@
     <!-- Pull quote: bordered + shaded, centered within the column -->
     <w:p><w:pPr><w:spacing w:before="120" w:after="120"/><w:jc w:val="center"/><w:ind w:left="144" w:right="144"/><w:pBdr><w:top w:val="single" w:sz="24" w:space="6" w:color="ED7D31" w:themeColor="accent2"/><w:bottom w:val="single" w:sz="24" w:space="6" w:color="ED7D31" w:themeColor="accent2"/></w:pBdr><w:shd w:val="clear" w:color="auto" w:fill="FDF0E6"/></w:pPr>
       <w:r><w:rPr><w:i/><w:sz w:val="26"/><w:color w:val="C55A11"/></w:rPr><w:t>&#8220;The columns balance, the figure wraps, and the leading holds.&#8221;</w:t></w:r></w:p>
+    <!-- Floating text box (wps shape), anchored right, square wrap -->
     <w:p><w:pPr><w:jc w:val="both"/></w:pPr>
+      <w:r><w:drawing>
+        <wp:anchor distT="45720" distB="45720" distL="114300" distR="114300" simplePos="0" relativeHeight="3" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">
+          <wp:simplePos x="0" y="0"/>
+          <wp:positionH relativeFrom="column"><wp:align>right</wp:align></wp:positionH>
+          <wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>
+          <wp:extent cx="1828800" cy="731520"/>
+          <wp:effectExtent l="0" t="0" r="0" b="0"/>
+          <wp:wrapSquare wrapText="left"/>
+          <wp:docPr id="5" name="Sidebar Note"/>
+          <wp:cNvGraphicFramePr/>
+          <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
+            <wps:wsp>
+              <wps:cNvSpPr txBox="1"/>
+              <wps:spPr>
+                <a:xfrm><a:off x="0" y="0"/><a:ext cx="1828800" cy="731520"/></a:xfrm>
+                <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+                <a:solidFill><a:srgbClr val="FDF0E6"/></a:solidFill>
+                <a:ln w="12700"><a:solidFill><a:srgbClr val="ED7D31"/></a:solidFill></a:ln>
+              </wps:spPr>
+              <wps:txbx><w:txbxContent>
+                <w:p><w:pPr><w:spacing w:after="0"/></w:pPr>
+                  <w:r><w:rPr><w:b/><w:color w:val="C55A11"/></w:rPr><w:t xml:space="preserve">Sidebar. </w:t></w:r>
+                  <w:r><w:t>A floating text box wraps the body copy on its left, with its own border and fill.</w:t></w:r></w:p>
+              </w:txbxContent></wps:txbx>
+              <wps:bodyPr rot="0" anchor="t" lIns="91440" tIns="45720" rIns="91440" bIns="45720"/>
+            </wps:wsp>
+          </a:graphicData></a:graphic>
+        </wp:anchor>
+      </w:drawing></w:r>
       <w:r><w:t xml:space="preserve">The remaining copy continues in two balanced columns to the foot of the page, exercising the column breaker together with justified text, hyphenation-free wrapping, and the running header and footer that persist across every section of this document.</w:t></w:r></w:p>
 
     <!-- Section C break → Section D (invoice / contract, one column) -->

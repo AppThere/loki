@@ -89,6 +89,21 @@ pub struct CollectedImage {
     /// `None` for an inline drawing. Read from the image's `NodeAttr` (see
     /// [`loki_doc_model::content::float::FloatWrap`]).
     pub float: Option<loki_doc_model::content::float::FloatWrap>,
+    /// When `Some`, this "image" is actually a `wps` **text box**: `src` is empty
+    /// and the flow engine renders a bordered/filled box with this content flowed
+    /// inside instead of a picture. `cx_emu`/`cy_emu`/`float` still apply.
+    pub textbox: Option<CollectedTextBox>,
+}
+
+/// The interior of a floating text box ([`CollectedImage::textbox`]).
+#[derive(Debug, Clone)]
+pub struct CollectedTextBox {
+    /// Block content flowed inside the box.
+    pub blocks: Vec<loki_doc_model::content::block::Block>,
+    /// Fill colour hex (`"RRGGBB"`), or `None` for no fill.
+    pub fill: Option<String>,
+    /// Border colour hex (`"RRGGBB"`), or `None` for no border.
+    pub line: Option<String>,
 }
 
 /// A footnote or endnote body collected during paragraph flattening.

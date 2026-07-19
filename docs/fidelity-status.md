@@ -374,8 +374,28 @@ colours the body and keeps the runs from coalescing past their span. Parsed
 by `parses_emboss_imprint_shadow` / `maps_emboss_and_imprint`. (Import + render
 only; export/round-trip deferred.)
 
+**Floating text boxes** (`wps` shapes with text) — **rendered (2026-07-19).** A
+DrawingML `wps:wsp` shape carrying `w:txbxContent` is now imported end-to-end: the
+reader (`document_drawing.rs`) parses the shape's `a:ln` border width/colour, its
+`a:srgbClr` fill, and recurses into the text-box body paragraphs (`parse_txbx_content`
+→ `parse_paragraph`); the mapper (`docx/mapper/images.rs`) maps such a drawing to a
+new `Inline::TextBox(NodeAttr, Vec<Block>)` (geometry + `textbox-fill`/`textbox-line`
+on the attr) instead of an image; resolution collects it as a `CollectedImage` whose
+`textbox: Some(CollectedTextBox { blocks, fill, line })`; and the flow engine
+(`flow_textbox.rs`) flows the interior blocks in a nested `Pageless` sub-layout at the
+inner width, wraps them in a fill + border `ClippedGroup`, grows the box to fit its
+content if the authored height is short, and returns a `FloatPlacement` so the
+anchoring paragraph reserves a side band and the surrounding copy wraps around it —
+reusing the same wrap machinery as a floating image (`plan_textbox` runs ahead of
+`plan_float`; `plan_float` skips text boxes). The ACID2 newsletter (section C) now
+carries an anchored right-floating sidebar box that visually verifies: the box paints
+with its orange border + peach fill in the right column and the two-column body copy
+wraps square on its left. Tested: `parses_wps_text_box` (reader),
+`text_box_drawing_maps_to_inline_text_box` (mapper). **Still pending:** DOCX/ODT
+re-export of the text box (import + render only); absolute anchor offsets
+(`wp:positionH`/`positionV`) fall back to the wrap-side band as with floating images.
+
 **Gaps it currently surfaces** (candidate golden-diff regions; not yet fixed):
-floating text boxes (`wps` shapes with text) not rendered;
 footnote space is not reserved from the content area (see above);
 line/cross `w:shd` textures are flattened to a solid tint (the
 hatch lines are not drawn);

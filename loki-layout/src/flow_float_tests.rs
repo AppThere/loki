@@ -14,6 +14,7 @@ fn img(w_in: f64, h_in: f64, float: Option<FloatWrap>) -> CollectedImage {
         cx_emu: (w_in * 914_400.0) as u64,
         cy_emu: (h_in * 914_400.0) as u64,
         float,
+        textbox: None,
     }
 }
 

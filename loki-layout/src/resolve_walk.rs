@@ -213,6 +213,11 @@ pub(super) fn walk_inlines(
             Inline::Image(attr, alt_inlines, target) => {
                 collect_inline_image(attr, alt_inlines, target, effective, catalog, images);
             }
+            // Floating text box: collect like an image (post-Parley placement),
+            // carrying its interior blocks + fill/border; emits no inline text.
+            Inline::TextBox(attr, blocks) => {
+                super::inlines::collect_textbox(attr, blocks, images);
+            }
             Inline::Cite(_, ch) => walk_inlines(
                 ch,
                 effective,

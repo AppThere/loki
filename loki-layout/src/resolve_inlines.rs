@@ -261,6 +261,36 @@ pub(super) fn collect_inline_image(
             cx_emu,
             cy_emu,
             float: FloatWrap::read_or_class_default(attr),
+            textbox: None,
         });
     }
+}
+
+/// Collect an `Inline::TextBox` (a floating `wps` text box) as a
+/// [`CollectedImage`] whose [`textbox`](CollectedImage::textbox) carries the
+/// interior blocks + fill/border; the flow engine renders it as a bordered box.
+pub(super) fn collect_textbox(
+    attr: &NodeAttr,
+    blocks: &[loki_doc_model::content::block::Block],
+    images: &mut Vec<CollectedImage>,
+) {
+    let get = |key: &str| {
+        attr.kv
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.clone())
+    };
+    let emu = |key: &str| get(key).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+    images.push(CollectedImage {
+        src: String::new(),
+        alt: None,
+        cx_emu: emu("cx_emu"),
+        cy_emu: emu("cy_emu"),
+        float: FloatWrap::read_or_class_default(attr),
+        textbox: Some(crate::resolve::CollectedTextBox {
+            blocks: blocks.to_vec(),
+            fill: get("textbox-fill"),
+            line: get("textbox-line"),
+        }),
+    });
 }
