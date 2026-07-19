@@ -9,6 +9,7 @@
 
 use crate::content::attr::ExtensionBag;
 use crate::meta::LanguageTag;
+use crate::style::props::border::Border;
 use crate::style::props::revision::RevisionMark;
 use loki_primitives::color::DocumentColor;
 use loki_primitives::units::Points;
@@ -176,6 +177,13 @@ pub struct CharProps {
     /// (named); OOXML `w:highlight`.
     pub highlight_color: Option<HighlightColor>,
 
+    /// A border box drawn around the run's text. OOXML `w:bdr`; ODF
+    /// `fo:border` on a text style. `None` = no character border.
+    ///
+    /// TODO(char-border-export): imported and rendered, but not yet written back
+    /// on DOCX/ODF export nor round-tripped through the Loro bridge.
+    pub character_border: Option<Border>,
+
     // ── Spacing ───────────────────────────────────────────────────────────
     /// Letter spacing (tracking) in points. ODF `fo:letter-spacing`;
     /// OOXML `w:spacing`.
@@ -257,6 +265,7 @@ impl CharProps {
         inherit!(color);
         inherit!(background_color);
         inherit!(highlight_color);
+        inherit!(character_border);
         inherit!(letter_spacing);
         inherit!(word_spacing);
         inherit!(kerning);

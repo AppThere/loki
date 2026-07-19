@@ -339,6 +339,13 @@ orange tint like Word's (Loki paints flat fills, so the hatch lines themselves
 are still an approximation); tested by `shading_texture_pattern_blends_color_over_fill`
 and `shading_thin_texture_is_lighter_than_bold`. (`pctN` shading already blended
 — the "25% pattern" cell matched Word.)
+**Character borders (`w:bdr`)** now render: the run reader parses `w:bdr`, the
+mapper carries it as `CharProps.character_border` (a `Border`), and the layout
+draws a border box around the run — one box per visual line via the same Parley
+selection geometry as the highlight underlay (`para_underlays`). The appendix's
+red-boxed "char-border" run now matches Word; tested by `maps_character_border` /
+`none_valued_bdr_is_dropped`. (Import + render only — `TODO(char-border-export)`:
+not yet written back on DOCX/ODF export nor round-tripped through the Loro bridge.)
 
 **Gaps it currently surfaces** (candidate golden-diff regions; not yet fixed):
 floating text boxes (`wps` shapes with text) not rendered;
@@ -346,7 +353,7 @@ a footnote referenced from a
 keep-with-next paragraph is dropped (and Loki does not reserve page-bottom
 footnote space); line/cross `w:shd` textures are flattened to a solid tint (the
 hatch lines are not drawn); run
-text effects (emboss/imprint/shadow) and character borders (`w:bdr`) not rendered;
+text effects (emboss/imprint/shadow) not rendered;
 a block-stacked inline image is
 left-aligned rather than honouring the paragraph's `w:jc`; header/footer
 references are not **inherited** across section breaks (the fixture declares them

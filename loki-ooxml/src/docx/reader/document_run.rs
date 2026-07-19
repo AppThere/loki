@@ -88,6 +88,17 @@ pub(crate) fn parse_rpr_element(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxR
                     b"outline" => {
                         rpr.outline = Some(toggle_prop(attr_val(e, b"val").as_deref()));
                     }
+                    b"bdr" => {
+                        // `w:bdr` character border (ECMA-376 §17.3.2.4).
+                        rpr.bdr = Some(crate::docx::model::paragraph::DocxBorderEdge {
+                            val: attr_val(e, b"val").unwrap_or_default(),
+                            sz: attr_val(e, b"sz").as_deref().and_then(|v| v.parse().ok()),
+                            color: attr_val(e, b"color"),
+                            space: attr_val(e, b"space")
+                                .as_deref()
+                                .and_then(|v| v.parse().ok()),
+                        });
+                    }
                     // A tracked ¶ deletion/insertion on a paragraph mark's rPr.
                     n @ (b"del" | b"ins") => {
                         rpr.mark_rev = Some(parse_mark_revision(n, e));

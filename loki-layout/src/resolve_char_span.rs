@@ -159,6 +159,11 @@ pub(super) fn char_props_to_style_span(props: &CharProps, range: Range<usize>) -
         line_height: None,
         vertical_align,
         highlight_color,
+        // `w:bdr` character border — reuse the paragraph border converter.
+        character_border: props
+            .character_border
+            .as_ref()
+            .and_then(crate::resolve::convert_border),
         letter_spacing: props.letter_spacing.map(pts_to_f32), // gap #13
         font_variant,
         word_spacing: props.word_spacing.map(pts_to_f32), // gap #22

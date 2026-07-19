@@ -155,6 +155,8 @@ pub struct StyleSpan {
     pub vertical_align: Option<VerticalAlign>,
     /// Highlight colour to paint behind the run. `None` = no highlight.
     pub highlight_color: Option<LayoutColor>,
+    /// A border box drawn around the run's text (OOXML `w:bdr`). `None` = none.
+    pub character_border: Option<crate::items::BorderEdge>,
     /// Letter spacing (tracking) in points. `None` = font default.
     pub letter_spacing: Option<f32>,
     /// Caps variant for this run, retained as metadata.

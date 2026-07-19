@@ -96,6 +96,8 @@ pub struct DocxRPr {
     pub shd_color: Option<String>,
     /// `w:outline` toggle — hollow/outline text effect.
     pub outline: Option<bool>,
+    /// `w:bdr` — a border box drawn around the run's text (ECMA-376 §17.3.2.4).
+    pub bdr: Option<super::DocxBorderEdge>,
 }
 
 /// `w:rFonts` font name attributes (ECMA-376 §17.3.2.26).
