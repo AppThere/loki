@@ -360,13 +360,25 @@ refinement:** the band is bottom-aligned but its height is not *reserved* from
 the content area up-front, so on a completely full page the notes can extend past
 the text margin instead of pushing content down; multi-column and non-paginated
 (reflow) footnotes keep the section-end fallback.
+**Emboss / imprint / shadow run effects** (`w:emboss`, `w:imprint`, `w:shadow`)
+now render as a 3-D relief: a second offset glyph copy behind the run — a darker
+copy for shadow/emboss (drop shadow / raised), a lighter copy for imprint
+(engraved) — with emboss/imprint bodies drawn in the effect grey. Root cause
+that had also left the pre-existing `w:shadow` invisible: Parley **coalesced**
+the adjacent effect runs into one glyph run spanning several style spans, so the
+per-run effect lookup (`span_covering_range`, which needs full coverage) returned
+nothing; pushing the emboss/imprint body grey as the Parley **brush** both
+colours the body and keeps the runs from coalescing past their span. Parsed
+(`w:emboss`/`w:imprint` toggles) → `CharProps.emboss/imprint` → `StyleSpan` →
+`para_emit`. The appendix's "shadow emboss imprint" now render distinctly; tested
+by `parses_emboss_imprint_shadow` / `maps_emboss_and_imprint`. (Import + render
+only; export/round-trip deferred.)
 
 **Gaps it currently surfaces** (candidate golden-diff regions; not yet fixed):
 floating text boxes (`wps` shapes with text) not rendered;
 footnote space is not reserved from the content area (see above);
 line/cross `w:shd` textures are flattened to a solid tint (the
-hatch lines are not drawn); run
-text effects (emboss/imprint/shadow) not rendered;
+hatch lines are not drawn);
 a block-stacked inline image is
 left-aligned rather than honouring the paragraph's `w:jc`; header/footer
 references are not **inherited** across section breaks (the fixture declares them

@@ -206,50 +206,50 @@ pub(crate) fn emit_glyph_run(
         }));
     }
 
-    // ── Shadow copy (gap #24) ─────────────────────────────────────────────────
-    // Emit a dark-grey copy of the run offset by (0.5 pt, 0.5 pt) so it appears
-    // as a hard shadow behind the main run.
-    // TODO(shadow): replace with Vello blur filter for soft shadow once
-    // scene.rs blur pipeline is verified stable (see TODO in scene.rs).
-    if covering_span.is_some_and(|s| s.shadow) {
+    // Builder for a glyph-run copy (shared by the relief copy and the main run)
+    // capturing this run's shared shaping state (font, synthesis, VF coords).
+    let synth = GlyphSynthesis {
+        bold: synthesis.embolden(),
+        italic: synthesis.skew().is_some(),
+    };
+    let coords = run.normalized_coords().to_vec();
+    let (fidx, fsize) = (run.font().index, run.font_size());
+    let mut push_run = |x: f32, y: f32, gs: Vec<GlyphEntry>, color, link: Option<String>| {
         items.push(PositionedItem::GlyphRun(PositionedGlyphRun {
-            origin: LayoutPoint {
-                x: run_offset + indent_x + 0.5,
-                y: run_baseline + va_offset + 0.5,
-            },
+            origin: LayoutPoint { x, y },
             font_data: font_data.clone(),
-            font_index: run.font().index,
-            font_size: run.font_size(),
-            glyphs: glyphs.clone(),
-            color: LayoutColor::new(0.4, 0.4, 0.4, 1.0),
-            synthesis: GlyphSynthesis {
-                bold: synthesis.embolden(),
-                italic: synthesis.skew().is_some(),
-            },
-            normalized_coords: run.normalized_coords().to_vec(),
-            link_url: None, // shadows don't carry link metadata
+            font_index: fidx,
+            font_size: fsize,
+            glyphs: gs,
+            color,
+            synthesis: synth,
+            normalized_coords: coords.clone(),
+            link_url: link,
         }));
-    }
+    };
 
-    // ── Main glyph run ────────────────────────────────────────────────────────
-    items.push(PositionedItem::GlyphRun(PositionedGlyphRun {
-        origin: LayoutPoint {
-            x: run_offset + indent_x,
-            y: run_baseline + va_offset,
-        },
-        font_data,
-        font_index: run.font().index,
-        font_size: run.font_size(),
-        glyphs,
-        color: style.brush,
-        synthesis: GlyphSynthesis {
-            bold: synthesis.embolden(),
-            italic: synthesis.skew().is_some(),
-        },
-        // VF instance (e.g. Arimo wght=700 for bold Arial); empty for static faces.
-        normalized_coords: run.normalized_coords().to_vec(),
-        link_url,
-    }));
+    // Relief copy: an offset copy behind the run for the 3-D effect — a darker
+    // copy for `w:shadow`/`w:emboss` (drop shadow / raised), a lighter copy for
+    // `w:imprint` (engraved). Emboss/imprint bodies are the effect grey (pushed
+    // as the Parley brush in `push_para_styles`, which also stops the run
+    // coalescing past its span, so `style.brush` carries it below); shadow keeps
+    // the text colour. TODO(shadow): swap for a Vello blur (see scene.rs).
+    let relief = covering_span.and_then(|s| {
+        if s.emboss || s.shadow {
+            Some(LayoutColor::new(0.42, 0.42, 0.42, 1.0))
+        } else if s.imprint {
+            Some(LayoutColor::new(0.82, 0.82, 0.82, 1.0))
+        } else {
+            None
+        }
+    });
+    let bx = run_offset + indent_x;
+    let by = run_baseline + va_offset;
+    if let Some(color) = relief {
+        push_run(bx + 0.6, by + 0.6, glyphs.clone(), color, None);
+    }
+    // Main glyph run.
+    push_run(bx, by, glyphs, style.brush, link_url);
 
     // Underline decoration. Parley supplies the geometry (offset/size) but not
     // the `w:u` variant, so recover it from our spans by the run's text range.

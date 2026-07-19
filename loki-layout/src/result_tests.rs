@@ -201,6 +201,8 @@ fn para(text: &str, block_index: usize, origin: (f32, f32)) -> PageParagraphData
             font_variant: None,
             word_spacing: None,
             shadow: false,
+            emboss: false,
+            imprint: false,
             link_url: None,
             math: None,
             scale: None,

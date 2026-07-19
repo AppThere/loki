@@ -38,6 +38,8 @@ fn carlito_span(text: &str, font_size: f32, kerning: Option<bool>) -> StyleSpan 
         font_variant: None,
         word_spacing: None,
         shadow: false,
+        emboss: false,
+        imprint: false,
         link_url: None,
         math: None,
         scale: None,

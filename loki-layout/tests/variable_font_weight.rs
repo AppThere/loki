@@ -34,6 +34,8 @@ fn arimo_span(text: &str, weight: u16, bold: bool) -> StyleSpan {
         font_variant: None,
         word_spacing: None,
         shadow: false,
+        emboss: false,
+        imprint: false,
         link_url: None,
         math: None,
         scale: None,

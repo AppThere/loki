@@ -98,6 +98,8 @@ pub(crate) fn map_rpr(rpr: &DocxRPr) -> CharProps {
         }),
         baseline_shift: rpr.position.map(|hp| Points::new(f64::from(hp) / 2.0)),
         outline: rpr.outline,
+        emboss: rpr.emboss,
+        imprint: rpr.imprint,
         // `w:bdr` character border, dropping an explicit none/nil edge.
         character_border: rpr
             .bdr
@@ -148,5 +150,16 @@ mod tests {
     #[test]
     fn no_bdr_maps_to_none() {
         assert!(map_rpr(&DocxRPr::default()).character_border.is_none());
+    }
+    #[test]
+    fn maps_emboss_and_imprint() {
+        let rpr = DocxRPr {
+            emboss: Some(true),
+            imprint: Some(true),
+            ..Default::default()
+        };
+        let cp = map_rpr(&rpr);
+        assert_eq!(cp.emboss, Some(true));
+        assert_eq!(cp.imprint, Some(true));
     }
 }

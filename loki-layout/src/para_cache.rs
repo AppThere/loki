@@ -169,6 +169,8 @@ mod tests {
             font_variant: None,
             word_spacing: None,
             shadow: false,
+            emboss: false,
+            imprint: false,
             link_url: None,
             math: None,
             scale: None,

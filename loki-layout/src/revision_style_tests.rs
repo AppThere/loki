@@ -26,6 +26,8 @@ fn bare_span() -> StyleSpan {
         font_variant: None,
         word_spacing: None,
         shadow: false,
+        emboss: false,
+        imprint: false,
         kerning: None,
         link_url: None,
         math: None,

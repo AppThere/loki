@@ -28,6 +28,8 @@ fn span(range: std::ops::Range<usize>, underline: Option<UnderlineStyle>) -> Sty
         font_variant: None,
         word_spacing: None,
         shadow: false,
+        emboss: false,
+        imprint: false,
         link_url: None,
         math: None,
         scale: None,

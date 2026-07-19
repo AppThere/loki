@@ -146,6 +146,12 @@ pub struct CharProps {
     /// Shadow text effect. ODF `fo:text-shadow`; OOXML `w:shadow`.
     pub shadow: Option<bool>,
 
+    /// Embossed (raised) text effect. OOXML `w:emboss`. No direct ODF equivalent.
+    pub emboss: Option<bool>,
+
+    /// Imprint (engraved) text effect. OOXML `w:imprint`. No direct ODF equivalent.
+    pub imprint: Option<bool>,
+
     /// Small caps. ODF `fo:font-variant small-caps`; OOXML `w:smallCaps`.
     pub small_caps: Option<bool>,
 
@@ -258,6 +264,8 @@ impl CharProps {
         inherit!(strikethrough);
         inherit!(outline);
         inherit!(shadow);
+        inherit!(emboss);
+        inherit!(imprint);
         inherit!(small_caps);
         inherit!(all_caps);
         inherit!(vertical_align);

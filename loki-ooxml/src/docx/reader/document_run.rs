@@ -46,6 +46,12 @@ pub(crate) fn parse_rpr_element(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxR
                     b"shadow" => {
                         rpr.shadow = Some(toggle_prop(attr_val(e, b"val").as_deref()));
                     }
+                    b"emboss" => {
+                        rpr.emboss = Some(toggle_prop(attr_val(e, b"val").as_deref()));
+                    }
+                    b"imprint" => {
+                        rpr.imprint = Some(toggle_prop(attr_val(e, b"val").as_deref()));
+                    }
                     b"color" => rpr.color = attr_val(e, b"val"),
                     b"highlight" => rpr.highlight = attr_val(e, b"val"),
                     b"position" => {
@@ -249,43 +255,5 @@ pub(crate) fn parse_run(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxRun> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::docx::model::paragraph::DocxRunChild;
-
-    /// Concatenate the text of a `<w:r>` fragment's `Text` children.
-    fn run_text(xml: &str) -> String {
-        let mut reader = Reader::from_reader(xml.as_bytes());
-        let mut buf = Vec::new();
-        loop {
-            match reader.read_event_into(&mut buf).unwrap() {
-                Event::Start(ref e) if local_name(e.local_name().as_ref()) == b"r" => break,
-                Event::Eof => panic!("no w:r"),
-                _ => {}
-            }
-        }
-        parse_run(&mut reader)
-            .unwrap()
-            .children
-            .iter()
-            .filter_map(|c| match c {
-                DocxRunChild::Text { text, .. } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect()
-    }
-
-    #[test]
-    fn no_break_hyphen_becomes_u2011() {
-        let xml = r#"<w:r xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-            <w:t>non</w:t><w:noBreakHyphen/><w:t>breaking</w:t></w:r>"#;
-        assert_eq!(run_text(xml), "non\u{2011}breaking");
-    }
-
-    #[test]
-    fn soft_hyphen_becomes_u00ad() {
-        let xml = r#"<w:r xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-            <w:t>optional</w:t><w:softHyphen/><w:t>hyphen</w:t></w:r>"#;
-        assert_eq!(run_text(xml), "optional\u{00ad}hyphen");
-    }
-}
+#[path = "document_run_tests.rs"]
+mod tests;

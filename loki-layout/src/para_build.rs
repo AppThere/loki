@@ -90,7 +90,19 @@ pub(crate) fn push_para_styles(
             span.font_size
         };
         builder.push(StyleProperty::FontSize(effective_font_size), r.clone());
-        builder.push(StyleProperty::Brush(span.color), r.clone());
+        // Emboss/imprint draw the body in a relief grey (the raised surface /
+        // engraved floor). Pushing it as the Parley brush both colours the body
+        // and — because the brush now differs from the neighbours — stops Parley
+        // coalescing the run into a glyph run spanning several style spans (which
+        // would defeat the per-run effect lookup in `para_emit`).
+        let brush = if span.emboss {
+            LayoutColor::new(0.78, 0.78, 0.78, 1.0)
+        } else if span.imprint {
+            LayoutColor::new(0.42, 0.42, 0.42, 1.0)
+        } else {
+            span.color
+        };
+        builder.push(StyleProperty::Brush(brush), r.clone());
         // Push the effective numeric weight. `weight` already folds in `bold`
         // (700 when bold, else 400) plus any explicit `font_weight` style, so a
         // non-default weight is honoured even when the bold flag is unset.

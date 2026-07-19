@@ -62,6 +62,10 @@ pub struct DocxRPr {
     pub all_caps: Option<bool>,
     /// `w:shadow` toggle.
     pub shadow: Option<bool>,
+    /// `w:emboss` toggle — embossed (raised) text.
+    pub emboss: Option<bool>,
+    /// `w:imprint` toggle — imprinted (engraved) text.
+    pub imprint: Option<bool>,
     /// `w:color @w:val` — foreground color hex string.
     pub color: Option<String>,
     /// `w:highlight @w:val` — named highlight color.
