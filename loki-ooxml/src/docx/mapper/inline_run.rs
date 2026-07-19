@@ -125,11 +125,16 @@ fn process_run_child(
             }
             _ => {} // inside field code or nested field
         },
-        DocxRunChild::Tab => {
-            if matches!(state, FieldState::Normal) {
-                raw.push(Inline::Str("\t".to_string()));
-            }
-        }
+        DocxRunChild::Tab => match state {
+            FieldState::Normal => raw.push(Inline::Str("\t".to_string())),
+            // A tab inside a field's cached result (e.g. a TOC entry's leader
+            // tab between the heading text and its page number) is part of the
+            // visible result — keep it in the snapshot so it survives.
+            FieldState::InResult {
+                snapshot, depth, ..
+            } if *depth == 1 => snapshot.push('\t'),
+            _ => {}
+        },
         DocxRunChild::Break { break_type } => {
             if matches!(state, FieldState::Normal) {
                 match break_type.as_deref() {

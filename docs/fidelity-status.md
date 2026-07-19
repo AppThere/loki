@@ -289,6 +289,14 @@ currency amount whose decimal stop sits near the cell edge) right-aligns against
 the line end instead of overflowing → wrapping → losing its alignment (Parley
 wraps atomic runs that exceed `line_w`). The invoice amounts now align in a
 column like Word's; tested by `decimal_tab_clamps_to_line_when_content_would_overflow`.
+**A TOC field's first cached entry** (whose paragraph holds the `fldChar`
+begin/separate while the field's `end` lives in the last entry's paragraph) is no
+longer dropped: `map_inlines` resets the complex-field state per paragraph, so a
+field still `InResult` at a paragraph's end now flushes its accumulated snapshot
+(including the leader `\t`) as plain `Inline::Str` instead of discarding it. The
+imported ACID2 TOC now shows all four entries ("1. Introduction …" through "2.1
+Per-feature scores") with dot leaders and right-aligned page numbers; tested by
+`open_field_flushes_its_result_at_paragraph_end`.
 
 **Gaps it currently surfaces** (candidate golden-diff regions; not yet fixed):
 floating text boxes (`wps` shapes with text) not rendered;
@@ -299,8 +307,7 @@ text effects (emboss/imprint/shadow) and character borders (`w:bdr`) not rendere
 `w:noBreakHyphen`/`w:softHyphen` produce no glyph; a block-stacked inline image is
 left-aligned rather than honouring the paragraph's `w:jc`; header/footer
 references are not **inherited** across section breaks (the fixture declares them
-per-section as a workaround); and a TOC field's first cached entry (sharing the
-`fldChar` paragraph) is dropped.
+per-section as a workaround).
 
 ---
 

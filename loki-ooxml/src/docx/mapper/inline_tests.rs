@@ -173,6 +173,60 @@ fn page_field_assembled() {
 }
 
 #[test]
+fn open_field_flushes_its_result_at_paragraph_end() {
+    // A multi-entry TOC field: `begin`/`separate` and the first entry's result
+    // (with a leader tab before the page number) live in one paragraph, but the
+    // `end` is in a later paragraph. The result-so-far must be emitted (not
+    // dropped, as it once was), with the tab preserved so the leader renders.
+    let (styles, fn_m, en_m, hl_m, img_m, opts) = default_ctx();
+    let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
+    let children = vec![
+        DocxParaChild::Run(DocxRun {
+            rpr: None,
+            children: vec![DocxRunChild::FldChar {
+                fld_char_type: "begin".into(),
+            }],
+        }),
+        DocxParaChild::Run(DocxRun {
+            rpr: None,
+            children: vec![DocxRunChild::InstrText {
+                text: " TOC \\o \"1-2\" \\h ".into(),
+            }],
+        }),
+        DocxParaChild::Run(DocxRun {
+            rpr: None,
+            children: vec![DocxRunChild::FldChar {
+                fld_char_type: "separate".into(),
+            }],
+        }),
+        DocxParaChild::Run(DocxRun {
+            rpr: None,
+            children: vec![
+                DocxRunChild::Text {
+                    text: "1.  Introduction".into(),
+                    preserve: false,
+                },
+                DocxRunChild::Tab,
+                DocxRunChild::Text {
+                    text: "3".into(),
+                    preserve: false,
+                },
+            ],
+        }),
+        // No `end` — the field continues into the following paragraph.
+    ];
+    let inlines = map_inlines(&children, &mut ctx);
+    assert_eq!(inlines.len(), 1, "flushed result: {inlines:?}");
+    match &inlines[0] {
+        Inline::Str(s) => {
+            assert!(s.contains("Introduction"), "result text kept: {s:?}");
+            assert!(s.contains('\t'), "leader tab preserved: {s:?}");
+        }
+        other => panic!("expected a flushed Str, got {other:?}"),
+    }
+}
+
+#[test]
 fn simple_field_maps_to_field_inline() {
     let (styles, fn_m, en_m, hl_m, img_m, opts) = default_ctx();
     let mut ctx = make_ctx(&fn_m, &en_m, &hl_m, &img_m, &styles, &opts);
