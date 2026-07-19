@@ -48,15 +48,18 @@ impl<H: Host> Interp<'_, H> {
                 if super::refused::is_refused(name) {
                     return Err(RuntimeError::feature_refused(name));
                 }
-                // Property read: resolve the receiver to a host object, then ask
-                // the host for the member value (no args → property get).
+                // Property read: resolve the receiver, then dispatch. A user
+                // class instance (§4.2) is served from the interpreter's own
+                // heap, never the host; a host object goes through the seam.
                 let recv = self.eval_receiver(object, frame)?;
+                if self.is_instance(recv) {
+                    return self.instance_get(recv, name);
+                }
                 self.host.get_member(recv, name, &[])
             }
-            // `New` constructs an object. User class modules are Phase 6; an
-            // external ProgID is on the "never" list (spec §7). Either way v1
-            // refuses, named, so the author sees why.
-            Expr::New(class) => Err(RuntimeError::feature_refused(&format!("New {class}"))),
+            // `New` constructs a user class-module instance (§4.2). An unknown
+            // class name is an external ProgID/COM object — refused, named (§7).
+            Expr::New(class) => self.construct_instance(class),
             Expr::WithContext => frame
                 .with_stack
                 .last()
@@ -90,6 +93,16 @@ impl<H: Host> Interp<'_, H> {
     fn eval_var(&mut self, name: &str, frame: &mut Frame) -> Result<Value, RuntimeError> {
         if let Some(v) = frame.get(name) {
             return Ok(v.clone());
+        }
+        // Inside a class method, `Me` is the receiver and a bare name resolves
+        // against the instance's fields/methods before module-level scope (§4.2).
+        if let Some(me) = frame.me {
+            if name.eq_ignore_ascii_case("Me") {
+                return Ok(Value::Object(me));
+            }
+            if let Some(v) = self.instance_implicit_get(me, name)? {
+                return Ok(v);
+            }
         }
         if let Some(v) = self.const_or_global(name) {
             return Ok(v);

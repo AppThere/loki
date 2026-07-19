@@ -15,5 +15,7 @@ pub mod stmt;
 
 pub use decl::{ArrayBound, ConstDecl, Param, TypeRef, VarDecl};
 pub use expr::{Argument, BinOp, Expr, UnOp};
-pub use program::{EnumDef, Item, Module, ModuleOptions, ProcKind, Procedure, TypeDef, Visibility};
+pub use program::{
+    ClassDef, EnumDef, Item, Module, ModuleOptions, ProcKind, Procedure, TypeDef, Visibility,
+};
 pub use stmt::{CaseClause, CaseCond, CompareOp, DoCond, ExitKind, OnError, ResumeKind, Stmt};

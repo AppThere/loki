@@ -9,6 +9,7 @@
 
 use std::collections::HashMap;
 
+use crate::host::ObjectRef;
 use crate::value::Value;
 
 /// The active `On Error` disposition for a frame.
@@ -55,6 +56,10 @@ pub(super) struct Frame {
     pub(super) with_stack: Vec<Value>,
     /// Body index of the most recent faulting statement, for `Resume`.
     pub(super) resume_pc: Option<usize>,
+    /// The class instance this frame runs as a method of (`Me`), if any.
+    /// Set only when a class method is invoked; bare names inside the body then
+    /// resolve against the instance's fields/methods (macro spec §4.2).
+    pub(super) me: Option<ObjectRef>,
 }
 
 impl Frame {
@@ -68,6 +73,7 @@ impl Frame {
             compare_text,
             with_stack: Vec::new(),
             resume_pc: None,
+            me: None,
         }
     }
 

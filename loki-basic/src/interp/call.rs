@@ -35,6 +35,10 @@ impl<H: Host> Interp<'_, H> {
             }
             let recv = self.eval_receiver(object, frame)?;
             let vals = self.eval_arg_values(args, frame)?;
+            // A user class instance (§4.2) dispatches from interpreter heap.
+            if self.is_instance(recv) {
+                return self.instance_call(recv, name, vals);
+            }
             return self.host.get_member(recv, name, &vals);
         }
         let Expr::Var(name) = callee else {
@@ -50,6 +54,14 @@ impl<H: Host> Interp<'_, H> {
         if let Some(Value::Array(arr)) = self.globals.get(&key(name)).cloned() {
             let indices = self.eval_indices(args, frame)?;
             return arr.get(&indices);
+        }
+        // A sibling method called by bare name inside a class method (`Foo(x)`),
+        // resolved against `Me` before module-level procedures (§4.2).
+        if let Some(me) = frame.me
+            && self.instance_has_method(me, name)
+        {
+            let vals = self.eval_arg_values(args, frame)?;
+            return self.instance_call(me, name, vals);
         }
         if let Some(&proc) = self.procs.get(&key(name)) {
             return self.invoke_call(proc, args, frame);
@@ -161,14 +173,18 @@ impl<H: Host> Interp<'_, H> {
         Ok(result)
     }
 
-    fn new_frame(&self, proc: &Procedure) -> Frame {
+    pub(super) fn new_frame(&self, proc: &Procedure) -> Frame {
         let ret_key = proc.kind.returns_value().then(|| key(&proc.name));
         Frame::new(ret_key, self.compare_text())
     }
 
     /// Runs a procedure body, honouring the call-depth cap, returning its result
     /// value. A `Halt` (`End`/`Stop`) unwinds as an untrappable halt sentinel.
-    fn run_proc(&mut self, proc: &Procedure, callee: &mut Frame) -> Result<Value, RuntimeError> {
+    pub(super) fn run_proc(
+        &mut self,
+        proc: &Procedure,
+        callee: &mut Frame,
+    ) -> Result<Value, RuntimeError> {
         if self.call_depth >= MAX_CALL_DEPTH {
             return Err(RuntimeError::new(28, "Out of stack space"));
         }
@@ -201,7 +217,7 @@ fn split_args(args: &[Argument]) -> (Vec<Option<&Expr>>, Vec<(&str, &Expr)>) {
 }
 
 /// Builds a 0-based `Variant` array from values (for `ParamArray`).
-fn variant_array(values: Vec<Value>) -> Result<Value, RuntimeError> {
+pub(super) fn variant_array(values: Vec<Value>) -> Result<Value, RuntimeError> {
     if values.is_empty() {
         return Ok(Value::Array(Array::new(vec![(0, -1)])?));
     }

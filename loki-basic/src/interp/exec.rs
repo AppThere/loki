@@ -129,6 +129,11 @@ impl<H: Host> Interp<'_, H> {
             Expr::Var(name) => {
                 if frame.has(name) {
                     frame.set(name, value);
+                } else if let Some(me) = frame.me
+                    && self.instance_has_settable(me, name)
+                {
+                    // A bare field/property assignment inside a class method (§4.2).
+                    return self.instance_set(me, name, value);
                 } else if let Some(slot) = self.globals.get_mut(&key(name)) {
                     *slot = value;
                 } else {
@@ -136,9 +141,14 @@ impl<H: Host> Interp<'_, H> {
                 }
                 Ok(())
             }
-            // `obj.Prop = value` — property assignment on a host object.
+            // `obj.Prop = value` — property/field assignment. A user class
+            // instance (§4.2) is set in interpreter heap; a host object via the
+            // seam.
             Expr::Member { object, name } => {
                 let recv = self.eval_receiver(object, frame)?;
+                if self.is_instance(recv) {
+                    return self.instance_set(recv, name, value);
+                }
                 self.host_mut().set_member(recv, name, value)
             }
             Expr::Call { callee, args } => {
@@ -192,6 +202,14 @@ impl<H: Host> Interp<'_, H> {
         }
         // Bare name: call a Sub/Function/builtin if it names one, else evaluate.
         if let Expr::Var(name) = expr {
+            // A sibling method called by bare name inside a class method (§4.2),
+            // resolved before module-level procedures.
+            if let Some(me) = frame.me
+                && self.instance_has_method(me, name)
+            {
+                self.instance_call(me, name, Vec::new())?;
+                return Ok(());
+            }
             if let Some(&proc) = self.procs.get(&key(name)) {
                 self.invoke_with_values(proc, Vec::new())?;
                 return Ok(());

@@ -10,6 +10,7 @@
 
 mod builtins;
 mod call;
+mod class;
 mod dialog;
 mod env;
 mod eval;
@@ -20,11 +21,12 @@ mod refused;
 
 use std::collections::{HashMap, HashSet};
 
-use crate::ast::{Item, Module, ModuleOptions, Procedure, TypeRef, VarDecl};
+use crate::ast::{ClassDef, Item, Module, ModuleOptions, Procedure, TypeRef, VarDecl};
 use crate::error::{BasicError, RuntimeError};
 use crate::host::{FuelVerdict, Host};
 use crate::value::{Array, Value};
 
+use class::Instance;
 use env::Frame;
 
 /// Maximum BASIC call-stack depth, a hard guard against unbounded recursion
@@ -66,6 +68,15 @@ pub struct Interp<'m, H: Host> {
     /// `Declare … Lib` names (lowercased), refused with a named feature-refusal
     /// when called (FFI is on the "never" list, spec §7).
     foreign_decls: HashSet<String>,
+    /// Class modules by lowercased name (macro spec §4.2). Compute-only; a class
+    /// instance never reaches the host, so it grants no capability.
+    classes: HashMap<String, &'m ClassDef>,
+    /// Live class instances, keyed by the `u32` inside their [`ObjectRef`]. User
+    /// handles are allocated from [`class::USER_OBJ_BASE`] upward so they never
+    /// collide with the small handles a [`Host`] hands out for its own objects.
+    instances: HashMap<u32, Instance>,
+    /// The next user-instance handle to allocate.
+    next_obj: u32,
 }
 
 impl<'m, H: Host> Interp<'m, H> {
@@ -87,6 +98,9 @@ impl<'m, H: Host> Interp<'m, H> {
             host,
             call_depth: 0,
             foreign_decls: HashSet::new(),
+            classes: HashMap::new(),
+            instances: HashMap::new(),
+            next_obj: class::USER_OBJ_BASE,
         };
         interp.index_items()?;
         Ok(interp)
@@ -113,6 +127,9 @@ impl<'m, H: Host> Interp<'m, H> {
                 }
                 Item::ForeignDecl { name } => {
                     self.foreign_decls.insert(env::key(name));
+                }
+                Item::Class(c) => {
+                    self.classes.insert(env::key(&c.name), c);
                 }
                 Item::Type(_) => {}
             }
@@ -204,7 +221,7 @@ impl<'m, H: Host> Interp<'m, H> {
     }
 
     /// The initial value for a declared variable (array or typed scalar).
-    fn default_value(&mut self, decl: &VarDecl) -> Result<Value, BasicError> {
+    pub(super) fn default_value(&mut self, decl: &VarDecl) -> Result<Value, BasicError> {
         if let Some(bounds) = &decl.bounds {
             if bounds.is_empty() {
                 // Dynamic array, not yet sized.

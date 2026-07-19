@@ -56,6 +56,8 @@ pub enum Item {
         /// The declared procedure name.
         name: String,
     },
+    /// A `Class <Name> … End Class` class module (macro spec §4.2, phase 6).
+    Class(ClassDef),
 }
 
 /// A procedure definition.
@@ -119,6 +121,23 @@ pub struct TypeDef {
     pub name: String,
     /// The record fields.
     pub fields: Vec<VarDecl>,
+}
+
+/// A class module (`Class <Name> … End Class`): instance fields plus
+/// `Sub`/`Function`/`Property` methods (macro spec §4.2, phase 6).
+///
+/// Compute-only by construction: a class instance is pure interpreter heap
+/// (fields + method dispatch on `Me`) and carries **no** host authority — it
+/// never reaches the [`crate::Host`] seam, so a user class can grant a script
+/// no capability it did not already have.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassDef {
+    /// The class name.
+    pub name: String,
+    /// Instance fields (module-level `Dim`/`Private`/`Public` declarations).
+    pub fields: Vec<VarDecl>,
+    /// Instance methods (`Sub`/`Function`/`Property Get/Let/Set`).
+    pub methods: Vec<Procedure>,
 }
 
 /// An enumeration (`Enum … End Enum`).

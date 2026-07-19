@@ -7,19 +7,24 @@
 //! statement parser for local `Dim`/`Const`.
 
 use super::Parser;
-use crate::ast::{EnumDef, Item, Param, ProcKind, Procedure, TypeDef, Visibility};
+use crate::ast::{
+    ClassDef, EnumDef, Item, Param, ProcKind, Procedure, TypeDef, VarDecl, Visibility,
+};
 use crate::error::BasicError;
 use crate::lexer::TokenKind;
 
 /// Parses one top-level item, or `None` if the line yielded none.
 pub(super) fn parse_item(p: &mut Parser) -> Result<Option<Item>, BasicError> {
     let mut visibility = Visibility::Public;
+    let mut saw_modifier = false;
     // Optional leading visibility / linkage modifiers.
     loop {
         if p.eat_kw("Public") || p.eat_kw("Global") || p.eat_kw("Friend") {
             visibility = Visibility::Public;
+            saw_modifier = true;
         } else if p.eat_kw("Private") {
             visibility = Visibility::Private;
+            saw_modifier = true;
         } else {
             break;
         }
@@ -56,6 +61,9 @@ pub(super) fn parse_item(p: &mut Parser) -> Result<Option<Item>, BasicError> {
             p, kind, visibility, is_static,
         )?)));
     }
+    if p.eat_kw("Class") {
+        return Ok(Some(Item::Class(parse_class_def(p)?)));
+    }
     if p.eat_kw("Type") {
         return Ok(Some(Item::Type(parse_type_def(p)?)));
     }
@@ -72,6 +80,13 @@ pub(super) fn parse_item(p: &mut Parser) -> Result<Option<Item>, BasicError> {
     }
     // Module-level variable declaration.
     if p.eat_kw("Dim") || p.eat_kw("WithEvents") {
+        let decls = p.parse_var_decls()?;
+        p.end_of_statement()?;
+        return Ok(Some(Item::Var(decls)));
+    }
+    // A bare `Public`/`Private`/`Static name As Type` variable (no `Dim`) — the
+    // usual form for module-level and class-module fields.
+    if (saw_modifier || is_static) && matches!(p.peek_kind(), TokenKind::Ident(_)) {
         let decls = p.parse_var_decls()?;
         p.end_of_statement()?;
         return Ok(Some(Item::Var(decls)));
@@ -183,6 +198,32 @@ fn parse_type_def(p: &mut Parser) -> Result<TypeDef, BasicError> {
     }
     p.expect_end("Type")?;
     Ok(TypeDef { name, fields })
+}
+
+/// `Class <Name> … End Class` — a class module (macro spec §4.2, phase 6). The
+/// body is the same items a module accepts, sorted into instance fields
+/// (`Dim`/`Private`/`Public`) and methods (`Sub`/`Function`/`Property`). Nested
+/// classes/types/enums/`Declare`s are rejected (a class body is flat).
+fn parse_class_def(p: &mut Parser) -> Result<ClassDef, BasicError> {
+    let name = p.expect_ident("a class name")?;
+    p.end_of_statement()?;
+    let mut fields: Vec<VarDecl> = Vec::new();
+    let mut methods: Vec<Procedure> = Vec::new();
+    p.skip_terminators();
+    while !p.at_eof() && !p.peek_kw("End") {
+        match parse_item(p)? {
+            Some(Item::Procedure(proc)) => methods.push(proc),
+            Some(Item::Var(decls)) => fields.extend(decls),
+            _ => return Err(p.error("a class body allows only fields and methods")),
+        }
+        p.skip_terminators();
+    }
+    p.expect_end("Class")?;
+    Ok(ClassDef {
+        name,
+        fields,
+        methods,
+    })
 }
 
 fn parse_enum_def(p: &mut Parser) -> Result<EnumDef, BasicError> {
