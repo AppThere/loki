@@ -352,8 +352,12 @@ border survives an export→re-import — tested by `character_border_is_emitted
 (import-export-import). **ODT export (2026-07-20):** written as an `fo:border`
 shorthand + `fo:padding` inset on `style:text-properties` and read back
 (`OdfTextProps.border`/`padding` → `parse_odf_border` → `CharProps.character_border`)
-— tested by `emboss_and_char_border_round_trip_through_odt`. **Still pending:** the
-Loro-bridge round-trip (`TODO(char-border-export)` now scoped to just that).
+— tested by `emboss_and_char_border_round_trip_through_odt`. **Loro-bridge
+round-trip (2026-07-20):** carried as a `char_border` text mark holding the packed
+`Border` string (`encode_border`/`decode_border`, reused from the paragraph-border
+codec), registered in `CHAR_MARK_KEYS` — tested by
+`bridge_emboss_imprint_char_border_roundtrip`. `TODO(char-border-export)` is now
+fully closed for character borders.
 **A footnote referenced from a keep-with-next paragraph** is no longer dropped,
 and footnotes now render **per page** at the foot of the page carrying their
 reference (matching Word) rather than dumped at the section end. Two fixes: the
@@ -387,8 +391,10 @@ both survive an export→re-import (`w:shadow` already round-tripped) — tested
 (2026-07-20):** mapped to the single `style:font-relief`
 (embossed = emboss, engraved = imprint) and read back
 (`OdfTextProps.font_relief`) — tested by
-`emboss_and_char_border_round_trip_through_odt`. Only the Loro-bridge
-round-trip remains deferred.
+`emboss_and_char_border_round_trip_through_odt`. **Loro-bridge round-trip
+(2026-07-20):** carried as `emboss` / `imprint` boolean text marks
+(`CHAR_MARK_KEYS`) — tested by `bridge_emboss_imprint_char_border_roundtrip`.
+DOCX, ODT, and the CRDT now all round-trip these effects end-to-end.
 
 **Floating text boxes** (`wps` shapes with text) — **rendered (2026-07-19).** A
 DrawingML `wps:wsp` shape carrying `w:txbxContent` is now imported end-to-end: the

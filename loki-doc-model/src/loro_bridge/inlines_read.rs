@@ -9,7 +9,8 @@
 use super::BridgeError;
 use super::color_codec::decode_document_color;
 use super::decode::{
-    decode_highlight_color, decode_strikethrough, decode_underline, decode_vertical_align,
+    decode_border, decode_highlight_color, decode_strikethrough, decode_underline,
+    decode_vertical_align,
 };
 use crate::content::attr::NodeAttr;
 use crate::content::inline::{Inline, QuoteType, StyledRun};
@@ -240,6 +241,8 @@ fn read_char_props_from_marks(
     read_bool!(italic, MARK_ITALIC);
     read_bool!(outline, MARK_OUTLINE);
     read_bool!(shadow, MARK_SHADOW);
+    read_bool!(emboss, MARK_EMBOSS);
+    read_bool!(imprint, MARK_IMPRINT);
     read_bool!(small_caps, MARK_SMALL_CAPS);
     read_bool!(all_caps, MARK_ALL_CAPS);
     read_bool!(kerning, MARK_KERNING);
@@ -262,6 +265,7 @@ fn read_char_props_from_marks(
     read_str!(strikethrough, MARK_STRIKETHROUGH, decode_strikethrough);
     read_str!(vertical_align, MARK_VERTICAL_ALIGN, decode_vertical_align);
     read_str!(color, MARK_COLOR, decode_document_color);
+    read_str!(character_border, MARK_CHAR_BORDER, decode_border);
     read_str!(
         highlight_color,
         MARK_HIGHLIGHT_COLOR,

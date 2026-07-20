@@ -319,6 +319,67 @@ fn bridge_para_background_color_roundtrip() {
     }
 }
 
+// ── bridge_emboss_imprint_char_border_roundtrip ───────────────────────────────
+
+/// `CharProps.emboss`, `imprint`, and `character_border` must survive a Loro
+/// CRDT round-trip via text marks (previously read from OOXML/ODF but dropped by
+/// the bridge — the last export-refinement round-trip gap for these fields).
+#[test]
+fn bridge_emboss_imprint_char_border_roundtrip() {
+    let props = CharProps {
+        emboss: Some(true),
+        imprint: Some(true),
+        character_border: Some(Border {
+            style: BorderStyle::Solid,
+            width: Points::new(1.0),
+            color: Some(DocumentColor::from_hex("#C00000").unwrap()),
+            spacing: Some(Points::new(1.0)),
+        }),
+        ..Default::default()
+    };
+
+    let doc = single_block_doc(styled_para_with_char(props));
+    let recovered = round_trip(&doc);
+
+    let rp = recovered.sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| {
+            if let Block::StyledPara(p) = b {
+                p.inlines.iter().find_map(|i| match i {
+                    Inline::StyledRun(sr) => sr.direct_props.as_deref(),
+                    _ => None,
+                })
+            } else {
+                None
+            }
+        })
+        .expect("StyledRun with direct_props must survive round-trip");
+
+    assert_eq!(rp.emboss, Some(true), "emboss must survive Loro round-trip");
+    assert_eq!(
+        rp.imprint,
+        Some(true),
+        "imprint must survive Loro round-trip"
+    );
+    let b = rp
+        .character_border
+        .as_ref()
+        .expect("character_border must survive Loro round-trip");
+    assert_eq!(b.style, BorderStyle::Solid);
+    assert_eq!(b.width.value().round(), 1.0);
+    assert_eq!(
+        b.color,
+        Some(DocumentColor::from_hex("#C00000").unwrap()),
+        "border colour must survive"
+    );
+    assert_eq!(
+        b.spacing.map(|p| p.value().round()),
+        Some(1.0),
+        "border spacing must survive"
+    );
+}
+
 // ── bridge_para_fields_roundtrip ──────────────────────────────────────────────
 
 /// `ParaProps.page_break_before`, `orphan_control`, `outline_level`, and
