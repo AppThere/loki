@@ -76,6 +76,21 @@ fn text_properties_attrs(cp: &CharProps) -> String {
     if cp.shadow == Some(true) {
         attr(&mut s, "fo:text-shadow", "1pt 1pt");
     }
+    // Emboss / imprint → the single ODF style:font-relief (embossed wins if both
+    // are set, which the model never produces from a real import). ODF 1.3 §20.191.
+    if cp.emboss == Some(true) {
+        attr(&mut s, "style:font-relief", "embossed");
+    } else if cp.imprint == Some(true) {
+        attr(&mut s, "style:font-relief", "engraved");
+    }
+    // Character border → fo:border shorthand on text-properties, with fo:padding
+    // carrying the border↔glyph inset (Border::spacing).
+    if let Some(b) = &cp.character_border {
+        super::para_props::border_attr(&mut s, "fo:border", Some(b));
+        if let Some(pad) = b.spacing {
+            attr(&mut s, "fo:padding", &pt(pad));
+        }
+    }
     if let Some(va) = cp.vertical_align {
         let v = match va {
             VerticalAlign::Superscript => "super 58%",

@@ -275,6 +275,70 @@ fn full_character_and_paragraph_props_round_trip() {
     assert_eq!(p.page_break_before, Some(true));
 }
 
+/// Emboss (`style:font-relief="embossed"`) and a character border
+/// (`fo:border` + `fo:padding` on `style:text-properties`) must survive an ODT
+/// export→re-import. Emboss and imprint share the single `font-relief`
+/// attribute, so they are tested in separate styles.
+#[test]
+fn emboss_and_char_border_round_trip_through_odt() {
+    use loki_doc_model::style::props::border::{Border, BorderStyle};
+    use loki_primitives::color::DocumentColor;
+
+    let embossed = CharProps {
+        emboss: Some(true),
+        character_border: Some(Border {
+            style: BorderStyle::Solid,
+            width: Points::new(1.0),
+            color: Some(DocumentColor::from_hex("#C00000").unwrap()),
+            spacing: Some(Points::new(1.0)),
+        }),
+        ..Default::default()
+    };
+    let engraved = CharProps {
+        imprint: Some(true),
+        ..Default::default()
+    };
+
+    let mut doc = sample_doc();
+    doc.styles.paragraph_styles.insert(
+        StyleId::new("Embossed"),
+        para_style("Embossed", "Embossed", embossed, ParaProps::default()),
+    );
+    doc.styles.paragraph_styles.insert(
+        StyleId::new("Engraved"),
+        para_style("Engraved", "Engraved", engraved, ParaProps::default()),
+    );
+
+    let out = round_trip(&doc);
+
+    let emb = &out
+        .styles
+        .paragraph_styles
+        .get(&StyleId::new("Embossed"))
+        .expect("Embossed style survives")
+        .char_props;
+    assert_eq!(emb.emboss, Some(true), "emboss survives");
+    assert_eq!(emb.imprint, None, "emboss is not imprint");
+    let border = emb.character_border.as_ref().expect("char border survives");
+    assert_eq!(border.style, BorderStyle::Solid);
+    assert_eq!(border.width.value().round(), 1.0);
+    assert!(border.color.is_some(), "border colour survives");
+    assert_eq!(
+        border.spacing.map(|p| p.value().round()),
+        Some(1.0),
+        "border padding survives"
+    );
+
+    let eng = &out
+        .styles
+        .paragraph_styles
+        .get(&StyleId::new("Engraved"))
+        .expect("Engraved style survives")
+        .char_props;
+    assert_eq!(eng.imprint, Some(true), "imprint survives");
+    assert_eq!(eng.emboss, None, "imprint is not emboss");
+}
+
 #[test]
 fn inline_bookmark_field_and_image_round_trip() {
     use loki_doc_model::content::field::types::{Field, FieldKind};
