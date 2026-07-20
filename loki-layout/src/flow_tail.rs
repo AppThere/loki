@@ -55,8 +55,13 @@ fn measure_note_height(state: &mut FlowState, note: &CollectedNote) -> f32 {
             first = false;
             let resolved = crate::resolve::resolve_para_props(&p, state.catalog);
             let mut counter = state.note_counter;
-            let (text, spans, _images, _notes) =
-                crate::resolve::flatten_paragraph_with_base(&p, state.catalog, &mut counter, None);
+            let (text, spans, _images, _notes) = crate::resolve::flatten_paragraph_with_base(
+                &p,
+                state.catalog,
+                &mut counter,
+                None,
+                state.options.revision_display,
+            );
             let layout = crate::para::layout_paragraph_spelled(
                 state.resources,
                 &text,

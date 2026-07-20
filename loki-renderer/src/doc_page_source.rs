@@ -218,6 +218,7 @@ impl DocPageSource {
                     let options = LayoutOptions {
                         preserve_for_editing: true,
                         spell: crate::spell::active(),
+                        revision_display: crate::revision::display(),
                         ..Default::default()
                     };
                     match loki_layout::layout_document(
@@ -239,6 +240,7 @@ impl DocPageSource {
                     let options = LayoutOptions {
                         preserve_for_editing: true,
                         spell: crate::spell::active(),
+                        revision_display: crate::revision::display(),
                         ..Default::default()
                     };
                     let content_width =

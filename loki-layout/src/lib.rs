@@ -45,6 +45,8 @@ mod para_drop_cap;
 mod para_emit;
 pub mod resolve;
 pub mod result;
+#[path = "revision_filter.rs"]
+mod revision_filter;
 mod revision_style;
 mod table_shading;
 pub use color::LayoutColor;
@@ -63,7 +65,7 @@ pub use items::{
 };
 pub use layout_entry::{layout_document, layout_paginated_full};
 pub use mode::LayoutMode;
-pub use options::{FieldContext, LayoutOptions, SpellState};
+pub use options::{FieldContext, LayoutOptions, RevisionDisplay, SpellState};
 pub use para::{
     Affinity, CursorRect, HitTestResult, ParagraphLayout, ResolvedLineHeight, ResolvedParaProps,
     StyleSpan, layout_paragraph,

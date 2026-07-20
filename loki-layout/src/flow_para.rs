@@ -20,7 +20,7 @@ use loki_doc_model::content::float::{TextWrap, WrapSide};
 use crate::geometry::LayoutRect;
 use crate::items::{PositionedImage, PositionedItem};
 use crate::para::{ParagraphLayout, ResolvedParaProps, layout_paragraph_spelled};
-use crate::resolve::{emu_to_pt, pts_to_f32, resolve_para_props};
+use crate::resolve::{emu_to_pt, resolve_para_props};
 
 use super::columns_impl::break_column;
 use super::editing::push_editing_para;
@@ -44,6 +44,14 @@ use split::split_and_place_loop;
 /// Resolve, lay out, and place a single paragraph block.
 pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, block_index: usize) {
     let mut resolved = resolve_para_props(para, state.catalog);
+    // A tracked ¶-mark deletion paints a struck end-of-paragraph marker only in
+    // the All-Markup view; Final/Original render the accepted/rejected document,
+    // where no revision decoration is shown. (Full paragraph *merge* in the
+    // Final view is not modelled — the ¶ is simply not marked; see the
+    // `revision_filter` module docs.)
+    if state.options.revision_display != crate::options::RevisionDisplay::AllMarkup {
+        resolved.para_mark_deleted_color = None;
+    }
     // Between-border group adjustment (gap #26), staged by the block loop.
     if let Some(ovr) = state.staged_between.take() {
         if ovr.suppress_top {
@@ -60,22 +68,9 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
         resolved.default_tab_stop = pt;
     }
 
-    // ── List level indentation fallback ─────────────────────────────────────
-    // The numbering level's pPr is the authoritative indent when the paragraph
-    // carries none (both indents 0.0) — e.g. `w:ind` only on the abstract num.
-    if let Some(ref lm) = resolved.list_marker
-        && resolved.indent_start == 0.0
-        && resolved.indent_hanging == 0.0
-        && let Some(list_style) = state.catalog.list_styles.get(&lm.list_id)
-        && let Some(level_def) = list_style.levels.get(lm.level as usize)
-    {
-        let level_indent = pts_to_f32(level_def.indent_start);
-        let level_hanging = pts_to_f32(level_def.hanging_indent);
-        if level_indent > 0.0 || level_hanging > 0.0 {
-            resolved.indent_start = level_indent;
-            resolved.indent_hanging = level_hanging;
-        }
-    }
+    // List level indentation fallback (numbering `pPr` indent when the paragraph
+    // carries none) — extracted to `flow_list_marker` for the 300-line ceiling.
+    super::flow_list_marker::apply_level_indent_fallback(state, &mut resolved);
 
     // ── List marker synthesis ────────────────────────────────────────────────
     // Prepend the label (bullet / number) as an `Inline::Str` + tab; a picture
@@ -89,6 +84,7 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
         state.catalog,
         &mut state.note_counter,
         state.cell_char_defaults.as_ref(),
+        state.options.revision_display,
     );
     // Tag each note with its owning block + per-block order. The notes render at
     // the foot of the page carrying their reference — see `flow_tail`.

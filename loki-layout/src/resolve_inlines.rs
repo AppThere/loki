@@ -32,6 +32,7 @@ pub fn flatten_paragraph_with_base(
     catalog: &StyleCatalog,
     note_counter: &mut u32,
     region_base: Option<&CharProps>,
+    revision_display: crate::options::RevisionDisplay,
 ) -> (
     String,
     Vec<StyleSpan>,
@@ -62,8 +63,11 @@ pub fn flatten_paragraph_with_base(
     let mut spans: Vec<StyleSpan> = Vec::new();
     let mut images: Vec<CollectedImage> = Vec::new();
     let mut notes: Vec<CollectedNote> = Vec::new();
+    // Non-destructive tracked-change display: hide/normalise revision runs for
+    // Final/Original modes (borrowed unchanged for All-Markup / no revisions).
+    let inlines = crate::revision_filter::display_inlines(&block.inlines, revision_display);
     walk_inlines(
-        &block.inlines,
+        &inlines,
         &mut base,
         catalog,
         &mut buf,

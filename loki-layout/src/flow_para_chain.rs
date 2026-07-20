@@ -152,6 +152,7 @@ fn build_chain_layouts<'s>(
                 state.catalog,
                 &mut counter,
                 state.cell_char_defaults.as_ref(),
+                state.options.revision_display,
             );
             let mut layout = layout_paragraph_spelled(
                 state.resources,

@@ -224,7 +224,15 @@ pub fn flatten_paragraph(
     Vec<CollectedImage>,
     Vec<CollectedNote>,
 ) {
-    flatten_paragraph_with_base(block, catalog, note_counter, None)
+    // The convenience entry point renders full markup (the default view); the
+    // flow engine calls `_with_base` directly to pass the document's mode.
+    flatten_paragraph_with_base(
+        block,
+        catalog,
+        note_counter,
+        None,
+        crate::options::RevisionDisplay::AllMarkup,
+    )
 }
 
 // ── Border conversion ──────────────────────────────────────────────────────────
