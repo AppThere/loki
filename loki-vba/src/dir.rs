@@ -109,6 +109,32 @@ pub(crate) fn parse(data: &[u8]) -> VbaResult<DirInfo> {
     Ok(DirInfo { code_page, modules })
 }
 
+/// Returns a copy of the decompressed `dir` stream with every module's
+/// `MODULEOFFSET` (`0x0031`) set to zero — used by source-only write-back
+/// (macro spec §3.4): once a module stream holds *only* its compressed source
+/// (the compiled p-code prefix dropped), the source begins at offset 0.
+///
+/// Records are walked exactly as [`parse`] does, so an offset field is patched
+/// only where it genuinely is one; malformed tails are left untouched.
+pub(crate) fn zero_module_offsets(decompressed: &[u8]) -> Vec<u8> {
+    let mut out = decompressed.to_vec();
+    let mut pos = 0usize;
+    while pos + 6 <= out.len() {
+        let id = u16::from_le_bytes([out[pos], out[pos + 1]]);
+        let size =
+            u32::from_le_bytes([out[pos + 2], out[pos + 3], out[pos + 4], out[pos + 5]]) as usize;
+        let body_start = pos + 6;
+        let Some(end) = body_start.checked_add(size).filter(|&e| e <= out.len()) else {
+            break;
+        };
+        if id == ID_MODULEOFFSET && size >= 4 {
+            out[body_start..body_start + 4].fill(0);
+        }
+        pos = end;
+    }
+    out
+}
+
 /// Decodes a byte slice from the project code page to a Rust `String`, used for
 /// module/stream names in the `dir` stream.
 pub(crate) fn decode_mbcs(bytes: &[u8], code_page: u16) -> String {

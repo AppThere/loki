@@ -28,6 +28,11 @@ pub enum VbaError {
     /// A decompression bomb guard tripped — the stream expanded past the cap.
     #[error("VBA stream exceeded the decompression size cap")]
     TooLarge,
+
+    /// Writing an edited project back to a container failed (source-only
+    /// write-back, macro spec §3.4).
+    #[error("VBA container could not be written: {0}")]
+    Write(String),
 }
 
 /// Convenience result alias.

@@ -28,11 +28,13 @@ mod decompress;
 mod dir;
 mod project;
 mod tamper;
+mod write;
 
 pub mod error;
 
 pub use error::{VbaError, VbaResult};
 pub use project::{ModuleKind, VbaModule, VbaProject};
+pub use write::write_source;
 
 // Re-exported for the fuzz harness and integration tests.
 #[doc(hidden)]

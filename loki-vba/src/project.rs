@@ -4,7 +4,7 @@
 //! The public [`VbaProject`] model and the reader that extracts module source
 //! from a `vbaProject.bin` compound file.
 
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Seek};
 use std::path::{Path, PathBuf};
 
 use encoding_rs::Encoding;
@@ -117,7 +117,13 @@ fn extract_source(raw: &[u8], text_offset: usize, code_page: u16) -> String {
     }
 }
 
-fn read_stream(comp: &mut cfb::CompoundFile<Cursor<&[u8]>>, path: &Path) -> VbaResult<Vec<u8>> {
+/// Reads a whole stream into a buffer. Generic over the backing store so both
+/// the reader (`Cursor<&[u8]>`) and the write-back path (`Cursor<Vec<u8>>`) share
+/// it.
+pub(crate) fn read_stream<F: Read + Seek>(
+    comp: &mut cfb::CompoundFile<F>,
+    path: &Path,
+) -> VbaResult<Vec<u8>> {
     let mut stream = comp
         .open_stream(path)
         .map_err(|e| VbaError::Container(e.to_string()))?;
@@ -130,7 +136,7 @@ fn read_stream(comp: &mut cfb::CompoundFile<Cursor<&[u8]>>, path: &Path) -> VbaR
 
 /// Finds the `dir` stream by walking the compound file (its parent storage is
 /// the VBA storage, wherever it lives).
-fn find_dir_stream(comp: &cfb::CompoundFile<Cursor<&[u8]>>) -> Option<PathBuf> {
+pub(crate) fn find_dir_stream<F>(comp: &cfb::CompoundFile<F>) -> Option<PathBuf> {
     comp.walk()
         .find(|e| e.is_stream() && e.name().eq_ignore_ascii_case("dir"))
         .map(|e| e.path().to_path_buf())
