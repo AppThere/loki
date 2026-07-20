@@ -68,6 +68,7 @@ pub(super) fn cell_flow_state<'a>(
         prev_list_id: None,
         note_counter: 0,
         pending_footnotes: Vec::new(),
+        footnote_reserved: 0.0,
         current_paragraphs: Vec::new(),
         checkpoints: Vec::new(),
         columns: 1,

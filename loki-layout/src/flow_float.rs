@@ -30,7 +30,45 @@ use loki_doc_model::content::float::{TextWrap, WrapSide};
 
 use crate::geometry::LayoutRect;
 use crate::items::{PositionedImage, PositionedItem};
+use crate::para::ResolvedParaProps;
 use crate::resolve::{CollectedImage, emu_to_pt};
+
+use super::FlowState;
+
+/// Plan the paragraph's own float (a `wps` text box first, else an image float),
+/// set its wrap band on `resolved`, and drop the floated image from `images` so
+/// it is not also block-stacked. Returns the placement (index into `images` +
+/// [`FloatPlacement`]) and the `(inset, height, shift_text)` band geometry the
+/// caller reuses for the cross-paragraph [`ActiveFloat`]. Split from `flow_para`
+/// for the 300-line ceiling.
+#[allow(clippy::type_complexity)] // the two returned float descriptors are cohesive
+pub(super) fn plan_paragraph_float(
+    state: &mut FlowState,
+    images: &mut Vec<CollectedImage>,
+    resolved: &mut ResolvedParaProps,
+) -> (Option<(usize, FloatPlacement)>, Option<(f32, f32, bool)>) {
+    let cw = state.content_width;
+    let float_plan =
+        super::textbox_impl::plan_textbox(state, images, cw).or_else(|| plan_float(images, cw));
+    let own_float: Option<(f32, f32, bool)> = float_plan.as_ref().map(|(_, p)| {
+        (
+            p.indent_start_delta + p.indent_end_delta,
+            p.height,
+            p.indent_start_delta > 0.0,
+        )
+    });
+    if let Some((idx, _)) = &float_plan
+        && let Some((inset, height, shift_text)) = own_float
+    {
+        resolved.wrap_band = Some(crate::para::WrapBand {
+            inset,
+            cover_height: height,
+            shift_text,
+        });
+        images.remove(*idx);
+    }
+    (float_plan, own_float)
+}
 
 /// A float whose vertical extent reaches past its anchoring paragraph, so the
 /// paragraphs that follow on the same page keep wrapping beside it.

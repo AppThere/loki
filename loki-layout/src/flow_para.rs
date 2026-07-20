@@ -36,7 +36,7 @@ mod split;
 mod widow_orphan;
 
 pub(super) use chain::flow_keep_with_next_chain;
-use place::place_paragraph_layout;
+use place::{place_paragraph_layout, place_with_footnote_band};
 use split::split_and_place_loop;
 
 // ── Public(super) API ─────────────────────────────────────────────────────────
@@ -92,34 +92,18 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
         note.owner_block_index = block_index;
         note.note_in_block = i;
     }
+    // Measure this paragraph's footnote band now; `place_with_footnote_band`
+    // applies it after placement (shrinking `content_bottom()` for following
+    // content) iff the paragraph stays on `page_before_para`.
+    let footnote_reserve = super::tail::footnote_reservation(state, &notes);
+    let page_before_para = state.page_number;
     state.pending_footnotes.extend(notes);
 
-    // ── Floating image wrap (gap #12): reserve a side band so text wraps
-    // beside the float (emitted after text layout; removed from the
-    // inline/block set so it is not also stacked above the text).
-    let cw = state.content_width;
-    // A floating text box (a `wps` shape) is planned first — it flows its own
-    // interior content and renders a box; otherwise plan an image float.
-    let float_plan = super::textbox_impl::plan_textbox(state, &images, cw)
-        .or_else(|| super::float_impl::plan_float(&images, cw));
-    // Band geometry shared by this paragraph's own float (below) and the
-    // `ActiveFloat` it may leave for following paragraphs.
-    let own_float: Option<(f32, f32, bool)> = float_plan.as_ref().map(|(_, p)| {
-        let inset = p.indent_start_delta + p.indent_end_delta;
-        (inset, p.height, p.indent_start_delta > 0.0)
-    });
-    if let Some((idx, _)) = &float_plan
-        && let Some((inset, height, shift_text)) = own_float
-    {
-        // The banded layout path narrows the lines beside the float and reflows
-        // the rest at full width (one of the deltas is zero — left vs right).
-        resolved.wrap_band = Some(crate::para::WrapBand {
-            inset,
-            cover_height: height,
-            shift_text,
-        });
-        images.remove(*idx);
-    }
+    // Floating image/text-box wrap (gap #12): plan the paragraph's own float,
+    // set its wrap band on `resolved`, and drop the floated image from the
+    // block-stacked set (see `flow_float::plan_paragraph_float`).
+    let (float_plan, own_float) =
+        super::float_impl::plan_paragraph_float(state, &mut images, &mut resolved);
 
     state.cursor_y += resolved.space_before;
 
@@ -186,7 +170,17 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     let para_top = state.cursor_y;
     let page_before = state.page_number;
 
-    place_paragraph_layout(state, &resolved, para_layout, block_index);
+    // Place the paragraph, exempting an empty one from — and otherwise applying —
+    // this page's footnote-band reservation (see `place_with_footnote_band`).
+    place_with_footnote_band(
+        state,
+        &resolved,
+        para_layout,
+        block_index,
+        text.trim().is_empty(),
+        footnote_reserve,
+        page_before_para,
+    );
 
     // Maintain the cross-paragraph float band.
     if state.page_number != page_before {

@@ -91,7 +91,7 @@ pub(crate) fn flow_keep_with_next_chain(
         return place_chain_too_tall(state, chain, start, chain_end, total_h);
     }
 
-    let available = state.page_content_height - state.cursor_y;
+    let available = state.content_bottom() - state.cursor_y;
     if total_h > available && state.cursor_y > 0.0 {
         break_column(state);
     }
@@ -209,6 +209,10 @@ fn collect_chain_notes(state: &mut FlowState, mut notes: Vec<CollectedNote>, blo
         note.note_in_block = i;
     }
     state.note_counter += notes.len() as u32;
+    // The chain is placed as a single-page unit (it was measured to fit), so its
+    // notes land on the current page — reserve their band immediately so
+    // post-chain content stops above it.
+    state.footnote_reserved += super::super::tail::footnote_reservation(state, &notes);
     state.pending_footnotes.extend(notes);
 }
 

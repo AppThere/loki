@@ -40,7 +40,9 @@ pub(super) fn split_and_place_loop(
 
     loop {
         let frag_height = para_layout.height - frag_start;
-        let page_remaining = state.page_content_height - state.cursor_y;
+        // Break against the footnote-reserved content limit so lines stop above
+        // this page's footnote band instead of overlapping it.
+        let page_remaining = state.content_bottom() - state.cursor_y;
 
         if frag_height <= page_remaining {
             // Remaining fragment fits on the current page.

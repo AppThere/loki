@@ -184,6 +184,11 @@ pub(super) struct FlowState<'a> {
     /// matching Word — a footnote sits at the foot of the page carrying its
     /// reference, not dumped at the section end).
     pub(super) pending_footnotes: Vec<CollectedNote>,
+    /// Points reserved at the foot of the **current page** for the footnotes
+    /// collected so far (separator band + each note's measured height). Shrinks
+    /// [`content_bottom`](Self::content_bottom) so body content stops above the
+    /// band; reset to `0` at each page boundary (`finish_page`).
+    pub(super) footnote_reserved: f32,
     /// Re-entrancy guard: `true` while `finish_page` is laying out the footnote
     /// band, so a nested page flush during that work does not recurse.
     pub(super) rendering_footnotes: bool,

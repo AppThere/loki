@@ -40,6 +40,26 @@ const SEP_HEIGHT: f32 = 0.5;
 const SEP_GAP: f32 = 4.0;
 const SEP_BAND: f32 = SEP_GAP + SEP_HEIGHT + SEP_GAP;
 
+/// Measure the foot-of-page space `notes` need on the current page — the
+/// separator band (only on the page's first reservation) plus each note's
+/// laid-out height. **Pure** (no mutation), so the caller applies it only once
+/// the reference paragraph is placed on this page. `0.0` when there is nothing
+/// to reserve or the flow is multi-column (footnotes are single-column only).
+pub(super) fn footnote_reservation(state: &mut FlowState, notes: &[CollectedNote]) -> f32 {
+    if notes.is_empty() || state.columns != 1 {
+        return 0.0;
+    }
+    let sep = if state.footnote_reserved == 0.0 {
+        SEP_BAND
+    } else {
+        0.0
+    };
+    sep + notes
+        .iter()
+        .map(|n| measure_note_height(state, n))
+        .sum::<f32>()
+}
+
 /// Height one footnote will occupy, laid out (with its reference mark) exactly
 /// as [`render_footnote_bodies`] will render it, so the reserved band matches.
 fn measure_note_height(state: &mut FlowState, note: &CollectedNote) -> f32 {
@@ -82,15 +102,12 @@ fn measure_note_height(state: &mut FlowState, note: &CollectedNote) -> f32 {
 /// `finish_page` before the page is finalized (so each footnote sits on the page
 /// carrying its reference, matching Word). Single-column body flow only.
 ///
-/// The band is measured and bottom-aligned: it starts at
-/// `page_content_height − total`, but never above where content already stopped
-/// (`cursor_y`), so a nearly-full page places its notes just below the text
-/// rather than on top of it. Pagination is disabled during rendering (the band
-/// is self-contained), and a re-entrancy guard blocks recursion.
-///
-/// Space is not reserved from the content area up-front, so on a *completely*
-/// full page the band can extend past the text margin — see the deferred
-/// reservation note in [`crate::flow`].
+/// The band is bottom-aligned at `page_content_height − total`, but never above
+/// where content stopped (`cursor_y`). Body content already stops above it via
+/// the per-reference reservation ([`footnote_reservation`] +
+/// [`FlowState::content_bottom`]); this bottom-aligns the actual render.
+/// Pagination is disabled during rendering (the band is self-contained) and a
+/// re-entrancy guard blocks recursion.
 pub(super) fn flow_page_footnotes(state: &mut FlowState) {
     if state.pending_footnotes.is_empty() || state.rendering_footnotes || state.columns != 1 {
         return;

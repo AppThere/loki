@@ -167,6 +167,9 @@ pub(crate) fn finish_page(state: &mut FlowState) {
     state.page_number += 1;
     state.current_paragraphs.clear();
     state.cursor_y = 0.0;
+    // The footnote band is laid out; release its per-page reservation so the
+    // fresh page starts with the full content height.
+    state.footnote_reserved = 0.0;
     // Restart margin line numbering at the top of the new page (`newPage`).
     if let Some(ln) = &mut state.line_num {
         ln.restart_for_page();

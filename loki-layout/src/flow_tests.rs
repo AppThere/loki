@@ -1086,6 +1086,72 @@ fn keep_with_next_paragraph_keeps_its_footnote() {
 }
 
 #[test]
+fn footnote_band_stays_within_the_content_area() {
+    use loki_doc_model::content::inline::NoteKind;
+
+    let mut r = test_resources();
+    // A paragraph early on a small page carries a footnote; several fillers then
+    // pack the page. The reservation must stop body content above the band so the
+    // whole band fits inside the content area instead of spilling past it.
+    let note_body = vec![Block::StyledPara(make_para(
+        "A footnote body occupying a line of its own at the foot of the page.",
+    ))];
+    let mut paras = vec![StyledParagraph {
+        style_id: None,
+        direct_para_props: None,
+        direct_char_props: None,
+        inlines: vec![
+            Inline::Str("Reference".into()),
+            Inline::Note(NoteKind::Footnote, note_body),
+        ],
+        attr: NodeAttr::default(),
+    }];
+    for i in 0..12 {
+        paras.push(make_para(&format!(
+            "Filler body line number {i} on this page."
+        )));
+    }
+    let section = section_of(paras, tiny_layout());
+    let (pages, _) = flow_paginated(&mut r, &section);
+
+    // The page carrying the footnote band (its separator rule).
+    let page = pages
+        .iter()
+        .find(|p| {
+            p.content_items
+                .iter()
+                .any(|i| matches!(i, PositionedItem::HorizontalRule(_)))
+        })
+        .expect("a page must carry the footnote band");
+
+    // tiny_layout: 100 pt page − 2×5 pt margins = 90 pt content height.
+    const CONTENT_H: f32 = 90.0;
+    let bottom = |it: &PositionedItem| -> f32 {
+        match it {
+            // Baseline y; the descender adds a little below but stays < content_h.
+            PositionedItem::GlyphRun(g) => g.origin.y,
+            PositionedItem::FilledRect(r) | PositionedItem::HorizontalRule(r) => {
+                r.rect.origin.y + r.rect.size.height
+            }
+            PositionedItem::ClippedGroup { clip_rect, .. } => {
+                clip_rect.origin.y + clip_rect.size.height
+            }
+            _ => 0.0,
+        }
+    };
+    let max_bottom = page
+        .content_items
+        .iter()
+        .map(bottom)
+        .fold(0.0_f32, f32::max);
+    assert!(
+        max_bottom <= CONTENT_H + 1.0,
+        "footnote band + body must fit within the {CONTENT_H} pt content area, \
+         but content reaches {max_bottom} pt (band overlaps the margin)"
+    );
+}
+
+#[test]
 fn keep_with_next_chain_pushed_to_next_page() {
     let mut r = test_resources();
     // para0 has large space_after to fill most of the tiny page.

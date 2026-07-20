@@ -377,11 +377,26 @@ each placed block's notes to `pending_footnotes` (`keep_with_next_paragraph_keep
 and `finish_page` (`flow_tail::flow_page_footnotes`) lays out that page's
 footnotes in a measured, bottom-aligned band, with pagination disabled for the
 self-contained band (no spurious overflow page). The report's two footnotes now
-sit together at the foot of page 3 and the fixture stays 7 pages. **Deferred
-refinement:** the band is bottom-aligned but its height is not *reserved* from
-the content area up-front, so on a completely full page the notes can extend past
-the text margin instead of pushing content down; multi-column and non-paginated
-(reflow) footnotes keep the section-end fallback.
+sit together at the foot of page 3 and the fixture stays 7 pages. **Space
+reservation (2026-07-20):** the band's height is now *reserved* from the content
+area as each footnote reference is placed, so body content stops above the band
+instead of overlapping it on a full page. `FlowState::footnote_reserved`
+accumulates the measured band height per page (separator + each note, via
+`flow_tail::footnote_reservation`); the "space remaining on this page" break
+checks (`flow_split`, `flow_para_place`, `flow_para_chain`, `flow_table_main`)
+use `FlowState::content_bottom()` = `page_content_height − footnote_reserved`
+instead of the full height; and `finish_page` resets the reservation per page.
+The reservation is applied *after* the reference paragraph is placed and only if
+it stayed on its page (`place_with_footnote_band`), so a paragraph that breaks
+does not double-count. An **empty** (section-break) paragraph is exempted — it
+has no visible glyphs and may sit within the band, which stops the reservation
+from spilling a trailing section mark onto a spurious page (the failure mode that
+had deferred this). Verified on the fixture: the intro page's blockquote stops
+above the footnote band (no overlap) and the document stays 7 pages; tested by
+`footnote_band_stays_within_the_content_area`. **Remaining:** multi-column and
+non-paginated (reflow) footnotes keep the section-end fallback; a footnote
+reference in the very last line of a full page can still bottom-align its band
+into the margin (no visible-text overlap).
 **Emboss / imprint / shadow run effects** (`w:emboss`, `w:imprint`, `w:shadow`)
 now render as a 3-D relief: a second offset glyph copy behind the run — a darker
 copy for shadow/emboss (drop shadow / raised), a lighter copy for imprint
@@ -451,7 +466,6 @@ render). A text box with no wrap style still maps to a block `Div` (unchanged).
 with floating images.
 
 **Gaps it currently surfaces** (candidate golden-diff regions; not yet fixed):
-footnote space is not reserved from the content area (see above);
 a block-stacked inline image is
 left-aligned rather than honouring the paragraph's `w:jc`; header/footer
 references are not **inherited** across section breaks (the fixture declares them

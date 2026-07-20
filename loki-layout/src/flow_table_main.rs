@@ -56,7 +56,9 @@ pub(super) fn flow_table(
         let row_max_h = row_heights[row_idx];
 
         if state.mode.is_paginated() {
-            let remaining_h = state.page_content_height - state.cursor_y;
+            // Remaining space honours this page's footnote reservation so a row
+            // does not overlap the footnote band.
+            let remaining_h = state.content_bottom() - state.cursor_y;
             if row_max_h > remaining_h && row_max_h <= state.page_content_height {
                 // A whole row that fits in a band but not the remaining space
                 // moves to the next column (or page).
