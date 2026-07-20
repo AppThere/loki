@@ -42,6 +42,25 @@ impl TrustDecision {
     }
 }
 
+/// How a document's macros came to be trusted (spec §2.5).
+///
+/// Trust is never inferred from a document's own content (T10); this records
+/// *how* an existing trust record was established, so an in-app edit can keep
+/// trust while an external modification cannot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum Provenance {
+    /// The document arrived from elsewhere (file manager, download, sync, a
+    /// collaboration server). The default — nothing self-authored.
+    #[default]
+    External,
+    /// The macros were authored or edited **in Loki on this machine** (spec
+    /// §2.5): created here, or last written back through the macro editor. Such
+    /// an edit re-keys the trust record to the new payload hash rather than
+    /// dropping trust (an external change to the same bytes still would, because
+    /// it never travels through the editor's re-key path).
+    AuthoredHere,
+}
+
 /// A persisted, always-for-document capability grant (spec §2.4).
 ///
 /// Only [`GrantScope::AlwaysForDocument`] grants are recorded here; once/session
@@ -78,6 +97,10 @@ pub struct TrustRecord {
     /// Persisted always-for-document capability grants (spec §5.4).
     #[serde(default)]
     pub capability_grants: Vec<PersistedGrant>,
+    /// How this trust was established (spec §2.5). Defaults to
+    /// [`Provenance::External`] for records written before this field existed.
+    #[serde(default)]
+    pub provenance: Provenance,
     /// Unix seconds when the record was created (advisory).
     #[serde(default)]
     pub created: u64,
@@ -97,6 +120,7 @@ impl TrustRecord {
             decision,
             auto_run_open: false,
             capability_grants: Vec::new(),
+            provenance: Provenance::External,
             created: now,
             last_used: now,
         }
@@ -107,6 +131,19 @@ impl TrustRecord {
     pub fn with_origin(mut self, path: Option<PathBuf>) -> Self {
         self.origin_path = path;
         self
+    }
+
+    /// Builder: set how this trust was established (spec §2.5).
+    #[must_use]
+    pub fn with_provenance(mut self, provenance: Provenance) -> Self {
+        self.provenance = provenance;
+        self
+    }
+
+    /// Whether these macros were authored/edited in Loki (spec §2.5).
+    #[must_use]
+    pub fn is_authored(&self) -> bool {
+        self.provenance == Provenance::AuthoredHere
     }
 
     /// Whether an always-for-document allow grant exists for `cap`.

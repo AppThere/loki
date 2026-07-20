@@ -15,7 +15,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use super::record::{TrustDecision, TrustRecord};
+use super::record::{Provenance, TrustDecision, TrustRecord, now_secs};
 use crate::error::MacroHostError;
 
 /// On-disk schema version, so future format changes are detectable.
@@ -106,6 +106,29 @@ impl TrustStore {
     /// Inserts or replaces a record.
     pub fn insert(&mut self, record: TrustRecord) {
         self.records.insert(record.doc_key, record);
+    }
+
+    /// Re-keys the record from `old_key` to `new_key` and marks it
+    /// [`Provenance::AuthoredHere`] — the trust half of an **in-app macro edit**
+    /// (spec §2.4/§2.5). When the editor writes back edited source the payload
+    /// hash changes; this carries the existing decision, grants, and auto-run
+    /// opt-in over to the new hash so the user's own edit keeps trust.
+    ///
+    /// Returns `true` if a record existed at `old_key` and was moved. When no
+    /// record exists it returns `false` and creates nothing — trust is never
+    /// fabricated, so an untrusted document stays untrusted after an edit, and an
+    /// *external* modification (which never calls this) still drops to untrusted
+    /// via the plain hash mismatch. If `old_key == new_key` (a no-op edit) the
+    /// existing record is marked authored in place.
+    pub fn reauthor(&mut self, old_key: &[u8; 32], new_key: [u8; 32]) -> bool {
+        let Some(mut record) = self.records.remove(old_key) else {
+            return false;
+        };
+        record.doc_key = new_key;
+        record.provenance = Provenance::AuthoredHere;
+        record.last_used = now_secs();
+        self.records.insert(new_key, record);
+        true
     }
 
     /// Removes the record for `key` — "forget this document" (spec §9.4).

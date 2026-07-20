@@ -4,7 +4,7 @@
 use loki_doc_model::io::macros::{MacroPayload, MacroPayloadKind, PreservedPart};
 
 use crate::capability::{Capability, GrantScope};
-use crate::trust::{TrustDecision, TrustRecord, TrustStore};
+use crate::trust::{Provenance, TrustDecision, TrustRecord, TrustStore};
 
 fn payload(bytes: &[u8]) -> MacroPayload {
     MacroPayload::new(
@@ -165,4 +165,123 @@ fn forget_removes_record() {
     assert_eq!(store.len(), 1);
     assert!(store.forget(&key).is_some());
     assert!(store.is_empty());
+}
+
+// ── §2.5: self-authored edits keep trust; external changes do not ────────────
+
+#[test]
+fn reauthor_moves_trust_to_the_new_hash_and_marks_authored() {
+    // A trusted document is edited in-app: its payload hash changes old → new.
+    let old = payload(b"Sub Main : End Sub").payload_hash();
+    let new = payload(b"Sub Main : Beep : End Sub").payload_hash();
+    assert_ne!(old, new);
+
+    let mut store = TrustStore::default();
+    let mut rec = TrustRecord::new(old, TrustDecision::Trusted);
+    rec.auto_run_open = true;
+    rec.set_grant(Capability::DocWrite, GrantScope::AlwaysForDocument);
+    store.insert(rec);
+
+    assert!(store.reauthor(&old, new), "an existing record moves");
+
+    // Old hash no longer resolves; the new hash carries the trust + grants.
+    assert_eq!(store.decision(&old), TrustDecision::Disabled);
+    let moved = store.get(&new).expect("trust followed the edit");
+    assert_eq!(moved.decision, TrustDecision::Trusted);
+    assert!(moved.auto_run_open);
+    assert!(moved.grants(Capability::DocWrite));
+    assert!(
+        moved.is_authored(),
+        "an in-app edit is self-authored (§2.5)"
+    );
+    assert_eq!(store.len(), 1, "re-keyed, not duplicated");
+}
+
+#[test]
+fn reauthor_never_fabricates_trust_for_an_unknown_document() {
+    // No record at the old hash ⇒ nothing to carry; trust is never invented.
+    let old = payload(b"never trusted").payload_hash();
+    let new = payload(b"never trusted, now edited").payload_hash();
+    let mut store = TrustStore::default();
+
+    assert!(!store.reauthor(&old, new));
+    assert!(store.is_empty());
+    assert_eq!(store.decision(&new), TrustDecision::Disabled);
+}
+
+#[test]
+fn external_modification_without_reauthor_drops_trust() {
+    // The contrast to reauthor: a document changed *outside* Loki simply presents
+    // a new hash the store has no record for — untrusted, per §2.4. (Nothing
+    // calls reauthor for an external change.)
+    let original = payload(b"trusted body").payload_hash();
+    let tampered = payload(b"trusted body + injected macro").payload_hash();
+
+    let mut store = TrustStore::default();
+    store.insert(TrustRecord::new(original, TrustDecision::Trusted));
+
+    assert_eq!(store.decision(&original), TrustDecision::Trusted);
+    assert_eq!(
+        store.decision(&tampered),
+        TrustDecision::Disabled,
+        "an external payload change is untrusted until re-enabled"
+    );
+}
+
+#[test]
+fn reauthor_in_place_for_a_noop_edit() {
+    // Editing to identical bytes: old_key == new_key. The record stays and is
+    // marked authored.
+    let key = payload(b"unchanged").payload_hash();
+    let mut store = TrustStore::default();
+    store.insert(TrustRecord::new(key, TrustDecision::Trusted));
+
+    assert!(store.reauthor(&key, key));
+    let rec = store.get(&key).expect("still present");
+    assert!(rec.is_authored());
+    assert_eq!(rec.decision, TrustDecision::Trusted);
+    assert_eq!(store.len(), 1);
+}
+
+#[test]
+fn authored_provenance_persists_across_save_and_reload() {
+    let dir = std::env::temp_dir().join(format!("loki-trust-prov-{}", std::process::id()));
+    let path = dir.join("trust.json");
+    let _ = std::fs::remove_file(&path);
+
+    let key = payload(b"authored here").payload_hash();
+    {
+        let mut store = TrustStore::new(Some(path.clone()));
+        store.insert(
+            TrustRecord::new(key, TrustDecision::Trusted).with_provenance(Provenance::AuthoredHere),
+        );
+        store.save().expect("save");
+    }
+    let reloaded = TrustStore::load(path.clone()).expect("load");
+    assert!(reloaded.get(&key).expect("record survived").is_authored());
+
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_dir(&dir);
+}
+
+#[test]
+fn provenance_defaults_to_external_for_legacy_records() {
+    // A record written before the field existed (no `provenance` key) loads as
+    // External, so old stores are never silently treated as self-authored.
+    let key = [7u8; 32];
+    let json = format!(
+        r#"{{"version":1,"records":{{"{}":{{"doc_key":"{}","decision":"Trusted"}}}}}}"#,
+        crate::trust::hex::encode(&key),
+        crate::trust::hex::encode(&key),
+    );
+    let dir = std::env::temp_dir().join(format!("loki-trust-legacy-{}", std::process::id()));
+    let path = dir.join("trust.json");
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    std::fs::write(&path, json).expect("write");
+
+    let store = TrustStore::load(path.clone()).expect("load");
+    assert!(!store.get(&key).expect("loaded").is_authored());
+
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_dir(&dir);
 }

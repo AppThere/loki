@@ -11,5 +11,5 @@ pub(crate) mod hex;
 mod record;
 mod store;
 
-pub use record::{PersistedGrant, TrustDecision, TrustRecord};
+pub use record::{PersistedGrant, Provenance, TrustDecision, TrustRecord};
 pub use store::TrustStore;
