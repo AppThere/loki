@@ -3,7 +3,7 @@
 #
 # Detached from the main workspace (own empty [workspace] table) so ordinary
 # `cargo build --workspace` and CI never build it. Run with:
-#   cargo +nightly fuzz run decompress   (or `read`)
+#   cargo +nightly fuzz run decompress   (or `read`, `compress_roundtrip`)
 [package]
 name = "loki-vba-fuzz"
 version = "0.0.0"
@@ -28,5 +28,11 @@ doc = false
 [[bin]]
 name = "read"
 path = "fuzz_targets/read.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "compress_roundtrip"
+path = "fuzz_targets/compress_roundtrip.rs"
 test = false
 doc = false

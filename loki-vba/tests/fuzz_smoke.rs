@@ -5,7 +5,7 @@
 //! return `Result` (never panic) on malformed, truncated, or adversarial input.
 //! In-tree complement to the `cargo-fuzz` targets (macro spec §12, T9).
 
-use loki_vba::{VbaProject, decompress};
+use loki_vba::{VbaProject, compress, decompress};
 
 #[test]
 fn decompress_never_panics_on_adversarial_input() {
@@ -36,6 +36,23 @@ fn decompress_bomb_guard_bounds_output() {
     let mut input = vec![0x01u8, 0xFF, 0xB0]; // header claims a large chunk
     input.extend(std::iter::repeat_n(0xFFu8, 4096));
     let _ = decompress(&input); // must return (Ok or Err), never hang/panic
+}
+
+#[test]
+fn compress_round_trips_arbitrary_bytes() {
+    // The write-back invariant (macro spec §3.4): `decompress ∘ compress == id`
+    // for any source bytes, so a save can never corrupt a module.
+    let cases: Vec<Vec<u8>> = vec![
+        vec![],
+        vec![0x00],
+        b"Sub X()\r\nEnd Sub\r\n".to_vec(),
+        (0..=255u8).collect(),
+        vec![0x41u8; 4097], // spans a chunk boundary
+        (0u16..9000).map(|i| (i % 256) as u8).collect(),
+    ];
+    for c in &cases {
+        assert_eq!(&decompress(&compress(c)).expect("round-trips"), c);
+    }
 }
 
 #[test]

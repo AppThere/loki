@@ -23,6 +23,7 @@
 //! filesystem, no network, no code execution. Malformed or hostile input
 //! degrades to a typed [`VbaError`], never a panic (§12, T9).
 
+mod compress;
 mod decompress;
 mod dir;
 mod project;
@@ -34,5 +35,7 @@ pub use error::{VbaError, VbaResult};
 pub use project::{ModuleKind, VbaModule, VbaProject};
 
 // Re-exported for the fuzz harness and integration tests.
+#[doc(hidden)]
+pub use compress::compress;
 #[doc(hidden)]
 pub use decompress::decompress;
