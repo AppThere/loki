@@ -100,6 +100,12 @@ pub(crate) struct OdfGraphicWrap {
     pub wrap: Option<String>,
     /// `style:run-through` — `"foreground"` or `"background"` (behind text).
     pub run_through: Option<String>,
+    /// `draw:fill-color` — frame solid-fill colour (`"#RRGGBB"`), when
+    /// `draw:fill="solid"`. Used to recover a floating text box's fill.
+    pub fill_color: Option<String>,
+    /// `svg:stroke-color` — frame border colour (`"#RRGGBB"`), when
+    /// `draw:stroke="solid"`. Used to recover a floating text box's border.
+    pub stroke_color: Option<String>,
 }
 
 /// The family of ODF elements a style applies to.

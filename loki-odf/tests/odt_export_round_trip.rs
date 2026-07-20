@@ -339,6 +339,97 @@ fn emboss_and_char_border_round_trip_through_odt() {
     assert_eq!(eng.emboss, None, "imprint is not emboss");
 }
 
+/// A floating text box (`Inline::TextBox`) must survive an ODT export→re-import:
+/// the writer emits a `draw:frame`/`draw:text-box` with a graphic auto-style
+/// (wrap + fill + border), and the importer maps that floating frame back to an
+/// `Inline::TextBox` — so a text box round-trips DOCX ↔ ODT.
+#[test]
+fn floating_text_box_round_trips_through_odt() {
+    use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
+
+    let mut attr = NodeAttr::default();
+    attr.kv.push(("cx_emu".to_string(), "1828800".to_string())); // 144 pt
+    attr.kv.push(("cy_emu".to_string(), "731520".to_string())); // 57.6 pt
+    attr.kv
+        .push(("textbox-fill".to_string(), "FDF0E6".to_string()));
+    attr.kv
+        .push(("textbox-line".to_string(), "ED7D31".to_string()));
+    FloatWrap {
+        wrap: TextWrap::Square,
+        side: WrapSide::Right,
+        behind_text: false,
+    }
+    .store(&mut attr);
+    let text_box = Inline::TextBox(
+        attr,
+        vec![Block::Para(vec![Inline::Str("Sidebar body.".to_string())])],
+    );
+
+    let mut doc = sample_doc();
+    doc.sections[0].blocks.push(Block::Para(vec![
+        text_box,
+        Inline::Str("Body copy beside the box.".to_string()),
+    ]));
+
+    let out = round_trip(&doc);
+
+    let (at, blocks) = out
+        .sections
+        .iter()
+        .flat_map(|s| &s.blocks)
+        .flat_map(|b| match b {
+            Block::Para(i) | Block::Plain(i) => i.clone(),
+            Block::StyledPara(sp) => sp.inlines.clone(),
+            _ => vec![],
+        })
+        .find_map(|i| match i {
+            Inline::TextBox(at, blocks) => Some((at, blocks)),
+            _ => None,
+        })
+        .expect("a floating text box must survive as Inline::TextBox");
+
+    assert!(
+        at.kv
+            .iter()
+            .any(|(k, v)| k == "textbox-fill" && v == "FDF0E6"),
+        "fill survives: {:?}",
+        at.kv
+    );
+    assert!(
+        at.kv
+            .iter()
+            .any(|(k, v)| k == "textbox-line" && v == "ED7D31"),
+        "border survives: {:?}",
+        at.kv
+    );
+    assert!(
+        at.kv.iter().any(|(k, v)| k == "cx_emu" && v == "1828800"),
+        "geometry survives: {:?}",
+        at.kv
+    );
+    assert!(
+        FloatWrap::read_or_class_default(&at).is_some(),
+        "wrap survives so the flow engine still floats it: {:?}",
+        at.kv
+    );
+    let inner: String = blocks
+        .iter()
+        .flat_map(|b| match b {
+            Block::Para(i) | Block::Plain(i) => i.clone(),
+            Block::StyledPara(sp) => sp.inlines.clone(),
+            _ => vec![],
+        })
+        .filter_map(|i| match i {
+            Inline::Str(s) => Some(s),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        inner.contains("Sidebar body."),
+        "interior text survives: {inner:?}"
+    );
+}
+
 #[test]
 fn inline_bookmark_field_and_image_round_trip() {
     use loki_doc_model::content::field::types::{Field, FieldKind};

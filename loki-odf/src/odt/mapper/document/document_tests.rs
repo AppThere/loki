@@ -57,6 +57,8 @@ fn graphic_style(name: &str, wrap: &str) -> OdfStyle {
         graphic_wrap: Some(OdfGraphicWrap {
             wrap: Some(wrap.into()),
             run_through: None,
+            fill_color: None,
+            stroke_color: None,
         }),
         table_props: None,
         is_automatic: true,
