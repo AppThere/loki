@@ -242,13 +242,37 @@ pub fn link_at_point(
     editing.link_at(content_x, content_y).map(str::to_owned)
 }
 
+/// Where a Ctrl/Cmd+clicked link resolves to — the pure routing decision behind
+/// [`open_or_run`], separated from its side effect so the click-to-run flow can
+/// be asserted without a Dioxus runtime or launching a browser.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LinkRoute {
+    /// A `loki-macro:` target: run the named document macro through the
+    /// trust-gated runner (macro spec §6).
+    RunMacro(String),
+    /// Any other URL: open it in the OS browser.
+    OpenBrowser,
+}
+
+/// Classifies a clicked link URL without performing any side effect: a
+/// `loki-macro:<name>` target routes to the gated macro runner (carrying the
+/// bare macro name); every other URL routes to the browser.
+#[must_use]
+pub fn classify_link(url: &str) -> LinkRoute {
+    match url.strip_prefix(MACRO_LINK_SCHEME) {
+        Some(name) => LinkRoute::RunMacro(name.to_string()),
+        None => LinkRoute::OpenBrowser,
+    }
+}
+
 /// Routes a Ctrl/Cmd+clicked link: a `loki-macro:` target sets `macro_run_request`
 /// (so the macro notice bar dispatches a trust-gated run, macro spec §6); any
-/// other URL opens in the OS browser.
+/// other URL opens in the OS browser. Thin side-effecting wrapper over
+/// [`classify_link`].
 pub fn open_or_run(url: &str, mut macro_run_request: Signal<Option<String>>) {
-    match url.strip_prefix(MACRO_LINK_SCHEME) {
-        Some(name) => macro_run_request.set(Some(name.to_string())),
-        None => {
+    match classify_link(url) {
+        LinkRoute::RunMacro(name) => macro_run_request.set(Some(name)),
+        LinkRoute::OpenBrowser => {
             let _ = webbrowser::open(url);
         }
     }
