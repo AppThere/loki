@@ -253,7 +253,17 @@ pub(super) fn emit_row_cell_decorations(
                         }),
                     );
                 }
-                if let Some(bg) = cell_bg.as_ref() {
+                // A `w:shd` line/cross texture paints as a hatch (bg + lines);
+                // a plain fill paints as a flat rect. Direct cell shading only —
+                // table-style banding has no texture.
+                if let Some(shading) = cell.props.shading.as_ref() {
+                    items.insert(
+                        insert_idx,
+                        PositionedItem::HatchRect(crate::resolve::hatch_from_shading(
+                            shading, cell_rect,
+                        )),
+                    );
+                } else if let Some(bg) = cell_bg.as_ref() {
                     items.insert(
                         insert_idx,
                         PositionedItem::FilledRect(PositionedRect {

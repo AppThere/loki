@@ -38,6 +38,9 @@ pub struct ResolvedParaProps {
     pub line_height: Option<ResolvedLineHeight>,
     /// Optional paragraph background fill.
     pub background_color: Option<LayoutColor>,
+    /// Optional `w:shd` line/cross hatch shading. When set, the renderer draws
+    /// the hatch lines instead of a flat `background_color` fill.
+    pub background_hatch: Option<loki_doc_model::style::props::shading::ShadingPattern>,
     /// Top border edge, or `None`.
     pub border_top: Option<BorderEdge>,
     /// Bottom border edge, or `None`.
@@ -116,6 +119,7 @@ impl Default for ResolvedParaProps {
             indent_first_line: 0.0,
             line_height: None, // None → MetricsRelative(1.0) default in Parley
             background_color: None,
+            background_hatch: None,
             border_top: None,
             border_bottom: None,
             border_left: None,

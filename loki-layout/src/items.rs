@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use crate::color::LayoutColor;
 use crate::geometry::{LayoutPoint, LayoutRect};
+use crate::hatch::PositionedHatch;
 
 /// A single renderer-agnostic draw item with an absolute position in layout
 /// space.
@@ -24,6 +25,10 @@ pub enum PositionedItem {
     GlyphRun(PositionedGlyphRun),
     /// A filled rectangle (backgrounds, table cell fills, etc.).
     FilledRect(PositionedRect),
+    /// A hatch-shaded rectangle (`w:shd` line/cross texture): an optional
+    /// background fill overlaid with hatch lines. The renderer draws the lines;
+    /// see [`PositionedHatch`].
+    HatchRect(PositionedHatch),
     /// A border rectangle (stroked, not filled).
     BorderRect(PositionedBorderRect),
     /// An image at a position.
@@ -72,6 +77,10 @@ impl PositionedItem {
             Self::FilledRect(r) | Self::HorizontalRule(r) => {
                 r.rect.origin.x += dx;
                 r.rect.origin.y += dy;
+            }
+            Self::HatchRect(h) => {
+                h.rect.origin.x += dx;
+                h.rect.origin.y += dy;
             }
             Self::BorderRect(r) => {
                 r.rect.origin.x += dx;

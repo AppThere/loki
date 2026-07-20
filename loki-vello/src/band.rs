@@ -37,6 +37,7 @@ fn y_extent(item: &PositionedItem) -> (f32, f32) {
         PositionedItem::FilledRect(r) | PositionedItem::HorizontalRule(r) => {
             (r.rect.origin.y, r.rect.origin.y + r.rect.size.height)
         }
+        PositionedItem::HatchRect(h) => (h.rect.origin.y, h.rect.origin.y + h.rect.size.height),
         PositionedItem::BorderRect(r) => (r.rect.origin.y, r.rect.origin.y + r.rect.size.height),
         PositionedItem::Image(img) => (img.rect.origin.y, img.rect.origin.y + img.rect.size.height),
         PositionedItem::Decoration(d) => (d.y - d.thickness, d.y + d.thickness * 2.0),
@@ -79,6 +80,7 @@ fn x_extent(item: &PositionedItem) -> f32 {
         PositionedItem::FilledRect(r) | PositionedItem::HorizontalRule(r) => {
             r.rect.origin.x + r.rect.size.width
         }
+        PositionedItem::HatchRect(h) => h.rect.origin.x + h.rect.size.width,
         PositionedItem::BorderRect(r) => r.rect.origin.x + r.rect.size.width,
         PositionedItem::Image(img) => img.rect.origin.x + img.rect.size.width,
         PositionedItem::Decoration(d) => d.x + d.width,

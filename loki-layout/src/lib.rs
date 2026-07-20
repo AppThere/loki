@@ -28,6 +28,8 @@ pub mod flow;
 pub mod font;
 pub mod font_handle;
 pub mod geometry;
+#[path = "hatch.rs"]
+pub mod hatch;
 pub mod incremental;
 pub mod items;
 mod layout_entry;
@@ -51,6 +53,7 @@ pub use flow::{FlowOutput, LayoutWarning, flow_section};
 pub use font::FontResources;
 pub use font_handle::SharedFontResources;
 pub use geometry::{LayoutInsets, LayoutPoint, LayoutRect, LayoutSize};
+pub use hatch::{HatchPattern, HatchSegment, PositionedHatch};
 pub use incremental::{
     FlowCheckpoint, PageStart, PaginatedReuse, document_has_notes, relayout_paginated_incremental,
 };

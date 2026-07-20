@@ -254,6 +254,7 @@ pub(super) fn get_items_max_x(items: &[PositionedItem]) -> f32 {
             PositionedItem::FilledRect(r) | PositionedItem::HorizontalRule(r) => {
                 r.rect.origin.x + r.rect.size.width
             }
+            PositionedItem::HatchRect(h) => h.rect.origin.x + h.rect.size.width,
             PositionedItem::BorderRect(r) => r.rect.origin.x + r.rect.size.width,
             PositionedItem::Image(r) => r.rect.origin.x + r.rect.size.width,
             PositionedItem::Decoration(d) => d.x + d.width,

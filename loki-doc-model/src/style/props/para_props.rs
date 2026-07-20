@@ -140,6 +140,10 @@ pub struct ParaProps {
     // ── Background ────────────────────────────────────────────────────────
     /// Paragraph background fill color. ODF `fo:background-color`; OOXML `w:shd`.
     pub background_color: Option<DocumentColor>,
+    /// Line/cross hatch shading (`w:shd` texture value). When set, the renderer
+    /// draws the hatch lines; `background_color` holds the flattened-tint
+    /// fallback for consumers that cannot. `None` for a plain solid fill.
+    pub shading: Option<crate::style::props::shading::ShadingPattern>,
 
     // ── Tab stops ─────────────────────────────────────────────────────────
     /// Custom tab stops for this paragraph. ODF `style:tab-stop` list;

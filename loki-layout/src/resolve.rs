@@ -57,6 +57,48 @@ pub fn resolve_color(color: Option<&DocumentColor>) -> LayoutColor {
     }
 }
 
+/// Build a [`PositionedHatch`](crate::hatch::PositionedHatch) for `rect` from a
+/// doc-model [`ShadingPattern`], resolving both colours and mapping the pattern
+/// to the layout-level [`HatchPattern`](crate::hatch::HatchPattern).
+pub fn hatch_from_shading(
+    shading: &loki_doc_model::style::props::shading::ShadingPattern,
+    rect: crate::geometry::LayoutRect,
+) -> crate::hatch::PositionedHatch {
+    use crate::hatch::HatchPattern as L;
+    use loki_doc_model::style::props::shading::HatchPattern as M;
+    let pattern = match shading.pattern {
+        M::Horizontal => L::Horizontal,
+        M::Vertical => L::Vertical,
+        M::DiagUp => L::DiagUp,
+        M::DiagDown => L::DiagDown,
+        M::Cross => L::Cross,
+        M::DiagCross => L::DiagCross,
+    };
+    crate::hatch::PositionedHatch {
+        rect,
+        fill: shading.fill.as_ref().map(|c| resolve_color(Some(c))),
+        color: resolve_color(Some(&shading.color)),
+        pattern,
+        thin: shading.thin,
+    }
+}
+
+/// Build the paragraph background draw item for `rect`: a [`PositionedItem::HatchRect`]
+/// when the paragraph carries a `w:shd` texture, else a flat
+/// [`PositionedItem::FilledRect`] for a solid `background_color`, else `None`.
+pub fn para_background_item(
+    pp: &ResolvedParaProps,
+    rect: crate::geometry::LayoutRect,
+) -> Option<crate::items::PositionedItem> {
+    use crate::items::{PositionedItem, PositionedRect};
+    if let Some(shading) = pp.background_hatch.as_ref() {
+        Some(PositionedItem::HatchRect(hatch_from_shading(shading, rect)))
+    } else {
+        pp.background_color
+            .map(|color| PositionedItem::FilledRect(PositionedRect { rect, color }))
+    }
+}
+
 /// Convert a [`Points`] value to `f32`.
 pub fn pts_to_f32(pts: Points) -> f32 {
     pts.value() as f32

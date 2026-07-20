@@ -331,14 +331,24 @@ invisible when — as in Loki's wider line — the text does not break at it (Wo
 shows it only because its narrower line happens to break there). Tested by
 `no_break_hyphen_becomes_u2011` / `soft_hyphen_becomes_u00ad`.
 **Line/cross `w:shd` texture patterns** (`diagStripe`, `horzStripe`,
-`diagCross`, `thin*`, …) now render as a flat tint of the pattern's `@w:color`
-over `@w:fill` at the pattern's approximate ink coverage, instead of dropping to
-the (often white) fill and rendering blank — `resolve_shading` gained a
-`texture_coverage` table. The appendix's "diagonal stripe" cell now shows an
-orange tint like Word's (Loki paints flat fills, so the hatch lines themselves
-are still an approximation); tested by `shading_texture_pattern_blends_color_over_fill`
-and `shading_thin_texture_is_lighter_than_bold`. (`pctN` shading already blended
-— the "25% pattern" cell matched Word.)
+`diagCross`, `thin*`, …) now render as **actual hatch lines (2026-07-20)**, not a
+flat tint. The mapper preserves the pattern (`resolve_shading_pattern` →
+`ShadingPattern { pattern, thin, color, fill }` on `ParaProps`/`CellProps`, kept
+alongside the flattened-tint `background_color` fallback); the flow engine emits
+a `PositionedItem::HatchRect` for a shaded cell/paragraph
+(`resolve::hatch_from_shading`); `loki-layout`'s `hatch.rs` turns the rect +
+pattern into rect-clipped line segments (Liang–Barsky clip, a perpendicular
+family for the cross variants); and both renderers draw them — `loki-vello`
+strokes each segment (`rect::paint_hatch`), `loki-pdf` fills a thin quad per
+segment (`render_hatch`, keeping its fill-only colour pipeline). The appendix's
+"diagonal stripe" cell now shows real orange `/` stripes matching Word, verified
+by rendering the ACID2 DOCX to PDF. Tested by
+`shading_pattern_preserves_geometry_and_colors` (mapper) and the `hatch.rs`
+geometry unit tests (horizontal/vertical/cross span the rect; diagonals stay
+clipped inside it; `thin*` is thinner + closer). The flattened-tint path
+(`resolve_shading` + `texture_coverage`) is retained for consumers that cannot
+draw the hatch — ODT/EPUB export and the reflow paths. (`pctN` shading already
+blended — the "25% pattern" cell matched Word.)
 **Character borders (`w:bdr`)** now render: the run reader parses `w:bdr`, the
 mapper carries it as `CharProps.character_border` (a `Border`), and the layout
 draws a border box around the run — one box per visual line via the same Parley
@@ -442,8 +452,6 @@ with floating images.
 
 **Gaps it currently surfaces** (candidate golden-diff regions; not yet fixed):
 footnote space is not reserved from the content area (see above);
-line/cross `w:shd` textures are flattened to a solid tint (the
-hatch lines are not drawn);
 a block-stacked inline image is
 left-aligned rather than honouring the paragraph's `w:jc`; header/footer
 references are not **inherited** across section breaks (the fixture declares them

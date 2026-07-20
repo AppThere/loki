@@ -16,7 +16,7 @@ use parley::{AlignmentOptions, InlineBox, InlineBoxKind, PositionedLayoutItem};
 
 use crate::font::FontResources;
 use crate::geometry::LayoutRect;
-use crate::items::{PositionedBorderRect, PositionedItem, PositionedRect};
+use crate::items::{PositionedBorderRect, PositionedItem};
 
 #[path = "para_build.rs"]
 mod build;
@@ -229,14 +229,11 @@ fn prepend_para_box(
             }),
         );
     }
-    if let Some(bg) = para_props.background_color {
-        items.insert(
-            0,
-            PositionedItem::FilledRect(PositionedRect {
-                rect: LayoutRect::new(x, 0.0, w, height),
-                color: bg,
-            }),
-        );
+    // A `w:shd` texture paints as a hatch (bg + lines); a solid fill as a flat
+    // rect (`para_background_item`).
+    let bg_rect = LayoutRect::new(x, 0.0, w, height);
+    if let Some(item) = crate::resolve::para_background_item(para_props, bg_rect) {
+        items.insert(0, item);
     }
 }
 
