@@ -119,8 +119,11 @@ fn run_repair(args: &RepairArgs) -> Result<(), CliError> {
         source: e,
     })?;
 
-    // Report-only when --check is set or no --out was given.
-    if args.check || args.output.is_none() {
+    // The repair-and-write path needs an `--out` and no `--check`; every other
+    // combination (no `--out`, or `--check` set) is report-only. Binding `out`
+    // with `let-else` makes "output present here" a type-level fact, so the
+    // write path never has to assert it at runtime.
+    let Some(out) = args.output.as_ref().filter(|_| !args.check) else {
         let report = loki_ooxml::analyze_docx(&input)?;
         if report.is_clean() {
             println!(
@@ -141,12 +144,8 @@ fn run_repair(args: &RepairArgs) -> Result<(), CliError> {
             }
         }
         return Ok(());
-    }
+    };
 
-    let out = args
-        .output
-        .as_ref()
-        .expect("output present in repair branch");
     let (bytes, report) = loki_ooxml::repair_docx(&input)?;
     for f in &report.findings {
         println!("fixed [{}] <{}>: {}", f.part, f.container, f.detail);
