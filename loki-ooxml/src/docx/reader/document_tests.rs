@@ -256,7 +256,7 @@ fn two_level_table_nesting_parses() {
 fn excessive_table_nesting_is_rejected_not_stack_overflow() {
     let err = parse_document(&nested_table_doc(150)).unwrap_err();
     assert!(
-        matches!(err, OoxmlError::NestingTooDeep { limit: 100 }),
+        matches!(err, OoxmlError::NestingTooDeep { limit: 50 }),
         "expected NestingTooDeep, got {err:?}"
     );
 }
@@ -277,7 +277,7 @@ fn excessive_sdt_nesting_is_rejected() {
     xml.push_str("</w:body></w:document>");
     let err = parse_document(xml.as_bytes()).unwrap_err();
     assert!(
-        matches!(err, OoxmlError::NestingTooDeep { limit: 100 }),
+        matches!(err, OoxmlError::NestingTooDeep { limit: 50 }),
         "expected NestingTooDeep, got {err:?}"
     );
 }

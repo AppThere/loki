@@ -17,9 +17,17 @@ use super::cell;
 
 /// Maximum table/content-control nesting depth accepted from a file. Nested
 /// tables recurse (`parse_table` → row → cell → `parse_table`), so without a
-/// cap a crafted document can exhaust the stack (audit-2026-06 S-1b). Matches
-/// `loki-odf`'s `MAX_NESTING_DEPTH`; real documents rarely exceed ~5.
-pub(super) const MAX_NESTING_DEPTH: usize = 100;
+/// cap a crafted document can exhaust the stack (audit-2026-06 S-1b).
+///
+/// A single **table** level costs three stack frames (`parse_table`,
+/// `parse_table_row`, `parse_table_cell`), so a depth of 100 recurses ~300
+/// frames — enough to overflow a 2-`MiB` worker-thread stack (a real denial of
+/// service when a server parses an uploaded document off the main thread). The
+/// cap is chosen to reject deep nesting *before* that point: 50 levels stay
+/// comfortably within a 2-`MiB` stack while still being ~10× the deepest real
+/// documents (which rarely exceed ~5). The content-control (`w:sdt`) parser
+/// shares this budget.
+pub(super) const MAX_NESTING_DEPTH: usize = 50;
 
 /// Parses a `w:tbl` element. Called after Start("tbl") is consumed. `depth`
 /// counts enclosing tables/content controls; the top-level caller passes 0.
