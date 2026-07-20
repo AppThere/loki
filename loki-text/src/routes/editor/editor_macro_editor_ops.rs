@@ -30,18 +30,12 @@ pub(super) fn build_edited_payload(
     let mut payload = original.clone();
     match payload.kind {
         MacroPayloadKind::OoxmlVba => {
-            let part_name = payload
+            let (part_name, original_bin) = payload
                 .parts
                 .iter()
                 .find(|p| p.name.ends_with("vbaProject.bin"))
-                .map(|p| p.name.clone())
+                .map(|p| (p.name.clone(), p.bytes.clone()))
                 .ok_or_else(|| "VBA payload has no vbaProject.bin part".to_string())?;
-            let original_bin = payload
-                .parts
-                .iter()
-                .find(|p| p.name == part_name)
-                .map(|p| p.bytes.clone())
-                .unwrap_or_default();
             let new_bin =
                 loki_vba::write_source(&original_bin, edits).map_err(|e| e.to_string())?;
             payload.replace_part(&part_name, new_bin);

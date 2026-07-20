@@ -150,3 +150,50 @@ fn unedited_module_keeps_source_but_loses_pcode() {
 fn non_container_input_is_typed_error() {
     assert!(write_source(b"not a compound file", &edits(&[])).is_err());
 }
+
+#[test]
+fn edit_with_uncodepageable_char_is_refused() {
+    // The fixture is code page 1252; '中' (U+4E2D) cannot be stored there.
+    // Refuse rather than silently replacing it with '?'.
+    let bin = build_fixture(&[("Module1", "' original\n")]);
+    let result = write_source(&bin, &edits(&[("Module1", "MsgBox \"\u{4e2d}\"\n")]));
+    assert!(matches!(result, Err(crate::error::VbaError::Encoding(_))));
+}
+
+#[test]
+fn missing_module_stream_degrades_to_empty_not_error() {
+    // `dir` lists Module1 + Ghost but only Module1 has a stream — a
+    // malformed-but-readable project the reader tolerates (empty source). The
+    // write-back must tolerate it too, not fail the whole save.
+    let mut comp = cfb::CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+    comp.create_storage("/VBA").unwrap();
+    let mut dir = rec(0x0003, &1252u16.to_le_bytes());
+    for name in ["Module1", "Ghost"] {
+        dir.extend(rec(0x0019, name.as_bytes()));
+        dir.extend(rec(0x001A, name.as_bytes()));
+        dir.extend(rec(0x0021, &[]));
+        dir.extend(rec(0x0031, &0u32.to_le_bytes())); // offset 0, no p-code
+        dir.extend(rec(0x002B, &[]));
+    }
+    write_stream(&mut comp, "/VBA/dir", &compress(&dir));
+    write_stream(&mut comp, "/VBA/Module1", &source_container("' one\n"));
+    // No /VBA/Ghost stream on purpose.
+    comp.flush().unwrap();
+    let bin = comp.into_inner().into_inner();
+
+    let out = write_source(&bin, &edits(&[("Module1", "' edited\n")])).expect("save succeeds");
+    let project = VbaProject::read(&out).unwrap();
+    let src = |n: &str| {
+        project
+            .modules
+            .iter()
+            .find(|m| m.name == n)
+            .map(|m| m.source.clone())
+    };
+    assert_eq!(src("Module1").as_deref(), Some("' edited\n"));
+    assert_eq!(
+        src("Ghost").as_deref(),
+        Some(""),
+        "a missing stream degrades to empty, not a failed save"
+    );
+}

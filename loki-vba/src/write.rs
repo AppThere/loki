@@ -69,8 +69,11 @@ pub fn write_source(original: &[u8], edits: &BTreeMap<String, String>) -> VbaRes
     for m in &info.modules {
         let stream_name = dir::decode_mbcs(&m.stream_name, info.code_page);
         let path = vba_storage.join(&stream_name);
-        let existing = read_stream(&mut comp, &path)?;
-        let content = module_content(&existing, m, info.code_page, edits);
+        // Tolerate a missing/unreadable stream exactly as the reader does
+        // (`project::read` uses `unwrap_or_default`): an unedited module with no
+        // stream degrades to empty source rather than failing the whole save.
+        let existing = read_stream(&mut comp, &path).unwrap_or_default();
+        let content = module_content(&existing, m, info.code_page, edits)?;
         write_stream(&mut comp, &path, &content)?;
     }
 
@@ -95,23 +98,31 @@ pub fn write_source(original: &[u8], edits: &BTreeMap<String, String>) -> VbaRes
 /// module, its source is re-encoded (LF→CRLF, project code page) and compressed;
 /// otherwise the module's existing compressed source is carried over verbatim.
 /// Either way the compiled p-code prefix (`existing[..text_offset]`) is dropped.
+///
+/// # Errors
+///
+/// [`VbaError::Encoding`] if edited source contains characters the project's code
+/// page cannot represent — refused rather than silently corrupting the source.
 fn module_content(
     existing: &[u8],
     m: &DirModule,
     code_page: u16,
     edits: &BTreeMap<String, String>,
-) -> Vec<u8> {
+) -> VbaResult<Vec<u8>> {
     if let Some(src) = edits.get(m.name.as_str()) {
         let crlf = src.replace("\r\n", "\n").replace('\n', "\r\n");
-        let (bytes, _, _) = encoding_for(code_page).encode(&crlf);
-        return compress(bytes.as_ref());
+        let (bytes, _, had_unmappable) = encoding_for(code_page).encode(&crlf);
+        if had_unmappable {
+            return Err(VbaError::Encoding(m.name.clone()));
+        }
+        return Ok(compress(bytes.as_ref()));
     }
-    match existing.get(m.text_offset..) {
+    Ok(match existing.get(m.text_offset..) {
         Some(tail) if !tail.is_empty() => tail.to_vec(),
         // Missing/stomped source: emit a valid empty container rather than an
         // empty stream, so a re-read decodes cleanly to empty source.
         _ => compress(b""),
-    }
+    })
 }
 
 /// Replaces (or creates) a stream's entire contents.

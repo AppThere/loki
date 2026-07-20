@@ -121,20 +121,22 @@ pub(super) fn MacroNoticeBar(
 
     // Background effects (split out for the 300-line ceiling): auto-run on open
     // (spec §5.6) and MACROBUTTON click dispatch (spec §6).
+    let launch = super::editor_macro_notice_effects::RunnerLaunch {
+        view: runner,
+        auto: runner_auto,
+        proc: run_proc,
+    };
     super::editor_macro_notice_effects::use_auto_run_effect(
         ctx.clone(),
         svc.clone(),
         loro_doc,
-        runner,
-        runner_auto,
+        launch,
     );
     super::editor_macro_notice_effects::use_click_dispatch_effect(
         ctx.clone(),
         svc.clone(),
         macro_run_request,
-        runner,
-        runner_auto,
-        run_proc,
+        launch,
         trust_open,
     );
 

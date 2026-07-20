@@ -185,9 +185,16 @@ fn apply_edits(
     guard.generation = guard.generation.wrapping_add(1);
     drop(guard);
 
-    // Re-key trust to the edited hash (self-authored, §2.5). Non-fatal: the edit
-    // is already in the document; a trust-store IO error just logs.
-    svc.reauthor(&original, &edited).map_err(|e| e.to_string())
+    // Re-key trust to the edited hash (self-authored, §2.5). Best-effort and
+    // deliberately *not* propagated: the edit is already committed to the
+    // document and the caller will request the save, so a trust-store IO failure
+    // must not report the whole edit as failed (which would be false) — it just
+    // logs. Worst case the re-key is lost and the edited document reopens
+    // untrusted, which is the safe (fail-closed) direction.
+    if let Err(e) = svc.reauthor(&original, &edited) {
+        tracing::warn!("macro edit trust re-key failed (edit still applied): {e}");
+    }
+    Ok(())
 }
 
 fn container_style() -> String {

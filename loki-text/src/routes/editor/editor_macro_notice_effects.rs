@@ -10,6 +10,19 @@ use loki_macro_host::MacroService;
 
 use super::editor_macro_notice::{MacroCtx, MacroView, payload_of};
 
+/// The three signals that together launch the macro runner, bundled so the
+/// effects below stay well under the argument-count lint (all `Signal`s are
+/// `Copy`, so this is a cheap handle).
+#[derive(Clone, Copy)]
+pub(super) struct RunnerLaunch {
+    /// The extracted view to run; `Some` mounts the runner panel.
+    pub(super) view: Signal<Option<MacroView>>,
+    /// Whether the run is an auto-run-on-open (vs. an explicit invocation).
+    pub(super) auto: Signal<bool>,
+    /// A specific procedure to run (a MACROBUTTON click), else the picker.
+    pub(super) proc: Signal<Option<String>>,
+}
+
 /// Fires on-open handlers when a newly-opened document authorizes auto-run
 /// (spec §5.6). Reads `loro_doc` so it re-runs on document load; guarded per
 /// payload-hash so it fires at most once per document. Gated by
@@ -19,8 +32,7 @@ pub(super) fn use_auto_run_effect(
     ctx: MacroCtx,
     svc: MacroService,
     loro_doc: Signal<Option<loro::LoroDoc>>,
-    mut runner: Signal<Option<MacroView>>,
-    mut runner_auto: Signal<bool>,
+    mut launch: RunnerLaunch,
 ) {
     let mut fired = use_signal(|| None::<[u8; 32]>);
     use_effect(move || {
@@ -31,8 +43,8 @@ pub(super) fn use_auto_run_effect(
                 let v = super::editor_macro_extract::extract_view(&payload);
                 if !v.modules.is_empty() {
                     fired.set(Some(key));
-                    runner.set(Some(v));
-                    runner_auto.set(true);
+                    launch.view.set(Some(v));
+                    launch.auto.set(true);
                 }
             }
         }
@@ -43,14 +55,11 @@ pub(super) fn use_auto_run_effect(
 /// enabled, opens the runner on the named procedure through the gated path; when
 /// disabled, prompts to enable first — a click never runs a macro from an
 /// untrusted document.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn use_click_dispatch_effect(
     ctx: MacroCtx,
     svc: MacroService,
     mut macro_run_request: Signal<Option<String>>,
-    mut runner: Signal<Option<MacroView>>,
-    mut runner_auto: Signal<bool>,
-    mut run_proc: Signal<Option<String>>,
+    mut launch: RunnerLaunch,
     mut trust_open: Signal<bool>,
 ) {
     use_effect(move || {
@@ -59,9 +68,9 @@ pub(super) fn use_click_dispatch_effect(
                 if svc.decision_for(&payload).is_enabled() {
                     let v = super::editor_macro_extract::extract_view(&payload);
                     if !v.modules.is_empty() {
-                        runner_auto.set(false);
-                        run_proc.set(Some(name));
-                        runner.set(Some(v));
+                        launch.auto.set(false);
+                        launch.proc.set(Some(name));
+                        launch.view.set(Some(v));
                     }
                 } else {
                     trust_open.set(true);

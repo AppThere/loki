@@ -33,6 +33,12 @@ pub enum VbaError {
     /// write-back, macro spec §3.4).
     #[error("VBA container could not be written: {0}")]
     Write(String),
+
+    /// Edited source for a module contains characters that cannot be stored in
+    /// the project's code page — saving it would silently corrupt the source, so
+    /// the write is refused (macro spec §3.4). The payload holds the module name.
+    #[error("module {0} has characters that cannot be stored in the project's code page")]
+    Encoding(String),
 }
 
 /// Convenience result alias.
