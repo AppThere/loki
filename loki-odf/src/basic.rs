@@ -44,7 +44,7 @@ pub fn extract_basic_modules(payload: &MacroPayload) -> Vec<BasicModule> {
 
 /// Whether a preserved part path looks like a Basic *module* file (as opposed to
 /// a library index or a directory entry).
-fn is_module_file(path: &str) -> bool {
+pub(crate) fn is_module_file(path: &str) -> bool {
     let is_xml = std::path::Path::new(path)
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("xml"));
@@ -57,7 +57,7 @@ fn is_module_file(path: &str) -> bool {
 
 /// Parses a `<script:module>` file into a [`BasicModule`]. Returns `None` if the
 /// file is not a module element.
-fn parse_module(bytes: &[u8], path: &str) -> Option<BasicModule> {
+pub(crate) fn parse_module(bytes: &[u8], path: &str) -> Option<BasicModule> {
     let mut reader = Reader::from_reader(bytes);
     reader.config_mut().trim_text(false);
     let mut buf = Vec::new();
@@ -73,6 +73,15 @@ fn parse_module(bytes: &[u8], path: &str) -> Option<BasicModule> {
             }
             Ok(Event::Text(ref t)) if in_module => {
                 if let Ok(text) = crate::xml_util::unescape_text(t) {
+                    source.push_str(&text);
+                }
+            }
+            // COMPAT(quick-xml-0.41): escaped entities (`&lt;`, `&amp;`, …) —
+            // common in Basic source (`If a < b`, string `&` concatenation) —
+            // arrive as their own event, not folded into `Text`. Without this
+            // arm they would be silently dropped from the viewed/edited source.
+            Ok(Event::GeneralRef(ref r)) if in_module => {
+                if let Ok(text) = crate::xml_util::resolve_general_ref(r) {
                     source.push_str(&text);
                 }
             }
@@ -92,7 +101,7 @@ fn parse_module(bytes: &[u8], path: &str) -> Option<BasicModule> {
     })
 }
 
-fn local(qname: &[u8]) -> &[u8] {
+pub(crate) fn local(qname: &[u8]) -> &[u8] {
     qname
         .iter()
         .rposition(|&b| b == b':')
@@ -167,5 +176,21 @@ End Sub</script:module>"#;
     fn non_odf_payload_yields_nothing() {
         let p = MacroPayload::new(MacroPayloadKind::OoxmlVba, Vec::new());
         assert!(extract_basic_modules(&p).is_empty());
+    }
+
+    #[test]
+    fn decodes_escaped_entities_in_source() {
+        // Regression: `<`, `>`, `&` in Basic source are XML-escaped in the file
+        // and (quick-xml 0.41) arrive as their own events — they must decode
+        // back, not be dropped.
+        let module = br#"<script:module xmlns:script="urn:oasis:names:tc:opendocument:xmlns:script:1.0"
+ script:name="M" script:language="StarBasic">If a &lt; b And c &gt; d Then s = x &amp; y</script:module>"#;
+        let p = payload(vec![PreservedPart::new(
+            "Basic/Standard/M.xml",
+            Some("text/xml".into()),
+            module.to_vec(),
+        )]);
+        let mods = extract_basic_modules(&p);
+        assert_eq!(mods[0].source, "If a < b And c > d Then s = x & y");
     }
 }

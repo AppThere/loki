@@ -120,6 +120,23 @@ impl MacroPayload {
         self.parts.is_empty()
     }
 
+    /// Replaces the bytes of the part named `name`, returning `true` if such a
+    /// part existed and was updated (its media type and position are unchanged),
+    /// or `false` if no part matched. Used by the macro editor's source-only
+    /// write-back (spec §3.4): after editing, the caller rewrites the affected
+    /// container part in place, and [`payload_hash`](Self::payload_hash)
+    /// recomputes to the new content — the value the trust store is then
+    /// re-keyed to for a self-authored edit (§2.4).
+    pub fn replace_part(&mut self, name: &str, bytes: Vec<u8>) -> bool {
+        match self.parts.iter_mut().find(|p| p.name == name) {
+            Some(part) => {
+                part.bytes = bytes;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Computes the canonical content hash used as the trust-store key
     /// (spec §2.4).
     ///

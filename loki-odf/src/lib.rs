@@ -53,6 +53,7 @@
 #![allow(clippy::if_not_else)]
 
 pub mod basic;
+pub mod basic_write;
 pub mod constants;
 pub mod error;
 pub(crate) mod limits;

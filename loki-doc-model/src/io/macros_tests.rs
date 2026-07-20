@@ -80,3 +80,34 @@ fn event_bindings_do_not_affect_hash() {
     }]);
     assert_eq!(base.payload_hash(), with_binding.payload_hash());
 }
+
+#[test]
+fn replace_part_updates_bytes_and_changes_hash() {
+    let mut p = MacroPayload::new(
+        MacroPayloadKind::OdfBasic,
+        vec![part("Basic/Standard/Module1.xml", b"old")],
+    );
+    let before = p.payload_hash();
+
+    assert!(p.replace_part("Basic/Standard/Module1.xml", b"new source".to_vec()));
+    assert_eq!(p.parts[0].bytes, b"new source");
+    // The media type and position are untouched.
+    assert_eq!(
+        p.parts[0].media_type.as_deref(),
+        Some("application/octet-stream")
+    );
+    // Editing the content re-keys the trust hash (spec §2.4).
+    assert_ne!(p.payload_hash(), before);
+}
+
+#[test]
+fn replace_part_reports_missing() {
+    let mut p = MacroPayload::new(MacroPayloadKind::OdfBasic, vec![part("a", b"x")]);
+    let before = p.payload_hash();
+    assert!(!p.replace_part("does-not-exist", b"y".to_vec()));
+    assert_eq!(
+        p.payload_hash(),
+        before,
+        "a no-op replace leaves the hash intact"
+    );
+}
