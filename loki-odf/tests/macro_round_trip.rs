@@ -129,3 +129,45 @@ fn export_reemits_basic_library_verbatim() {
         macros.payload_hash(),
     );
 }
+
+/// End-to-end macro-editor path (spec §3.4, Phase 7.7): import an ODT with a
+/// Basic module, edit the module source through the write-back, export, and
+/// re-import — the edited source must survive a real ODT save+reopen.
+#[test]
+fn edited_basic_source_survives_export_and_reimport() {
+    use std::collections::BTreeMap;
+
+    let mut doc =
+        OdtImport::import(Cursor::new(build_odt_with_basic()), Default::default()).expect("import");
+
+    // Apply an edit to the preserved payload, exactly as the editor's save does.
+    let mut payload = doc.source.as_ref().unwrap().macros.clone().unwrap();
+    let edits: BTreeMap<String, String> = [(
+        "Module1".to_string(),
+        "Sub Main\n  Beep\nEnd Sub".to_string(),
+    )]
+    .into_iter()
+    .collect();
+    let count = loki_odf::basic_write::apply_basic_edits(&mut payload, &edits).expect("edit");
+    assert_eq!(count, 1);
+    doc.source.as_mut().unwrap().macros = Some(payload);
+
+    // Save and reopen.
+    let mut out = Cursor::new(Vec::new());
+    OdtExport::export(&doc, &mut out, Default::default()).expect("export");
+    let reimported =
+        OdtImport::import(Cursor::new(out.into_inner()), Default::default()).expect("reimport");
+
+    // The reopened document reads back the edited source, not the original.
+    let macros = reimported.source.as_ref().unwrap().macros.as_ref().unwrap();
+    let modules = loki_odf::basic::extract_basic_modules(macros);
+    let module = modules
+        .iter()
+        .find(|m| m.name == "Module1")
+        .expect("Module1 present after reopen");
+    assert_eq!(module.source, "Sub Main\n  Beep\nEnd Sub");
+    assert!(
+        !module.source.contains("MsgBox"),
+        "the original source must be gone"
+    );
+}
