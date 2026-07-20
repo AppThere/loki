@@ -159,13 +159,20 @@ pub(super) fn char_props_to_style_span(props: &CharProps, range: Range<usize>) -
         line_height: None,
         vertical_align,
         highlight_color,
+        // `w:bdr` character border — reuse the paragraph border converter.
+        character_border: props
+            .character_border
+            .as_ref()
+            .and_then(crate::resolve::convert_border),
         letter_spacing: props.letter_spacing.map(pts_to_f32), // gap #13
         font_variant,
         word_spacing: props.word_spacing.map(pts_to_f32), // gap #22
         shadow: props.shadow.unwrap_or(false),            // gap #24
-        kerning: props.kerning,                           // gap #23
-        link_url: None, // set by walk_inlines when inside Inline::Link (gap #11)
-        math: None,     // set by walk_inlines for Inline::Math placeholders
+        emboss: props.emboss.unwrap_or(false),
+        imprint: props.imprint.unwrap_or(false),
+        kerning: props.kerning, // gap #23
+        link_url: None,         // set by walk_inlines when inside Inline::Link (gap #11)
+        math: None,             // set by walk_inlines for Inline::Math placeholders
         // Horizontal text scale (gap #14): only forward a non-trivial, positive
         // factor so the common 100 % case stays on the fast (unscaled) path.
         scale: props

@@ -98,8 +98,68 @@ pub(crate) fn map_rpr(rpr: &DocxRPr) -> CharProps {
         }),
         baseline_shift: rpr.position.map(|hp| Points::new(f64::from(hp) / 2.0)),
         outline: rpr.outline,
+        emboss: rpr.emboss,
+        imprint: rpr.imprint,
+        // `w:bdr` character border, dropping an explicit none/nil edge.
+        character_border: rpr
+            .bdr
+            .as_ref()
+            .map(crate::docx::mapper::props::map_border_edge)
+            .filter(|b| b.style != loki_doc_model::style::props::border::BorderStyle::None),
         // A paragraph mark's w:ins/w:del (tracked ¶ deletion) → CharProps.revision.
         revision: rpr.mark_rev.as_ref().map(DocxMarkRevision::to_mark),
         ..Default::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::docx::model::paragraph::DocxBorderEdge;
+    use loki_doc_model::style::props::border::BorderStyle;
+
+    #[test]
+    fn maps_character_border() {
+        let rpr = DocxRPr {
+            bdr: Some(DocxBorderEdge {
+                val: "single".into(),
+                sz: Some(4),
+                color: Some("C00000".into()),
+                space: Some(0),
+            }),
+            ..Default::default()
+        };
+        let b = map_rpr(&rpr).character_border.expect("bdr mapped");
+        assert_eq!(b.style, BorderStyle::Solid);
+    }
+
+    #[test]
+    fn none_valued_bdr_is_dropped() {
+        let rpr = DocxRPr {
+            bdr: Some(DocxBorderEdge {
+                val: "none".into(),
+                sz: None,
+                color: None,
+                space: None,
+            }),
+            ..Default::default()
+        };
+        assert!(map_rpr(&rpr).character_border.is_none());
+    }
+
+    #[test]
+    fn no_bdr_maps_to_none() {
+        assert!(map_rpr(&DocxRPr::default()).character_border.is_none());
+    }
+    #[test]
+    fn maps_emboss_and_imprint() {
+        let rpr = DocxRPr {
+            emboss: Some(true),
+            imprint: Some(true),
+            ..Default::default()
+        };
+        let cp = map_rpr(&rpr);
+        assert_eq!(cp.emboss, Some(true));
+        assert_eq!(cp.imprint, Some(true));
     }
 }

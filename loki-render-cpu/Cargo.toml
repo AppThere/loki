@@ -20,4 +20,6 @@ loki-doc-model = { path = "../loki-doc-model" }
 loki-fonts = { path = "../loki-fonts" }
 # Calibration example: import the ODF fixtures and diff against goldens.
 loki-odf = { path = "../loki-odf" }
+# DOCX visual-golden test: import the OOXML corpus fixtures as candidates.
+loki-ooxml = { path = "../loki-ooxml" }
 appthere-conformance = { path = "../appthere-conformance" }

@@ -32,6 +32,24 @@ pub(super) struct ListMarker {
 /// (the tab positions the content at the indent). For a **picture bullet** the
 /// label text is empty (so only a leading tab is prepended) and `bullet_src` is
 /// returned for out-of-band image placement.
+/// Apply the numbering level's `pPr` indent as a fallback when the paragraph
+/// carries none (both indents 0.0) — e.g. `w:ind` set only on the abstract num.
+pub(super) fn apply_level_indent_fallback(state: &FlowState, resolved: &mut ResolvedParaProps) {
+    if let Some(ref lm) = resolved.list_marker
+        && resolved.indent_start == 0.0
+        && resolved.indent_hanging == 0.0
+        && let Some(list_style) = state.catalog.list_styles.get(&lm.list_id)
+        && let Some(level_def) = list_style.levels.get(lm.level as usize)
+    {
+        let level_indent = crate::resolve::pts_to_f32(level_def.indent_start);
+        let level_hanging = crate::resolve::pts_to_f32(level_def.hanging_indent);
+        if level_indent > 0.0 || level_hanging > 0.0 {
+            resolved.indent_start = level_indent;
+            resolved.indent_hanging = level_hanging;
+        }
+    }
+}
+
 pub(super) fn synthesize(
     state: &mut FlowState,
     para: &StyledParagraph,

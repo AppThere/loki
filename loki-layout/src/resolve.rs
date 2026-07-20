@@ -57,6 +57,48 @@ pub fn resolve_color(color: Option<&DocumentColor>) -> LayoutColor {
     }
 }
 
+/// Build a [`PositionedHatch`](crate::hatch::PositionedHatch) for `rect` from a
+/// doc-model [`ShadingPattern`], resolving both colours and mapping the pattern
+/// to the layout-level [`HatchPattern`](crate::hatch::HatchPattern).
+pub fn hatch_from_shading(
+    shading: &loki_doc_model::style::props::shading::ShadingPattern,
+    rect: crate::geometry::LayoutRect,
+) -> crate::hatch::PositionedHatch {
+    use crate::hatch::HatchPattern as L;
+    use loki_doc_model::style::props::shading::HatchPattern as M;
+    let pattern = match shading.pattern {
+        M::Horizontal => L::Horizontal,
+        M::Vertical => L::Vertical,
+        M::DiagUp => L::DiagUp,
+        M::DiagDown => L::DiagDown,
+        M::Cross => L::Cross,
+        M::DiagCross => L::DiagCross,
+    };
+    crate::hatch::PositionedHatch {
+        rect,
+        fill: shading.fill.as_ref().map(|c| resolve_color(Some(c))),
+        color: resolve_color(Some(&shading.color)),
+        pattern,
+        thin: shading.thin,
+    }
+}
+
+/// Build the paragraph background draw item for `rect`: a [`PositionedItem::HatchRect`]
+/// when the paragraph carries a `w:shd` texture, else a flat
+/// [`PositionedItem::FilledRect`] for a solid `background_color`, else `None`.
+pub fn para_background_item(
+    pp: &ResolvedParaProps,
+    rect: crate::geometry::LayoutRect,
+) -> Option<crate::items::PositionedItem> {
+    use crate::items::{PositionedItem, PositionedRect};
+    if let Some(shading) = pp.background_hatch.as_ref() {
+        Some(PositionedItem::HatchRect(hatch_from_shading(shading, rect)))
+    } else {
+        pp.background_color
+            .map(|color| PositionedItem::FilledRect(PositionedRect { rect, color }))
+    }
+}
+
 /// Convert a [`Points`] value to `f32`.
 pub fn pts_to_f32(pts: Points) -> f32 {
     pts.value() as f32
@@ -89,6 +131,21 @@ pub struct CollectedImage {
     /// `None` for an inline drawing. Read from the image's `NodeAttr` (see
     /// [`loki_doc_model::content::float::FloatWrap`]).
     pub float: Option<loki_doc_model::content::float::FloatWrap>,
+    /// When `Some`, this "image" is actually a `wps` **text box**: `src` is empty
+    /// and the flow engine renders a bordered/filled box with this content flowed
+    /// inside instead of a picture. `cx_emu`/`cy_emu`/`float` still apply.
+    pub textbox: Option<CollectedTextBox>,
+}
+
+/// The interior of a floating text box ([`CollectedImage::textbox`]).
+#[derive(Debug, Clone)]
+pub struct CollectedTextBox {
+    /// Block content flowed inside the box.
+    pub blocks: Vec<loki_doc_model::content::block::Block>,
+    /// Fill colour hex (`"RRGGBB"`), or `None` for no fill.
+    pub fill: Option<String>,
+    /// Border colour hex (`"RRGGBB"`), or `None` for no border.
+    pub line: Option<String>,
 }
 
 /// A footnote or endnote body collected during paragraph flattening.
@@ -167,7 +224,15 @@ pub fn flatten_paragraph(
     Vec<CollectedImage>,
     Vec<CollectedNote>,
 ) {
-    flatten_paragraph_with_base(block, catalog, note_counter, None)
+    // The convenience entry point renders full markup (the default view); the
+    // flow engine calls `_with_base` directly to pass the document's mode.
+    flatten_paragraph_with_base(
+        block,
+        catalog,
+        note_counter,
+        None,
+        crate::options::RevisionDisplay::AllMarkup,
+    )
 }
 
 // ── Border conversion ──────────────────────────────────────────────────────────

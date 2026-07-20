@@ -41,6 +41,48 @@ fn test_package_round_trip() {
     );
 }
 
+/// The core-properties part is an `.xml` part, so it must carry an explicit
+/// content-type Override — otherwise it resolves to the generic
+/// `application/xml` default and Microsoft Word rejects the whole package as
+/// unreadable (ISO/IEC 29500-2 §8.2). Regression lock for that write-path fix.
+#[test]
+fn core_properties_part_is_typed_correctly() {
+    const CORE_CT: &str = "application/vnd.openxmlformats-package.core-properties+xml";
+
+    let mut pkg = Package::new();
+    pkg.set_part(
+        PartName::new("/word/document.xml").unwrap(),
+        PartData::xml(b"<doc />".to_vec()),
+    );
+    pkg.core_properties_mut().title = Some("Typed Core".to_string());
+
+    let mut buffer = std::io::Cursor::new(Vec::new());
+    pkg.write(&mut buffer).unwrap();
+
+    // The raw [Content_Types].xml must carry the override (this is exactly what
+    // Word inspects on open).
+    buffer.set_position(0);
+    let mut zip = zip::ZipArchive::new(&mut buffer).unwrap();
+    let mut ct = String::new();
+    zip.by_name("[Content_Types].xml")
+        .unwrap()
+        .read_to_string(&mut ct)
+        .unwrap();
+    assert!(
+        ct.contains("/docProps/core.xml") && ct.contains(CORE_CT),
+        "[Content_Types].xml must override core.xml to the core-properties type:\n{ct}"
+    );
+
+    // And the reopened package must resolve that content type.
+    buffer.set_position(0);
+    let pkg_read = Package::open(&mut buffer).unwrap();
+    assert_eq!(
+        pkg_read.content_type(&PartName::new("/docProps/core.xml").unwrap()),
+        Some(CORE_CT),
+        "core.xml must resolve to the core-properties content type, not the xml default",
+    );
+}
+
 #[test]
 fn test_package_utf16_transcode() {
     use std::io::Cursor;

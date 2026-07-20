@@ -15,7 +15,8 @@ use parley::{Cursor, Layout, Selection};
 use crate::color::LayoutColor;
 use crate::geometry::LayoutRect;
 use crate::items::{
-    DecorationKind, DecorationStyle, PositionedDecoration, PositionedItem, PositionedRect,
+    DecorationKind, DecorationStyle, PositionedBorderRect, PositionedDecoration, PositionedItem,
+    PositionedRect,
 };
 
 use super::{ResolvedParaProps, StyleSpan};
@@ -48,8 +49,37 @@ fn line_indent(
     indent
 }
 
-/// Emit a filled rect behind each highlighted span. `span.highlight_color`
-/// already folds in the run-shading (`w:shd` / `fo:background-color`) fallback.
+/// Invoke `f` with each per-line layout rect of `span`'s byte range (Parley
+/// selection geometry, indent-adjusted). Shared by the highlight and
+/// character-border underlays.
+fn for_span_line_rects(
+    layout: &Layout<LayoutColor>,
+    span: &StyleSpan,
+    para_props: &ResolvedParaProps,
+    drop_lines: usize,
+    drop_shift: f32,
+    mut f: impl FnMut(LayoutRect),
+) {
+    if span.range.start >= span.range.end {
+        return;
+    }
+    let anchor = Cursor::from_byte_index(layout, span.range.start, parley::Affinity::Downstream);
+    let focus = Cursor::from_byte_index(layout, span.range.end, parley::Affinity::Downstream);
+    for (bb, line_idx) in Selection::new(anchor, focus).geometry(layout) {
+        let indent = line_indent(para_props, line_idx, drop_lines, drop_shift);
+        f(LayoutRect::new(
+            bb.x0 as f32 + indent,
+            bb.y0 as f32,
+            (bb.x1 - bb.x0) as f32,
+            (bb.y1 - bb.y0) as f32,
+        ));
+    }
+}
+
+/// Emit each run's background/border underlays: a filled rect behind a
+/// highlighted span (`span.highlight_color` folds in the `w:shd` /
+/// `fo:background-color` fallback) and a border box around a `w:bdr` character
+/// border — both resolved per visual line via Parley selection geometry.
 pub(super) fn emit_highlight_underlays(
     items: &mut Vec<PositionedItem>,
     layout: &Layout<LayoutColor>,
@@ -59,26 +89,24 @@ pub(super) fn emit_highlight_underlays(
     drop_shift: f32,
 ) {
     for span in clean_spans {
-        let Some(hl) = span.highlight_color else {
-            continue;
-        };
-        if span.range.start >= span.range.end {
-            continue;
+        if let Some(hl) = span.highlight_color {
+            for_span_line_rects(layout, span, para_props, drop_lines, drop_shift, |rect| {
+                items.push(PositionedItem::FilledRect(PositionedRect {
+                    rect,
+                    color: hl,
+                }));
+            });
         }
-        let anchor =
-            Cursor::from_byte_index(layout, span.range.start, parley::Affinity::Downstream);
-        let focus = Cursor::from_byte_index(layout, span.range.end, parley::Affinity::Downstream);
-        for (bb, line_idx) in Selection::new(anchor, focus).geometry(layout) {
-            let indent = line_indent(para_props, line_idx, drop_lines, drop_shift);
-            items.push(PositionedItem::FilledRect(PositionedRect {
-                rect: LayoutRect::new(
-                    bb.x0 as f32 + indent,
-                    bb.y0 as f32,
-                    (bb.x1 - bb.x0) as f32,
-                    (bb.y1 - bb.y0) as f32,
-                ),
-                color: hl,
-            }));
+        if let Some(edge) = span.character_border {
+            for_span_line_rects(layout, span, para_props, drop_lines, drop_shift, |rect| {
+                items.push(PositionedItem::BorderRect(PositionedBorderRect {
+                    rect,
+                    top: Some(edge),
+                    right: Some(edge),
+                    bottom: Some(edge),
+                    left: Some(edge),
+                }));
+            });
         }
     }
 }

@@ -43,6 +43,9 @@ pub(super) fn parse_text_props_attrs(e: &quick_xml::events::BytesStart<'_>) -> O
         font_name_complex: local_attr_val(e, b"font-name-complex"),
         font_name_asian: local_attr_val(e, b"font-name-asian"),
         text_outline: local_attr_val(e, b"text-outline").map(|v| v != "false"),
+        font_relief: local_attr_val(e, b"font-relief"),
+        border: local_attr_val(e, b"border"),
+        padding: local_attr_val(e, b"padding"),
         word_spacing: local_attr_val(e, b"word-spacing"),
         letter_kerning: local_attr_val(e, b"letter-kerning").map(|v| v == "true"),
         text_scale: local_attr_val(e, b"text-scale"),
@@ -154,9 +157,19 @@ pub(super) fn parse_style_props(
 
 /// Build an [`OdfGraphicWrap`] from a `style:graphic-properties` element.
 fn parse_graphic_wrap_element(e: &quick_xml::events::BytesStart<'_>) -> OdfGraphicWrap {
+    // `draw:fill-color` / `svg:stroke-color` are only meaningful when their
+    // matching `draw:fill` / `draw:stroke` is `"solid"`; a `"none"` toggle drops
+    // the colour so an unfilled/unstroked frame does not resurrect one.
+    let solid = |toggle: &[u8]| local_attr_val(e, toggle).as_deref() != Some("none");
     OdfGraphicWrap {
         wrap: local_attr_val(e, b"wrap"),
         run_through: local_attr_val(e, b"run-through"),
+        fill_color: solid(b"fill")
+            .then(|| local_attr_val(e, b"fill-color"))
+            .flatten(),
+        stroke_color: solid(b"stroke")
+            .then(|| local_attr_val(e, b"stroke-color"))
+            .flatten(),
     }
 }
 

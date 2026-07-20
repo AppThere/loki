@@ -1011,6 +1011,146 @@ fn keep_with_next_chain_fits_on_current_page_no_flush() {
     assert_eq!(pages.len(), 1, "chain fits on one page, expected 1 page");
 }
 
+/// REGRESSION: an inline image in a `keep_with_next` paragraph (a captioned
+/// figure whose image paragraph is kept with its caption) must not be dropped.
+/// The keep-with-next chain formerly discarded the collected images, so the
+/// figure vanished while its caption remained.
+#[test]
+fn keep_with_next_paragraph_keeps_its_inline_image() {
+    use loki_doc_model::content::inline::LinkTarget;
+
+    let mut r = test_resources();
+    let mut attr = NodeAttr::default();
+    attr.kv.push(("cx_emu".into(), "914400".into())); // 1 in
+    attr.kv.push(("cy_emu".into(), "914400".into()));
+    let image_para = StyledParagraph {
+        style_id: None,
+        direct_para_props: Some(Box::new(ParaProps {
+            keep_with_next: Some(true),
+            ..Default::default()
+        })),
+        direct_char_props: None,
+        inlines: vec![Inline::Image(
+            attr,
+            vec![],
+            LinkTarget::new("data:image/png;base64,AAAA"),
+        )],
+        attr: NodeAttr::default(),
+    };
+    let caption = make_para("Figure 1. Caption.");
+    let section = section_of(vec![image_para, caption], PageLayout::default());
+
+    let (items, _h, _w) = flow_pageless(&mut r, &section);
+    let has_image = items.iter().any(|i| matches!(i, PositionedItem::Image(_)));
+    assert!(
+        has_image,
+        "an inline image in a keep_with_next paragraph must not be dropped"
+    );
+}
+
+#[test]
+fn keep_with_next_paragraph_keeps_its_footnote() {
+    use loki_doc_model::content::inline::NoteKind;
+
+    let mut r = test_resources();
+    // A keep-with-next paragraph whose text carries a footnote reference. The
+    // chain path used to discard the collected note, dropping the body entirely.
+    let note_body = vec![Block::StyledPara(make_para("Note body text."))];
+    let ref_para = StyledParagraph {
+        style_id: None,
+        direct_para_props: Some(Box::new(ParaProps {
+            keep_with_next: Some(true),
+            ..Default::default()
+        })),
+        direct_char_props: None,
+        inlines: vec![
+            Inline::Str("See".into()),
+            Inline::Note(NoteKind::Footnote, note_body),
+        ],
+        attr: NodeAttr::default(),
+    };
+    let follow = make_para("Following paragraph.");
+    let section = section_of(vec![ref_para, follow], PageLayout::default());
+
+    let (pages, _) = flow_paginated(&mut r, &section);
+    // The footnote separator rule is emitted only when a note body renders.
+    let has_note = pages.iter().any(|p| {
+        p.content_items
+            .iter()
+            .any(|i| matches!(i, PositionedItem::HorizontalRule(_)))
+    });
+    assert!(
+        has_note,
+        "a footnote referenced from a keep-with-next paragraph must render, not be dropped"
+    );
+}
+
+#[test]
+fn footnote_band_stays_within_the_content_area() {
+    use loki_doc_model::content::inline::NoteKind;
+
+    let mut r = test_resources();
+    // A paragraph early on a small page carries a footnote; several fillers then
+    // pack the page. The reservation must stop body content above the band so the
+    // whole band fits inside the content area instead of spilling past it.
+    let note_body = vec![Block::StyledPara(make_para(
+        "A footnote body occupying a line of its own at the foot of the page.",
+    ))];
+    let mut paras = vec![StyledParagraph {
+        style_id: None,
+        direct_para_props: None,
+        direct_char_props: None,
+        inlines: vec![
+            Inline::Str("Reference".into()),
+            Inline::Note(NoteKind::Footnote, note_body),
+        ],
+        attr: NodeAttr::default(),
+    }];
+    for i in 0..12 {
+        paras.push(make_para(&format!(
+            "Filler body line number {i} on this page."
+        )));
+    }
+    let section = section_of(paras, tiny_layout());
+    let (pages, _) = flow_paginated(&mut r, &section);
+
+    // The page carrying the footnote band (its separator rule).
+    let page = pages
+        .iter()
+        .find(|p| {
+            p.content_items
+                .iter()
+                .any(|i| matches!(i, PositionedItem::HorizontalRule(_)))
+        })
+        .expect("a page must carry the footnote band");
+
+    // tiny_layout: 100 pt page − 2×5 pt margins = 90 pt content height.
+    const CONTENT_H: f32 = 90.0;
+    let bottom = |it: &PositionedItem| -> f32 {
+        match it {
+            // Baseline y; the descender adds a little below but stays < content_h.
+            PositionedItem::GlyphRun(g) => g.origin.y,
+            PositionedItem::FilledRect(r) | PositionedItem::HorizontalRule(r) => {
+                r.rect.origin.y + r.rect.size.height
+            }
+            PositionedItem::ClippedGroup { clip_rect, .. } => {
+                clip_rect.origin.y + clip_rect.size.height
+            }
+            _ => 0.0,
+        }
+    };
+    let max_bottom = page
+        .content_items
+        .iter()
+        .map(bottom)
+        .fold(0.0_f32, f32::max);
+    assert!(
+        max_bottom <= CONTENT_H + 1.0,
+        "footnote band + body must fit within the {CONTENT_H} pt content area, \
+         but content reaches {max_bottom} pt (band overlaps the margin)"
+    );
+}
+
 #[test]
 fn keep_with_next_chain_pushed_to_next_page() {
     let mut r = test_resources();
@@ -1875,6 +2015,90 @@ mod page_fields {
             below_min_x < left_edge + 5.0,
             "text below the float must reclaim full width; \
              min x = {below_min_x}, float left = {left_edge}"
+        );
+    }
+
+    /// A `wrapNone` float reserves no space: Word flows the text at full column
+    /// width and the object overlaps it. So the anchoring paragraph's text must
+    /// start at the column edge (not shifted to clear a band), and the following
+    /// paragraph must not be pushed down by the image height.
+    #[test]
+    fn wrap_none_float_overlaps_text_without_reserving_space() {
+        use loki_doc_model::content::float::{FloatWrap, TextWrap, WrapSide};
+        use loki_doc_model::content::inline::LinkTarget;
+
+        fn wrap_none_image(cx_emu: u64, cy_emu: u64) -> Inline {
+            let mut attr = NodeAttr::default();
+            attr.kv.push(("cx_emu".into(), cx_emu.to_string()));
+            attr.kv.push(("cy_emu".into(), cy_emu.to_string()));
+            FloatWrap {
+                wrap: TextWrap::None,
+                side: WrapSide::Both,
+                behind_text: false,
+            }
+            .store(&mut attr);
+            Inline::Image(attr, vec![], LinkTarget::new("data:image/png;base64,AAAA"))
+        }
+
+        let mut r = test_resources();
+        // 1 in × 1 in (72 × 72 pt) wrapNone float in a multi-line paragraph.
+        let body = "The quick brown fox jumps over the lazy dog. ".repeat(6);
+        let anchor = StyledParagraph {
+            style_id: None,
+            direct_para_props: None,
+            direct_char_props: None,
+            inlines: vec![wrap_none_image(914_400, 914_400), Inline::Str(body)],
+            attr: NodeAttr::default(),
+        };
+        let follower = make_para("Follower paragraph after the anchor.");
+        let section = section_of(vec![anchor, follower], PageLayout::default());
+
+        let (items, _h, _w) = flow_pageless(&mut r, &section);
+
+        let img = items
+            .iter()
+            .find_map(|i| match i {
+                PositionedItem::Image(im) => Some(im),
+                _ => None,
+            })
+            .expect("wrapNone float image emitted");
+        assert!((img.rect.size.height - 72.0).abs() < 1.0, "1 in tall float");
+        let left_edge = img.rect.origin.x;
+
+        let glyphs: Vec<(f32, f32)> = items
+            .iter()
+            .filter_map(|i| match i {
+                PositionedItem::GlyphRun(g) => Some((g.origin.y, g.origin.x)),
+                _ => None,
+            })
+            .collect();
+
+        // Lines within the float's vertical extent are NOT shifted right — the
+        // text overlaps the image (full-width flow), unlike a Square wrap.
+        let beside_min_x = glyphs
+            .iter()
+            .filter(|(y, _)| *y > 5.0 && *y < 60.0)
+            .map(|(_, x)| *x)
+            .fold(f32::INFINITY, f32::min);
+        assert!(
+            beside_min_x < left_edge + 5.0,
+            "wrapNone text must overlap the float, not clear a band; \
+             min x = {beside_min_x}, float left = {left_edge}"
+        );
+
+        // The image reserved no vertical space: the anchor text starts at the
+        // top (it was not shifted down by a block image), and the whole anchor +
+        // follower fits well within the 72 pt the image would otherwise occupy —
+        // block-stacking would push the follower to y ≳ (anchor lines × 12 + 72).
+        let min_y = glyphs.iter().map(|(y, _)| *y).fold(f32::INFINITY, f32::min);
+        let max_y = glyphs.iter().map(|(y, _)| *y).fold(0.0_f32, f32::max);
+        assert!(
+            min_y < 20.0,
+            "anchor text must start at the top, not below the image (min y = {min_y})"
+        );
+        assert!(
+            max_y < 90.0,
+            "no paragraph may be pushed past a reserved 72 pt band (max y = {max_y})"
         );
     }
 

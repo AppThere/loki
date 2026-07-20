@@ -16,6 +16,7 @@ use super::{FlowState, editing, flow_block, flow_paragraph};
 use crate::color::LayoutColor;
 use crate::geometry::LayoutRect;
 use crate::items::{PositionedItem, PositionedRect};
+use crate::resolve::CollectedNote;
 
 // ── Miscellaneous block renderers ─────────────────────────────────────────────
 
@@ -33,20 +34,114 @@ pub(super) fn flow_hrule(state: &mut FlowState) {
 
 // ── Footnote rendering ────────────────────────────────────────────────────────
 
-/// Render all accumulated footnotes at the end of the section.
+/// Separator geometry above a page's first footnote (0.5 pt rule, 4 pt of gap
+/// above and below), reserved once per page.
+const SEP_HEIGHT: f32 = 0.5;
+const SEP_GAP: f32 = 4.0;
+const SEP_BAND: f32 = SEP_GAP + SEP_HEIGHT + SEP_GAP;
+
+/// Measure the foot-of-page space `notes` need on the current page — the
+/// separator band (only on the page's first reservation) plus each note's
+/// laid-out height. **Pure** (no mutation), so the caller applies it only once
+/// the reference paragraph is placed on this page. `0.0` when there is nothing
+/// to reserve or the flow is multi-column (footnotes are single-column only).
+pub(super) fn footnote_reservation(state: &mut FlowState, notes: &[CollectedNote]) -> f32 {
+    if notes.is_empty() || state.columns != 1 {
+        return 0.0;
+    }
+    let sep = if state.footnote_reserved == 0.0 {
+        SEP_BAND
+    } else {
+        0.0
+    };
+    sep + notes
+        .iter()
+        .map(|n| measure_note_height(state, n))
+        .sum::<f32>()
+}
+
+/// Height one footnote will occupy, laid out (with its reference mark) exactly
+/// as [`render_footnote_bodies`] will render it, so the reserved band matches.
+fn measure_note_height(state: &mut FlowState, note: &CollectedNote) -> f32 {
+    let mark = format!("{} ", footnote_mark(note.number));
+    let mut h = 0.0;
+    let mut first = true;
+    for block in &note.blocks {
+        if let Block::StyledPara(p) = block {
+            let mut p = p.clone();
+            if first {
+                p.inlines.insert(0, Inline::Str(mark.clone()));
+            }
+            first = false;
+            let resolved = crate::resolve::resolve_para_props(&p, state.catalog);
+            let mut counter = state.note_counter;
+            let (text, spans, _images, _notes) = crate::resolve::flatten_paragraph_with_base(
+                &p,
+                state.catalog,
+                &mut counter,
+                None,
+                state.options.revision_display,
+            );
+            let layout = crate::para::layout_paragraph_spelled(
+                state.resources,
+                &text,
+                &spans,
+                &resolved,
+                state.content_width,
+                state.display_scale,
+                false,
+                None,
+            );
+            h += resolved.space_before + layout.height + resolved.space_after;
+        }
+    }
+    h
+}
+
+/// Lay out the current page's footnotes at the foot of the page. Called by
+/// `finish_page` before the page is finalized (so each footnote sits on the page
+/// carrying its reference, matching Word). Single-column body flow only.
 ///
-/// Places a 1/3-width separator rule followed by each note body. The note
-/// reference mark (e.g. "¹") is prepended to the first block of each note.
-/// End-of-section placement is used for v0.1; end-of-page is deferred.
+/// The band is bottom-aligned at `page_content_height − total`, but never above
+/// where content stopped (`cursor_y`). Body content already stops above it via
+/// the per-reference reservation ([`footnote_reservation`] +
+/// [`FlowState::content_bottom`]); this bottom-aligns the actual render.
+/// Pagination is disabled during rendering (the band is self-contained) and a
+/// re-entrancy guard blocks recursion.
+pub(super) fn flow_page_footnotes(state: &mut FlowState) {
+    if state.pending_footnotes.is_empty() || state.rendering_footnotes || state.columns != 1 {
+        return;
+    }
+    let notes = std::mem::take(&mut state.pending_footnotes);
+    let total: f32 = SEP_BAND
+        + notes
+            .iter()
+            .map(|n| measure_note_height(state, n))
+            .sum::<f32>();
+    let band_top = (state.page_content_height - total).max(state.cursor_y);
+    state.cursor_y = band_top;
+    state.rendering_footnotes = true;
+    // Disable pagination for the self-contained band (avoids a spurious break /
+    // finish_page recursion if the measured height rounds under the rendered).
+    let saved = state.page_content_height;
+    state.page_content_height = f32::MAX;
+    render_footnote_bodies(state, notes);
+    state.page_content_height = saved;
+    state.rendering_footnotes = false;
+}
+
+/// Render any remaining footnotes at the current position — the non-paginated
+/// (canvas / reflow) tail, which has no per-page bands to place them in.
 pub(super) fn flow_footnotes(state: &mut FlowState) {
     if state.pending_footnotes.is_empty() {
         return;
     }
     let notes = std::mem::take(&mut state.pending_footnotes);
+    render_footnote_bodies(state, notes);
+}
 
-    // Separator: 1/3-width, 0.5 pt tall, 4 pt spacing above and below.
-    const SEP_HEIGHT: f32 = 0.5;
-    const SEP_GAP: f32 = 4.0;
+/// Emit the separator rule and each note body from `state.cursor_y` downward.
+fn render_footnote_bodies(state: &mut FlowState, notes: Vec<CollectedNote>) {
     let sep_w = state.content_width / 3.0;
     state.cursor_y += SEP_GAP;
     state
@@ -181,6 +276,7 @@ pub(super) fn get_items_max_x(items: &[PositionedItem]) -> f32 {
             PositionedItem::FilledRect(r) | PositionedItem::HorizontalRule(r) => {
                 r.rect.origin.x + r.rect.size.width
             }
+            PositionedItem::HatchRect(h) => h.rect.origin.x + h.rect.size.width,
             PositionedItem::BorderRect(r) => r.rect.origin.x + r.rect.size.width,
             PositionedItem::Image(r) => r.rect.origin.x + r.rect.size.width,
             PositionedItem::Decoration(d) => d.x + d.width,

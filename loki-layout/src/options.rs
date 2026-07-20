@@ -41,6 +41,33 @@ pub struct LayoutOptions {
     /// width is unchanged (left + right is constant), only the content
     /// area's horizontal position swaps.
     pub mirror_margins: bool,
+
+    /// How tracked changes (`CharProps::revision`) are displayed. The default
+    /// [`RevisionDisplay::AllMarkup`] shows insertions underlined and deletions
+    /// struck through; [`RevisionDisplay::Final`] / [`RevisionDisplay::Original`]
+    /// render the accepted / rejected document **non-destructively** (the
+    /// revision marks are untouched — only the view changes), matching Word's
+    /// "Show Markup" dropdown. Because the mode changes the flattened text +
+    /// spans, the content-addressed paragraph cache keys on it automatically.
+    pub revision_display: RevisionDisplay,
+}
+
+/// How tracked-change (`CharProps::revision`) runs are rendered — a
+/// **non-destructive** view over the document, mirroring Word's Review-tab
+/// "Show Markup" dropdown. Switching modes never mutates the revision marks
+/// (unlike `accept_revisions` / `reject_revisions`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RevisionDisplay {
+    /// Show insertions (author-coloured, underlined) and deletions
+    /// (author-coloured, struck through) inline — Word's "All Markup". Default.
+    #[default]
+    AllMarkup,
+    /// Show the document as if every change were **accepted**: insertions render
+    /// as normal text, deletions are hidden — Word's "No Markup" / Final.
+    Final,
+    /// Show the document as if every change were **rejected**: deletions render
+    /// as normal text, insertions are hidden — Word's "Original".
+    Original,
 }
 
 /// A spell checker plus a cache-invalidation generation, supplied via

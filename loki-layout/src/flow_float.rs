@@ -16,11 +16,12 @@
 //! taller than its anchoring paragraph, the remaining extent is recorded as an
 //! [`ActiveFloat`] on the flow state so the *following* paragraphs continue to
 //! wrap beside it until the float bottom is cleared (cross-paragraph wrap).
-//! `Square`, `Tight`, `Through`, and non-behind `None` modes wrap on one side
-//! (the tight contour is approximated by the bounding box; a margin-anchored
-//! `wrapNone` image reserves its space in Word, so text flows beside rather than
-//! under it). `TopAndBottom` and behind-text floats fall through to the
-//! block-stacked image path. Cross-paragraph wrap is bounded to a single page
+//! `Square`, `Tight`, and `Through` modes wrap on one side (the tight contour
+//! is approximated by the bounding box). `wrapNone` never reserves space —
+//! Word flows the text at full column width and the object floats over (or,
+//! `behindDoc`, under) it; the caller emits those as overlays via
+//! [`crate::flow_para`], not as bands. `TopAndBottom` and behind-text floats
+//! fall through to the block-stacked image path. Cross-paragraph wrap is bounded to a single page
 //! and to consecutive plain paragraphs; a table/list/rule (or page break) below
 //! the float reserves its remaining height instead of wrapping. OOXML
 //! `wp:anchor` wrap children; ODF `style:wrap`.
@@ -29,7 +30,45 @@ use loki_doc_model::content::float::{TextWrap, WrapSide};
 
 use crate::geometry::LayoutRect;
 use crate::items::{PositionedImage, PositionedItem};
+use crate::para::ResolvedParaProps;
 use crate::resolve::{CollectedImage, emu_to_pt};
+
+use super::FlowState;
+
+/// Plan the paragraph's own float (a `wps` text box first, else an image float),
+/// set its wrap band on `resolved`, and drop the floated image from `images` so
+/// it is not also block-stacked. Returns the placement (index into `images` +
+/// [`FloatPlacement`]) and the `(inset, height, shift_text)` band geometry the
+/// caller reuses for the cross-paragraph [`ActiveFloat`]. Split from `flow_para`
+/// for the 300-line ceiling.
+#[allow(clippy::type_complexity)] // the two returned float descriptors are cohesive
+pub(super) fn plan_paragraph_float(
+    state: &mut FlowState,
+    images: &mut Vec<CollectedImage>,
+    resolved: &mut ResolvedParaProps,
+) -> (Option<(usize, FloatPlacement)>, Option<(f32, f32, bool)>) {
+    let cw = state.content_width;
+    let float_plan =
+        super::textbox_impl::plan_textbox(state, images, cw).or_else(|| plan_float(images, cw));
+    let own_float: Option<(f32, f32, bool)> = float_plan.as_ref().map(|(_, p)| {
+        (
+            p.indent_start_delta + p.indent_end_delta,
+            p.height,
+            p.indent_start_delta > 0.0,
+        )
+    });
+    if let Some((idx, _)) = &float_plan
+        && let Some((inset, height, shift_text)) = own_float
+    {
+        resolved.wrap_band = Some(crate::para::WrapBand {
+            inset,
+            cover_height: height,
+            shift_text,
+        });
+        images.remove(*idx);
+    }
+    (float_plan, own_float)
+}
 
 /// A float whose vertical extent reaches past its anchoring paragraph, so the
 /// paragraphs that follow on the same page keep wrapping beside it.
@@ -63,7 +102,7 @@ pub(crate) fn reserve_active_float(state: &mut super::FlowState) {
 }
 
 /// Default gap between a float and the wrapped text, in points (~0.13").
-const FLOAT_WRAP_GAP: f32 = 9.0;
+pub(super) const FLOAT_WRAP_GAP: f32 = 9.0;
 
 /// A planned float placement for one paragraph.
 pub(crate) struct FloatPlacement {
@@ -91,14 +130,19 @@ pub(crate) fn plan_float(
     content_width: f32,
 ) -> Option<(usize, FloatPlacement)> {
     let (idx, img, fw) = images.iter().enumerate().find_map(|(i, img)| {
+        // Text boxes are planned by `flow_textbox` (they render a box, not a
+        // picture); skip them here.
+        if img.textbox.is_some() {
+            return None;
+        }
         let f = img.float?;
-        // Side-wrapping modes flow text beside the object. `None` is included
-        // when the float is not behind the text: Word reserves space for a
-        // margin-anchored `wrapNone` image (text flows beside, not under it),
-        // matching the reference. A behind-text float never displaces text.
+        // Side-wrapping modes flow text beside the object. `wrapNone` is NOT one:
+        // Word reserves no space for it — the text flows the full column width and
+        // the image overlaps (drawn over/under it). The caller handles `wrapNone`
+        // as an overlay; a behind-text float never displaces text either.
         let side_wraps = matches!(
             f.wrap,
-            TextWrap::Square | TextWrap::Tight | TextWrap::Through | TextWrap::None
+            TextWrap::Square | TextWrap::Tight | TextWrap::Through
         );
         (side_wraps && !f.behind_text).then_some((i, img, f))
     })?;

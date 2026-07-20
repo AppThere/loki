@@ -62,6 +62,10 @@ pub struct DocxRPr {
     pub all_caps: Option<bool>,
     /// `w:shadow` toggle.
     pub shadow: Option<bool>,
+    /// `w:emboss` toggle — embossed (raised) text.
+    pub emboss: Option<bool>,
+    /// `w:imprint` toggle — imprinted (engraved) text.
+    pub imprint: Option<bool>,
     /// `w:color @w:val` — foreground color hex string.
     pub color: Option<String>,
     /// `w:highlight @w:val` — named highlight color.
@@ -96,6 +100,8 @@ pub struct DocxRPr {
     pub shd_color: Option<String>,
     /// `w:outline` toggle — hollow/outline text effect.
     pub outline: Option<bool>,
+    /// `w:bdr` — a border box drawn around the run's text (ECMA-376 §17.3.2.4).
+    pub bdr: Option<super::DocxBorderEdge>,
 }
 
 /// `w:rFonts` font name attributes (ECMA-376 §17.3.2.26).
@@ -140,4 +146,14 @@ pub struct DocxDrawing {
     /// Text-wrap configuration for a floating (anchored) drawing.
     /// `None` for inline drawings or anchored drawings without a wrap element.
     pub wrap: Option<loki_doc_model::content::float::FloatWrap>,
+    /// `w:txbxContent` paragraphs when this drawing is a `wps` text box
+    /// (empty otherwise). Their presence marks the drawing as a text box
+    /// rather than a picture.
+    pub txbx: Vec<super::DocxParagraph>,
+    /// Text-box fill colour from `wps:spPr/a:solidFill/a:srgbClr` (hex, no `#`).
+    pub fill_color: Option<String>,
+    /// Text-box border colour from `wps:spPr/a:ln/.../a:srgbClr` (hex).
+    pub line_color: Option<String>,
+    /// Text-box border width in EMUs from `a:ln @w`.
+    pub line_w_emu: Option<i64>,
 }

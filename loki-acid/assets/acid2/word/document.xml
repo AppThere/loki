@@ -1,0 +1,447 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- NOTE: child elements here are authored for readability, NOT in strict
+     CT_PPr/CT_RPr/… schema order. The gen_acid2_docx generator runs
+     loki_ooxml::repair_docx over the packaged bytes, which reorders them into
+     the ECMA-376 sequence Word requires. Don't hand-sort this file. -->
+<w:document
+    xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+    xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+    xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"
+    xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
+  <w:body>
+
+    <!-- ============================================================ -->
+    <!-- SECTION A · BUSINESS REPORT (cover + TOC + body)             -->
+    <!-- ============================================================ -->
+
+    <!-- Cover page -->
+    <w:p><w:pPr><w:spacing w:before="2400" w:after="0"/></w:pPr>
+      <w:r><w:rPr><w:caps/><w:color w:val="ED7D31" w:themeColor="accent2"/><w:spacing w:val="60"/><w:sz w:val="20"/></w:rPr><w:t>AppThere Engineering</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr>
+      <w:r><w:t>Rendering Fidelity at Scale</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="Subtitle"/></w:pPr>
+      <w:r><w:t>The ACID 2 parity report for opening real-world documents in Loki</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="12" w:space="4" w:color="4472C4" w:themeColor="accent1"/></w:pBdr><w:spacing w:after="240"/></w:pPr></w:p>
+    <w:p>
+      <w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Prepared by </w:t></w:r>
+      <w:r><w:t xml:space="preserve">the Loki Layout Team</w:t></w:r>
+      <w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">   ·   Date </w:t></w:r>
+      <w:fldSimple w:instr=" DATE \@ &quot;d MMMM yyyy&quot; "><w:r><w:t>14 July 2026</w:t></w:r></w:fldSimple>
+    </w:p>
+    <w:p><w:r><w:br w:type="page"/></w:r></w:p>
+
+    <!-- Table of contents (real TOC field with dot-leader entries) -->
+    <w:p><w:pPr><w:pStyle w:val="TOCHeading"/></w:pPr><w:r><w:t>Contents</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr>
+      <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+      <w:r><w:instrText xml:space="preserve"> TOC \o &quot;1-2&quot; \h \z \u </w:instrText></w:r>
+      <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+      <w:r><w:t>1.  Introduction</w:t></w:r><w:r><w:tab/><w:t>3</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="TOC2"/></w:pPr>
+      <w:r><w:t>1.1  Background and goals</w:t></w:r><w:r><w:tab/><w:t>3</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr>
+      <w:r><w:t>2.  Measured results</w:t></w:r><w:r><w:tab/><w:t>3</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="TOC2"/></w:pPr>
+      <w:r><w:t>2.1  Per-feature scores</w:t></w:r><w:r><w:tab/><w:t>4</w:t></w:r>
+      <w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>
+    <w:p><w:r><w:br w:type="page"/></w:r></w:p>
+
+    <!-- Body -->
+    <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>1.  Introduction</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>1.1  Background and goals</w:t></w:r></w:p>
+    <w:p><w:pPr><w:jc w:val="both"/></w:pPr>
+      <w:r><w:t xml:space="preserve">When a reader opens an existing document, the first impression is entirely visual: line spacing, tables, headings, and figures must land where the author put them. This report exercises the constructs that most often drift between suites, measured with SSIM</w:t></w:r>
+      <w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="1"/></w:r>
+      <w:r><w:t xml:space="preserve"> against the canonical Microsoft&#160;365 render. The bulk of divergence historically comes from a handful of features working </w:t></w:r>
+      <w:r><w:rPr><w:i/></w:rPr><w:t>together</w:t></w:r>
+      <w:r><w:t xml:space="preserve">, which is exactly what the pages that follow stress.</w:t></w:r></w:p>
+
+    <w:p><w:pPr><w:pStyle w:val="Heading3"/></w:pPr><w:r><w:t>Scope</w:t></w:r></w:p>
+    <w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="2"/></w:numPr></w:pPr>
+      <w:r><w:t>Word-processing layout: spacing, indents, keep-with-next, widows.</w:t></w:r></w:p>
+    <w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="2"/></w:numPr></w:pPr>
+      <w:r><w:t>Tables with merged cells, shading, and repeated header rows.</w:t></w:r></w:p>
+    <w:p><w:pPr><w:numPr><w:ilvl w:val="2"/><w:numId w:val="2"/></w:numPr></w:pPr>
+      <w:r><w:t>Floating figures and captions with sequence fields.</w:t></w:r></w:p>
+    <w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="2"/></w:numPr></w:pPr>
+      <w:r><w:t>Cross-references and fields that update on open.</w:t></w:r></w:p>
+
+    <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>2.  Measured results</w:t></w:r></w:p>
+    <w:p><w:pPr><w:jc w:val="both"/></w:pPr>
+      <w:r><w:t xml:space="preserve">The results are summarised in </w:t></w:r>
+      <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+      <w:r><w:instrText xml:space="preserve"> REF tblResults \h </w:instrText></w:r>
+      <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+      <w:r><w:t>Table 1</w:t></w:r>
+      <w:r><w:fldChar w:fldCharType="end"/></w:r>
+      <w:r><w:t xml:space="preserve">. Scores at or above the calibrated threshold pass; the total row aggregates the section.</w:t></w:r></w:p>
+
+    <!-- Caption with SEQ field + bookmark for the cross-reference -->
+    <w:p><w:pPr><w:pStyle w:val="Caption"/><w:keepNext/></w:pPr>
+      <w:bookmarkStart w:id="0" w:name="tblResults"/>
+      <w:r><w:t xml:space="preserve">Table </w:t></w:r>
+      <w:fldSimple w:instr=" SEQ Table \* ARABIC "><w:r><w:t>1</w:t></w:r></w:fldSimple>
+      <w:bookmarkEnd w:id="0"/>
+      <w:r><w:t xml:space="preserve">.  Per-feature parity (illustrative).</w:t></w:r></w:p>
+
+    <!-- Report table: shaded header, vMerge + gridSpan, total row -->
+    <w:tbl>
+      <w:tblPr>
+        <w:tblStyle w:val="TableGrid"/>
+        <w:tblW w:w="9360" w:type="dxa"/>
+        <w:tblLayout w:type="fixed"/>
+        <w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="1" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>
+      </w:tblPr>
+      <w:tblGrid>
+        <w:gridCol w:w="2340"/><w:gridCol w:w="2340"/><w:gridCol w:w="2340"/><w:gridCol w:w="2340"/>
+      </w:tblGrid>
+      <w:tr>
+        <w:trPr><w:tblHeader/></w:trPr>
+        <w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/><w:vMerge w:val="restart"/><w:shd w:val="clear" w:color="auto" w:fill="4472C4" w:themeFill="accent1"/><w:vAlign w:val="center"/></w:tcPr>
+          <w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:b/><w:color w:val="FFFFFF"/></w:rPr><w:t>Feature</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="7020" w:type="dxa"/><w:gridSpan w:val="3"/><w:shd w:val="clear" w:color="auto" w:fill="4472C4" w:themeFill="accent1"/><w:vAlign w:val="center"/></w:tcPr>
+          <w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:color w:val="FFFFFF"/></w:rPr><w:t>Region score</w:t></w:r></w:p></w:tc></w:tr>
+      <w:tr>
+        <w:trPr><w:tblHeader/></w:trPr>
+        <w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/><w:vMerge/><w:shd w:val="clear" w:color="auto" w:fill="4472C4" w:themeFill="accent1"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/></w:pPr></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="D9E2F3" w:themeFill="accent1" w:themeFillTint="33"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>SSIM</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="D9E2F3" w:themeFill="accent1" w:themeFillTint="33"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>&#916;E</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="D9E2F3" w:themeFill="accent1" w:themeFillTint="33"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>Verdict</w:t></w:r></w:p></w:tc></w:tr>
+      <w:tr>
+        <w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>Line spacing</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:t>0.99</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:t>1.2</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="E2EFDA"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:color w:val="548235"/></w:rPr><w:t>Pass</w:t></w:r></w:p></w:tc></w:tr>
+      <w:tr>
+        <w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>Merged tables</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:t>0.97</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:t>2.6</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="E2EFDA"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:color w:val="548235"/></w:rPr><w:t>Pass</w:t></w:r></w:p></w:tc></w:tr>
+      <w:tr>
+        <w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>Total</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>0.98</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>1.9</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2340" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:color w:val="548235"/></w:rPr><w:t>Pass</w:t></w:r></w:p></w:tc></w:tr>
+    </w:tbl>
+
+    <w:p><w:pPr><w:spacing w:before="120"/></w:pPr></w:p>
+
+    <!-- Inline figure + caption -->
+    <w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="0"/><w:keepNext/></w:pPr>
+      <w:r><w:drawing>
+        <wp:inline distT="0" distB="0" distL="0" distR="0">
+          <wp:extent cx="2286000" cy="1371600"/>
+          <wp:effectExtent l="0" t="0" r="0" b="0"/>
+          <wp:docPr id="1" name="Figure 1"/>
+          <wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>
+          <a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+            <pic:pic>
+              <pic:nvPicPr><pic:cNvPr id="1" name="figure.png"/><pic:cNvPicPr/></pic:nvPicPr>
+              <pic:blipFill><a:blip r:embed="rId9"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
+              <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="2286000" cy="1371600"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
+            </pic:pic>
+          </a:graphicData></a:graphic>
+        </wp:inline>
+      </w:drawing></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="Caption"/><w:jc w:val="center"/></w:pPr>
+      <w:r><w:t xml:space="preserve">Figure </w:t></w:r>
+      <w:fldSimple w:instr=" SEQ Figure \* ARABIC "><w:r><w:t>1</w:t></w:r></w:fldSimple>
+      <w:r><w:t xml:space="preserve">.  Score distribution across regions.</w:t></w:r>
+      <w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="2"/></w:r></w:p>
+
+    <!-- Block quote (Quote style: indented, italic) -->
+    <w:p><w:pPr><w:pStyle w:val="Quote"/><w:pBdr><w:left w:val="single" w:sz="18" w:space="10" w:color="4472C4" w:themeColor="accent1"/></w:pBdr><w:shd w:val="clear" w:color="auto" w:fill="F2F6FC"/></w:pPr>
+      <w:r><w:t>Parity is not one big feature; it is a hundred small ones that must all be right at once.</w:t></w:r></w:p>
+
+    <!-- Section A break → Section B (résumé) -->
+    <w:p><w:pPr><w:sectPr>
+      <w:headerReference w:type="default" r:id="rId6"/>
+      <w:footerReference w:type="default" r:id="rId7"/>
+      <w:pgSz w:w="12240" w:h="15840"/>
+      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>
+      <w:cols w:space="720"/>
+    </w:sectPr></w:pPr></w:p>
+
+    <!-- ============================================================ -->
+    <!-- SECTION B · RÉSUMÉ / CV                                       -->
+    <!-- ============================================================ -->
+    <w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr>
+      <w:r><w:rPr><w:smallCaps/><w:spacing w:val="40"/><w:sz w:val="44"/><w:color w:val="1F3864"/></w:rPr><w:t>Jordan A. Rivera</w:t></w:r></w:p>
+    <w:p><w:pPr><w:spacing w:before="0" w:after="120"/><w:jc w:val="center"/></w:pPr>
+      <w:hyperlink r:id="rId10" w:history="1"><w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr><w:t>jordan@example.com</w:t></w:r></w:hyperlink>
+      <w:r><w:t xml:space="preserve">  &#8226;  </w:t></w:r>
+      <w:hyperlink r:id="rId11" w:history="1"><w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr><w:t>linkedin.com/in/jrivera</w:t></w:r></w:hyperlink>
+      <w:r><w:t xml:space="preserve">  &#8226;  San Francisco, CA</w:t></w:r></w:p>
+
+    <w:p><w:pPr><w:spacing w:before="120" w:after="80"/><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="1F3864"/></w:pBdr></w:pPr>
+      <w:r><w:rPr><w:b/><w:caps/><w:color w:val="1F3864"/><w:spacing w:val="30"/></w:rPr><w:t>Experience</w:t></w:r></w:p>
+
+    <w:p><w:pPr><w:tabs><w:tab w:val="right" w:pos="9360"/></w:tabs><w:spacing w:after="0"/></w:pPr>
+      <w:r><w:rPr><w:b/></w:rPr><w:t>Staff Layout Engineer, AppThere</w:t></w:r>
+      <w:r><w:tab/><w:t>2023 &#8211; Present</w:t></w:r></w:p>
+    <w:p><w:pPr><w:spacing w:after="80"/><w:ind w:left="0"/></w:pPr>
+      <w:r><w:rPr><w:i/><w:color w:val="595959"/></w:rPr><w:t>Loki word-processing layout &amp; rendering fidelity.</w:t></w:r></w:p>
+    <w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:spacing w:after="40"/></w:pPr>
+      <w:r><w:t>Drove SSIM parity with Microsoft&#160;365 across the ACID corpus.</w:t></w:r></w:p>
+    <w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:spacing w:after="40"/></w:pPr>
+      <w:r><w:t>Shipped variable-font instancing and floating-image wrap parity.</w:t></w:r></w:p>
+
+    <w:p><w:pPr><w:tabs><w:tab w:val="right" w:pos="9360"/></w:tabs><w:spacing w:before="80" w:after="0"/></w:pPr>
+      <w:r><w:rPr><w:b/></w:rPr><w:t>Software Engineer, Contoso Docs</w:t></w:r>
+      <w:r><w:tab/><w:t>2019 &#8211; 2023</w:t></w:r></w:p>
+    <w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:spacing w:before="40" w:after="40"/></w:pPr>
+      <w:r><w:t>Built the OOXML import pipeline for tables and numbering.</w:t></w:r></w:p>
+
+    <w:p><w:pPr><w:spacing w:before="160" w:after="80"/><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="1F3864"/></w:pBdr></w:pPr>
+      <w:r><w:rPr><w:b/><w:caps/><w:color w:val="1F3864"/><w:spacing w:val="30"/></w:rPr><w:t>Skills</w:t></w:r></w:p>
+    <w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="1980"/><w:tab w:val="left" w:pos="3960"/></w:tabs><w:spacing w:after="0"/></w:pPr>
+      <w:r><w:t>Rust</w:t></w:r><w:r><w:tab/><w:t>OOXML / ODF</w:t></w:r><w:r><w:tab/><w:t>Typography</w:t></w:r></w:p>
+
+    <!-- Section B break → Section C (newsletter, two balanced columns) -->
+    <w:p><w:pPr><w:sectPr>
+      <w:headerReference w:type="default" r:id="rId6"/>
+      <w:footerReference w:type="default" r:id="rId7"/>
+      <w:type w:val="nextPage"/>
+      <w:pgSz w:w="12240" w:h="15840"/>
+      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>
+      <w:cols w:space="720"/>
+    </w:sectPr></w:pPr></w:p>
+
+    <!-- ============================================================ -->
+    <!-- SECTION C · NEWSLETTER (drop cap, columns, float, pull-quote) -->
+    <!-- ============================================================ -->
+    <w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/><w:pBdr><w:top w:val="double" w:sz="6" w:space="2" w:color="ED7D31" w:themeColor="accent2"/><w:bottom w:val="double" w:sz="6" w:space="2" w:color="ED7D31" w:themeColor="accent2"/></w:pBdr></w:pPr>
+      <w:r><w:rPr><w:rFonts w:ascii="Calibri Light" w:hAnsi="Calibri Light"/><w:caps/><w:color w:val="ED7D31" w:themeColor="accent2"/><w:spacing w:val="40"/><w:sz w:val="40"/></w:rPr><w:t>The Loki Ledger</w:t></w:r></w:p>
+    <w:p><w:pPr><w:spacing w:after="160"/><w:jc w:val="center"/></w:pPr>
+      <w:r><w:rPr><w:i/><w:color w:val="595959"/></w:rPr><w:t>Volume 2, Issue 7 — News from the rendering desk</w:t></w:r></w:p>
+
+    <!-- Drop cap: first letter in its own frame, rest of the paragraph follows -->
+    <w:p><w:pPr><w:framePr w:dropCap="drop" w:lines="3" w:wrap="around" w:vAnchor="text" w:hAnchor="text"/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>
+      <w:r><w:rPr><w:rFonts w:ascii="Calibri Light" w:hAnsi="Calibri Light"/><w:color w:val="4472C4" w:themeColor="accent1"/><w:sz w:val="116"/></w:rPr><w:t>P</w:t></w:r></w:p>
+    <w:p><w:pPr><w:jc w:val="both"/><w:spacing w:after="120"/></w:pPr>
+      <w:r><w:t xml:space="preserve">arity work this quarter focused on the constructs users hit first. A floating figure now sits beside the body text, wrapped square, while the columns balance across the page. Small drifts in leading and indent are the ones readers notice, so those got the most attention.</w:t></w:r></w:p>
+
+    <!-- Floating image, square wrap, anchored right -->
+    <w:p><w:pPr><w:jc w:val="both"/><w:spacing w:after="120"/></w:pPr>
+      <w:r><w:drawing>
+        <wp:anchor distT="45720" distB="45720" distL="114300" distR="114300" simplePos="0" relativeHeight="2" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">
+          <wp:simplePos x="0" y="0"/>
+          <wp:positionH relativeFrom="column"><wp:align>right</wp:align></wp:positionH>
+          <wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>
+          <wp:extent cx="1371600" cy="914400"/>
+          <wp:effectExtent l="0" t="0" r="0" b="0"/>
+          <wp:wrapSquare wrapText="bothSides"/>
+          <wp:docPr id="2" name="Sidebar"/>
+          <wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>
+          <a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+            <pic:pic>
+              <pic:nvPicPr><pic:cNvPr id="2" name="figure.png"/><pic:cNvPicPr/></pic:nvPicPr>
+              <pic:blipFill><a:blip r:embed="rId9"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
+              <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1371600" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
+            </pic:pic>
+          </a:graphicData></a:graphic>
+        </wp:anchor>
+      </w:drawing></w:r>
+      <w:r><w:t xml:space="preserve">Text flows around the sidebar image on its left, then reclaims the full column width once the image is cleared. The wrap band is exactly the image width plus its distance insets, matching the reference render used by the visual harness for this page.</w:t></w:r></w:p>
+
+    <!-- Pull quote: bordered + shaded, centered within the column -->
+    <w:p><w:pPr><w:spacing w:before="120" w:after="120"/><w:jc w:val="center"/><w:ind w:left="144" w:right="144"/><w:pBdr><w:top w:val="single" w:sz="24" w:space="6" w:color="ED7D31" w:themeColor="accent2"/><w:bottom w:val="single" w:sz="24" w:space="6" w:color="ED7D31" w:themeColor="accent2"/></w:pBdr><w:shd w:val="clear" w:color="auto" w:fill="FDF0E6"/></w:pPr>
+      <w:r><w:rPr><w:i/><w:sz w:val="26"/><w:color w:val="C55A11"/></w:rPr><w:t>&#8220;The columns balance, the figure wraps, and the leading holds.&#8221;</w:t></w:r></w:p>
+    <!-- Floating text box (wps shape), anchored right, square wrap -->
+    <w:p><w:pPr><w:jc w:val="both"/></w:pPr>
+      <w:r><w:drawing>
+        <wp:anchor distT="45720" distB="45720" distL="114300" distR="114300" simplePos="0" relativeHeight="3" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">
+          <wp:simplePos x="0" y="0"/>
+          <wp:positionH relativeFrom="column"><wp:align>right</wp:align></wp:positionH>
+          <wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>
+          <wp:extent cx="1828800" cy="731520"/>
+          <wp:effectExtent l="0" t="0" r="0" b="0"/>
+          <wp:wrapSquare wrapText="left"/>
+          <wp:docPr id="5" name="Sidebar Note"/>
+          <wp:cNvGraphicFramePr/>
+          <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
+            <wps:wsp>
+              <wps:cNvSpPr txBox="1"/>
+              <wps:spPr>
+                <a:xfrm><a:off x="0" y="0"/><a:ext cx="1828800" cy="731520"/></a:xfrm>
+                <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+                <a:solidFill><a:srgbClr val="FDF0E6"/></a:solidFill>
+                <a:ln w="12700"><a:solidFill><a:srgbClr val="ED7D31"/></a:solidFill></a:ln>
+              </wps:spPr>
+              <wps:txbx><w:txbxContent>
+                <w:p><w:pPr><w:spacing w:after="0"/></w:pPr>
+                  <w:r><w:rPr><w:b/><w:color w:val="C55A11"/></w:rPr><w:t xml:space="preserve">Sidebar. </w:t></w:r>
+                  <w:r><w:t>A floating text box wraps the body copy on its left, with its own border and fill.</w:t></w:r></w:p>
+              </w:txbxContent></wps:txbx>
+              <wps:bodyPr rot="0" anchor="t" lIns="91440" tIns="45720" rIns="91440" bIns="45720"/>
+            </wps:wsp>
+          </a:graphicData></a:graphic>
+        </wp:anchor>
+      </w:drawing></w:r>
+      <w:r><w:t xml:space="preserve">The remaining copy continues in two balanced columns to the foot of the page, exercising the column breaker together with justified text, hyphenation-free wrapping, and the running header and footer that persist across every section of this document.</w:t></w:r></w:p>
+
+    <!-- Section C break → Section D (invoice / contract, one column) -->
+    <w:p><w:pPr><w:sectPr>
+      <w:headerReference w:type="default" r:id="rId6"/>
+      <w:footerReference w:type="default" r:id="rId7"/>
+      <w:type w:val="nextPage"/>
+      <w:pgSz w:w="12240" w:h="15840"/>
+      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>
+      <w:cols w:num="2" w:space="432"/>
+    </w:sectPr></w:pPr></w:p>
+
+    <!-- ============================================================ -->
+    <!-- SECTION D · INVOICE / CONTRACT                                -->
+    <!-- ============================================================ -->
+    <w:p><w:pPr><w:spacing w:after="40"/></w:pPr>
+      <w:r><w:rPr><w:b/><w:sz w:val="36"/><w:color w:val="1F3864"/></w:rPr><w:t>INVOICE</w:t></w:r>
+      <w:r><w:rPr><w:color w:val="808080"/></w:rPr><w:tab/><w:tab/><w:tab/><w:tab/><w:t>No. LK-2026-0714</w:t></w:r></w:p>
+    <w:p><w:pPr><w:spacing w:after="160"/><w:pBdr><w:bottom w:val="single" w:sz="8" w:space="1" w:color="1F3864"/></w:pBdr></w:pPr>
+      <w:r><w:rPr><w:color w:val="595959"/></w:rPr><w:t>AppThere, Inc.  ·  Terms: Net 30  ·  Due: 13 August 2026</w:t></w:r></w:p>
+
+    <!-- Line-item table: fixed layout, decimal-aligned amounts -->
+    <w:tbl>
+      <w:tblPr>
+        <w:tblStyle w:val="TableGrid"/>
+        <w:tblW w:w="9360" w:type="dxa"/>
+        <w:tblLayout w:type="fixed"/>
+        <w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="1" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>
+      </w:tblPr>
+      <w:tblGrid><w:gridCol w:w="5040"/><w:gridCol w:w="1440"/><w:gridCol w:w="2880"/></w:tblGrid>
+      <w:tr>
+        <w:trPr><w:tblHeader/></w:trPr>
+        <w:tc><w:tcPr><w:tcW w:w="5040" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="1F3864"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:b/><w:color w:val="FFFFFF"/></w:rPr><w:t>Description</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="1440" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="1F3864"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:color w:val="FFFFFF"/></w:rPr><w:t>Qty</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2880" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="1F3864"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="right"/></w:pPr><w:r><w:rPr><w:b/><w:color w:val="FFFFFF"/></w:rPr><w:t>Amount</w:t></w:r></w:p></w:tc></w:tr>
+      <w:tr>
+        <w:tc><w:tcPr><w:tcW w:w="5040" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>Layout engineering (hours)</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="1440" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:t>40</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2880" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:tabs><w:tab w:val="decimal" w:pos="2520"/></w:tabs><w:spacing w:after="0"/></w:pPr><w:r><w:tab/><w:t>6,400.00</w:t></w:r></w:p></w:tc></w:tr>
+      <w:tr>
+        <w:tc><w:tcPr><w:tcW w:w="5040" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>Conformance harness setup</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="1440" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:t>1</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2880" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:tabs><w:tab w:val="decimal" w:pos="2520"/></w:tabs><w:spacing w:after="0"/></w:pPr><w:r><w:tab/><w:t>950.50</w:t></w:r></w:p></w:tc></w:tr>
+      <w:tr>
+        <w:tc><w:tcPr><w:tcW w:w="6480" w:type="dxa"/><w:gridSpan w:val="2"/><w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="right"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>Total due</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2880" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/></w:tcPr><w:p><w:pPr><w:tabs><w:tab w:val="decimal" w:pos="2520"/></w:tabs><w:spacing w:after="0"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:tab/><w:t>7,350.50</w:t></w:r></w:p></w:tc></w:tr>
+    </w:tbl>
+
+    <w:p><w:pPr><w:pStyle w:val="Heading3"/><w:spacing w:before="240"/></w:pPr><w:r><w:t>Terms and conditions</w:t></w:r></w:p>
+    <w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr><w:jc w:val="both"/></w:pPr>
+      <w:r><w:t>Payment.  All amounts are due within thirty (30) days of the invoice date.</w:t></w:r></w:p>
+    <w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="3"/></w:numPr><w:jc w:val="both"/></w:pPr>
+      <w:commentRangeStart w:id="1"/>
+      <w:r><w:t xml:space="preserve">Late payments accrue interest at </w:t></w:r>
+      <w:del w:id="20" w:author="Editor" w:date="2026-07-14T09:00:00Z"><w:r><w:delText>2.0%</w:delText></w:r></w:del>
+      <w:ins w:id="21" w:author="Editor" w:date="2026-07-14T09:01:00Z"><w:r><w:t>1.5%</w:t></w:r></w:ins>
+      <w:r><w:t xml:space="preserve"> per month.</w:t></w:r>
+      <w:commentRangeEnd w:id="1"/>
+      <w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="1"/></w:r></w:p>
+    <w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr><w:jc w:val="both"/></w:pPr>
+      <w:r><w:t>Acceptance.  Signature below constitutes acceptance of these terms.</w:t></w:r></w:p>
+
+    <!-- Signature lines via bottom-bordered tab -->
+    <w:p><w:pPr><w:spacing w:before="360" w:after="0"/><w:tabs><w:tab w:val="left" w:pos="4320"/><w:tab w:val="left" w:pos="9360"/></w:tabs></w:pPr>
+      <w:r><w:rPr><w:u w:val="single"/></w:rPr><w:tab/></w:r>
+      <w:r><w:t xml:space="preserve">        </w:t></w:r>
+      <w:r><w:rPr><w:u w:val="single"/></w:rPr><w:tab/></w:r></w:p>
+    <w:p><w:pPr><w:spacing w:after="0"/></w:pPr>
+      <w:r><w:rPr><w:sz w:val="18"/><w:color w:val="808080"/></w:rPr><w:t xml:space="preserve">Authorised signature</w:t></w:r>
+      <w:r><w:rPr><w:sz w:val="18"/><w:color w:val="808080"/></w:rPr><w:tab/><w:tab/><w:tab/><w:tab/><w:tab/><w:t xml:space="preserve">Date</w:t></w:r></w:p>
+
+    <!-- Section D break → Section E (appendix: page border + line numbers) -->
+    <w:p><w:pPr><w:sectPr>
+      <w:headerReference w:type="default" r:id="rId6"/>
+      <w:footerReference w:type="default" r:id="rId7"/>
+      <w:type w:val="nextPage"/>
+      <w:pgSz w:w="12240" w:h="15840"/>
+      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>
+      <w:cols w:space="720"/>
+    </w:sectPr></w:pPr></w:p>
+
+    <!-- ============================================================ -->
+    <!-- SECTION E · FEATURE-MATRIX APPENDIX (isolated cells)          -->
+    <!-- ============================================================ -->
+    <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Appendix A.  Feature matrix</w:t></w:r></w:p>
+    <w:p><w:r><w:rPr><w:color w:val="595959"/></w:rPr><w:t>Isolated cells for pinpoint diagnosis. This section also carries a page border and line numbering in its section properties.</w:t></w:r></w:p>
+
+    <w:p><w:pPr><w:pStyle w:val="Heading3"/></w:pPr><w:r><w:t>A1.  Run decorations and effects</w:t></w:r></w:p>
+    <w:p><w:pPr><w:spacing w:after="60"/></w:pPr>
+      <w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t xml:space="preserve">single </w:t></w:r>
+      <w:r><w:rPr><w:u w:val="double"/></w:rPr><w:t xml:space="preserve">double </w:t></w:r>
+      <w:r><w:rPr><w:u w:val="dotted"/></w:rPr><w:t xml:space="preserve">dotted </w:t></w:r>
+      <w:r><w:rPr><w:u w:val="wave"/></w:rPr><w:t xml:space="preserve">wave </w:t></w:r>
+      <w:r><w:rPr><w:strike/></w:rPr><w:t xml:space="preserve">strike </w:t></w:r>
+      <w:r><w:rPr><w:dstrike/></w:rPr><w:t xml:space="preserve">dbl-strike </w:t></w:r>
+      <w:r><w:t xml:space="preserve">super</w:t></w:r><w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>2</w:t></w:r>
+      <w:r><w:t xml:space="preserve"> sub</w:t></w:r><w:r><w:rPr><w:vertAlign w:val="subscript"/></w:rPr><w:t>n</w:t></w:r></w:p>
+    <w:p><w:pPr><w:spacing w:after="60"/></w:pPr>
+      <w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t xml:space="preserve">highlight </w:t></w:r>
+      <w:r><w:rPr><w:bdr w:val="single" w:sz="4" w:space="0" w:color="C00000"/></w:rPr><w:t xml:space="preserve">char-border </w:t></w:r>
+      <w:r><w:rPr><w:shd w:val="clear" w:color="auto" w:fill="D9E2F3"/></w:rPr><w:t xml:space="preserve">char-shading </w:t></w:r>
+      <w:r><w:rPr><w:outline/><w:color w:val="4472C4"/><w:sz w:val="26"/></w:rPr><w:t xml:space="preserve">outline </w:t></w:r>
+      <w:r><w:rPr><w:shadow/><w:sz w:val="26"/></w:rPr><w:t xml:space="preserve">shadow </w:t></w:r>
+      <w:r><w:rPr><w:emboss/></w:rPr><w:t xml:space="preserve">emboss </w:t></w:r>
+      <w:r><w:rPr><w:imprint/></w:rPr><w:t>imprint</w:t></w:r></w:p>
+
+    <w:p><w:pPr><w:pStyle w:val="Heading3"/></w:pPr><w:r><w:t>A2.  Decimal tabs with dot leader</w:t></w:r></w:p>
+    <w:p><w:pPr><w:tabs><w:tab w:val="decimal" w:leader="dot" w:pos="4680"/></w:tabs><w:spacing w:after="0"/></w:pPr><w:r><w:t>Subtotal</w:t></w:r><w:r><w:tab/><w:t>1,234.50</w:t></w:r></w:p>
+    <w:p><w:pPr><w:tabs><w:tab w:val="decimal" w:leader="dot" w:pos="4680"/></w:tabs><w:spacing w:after="0"/></w:pPr><w:r><w:t>Tax</w:t></w:r><w:r><w:tab/><w:t>98.76</w:t></w:r></w:p>
+    <w:p><w:pPr><w:tabs><w:tab w:val="decimal" w:leader="dot" w:pos="4680"/></w:tabs></w:pPr><w:r><w:t>Grand total</w:t></w:r><w:r><w:tab/><w:t>1,333.26</w:t></w:r></w:p>
+
+    <w:p><w:pPr><w:pStyle w:val="Heading3"/></w:pPr><w:r><w:t>A3.  Cell shading with a vertically merged label</w:t></w:r></w:p>
+    <w:tbl>
+      <w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="6480" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr>
+      <w:tblGrid><w:gridCol w:w="1440"/><w:gridCol w:w="2520"/><w:gridCol w:w="2520"/></w:tblGrid>
+      <w:tr>
+        <w:tc><w:tcPr><w:tcW w:w="1440" w:type="dxa"/><w:vMerge w:val="restart"/><w:vAlign w:val="center"/><w:shd w:val="clear" w:color="auto" w:fill="4472C4"/></w:tcPr>
+          <w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:color w:val="FFFFFF"/></w:rPr><w:t>Fills</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2520" w:type="dxa"/><w:shd w:val="pct25" w:color="4472C4" w:fill="FFFFFF"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>25% pattern</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2520" w:type="dxa"/><w:shd w:val="diagStripe" w:color="ED7D31" w:fill="FFFFFF"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>diagonal stripe</w:t></w:r></w:p></w:tc></w:tr>
+      <w:tr>
+        <w:tc><w:tcPr><w:tcW w:w="1440" w:type="dxa"/><w:vMerge/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/></w:pPr></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2520" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>plain cell</w:t></w:r></w:p></w:tc>
+        <w:tc><w:tcPr><w:tcW w:w="2520" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="E2EFDA"/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>solid fill</w:t></w:r></w:p></w:tc></w:tr>
+    </w:tbl>
+
+    <w:p><w:pPr><w:pStyle w:val="Heading3"/></w:pPr><w:r><w:t>A4.  Callout box (bordered + shaded paragraph)</w:t></w:r></w:p>
+    <w:p><w:pPr>
+        <w:pBdr>
+          <w:top w:val="single" w:sz="18" w:space="6" w:color="4472C4" w:themeColor="accent1"/>
+          <w:left w:val="single" w:sz="18" w:space="6" w:color="4472C4" w:themeColor="accent1"/>
+          <w:bottom w:val="single" w:sz="18" w:space="6" w:color="4472C4" w:themeColor="accent1"/>
+          <w:right w:val="single" w:sz="18" w:space="6" w:color="4472C4" w:themeColor="accent1"/>
+        </w:pBdr>
+        <w:shd w:val="clear" w:color="auto" w:fill="F2F6FC"/>
+        <w:ind w:left="144" w:right="144"/>
+        <w:spacing w:before="60" w:after="60"/>
+      </w:pPr>
+      <w:r><w:rPr><w:b/><w:color w:val="1F3864"/></w:rPr><w:t>Callout.</w:t></w:r>
+      <w:r><w:t xml:space="preserve"> A bordered, shaded paragraph forming a callout box — a four-sided paragraph border, a solid fill, and symmetric side indents, all exercised together and rendered by both Word and Loki.</w:t></w:r></w:p>
+
+    <w:p><w:pPr><w:pStyle w:val="Heading3"/><w:spacing w:before="240"/></w:pPr><w:r><w:t>A5.  Special spaces and hyphens</w:t></w:r></w:p>
+    <w:p>
+      <w:r><w:t>Non-breaking space keeps</w:t></w:r><w:r><w:t>&#160;</w:t></w:r><w:r><w:t>10&#160;kg together; a non-breaking</w:t></w:r>
+      <w:r><w:noBreakHyphen/></w:r><w:r><w:t xml:space="preserve">hyphen holds compounds, while an optional</w:t></w:r><w:r><w:softHyphen/></w:r><w:r><w:t>hyphen breaks only when needed.</w:t></w:r></w:p>
+
+    <!-- Final body-level sectPr: appendix section with page border + line numbering -->
+    <w:sectPr>
+      <w:headerReference w:type="default" r:id="rId6"/>
+      <w:footerReference w:type="default" r:id="rId7"/>
+      <w:type w:val="nextPage"/>
+      <w:pgSz w:w="12240" w:h="15840"/>
+      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>
+      <w:pgBorders w:offsetFrom="page">
+        <w:top w:val="single" w:sz="8" w:space="24" w:color="4472C4" w:themeColor="accent1"/>
+        <w:left w:val="single" w:sz="8" w:space="24" w:color="4472C4" w:themeColor="accent1"/>
+        <w:bottom w:val="single" w:sz="8" w:space="24" w:color="4472C4" w:themeColor="accent1"/>
+        <w:right w:val="single" w:sz="8" w:space="24" w:color="4472C4" w:themeColor="accent1"/>
+      </w:pgBorders>
+      <w:lnNumType w:countBy="1" w:start="1" w:restart="newPage"/>
+      <w:cols w:space="720"/>
+    </w:sectPr>
+
+  </w:body>
+</w:document>

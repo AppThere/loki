@@ -136,6 +136,12 @@ pub(crate) struct OdfTextProps {
     pub font_name_asian: Option<String>,
     /// `style:text-outline` — hollow/outline text effect.
     pub text_outline: Option<bool>,
+    /// `style:font-relief` — `"embossed"` / `"engraved"` / `"none"` (3-D relief).
+    pub font_relief: Option<String>,
+    /// `fo:border` — character border shorthand (`"1pt solid #C00000"`).
+    pub border: Option<String>,
+    /// `fo:padding` — character-border inset (e.g. `"1pt"`).
+    pub padding: Option<String>,
     /// `fo:word-spacing` — additional space between words (e.g. `"0.2cm"`).
     pub word_spacing: Option<String>,
     /// `style:letter-kerning` — enable font kerning (`"true"` / `"false"`).

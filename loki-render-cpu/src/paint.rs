@@ -130,10 +130,11 @@ fn paint_glyph_run(
         })
         .collect::<Vec<_>>();
 
-    // Variable fonts render at their default instance, matching the GPU
-    // path (its FontDataCache passes all-zero coords — the default master).
+    // Apply the run's variable-font instance (e.g. Arimo `wght=700` for bold
+    // Arial). Empty for static faces, where glifo uses the default master.
     ctx.glyph_run(resources, &font)
         .font_size(run.font_size * scale)
+        .normalized_coords(&run.normalized_coords)
         .hint(false)
         .fill_glyphs(glyphs.into_iter());
 

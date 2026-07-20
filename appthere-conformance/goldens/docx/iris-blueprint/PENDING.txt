@@ -1,0 +1,19 @@
+Golden capture PENDING — no reference render committed yet.
+
+The visual golden for this DOCX fixture is Microsoft Word's own render,
+which cannot be produced headlessly on Linux/CI. To capture it, on a
+machine with Microsoft Office:
+
+  1. Open  appthere-conformance/fixtures/docx/iris-blueprint.docx  in Word.
+  2. Export/Print to PDF at default ("Standard") settings.
+  3. Run, from a checkout with poppler-utils installed:
+
+       scripts/generate-office-goldens.sh \
+           --format docx --stem iris-blueprint \
+           --pdf <the-printed>.pdf \
+           --reference "Microsoft 365 Word (<exact build>)" \
+           --fixture appthere-conformance/fixtures/docx/iris-blueprint.docx
+
+This writes page-N.png + GENERATION.txt here, replacing this file. The
+DOCX visual-golden test (loki-render-cpu/tests/visual_golden_docx.rs)
+then compares Loki's render against them; until then it is a no-op.

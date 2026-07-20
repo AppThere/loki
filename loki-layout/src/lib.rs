@@ -28,6 +28,8 @@ pub mod flow;
 pub mod font;
 pub mod font_handle;
 pub mod geometry;
+#[path = "hatch.rs"]
+pub mod hatch;
 pub mod incremental;
 pub mod items;
 mod layout_entry;
@@ -43,6 +45,8 @@ mod para_drop_cap;
 mod para_emit;
 pub mod resolve;
 pub mod result;
+#[path = "revision_filter.rs"]
+mod revision_filter;
 mod revision_style;
 mod table_shading;
 pub use color::LayoutColor;
@@ -51,6 +55,7 @@ pub use flow::{FlowOutput, LayoutWarning, flow_section};
 pub use font::FontResources;
 pub use font_handle::SharedFontResources;
 pub use geometry::{LayoutInsets, LayoutPoint, LayoutRect, LayoutSize};
+pub use hatch::{HatchPattern, HatchSegment, PositionedHatch};
 pub use incremental::{
     FlowCheckpoint, PageStart, PaginatedReuse, document_has_notes, relayout_paginated_incremental,
 };
@@ -60,7 +65,7 @@ pub use items::{
 };
 pub use layout_entry::{layout_document, layout_paginated_full};
 pub use mode::LayoutMode;
-pub use options::{FieldContext, LayoutOptions, SpellState};
+pub use options::{FieldContext, LayoutOptions, RevisionDisplay, SpellState};
 pub use para::{
     Affinity, CursorRect, HitTestResult, ParagraphLayout, ResolvedLineHeight, ResolvedParaProps,
     StyleSpan, layout_paragraph,

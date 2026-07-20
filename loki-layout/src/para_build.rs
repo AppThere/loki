@@ -74,6 +74,14 @@ pub(crate) fn push_para_styles(
             continue;
         }
         let r = span.range.clone();
+        // A span whose shaped text is empty — e.g. a run that is only a tab
+        // (tabs are excluded from the Parley text, gap #8) carrying its own
+        // char props, as in an underlined signature-line tab — remaps to a
+        // zero-length range. Parley asserts `start < end` on every style span,
+        // so drop empties here (matching the guard in `para_underlays`).
+        if r.start >= r.end {
+            continue;
+        }
         // For super/subscript (gap #3), reduce font size to 58 %. The shift is
         // applied in `para_emit` (`va_offset`) — TODO(super-sub): no native API.
         let effective_font_size = if span.vertical_align.is_some() {
@@ -82,7 +90,19 @@ pub(crate) fn push_para_styles(
             span.font_size
         };
         builder.push(StyleProperty::FontSize(effective_font_size), r.clone());
-        builder.push(StyleProperty::Brush(span.color), r.clone());
+        // Emboss/imprint draw the body in a relief grey (the raised surface /
+        // engraved floor). Pushing it as the Parley brush both colours the body
+        // and — because the brush now differs from the neighbours — stops Parley
+        // coalescing the run into a glyph run spanning several style spans (which
+        // would defeat the per-run effect lookup in `para_emit`).
+        let brush = if span.emboss {
+            LayoutColor::new(0.78, 0.78, 0.78, 1.0)
+        } else if span.imprint {
+            LayoutColor::new(0.42, 0.42, 0.42, 1.0)
+        } else {
+            span.color
+        };
+        builder.push(StyleProperty::Brush(brush), r.clone());
         // Push the effective numeric weight. `weight` already folds in `bold`
         // (700 when bold, else 400) plus any explicit `font_weight` style, so a
         // non-default weight is honoured even when the bold flag is unset.

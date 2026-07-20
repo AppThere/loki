@@ -53,6 +53,9 @@ pub(crate) fn map_cell_props(cell_props: &OdfCellProps) -> CellProps {
             .border_right
             .as_deref()
             .and_then(parse_odf_border),
+        // ODF has no line/cross hatch shading equivalent — cells carry a solid
+        // `fo:background-color` only.
+        shading: None,
     }
 }
 

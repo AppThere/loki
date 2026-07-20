@@ -102,9 +102,60 @@ fn shading_nil_is_none() {
 }
 
 #[test]
-fn shading_unknown_texture_falls_back_to_fill() {
-    let c = resolve_shading(Some("97BC62"), Some("horzStripe"), Some("000000")).unwrap();
+fn shading_texture_pattern_blends_color_over_fill() {
+    // A line/cross texture is flattened to a tint of the foreground over fill.
+    // diagStripe ≈ 50 % of orange (ED7D31) over white (FFFFFF).
+    let c = resolve_shading(Some("FFFFFF"), Some("diagStripe"), Some("ED7D31")).unwrap();
+    let expect = |fg: f32| 1.0 * 0.5 + fg * 0.5;
+    assert!((c.red() - expect(0xED as f32 / 255.0)).abs() < 1e-4);
+    assert!((c.green() - expect(0x7D as f32 / 255.0)).abs() < 1e-4);
+    // Lighter than the solid foreground (a visible-but-tinted stripe).
+    assert!(c.blue() > 0x31 as f32 / 255.0);
+}
+
+#[test]
+fn shading_thin_texture_is_lighter_than_bold() {
+    let thin = resolve_shading(Some("FFFFFF"), Some("thinDiagStripe"), Some("000000")).unwrap();
+    let bold = resolve_shading(Some("FFFFFF"), Some("diagStripe"), Some("000000")).unwrap();
+    // Less ink → closer to white → higher channel value.
+    assert!(thin.red() > bold.red());
+}
+
+#[test]
+fn shading_unknown_value_falls_back_to_fill() {
+    let c = resolve_shading(Some("97BC62"), Some("someFutureVal"), Some("000000")).unwrap();
     assert!((c.green() - 0xBC as f32 / 255.0).abs() < 1e-4);
+}
+
+// ── resolve_shading_pattern ──────────────────────────────────────────────────
+
+#[test]
+fn shading_pattern_preserves_geometry_and_colors() {
+    use loki_doc_model::style::props::shading::HatchPattern;
+    use loki_primitives::color::DocumentColor;
+
+    let p = resolve_shading_pattern(Some("FFFFFF"), Some("diagStripe"), Some("ED7D31"))
+        .expect("diagStripe is a texture pattern");
+    assert_eq!(p.pattern, HatchPattern::DiagUp);
+    assert!(!p.thin);
+    assert_eq!(p.color, DocumentColor::from_hex("#ED7D31").unwrap());
+    assert_eq!(p.fill, Some(DocumentColor::from_hex("#FFFFFF").unwrap()));
+
+    let thin = resolve_shading_pattern(Some("auto"), Some("thinHorzCross"), None)
+        .expect("thinHorzCross is a texture pattern");
+    assert_eq!(thin.pattern, HatchPattern::Cross);
+    assert!(thin.thin);
+    // `@w:fill="auto"` leaves the background unpainted; missing `@w:color` → black.
+    assert_eq!(thin.fill, None);
+    assert_eq!(thin.color, DocumentColor::from_hex("#000000").unwrap());
+}
+
+#[test]
+fn shading_pattern_none_for_non_texture_values() {
+    assert!(resolve_shading_pattern(Some("FFFFFF"), Some("clear"), None).is_none());
+    assert!(resolve_shading_pattern(Some("FFFFFF"), Some("solid"), Some("FF0000")).is_none());
+    assert!(resolve_shading_pattern(Some("FFFFFF"), Some("pct25"), Some("FF0000")).is_none());
+    assert!(resolve_shading_pattern(Some("FFFFFF"), None, None).is_none());
 }
 
 // ── XXE posture (audit-2026-06 S-5) ──────────────────────────────────────────

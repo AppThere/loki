@@ -12,7 +12,9 @@ use std::io::{Seek, Write};
 use zip::write::{FileOptions, ZipWriter};
 
 use crate::{
-    constants::{MEDIA_TYPE_RELATIONSHIPS, REL_CORE_PROPERTIES, REL_THUMBNAIL},
+    constants::{
+        MEDIA_TYPE_CORE_PROPERTIES, MEDIA_TYPE_RELATIONSHIPS, REL_CORE_PROPERTIES, REL_THUMBNAIL,
+    },
     content_types::write_content_types,
     core_properties::write_core_properties,
     error::{OpcError, OpcResult},
@@ -79,6 +81,13 @@ pub fn write_package_to_zip<W: Write + Seek>(pkg: &Package, writer: &mut W) -> O
     let mut ctm = pkg.content_type_map().clone();
     ctm.add_default("rels", MEDIA_TYPE_RELATIONSHIPS);
     ctm.add_default("xml", "application/xml");
+    // The core-properties part is an `.xml` part, so without an explicit
+    // Override it would resolve to the generic `application/xml` default —
+    // which makes Word reject the whole package. Register the required content
+    // type so `/docProps/core.xml` is typed correctly (ISO/IEC 29500-2 §8.2).
+    if let Some((name, _)) = &core_props_part_name {
+        ctm.add_override(name, MEDIA_TYPE_CORE_PROPERTIES);
+    }
 
     let ct_bytes = write_content_types(&ctm)?;
     zip.start_file("[Content_Types].xml", options)?;

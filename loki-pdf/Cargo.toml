@@ -19,6 +19,10 @@ flate2 = "1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif"] }
 subsetter = "0.2.6"
 
+[dev-dependencies]
+# The bundled variable Arimo face, to verify PDF variable-font instancing.
+loki-fonts = { path = "../loki-fonts" }
+
 [dependencies.chrono]
 version = "0.4"
 default-features = false

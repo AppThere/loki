@@ -5,7 +5,7 @@
 //! [`save_document_to_path`] serialises the live document from [`DocumentState`]
 //! and writes it back to the file identified by the route `path` token.
 
-use std::io::{Cursor, Write};
+use std::io::{Cursor, Read, Write};
 use std::sync::{Arc, Mutex};
 
 use loki_doc_model::document::Document;
@@ -123,6 +123,48 @@ pub(super) fn export_template_to_token(
     DocxTemplateExport::export(&arc_doc, &mut buf, ())
         .map_err(|e| SaveError::Export(e.to_string()))?;
     write_all_to_token(token, &buf.into_inner())
+}
+
+/// Repairs the on-disk `.docx` at `path` **losslessly**: reorders the OOXML
+/// child elements into the schema sequence Microsoft Word requires, touching
+/// nothing else (attributes, text, and constructs Loki does not model survive
+/// verbatim). Returns the number of problems fixed (0 = already clean).
+///
+/// This deliberately operates on the file bytes, not the in-memory document —
+/// Loki's tolerant reader already imported a correct model, so a model
+/// round-trip would only risk dropping what Loki cannot represent. Reuses the
+/// same single-write path as save to avoid partial-write corruption.
+pub(super) fn repair_document_file(path: &str) -> Result<usize, SaveError> {
+    use super::editor_load::{DocumentFormat, detect_format};
+
+    if is_untitled(path) {
+        return Err(SaveError::UnsupportedFormat(
+            "untitled document — save it first".to_string(),
+        ));
+    }
+    let token =
+        FileAccessToken::deserialize(path).map_err(|e| SaveError::InvalidToken(e.to_string()))?;
+    if !matches!(detect_format(&token), DocumentFormat::Docx) {
+        return Err(SaveError::UnsupportedFormat(
+            "repair currently supports .docx only".to_string(),
+        ));
+    }
+
+    let mut reader = token
+        .open_read()
+        .map_err(|e| SaveError::Io(e.to_string()))?;
+    let mut bytes = Vec::new();
+    reader
+        .read_to_end(&mut bytes)
+        .map_err(|e| SaveError::Io(e.to_string()))?;
+
+    let (fixed, report) =
+        loki_ooxml::repair_docx(&bytes).map_err(|e| SaveError::Export(e.to_string()))?;
+    if report.is_clean() {
+        return Ok(0);
+    }
+    write_all_to_token(&token, &fixed)?;
+    Ok(report.findings.len())
 }
 
 /// Clones the currently-loaded document out of `doc_state`.

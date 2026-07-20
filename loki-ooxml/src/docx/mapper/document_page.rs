@@ -12,7 +12,10 @@ use std::collections::HashMap;
 
 use loki_doc_model::content::block::Block;
 use loki_doc_model::layout::header_footer::{HeaderFooter, HeaderFooterKind};
-use loki_doc_model::layout::page::{PageLayout, PageMargins, PageOrientation, PageSize};
+use loki_doc_model::layout::page::{
+    LineNumberRestart, LineNumbering, PageBorders, PageLayout, PageMargins, PageOrientation,
+    PageSize,
+};
 use loki_doc_model::layout::section::SectionStart;
 use loki_doc_model::style::list_style::NumberingScheme;
 use loki_primitives::units::Points;
@@ -83,7 +86,54 @@ fn map_page_layout(sect_pr: Option<&DocxSectPr>) -> PageLayout {
     layout.page_number_format = sp.pg_num_fmt.as_deref().map(map_page_num_fmt);
     layout.page_number_start = sp.pg_num_start;
 
+    layout.page_border = sp
+        .pg_borders
+        .as_ref()
+        .map(map_pg_borders)
+        .filter(|b| !b.is_empty());
+
+    layout.line_numbering = sp.ln_num_type.as_ref().map(map_ln_num_type);
+
     layout
+}
+
+/// Maps a parsed `w:lnNumType` to the doc-model [`LineNumbering`], applying
+/// Word's defaults (`countBy=1`, `start=1`, `restart="newPage"`) and converting
+/// `@w:distance` from twips to points.
+fn map_ln_num_type(t: &crate::docx::model::section::DocxLnNumType) -> LineNumbering {
+    let restart = match t.restart.as_deref() {
+        Some("newSection") => LineNumberRestart::NewSection,
+        Some("continuous") => LineNumberRestart::Continuous,
+        // "newPage", absent, or unknown → the default.
+        _ => LineNumberRestart::NewPage,
+    };
+    LineNumbering {
+        count_by: t.count_by.filter(|&n| n > 0).unwrap_or(1),
+        start: t.start.unwrap_or(1),
+        restart,
+        distance: t
+            .distance
+            .filter(|&d| d > 0)
+            .map(|d| Points::new(f64::from(d) / 20.0)),
+    }
+}
+
+/// Maps a parsed `w:pgBorders` set to the doc-model [`PageBorders`], dropping
+/// edges that are absent or explicitly `none`/`nil`.
+fn map_pg_borders(b: &crate::docx::model::section::DocxPgBorders) -> PageBorders {
+    use loki_doc_model::style::props::border::BorderStyle;
+    let edge = |e: &Option<crate::docx::model::paragraph::DocxBorderEdge>| {
+        e.as_ref()
+            .map(crate::docx::mapper::props::map_border_edge)
+            .filter(|bd| bd.style != BorderStyle::None)
+    };
+    PageBorders {
+        top: edge(&b.top),
+        left: edge(&b.left),
+        bottom: edge(&b.bottom),
+        right: edge(&b.right),
+        offset_from_text: b.offset_from_text,
+    }
 }
 
 /// Maps an OOXML `w:pgNumType @w:fmt` token to a [`NumberingScheme`].
@@ -167,3 +217,7 @@ pub(super) fn map_page_layout_with_hf(
 
     layout
 }
+
+#[cfg(test)]
+#[path = "document_page_tests.rs"]
+mod tests;

@@ -8,6 +8,7 @@
 
 use super::BridgeError;
 use super::color_codec::encode_document_color;
+use super::decode::encode_border;
 use crate::content::inline::{Inline, QuoteType};
 use crate::loro_schema::*;
 use crate::style::props::char_props::CharProps;
@@ -223,6 +224,15 @@ pub(super) fn apply_char_props_marks(
     }
     if let Some(v) = props.shadow {
         text.mark(start..end, MARK_SHADOW, v)?;
+    }
+    if let Some(v) = props.emboss {
+        text.mark(start..end, MARK_EMBOSS, v)?;
+    }
+    if let Some(v) = props.imprint {
+        text.mark(start..end, MARK_IMPRINT, v)?;
+    }
+    if let Some(v) = &props.character_border {
+        text.mark(start..end, MARK_CHAR_BORDER, encode_border(v))?;
     }
     if let Some(v) = props.small_caps {
         text.mark(start..end, MARK_SMALL_CAPS, v)?;

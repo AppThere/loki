@@ -228,6 +228,13 @@ pub(crate) fn map_ppr(ppr: &DocxPPr) -> ParaProps {
     ) {
         props.background_color = Some(DocumentColor::Rgb(rgb));
     }
+    // Preserve a line/cross texture so the renderer can draw the actual hatch
+    // lines (the flattened tint above is the fallback for non-hatch consumers).
+    props.shading = crate::xml_util::resolve_shading_pattern(
+        ppr.shd_fill.as_deref(),
+        ppr.shd_val.as_deref(),
+        ppr.shd_color.as_deref(),
+    );
 
     // Tab stops: w:tabs → ParaProps.tab_stops.
     // "clear" entries remove inherited stops and are not forwarded as explicit stops.

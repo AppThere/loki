@@ -15,11 +15,12 @@
 //! deferred to a future Parley (workaround would be U+202B/U+200F controls).
 
 use loki_doc_model::content::block::StyledParagraph;
+use loki_doc_model::content::float::{TextWrap, WrapSide};
 
 use crate::geometry::LayoutRect;
 use crate::items::{PositionedImage, PositionedItem};
 use crate::para::{ParagraphLayout, ResolvedParaProps, layout_paragraph_spelled};
-use crate::resolve::{emu_to_pt, pts_to_f32, resolve_para_props};
+use crate::resolve::{emu_to_pt, resolve_para_props};
 
 use super::columns_impl::break_column;
 use super::editing::push_editing_para;
@@ -35,7 +36,7 @@ mod split;
 mod widow_orphan;
 
 pub(super) use chain::flow_keep_with_next_chain;
-use place::place_paragraph_layout;
+use place::{place_paragraph_layout, place_with_footnote_band};
 use split::split_and_place_loop;
 
 // ── Public(super) API ─────────────────────────────────────────────────────────
@@ -43,6 +44,14 @@ use split::split_and_place_loop;
 /// Resolve, lay out, and place a single paragraph block.
 pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, block_index: usize) {
     let mut resolved = resolve_para_props(para, state.catalog);
+    // A tracked ¶-mark deletion paints a struck end-of-paragraph marker only in
+    // the All-Markup view; Final/Original render the accepted/rejected document,
+    // where no revision decoration is shown. (Full paragraph *merge* in the
+    // Final view is not modelled — the ¶ is simply not marked; see the
+    // `revision_filter` module docs.)
+    if state.options.revision_display != crate::options::RevisionDisplay::AllMarkup {
+        resolved.para_mark_deleted_color = None;
+    }
     // Between-border group adjustment (gap #26), staged by the block loop.
     if let Some(ovr) = state.staged_between.take() {
         if ovr.suppress_top {
@@ -59,22 +68,9 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
         resolved.default_tab_stop = pt;
     }
 
-    // ── List level indentation fallback ─────────────────────────────────────
-    // The numbering level's pPr is the authoritative indent when the paragraph
-    // carries none (both indents 0.0) — e.g. `w:ind` only on the abstract num.
-    if let Some(ref lm) = resolved.list_marker
-        && resolved.indent_start == 0.0
-        && resolved.indent_hanging == 0.0
-        && let Some(list_style) = state.catalog.list_styles.get(&lm.list_id)
-        && let Some(level_def) = list_style.levels.get(lm.level as usize)
-    {
-        let level_indent = pts_to_f32(level_def.indent_start);
-        let level_hanging = pts_to_f32(level_def.hanging_indent);
-        if level_indent > 0.0 || level_hanging > 0.0 {
-            resolved.indent_start = level_indent;
-            resolved.indent_hanging = level_hanging;
-        }
-    }
+    // List level indentation fallback (numbering `pPr` indent when the paragraph
+    // carries none) — extracted to `flow_list_marker` for the 300-line ceiling.
+    super::flow_list_marker::apply_level_indent_fallback(state, &mut resolved);
 
     // ── List marker synthesis ────────────────────────────────────────────────
     // Prepend the label (bullet / number) as an `Inline::Str` + tab; a picture
@@ -88,36 +84,26 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
         state.catalog,
         &mut state.note_counter,
         state.cell_char_defaults.as_ref(),
+        state.options.revision_display,
     );
-    // Tag each note with its owning block + per-block order (see flow_footnotes).
+    // Tag each note with its owning block + per-block order. The notes render at
+    // the foot of the page carrying their reference — see `flow_tail`.
     for (i, note) in notes.iter_mut().enumerate() {
         note.owner_block_index = block_index;
         note.note_in_block = i;
     }
+    // Measure this paragraph's footnote band now; `place_with_footnote_band`
+    // applies it after placement (shrinking `content_bottom()` for following
+    // content) iff the paragraph stays on `page_before_para`.
+    let footnote_reserve = super::tail::footnote_reservation(state, &notes);
+    let page_before_para = state.page_number;
     state.pending_footnotes.extend(notes);
 
-    // ── Floating image wrap (gap #12): reserve a side band so text wraps
-    // beside the float (emitted after text layout; removed from the
-    // inline/block set so it is not also stacked above the text).
-    let float_plan = super::float_impl::plan_float(&images, state.content_width);
-    // Band geometry shared by this paragraph's own float (below) and the
-    // `ActiveFloat` it may leave for following paragraphs.
-    let own_float: Option<(f32, f32, bool)> = float_plan.as_ref().map(|(_, p)| {
-        let inset = p.indent_start_delta + p.indent_end_delta;
-        (inset, p.height, p.indent_start_delta > 0.0)
-    });
-    if let Some((idx, _)) = &float_plan
-        && let Some((inset, height, shift_text)) = own_float
-    {
-        // The banded layout path narrows the lines beside the float and reflows
-        // the rest at full width (one of the deltas is zero — left vs right).
-        resolved.wrap_band = Some(crate::para::WrapBand {
-            inset,
-            cover_height: height,
-            shift_text,
-        });
-        images.remove(*idx);
-    }
+    // Floating image/text-box wrap (gap #12): plan the paragraph's own float,
+    // set its wrap band on `resolved`, and drop the floated image from the
+    // block-stacked set (see `flow_float::plan_paragraph_float`).
+    let (float_plan, own_float) =
+        super::float_impl::plan_paragraph_float(state, &mut images, &mut resolved);
 
     state.cursor_y += resolved.space_before;
 
@@ -165,37 +151,8 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
     }
 
     // ── Inline image placement (gap #9) ──────────────────────────────────────
-    // TODO(inline-image-flow): no Parley inline image boxes; images are a
-    // block-level prefix and existing items shift down to make room.
-    let mut total_image_height = 0.0f32;
-    let mut image_items: Vec<PositionedItem> = Vec::new();
-    for img in &images {
-        if img.cx_emu == 0 && img.cy_emu == 0 {
-            continue; // zero-size image — skip without crashing
-        }
-        let w = emu_to_pt(img.cx_emu);
-        let h = emu_to_pt(img.cy_emu);
-        image_items.push(PositionedItem::Image(PositionedImage {
-            rect: LayoutRect::new(0.0, total_image_height, w, h),
-            src: img.src.clone(),
-            alt: img.alt.clone(),
-        }));
-        total_image_height += h;
-    }
-    if total_image_height > 0.0 {
-        // Expand background fill to cover image area (first item when present).
-        if let Some(PositionedItem::FilledRect(bg)) = para_layout.items.first_mut() {
-            bg.rect.size.height += total_image_height;
-        }
-        // Shift all existing paragraph items down by total image height.
-        for item in &mut para_layout.items {
-            item.translate(0.0, total_image_height);
-        }
-        para_layout.height += total_image_height;
-        // Prepend image items (they render before paragraph text).
-        image_items.append(&mut para_layout.items);
-        para_layout.items = image_items;
-    }
+    // Block-stack the non-floating images and collect any `wrapNone` overlays.
+    let overlay_items = stack_block_images(&mut para_layout, &images, state.content_width);
 
     // Emit the float beside the wrapped text; a float taller than its text
     // becomes an `ActiveFloat` so *following* paragraphs wrap its remainder.
@@ -203,12 +160,27 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
         para_layout.items.push(placement.item);
     }
 
+    // Emit overlay (`wrapNone`) floats last: behind-text ones go under the
+    // whole paragraph (drawn first), in-front ones over the text (drawn last).
+    // Neither reserves vertical space nor shifts the text.
+    apply_overlay_images(&mut para_layout, overlay_items);
+
     // The paragraph's content top in page coordinates (where the float image's
     // own top sits), captured before placement may advance/split the cursor.
     let para_top = state.cursor_y;
     let page_before = state.page_number;
 
-    place_paragraph_layout(state, &resolved, para_layout, block_index);
+    // Place the paragraph, exempting an empty one from — and otherwise applying —
+    // this page's footnote-band reservation (see `place_with_footnote_band`).
+    place_with_footnote_band(
+        state,
+        &resolved,
+        para_layout,
+        block_index,
+        text.trim().is_empty(),
+        footnote_reserve,
+        page_before_para,
+    );
 
     // Maintain the cross-paragraph float band.
     if state.page_number != page_before {
@@ -232,5 +204,87 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
 
     if resolved.page_break_after && state.mode.is_paginated() {
         finish_page(state);
+    }
+}
+
+/// Block-stacks a paragraph's non-floating images above its text (gap #9) and
+/// returns any `wrapNone` overlays for the caller to emit after floats.
+///
+/// TODO(inline-image-flow): Parley has no inline image boxes, so images are a
+/// block-level prefix — existing items shift down to make room. Shared by
+/// [`flow_paragraph`] and the keep-with-next chain (`flow_para_chain`) so an
+/// image in a `keepNext` paragraph (e.g. a captioned figure) is not dropped.
+pub(super) fn stack_block_images(
+    para_layout: &mut ParagraphLayout,
+    images: &[crate::resolve::CollectedImage],
+    content_width: f32,
+) -> Vec<(bool, PositionedItem)> {
+    let mut total_image_height = 0.0f32;
+    let mut image_items: Vec<PositionedItem> = Vec::new();
+    // Overlay floats (`wrapNone`): Word reserves no space for them, so instead
+    // of stacking above the text they float at a side-anchored position over
+    // the full-width text (or under it when `behind_text`).
+    let mut overlay_items: Vec<(bool, PositionedItem)> = Vec::new();
+    for img in images {
+        if img.cx_emu == 0 && img.cy_emu == 0 {
+            continue; // zero-size image — skip without crashing
+        }
+        let w = emu_to_pt(img.cx_emu);
+        let h = emu_to_pt(img.cy_emu);
+        if let Some(f) = img.float.filter(|f| f.wrap == TextWrap::None) {
+            // Anchor to the same side `plan_float` would have chosen: text on
+            // the left (`side=Left`) means the object sits on the right.
+            let x = if matches!(f.side, WrapSide::Left) {
+                (content_width - w).max(0.0)
+            } else {
+                0.0
+            };
+            overlay_items.push((
+                f.behind_text,
+                PositionedItem::Image(PositionedImage {
+                    rect: LayoutRect::new(x, 0.0, w, h),
+                    src: img.src.clone(),
+                    alt: img.alt.clone(),
+                }),
+            ));
+            continue;
+        }
+        image_items.push(PositionedItem::Image(PositionedImage {
+            rect: LayoutRect::new(0.0, total_image_height, w, h),
+            src: img.src.clone(),
+            alt: img.alt.clone(),
+        }));
+        total_image_height += h;
+    }
+    if total_image_height > 0.0 {
+        // Expand background fill to cover image area (first item when present).
+        if let Some(PositionedItem::FilledRect(bg)) = para_layout.items.first_mut() {
+            bg.rect.size.height += total_image_height;
+        }
+        // Shift all existing paragraph items down by total image height.
+        for item in &mut para_layout.items {
+            item.translate(0.0, total_image_height);
+        }
+        para_layout.height += total_image_height;
+        // Prepend image items (they render before paragraph text).
+        image_items.append(&mut para_layout.items);
+        para_layout.items = image_items;
+    }
+    overlay_items
+}
+
+/// Emits `wrapNone` overlay images: behind-text ones under the whole paragraph
+/// (drawn first), in-front ones over the text (drawn last). Neither reserves
+/// vertical space nor shifts the text.
+pub(super) fn apply_overlay_images(
+    para_layout: &mut ParagraphLayout,
+    overlay_items: Vec<(bool, PositionedItem)>,
+) {
+    for (behind, item) in overlay_items {
+        if behind {
+            para_layout.items.insert(0, item);
+        } else {
+            para_layout.items.push(item);
+        }
     }
 }

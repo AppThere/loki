@@ -25,6 +25,8 @@ pub(super) struct AutoStyles {
     para: HashMap<(String, String, String), String>,
     /// table-cell-properties element → style name (`TC{n}`).
     cell: HashMap<String, String>,
+    /// graphic-properties element → style name (`gr{n}`).
+    graphic: HashMap<String, String>,
     /// Rendered `<style:style>` elements, in creation order.
     rendered: Vec<String>,
 }
@@ -147,11 +149,39 @@ impl AutoStyles {
         Some(name)
     }
 
+    /// Returns the automatic `family="graphic"` style name for a floating
+    /// frame's `style:graphic-properties` (`wrap` / `run-through`, solid fill,
+    /// solid stroke), or `None` when none of them is set. Used by the text-box
+    /// writer so a `draw:frame`'s wrap + fill + border round-trip.
+    pub(super) fn graphic_style(
+        &mut self,
+        wrap: Option<loki_doc_model::content::float::FloatWrap>,
+        fill: Option<&str>,
+        stroke: Option<&str>,
+    ) -> Option<String> {
+        let props = graphic::emit_graphic_properties(wrap, fill, stroke);
+        if props.is_empty() {
+            return None;
+        }
+        if let Some(name) = self.graphic.get(&props) {
+            return Some(name.clone());
+        }
+        let name = format!("gr{}", self.rendered.len() + 1);
+        self.rendered.push(format!(
+            "<style:style style:name=\"{name}\" style:family=\"graphic\">{props}</style:style>"
+        ));
+        self.graphic.insert(props, name.clone());
+        Some(name)
+    }
+
     /// Renders all collected automatic styles as concatenated XML.
     pub(super) fn render(&self) -> String {
         self.rendered.concat()
     }
 }
+
+#[path = "auto_graphic.rs"]
+mod graphic;
 
 /// Serialises a cell's exportable direct properties — background, borders,
 /// and padding (4a.3) — as a `<style:table-cell-properties/>` element, or an

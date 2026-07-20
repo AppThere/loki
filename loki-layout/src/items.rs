@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use crate::color::LayoutColor;
 use crate::geometry::{LayoutPoint, LayoutRect};
+use crate::hatch::PositionedHatch;
 
 /// A single renderer-agnostic draw item with an absolute position in layout
 /// space.
@@ -24,6 +25,10 @@ pub enum PositionedItem {
     GlyphRun(PositionedGlyphRun),
     /// A filled rectangle (backgrounds, table cell fills, etc.).
     FilledRect(PositionedRect),
+    /// A hatch-shaded rectangle (`w:shd` line/cross texture): an optional
+    /// background fill overlaid with hatch lines. The renderer draws the lines;
+    /// see [`PositionedHatch`].
+    HatchRect(PositionedHatch),
     /// A border rectangle (stroked, not filled).
     BorderRect(PositionedBorderRect),
     /// An image at a position.
@@ -73,6 +78,10 @@ impl PositionedItem {
                 r.rect.origin.x += dx;
                 r.rect.origin.y += dy;
             }
+            Self::HatchRect(h) => {
+                h.rect.origin.x += dx;
+                h.rect.origin.y += dy;
+            }
             Self::BorderRect(r) => {
                 r.rect.origin.x += dx;
                 r.rect.origin.y += dy;
@@ -121,6 +130,14 @@ pub struct PositionedGlyphRun {
     pub color: LayoutColor,
     /// Synthesis flags (bold/italic synthesis).
     pub synthesis: GlyphSynthesis,
+    /// Normalized variation coordinates (F2Dot14 raw i16, one per fvar axis)
+    /// for this run's selected face, as resolved by Parley. Non-empty only for
+    /// variable fonts — e.g. the bundled Arimo (Arial substitute) is a `wght`
+    /// variable font, so a bold run carries its `wght=700` coordinate here.
+    /// Both painters must apply these; rendering the default (all-zero) master
+    /// instead paints regular-weight glyphs with bold advances (gap: bold Arial
+    /// looked "wide but not bold").
+    pub normalized_coords: Vec<i16>,
     /// Hyperlink URL if this run is part of a link. `None` for non-link text.
     ///
     /// A blue-tint underlay hint is rendered by `loki-vello`, a point resolves

@@ -97,6 +97,7 @@ pub(super) fn map_para_props(p: &ParaProps) -> ResolvedParaProps {
             _ => None,
         }),
         background_color: p.background_color.as_ref().map(|c| resolve_color(Some(c))),
+        background_hatch: p.shading.clone(),
         border_top: p.border_top.as_ref().and_then(convert_border),
         border_bottom: p.border_bottom.as_ref().and_then(convert_border),
         border_left: p.border_left.as_ref().and_then(convert_border),

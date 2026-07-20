@@ -204,6 +204,16 @@ pub enum Inline {
     /// ODF: `draw:frame/draw:image` inline. OOXML: `w:drawing` inline.
     Image(NodeAttr, Vec<Inline>, LinkTarget),
 
+    /// A floating/anchored text box — a shape carrying block content, a border,
+    /// and a fill (OOXML `wps:wsp` + `w:txbxContent`; ODF `draw:frame/draw:text-box`).
+    ///
+    /// The [`NodeAttr`] carries the same geometry (`cx_emu`/`cy_emu`), float, and
+    /// wrap metadata an anchored [`Image`](Self::Image) does, plus the box's
+    /// `textbox-fill` / `textbox-line` colours. The `Vec<Block>` is the flowed
+    /// interior content. Rendered by the layout as a bordered/filled box with its
+    /// content laid out inside and surrounding text wrapped around it.
+    TextBox(NodeAttr, Vec<Block>),
+
     /// A footnote or endnote reference and its content.
     /// Corresponds to pandoc `Note`, extended with a [`NoteKind`] discriminant
     /// so consumers can distinguish footnotes from endnotes without inspecting

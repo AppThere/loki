@@ -92,6 +92,27 @@ pub(crate) fn map_text_props(props: &OdfTextProps) -> CharProps {
         out.shadow = Some(!shadow.is_empty() && shadow != "none");
     }
 
+    // ── Relief (emboss / imprint) ──────────────────────────────────────────
+    // ODF style:font-relief maps 1:1 to the two toggles (embossed = raised,
+    // engraved = imprinted). ODF 1.3 §20.191.
+    match props.font_relief.as_deref() {
+        Some("embossed") => out.emboss = Some(true),
+        Some("engraved") => out.imprint = Some(true),
+        _ => {}
+    }
+
+    // ── Character border ───────────────────────────────────────────────────
+    // ODF puts a character border on style:text-properties as an fo:border
+    // shorthand, with fo:padding carrying the border↔glyph inset.
+    if let Some(mut border) = props
+        .border
+        .as_deref()
+        .and_then(super::paragraph::parse_odf_border)
+    {
+        border.spacing = props.padding.as_deref().and_then(parse_length);
+        out.character_border = Some(border);
+    }
+
     // ── Spacing ────────────────────────────────────────────────────────────
     if let Some(pts) = props.letter_spacing.as_deref().and_then(parse_length) {
         out.letter_spacing = Some(pts);

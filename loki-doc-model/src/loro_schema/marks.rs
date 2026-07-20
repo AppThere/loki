@@ -29,6 +29,13 @@ pub const MARK_SCALE: &str = "scale";
 pub const MARK_SMALL_CAPS: &str = "small_caps";
 pub const MARK_ALL_CAPS: &str = "all_caps";
 pub const MARK_SHADOW: &str = "shadow";
+/// `w:emboss` / ODF `style:font-relief="embossed"` — raised 3-D relief.
+pub const MARK_EMBOSS: &str = "emboss";
+/// `w:imprint` / ODF `style:font-relief="engraved"` — engraved 3-D relief.
+pub const MARK_IMPRINT: &str = "imprint";
+/// Character border (`w:bdr` / ODF `fo:border` on text) — the packed
+/// `Border` string (`loro_bridge::decode::encode_border`).
+pub const MARK_CHAR_BORDER: &str = "char_border";
 pub const MARK_KERNING: &str = "kerning";
 /// Named character style (`StyledRun::style_id`) carried as a mark so that
 /// run-level style references survive Loro round-trips.
@@ -117,6 +124,9 @@ pub const CHAR_MARK_KEYS: &[&str] = &[
     MARK_SMALL_CAPS,
     MARK_ALL_CAPS,
     MARK_SHADOW,
+    MARK_EMBOSS,
+    MARK_IMPRINT,
+    MARK_CHAR_BORDER,
     MARK_KERNING,
     MARK_OUTLINE,
     MARK_CHAR_STYLE_ID,

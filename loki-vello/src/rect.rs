@@ -6,7 +6,32 @@
 //! Translates [`loki_layout::PositionedRect`] and
 //! [`loki_layout::PositionedBorderRect`] into Vello `fill` / `stroke` calls.
 
-use loki_layout::{BorderEdge, LayoutRect, PositionedBorderRect, PositionedRect};
+use loki_layout::{BorderEdge, LayoutRect, PositionedBorderRect, PositionedHatch, PositionedRect};
+
+/// Paint a `w:shd` hatch: the optional background fill, then each clipped hatch
+/// line stroked at the pattern's line width.
+pub fn paint_hatch(scene: &mut vello::Scene, item: &PositionedHatch, scale: f32) {
+    if let Some(fill) = item.fill {
+        paint_filled_rect(
+            scene,
+            &PositionedRect {
+                rect: item.rect,
+                color: fill,
+            },
+            scale,
+        );
+    }
+    let brush = crate::color::to_brush(&item.color);
+    let stroke = kurbo::Stroke::new(f64::from(item.line_width() * scale));
+    let s = f64::from(scale);
+    for seg in item.segments() {
+        let line = kurbo::Line::new(
+            (f64::from(seg.x0) * s, f64::from(seg.y0) * s),
+            (f64::from(seg.x1) * s, f64::from(seg.y1) * s),
+        );
+        scene.stroke(&stroke, kurbo::Affine::IDENTITY, &brush, None, &line);
+    }
+}
 
 /// Paint a filled rectangle into the scene.
 pub fn paint_filled_rect(scene: &mut vello::Scene, item: &PositionedRect, scale: f32) {

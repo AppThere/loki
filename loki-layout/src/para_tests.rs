@@ -42,10 +42,13 @@ fn single_span(text: &str, font_size: f32) -> StyleSpan {
         line_height: None,
         vertical_align: None,
         highlight_color: None,
+        character_border: None,
         letter_spacing: None,
         font_variant: None,
         word_spacing: None,
         shadow: false,
+        emboss: false,
+        imprint: false,
         link_url: None,
         math: None,
         scale: None,
@@ -268,6 +271,45 @@ fn background_color_is_first_item() {
     );
 }
 
+/// REGRESSION: a run that is only a tab (excluded from the Parley text, gap #8)
+/// carrying its own char props — e.g. an underlined signature-line tab — remaps
+/// to a zero-length style span. Parley asserts `start < end` on every span, so
+/// the empty span must be dropped; otherwise layout panics.
+#[test]
+fn tab_only_styled_run_does_not_panic() {
+    let mut r = test_resources();
+    let text = "a\tb"; // bytes: a=0, \t=1, b=2
+    let spans = [
+        StyleSpan {
+            range: 0..1,
+            ..single_span("a", 12.0)
+        },
+        StyleSpan {
+            range: 1..2, // the tab, with a distinct (underlined) style
+            underline: Some(UnderlineStyle::Single),
+            ..single_span("t", 12.0)
+        },
+        StyleSpan {
+            range: 2..3,
+            ..single_span("b", 12.0)
+        },
+    ];
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &spans,
+        &ResolvedParaProps::default(),
+        400.0,
+        1.0,
+        false,
+    );
+    // The point is that layout returned at all (no panic); it also shaped "ab".
+    assert!(
+        result.height > 0.0,
+        "layout with a tab-only styled run must succeed"
+    );
+}
+
 #[test]
 fn underline_span_emits_decoration() {
     let mut r = test_resources();
@@ -438,7 +480,10 @@ fn line_boundaries_populated_for_multiline_paragraph() {
 }
 
 #[test]
-fn empty_paragraph_has_no_line_boundaries() {
+fn empty_paragraph_occupies_one_line() {
+    // Word gives an empty paragraph one line of height (and it can carry a
+    // border — an empty paragraph with a bottom border is a horizontal rule),
+    // so it must occupy exactly one line, not collapse to zero.
     let mut r = test_resources();
     let result = layout_paragraph(
         &mut r,
@@ -449,9 +494,43 @@ fn empty_paragraph_has_no_line_boundaries() {
         1.0,
         false,
     );
+    assert_eq!(
+        result.line_boundaries.len(),
+        1,
+        "empty paragraph must occupy exactly one line"
+    );
     assert!(
-        result.line_boundaries.is_empty(),
-        "empty paragraph must have no line boundaries"
+        result.height > 0.0,
+        "empty paragraph must take one line's height, got {}",
+        result.height
+    );
+}
+
+#[test]
+fn empty_paragraph_with_bottom_border_emits_a_rule() {
+    // Word's horizontal-rule idiom: an empty paragraph carrying only a bottom
+    // border must emit a border rect spanning the content column.
+    let mut r = test_resources();
+    let edge = BorderEdge {
+        color: LayoutColor::BLACK,
+        width: 1.0,
+        style: BorderStyle::Solid,
+    };
+    let props = ResolvedParaProps {
+        border_bottom: Some(edge),
+        ..Default::default()
+    };
+    let result = layout_paragraph(&mut r, "", &[], &props, 400.0, 1.0, false);
+    let border = result.items.iter().find_map(|i| match i {
+        PositionedItem::BorderRect(b) => Some(b),
+        _ => None,
+    });
+    let b = border.expect("empty bordered paragraph must emit a border rect");
+    assert!(b.bottom.is_some(), "the bottom edge must be set");
+    assert!(
+        b.rect.size.width > 300.0,
+        "the rule must span the content column (~400), got {}",
+        b.rect.size.width
     );
 }
 
@@ -486,6 +565,52 @@ fn border_follows_background() {
         result.items.get(1),
         Some(PositionedItem::BorderRect(_))
     ));
+}
+
+#[test]
+fn paragraph_border_spans_the_content_column() {
+    // A bordered paragraph fills the content column — from the start indent to
+    // the end indent — not just the (~short) text ink, matching Word.
+    let mut r = test_resources();
+    let text = "Short.";
+    let edge = BorderEdge {
+        color: LayoutColor::BLACK,
+        width: 1.0,
+        style: BorderStyle::Solid,
+    };
+    let props = ResolvedParaProps {
+        border_bottom: Some(edge),
+        indent_start: 30.0,
+        indent_end: 20.0,
+        ..Default::default()
+    };
+    let result = layout_paragraph(
+        &mut r,
+        text,
+        &[single_span(text, 12.0)],
+        &props,
+        400.0,
+        1.0,
+        false,
+    );
+    let b = result
+        .items
+        .iter()
+        .find_map(|i| match i {
+            PositionedItem::BorderRect(b) => Some(b),
+            _ => None,
+        })
+        .expect("border rect");
+    assert!(
+        (b.rect.origin.x - 30.0).abs() < 0.5,
+        "border must start at the start indent (30), got {}",
+        b.rect.origin.x
+    );
+    assert!(
+        (b.rect.size.width - 350.0).abs() < 0.5,
+        "border must span the column (400-30-20=350), not the short text ink; got {}",
+        b.rect.size.width
+    );
 }
 
 #[test]
@@ -621,6 +746,56 @@ fn exact_line_height_clips_each_line() {
             .iter()
             .any(|i| matches!(i, PositionedItem::ClippedGroup { .. })),
         "non-exact line height must not clip lines"
+    );
+}
+
+#[test]
+fn exact_line_clip_is_anchored_by_body_text_not_a_raised_run() {
+    // The exact-line clip box must be anchored by the body run's descent, so a
+    // raised super/subscript (or over-tall run) can't inflate the line's
+    // aggregate descent and push the box down over the body text's tops. The
+    // box's extent above the baseline must match with or without the raised run.
+    fn clip_top(p: &ParagraphLayout) -> f32 {
+        p.items
+            .iter()
+            .find_map(|i| match i {
+                PositionedItem::ClippedGroup { clip_rect, .. } => Some(clip_rect.y()),
+                _ => None,
+            })
+            .expect("exact line height wraps items in a clip group")
+    }
+    let mut r = test_resources();
+    let props = ResolvedParaProps {
+        line_height: Some(ResolvedLineHeight::Exact(12.0)),
+        ..Default::default()
+    };
+
+    // Body text only (11pt).
+    let plain = layout_paragraph(
+        &mut r,
+        "Body",
+        &[single_span("Body", 11.0)],
+        &props,
+        400.0,
+        1.0,
+        false,
+    );
+    let plain_above = plain.first_baseline - clip_top(&plain);
+
+    // Same body plus a large raised superscript.
+    let text = "Body BIG";
+    let mut body = single_span(text, 11.0);
+    body.range = 0..5;
+    let mut sup = single_span(text, 28.0);
+    sup.range = 5..8;
+    sup.vertical_align = Some(VerticalAlign::Superscript);
+    let raised = layout_paragraph(&mut r, text, &[body, sup], &props, 400.0, 1.0, false);
+    let raised_above = raised.first_baseline - clip_top(&raised);
+
+    assert!(
+        (plain_above - raised_above).abs() < 0.5,
+        "the exact clip box's extent above the baseline must be body-anchored \
+         and unchanged by a raised run; plain={plain_above} raised={raised_above}"
     );
 }
 
@@ -1558,5 +1733,32 @@ fn line_end_offset_read_only_returns_none() {
     assert!(
         para.line_end_offset(0, text).is_none(),
         "line_end_offset must return None in read-only mode"
+    );
+}
+
+#[test]
+fn decimal_tab_clamps_to_line_when_content_would_overflow() {
+    use loki_doc_model::style::props::tab_stop::{TabAlignment, TabLeader};
+    let stops = vec![ResolvedTabStop {
+        position: 126.0,
+        alignment: TabAlignment::Decimal,
+        leader: TabLeader::None,
+    }];
+    // Leading tab at x=0; the amount's decimal sits 34.4 in, its run ends at
+    // 53.4. On a narrow line (133) the natural decimal expansion (126-34.4=91.6)
+    // would push the run to 145 > 133 and Parley would wrap it, losing the
+    // alignment — so it clamps to right-align the run against the edge.
+    let narrow = tabs::compute_tab_plans(&stops, 0.0, 36.0, &[0.0], &[0], &[34.4], 53.4, 0, 133.0);
+    assert!(
+        (narrow[0].width - (133.0 - 53.4)).abs() < 0.2,
+        "narrow line clamps to the edge: {}",
+        narrow[0].width
+    );
+    // On a wide line (468) the run fits, so the full decimal expansion is kept.
+    let wide = tabs::compute_tab_plans(&stops, 0.0, 36.0, &[0.0], &[0], &[34.4], 53.4, 0, 468.0);
+    assert!(
+        (wide[0].width - (126.0 - 34.4)).abs() < 0.2,
+        "wide line is unclamped (true decimal align): {}",
+        wide[0].width
     );
 }

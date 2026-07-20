@@ -11,7 +11,7 @@
 
 use loki_layout::{
     DecorationKind, GlyphEntry, LayoutPage, LayoutRect, PositionedDecoration, PositionedGlyphRun,
-    PositionedImage, PositionedItem,
+    PositionedHatch, PositionedImage, PositionedItem,
 };
 use pdf_writer::{Content, Name, Str};
 
@@ -58,6 +58,7 @@ fn render_item(
         PositionedItem::FilledRect(r) | PositionedItem::HorizontalRule(r) => {
             fill_rect(&r.rect, layout_to_cmyk(r.color), page_h, ox, oy, content);
         }
+        PositionedItem::HatchRect(h) => render_hatch(h, page_h, ox, oy, content),
         PositionedItem::Decoration(d) => render_decoration(d, page_h, ox, oy, content),
         PositionedItem::BorderRect(b) => render_border(b, page_h, ox, oy, content),
         PositionedItem::Image(img) => draw_image(img, page_h, ox, oy, banks.images, content),
@@ -155,7 +156,14 @@ fn render_run(
     if drawn.is_empty() {
         return;
     }
-    let resource = bank.use_face(&run.font_data, run.font_index, drawn.iter().map(|g| g.id));
+    // The run's variable-font instance (e.g. Arimo `wght=700` for bold Arial)
+    // is embedded as its own instanced subset, so bold Arial exports bold.
+    let resource = bank.use_face(
+        &run.font_data,
+        run.font_index,
+        &run.normalized_coords,
+        drawn.iter().map(|g| g.id),
+    );
 
     let cmyk: Cmyk = layout_to_cmyk(run.color);
     content.set_fill_cmyk(cmyk.c, cmyk.m, cmyk.y, cmyk.k);
@@ -180,6 +188,42 @@ fn fill_rect(rect: &LayoutRect, color: Cmyk, page_h: f32, ox: f32, oy: f32, cont
     content.set_fill_cmyk(color.c, color.m, color.y, color.k);
     content.rect(x, y, w, h);
     content.fill_nonzero();
+}
+
+/// Renders a `w:shd` hatch: the optional background fill, then each clipped
+/// hatch line as a thin filled quad (the colour pipeline stays fill-only, so no
+/// stroke colour space is needed — matching `render_decoration`/`render_border`).
+fn render_hatch(h: &PositionedHatch, page_h: f32, ox: f32, oy: f32, content: &mut Content) {
+    if let Some(fill) = h.fill {
+        fill_rect(&h.rect, layout_to_cmyk(fill), page_h, ox, oy, content);
+    }
+    let cmyk = layout_to_cmyk(h.color);
+    let half = h.line_width() * 0.5;
+    content.set_fill_cmyk(cmyk.c, cmyk.m, cmyk.y, cmyk.k);
+    for s in h.segments() {
+        // Perpendicular offset of half the line width, so the segment becomes a
+        // thin quad; degenerate (zero-length) segments are skipped.
+        let (dx, dy) = (s.x1 - s.x0, s.y1 - s.y0);
+        let len = dx.hypot(dy);
+        if len <= f32::EPSILON {
+            continue;
+        }
+        let (px, py) = (-dy / len * half, dx / len * half);
+        // Layout → PDF space: x + ox, y flipped through the page height.
+        let fy = |y: f32| page_h - (oy + y);
+        let pts = [
+            (ox + s.x0 + px, fy(s.y0 + py)),
+            (ox + s.x1 + px, fy(s.y1 + py)),
+            (ox + s.x1 - px, fy(s.y1 - py)),
+            (ox + s.x0 - px, fy(s.y0 - py)),
+        ];
+        content.move_to(pts[0].0, pts[0].1);
+        content.line_to(pts[1].0, pts[1].1);
+        content.line_to(pts[2].0, pts[2].1);
+        content.line_to(pts[3].0, pts[3].1);
+        content.close_path();
+        content.fill_nonzero();
+    }
 }
 
 fn render_decoration(

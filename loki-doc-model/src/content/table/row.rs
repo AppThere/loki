@@ -56,6 +56,10 @@ pub enum CellTextDirection {
 pub struct CellProps {
     /// Background fill color. ODF `fo:background-color`; OOXML `w:shd`.
     pub background_color: Option<DocumentColor>,
+    /// Line/cross hatch shading (`w:shd` texture value). When set, the renderer
+    /// draws the hatch lines over `background_color` (the flattened-tint
+    /// fallback). `None` for a plain solid fill.
+    pub shading: Option<crate::style::props::shading::ShadingPattern>,
     /// Top border.
     pub border_top: Option<Border>,
     /// Bottom border.

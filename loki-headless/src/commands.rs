@@ -8,7 +8,7 @@ use std::time::Duration;
 use loki_convert::{ConvertError, ConvertOptions, Format, PdfProfile, convert};
 use loki_print::{ColorMode, Duplex, IppPrinter, PrintError, PrintOptions};
 
-use crate::cli::{Cli, Command, ConvertArgs, PrintArgs};
+use crate::cli::{Cli, Command, ConvertArgs, PrintArgs, RepairArgs};
 
 /// CLI failures (all map to exit code 1).
 #[derive(Debug, thiserror::Error)]
@@ -19,6 +19,8 @@ pub enum CliError {
     Convert(#[from] ConvertError),
     #[error(transparent)]
     Print(#[from] PrintError),
+    #[error(transparent)]
+    Repair(#[from] loki_ooxml::OoxmlError),
     #[error("failed to read {path}: {source}")]
     ReadInput {
         path: String,
@@ -37,6 +39,7 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
     match cli.command {
         Command::Convert(args) | Command::Render(args) => run_convert(&args),
         Command::Print(args) => run_print(&args),
+        Command::Repair(args) => run_repair(&args),
         Command::Formats => {
             for (source, target) in loki_convert::supported_pairs() {
                 println!("{source} -> {target}");
@@ -95,6 +98,67 @@ fn run_convert(args: &ConvertArgs) -> Result<(), CliError> {
         args.input.display(),
         args.output.display(),
         output.bytes.len()
+    );
+    Ok(())
+}
+
+fn run_repair(args: &RepairArgs) -> Result<(), CliError> {
+    let is_docx = args
+        .input
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("docx"));
+    if !is_docx {
+        return Err(CliError::UnknownFileFormat {
+            path: args.input.display().to_string(),
+            reason: "repair currently supports .docx only",
+        });
+    }
+    let input = std::fs::read(&args.input).map_err(|e| CliError::ReadInput {
+        path: args.input.display().to_string(),
+        source: e,
+    })?;
+
+    // The repair-and-write path needs an `--out` and no `--check`; every other
+    // combination (no `--out`, or `--check` set) is report-only. Binding `out`
+    // with `let-else` makes "output present here" a type-level fact, so the
+    // write path never has to assert it at runtime.
+    let Some(out) = args.output.as_ref().filter(|_| !args.check) else {
+        let report = loki_ooxml::analyze_docx(&input)?;
+        if report.is_clean() {
+            println!(
+                "{}: no Word-compatibility problems found",
+                args.input.display()
+            );
+        } else {
+            println!(
+                "{}: {} problem(s) that can stop Microsoft Word from opening this file:",
+                args.input.display(),
+                report.findings.len()
+            );
+            for f in &report.findings {
+                println!("  [{}] <{}>: {}", f.part, f.container, f.detail);
+            }
+            if !args.check {
+                println!("re-run with --out <file> to write a repaired copy");
+            }
+        }
+        return Ok(());
+    };
+
+    let (bytes, report) = loki_ooxml::repair_docx(&input)?;
+    for f in &report.findings {
+        println!("fixed [{}] <{}>: {}", f.part, f.container, f.detail);
+    }
+    std::fs::write(out, &bytes).map_err(|e| CliError::WriteOutput {
+        path: out.display().to_string(),
+        source: e,
+    })?;
+    println!(
+        "{} -> {} ({} problem(s) fixed)",
+        args.input.display(),
+        out.display(),
+        report.findings.len()
     );
     Ok(())
 }

@@ -16,6 +16,7 @@ use super::RunProps;
 use super::drawing::{
     inlines_to_string, write_anchor_drawing, write_bookmark, write_inline_drawing,
 };
+use super::textbox::write_textbox_drawing;
 use crate::docx::write::collector::ExportCollector;
 use crate::docx::write::run_props::emit_char_props;
 use crate::docx::write::xml::{write_empty, write_end, write_start, wval};
@@ -150,6 +151,9 @@ fn write_inline<W: std::io::Write>(
             } else {
                 write_text_run(w, "[Image]", props);
             }
+        }
+        Inline::TextBox(attr, blocks) => {
+            write_textbox_drawing(w, attr, blocks, collector);
         }
         Inline::Note(kind, blocks) => {
             let note_id = match kind {

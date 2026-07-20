@@ -246,6 +246,14 @@ pub(crate) fn assemble_docx_kind(
         ct.add_default(ext, mime);
     }
 
-    // ── Step 5: Write ZIP ─────────────────────────────────────────────────
+    // ── Step 5: Canonicalise child order, then write ZIP ──────────────────
+    // The per-part serialisers emit content correctly but do not all emit
+    // `pPr`/`rPr`/… children in the strict `xsd:sequence` order that
+    // schema-validating consumers (Microsoft Word) require to open the file —
+    // tolerant readers (Loki, LibreOffice) accept any order. This pass reorders
+    // them so a document Loki writes opens in Word. It is semantics-preserving
+    // (only element order changes), so it does not affect re-import. See
+    // `docx::repair`.
+    crate::docx::repair::canonicalize_package(&mut pkg);
     pkg.write(writer).map_err(OoxmlError::Opc)
 }

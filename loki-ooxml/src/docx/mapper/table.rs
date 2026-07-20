@@ -176,6 +176,13 @@ fn map_cell(tc: &crate::docx::model::styles::DocxTableCell, ctx: &mut MappingCon
             use loki_primitives::color::DocumentColor;
             props.background_color = Some(DocumentColor::Rgb(rgb));
         }
+        // Preserve a line/cross texture for hatch-line rendering (the flattened
+        // tint above is the fallback for consumers that cannot draw the hatch).
+        props.shading = crate::xml_util::resolve_shading_pattern(
+            tc_pr.shd_fill.as_deref(),
+            tc_pr.shd_val.as_deref(),
+            tc_pr.shd_color.as_deref(),
+        );
         // Cell borders from `w:tcBorders`.
         if let Some(ref borders) = tc_pr.tc_borders {
             props.border_top = borders.top.as_ref().map(map_border_edge);

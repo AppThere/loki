@@ -132,7 +132,6 @@ pub(super) fn map_frame(frame: &OdfFrame, ctx: &mut OdfMappingContext<'_>) -> Op
             }
         }
         OdfFrameKind::TextBox { paragraphs } => {
-            // Map the text box content as a Div pushed to pending_figures.
             let inner: Vec<Block> = paragraphs
                 .iter()
                 .flat_map(|p| {
@@ -141,6 +140,27 @@ pub(super) fn map_frame(frame: &OdfFrame, ctx: &mut OdfMappingContext<'_>) -> Op
                     std::iter::once(block).chain(figs)
                 })
                 .collect();
+            // A floating text box (one carrying a wrap style) maps to
+            // `Inline::TextBox` so the flow engine renders it as a bordered box
+            // with side-wrap — the same shape as the DOCX `wps` path, so a text
+            // box round-trips DOCX ↔ ODT. Fill/border come from the frame's
+            // graphic style; geometry from `svg:width`/`svg:height`. A text box
+            // with no wrap stays a block-stacked `Div` (unchanged).
+            let wrap = (!is_as_char).then(|| frame_wrap(frame, ctx)).flatten();
+            if let Some(wrap) = wrap {
+                let mut attr = image_attr_with_size(frame);
+                wrap.store(&mut attr);
+                let by_style = |m: &std::collections::HashMap<String, String>| {
+                    frame.style_name.as_deref().and_then(|n| m.get(n)).cloned()
+                };
+                if let Some(fill) = by_style(ctx.frame_fills) {
+                    attr.kv.push(("textbox-fill".to_string(), fill));
+                }
+                if let Some(line) = by_style(ctx.frame_strokes) {
+                    attr.kv.push(("textbox-line".to_string(), line));
+                }
+                return Some(Inline::TextBox(attr, inner));
+            }
             ctx.pending_figures
                 .push(Block::Div(NodeAttr::default(), inner));
             None

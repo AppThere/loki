@@ -15,6 +15,9 @@ use loki_doc_model::style::props::char_props::{
 use super::content::{Cx, write_block};
 use super::xml::{attr, escape};
 
+#[path = "inlines_frame.rs"]
+mod frame;
+
 /// Writes a sequence of inline runs.
 pub(super) fn write_inlines(out: &mut String, inlines: &[Inline], cx: &mut Cx) {
     for inl in inlines {
@@ -55,6 +58,9 @@ fn write_inline(out: &mut String, inl: &Inline, cx: &mut Cx) {
             out.push_str("/>");
         }
         Inline::Field(field) => write_field(out, field),
+        Inline::TextBox(node_attr, blocks) => {
+            frame::write_text_box(out, node_attr, blocks, cx);
+        }
         Inline::Image(_, alt, target) => write_image(out, alt, &target.url, cx),
         Inline::Note(kind, blocks) => note(out, *kind, blocks, cx),
         Inline::Comment(c) => write_comment(out, c, cx),

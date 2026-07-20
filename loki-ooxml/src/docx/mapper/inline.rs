@@ -159,6 +159,17 @@ pub(crate) fn map_inlines(children: &[DocxParaChild], ctx: &mut MappingContext<'
         }
     }
 
+    // A complex field still open at the paragraph's end spans into the next
+    // paragraph (e.g. a multi-entry TOC field, whose `begin`/`separate` sit in
+    // the first entry's paragraph and whose `end` is in the last). Emit the
+    // result text accumulated so far as plain inline content so this paragraph's
+    // entry is not dropped; the continuation paragraphs render as normal text.
+    if let FieldState::InResult { snapshot, .. } = state
+        && !snapshot.trim().is_empty()
+    {
+        result.push(Inline::Str(snapshot));
+    }
+
     result
 }
 

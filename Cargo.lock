@@ -4411,6 +4411,7 @@ dependencies = [
  "loki-layout",
  "loki-odf",
  "loki-ooxml",
+ "loki-opc",
  "loki-pdf",
  "loki-presentation-model",
  "loki-primitives",
@@ -4653,6 +4654,7 @@ dependencies = [
  "flate2",
  "image",
  "loki-doc-model",
+ "loki-fonts",
  "loki-layout",
  "pdf-writer",
  "subsetter",
@@ -4730,6 +4732,7 @@ dependencies = [
  "loki-fonts",
  "loki-layout",
  "loki-odf",
+ "loki-ooxml",
  "thiserror 2.0.18",
  "vello_cpu 0.0.9",
 ]

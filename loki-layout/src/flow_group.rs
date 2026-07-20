@@ -10,8 +10,8 @@ use loki_doc_model::StyleCatalog;
 use loki_doc_model::layout::section::Section;
 
 use super::{
-    FlowOutput, begin_continuous_section, finish_page, flow_footnotes, flow_section,
-    new_flow_state, run_paginated_loop,
+    FlowOutput, begin_continuous_section, finish_page, flow_section, new_flow_state,
+    run_paginated_loop,
 };
 use crate::LayoutOptions;
 use crate::font::FontResources;
@@ -73,7 +73,7 @@ pub fn flow_section_group(
         block_base += section.blocks.len();
     }
 
-    flow_footnotes(&mut state);
+    // `finish_page` lays out the final page's footnote band (per-page placement).
     finish_page(&mut state);
     FlowOutput::Pages {
         pages: state.pages,

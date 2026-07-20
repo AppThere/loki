@@ -12,7 +12,73 @@
 use crate::content::attr::ExtensionBag;
 use crate::layout::header_footer::HeaderFooter;
 use crate::style::list_style::NumberingScheme;
+use crate::style::props::border::Border;
 use loki_primitives::units::Points;
+
+/// A decorative border drawn around each page of a section (`w:pgBorders`,
+/// ECMA-376 §17.6.10). ODF: `style:page-layout` border properties.
+#[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PageBorders {
+    pub top: Option<Border>,
+    pub left: Option<Border>,
+    pub bottom: Option<Border>,
+    pub right: Option<Border>,
+    /// `true` when `@w:offsetFrom="text"` (each edge is inset from the text/margin
+    /// area). `false` (the default `="page"`) insets from the physical page edge.
+    /// Each edge's inset distance is carried in its [`Border::spacing`] (points).
+    pub offset_from_text: bool,
+}
+
+impl PageBorders {
+    /// `true` when no edge is set.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.top.is_none() && self.left.is_none() && self.bottom.is_none() && self.right.is_none()
+    }
+}
+
+/// When the line-number counter restarts (OOXML `w:lnNumType @w:restart`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum LineNumberRestart {
+    /// Restart at the top of every page (`@w:restart="newPage"`, the default).
+    #[default]
+    NewPage,
+    /// Restart at the start of every section (`@w:restart="newSection"`).
+    NewSection,
+    /// Never restart — number continuously across the document
+    /// (`@w:restart="continuous"`).
+    Continuous,
+}
+
+/// Line numbering displayed in the margin for a section (`w:lnNumType`,
+/// ECMA-376 §17.6.8). ODF: `text:linenumbering-configuration`.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct LineNumbering {
+    /// Print a number every `count_by` lines (`@w:countBy`); e.g. `1` numbers
+    /// every line, `5` every fifth. `0`/absent is treated as `1`.
+    pub count_by: u32,
+    /// The first line number (`@w:start`); defaults to `1`.
+    pub start: i32,
+    /// When the counter restarts (`@w:restart`).
+    pub restart: LineNumberRestart,
+    /// Distance from the numbers to the text, in points (`@w:distance`). `None`
+    /// = automatic (the renderer picks a default gutter offset).
+    pub distance: Option<Points>,
+}
+
+impl Default for LineNumbering {
+    fn default() -> Self {
+        Self {
+            count_by: 1,
+            start: 1,
+            restart: LineNumberRestart::default(),
+            distance: None,
+        }
+    }
+}
 
 /// Page orientation.
 ///
@@ -175,6 +241,13 @@ pub struct PageLayout {
     /// Page-number restart value for this section (OOXML `w:pgNumType @w:start`).
     /// `None` = continue numbering from the previous section.
     pub page_number_start: Option<u32>,
+    /// Decorative border drawn around each page of the section (`w:pgBorders`).
+    /// `None` = no page border.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub page_border: Option<PageBorders>,
+    /// Margin line numbering for the section (`w:lnNumType`). `None` = off.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub line_numbering: Option<LineNumbering>,
     /// Format-specific extension data.
     pub extensions: ExtensionBag,
 }

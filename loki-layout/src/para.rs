@@ -16,7 +16,7 @@ use parley::{AlignmentOptions, InlineBox, InlineBoxKind, PositionedLayoutItem};
 
 use crate::font::FontResources;
 use crate::geometry::LayoutRect;
-use crate::items::{PositionedBorderRect, PositionedItem, PositionedRect};
+use crate::items::{PositionedBorderRect, PositionedItem};
 
 #[path = "para_build.rs"]
 mod build;
@@ -24,6 +24,8 @@ mod build;
 mod layout_types;
 #[path = "para_query.rs"]
 mod query;
+#[path = "para_tab_underline.rs"]
+mod tab_underline;
 #[path = "para_tabs.rs"]
 mod tabs;
 #[path = "para_types.rs"]
@@ -61,7 +63,10 @@ fn clean_text_and_spans(
 
     for c in text.chars() {
         let c_len = c.len_utf8();
-        let keep = c == '\t' || c == '\n' || (!c.is_control() && c != '\u{feff}');
+        // Drop `\t`: a tab is pure positioning (an inline box). Left in, it
+        // shapes to a `.notdef` (fonts lacking a tab glyph, e.g. Arimo) whose
+        // advance stacks on the box and overshoots the stop; byte maps anyway.
+        let keep = c == '\n' || (!c.is_control() && c != '\u{feff}');
         if keep {
             for i in 0..c_len {
                 orig_to_clean[orig_idx + i] = clean_idx + i;
@@ -195,15 +200,19 @@ pub(crate) fn layout_paragraph_spelled(
 }
 
 /// Prepends the paragraph's border and background-fill rects to `items` (so
-/// they render beneath the text). The box spans the full indented width and the
-/// paragraph height. Background is inserted last so it sits behind the border.
+/// they render beneath the text). The box spans the **content column** — from
+/// the start indent to the end indent, for the paragraph's full height —
+/// matching Word, where a paragraph border/shading fills the column rather than
+/// hugging the text ink. `available_width` is the paragraph's available width
+/// (before indents). Background is inserted last so it sits behind the border.
 fn prepend_para_box(
     items: &mut Vec<PositionedItem>,
     para_props: &ResolvedParaProps,
-    width: f32,
+    available_width: f32,
     height: f32,
 ) {
-    let bw = width + para_props.indent_start + para_props.indent_end;
+    let x = para_props.indent_start;
+    let w = (available_width - para_props.indent_start - para_props.indent_end).max(0.0);
     let has_border = para_props.border_top.is_some()
         || para_props.border_right.is_some()
         || para_props.border_bottom.is_some()
@@ -212,7 +221,7 @@ fn prepend_para_box(
         items.insert(
             0,
             PositionedItem::BorderRect(PositionedBorderRect {
-                rect: LayoutRect::new(0.0, 0.0, bw, height),
+                rect: LayoutRect::new(x, 0.0, w, height),
                 top: para_props.border_top,
                 right: para_props.border_right,
                 bottom: para_props.border_bottom,
@@ -220,14 +229,11 @@ fn prepend_para_box(
             }),
         );
     }
-    if let Some(bg) = para_props.background_color {
-        items.insert(
-            0,
-            PositionedItem::FilledRect(PositionedRect {
-                rect: LayoutRect::new(0.0, 0.0, bw, height),
-                color: bg,
-            }),
-        );
+    // A `w:shd` texture paints as a hatch (bg + lines); a solid fill as a flat
+    // rect (`para_background_item`).
+    let bg_rect = LayoutRect::new(x, 0.0, w, height);
+    if let Some(item) = crate::resolve::para_background_item(para_props, bg_rect) {
+        items.insert(0, item);
     }
 }
 
@@ -278,28 +284,11 @@ fn layout_paragraph_uncached(
     }
 
     if clean_text.is_empty() {
-        if !preserve_for_editing {
-            return ParagraphLayout {
-                height: 0.0,
-                width: 0.0,
-                items: vec![],
-                first_baseline: 0.0,
-                last_baseline: 0.0,
-                line_boundaries: vec![],
-                parley_layout: None,
-                orig_to_clean,
-                clean_to_orig,
-                indent_start: para_props.indent_start,
-                indent_hanging: para_props.indent_hanging,
-                drop_lines: 0,
-                drop_shift: 0.0,
-            };
-        }
-        // Build a phantom single-space layout so cursor_rect can return a
-        // properly-sized caret for empty paragraphs.  The space forces Parley
-        // to produce one line with the paragraph's resolved font metrics.
-        // height/line_boundaries are left at zero so empty paragraphs do not
-        // affect vertical flow — they remain un-clickable but navigable.
+        // An empty paragraph still occupies one line (its resolved line height)
+        // and draws its border/background box — matching Word, where a blank
+        // paragraph takes vertical space and an empty paragraph with a bottom
+        // border is a horizontal rule. Shape a phantom single space (no ink) for
+        // the metrics, and keep it for the editor's caret.
         let mut builder =
             resources
                 .layout_cx
@@ -307,19 +296,32 @@ fn layout_paragraph_uncached(
         push_para_styles(&mut builder, para_props, &[]);
         let mut phantom = builder.build(" ");
         phantom.break_all_lines(Some(available_width));
+        let line_h = phantom.height();
         let first_baseline = phantom
             .lines()
             .next()
             .map(|l| l.metrics().baseline)
             .unwrap_or(0.0);
+        let line_boundaries: Vec<(f32, f32)> = phantom
+            .lines()
+            .map(|l| {
+                let m = l.metrics();
+                (m.block_min_coord, m.block_max_coord)
+            })
+            .collect();
+        // The border/rule spans the full content column (indent to indent).
+        let content_w =
+            (available_width - para_props.indent_start - para_props.indent_end).max(0.0);
+        let mut items = Vec::new();
+        prepend_para_box(&mut items, para_props, available_width, line_h);
         return ParagraphLayout {
-            height: 0.0,
-            width: 0.0,
-            items: vec![],
+            height: line_h,
+            width: content_w,
+            items,
             first_baseline,
             last_baseline: first_baseline,
-            line_boundaries: vec![],
-            parley_layout: Some(Arc::new(phantom)),
+            line_boundaries,
+            parley_layout: preserve_for_editing.then(|| Arc::new(phantom)),
             orig_to_clean,
             clean_to_orig,
             indent_start: para_props.indent_start,
@@ -329,25 +331,22 @@ fn layout_paragraph_uncached(
         };
     }
 
-    // NOTE(indent-hanging-width): Parley 0.6 does not expose per-line width
-    // control. The first line of a hanging-indent paragraph wraps at the same
-    // `line_w` as subsequent lines, meaning it gets `indent_hanging` px less
-    // space than it should. Fix requires Parley to expose per-line measure.
-    // Tracked: fidelity audit gap #8 (partial).
+    // NOTE(indent-hanging-width): Parley 0.6 exposes no per-line width control,
+    // so a hanging-indent paragraph's first line wraps at the same `line_w` as
+    // the rest, getting `indent_hanging` px less space. Fidelity gap #8 (partial).
     let line_w = (available_width - para_props.indent_start - para_props.indent_end).max(0.0);
 
     // ── Tab stop expansion (gap #7) ───────────────────────────────────────────
-    // Parley 0.8 has no native tab stop API. Two-pass approach:
-    //   Pass 1 (probe): zero-width InlineBoxes at each \t → measure x-positions.
-    //   Pass 2 (final): InlineBoxes sized to advance to the next tab stop.
-    let tab_char_positions: Vec<usize> = clean_text
+    // Parley has no native tab-stop API. Two passes: (1) probe with zero-width
+    // InlineBoxes to measure x-positions; (2) final boxes sized to the next stop.
+    // `\t` is excluded from `clean_text`; map each tab to its following clean offset (box site).
+    let tab_char_positions: Vec<usize> = text_content
         .char_indices()
         .filter(|(_, c)| *c == '\t')
-        .map(|(i, _)| i)
+        .map(|(i, _)| orig_to_clean[i])
         .collect();
 
-    // Byte offset of the first decimal separator after each tab (before the
-    // next tab / end), for Decimal-aligned stops.
+    // First decimal separator in each tab's following content (for Decimal stops); `t` points at it.
     let decimal_positions: Vec<Option<usize>> = tab_char_positions
         .iter()
         .enumerate()
@@ -356,7 +355,7 @@ fn layout_paragraph_uncached(
                 .get(i + 1)
                 .copied()
                 .unwrap_or(clean_text.len());
-            clean_text[t + 1..end].find('.').map(|rel| t + 1 + rel)
+            clean_text[t..end].find('.').map(|rel| t + rel)
         })
         .collect();
 
@@ -511,7 +510,7 @@ fn layout_paragraph_uncached(
             }
             content_bottom = content_bottom.max(p.bottom);
         }
-        prepend_para_box(&mut items, para_props, body.width, body.height);
+        prepend_para_box(&mut items, para_props, available_width, body.height);
         return ParagraphLayout {
             height: content_bottom,
             width: body.width,
@@ -574,10 +573,9 @@ fn layout_paragraph_uncached(
     // can hang below the line's descent; grow the paragraph height to cover it.
     let mut content_bottom = total_height;
 
-    // OOXML lineRule="exact" (ODF fixed line height): the line box is a fixed
-    // height and content taller than it is clipped — unlike "atLeast", which
-    // grows. Each line's items are wrapped in a clip layer sized to the exact
-    // line box so over-tall glyphs / inline objects are cut off as in Word.
+    // OOXML lineRule="exact" (ODF fixed line height): each line's items are
+    // wrapped in a clip layer sized to the fixed line box, so content taller than
+    // it is cut off (unlike "atLeast", which grows the line) — as in Word.
     let exact_line_pts = match para_props.line_height {
         Some(ResolvedLineHeight::Exact(pts)) => Some(pts),
         _ => None,
@@ -622,9 +620,11 @@ fn layout_paragraph_uncached(
             indent_x += drop_shift;
         }
         let line_baseline = line.metrics().baseline;
-        // Extra horizontal offset accumulated from horizontally-scaled (w:w)
-        // runs earlier on this line, so later items shift right by the width the
-        // scaling added instead of overlapping. Reset per line.
+        // Descent of the line's first (body) run, used to anchor the exact-line
+        // clip box (below) so a raised/over-tall run can't inflate it.
+        let mut primary_descent: Option<f32> = None;
+        // Extra horizontal offset from horizontally-scaled (w:w) runs earlier on
+        // this line, so later items shift right instead of overlapping.
         let mut extra_x = 0.0f32;
         for item in line.items() {
             // Math inline box: emit the typeset equation's draw items, offset to
@@ -638,28 +638,29 @@ fn layout_paragraph_uncached(
                             prim.translate(pib.x + indent_x + extra_x, pib.y);
                             items.push(prim);
                         }
-                        // The box top is at `pib.y` and its baseline at
-                        // `pib.y + ascent`; the descent hangs below that.
+                        // Box top at `pib.y`, baseline `+ ascent`, descent below.
                         content_bottom = content_bottom.max(pib.y + render.ascent + render.descent);
                     }
                 } else if (pib.id as usize) < tab_char_positions.len() {
-                    // Tab inline box: draw the stop's leader (if any) across the
-                    // gap the box opened.
-                    if let Some(plan) = tab_plans.get(pib.id as usize) {
-                        tabs::emit_tab_leader(
-                            &mut items,
-                            plan.leader,
-                            pib.x + indent_x + extra_x,
-                            pib.x + indent_x + extra_x + pib.width,
-                            line_baseline,
-                        );
-                    }
+                    // Tab box: stop leader + any underlined tab run's rule (gap #8).
+                    tab_underline::emit_tab_box(
+                        &mut items,
+                        &clean_spans,
+                        tab_char_positions.get(pib.id as usize).copied(),
+                        tab_plans.get(pib.id as usize).map(|p| p.leader),
+                        pib.x + indent_x + extra_x,
+                        pib.width,
+                        line_baseline,
+                    );
                 }
                 continue;
             }
             let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
                 continue;
             };
+            if primary_descent.is_none() {
+                primary_descent = Some(glyph_run.run().metrics().descent);
+            }
             let scale =
                 span_scale_for_range(&clean_spans, glyph_run.run().text_range()).unwrap_or(1.0);
             // Reserve the extra width the run rendered (scaling, per-glyph or
@@ -676,21 +677,17 @@ fn layout_paragraph_uncached(
             );
         }
         if let Some(pts) = exact_line_pts {
-            // Clip this line's items to its fixed-height box. The clip is wide
-            // horizontally (exact governs the vertical extent only; horizontal
-            // overflow is handled by margins/wrapping, as in Word) and exactly
-            // `pts` tall.
-            //
-            // Word anchors the exact line box at the BOTTOM of the text: the box
-            // bottom sits at the baseline + descent and the top is `pts` above
-            // it, so when the font is taller than `pts` the ascenders (and a
-            // raised superscript) are clipped while descenders are preserved —
-            // the well-known "tops cut off" behaviour of small exact spacing.
-            // (A symmetric/centered box would instead clip descenders too, which
-            // does not match Word.) Consecutive boxes still tile exactly because
-            // Parley advances the baseline by `pts`.
+            // Clip this line's items to its fixed `pts`-tall box (wide
+            // horizontally; exact governs only the vertical extent, as in Word).
+            // Bottom-anchor at `baseline + descent` (top `pts` above) so the body
+            // text fills the box while a raised superscript / over-tall element is
+            // clipped at the top. Anchor on the *body* (first) run's descent, not
+            // the line's aggregate: a tall raised run would otherwise inflate it
+            // and push the box down over the body text's tops (the "small text
+            // tops cut off" bug). Boxes tile — Parley advances the baseline by `pts`.
             let lm = line.metrics();
-            let top = lm.baseline + lm.descent - pts;
+            let descent = primary_descent.unwrap_or(lm.descent);
+            let top = lm.baseline + descent - pts;
             let clipped: Vec<PositionedItem> = items.split_off(line_item_start);
             items.push(PositionedItem::ClippedGroup {
                 clip_rect: LayoutRect::new(-line_w, top, line_w * 3.0, pts),
@@ -712,7 +709,7 @@ fn layout_paragraph_uncached(
         content_bottom = content_bottom.max(p.bottom);
     }
 
-    prepend_para_box(&mut items, para_props, total_width, total_height);
+    prepend_para_box(&mut items, para_props, available_width, total_height);
 
     let parley_layout = if preserve_for_editing {
         Some(Arc::new(layout))

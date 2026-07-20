@@ -11,13 +11,15 @@
 use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::layout::header_footer::HeaderFooter;
-use loki_doc_model::layout::page::PageLayout;
+use loki_doc_model::layout::page::{PageBorders, PageLayout};
 use loki_doc_model::{Section, StyleCatalog};
 
 use super::{FlowOutput, flow_section, page_fields};
 use crate::font::FontResources;
-use crate::items::PositionedItem;
+use crate::geometry::LayoutRect;
+use crate::items::{PositionedBorderRect, PositionedItem};
 use crate::mode::LayoutMode;
+use crate::resolve::{convert_border, pts_to_f32};
 use crate::result::LayoutPage;
 
 /// Lay out `blocks` in reflow mode using `available_width`.
@@ -110,7 +112,6 @@ pub(crate) fn assign_headers_footers(
     let ftr_first = layout.footer_first.as_ref().map(&mut lay_static);
     let ftr_even = layout.footer_even.as_ref().map(&mut lay_static);
 
-    use crate::resolve::pts_to_f32;
     let hdr_margin_y = pts_to_f32(layout.margins.header);
     let ftr_margin = pts_to_f32(layout.margins.footer);
     let left_margin = pts_to_f32(layout.margins.left);
@@ -215,5 +216,47 @@ pub(crate) fn assign_headers_footers(
             page.footer_items = items;
             page.footer_height = h;
         }
+
+        // Page border (`w:pgBorders`): a decoration drawn around every page of
+        // the section, in the margin area. It goes in the page-local, unclipped
+        // item list (like headers/footers) rather than the content area.
+        if let Some(pb) = layout.page_border.as_ref() {
+            page.header_items.push(page_border_item(page, pb, layout));
+        }
     }
+}
+
+/// Builds the page-border decoration rect for one page, in page-local coords.
+///
+/// Each edge is inset from the physical page edge by its `w:space` (points);
+/// with `offset_from_text` the inset is measured inward from the text/margin
+/// area instead. Absent-spacing edges fall back to Word's 24 pt default.
+fn page_border_item(page: &LayoutPage, pb: &PageBorders, layout: &PageLayout) -> PositionedItem {
+    const DEFAULT_SPACE: f32 = 24.0;
+    let (pw, ph) = (page.page_size.width, page.page_size.height);
+    let space = |e: &Option<loki_doc_model::style::props::border::Border>| {
+        e.as_ref()
+            .and_then(|b| b.spacing)
+            .map_or(DEFAULT_SPACE, pts_to_f32)
+    };
+    // Inset of one side from the page edge (points).
+    let inset = |e: &Option<loki_doc_model::style::props::border::Border>, margin: f32| {
+        if pb.offset_from_text {
+            (margin - space(e)).max(0.0)
+        } else {
+            space(e)
+        }
+    };
+    let l = inset(&pb.left, pts_to_f32(layout.margins.left));
+    let t = inset(&pb.top, pts_to_f32(layout.margins.top));
+    let r = pw - inset(&pb.right, pts_to_f32(layout.margins.right));
+    let b = ph - inset(&pb.bottom, pts_to_f32(layout.margins.bottom));
+
+    PositionedItem::BorderRect(PositionedBorderRect {
+        rect: LayoutRect::new(l, t, (r - l).max(0.0), (b - t).max(0.0)),
+        top: pb.top.as_ref().and_then(convert_border),
+        right: pb.right.as_ref().and_then(convert_border),
+        bottom: pb.bottom.as_ref().and_then(convert_border),
+        left: pb.left.as_ref().and_then(convert_border),
+    })
 }

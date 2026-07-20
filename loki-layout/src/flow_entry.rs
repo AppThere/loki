@@ -58,10 +58,10 @@ pub(crate) fn flow_section_resume(
     // (base 0).
     let resynced_at = run_paginated_loop(&mut state, &section.blocks, start_block, 0, resync);
     if resynced_at.is_none() {
-        // Reached the end: flush trailing footnotes and the final partial page.
-        // On a resync stop the current page is an empty clean page top, so it is
-        // intentionally left unflushed for the caller to splice the reused suffix.
-        flow_footnotes(&mut state);
+        // Reached the end: flush the final partial page (whose `finish_page`
+        // lays out its footnote band). On a resync stop the current page is an
+        // empty clean page top, intentionally left unflushed for the caller to
+        // splice the reused suffix.
         finish_page(&mut state);
     }
     crate::incremental::ResumedFlow {

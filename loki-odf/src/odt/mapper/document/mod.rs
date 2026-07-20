@@ -66,6 +66,12 @@ pub(crate) struct OdfMappingContext<'a> {
     pub cell_style_props: &'a HashMap<String, OdfCellProps>,
     /// Frame text-wrap from `style:graphic-properties` (pre-built): name → wrap.
     pub frame_wraps: &'a HashMap<String, FloatWrap>,
+    /// Frame solid-fill colour from `style:graphic-properties` (pre-built):
+    /// name → bare `RRGGBB` hex. Recovers a floating text box's fill.
+    pub frame_fills: &'a HashMap<String, String>,
+    /// Frame stroke colour from `style:graphic-properties` (pre-built):
+    /// name → bare `RRGGBB` hex. Recovers a floating text box's border.
+    pub frame_strokes: &'a HashMap<String, String>,
     /// Non-fatal issues accumulated during mapping.
     pub warnings: Vec<OdfWarning>,
     /// Floating frames (images and text boxes that are not `as-char` anchored)
@@ -127,6 +133,26 @@ pub(crate) fn map_document(
         .chain(stylesheet.auto_styles.iter())
         .filter_map(|s| Some((s.name.clone(), map_graphic_wrap(s.graphic_wrap.as_ref()?)?)))
         .collect();
+    // Frame fill / stroke colours (name → bare RRGGBB hex), for text-box recovery.
+    let strip_hash = |c: &str| c.trim_start_matches('#').to_string();
+    let frame_fills: HashMap<String, String> = stylesheet
+        .named_styles
+        .iter()
+        .chain(stylesheet.auto_styles.iter())
+        .filter_map(|s| {
+            let hex = s.graphic_wrap.as_ref()?.fill_color.as_deref()?;
+            Some((s.name.clone(), strip_hash(hex)))
+        })
+        .collect();
+    let frame_strokes: HashMap<String, String> = stylesheet
+        .named_styles
+        .iter()
+        .chain(stylesheet.auto_styles.iter())
+        .filter_map(|s| {
+            let hex = s.graphic_wrap.as_ref()?.stroke_color.as_deref()?;
+            Some((s.name.clone(), strip_hash(hex)))
+        })
+        .collect();
 
     // ── 3. Build style lookup for master-page resolution ─────────────────────
     let all_styles: HashMap<&str, &OdfStyle> = stylesheet
@@ -166,6 +192,8 @@ pub(crate) fn map_document(
             col_style_widths: &col_style_widths,
             cell_style_props: &cell_style_props,
             frame_wraps: &frame_wraps,
+            frame_fills: &frame_fills,
+            frame_strokes: &frame_strokes,
             warnings: Vec::new(),
             pending_figures: Vec::new(),
             comments: Vec::new(),

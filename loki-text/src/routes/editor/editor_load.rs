@@ -104,6 +104,31 @@ fn import_token(serialized: &str) -> Result<Document, LoadError> {
     Ok(doc)
 }
 
+/// Checks the opened DOCX file for schema **child-ordering** problems that stop
+/// it opening in Microsoft Word (Loki's tolerant reader loads it regardless).
+///
+/// Returns `Some(report)` only for a real, on-disk `.docx` whose bytes were
+/// read and analysed; `None` for untitled/new documents, ODT, or any read
+/// failure. A *clean* DOCX returns `Some` with an empty report — the caller
+/// filters that out before showing the repair banner. Runs off the render
+/// thread (called from a `spawn`ed effect) so it never blocks the open.
+pub(super) fn analyze_open_docx(path: &str) -> Option<loki_ooxml::RepairReport> {
+    use std::io::Read;
+
+    // Untitled/new documents have no source file to inspect.
+    if crate::new_document::is_untitled(path) {
+        return None;
+    }
+    let token = FileAccessToken::deserialize(path).ok()?;
+    if !matches!(detect_format(&token), DocumentFormat::Docx) {
+        return None; // ODT/unsupported — the repair pass is DOCX-only.
+    }
+    let mut reader = token.open_read().ok()?;
+    let mut bytes = Vec::new();
+    reader.read_to_end(&mut bytes).ok()?;
+    loki_ooxml::analyze_docx(&bytes).ok()
+}
+
 /// Builds a bundled template document from its short `id` (see `loki-templates`).
 ///
 /// An unknown id degrades to a blank document so a stale path never fails to

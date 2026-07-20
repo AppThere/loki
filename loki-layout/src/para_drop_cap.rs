@@ -251,6 +251,7 @@ fn shape_cap(
                 bold: synthesis.embolden(),
                 italic: synthesis.skew().is_some(),
             },
+            normalized_coords: run.normalized_coords().to_vec(),
             link_url: None,
         }));
     }

@@ -155,6 +155,8 @@ pub struct StyleSpan {
     pub vertical_align: Option<VerticalAlign>,
     /// Highlight colour to paint behind the run. `None` = no highlight.
     pub highlight_color: Option<LayoutColor>,
+    /// A border box drawn around the run's text (OOXML `w:bdr`). `None` = none.
+    pub character_border: Option<crate::items::BorderEdge>,
     /// Letter spacing (tracking) in points. `None` = font default.
     pub letter_spacing: Option<f32>,
     /// Caps variant for this run, retained as metadata.
@@ -172,6 +174,12 @@ pub struct StyleSpan {
     /// TODO(shadow): replace with Vello blur filter for soft shadow once
     /// scene.rs blur pipeline is verified stable (see TODO in scene.rs).
     pub shadow: bool,
+    /// Embossed (raised) text effect — OOXML `w:emboss`. Painted in `para_emit`
+    /// as a light body over a darker offset copy.
+    pub emboss: bool,
+    /// Imprint (engraved) text effect — OOXML `w:imprint`. Painted as a dark
+    /// body over a lighter offset copy.
+    pub imprint: bool,
     /// Hyperlink URL if this run belongs to a link inline. `None` otherwise.
     ///
     /// Set by `resolve.rs` `walk_inlines` when recursing into `Inline::Link`

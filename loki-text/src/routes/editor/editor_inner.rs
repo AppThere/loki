@@ -261,6 +261,8 @@ pub(super) fn EditorInner(path: String) -> Element {
         }
     });
 
+    // Repair banner: self-contained hook (detection + state + mount).
+    let repair_banner = super::editor_repair_banner::use_repair_banner(path_signal, save_message);
     // ── Loro bridge: initialise CRDT once the document is loaded ─────────────
     //
     // The first paginated layout is a CPU-heavy pass (tens of ms on a multi-page
@@ -689,9 +691,8 @@ pub(super) fn EditorInner(path: String) -> Element {
                 )}
             }
 
-            // ── Save/export error banner (successes are the status chip) ─────
+            {repair_banner}
             {save_banner(save_message)}
-
             // ── Ribbon (formatting controls) ──────────────────────────────────
             AtRibbon {
                 // Core tabs + a Table contextual tab (appended by `use_ribbon_tabs` in a table).

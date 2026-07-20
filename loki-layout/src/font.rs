@@ -161,8 +161,14 @@ impl FontResources {
             "arial" => Some("Arimo"),
             "courier new" => Some("Cousine"),
             "times new roman" => Some("Tinos"),
-            "calibri" => Some("Carlito"),
-            "cambria" => Some("Caladea"),
+            // "Calibri Light" is a distinct family in Word (the default heading
+            // face) with the same metrics as Calibri, so it maps to the same
+            // metric-compatible substitute. Without this arm it falls through to
+            // a wider system fallback and headings/titles wrap differently.
+            "calibri" | "calibri light" => Some("Carlito"),
+            // "Cambria Math" is the math-glyph companion of Cambria; the text
+            // face substitute keeps its Latin metrics.
+            "cambria" | "cambria math" => Some("Caladea"),
             "georgia" => Some("Gelasio"),
             _ => None,
         };
@@ -231,6 +237,14 @@ mod tests {
         } else {
             assert_eq!(resolved, "calibri");
             assert_eq!(r.substitutions.get("calibri"), Some(&None));
+        }
+
+        // "Calibri Light" (Word's default heading face) must resolve to the same
+        // metric-compatible substitute as Calibri — otherwise headings/titles
+        // fall back to a wider face and wrap differently from Word.
+        let resolved = r.resolve_font_name("Calibri Light");
+        if r.font_cx.collection.family_id("Carlito").is_some() {
+            assert_eq!(resolved, "Carlito", "Calibri Light must map to Carlito");
         }
     }
 

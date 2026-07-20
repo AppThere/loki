@@ -15,7 +15,8 @@ use quick_xml::Writer;
 use loki_doc_model::style::props::char_props::{CharProps, HighlightColor};
 
 use crate::docx::write::xml::{
-    hex_color_val, pts_to_half_pts, pts_to_twips, write_empty, write_end, write_start, wval,
+    color_to_hex, hex_color_val, pts_to_half_pts, pts_to_twips, write_empty, write_end,
+    write_start, wval,
 };
 
 /// Writes a `<w:rPr>` element from [`CharProps`] (nothing if no field is set).
@@ -29,7 +30,10 @@ pub(crate) fn write_char_props_elem<W: std::io::Write>(w: &mut Writer<W>, cp: &C
         || cp.color.is_some()
         || cp.background_color.is_some()
         || cp.small_caps.is_some()
-        || cp.vertical_align.is_some();
+        || cp.vertical_align.is_some()
+        || cp.emboss.is_some()
+        || cp.imprint.is_some()
+        || cp.character_border.is_some();
     if !has_content {
         return;
     }
@@ -73,6 +77,12 @@ pub(crate) fn emit_char_props<W: std::io::Write>(w: &mut Writer<W>, cp: &CharPro
     }
     if cp.shadow == Some(true) {
         let _ = write_empty(w, "w:shadow", &[]);
+    }
+    if cp.emboss == Some(true) {
+        let _ = write_empty(w, "w:emboss", &[]);
+    }
+    if cp.imprint == Some(true) {
+        let _ = write_empty(w, "w:imprint", &[]);
     }
     if let Some(ref ul) = cp.underline {
         use loki_doc_model::style::props::char_props::UnderlineStyle;
@@ -151,6 +161,9 @@ pub(crate) fn emit_char_props<W: std::io::Write>(w: &mut Writer<W>, cp: &CharPro
         let v = if kern { "2" } else { "0" };
         let _ = write_empty(w, "w:kern", &wval(v));
     }
+    if let Some(ref bdr) = cp.character_border {
+        write_char_border(w, bdr);
+    }
     if cp.language.is_some() || cp.language_complex.is_some() || cp.language_east_asian.is_some() {
         let mut attrs: Vec<(&str, &str)> = Vec::new();
         if let Some(ref l) = cp.language {
@@ -164,6 +177,54 @@ pub(crate) fn emit_char_props<W: std::io::Write>(w: &mut Writer<W>, cp: &CharPro
         }
         let _ = write_empty(w, "w:lang", &attrs);
     }
+}
+
+/// Writes a `w:bdr` character border (ECMA-376 §17.3.2.4) — the reverse of the
+/// reader's `w:bdr` parse + `map_border_edge`: style → `w:val`, width in points →
+/// `w:sz` (eighth-points, clamped to OOXML's 2..=96), spacing in points →
+/// `w:space`, colour → hex (or `auto`). A `BorderStyle::None` border writes
+/// `w:val="none"` (an explicit no-border, symmetric with the `"none"` the reader
+/// maps back to `BorderStyle::None`).
+fn write_char_border<W: std::io::Write>(
+    w: &mut Writer<W>,
+    b: &loki_doc_model::style::props::border::Border,
+) {
+    use loki_doc_model::style::props::border::BorderStyle;
+    let val = match b.style {
+        BorderStyle::None => "none",
+        BorderStyle::Dashed => "dashed",
+        BorderStyle::Dotted => "dotted",
+        BorderStyle::Double => "double",
+        BorderStyle::Inset => "inset",
+        BorderStyle::Outset => "outset",
+        BorderStyle::Wave => "wave",
+        // Groove/Ridge have no distinct `w:bdr` token; Solid and future variants
+        // map to `single`.
+        _ => "single",
+    };
+    // Points → eighth-points, clamped to OOXML's valid 2..=96 `w:sz` range.
+    #[allow(clippy::cast_possible_truncation)] // clamped to 2..=96 above the cast
+    let sz = ((b.width.value() * 8.0).round().clamp(2.0, 96.0) as i32).to_string();
+    // Spacing is stored in points; `w:space` is points (not twips). Absent → 0.
+    #[allow(clippy::cast_possible_truncation)] // bounded document measurement
+    let space = b
+        .spacing
+        .map_or(0, |s| s.value().round().clamp(0.0, 31.0) as i32)
+        .to_string();
+    let color = b
+        .color
+        .as_ref()
+        .map_or_else(|| "auto".to_string(), color_to_hex);
+    let _ = write_empty(
+        w,
+        "w:bdr",
+        &[
+            ("w:val", val),
+            ("w:sz", &sz),
+            ("w:space", &space),
+            ("w:color", &color),
+        ],
+    );
 }
 
 /// Reverse of the import `map_highlight`: a [`HighlightColor`] to its OOXML

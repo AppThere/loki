@@ -69,6 +69,7 @@ pub(super) fn new_flow_state<'a>(
         page_size: LayoutSize::new(page_w, page_h),
         margins,
         page_content_height: (page_h - margins.vertical()).max(0.0),
+        rendering_footnotes: false,
         page_number: 1,
         warnings: Vec::new(),
         current_indent: 0.0,
@@ -76,6 +77,7 @@ pub(super) fn new_flow_state<'a>(
         prev_list_id: None,
         note_counter: 0,
         pending_footnotes: Vec::new(),
+        footnote_reserved: 0.0,
         current_paragraphs: Vec::new(),
         checkpoints: Vec::new(),
         columns,
@@ -94,6 +96,20 @@ pub(super) fn new_flow_state<'a>(
         staged_between: None,
         tail_candidate: None,
         cell_char_defaults: None,
+        line_num: pl
+            .line_numbering
+            .as_ref()
+            .map(super::line_numbers::LineNumberState::new),
+    }
+}
+
+impl FlowState<'_> {
+    /// Lowest `y` body content may reach before breaking — `page_content_height`
+    /// minus this page's [`footnote_reserved`](FlowState::footnote_reserved),
+    /// floored at `cursor_y` (so an over-full page never reports negative room).
+    /// Used only by the "space remaining on this page" break checks.
+    pub(super) fn content_bottom(&self) -> f32 {
+        (self.page_content_height - self.footnote_reserved).max(self.cursor_y)
     }
 }
 

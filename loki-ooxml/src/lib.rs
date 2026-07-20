@@ -65,6 +65,8 @@ pub use docx::export::{DocxExport, DocxTemplateExport};
 pub use docx::import::{DocxImport, DocxImportOptions, DocxImportResult};
 #[cfg(feature = "docx")]
 pub use docx::mapper::{MapperError, map_document};
+#[cfg(feature = "docx")]
+pub use docx::repair::{RepairFinding, RepairReport, analyze_docx, repair_docx};
 
 #[cfg(feature = "xlsx")]
 pub use xlsx::export::XlsxExport;

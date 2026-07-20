@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:defaultTabStop w:val="720"/>
+  <!-- footnotePr references the separator footnotes that live in
+       footnotes.xml (ids -1 and 0). There is deliberately NO endnotePr: this
+       document uses no endnotes, and declaring endnote separators without a
+       backing endnotes.xml part makes Word report an error in "Endnotes". -->
+  <w:footnotePr>
+    <w:footnote w:id="-1"/>
+    <w:footnote w:id="0"/>
+  </w:footnotePr>
+  <w:compat>
+    <w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/>
+  </w:compat>
+</w:settings>

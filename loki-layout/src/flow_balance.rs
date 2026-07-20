@@ -27,7 +27,7 @@ use loki_doc_model::StyleCatalog;
 use loki_doc_model::content::annotation::Comment;
 use loki_doc_model::layout::section::Section;
 
-use super::{FlowOutput, flow_footnotes, new_flow_state, run_paginated_loop};
+use super::{FlowOutput, new_flow_state, run_paginated_loop};
 use crate::LayoutOptions;
 use crate::font::FontResources;
 use crate::incremental::FlowCheckpoint;
@@ -197,8 +197,8 @@ fn run_capped(
         start = start_block;
     }
     run_paginated_loop(&mut state, &ctx.section.blocks, start, 0, |_, _| false);
-    flow_footnotes(&mut state);
     let has_notes = state.note_counter > 0;
+    // `finish_page` lays out the final page's footnote band (per-page placement).
     super::finish_page(&mut state);
     let pages = state.pages.len();
     let candidate = state.tail_candidate.take();

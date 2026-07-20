@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:comment w:id="1" w:author="A. Reviewer" w:date="2026-07-14T09:30:00Z" w:initials="AR">
+    <w:p>
+      <w:pPr><w:pStyle w:val="CommentText"/></w:pPr>
+      <w:r><w:t>Confirm the payment window with Legal before this clause is finalised.</w:t></w:r>
+    </w:p>
+  </w:comment>
+</w:comments>

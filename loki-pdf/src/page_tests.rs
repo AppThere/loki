@@ -22,6 +22,7 @@ fn run_with(ids: &[u16]) -> PositionedGlyphRun {
             .collect(),
         color: LayoutColor::new(0.0, 0.0, 0.0, 1.0),
         synthesis: GlyphSynthesis::default(),
+        normalized_coords: Vec::new(),
         link_url: None,
     }
 }

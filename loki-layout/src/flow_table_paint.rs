@@ -11,7 +11,7 @@ use loki_doc_model::style::{TableLook, TableStyle};
 use crate::geometry::{LayoutPoint, LayoutRect, LayoutSize};
 use crate::items::{PositionedBorderRect, PositionedItem, PositionedRect};
 use crate::resolve::{convert_border, pts_to_f32, resolve_color};
-use crate::table_shading::cell_style_shading_cnf;
+use crate::table_shading::{cell_style_borders, cell_style_shading_cnf};
 
 use super::{FlowState, table_geom};
 
@@ -183,10 +183,20 @@ pub(super) fn emit_row_cell_decorations(
                 },
             };
 
-            let has_borders = cell.props.border_top.is_some()
-                || cell.props.border_bottom.is_some()
-                || cell.props.border_left.is_some()
-                || cell.props.border_right.is_some();
+            // A direct cell border wins; otherwise the table style's borders
+            // (e.g. the Table Grid style's outer edges + interior gridlines)
+            // fill in each edge, so a styled table draws its grid without the
+            // cells carrying explicit borders. `sb` is (top, right, bottom, left).
+            let sb = cell_style_borders(table_style, row_idx, col_start, grid_rows, grid_cols);
+            let eff_top = cell.props.border_top.as_ref().or(sb.0.as_ref());
+            let eff_right = cell.props.border_right.as_ref().or(sb.1.as_ref());
+            let eff_bottom = cell.props.border_bottom.as_ref().or(sb.2.as_ref());
+            let eff_left = cell.props.border_left.as_ref().or(sb.3.as_ref());
+
+            let has_borders = eff_top.is_some()
+                || eff_bottom.is_some()
+                || eff_left.is_some()
+                || eff_right.is_some();
 
             // Direct cell shading wins, else the table style's banding — via
             // the cell's explicit w:cnfStyle mask when it carries one (4a.3).
@@ -206,17 +216,17 @@ pub(super) fn emit_row_cell_decorations(
             let is_last = p == row_page_end;
 
             let border_top = if is_first {
-                cell.props.border_top.as_ref().and_then(convert_border)
+                eff_top.and_then(convert_border)
             } else {
                 None
             };
             let border_bottom = if is_last {
-                cell.props.border_bottom.as_ref().and_then(convert_border)
+                eff_bottom.and_then(convert_border)
             } else {
                 None
             };
-            let border_left = cell.props.border_left.as_ref().and_then(convert_border);
-            let border_right = cell.props.border_right.as_ref().and_then(convert_border);
+            let border_left = eff_left.and_then(convert_border);
+            let border_right = eff_right.and_then(convert_border);
 
             let insert_idx = if p == cell_page_start {
                 cell_item_start
@@ -243,7 +253,17 @@ pub(super) fn emit_row_cell_decorations(
                         }),
                     );
                 }
-                if let Some(bg) = cell_bg.as_ref() {
+                // A `w:shd` line/cross texture paints as a hatch (bg + lines);
+                // a plain fill paints as a flat rect. Direct cell shading only —
+                // table-style banding has no texture.
+                if let Some(shading) = cell.props.shading.as_ref() {
+                    items.insert(
+                        insert_idx,
+                        PositionedItem::HatchRect(crate::resolve::hatch_from_shading(
+                            shading, cell_rect,
+                        )),
+                    );
+                } else if let Some(bg) = cell_bg.as_ref() {
                     items.insert(
                         insert_idx,
                         PositionedItem::FilledRect(PositionedRect {

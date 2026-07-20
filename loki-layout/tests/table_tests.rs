@@ -661,10 +661,12 @@ fn vmerge_gridspan_l_merge_places_cells_correctly() {
     );
 }
 
-/// A long unbreakable word in a narrow fixed-width cell must wrap *within* the
-/// column (CSS `overflow-wrap: anywhere`, matching Word's fixed-layout
+/// A long unbreakable word in a narrow **fixed-layout** cell must wrap *within*
+/// the column (CSS `overflow-wrap: anywhere`, matching Word's fixed-layout
 /// behaviour) — making the row tall — instead of overflowing horizontally into
-/// the neighbouring cell. Pins the TC-DOCX-006 fix.
+/// the neighbouring cell. Pins the TC-DOCX-006 fixed-layout case. (The autofit
+/// counterpart — where the column *grows* to fit the word — is
+/// `long_word_grows_autofit_column`.)
 #[test]
 fn long_word_wraps_within_narrow_cell() {
     use loki_doc_model::content::table::col::TableWidth;
@@ -674,7 +676,7 @@ fn long_word_wraps_within_narrow_cell() {
         None,
         1,
     );
-    let table = Block::Table(Box::new(Table {
+    let mut table = Block::Table(Box::new(Table {
         attr: loki_doc_model::content::attr::NodeAttr::default(),
         caption: Default::default(),
         width: Some(TableWidth::Fixed(60.0)),
@@ -686,6 +688,13 @@ fn long_word_wraps_within_narrow_cell() {
         bodies: vec![TableBody::from_rows(vec![Row::new(vec![cell])])],
         foot: TableFoot::empty(),
     }));
+    // Fixed layout (`w:tblLayout="fixed"`): the 60pt column is honoured exactly,
+    // so the over-long word must break to fit rather than grow the column.
+    if let Block::Table(t) = &mut table {
+        t.attr
+            .classes
+            .push(loki_doc_model::content::table::core::TABLE_FIXED_LAYOUT_CLASS.to_string());
+    }
     let section = Section {
         page_style: None,
         layout: PageLayout::default(),
@@ -734,6 +743,79 @@ fn long_word_wraps_within_narrow_cell() {
     assert!(
         distinct_lines >= 4,
         "expected the long word to wrap to several lines; got {distinct_lines}"
+    );
+}
+
+/// The autofit counterpart of `long_word_wraps_within_narrow_cell`: with no
+/// `w:tblLayout="fixed"`, a column whose preferred width (60pt) is far narrower
+/// than its content's minimum width must **grow** to fit the unbreakable word on
+/// one line — Word's autofit behaviour — rather than wrap it. This is the fix
+/// for the over-tall "KEY INSIGHT"/"ONBOARDING" callout boxes: a narrow label
+/// column no longer forces one-character-per-line stacking.
+#[test]
+fn long_word_grows_autofit_column() {
+    use loki_doc_model::content::table::col::TableWidth;
+    let mut r = test_resources();
+    let word = "Narrowcolumnshouldnotgrowtofitthislongunbrokenword";
+    let cell = make_cell_tall(vec![word], None, 1);
+    // Autofit (no fixed-layout class), preferred column 60pt but page-wide table.
+    let table = Block::Table(Box::new(Table {
+        attr: loki_doc_model::content::attr::NodeAttr::default(),
+        caption: Default::default(),
+        width: Some(TableWidth::Percent(100.0)),
+        col_specs: vec![ColSpec {
+            alignment: ColAlignment::Default,
+            width: ColWidth::Fixed(loki_primitives::units::Points::new(60.0)),
+        }],
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![Row::new(vec![cell])])],
+        foot: TableFoot::empty(),
+    }));
+    let section = Section {
+        page_style: None,
+        layout: PageLayout::default(),
+        start: Default::default(),
+        blocks: vec![table],
+        extensions: ExtensionBag::default(),
+    };
+    let (items, height) = flow_pageless(&mut r, &section);
+    let mut flat = Vec::new();
+    flatten(&items, &mut flat);
+
+    // The word landed on a single line wider than the 60pt preferred width — the
+    // column grew to fit it instead of wrapping into a tall stack.
+    let widest_line = flat
+        .iter()
+        .filter_map(|i| match i {
+            PositionedItem::GlyphRun(run) => {
+                Some(run.glyphs.iter().map(|g| g.advance).sum::<f32>())
+            }
+            _ => None,
+        })
+        .fold(0.0_f32, f32::max);
+    assert!(
+        widest_line > 62.0,
+        "autofit must grow the column past 60pt to fit the word; widest line = {widest_line}"
+    );
+    let baselines = {
+        let mut ys: Vec<f32> = flat
+            .iter()
+            .filter_map(|i| match i {
+                PositionedItem::GlyphRun(run) => Some((run.origin.y * 4.0).round()),
+                _ => None,
+            })
+            .collect();
+        ys.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        ys.dedup();
+        ys.len()
+    };
+    assert_eq!(
+        baselines, 1,
+        "the word must not wrap; got {baselines} lines"
+    );
+    assert!(
+        height < 40.0,
+        "a single unwrapped line stays short; height = {height}"
     );
 }
 
@@ -828,5 +910,59 @@ fn test_table_cell_vertical_alignment() {
         "Bottom-aligned run y ({}) should be below middle-aligned run y ({})",
         y2,
         y1
+    );
+}
+
+/// REGRESSION: a `keep_with_next` paragraph (the ubiquitous "Table N" caption)
+/// immediately followed by a table must not drop the table. The keep-with-next
+/// chain used to absorb the table as a zero-height empty paragraph, silently
+/// discarding every cell — so a shaded cell emitted no `FilledRect` at all.
+#[test]
+fn keep_next_caption_does_not_drop_the_following_table() {
+    use appthere_color::RgbColor;
+    use loki_doc_model::content::table::col::TableWidth;
+    use loki_doc_model::style::props::para_props::ParaProps;
+
+    let mut r = test_resources();
+    let bg = Some(DocumentColor::Rgb(RgbColor::new(0.2, 0.4, 0.8)));
+
+    let mut caption = make_para("Table 1. Caption");
+    caption.direct_para_props = Some(Box::new(ParaProps {
+        keep_with_next: Some(true),
+        ..Default::default()
+    }));
+
+    let cell = make_cell_tall(vec!["CellText"], bg, 1);
+    let table = Block::Table(Box::new(Table {
+        attr: loki_doc_model::content::attr::NodeAttr::default(),
+        caption: Default::default(),
+        width: Some(TableWidth::Fixed(200.0)),
+        col_specs: vec![ColSpec {
+            alignment: ColAlignment::Default,
+            width: ColWidth::Fixed(loki_primitives::units::Points::new(200.0)),
+        }],
+        head: TableHead::empty(),
+        bodies: vec![TableBody::from_rows(vec![Row::new(vec![cell])])],
+        foot: TableFoot::empty(),
+    }));
+
+    let section = Section {
+        page_style: None,
+        layout: PageLayout::default(),
+        start: Default::default(),
+        blocks: vec![Block::StyledPara(caption), table],
+        extensions: ExtensionBag::default(),
+    };
+    let (items, _) = flow_pageless(&mut r, &section);
+    let mut flat = Vec::new();
+    flatten(&items, &mut flat);
+
+    let has_cell_fill = flat
+        .iter()
+        .any(|i| matches!(i, PositionedItem::FilledRect(_)));
+    assert!(
+        has_cell_fill,
+        "the table following a keep_with_next caption must render (its shaded \
+         cell should emit a FilledRect); items = {flat:?}"
     );
 }

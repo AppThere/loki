@@ -46,6 +46,12 @@ pub(crate) fn parse_rpr_element(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxR
                     b"shadow" => {
                         rpr.shadow = Some(toggle_prop(attr_val(e, b"val").as_deref()));
                     }
+                    b"emboss" => {
+                        rpr.emboss = Some(toggle_prop(attr_val(e, b"val").as_deref()));
+                    }
+                    b"imprint" => {
+                        rpr.imprint = Some(toggle_prop(attr_val(e, b"val").as_deref()));
+                    }
                     b"color" => rpr.color = attr_val(e, b"val"),
                     b"highlight" => rpr.highlight = attr_val(e, b"val"),
                     b"position" => {
@@ -87,6 +93,17 @@ pub(crate) fn parse_rpr_element(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxR
                     }
                     b"outline" => {
                         rpr.outline = Some(toggle_prop(attr_val(e, b"val").as_deref()));
+                    }
+                    b"bdr" => {
+                        // `w:bdr` character border (ECMA-376 §17.3.2.4).
+                        rpr.bdr = Some(crate::docx::model::paragraph::DocxBorderEdge {
+                            val: attr_val(e, b"val").unwrap_or_default(),
+                            sz: attr_val(e, b"sz").as_deref().and_then(|v| v.parse().ok()),
+                            color: attr_val(e, b"color"),
+                            space: attr_val(e, b"space")
+                                .as_deref()
+                                .and_then(|v| v.parse().ok()),
+                        });
                     }
                     // A tracked ¶ deletion/insertion on a paragraph mark's rPr.
                     n @ (b"del" | b"ins") => {
@@ -186,6 +203,22 @@ pub(crate) fn parse_run(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxRun> {
                 b"tab" => {
                     run.children.push(DocxRunChild::Tab);
                 }
+                b"noBreakHyphen" => {
+                    // ECMA-376 §17.3.3.18: an always-visible, non-breaking hyphen
+                    // → U+2011 NON-BREAKING HYPHEN (kept as literal run text).
+                    run.children.push(DocxRunChild::Text {
+                        text: "\u{2011}".to_string(),
+                        preserve: true,
+                    });
+                }
+                b"softHyphen" => {
+                    // ECMA-376 §17.3.3.29: an optional hyphen, shown only when the
+                    // line breaks there → U+00AD SOFT HYPHEN.
+                    run.children.push(DocxRunChild::Text {
+                        text: "\u{00AD}".to_string(),
+                        preserve: true,
+                    });
+                }
                 b"fldChar" => {
                     if let Some(ft) = attr_val(e, b"fldCharType") {
                         run.children
@@ -220,3 +253,7 @@ pub(crate) fn parse_run(reader: &mut Reader<&[u8]>) -> OoxmlResult<DocxRun> {
     }
     Ok(run)
 }
+
+#[cfg(test)]
+#[path = "document_run_tests.rs"]
+mod tests;

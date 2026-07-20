@@ -1,0 +1,37 @@
+Golden capture PENDING — no reference render committed yet.
+
+The visual golden for this DOCX fixture is Microsoft Word's own render,
+which cannot be produced headlessly on Linux/CI. To capture it, on a
+machine with Microsoft Office:
+
+  1. Open  appthere-conformance/fixtures/docx/acid2-docx.docx  in Word.
+  2. Export/Print to PDF at default ("Standard") settings.
+  3. Run, from a checkout with poppler-utils installed:
+
+       scripts/generate-office-goldens.sh \
+           --format docx --stem acid2-docx \
+           --pdf <the-printed>.pdf \
+           --reference "Microsoft 365 Word (<exact build>)" \
+           --fixture appthere-conformance/fixtures/docx/acid2-docx.docx
+
+This writes page-N.png + GENERATION.txt here, replacing this file. The
+DOCX visual-golden test (loki-render-cpu/tests/visual_golden_docx.rs)
+then compares Loki's render against them; until then it is a no-op.
+
+NOTE (acid2-docx): this fixture is *hand-authored OOXML*, not a
+Word-authored document — it is packaged from reviewable XML parts by
+`cargo run -p loki-acid --example gen_acid2_docx`. Regenerate the fixture
+(and this golden's provenance) from that generator if the parts change.
+Unlike acid-docx it is deliberately CJK-free, so it has no `ja`
+line-segmentation caveat. It combines features into four realistic
+archetypes (business report, résumé, newsletter, invoice/contract) plus a
+feature-matrix appendix, so a failing page maps to an archetype rather
+than a single isolated construct.
+
+Known Loki gaps this fixture currently surfaces (candidate golden-diff
+regions once the reference lands): table-style (`w:tblStyle`) borders,
+decimal tab stops *inside* table cells, floating text boxes (`wps`
+shapes), page borders (`w:pgBorders`), line numbering (`w:lnNumType`),
+pattern/gradient cell shading, run text effects (emboss/imprint/shadow),
+character borders (`w:bdr`), and `w:noBreakHyphen`/`w:softHyphen` glyphs.
+See docs/fidelity-status.md.

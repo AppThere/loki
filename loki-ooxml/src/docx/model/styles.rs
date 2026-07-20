@@ -71,8 +71,23 @@ pub struct DocxTableStyleProps {
     pub col_band_size: Option<u32>,
     /// Base whole-table cell shading fill from `w:tcPr/w:shd @w:fill`.
     pub base_shd_fill: Option<String>,
+    /// Whole-table borders from `w:tblPr/w:tblBorders` — the outer edges plus
+    /// the interior gridlines a *Table Grid* style draws.
+    pub tbl_borders: Option<DocxTblBorders>,
     /// Per-region conditional formats from `w:tblStylePr`.
     pub conditional: Vec<DocxTblStylePr>,
+}
+
+/// Table borders from `w:tblBorders` (ECMA-376 §17.4.39): the four outer edges
+/// plus the interior horizontal/vertical gridlines.
+#[derive(Debug, Clone, Default)]
+pub struct DocxTblBorders {
+    pub top: Option<DocxBorderEdge>,
+    pub bottom: Option<DocxBorderEdge>,
+    pub left: Option<DocxBorderEdge>,
+    pub right: Option<DocxBorderEdge>,
+    pub inside_h: Option<DocxBorderEdge>,
+    pub inside_v: Option<DocxBorderEdge>,
 }
 
 /// One `w:tblStylePr` conditional format (ECMA-376 §17.7.6.6). Only cell

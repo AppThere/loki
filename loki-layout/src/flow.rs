@@ -26,12 +26,16 @@ mod flow_list_marker;
 mod group;
 #[path = "flow_headers.rs"]
 mod headers;
+#[path = "flow_line_numbers.rs"]
+mod line_numbers;
 #[path = "flow_page_fields.rs"]
 mod page_fields;
 #[path = "flow_para_between.rs"]
 mod para_between;
 #[path = "flow_para.rs"]
 mod para_impl;
+#[path = "flow_table_autofit.rs"]
+mod table_autofit;
 #[path = "flow_table_cells.rs"]
 mod table_cells;
 #[path = "flow_table_chars.rs"]
@@ -44,6 +48,8 @@ mod table_main;
 mod table_paint;
 #[path = "flow_tail.rs"]
 mod tail;
+#[path = "flow_textbox.rs"]
+mod textbox_impl;
 
 pub use group::flow_section_group;
 pub(crate) use headers::assign_headers_footers;
@@ -169,10 +175,23 @@ pub(super) struct FlowState<'a> {
     pub(super) list_counters: HashMap<ListId, [u32; 9]>,
     /// `ListId` of the most recently placed list item (detects list changes).
     pub(super) prev_list_id: Option<ListId>,
-    /// Footnote/endnote counter for the section (bumped by `walk_inlines`);
-    /// collected notes render via `flow_footnotes`.
+    /// Footnote/endnote counter for the section (bumped by `walk_inlines`).
     pub(super) note_counter: u32,
+    /// Footnotes whose reference has been placed on the **current page**, laid
+    /// out at their bottom by `finish_page`. Their height is reserved from
+    /// [`page_content_height`](Self::page_content_height) as each is collected,
+    /// so body content stops above the footnote band (per-page placement,
+    /// matching Word — a footnote sits at the foot of the page carrying its
+    /// reference, not dumped at the section end).
     pub(super) pending_footnotes: Vec<CollectedNote>,
+    /// Points reserved at the foot of the **current page** for the footnotes
+    /// collected so far (separator band + each note's measured height). Shrinks
+    /// [`content_bottom`](Self::content_bottom) so body content stops above the
+    /// band; reset to `0` at each page boundary (`finish_page`).
+    pub(super) footnote_reserved: f32,
+    /// Re-entrancy guard: `true` while `finish_page` is laying out the footnote
+    /// band, so a nested page flush during that work does not recurse.
+    pub(super) rendering_footnotes: bool,
     /// Paragraph metadata for the current page (block index, layout, origin).
     pub(super) current_paragraphs: Vec<PageParagraphData>,
     /// Clean-page-top checkpoints for incremental relayout (top-level only).
@@ -219,6 +238,9 @@ pub(super) struct FlowState<'a> {
     /// Table-region character defaults for the cell currently flowing (4a.3);
     /// merged under the paragraph chain by `flatten_paragraph_with_base`.
     pub(super) cell_char_defaults: Option<loki_doc_model::style::props::char_props::CharProps>,
+    /// Active margin line-numbering state for the section (`w:lnNumType`), or
+    /// `None` when the section has no line numbering (the common case).
+    pub(super) line_num: Option<line_numbers::LineNumberState>,
 }
 
 impl FlowState<'_> {

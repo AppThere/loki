@@ -125,6 +125,11 @@ fn flow_blocks(state: &mut FlowState, blocks: &[Block], idx: usize) {
 // ── Page management ───────────────────────────────────────────────────────────
 
 pub(crate) fn finish_page(state: &mut FlowState) {
+    // Lay out this page's footnotes in the band reserved at their reference (per
+    // the `pending_footnotes` doc). Runs before column positioning so the note
+    // items are placed with the rest of the page's content.
+    super::tail::flow_page_footnotes(state);
+
     // Position + separate the used columns, then reset for the next page.
     columns_impl::position_current_column(state);
     columns_impl::emit_column_separators(state);
@@ -162,6 +167,13 @@ pub(crate) fn finish_page(state: &mut FlowState) {
     state.page_number += 1;
     state.current_paragraphs.clear();
     state.cursor_y = 0.0;
+    // The footnote band is laid out; release its per-page reservation so the
+    // fresh page starts with the full content height.
+    state.footnote_reserved = 0.0;
+    // Restart margin line numbering at the top of the new page (`newPage`).
+    if let Some(ln) = &mut state.line_num {
+        ln.restart_for_page();
+    }
     // Cross-paragraph float wrap does not continue onto the next page.
     state.active_float = None;
 }

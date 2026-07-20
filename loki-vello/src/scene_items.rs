@@ -128,6 +128,9 @@ pub(crate) fn paint_items(
             PositionedItem::FilledRect(r) => {
                 crate::rect::paint_filled_rect(scene, r, scale);
             }
+            PositionedItem::HatchRect(h) => {
+                crate::rect::paint_hatch(scene, h, scale);
+            }
             PositionedItem::BorderRect(r) => {
                 crate::rect::paint_border_rect(scene, r, scale);
             }
@@ -209,6 +212,10 @@ pub(super) fn translate_item(item: &mut PositionedItem, dx: f32, dy: f32) {
         PositionedItem::FilledRect(r) => {
             r.rect.origin.x += dx;
             r.rect.origin.y += dy;
+        }
+        PositionedItem::HatchRect(h) => {
+            h.rect.origin.x += dx;
+            h.rect.origin.y += dy;
         }
         PositionedItem::BorderRect(r) => {
             r.rect.origin.x += dx;

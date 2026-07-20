@@ -78,6 +78,38 @@ fn kerning_emits_threshold_and_disabled_zero() {
 }
 
 #[test]
+fn emboss_and_imprint_are_emitted() {
+    let cp = CharProps {
+        emboss: Some(true),
+        imprint: Some(true),
+        ..Default::default()
+    };
+    let xml = emit(&cp);
+    assert!(xml.contains("<w:emboss/>"), "xml = {xml}");
+    assert!(xml.contains("<w:imprint/>"), "xml = {xml}");
+}
+
+#[test]
+fn character_border_is_emitted() {
+    use loki_doc_model::style::props::border::{Border, BorderStyle};
+    use loki_primitives::color::DocumentColor;
+    let cp = CharProps {
+        character_border: Some(Border {
+            style: BorderStyle::Solid,
+            width: Points::new(1.0),
+            color: Some(DocumentColor::from_hex("#C00000").expect("valid hex")),
+            spacing: Some(Points::new(1.0)),
+        }),
+        ..Default::default()
+    };
+    let xml = emit(&cp);
+    assert!(
+        xml.contains(r#"<w:bdr w:val="single" w:sz="8" w:space="1" w:color="C00000"/>"#),
+        "xml = {xml}"
+    );
+}
+
+#[test]
 fn complex_font_and_size_are_emitted() {
     let cp = CharProps {
         font_name_complex: Some("Arabic Typesetting".to_string()),

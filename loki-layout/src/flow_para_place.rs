@@ -13,6 +13,40 @@ use super::{
     split_and_place_loop,
 };
 
+/// [`place_paragraph_layout`] wrapped with footnote-band bookkeeping.
+///
+/// An empty (whitespace-only) paragraph — e.g. the trailing paragraph holding a
+/// section break — is exempted from the current page's footnote reservation
+/// (`text_empty`), since it carries no visible glyphs and may sit within the
+/// reserved band; this stops the reservation from spilling it (and its section
+/// mark) onto a spurious page. After placement, `reserve` (the band this
+/// paragraph's own notes need) is applied iff the paragraph stayed on
+/// `page_before_para` — a paragraph that broke to a new page already flushed its
+/// notes on the boundary, and the fresh page's reservation resets in `finish_page`.
+#[allow(clippy::too_many_arguments)] // cohesive footnote-band placement bundle
+pub(super) fn place_with_footnote_band(
+    state: &mut FlowState,
+    resolved: &ResolvedParaProps,
+    para_layout: ParagraphLayout,
+    block_index: usize,
+    text_empty: bool,
+    reserve: f32,
+    page_before_para: usize,
+) {
+    let saved = state.footnote_reserved;
+    let page_before = state.page_number;
+    if text_empty {
+        state.footnote_reserved = 0.0;
+    }
+    place_paragraph_layout(state, resolved, para_layout, block_index);
+    if text_empty && state.page_number == page_before {
+        state.footnote_reserved = saved;
+    }
+    if reserve > 0.0 && state.page_number == page_before_para {
+        state.footnote_reserved += reserve;
+    }
+}
+
 /// Place a pre-computed paragraph layout, handling `keep_together` and splitting.
 ///
 /// `space_before` must already be reflected in `state.cursor_y` by the caller.
@@ -57,7 +91,7 @@ pub(super) fn place_paragraph_layout(
             );
             // Fall through to normal splitting.
         } else {
-            let available = state.page_content_height - state.cursor_y;
+            let available = state.content_bottom() - state.cursor_y;
             if needed > available && state.cursor_y > 0.0 {
                 break_column(state);
                 state.cursor_y += resolved.space_before;
@@ -68,6 +102,7 @@ pub(super) fn place_paragraph_layout(
             if state.options.preserve_for_editing {
                 push_editing_para(state, block_index, Arc::new(para_layout.clone()), (0.0, dy));
             }
+            super::super::line_numbers::emit(state, &para_layout, dy, 0.0, para_layout.height);
             for mut item in para_layout.items {
                 item.translate(dx, dy);
                 state.current_items.push(item);

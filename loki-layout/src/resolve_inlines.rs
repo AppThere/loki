@@ -32,6 +32,7 @@ pub fn flatten_paragraph_with_base(
     catalog: &StyleCatalog,
     note_counter: &mut u32,
     region_base: Option<&CharProps>,
+    revision_display: crate::options::RevisionDisplay,
 ) -> (
     String,
     Vec<StyleSpan>,
@@ -62,8 +63,11 @@ pub fn flatten_paragraph_with_base(
     let mut spans: Vec<StyleSpan> = Vec::new();
     let mut images: Vec<CollectedImage> = Vec::new();
     let mut notes: Vec<CollectedNote> = Vec::new();
+    // Non-destructive tracked-change display: hide/normalise revision runs for
+    // Final/Original modes (borrowed unchanged for All-Markup / no revisions).
+    let inlines = crate::revision_filter::display_inlines(&block.inlines, revision_display);
     walk_inlines(
-        &block.inlines,
+        &inlines,
         &mut base,
         catalog,
         &mut buf,
@@ -261,6 +265,36 @@ pub(super) fn collect_inline_image(
             cx_emu,
             cy_emu,
             float: FloatWrap::read_or_class_default(attr),
+            textbox: None,
         });
     }
+}
+
+/// Collect an `Inline::TextBox` (a floating `wps` text box) as a
+/// [`CollectedImage`] whose [`textbox`](CollectedImage::textbox) carries the
+/// interior blocks + fill/border; the flow engine renders it as a bordered box.
+pub(super) fn collect_textbox(
+    attr: &NodeAttr,
+    blocks: &[loki_doc_model::content::block::Block],
+    images: &mut Vec<CollectedImage>,
+) {
+    let get = |key: &str| {
+        attr.kv
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.clone())
+    };
+    let emu = |key: &str| get(key).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+    images.push(CollectedImage {
+        src: String::new(),
+        alt: None,
+        cx_emu: emu("cx_emu"),
+        cy_emu: emu("cy_emu"),
+        float: FloatWrap::read_or_class_default(attr),
+        textbox: Some(crate::resolve::CollectedTextBox {
+            blocks: blocks.to_vec(),
+            fill: get("textbox-fill"),
+            line: get("textbox-line"),
+        }),
+    });
 }

@@ -146,7 +146,7 @@ pub(super) fn write_anchor_drawing<W: std::io::Write>(
 }
 
 /// Emits the single `wp:wrap*` child selecting the wrap mode/side (§20.4.2.*).
-fn write_wrap_element<W: std::io::Write>(w: &mut Writer<W>, wrap: FloatWrap) {
+pub(super) fn write_wrap_element<W: std::io::Write>(w: &mut Writer<W>, wrap: FloatWrap) {
     let side = match wrap.side {
         WrapSide::Left => "left",
         WrapSide::Right => "right",
