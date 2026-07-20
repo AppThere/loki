@@ -24,10 +24,13 @@ pub(super) struct MacroSecurityPanelProps {
     pub(super) payload: MacroPayload,
     /// The host document title, shown for identity.
     pub(super) title: String,
-    /// Whether macros are enabled (so a "Run a macro…" entry is offered).
+    /// Whether macros are enabled (so "Run a macro…" / "Edit macros…" are
+    /// offered).
     pub(super) can_run: bool,
     /// Opens the macro runner (Tools ▸ Macros).
     pub(super) on_run: EventHandler<()>,
+    /// Opens the macro editor (edit + source-only write-back, spec §3.4).
+    pub(super) on_edit: EventHandler<()>,
     /// Closes the panel.
     pub(super) on_close: EventHandler<()>,
 }
@@ -88,6 +91,11 @@ pub(super) fn MacroSecurityPanel(props: MacroSecurityPanelProps) -> Element {
                         style: pill_button(true),
                         onclick: move |_| props.on_run.call(()),
                         {fl!("macros-run-open-action")}
+                    }
+                    button {
+                        style: pill_button(true),
+                        onclick: move |_| props.on_edit.call(()),
+                        {fl!("macros-edit-open-action")}
                     }
                 }
                 button {

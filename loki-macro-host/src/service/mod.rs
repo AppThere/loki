@@ -190,6 +190,31 @@ impl MacroService {
         inner.store.save()
     }
 
+    /// Re-keys trust after an **in-app macro edit** (spec §2.4/§2.5): the payload
+    /// hash changes from `old`'s to `new`'s, so this carries the persistent
+    /// record and any session override over to the new hash and marks the record
+    /// self-authored ([`Provenance::AuthoredHere`]). A document with no prior
+    /// trust gains none — trust is never fabricated. Only the macro editor's save
+    /// path calls this; an external modification never does, so it still drops
+    /// trust by plain hash mismatch.
+    ///
+    /// [`Provenance::AuthoredHere`]: crate::Provenance::AuthoredHere
+    ///
+    /// # Errors
+    /// Propagates a trust-store save failure (the re-key still applies in
+    /// memory).
+    pub fn reauthor(&self, old: &MacroPayload, new: &MacroPayload) -> Result<(), MacroHostError> {
+        let old_key = old.payload_hash();
+        let new_key = new.payload_hash();
+        let mut inner = self.write();
+        // Carry any session-only override across to the new hash.
+        if let Some(session) = inner.sessions.remove(&old_key) {
+            inner.sessions.insert(new_key, session);
+        }
+        inner.store.reauthor(&old_key, new_key);
+        inner.store.save()
+    }
+
     /// Forgets the document entirely: removes the persistent record and session
     /// state (spec §9.4).
     ///

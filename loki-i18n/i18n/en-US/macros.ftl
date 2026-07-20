@@ -118,3 +118,14 @@ macros-run-denied =
     to allow the permission if you trust it.
 macros-run-stopped = The macro was stopped: it ran too long or was cancelled.
 macros-run-unreadable = The macro could not be run.
+
+# Macro editor (edit + source-only write-back, spec §3.4)
+macros-edit-open-action = Edit macros…
+macros-editor-title = Edit macros
+macros-editor-save = Save
+macros-editor-close = Close
+macros-editor-hint =
+    Saves source only — Word or LibreOffice recompiles the macros when the file
+    is reopened.
+macros-editor-saved = Macros updated — saving the document.
+macros-editor-failed = The macros couldn't be updated, so they were left unchanged.

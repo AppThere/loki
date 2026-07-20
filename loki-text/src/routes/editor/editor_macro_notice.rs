@@ -106,6 +106,8 @@ pub(super) fn MacroNoticeBar(
     loro_doc: Signal<Option<loro::LoroDoc>>,
     // `macro_run_request`: a proc name set by a MACROBUTTON click (spec §6).
     macro_run_request: Signal<Option<String>>,
+    // Bumped to request a document save after an in-app macro edit (spec §3.4).
+    save_request: Signal<u32>,
 ) -> Element {
     let svc = use_context::<MacroService>();
     let mut dismissed = use_signal(|| false);
@@ -115,58 +117,26 @@ pub(super) fn MacroNoticeBar(
     let mut runner = use_signal(|| None::<MacroView>);
     let mut runner_auto = use_signal(|| false);
     let mut run_proc = use_signal(|| None::<String>);
+    let mut editor_open = use_signal(|| None::<MacroView>);
 
-    // Auto-run on-open handlers when a newly-opened document authorizes it
-    // (spec §5.6). Reads `loro_doc` so the effect re-runs when a document loads;
-    // guarded per payload-hash so it fires at most once per document. Firing is
-    // gated by `authorize_auto_run` (trusted + `auto_run_open`); the runner's
-    // `start_auto_run` re-checks the token, so nothing fires without the flag.
-    {
-        let ctx_auto = ctx.clone();
-        let svc_auto = svc.clone();
-        let mut fired = use_signal(|| None::<[u8; 32]>);
-        use_effect(move || {
-            let _loaded = loro_doc.read().is_some();
-            if let Some(payload) = payload_of(&ctx_auto.0) {
-                let key = payload.payload_hash();
-                if fired() != Some(key) && svc_auto.authorize_auto_run(&payload).is_some() {
-                    let v = super::editor_macro_extract::extract_view(&payload);
-                    if !v.modules.is_empty() {
-                        fired.set(Some(key));
-                        runner.set(Some(v));
-                        runner_auto.set(true);
-                    }
-                }
-            }
-        });
-    }
-
-    // Dispatch a MACROBUTTON click (spec §6): when the document's macros are
-    // enabled, open the runner on the named procedure through the normal gated
-    // path; when disabled, prompt to enable first — a document the user has not
-    // trusted never runs a macro from a click.
-    {
-        let ctx_click = ctx.clone();
-        let svc_click = svc.clone();
-        let mut request = macro_run_request;
-        use_effect(move || {
-            if let Some(name) = request() {
-                if let Some(payload) = payload_of(&ctx_click.0) {
-                    if svc_click.decision_for(&payload).is_enabled() {
-                        let v = super::editor_macro_extract::extract_view(&payload);
-                        if !v.modules.is_empty() {
-                            runner_auto.set(false);
-                            run_proc.set(Some(name));
-                            runner.set(Some(v));
-                        }
-                    } else {
-                        trust_open.set(true);
-                    }
-                }
-                request.set(None);
-            }
-        });
-    }
+    // Background effects (split out for the 300-line ceiling): auto-run on open
+    // (spec §5.6) and MACROBUTTON click dispatch (spec §6).
+    super::editor_macro_notice_effects::use_auto_run_effect(
+        ctx.clone(),
+        svc.clone(),
+        loro_doc,
+        runner,
+        runner_auto,
+    );
+    super::editor_macro_notice_effects::use_click_dispatch_effect(
+        ctx.clone(),
+        svc.clone(),
+        macro_run_request,
+        runner,
+        runner_auto,
+        run_proc,
+        trust_open,
+    );
 
     let Some((payload, title)) = read_doc(&ctx.0) else {
         return rsx! {};
@@ -197,6 +167,7 @@ pub(super) fn MacroNoticeBar(
     let payload_choice = payload.clone();
     let view_payload = payload.clone();
     let runner_payload = payload.clone();
+    let editor_payload = payload.clone();
 
     rsx! {
         if !dismissed() {
@@ -245,6 +216,10 @@ pub(super) fn MacroNoticeBar(
                     runner_auto.set(false);
                     runner.set(Some(super::editor_macro_extract::extract_view(&runner_payload)));
                 },
+                on_edit: move |()| {
+                    panel_open.set(false);
+                    editor_open.set(Some(super::editor_macro_extract::extract_view(&editor_payload)));
+                },
                 on_close: move |()| panel_open.set(false),
             }
         }
@@ -271,6 +246,15 @@ pub(super) fn MacroNoticeBar(
             super::editor_macro_viewer::MacroViewerPanel {
                 view: v,
                 on_close: move |()| view.set(None),
+            }
+        }
+
+        if let Some(v) = editor_open() {
+            super::editor_macro_editor::MacroEditorPanel {
+                ctx: ctx.clone(),
+                view: v,
+                save_request,
+                on_close: move |()| editor_open.set(None),
             }
         }
     }

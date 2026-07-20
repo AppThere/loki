@@ -155,3 +155,39 @@ fn security_summary_reflects_state() {
         .expect("row");
     assert!(net.refused && !net.granted());
 }
+
+#[test]
+fn reauthor_carries_trust_to_the_edited_payload() {
+    let svc = MacroService::in_memory();
+    let old = payload(b"Sub Main : End Sub");
+    let new = payload(b"Sub Main : Beep : End Sub");
+    svc.trust_document(&old, None).unwrap();
+    assert_eq!(svc.decision_for(&old), TrustDecision::Trusted);
+
+    svc.reauthor(&old, &new).unwrap();
+    // Trust moved to the edited hash; the old hash is untrusted again.
+    assert_eq!(svc.decision_for(&new), TrustDecision::Trusted);
+    assert_eq!(svc.decision_for(&old), TrustDecision::Disabled);
+}
+
+#[test]
+fn reauthor_carries_a_session_override() {
+    let svc = MacroService::in_memory();
+    let old = payload(b"orig");
+    let new = payload(b"edited");
+    svc.enable_session(&old);
+    assert_eq!(svc.decision_for(&old), TrustDecision::SessionOnly);
+
+    svc.reauthor(&old, &new).unwrap();
+    assert_eq!(svc.decision_for(&new), TrustDecision::SessionOnly);
+    assert_eq!(svc.decision_for(&old), TrustDecision::Disabled);
+}
+
+#[test]
+fn reauthor_fabricates_no_trust_for_an_untrusted_document() {
+    let svc = MacroService::in_memory();
+    let old = payload(b"never trusted");
+    let new = payload(b"never trusted, edited");
+    svc.reauthor(&old, &new).unwrap();
+    assert_eq!(svc.decision_for(&new), TrustDecision::Disabled);
+}
