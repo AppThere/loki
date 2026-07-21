@@ -26,14 +26,16 @@
 //!
 //! ## Status
 //!
-//! 8A.1 lands the output vocabulary ([`SignatureVerdict`], [`CertInfo`],
-//! [`Thumbprint`], and the reason enums) so the rest of the phase can be built
-//! against a stable surface. The actual parsers and verifier land next:
+//! 8A.1 landed the output vocabulary ([`SignatureVerdict`], [`CertInfo`],
+//! [`Thumbprint`], and the reason enums). 8A.2 (this drop) adds VBA
+//! signature-stream location + discrimination ([`extract_vba_signatures`]) and
+//! the embedded-PKCS#7 locator — parse only, fuzzed, total. Still to come:
 //!
-//! - 8A.2 — VBA signature-stream parsing (MS-OVBA / MS-OSHARED), fuzzed.
 //! - 8A.3 — PKCS#7 `SignedData` + X.509 verification (`RustCrypto`), corpus-gated.
 //! - 8A.4 — ODF `XMLDSig` (`macrosignatures.xml`).
 
+mod vba;
 mod verdict;
 
+pub use vba::{RawVbaSignature, SigVariant, extract_vba_signatures};
 pub use verdict::{CertInfo, InvalidReason, SignatureVerdict, Thumbprint, UntrustedReason};

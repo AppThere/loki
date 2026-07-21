@@ -18,6 +18,13 @@ categories = ["cryptography", "parser-implementations"]
 # stack (`cms`, `x509-cert`, `rsa`, `p256`, `sha2`) arrives in 8A.2/8A.3.
 
 [dependencies]
+# Walks the vbaProject.bin OLE compound file to locate the signature streams.
+# Read-only, in-memory; no crypto here (that is 8A.3).
+cfb = "0.7"
+
+[dev-dependencies]
+# The tests build a synthetic signed vbaProject.bin to read back.
+cfb = "0.7"
 
 [package.metadata.docs.rs]
 all-features = true

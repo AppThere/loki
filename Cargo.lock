@@ -4604,6 +4604,9 @@ dependencies = [
 [[package]]
 name = "loki-macro-sig"
 version = "0.1.0"
+dependencies = [
+ "cfb",
+]
 
 [[package]]
 name = "loki-model"
