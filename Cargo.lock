@@ -4700,6 +4700,7 @@ version = "0.1.0"
 dependencies = [
  "loki-basic",
  "loki-doc-model",
+ "loki-macro-sig",
  "loki-sheet-model",
  "serde",
  "serde_json",

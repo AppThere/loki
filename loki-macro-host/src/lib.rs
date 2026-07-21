@@ -49,4 +49,7 @@ pub use events::{EventPhase, auto_open_handlers, handler_phase, is_auto_open};
 pub use exec::{DenyBackend, DialogOutcome, DocEdit, EditBatch, ExecutionHost, MacroBackend};
 pub use runtime::{AutoRunToken, MacroRunError, MacroRuntime, RunOutcome, RunRequest, UdfOutcome};
 pub use service::{CapabilityState, DocumentSecurity, MacroService};
-pub use trust::{PersistedGrant, Provenance, TrustDecision, TrustRecord, TrustStore};
+pub use trust::{
+    PersistedGrant, Provenance, PublisherRecord, TrustDecision, TrustRecord, TrustStore,
+    TrustedPublisherStore,
+};

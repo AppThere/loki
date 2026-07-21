@@ -59,6 +59,16 @@ pub enum Provenance {
     /// dropping trust (an external change to the same bytes still would, because
     /// it never travels through the editor's re-key path).
     AuthoredHere,
+    /// The macros carry a valid signature from a **user-pinned trusted
+    /// publisher** (ADR-0014 §4.5, 8A.5). The trust anchor is the signer
+    /// certificate's SHA-256 thumbprint, recorded here so a later verify against
+    /// the same publisher can be recognised; trust still comes from the pin in
+    /// the `TrustedPublisherStore`, never from the document (T10).
+    TrustedPublisher {
+        /// The pinned signer-certificate thumbprint that matched.
+        #[serde(with = "hex32")]
+        thumbprint: [u8; 32],
+    },
 }
 
 /// A persisted, always-for-document capability grant (spec §2.4).

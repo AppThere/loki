@@ -8,8 +8,10 @@
 //! persistence and [`record`] for the per-document record shape.
 
 pub(crate) mod hex;
+mod publisher;
 mod record;
 mod store;
 
+pub use publisher::{PublisherRecord, TrustedPublisherStore};
 pub use record::{PersistedGrant, Provenance, TrustDecision, TrustRecord};
 pub use store::TrustStore;
