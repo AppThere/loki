@@ -31,11 +31,16 @@
 //! signature-stream location + discrimination ([`extract_vba_signatures`]) and
 //! the embedded-PKCS#7 locator — parse only, fuzzed, total. Still to come:
 //!
-//! - 8A.3 — PKCS#7 `SignedData` + X.509 verification (`RustCrypto`), corpus-gated.
+//! - 8A.3 (this drop) — PKCS#7 `SignedData` + X.509 verification
+//!   ([`verify_signed_data`], `RustCrypto` stack), corpus-gated.
 //! - 8A.4 — ODF `XMLDSig` (`macrosignatures.xml`).
 
 mod vba;
 mod verdict;
+mod verify;
+mod verify_cert;
+mod verify_crypto;
 
 pub use vba::{RawVbaSignature, SigVariant, extract_vba_signatures};
 pub use verdict::{CertInfo, InvalidReason, SignatureVerdict, Thumbprint, UntrustedReason};
+pub use verify::verify_signed_data;

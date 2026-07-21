@@ -22,9 +22,42 @@ categories = ["cryptography", "parser-implementations"]
 # Read-only, in-memory; no crypto here (that is 8A.3).
 cfb = "0.7"
 
+# --- 8A.3 CMS/PKCS#7 + X.509 verification stack (RustCrypto `der 0.7` gen) ---
+# PKCS#7 `SignedData` container parsing (ContentInfo / SignerInfo / SignedAttrs).
+cms = "=0.2.3"
+# X.509 certificate parsing (subject/issuer/serial/validity, SPKI).
+x509-cert = "=0.2.5"
+# DER primitives shared by the whole stack (Encode/Decode, Any, SetOfVec).
+der = "=0.7.10"
+# Well-known OID constants (digest/signature algorithms, attribute OIDs).
+const-oid = { version = "=0.9.6", features = ["db"] }
+# SubjectPublicKeyInfo → public-key material.
+spki = "=0.7.3"
+# RSA PKCS#1 v1.5 verification.
+rsa = "=0.9.10"
+# ECDSA P-256 verification.
+p256 = "=0.13.2"
+# Generic `signature::Verifier` trait (shared by rsa/p256).
+signature = "=2.2.0"
+# Digest algorithms: SHA-2 (eligible), SHA-1 + MD5 (legacy, displayed not trusted).
+# `oid` gives each core an `AssociatedOid`, needed for the RSA DigestInfo prefix.
+sha2 = { version = "=0.10.9", features = ["oid"] }
+sha1 = { version = "=0.10.6", features = ["oid"] }
+md-5 = { version = "=0.10.6", features = ["oid"] }
+
 [dev-dependencies]
 # The tests build a synthetic signed vbaProject.bin to read back.
 cfb = "0.7"
+# Fixture generation: self-signed X.509 certs over RustCrypto-generated keys.
+rcgen = { version = "=0.13.2", default-features = false, features = ["pem", "ring"] }
+# Fixture signing: import the generated key, build a detached CMS SignedData.
+rsa = { version = "=0.9.10", features = ["sha2"] }
+p256 = { version = "=0.13.2", features = ["ecdsa", "pkcs8"] }
+pkcs8 = { version = "=0.10.2", features = ["pem"] }
+sha2 = { version = "=0.10.9", features = ["oid"] }
+sha1 = { version = "=0.10.6", features = ["oid"] }
+# RNG for generating fresh RSA / P-256 fixture keys (rand_core 0.6, matches rsa/p256).
+rand = "=0.8.5"
 
 [package.metadata.docs.rs]
 all-features = true
