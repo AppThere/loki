@@ -166,9 +166,9 @@ timestamping, legacy digest agility) and the per-document model above is
 sufficient for v1. Signature parts are preserved opaquely (consistent with
 `loki-opc`'s existing signature policy).
 
-> **Design addendum (Proposed, not yet ratified):**
+> **Design addendum (Accepted 2026-07-20):**
 > [ADR-0014](0014-macro-signatures-and-trusted-publishers.md) designs the
-> verification + trusted-publisher tier. No implementation until it is Accepted.
+> verification + trusted-publisher tier; implementation may proceed.
 
 ---
 
@@ -615,7 +615,7 @@ phases can be dropped or reordered without stranding earlier ones.
 | **5. Execution v1 — text + spreadsheet** | object-model facades (§6.1), `DocRead`/`DocWrite`/`UiDialog`/`Clipboard`/`Print`, explicit run only, CRDT-batched undo, Stop control | `loki-macro-host`, apps | "never" table tests green; malware corpus inert; macro run = 1 undo entry |
 | **6. Events & UDFs** | button/control-assigned macros; spreadsheet UDFs (compute-only, `#MACRO!`); on-open events behind `auto_run_open` (§5.6); `Find`, class modules | same | T1 regression corpus: nothing fires without the flag |
 | **7. Macro editor** | edit + save-back (source-only write, §3.4) for self-authored docs; picker-mediated `FileRead`/`FileWrite` | `loki-vba`, apps | edited projects reopen in Office/LO from source |
-| **8. Extended trust (optional)** | signature verification / trusted publishers (§2.5); `Network` capability with per-host prompts — **each requires its own spec addendum before implementation** (Proposed: [ADR-0014](0014-macro-signatures-and-trusted-publishers.md) signatures, [ADR-0015](0015-macro-network-capability.md) network) | new | — |
+| **8. Extended trust (optional)** | signature verification / trusted publishers (§2.5); `Network` capability with per-host prompts — **each requires its own spec addendum before implementation** (Accepted 2026-07-20: [ADR-0014](0014-macro-signatures-and-trusted-publishers.md) signatures, [ADR-0015](0015-macro-network-capability.md) network) | new | — |
 
 ---
 
@@ -626,7 +626,7 @@ All five decisions were accepted as recommended:
 | # | Decision | Resolution |
 |---|---|---|
 | D1 | iOS ships execution? | **Accepted:** full engine behind the `macro-exec` build flag; attempt App Review with execution enabled, fall back to preserve+viewer-only if required (§11) |
-| D2 | `Network` capability | **Accepted:** refused in v1 (§5.2); v2 at earliest, and only with its own spec addendum ([ADR-0015](0015-macro-network-capability.md), Proposed) |
+| D2 | `Network` capability | **Accepted:** refused in v1 (§5.2); v2 at earliest, and only with its own spec addendum ([ADR-0015](0015-macro-network-capability.md), Accepted) |
 | D3 | UserForms | **Accepted:** deferred native-widget subset (phase ≥8), not v1 |
 | D4 | Trust-store sync across user's devices | **Accepted:** local-only in v1 |
 | D5 | Presentation-app object model | **Accepted:** deferred until the app matures; payload preservation still covers presentation-family scripts where the formats are supported |

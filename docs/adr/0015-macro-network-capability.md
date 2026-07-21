@@ -1,9 +1,10 @@
 # ADR-0015: Macro `Network` capability (Phase 8, Track B)
 
-**Status:** Proposed — the design addendum the macro spec requires *before* any
-implementation.
+**Status:** Accepted (ratified 2026-07-20) — the design addendum the macro spec
+requires before any implementation. Implementation of the §6 phased plan may
+proceed; it stays gated behind the off-by-default `macro-net` flag.
 **Date:** 2026-07-20
-**Deciders:** AppThere engineering (awaiting ratification)
+**Deciders:** AppThere engineering
 **Resolves:** [`LOKI_MACRO_SCRIPTING_SPEC.md`](LOKI_MACRO_SCRIPTING_SPEC.md) §5.2
 (`Network` = *"refused in v1 … v2 at earliest, per-host prompts, no raw
 sockets"*), §14 Phase 8, and §15 D2 (`Network` *"v2 at earliest, and only with
@@ -60,11 +61,14 @@ bounded network capability defensible.
 
 ### 4.1 A gated object-model shim, not a socket API
 
-Scripts reach the network only through object-model verbs on the host facade,
-e.g. `Application.HttpGet(url)` and `Application.HttpPost(url, body, contentType)`,
-returning an `HttpResponse { status, headers, bytes }`. There is **no**
-`CreateObject("MSXML2.XMLHTTP")` (COM, refused) and no socket type. Each call
-gates the `Network` capability through the broker before doing anything.
+Scripts reach the network only through object-model verbs on the host facade.
+**v1 ships read-only `Application.HttpGet(url)`** returning
+`HttpResponse { status, headers, bytes }`; `HttpPost` (the sharper exfil edge, a
+direct large-payload upload) is **deferred to a later iteration** once GET is
+proven. There is **no** `CreateObject("MSXML2.XMLHTTP")` (COM, refused) and no
+socket type. Each call gates the `Network` capability through the broker before
+doing anything. (GET still admits small exfil via query parameters — the per-host
+consent + composition warning is the mitigation regardless of verb.)
 
 ### 4.2 HTTPS-only, per-host allowlist, per-host prompts
 
@@ -72,19 +76,32 @@ gates the `Network` capability through the broker before doing anything.
   refused (a plaintext or local-file fetch is never allowed).
 - **Grant unit = origin** (`scheme + host + port`), never a bare "network on"
   switch. The first request to `https://api.example.com` prompts:
-  *"This macro wants to connect to **api.example.com**. Allow?"* with the standard
-  `GrantScope` choices (`Deny` default / `AllowOnce` / `AllowSession` /
-  `AlwaysForDocument`) — reusing the exact broker + prompt machinery built in
-  Phase 4. No wildcards; each distinct origin prompts once.
+  *"This macro wants to connect to **api.example.com**. Allow?"* reusing the exact
+  broker + prompt machinery built in Phase 4. No wildcards; each distinct origin
+  prompts once.
+- **Network grants never persist to disk.** The offered scopes are `Deny`
+  (default) / `AllowOnce` / `AllowSession` only — **no `AlwaysForDocument`**.
+  Network is the sharpest exfiltration edge (T4); a persisted grant would let a
+  forgotten document phone an approved host silently on every future open.
+  Per-session re-consent keeps the user aware. (This is stricter than the other
+  capabilities, which may persist.) Persistence can be revisited later behind the
+  stronger anti-spoof confirmation if a real workflow demands it.
 - **Redirects** are followed only to already-allowed origins; a redirect to a
   new origin re-prompts (or fails if non-interactive). Redirect count capped.
 
 ### 4.3 No ambient authority
 
-No cookie jar, no OS/proxy credential reuse, no client certs, no automatic
-`Authorization`. The macro may set explicit request headers **except** a
-deny-list (`Host`, `Cookie`, and hop-by-hop headers are stripped). This prevents
-a macro from silently acting as the signed-in user against a first-party service.
+No cookie jar, no OS/proxy credential reuse, no client certs. The distinction is
+**ambient vs. explicit** authority: ambient credentials are forbidden, but a
+macro **may set an explicit `Authorization` header** — an API token the author
+wrote into the macro is a deliberate, visible credential (visible to anyone who
+can open the source viewer; the author's responsibility, which we document), not
+ambient authority. The macro may set other request headers **except** a
+deny-list: `Host`, `Cookie`/`Set-Cookie`, the client-computed `Content-Length`,
+and hop-by-hop headers (`Connection`, `Keep-Alive`, `Proxy-*`, `TE`, `Trailer`,
+`Transfer-Encoding`, `Upgrade`) are stripped. This prevents a macro from silently
+riding the signed-in user's identity against a first-party service while still
+allowing legitimate token-authenticated APIs.
 
 ### 4.4 Bounded execution
 
@@ -109,8 +126,8 @@ Because `Network` + a read capability is the exfiltration primitive (T4), the
 grant prompt is **context-aware**: if the document already holds `DocRead`
 (always) or a `Clipboard`/`FileRead` grant, the `Network` prompt adds an explicit
 line — *"This document can also read your content; allowing network access lets a
-macro send it to this site."* `AlwaysForDocument` for `Network` requires the
-stronger confirmation variant of the anti-spoof dialog.
+macro send it to this site."* (Network grants are session-scoped at most, §4.2,
+so this consent is re-taken each session.)
 
 ## 5. Relationship to ADR-0014 (signatures)
 
@@ -125,8 +142,8 @@ stronger confirmation variant of the anti-spoof dialog.
 
 | 8B.n | Deliverable |
 |---|---|
-| 8B.1 | Flip `Capability::Network` off the `is_refused_in_v1` list **behind an off-by-default build/runtime flag**; broker + `GrantScope` plumbing for origin-scoped grants; tests. |
-| 8B.2 | `HttpResponse`/request model + the object-model shim (`Application.HttpGet/HttpPost`) in `loki-macro-host`; interpreter dispatch through the `Host` seam. |
+| 8B.1 | Gate `Capability::Network` behind the off-by-default `macro-net` **build feature** *and* an off-by-default **runtime setting** (both must be on); broker + `GrantScope` plumbing for origin-scoped, **session-max** grants; tests. |
+| 8B.2 | `HttpResponse`/request model + the read-only `Application.HttpGet` shim in `loki-macro-host`; interpreter dispatch through the `Host` seam. (`HttpPost` deferred.) |
 | 8B.3 | App `MacroBackend` network impl: HTTPS-only, origin allowlist, redirect re-check, header deny-list, no ambient creds (`reqwest`/`rustls`). |
 | 8B.4 | Bounds: timeouts, size cap, per-run call cap, Stop-cancels-request; worker-thread wiring. |
 | 8B.5 | Context-aware per-host prompt + composition warning in the anti-spoof frame; i18n `macros-net-*`. |
@@ -147,15 +164,20 @@ stronger confirmation variant of the anti-spoof dialog.
 - **T2** stays structurally closed (no execute primitive), which is the reason a
   network capability is defensible at all.
 
-## 8. Open decisions to ratify
+## 8. Resolved decisions (ratified 2026-07-20)
 
-1. **Ship gate (§6, 8B.1):** off-by-default *runtime* setting the user must
-   enable, a *build* flag (like the iOS `macro-exec` flag), or both?
-2. **`AlwaysForDocument` for `Network`:** allow it (with the stronger
-   confirmation), or cap network grants at `AllowSession` so they never persist?
-3. **`HttpPost` at all**, or ship read-only `HttpGet` first (POST is the sharper
-   exfil edge)?
-4. **Header policy (§4.3):** exact deny-list, and whether author-set
-   `Authorization` is allowed (explicit tokens) or stripped.
-5. **iOS/App-Review posture:** does an enabled network capability affect the
-   `macro-exec` App-Review strategy (spec §11)?
+1. **Ship gate (§6, 8B.1):** **both** — an off-by-default `macro-net` build
+   feature (so a distribution can exclude the code entirely) *and* an
+   off-by-default runtime setting; both must be on for any network call.
+2. **Grant persistence (§4.2):** **capped at `AllowSession`** — network grants
+   never persist to disk. (Stricter than the original draft.)
+3. **Verb (§4.1):** **read-only `HttpGet` ships first**; `HttpPost` deferred to a
+   later iteration. (Stricter than the original draft.)
+4. **Header policy (§4.3):** strict deny-list (`Host`, `Cookie`, `Content-Length`,
+   hop-by-hop); **author-set `Authorization` is allowed** (explicit token, not
+   ambient authority); ambient credentials (cookies, proxy auth, client certs)
+   are always forbidden.
+5. **iOS / App-Review (§11):** the `macro-net` build feature stays **off in the
+   iOS build** initially — dynamic code + arbitrary network is a review-rejection
+   risk that would jeopardise the `macro-exec` strategy. Desktop-first; revisit
+   per-platform once desktop is proven. (Product sign-off item.)

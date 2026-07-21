@@ -1,9 +1,10 @@
 # ADR-0014: Macro signature verification & trusted publishers (Phase 8, Track A)
 
-**Status:** Proposed — the design addendum the macro spec requires *before* any
-implementation.
+**Status:** Accepted (ratified 2026-07-20) — the design addendum the macro spec
+requires before any implementation. Implementation of the §6 phased plan may
+proceed.
 **Date:** 2026-07-20
-**Deciders:** AppThere engineering (awaiting ratification)
+**Deciders:** AppThere engineering
 **Resolves:** [`LOKI_MACRO_SCRIPTING_SPEC.md`](LOKI_MACRO_SCRIPTING_SPEC.md) §2.5
 ("Signed macros / trusted publishers — deferred (phase 8)") and §14 Phase 8,
 which state that signature verification *"requires its own spec addendum before
@@ -115,9 +116,21 @@ A new per-user **`TrustedPublisherStore`** (sibling of the existing per-document
 `TrustStore`, same JSON-in-profile pattern, same "nothing in a document can
 write it" rule) holds `{ thumbprint: [u8;32], display_name, added: u64 }` entries.
 A signature is `ValidTrusted` iff its signer cert's SHA-256 thumbprint is in that
-store. The chain **may** be validated for *display* ("issued by …"), but trust is
-the pin, not the chain. Adding a publisher is an explicit, anti-spoof-framed user
-action (§5), typically "Trust this publisher" from a `ValidUntrusted` document.
+store. The chain **is** validated for *display* ("issued by …") and to compute
+expiry, but trust is the pin, not the chain — the UI states plainly that
+chain-valid ≠ trusted. Chain display uses the platform trust roots
+(`rustls-native-certs`, else bundled `webpki-roots`); if roots are unavailable it
+degrades to "issuer not validated" and the pin-based trust is unaffected. Adding a
+publisher is an explicit, anti-spoof-framed user action (§5), typically "Trust
+this publisher" from a `ValidUntrusted` document.
+
+**Certificate rotation.** A pure leaf pin would break when a publisher renews
+their (annual) certificate. The store therefore also records the signer Subject +
+issuer; when a *new* leaf appears whose Subject/issuer matches a pinned publisher
+but whose thumbprint differs, the document is `ValidUntrusted` with a
+*"\<publisher\> renewed their certificate — trust the new one?"* affordance rather
+than silent trust or silent breakage. The trusted blast radius stays exactly one
+leaf thumbprint.
 
 ### 4.4 Expiry & timestamps, no online revocation (this track)
 
@@ -176,7 +189,7 @@ This composes cleanly with the existing re-key path.
 |---|---|
 | 8A.1 | `loki-macro-sig` crate skeleton + `SignatureVerdict`/`CertInfo` model; workspace + gate registration; `forbid(unsafe_code)`. |
 | 8A.2 | VBA signature parsing (MS-OVBA/MS-OSHARED DigSig streams; legacy/agile/V3 discrimination) — **parse only**, fuzzed, total. |
-| 8A.3 | PKCS#7 SignedData + X.509 verification; digest/signature-algo agility; content-hash check against the source. |
+| 8A.3 | PKCS#7 SignedData + X.509 verification; digest/signature-algo agility; content-hash check against the source. **Gate:** validate the verifier against a real corpus of signed `.docm`/`.odt` samples before it is trusted (RustCrypto `cms`/`x509-cert` are young); if a real-world SignedData quirk defeats it, fall back to `rasn-cms`. |
 | 8A.4 | ODF XMLDSig verification (`macrosignatures.xml`). |
 | 8A.5 | `TrustedPublisherStore` (persist, T10 tests) + `Provenance::TrustedPublisher`; `MacroService` open-time verdict → decision wiring. |
 | 8A.6 | RFC-3161 timestamp handling + expiry policy. |
@@ -197,15 +210,19 @@ This composes cleanly with the existing re-key path.
 - **New crate, new per-user store** — additive; no change to existing trust,
   capability, or interpreter behaviour when a document is unsigned.
 
-## 8. Open decisions to ratify
+## 8. Resolved decisions (ratified 2026-07-20)
 
-1. **Trust anchor (§4.3):** user-pinned leaf thumbprint only (recommended), or
-   also allow "trust issuer" (broader, riskier)?
-2. **Chain display (§4.3):** validate the full chain for *display* even though
-   trust is the pin, or show only the leaf?
-3. **Crypto stack:** `cms` + `x509-cert` + `rsa`/`p256` (RustCrypto) vs an
-   alternative — pick the vetted set and pin versions.
-4. **Timestamp requirement (§4.4):** honor expired-but-timestamped signatures
-   (recommended, matches Office), or refuse all expired?
-5. **Scope of ODF signatures:** `macrosignatures.xml` only, or also treat a
-   whole-document signature as covering macros?
+1. **Trust anchor (§4.3):** **user-pinned leaf thumbprint**, never trust-issuer —
+   blast radius stays one certificate. Cert rotation is handled by the
+   Subject/issuer-match re-prompt (§4.3), not by broadening the anchor.
+2. **Chain (§4.3):** **validated for display + expiry, never as the trust
+   anchor** (chain-valid ≠ trusted, stated in the UI); degrades gracefully when
+   platform roots are unavailable.
+3. **Crypto stack:** **RustCrypto** — `cms` + `x509-cert` + `rsa` + `p256`/`p384`
+   + `sha2`, versions pinned, crate fuzzed as attacker-facing. `rasn-cms` is the
+   named fallback. 8A.3 is gated on real-corpus validation.
+4. **Timestamp (§4.4):** **honor expired-but-RFC-3161-timestamped** signatures
+   (a timestamp proves signing-time validity); **refuse expired-without-timestamp**.
+5. **ODF scope (§4.5):** **`macrosignatures.xml` is the macro-trust anchor**;
+   `documentsignatures.xml` is display-only ("document is signed"), not a macro
+   grant.
