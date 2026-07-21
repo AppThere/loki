@@ -1,0 +1,24 @@
+[package]
+name = "loki-macro-sig"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Verify macro signatures (VBA MS-OSHARED / ODF XMLDSig) for the Loki suite's trusted-publisher tier — verification only, never trust anchoring"
+repository = "https://github.com/appthere/loki"
+keywords = ["vba", "signature", "xmldsig", "macro", "loki"]
+categories = ["cryptography", "parser-implementations"]
+
+# The isolated, security-critical signature-verification surface (ADR-0014,
+# macro spec §2.5 Phase 8 Track A). `#![forbid(unsafe_code)]`, pure Rust, no I/O,
+# fuzzed. It answers "is this macro payload signed, and by whom" as a total
+# `SignatureVerdict`; **trust** is decided elsewhere against a user-pinned
+# publisher store — a valid signature alone never grants trust (T10).
+#
+# 8A.1 (this drop) is the output vocabulary only. The RustCrypto verification
+# stack (`cms`, `x509-cert`, `rsa`, `p256`, `sha2`) arrives in 8A.2/8A.3.
+
+[dependencies]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

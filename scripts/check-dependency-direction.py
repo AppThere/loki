@@ -40,6 +40,8 @@ LAYERS: dict[str, float] = {
     "loki-templates": 2,
     # L2 macro source reader (leaf: external cfb/encoding_rs only; macro spec Phase 3)
     "loki-vba": 2,
+    # L2 macro signature verifier (leaf: external crypto only; macro spec Phase 8A / ADR-0014)
+    "loki-macro-sig": 2,
     # L3 layout
     "loki-layout": 3,
     # L3b exporter-above-layout
