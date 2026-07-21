@@ -35,12 +35,17 @@
 //!   ([`verify_signed_data`], `RustCrypto` stack), corpus-gated.
 //! - 8A.4 — ODF `XMLDSig` (`macrosignatures.xml`).
 
+mod odf;
+mod odf_dom;
 mod vba;
 mod verdict;
 mod verify;
 mod verify_cert;
 mod verify_crypto;
+mod verify_odf;
+mod xml_c14n;
 
 pub use vba::{RawVbaSignature, SigVariant, extract_vba_signatures};
 pub use verdict::{CertInfo, InvalidReason, SignatureVerdict, Thumbprint, UntrustedReason};
 pub use verify::verify_signed_data;
+pub use verify_odf::verify_xmldsig;

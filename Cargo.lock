@@ -4710,6 +4710,7 @@ dependencies = [
 name = "loki-macro-sig"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "cfb",
  "cms",
  "const-oid",
@@ -4717,6 +4718,7 @@ dependencies = [
  "md-5",
  "p256",
  "pkcs8",
+ "quick-xml 0.41.0",
  "rand 0.8.5",
  "rcgen",
  "rsa",

@@ -22,6 +22,12 @@ categories = ["cryptography", "parser-implementations"]
 # Read-only, in-memory; no crypto here (that is 8A.3).
 cfb = "0.7"
 
+# --- 8A.4 ODF XMLDSig (macrosignatures.xml) ---
+# Streaming XML reader for the signature document (patched 0.41 — see CLAUDE.md).
+quick-xml = { version = "0.41", features = [] }
+# Base64 for the X509Certificate / SignatureValue / DigestValue payloads.
+base64 = "0.22"
+
 # --- 8A.3 CMS/PKCS#7 + X.509 verification stack (RustCrypto `der 0.7` gen) ---
 # PKCS#7 `SignedData` container parsing (ContentInfo / SignerInfo / SignedAttrs).
 cms = "=0.2.3"

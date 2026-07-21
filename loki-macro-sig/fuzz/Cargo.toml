@@ -24,3 +24,9 @@ name = "extract_vba_signatures"
 path = "fuzz_targets/extract_vba_signatures.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "verify_xmldsig"
+path = "fuzz_targets/verify_xmldsig.rs"
+test = false
+doc = false

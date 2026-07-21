@@ -6,7 +6,7 @@
 //! input — parsing runs before any trust decision (macro spec §12, T9). In-tree
 //! complement to the `cargo-fuzz` target.
 
-use loki_macro_sig::{extract_vba_signatures, verify_signed_data};
+use loki_macro_sig::{extract_vba_signatures, verify_signed_data, verify_xmldsig};
 
 const ADVERSARIAL: &[&[u8]] = &[
     &[],
@@ -48,4 +48,25 @@ fn verify_never_panics_on_adversarial_input() {
     for n in 0..prefix.len() {
         let _ = verify_signed_data(&prefix[..n], b"x");
     }
+}
+
+#[test]
+fn verify_xmldsig_never_panics_on_adversarial_input() {
+    // The ODF XMLDSig verifier parses, canonicalises, and verifies before any
+    // trust decision (T9): malformed XML/base64/DER must degrade to a verdict.
+    let resolve = |uri: &str| Some(uri.as_bytes().to_vec());
+    for c in ADVERSARIAL {
+        let _ = verify_xmldsig(c, resolve);
+    }
+    let partials: &[&[u8]] = &[
+        b"<document-signatures><Signature><SignedInfo>",
+        b"<Signature xmlns=\"http://www.w3.org/2000/09/xmldsig#\"><SignedInfo/></Signature>",
+        b"<a xmlns=\"urn:x\"><b xmlns:p=\"\"></b></a>",
+        b"<r>&notanentity; &amp; &#x41;</r>",
+    ];
+    for c in partials {
+        let _ = verify_xmldsig(c, resolve);
+    }
+    let noise: Vec<u8> = (0u16..12000).map(|i| (i % 251) as u8).collect();
+    let _ = verify_xmldsig(&noise, resolve);
 }

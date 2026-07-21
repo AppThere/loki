@@ -32,7 +32,7 @@ use der::{Decode, Encode};
 
 use crate::verdict::{CertInfo, InvalidReason, SignatureVerdict, UntrustedReason};
 use crate::verify_cert::{cert_info, signer_cert};
-use crate::verify_crypto::{DigestId, SigKind, verify_signature};
+use crate::verify_crypto::{DigestId, EcdsaEncoding, SigKind, verify_signature};
 
 /// Verifies a detached CMS `SignedData` (`pkcs7_der`) over `content`.
 ///
@@ -90,9 +90,23 @@ fn verify_inner(pkcs7_der: &[u8], content: &[u8]) -> Result<SignatureVerdict, In
             }
             // Signature is over the 0x31-tagged re-encoding of signedAttrs.
             let signed_bytes = attrs.to_der().map_err(|_| InvalidReason::Malformed)?;
-            verify_signature(sig_kind, digest, &spki_der, &signed_bytes, signature)
+            verify_signature(
+                sig_kind,
+                digest,
+                &spki_der,
+                &signed_bytes,
+                signature,
+                EcdsaEncoding::Der,
+            )
         }
-        None => verify_signature(sig_kind, digest, &spki_der, content, signature),
+        None => verify_signature(
+            sig_kind,
+            digest,
+            &spki_der,
+            content,
+            signature,
+            EcdsaEncoding::Der,
+        ),
     };
     if !verified {
         return Err(InvalidReason::DigestMismatch);
@@ -106,7 +120,8 @@ fn verify_inner(pkcs7_der: &[u8], content: &[u8]) -> Result<SignatureVerdict, In
 
 /// Picks the `ValidUntrusted` reason with the ADR-mandated precedence: a legacy
 /// (broken) digest wins, then an expired certificate, else plain `NotPinned`.
-fn untrusted_reason(digest: DigestId, info: &CertInfo) -> UntrustedReason {
+/// Shared with the ODF `XMLDSig` verifier (8A.4).
+pub(crate) fn untrusted_reason(digest: DigestId, info: &CertInfo) -> UntrustedReason {
     if digest.is_legacy() {
         UntrustedReason::LegacyAlgorithm
     } else if is_expired(info) {
@@ -118,8 +133,9 @@ fn untrusted_reason(digest: DigestId, info: &CertInfo) -> UntrustedReason {
 
 /// Whether the signing certificate's `notAfter` is in the past relative to the
 /// system clock. Timestamp-backed rescue of expired certs is a later phase, so
-/// expired-without-timestamp is untrusted (ADR-0014 §4.4).
-fn is_expired(info: &CertInfo) -> bool {
+/// expired-without-timestamp is untrusted (ADR-0014 §4.4). Shared with the ODF
+/// `XMLDSig` verifier (8A.4).
+pub(crate) fn is_expired(info: &CertInfo) -> bool {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))

@@ -115,20 +115,32 @@ impl SigKind {
     }
 }
 
+/// How an ECDSA signature value is encoded: DER (CMS / PKCS#7) or the raw
+/// fixed-width `r ‖ s` concatenation `IEEE` P1363 form that `XMLDSig` uses.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum EcdsaEncoding {
+    /// ASN.1 DER `SEQUENCE { r, s }` — CMS `SignedData`.
+    Der,
+    /// Fixed-width `r ‖ s` — W3C `XMLDSig`.
+    P1363,
+}
+
 /// Verifies `signature` over `message` (already the exact signed bytes — the
-/// re-encoded `signedAttrs` or the raw content) using the signer's DER-encoded
-/// `SubjectPublicKeyInfo`. Returns `true` only on a cryptographically valid
-/// signature; every parse/verify failure is `false`.
+/// re-encoded `signedAttrs`, the raw content, or the canonical `SignedInfo`)
+/// using the signer's DER-encoded `SubjectPublicKeyInfo`. `ecdsa_enc` selects the
+/// ECDSA signature encoding (ignored for RSA). Returns `true` only on a
+/// cryptographically valid signature; every parse/verify failure is `false`.
 pub(crate) fn verify_signature(
     kind: SigKind,
     digest: DigestId,
     spki_der: &[u8],
     message: &[u8],
     signature: &[u8],
+    ecdsa_enc: EcdsaEncoding,
 ) -> bool {
     match kind {
         SigKind::Rsa => verify_rsa(digest, spki_der, message, signature),
-        SigKind::Ecdsa => verify_ecdsa_p256(digest, spki_der, message, signature),
+        SigKind::Ecdsa => verify_ecdsa_p256(digest, spki_der, message, signature, ecdsa_enc),
     }
 }
 
@@ -161,12 +173,23 @@ fn verify_rsa(digest: DigestId, spki_der: &[u8], message: &[u8], signature: &[u8
 }
 
 /// ECDSA P-256 verification. The digest is applied by us (prehash) so any
-/// supported hash pairs with the fixed curve; the signature is DER-encoded.
-fn verify_ecdsa_p256(digest: DigestId, spki_der: &[u8], message: &[u8], signature: &[u8]) -> bool {
+/// supported hash pairs with the fixed curve. `enc` picks the signature-value
+/// encoding: DER for CMS, raw `r ‖ s` for `XMLDSig`.
+fn verify_ecdsa_p256(
+    digest: DigestId,
+    spki_der: &[u8],
+    message: &[u8],
+    signature: &[u8],
+    enc: EcdsaEncoding,
+) -> bool {
     let Ok(verifying_key) = p256::ecdsa::VerifyingKey::from_public_key_der(spki_der) else {
         return false;
     };
-    let Ok(sig) = p256::ecdsa::Signature::from_der(signature) else {
+    let sig = match enc {
+        EcdsaEncoding::Der => p256::ecdsa::Signature::from_der(signature),
+        EcdsaEncoding::P1363 => p256::ecdsa::Signature::from_slice(signature),
+    };
+    let Ok(sig) = sig else {
         return false;
     };
     let prehash = digest.digest(message);
