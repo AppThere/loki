@@ -149,6 +149,15 @@ macros-sig-trusted-note =
     Macros from this publisher are enabled when the document opens. Every
     sensitive action still asks first.
 
+# Infobar line for a document enabled because its signer is a trusted publisher.
+macros-sig-enabled-publisher = Macros enabled — signed by a trusted publisher.
+
+# Warning shown atop the macro editor for a signed project (ADR-0014 §4.6):
+# editing invalidates the signature.
+macros-sig-edit-warning =
+    Editing these macros removes the publisher's digital signature. The document
+    will fall back to per-document trust.
+
 # "Trust this publisher" affordance and its confirmation (anti-spoof frame).
 macros-sig-trust-action = Trust this publisher…
 macros-sig-trust-renewed-action = Trust the renewed certificate…

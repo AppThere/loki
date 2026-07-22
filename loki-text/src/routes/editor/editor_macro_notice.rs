@@ -126,6 +126,13 @@ pub(super) fn MacroNoticeBar(
         auto: runner_auto,
         proc: run_proc,
     };
+    // Verify the preserved macro signature on open (ADR-0014 §4.5) before the
+    // auto-run gate, so a trusted-publisher document is recognised at open.
+    super::editor_macro_notice_effects::use_verify_signature_effect(
+        ctx.clone(),
+        svc.clone(),
+        loro_doc,
+    );
     super::editor_macro_notice_effects::use_auto_run_effect(
         ctx.clone(),
         svc.clone(),
@@ -144,24 +151,37 @@ pub(super) fn MacroNoticeBar(
         return rsx! {};
     };
     let decision = svc.decision_for(&payload);
-    let enabled = decision.is_enabled();
+    // A pinned trusted publisher enables the document at open even without a
+    // per-document decision (ADR-0014 §4.5).
+    let publisher_trusted = svc.is_publisher_trusted(&payload);
+    let enabled = decision.is_enabled() || publisher_trusted;
     let project = project_name(&payload);
     let dialect = match payload.kind {
         MacroPayloadKind::OoxmlVba => loki_macro_host::Dialect::Vba,
         MacroPayloadKind::OdfBasic => loki_macro_host::Dialect::StarBasic,
     };
 
-    // Infobar message + primary action depend on the current trust state.
-    let (message, primary) = match decision {
-        TrustDecision::Disabled => (fl!("macros-infobar-disabled"), fl!("macros-infobar-action")),
-        TrustDecision::SessionOnly => (
-            fl!("macros-security-state-session"),
+    // Infobar message + primary action depend on the current trust state. A
+    // trusted-publisher document (no per-document decision) reads as enabled.
+    let (message, primary) = if publisher_trusted && decision == TrustDecision::Disabled {
+        (
+            fl!("macros-sig-enabled-publisher"),
             fl!("macros-security-open-action"),
-        ),
-        TrustDecision::Trusted => (
-            fl!("macros-security-state-trusted"),
-            fl!("macros-security-open-action"),
-        ),
+        )
+    } else {
+        match decision {
+            TrustDecision::Disabled => {
+                (fl!("macros-infobar-disabled"), fl!("macros-infobar-action"))
+            }
+            TrustDecision::SessionOnly => (
+                fl!("macros-security-state-session"),
+                fl!("macros-security-open-action"),
+            ),
+            TrustDecision::Trusted => (
+                fl!("macros-security-state-trusted"),
+                fl!("macros-security-open-action"),
+            ),
+        }
     };
 
     // Clones for the trust-dialog choice handler.

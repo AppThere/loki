@@ -51,6 +51,11 @@ pub(super) struct MacroEditorProps {
 #[component]
 pub(super) fn MacroEditorPanel(props: MacroEditorProps) -> Element {
     let svc = use_context::<MacroService>();
+    // Warn before editing a signed project: the edit invalidates the signature
+    // (ADR-0014 §4.6).
+    let signed = payload_of(&props.ctx.0)
+        .map(|p| svc.signature_for(&p).status.is_signed())
+        .unwrap_or(false);
     let names: Vec<String> = props.view.modules.iter().map(|m| m.name.clone()).collect();
     let originals: Vec<String> = props
         .view
@@ -114,6 +119,16 @@ pub(super) fn MacroEditorPanel(props: MacroEditorProps) -> Element {
             span {
                 style: format!("font-size: {}px; color: {};", tokens::FONT_SIZE_XS, tokens::COLOR_TEXT_ON_CHROME_SECONDARY),
                 {fl!("macros-editor-hint")}
+            }
+
+            if signed {
+                span {
+                    style: format!(
+                        "font-size: {}px; color: {}; border-left: 2px solid {c}; padding-left: 6px;",
+                        tokens::FONT_SIZE_LABEL, tokens::COLOR_TEXT_ON_CHROME, c = tokens::COLOR_MACRO_BADGE,
+                    ),
+                    {fl!("macros-sig-edit-warning")}
+                }
             }
 
             if saved() == Some(true) {

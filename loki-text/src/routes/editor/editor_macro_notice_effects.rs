@@ -23,6 +23,29 @@ pub(super) struct RunnerLaunch {
     pub(super) proc: Signal<Option<String>>,
 }
 
+/// Verifies the document's preserved macro signature once per payload as it
+/// loads (ADR-0014 §4.5, 8A.8) and records the verdict in the [`MacroService`],
+/// so the Document Security panel and the enable-at-open gate reflect a
+/// trusted-publisher signature. Reads `loro_doc` so it re-runs on document load;
+/// guarded per payload-hash so it verifies at most once per document.
+pub(super) fn use_verify_signature_effect(
+    ctx: MacroCtx,
+    svc: MacroService,
+    loro_doc: Signal<Option<loro::LoroDoc>>,
+) {
+    let mut verified = use_signal(|| None::<[u8; 32]>);
+    use_effect(move || {
+        let _loaded = loro_doc.read().is_some();
+        if let Some(payload) = payload_of(&ctx.0) {
+            let key = payload.payload_hash();
+            if verified() != Some(key) {
+                verified.set(Some(key));
+                svc.verify_and_record(&payload);
+            }
+        }
+    });
+}
+
 /// Fires on-open handlers when a newly-opened document authorizes auto-run
 /// (spec §5.6). Reads `loro_doc` so it re-runs on document load; guarded per
 /// payload-hash so it fires at most once per document. Gated by
