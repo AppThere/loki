@@ -45,7 +45,20 @@ pub(super) fn build_edited_payload(
                 .map_err(|e| e.to_string())?;
         }
     }
+    // Editing invalidates any publisher signature (ADR-0014 §4.6). Drop the
+    // signature parts so the saved file is cleanly *unsigned* rather than
+    // carrying a stale signature that other apps flag as tampered; trust falls
+    // back to per-document (the editor re-keys it to the new hash).
+    payload.parts.retain(|p| !is_signature_part(&p.name));
     Ok(payload)
+}
+
+/// Whether `name` is an ODF macro/document signature part (dropped on edit).
+fn is_signature_part(name: &str) -> bool {
+    matches!(
+        name,
+        "META-INF/macrosignatures.xml" | "META-INF/documentsignatures.xml"
+    )
 }
 
 /// The changed modules — pairs of (name, new source) where the draft differs

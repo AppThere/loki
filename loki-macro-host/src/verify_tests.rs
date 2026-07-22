@@ -120,6 +120,26 @@ fn unsigned_odf_payload_is_unsigned() {
 }
 
 #[test]
+fn unreferenced_module_fails_coverage() {
+    // The signature covers Module1 only; a second, unsigned module part is
+    // present. The signature must not vouch for the whole payload.
+    let (sig, _key) = macrosignatures();
+    let mut payload = odf_payload(Some(sig), MODULE);
+    payload.parts.insert(
+        0,
+        PreservedPart::new(
+            "Basic/Standard/Module2.xml",
+            Some("text/xml".to_owned()),
+            b"<module>evil</module>".to_vec(),
+        ),
+    );
+    assert!(matches!(
+        verify_payload(&payload),
+        SignatureVerdict::Invalid(_)
+    ));
+}
+
+#[test]
 fn vba_payload_is_unsigned_pending_content_hash() {
     // VBA verification is deferred (MS-OVBA content hash) — never a false Invalid.
     let payload = MacroPayload::new(

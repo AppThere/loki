@@ -7,7 +7,7 @@ use libfuzzer_sys::fuzz_target;
 fuzz_target!(|data: &[u8]| {
     // A resolver that echoes the URI bytes exercises the digest path without a
     // fixed corpus; the verifier must stay total regardless of what it returns.
-    std::hint::black_box(loki_macro_sig::verify_xmldsig(data, |uri| {
+    std::hint::black_box(loki_macro_sig::verify_xmldsig(data, &[], |uri| {
         Some(uri.as_bytes().to_vec())
     }));
 });

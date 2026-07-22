@@ -29,6 +29,37 @@ fn edits(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 }
 
 #[test]
+fn editing_drops_the_macro_signature_part() {
+    // A signed ODF: editing invalidates the signature, so the rewritten payload
+    // must not carry the stale macrosignatures.xml (ADR-0014 §4.6).
+    let mut original = odf_payload();
+    original.parts.push(PreservedPart::new(
+        "META-INF/macrosignatures.xml",
+        Some("text/xml".into()),
+        b"<document-signatures/>".to_vec(),
+    ));
+    let edited = build_edited_payload(
+        &original,
+        &edits(&[("Module1", "Sub Main\n  Beep\nEnd Sub")]),
+    )
+    .expect("ODF edit applies");
+    assert!(
+        !edited
+            .parts
+            .iter()
+            .any(|p| p.name == "META-INF/macrosignatures.xml"),
+        "the stale signature must be dropped on edit"
+    );
+    // The edited module is still present.
+    assert!(
+        edited
+            .parts
+            .iter()
+            .any(|p| p.name == "Basic/Standard/Module1.xml")
+    );
+}
+
+#[test]
 fn odf_edit_rewrites_module_and_changes_hash() {
     let original = odf_payload();
     let before = original.payload_hash();

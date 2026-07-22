@@ -104,7 +104,7 @@ fn rsa_sha256_valid_is_untrusted_not_pinned() {
     let sig = SigningKey::<Sha256>::new(key).sign(si.as_bytes()).to_vec();
     let xml = macrosig(&si, &sig, &cert);
 
-    match verify_xmldsig(xml.as_bytes(), resolve_module) {
+    match verify_xmldsig(xml.as_bytes(), &[MODULE_URI], resolve_module) {
         SignatureVerdict::ValidUntrusted { signer, reason } => {
             assert_eq!(reason, UntrustedReason::NotPinned);
             assert_eq!(signer.subject_cn, "Contoso Ltd");
@@ -127,7 +127,7 @@ fn ecdsa_p256_sha256_valid_is_untrusted() {
     let sig: p256::ecdsa::Signature = signing_key.sign(si.as_bytes());
     let xml = macrosig(&si, &sig.to_bytes(), &cert);
 
-    match verify_xmldsig(xml.as_bytes(), resolve_module) {
+    match verify_xmldsig(xml.as_bytes(), &[MODULE_URI], resolve_module) {
         SignatureVerdict::ValidUntrusted { reason, .. } => {
             assert_eq!(reason, UntrustedReason::NotPinned);
         }
@@ -146,7 +146,7 @@ fn tampered_part_is_content_mismatch() {
     let xml = macrosig(&si, &sig, &cert);
 
     // Resolver returns different bytes than were signed.
-    let verdict = verify_xmldsig(xml.as_bytes(), |uri| {
+    let verdict = verify_xmldsig(xml.as_bytes(), &[MODULE_URI], |uri| {
         (uri == MODULE_URI).then(|| b"tampered module source".to_vec())
     });
     assert_eq!(
@@ -163,7 +163,28 @@ fn missing_part_is_content_mismatch() {
     let sig = SigningKey::<Sha256>::new(key).sign(si.as_bytes()).to_vec();
     let xml = macrosig(&si, &sig, &cert);
 
-    let verdict = verify_xmldsig(xml.as_bytes(), |_| None);
+    let verdict = verify_xmldsig(xml.as_bytes(), &[MODULE_URI], |_| None);
+    assert_eq!(
+        verdict,
+        SignatureVerdict::Invalid(InvalidReason::ContentMismatch)
+    );
+}
+
+#[test]
+fn signature_not_covering_a_required_part_is_content_mismatch() {
+    // The signature references only MODULE_URI, but a second module must also be
+    // covered — an unsigned module would otherwise run under a "valid" signature.
+    let key = rsa_key();
+    let cert = rsa_cert(&key, "Contoso Ltd", false);
+    let si = signed_info(MODULE, RSA_SHA256);
+    let sig = SigningKey::<Sha256>::new(key).sign(si.as_bytes()).to_vec();
+    let xml = macrosig(&si, &sig, &cert);
+
+    let verdict = verify_xmldsig(
+        xml.as_bytes(),
+        &[MODULE_URI, "Basic/Standard/Module2.xml"],
+        resolve_module,
+    );
     assert_eq!(
         verdict,
         SignatureVerdict::Invalid(InvalidReason::ContentMismatch)
@@ -180,7 +201,7 @@ fn corrupt_signature_is_digest_mismatch() {
     sig[n - 1] ^= 0xFF;
     let xml = macrosig(&si, &sig, &cert);
 
-    let verdict = verify_xmldsig(xml.as_bytes(), resolve_module);
+    let verdict = verify_xmldsig(xml.as_bytes(), &[MODULE_URI], resolve_module);
     assert_eq!(
         verdict,
         SignatureVerdict::Invalid(InvalidReason::DigestMismatch)
@@ -195,7 +216,7 @@ fn expired_cert_is_certificate_expired() {
     let sig = SigningKey::<Sha256>::new(key).sign(si.as_bytes()).to_vec();
     let xml = macrosig(&si, &sig, &cert);
 
-    match verify_xmldsig(xml.as_bytes(), resolve_module) {
+    match verify_xmldsig(xml.as_bytes(), &[MODULE_URI], resolve_module) {
         SignatureVerdict::ValidUntrusted { reason, .. } => {
             assert_eq!(reason, UntrustedReason::CertificateExpired);
         }
@@ -211,7 +232,7 @@ fn legacy_rsa_sha1_is_legacy_algorithm() {
     let sig = SigningKey::<Sha1>::new(key).sign(si.as_bytes()).to_vec();
     let xml = macrosig(&si, &sig, &cert);
 
-    match verify_xmldsig(xml.as_bytes(), resolve_module) {
+    match verify_xmldsig(xml.as_bytes(), &[MODULE_URI], resolve_module) {
         SignatureVerdict::ValidUntrusted { reason, .. } => {
             assert_eq!(reason, UntrustedReason::LegacyAlgorithm);
         }
@@ -228,7 +249,7 @@ fn unknown_signature_method_is_unsupported() {
     let xml = macrosig(&si, &sig, &cert);
 
     assert_eq!(
-        verify_xmldsig(xml.as_bytes(), resolve_module),
+        verify_xmldsig(xml.as_bytes(), &[MODULE_URI], resolve_module),
         SignatureVerdict::Invalid(InvalidReason::UnsupportedAlgorithm)
     );
 }
@@ -236,12 +257,12 @@ fn unknown_signature_method_is_unsupported() {
 #[test]
 fn no_signature_is_unsigned() {
     assert_eq!(
-        verify_xmldsig(b"not xml at all", resolve_module),
+        verify_xmldsig(b"not xml at all", &[], resolve_module),
         SignatureVerdict::Unsigned
     );
     let empty = "<?xml version=\"1.0\"?><document-signatures xmlns=\"urn:oasis:names:tc:opendocument:xmlns:digitalsignature:1.0\"></document-signatures>";
     assert_eq!(
-        verify_xmldsig(empty.as_bytes(), resolve_module),
+        verify_xmldsig(empty.as_bytes(), &[], resolve_module),
         SignatureVerdict::Unsigned
     );
 }
@@ -257,6 +278,6 @@ fn adversarial_input_never_panics() {
         &[0xFF, 0xFE, 0x00, 0x01],
     ];
     for c in cases {
-        let _ = verify_xmldsig(c, resolve_module);
+        let _ = verify_xmldsig(c, &[], resolve_module);
     }
 }

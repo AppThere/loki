@@ -119,8 +119,6 @@ pub(super) fn MacroSignatureSection(props: MacroSignatureSectionProps) -> Elemen
                     style: hint_style(),
                     {fl!("macros-sig-manage-revocation-note")}
                 }
-            } else if summary.status.is_signed() {
-                // Signed but nothing pinned yet — no list, no empty note.
             }
         }
     }

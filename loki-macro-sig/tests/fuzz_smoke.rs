@@ -56,7 +56,7 @@ fn verify_xmldsig_never_panics_on_adversarial_input() {
     // trust decision (T9): malformed XML/base64/DER must degrade to a verdict.
     let resolve = |uri: &str| Some(uri.as_bytes().to_vec());
     for c in ADVERSARIAL {
-        let _ = verify_xmldsig(c, resolve);
+        let _ = verify_xmldsig(c, &[], resolve);
     }
     let partials: &[&[u8]] = &[
         b"<document-signatures><Signature><SignedInfo>",
@@ -65,8 +65,8 @@ fn verify_xmldsig_never_panics_on_adversarial_input() {
         b"<r>&notanentity; &amp; &#x41;</r>",
     ];
     for c in partials {
-        let _ = verify_xmldsig(c, resolve);
+        let _ = verify_xmldsig(c, &[], resolve);
     }
     let noise: Vec<u8> = (0u16..12000).map(|i| (i % 251) as u8).collect();
-    let _ = verify_xmldsig(&noise, resolve);
+    let _ = verify_xmldsig(&noise, &[], resolve);
 }

@@ -39,9 +39,20 @@ use crate::xml_c14n::canonicalize;
 /// exact bytes Loki would hash; returning `None` means the signed part is missing
 /// and the signature fails closed.
 ///
+/// `require_covered` lists the parts the signature **must** cover — every
+/// executable macro module the runner would execute. A signature that does not
+/// reference all of them is [`InvalidReason::ContentMismatch`] (treated as
+/// unsigned), closing the gap where a signature covering nothing — or only a
+/// benign subset — would vouch for unsigned code (T10; "verify against the source
+/// the runner would execute", ADR-0014 §4.5).
+///
 /// Returns [`SignatureVerdict::Unsigned`] when the document holds no signature,
 /// and otherwise the strongest verdict across the signatures present.
-pub fn verify_xmldsig<F>(macrosignatures_xml: &[u8], resolve_part: F) -> SignatureVerdict
+pub fn verify_xmldsig<F>(
+    macrosignatures_xml: &[u8],
+    require_covered: &[&str],
+    resolve_part: F,
+) -> SignatureVerdict
 where
     F: Fn(&str) -> Option<Vec<u8>>,
 {
@@ -51,7 +62,7 @@ where
     }
     let mut best: Option<SignatureVerdict> = None;
     for sig in &signatures {
-        let verdict = verify_one(sig, &resolve_part);
+        let verdict = verify_one(sig, require_covered, &resolve_part);
         best = Some(match best.take() {
             Some(current) => stronger(current, verdict),
             None => verdict,
@@ -61,11 +72,11 @@ where
 }
 
 /// Verifies a single parsed signature.
-fn verify_one<F>(sig: &OdfSignature, resolve_part: &F) -> SignatureVerdict
+fn verify_one<F>(sig: &OdfSignature, require_covered: &[&str], resolve_part: &F) -> SignatureVerdict
 where
     F: Fn(&str) -> Option<Vec<u8>>,
 {
-    match verify_one_inner(sig, resolve_part) {
+    match verify_one_inner(sig, require_covered, resolve_part) {
         Ok(verdict) => verdict,
         Err(reason) => SignatureVerdict::Invalid(reason),
     }
@@ -73,6 +84,7 @@ where
 
 fn verify_one_inner<F>(
     sig: &OdfSignature,
+    require_covered: &[&str],
     resolve_part: &F,
 ) -> Result<SignatureVerdict, InvalidReason>
 where
@@ -88,6 +100,18 @@ where
         .subject_public_key_info
         .to_der()
         .map_err(|_| InvalidReason::Malformed)?;
+
+    // Coverage: the signature must reference every part the runner will execute.
+    // A part that is not among the package-part (non-`#`) references is unsigned,
+    // so the signature vouches for nothing — reject it.
+    let covered = |part: &str| {
+        sig.references
+            .iter()
+            .any(|r| !r.uri.starts_with('#') && r.uri == part)
+    };
+    if require_covered.iter().any(|part| !covered(part)) {
+        return Err(InvalidReason::ContentMismatch);
+    }
 
     // Each package-part reference digest must match the real part bytes.
     for reference in &sig.references {

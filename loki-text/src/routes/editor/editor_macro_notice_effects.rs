@@ -88,7 +88,11 @@ pub(super) fn use_click_dispatch_effect(
     use_effect(move || {
         if let Some(name) = macro_run_request() {
             if let Some(payload) = payload_of(&ctx.0) {
-                if svc.decision_for(&payload).is_enabled() {
+                // `is_enabled` (not `decision_for`) so a trusted-publisher
+                // document — enabled at open without a per-document decision
+                // (ADR-0014 §4.5) — runs a clicked MACROBUTTON instead of
+                // re-prompting.
+                if svc.is_enabled(&payload) {
                     let v = super::editor_macro_extract::extract_view(&payload);
                     if !v.modules.is_empty() {
                         launch.auto.set(false);

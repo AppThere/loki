@@ -37,17 +37,35 @@ pub fn verify_payload(payload: &MacroPayload) -> SignatureVerdict {
 /// Verifies an ODF `macrosignatures.xml` against the payload's other parts. The
 /// resolver maps a reference URI (a package path like
 /// `Basic/Standard/Module1.xml`) to the preserved bytes for that part.
+///
+/// The signature must cover **every executable script part** — each non-empty
+/// `Basic/`/`Scripts/` file the runner could execute — or it is rejected: a
+/// signature that leaves a module unreferenced does not vouch for the code that
+/// runs (ADR-0014 §4.5; the fail-closed reading pending corpus validation,
+/// `TODO(8A.4-corpus)`).
 fn verify_odf(payload: &MacroPayload) -> SignatureVerdict {
     let Some(sig) = payload.parts.iter().find(|p| p.name == ODF_MACRO_SIG) else {
         return SignatureVerdict::Unsigned;
     };
-    verify_xmldsig(&sig.bytes, |uri| {
+    let require_covered: Vec<&str> = payload
+        .parts
+        .iter()
+        .filter(|p| is_executable_script_part(&p.name) && !p.bytes.is_empty())
+        .map(|p| p.name.as_str())
+        .collect();
+    verify_xmldsig(&sig.bytes, &require_covered, |uri| {
         payload
             .parts
             .iter()
             .find(|p| p.name == uri)
             .map(|p| p.bytes.clone())
     })
+}
+
+/// Whether `name` is an executable ODF macro/script file (a `Basic/`/`Scripts/`
+/// file entry, not a directory). These are the parts a signature must cover.
+fn is_executable_script_part(name: &str) -> bool {
+    (name.starts_with("Basic/") || name.starts_with("Scripts/")) && !name.ends_with('/')
 }
 
 #[cfg(test)]
