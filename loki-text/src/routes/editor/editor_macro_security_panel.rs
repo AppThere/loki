@@ -111,6 +111,11 @@ pub(super) fn MacroSecurityPanel(props: MacroSecurityPanelProps) -> Element {
                 "{fl!(\"macros-security-state-label\")}: {state_label} — {props.title}"
             }
 
+            // Signature state + trusted-publisher management (8A.7).
+            super::editor_macro_signature_section::MacroSignatureSection {
+                payload: payload.clone(),
+            }
+
             // Auto-run-on-open opt-in (only meaningful for a trusted document).
             if can_auto_run {
                 div {

@@ -44,6 +44,7 @@ mod editor_macro_run;
 mod editor_macro_runner;
 mod editor_macro_runner_ops;
 mod editor_macro_security_panel;
+mod editor_macro_signature_section;
 mod editor_macro_viewer;
 mod editor_metadata;
 mod editor_metadata_panel;

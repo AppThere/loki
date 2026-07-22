@@ -14,8 +14,10 @@
 //! here, capability grants in [`grants`], UI summaries in [`summary`].
 
 mod grants;
+mod signature;
 mod summary;
 
+pub use signature::{SignatureStatus, SignatureSummary};
 pub use summary::{CapabilityState, DocumentSecurity};
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -23,10 +25,11 @@ use std::path::PathBuf;
 use std::sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use loki_doc_model::io::macros::MacroPayload;
+use loki_macro_sig::SignatureVerdict;
 
 use crate::capability::Capability;
 use crate::error::MacroHostError;
-use crate::trust::{TrustDecision, TrustRecord, TrustStore};
+use crate::trust::{TrustDecision, TrustRecord, TrustStore, TrustedPublisherStore};
 
 /// Per-document, in-memory state that must not be persisted (spec §2.3, §5.4).
 #[derive(Debug, Default)]
@@ -39,7 +42,13 @@ pub(super) struct SessionState {
 
 pub(super) struct Inner {
     pub(super) store: TrustStore,
+    /// The per-user pinned trusted-publisher store (ADR-0014 §4.3, 8A.5).
+    pub(super) publishers: TrustedPublisherStore,
     pub(super) sessions: BTreeMap<[u8; 32], SessionState>,
+    /// The raw (pre-pin) signature verdict recorded for each open document,
+    /// keyed by payload hash. Resolved against `publishers` on read so pinning
+    /// updates the displayed trust live (8A.7).
+    pub(super) signatures: BTreeMap<[u8; 32], SignatureVerdict>,
 }
 
 /// Suite-shared macro-security service. See the module docs.
@@ -54,14 +63,28 @@ impl MacroService {
     /// file never blocks opening a document.
     #[must_use]
     pub fn bootstrap(path: Option<PathBuf>) -> Self {
+        // The pinned-publisher store lives beside the trust store in the same
+        // profile directory (independent files, spec §4.5).
+        let publisher_path = path.as_ref().map(|p| {
+            p.parent().map_or_else(
+                || PathBuf::from("trusted-publishers.json"),
+                |dir| dir.join("trusted-publishers.json"),
+            )
+        });
         let store = match path {
             Some(p) => TrustStore::load_or_empty(p),
             None => TrustStore::default(),
         };
+        let publishers = match publisher_path {
+            Some(p) => TrustedPublisherStore::load_or_empty(p),
+            None => TrustedPublisherStore::default(),
+        };
         Self {
             inner: Arc::new(RwLock::new(Inner {
                 store,
+                publishers,
                 sessions: BTreeMap::new(),
+                signatures: BTreeMap::new(),
             })),
         }
     }

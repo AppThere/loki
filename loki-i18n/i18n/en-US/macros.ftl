@@ -129,3 +129,41 @@ macros-editor-hint =
     is reopened.
 macros-editor-saved = Macros updated — saving the document.
 macros-editor-failed = The macros couldn't be updated, so they were left unchanged.
+
+# ── Phase 8A: digital signatures & trusted publishers (ADR-0014 §5) ───────────
+
+# Signature state shown in the Document Security panel. { $name } is the signer
+# common name; { $issuer } the issuing authority; { $thumbprint } the hex
+# certificate thumbprint.
+macros-sig-label = Signature
+macros-sig-unsigned = Not digitally signed
+macros-sig-invalid = Signature invalid — treated as unsigned
+macros-sig-trusted = Signed by { $name } (trusted publisher)
+macros-sig-untrusted = Signed by { $name } — not trusted
+macros-sig-legacy = Signed by { $name } — with a method Loki will not trust
+macros-sig-expired = Signed by { $name } — the certificate has expired
+macros-sig-renewed = { $name } renewed their certificate
+macros-sig-issuer = Issued by { $issuer }
+macros-sig-thumbprint = Thumbprint { $thumbprint }
+macros-sig-trusted-note =
+    Macros from this publisher are enabled when the document opens. Every
+    sensitive action still asks first.
+
+# "Trust this publisher" affordance and its confirmation (anti-spoof frame).
+macros-sig-trust-action = Trust this publisher…
+macros-sig-trust-renewed-action = Trust the renewed certificate…
+macros-sig-trust-title = Trust this publisher?
+macros-sig-trust-message =
+    Loki will enable macros signed by { $name } automatically whenever you open
+    a document. Only trust a publisher you recognise — this is exactly what an
+    attacker would try to impersonate.
+macros-sig-trust-confirm = Trust publisher
+macros-sig-trust-cancel = Cancel
+
+# Trusted-publisher management list (Document Security panel).
+macros-sig-manage-title = Trusted publishers
+macros-sig-manage-empty = No publishers are trusted on this device.
+macros-sig-manage-remove = Remove
+macros-sig-manage-revocation-note =
+    Removing a publisher is the only way to distrust it — Loki does not check
+    online certificate revocation.
