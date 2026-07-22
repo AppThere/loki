@@ -27,6 +27,13 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [dev-dependencies]
+# End-to-end open-path test: build a real signed ODF macrosignatures.xml.
+rcgen = { version = "=0.13.2", default-features = false, features = ["pem", "ring"] }
+rsa = { version = "=0.9.10", features = ["sha2"] }
+pkcs8 = { version = "=0.10.2", features = ["pem"] }
+sha2 = { version = "=0.10.9", features = ["oid"] }
+base64 = "0.22"
+rand = "=0.8.5"
 
 [package.metadata.docs.rs]
 all-features = true

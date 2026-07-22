@@ -36,6 +36,7 @@ pub mod exec;
 pub mod runtime;
 pub mod service;
 pub mod trust;
+pub mod verify;
 
 /// Re-exported so consumers can name the dialect for [`runtime::MacroRuntime`],
 /// implement [`exec::MacroBackend`], and pass/receive interpreter values
@@ -55,3 +56,4 @@ pub use trust::{
     PersistedGrant, Provenance, PublisherRecord, TrustDecision, TrustRecord, TrustStore,
     TrustedPublisherStore,
 };
+pub use verify::verify_payload;

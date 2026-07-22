@@ -126,6 +126,16 @@ impl MacroService {
             .insert(payload.payload_hash(), verdict);
     }
 
+    /// Verifies `payload`'s preserved signature and records the verdict, returning
+    /// the resulting display summary. The document-open entry point (ADR-0014
+    /// §4.5): after this, [`Self::is_publisher_trusted`] and [`Self::is_enabled`]
+    /// reflect a trusted-publisher signature.
+    pub fn verify_and_record(&self, payload: &MacroPayload) -> SignatureSummary {
+        let verdict = crate::verify::verify_payload(payload);
+        self.set_signature(payload, verdict);
+        self.signature_for(payload)
+    }
+
     /// The display summary for `payload`, resolving its recorded verdict against
     /// the pinned-publisher store. [`SignatureSummary::unsigned`] if none is
     /// recorded.

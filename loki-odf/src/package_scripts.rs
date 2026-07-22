@@ -29,9 +29,25 @@ use crate::limits::read_entry_capped;
 /// Path prefixes that hold macro/script libraries in an ODF package.
 const SCRIPT_PREFIXES: [&str; 2] = ["Basic/", "Scripts/"];
 
+/// The W3C-XMLDSig macro/document signature files. These are **not** declared in
+/// `manifest.xml` (ODF excludes the signature files from the manifest), so they
+/// are collected out-of-band and, on export, kept out of the manifest too. Only
+/// `macrosignatures.xml` is the macro-trust anchor (`documentsignatures.xml` is
+/// display-only), but both are preserved for round-trip fidelity.
+const SIGNATURE_PARTS: [&str; 2] = [
+    "META-INF/macrosignatures.xml",
+    "META-INF/documentsignatures.xml",
+];
+
 /// Returns `true` if `path` lives under a script-library subtree.
 fn is_script_path(path: &str) -> bool {
     SCRIPT_PREFIXES.iter().any(|p| path.starts_with(p))
+}
+
+/// Returns `true` if `path` is an ODF signature file (kept out of the manifest).
+#[must_use]
+pub(crate) fn is_signature_path(path: &str) -> bool {
+    SIGNATURE_PARTS.contains(&path)
 }
 
 /// Collects the ODF script payload, if any, driven by the manifest.
@@ -68,6 +84,19 @@ pub(super) fn collect_scripts<R: Read + Seek>(
     if parts.iter().all(|p| p.bytes.is_empty()) {
         // Only directory entries and no actual script files: nothing to keep.
         return Ok(None);
+    }
+
+    // Preserve any macro/document signature files (not manifest-declared) so the
+    // signature can be verified on open (8A.8) and round-trips on save.
+    for sig_path in SIGNATURE_PARTS {
+        if let Ok(mut entry) = archive.by_name(sig_path) {
+            let bytes = read_entry_capped(&mut entry, sig_path, total_decompressed)?;
+            parts.push(PreservedPart::new(
+                sig_path,
+                Some("text/xml".to_owned()),
+                bytes,
+            ));
+        }
     }
 
     Ok(Some(MacroPayload::new(MacroPayloadKind::OdfBasic, parts)))
@@ -156,5 +185,67 @@ mod tests {
         assert!(is_script_path("Basic/Standard/Module1.xml"));
         assert!(is_script_path("Scripts/python/foo.py"));
         assert!(!is_script_path("Pictures/img.png"));
+    }
+
+    #[test]
+    fn is_signature_path_matches_the_signature_files_only() {
+        assert!(is_signature_path("META-INF/macrosignatures.xml"));
+        assert!(is_signature_path("META-INF/documentsignatures.xml"));
+        assert!(!is_signature_path("Basic/Standard/Module1.xml"));
+        assert!(!is_signature_path("META-INF/manifest.xml"));
+    }
+
+    fn zip_with(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        use std::io::Write;
+        let mut buf = Vec::new();
+        {
+            let mut w = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            let opts = zip::write::FileOptions::<()>::default();
+            for (name, bytes) in entries {
+                w.start_file(*name, opts).unwrap();
+                w.write_all(bytes).unwrap();
+            }
+            w.finish().unwrap();
+        }
+        buf
+    }
+
+    #[test]
+    fn preserves_macrosignatures_alongside_scripts() {
+        let module = b"<module>Sub AutoOpen()\nEnd Sub</module>";
+        let sig = b"<document-signatures>signed</document-signatures>";
+        let zip = zip_with(&[
+            ("Basic/Standard/Module1.xml", module),
+            ("META-INF/macrosignatures.xml", sig),
+        ]);
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(zip)).unwrap();
+        let mut total = 0u64;
+        let payload = collect_scripts(&mut archive, MANIFEST, &mut total)
+            .unwrap()
+            .expect("payload");
+
+        let sig_part = payload
+            .parts
+            .iter()
+            .find(|p| p.name == "META-INF/macrosignatures.xml")
+            .expect("signature preserved");
+        assert_eq!(sig_part.bytes, sig);
+        // The signature is the last part, after the declared script entries.
+        assert_eq!(
+            payload.parts.last().map(|p| p.name.as_str()),
+            Some("META-INF/macrosignatures.xml")
+        );
+    }
+
+    #[test]
+    fn no_signature_part_when_absent() {
+        let module = b"<module/>";
+        let zip = zip_with(&[("Basic/Standard/Module1.xml", module)]);
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(zip)).unwrap();
+        let mut total = 0u64;
+        let payload = collect_scripts(&mut archive, MANIFEST, &mut total)
+            .unwrap()
+            .expect("payload");
+        assert!(!payload.parts.iter().any(|p| is_signature_path(&p.name)));
     }
 }

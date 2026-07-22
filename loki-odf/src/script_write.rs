@@ -29,6 +29,11 @@ pub(crate) fn odf_script_payload(macros: Option<&MacroPayload>) -> Option<&Macro
 pub(crate) fn script_manifest_entries(payload: &MacroPayload) -> String {
     let mut m = String::new();
     for part in &payload.parts {
+        // Signature files are never manifest-declared in ODF; they are written
+        // to the ZIP directly (see `write_script_parts`) but not listed here.
+        if crate::package::scripts::is_signature_path(&part.name) {
+            continue;
+        }
         let media = part.media_type.as_deref().unwrap_or("");
         m.push_str(&format!(
             "<manifest:file-entry manifest:full-path=\"{}\" manifest:media-type=\"{}\"/>",
@@ -99,5 +104,19 @@ mod tests {
         assert!(odf_script_payload(Some(&vba)).is_none());
         let basic = payload();
         assert!(odf_script_payload(Some(&basic)).is_some());
+    }
+
+    #[test]
+    fn manifest_excludes_signature_files() {
+        let mut p = payload();
+        p.parts.push(PreservedPart::new(
+            "META-INF/macrosignatures.xml",
+            Some("text/xml".into()),
+            b"<document-signatures/>".to_vec(),
+        ));
+        let m = script_manifest_entries(&p);
+        // The signature file is written to the ZIP but never manifest-declared.
+        assert!(!m.contains("macrosignatures"));
+        assert!(m.contains("full-path=\"Basic/Standard/Module1.xml\""));
     }
 }

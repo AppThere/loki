@@ -118,10 +118,14 @@ impl MacroService {
         inner.store.decision(&key)
     }
 
-    /// Whether explicitly-invoked macros in `payload` may run.
+    /// Whether explicitly-invoked macros in `payload` may run — the per-document
+    /// trust decision, **or** a signature from a user-pinned trusted publisher
+    /// (enabled at open, ADR-0014 §4.5). Sensitive capabilities still prompt and
+    /// auto-run-on-open still needs its own opt-in — publisher trust only clears
+    /// the per-document enable click.
     #[must_use]
     pub fn is_enabled(&self, payload: &MacroPayload) -> bool {
-        self.decision_for(payload).is_enabled()
+        self.decision_for(payload).is_enabled() || self.is_publisher_trusted(payload)
     }
 
     /// Whether on-open / auto events may fire for `payload` (spec §5.6). Only

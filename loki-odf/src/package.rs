@@ -26,7 +26,7 @@ mod read;
 use read::{collect_images, collect_objects, read_entry, validate_mimetype};
 
 #[path = "package_scripts.rs"]
-mod scripts;
+pub(crate) mod scripts;
 use loki_doc_model::io::macros::MacroPayload;
 use scripts::collect_scripts;
 

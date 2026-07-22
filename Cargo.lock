@@ -4698,12 +4698,18 @@ dependencies = [
 name = "loki-macro-host"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "loki-basic",
  "loki-doc-model",
  "loki-macro-sig",
  "loki-sheet-model",
+ "pkcs8",
+ "rand 0.8.5",
+ "rcgen",
+ "rsa",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.18",
 ]
 
