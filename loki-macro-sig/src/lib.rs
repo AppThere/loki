@@ -37,6 +37,7 @@
 
 mod odf;
 mod odf_dom;
+mod timestamp;
 mod vba;
 mod verdict;
 mod verify;

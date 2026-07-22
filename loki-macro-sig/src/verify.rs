@@ -112,30 +112,46 @@ fn verify_inner(pkcs7_der: &[u8], content: &[u8]) -> Result<SignatureVerdict, In
         return Err(InvalidReason::DigestMismatch);
     }
 
+    // An RFC-3161 timestamp bound to this signature rescues an expired cert
+    // (ADR-0014 §4.4): if it proves the signature predates expiry, the cert
+    // counts as valid-at-signing.
+    let signed_time = crate::timestamp::signed_time(signer, signature);
+
     Ok(SignatureVerdict::ValidUntrusted {
-        reason: untrusted_reason(digest, &info),
+        reason: untrusted_reason(digest, &info, signed_time),
         signer: info,
     })
 }
 
 /// Picks the `ValidUntrusted` reason with the ADR-mandated precedence: a legacy
-/// (broken) digest wins, then an expired certificate, else plain `NotPinned`.
-/// Shared with the ODF `XMLDSig` verifier (8A.4).
-pub(crate) fn untrusted_reason(digest: DigestId, info: &CertInfo) -> UntrustedReason {
+/// (broken) digest wins, then an expired certificate (unless a trusted timestamp
+/// proves it was signed while valid), else plain `NotPinned`. Shared with the ODF
+/// `XMLDSig` verifier (8A.4), which passes `signed_time = None`.
+pub(crate) fn untrusted_reason(
+    digest: DigestId,
+    info: &CertInfo,
+    signed_time: Option<i64>,
+) -> UntrustedReason {
     if digest.is_legacy() {
         UntrustedReason::LegacyAlgorithm
-    } else if is_expired(info) {
+    } else if is_expired_at(info, signed_time) {
         UntrustedReason::CertificateExpired
     } else {
         UntrustedReason::NotPinned
     }
 }
 
-/// Whether the signing certificate's `notAfter` is in the past relative to the
-/// system clock. Timestamp-backed rescue of expired certs is a later phase, so
-/// expired-without-timestamp is untrusted (ADR-0014 §4.4). Shared with the ODF
-/// `XMLDSig` verifier (8A.4).
-pub(crate) fn is_expired(info: &CertInfo) -> bool {
+/// Whether the certificate is expired **for trust purposes**: its `notAfter` is
+/// in the past *and* no bound timestamp proves the signature predates expiry. A
+/// `signed_time` within `[notBefore, notAfter]` means the certificate was valid
+/// when it signed, so expiry no longer withholds trust (ADR-0014 §4.4).
+fn is_expired_at(info: &CertInfo, signed_time: Option<i64>) -> bool {
+    if let Some(t) = signed_time
+        && t >= info.not_before
+        && t <= info.not_after
+    {
+        return false;
+    }
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))

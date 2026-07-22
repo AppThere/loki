@@ -108,8 +108,11 @@ where
         return Err(InvalidReason::DigestMismatch);
     }
 
+    // ODF/XAdES timestamps are a different structure than CMS unsigned attrs
+    // (TODO(8A.6-xades): honour `xades:SignatureTimeStamp`); none is consulted
+    // here, so expiry is judged against the clock alone.
     Ok(SignatureVerdict::ValidUntrusted {
-        reason: untrusted_reason(sig_digest, &info),
+        reason: untrusted_reason(sig_digest, &info, None),
         signer: info,
     })
 }
