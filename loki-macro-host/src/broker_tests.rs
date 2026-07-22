@@ -160,3 +160,55 @@ fn cancel_flag_stops_before_fuel_runs_out() {
     cancel.store(true, std::sync::atomic::Ordering::SeqCst);
     assert_eq!(b.consume_fuel(1), FuelVerdict::Cancelled);
 }
+
+// ── Network capability (ADR-0015 §4.2) ───────────────────────────────────────
+
+use crate::net::NetworkPolicy;
+
+const ORIGIN: &str = "https://api.example.com";
+
+#[test]
+fn network_is_refused_when_disabled() {
+    // The default broker has no network policy → refused (build feature / runtime
+    // setting off). The generic Network capability is also refused.
+    let b = broker(GrantSet::new());
+    assert_eq!(b.evaluate_network(ORIGIN), CapabilityDecision::Refused);
+    assert_eq!(b.evaluate(Capability::Network), CapabilityDecision::Refused);
+}
+
+#[test]
+fn enabled_network_prompts_then_grants_per_origin() {
+    let mut b = broker(GrantSet::new()).with_network(NetworkPolicy::enabled());
+    // First contact with an origin prompts.
+    assert_eq!(b.evaluate_network(ORIGIN), CapabilityDecision::Prompt);
+    // Allowing it grants that origin only.
+    assert!(b.apply_network_prompt(ORIGIN, GrantScope::AllowSession));
+    assert_eq!(b.evaluate_network(ORIGIN), CapabilityDecision::Granted);
+    // A different origin still prompts — no wildcards.
+    assert_eq!(
+        b.evaluate_network("https://other.example.com"),
+        CapabilityDecision::Prompt
+    );
+    // The generic Network capability stays refused regardless.
+    assert_eq!(b.evaluate(Capability::Network), CapabilityDecision::Refused);
+}
+
+#[test]
+fn network_deny_grants_nothing() {
+    let mut b = broker(GrantSet::new()).with_network(NetworkPolicy::enabled());
+    assert!(!b.apply_network_prompt(ORIGIN, GrantScope::Deny));
+    assert_eq!(b.evaluate_network(ORIGIN), CapabilityDecision::Prompt);
+}
+
+#[test]
+fn network_prompt_on_a_disabled_broker_is_a_noop() {
+    let mut b = broker(GrantSet::new()); // network disabled
+    assert!(!b.apply_network_prompt(ORIGIN, GrantScope::AllowSession));
+    assert_eq!(b.evaluate_network(ORIGIN), CapabilityDecision::Refused);
+}
+
+#[test]
+fn udf_never_reaches_the_network_even_when_enabled() {
+    let b = CapabilityBroker::for_udf(1_000).with_network(NetworkPolicy::enabled());
+    assert_eq!(b.evaluate_network(ORIGIN), CapabilityDecision::Denied);
+}

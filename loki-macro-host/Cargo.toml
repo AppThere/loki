@@ -14,6 +14,13 @@ categories = ["gui"]
 # headless crate (macro spec §10, enforced by scripts/check-loki-basic-pure.py).
 # The capability broker is the *only* thing that grants a macro any authority
 # (macro spec §4.3, §5): the interpreter has none of its own.
+[features]
+# Off by default (ADR-0015 §8 decision 1). Compiles in the macro `Network`
+# capability (bounded HTTPS GET); a distribution can exclude the network code by
+# building without it. Even when compiled, network stays off until the runtime
+# setting is also on — both must be on. Off in the iOS build (§8 decision 5).
+macro-net = []
+
 [dependencies]
 loki-basic = { path = "../loki-basic" }
 loki-doc-model = { path = "../loki-doc-model" }

@@ -28,6 +28,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use loki_basic::{FuelVerdict, Host};
 
 use crate::capability::{Capability, CapabilityDecision, GrantScope, RunContext};
+use crate::net::NetworkPolicy;
 use crate::trust::TrustRecord;
 
 /// The capabilities permitted for a run, resolved before it starts.
@@ -85,6 +86,9 @@ pub struct CapabilityBroker {
     context: RunContext,
     resolved: GrantSet,
     once: BTreeSet<Capability>,
+    /// Origin-scoped network policy (ADR-0015 §4.2). Disabled unless the app
+    /// enabled it (build feature + runtime setting).
+    network: NetworkPolicy,
     remaining_fuel: u64,
     cancel: Arc<AtomicBool>,
 }
@@ -98,9 +102,19 @@ impl CapabilityBroker {
             context: RunContext::Interactive,
             resolved,
             once: BTreeSet::new(),
+            network: NetworkPolicy::disabled(),
             remaining_fuel: fuel,
             cancel,
         }
+    }
+
+    /// Sets the origin-scoped network policy for this run (ADR-0015 §4.2). The
+    /// caller enables it only when the `macro-net` build feature and the runtime
+    /// setting are both on, and folds in any session-remembered origins.
+    #[must_use]
+    pub fn with_network(mut self, network: NetworkPolicy) -> Self {
+        self.network = network;
+        self
     }
 
     /// Creates a compute-only broker for a spreadsheet UDF: zero capabilities,
@@ -112,6 +126,7 @@ impl CapabilityBroker {
             context: RunContext::Udf,
             resolved: GrantSet::new(),
             once: BTreeSet::new(),
+            network: NetworkPolicy::disabled(),
             remaining_fuel: fuel,
             cancel: Arc::new(AtomicBool::new(false)),
         }
@@ -171,6 +186,43 @@ impl CapabilityBroker {
         ) {
             self.resolved.allow(cap);
         }
+        true
+    }
+
+    /// Decides how a network request to `origin` is handled (ADR-0015 §4.2).
+    ///
+    /// Network is **not** reachable through the generic [`Self::evaluate`] path
+    /// ([`Capability::Network`] is refused there — a bare "network on" is never a
+    /// grant): it is gated per origin here. `Refused` when network is disabled
+    /// (build feature and/or runtime setting off), `Denied` in a UDF (no prompts,
+    /// §6.3), `Granted` when the origin is already allowed, else `Prompt`.
+    #[must_use]
+    pub fn evaluate_network(&self, origin: &str) -> CapabilityDecision {
+        if !self.network.is_enabled() {
+            return CapabilityDecision::Refused;
+        }
+        if self.context == RunContext::Udf {
+            return CapabilityDecision::Denied;
+        }
+        if self.network.allows(origin) {
+            return CapabilityDecision::Granted;
+        }
+        CapabilityDecision::Prompt
+    }
+
+    /// Applies the user's answer to a per-origin network prompt (ADR-0015 §4.2).
+    ///
+    /// Returns whether the request may proceed. Any allow is honoured for the rest
+    /// of this run; the caller (`MacroService`) may remember an `AllowSession`
+    /// origin for the session but **never** persists it to disk — network is
+    /// session-max, so `AlwaysForDocument` is treated as session here and must not
+    /// be offered by the UI. A `Deny`, a disabled policy, or a network-off build
+    /// records nothing.
+    pub fn apply_network_prompt(&mut self, origin: &str, scope: GrantScope) -> bool {
+        if !self.network.is_enabled() || !scope.is_allow() {
+            return false;
+        }
+        self.network.allow_origin(origin);
         true
     }
 
