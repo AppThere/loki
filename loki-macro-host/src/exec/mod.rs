@@ -21,6 +21,7 @@
 mod edit;
 mod facade;
 mod find;
+mod network;
 
 pub use edit::{DocEdit, EditBatch};
 
@@ -29,6 +30,7 @@ use loki_basic::{DialogRequest, FuelVerdict, Host, ObjectRef, RuntimeError, Valu
 
 use crate::broker::CapabilityBroker;
 use crate::capability::{Capability, CapabilityDecision, GrantScope};
+use crate::http::{HttpError, HttpRequest};
 
 /// The `Application` object handle.
 pub(crate) const APP: ObjectRef = ObjectRef(1);
@@ -40,6 +42,10 @@ pub(crate) const SELECTION: ObjectRef = ObjectRef(3);
 pub(crate) const FIND: ObjectRef = ObjectRef(4);
 /// The `Find.Replacement` object handle (phase 6).
 pub(crate) const REPLACEMENT: ObjectRef = ObjectRef(5);
+/// Base handle for `HttpResponse` objects (8B.2). A response returned by
+/// `Application.HttpGet` is `HTTP_RESPONSE_BASE + index`; well above the fixed
+/// singleton handles so there is no collision.
+pub(crate) const HTTP_RESPONSE_BASE: u32 = 0x1000;
 
 /// The outcome of showing a macro dialog (spec §5.5).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,6 +75,22 @@ pub trait MacroBackend {
 
     /// Renders an already-permitted dialog and returns its result.
     fn show_dialog(&mut self, req: &DialogRequest) -> DialogOutcome;
+
+    /// Prompts the user to allow network access to `origin` (ADR-0015 §4.2) and
+    /// returns the scope. The default denies. A real app renders the badged
+    /// per-host prompt (8B.5) and remembers an `AllowSession` origin for the
+    /// session — never to disk.
+    fn prompt_network(&mut self, _origin: &str) -> GrantScope {
+        GrantScope::Deny
+    }
+
+    /// Performs an already-permitted HTTP request (ADR-0015 §4.1). The default
+    /// refuses, so any backend that does not opt in (UDF, headless, tests) has no
+    /// network. The real app impl (8B.3) enforces HTTPS-only, the header
+    /// deny-list, no ambient credentials, and the size/timeout bounds (8B.4).
+    fn http_get(&mut self, _request: &HttpRequest) -> Result<crate::http::HttpResponse, HttpError> {
+        Err(HttpError::Refused)
+    }
 }
 
 /// A backend that grants nothing and shows nothing — for UDFs and tests.
@@ -95,6 +117,18 @@ pub(crate) struct DocFacade {
     /// The `Find`/`Replacement` search state (phase 6). A singleton backing the
     /// stateless `FIND`/`REPLACEMENT` handles.
     pub(crate) find: FindState,
+    /// `HttpResponse` objects returned by `Application.HttpGet` this run, indexed
+    /// by `handle - HTTP_RESPONSE_BASE` (8B.2).
+    pub(crate) responses: Vec<crate::http::HttpResponse>,
+}
+
+impl DocFacade {
+    /// Stores `response` and returns its object handle.
+    pub(crate) fn push_response(&mut self, response: crate::http::HttpResponse) -> ObjectRef {
+        let handle = ObjectRef(HTTP_RESPONSE_BASE + self.responses.len() as u32);
+        self.responses.push(response);
+        handle
+    }
 }
 
 /// The [`loki_basic::Host`] a macro runs against.
@@ -117,6 +151,7 @@ impl<B: MacroBackend> ExecutionHost<B> {
                 batch: EditBatch::new(),
                 printed: false,
                 find: FindState::default(),
+                responses: Vec::new(),
             },
         }
     }

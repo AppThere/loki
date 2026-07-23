@@ -14,7 +14,10 @@
 
 use loki_basic::{RuntimeError, Value};
 
-use super::{APP, DOC, DocEdit, ExecutionHost, FIND, MacroBackend, REPLACEMENT, SELECTION, find};
+use super::{
+    APP, DOC, DocEdit, ExecutionHost, FIND, HTTP_RESPONSE_BASE, MacroBackend, REPLACEMENT,
+    SELECTION, find,
+};
 use crate::capability::Capability;
 
 /// Property read (`args` empty) or method call (`args` non-empty) on a facade
@@ -27,11 +30,12 @@ pub(super) fn get_member<B: MacroBackend>(
 ) -> Result<Value, RuntimeError> {
     let member = name.to_ascii_lowercase();
     match obj {
-        APP => application_member(&member),
+        APP => application_member(host, &member, args),
         DOC => document_member(host, &member, args),
         SELECTION => find::selection_member(host, &member, args),
         FIND => find::find_member(host, &member, args),
         REPLACEMENT => find::replacement_member(host, &member, args),
+        _ if obj.0 >= HTTP_RESPONSE_BASE => response_member(host, obj, &member, args),
         _ => Err(no_member()),
     }
 }
@@ -75,9 +79,13 @@ pub(super) fn set_member<B: MacroBackend>(
     }
 }
 
-/// `Application.*` members. App identity is not document content, so these read
-/// without a capability.
-fn application_member(member: &str) -> Result<Value, RuntimeError> {
+/// `Application.*` members. App identity is not document content, so those read
+/// without a capability; `HttpGet` gates the `Network` capability per origin.
+fn application_member<B: MacroBackend>(
+    host: &mut ExecutionHost<B>,
+    member: &str,
+    args: &[Value],
+) -> Result<Value, RuntimeError> {
     match member {
         // App identity is not document content — always readable.
         "name" => Ok(Value::Str("Loki".into())),
@@ -85,6 +93,30 @@ fn application_member(member: &str) -> Result<Value, RuntimeError> {
         // The host document, reachable via the application.
         "activedocument" | "thisdocument" | "thiscomponent" | "activeworkbook" | "thisworkbook" => {
             Ok(Value::Object(DOC))
+        }
+        // `Application.HttpGet(url)` — the read-only network verb (ADR-0015 §4.1).
+        "httpget" => host.http_get(arg_string(args, 0)?),
+        _ => Err(no_member()),
+    }
+}
+
+/// `HttpResponse.*` members — reading a fetched response. The network fetch was
+/// the gated act (ADR-0015 §4.1); reading the bytes it returned needs no further
+/// capability.
+fn response_member<B: MacroBackend>(
+    host: &mut ExecutionHost<B>,
+    obj: loki_basic::ObjectRef,
+    member: &str,
+    args: &[Value],
+) -> Result<Value, RuntimeError> {
+    let index = (obj.0 - HTTP_RESPONSE_BASE) as usize; // obj.0 is u32
+    let response = host.doc().responses.get(index).ok_or_else(no_member)?;
+    match member {
+        "status" | "statuscode" => Ok(Value::from_i64_fit(i64::from(response.status))),
+        "text" | "body" | "responsetext" => Ok(Value::Str(response.body_as_string())),
+        "header" => {
+            let name = arg_string(args, 0)?;
+            Ok(Value::Str(response.header(&name).unwrap_or("").to_owned()))
         }
         _ => Err(no_member()),
     }

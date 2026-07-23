@@ -38,6 +38,9 @@ pub struct RunRequest {
     pub fuel: u64,
     /// The shared cancel flag (the UI Stop control).
     pub cancel: Arc<AtomicBool>,
+    /// The origin-scoped network policy (ADR-0015 §4.2). Disabled unless the app
+    /// enables it (build feature + runtime setting) and folds in session origins.
+    pub network: crate::net::NetworkPolicy,
 }
 
 impl RunRequest {
@@ -50,6 +53,7 @@ impl RunRequest {
             grants: GrantSet::new(),
             fuel,
             cancel: Arc::new(AtomicBool::new(false)),
+            network: crate::net::NetworkPolicy::disabled(),
         }
     }
 
@@ -57,6 +61,13 @@ impl RunRequest {
     #[must_use]
     pub fn with_grants(mut self, grants: GrantSet) -> Self {
         self.grants = grants;
+        self
+    }
+
+    /// Builder: set the origin-scoped network policy (ADR-0015 §4.2).
+    #[must_use]
+    pub fn with_network(mut self, network: crate::net::NetworkPolicy) -> Self {
+        self.network = network;
         self
     }
 
@@ -169,7 +180,8 @@ impl MacroRuntime {
                 };
             }
         };
-        let broker = CapabilityBroker::new(req.grants, req.fuel, req.cancel);
+        let broker =
+            CapabilityBroker::new(req.grants, req.fuel, req.cancel).with_network(req.network);
         let host = ExecutionHost::new(broker, backend, req.title, req.text);
         let mut interp = match Interp::new(&module, host) {
             Ok(i) => i,

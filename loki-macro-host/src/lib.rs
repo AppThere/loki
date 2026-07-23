@@ -33,6 +33,7 @@ pub mod capability;
 pub mod error;
 pub mod events;
 pub mod exec;
+pub mod http;
 pub mod net;
 pub mod runtime;
 pub mod service;
@@ -49,6 +50,7 @@ pub use capability::{Capability, CapabilityDecision, GrantScope, RunContext};
 pub use error::MacroHostError;
 pub use events::{EventPhase, auto_open_handlers, handler_phase, is_auto_open};
 pub use exec::{DenyBackend, DialogOutcome, DocEdit, EditBatch, ExecutionHost, MacroBackend};
+pub use http::{HttpError, HttpRequest, HttpResponse, origin_of};
 pub use net::{MACRO_NET_COMPILED, NetworkPolicy};
 pub use runtime::{AutoRunToken, MacroRunError, MacroRuntime, RunOutcome, RunRequest, UdfOutcome};
 pub use service::{
