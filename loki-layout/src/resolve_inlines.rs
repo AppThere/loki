@@ -178,19 +178,11 @@ pub(super) fn field_display_text(f: &Field) -> String {
         return v.clone();
     }
     match &f.kind {
-        FieldKind::PageNumber => "1".to_string(),
-        FieldKind::PageCount => "1".to_string(),
-        FieldKind::Date { .. } => String::new(),
-        FieldKind::Time { .. } => String::new(),
-        FieldKind::Title | FieldKind::Author | FieldKind::Subject | FieldKind::FileName => {
-            String::new()
-        }
-        FieldKind::WordCount => String::new(),
-        FieldKind::CrossReference { .. } => String::new(),
+        FieldKind::PageNumber | FieldKind::PageCount => "1".to_string(),
         // A MACROBUTTON renders its visible label (macro spec §6); the macro is
         // never run from layout.
         FieldKind::MacroButton { display, .. } => display.clone(),
-        FieldKind::Raw { .. } => String::new(),
+        // All other field kinds have no static placeholder text.
         _ => String::new(),
     }
 }

@@ -583,7 +583,6 @@ pub(super) fn EditorInner(path: String) -> Element {
                 open: font_panel_open,
             }
             super::editor_macro_notice::MacroNoticeBar { ctx: super::editor_macro_notice::MacroCtx(doc_state_ribbon.clone()), loro_doc, macro_run_request, save_request }
-
             // ── Colour-picker panel (inline, above ribbon) ────────────────────
             // Opened by the Format tab's Font colour / Highlight triggers.
             if let Some(target) = open_color_picker() {
