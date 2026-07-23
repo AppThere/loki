@@ -69,6 +69,9 @@ pub enum HttpError {
     TooLarge,
     /// The request timed out (8B.4).
     Timeout,
+    /// The user pressed **Stop** while the request was in flight (8B.4). The
+    /// shared cancel flag was tripped mid-fetch; the partial download is dropped.
+    Cancelled,
     /// A transport/TLS error, message for display only.
     Transport(String),
 }

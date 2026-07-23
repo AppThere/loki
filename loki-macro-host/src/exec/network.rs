@@ -80,6 +80,9 @@ fn http_error(error: &HttpError) -> RuntimeError {
         }
         HttpError::TooLarge => RuntimeError::new(7, "Response too large".to_string()),
         HttpError::Timeout => RuntimeError::new(1460, "Network request timed out".to_string()),
+        // User pressed Stop mid-fetch — trappable (18 = user interrupt), though the
+        // run is being torn down regardless.
+        HttpError::Cancelled => RuntimeError::new(18, "Network request cancelled".to_string()),
         HttpError::Transport(msg) => RuntimeError::new(1004, format!("Network error: {msg}")),
     }
 }

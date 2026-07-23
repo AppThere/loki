@@ -5,9 +5,14 @@
 //! `reqwest`, no I/O — these run under either `macro-net` config.
 
 use std::collections::BTreeSet;
+use std::io::Cursor;
+use std::sync::atomic::AtomicBool;
+
+use crate::http::HttpError;
 
 use super::{
-    MAX_BODY_BYTES, MAX_REDIRECTS, RedirectNext, header_is_denied, redirect_next, sanitized_headers,
+    MAX_BODY_BYTES, MAX_REDIRECTS, RedirectNext, header_is_denied, read_body_capped, redirect_next,
+    sanitized_headers,
 };
 
 fn allowed(origins: &[&str]) -> BTreeSet<String> {
@@ -144,6 +149,38 @@ fn redirect_to_non_https_scheme_is_bad() {
         ),
         RedirectNext::Bad
     );
+}
+
+#[test]
+fn body_under_cap_reads_fully() {
+    let data = vec![7u8; 1000];
+    let cancel = AtomicBool::new(false);
+    let out = read_body_capped(Cursor::new(data.clone()), 4096, &cancel).expect("under cap");
+    assert_eq!(out, data);
+}
+
+#[test]
+fn body_exactly_at_cap_reads_fully() {
+    let data = vec![9u8; 4096];
+    let cancel = AtomicBool::new(false);
+    let out = read_body_capped(Cursor::new(data.clone()), 4096, &cancel).expect("at cap");
+    assert_eq!(out, data);
+}
+
+#[test]
+fn body_over_cap_is_too_large() {
+    let data = vec![1u8; 5000];
+    let cancel = AtomicBool::new(false);
+    let err = read_body_capped(Cursor::new(data), 4096, &cancel).expect_err("over cap");
+    assert_eq!(err, HttpError::TooLarge);
+}
+
+#[test]
+fn cancel_before_read_yields_cancelled() {
+    let data = vec![0u8; 5000];
+    let cancel = AtomicBool::new(true); // Stop already pressed
+    let err = read_body_capped(Cursor::new(data), 1_000_000, &cancel).expect_err("cancelled");
+    assert_eq!(err, HttpError::Cancelled);
 }
 
 #[test]
