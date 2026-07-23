@@ -34,7 +34,10 @@ impl<B: MacroBackend> ExecutionHost<B> {
             url,
             headers: Vec::new(),
         };
-        match self.backend.http_get(&request) {
+        // Snapshot the granted origins *after* gating, so the just-allowed origin
+        // (and any prior session grants) bound the backend's redirect following.
+        let allowed = self.broker.network_origins();
+        match self.backend.http_get(&request, &allowed) {
             Ok(response) => Ok(Value::Object(self.doc.push_response(response))),
             Err(e) => Err(http_error(&e)),
         }

@@ -226,6 +226,15 @@ impl CapabilityBroker {
         true
     }
 
+    /// The origins currently allowed for this run — the initial session grants
+    /// plus any answered this run. The request layer follows redirects only
+    /// within this set (ADR-0015 §4.2, 8B.3). Cloned because the fetcher may run
+    /// on another thread and grants can still change on the broker.
+    #[must_use]
+    pub fn network_origins(&self) -> BTreeSet<String> {
+        self.network.origins().map(str::to_string).collect()
+    }
+
     /// Fuel still available (spec §8).
     #[must_use]
     pub fn remaining_fuel(&self) -> u64 {

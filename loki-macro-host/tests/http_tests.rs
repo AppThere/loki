@@ -6,6 +6,7 @@
 //! stands in for the real `reqwest` impl (8B.3): it allows a configured origin
 //! and returns a canned response.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -41,7 +42,17 @@ impl MacroBackend for NetBackend {
             GrantScope::Deny
         }
     }
-    fn http_get(&mut self, request: &HttpRequest) -> Result<HttpResponse, HttpError> {
+    fn http_get(
+        &mut self,
+        request: &HttpRequest,
+        allowed: &BTreeSet<String>,
+    ) -> Result<HttpResponse, HttpError> {
+        // The host passes the granted origins so the backend can bound its
+        // redirect following; the just-granted origin must be present.
+        assert!(
+            allowed.contains("https://api.example.com"),
+            "granted origin should be in the allow-list, got {allowed:?}"
+        );
         *self.last_url.lock().unwrap() = Some(request.url.clone());
         Ok(HttpResponse {
             status: 200,

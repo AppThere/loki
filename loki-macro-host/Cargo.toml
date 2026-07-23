@@ -16,10 +16,11 @@ categories = ["gui"]
 # (macro spec §4.3, §5): the interpreter has none of its own.
 [features]
 # Off by default (ADR-0015 §8 decision 1). Compiles in the macro `Network`
-# capability (bounded HTTPS GET); a distribution can exclude the network code by
-# building without it. Even when compiled, network stays off until the runtime
-# setting is also on — both must be on. Off in the iOS build (§8 decision 5).
-macro-net = []
+# capability (bounded HTTPS GET) — pulling in the `reqwest`/`rustls` transport;
+# a distribution can exclude the network code entirely by building without it.
+# Even when compiled, network stays off until the runtime setting is also on —
+# both must be on. Off in the iOS build (§8 decision 5).
+macro-net = ["dep:reqwest"]
 
 [dependencies]
 loki-basic = { path = "../loki-basic" }
@@ -32,6 +33,17 @@ loki-macro-sig = { path = "../loki-macro-sig" }
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Relative-redirect resolution + origin parsing for the network policy (always
+# compiled — pure Rust, tiny; the reqwest transport below is the gated part).
+url = "2"
+# The macro Network transport (ADR-0015 §4.1, 8B.3): only pulled in under the
+# `macro-net` feature. rustls (pure Rust) to match the blitz-net patch —
+# native-tls would link libssl.so, absent on Android; `blocking` because macro
+# runs happen on a dedicated worker thread, never the UI loop.
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls-webpki-roots",
+    "blocking",
+], optional = true }
 
 [dev-dependencies]
 # End-to-end open-path test: build a real signed ODF macrosignatures.xml.

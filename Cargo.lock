@@ -4706,11 +4706,13 @@ dependencies = [
  "pkcs8",
  "rand 0.8.5",
  "rcgen",
+ "reqwest",
  "rsa",
  "serde",
  "serde_json",
  "sha2",
  "thiserror 2.0.18",
+ "url",
 ]
 
 [[package]]

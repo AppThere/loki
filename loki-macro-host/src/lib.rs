@@ -35,6 +35,14 @@ pub mod events;
 pub mod exec;
 pub mod http;
 pub mod net;
+/// The `reqwest`/`rustls` transport for the macro `Network` capability — only
+/// compiled under the `macro-net` feature (ADR-0015 §8 decision 1, 8B.3).
+#[cfg(feature = "macro-net")]
+pub mod net_fetch;
+// Pure request-shaping policy for `net_fetch`. Compiled with the transport, and
+// under `test` so its (reqwest-free) unit tests run in the default `cargo test`.
+#[cfg(any(feature = "macro-net", test))]
+mod net_policy;
 pub mod runtime;
 pub mod service;
 pub mod trust;
@@ -52,6 +60,8 @@ pub use events::{EventPhase, auto_open_handlers, handler_phase, is_auto_open};
 pub use exec::{DenyBackend, DialogOutcome, DocEdit, EditBatch, ExecutionHost, MacroBackend};
 pub use http::{HttpError, HttpRequest, HttpResponse, origin_of};
 pub use net::{MACRO_NET_COMPILED, NetworkPolicy};
+#[cfg(feature = "macro-net")]
+pub use net_fetch::NetFetcher;
 pub use runtime::{AutoRunToken, MacroRunError, MacroRuntime, RunOutcome, RunRequest, UdfOutcome};
 pub use service::{
     CapabilityState, DocumentSecurity, MacroService, SignatureStatus, SignatureSummary,

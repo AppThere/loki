@@ -25,6 +25,8 @@ mod network;
 
 pub use edit::{DocEdit, EditBatch};
 
+use std::collections::BTreeSet;
+
 use find::FindState;
 use loki_basic::{DialogRequest, FuelVerdict, Host, ObjectRef, RuntimeError, Value};
 
@@ -84,11 +86,19 @@ pub trait MacroBackend {
         GrantScope::Deny
     }
 
-    /// Performs an already-permitted HTTP request (ADR-0015 §4.1). The default
-    /// refuses, so any backend that does not opt in (UDF, headless, tests) has no
-    /// network. The real app impl (8B.3) enforces HTTPS-only, the header
-    /// deny-list, no ambient credentials, and the size/timeout bounds (8B.4).
-    fn http_get(&mut self, _request: &HttpRequest) -> Result<crate::http::HttpResponse, HttpError> {
+    /// Performs an already-permitted HTTP request (ADR-0015 §4.1). `allowed` is
+    /// the set of origins the user has granted this session — the backend follows
+    /// redirects **only** within it (the request layer's redirect re-check).
+    ///
+    /// The default refuses, so any backend that does not opt in (UDF, headless,
+    /// tests) has no network. The real app impl ([`crate::net_fetch::NetFetcher`],
+    /// 8B.3) enforces HTTPS-only, the header deny-list, no ambient credentials,
+    /// and the size/timeout bounds (8B.4).
+    fn http_get(
+        &mut self,
+        _request: &HttpRequest,
+        _allowed: &BTreeSet<String>,
+    ) -> Result<crate::http::HttpResponse, HttpError> {
         Err(HttpError::Refused)
     }
 }
