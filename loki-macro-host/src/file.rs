@@ -11,15 +11,35 @@
 //! seam — the app performs the actual pick + read.
 
 /// A file the user chose through the OS picker. The pick is the grant, so this
-/// carries only what the macro may read: the chosen path (so a script can tell
-/// which file it got) and the bytes. A macro cannot construct one for a path it
-/// names — there is no such API.
+/// carries only what the macro may read: a **user-visible name** (so a script can
+/// tell which file it got) and the bytes. A macro cannot construct one for a path
+/// it names — there is no such API.
+///
+/// Deliberately *not* a path or a platform handle: on Android a pick yields a
+/// content-URI permission token, which is neither meaningful nor safe to hand to
+/// a macro. The app fills this from the token's display name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PickedFile {
-    /// The absolute path the user picked (display / echo only).
-    pub path: String,
+    /// The user-visible name of the picked file (display / echo only).
+    pub display_name: String,
     /// The file's bytes, as read by the app at pick time.
     pub bytes: Vec<u8>,
+}
+
+/// A save target the user chose through the OS picker (the consent, T3).
+///
+/// The two halves are deliberately separate: [`Self::display_name`] is the only
+/// part a macro may see, while [`Self::handle`] is an **opaque** backend
+/// reference used to perform the write — in the app a serialized
+/// `FileAccessToken`, which on Android is a content-URI permission grant. Handing
+/// that to a macro would leak an internal capability reference and read as
+/// gibberish where a script expects a filename.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WriteTarget {
+    /// The user-visible name of the chosen target (shown to the macro).
+    pub display_name: String,
+    /// The opaque backend reference used to write. Never exposed to the macro.
+    pub handle: String,
 }
 
 impl PickedFile {

@@ -91,6 +91,29 @@ fn network_enabled_defaults_off_and_requires_record() {
 }
 
 #[test]
+fn a_disabled_document_never_reports_network_enabled() {
+    // `upsert_decision` deliberately preserves the per-document flags across a
+    // decision change, so a later "Keep disabled" would otherwise leave a stale
+    // network opt-in active — with the panel (which offers the toggle only while
+    // Trusted) giving the user no way to see or revoke it.
+    let svc = MacroService::in_memory();
+    let p = payload(b"net-off");
+    svc.trust_document(&p, None).expect("trust");
+    svc.set_allow_network(&p, true).expect("optin");
+    assert!(svc.network_enabled(&p));
+
+    svc.keep_disabled(&p, None).expect("disable");
+    assert!(
+        !svc.network_enabled(&p),
+        "a disabled document must not keep a live network opt-in"
+    );
+    // Re-trusting restores the user's standing choice rather than silently
+    // dropping it.
+    svc.trust_document(&p, None).expect("re-trust");
+    assert!(svc.network_enabled(&p));
+}
+
+#[test]
 fn session_and_always_grants_resolve_into_grant_set() {
     let svc = MacroService::in_memory();
     let p = payload(b"f");

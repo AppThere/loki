@@ -124,22 +124,25 @@ pub trait MacroBackend {
         None
     }
 
-    /// Raises the OS **save** picker (filtered by `filter`) and returns the path
+    /// Raises the OS **save** picker (filtered by `filter`) and returns the target
     /// the user chose, or `None` if they cancelled (macro spec §5.3, Phase 7B).
     /// The pick is the consent (T3); [`Capability::FileWrite`] has already been
     /// granted. The default returns `None`, so a non-interactive backend writes
     /// nothing.
-    fn pick_write_target(&mut self, _filter: &crate::file::FileFilter) -> Option<String> {
+    fn pick_write_target(
+        &mut self,
+        _filter: &crate::file::FileFilter,
+    ) -> Option<crate::file::WriteTarget> {
         None
     }
 
-    /// Writes `bytes` to `path` (a target the user already chose via
-    /// [`Self::pick_write_target`]) when the macro closes the handle. The default
-    /// refuses, so a non-interactive backend never writes even if a path somehow
-    /// reached it.
+    /// Writes `bytes` to the opaque `handle` of a target the user already chose
+    /// via [`Self::pick_write_target`], when the macro closes the write handle.
+    /// The default refuses, so a non-interactive backend never writes even if a
+    /// handle somehow reached it.
     fn write_file(
         &mut self,
-        _path: &str,
+        _handle: &str,
         _bytes: &[u8],
     ) -> Result<(), crate::file::FileWriteError> {
         Err(crate::file::FileWriteError::Refused)

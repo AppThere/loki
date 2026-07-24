@@ -35,6 +35,36 @@ fn non_https_and_malformed_urls_have_no_origin() {
 }
 
 #[test]
+fn the_default_port_normalizes_away() {
+    // Regression: `origin_of` hand-parsed the authority while redirect targets
+    // were resolved through `url::Url`, which drops the scheme-default port. A
+    // grant taken on an explicit `:443` URL therefore did not match the origin of
+    // its own same-host redirect, and the hop was refused as cross-origin.
+    assert_eq!(
+        origin_of("https://api.example.com:443/x").as_deref(),
+        Some("https://api.example.com")
+    );
+    assert_eq!(
+        origin_of("https://api.example.com:443/x"),
+        origin_of("https://api.example.com/y"),
+    );
+    // A non-default port is still part of the origin.
+    assert_ne!(
+        origin_of("https://api.example.com:8443/x"),
+        origin_of("https://api.example.com/x"),
+    );
+}
+
+#[test]
+fn an_idn_host_normalizes_to_punycode() {
+    // Same class of bug: the client resolves IDN hosts to punycode, so the origin
+    // check must too, or a grant never matches the request that follows it.
+    let unicode = origin_of("https://bücher.example/x");
+    assert_eq!(unicode.as_deref(), Some("https://xn--bcher-kva.example"));
+    assert_eq!(unicode, origin_of("https://xn--bcher-kva.example/y"));
+}
+
+#[test]
 fn response_body_and_headers() {
     let response = HttpResponse {
         status: 200,

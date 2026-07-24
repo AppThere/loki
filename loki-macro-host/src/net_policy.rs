@@ -36,12 +36,15 @@ const READ_CHUNK: usize = 16 * 1024;
 /// prompt-spam (ADR-0015 §4.1).
 pub(crate) const MAX_REDIRECTS: usize = 5;
 
-/// Response body cap in bytes (16 MiB). A macro fetch is meant for small API
-/// payloads, not bulk downloads.
+/// Response body cap in bytes (16 MiB) for a single fetch. A macro fetch is meant
+/// for small API payloads, not bulk downloads. Enforced by streaming in
+/// [`read_body_capped`] (which reads at most `cap + 1` bytes, so an undeclared
+/// over-cap body cannot force a large allocation before the cap trips); the
+/// *cumulative* retention across a run is bounded separately by the execution
+/// host's object tables.
 ///
-// TODO(8B.4): enforce this by streaming with an early cutoff rather than the
-// current read-then-measure check, so a hostile server cannot force a large
-// allocation before the cap trips; also make the cap configurable per run.
+// TODO(8B.4-config): make the cap configurable per run once a network settings
+// surface exists; it is a fixed conservative default until then.
 pub(crate) const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 
 /// Request headers a macro author may never set (matched case-insensitively):

@@ -50,11 +50,12 @@ pub(super) enum UiRequest {
     /// [`UiReply::ReadFile`].
     PickReadFile(FileFilter),
     /// Raise the OS **save** picker and return the chosen target (Phase 7B).
-    /// Answer with [`UiReply::WritePath`].
+    /// Answer with [`UiReply::WriteTarget`].
     PickWriteTarget(FileFilter),
-    /// Flush `bytes` to an already-picked `path` on `.Close` (Phase 7B). Done on
-    /// the UI thread via the file-access token; answer with [`UiReply::WriteResult`].
-    WriteFile { path: String, bytes: Vec<u8> },
+    /// Flush `bytes` to an already-picked target, addressed by its opaque
+    /// `handle`, on `.Close` (Phase 7B). Done on the UI thread via the
+    /// file-access token; answer with [`UiReply::WriteResult`].
+    WriteFile { handle: String, bytes: Vec<u8> },
 }
 
 /// The UI's answer to a [`UiRequest`].
@@ -66,7 +67,7 @@ pub(super) enum UiReply {
     /// A picked + read file, or `None` if the user cancelled / the read failed.
     ReadFile(Option<PickedFile>),
     /// A picked save target, or `None` if the user cancelled.
-    WritePath(Option<String>),
+    WriteTarget(Option<loki_macro_host::WriteTarget>),
     /// The outcome of flushing bytes to the picked target (`Err` message on I/O
     /// failure).
     WriteResult(Result<(), String>),
@@ -181,18 +182,18 @@ impl MacroBackend for BridgeBackend {
     }
 
     /// Raises the save picker on the UI thread and blocks for the chosen target.
-    fn pick_write_target(&mut self, filter: &FileFilter) -> Option<String> {
+    fn pick_write_target(&mut self, filter: &FileFilter) -> Option<loki_macro_host::WriteTarget> {
         match self.ask(UiRequest::PickWriteTarget(filter.clone())) {
-            Some(UiReply::WritePath(path)) => path,
+            Some(UiReply::WriteTarget(target)) => target,
             _ => None,
         }
     }
 
-    /// Flushes `bytes` to the already-picked `path` (on `.Close`), performing the
+    /// Flushes `bytes` to the already-picked target (on `.Close`), performing the
     /// write on the UI thread through the file-access token.
-    fn write_file(&mut self, path: &str, bytes: &[u8]) -> Result<(), FileWriteError> {
+    fn write_file(&mut self, handle: &str, bytes: &[u8]) -> Result<(), FileWriteError> {
         match self.ask(UiRequest::WriteFile {
-            path: path.to_owned(),
+            handle: handle.to_owned(),
             bytes: bytes.to_vec(),
         }) {
             Some(UiReply::WriteResult(Ok(()))) => Ok(()),

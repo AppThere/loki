@@ -57,16 +57,22 @@ impl MacroService {
     }
 
     /// Whether `payload` is allowed to attempt macro network access — the
-    /// per-document half of the runtime setting (ADR-0015 §8). Only ever true for
-    /// a document with a persistent record whose user set the opt-in. The caller
-    /// must additionally check [`crate::MACRO_NET_COMPILED`]; per-origin prompts
-    /// still gate every actual request.
+    /// per-document half of the runtime setting (ADR-0015 §8). The caller must
+    /// additionally check [`crate::MACRO_NET_COMPILED`]; per-origin prompts still
+    /// gate every actual request.
+    ///
+    /// Requires the persistent record to be **currently enabled**, mirroring
+    /// [`Self::authorize_auto_run`]: `upsert_decision` deliberately preserves the
+    /// per-document flags across a decision change, so a document later set to
+    /// "Keep disabled" (or re-enabled for one session only) would otherwise keep
+    /// a stale network opt-in that the Document Security panel — which offers the
+    /// toggle only while `Trusted` — gives the user no way to see or revoke.
     #[must_use]
     pub fn network_enabled(&self, payload: &MacroPayload) -> bool {
         self.read()
             .store
             .get(&payload.payload_hash())
-            .is_some_and(|r| r.allow_network)
+            .is_some_and(|r| r.decision.is_enabled() && r.allow_network)
     }
 
     /// Sets the per-document network-access opt-in (ADR-0015 §8). Requires an

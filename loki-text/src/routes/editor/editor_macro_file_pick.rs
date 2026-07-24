@@ -14,7 +14,7 @@
 use std::io::{Read, Write};
 
 use loki_file_access::{FileAccessToken, FilePicker, PickOptions, SaveOptions};
-use loki_macro_host::{FileFilter, PickedFile};
+use loki_macro_host::{FileFilter, PickedFile, WriteTarget};
 
 use super::editor_macro_bridge::{PendingPrompt, UiReply, UiRequest};
 
@@ -23,6 +23,7 @@ use super::editor_macro_bridge::{PendingPrompt, UiReply, UiRequest};
 enum FileOp {
     Read(FileFilter),
     PickWrite(FileFilter),
+    /// `(opaque handle, bytes)` — the handle came from a prior save pick.
     Write(String, Vec<u8>),
 }
 
@@ -33,14 +34,14 @@ pub(super) async fn try_handle_file_request(prompt: PendingPrompt) -> Option<Pen
     let op = match prompt.request() {
         UiRequest::PickReadFile(filter) => FileOp::Read(filter.clone()),
         UiRequest::PickWriteTarget(filter) => FileOp::PickWrite(filter.clone()),
-        UiRequest::WriteFile { path, bytes } => FileOp::Write(path.clone(), bytes.clone()),
+        UiRequest::WriteFile { handle, bytes } => FileOp::Write(handle.clone(), bytes.clone()),
         // Not a file request — hand it back for the normal prompt path.
         _ => return Some(prompt),
     };
     let reply = match op {
         FileOp::Read(filter) => UiReply::ReadFile(pick_and_read(&filter).await),
-        FileOp::PickWrite(filter) => UiReply::WritePath(pick_write_target(&filter).await),
-        FileOp::Write(path, bytes) => UiReply::WriteResult(write_bytes(&path, &bytes)),
+        FileOp::PickWrite(filter) => UiReply::WriteTarget(pick_write_target(&filter).await),
+        FileOp::Write(handle, bytes) => UiReply::WriteResult(write_bytes(&handle, &bytes)),
     };
     prompt.answer(reply);
     None
@@ -61,31 +62,41 @@ async fn pick_and_read(filter: &FileFilter) -> Option<PickedFile> {
 }
 
 /// Read a picked token into a [`PickedFile`], or `None` on an I/O error.
+///
+/// The macro-visible name is the token's **display name**, never
+/// `token.serialize()` — the latter is URL-safe base64 of the token's JSON (on
+/// Android, a content-URI permission grant), which is meaningless to a script and
+/// leaks an internal capability reference.
 fn read_token(token: &FileAccessToken) -> Option<PickedFile> {
     let mut reader = token.open_read().ok()?;
     let mut bytes = Vec::new();
     reader.read_to_end(&mut bytes).ok()?;
     Some(PickedFile {
-        path: token.serialize(),
+        display_name: token.display_name().to_owned(),
         bytes,
     })
 }
 
-/// Raise the save picker and return the chosen target as a serialized token.
-async fn pick_write_target(filter: &FileFilter) -> Option<String> {
+/// Raise the save picker and return the chosen target: the display name for the
+/// macro, and the serialized token as the opaque write handle.
+async fn pick_write_target(filter: &FileFilter) -> Option<WriteTarget> {
     let opts = SaveOptions {
         mime_type: mime_types(filter).into_iter().next(),
         suggested_name: filter.extensions.first().map(|ext| format!("output.{ext}")),
     };
     match FilePicker::new().pick_file_to_save(opts).await {
-        Ok(Some(token)) => Some(token.serialize()),
+        Ok(Some(token)) => Some(WriteTarget {
+            display_name: token.display_name().to_owned(),
+            handle: token.serialize(),
+        }),
         _ => None,
     }
 }
 
-/// Flush `bytes` to the target the user already picked (deserialized from `path`).
-fn write_bytes(path: &str, bytes: &[u8]) -> Result<(), String> {
-    let token = FileAccessToken::deserialize(path).map_err(|e| e.to_string())?;
+/// Flush `bytes` to the target the user already picked, addressed by the opaque
+/// handle from [`pick_write_target`].
+fn write_bytes(handle: &str, bytes: &[u8]) -> Result<(), String> {
+    let token = FileAccessToken::deserialize(handle).map_err(|e| e.to_string())?;
     let mut writer = token.open_write().map_err(|e| e.to_string())?;
     writer.write_all(bytes).map_err(|e| e.to_string())?;
     Ok(())

@@ -76,20 +76,33 @@ pub enum HttpError {
     Transport(String),
 }
 
-/// The normalized **origin** (`https://host[:port]`, host lower-cased) of `url`,
-/// or `None` if it is not an absolute `https` URL. Origin is the grant unit
-/// (ADR-0015 §4.2). Rejects a URL carrying userinfo (`user@host`) — a common
-/// spoofing shape and a channel for ambient-credential smuggling (§4.3).
+/// The normalized **origin** (`https://host[:port]`) of `url`, or `None` if it is
+/// not an absolute `https` URL. Origin is the grant unit (ADR-0015 §4.2). Rejects
+/// a URL carrying userinfo (`user@host`) — a common spoofing shape and a channel
+/// for ambient-credential smuggling (§4.3).
+///
+/// Normalisation goes through the **same `url` parser the HTTP client and the
+/// redirect resolver use**, deliberately: an origin check that parses differently
+/// from the code that actually issues the request is how origin checks get
+/// bypassed. Concretely, `Url` lower-cases and punycodes the host and omits a
+/// default port, so a grant for `https://host:443` and a redirect resolved to
+/// `https://host` compare equal instead of being spuriously refused.
 #[must_use]
 pub fn origin_of(url: &str) -> Option<String> {
-    let rest = url.strip_prefix("https://")?;
-    // The authority ends at the first path/query/fragment delimiter.
-    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let authority = &rest[..end];
-    if authority.is_empty() || authority.contains('@') || authority.contains('\\') {
+    let parsed = url::Url::parse(url).ok()?;
+    if parsed.scheme() != "https" {
         return None;
     }
-    Some(format!("https://{}", authority.to_ascii_lowercase()))
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return None;
+    }
+    let host = parsed.host_str()?;
+    match parsed.port() {
+        // `Url::port` is `None` when the port equals the scheme default (443),
+        // which is exactly the normalisation we want.
+        Some(port) => Some(format!("https://{host}:{port}")),
+        None => Some(format!("https://{host}")),
+    }
 }
 
 #[cfg(test)]

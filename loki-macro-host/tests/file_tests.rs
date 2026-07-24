@@ -13,7 +13,7 @@ use std::sync::Mutex;
 use loki_basic::{Dialect, DialogRequest};
 use loki_macro_host::{
     Capability, DialogOutcome, FileFilter, FileWriteError, GrantScope, MacroBackend, MacroRuntime,
-    PickedFile, RunRequest,
+    PickedFile, RunRequest, WriteTarget,
 };
 
 /// A backend that answers `FileRead`/`DocWrite` per its flags and returns a
@@ -53,7 +53,7 @@ fn run(src: &str, backend: FileBackend) -> loki_macro_host::RunOutcome {
 
 fn picked(text: &str) -> PickedFile {
     PickedFile {
-        path: "/picked/data.txt".to_owned(),
+        display_name: "data.txt".to_owned(),
         bytes: text.as_bytes().to_vec(),
     }
 }
@@ -170,15 +170,19 @@ impl MacroBackend for WriteBackend {
     fn show_dialog(&mut self, _req: &DialogRequest) -> DialogOutcome {
         DialogOutcome::Cancelled
     }
-    fn pick_write_target(&mut self, filter: &FileFilter) -> Option<String> {
+    fn pick_write_target(&mut self, filter: &FileFilter) -> Option<WriteTarget> {
         *self.seen_filter.lock().unwrap() = Some(filter.extensions.clone());
-        self.target.clone()
+        self.target.clone().map(|handle| WriteTarget {
+            // The app surfaces a friendly name; the handle stays opaque.
+            display_name: "output.txt".to_owned(),
+            handle,
+        })
     }
-    fn write_file(&mut self, path: &str, bytes: &[u8]) -> Result<(), FileWriteError> {
+    fn write_file(&mut self, handle: &str, bytes: &[u8]) -> Result<(), FileWriteError> {
         self.written
             .lock()
             .unwrap()
-            .push((path.to_owned(), bytes.to_vec()));
+            .push((handle.to_owned(), bytes.to_vec()));
         self.write_result.clone()
     }
 }
@@ -274,6 +278,45 @@ fn a_write_failure_on_close_is_trappable() {
 }
 
 #[test]
+fn a_failed_close_leaves_the_handle_open_so_a_retry_really_retries() {
+    // Regression: `.Close` used to mark the handle closed *before* the write, so
+    // after a failed flush a second `.Close` returned success without writing —
+    // an `On Error`-retrying macro would believe the file had been saved.
+    let (backend, _seen, written) = write_backend(
+        true,
+        Some("/out.txt"),
+        Err(FileWriteError::Io("disk full".to_owned())),
+    );
+    let src = "Sub Main()\n On Error Resume Next\n Dim f As Object\n \
+         Set f = Application.OpenFileForWriting(\"*.txt\")\n f.Write \"data\"\n \
+         f.Close\n f.Close\n \
+         Application.ActiveDocument.AppendText CStr(Err.Number <> 0)\nEnd Sub";
+    let out = run_write(src, backend);
+    out.result
+        .expect("the macro trapped both failures and finished");
+    // Both closes attempted the write — the second was not silently swallowed.
+    assert_eq!(written.lock().unwrap().len(), 2);
+    // And the macro still sees an error after the retry, not a false success.
+    assert_eq!(out.batch.apply_to(String::new()), "True");
+}
+
+#[test]
+fn a_successful_close_is_idempotent() {
+    // The flip side: a close that *did* write must not write again.
+    let (backend, _seen, written) = write_backend(true, Some("/out.txt"), Ok(()));
+    let src = "Sub Main()\n Dim f As Object\n \
+         Set f = Application.OpenFileForWriting(\"*.txt\")\n f.Write \"data\"\n \
+         f.Close\n f.Close\nEnd Sub";
+    let out = run_write(src, backend);
+    out.result.expect("clean run");
+    assert_eq!(
+        written.lock().unwrap().len(),
+        1,
+        "the second Close is a no-op"
+    );
+}
+
+#[test]
 fn an_unclosed_write_handle_is_not_flushed() {
     // No `.Close` → the buffered text is never written. Explicit-close contract.
     let (backend, _seen, written) = write_backend(true, Some("/out.txt"), Ok(()));
@@ -300,7 +343,8 @@ fn path_and_length_members_read_back() {
          Application.ActiveDocument.AppendText f.Path & \":\" & CStr(f.Length)\nEnd Sub";
     let out = run(src, backend);
     out.result.expect("clean run");
-    assert_eq!(out.batch.apply_to(String::new()), "/picked/data.txt:5");
+    // `.Path` is the user-visible name, never a platform path or opaque handle.
+    assert_eq!(out.batch.apply_to(String::new()), "data.txt:5");
     // No filter argument → any file.
     assert_eq!(seen.lock().unwrap().as_deref(), Some(&[][..]));
 }

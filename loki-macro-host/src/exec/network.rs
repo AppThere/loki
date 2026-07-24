@@ -38,7 +38,12 @@ impl<B: MacroBackend> ExecutionHost<B> {
         // (and any prior session grants) bound the backend's redirect following.
         let allowed = self.broker.network_origins();
         match self.backend.http_get(&request, &allowed) {
-            Ok(response) => Ok(Value::Object(self.doc.push_response(response))),
+            Ok(response) => match self.doc.push_response(response) {
+                Some(handle) => Ok(Value::Object(handle)),
+                // The run is holding too many objects / too many retained bytes;
+                // trappable so a fetch loop degrades instead of exhausting memory.
+                None => Err(super::file::too_many_objects()),
+            },
             Err(e) => Err(http_error(&e)),
         }
     }

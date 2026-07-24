@@ -120,12 +120,19 @@ fn write_file_member<B: MacroBackend>(
 ) -> Result<Value, RuntimeError> {
     let index = (obj.0 - WRITE_FILE_BASE) as usize; // obj.0 is u32
     match member {
+        // The user-visible name only — never the opaque backend handle.
         "path" | "fullname" | "name" => {
             let handle = host.doc().write_files.get(index).ok_or_else(no_member)?;
-            Ok(Value::Str(handle.path.clone()))
+            Ok(Value::Str(handle.target.display_name.clone()))
         }
         "write" | "writeline" | "print" => {
             let text = arg_string(args, 0)?;
+            // Charge the buffered text against the run's retention budget so a
+            // `.Write` loop cannot grow an unbounded in-memory buffer.
+            let charge = text.len() + usize::from(member == "writeline");
+            if !host.doc_mut().reserve(charge) {
+                return Err(super::file::too_many_objects());
+            }
             let handle = host
                 .doc_mut()
                 .write_files
@@ -156,7 +163,8 @@ fn file_member<B: MacroBackend>(
     let index = (obj.0 - FILE_HANDLE_BASE) as usize; // obj.0 is u32
     let file = host.doc().files.get(index).ok_or_else(no_member)?;
     match member {
-        "path" | "fullname" | "name" => Ok(Value::Str(file.path.clone())),
+        // The user-visible name only — never a platform path/handle.
+        "path" | "fullname" | "name" => Ok(Value::Str(file.display_name.clone())),
         "text" | "readall" | "readalltext" | "content" => Ok(Value::Str(file.text())),
         "length" | "len" | "size" => Ok(Value::from_i64_fit(file.len_bytes() as i64)),
         _ => Err(no_member()),

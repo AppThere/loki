@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use loki_macro_host::{
     Capability, Dialect, DialogOutcome, GrantScope, MacroRuntime, NetworkPolicy, PickedFile,
-    RunOutcome, RunRequest,
+    RunOutcome, RunRequest, WriteTarget,
 };
 
 use super::{BridgeBackend, UiReply, UiRequest, prompt_channel};
@@ -207,7 +207,7 @@ fn a_file_read_round_trips_through_the_bridge() {
                 Some(UiReply::Grant(GrantScope::AllowSession))
             }
             UiRequest::PickReadFile(_) => Some(UiReply::ReadFile(Some(PickedFile {
-                path: "/f.txt".to_owned(),
+                display_name: "f.txt".to_owned(),
                 bytes: b"from disk".to_vec(),
             }))),
             _ => None,
@@ -233,21 +233,25 @@ fn a_file_write_round_trips_through_the_bridge() {
             UiRequest::Capability(Capability::FileWrite) => {
                 Some(UiReply::Grant(GrantScope::AllowSession))
             }
-            UiRequest::PickWriteTarget(_) => Some(UiReply::WritePath(Some("/out.txt".to_owned()))),
-            UiRequest::WriteFile { path, bytes } => {
-                *sink.lock().unwrap() = Some((path.clone(), bytes.clone()));
+            UiRequest::PickWriteTarget(_) => Some(UiReply::WriteTarget(Some(WriteTarget {
+                display_name: "out.txt".to_owned(),
+                handle: "opaque-token".to_owned(),
+            }))),
+            UiRequest::WriteFile { handle, bytes } => {
+                *sink.lock().unwrap() = Some((handle.clone(), bytes.clone()));
                 Some(UiReply::WriteResult(Ok(())))
             }
             _ => None,
         },
     );
     out.result.expect("clean run");
-    let (path, bytes) = flushed
+    let (handle, bytes) = flushed
         .lock()
         .unwrap()
         .clone()
         .expect("write reached the UI");
-    assert_eq!(path, "/out.txt");
+    // The flush is addressed by the *opaque* handle, not the display name.
+    assert_eq!(handle, "opaque-token");
     assert_eq!(bytes, b"hello\n");
 }
 
