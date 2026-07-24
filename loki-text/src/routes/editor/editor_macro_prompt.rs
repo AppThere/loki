@@ -10,7 +10,9 @@
 //! `MsgBox`/`InputBox` uses the badged `MacroDialogFrame` — both frames app
 //! chrome never uses, so a macro dialog can't impersonate a real one.
 
-use appthere_ui::{AtPermissionPrompt, MacroDialogFrame, MacroGrantChoice, tokens};
+use appthere_ui::{
+    AtNetworkPrompt, AtPermissionPrompt, MacroDialogFrame, MacroGrantChoice, tokens,
+};
 use dioxus::prelude::*;
 use loki_i18n::fl;
 use loki_macro_host::{Capability, DialogKind, DialogOutcome, GrantScope};
@@ -22,6 +24,8 @@ use super::editor_macro_bridge::{UiReply, UiRequest};
 pub(super) enum PromptKind {
     /// A first-use capability prompt.
     Capability(Capability),
+    /// A first-request-per-origin network prompt carrying the destination origin.
+    Network(String),
     /// A `MsgBox` — message + optional title.
     Message {
         prompt: String,
@@ -40,6 +44,7 @@ impl PromptKind {
     pub(super) fn from_request(req: &UiRequest) -> Self {
         match req {
             UiRequest::Capability(cap) => PromptKind::Capability(*cap),
+            UiRequest::Network(origin) => PromptKind::Network(origin.clone()),
             UiRequest::Dialog(d) => match d.kind {
                 DialogKind::Message => PromptKind::Message {
                     prompt: d.prompt.clone(),
@@ -75,6 +80,22 @@ pub(super) fn MacroPromptView(
                 allow_once_label: fl!("macros-perm-allow-once"),
                 allow_session_label: fl!("macros-perm-allow-session"),
                 always_label: fl!("macros-perm-allow-always"),
+                on_choice: move |choice: MacroGrantChoice| {
+                    on_answer.call(UiReply::Grant(scope_of(choice)));
+                },
+            }
+        },
+        PromptKind::Network(origin) => rsx! {
+            AtNetworkPrompt {
+                badge_label: fl!("macros-badge"),
+                project_name: project,
+                document_title: doc_title,
+                request_title: fl!("macros-net-title"),
+                origin,
+                composition_warning: fl!("macros-net-warning"),
+                deny_label: fl!("macros-net-deny"),
+                allow_once_label: fl!("macros-net-allow-once"),
+                allow_session_label: fl!("macros-net-allow-session"),
                 on_choice: move |choice: MacroGrantChoice| {
                     on_answer.call(UiReply::Grant(scope_of(choice)));
                 },

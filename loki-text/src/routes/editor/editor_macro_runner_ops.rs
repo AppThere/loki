@@ -167,7 +167,13 @@ pub(super) fn answer_prompt(
 ) {
     let cap = pending.read().as_ref().and_then(|p| match p.request() {
         UiRequest::Capability(c) => Some(*c),
-        UiRequest::Dialog(_) => None,
+        // A network grant is session-max and recorded by the broker's
+        // per-origin path during the run (ADR-0015 §4.2), never as a persisted
+        // capability grant here.
+        // TODO(8B.5-session-origins): remember an AllowSession origin in the
+        // MacroService (session memory, never disk) and fold it into each run's
+        // NetworkPolicy so an already-allowed origin does not re-prompt per run.
+        UiRequest::Network(_) | UiRequest::Dialog(_) => None,
     });
     if let (Some(cap), Some(payload), UiReply::Grant(scope)) = (cap, payload, &reply) {
         match scope {

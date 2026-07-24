@@ -30,11 +30,16 @@ use std::sync::mpsc::{Sender, channel};
 
 use futures_channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use loki_macro_host::{Capability, DialogOutcome, DialogRequest, GrantScope, MacroBackend};
+#[cfg(feature = "macro-net")]
+use loki_macro_host::{HttpError, HttpRequest, HttpResponse};
 
 /// A request from the running macro that needs a UI answer.
 pub(super) enum UiRequest {
     /// A first-use capability prompt (spec §5.4) — answer with a [`GrantScope`].
     Capability(Capability),
+    /// A first-request-per-origin network prompt (ADR-0015 §4.2) carrying the
+    /// destination origin — answer with a session-max [`GrantScope`].
+    Network(String),
     /// A macro-shown dialog (spec §5.5) — answer with a [`DialogOutcome`].
     Dialog(DialogRequest),
 }
@@ -87,12 +92,21 @@ pub(super) fn prompt_channel() -> (PromptSender, PromptReceiver) {
 pub(super) struct BridgeBackend {
     req_tx: PromptSender,
     cancel: Arc<AtomicBool>,
+    /// The HTTPS fetcher, built lazily on first `HttpGet` (ADR-0015 §4.1, 8B.5).
+    /// Only present when the `macro-net` feature is compiled in.
+    #[cfg(feature = "macro-net")]
+    fetcher: Option<loki_macro_host::NetFetcher>,
 }
 
 impl BridgeBackend {
     /// Creates a backend that posts to `req_tx` and honours `cancel`.
     pub(super) fn new(req_tx: PromptSender, cancel: Arc<AtomicBool>) -> Self {
-        Self { req_tx, cancel }
+        Self {
+            req_tx,
+            cancel,
+            #[cfg(feature = "macro-net")]
+            fetcher: None,
+        }
     }
 
     /// Sends `request` to the UI and blocks for the reply, mapping a cancel or a
@@ -121,11 +135,38 @@ impl MacroBackend for BridgeBackend {
         }
     }
 
+    fn prompt_network(&mut self, origin: &str) -> GrantScope {
+        // The UI clamps the offered choices to session-max; a `Deny` (or a gone
+        // UI / cancel) is the safe default.
+        match self.ask(UiRequest::Network(origin.to_owned())) {
+            Some(UiReply::Grant(scope)) => scope,
+            _ => GrantScope::Deny,
+        }
+    }
+
     fn show_dialog(&mut self, req: &DialogRequest) -> DialogOutcome {
         match self.ask(UiRequest::Dialog(req.clone())) {
             Some(UiReply::Dialog(outcome)) => outcome,
             _ => DialogOutcome::Cancelled,
         }
+    }
+
+    /// Performs the gated HTTPS GET on the worker thread via the `reqwest`
+    /// fetcher, passing the shared cancel flag so **Stop** aborts it (8B.5).
+    /// Only compiled with `macro-net`; without it the trait default refuses.
+    #[cfg(feature = "macro-net")]
+    fn http_get(
+        &mut self,
+        request: &HttpRequest,
+        allowed: &std::collections::BTreeSet<String>,
+    ) -> Result<HttpResponse, HttpError> {
+        if self.fetcher.is_none() {
+            self.fetcher = Some(loki_macro_host::NetFetcher::new()?);
+        }
+        let Some(fetcher) = self.fetcher.as_ref() else {
+            return Err(HttpError::Transport("fetcher unavailable".to_owned()));
+        };
+        fetcher.fetch(request, allowed, &self.cancel)
     }
 }
 

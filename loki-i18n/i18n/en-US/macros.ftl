@@ -76,6 +76,16 @@ macros-cap-print-title = Print this document?
 macros-cap-print-consequence = The macro wants to send the document to the printer.
 macros-cap-network-name = Network access
 
+# Per-host network-access prompt (ADR-0015 §4.2/§4.6). Grants are session-max —
+# there is no "always for this document" option. The composition warning is
+# always shown because a macro can always read the document (DocRead is baseline).
+macros-net-title = Allow network access?
+macros-net-warning =
+    This document can also read your content; allowing network access lets a macro send it to this site.
+macros-net-deny = Deny
+macros-net-allow-once = Allow once
+macros-net-allow-session = Allow for this session
+
 # Document Security panel (macro spec §9.4).
 macros-security-title = Document security
 macros-security-close = Close

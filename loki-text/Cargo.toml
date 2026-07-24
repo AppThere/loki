@@ -15,6 +15,14 @@ crate-type = ["cdylib", "rlib"]
 name = "loki-text-desktop"
 path = "src/main.rs"
 
+[features]
+# Compiles in the macro `Network` capability transport (ADR-0015 §8 decision 1,
+# 8B.5): enables `loki-macro-host/macro-net` (the `reqwest`/`rustls` fetcher) and
+# the app-side per-host prompt + `HttpGet` wiring. Off by default; even when
+# compiled, network stays off until the runtime setting is also on. Excluded from
+# the iOS build (§8 decision 5).
+macro-net = ["loki-macro-host/macro-net"]
+
 [dependencies]
 # Dioxus Native (Blitz renderer) with client-side router.
 dioxus          = { version = "=0.7.9", features = ["native", "router"] }

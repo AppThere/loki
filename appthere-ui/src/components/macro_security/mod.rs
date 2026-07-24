@@ -14,10 +14,12 @@
 //! dependency (the hosting app maps the choice to a `MacroService` call).
 
 mod frame;
+mod network;
 mod permission;
 mod trust;
 
 pub use frame::{MacroDialogFrame, MacroDialogFrameProps};
+pub use network::{AtNetworkPrompt, AtNetworkPromptProps};
 pub use permission::{AtPermissionPrompt, AtPermissionPromptProps};
 pub use trust::{AtMacroTrustDialog, AtMacroTrustDialogProps};
 

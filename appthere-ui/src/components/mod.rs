@@ -30,8 +30,9 @@ pub use document_tab::{AtDocumentTab, AtDocumentTabProps};
 pub use home_tab::{AtHomeTab, AtHomeTabProps, BuiltinTemplate, RecentDocument};
 pub use infobar::{AtInfobar, AtInfobarProps};
 pub use macro_security::{
-    AtMacroTrustDialog, AtMacroTrustDialogProps, AtPermissionPrompt, AtPermissionPromptProps,
-    MacroDialogFrame, MacroDialogFrameProps, MacroGrantChoice, MacroTrustChoice,
+    AtMacroTrustDialog, AtMacroTrustDialogProps, AtNetworkPrompt, AtNetworkPromptProps,
+    AtPermissionPrompt, AtPermissionPromptProps, MacroDialogFrame, MacroDialogFrameProps,
+    MacroGrantChoice, MacroTrustChoice,
 };
 pub use overlay::{
     use_backdrop, use_provide_backdrop, AtBackdropContext, AtBackdropHost, BACKDROP_Z_INDEX,

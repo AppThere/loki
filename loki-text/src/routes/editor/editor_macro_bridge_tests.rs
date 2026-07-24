@@ -11,7 +11,8 @@ use std::sync::mpsc::channel;
 use std::time::Duration;
 
 use loki_macro_host::{
-    Capability, Dialect, DialogOutcome, GrantScope, MacroRuntime, RunOutcome, RunRequest,
+    Capability, Dialect, DialogOutcome, GrantScope, MacroRuntime, NetworkPolicy, RunOutcome,
+    RunRequest,
 };
 
 use super::{BridgeBackend, UiReply, UiRequest, prompt_channel};
@@ -23,6 +24,18 @@ fn drive(
     src: &'static str,
     proc: &'static str,
     cancel: Arc<AtomicBool>,
+    policy: impl FnMut(&UiRequest) -> Option<UiReply>,
+) -> RunOutcome {
+    drive_net(src, proc, cancel, false, policy)
+}
+
+/// Like [`drive`], but `network` enables the run's [`NetworkPolicy`] so an
+/// `HttpGet` reaches the per-origin gate (and thus the network prompt).
+fn drive_net(
+    src: &'static str,
+    proc: &'static str,
+    cancel: Arc<AtomicBool>,
+    network: bool,
     mut policy: impl FnMut(&UiRequest) -> Option<UiReply>,
 ) -> RunOutcome {
     let (req_tx, mut req_rx) = prompt_channel();
@@ -32,7 +45,10 @@ fn drive(
     let proc = proc.to_string();
     std::thread::spawn(move || {
         let backend = BridgeBackend::new(req_tx, cancel_worker.clone());
-        let req = RunRequest::new("Doc", "seed", 5_000_000).with_cancel(cancel_worker);
+        let mut req = RunRequest::new("Doc", "seed", 5_000_000).with_cancel(cancel_worker);
+        if network {
+            req = req.with_network(NetworkPolicy::enabled());
+        }
         let out = MacroRuntime::run(&src, Dialect::Vba, &proc, req, backend);
         let _keep = result_tx.send(out);
     });
@@ -110,6 +126,37 @@ fn a_dialog_is_answered_by_the_ui() {
     );
     out.result.expect("dialog run finishes");
     assert!(answered.load(Ordering::SeqCst), "the dialog reached the UI");
+}
+
+#[test]
+fn a_network_request_prompts_per_origin_and_deny_traps() {
+    // With network enabled, HttpGet to a new origin reaches the per-origin
+    // prompt (UiRequest::Network with the exact origin). Answering Deny traps
+    // the call — no fetch is attempted, so this holds under either macro-net
+    // config.
+    let saw_origin = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&saw_origin);
+    let out = drive_net(
+        "Function Main() As Long\n On Error Resume Next\n \
+         Application.HttpGet \"https://api.example.com/ping\"\n Main = Err.Number\nEnd Function",
+        "Main",
+        Arc::new(AtomicBool::new(false)),
+        true,
+        move |req| match req {
+            UiRequest::Network(origin) => {
+                assert_eq!(origin, "https://api.example.com");
+                flag.store(true, Ordering::SeqCst);
+                Some(UiReply::Grant(GrantScope::Deny))
+            }
+            _ => None,
+        },
+    );
+    out.result
+        .expect("the macro trapped the denial and finished");
+    assert!(
+        saw_origin.load(Ordering::SeqCst),
+        "the origin prompt reached the UI"
+    );
 }
 
 #[test]
