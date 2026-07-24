@@ -70,8 +70,13 @@ pub(super) fn MacroSecurityPanel(props: MacroSecurityPanelProps) -> Element {
     );
 
     let can_auto_run = sec.decision == TrustDecision::Trusted;
+    // The network opt-in is offered only when the build feature is compiled in
+    // (ADR-0015 §8); without it, network is unreachable and the toggle is hidden.
+    let can_allow_network = can_auto_run && loki_macro_host::MACRO_NET_COMPILED;
     let payload_toggle = payload.clone();
     let svc_toggle = svc.clone();
+    let payload_net = payload.clone();
+    let svc_net = svc.clone();
     let payload_forget = payload.clone();
     let svc_forget = svc.clone();
     let on_close = props.on_close;
@@ -135,6 +140,31 @@ pub(super) fn MacroSecurityPanel(props: MacroSecurityPanelProps) -> Element {
                     span {
                         style: format!("font-size: {}px; color: {};", tokens::FONT_SIZE_XS, tokens::COLOR_TEXT_ON_CHROME_SECONDARY),
                         {fl!("macros-security-auto-run-hint")}
+                    }
+                }
+            }
+
+            // Network-access opt-in (per-document runtime setting, ADR-0015 §8).
+            // Hidden unless the document is trusted and the `macro-net` feature
+            // is built; per-origin prompts still gate every request.
+            if can_allow_network {
+                div {
+                    style: "display: flex; flex-direction: column; gap: 4px;",
+                    button {
+                        style: pill_button(sec.allow_network),
+                        onclick: move |_| {
+                            let next = !sec.allow_network;
+                            if let Err(e) = svc_net.set_allow_network(&payload_net, next) {
+                                tracing::warn!("macro trust save failed: {e}");
+                            }
+                            refresh.set(refresh() + 1);
+                        },
+                        {if sec.allow_network { "☑ " } else { "☐ " }}
+                        {fl!("macros-security-network")}
+                    }
+                    span {
+                        style: format!("font-size: {}px; color: {};", tokens::FONT_SIZE_XS, tokens::COLOR_TEXT_ON_CHROME_SECONDARY),
+                        {fl!("macros-security-network-hint")}
                     }
                 }
             }

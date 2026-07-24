@@ -40,6 +40,10 @@ pub struct DocumentSecurity {
     pub decision: TrustDecision,
     /// Whether on-open auto-run is enabled (spec §5.6).
     pub auto_run_open: bool,
+    /// Whether this document may attempt macro network access (ADR-0015 §8, the
+    /// per-document half of the runtime setting). Meaningful only when the
+    /// `macro-net` build feature is compiled in.
+    pub allow_network: bool,
     /// Whether a persistent record exists for this document.
     pub has_record: bool,
     /// Per-capability grant state (baseline `DocRead` omitted).
@@ -78,6 +82,7 @@ impl MacroService {
             key,
             decision,
             auto_run_open: record.is_some_and(|r| r.auto_run_open),
+            allow_network: record.is_some_and(|r| r.allow_network),
             has_record: record.is_some(),
             capabilities,
         }

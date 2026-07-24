@@ -14,6 +14,7 @@
 //! here, capability grants in [`grants`], UI summaries in [`summary`].
 
 mod grants;
+mod opt_in;
 mod signature;
 mod summary;
 
@@ -128,32 +129,6 @@ impl MacroService {
         self.decision_for(payload).is_enabled() || self.is_publisher_trusted(payload)
     }
 
-    /// Whether on-open / auto events may fire for `payload` (spec §5.6). Only
-    /// ever true for a persistently-trusted document with the explicit opt-in.
-    #[must_use]
-    pub fn auto_run_open(&self, payload: &MacroPayload) -> bool {
-        self.read()
-            .store
-            .get(&payload.payload_hash())
-            .is_some_and(|r| r.auto_run_open)
-    }
-
-    /// Returns an [`AutoRunToken`] **iff** on-open events are authorized for
-    /// `payload` — the document is persistently trusted *and* the user set the
-    /// separate `auto_run_open` opt-in (spec §5.6). The token is the only key to
-    /// [`crate::MacroRuntime::run_event`], so nothing can fire on open without
-    /// this gate returning `Some` (threat T1). A session-only or disabled
-    /// document (no persistent record) never authorizes auto-run.
-    #[must_use]
-    pub fn authorize_auto_run(
-        &self,
-        payload: &MacroPayload,
-    ) -> Option<crate::runtime::AutoRunToken> {
-        let inner = self.read();
-        let rec = inner.store.get(&payload.payload_hash())?;
-        (rec.decision.is_enabled() && rec.auto_run_open).then(crate::runtime::AutoRunToken::new)
-    }
-
     // ── Trust decisions (spec §2.3) ───────────────────────────────────────────
 
     /// Records the sticky "Keep disabled" choice (persisted so later opens show
@@ -196,24 +171,6 @@ impl MacroService {
         let key = payload.payload_hash();
         let mut inner = self.write();
         upsert_decision(&mut inner.store, key, TrustDecision::Trusted, origin);
-        inner.store.save()
-    }
-
-    /// Sets the auto-run-on-open opt-in (spec §5.6). Requires an existing
-    /// persistent record; a no-op if the document is not trusted.
-    ///
-    /// # Errors
-    /// Propagates a trust-store save failure.
-    pub fn set_auto_run_open(
-        &self,
-        payload: &MacroPayload,
-        enabled: bool,
-    ) -> Result<(), MacroHostError> {
-        let key = payload.payload_hash();
-        let mut inner = self.write();
-        if let Some(rec) = inner.store.get_mut(&key) {
-            rec.auto_run_open = enabled;
-        }
         inner.store.save()
     }
 

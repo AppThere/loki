@@ -74,6 +74,23 @@ fn auto_run_open_defaults_off_and_requires_record() {
 }
 
 #[test]
+fn network_enabled_defaults_off_and_requires_record() {
+    let svc = MacroService::in_memory();
+    let p = payload(b"net");
+    assert!(!svc.network_enabled(&p));
+    // No persistent record yet → the opt-in is a no-op.
+    svc.set_allow_network(&p, true).expect("noop");
+    assert!(!svc.network_enabled(&p));
+    // With trust, the per-document opt-in sticks (and the security snapshot too).
+    svc.trust_document(&p, None).expect("trust");
+    svc.set_allow_network(&p, true).expect("optin");
+    assert!(svc.network_enabled(&p));
+    assert!(svc.security_for(&p).allow_network);
+    // It is independent of the auto-run opt-in.
+    assert!(!svc.auto_run_open(&p));
+}
+
+#[test]
 fn session_and_always_grants_resolve_into_grant_set() {
     let svc = MacroService::in_memory();
     let p = payload(b"f");

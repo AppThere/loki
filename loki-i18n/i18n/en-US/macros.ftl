@@ -97,6 +97,9 @@ macros-security-state-trusted = Trusted
 macros-security-enable = Enable options…
 macros-security-auto-run = Run this document's macros automatically when it opens
 macros-security-auto-run-hint = Recommended only for documents you created.
+macros-security-network = Allow this document's macros to access the network
+macros-security-network-hint =
+    Off by default. Each destination site still asks permission before a macro can reach it.
 macros-security-capabilities = Granted capabilities
 macros-security-cap-none = No capabilities have been granted.
 macros-security-cap-session-tag = this session

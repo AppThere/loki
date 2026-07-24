@@ -104,6 +104,12 @@ pub struct TrustRecord {
     /// spec §5.6). `false` unless the user explicitly enabled auto-run.
     #[serde(default)]
     pub auto_run_open: bool,
+    /// Whether this document may attempt macro network access (ADR-0015 §8): the
+    /// per-document half of the runtime setting that, ANDed with the `macro-net`
+    /// build feature, unlocks the origin-scoped `Network` capability. `false`
+    /// unless the user explicitly allowed it; per-origin prompts still apply.
+    #[serde(default)]
+    pub allow_network: bool,
     /// Persisted always-for-document capability grants (spec §5.4).
     #[serde(default)]
     pub capability_grants: Vec<PersistedGrant>,
@@ -129,6 +135,7 @@ impl TrustRecord {
             origin_path: None,
             decision,
             auto_run_open: false,
+            allow_network: false,
             capability_grants: Vec::new(),
             provenance: Provenance::External,
             created: now,

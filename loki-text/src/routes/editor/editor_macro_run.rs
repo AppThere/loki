@@ -69,9 +69,17 @@ pub(super) fn make_run_request(
 ) -> RunRequest {
     let (title, text) = read_document(doc_state);
     let grants = svc.grant_set_for(payload);
-    RunRequest::new(title, text, RUN_FUEL)
+    let mut request = RunRequest::new(title, text, RUN_FUEL)
         .with_grants(grants)
-        .with_cancel(cancel)
+        .with_cancel(cancel);
+    // Network is unlocked only when BOTH the `macro-net` build feature and the
+    // per-document runtime opt-in are on (ADR-0015 §8); per-origin prompts still
+    // gate every request. Off → NetworkPolicy stays disabled and every HttpGet is
+    // an untrappable refusal.
+    if loki_macro_host::MACRO_NET_COMPILED && svc.network_enabled(payload) {
+        request = request.with_network(loki_macro_host::NetworkPolicy::enabled());
+    }
+    request
 }
 
 /// Applies a finished run's edits (on the UI thread) and builds the report. On a
