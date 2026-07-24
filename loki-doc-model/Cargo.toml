@@ -30,6 +30,7 @@ thiserror = "2"
 indexmap = "2"
 loro = "1.11.1"
 rustc-hash = "2"
+sha2 = "0.10"
 tracing = "0.1"
 
 [dependencies.chrono]

@@ -25,3 +25,7 @@ pub(crate) mod omml;
 pub(crate) mod reader;
 pub mod repair;
 pub(crate) mod write;
+
+#[cfg(test)]
+#[path = "vba_tests.rs"]
+mod vba_tests;

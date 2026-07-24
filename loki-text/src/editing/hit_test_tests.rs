@@ -13,6 +13,13 @@ use super::*;
 /// Build a minimal `PaginatedLayout` with a single page containing one
 /// paragraph placed at the content-area origin.
 fn make_test_layout() -> PaginatedLayout {
+    layout_with_link(None)
+}
+
+/// Like [`make_test_layout`], but the single "Hello world" run carries `link_url`
+/// — used to drive the hyperlink / MACROBUTTON click-to-run path end to end (the
+/// same field the layout tags a macro button's run with, macro spec §6).
+fn layout_with_link(link_url: Option<String>) -> PaginatedLayout {
     let mut resources = FontResources::new();
     let para = layout_paragraph(
         &mut resources,
@@ -37,7 +44,7 @@ fn make_test_layout() -> PaginatedLayout {
             emboss: false,
             imprint: false,
             character_border: None,
-            link_url: None,
+            link_url,
             math: None,
             scale: None,
             kerning: None,
@@ -472,4 +479,95 @@ fn reflow_tap_above_canvas_top_is_none() {
     let cl = two_para_continuous();
     // origin.y above the tap ⇒ canvas_y < 0 ⇒ no position.
     assert!(reflow_hit_test_window(10.0, 10.0, (0.0, 100.0), 0.0, 1.0, &cl).is_none());
+}
+
+// ── MACROBUTTON click-to-run flow ───────────────────────────────────────────
+//
+// These exercise the whole seam a Ctrl/Cmd-click travels: doc-model models the
+// link (`FieldKind::MacroButton::macro_link`), the layout tags the button's run
+// with it, `link_at_point` recovers it from a page-local click, and
+// `classify_link` routes it to the gated runner vs. the browser. Only the final
+// `macro_run_request.set` / `webbrowser::open` side effect is left out (it needs
+// a live Dioxus runtime); `classify_link` is the pure decision behind it.
+
+use loki_doc_model::content::field::types::FieldKind;
+use loki_layout::PositionedItem;
+
+/// Page-local layout point (points, as `link_at_point` expects) at the centre of
+/// the first linked glyph run in page 0 — deterministically inside the run's
+/// hit box regardless of font metrics, since the run baseline `origin.y` always
+/// lies within the `[origin.y − 0.8·fs, origin.y + 0.2·fs]` link band.
+fn linked_run_point(layout: &PaginatedLayout) -> (f32, f32) {
+    fn find(items: &[PositionedItem]) -> Option<(f32, f32)> {
+        for item in items {
+            match item {
+                PositionedItem::GlyphRun(run) if run.link_url.is_some() => {
+                    let width: f32 = run.glyphs.iter().map(|g| g.advance).sum();
+                    return Some((run.origin.x + width / 2.0, run.origin.y));
+                }
+                PositionedItem::ClippedGroup { items, .. } => {
+                    if let Some(p) = find(items) {
+                        return Some(p);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+    let page = &layout.pages[0];
+    let para = &page.editing_data.as_ref().unwrap().paragraphs[0];
+    // `link_at_point` re-adds the margins (subtracting them internally); the run
+    // origin is content-area-local, so hand back page-local points.
+    let (cx, cy) = find(&para.layout.items).expect("layout has a linked run");
+    (cx + page.margins.left, cy + page.margins.top)
+}
+
+#[test]
+fn macrobutton_click_routes_to_gated_macro_run() {
+    // The exact link the layout tags a MACROBUTTON's run with.
+    let url = FieldKind::MacroButton {
+        macro_name: "RunReport".into(),
+        display: "Run".into(),
+    }
+    .macro_link()
+    .expect("MacroButton yields a macro link");
+
+    let layout = layout_with_link(Some(url.clone()));
+    let (x_pt, y_pt) = linked_run_point(&layout);
+
+    // Click on the button's run recovers the macro link…
+    let hit = link_at_point(&layout, 0, x_pt, y_pt).expect("click lands on the macro link");
+    assert_eq!(hit, url);
+    assert!(hit.starts_with(MACRO_LINK_SCHEME));
+
+    // …and it routes to the gated runner for the bare macro name, not the browser.
+    assert_eq!(classify_link(&hit), LinkRoute::RunMacro("RunReport".into()));
+}
+
+#[test]
+fn plain_hyperlink_click_routes_to_browser_not_macro() {
+    let layout = layout_with_link(Some("https://example.com/report".into()));
+    let (x_pt, y_pt) = linked_run_point(&layout);
+
+    let hit = link_at_point(&layout, 0, x_pt, y_pt).expect("click lands on the hyperlink");
+    assert_eq!(hit, "https://example.com/report");
+    // A normal hyperlink must never be mistaken for a macro run.
+    assert_eq!(classify_link(&hit), LinkRoute::OpenBrowser);
+}
+
+#[test]
+fn click_off_the_macrobutton_run_yields_no_link() {
+    let url = FieldKind::MacroButton {
+        macro_name: "RunReport".into(),
+        display: "Run".into(),
+    }
+    .macro_link()
+    .unwrap();
+    let layout = layout_with_link(Some(url));
+    let page = &layout.pages[0];
+
+    // Far below the single run's line: no link, so nothing to route.
+    let y_pt = page.margins.top + 400.0;
+    assert!(link_at_point(&layout, 0, page.margins.left + 5.0, y_pt).is_none());
 }

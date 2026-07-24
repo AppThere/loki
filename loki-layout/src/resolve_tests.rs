@@ -545,6 +545,23 @@ fn flatten_field_uses_current_value() {
 }
 
 #[test]
+fn flatten_macrobutton_field_carries_macro_link_and_label() {
+    let catalog = StyleCatalog::new();
+    let field = Field::new(FieldKind::MacroButton {
+        macro_name: "RunReport".into(),
+        display: "Run report".into(),
+    });
+    let para = empty_para(vec![Inline::Field(field)]);
+    let (text, spans, _images, _notes) = flatten_paragraph(&para, &catalog, &mut 0u32);
+    assert_eq!(text, "Run report", "the button renders its label");
+    assert_eq!(
+        spans[0].link_url.as_deref(),
+        Some("loki-macro:RunReport"),
+        "a MACROBUTTON run must carry the macro-scheme link target for hit-testing"
+    );
+}
+
+#[test]
 fn flatten_field_page_number_fallback() {
     let catalog = StyleCatalog::new();
     let field = Field::new(FieldKind::PageNumber); // no current_value

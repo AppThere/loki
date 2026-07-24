@@ -4,13 +4,13 @@
 //! Worksheet (`xl/worksheets/sheetN.xml`) parsing for the XLSX importer
 //! (split from `import.rs` for the 300-line ceiling): reads cells (values via
 //! the shared-strings table, formulas, per-cell style index) and column
-//! widths into a `Worksheet`. Column-width conversion and the A1 cell-ref
-//! decoder stay in `import.rs`.
+//! widths into a `Worksheet`. Column-width conversion stays in `import.rs`;
+//! the A1 cell-ref decoder lives here (its only caller).
 
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
-use super::{cell_ref_to_coord, xlsx_char_width_to_pt};
+use super::xlsx_char_width_to_pt;
 use crate::error::OoxmlError;
 use crate::xml_util::{event_text, local_attr_val, local_attr_vals, local_name};
 use loki_sheet_model::{Cell, CellStyle, Worksheet};
@@ -173,4 +173,29 @@ pub(super) fn parse_worksheet(
     }
 
     Ok(worksheet)
+}
+
+/// Decodes an A1-style cell reference (`"AB12"`) into zero-based `(row, col)`.
+fn cell_ref_to_coord(cell_ref: &str) -> Option<(u32, u32)> {
+    // Allocation-free split of "AB12" into column letters and row digits —
+    // this runs once per cell on import. The leading letters are single-byte
+    // ASCII, so `split` always lands on a char boundary; a non-digit tail
+    // (or a non-ASCII byte) simply fails the row parse, as before.
+    let bytes = cell_ref.as_bytes();
+    let split = bytes
+        .iter()
+        .position(|b| !b.is_ascii_alphabetic())
+        .unwrap_or(bytes.len());
+    if split == 0 || split == bytes.len() {
+        return None;
+    }
+    let mut col: u32 = 0;
+    for &b in &bytes[..split] {
+        col = col
+            .checked_mul(26)?
+            .checked_add(u32::from(b.to_ascii_uppercase() - b'A') + 1)?;
+    }
+    let col = col.checked_sub(1)?;
+    let row = cell_ref[split..].parse::<u32>().ok()?.checked_sub(1)?;
+    Some((row, col))
 }

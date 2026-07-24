@@ -15,6 +15,14 @@ crate-type = ["cdylib", "rlib"]
 name = "loki-text-desktop"
 path = "src/main.rs"
 
+[features]
+# Compiles in the macro `Network` capability transport (ADR-0015 §8 decision 1,
+# 8B.5): enables `loki-macro-host/macro-net` (the `reqwest`/`rustls` fetcher) and
+# the app-side per-host prompt + `HttpGet` wiring. Off by default; even when
+# compiled, network stays off until the runtime setting is also on. Excluded from
+# the iOS build (§8 decision 5).
+macro-net = ["loki-macro-host/macro-net"]
+
 [dependencies]
 # Dioxus Native (Blitz renderer) with client-side router.
 dioxus          = { version = "=0.7.9", features = ["native", "router"] }
@@ -24,6 +32,11 @@ loki-doc-model  = { path = "../loki-doc-model" }
 loki-ooxml      = { path = "../loki-ooxml" }
 # ODT/ODF import — converts OpenDocument Text files to loki_doc_model::Document.
 loki-odf        = { path = "../loki-odf" }
+# VBA source extraction (source only, never p-code) for the read-only macro viewer.
+loki-vba        = { path = "../loki-vba" }
+# Macro trust store + capability broker (macro spec Phase 4). Provided into
+# context like SpellService; the app maps trust/permission choices onto it.
+loki-macro-host = { path = "../loki-macro-host" }
 # Bundled document templates (Markdown, APA, MLA, Screenplay, Resume).
 loki-templates  = { path = "../loki-templates" }
 # PDF / PDF-X export for the Publish ribbon tab.
@@ -52,6 +65,8 @@ fontique        = { version = "0.10", features = ["fontconfig-dlopen"] }
 loro = "1.11.1"
 # oneshot channel used to await the off-main-thread document-open layout.
 futures-channel = "0.3"
+# StreamExt::next for draining the macro-runner prompt channel on the UI thread.
+futures-util = { version = "0.3", default-features = false }
 # Unicode grapheme cluster segmentation for correct backspace/delete behaviour.
 unicode-segmentation = "1"
 # Image decoding for Insert → Image (intrinsic pixel dimensions).

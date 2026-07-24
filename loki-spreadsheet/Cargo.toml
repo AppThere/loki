@@ -24,6 +24,14 @@ loki-ooxml      = { path = "../loki-ooxml", features = ["xlsx"] }
 loki-sheet-model = { path = "../loki-sheet-model" }
 # ODF import/export.
 loki-odf        = { path = "../loki-odf" }
+# Macro execution host — compute-only spreadsheet UDFs (macro spec §6.3).
+loki-macro-host = { path = "../loki-macro-host" }
+# BASIC interpreter value/dialect types for UDF argument/result marshalling.
+loki-basic      = { path = "../loki-basic" }
+# VBA source extraction for UDF modules.
+loki-vba        = { path = "../loki-vba" }
+# Format-neutral document provenance (the preserved MacroPayload).
+loki-doc-model  = { path = "../loki-doc-model" }
 # Shared AppThere design tokens and UI components.
 appthere-ui     = { path = "../appthere-ui" }
 loki-app-shell  = { path = "../loki-app-shell" }

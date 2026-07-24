@@ -68,6 +68,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         can_redo,
         mut selected_cell,
         mut editing_cell,
+        mut udf_resolver,
     } = use_editor_state();
 
     // Transient save status (success or error) shown as a dismissible banner.
@@ -138,24 +139,22 @@ pub(super) fn EditorInner(path: String) -> Element {
     // ── Document load — reactive on path_signal ───────────────────────────────
     let document_load = use_resource(move || {
         let p = path_signal();
-        async move {
-            let res = load_document(p.clone());
-            (p, res)
-        }
+        async move { (p.clone(), load_document(p)) }
     });
 
     // ── Loro bridge: initialise CRDT once the document is loaded ─────────────
     use_effect(move || {
-        if let Some((loaded_path, Ok(wb))) = &*document_load.value().read_unchecked()
+        if let Some((loaded_path, Ok(loaded))) = &*document_load.value().read_unchecked()
             && loaded_path == &path_signal()
             && loro_doc().is_none()
         {
-            match loki_sheet_model::loro_bridge::workbook_to_loro(wb) {
+            match loki_sheet_model::loro_bridge::workbook_to_loro(&loaded.workbook) {
                 Ok(l_doc) => {
                     let um = loro::UndoManager::new(&l_doc);
                     loro_doc.set(Some(l_doc));
                     undo_manager.set(Some(um));
-                    workbook_snap.set(wb.clone());
+                    workbook_snap.set(loaded.workbook.clone());
+                    udf_resolver.set(super::editor_load::udf_from(loaded));
                 }
                 Err(e) => tracing::warn!("Failed to initialize Loro sync bridge: {}", e),
             }
@@ -304,7 +303,7 @@ pub(super) fn EditorInner(path: String) -> Element {
             let format = cell.style.clone().unwrap_or_default();
             if cell.formula.is_some() {
                 let mut visited = HashSet::new();
-                let raw_eval = evaluate_cell(r, c, &wb, &mut visited);
+                let raw_eval = evaluate_cell(r, c, &wb, &mut visited, udf_resolver.read().as_ref());
                 format_evaluated_value(&raw_eval, &format)
             } else {
                 format_evaluated_value(&cell.value, &format)

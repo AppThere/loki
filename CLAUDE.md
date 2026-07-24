@@ -110,12 +110,31 @@ These conventions apply to all crates in the workspace.
 - **Checkpoints:** Run `cargo check --workspace` after each logical unit of
   work. Do not accumulate failures across steps.
 - **Documentation Sync:** Any change to layout, rendering, or import/export properties must update the living status registry in [docs/fidelity-status.md](docs/fidelity-status.md).
-- **Final pass:** `cargo fmt --all` and `cargo clippy --workspace -- -D warnings`
-  must both pass before any PR or commit is considered complete.
+- **Final pass:** `cargo fmt --all --check` and the **exact CI clippy command**
+  (below) must both pass before any PR or commit is considered complete.
+
+### Toolchain is pinned
+
+[`rust-toolchain.toml`](rust-toolchain.toml) pins the workspace toolchain, and
+CI installs that same version. Do **not** work around it by switching your local
+toolchain: clippy widens lints between releases, so a floating toolchain lets CI
+fail on lints a local run cannot report — a drift only discoverable by pushing.
+Upgrade the pin deliberately (see the file's header for the procedure).
 
 ### Clippy compliance
 
-The entire workspace must pass `cargo clippy --workspace -- -D warnings`.
+The whole workspace must pass **the command CI runs** — note `--all-features`
+and the two extra deny flags, which a plain `cargo clippy --workspace` does
+*not* apply. Running anything narrower is how `.unwrap()`/`.expect()` in library
+code reaches CI:
+
+```
+cargo clippy --workspace --all-features -- -D warnings \
+    -D clippy::unwrap_used -D clippy::expect_used
+```
+
+`clippy.toml` exempts `#[cfg(test)]` code from the panic-accessor lints, so the
+gate targets shipped code only.
 
 For pre-existing code in `loki-layout`, `loki-odf`, and `loki-ooxml` that
 required structural changes beyond the scope of the cleanup pass, targeted

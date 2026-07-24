@@ -29,6 +29,8 @@
 //! The conversion from CSS logical pixels is applied once at entry:
 //! `pt = px × (72/96)`.
 
+use dioxus::prelude::*;
+use loki_doc_model::content::field::types::MACRO_LINK_SCHEME;
 use loki_layout::{ContinuousLayout, PaginatedLayout};
 use loki_renderer::render_layout::REFLOW_PADDING_PT;
 
@@ -220,32 +222,60 @@ pub fn hit_test_page(
     })
 }
 
-/// Open the hyperlink under a paginated-page click, if any (feature 5.11).
+/// The link URL under a paginated-page click, if any (feature 5.11).
 ///
 /// `(x_pt, y_pt)` are page-local layout points (as delivered by the page tile).
 /// The paginated hit-test frame is content-area-local, so the page margins are
-/// subtracted before consulting [`PageEditingData::link_at`]. Returns `true`
-/// when a link was found and handed to the OS URL opener — the caller then skips
-/// caret placement.
-pub fn open_hyperlink_at(
+/// subtracted before consulting [`PageEditingData::link_at`]. Returns the URL —
+/// which may be a `loki-macro:` target (macro spec §6) — so the caller routes it
+/// (browser open vs. gated macro run) rather than opening it here.
+pub fn link_at_point(
     layout: &PaginatedLayout,
     page_index: usize,
     x_pt: f32,
     y_pt: f32,
-) -> bool {
-    let Some(page) = layout.pages.get(page_index) else {
-        return false;
-    };
-    let Some(editing) = page.editing_data.as_ref() else {
-        return false;
-    };
+) -> Option<String> {
+    let page = layout.pages.get(page_index)?;
+    let editing = page.editing_data.as_ref()?;
     let content_x = x_pt - page.margins.left;
     let content_y = y_pt - page.margins.top;
-    if let Some(url) = editing.link_at(content_x, content_y) {
-        let _ = webbrowser::open(url);
-        return true;
+    editing.link_at(content_x, content_y).map(str::to_owned)
+}
+
+/// Where a Ctrl/Cmd+clicked link resolves to — the pure routing decision behind
+/// [`open_or_run`], separated from its side effect so the click-to-run flow can
+/// be asserted without a Dioxus runtime or launching a browser.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LinkRoute {
+    /// A `loki-macro:` target: run the named document macro through the
+    /// trust-gated runner (macro spec §6).
+    RunMacro(String),
+    /// Any other URL: open it in the OS browser.
+    OpenBrowser,
+}
+
+/// Classifies a clicked link URL without performing any side effect: a
+/// `loki-macro:<name>` target routes to the gated macro runner (carrying the
+/// bare macro name); every other URL routes to the browser.
+#[must_use]
+pub fn classify_link(url: &str) -> LinkRoute {
+    match url.strip_prefix(MACRO_LINK_SCHEME) {
+        Some(name) => LinkRoute::RunMacro(name.to_string()),
+        None => LinkRoute::OpenBrowser,
     }
-    false
+}
+
+/// Routes a Ctrl/Cmd+clicked link: a `loki-macro:` target sets `macro_run_request`
+/// (so the macro notice bar dispatches a trust-gated run, macro spec §6); any
+/// other URL opens in the OS browser. Thin side-effecting wrapper over
+/// [`classify_link`].
+pub fn open_or_run(url: &str, mut macro_run_request: Signal<Option<String>>) {
+    match classify_link(url) {
+        LinkRoute::RunMacro(name) => macro_run_request.set(Some(name)),
+        LinkRoute::OpenBrowser => {
+            let _ = webbrowser::open(url);
+        }
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

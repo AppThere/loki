@@ -39,6 +39,10 @@ features = ["std"]
 [dev-dependencies]
 loki-opc    = { path = "../loki-opc" }
 loki-layout = { path = "../loki-layout" }
+# Phase 7.7 VBA macro-editor end-to-end test: build a real vbaProject.bin (cfb),
+# edit it (loki-vba write-back), and round-trip it through DOCX export/import.
+loki-vba = { path = "../loki-vba" }
+cfb = "0.7"
 # Spec 02 round-trip axis: the normalized-model differ + Document/Workbook
 # canonicalizers (doc-model for DOCX, sheet-model for XLSX).
 appthere-conformance = { path = "../appthere-conformance", features = ["doc-model", "sheet-model"] }

@@ -12,6 +12,13 @@
 
 use crate::content::attr::ExtensionBag;
 
+/// The pseudo-URL scheme an editor uses to route a `MACROBUTTON` click to the
+/// trust-gated macro runner (macro spec §6). A layout run for a
+/// [`FieldKind::MacroButton`] carries `"<scheme><macro name>"` as its link URL;
+/// the editor recognises the scheme in its hyperlink click path and dispatches
+/// the run **instead of** opening a browser. It is never a real URL.
+pub const MACRO_LINK_SCHEME: &str = "loki-macro:";
+
 /// The display format for a cross-reference field.
 ///
 /// TR 29166 §5.2.19. ODF `text:reference-format`;
@@ -95,6 +102,21 @@ pub enum FieldKind {
         format: CrossRefFormat,
     },
 
+    /// A Word `MACROBUTTON` field — a control-assigned macro (macro spec §6).
+    ///
+    /// Clicking it is meant to run `macro_name`. The document only carries the
+    /// **assignment**; execution is gated by the same trust rules as any macro
+    /// (disabled by default for documents the user did not author, spec §2), so
+    /// modelling the button never implies running it. `display` is the button's
+    /// visible label. OOXML: `MACROBUTTON <macro> <display>`. ODF has no direct
+    /// equivalent.
+    MacroButton {
+        /// The assigned macro/procedure name.
+        macro_name: String,
+        /// The button's visible label text.
+        display: String,
+    },
+
     /// A field whose instruction string cannot be mapped to a known kind.
     ///
     /// Stored verbatim for lossless round-trips within the same format.
@@ -129,6 +151,21 @@ pub struct Field {
 
     /// Format-specific extension data.
     pub extensions: ExtensionBag,
+}
+
+impl FieldKind {
+    /// The macro-runner link target for a `MACROBUTTON` (`loki-macro:<name>`),
+    /// or `None` for any other field kind. Used by the layout to tag the button's
+    /// run so the editor's click path can route it to the gated runner (§6).
+    #[must_use]
+    pub fn macro_link(&self) -> Option<String> {
+        match self {
+            FieldKind::MacroButton { macro_name, .. } => {
+                Some(format!("{MACRO_LINK_SCHEME}{macro_name}"))
+            }
+            _ => None,
+        }
+    }
 }
 
 impl Field {
@@ -171,5 +208,15 @@ mod tests {
         } else {
             panic!("expected Raw variant");
         }
+    }
+
+    #[test]
+    fn macro_button_yields_macro_link_others_none() {
+        let btn = FieldKind::MacroButton {
+            macro_name: "RunReport".into(),
+            display: "Run".into(),
+        };
+        assert_eq!(btn.macro_link().as_deref(), Some("loki-macro:RunReport"));
+        assert_eq!(FieldKind::PageNumber.macro_link(), None);
     }
 }

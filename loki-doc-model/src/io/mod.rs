@@ -7,6 +7,7 @@
 //! [`DocumentExport`] to convert between their native formats and the
 //! abstract [`crate::Document`] model.
 
+pub mod macros;
 pub mod source;
 
 use crate::document::Document;

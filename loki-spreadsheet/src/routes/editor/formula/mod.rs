@@ -15,11 +15,23 @@
 //! arithmetic and excluded from aggregates (matching Excel's blank handling).
 
 mod eval;
+mod funcs;
 mod lexer;
+pub(crate) mod udf;
 
 use std::collections::HashSet;
 
 use loki_sheet_model::{CellStyle, NumberFormat, Workbook};
+
+pub(crate) use udf::UdfResolver;
+
+/// A computed formula value — a number, or text (a text-returning UDF, §6.3).
+pub(crate) enum CellValue {
+    /// A numeric result (the only kind the arithmetic evaluator produces).
+    Num(f64),
+    /// A text result — only a whole-formula UDF call can yield this.
+    Text(String),
+}
 
 /// An Excel-style formula error value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +46,9 @@ pub(crate) enum FormulaError {
     Ref,
     /// Non-finite numeric result.
     Num,
+    /// A user-defined function failed, was refused, exhausted its budget, or
+    /// tried to reach outside its compute-only sandbox (macro spec §6.3).
+    Macro,
 }
 
 impl FormulaError {
@@ -45,6 +60,7 @@ impl FormulaError {
             FormulaError::Div0 => "#DIV/0!",
             FormulaError::Ref => "#REF!",
             FormulaError::Num => "#NUM!",
+            FormulaError::Macro => "#MACRO!",
         }
     }
 
@@ -57,6 +73,7 @@ impl FormulaError {
             "#DIV/0!" => Some(FormulaError::Div0),
             "#REF!" => Some(FormulaError::Ref),
             "#NUM!" => Some(FormulaError::Num),
+            "#MACRO!" => Some(FormulaError::Macro),
             _ => None,
         }
     }
@@ -72,11 +89,12 @@ pub(crate) fn evaluate_cell(
     col: usize,
     wb: &Workbook,
     visited: &mut HashSet<(usize, usize)>,
+    udf: Option<&UdfResolver>,
 ) -> String {
     if !visited.insert((row, col)) {
         return "#REF!".to_string();
     }
-    let result = eval_cell_inner(row, col, wb, visited);
+    let result = eval_cell_inner(row, col, wb, visited, udf);
     visited.remove(&(row, col));
     result
 }
@@ -86,6 +104,7 @@ fn eval_cell_inner(
     col: usize,
     wb: &Workbook,
     visited: &mut HashSet<(usize, usize)>,
+    udf: Option<&UdfResolver>,
 ) -> String {
     let Some(sheet) = wb.get_sheet(0) else {
         return String::new();
@@ -98,32 +117,41 @@ fn eval_cell_inner(
         // `cell.formula` is populated only when the cell holds a formula (the
         // editor strips the leading `=` before storing, and importers store the
         // bare expression), so a present formula is always evaluated.
-        Some(f) => match evaluate_formula(f, wb, visited) {
-            Ok(v) => format_number(v),
+        Some(f) => match evaluate_formula(f, wb, visited, udf) {
+            Ok(CellValue::Num(v)) => format_number(v),
+            Ok(CellValue::Text(s)) => s,
             Err(e) => e.code().to_string(),
         },
     }
 }
 
-/// Evaluates a formula expression (with or without a leading `=`) to a number.
+/// Evaluates a formula expression (with or without a leading `=`) to a value.
+///
+/// `udf` supplies the workbook's user-defined functions; when `None`, an unknown
+/// function name is a plain `#NAME?` (no macro payload / no UDFs).
 pub(crate) fn evaluate_formula(
     formula: &str,
     wb: &Workbook,
     visited: &mut HashSet<(usize, usize)>,
-) -> Result<f64, FormulaError> {
+    udf: Option<&UdfResolver>,
+) -> Result<CellValue, FormulaError> {
     let expr = formula.trim().strip_prefix('=').unwrap_or(formula.trim());
     if expr.is_empty() {
-        return Ok(0.0);
+        return Ok(CellValue::Num(0.0));
     }
     let tokens = lexer::tokenize(expr)?;
     if tokens.is_empty() {
-        return Ok(0.0);
+        return Ok(CellValue::Num(0.0));
     }
-    let value = eval::evaluate_tokens(tokens, wb, visited)?;
+    // A whole-formula UDF call may return text; anything else is numeric.
+    if let Some(cv) = funcs::try_udf_value_formula(&tokens, wb, visited, udf)? {
+        return Ok(cv);
+    }
+    let value = eval::evaluate_tokens(tokens, wb, visited, udf)?;
     if !value.is_finite() {
         return Err(FormulaError::Num);
     }
-    Ok(value)
+    Ok(CellValue::Num(value))
 }
 
 /// Applies the cell's number format to an already-evaluated string value.

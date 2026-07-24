@@ -192,6 +192,15 @@ pub(crate) fn parse_and_map_package(
     // content flow as Inline::Comment).
     document.comments = comments;
 
+    // Preserve any VBA macro payload (spec §3, Phase 1). Not executed — kept so
+    // a round-trip to a macro-enabled extension does not silently strip it.
+    if let Some(payload) = crate::vba::collect(package, &doc_part_name) {
+        document
+            .source
+            .get_or_insert_with(|| loki_doc_model::io::source::DocumentSource::new("ooxml"))
+            .macros = Some(payload);
+    }
+
     Ok((document, warnings))
 }
 

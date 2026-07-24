@@ -45,6 +45,18 @@ pub(super) fn parse_field_instruction(instruction: &str) -> FieldKind {
                 format: CrossRefFormat::Page,
             }
         }
+        // `MACROBUTTON <macro> <display…>` — a control-assigned macro. The macro
+        // name is the second token; the rest is the visible label. The
+        // assignment is modelled, never run (macro spec §2/§6).
+        "MACROBUTTON" => {
+            let mut rest = trimmed.splitn(3, char::is_whitespace).skip(1);
+            let macro_name = rest.next().unwrap_or("").to_string();
+            let display = rest.next().unwrap_or("").trim().to_string();
+            FieldKind::MacroButton {
+                macro_name,
+                display,
+            }
+        }
         _ => FieldKind::Raw {
             instruction: trimmed.to_string(),
         },
@@ -105,5 +117,25 @@ mod tests {
         assert!(
             matches!(kind, FieldKind::Raw { instruction } if instruction.contains("HYPERLINK"))
         );
+    }
+
+    #[test]
+    fn parse_macrobutton_field_captures_macro_and_label() {
+        let kind = parse_field_instruction(" MACROBUTTON RunReport Click to run ");
+        assert!(matches!(
+            kind,
+            FieldKind::MacroButton { macro_name, display }
+                if macro_name == "RunReport" && display == "Click to run"
+        ));
+    }
+
+    #[test]
+    fn parse_macrobutton_without_label() {
+        let kind = parse_field_instruction("MACROBUTTON DoThing");
+        assert!(matches!(
+            kind,
+            FieldKind::MacroButton { macro_name, display }
+                if macro_name == "DoThing" && display.is_empty()
+        ));
     }
 }

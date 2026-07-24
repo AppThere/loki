@@ -1,0 +1,26 @@
+[package]
+name = "loki-vba"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Read VBA project source text from vbaProject.bin (source only — never p-code) for the Loki suite's macro viewer"
+repository = "https://github.com/appthere/loki"
+keywords = ["vba", "ovba", "macro", "office", "loki"]
+categories = ["parser-implementations", "encoding"]
+
+# Reads bytes only — no filesystem/network. `cfb` walks the OLE compound file
+# in memory; `encoding_rs` decodes the project's MBCS code page. Loki never
+# parses or executes VBA p-code (macro spec §4.4, T5 — VBA stomping defense).
+
+[dependencies]
+thiserror = "2"
+cfb = "0.7"
+encoding_rs = "0.8"
+
+[dev-dependencies]
+# The round-trip test *writes* a synthetic vbaProject.bin to read back.
+cfb = "0.7"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

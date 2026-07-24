@@ -14,7 +14,7 @@ use crate::embed::LokiTranslations;
 
 /// All translation domains; each maps to one `.ftl` file per locale.
 const DOMAINS: &[&str] = &[
-    "shell", "home", "editor", "ribbon", "errors", "document", "publish", "style",
+    "shell", "home", "editor", "ribbon", "errors", "document", "publish", "style", "macros",
 ];
 
 /// Locale used when the system locale has no embedded translations,

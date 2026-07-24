@@ -33,9 +33,15 @@ LAYERS: dict[str, float] = {
     "loki-graphics": 0,
     # L1 model
     "loki-doc-model": 1, "loki-sheet-model": 1, "loki-presentation-model": 1,
+    # L1 macro interpreter core (leaf: no internal deps; macro spec Phase 2)
+    "loki-basic": 1,
     # L2 io/serde + content
     "loki-opc": 2, "loki-odf": 2, "loki-ooxml": 2, "loki-epub": 2,
     "loki-templates": 2,
+    # L2 macro source reader (leaf: external cfb/encoding_rs only; macro spec Phase 3)
+    "loki-vba": 2,
+    # L2 macro signature verifier (leaf: external crypto only; macro spec Phase 8A / ADR-0014)
+    "loki-macro-sig": 2,
     # L3 layout
     "loki-layout": 3,
     # L3b exporter-above-layout
@@ -45,6 +51,8 @@ LAYERS: dict[str, float] = {
     "loki-renderer": 4, "loki-render-cpu": 4,
     # L5 ui / app-shell
     "appthere-ui": 5, "loki-app-shell": 5,
+    # L5 macro trust store + capability broker + host services (macro spec Phase 4)
+    "loki-macro-host": 5,
     # L6 app binaries
     "loki-text": 6, "loki-spreadsheet": 6, "loki-presentation": 6,
     # ── Server subsystem (backend; web-server spec ADRs C012–C028) ──────────

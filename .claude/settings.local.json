@@ -103,7 +103,9 @@
       "mcp__code-review-graph__list_graph_stats_tool",
       "mcp__Claude_Code_Remote__send_later",
       "mcp__code-review-graph__refactor_tool",
-      "mcp__code-review-graph__build_or_update_graph_tool"
+      "mcp__code-review-graph__build_or_update_graph_tool",
+      "Bash(sed -n '/\\\\[features\\\\]/,/\\\\[/p' /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rcgen-0.13.2/Cargo.toml)",
+      "Read(//root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rcgen-0.13.2/src/**)"
     ]
   },
   "enableAllProjectMcpServers": true,

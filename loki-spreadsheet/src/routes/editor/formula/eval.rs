@@ -5,24 +5,31 @@
 
 use std::collections::HashSet;
 
+use loki_basic::Value;
+use loki_macro_host::UdfOutcome;
 use loki_sheet_model::Workbook;
 
 use super::super::cell_ref::parse_cell_ref;
-use super::FormulaError;
 use super::evaluate_cell;
+use super::funcs::{Arg, dispatch, flatten, is_builtin, value_to_cell};
 use super::lexer::Token;
+use super::{CellValue, FormulaError, UdfResolver};
 
-/// Parses and evaluates a token stream to a number.
+/// Parses and evaluates a token stream to a number (the arithmetic evaluator's
+/// working type). A user-defined function that returns text is `#VALUE!` here;
+/// a whole-formula text UDF is handled by [`super::funcs::try_udf_value_formula`].
 pub(super) fn evaluate_tokens(
     tokens: Vec<Token>,
     wb: &Workbook,
     visited: &mut HashSet<(usize, usize)>,
+    udf: Option<&UdfResolver>,
 ) -> Result<f64, FormulaError> {
     let mut p = Parser {
         tokens,
         pos: 0,
         wb,
         visited,
+        udf,
     };
     let value = p.parse_expr()?;
     if p.pos != p.tokens.len() {
@@ -31,21 +38,15 @@ pub(super) fn evaluate_tokens(
     Ok(value)
 }
 
-/// A function argument: either a scalar expression or an expanded range of the
-/// numeric cell values it covers.
-enum Arg {
-    Scalar(f64),
-    Range(Vec<f64>),
+pub(super) struct Parser<'a, 'b, 'c> {
+    pub(super) tokens: Vec<Token>,
+    pub(super) pos: usize,
+    pub(super) wb: &'a Workbook,
+    pub(super) visited: &'b mut HashSet<(usize, usize)>,
+    pub(super) udf: Option<&'c UdfResolver>,
 }
 
-struct Parser<'a, 'b> {
-    tokens: Vec<Token>,
-    pos: usize,
-    wb: &'a Workbook,
-    visited: &'b mut HashSet<(usize, usize)>,
-}
-
-impl Parser<'_, '_> {
+impl Parser<'_, '_, '_> {
     fn peek_at(&self, n: usize) -> Option<&Token> {
         self.tokens.get(self.pos + n)
     }
@@ -53,7 +54,7 @@ impl Parser<'_, '_> {
     /// Resolves an A1 cell to its numeric value, `None` if empty/non-numeric, or
     /// propagates a referenced error value (e.g. a reference cycle's `#REF!`).
     fn resolve(&mut self, row: usize, col: usize) -> Result<Option<f64>, FormulaError> {
-        let s = evaluate_cell(row, col, self.wb, &mut *self.visited);
+        let s = evaluate_cell(row, col, self.wb, &mut *self.visited, self.udf);
         if s.is_empty() {
             return Ok(None);
         }
@@ -159,6 +160,22 @@ impl Parser<'_, '_> {
         if name.eq_ignore_ascii_case("if") {
             return self.parse_if_function();
         }
+        let args = self.collect_args()?;
+        self.expect(Token::RParen)?;
+        if is_builtin(name) {
+            return dispatch(name, &args);
+        }
+        // A user-defined function in a numeric context: a text result cannot
+        // participate in arithmetic, so it is `#VALUE!` (a whole-formula text
+        // UDF is surfaced by `try_udf_value_formula` before reaching here).
+        match self.call_udf(name, &args)? {
+            CellValue::Num(n) => Ok(n),
+            CellValue::Text(_) => Err(FormulaError::Value),
+        }
+    }
+
+    /// Parses a comma-separated argument list up to (but not consuming) the `)`.
+    pub(super) fn collect_args(&mut self) -> Result<Vec<Arg>, FormulaError> {
         let mut args = Vec::new();
         if self.peek_at(0) != Some(&Token::RParen) {
             loop {
@@ -169,8 +186,20 @@ impl Parser<'_, '_> {
                 }
             }
         }
-        self.expect(Token::RParen)?;
-        dispatch(name, &args)
+        Ok(args)
+    }
+
+    /// Evaluates the user-defined function `name` with numeric arguments,
+    /// compute-only (macro spec §6.3). An unknown name is `#NAME?`; a sandbox
+    /// violation / error / budget exhaustion is `#MACRO!`.
+    pub(super) fn call_udf(&self, name: &str, args: &[Arg]) -> Result<CellValue, FormulaError> {
+        let resolver = self.udf.ok_or(FormulaError::Name)?;
+        let values: Vec<Value> = flatten(args).into_iter().map(Value::Double).collect();
+        match resolver.call(name, values) {
+            Some(UdfOutcome::Value(v)) => value_to_cell(v),
+            Some(UdfOutcome::Macro) => Err(FormulaError::Macro),
+            None => Err(FormulaError::Name),
+        }
     }
 
     /// Evaluates `IF(cond, then, else)` lazily: only the taken branch is
@@ -251,48 +280,12 @@ impl Parser<'_, '_> {
         Ok(Arg::Scalar(self.parse_expr()?))
     }
 
-    fn expect(&mut self, tok: Token) -> Result<(), FormulaError> {
+    pub(super) fn expect(&mut self, tok: Token) -> Result<(), FormulaError> {
         if self.peek_at(0) == Some(&tok) {
             self.pos += 1;
             Ok(())
         } else {
             Err(FormulaError::Value)
         }
-    }
-}
-
-fn flatten(args: &[Arg]) -> Vec<f64> {
-    let mut out = Vec::new();
-    for a in args {
-        match a {
-            Arg::Scalar(v) => out.push(*v),
-            Arg::Range(vs) => out.extend(vs.iter().copied()),
-        }
-    }
-    out
-}
-
-fn dispatch(name: &str, args: &[Arg]) -> Result<f64, FormulaError> {
-    match name.to_ascii_uppercase().as_str() {
-        "SUM" => Ok(flatten(args).iter().sum()),
-        "COUNT" => Ok(flatten(args).len() as f64),
-        "AVERAGE" => {
-            let vals = flatten(args);
-            if vals.is_empty() {
-                Err(FormulaError::Div0)
-            } else {
-                Ok(vals.iter().sum::<f64>() / vals.len() as f64)
-            }
-        }
-        "MIN" => {
-            let v = flatten(args).into_iter().fold(f64::INFINITY, f64::min);
-            Ok(if v.is_finite() { v } else { 0.0 })
-        }
-        "MAX" => {
-            let v = flatten(args).into_iter().fold(f64::NEG_INFINITY, f64::max);
-            Ok(if v.is_finite() { v } else { 0.0 })
-        }
-        // `IF` is handled lazily in `parse_if_function` before reaching here.
-        _ => Err(FormulaError::Name),
     }
 }
