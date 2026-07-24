@@ -37,6 +37,10 @@ pub(super) enum PromptKind {
         title: Option<String>,
         default: String,
     },
+    /// A request handled inline by the runner's drain loop (a file pick), never
+    /// rendered as a prompt. Present only to keep [`PromptKind::from_request`]
+    /// total; [`MacroPromptView`] renders nothing for it.
+    Internal,
 }
 
 impl PromptKind {
@@ -45,6 +49,10 @@ impl PromptKind {
         match req {
             UiRequest::Capability(cap) => PromptKind::Capability(*cap),
             UiRequest::Network(origin) => PromptKind::Network(origin.clone()),
+            // File requests are consumed by the drain loop, never rendered.
+            UiRequest::PickReadFile(_)
+            | UiRequest::PickWriteTarget(_)
+            | UiRequest::WriteFile { .. } => PromptKind::Internal,
             UiRequest::Dialog(d) => match d.kind {
                 DialogKind::Message => PromptKind::Message {
                     prompt: d.prompt.clone(),
@@ -135,6 +143,8 @@ pub(super) fn MacroPromptView(
                 on_answer,
             }
         },
+        // A file pick is serviced by the drain loop, not rendered.
+        PromptKind::Internal => rsx! {},
     }
 }
 

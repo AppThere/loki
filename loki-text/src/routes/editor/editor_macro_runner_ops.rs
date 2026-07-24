@@ -21,6 +21,7 @@ use loki_macro_host::{AutoRunToken, Dialect, GrantScope, MacroRuntime, MacroServ
 use super::editor_macro_bridge::{
     BridgeBackend, PendingPrompt, UiReply, UiRequest, prompt_channel,
 };
+use super::editor_macro_file_pick::try_handle_file_request;
 use super::editor_macro_notice::{MacroCtx, MacroView, payload_of};
 use super::editor_macro_run::{RunMessages, RunReport, apply_and_report, make_run_request};
 
@@ -70,7 +71,7 @@ pub(super) fn start_auto_run(
 
 /// Launches a run on a worker thread, rendering prompts/dialogs and applying the
 /// result on the UI thread when it finishes. `auto` fires an on-open event
-/// handler through the token-gated `run_event`; it aborts silently if the
+/// handler through the token-gated `run_event`, aborting silently if the
 /// document no longer authorizes auto-run.
 fn launch(
     ctx: &MacroCtx,
@@ -139,9 +140,13 @@ fn launch(
 
     let messages = run_messages();
     spawn(async move {
-        // Drain prompts until the worker's backend is dropped (run finished).
+        // Drain prompts until the worker's backend is dropped (run finished). A
+        // file pick is serviced inline (async picker + token I/O, spec §5.3);
+        // every other request renders as a prompt component.
         while let Some(prompt) = req_rx.next().await {
-            pending.set(Some(prompt));
+            if let Some(prompt) = try_handle_file_request(prompt).await {
+                pending.set(Some(prompt));
+            }
         }
         let rep = match result_rx.await {
             Ok(outcome) => match loro_doc.read().as_ref() {
@@ -165,15 +170,16 @@ pub(super) fn answer_prompt(
     mut pending: Signal<Option<PendingPrompt>>,
     reply: UiReply,
 ) {
+    // Only a capability prompt records a persisted grant here. A network grant is
+    // session-max and recorded by the broker's per-origin path during the run
+    // (ADR-0015 §4.2); a dialog carries none; file requests are drain-loop-handled
+    // and never reach `pending`.
+    // TODO(8B.5-session-origins): remember an AllowSession origin in the
+    // MacroService (session memory, never disk) and fold it into each run's
+    // NetworkPolicy so an already-allowed origin does not re-prompt per run.
     let cap = pending.read().as_ref().and_then(|p| match p.request() {
         UiRequest::Capability(c) => Some(*c),
-        // A network grant is session-max and recorded by the broker's
-        // per-origin path during the run (ADR-0015 §4.2), never as a persisted
-        // capability grant here.
-        // TODO(8B.5-session-origins): remember an AllowSession origin in the
-        // MacroService (session memory, never disk) and fold it into each run's
-        // NetworkPolicy so an already-allowed origin does not re-prompt per run.
-        UiRequest::Network(_) | UiRequest::Dialog(_) => None,
+        _ => None,
     });
     if let (Some(cap), Some(payload), UiReply::Grant(scope)) = (cap, payload, &reply) {
         match scope {

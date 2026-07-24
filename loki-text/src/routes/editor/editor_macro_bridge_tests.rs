@@ -5,14 +5,14 @@
 //! real macro with [`BridgeBackend`]; the test thread plays the UI, draining
 //! prompts and answering per a policy.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::channel;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use loki_macro_host::{
-    Capability, Dialect, DialogOutcome, GrantScope, MacroRuntime, NetworkPolicy, RunOutcome,
-    RunRequest,
+    Capability, Dialect, DialogOutcome, GrantScope, MacroRuntime, NetworkPolicy, PickedFile,
+    RunOutcome, RunRequest,
 };
 
 use super::{BridgeBackend, UiReply, UiRequest, prompt_channel};
@@ -190,6 +190,65 @@ fn stop_during_a_prompt_unblocks_the_worker() {
     );
     assert!(out.result.is_err(), "the run ended instead of wedging");
     assert!(out.batch.is_empty());
+}
+
+#[test]
+fn a_file_read_round_trips_through_the_bridge() {
+    // The "UI" grants FileRead + DocWrite and answers the pick with a canned
+    // file; the macro reads its text into the document.
+    let out = drive(
+        "Sub Main()\n Dim f As Object\n \
+         Set f = Application.OpenFileForReading(\"*.txt\")\n \
+         ActiveDocument.AppendText f.Text\nEnd Sub",
+        "Main",
+        Arc::new(AtomicBool::new(false)),
+        |req| match req {
+            UiRequest::Capability(Capability::FileRead | Capability::DocWrite) => {
+                Some(UiReply::Grant(GrantScope::AllowSession))
+            }
+            UiRequest::PickReadFile(_) => Some(UiReply::ReadFile(Some(PickedFile {
+                path: "/f.txt".to_owned(),
+                bytes: b"from disk".to_vec(),
+            }))),
+            _ => None,
+        },
+    );
+    out.result.expect("clean run");
+    assert_eq!(out.batch.apply_to(String::new()), "from disk");
+}
+
+#[test]
+fn a_file_write_round_trips_through_the_bridge() {
+    // The "UI" grants FileWrite, answers the save pick with a target, and
+    // captures the flush; the macro's buffered text reaches write_file on Close.
+    let flushed = Arc::new(Mutex::new(None::<(String, Vec<u8>)>));
+    let sink = Arc::clone(&flushed);
+    let out = drive(
+        "Sub Main()\n Dim f As Object\n \
+         Set f = Application.OpenFileForWriting(\"*.txt\")\n \
+         f.WriteLine \"hello\"\n f.Close\nEnd Sub",
+        "Main",
+        Arc::new(AtomicBool::new(false)),
+        move |req| match req {
+            UiRequest::Capability(Capability::FileWrite) => {
+                Some(UiReply::Grant(GrantScope::AllowSession))
+            }
+            UiRequest::PickWriteTarget(_) => Some(UiReply::WritePath(Some("/out.txt".to_owned()))),
+            UiRequest::WriteFile { path, bytes } => {
+                *sink.lock().unwrap() = Some((path.clone(), bytes.clone()));
+                Some(UiReply::WriteResult(Ok(())))
+            }
+            _ => None,
+        },
+    );
+    out.result.expect("clean run");
+    let (path, bytes) = flushed
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("write reached the UI");
+    assert_eq!(path, "/out.txt");
+    assert_eq!(bytes, b"hello\n");
 }
 
 #[test]

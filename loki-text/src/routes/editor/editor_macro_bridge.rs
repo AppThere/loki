@@ -29,7 +29,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Sender, channel};
 
 use futures_channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
-use loki_macro_host::{Capability, DialogOutcome, DialogRequest, GrantScope, MacroBackend};
+use loki_macro_host::{
+    Capability, DialogOutcome, DialogRequest, FileFilter, FileWriteError, GrantScope, MacroBackend,
+    PickedFile,
+};
 #[cfg(feature = "macro-net")]
 use loki_macro_host::{HttpError, HttpRequest, HttpResponse};
 
@@ -42,6 +45,16 @@ pub(super) enum UiRequest {
     Network(String),
     /// A macro-shown dialog (spec §5.5) — answer with a [`DialogOutcome`].
     Dialog(DialogRequest),
+    /// Raise the OS **open** picker and read the chosen file (spec §5.3, Phase
+    /// 7B). Handled on the UI thread (the picker is async); answer with
+    /// [`UiReply::ReadFile`].
+    PickReadFile(FileFilter),
+    /// Raise the OS **save** picker and return the chosen target (Phase 7B).
+    /// Answer with [`UiReply::WritePath`].
+    PickWriteTarget(FileFilter),
+    /// Flush `bytes` to an already-picked `path` on `.Close` (Phase 7B). Done on
+    /// the UI thread via the file-access token; answer with [`UiReply::WriteResult`].
+    WriteFile { path: String, bytes: Vec<u8> },
 }
 
 /// The UI's answer to a [`UiRequest`].
@@ -50,6 +63,13 @@ pub(super) enum UiReply {
     Grant(GrantScope),
     /// Answer to a dialog.
     Dialog(DialogOutcome),
+    /// A picked + read file, or `None` if the user cancelled / the read failed.
+    ReadFile(Option<PickedFile>),
+    /// A picked save target, or `None` if the user cancelled.
+    WritePath(Option<String>),
+    /// The outcome of flushing bytes to the picked target (`Err` message on I/O
+    /// failure).
+    WriteResult(Result<(), String>),
 }
 
 /// A pending request plus the channel to answer it on.
@@ -148,6 +168,38 @@ impl MacroBackend for BridgeBackend {
         match self.ask(UiRequest::Dialog(req.clone())) {
             Some(UiReply::Dialog(outcome)) => outcome,
             _ => DialogOutcome::Cancelled,
+        }
+    }
+
+    /// Raises the open picker on the UI thread and blocks for the picked +
+    /// read file (spec §5.3, Phase 7B). A cancel or gone UI → `None`.
+    fn read_file(&mut self, filter: &FileFilter) -> Option<PickedFile> {
+        match self.ask(UiRequest::PickReadFile(filter.clone())) {
+            Some(UiReply::ReadFile(picked)) => picked,
+            _ => None,
+        }
+    }
+
+    /// Raises the save picker on the UI thread and blocks for the chosen target.
+    fn pick_write_target(&mut self, filter: &FileFilter) -> Option<String> {
+        match self.ask(UiRequest::PickWriteTarget(filter.clone())) {
+            Some(UiReply::WritePath(path)) => path,
+            _ => None,
+        }
+    }
+
+    /// Flushes `bytes` to the already-picked `path` (on `.Close`), performing the
+    /// write on the UI thread through the file-access token.
+    fn write_file(&mut self, path: &str, bytes: &[u8]) -> Result<(), FileWriteError> {
+        match self.ask(UiRequest::WriteFile {
+            path: path.to_owned(),
+            bytes: bytes.to_vec(),
+        }) {
+            Some(UiReply::WriteResult(Ok(()))) => Ok(()),
+            Some(UiReply::WriteResult(Err(msg))) => Err(FileWriteError::Io(msg)),
+            _ => Err(FileWriteError::Io(
+                "the file picker is unavailable".to_owned(),
+            )),
         }
     }
 

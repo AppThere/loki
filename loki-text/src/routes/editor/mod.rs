@@ -37,6 +37,7 @@ mod editor_macro_bridge;
 mod editor_macro_editor;
 mod editor_macro_editor_ops;
 mod editor_macro_extract;
+mod editor_macro_file_pick;
 mod editor_macro_notice;
 mod editor_macro_notice_effects;
 mod editor_macro_prompt;
