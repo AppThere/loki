@@ -1,0 +1,22 @@
+# Pinned Rust toolchain for the whole workspace.
+#
+# WHY THIS EXISTS: CI previously installed `dtolnay/rust-toolchain@stable`,
+# which floats on whatever stable is current, while a developer's local rustup
+# sat on whatever they last installed. Clippy gains and widens lints between
+# releases, so CI could fail on lints that a local `cargo clippy` — passing
+# cleanly on an older toolchain — could not possibly report. That drift is only
+# discoverable by pushing, which makes it a slow, confusing failure loop.
+#
+# Pinning makes `cargo`/`cargo clippy` behave identically in CI and locally:
+# rustup reads this file for every invocation inside the repo and installs the
+# named toolchain on demand.
+#
+# TO UPGRADE: bump `channel` here, run the full CI lint command locally
+#   cargo clippy --workspace --all-features -- -D warnings \
+#       -D clippy::unwrap_used -D clippy::expect_used
+# fix any newly-reported lints in the same change, and keep the version in
+# .github/workflows/rust.yml in step with this file.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
