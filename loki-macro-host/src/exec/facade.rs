@@ -16,7 +16,7 @@ use loki_basic::{RuntimeError, Value};
 
 use super::{
     APP, DOC, DocEdit, ExecutionHost, FILE_HANDLE_BASE, FIND, HTTP_RESPONSE_BASE, MacroBackend,
-    REPLACEMENT, SELECTION, find,
+    REPLACEMENT, SELECTION, WRITE_FILE_BASE, find,
 };
 use crate::capability::Capability;
 
@@ -35,7 +35,8 @@ pub(super) fn get_member<B: MacroBackend>(
         SELECTION => find::selection_member(host, &member, args),
         FIND => find::find_member(host, &member, args),
         REPLACEMENT => find::replacement_member(host, &member, args),
-        // Highest base first so a file handle is never mistaken for a response.
+        // Highest base first so the handle ranges never shadow one another.
+        _ if obj.0 >= WRITE_FILE_BASE => write_file_member(host, obj, &member, args),
         _ if obj.0 >= FILE_HANDLE_BASE => file_member(host, obj, &member),
         _ if obj.0 >= HTTP_RESPONSE_BASE => response_member(host, obj, &member, args),
         _ => Err(no_member()),
@@ -101,6 +102,45 @@ fn application_member<B: MacroBackend>(
         // `Application.OpenFileForReading([filter])` — picker-mediated file read
         // (spec §5.3, Phase 7B).
         "openfileforreading" | "openfileforread" => host.open_file_for_reading(args),
+        // `Application.OpenFileForWriting([filter])` — picker-mediated file write.
+        "openfileforwriting" | "openfileforwrite" => host.open_file_for_writing(args),
+        _ => Err(no_member()),
+    }
+}
+
+/// `WriteFile.*` members — buffering into and flushing a picker-chosen write
+/// target. The `FileWrite` grant + the save-picker pick were the gated acts
+/// (spec §5.3); buffering text needs no further capability, and `.Close` flushes
+/// through the backend.
+fn write_file_member<B: MacroBackend>(
+    host: &mut ExecutionHost<B>,
+    obj: loki_basic::ObjectRef,
+    member: &str,
+    args: &[Value],
+) -> Result<Value, RuntimeError> {
+    let index = (obj.0 - WRITE_FILE_BASE) as usize; // obj.0 is u32
+    match member {
+        "path" | "fullname" | "name" => {
+            let handle = host.doc().write_files.get(index).ok_or_else(no_member)?;
+            Ok(Value::Str(handle.path.clone()))
+        }
+        "write" | "writeline" | "print" => {
+            let text = arg_string(args, 0)?;
+            let handle = host
+                .doc_mut()
+                .write_files
+                .get_mut(index)
+                .ok_or_else(no_member)?;
+            if handle.closed {
+                return Err(RuntimeError::new(75, "The file is already closed"));
+            }
+            handle.buffer.push_str(&text);
+            if member == "writeline" {
+                handle.buffer.push('\n');
+            }
+            Ok(Value::Empty)
+        }
+        "close" => host.close_write_file(index),
         _ => Err(no_member()),
     }
 }

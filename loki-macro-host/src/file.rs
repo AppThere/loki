@@ -89,6 +89,19 @@ impl FileFilter {
     }
 }
 
+/// Why a picker-mediated file **write** could not complete (macro spec §5.3,
+/// Phase 7B). The user's pick of a save target was the consent; a failure here
+/// surfaces to the macro as a trappable error it can `On Error` around.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FileWriteError {
+    /// The backend performs no writes at all — the safe default for a
+    /// non-interactive context (UDF, headless, tests).
+    Refused,
+    /// The OS write failed (permission denied, disk full, …). The message is for
+    /// display only; it never carries a privileged object.
+    Io(String),
+}
+
 #[cfg(test)]
 #[path = "file_tests.rs"]
 mod tests;

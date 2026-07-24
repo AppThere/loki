@@ -18,6 +18,7 @@
 //! Every effect passes through [`ExecutionHost::gate`], so the interpreter can
 //! reach nothing the broker has not permitted.
 
+mod doc_facade;
 mod edit;
 mod facade;
 mod file;
@@ -28,7 +29,7 @@ pub use edit::{DocEdit, EditBatch};
 
 use std::collections::BTreeSet;
 
-use find::FindState;
+use doc_facade::DocFacade;
 use loki_basic::{DialogRequest, FuelVerdict, Host, ObjectRef, RuntimeError, Value};
 
 use crate::broker::CapabilityBroker;
@@ -54,6 +55,10 @@ pub(crate) const HTTP_RESPONSE_BASE: u32 = 0x1000;
 /// higher range than [`HTTP_RESPONSE_BASE`] so the two never collide (checked
 /// highest-base-first in the facade dispatch).
 pub(crate) const FILE_HANDLE_BASE: u32 = 0x2000;
+/// Base handle for write-file objects (Phase 7B). A handle returned by
+/// `Application.OpenFileForWriting` is `WRITE_FILE_BASE + index`; the highest of
+/// the object-handle ranges (checked first in the facade dispatch).
+pub(crate) const WRITE_FILE_BASE: u32 = 0x3000;
 
 /// The outcome of showing a macro dialog (spec §5.5).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,6 +123,27 @@ pub trait MacroBackend {
     fn read_file(&mut self, _filter: &crate::file::FileFilter) -> Option<crate::file::PickedFile> {
         None
     }
+
+    /// Raises the OS **save** picker (filtered by `filter`) and returns the path
+    /// the user chose, or `None` if they cancelled (macro spec §5.3, Phase 7B).
+    /// The pick is the consent (T3); [`Capability::FileWrite`] has already been
+    /// granted. The default returns `None`, so a non-interactive backend writes
+    /// nothing.
+    fn pick_write_target(&mut self, _filter: &crate::file::FileFilter) -> Option<String> {
+        None
+    }
+
+    /// Writes `bytes` to `path` (a target the user already chose via
+    /// [`Self::pick_write_target`]) when the macro closes the handle. The default
+    /// refuses, so a non-interactive backend never writes even if a path somehow
+    /// reached it.
+    fn write_file(
+        &mut self,
+        _path: &str,
+        _bytes: &[u8],
+    ) -> Result<(), crate::file::FileWriteError> {
+        Err(crate::file::FileWriteError::Refused)
+    }
 }
 
 /// A backend that grants nothing and shows nothing — for UDFs and tests.
@@ -127,44 +153,6 @@ pub struct DenyBackend;
 impl MacroBackend for DenyBackend {
     fn show_dialog(&mut self, _req: &DialogRequest) -> DialogOutcome {
         DialogOutcome::Cancelled
-    }
-}
-
-/// The working state of the document facade during a run.
-pub(crate) struct DocFacade {
-    /// The document title (`Document.Name`).
-    pub(crate) title: String,
-    /// The working body text — starts from the document and reflects the run's
-    /// own edits so a later `.Text` read sees earlier writes.
-    pub(crate) text: String,
-    /// The accumulated edits (one undo entry, spec §6.2).
-    pub(crate) batch: EditBatch,
-    /// Whether the macro requested a print (spec §5.2 `Print`).
-    pub(crate) printed: bool,
-    /// The `Find`/`Replacement` search state (phase 6). A singleton backing the
-    /// stateless `FIND`/`REPLACEMENT` handles.
-    pub(crate) find: FindState,
-    /// `HttpResponse` objects returned by `Application.HttpGet` this run, indexed
-    /// by `handle - HTTP_RESPONSE_BASE` (8B.2).
-    pub(crate) responses: Vec<crate::http::HttpResponse>,
-    /// Picked-file objects returned by `Application.OpenFileForReading` this run,
-    /// indexed by `handle - FILE_HANDLE_BASE` (Phase 7B).
-    pub(crate) files: Vec<crate::file::PickedFile>,
-}
-
-impl DocFacade {
-    /// Stores `response` and returns its object handle.
-    pub(crate) fn push_response(&mut self, response: crate::http::HttpResponse) -> ObjectRef {
-        let handle = ObjectRef(HTTP_RESPONSE_BASE + self.responses.len() as u32);
-        self.responses.push(response);
-        handle
-    }
-
-    /// Stores `file` and returns its object handle.
-    pub(crate) fn push_file(&mut self, file: crate::file::PickedFile) -> ObjectRef {
-        let handle = ObjectRef(FILE_HANDLE_BASE + self.files.len() as u32);
-        self.files.push(file);
-        handle
     }
 }
 
@@ -182,15 +170,7 @@ impl<B: MacroBackend> ExecutionHost<B> {
         Self {
             broker,
             backend,
-            doc: DocFacade {
-                title,
-                text,
-                batch: EditBatch::new(),
-                printed: false,
-                find: FindState::default(),
-                responses: Vec::new(),
-                files: Vec::new(),
-            },
+            doc: DocFacade::new(title, text),
         }
     }
 
