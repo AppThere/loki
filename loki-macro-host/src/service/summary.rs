@@ -93,7 +93,7 @@ impl MacroService {
     #[must_use]
     pub fn all_records(&self) -> Vec<TrustRecord> {
         let mut recs: Vec<TrustRecord> = self.read().store.records().cloned().collect();
-        recs.sort_by(|a, b| b.last_used.cmp(&a.last_used));
+        recs.sort_by_key(|r| std::cmp::Reverse(r.last_used));
         recs
     }
 }

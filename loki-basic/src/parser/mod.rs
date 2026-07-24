@@ -16,8 +16,20 @@ mod stmt_block;
 
 use crate::ast::{Item, Module, ModuleOptions};
 use crate::dialect::Dialect;
-use crate::error::BasicError;
+use crate::error::{BasicError, Span};
 use crate::lexer::{Lexer, Token, TokenKind};
+
+/// Fallback token for a cursor read against an **empty** buffer.
+///
+/// The lexer always terminates its stream with `Eof`, so a non-empty buffer
+/// never needs this — [`Parser::peek`] falls back to the real trailing `Eof`
+/// (which carries the true end-of-source span, so diagnostics stay accurate).
+/// This exists only to keep the cursor total rather than panicking on an
+/// invariant the type system does not enforce.
+static EOF_TOKEN: Token = Token {
+    kind: TokenKind::Eof,
+    span: Span { start: 0, end: 0 },
+};
 
 /// A recursive-descent BASIC parser over a token buffer.
 pub struct Parser {
@@ -117,13 +129,14 @@ impl Parser {
     // ── Cursor primitives (shared by submodules) ────────────────────────────
 
     pub(super) fn peek(&self) -> &Token {
-        // The token buffer always ends with Eof, so indexing the last token is
-        // safe once `pos` reaches the end.
-        self.tokens.get(self.pos).unwrap_or_else(|| {
-            self.tokens
-                .last()
-                .expect("token buffer always contains Eof")
-        })
+        // Past the end, the trailing `Eof` token stands in — it carries the real
+        // end-of-source span, so error messages still point at the right place.
+        // `EOF_TOKEN` covers the empty-buffer case the lexer never produces,
+        // keeping this total (no `.expect()` in library code, per CLAUDE.md).
+        self.tokens
+            .get(self.pos)
+            .or_else(|| self.tokens.last())
+            .unwrap_or(&EOF_TOKEN)
     }
 
     pub(super) fn peek_kind(&self) -> &TokenKind {
