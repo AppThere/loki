@@ -157,16 +157,20 @@ pub(super) fn MacroRunnerPanel(
         }
 
         // Live capability prompt / dialog from the running macro.
-        if pending.read().is_some() {
-            {
-                let kind = pending
-                    .read()
-                    .as_ref()
-                    .map(|p| PromptKind::from_request(p.request()))
-                    .expect("pending is Some");
-                let svc_answer = svc.clone();
-                let payload_answer = payload_of(&ctx.0);
-                rsx! {
+        {
+            // Bind the owned view in its own statement so the signal borrow is
+            // released before the body — the answer callback writes the same
+            // signal. `if let` then covers the empty case without a redundant
+            // `is_some()` guard and its unreachable `.expect()` (CLAUDE.md: no
+            // panicking accessors in library code).
+            let kind = pending
+                .read()
+                .as_ref()
+                .map(|p| PromptKind::from_request(p.request()));
+            let svc_answer = svc.clone();
+            let payload_answer = payload_of(&ctx.0);
+            rsx! {
+                if let Some(kind) = kind {
                     MacroPromptView {
                         kind,
                         project: project.clone(),
