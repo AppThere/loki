@@ -15,8 +15,8 @@
 use loki_basic::{RuntimeError, Value};
 
 use super::{
-    APP, DOC, DocEdit, ExecutionHost, FIND, HTTP_RESPONSE_BASE, MacroBackend, REPLACEMENT,
-    SELECTION, find,
+    APP, DOC, DocEdit, ExecutionHost, FILE_HANDLE_BASE, FIND, HTTP_RESPONSE_BASE, MacroBackend,
+    REPLACEMENT, SELECTION, find,
 };
 use crate::capability::Capability;
 
@@ -35,6 +35,8 @@ pub(super) fn get_member<B: MacroBackend>(
         SELECTION => find::selection_member(host, &member, args),
         FIND => find::find_member(host, &member, args),
         REPLACEMENT => find::replacement_member(host, &member, args),
+        // Highest base first so a file handle is never mistaken for a response.
+        _ if obj.0 >= FILE_HANDLE_BASE => file_member(host, obj, &member),
         _ if obj.0 >= HTTP_RESPONSE_BASE => response_member(host, obj, &member, args),
         _ => Err(no_member()),
     }
@@ -96,6 +98,27 @@ fn application_member<B: MacroBackend>(
         }
         // `Application.HttpGet(url)` — the read-only network verb (ADR-0015 §4.1).
         "httpget" => host.http_get(arg_string(args, 0)?),
+        // `Application.OpenFileForReading([filter])` — picker-mediated file read
+        // (spec §5.3, Phase 7B).
+        "openfileforreading" | "openfileforread" => host.open_file_for_reading(args),
+        _ => Err(no_member()),
+    }
+}
+
+/// `PickedFile.*` members — reading a file the user chose through the picker.
+/// The pick + the `FileRead` grant were the gated acts (spec §5.3); reading the
+/// bytes it returned needs no further capability.
+fn file_member<B: MacroBackend>(
+    host: &mut ExecutionHost<B>,
+    obj: loki_basic::ObjectRef,
+    member: &str,
+) -> Result<Value, RuntimeError> {
+    let index = (obj.0 - FILE_HANDLE_BASE) as usize; // obj.0 is u32
+    let file = host.doc().files.get(index).ok_or_else(no_member)?;
+    match member {
+        "path" | "fullname" | "name" => Ok(Value::Str(file.path.clone())),
+        "text" | "readall" | "readalltext" | "content" => Ok(Value::Str(file.text())),
+        "length" | "len" | "size" => Ok(Value::from_i64_fit(file.len_bytes() as i64)),
         _ => Err(no_member()),
     }
 }

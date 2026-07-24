@@ -20,6 +20,7 @@
 
 mod edit;
 mod facade;
+mod file;
 mod find;
 mod network;
 
@@ -48,6 +49,11 @@ pub(crate) const REPLACEMENT: ObjectRef = ObjectRef(5);
 /// `Application.HttpGet` is `HTTP_RESPONSE_BASE + index`; well above the fixed
 /// singleton handles so there is no collision.
 pub(crate) const HTTP_RESPONSE_BASE: u32 = 0x1000;
+/// Base handle for picked-file objects (Phase 7B). A file returned by
+/// `Application.OpenFileForReading` is `FILE_HANDLE_BASE + index`; a distinct,
+/// higher range than [`HTTP_RESPONSE_BASE`] so the two never collide (checked
+/// highest-base-first in the facade dispatch).
+pub(crate) const FILE_HANDLE_BASE: u32 = 0x2000;
 
 /// The outcome of showing a macro dialog (spec §5.5).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +107,17 @@ pub trait MacroBackend {
     ) -> Result<crate::http::HttpResponse, HttpError> {
         Err(HttpError::Refused)
     }
+
+    /// Raises the OS file picker (filtered by `filter`) and returns the chosen
+    /// file's path + bytes, or `None` if the user cancelled (macro spec §5.3,
+    /// Phase 7B). The pick *is* the second consent (T3); the [`Capability::FileRead`]
+    /// prompt has already been granted by the time this is called.
+    ///
+    /// The default returns `None` (nothing picked), so a non-interactive backend
+    /// (UDF, headless, tests) reads no files.
+    fn read_file(&mut self, _filter: &crate::file::FileFilter) -> Option<crate::file::PickedFile> {
+        None
+    }
 }
 
 /// A backend that grants nothing and shows nothing — for UDFs and tests.
@@ -130,6 +147,9 @@ pub(crate) struct DocFacade {
     /// `HttpResponse` objects returned by `Application.HttpGet` this run, indexed
     /// by `handle - HTTP_RESPONSE_BASE` (8B.2).
     pub(crate) responses: Vec<crate::http::HttpResponse>,
+    /// Picked-file objects returned by `Application.OpenFileForReading` this run,
+    /// indexed by `handle - FILE_HANDLE_BASE` (Phase 7B).
+    pub(crate) files: Vec<crate::file::PickedFile>,
 }
 
 impl DocFacade {
@@ -137,6 +157,13 @@ impl DocFacade {
     pub(crate) fn push_response(&mut self, response: crate::http::HttpResponse) -> ObjectRef {
         let handle = ObjectRef(HTTP_RESPONSE_BASE + self.responses.len() as u32);
         self.responses.push(response);
+        handle
+    }
+
+    /// Stores `file` and returns its object handle.
+    pub(crate) fn push_file(&mut self, file: crate::file::PickedFile) -> ObjectRef {
+        let handle = ObjectRef(FILE_HANDLE_BASE + self.files.len() as u32);
+        self.files.push(file);
         handle
     }
 }
@@ -162,6 +189,7 @@ impl<B: MacroBackend> ExecutionHost<B> {
                 printed: false,
                 find: FindState::default(),
                 responses: Vec::new(),
+                files: Vec::new(),
             },
         }
     }

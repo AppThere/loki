@@ -33,6 +33,7 @@ pub mod capability;
 pub mod error;
 pub mod events;
 pub mod exec;
+pub mod file;
 pub mod http;
 pub mod net;
 /// The `reqwest`/`rustls` transport for the macro `Network` capability — only
@@ -58,6 +59,7 @@ pub use capability::{Capability, CapabilityDecision, GrantScope, RunContext};
 pub use error::MacroHostError;
 pub use events::{EventPhase, auto_open_handlers, handler_phase, is_auto_open};
 pub use exec::{DenyBackend, DialogOutcome, DocEdit, EditBatch, ExecutionHost, MacroBackend};
+pub use file::{FileFilter, PickedFile};
 pub use http::{HttpError, HttpRequest, HttpResponse, origin_of};
 pub use net::{MACRO_NET_COMPILED, NetworkPolicy};
 #[cfg(feature = "macro-net")]
