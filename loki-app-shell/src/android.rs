@@ -11,23 +11,24 @@
 //! init, safe-area insets, `set_android_app`, the soft-keyboard (IME) visibility
 //! bridge, i18n, and the Dioxus launch.
 //!
-//! [`android_main!`] generates that body once.
+//! [`android_main!`] generates that body once. It is a macro rather than a
+//! function so the expansion uses each binary's own `dioxus` / `blitz_shell` /
+//! `android_activity` dependencies — keeping this crate lean and
+//! `#![forbid(unsafe_code)]` (the emitted `unsafe` lives in the *caller*, under
+//! the scoped `#[allow(unsafe_code)]` the macro attaches; Spec 01 audit A-7).
 //!
 //! ## This macro is the *only* `android_main` a binary may define
 //!
 //! `macro_rules!` is hygienic for local bindings but **not for item names**: the
 //! `static ANDROID_MAIN_RUNNING` and `fn android_main` emitted below land in the
 //! caller's module namespace under those literal names. A binary that both
-//! invokes this macro and keeps a hand-written `android_main` gets `E0428`, and
-//! because both are behind `#[cfg(target_os = "android")]` a desktop
-//! `cargo check` cannot see it. That is exactly how merge `cce9772` broke the
-//! `loki-text` Android build for three weeks (Spec 08 I-16 / S0.4); the Android
-//! CI target added in the same change (L08-014) is what keeps it from
-//! recurring. It is a macro rather than a
-//! function so the expansion uses each binary's own `dioxus` / `blitz_shell` /
-//! `android_activity` dependencies — keeping this crate lean and
-//! `#![forbid(unsafe_code)]` (the emitted `unsafe` lives in the *caller*, under
-//! the scoped `#[allow(unsafe_code)]` the macro attaches; Spec 01 audit A-7).
+//! invokes this macro and keeps a hand-written `android_main` gets `E0428` — and
+//! because both are behind `#[cfg(target_os = "android")]`, no host job can see
+//! it. Measured, not assumed: with a plain `let x: u32 = "string";` inside this
+//! macro body, `cargo check --workspace` and the full CI clippy command both
+//! still pass. That is how merge `cce9772` broke the `loki-text` Android build
+//! (Spec 08 I-16 / S0.4). The `android-check` CI job added in the same change
+//! (L08-014) is the only thing that catches it.
 //!
 //! ## Usage
 //!

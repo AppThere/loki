@@ -64,7 +64,8 @@ unchanged; four gain a consequence:
 | Item | Owner phase | Note |
 | --- | --- | --- |
 | ~~Identify the sixth scroll capability (spec r3 §3.1)~~ | — | **Answered** in S0.1 §2a: the missing one is **animated programmatic scroll**, which is app-side work, so T1.1 has no patch to land. Nested containers are *unproven*, not missing |
-| Probe P1 — nested scroll containers | before T7.3 | S0.1 §4. Until recorded, T7.4's modal fallback is the assumed path and R2 stays open |
+| Probe P1 — nested scroll containers | T1.7 (Phase 1) | S0.1 §4. Test input routing, not layout — blitz-dom models the geometry, so the plausible failure is renders-right/routes-wrong. Gates T7.3; R2 is *unverified*, not unsupported |
+| Close Phase 0.5: run the negative test, and make CI reach the branch | next CI run | S0.4 §6b. Half one (host gates are blind) is measured; half two needs an NDK the sandbox cannot fetch. Note the branch currently triggers **no** CI — `rust.yml` fires only on `main` pushes and PRs to `main` |
 | Confirm I-06 candidate 1 with a failing test | T3.1 | S0.3 §4 |
 | Decide Phase 2 acceptance criterion (a) or (b) | before T2.1 | S0.2 §4 |
 | Reconcile L08-003 with ADR-0012 Decision 2 | Phase 6 ADR pass | S0.5 §7 |
