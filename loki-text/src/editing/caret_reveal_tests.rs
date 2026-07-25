@@ -75,3 +75,65 @@ fn a_caret_on_a_later_page_is_far_down_the_content() {
     let s = stack(1.0);
     assert_eq!(s.content_y(9, 72.0), 24.0 + 9.0 * 1080.0 + 96.0);
 }
+
+// ── Reveal trigger (L08-019 / I-20) ──────────────────────────────────────────
+
+use super::{CaretRevision, should_reveal};
+use crate::editing::cursor::DocumentPosition;
+
+fn pos(page: usize, para: usize, byte: usize) -> DocumentPosition {
+    DocumentPosition {
+        page_index: page,
+        paragraph_index: para,
+        byte_offset: byte,
+        path: Vec::new(),
+    }
+}
+
+#[test]
+fn first_reveal_always_fires() {
+    let now = CaretRevision::new(pos(0, 0, 0), None);
+    assert!(should_reveal(None, &now));
+}
+
+#[test]
+fn an_unchanged_caret_does_not_re_reveal() {
+    // This is I-20 in miniature. The effect can re-run for any number of
+    // reasons — a scroll event, a re-render, a props change — and none of them
+    // moved the caret, so none of them may scroll the view.
+    let rev = CaretRevision::new(pos(3, 12, 40), None);
+    assert!(!should_reveal(Some(&rev), &rev.clone()));
+}
+
+#[test]
+fn typing_a_character_fires() {
+    let before = CaretRevision::new(pos(3, 12, 40), None);
+    let after = CaretRevision::new(pos(3, 12, 41), None);
+    assert!(should_reveal(Some(&before), &after));
+}
+
+#[test]
+fn moving_to_another_page_fires() {
+    let before = CaretRevision::new(pos(3, 12, 40), None);
+    let after = CaretRevision::new(pos(4, 13, 0), None);
+    assert!(should_reveal(Some(&before), &after));
+}
+
+#[test]
+fn extending_a_selection_fires_even_when_the_focus_is_unchanged() {
+    // Collapsing or extending at the same byte offset is still a caret change
+    // the user made; without the anchor in the revision it would be invisible.
+    let collapsed = CaretRevision::new(pos(1, 2, 10), None);
+    let extended = CaretRevision::new(pos(1, 2, 10), Some(pos(1, 2, 4)));
+    assert!(should_reveal(Some(&collapsed), &extended));
+}
+
+#[test]
+fn entering_a_table_cell_fires() {
+    // Same page, paragraph and offset, different container path.
+    let outside = CaretRevision::new(pos(0, 5, 3), None);
+    let mut inside_pos = pos(0, 5, 3);
+    inside_pos.path = vec![loki_doc_model::PathStep::Cell { cell: 0, block: 0 }];
+    let inside = CaretRevision::new(inside_pos, None);
+    assert!(should_reveal(Some(&outside), &inside));
+}

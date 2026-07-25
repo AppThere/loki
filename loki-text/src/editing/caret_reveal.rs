@@ -34,6 +34,48 @@ const PT_TO_PX: f32 = 96.0 / 72.0;
 /// when it sits exactly on the right edge.
 const CARET_WIDTH_PT: f32 = 1.0;
 
+/// The caret identity a reveal is keyed on (ADR L08-019).
+///
+/// A reveal must fire when the caret *moves*, and at no other time. Keying on
+/// anything derived from scroll position instead — "is the caret still inside
+/// the margin band" — produces I-20: the user turns the wheel, the caret's
+/// viewport-relative position changes without the caret moving, the check
+/// fails, and the reveal drags the view back. The wheel ends up capped at the
+/// margin band, asymmetrically, because the margin is asymmetric.
+///
+/// `anchor` is included so extending a selection with Shift+arrow reveals the
+/// moving end even when the focus byte offset happens to land where it was.
+#[derive(Clone, PartialEq, Debug)]
+pub struct CaretRevision {
+    focus: DocumentPosition,
+    anchor: Option<DocumentPosition>,
+}
+
+impl CaretRevision {
+    /// Captures the current caret identity.
+    #[must_use]
+    pub fn new(focus: DocumentPosition, anchor: Option<DocumentPosition>) -> Self {
+        Self { focus, anchor }
+    }
+}
+
+/// Whether a reveal should fire, given the revision at the last reveal and the
+/// revision now.
+///
+/// The whole trigger rule, in one testable place: fire if and only if the caret
+/// identity changed. A scroll cannot change it, so a scroll cannot trigger a
+/// reveal — which is the property T1.4 asked for and idempotence never actually
+/// provided.
+///
+/// This also means a caret that stays put while the layout moves underneath it
+/// — an async font load, an image resolving, a reflow after a style change —
+/// does not yank the view (Spec 08 R25). That movement is real but it is not
+/// the user asking to go anywhere.
+#[must_use]
+pub fn should_reveal(last: Option<&CaretRevision>, now: &CaretRevision) -> bool {
+    last != Some(now)
+}
+
 /// Page stacking geometry, shared by the caret rect and the hit-test.
 #[derive(Clone, Copy, Debug)]
 pub struct PageStack {

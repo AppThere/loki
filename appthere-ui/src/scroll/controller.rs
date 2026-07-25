@@ -22,6 +22,28 @@ pub type ContentRect = (f32, f32, f32, f32);
 /// same numbers a reveal needs, and a second source would recreate the
 /// divergence Spec 01 audit A-1 removed from viewport width (S0.1 §3).
 ///
+/// # A command must never subscribe to scroll state (L08-019)
+///
+/// This is the rule I-20 was created by breaking. `scroll_to_reveal` read the
+/// metrics signal reactively, so the caret-follow effect that called it became
+/// a subscriber to every scroll event. Turning the wheel then re-ran the
+/// effect, which recomputed the caret's position *relative to the new scroll
+/// offset*, found it outside the reveal margin — because the user had just
+/// scrolled it there — and scrolled back. The wheel was capped at the margin
+/// band around the caret, and the cap was asymmetric (one line up, three down)
+/// because the margin is.
+///
+/// Nothing in the type system stops that recurring, so the discipline is:
+/// **observation methods read, command methods peek.** `metrics` and
+/// `visible_rect` are the observers and say so; every command path goes
+/// through [`Self::metrics_now`]. If a command ever needs a value not exposed
+/// that way, add a peeking accessor rather than reaching for the reactive one.
+///
+/// The deeper guarantee lives at the call site: a reveal fires on *caret
+/// revision change*, never on anything derived from scroll position. Removing
+/// the subscription stops the loop; keying the trigger on caret identity means
+/// a future subscription slipping back in cannot restart it.
+///
 /// `Copy`, so it threads through render functions like any other signal bundle.
 #[derive(Clone, Copy)]
 pub struct ViewportController {
@@ -53,16 +75,28 @@ pub fn use_viewport_controller(
 }
 
 impl ViewportController {
-    /// The live scroll geometry.
+    /// The live scroll geometry, as a **reactive** read.
+    ///
+    /// Calling this inside a `use_effect` subscribes that effect to every
+    /// scroll event. That is correct for an observer — a scroll indicator, a
+    /// page counter — and catastrophic for anything that issues a scroll. See
+    /// the type docs; commands use [`Self::metrics_now`].
     #[must_use]
     pub fn metrics(&self) -> ScrollMetrics {
         *self.metrics.read()
     }
 
-    /// The visible region in content coordinates, `(x, y, width, height)`.
+    /// The visible region in content coordinates, `(x, y, width, height)`, as a
+    /// **reactive** read. Same subscription caveat as [`Self::metrics`].
     #[must_use]
     pub fn visible_rect(&self) -> ContentRect {
         self.metrics.read().visible_rect()
+    }
+
+    /// The current scroll geometry **without subscribing** — the only accessor
+    /// a command path may use (L08-019).
+    fn metrics_now(&self) -> ScrollMetrics {
+        *self.metrics.peek()
     }
 
     /// Sets the motion preference (see [`MotionPreference`]).
@@ -91,7 +125,7 @@ impl ViewportController {
         margin: RevealMargin,
         behavior: ScrollBehavior,
     ) -> bool {
-        let m = self.metrics();
+        let m = self.metrics_now();
         if !m.is_measured() {
             return false;
         }
@@ -128,18 +162,18 @@ impl ViewportController {
         // instant one: otherwise a keystroke's instant reveal would be undone
         // by the tail of a smooth scroll still running underneath it.
         self.cancel();
-        let smooth = behavior == ScrollBehavior::Smooth && self.motion.read().animates();
+        let smooth = behavior == ScrollBehavior::Smooth && self.motion.peek().animates();
         if !smooth {
             self.apply(x, y);
             return;
         }
-        let m = self.metrics();
+        let m = self.metrics_now();
         self.animate(m.scroll_left, m.scroll_top, x, y);
     }
 
     /// Issues one instant scroll through the mounted container.
     fn apply(&self, x: f32, y: f32) {
-        let guard = self.mounted.read();
+        let guard = self.mounted.peek();
         let Some(mounted) = guard.as_ref() else {
             return; // container not mounted yet
         };
