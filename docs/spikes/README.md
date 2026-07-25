@@ -1,0 +1,69 @@
+<!--
+SPDX-FileCopyrightText: 2026 Kevin Carlson
+SPDX-License-Identifier: Apache-2.0
+-->
+
+# Spike findings
+
+Investigation documents produced by a spec's Phase 0. No production code; each
+document is evidence for a decision taken later.
+
+## Loki Spec 08 — UX & Memory Remediation Program, Phase 0
+
+| ID | Document | Gates | Verdict |
+| --- | --- | --- | --- |
+| S0.1 | [Blitz scroll capability](S0.1-blitz-scroll-capability.md) | Phases 1, 2, 7 | 5 of 6 capabilities already exist and ship today. R1 closed |
+| S0.2 | [Render pipeline and memory census](S0.2-render-memory-census.md) | Phase 2 | Textures are already windowed; the unbounded axis is zoom×DPI, not page count. Phase 2's acceptance criterion needs restating |
+| S0.3 | [Coordinate-space audit](S0.3-coordinate-space-audit.md) | T1.3, T3.1, T5.5 | Chain documented; §3.3's stated cause for I-06 is wrong; a better candidate identified |
+| S0.4 | [IME patch archaeology](S0.4-ime-patch-archaeology.md) | T3.2 | Patch intact; the **Android build of `loki-text` is broken** by a duplicated entry point. R6 closed |
+| S0.5 | [Page style format study](S0.5-page-style-format-study.md) | Phase 6 | §3.4 confirmed; most of T6a/T6b already built under ADR-0012. Phase 6 is much smaller than scoped |
+| S0.6 | [Device capability probe](S0.6-device-capability-probe.md) | T1.6 and all later responsive work | 11 behavioural `cfg(target_os)` sites, all enumerated. R13 closed |
+
+### Exit criteria
+
+Spec §4 Phase 0 requires six findings documents and confirmation that the §7
+decisions still hold. Both are met. All eight decisions survive the findings
+unchanged; four gain a consequence:
+
+| Decision | Status | Consequence from Phase 0 |
+| --- | --- | --- |
+| D-01 patch locally, PR upstream | **Holds** | Cheaper than assumed — S0.1 finds no new patch is needed for scroll. The one new patch candidate is input-device events for pointer precision (S0.6 §4) |
+| D-02 page-style names in a custom part | **Holds** | S0.5 §4 identifies `docx/write/custom_props.rs` as the worked example to copy |
+| D-03 OS measurement system → locale → metric | **Holds** | S0.6 §4 folds the probe into `DeviceProfile`'s plumbing |
+| D-04 calibrate on first use of Actual Size | **Holds** | S0.6 §4 confirms R7: physical display size is frequently absent or wrong, so calibration is the primary path as D-04 assumes |
+| D-05 character-based measure | **Holds** | `reflow_metrics.rs` already has a pixel cap (`MAX_REFLOW_TILE_PX`) to replace |
+| D-06 extract `appthere-color-ui` | **Holds, with a correction** | **`appthere-color` does not exist.** The picker lives in `appthere-ui/src/components/color_picker/` (`mod.rs`, `custom.rs`, `convert.rs`). T5.1 must create *both* crates, or restate D-06 as "extract the existing `appthere-ui` picker into a standalone pair". This is the one §7 decision written against a component that is not there |
+| D-07 styles document-scoped, defaults app-scoped | **Holds** | Document half already implemented (S0.5 §1); the application-scoped half is new |
+| D-08 budget derived per device at runtime | **Holds** | S0.6 confirms the violation set is small; S0.2 §5 finds the largest violation is the Android renderer path, not the budget |
+
+### Recommended changes to the spec before Phase 1 starts
+
+1. **Phase 2 acceptance (§4).** Replace "peak RSS for a 500-page document within
+   20% of a 10-page document" with a resident-texture-bytes bound. Texture
+   residency is already document-length-independent; the RSS difference between
+   those documents is layout and editing data, which Phase 2 as scoped does not
+   touch. Add the layout tail as a new issue rather than absorbing it silently.
+   (S0.2 §4, §6.)
+2. **Add an issue for the broken Android build.** S0.4 finds a compile failure,
+   not the behavioural regression I-07 describes. It should be tracked and fixed
+   ahead of Phase 3 rather than inside it, since nothing on Android can be
+   verified until it builds.
+3. **Rescope Phase 6 (§4).** T6a.1, T6a.2, T6a.3, T6b.1, T6b.2, T6b.3 and most
+   of T6b.5 are already implemented. The real backlog is `style:page-usage`,
+   the page-size catalogue, the EMU migration of the page family only,
+   application-scoped defaults, the advisory custom part, and all of T6c.
+   (S0.5 §1, §4.)
+4. **Correct §3.3.** Spelling squiggles are already emitted per layout line;
+   the leading candidate is the fragment clip floor discarding the descender
+   band. (S0.3 §4.)
+5. **Note in §3.1** that the overlay *and* most scroll capabilities are proven,
+   so T1.1 is a documentation task.
+
+### Open items carried out of Phase 0
+
+| Item | Owner phase | Note |
+| --- | --- | --- |
+| Probe P1 — nested scroll containers | before T7.3 | S0.1 §4. Until recorded, T7.4's modal fallback is the assumed path and R2 stays open |
+| Confirm I-06 candidate 1 with a failing test | T3.1 | S0.3 §4 |
+| Decide Phase 2 acceptance criterion (a) or (b) | before T2.1 | S0.2 §4 |
+| Reconcile L08-003 with ADR-0012 Decision 2 | Phase 6 ADR pass | S0.5 §7 |
