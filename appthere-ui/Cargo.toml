@@ -13,3 +13,9 @@ path = "src/lib.rs"
 [dependencies]
 dioxus     = { workspace = true }
 loki-i18n  = { path = "../loki-i18n" }
+# Smooth-scroll animation ticks: a worker thread sleeps and signals the UI task
+# through an mpsc channel, because dioxus-native has no async timer and Blitz
+# no per-element animation clock (Spec 08 S0.1 / scroll::animate).
+futures-channel = "0.3"
+# StreamExt::next, to drain those ticks on the UI thread.
+futures-util = { version = "0.3", default-features = false }

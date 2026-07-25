@@ -1,0 +1,77 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
+
+//! Tests for the caret content-space geometry.
+
+use super::{PageStack, caret_line_height_px};
+
+/// US Letter at 100%: 792 pt → 1056 CSS px, 24 px gap, 24 px container padding.
+fn stack(zoom: f32) -> PageStack {
+    PageStack {
+        page_height_px: 1056.0,
+        page_gap_px: 24.0,
+        zoom,
+        content_top_px: 24.0,
+    }
+}
+
+#[test]
+fn slot_scales_the_page_but_not_the_gap() {
+    // The gap is a fixed CSS margin on the tile, so it must not be zoomed.
+    // Getting this wrong drifts the caret by one gap per page — invisible on
+    // page 1 and badly wrong on page 20.
+    assert_eq!(stack(1.0).slot_px(), 1080.0);
+    assert_eq!(stack(2.0).slot_px(), 2136.0);
+    assert_eq!(stack(0.5).slot_px(), 552.0);
+}
+
+#[test]
+fn first_page_starts_below_the_container_padding() {
+    // Content y = 0 is the scroll container's top edge, not the first page's.
+    assert_eq!(stack(1.0).content_y(0, 0.0), 24.0);
+}
+
+#[test]
+fn later_pages_accumulate_whole_slots() {
+    let s = stack(1.0);
+    assert_eq!(s.content_y(1, 0.0), 24.0 + 1080.0);
+    assert_eq!(s.content_y(4, 0.0), 24.0 + 4.0 * 1080.0);
+}
+
+#[test]
+fn page_local_points_convert_at_ninety_six_over_seventy_two() {
+    // 72 pt is one inch is 96 px at zoom 1.
+    let s = stack(1.0);
+    assert_eq!(s.content_y(0, 72.0), 24.0 + 96.0);
+    assert_eq!(s.px_per_pt(), 96.0 / 72.0);
+}
+
+#[test]
+fn zoom_scales_both_the_slot_and_the_in_page_offset() {
+    let s = stack(2.0);
+    // Page 1 top, plus a 72 pt margin inside it, both at 2x.
+    assert_eq!(s.content_y(1, 72.0), 24.0 + 2136.0 + 192.0);
+}
+
+#[test]
+fn line_height_prefers_the_caret_rect() {
+    assert_eq!(
+        caret_line_height_px(Some((0.0, 0.0, 1.0, 21.0)), 18.0),
+        21.0
+    );
+}
+
+#[test]
+fn line_height_falls_back_when_the_caret_has_no_rect() {
+    assert_eq!(caret_line_height_px(None, 18.0), 18.0);
+    // A degenerate zero-height rect is not a usable line height either.
+    assert_eq!(caret_line_height_px(Some((0.0, 0.0, 1.0, 0.0)), 18.0), 18.0);
+}
+
+#[test]
+fn a_caret_on_a_later_page_is_far_down_the_content() {
+    // Guards the whole chain: page 9, one inch into the page, at 100%.
+    // 24 padding + 9 slots + 96 px = 9840.
+    let s = stack(1.0);
+    assert_eq!(s.content_y(9, 72.0), 24.0 + 9.0 * 1080.0 + 96.0);
+}

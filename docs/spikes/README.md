@@ -64,7 +64,8 @@ unchanged; four gain a consequence:
 | Item | Owner phase | Note |
 | --- | --- | --- |
 | ~~Identify the sixth scroll capability (spec r3 §3.1)~~ | — | **Answered** in S0.1 §2a: the missing one is **animated programmatic scroll**, which is app-side work, so T1.1 has no patch to land. Nested containers are *unproven*, not missing |
-| Probe P1 — nested scroll containers | T1.7 (Phase 1) | S0.1 §4. Test input routing, not layout — blitz-dom models the geometry, so the plausible failure is renders-right/routes-wrong. Gates T7.3; R2 is *unverified*, not unsupported |
+| Probe P1 — nested scroll containers | T1.7 (Phase 1) | S0.1 §4. **Still open** — needs a running app; not runnable in the dev sandbox. Test input routing, not layout: blitz-dom models the geometry, so the plausible failure is renders-right/routes-wrong. Gates T7.3; R2 is *unverified*, not unsupported |
+| Wire the `DeviceProfile` platform probes | T1.6 tail | The type, context and pointer latch landed in Phase 1 (`appthere-ui/src/device_profile.rs`); every probe behind it is still `Unknown`. RAM, GPU class, display size and reduced-motion each need platform FFI, and the 11 behavioural `cfg` sites from S0.6 §2a cannot retire until their probe exists |
 | Close Phase 0.5: run the negative test, and make CI reach the branch | next CI run | S0.4 §6b. Half one (host gates are blind) is measured; half two needs an NDK the sandbox cannot fetch. Note the branch currently triggers **no** CI — `rust.yml` fires only on `main` pushes and PRs to `main` |
 | Confirm I-06 candidate 1 with a failing test | T3.1 | S0.3 §4 |
 | Decide Phase 2 acceptance criterion (a) or (b) | before T2.1 | S0.2 §4 |
