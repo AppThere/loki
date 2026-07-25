@@ -63,6 +63,7 @@ unchanged; four gain a consequence:
 
 | Item | Owner phase | Note |
 | --- | --- | --- |
+| ~~Identify the sixth scroll capability (spec r3 §3.1)~~ | — | **Answered** in S0.1 §2a: the missing one is **animated programmatic scroll**, which is app-side work, so T1.1 has no patch to land. Nested containers are *unproven*, not missing |
 | Probe P1 — nested scroll containers | before T7.3 | S0.1 §4. Until recorded, T7.4's modal fallback is the assumed path and R2 stays open |
 | Confirm I-06 candidate 1 with a failing test | T3.1 | S0.3 §4 |
 | Decide Phase 2 acceptance criterion (a) or (b) | before T2.1 | S0.2 §4 |
