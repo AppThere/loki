@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use parley::Alignment;
 
-use super::{ResolvedLineHeight, ResolvedListMarker, ResolvedTabStop};
+use super::{ByteIndexMap, ResolvedLineHeight, ResolvedListMarker, ResolvedTabStop};
 use crate::color::LayoutColor;
 use crate::geometry::LayoutInsets;
 use crate::items::{BorderEdge, PositionedItem};
@@ -219,9 +219,9 @@ pub struct ParagraphLayout {
     /// the editing layer shares layouts across the page editing index.
     pub parley_layout: Option<Arc<parley::Layout<LayoutColor>>>,
     /// Original to cleaned byte index mappings.
-    pub orig_to_clean: Vec<usize>,
+    pub orig_to_clean: ByteIndexMap,
     /// Cleaned to original byte index mappings.
-    pub clean_to_orig: Vec<usize>,
+    pub clean_to_orig: ByteIndexMap,
     /// Paragraph start (left) indent in points, applied to drawn glyphs.
     ///
     /// Retained so cursor / hit-test / selection geometry can include the same
@@ -241,6 +241,25 @@ pub struct ParagraphLayout {
     /// Horizontal shift in points applied to the first [`Self::drop_lines`]
     /// lines. `0.0` = none.
     pub drop_shift: f32,
+}
+
+impl ParagraphLayout {
+    /// Releases spare capacity in every owned vector, glyph runs included.
+    ///
+    /// Called once per cache miss before the layout is shared (S9-1). These
+    /// vectors are built by `push`, so they carry up to 2× slack from doubling,
+    /// and a cached layout is long-lived — the slack is retained for as long as
+    /// the entry survives. It must reach the *nested* glyph vectors, not just
+    /// the top-level ones: the deep clone this replaces compacted every level,
+    /// and a shallow shrink recovers only about a quarter of what it did. Costs
+    /// one realloc per vector on the shaping path; cache hits never touch it.
+    pub(crate) fn shrink_to_fit(&mut self) {
+        self.items.shrink_to_fit();
+        for item in &mut self.items {
+            item.shrink_to_fit();
+        }
+        self.line_boundaries.shrink_to_fit();
+    }
 }
 
 impl std::fmt::Debug for ParagraphLayout {

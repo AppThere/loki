@@ -26,8 +26,10 @@
 #![warn(missing_docs)]
 
 pub mod components;
+pub mod device_profile;
 pub mod responsive;
 pub mod safe_area;
+pub mod scroll;
 pub mod theme;
 pub mod tokens;
 
@@ -59,6 +61,10 @@ pub use components::{
     MacroDialogFrame, MacroDialogFrameProps, MacroGrantChoice, MacroTrustChoice, PanelPosture,
     Platform, RecentDocument, BACKDROP_Z_INDEX,
 };
+pub use device_profile::{
+    note_pointer, use_device_profile, use_provide_device_profile, AtDeviceProfileContext,
+    DeviceProfile, GpuClass, PhysicalDisplay, PointerPrecision, WindowMode,
+};
 pub use responsive::{
     estimate_group_metrics, group_layout, page_fits, required_page_width, resolve_cascade,
     resolve_page_fit, use_breakpoint, use_provide_responsive, use_responsive, use_ribbon_cascade,
@@ -66,4 +72,8 @@ pub use responsive::{
     GroupCollapse, GroupLayout, GroupMetrics, PageFit, RibbonCascade, Viewport, DEFAULT_DPI,
 };
 pub use safe_area::{set_safe_area_insets, update_safe_area_insets, use_safe_area, SafeAreaInsets};
+pub use scroll::{
+    use_viewport_controller, ContentRect, MotionPreference, RevealMargin, ScrollMetrics,
+    ViewportController,
+};
 pub use theme::{use_theme, AtThemeContext, ThemeVariant};

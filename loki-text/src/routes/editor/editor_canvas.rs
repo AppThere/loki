@@ -38,6 +38,8 @@ use loki_doc_model::loro_bridge::derive_loro_cursor;
 use loki_renderer::{DocumentView, RendererCursorPos, TileContext, ViewMode};
 
 use super::editor_canvas_loading::loading_view;
+use super::editor_canvas_spell::open_spell_panel_at;
+use super::editor_caret_follow::CaretFollow;
 use super::editor_error_view::EditorErrorView;
 use super::editor_keydown::make_keydown_handler;
 use super::editor_pointer::{make_mousedown_handler, make_mousemove_handler, make_mouseup_handler};
@@ -47,7 +49,7 @@ use super::editor_pointer_touch::{
 use super::editor_scrollbar::{
     CanvasMounted, ScrollMetrics, ThumbDrag, horizontal_scrollbar, vertical_scrollbar,
 };
-use super::editor_spell::{SpellMenu, resolve_spell_menu};
+use super::editor_spell::SpellMenu;
 use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::hit_test::{link_at_point, open_or_run};
 use crate::editing::{hit_test::hit_test_page, state::DocumentState, touch::TouchInteractionState};
@@ -59,47 +61,6 @@ use crate::error::LoadError;
 /// audit A-1) — used only for the single frame until `get_client_rect` reports
 /// the real height.
 const DEFAULT_VIEWPORT_HEIGHT_PX: f64 = 800.0;
-
-/// Right-click handler body: resolves the word under the tile-local coordinates
-/// in `ctx` (accurate, via `element_coordinates` — no window-centring math),
-/// selects it, and opens the spelling menu anchored at the cursor. A no-op when
-/// there is no word at the point.
-fn open_spell_panel_at(
-    ctx: TileContext,
-    doc_state: &Arc<std::sync::Mutex<DocumentState>>,
-    loro_doc: Signal<Option<loro::LoroDoc>>,
-    service: &SpellService,
-    mut cursor_state: Signal<CursorState>,
-    mut spell_menu: Signal<Option<SpellMenu>>,
-) {
-    let layout_opt = {
-        let Ok(s) = doc_state.lock() else { return };
-        s.paginated_layout.clone()
-    };
-    let Some(layout) = layout_opt else { return };
-    let Some(pos) = hit_test_page(ctx.page_index, ctx.x_pt, ctx.y_pt, &layout) else {
-        return;
-    };
-    match resolve_spell_menu(loro_doc, service, pos.paragraph_index, pos.byte_offset) {
-        Some(mut menu) => {
-            // Anchor the floating menu at the cursor (window-relative coords).
-            menu.anchor_x = ctx.client_x;
-            menu.anchor_y = ctx.client_y;
-            // Select the whole word so the user sees what the suggestions apply to.
-            let word_pos = |byte_offset| {
-                DocumentPosition::top_level(pos.page_index, menu.paragraph_index, byte_offset)
-            };
-            cursor_state.write().anchor = Some(word_pos(menu.byte_start));
-            cursor_state.write().focus = Some(word_pos(menu.byte_end));
-            spell_menu.set(Some(menu));
-        }
-        // No word at the point — just place the caret.
-        None => {
-            cursor_state.write().anchor = Some(pos.clone());
-            cursor_state.write().focus = Some(pos);
-        }
-    }
-}
 
 /// Renders the scrollable canvas area for the document editor.
 ///
@@ -293,6 +254,23 @@ pub(super) fn render_canvas_area(
                 view_mode,
                 scroll_metrics,
             ),
+
+            // Keeps the caret on screen as it moves (Spec 08 I-05). A zero-
+            // output sensor component so the effect gets a hook scope without
+            // this plain function needing one — see `editor_caret_follow`.
+            CaretFollow {
+                doc_state: Arc::clone(&doc_state_context),
+                cursor_state,
+                scroll_metrics,
+                canvas_mounted,
+                is_dragging,
+                view_mode,
+                zoom_percent,
+                page_gap_px,
+                // The scroll container's own top padding: content y = 0 is its
+                // top edge, and the first page starts one padding below.
+                content_top_px: tokens::SPACE_6,
+            }
 
             match &*document_load.value().read_unchecked() {
                 // Gate on `total_pages > 0`: the document has loaded *and* the

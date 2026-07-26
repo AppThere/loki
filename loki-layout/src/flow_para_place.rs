@@ -27,7 +27,7 @@ use super::{
 pub(super) fn place_with_footnote_band(
     state: &mut FlowState,
     resolved: &ResolvedParaProps,
-    para_layout: ParagraphLayout,
+    para_layout: Arc<ParagraphLayout>,
     block_index: usize,
     text_empty: bool,
     reserve: f32,
@@ -51,13 +51,19 @@ pub(super) fn place_with_footnote_band(
 ///
 /// `space_before` must already be reflected in `state.cursor_y` by the caller.
 ///
+/// `para_layout` arrives as the shaping cache's own `Arc` (S9-1), so the editing
+/// index shares that allocation instead of deep-copying it. Page items are
+/// cloned out of it because they are translated into page coordinates, which the
+/// shared paragraph-local layout must not be: that copy is the irreducible
+/// per-placement cost, and it was already a clone on every cache hit.
+///
 /// # Errors
 ///
 /// Non-fatal issues are pushed onto `state.warnings` rather than returned.
 pub(super) fn place_paragraph_layout(
     state: &mut FlowState,
     resolved: &ResolvedParaProps,
-    para_layout: ParagraphLayout,
+    para_layout: Arc<ParagraphLayout>,
     block_index: usize,
 ) {
     if !state.mode.is_paginated() {
@@ -65,9 +71,10 @@ pub(super) fn place_paragraph_layout(
         let dx = state.current_indent;
         if state.options.preserve_for_editing {
             // origin (dx, dy) matches the item translation below (lists indent dx).
-            push_editing_para(state, block_index, Arc::new(para_layout.clone()), (dx, dy));
+            push_editing_para(state, block_index, Arc::clone(&para_layout), (dx, dy));
         }
-        for mut item in para_layout.items {
+        for item in &para_layout.items {
+            let mut item = item.clone();
             item.translate(dx, dy);
             state.current_items.push(item);
         }
@@ -100,10 +107,11 @@ pub(super) fn place_paragraph_layout(
             let dy = state.cursor_y;
             let dx = state.current_indent;
             if state.options.preserve_for_editing {
-                push_editing_para(state, block_index, Arc::new(para_layout.clone()), (0.0, dy));
+                push_editing_para(state, block_index, Arc::clone(&para_layout), (0.0, dy));
             }
             super::super::line_numbers::emit(state, &para_layout, dy, 0.0, para_layout.height);
-            for mut item in para_layout.items {
+            for item in &para_layout.items {
+                let mut item = item.clone();
                 item.translate(dx, dy);
                 state.current_items.push(item);
             }
@@ -121,11 +129,10 @@ pub(super) fn place_paragraph_layout(
     }
 
     let dx = state.current_indent;
-    let arc_layout = if state.options.preserve_for_editing {
-        Some(Arc::new(para_layout.clone()))
-    } else {
-        None
-    };
+    let arc_layout = state
+        .options
+        .preserve_for_editing
+        .then(|| Arc::clone(&para_layout));
     split_and_place_loop(state, resolved, &para_layout, arc_layout, block_index, dx);
     state.cursor_y += resolved.space_after;
 }

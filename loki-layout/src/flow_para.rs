@@ -15,12 +15,9 @@
 //! deferred to a future Parley (workaround would be U+202B/U+200F controls).
 
 use loki_doc_model::content::block::StyledParagraph;
-use loki_doc_model::content::float::{TextWrap, WrapSide};
 
-use crate::geometry::LayoutRect;
-use crate::items::{PositionedImage, PositionedItem};
 use crate::para::{ParagraphLayout, ResolvedParaProps, layout_paragraph_spelled};
-use crate::resolve::{emu_to_pt, resolve_para_props};
+use crate::resolve::resolve_para_props;
 
 use super::columns_impl::break_column;
 use super::editing::push_editing_para;
@@ -28,6 +25,8 @@ use super::{FlowState, LayoutWarning, finish_page};
 
 #[path = "flow_para_chain.rs"]
 mod chain;
+#[path = "flow_para_images.rs"]
+mod images;
 #[path = "flow_para_place.rs"]
 mod place;
 #[path = "flow_split.rs"]
@@ -36,6 +35,7 @@ mod split;
 mod widow_orphan;
 
 pub(super) use chain::flow_keep_with_next_chain;
+pub(super) use images::{apply_overlay_images, stack_block_images};
 use place::{place_paragraph_layout, place_with_footnote_band};
 use split::split_and_place_loop;
 
@@ -140,30 +140,45 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
         state.options.spell.as_ref(),
     );
 
+    // ── Flow-level item injection ────────────────────────────────────────────
+    // Picture bullets, inline images and floats are pushed into the paragraph's
+    // items *after* shaping, so they cannot live in the shared cache entry.
+    //
+    // Each is conditional and the overwhelming majority of paragraphs need none
+    // of them, so the copy is taken only when there is something to inject
+    // (S9-1): `Arc::make_mut` clones here, since the cache always holds a
+    // second reference, and the resulting private copy is what reaches both the
+    // page items and the editing index — exactly the layout that was placed.
+    // Paragraphs that skip this block keep the single shared allocation.
+    //
     // Picture bullet (feature 5.4): place the label image in the hanging label
     // box on line 0. Injected into the paragraph's items so it translates with
     // the paragraph on placement.
-    if let Some(src) = &marker.bullet_src
-        && let Some(item) =
-            super::flow_list_marker::picture_bullet_item(src, &resolved, &para_layout)
-    {
-        para_layout.items.push(item);
+    let bullet_item = marker
+        .bullet_src
+        .as_ref()
+        .and_then(|src| super::flow_list_marker::picture_bullet_item(src, &resolved, &para_layout));
+    if bullet_item.is_some() || !images.is_empty() || float_plan.is_some() {
+        let layout = std::sync::Arc::make_mut(&mut para_layout);
+        if let Some(item) = bullet_item {
+            layout.items.push(item);
+        }
+
+        // ── Inline image placement (gap #9) ──────────────────────────────────
+        // Block-stack the non-floating images and collect any `wrapNone` overlays.
+        let overlay_items = stack_block_images(layout, &images, state.content_width);
+
+        // Emit the float beside the wrapped text; a float taller than its text
+        // becomes an `ActiveFloat` so *following* paragraphs wrap its remainder.
+        if let Some((_, placement)) = float_plan {
+            layout.items.push(placement.item);
+        }
+
+        // Emit overlay (`wrapNone`) floats last: behind-text ones go under the
+        // whole paragraph (drawn first), in-front ones over the text (drawn last).
+        // Neither reserves vertical space nor shifts the text.
+        apply_overlay_images(layout, overlay_items);
     }
-
-    // ── Inline image placement (gap #9) ──────────────────────────────────────
-    // Block-stack the non-floating images and collect any `wrapNone` overlays.
-    let overlay_items = stack_block_images(&mut para_layout, &images, state.content_width);
-
-    // Emit the float beside the wrapped text; a float taller than its text
-    // becomes an `ActiveFloat` so *following* paragraphs wrap its remainder.
-    if let Some((_, placement)) = float_plan {
-        para_layout.items.push(placement.item);
-    }
-
-    // Emit overlay (`wrapNone`) floats last: behind-text ones go under the
-    // whole paragraph (drawn first), in-front ones over the text (drawn last).
-    // Neither reserves vertical space nor shifts the text.
-    apply_overlay_images(&mut para_layout, overlay_items);
 
     // The paragraph's content top in page coordinates (where the float image's
     // own top sits), captured before placement may advance/split the cursor.
@@ -204,87 +219,5 @@ pub(super) fn flow_paragraph(state: &mut FlowState, para: &StyledParagraph, bloc
 
     if resolved.page_break_after && state.mode.is_paginated() {
         finish_page(state);
-    }
-}
-
-/// Block-stacks a paragraph's non-floating images above its text (gap #9) and
-/// returns any `wrapNone` overlays for the caller to emit after floats.
-///
-/// TODO(inline-image-flow): Parley has no inline image boxes, so images are a
-/// block-level prefix — existing items shift down to make room. Shared by
-/// [`flow_paragraph`] and the keep-with-next chain (`flow_para_chain`) so an
-/// image in a `keepNext` paragraph (e.g. a captioned figure) is not dropped.
-pub(super) fn stack_block_images(
-    para_layout: &mut ParagraphLayout,
-    images: &[crate::resolve::CollectedImage],
-    content_width: f32,
-) -> Vec<(bool, PositionedItem)> {
-    let mut total_image_height = 0.0f32;
-    let mut image_items: Vec<PositionedItem> = Vec::new();
-    // Overlay floats (`wrapNone`): Word reserves no space for them, so instead
-    // of stacking above the text they float at a side-anchored position over
-    // the full-width text (or under it when `behind_text`).
-    let mut overlay_items: Vec<(bool, PositionedItem)> = Vec::new();
-    for img in images {
-        if img.cx_emu == 0 && img.cy_emu == 0 {
-            continue; // zero-size image — skip without crashing
-        }
-        let w = emu_to_pt(img.cx_emu);
-        let h = emu_to_pt(img.cy_emu);
-        if let Some(f) = img.float.filter(|f| f.wrap == TextWrap::None) {
-            // Anchor to the same side `plan_float` would have chosen: text on
-            // the left (`side=Left`) means the object sits on the right.
-            let x = if matches!(f.side, WrapSide::Left) {
-                (content_width - w).max(0.0)
-            } else {
-                0.0
-            };
-            overlay_items.push((
-                f.behind_text,
-                PositionedItem::Image(PositionedImage {
-                    rect: LayoutRect::new(x, 0.0, w, h),
-                    src: img.src.clone(),
-                    alt: img.alt.clone(),
-                }),
-            ));
-            continue;
-        }
-        image_items.push(PositionedItem::Image(PositionedImage {
-            rect: LayoutRect::new(0.0, total_image_height, w, h),
-            src: img.src.clone(),
-            alt: img.alt.clone(),
-        }));
-        total_image_height += h;
-    }
-    if total_image_height > 0.0 {
-        // Expand background fill to cover image area (first item when present).
-        if let Some(PositionedItem::FilledRect(bg)) = para_layout.items.first_mut() {
-            bg.rect.size.height += total_image_height;
-        }
-        // Shift all existing paragraph items down by total image height.
-        for item in &mut para_layout.items {
-            item.translate(0.0, total_image_height);
-        }
-        para_layout.height += total_image_height;
-        // Prepend image items (they render before paragraph text).
-        image_items.append(&mut para_layout.items);
-        para_layout.items = image_items;
-    }
-    overlay_items
-}
-
-/// Emits `wrapNone` overlay images: behind-text ones under the whole paragraph
-/// (drawn first), in-front ones over the text (drawn last). Neither reserves
-/// vertical space nor shifts the text.
-pub(super) fn apply_overlay_images(
-    para_layout: &mut ParagraphLayout,
-    overlay_items: Vec<(bool, PositionedItem)>,
-) {
-    for (behind, item) in overlay_items {
-        if behind {
-            para_layout.items.insert(0, item);
-        } else {
-            para_layout.items.push(item);
-        }
     }
 }

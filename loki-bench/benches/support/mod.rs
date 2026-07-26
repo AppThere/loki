@@ -21,6 +21,7 @@ use loki_doc_model::layout::section::Section;
 use loki_doc_model::style::props::char_props::CharProps;
 use loki_doc_model::style::props::para_props::{ParaProps, ParagraphAlignment};
 use loki_doc_model::style::{ParagraphStyle, StyleCatalog, StyleId};
+use loki_layout::{DocumentLayout, PositionedItem};
 
 /// A small fixed word pool — cycling it gives varied line breaks without a
 /// Lorem-ipsum dependency.
@@ -143,4 +144,299 @@ pub fn report_row(label: &str, s: AllocStats) {
         "  {label:<26} bytes={:>12} allocs={:>9} peak_bytes={:>12}",
         s.total_bytes, s.total_blocks, s.max_bytes,
     );
+}
+
+// ── Spec 09 E0 helpers (layout residency) ────────────────────────────────────
+
+/// Counts the characters of display text in a document.
+///
+/// Built on `inline_plain_text`, which already flattens every inline variant.
+/// A hand-rolled matcher over a subset of `Block`/`Inline` silently returned
+/// zero for every real document in the corpus, because they use `StyledPara`
+/// and `Heading` where [`build_doc`] uses `Para` — the quiet-wrong-answer shape
+/// Spec 09 L9-009 now forbids.
+pub fn char_count(doc: &Document) -> usize {
+    use loki_doc_model::content::toc::inline_plain_text;
+
+    fn block_chars(b: &Block) -> usize {
+        match b {
+            Block::Para(i) | Block::Plain(i) | Block::Heading(_, _, i) => {
+                inline_plain_text(i).chars().count()
+            }
+            Block::StyledPara(p) => inline_plain_text(&p.inlines).chars().count(),
+            Block::BlockQuote(inner) => inner.iter().map(block_chars).sum(),
+            Block::OrderedList(_, items) | Block::BulletList(items) => items
+                .iter()
+                .flat_map(|blocks| blocks.iter())
+                .map(block_chars)
+                .sum(),
+            Block::Table(t) => t
+                .head
+                .rows
+                .iter()
+                .chain(
+                    t.bodies
+                        .iter()
+                        .flat_map(|b| b.head_rows.iter().chain(b.body_rows.iter())),
+                )
+                .chain(t.foot.rows.iter())
+                .flat_map(|row| row.cells.iter())
+                .flat_map(|cell| cell.blocks.iter())
+                .map(block_chars)
+                .sum(),
+            _ => 0,
+        }
+    }
+    doc.sections
+        .iter()
+        .flat_map(|s| s.blocks.iter())
+        .map(block_chars)
+        .sum()
+}
+
+/// Conformance-corpus documents, as `(label, path relative to `loki-bench/`)`.
+///
+/// Read by path rather than by depending on `appthere-conformance`, so no crate
+/// edge is added for the dependency-direction gate to weigh. Note the corpus is
+/// **six** documents — the ~143 `TC-*` entries elsewhere in that crate are a
+/// planned case catalog, not fixtures on disk.
+pub const CORPUS: &[(&str, &str)] = &[
+    (
+        "acid-docx",
+        "../appthere-conformance/fixtures/docx/acid-docx.docx",
+    ),
+    (
+        "acid2-docx",
+        "../appthere-conformance/fixtures/docx/acid2-docx.docx",
+    ),
+    (
+        "iris-blueprint",
+        "../appthere-conformance/fixtures/docx/iris-blueprint.docx",
+    ),
+    (
+        "styles-tinos",
+        "../appthere-conformance/fixtures/odt/styles-tinos.odt",
+    ),
+    (
+        "para-gelasio",
+        "../appthere-conformance/fixtures/odt/para-gelasio.odt",
+    ),
+    (
+        "para-carlito",
+        "../appthere-conformance/fixtures/odt/para-carlito.odt",
+    ),
+];
+
+/// Imports a corpus fixture, or `None` when it is absent or fails to import.
+pub fn load_corpus_doc(rel: &str) -> Option<Document> {
+    use loki_doc_model::io::DocumentImport;
+    use std::io::Cursor;
+
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(rel);
+    let bytes = std::fs::read(&path).ok()?;
+    if rel.ends_with(".docx") {
+        loki_ooxml::DocxImport::import(Cursor::new(bytes.as_slice()), Default::default()).ok()
+    } else {
+        loki_odf::OdtImport::import(Cursor::new(bytes.as_slice()), Default::default()).ok()
+    }
+}
+
+/// Total **source bytes** of a document's text, the UTF-8 length that
+/// [`char_count`] counts characters of.
+///
+/// Spec 09 R9-16: several residency contributors are sized per source byte
+/// rather than per character — the index maps demonstrably so (§10g's multibyte
+/// cross-check) — so a per-character rate is a per-byte rate multiplied by the
+/// script's bytes-per-character. Reporting both lets the reader see which unit
+/// is the invariant instead of inferring it from an assumed ratio.
+pub fn byte_count(doc: &Document) -> usize {
+    use loki_doc_model::content::toc::inline_plain_text;
+
+    fn block_bytes(b: &Block) -> usize {
+        match b {
+            Block::Para(i) | Block::Plain(i) | Block::Heading(_, _, i) => {
+                inline_plain_text(i).len()
+            }
+            Block::StyledPara(p) => inline_plain_text(&p.inlines).len(),
+            Block::BlockQuote(inner) => inner.iter().map(block_bytes).sum(),
+            Block::OrderedList(_, items) | Block::BulletList(items) => items
+                .iter()
+                .flat_map(|blocks| blocks.iter())
+                .map(block_bytes)
+                .sum(),
+            _ => 0,
+        }
+    }
+
+    doc.sections
+        .iter()
+        .flat_map(|s| s.blocks.iter())
+        .map(block_bytes)
+        .sum()
+}
+
+/// Russian and Greek sentences for the 2-byte-per-character tier.
+///
+/// The discriminator for R9-16. Cyrillic and Greek are two UTF-8 bytes per
+/// character with Latin-like shaping complexity — one glyph per character, real
+/// word spaces, ordinary line breaking. So the two hypotheses separate cleanly:
+/// **per-byte residency predicts ~2× the Latin B/char rate**, while
+/// script-complexity predicts ~1×, since nothing about this text is harder to
+/// shape than English. DejaVu covers both.
+const BICAMERAL_2BYTE_SENTENCES: &[&str] = &[
+    "Разметка документа пересчитывается для каждого абзаца.",
+    "Эта строка проверяет расстановку переносов и межстрочный интервал.",
+    "Η διάταξη του εγγράφου υπολογίζεται για κάθε παράγραφο.",
+    "Αυτή η γραμμή ελέγχει τη στοίχιση και το διάστιχο του κειμένου.",
+    "Ширина колонки влияет на количество строк в абзаце.",
+    "Το μέγεθος της γραμματοσειράς καθορίζει το ύψος της γραμμής.",
+];
+
+/// Builds a 2-byte-per-character document (Cyrillic + Greek) — see
+/// [`BICAMERAL_2BYTE_SENTENCES`].
+pub fn build_2byte_doc(paras: usize, sentences: usize) -> Document {
+    build_from_sentences(paras, sentences, BICAMERAL_2BYTE_SENTENCES)
+}
+
+/// Shared paragraph builder for the non-Latin tiers.
+///
+/// Paragraphs are seeded so each is distinct, matching [`build_doc`]: identical
+/// paragraphs would collide in `ParaCache` and measure deduplication instead of
+/// size (L9-012).
+fn build_from_sentences(paras: usize, sentences: usize, pool: &[&str]) -> Document {
+    let blocks: Vec<Block> = (0..paras)
+        .map(|i| {
+            let mut s = format!("{}. ", i + 1);
+            for j in 0..sentences {
+                s.push_str(pool[(i + j) % pool.len()]);
+            }
+            Block::Para(vec![Inline::Str(s)])
+        })
+        .collect();
+    let section = Section::with_layout_and_blocks(PageLayout::default(), blocks);
+    let mut doc = Document::new();
+    doc.sections = vec![section];
+    doc
+}
+
+/// Japanese and Simplified-Chinese sentences for the CJK tier.
+///
+/// Real sentences rather than repeated ideographs: glyph coverage and shaping
+/// cost both depend on how many *distinct* characters appear, so a repeated
+/// character would understate the font-cache side of the measurement.
+const CJK_SENTENCES: &[&str] = &[
+    "文書のレイアウトは段落ごとに計算されます。",
+    "この行は日本語の文字送りを確認するためのものです。",
+    "编辑器需要在每次按键后重新计算段落布局。",
+    "字形缓存的大小取决于文档中不同字符的数量。",
+    "改行位置は字送りと行間の設定によって変わります。",
+    "表格单元格中的文本会按照列宽自动换行。",
+];
+
+/// Builds a CJK document of `paras` paragraphs, each `sentences` sentences long.
+///
+/// Spec 09 R9-15: every B/char figure in the census is measured on Latin text,
+/// and the per-character model may not transfer. CJK is the sharpest test —
+/// three bytes per character in UTF-8 against one, no spaces to break on, and
+/// glyph coverage in the thousands rather than under a hundred.
+///
+/// Paragraphs are seeded so each is distinct, matching [`build_doc`]: identical
+/// paragraphs would collide in `ParaCache` and measure deduplication instead of
+/// size (L9-012).
+pub fn build_cjk_doc(paras: usize, sentences: usize) -> Document {
+    build_from_sentences(paras, sentences, CJK_SENTENCES)
+}
+
+/// Counts shaped glyphs in a laid-out document, and how many are `.notdef`.
+///
+/// Returns `(total, notdef)`. Glyph id 0 is `.notdef` in every OpenType face, so
+/// a CJK run against a Latin-only font resolves to a page of tofu that still
+/// allocates, shapes, and produces a perfectly plausible B/char figure. That is
+/// the R9-13 failure mode exactly — an instrument reporting a believable wrong
+/// number — so the CJK tier checks coverage before reporting a rate.
+/// Total laid-out lines across a paginated document's editing index.
+///
+/// Discriminates the mechanism behind a script's residency rate: full-width CJK
+/// fits roughly half as many characters per line as Latin, so per-line and
+/// per-run overheads are paid about twice as often per character. If lines per
+/// character tracks the rate, the driver is line count; if it does not, it is
+/// something per-character in shaping.
+pub fn line_count(layout: &DocumentLayout) -> usize {
+    match layout {
+        DocumentLayout::Paginated(p) => p
+            .pages
+            .iter()
+            .filter_map(|page| page.editing_data.as_ref())
+            .flat_map(|ed| ed.paragraphs.iter())
+            .map(|para| para.layout.line_boundaries.len())
+            .sum(),
+        _ => 0,
+    }
+}
+
+pub fn glyph_coverage(layout: &DocumentLayout) -> (usize, usize) {
+    fn count(items: &mut dyn Iterator<Item = &PositionedItem>) -> (usize, usize) {
+        let (mut total, mut notdef) = (0usize, 0usize);
+        for item in items {
+            if let PositionedItem::GlyphRun(run) = item {
+                total += run.glyphs.len();
+                notdef += run.glyphs.iter().filter(|g| g.id == 0).count();
+            }
+        }
+        (total, notdef)
+    }
+    match layout {
+        DocumentLayout::Paginated(p) => {
+            let (mut total, mut notdef) = (0usize, 0usize);
+            for page in &p.pages {
+                let (t, n) = count(&mut page.all_items());
+                total += t;
+                notdef += n;
+            }
+            (total, notdef)
+        }
+        // Only the paginated mode is measured; anything else reports no
+        // coverage rather than a number the caller might trust.
+        _ => (0, 0),
+    }
+}
+
+/// Repeats a document's blocks `times` over, holding its formatting profile
+/// constant while scaling size — the way to vary size independently of
+/// formatting density (Spec 09 §4.1).
+pub fn repeat_doc(doc: &Document, times: usize) -> Document {
+    let mut out = doc.clone();
+    for section in &mut out.sections {
+        let original = section.blocks.clone();
+        for _ in 1..times {
+            section.blocks.extend(original.iter().cloned());
+        }
+    }
+    out
+}
+
+/// Least-squares fit of `rate = intercept + slope · x`, returning
+/// `(intercept, slope)`.
+///
+/// Used by the duplication sweep: with `x = unique/total` (i.e. `1/n` for an
+/// n-fold repeated document), the intercept is the **per-placement** cost that
+/// every copy pays and the slope is the **content-keyed** cost that
+/// deduplicates. Returns `(0, 0)` for fewer than two distinct `x` values —
+/// callers must not report a fit they did not get.
+pub fn fit_line(points: &[(f64, f64)]) -> (f64, f64) {
+    let n = points.len() as f64;
+    if points.len() < 2 {
+        return (0.0, 0.0);
+    }
+    let sx: f64 = points.iter().map(|p| p.0).sum();
+    let sy: f64 = points.iter().map(|p| p.1).sum();
+    let sxx: f64 = points.iter().map(|p| p.0 * p.0).sum();
+    let sxy: f64 = points.iter().map(|p| p.0 * p.1).sum();
+    let denom = n * sxx - sx * sx;
+    if denom.abs() < f64::EPSILON {
+        return (0.0, 0.0);
+    }
+    let slope = (n * sxy - sx * sy) / denom;
+    let intercept = (sy - slope * sx) / n;
+    (intercept, slope)
 }

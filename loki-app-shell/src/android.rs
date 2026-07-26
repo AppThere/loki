@@ -8,13 +8,27 @@
 //! entry point can't be a plain function in this crate. The bootstrap *body*,
 //! however, was duplicated verbatim across all three (Spec 01 audit A-14): the
 //! Android-16 double-fire guard, logger + panic-to-logcat setup, file-access
-//! init, safe-area insets, `set_android_app`, i18n, and the Dioxus launch.
+//! init, safe-area insets, `set_android_app`, the soft-keyboard (IME) visibility
+//! bridge, i18n, and the Dioxus launch.
 //!
 //! [`android_main!`] generates that body once. It is a macro rather than a
 //! function so the expansion uses each binary's own `dioxus` / `blitz_shell` /
 //! `android_activity` dependencies — keeping this crate lean and
 //! `#![forbid(unsafe_code)]` (the emitted `unsafe` lives in the *caller*, under
 //! the scoped `#[allow(unsafe_code)]` the macro attaches; Spec 01 audit A-7).
+//!
+//! ## This macro is the *only* `android_main` a binary may define
+//!
+//! `macro_rules!` is hygienic for local bindings but **not for item names**: the
+//! `static ANDROID_MAIN_RUNNING` and `fn android_main` emitted below land in the
+//! caller's module namespace under those literal names. A binary that both
+//! invokes this macro and keeps a hand-written `android_main` gets `E0428` — and
+//! because both are behind `#[cfg(target_os = "android")]`, no host job can see
+//! it. Measured, not assumed: with a plain `let x: u32 = "string";` inside this
+//! macro body, `cargo check --workspace` and the full CI clippy command both
+//! still pass. That is how merge `cce9772` broke the `loki-text` Android build
+//! (Spec 08 I-16 / S0.4). The `android-check` CI job added in the same change
+//! (L08-014) is the only thing that catches it.
 //!
 //! ## Usage
 //!
@@ -102,6 +116,28 @@ macro_rules! android_main {
                 $crate::recent_documents::set_android_data_dir(data_path);
             }
             ::blitz_shell::set_android_app(android_app);
+            // Bridge Android soft-keyboard visibility back to the app. A
+            // NativeActivity is never told when the *user* dismisses the keyboard
+            // (back button, swipe-down gesture, hide key), so the bottom safe area
+            // would stay reserved for a keyboard that is gone. loki-file-access
+            // installs a decor-view inset listener that reports every IME
+            // visibility change; blitz-shell re-queries the safe area in response
+            // (converging to 0 on a collapse). Register the bridge *before*
+            // installing the listener so the first callback is not dropped.
+            //
+            // Lives here, not in one binary's entry point: it was previously
+            // wired only in `loki-text`, so Calc and Slides never had it
+            // (Spec 08 S0.4 §4). One implementation, three consumers.
+            ::loki_file_access::set_ime_visibility_listener(::std::boxed::Box::new(|visible| {
+                ::blitz_shell::notify_ime_visibility_changed(visible);
+            }));
+            // Returns `false` on a null pointer / JNI failure / API < 30, where
+            // the inset query already falls back; it is a plain bool, not a
+            // `Result` and not `#[must_use]`, and there is no recovery to
+            // attempt, so it is called as a statement and the value dropped.
+            ::loki_file_access::install_ime_listener(
+                ::blitz_shell::current_android_app().activity_as_ptr(),
+            );
             ::log::info!("android_main: i18n init");
             ::loki_i18n::init();
             ::log::info!("android_main: launching dioxus");

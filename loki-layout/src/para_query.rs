@@ -36,11 +36,7 @@ impl super::ParagraphLayout {
         let local_x = x - self.line_indent(line_index);
         let cursor = Cursor::from_point(layout, local_x, y);
         let byte_offset = cursor.index();
-        let mapped_offset = self
-            .clean_to_orig
-            .get(byte_offset)
-            .copied()
-            .unwrap_or_else(|| self.clean_to_orig.last().copied().unwrap_or(0));
+        let mapped_offset = self.clean_to_orig.get_clamped(byte_offset);
         let affinity = match cursor.affinity() {
             parley::Affinity::Upstream => Affinity::Upstream,
             parley::Affinity::Downstream => Affinity::Downstream,
@@ -66,11 +62,7 @@ impl super::ParagraphLayout {
     /// when the paragraph has no lines.
     pub fn line_end_offset(&self, byte_offset: usize, text: &str) -> Option<usize> {
         let layout = self.parley_layout.as_ref()?;
-        let clean_offset = self
-            .orig_to_clean
-            .get(byte_offset)
-            .copied()
-            .unwrap_or_else(|| self.orig_to_clean.last().copied().unwrap_or(0));
+        let clean_offset = self.orig_to_clean.get_clamped(byte_offset);
         // Find the line whose text range contains clean_offset, or fall back to
         // the last line (handles cursor positioned at text.len()).
         let line = layout
@@ -84,11 +76,7 @@ impl super::ParagraphLayout {
         let range = line.text_range();
         let end = range.end;
 
-        let mapped_end = self
-            .clean_to_orig
-            .get(end)
-            .copied()
-            .unwrap_or_else(|| self.clean_to_orig.last().copied().unwrap_or(0));
+        let mapped_end = self.clean_to_orig.get_clamped(end);
 
         // Trim a trailing '\n' or '\r\n' so End lands before the newline byte, not after.
         // In loki-text, paragraph breaks are modelled as separate blocks, so
@@ -112,11 +100,7 @@ impl super::ParagraphLayout {
     /// position by Parley.
     pub fn cursor_rect(&self, byte_offset: usize) -> Option<CursorRect> {
         let layout = self.parley_layout.as_deref()?;
-        let clean_offset = self
-            .orig_to_clean
-            .get(byte_offset)
-            .copied()
-            .unwrap_or_else(|| self.orig_to_clean.last().copied().unwrap_or(0));
+        let clean_offset = self.orig_to_clean.get_clamped(byte_offset);
         let cursor = Cursor::from_byte_index(layout, clean_offset, parley::Affinity::Downstream);
         // width=1.0 requests a 1-point wide caret geometry.
         let bb = cursor.geometry(layout, 1.0);
@@ -148,12 +132,7 @@ impl super::ParagraphLayout {
         let Some(layout) = self.parley_layout.as_deref() else {
             return Vec::new();
         };
-        let to_clean = |b: usize| {
-            self.orig_to_clean
-                .get(b)
-                .copied()
-                .unwrap_or_else(|| self.orig_to_clean.last().copied().unwrap_or(0))
-        };
+        let to_clean = |b: usize| self.orig_to_clean.get_clamped(b);
         let (lo, hi) = if start <= end {
             (start, end)
         } else {

@@ -57,6 +57,10 @@ jobs:
     - name: Viewport-dimension guard (no assumed screen sizes)
       # Spec 01 audit A-1. No bare 1280-class literals in editor input/viewport paths.
       run: python3 scripts/check-no-hardcoded-viewport-dims.py
+    - name: Arc::get_mut ban in loki-layout (copy-on-write must not be fallible)
+      # Spec 09 L9-016. Arc::get_mut returns None whenever the layout is shared —
+      # always, for a cached one — so it silently skips the mutation. Use make_mut.
+      run: python3 scripts/check-arc-get-mut.py
     - name: Format check
       run: cargo fmt --all --check
     - name: Clippy (workspace, all features, warnings denied)
@@ -64,6 +68,58 @@ jobs:
       # code (audit A-5); clippy.toml exempts test code. Tooling (build.rs, the
       # gen_templates bin) carries a scoped file-level allow.
       run: cargo clippy --workspace --all-features -- -D warnings -D clippy::unwrap_used -D clippy::expect_used
+
+  # Spec 08 L08-014: every supported target builds in CI. Android is a supported
+  # target and was NOT built here, so merge cce9772 could leave `loki-text` with
+  # two `android_main` definitions (E0428) for three weeks without any job going
+  # red — both copies sit behind `#[cfg(target_os = "android")]`, which the jobs
+  # above never compile. This job is the gate that closes that class.
+  #
+  # `cargo check`, not `cargo build`: it type-checks the cfg'd code (which is all
+  # that was ever wrong) without linking a cdylib, and needs no SDK, d8 or
+  # keystore. The NDK is still required because `ring` (via reqwest/rustls)
+  # compiles C in its build script even under `check`.
+  android-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install toolchain (+ Android target)
+      # Pinned — see the lint job and rust-toolchain.toml.
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: "1.97.1"
+        targets: aarch64-linux-android
+    - uses: Swatinem/rust-cache@v2
+      with:
+        # Distinct cache: this job's artifacts are for a different target triple
+        # and must not share a key with the host build.
+        key: android
+    - name: Point cargo and cc-rs at the runner's preinstalled NDK
+      # ubuntu-latest ships the Android NDK; no download step needed. API 26 is
+      # loki-text's min_sdk_version (Cargo.toml [package.metadata.android.sdk]).
+      # Fail loudly if the layout ever changes rather than falling back to a
+      # host compiler and producing a meaningless pass.
+      run: |
+        NDK="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_ROOT:-}}"
+        BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+        CLANG="$BIN/aarch64-linux-android26-clang"
+        if [ ! -x "$CLANG" ]; then
+          echo "::error::Android NDK clang not found at $CLANG"
+          ls "$BIN" 2>/dev/null | head -20
+          exit 1
+        fi
+        {
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$CLANG"
+          echo "CC_aarch64_linux_android=$CLANG"
+          echo "AR_aarch64_linux_android=$BIN/llvm-ar"
+        } >> "$GITHUB_ENV"
+    - name: Check loki-text for Android
+      # Default features, matching what an APK actually ships.
+      # TODO(android-ci): add `-p loki-spreadsheet -p loki-presentation` once
+      # those two crates build again (Spec 08 R11) — they share this entry point
+      # via `loki_app_shell::android_main!`, so they are exposed to the same
+      # class of break and are currently unguarded.
+      run: cargo check --target aarch64-linux-android -p loki-text
 
   build-and-test:
     runs-on: ubuntu-latest

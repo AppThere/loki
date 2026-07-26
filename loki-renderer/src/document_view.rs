@@ -5,7 +5,9 @@
 
 use std::sync::{Arc, Mutex};
 
-#[cfg(any(not(target_os = "android"), android_gpu))]
+// Must stay unconditional: this module is ungated in `lib.rs` and BOTH arms of
+// `DocumentView` need the prelude. Gating it to the GPU path broke the Android
+// CPU target while desktop stayed green — gate the module, never this import.
 use dioxus::prelude::*;
 
 // PageTile (and the wgpu paint path under it) is enabled on: desktop, and

@@ -39,26 +39,13 @@ const TRACK_PX: f32 = 12.0;
 const MIN_THUMB_FRAC: f32 = 0.08;
 
 /// Live scroll geometry for the canvas container, mirrored from the most recent
-/// DOM `scroll` event.  All values are logical pixels; `scroll_width` /
-/// `scroll_height` are the scrollable distance (see module docs).  Defaults to
-/// all-zero (pre-first-scroll), which callers treat as "not yet measured".
-#[derive(Clone, Copy, PartialEq, Default)]
-pub(super) struct ScrollMetrics {
-    pub scroll_top: f32,
-    pub scroll_left: f32,
-    pub scroll_width: f32,
-    pub scroll_height: f32,
-    pub client_width: f32,
-    pub client_height: f32,
-}
-
-impl ScrollMetrics {
-    /// True when the content can be scrolled horizontally — the only case in
-    /// which the bottom scrollbar is shown.
-    fn can_scroll_x(&self) -> bool {
-        self.client_width > 0.0 && self.scroll_width > 0.5
-    }
-}
+/// DOM `scroll` event.
+///
+/// Now `appthere_ui::ScrollMetrics` — the caret-follow controller (Spec 08
+/// T1.2) needs exactly these six numbers, and a second copy would drift from
+/// this one the way viewport width drifted before Spec 01 audit A-1. Re-exported
+/// under the old path so the editor's call sites are unchanged.
+pub(super) use appthere_ui::ScrollMetrics;
 
 /// Returns `(thumb_fraction, start_fraction)` of the track for one axis.
 ///
