@@ -241,6 +241,84 @@ pub fn load_corpus_doc(rel: &str) -> Option<Document> {
     }
 }
 
+/// Total **source bytes** of a document's text, the UTF-8 length that
+/// [`char_count`] counts characters of.
+///
+/// Spec 09 R9-16: several residency contributors are sized per source byte
+/// rather than per character — the index maps demonstrably so (§10g's multibyte
+/// cross-check) — so a per-character rate is a per-byte rate multiplied by the
+/// script's bytes-per-character. Reporting both lets the reader see which unit
+/// is the invariant instead of inferring it from an assumed ratio.
+pub fn byte_count(doc: &Document) -> usize {
+    use loki_doc_model::content::toc::inline_plain_text;
+
+    fn block_bytes(b: &Block) -> usize {
+        match b {
+            Block::Para(i) | Block::Plain(i) | Block::Heading(_, _, i) => {
+                inline_plain_text(i).len()
+            }
+            Block::StyledPara(p) => inline_plain_text(&p.inlines).len(),
+            Block::BlockQuote(inner) => inner.iter().map(block_bytes).sum(),
+            Block::OrderedList(_, items) | Block::BulletList(items) => items
+                .iter()
+                .flat_map(|blocks| blocks.iter())
+                .map(block_bytes)
+                .sum(),
+            _ => 0,
+        }
+    }
+
+    doc.sections
+        .iter()
+        .flat_map(|s| s.blocks.iter())
+        .map(block_bytes)
+        .sum()
+}
+
+/// Russian and Greek sentences for the 2-byte-per-character tier.
+///
+/// The discriminator for R9-16. Cyrillic and Greek are two UTF-8 bytes per
+/// character with Latin-like shaping complexity — one glyph per character, real
+/// word spaces, ordinary line breaking. So the two hypotheses separate cleanly:
+/// **per-byte residency predicts ~2× the Latin B/char rate**, while
+/// script-complexity predicts ~1×, since nothing about this text is harder to
+/// shape than English. DejaVu covers both.
+const BICAMERAL_2BYTE_SENTENCES: &[&str] = &[
+    "Разметка документа пересчитывается для каждого абзаца.",
+    "Эта строка проверяет расстановку переносов и межстрочный интервал.",
+    "Η διάταξη του εγγράφου υπολογίζεται για κάθε παράγραφο.",
+    "Αυτή η γραμμή ελέγχει τη στοίχιση και το διάστιχο του κειμένου.",
+    "Ширина колонки влияет на количество строк в абзаце.",
+    "Το μέγεθος της γραμματοσειράς καθορίζει το ύψος της γραμμής.",
+];
+
+/// Builds a 2-byte-per-character document (Cyrillic + Greek) — see
+/// [`BICAMERAL_2BYTE_SENTENCES`].
+pub fn build_2byte_doc(paras: usize, sentences: usize) -> Document {
+    build_from_sentences(paras, sentences, BICAMERAL_2BYTE_SENTENCES)
+}
+
+/// Shared paragraph builder for the non-Latin tiers.
+///
+/// Paragraphs are seeded so each is distinct, matching [`build_doc`]: identical
+/// paragraphs would collide in `ParaCache` and measure deduplication instead of
+/// size (L9-012).
+fn build_from_sentences(paras: usize, sentences: usize, pool: &[&str]) -> Document {
+    let blocks: Vec<Block> = (0..paras)
+        .map(|i| {
+            let mut s = format!("{}. ", i + 1);
+            for j in 0..sentences {
+                s.push_str(pool[(i + j) % pool.len()]);
+            }
+            Block::Para(vec![Inline::Str(s)])
+        })
+        .collect();
+    let section = Section::with_layout_and_blocks(PageLayout::default(), blocks);
+    let mut doc = Document::new();
+    doc.sections = vec![section];
+    doc
+}
+
 /// Japanese and Simplified-Chinese sentences for the CJK tier.
 ///
 /// Real sentences rather than repeated ideographs: glyph coverage and shaping
@@ -266,19 +344,7 @@ const CJK_SENTENCES: &[&str] = &[
 /// paragraphs would collide in `ParaCache` and measure deduplication instead of
 /// size (L9-012).
 pub fn build_cjk_doc(paras: usize, sentences: usize) -> Document {
-    let blocks: Vec<Block> = (0..paras)
-        .map(|i| {
-            let mut s = format!("{}. ", i + 1);
-            for j in 0..sentences {
-                s.push_str(CJK_SENTENCES[(i + j) % CJK_SENTENCES.len()]);
-            }
-            Block::Para(vec![Inline::Str(s)])
-        })
-        .collect();
-    let section = Section::with_layout_and_blocks(PageLayout::default(), blocks);
-    let mut doc = Document::new();
-    doc.sections = vec![section];
-    doc
+    build_from_sentences(paras, sentences, CJK_SENTENCES)
 }
 
 /// Counts shaped glyphs in a laid-out document, and how many are `.notdef`.
@@ -288,6 +354,26 @@ pub fn build_cjk_doc(paras: usize, sentences: usize) -> Document {
 /// allocates, shapes, and produces a perfectly plausible B/char figure. That is
 /// the R9-13 failure mode exactly — an instrument reporting a believable wrong
 /// number — so the CJK tier checks coverage before reporting a rate.
+/// Total laid-out lines across a paginated document's editing index.
+///
+/// Discriminates the mechanism behind a script's residency rate: full-width CJK
+/// fits roughly half as many characters per line as Latin, so per-line and
+/// per-run overheads are paid about twice as often per character. If lines per
+/// character tracks the rate, the driver is line count; if it does not, it is
+/// something per-character in shaping.
+pub fn line_count(layout: &DocumentLayout) -> usize {
+    match layout {
+        DocumentLayout::Paginated(p) => p
+            .pages
+            .iter()
+            .filter_map(|page| page.editing_data.as_ref())
+            .flat_map(|ed| ed.paragraphs.iter())
+            .map(|para| para.layout.line_boundaries.len())
+            .sum(),
+        _ => 0,
+    }
+}
+
 pub fn glyph_coverage(layout: &DocumentLayout) -> (usize, usize) {
     fn count(items: &mut dyn Iterator<Item = &PositionedItem>) -> (usize, usize) {
         let (mut total, mut notdef) = (0usize, 0usize);

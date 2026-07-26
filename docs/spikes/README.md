@@ -77,6 +77,19 @@ derived as **page-access-set bounds** rather than C and P — which found that t
 scan inventory is four sites, not one, and that the worst of them
 (`recompute_page_index`) starts at page 0 and runs on *every keystroke*.
 
+Three of those follow-ups then produced results worth having. **R9-16 — the
+per-byte hypothesis — is refuted by its own discriminator** (§10j): a
+Cyrillic+Greek tier at 1.85 bytes/char reads 88.1 B/char where per-byte predicts
+135.1, and per source byte the three scripts read 73.0 / 47.7 / 74.7 rather than
+agreeing. The CJK/Latin match was a two-point coincidence. Neither characters nor
+bytes are invariant — but the **evictable fraction is, across all three scripts
+(47.7 / 50.4 / 50.9%)**, now the third independent axis supporting L9-008. And
+**the per-keystroke scan is measured** (§10l): 3.3 µs at 445 pages, 13.6 µs at
+889, so it is not a present-day latency defect and S9-3 stays architecture — but
+the measurement corrected §10i, because cost is *flat* in caret position, meaning
+the loop runs to completion and the access set is the whole document rather than
+a prefix.
+
 ## Loki Spec 08 — UX & Memory Remediation Program, Phase 0
 
 | ID | Document | Gates | Verdict |

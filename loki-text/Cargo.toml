@@ -15,6 +15,14 @@ crate-type = ["cdylib", "rlib"]
 name = "loki-text-desktop"
 path = "src/main.rs"
 
+# Spec 09 S9-3 (S09.0 §10i): is the per-keystroke page scan measurable
+# work today, or only an eviction blocker? Decides whether S9-3 is a
+# latency fix or architecture. `harness = false` — plain main(), no libtest.
+[[bench]]
+name = "page_locate_latency"
+path = "benches/page_locate_latency.rs"
+harness = false
+
 [features]
 # Compiles in the macro `Network` capability transport (ADR-0015 §8 decision 1,
 # 8B.5): enables `loki-macro-host/macro-net` (the `reqwest`/`rustls` fetcher) and

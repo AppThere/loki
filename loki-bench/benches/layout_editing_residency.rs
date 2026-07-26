@@ -130,6 +130,7 @@ fn warm_up(resources: &mut FontResources) {
 /// fraction. Returns `(retained_bytes, editing_per_char)`.
 fn report_doc(resources: &mut FontResources, label: &str, doc: &Document) -> (i64, f64) {
     let chars = support::char_count(doc);
+    let bytes = support::byte_count(doc);
     // L9-009: a document that yields no characters means the extractor failed,
     // not that the document is empty — the corpus has no empty fixtures. Fail
     // rather than print a tidy "skipped", which is how six fixtures once
@@ -162,9 +163,19 @@ fn report_doc(resources: &mut FontResources, label: &str, doc: &Document) -> (i6
     } else {
         ""
     };
+    // Both denominators, per R9-16. Several contributors are sized per source
+    // byte (§10g's multibyte cross-check proved it for the index maps), so
+    // B/char is B/byte times the script's bytes-per-character. Printing the
+    // measured byte count rather than an assumed ratio is the whole point: any
+    // ASCII punctuation, digits or spaces pull the average below the script's
+    // nominal width, and a hypothesis tested against an assumed 3.0 would be
+    // testing arithmetic rather than the document.
+    let bpc = bytes as f64 / chars.max(1) as f64;
+    let total_per_byte = editing.max_bytes as f64 / bytes.max(1) as f64;
     eprintln!(
-        "  {label:<24} chars={chars:>7}  editing={per_char:>7.1} B/char  \
-         total={total_per_char:>7.1} B/char  evictable={evictable:>5.1}%{flag}",
+        "  {label:<24} chars={chars:>7} b/ch={bpc:>4.2}  editing={per_char:>7.1} B/char  \
+         total={total_per_char:>7.1} B/char  total={total_per_byte:>6.1} B/src-byte  \
+         evict={evictable:>5.1}%{flag}",
     );
     (delta, per_char)
 }
@@ -185,6 +196,34 @@ fn main() {
     let mut first_small = 0.0_f64;
 
     eprintln!("\n  synthetic tiers:");
+    {
+        // Latin baseline for the R9-16 comparison: the other two tiers report
+        // the same two ratios, and without this row they have nothing to be
+        // ratios against.
+        let doc = support::build_doc(250, support::WORDS_PER_PARA);
+        let probe = layout_document(
+            &mut resources,
+            &doc,
+            LayoutMode::Paginated,
+            1.0,
+            &LayoutOptions {
+                preserve_for_editing: true,
+                spell: None,
+                ..Default::default()
+            },
+        );
+        let (glyphs, notdef) = support::glyph_coverage(&probe);
+        let lines = support::line_count(&probe);
+        drop(probe);
+        resources.clear_paragraph_cache();
+        let chars = support::char_count(&doc);
+        eprintln!(
+            "  (latin coverage: {glyphs} glyphs, {notdef} .notdef, {:.2} glyphs/char, \
+             {:.3} lines/char)",
+            glyphs as f64 / chars as f64,
+            lines as f64 / chars as f64,
+        );
+    }
     for &(name, paras) in support::DOC_TIERS {
         let doc = support::build_doc(paras, support::WORDS_PER_PARA);
         let (delta, per_char) = report_doc(&mut resources, &format!("{name} ({paras}p)"), &doc);
@@ -220,6 +259,7 @@ fn main() {
             },
         );
         let (glyphs, notdef) = support::glyph_coverage(&probe);
+        let lines = support::line_count(&probe);
         drop(probe);
         resources.clear_paragraph_cache();
         assert!(
@@ -228,8 +268,51 @@ fn main() {
              CJK-capable font resolved, so this row would measure tofu and report \
              it as a per-character rate"
         );
-        eprintln!("  (coverage: {glyphs} glyphs, {notdef} .notdef)");
+        let chars = support::char_count(&doc);
+        eprintln!(
+            "  (coverage: {glyphs} glyphs, {notdef} .notdef, {:.2} glyphs/char, {:.3} lines/char)",
+            glyphs as f64 / chars as f64,
+            lines as f64 / chars as f64,
+        );
         report_doc(&mut resources, "cjk (120p)", &doc);
+    }
+
+    // ── 2-byte tier: the R9-16 discriminator ────────────────────────────────
+    // Cyrillic and Greek are two UTF-8 bytes per character with Latin-like
+    // shaping — one glyph per character, real word spaces, ordinary breaking.
+    // So per-byte residency predicts ~2× the Latin B/char rate and
+    // script-complexity predicts ~1×. Two hypotheses, one row.
+    eprintln!("\n  2-byte tier (R9-16 discriminator — Cyrillic + Greek):");
+    {
+        let doc = support::build_2byte_doc(160, 6);
+        let probe = layout_document(
+            &mut resources,
+            &doc,
+            LayoutMode::Paginated,
+            1.0,
+            &LayoutOptions {
+                preserve_for_editing: true,
+                spell: None,
+                ..Default::default()
+            },
+        );
+        let (glyphs, notdef) = support::glyph_coverage(&probe);
+        let lines = support::line_count(&probe);
+        drop(probe);
+        resources.clear_paragraph_cache();
+        assert!(
+            glyphs > 0 && notdef * 10 < glyphs,
+            "2-byte tier shaped {glyphs} glyphs of which {notdef} are .notdef — \
+             no Cyrillic/Greek-capable font resolved, so this row would measure \
+             tofu and report it as a per-character rate"
+        );
+        let chars = support::char_count(&doc);
+        eprintln!(
+            "  (coverage: {glyphs} glyphs, {notdef} .notdef, {:.2} glyphs/char, {:.3} lines/char)",
+            glyphs as f64 / chars as f64,
+            lines as f64 / chars as f64,
+        );
+        report_doc(&mut resources, "cyrillic+greek (160p)", &doc);
     }
 
     eprintln!("\n  real documents (conformance corpus — six fixtures):");
