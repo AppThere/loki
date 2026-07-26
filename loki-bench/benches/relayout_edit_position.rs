@@ -12,27 +12,41 @@
 //! bounded by the work after it, which is nearly nothing. If both ends are O(N),
 //! reuse is not delivering.
 //!
-//! # What it found (2026-07-26, release profile)
+//! # What it found (2026-07-26, release profile, best of three)
 //!
-//! The incremental path *is* entered, and reuse stops paying as the document
-//! grows — then costs more than not reusing at all:
+//! | blocks | at start | at end | no-op | full layout |
+//! | ---: | ---: | ---: | ---: | ---: |
+//! | 100 | 0.376 ms | 0.384 | 0.002 | 0.402 |
+//! | 500 | 2.870 | 2.066 | 0.019 | 2.146 |
+//! | 2500 | 16.203 | 11.031 | 0.080 | 10.545 |
 //!
-//! | blocks | at start | at end | no-op | full layout | reuse verdict |
-//! | ---: | ---: | ---: | ---: | ---: | --- |
-//! | 100 | 0.850 ms | 0.421 | 0.002 | 2.110 | saves 80% |
-//! | 500 | 4.534 | 2.977 | 0.016 | 5.917 | saves 50% |
-//! | 2500 | 18.174 | **16.936** | 0.149 | **12.903** | **31% slower than full** |
+//! **The incremental path never wins.** An edit at the last block is parity with a
+//! full relayout at every size; an edit near the *start* is 34% worse at 500
+//! blocks and 54% worse at 2500. So the optimisation delivers none of its intended
+//! benefit and costs extra where it fails hardest.
 //!
-//! At 2500 blocks (~500 pages) an edit to the **last block** — where reuse should
-//! be near-free — costs 16.9 ms against a 12.9 ms full relayout. That is a dropped
-//! frame per keystroke, and the incremental path is the reason rather than the
-//! remedy.
+//! The no-op column is the control that rules out the cheap explanations: an
+//! identical document takes the reuse-verbatim early return and costs 0.080 ms at
+//! 2500 blocks, so the O(N) term is neither result assembly nor the structural
+//! section diff — it is genuine layout work being redone.
 //!
-//! The no-op column is the discriminator that rules out the cheap explanations:
-//! an identical document takes the reuse-verbatim early return and costs 0.149 ms
-//! at 2500 blocks, so the O(N) term is neither result assembly nor the structural
-//! section diff — it is genuine layout work being redone for content the edit
-//! cannot have affected.
+//! # Two measurement faults this bench shipped before it was right
+//!
+//! Recorded because both are the kind that produce a *confident wrong number*
+//! rather than an obvious failure.
+//!
+//! **Cold-cache comparison.** The full-layout column originally built a fresh
+//! `FontResources`, so it paid first-touch font loading that the incremental
+//! column had already paid. That inflated the comparison baseline and made reuse
+//! appear to save 80% at 100 blocks and 50% at 500 — reported as a finding before
+//! it was caught. Reuse saves nothing. L08-022's warm-up control exists for
+//! precisely this and this bench still walked into it.
+//!
+//! **Single-shot timing.** The two tables here measure the same quantity and
+//! disagreed by ~40% while both were single-shot, which is how the error above
+//! surfaced. The difference between these two implementations is smaller than the
+//! run-to-run spread, so both now take the best of three. A bench that contradicts
+//! itself is worse than one that says nothing.
 //!
 //! # Root cause, measured 2026-07-26
 //!
@@ -162,13 +176,24 @@ fn main() {
         let doc = doc_of_blocks(blocks);
         let (layout, reuse) = layout_paginated_full(&mut fr, &doc, 1.0, &opts);
 
+        // Best of three throughout. Single-shot figures put this table 40% apart
+        // from the crossover sweep below on the same quantity — a bench that
+        // contradicts itself is worse than one that says nothing, and the minimum
+        // of a few runs is the right estimator when comparing two implementations
+        // whose difference is smaller than the run-to-run spread.
         let mut run = |index: usize| -> (f64, bool) {
             let edited = edit_block(&doc, index);
-            let t = Instant::now();
-            let got =
-                relayout_paginated_incremental(&mut fr, &edited, &doc, &layout, &reuse, 1.0, &opts);
-            let ms = t.elapsed().as_secs_f64() * 1000.0;
-            (ms, got.is_some())
+            let mut best = f64::MAX;
+            let mut taken = false;
+            for _ in 0..3 {
+                let t = Instant::now();
+                let got = relayout_paginated_incremental(
+                    &mut fr, &edited, &doc, &layout, &reuse, 1.0, &opts,
+                );
+                best = best.min(t.elapsed().as_secs_f64() * 1000.0);
+                taken = got.is_some();
+            }
+            (best, taken)
         };
         let (start_ms, start_incr) = run(0);
         let (end_ms, end_incr) = run(blocks - 1);
@@ -185,12 +210,21 @@ fn main() {
             t.elapsed().as_secs_f64() * 1000.0
         };
 
+        // The comparison column must share the *same warm* FontResources as the
+        // incremental runs above. An earlier revision built a fresh `resources()`
+        // here, so this figure carried first-touch font loading that the
+        // incremental column had already paid — inflating it and making reuse look
+        // like it saved 50-80% when it saves nothing (L08-022: the control exists
+        // for exactly this, and this bench still walked into it).
         let full_ms = {
-            let mut fr2 = resources();
             let edited = edit_block(&doc, blocks - 1);
-            let t = Instant::now();
-            let _ = layout_paginated_full(&mut fr2, &edited, 1.0, &opts);
-            t.elapsed().as_secs_f64() * 1000.0
+            let mut best = f64::MAX;
+            for _ in 0..3 {
+                let t = Instant::now();
+                let _ = layout_paginated_full(&mut fr, &edited, 1.0, &opts);
+                best = best.min(t.elapsed().as_secs_f64() * 1000.0);
+            }
+            best
         };
         println!(
             "  {blocks:>6}  {start_ms:>9.3}  {end_ms:>9.3}  {noop_ms:>9.3}  {full_ms:>11.3}   \
@@ -216,6 +250,39 @@ fn main() {
             layout.pages.len(),
             reuse.checkpoints.len(),
             resume_block_for(&reuse, last),
+        );
+    }
+    println!();
+
+    // ── Crossover: where does reuse stop paying? The threshold's value should
+    // come from this rather than from a round number. ──────────────────────
+    println!("crossover sweep — edit at last block vs full relayout");
+    println!("  blocks   incremental   full layout   reuse");
+    for blocks in [50_usize, 100, 150, 200, 300, 500, 1000, 2500] {
+        let mut fr = resources();
+        let doc = doc_of_blocks(blocks);
+        let (layout, reuse) = layout_paginated_full(&mut fr, &doc, 1.0, &opts);
+        let edited = edit_block(&doc, blocks - 1);
+        // Best of three: this is a comparison between two implementations, and a
+        // single noisy sample either side can invert the verdict near the crossing.
+        let mut incr = f64::MAX;
+        let mut full = f64::MAX;
+        for _ in 0..3 {
+            let t = Instant::now();
+            let _ =
+                relayout_paginated_incremental(&mut fr, &edited, &doc, &layout, &reuse, 1.0, &opts);
+            incr = incr.min(t.elapsed().as_secs_f64() * 1000.0);
+            let t = Instant::now();
+            let _ = layout_paginated_full(&mut fr, &edited, 1.0, &opts);
+            full = full.min(t.elapsed().as_secs_f64() * 1000.0);
+        }
+        println!(
+            "  {blocks:>6}   {incr:>11.3}   {full:>11.3}   {}",
+            if incr < full {
+                format!("saves {:.0}%", 100.0 * (1.0 - incr / full))
+            } else {
+                format!("COSTS {:.0}% more", 100.0 * (incr / full - 1.0))
+            }
         );
     }
     println!();
