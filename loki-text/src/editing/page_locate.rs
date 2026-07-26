@@ -30,6 +30,13 @@ use super::cursor::DocumentPosition;
 #[path = "page_locate_tests.rs"]
 mod tests;
 
+// Behaviour on real flow geometry, kept separate from the rule tests above:
+// these pin what the function *does* so S9-3's replacement can be checked
+// against observations rather than against the code's apparent intent (R9-18).
+#[cfg(test)]
+#[path = "page_locate_characterisation_tests.rs"]
+mod characterisation_tests;
+
 /// Geometry tolerance for the content-band fit checks (points).
 const BAND_EPSILON: f32 = 0.5;
 

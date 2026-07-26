@@ -8,9 +8,10 @@
 //! scanning its paragraph list on the way. It runs on **every keystroke**
 //! (`editor_keydown_text.rs`, `editor_keydown.rs`, `editor_keydown_ctrl.rs`).
 //!
-//! Its access set is therefore `0..=M` for a caret on page `M`, which is why
-//! S9-3 exists: under windowing every page in that set must be resident, so the
-//! scan would defeat the windowing it is meant to enable (R9-04).
+//! Its access set is `0..=M` for a caret on page `M` — from the code's shape;
+//! this bench does *not* establish it, see below — which is why S9-3 exists:
+//! under windowing every page in that set must be resident, so the scan would
+//! defeat the windowing it is meant to enable (R9-04).
 //!
 //! But the access set is a residency argument, and this bench asks a different
 //! question that decides how S9-3 should be *scoped*: **is the walk measurable
@@ -21,6 +22,20 @@
 //!
 //! Wall-clock, not allocations: nothing is allocated here, and the cost is
 //! pointer-chasing over page and paragraph vectors.
+//!
+//! # What this bench does and does not show
+//!
+//! It shows **cost**: ~3.3 us at 445 pages, ~13.6 us at 889, flat in the caret's
+//! page, with a guaranteed miss costing about the same as a hit. Against a ~16 ms
+//! frame that settles the question it was built for — the scan is not a
+//! present-day latency defect.
+//!
+//! It does **not** show control flow. The flat curve was once read as proof that
+//! the `visible` early exit never fires (Spec 09 R9-18); a characterisation test
+//! on real geometry then showed it does fire, and R9-18 was retracted. The
+//! timing remains unexplained. A clock measures time; a claim about which branch
+//! runs needs its own observation, which is the counting accessor S9-3 has to
+//! build anyway.
 //!
 //! Run: `cargo bench -p loki-text --bench page_locate_latency`
 
