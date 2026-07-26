@@ -44,22 +44,54 @@
 //! R30 and Spec 09's S9-4/S9-5 need, and the density Q4's claim ("recovering a
 //! page costs one page of flow") already assumed.
 //!
-//! | measurement | now | predicted after | reasoning |
+//! **The same defect breaks both ends of the reflow.** Checkpoints give the
+//! *resume* point; resync gives the *stop* point, and resync matches on
+//! `cp.block_index == b && cp.checkpoint == s`. With one checkpoint it has exactly
+//! one candidate, so early termination can no more fire than resumption can. That
+//! is why the mid-document row exists: an edit at the last block exercises only the
+//! resume half, since after the last page there is nothing left to stop for.
+//!
+//! | measurement (2500 blocks) | now | predicted after | reasoning |
 //! | --- | ---: | ---: | --- |
-//! | 2500 blocks, edit at **last** block | 11.895 ms | **0.1 – 0.2 ms** | one page of flow (~11.3/327 ≈ 0.035) plus bookkeeping (~0.084, the no-op cost) |
-//! | 2500 blocks, edit at **first** block | 16.601 ms | **~11 ms** | unchanged and *correct*: an edit at block 0 legitimately shifts everything after it, so full-layout cost is the right answer |
-//! | 2500 blocks, no-op | 0.084 ms | unchanged | already takes the reuse-verbatim early return |
-//! | checkpoints at 2500 blocks | 1 | **327** (= page count) | one per page is the property both consumers want |
+//! | edit at **first** block | 17.161 ms | **~10.5 ms — unchanged, and correct** | an edit at block 0 legitimately shifts everything after it, so full-layout cost is the right answer |
+//! | edit at **middle** block | 13.275 ms | **0.1 – 0.3 ms** | resume one page before the edit, stop once pagination reconverges: a page or two of flow plus bookkeeping |
+//! | edit at **last** block | 10.885 ms | **0.1 – 0.2 ms** | one page of flow (~10.5/327 ≈ 0.032) plus bookkeeping (~0.096, the no-op cost) |
+//! | no-op | 0.096 ms | unchanged | already takes the reuse-verbatim early return |
+//! | checkpoints | 1 | **327** (= page count) | one per page is the property both consumers want |
 //!
-//! **Falsification.** If edit-at-last-block does *not* collapse to well under a
-//! millisecond, either the fix did not take — check the checkpoint count first,
-//! since it is deterministic and settles that in one number — or a **second O(N)
-//! term is hiding behind the first**, in which case this bench's start/end columns
-//! will still differ from each other while both remain large.
+//! **The middle row is the discriminating one, and it separates two failures the
+//! other rows cannot:**
 //!
-//! Note what is deliberately *not* predicted to improve: edit-at-start. Predicting
-//! that everything gets faster would make the result unfalsifiable, and the whole
-//! point of sweeping position is that one end of it *should* stay expensive.
+//! - **~0.1–0.3 ms** — both halves work.
+//! - **~5–6 ms** (about half a relayout) — resume works, **resync does not**. The
+//!   reflow starts near the edit and then runs to the end of the document because
+//!   nothing tells it to stop.
+//! - **~10 ms or more** — neither half took. Check the checkpoint count first: it
+//!   is deterministic and settles in one number whether the fix landed at all.
+//!
+//! Note the current middle figure is *worse than a full relayout* (13.275 against
+//! 10.551), not the half-relayout a naive reading suggests — because today it
+//! resumes at block 0, never stops early, and pays the failed resync attempts on
+//! top. That is the shape to expect from a mechanism that is entered but inert.
+//!
+//! Edit-at-start is deliberately predicted **not** to improve. A prediction that
+//! everything gets faster is unfalsifiable, and position is swept precisely because
+//! one end should not move.
+//!
+//! # Store a line index, not a y-offset
+//!
+//! The intra-block resume position must go into `PageStart`, and the obvious
+//! encoding — the paragraph-local `f32` y at which the page begins — puts a float
+//! into a value that resync compares for **equality**. That is the class
+//! `LAYOUT_EPSILON_PT` was just added for, and a derived `PartialEq` would be
+//! quietly wrong the moment the stored offset is compared against a recomputed one.
+//!
+//! It is avoidable: `split_and_place_loop` already works in line indices —
+//! `split_k` is an index into `para_layout.line_boundaries`, and the split y is
+//! simply `line_boundaries[split_k].1`. **Every fragment boundary is a line
+//! boundary**, so a `usize` line index carries exactly the same information with
+//! exact integer equality, no epsilon and no drift, and lets the derived
+//! `PartialEq` stay honest.
 //!
 //! # Two measurement faults this bench shipped before it was right
 //!
@@ -204,7 +236,7 @@ fn main() {
         ..Default::default()
     };
     println!("\nincremental relayout, one character inserted, by edit position");
-    println!("  blocks    at start     at end     no-op   full layout   incr taken?");
+    println!("  blocks    at start     at mid      at end     no-op   full layout   incr taken?");
     for blocks in [100_usize, 500, 2500] {
         let mut fr = resources();
         let doc = doc_of_blocks(blocks);
@@ -224,6 +256,14 @@ fn main() {
             (t.best_ms, taken)
         };
         let (start_ms, start_incr) = run(0);
+        // The mid-document row is the one that exercises *both* halves of the
+        // reflow. Checkpoints give the resume point; resync gives the stop point,
+        // and resync matches on `cp.block_index == b && cp.checkpoint == s` — so
+        // with one checkpoint it has exactly one candidate and early termination
+        // can no more fire than resumption can. An edit at the last block tests
+        // only the resume half, because after the last page there is nothing left
+        // to stop for.
+        let (mid_ms, _) = run(blocks / 2);
         let (end_ms, end_incr) = run(blocks - 1);
 
         // Discriminator: an *identical* document takes the early return that
@@ -252,8 +292,8 @@ fn main() {
             .best_ms
         };
         println!(
-            "  {blocks:>6}  {start_ms:>9.3}  {end_ms:>9.3}  {noop_ms:>9.3}  {full_ms:>11.3}   \
-             start={start_incr} end={end_incr}"
+            "  {blocks:>6}  {start_ms:>9.3}  {mid_ms:>9.3}  {end_ms:>9.3}  {noop_ms:>9.3}  \
+             {full_ms:>11.3}   start={start_incr} end={end_incr}"
         );
     }
     println!();
