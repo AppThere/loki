@@ -22,6 +22,8 @@ use crate::items::{PositionedBorderRect, PositionedItem};
 mod build;
 #[path = "para_clean.rs"]
 mod clean;
+#[path = "para_index_map.rs"]
+mod index_map;
 #[path = "para_layout_types.rs"]
 mod layout_types;
 #[path = "para_query.rs"]
@@ -35,6 +37,7 @@ mod types;
 #[path = "para_underlays.rs"]
 mod underlays;
 
+pub use index_map::ByteIndexMap;
 pub use layout_types::{
     Affinity, CursorRect, HitTestResult, ParagraphLayout, ResolvedParaProps, WrapBand,
 };
@@ -286,8 +289,8 @@ fn layout_paragraph_uncached(
             last_baseline: first_baseline,
             line_boundaries,
             parley_layout: preserve_for_editing.then(|| Arc::new(phantom)),
-            orig_to_clean,
-            clean_to_orig,
+            orig_to_clean: ByteIndexMap::from_indices(&orig_to_clean),
+            clean_to_orig: ByteIndexMap::from_indices(&clean_to_orig),
             indent_start: para_props.indent_start,
             indent_hanging: para_props.indent_hanging,
             drop_lines: 0,
@@ -483,8 +486,8 @@ fn layout_paragraph_uncached(
             last_baseline: body.last_baseline,
             line_boundaries: body.line_boundaries,
             parley_layout: None,
-            orig_to_clean,
-            clean_to_orig,
+            orig_to_clean: ByteIndexMap::from_indices(&orig_to_clean),
+            clean_to_orig: ByteIndexMap::from_indices(&clean_to_orig),
             indent_start: para_props.indent_start,
             indent_hanging: para_props.indent_hanging,
             drop_lines: 0,
@@ -691,8 +694,8 @@ fn layout_paragraph_uncached(
         last_baseline,
         line_boundaries,
         parley_layout,
-        orig_to_clean,
-        clean_to_orig,
+        orig_to_clean: ByteIndexMap::from_indices(&orig_to_clean),
+        clean_to_orig: ByteIndexMap::from_indices(&clean_to_orig),
         indent_start: para_props.indent_start,
         indent_hanging: para_props.indent_hanging,
         drop_lines,

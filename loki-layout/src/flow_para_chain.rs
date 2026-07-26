@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use loki_doc_model::content::block::{Block, StyledParagraph};
 
-use crate::para::{ParagraphLayout, ResolvedParaProps, layout_paragraph_spelled};
+use crate::para::{ByteIndexMap, ParagraphLayout, ResolvedParaProps, layout_paragraph_spelled};
 use crate::resolve::{CollectedNote, resolve_para_props};
 
 use super::{FlowState, LayoutWarning, break_column, finish_page, place_paragraph_layout};
@@ -191,8 +191,8 @@ fn build_chain_layouts<'s>(
                     last_baseline: 0.0,
                     line_boundaries: vec![],
                     parley_layout: None,
-                    orig_to_clean: vec![0],
-                    clean_to_orig: vec![0],
+                    orig_to_clean: ByteIndexMap::Identity { len: 1 },
+                    clean_to_orig: ByteIndexMap::Identity { len: 1 },
                     indent_start: 0.0,
                     indent_hanging: 0.0,
                     drop_lines: 0,

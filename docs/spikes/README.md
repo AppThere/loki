@@ -55,6 +55,15 @@ run also caught what the prediction missed — read-only residency rose ~11 B/ch
 because the deep `clone` into the cache had been compacting glyph vectors as a
 side effect nothing had named.
 
+**S9-2 has shipped too** (§10f prediction, §10g result). `ByteIndexMap` — `u32`
+entries plus an `Identity` variant — took body text to **73.0 B/char total,
+34.8 editing**, against 124 and 69.4 when E0 first ran: **41% off total
+residency across the two steps**, no eviction machinery, no contract change. The
+prediction that mattered here was the *null* one: C and P were predicted not to
+move, and did not, because after S9-1 the maps live in one place and appear in
+both measured conditions. A harness reporting only the duplication sweep would
+have called S9-2 a no-op while total residency fell 18%.
+
 ## Loki Spec 08 — UX & Memory Remediation Program, Phase 0
 
 | ID | Document | Gates | Verdict |

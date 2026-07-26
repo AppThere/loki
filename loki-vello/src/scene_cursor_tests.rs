@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use vello::kurbo::Point;
 
-use loki_layout::{CellRotation, CursorRect, PageParagraphData, ParagraphLayout};
+use loki_layout::{ByteIndexMap, CellRotation, CursorRect, PageParagraphData, ParagraphLayout};
 
 use super::{cursor_paint_transform, paint_cursor};
 use crate::scene::{SelectionHandle, SelectionHandleKind, SelectionRect};
@@ -23,8 +23,8 @@ fn para(origin: (f32, f32), rotation: Option<CellRotation>) -> PageParagraphData
         last_baseline: 10.0,
         line_boundaries: Vec::new(),
         parley_layout: None,
-        orig_to_clean: Vec::new(),
-        clean_to_orig: Vec::new(),
+        orig_to_clean: ByteIndexMap::Identity { len: 0 },
+        clean_to_orig: ByteIndexMap::Identity { len: 0 },
         indent_start: 0.0,
         indent_hanging: 0.0,
         drop_lines: 0,

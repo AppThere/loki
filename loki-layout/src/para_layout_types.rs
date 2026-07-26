@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use parley::Alignment;
 
-use super::{ResolvedLineHeight, ResolvedListMarker, ResolvedTabStop};
+use super::{ByteIndexMap, ResolvedLineHeight, ResolvedListMarker, ResolvedTabStop};
 use crate::color::LayoutColor;
 use crate::geometry::LayoutInsets;
 use crate::items::{BorderEdge, PositionedItem};
@@ -219,9 +219,9 @@ pub struct ParagraphLayout {
     /// the editing layer shares layouts across the page editing index.
     pub parley_layout: Option<Arc<parley::Layout<LayoutColor>>>,
     /// Original to cleaned byte index mappings.
-    pub orig_to_clean: Vec<usize>,
+    pub orig_to_clean: ByteIndexMap,
     /// Cleaned to original byte index mappings.
-    pub clean_to_orig: Vec<usize>,
+    pub clean_to_orig: ByteIndexMap,
     /// Paragraph start (left) indent in points, applied to drawn glyphs.
     ///
     /// Retained so cursor / hit-test / selection geometry can include the same
@@ -259,8 +259,6 @@ impl ParagraphLayout {
             item.shrink_to_fit();
         }
         self.line_boundaries.shrink_to_fit();
-        self.orig_to_clean.shrink_to_fit();
-        self.clean_to_orig.shrink_to_fit();
     }
 }
 

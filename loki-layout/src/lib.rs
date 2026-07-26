@@ -67,8 +67,8 @@ pub use layout_entry::{layout_document, layout_paginated_full};
 pub use mode::LayoutMode;
 pub use options::{FieldContext, LayoutOptions, RevisionDisplay, SpellState};
 pub use para::{
-    Affinity, CursorRect, HitTestResult, ParagraphLayout, ResolvedLineHeight, ResolvedParaProps,
-    StyleSpan, layout_paragraph,
+    Affinity, ByteIndexMap, CursorRect, HitTestResult, ParagraphLayout, ResolvedLineHeight,
+    ResolvedParaProps, StyleSpan, layout_paragraph,
 };
 pub use resolve::{
     CollectedImage, CollectedNote, emu_to_pt, flatten_paragraph, pts_to_f32, resolve_char_props,
