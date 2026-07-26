@@ -48,4 +48,4 @@ mod reveal;
 pub use animate::{animation_step, ease_out_cubic, MotionPreference};
 pub use controller::{use_viewport_controller, ContentRect, ViewportController};
 pub use metrics::ScrollMetrics;
-pub use reveal::{reveal_offset, RevealMargin};
+pub use reveal::{reveal_offset, RevealMargin, CARET_LEADING_LINES, CARET_TRAILING_LINES};

@@ -175,8 +175,10 @@ pub fn caret_rect_reflow(
 /// Body line height in CSS px at the caret, used to size the reveal margin.
 ///
 /// Taken from the caret's own line rather than a constant: T1.3 requires the
-/// margin to follow the live body style, so three trailing lines is three
-/// *actual* lines at the current size and zoom, not 60 px regardless.
+/// margin to follow the live body style, so the trailing lookahead is that many
+/// *actual* lines at the current size and zoom, not a fixed pixel count. This
+/// is also what ruled out the fixed-offset explanation for I-21 on screen — the
+/// observed trigger gap scaled with body font size (R26).
 /// Falls back to a plausible single-spaced line when the caret has no rect yet.
 #[must_use]
 pub fn caret_line_height_px(caret_rect: Option<(f32, f32, f32, f32)>, fallback_px: f32) -> f32 {

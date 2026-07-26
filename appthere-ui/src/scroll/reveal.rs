@@ -12,7 +12,7 @@
 /// Named `leading` / `trailing` rather than `above` / `below` because the same
 /// type serves both axes. For caret-follow the caller derives these from the
 /// **live body-style line height**, not from a pixel constant (Spec 08 T1.3):
-/// three lines of trailing space is a different number at 12 pt and at 24 pt,
+/// two lines of trailing space is a different number at 12 pt and at 24 pt,
 /// and a hardcoded margin would be wrong at every zoom but one.
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub struct RevealMargin {
@@ -24,6 +24,33 @@ pub struct RevealMargin {
     pub trailing: f32,
 }
 
+/// Lines of clearance kept **above** the caret by [`RevealMargin::caret_lines`].
+///
+/// See [`CARET_TRAILING_LINES`] for why both live here as named constants.
+pub const CARET_LEADING_LINES: f32 = 1.0;
+
+/// Lines of clearance kept **below** the caret by [`RevealMargin::caret_lines`]
+/// — the caret-follow lookahead (Spec 08 T1.3, T1.9).
+///
+/// This is the one number the reveal's *feel* turns on, and it is a taste
+/// value, not a derived one: it sets both when the reveal fires and where the
+/// caret comes to rest, which is what makes the view stair-step by a line
+/// rather than lurch. **Change it here and nowhere else** — the trigger and the
+/// rest position must stay coupled to the same value, and no call site may
+/// re-derive either from a literal.
+///
+/// History, so the next change is made with the evidence rather than against
+/// it: T1.3 shipped **3**, which screen-tested as firing too early — three
+/// lines of lookahead is more than a typist wants. T1.9 (r13) lowered it to
+/// **2**. The original ask was "a few lines of added text", so **1 is the
+/// floor** to try if 2 is still early; 0 was never wanted, because the caret
+/// would then rest on the viewport edge with nothing revealed ahead of it.
+///
+/// Phase 1's acceptance criterion — "≥2 lines of trailing space at page bottom"
+/// — is met exactly at this value, so lowering it further trades acceptance
+/// margin for feel and needs the criterion revisited alongside.
+pub const CARET_TRAILING_LINES: f32 = 2.0;
+
 impl RevealMargin {
     /// A margin of `leading` and `trailing` logical pixels.
     #[must_use]
@@ -31,14 +58,14 @@ impl RevealMargin {
         Self { leading, trailing }
     }
 
-    /// The caret-follow default expressed in lines: one line of clearance above
-    /// and three below, so the next few lines the user is about to type are
-    /// already on screen (Spec 08 T1.3).
+    /// The caret-follow default expressed in lines: [`CARET_LEADING_LINES`] of
+    /// clearance above and [`CARET_TRAILING_LINES`] below, so the next lines
+    /// the user is about to type are already on screen (Spec 08 T1.3).
     #[must_use]
     pub fn caret_lines(line_height_px: f32) -> Self {
         Self {
-            leading: line_height_px,
-            trailing: line_height_px * 3.0,
+            leading: line_height_px * CARET_LEADING_LINES,
+            trailing: line_height_px * CARET_TRAILING_LINES,
         }
     }
 }

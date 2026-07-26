@@ -30,8 +30,8 @@ pub type ContentRect = (f32, f32, f32, f32);
 /// effect, which recomputed the caret's position *relative to the new scroll
 /// offset*, found it outside the reveal margin — because the user had just
 /// scrolled it there — and scrolled back. The wheel was capped at the margin
-/// band around the caret, and the cap was asymmetric (one line up, three down)
-/// because the margin is.
+/// band around the caret, and the cap was asymmetric (one line up, three down
+/// at the margin values then in force) because the margin is.
 ///
 /// Nothing in the type system stops that recurring, so the discipline is:
 /// **observation methods read, command methods peek.** `metrics` and
