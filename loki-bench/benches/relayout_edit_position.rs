@@ -92,11 +92,43 @@
 //! match to the unit.
 //!
 //! **What the spread actually is remains unidentified**, and is recorded as unknown
-//! rather than guessed at a second time. What matters for T3.4 is the consequence:
-//! the predicted 0.1–0.3 ms assumed this overhead would vanish with the resume
-//! point. It is not this overhead, so that assumption is unsupported from a
-//! different direction than feared — a scan that is *cheap* cannot be the thing to
-//! remove.
+//! rather than guessed at a second time.
+//!
+//! # Why T3.4's prediction survives anyway — and where it still might not
+//!
+//! The worry was that unexplained *fixed* overhead would remain once the resume
+//! point moves. Cross-size scaling bounds that from data already here. Taking the
+//! edit-at-end column, which is the cleanest:
+//!
+//! | pages | time | per page |
+//! | ---: | ---: | ---: |
+//! | 14 | 0.375 ms | 0.0268 |
+//! | 66 | 2.171 | 0.0329 |
+//! | 327 | 10.982 | 0.0336 |
+//!
+//! A straight line through the endpoints is `t ≈ 0.0339 × pages` with an intercept
+//! of **−0.099 ms** — no positive fixed cost — and it predicts the 66-page row to
+//! within 1.5%. A large position-independent constant would show up as a much
+//! higher per-page figure at the small end, and it does not. So 3 pages lands near
+//! **0.10 ms**, inside the predicted band, derived from measured scaling rather than
+//! from any theory of what the spread is. **T3.4 does not need the spread explained
+//! first.**
+//!
+//! **The gap that argument does not close.** It bounds a *constant*. The
+//! position-dependent spread is not constant — it grows superlinearly per page:
+//!
+//! | pages | spread (start − end) | per page |
+//! | ---: | ---: | ---: |
+//! | 14 | 0.024 ms | 0.0017 |
+//! | 66 | 0.481 | 0.0073 |
+//! | 327 | 7.251 | 0.0222 |
+//!
+//! So if that component scales with **document size** rather than with **pages
+//! re-flowed**, it survives T3.4 and the prediction is wrong. Today's data cannot
+//! separate those two, because re-flowed *is* the document (327/327). Post-fix they
+//! diverge for the first time, and the re-flowed-page count is exactly the
+//! instrument that tells them apart — which is the other reason not to chase the
+//! spread now: it is about to become measurable for free.
 //!
 //! **Fixture caveat (L9-018).** These are uniform synthetic paragraphs, which may
 //! absorb pagination slack more or less readily than real prose. The cascade-depth
