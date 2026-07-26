@@ -8,6 +8,18 @@ SPDX-License-Identifier: Apache-2.0
 Investigation documents produced by a spec's Phase 0. No production code; each
 document is evidence for a decision taken later.
 
+## Loki Spec 09 — Layout Memory
+
+| ID | Document | Answers | Verdict |
+| --- | --- | --- | --- |
+| S09.0 | [Layout residency census](S09.0-layout-residency-census.md) | Spec 09 §3 Q1–Q7 | ~88 B/char resident, ~72 of it evictable. Eviction is **safe** (layout is a pure function of the CRDT) but not currently *representable* — `None` already means "read-only", so an evicted page would read as a silently wrong answer. Checkpoint-based re-materialisation already exists, limited to clean page tops. A four-step plan ordered by value ÷ risk, smallest first |
+
+Spec 09 §6 leaves phases, ADRs and acceptance criteria deliberately unwritten
+until §3 is answered. S09.0 answers it; the plan can now be written, but see
+S09.0 §10 — one profiled run is still required before any target is committed,
+and the cheapest experiment that validates or invalidates the whole model needs
+no code change at all.
+
 ## Loki Spec 08 — UX & Memory Remediation Program, Phase 0
 
 | ID | Document | Gates | Verdict |
