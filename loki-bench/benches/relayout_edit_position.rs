@@ -38,6 +38,29 @@
 //! 2500 blocks, so the O(N) term is neither result assembly nor the structural
 //! section diff — it is genuine layout work being redone.
 //!
+//! # Predicted post-fix figures, recorded before implementing (L9-013)
+//!
+//! The fix under consideration is one checkpoint **per page** — the density both
+//! R30 and Spec 09's S9-4/S9-5 need, and the density Q4's claim ("recovering a
+//! page costs one page of flow") already assumed.
+//!
+//! | measurement | now | predicted after | reasoning |
+//! | --- | ---: | ---: | --- |
+//! | 2500 blocks, edit at **last** block | 11.895 ms | **0.1 – 0.2 ms** | one page of flow (~11.3/327 ≈ 0.035) plus bookkeeping (~0.084, the no-op cost) |
+//! | 2500 blocks, edit at **first** block | 16.601 ms | **~11 ms** | unchanged and *correct*: an edit at block 0 legitimately shifts everything after it, so full-layout cost is the right answer |
+//! | 2500 blocks, no-op | 0.084 ms | unchanged | already takes the reuse-verbatim early return |
+//! | checkpoints at 2500 blocks | 1 | **327** (= page count) | one per page is the property both consumers want |
+//!
+//! **Falsification.** If edit-at-last-block does *not* collapse to well under a
+//! millisecond, either the fix did not take — check the checkpoint count first,
+//! since it is deterministic and settles that in one number — or a **second O(N)
+//! term is hiding behind the first**, in which case this bench's start/end columns
+//! will still differ from each other while both remain large.
+//!
+//! Note what is deliberately *not* predicted to improve: edit-at-start. Predicting
+//! that everything gets faster would make the result unfalsifiable, and the whole
+//! point of sweeping position is that one end of it *should* stay expensive.
+//!
 //! # Two measurement faults this bench shipped before it was right
 //!
 //! Recorded because both are the kind that produce a *confident wrong number*
