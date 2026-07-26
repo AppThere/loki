@@ -116,6 +116,9 @@ fn a_synthetic_profile_can_describe_an_android_desktop() {
         system_ram_bytes: Some(16 * 1024 * 1024 * 1024),
         available_ram_bytes: Some(11 * 1024 * 1024 * 1024),
         gpu_class: GpuClass::Integrated,
+        // An Android laptop driving a 2x panel — the case that makes R27 matter,
+        // since residency goes as the square of this (Spec 08 §3.2a).
+        device_scale_factor: Some(2.0),
         display: None,
         window_mode: WindowMode::Windowed,
         reduced_motion: false,

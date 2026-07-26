@@ -3,7 +3,7 @@
 
 //! Tests for the residency planner. Extracted per the file-ceiling idiom.
 
-use super::super::budget::{BUDGET_CEILING_BYTES, TextureBudget};
+use super::super::budget::{BUDGET_CEILING_BYTES, BudgetInputs, TextureBudget};
 use super::super::geometry::{PageBox, ViewportSpec};
 use super::{MIN_RASTER_SCALE, plan_residency, strictly_visible};
 
@@ -108,13 +108,50 @@ fn a_hard_budget_drops_off_centre_tiles_furthest_first() {
 }
 
 #[test]
-fn the_visible_set_is_reduced_only_as_a_last_resort() {
-    // 400% on a 3x display: one visible page is ~496 MB, far over any derived
-    // budget. The only legal move left is resolution, and it must be taken
-    // rather than dropping the page.
+fn the_visible_set_keeps_full_scale_when_over_target_but_under_the_ceiling() {
+    // The r15 policy, and the case that made it necessary (L08-026): 200% on a
+    // 2x display asks ~105 MiB for the two pages straddling a boundary, over a
+    // 64 MiB target. The old planner softened body text here, at 40% of scroll
+    // offsets. It must now stay sharp and report the overage instead.
+    let doc = letter_doc(500);
+    // Straddling a page boundary — the offset that makes two pages visible at
+    // once, and so the offset where the old policy fired. A page at 200% is
+    // 2112 CSS px plus a 24 px gap, so the third boundary sits at 6408.
+    let v = ViewportSpec::new(6008.0, 900.0, 2.0, 2.0);
+    assert_eq!(
+        strictly_visible(&doc, &v).iter().filter(|&&b| b).count(),
+        2,
+        "the case under test requires two visible pages",
+    );
+    let budget = TextureBudget::exact_with_ceiling(64 * 1024 * 1024, 1024 * 1024 * 1024);
+    let plan = plan_residency(&doc, &v, budget);
+    assert!(
+        plan.tiles
+            .iter()
+            .filter(|t| t.visible)
+            .all(|t| t.raster_scale == 1.0),
+        "visible pages must not be softened to reach a target",
+    );
+    assert!(
+        plan.over_budget,
+        "the overage is reported rather than hidden"
+    );
+    assert!(
+        !plan.survival_reduced,
+        "this is nowhere near the survival ceiling"
+    );
+}
+
+#[test]
+fn the_visible_set_is_reduced_only_above_the_survival_ceiling() {
+    // 400% on a 3x display asks ~947 MiB for the visible set. Under a 256 MiB
+    // ceiling there is no benign move left: refusing to degrade means an
+    // allocation the device cannot satisfy, so resolution is the right lever —
+    // and the page is still never dropped.
     let doc = letter_doc(500);
     let v = vp(4.0, 3.0);
-    let plan = plan_residency(&doc, &v, TextureBudget::exact(64 * 1024 * 1024));
+    let budget = TextureBudget::exact_with_ceiling(64 * 1024 * 1024, 256 * 1024 * 1024);
+    let plan = plan_residency(&doc, &v, budget);
     assert!(
         plan.tiles.iter().any(|t| t.visible),
         "the visible page is still mounted",
@@ -127,11 +164,42 @@ fn the_visible_set_is_reduced_only_as_a_last_resort() {
         .unwrap_or(1.0);
     assert!(
         visible_scale < 1.0,
-        "the visible tile must be reduced, got {visible_scale}",
+        "above the ceiling the visible tile must be reduced, got {visible_scale}",
     );
     assert!(visible_scale >= MIN_RASTER_SCALE);
-    assert!(plan.total_bytes <= 64 * 1024 * 1024);
-    assert!(!plan.over_budget);
+    assert!(plan.survival_reduced, "and must say that is why");
+    assert!(plan.total_bytes <= 256 * 1024 * 1024);
+}
+
+#[test]
+fn the_target_never_degrades_visible_text_at_any_derived_budget() {
+    // The invariant L08-026 buys, stated directly and swept: across every
+    // ordinary operating point on every device class, and at every scroll
+    // offset, a visible page is full scale unless the survival ceiling bound.
+    for available_gib in [2.0_f64, 4.0, 8.0, 11.0, 32.0] {
+        let budget = TextureBudget::derive(BudgetInputs {
+            available_ram_bytes: Some((available_gib * 1024.0 * 1024.0 * 1024.0) as u64),
+            ..BudgetInputs::default()
+        });
+        for (zoom, dsf) in [(1.0, 1.0), (1.0, 2.0), (2.0, 2.0), (2.0, 3.0)] {
+            let doc = letter_doc(500);
+            let page_h = doc[0].css_size(zoom).1;
+            for step in 0..40 {
+                let top = page_h * 3.0 + page_h * f64::from(step) / 40.0;
+                let v = ViewportSpec::new(top, 900.0, zoom, dsf);
+                let plan = plan_residency(&doc, &v, budget);
+                for t in plan.tiles.iter().filter(|t| t.visible) {
+                    assert!(
+                        t.raster_scale == 1.0 || plan.survival_reduced,
+                        "visible page softened at {}% / {dsf}x on {available_gib} GiB \
+                         without the survival ceiling binding (scale {})",
+                        zoom * 100.0,
+                        t.raster_scale,
+                    );
+                }
+            }
+        }
+    }
 }
 
 #[test]
@@ -141,8 +209,13 @@ fn over_budget_is_reported_rather_than_resolved_below_legibility() {
     // outcome — the alternatives are a blank page or an illegible one.
     let doc = letter_doc(500);
     let v = vp(4.0, 3.0);
-    let plan = plan_residency(&doc, &v, TextureBudget::exact(0)); // 24 MiB floor
+    let budget = TextureBudget::exact_with_ceiling(0, 24 * 1024 * 1024); // both at the floor
+    let plan = plan_residency(&doc, &v, budget);
     assert!(plan.over_budget, "this cannot be satisfied and must say so");
+    assert!(
+        plan.survival_reduced,
+        "and it is the ceiling that forced it"
+    );
     assert!(plan.tiles.iter().any(|t| t.visible));
     assert!(
         plan.tiles

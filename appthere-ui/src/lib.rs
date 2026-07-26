@@ -63,7 +63,8 @@ pub use components::{
     Platform, RecentDocument, BACKDROP_Z_INDEX,
 };
 pub use device_probe::{
-    note_gpu_class, note_system_memory, parse_meminfo, probe_system_memory, SystemMemory,
+    note_device_scale_factor, note_gpu_class, note_system_memory, parse_meminfo,
+    probe_system_memory, SystemMemory,
 };
 pub use device_profile::{
     note_pointer, use_device_profile, use_provide_device_profile, AtDeviceProfileContext,

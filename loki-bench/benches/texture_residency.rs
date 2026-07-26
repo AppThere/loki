@@ -80,7 +80,7 @@ const SCALES: &[f64] = &[1.0, 2.0, 3.0];
 const PAGE_COUNTS: &[usize] = &[10, 100, 500];
 
 /// One traversal's result.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 struct Reading {
     /// Highest resident texture byte total seen at any scroll offset.
     peak_bytes: u64,
@@ -88,10 +88,17 @@ struct Reading {
     peak_tiles: usize,
     /// Allocations recorded over the traversal.
     allocs: u64,
-    /// `true` when the plan reported, at any scroll offset, that it could not
-    /// reach the budget without dropping a visible page or rendering below
-    /// legibility. Always `false` for an unbudgeted traversal.
+    /// `true` when the plan reported, at any scroll offset, that it exceeds the
+    /// byte **target** after spending everything the target may spend. Since r15
+    /// this is an ordinary outcome, not a failure — see ADR L08-026. Always
+    /// `false` for an unbudgeted traversal.
     over_budget: bool,
+    /// `true` when the **survival ceiling** forced the visible set's scale down
+    /// at any offset — the only circumstance in which visible text degrades.
+    survival_reduced: bool,
+    /// Lowest scale assigned to a *visible* tile over the traversal. 1.0 means
+    /// the reader never saw a softened page.
+    min_visible_scale: f32,
 }
 
 /// Scrolls a document end to end, maintaining the mounted set exactly as the
@@ -171,6 +178,8 @@ fn traverse(pages: &[PageBox], zoom: f64, device_scale_factor: f64) -> Reading {
         peak_tiles,
         allocs: snap.allocs,
         over_budget: false,
+        survival_reduced: false,
+        min_visible_scale: 1.0,
     }
 }
 
@@ -247,12 +256,18 @@ fn traverse_budgeted(
     let mut peak_bytes = 0_u64;
     let mut peak_tiles = 0_usize;
     let mut over_budget = false;
+    let mut survival_reduced = false;
+    let mut min_visible_scale = 1.0_f32;
 
     let step = VIEWPORT_H / 2.0;
     let last_top = (doc_height - VIEWPORT_H).max(0.0);
     loop {
         let plan = plan_residency(pages, &vp, budget);
         over_budget |= plan.over_budget;
+        survival_reduced |= plan.survival_reduced;
+        for t in plan.tiles.iter().filter(|t| t.visible) {
+            min_visible_scale = min_visible_scale.min(t.raster_scale);
+        }
         let want: BTreeMap<usize, u64> =
             plan.tiles.iter().map(|t| (t.page_index, t.bytes)).collect();
 
@@ -306,6 +321,8 @@ fn traverse_budgeted(
         peak_tiles,
         allocs: snap.allocs,
         over_budget,
+        survival_reduced,
+        min_visible_scale,
     }
 }
 
@@ -330,16 +347,35 @@ fn budget_comparison() {
             "  {:>6}  {:>5}  {:>10}  {:>10}  {:>7}  {:>10}",
             "zoom", "dsf", "before MiB", "after MiB", "tiles", "change"
         );
-        eprintln!("  (`!` marks a row the plan cannot satisfy without dropping a visible page)");
+        eprintln!(
+            "  (`*` = over target, visible pages still full scale — the L08-026 \
+             outcome; `!` = survival ceiling bound and visible scale reduced)"
+        );
         for &zoom in ZOOMS {
             for &scale in SCALES {
                 let before = measure(&pages, zoom, scale);
                 let after = measure_budgeted(&pages, zoom, scale, budget);
-                let change = if after.peak_bytes == before.peak_bytes {
-                    "unchanged".to_string()
+                // Marker before shortcut: a row can be byte-identical to the
+                // unbudgeted reading *and* over target (nothing was left to
+                // give back), and reporting that as a bare "unchanged" would
+                // hide the L08-026 outcome the table exists to show.
+                let mark = if after.survival_reduced {
+                    " !"
                 } else if after.over_budget {
+                    " *"
+                } else {
+                    ""
+                };
+                let change = if after.peak_bytes == before.peak_bytes {
+                    format!("unchanged{mark}")
+                } else if after.survival_reduced {
                     format!(
                         "-{:.0}% !",
+                        100.0 * (1.0 - after.peak_bytes as f64 / before.peak_bytes as f64)
+                    )
+                } else if after.over_budget {
+                    format!(
+                        "-{:.0}% *",
                         100.0 * (1.0 - after.peak_bytes as f64 / before.peak_bytes as f64)
                     )
                 } else {
@@ -381,6 +417,28 @@ fn budget_comparison() {
                      budget without reporting over_budget",
                     after.peak_bytes,
                     budget.bytes(),
+                );
+
+                // ADR L08-026, the invariant that replaced the old step 4: a
+                // *target* may never spend legibility. A visible page is full
+                // scale unless the survival ceiling itself bound. Checked at
+                // every offset of the traversal, because the case that made this
+                // necessary is a page boundary crossing.
+                assert!(
+                    after.min_visible_scale == 1.0 || after.survival_reduced,
+                    "{label} at zoom {zoom} dsf {scale}: visible page softened to \
+                     {} to reach a byte target — L08-026 forbids this",
+                    after.min_visible_scale,
+                );
+
+                // And the ceiling is hard where the target is soft: nothing may
+                // exceed it, at any offset, on any device.
+                assert!(
+                    after.peak_bytes <= budget.hard_ceiling_bytes(),
+                    "{label} at zoom {zoom} dsf {scale}: {} bytes over the {} byte \
+                     survival ceiling, which is not a target",
+                    after.peak_bytes,
+                    budget.hard_ceiling_bytes(),
                 );
             }
         }

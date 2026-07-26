@@ -301,3 +301,165 @@ caught it.
   regress anything today, but the first time the budget binds on a real display
   is the first time it runs.
 - **Driver-side overhead**, unchanged from §3.
+
+---
+
+## 8. Re-measurement after the r15 policy change (ADR L08-026)
+
+### What changed and why
+
+The r14 planner had four steps, the last of which reduced the **visible** set's
+rasterisation scale once it exceeded the byte budget. That was presented as a
+400%-on-a-3x-display corner. It is not one.
+
+A probe over the trigger conditions (temporary, run 2026-07-26) found that once
+the real device scale factor is wired (R27), step 4 fires during ordinary
+reading:
+
+| device | 200% / 2x | 200% / 3x | 400% / 3x |
+| --- | --- | --- | --- |
+| phone 4 GiB | **100%** of scroll offsets, scale 0.55 | 100%, 0.37 | 100%, 0.25 |
+| design floor 8 GiB | **40%** of offsets, scale 0.76 | **100%**, 0.51 | 100%, 0.25 |
+| desktop 16 GiB | never | **40%**, 0.85 | 100%, 0.42 |
+
+The 40% figure is the important one, and it is not "40% of the time" in a way
+that averages out: step 4 fired at exactly those offsets where a **page boundary
+sits inside the viewport**, because that is when two full-page textures are
+resident at once. So body text did not sit uniformly soft — it softened and
+re-sharpened as the reader scrolled across each boundary. Intermittent is worse
+than constant here.
+
+That is a rendering defect wearing a memory policy's clothes. The byte target is
+our invention; the reader's perception is not. So:
+
+- **The target may only buy memory back from work the user cannot see.** Steps
+  1–3 (full scale, ladder off-centre tiles, drop off-centre tiles) are unchanged.
+- **Step 4 now stops.** If the visible set alone exceeds the target, it is mounted
+  at full scale and `over_budget` is reported. Being over target is an ordinary,
+  reported outcome rather than a failure to correct.
+- **A new step 5 degrades visible scale only above a survival ceiling**, far
+  above the target, where the alternative is not "slightly more memory" but the
+  OS killing the process.
+
+"Decline to mount instead of softening" was considered and rejected for *visible*
+content: refusing to mount is a blank page where the user is reading, which is
+strictly worse than a soft one and contradicts the never-drop-visible criterion.
+Declining is the right answer for off-centre tiles, and step 3 already does it.
+
+### Calibrating the ceiling
+
+Both candidate divisors were measured rather than argued.
+
+`available / 4` never softens an ordinary operating point on any device, but it
+permits a **946.7 MiB** peak on the 8 GB design floor, and a gigabyte of texture
+in a document viewer is not defensible beside Spec 09's layout residency on the
+same machine.
+
+`available / 8` caps that at 512 MiB and still clears every ordinary point with
+headroom — the worst ordinary case is 236.7 MiB, at 200% on a 3x display. It does
+bind earlier on a genuinely memory-poor device (a phone under ~1.9 GiB available
+softens at 200%/3x), and **that is the regime working, not a regression**: a
+device that cannot afford two full-resolution pages does not get sharp text by
+refusing to degrade, it gets an OOM kill.
+
+`available / 8` was chosen.
+
+### Measured, after the change
+
+```
+Under budget — phone 4 GiB (32 MiB budget, AvailableRam)
+    zoom    dsf  before MiB   after MiB    tiles      change
+  (`*` = over target, visible pages still full scale — the L08-026 outcome; `!` = survival ceiling bound and visible scale reduced)
+     25%    1.0         2.3         2.3       11   unchanged
+     25%    2.0         9.0         9.0       11   unchanged
+     25%    3.0        20.3        20.3       11   unchanged
+     50%    1.0         4.9         4.9        6   unchanged
+     50%    2.0        19.7        19.7        6   unchanged
+     50%    3.0        44.4        31.4        6        -29%
+    100%    1.0        13.1        13.1        4   unchanged
+    100%    2.0        52.6        29.6        3        -44%
+    100%    3.0       118.3        59.2        2      -50% *
+    200%    1.0        39.4        27.9        3        -29%
+    200%    2.0       157.8       105.2        2      -33% *
+    200%    3.0       355.0       236.7        2      -33% *
+    400%    1.0       105.2       105.2        2  unchanged *
+    400%    2.0       420.8       245.9        2      -42% !
+    400%    3.0       946.7       256.0        1      -73% !
+
+Under budget — design floor 8 GiB (64 MiB budget, AvailableRam)
+    zoom    dsf  before MiB   after MiB    tiles      change
+  (`*` = over target, visible pages still full scale — the L08-026 outcome; `!` = survival ceiling bound and visible scale reduced)
+     25%    1.0         2.3         2.3       11   unchanged
+     25%    2.0         9.0         9.0       11   unchanged
+     25%    3.0        20.3        20.3       11   unchanged
+     50%    1.0         4.9         4.9        6   unchanged
+     50%    2.0        19.7        19.7        6   unchanged
+     50%    3.0        44.4        44.4        6   unchanged
+    100%    1.0        13.1        13.1        4   unchanged
+    100%    2.0        52.6        52.6        4   unchanged
+    100%    3.0       118.3        62.9        4        -47%
+    200%    1.0        39.4        39.4        3   unchanged
+    200%    2.0       157.8       105.2        2      -33% *
+    200%    3.0       355.0       236.7        2      -33% *
+    400%    1.0       105.2       105.2        2  unchanged *
+    400%    2.0       420.8       420.8        2  unchanged *
+    400%    3.0       946.7       512.0        2      -46% !
+
+Under budget — desktop 16 GiB (176 MiB budget, AvailableRam)
+    zoom    dsf  before MiB   after MiB    tiles      change
+  (`*` = over target, visible pages still full scale — the L08-026 outcome; `!` = survival ceiling bound and visible scale reduced)
+     25%    1.0         2.3         2.3       11   unchanged
+     25%    2.0         9.0         9.0       11   unchanged
+     25%    3.0        20.3        20.3       11   unchanged
+     50%    1.0         4.9         4.9        6   unchanged
+     50%    2.0        19.7        19.7        6   unchanged
+     50%    3.0        44.4        44.4        6   unchanged
+    100%    1.0        13.1        13.1        4   unchanged
+    100%    2.0        52.6        52.6        4   unchanged
+    100%    3.0       118.3       118.3        4   unchanged
+    200%    1.0        39.4        39.4        3   unchanged
+    200%    2.0       157.8       157.8        3   unchanged
+    200%    3.0       355.0       236.7        2      -33% *
+    400%    1.0       105.2       105.2        2   unchanged
+    400%    2.0       420.8       420.8        2  unchanged *
+    400%    3.0       946.7       946.7        2  unchanged *
+
+Ordering control: OK — first subject re-read identically last (165445632 bytes, 3 tiles, 500 allocations).
+```
+
+`*` marks a row that exceeds the byte target with **visible pages still at full
+scale** — the L08-026 outcome, and now the common shape of budget pressure at
+high DPI. `!` marks the survival ceiling binding, the only rows where a page the
+user is looking at was reduced.
+
+### What this cost, stated plainly
+
+Peak residency went **up** at several operating points relative to r14, and that
+is the trade being made on purpose:
+
+| | r14 (soften visible) | r15 (protect visible) | cost |
+| --- | ---: | ---: | ---: |
+| 8 GiB, 200% / 2x | 61.5 MiB | 105.2 MiB | +43.7 MiB |
+| 8 GiB, 200% / 3x | 61.5 MiB | 236.7 MiB | +175.2 MiB |
+| 16 GiB, 400% / 3x | 169.1 MiB | 946.7 MiB | +777.6 MiB |
+
+The last row is the extreme: a 16 GiB machine at 400% zoom on a 3x display now
+holds ~947 MiB of page texture rather than 169 MiB, because its survival ceiling
+is 1408 MiB and nothing forces the reduction. That is a deliberate consequence of
+the decision and it is reported rather than silent — but it is the row most worth
+revisiting if real-device measurement shows driver-side overhead materially above
+the requested bytes.
+
+### What this bought
+
+Every ordinary operating point on every device class now renders visible pages at
+full resolution, and the bench asserts it directly at **every scroll offset of the
+traversal** rather than at one position:
+
+- a visible tile is at scale 1.0 unless `survival_reduced` is set;
+- nothing exceeds the survival ceiling, on any device, at any offset;
+- visible tiles are still never dropped, unchanged from r14.
+
+The swept invariant also runs as a unit test across five memory sizes x four
+zoom/DPI combinations x forty scroll offsets, so the property is pinned
+independently of the bench.

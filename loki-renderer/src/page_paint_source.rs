@@ -87,6 +87,11 @@ impl CustomPaintSource for LokiPageSource {
         height: u32,
         scale: f64,
     ) -> Option<TextureHandle> {
+        // R27: Blitz owns the display scale factor and this is the only place it
+        // reaches us. Recorded on the way past so the tile planner can use it on
+        // the *next* plan — see `dpr_probe` for the one-frame lag and why its
+        // direction is safe.
+        crate::dpr_probe::record(scale);
         // Cloned rather than borrowed: `wgpu::Device`/`Queue` are handles over
         // shared state, so this is a refcount bump, and holding them by value
         // frees `self` for the residency bookkeeping below (which needs `&mut`).

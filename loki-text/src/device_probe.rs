@@ -32,8 +32,11 @@
 //! one that must decide at launch — should not reuse this sensor without
 //! checking that reasoning still holds for it.
 
-use appthere_ui::{GpuClass, note_gpu_class, note_system_memory, probe_system_memory};
+use appthere_ui::{
+    GpuClass, note_device_scale_factor, note_gpu_class, note_system_memory, probe_system_memory,
+};
 use dioxus::prelude::*;
+use loki_renderer::dpr_probe::observed_scale;
 use loki_renderer::gpu_probe::{AdapterKind, observed_adapter};
 
 /// Maps the renderer's neutral adapter class onto the profile's capability
@@ -75,6 +78,16 @@ pub fn DeviceProbeSensor() -> Element {
     // render after the first observation — writes nothing and wakes nobody.
     if let Some(kind) = observed_adapter() {
         note_gpu_class(gpu_class_of(kind));
+    }
+
+    // Display scale factor (R27): same shape and same reason as the GPU class —
+    // Blitz owns it and only reveals it to the paint source, so it is observed on
+    // the way past and lifted here. Unlike the adapter it can *change*
+    // mid-session (a window dragged to another display), so this reads every
+    // render rather than once; `note_device_scale_factor` writes only on a
+    // change, so a stationary window wakes nobody.
+    if let Some(scale) = observed_scale() {
+        note_device_scale_factor(scale);
     }
 
     rsx! {}

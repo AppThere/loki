@@ -69,33 +69,24 @@ pub fn current() -> u64 {
 
 /// Physical pixels per CSS pixel on the display this window is on.
 ///
-/// TODO(device-profile-dpr): probe the real value. Blitz owns the factor — it
-/// reaches the paint source as `CustomPaintSource::render`'s `scale` argument —
-/// but nothing surfaces it to the application, and the tile planner needs it
-/// *before* the render callback in order to decide what to mount. Until a probe
-/// lands this returns 1.0, which under-states the texture cost on a HiDPI
-/// display. The failure direction is benign — under-planning over-mounts, it
-/// never evicts, so the cost is a missed saving and never a blank page.
+/// Reads the value the paint path last rendered at (Spec 08 R27), falling back to
+/// 1.0 before the first page tile has painted. `DeviceProfile` is the source of
+/// truth so the value is reactive: when the sensor observes a change — first
+/// paint, or a window dragged between displays — every plan downstream of this
+/// recomputes.
 ///
-/// **The magnitude is not benign, which is why this is Spec 08 R27 and blocks
-/// Phase 2 from closing.** Residency is *quadratic* in this factor and only
-/// sub-quadratic in zoom (the virtualization window is measured in CSS pixels,
-/// so DPI scales both tile dimensions with the mounted count unchanged, while
-/// zoom enlarges tiles *and* shrinks the count). DPI is therefore the dominant
-/// axis, and a 2x display's true requirement is 4x what this reports — enough
-/// that the budget does not bind at all and the pressure policy never fires, on
-/// exactly the hardware Phase 2 exists to protect.
-///
-/// The fix has a precedent in this tree: [`crate::device_probe`] already lifts
-/// an equally late-bound value — the GPU adapter class, unknowable until the
-/// paint path resumes — from a process-wide record into the reactive
-/// `DeviceProfile`, holding `Unknown` distinct from a default so "not probed"
-/// never reads as an answer. This takes the same shape, recording from
-/// `render`'s `scale` rather than from `resume`, and inherits the same one-frame
-/// lag in the same benign direction.
+/// **Why the fallback is 1.0 and not something larger.** Under-stating the factor
+/// over-mounts for one frame; over-stating it would reduce rasterisation scale on
+/// a display that did not need it, which is visible. Between a frame of extra
+/// residency and a frame of soft text, residency is the right thing to spend —
+/// the same asymmetry that makes the whole target-versus-ceiling split work
+/// (ADR L08-026).
 #[must_use]
 pub fn device_scale_factor() -> f64 {
-    1.0
+    use_device_profile()
+        .device_scale_factor
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .unwrap_or(1.0)
 }
 
 #[cfg(test)]

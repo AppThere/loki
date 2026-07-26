@@ -156,6 +156,32 @@ pub fn note_gpu_class(observed: GpuClass) {
     profile.write().gpu_class = observed;
 }
 
+/// Folds an observed display scale factor into the ambient profile.
+///
+/// A non-finite or non-positive value is ignored on the same principle as
+/// [`GpuClass::Unknown`] in [`note_gpu_class`]: a probe that could not answer
+/// must not overwrite one that did.
+///
+/// Writes only on a change, so the common case — every frame after the first
+/// observation on a stationary window — wakes nobody. The comparison is exact
+/// rather than epsilon-based on purpose: compositors report scale factors as
+/// exact values (1.0, 2.0, 1.5, 2.25), so any difference is a real display
+/// change and worth a re-plan, and an epsilon would silently swallow the 2.0 →
+/// 2.25 move between two Retina displays.
+pub fn note_device_scale_factor(observed: f64) {
+    if !observed.is_finite() || observed <= 0.0 {
+        return;
+    }
+    let Some(ctx) = try_consume_context::<AtDeviceProfileContext>() else {
+        return;
+    };
+    let mut profile = ctx.profile;
+    if profile.peek().device_scale_factor == Some(observed) {
+        return;
+    }
+    profile.write().device_scale_factor = Some(observed);
+}
+
 #[cfg(test)]
 #[path = "device_probe_tests.rs"]
 mod tests;

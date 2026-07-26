@@ -42,6 +42,39 @@ pub const BUDGET_CEILING_BYTES: u64 = 256 * 1024 * 1024;
 /// anchored on that one point.
 pub const AVAILABLE_RAM_DIVISOR: u64 = 64;
 
+/// Share of *available* RAM at which the renderer stops protecting resolution
+/// and starts protecting the process: one eighth.
+///
+/// This is **not** the budget. It is the line past which continuing to honour
+/// full-resolution visible pages risks the OS killing us, and a soft page beats
+/// a dead application. See [`TextureBudget::hard_ceiling_bytes`] for why the two
+/// thresholds exist and why only this one may degrade what the user is reading.
+///
+/// # Why an eighth and not a quarter
+///
+/// Both were measured. A quarter never softens an ordinary operating point on any
+/// device, but it permits a **946.7 MiB** peak on the 8 GB design floor (400% zoom
+/// on a 3x display, two pages straddling a boundary), and a gigabyte of texture in
+/// a document viewer is not defensible next to Spec 09's layout residency on the
+/// same machine.
+///
+/// An eighth caps that case at 512 MiB and still clears every ordinary point on
+/// every device with headroom — the worst ordinary case is 236.7 MiB at 200% on a
+/// 3x display, against a 512 MiB ceiling on the design floor.
+///
+/// It does bind earlier on a genuinely memory-poor device: a phone reporting under
+/// ~1.9 GiB available has a ceiling below that 236.7 MiB, so 200% on a 3x display
+/// softens there. **That is the regime working rather than a regression.** On a
+/// device that cannot afford two full-resolution pages, refusing to degrade does
+/// not buy sharp text — it buys an OOM kill, and Android's killer is neither slow
+/// nor negotiable.
+pub const SURVIVAL_AVAILABLE_RAM_DIVISOR: u64 = 8;
+
+/// Share of *total* RAM used for the survival ceiling when available is missing:
+/// one sixteenth. Agrees with [`SURVIVAL_AVAILABLE_RAM_DIVISOR`] at the design
+/// floor by the same construction as [`TOTAL_RAM_DIVISOR`].
+pub const SURVIVAL_TOTAL_RAM_DIVISOR: u64 = 16;
+
 /// Share of *total* RAM used when the available figure is missing: one 128th.
 ///
 /// Half the available-RAM share, because total overstates what this process may
@@ -97,6 +130,7 @@ pub enum BudgetSource {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct TextureBudget {
     bytes: u64,
+    hard_ceiling_bytes: u64,
     source: BudgetSource,
 }
 
@@ -106,6 +140,10 @@ impl TextureBudget {
     pub fn baseline() -> Self {
         Self {
             bytes: BUDGET_BASELINE_BYTES,
+            // The baseline stands for the 8 GB design floor's ~4 GiB available,
+            // so its ceiling is that machine's ceiling, by the same
+            // construction that anchors the budget itself.
+            hard_ceiling_bytes: (4 * 1024 * 1024 * 1024_u64) / SURVIVAL_AVAILABLE_RAM_DIVISOR,
             source: BudgetSource::Baseline,
         }
     }
@@ -117,8 +155,25 @@ impl TextureBudget {
     /// machine.
     #[must_use]
     pub fn exact(bytes: u64) -> Self {
+        let bytes = bytes.max(BUDGET_FLOOR_BYTES);
         Self {
-            bytes: bytes.max(BUDGET_FLOOR_BYTES),
+            bytes,
+            // A person may raise the *target* as high as they like; the survival
+            // ceiling is not theirs to lower, because it is about the OOM killer
+            // rather than about preference. It is only ever raised to keep the
+            // invariant ceiling >= target.
+            hard_ceiling_bytes: bytes.max(Self::baseline().hard_ceiling_bytes),
+            source: BudgetSource::UserOverride,
+        }
+    }
+
+    /// Builds a budget with both thresholds explicit, for tests.
+    #[must_use]
+    pub fn exact_with_ceiling(bytes: u64, hard_ceiling_bytes: u64) -> Self {
+        let bytes = bytes.max(BUDGET_FLOOR_BYTES);
+        Self {
+            bytes,
+            hard_ceiling_bytes: hard_ceiling_bytes.max(bytes),
             source: BudgetSource::UserOverride,
         }
     }
@@ -136,18 +191,23 @@ impl TextureBudget {
         if inputs.gpu_paint_path == Some(false) {
             return Self {
                 bytes: BUDGET_FLOOR_BYTES,
+                hard_ceiling_bytes: BUDGET_FLOOR_BYTES,
                 source: BudgetSource::NoGpuPaintPath,
             };
         }
         if let Some(available) = inputs.available_ram_bytes {
+            let bytes = clamp(available / AVAILABLE_RAM_DIVISOR);
             return Self {
-                bytes: clamp(available / AVAILABLE_RAM_DIVISOR),
+                bytes,
+                hard_ceiling_bytes: (available / SURVIVAL_AVAILABLE_RAM_DIVISOR).max(bytes),
                 source: BudgetSource::AvailableRam,
             };
         }
         if let Some(total) = inputs.total_ram_bytes {
+            let bytes = clamp(total / TOTAL_RAM_DIVISOR);
             return Self {
-                bytes: clamp(total / TOTAL_RAM_DIVISOR),
+                bytes,
+                hard_ceiling_bytes: (total / SURVIVAL_TOTAL_RAM_DIVISOR).max(bytes),
                 source: BudgetSource::TotalRam,
             };
         }
@@ -158,6 +218,29 @@ impl TextureBudget {
     #[must_use]
     pub fn bytes(self) -> u64 {
         self.bytes
+    }
+
+    /// The line past which the renderer will reduce the scale of pages the user
+    /// is **looking at**, because the alternative is the process being killed.
+    ///
+    /// Two thresholds rather than one, and the distinction is the whole of
+    /// ADR L08-026:
+    ///
+    /// - [`Self::bytes`] is a **target**. Exceeding it is a reported outcome, not
+    ///   a failure to correct. It buys memory back from work the user cannot
+    ///   see — the pre-render margin — and it never spends legibility to do it.
+    /// - This is a **survival ceiling**. Between the two, visible pages stay at
+    ///   full resolution and the plan simply reports that it is over target.
+    ///   Above it, there is no benign move left: refusing to degrade means an
+    ///   allocation the device cannot satisfy.
+    ///
+    /// The byte budget is our invention and the reader's perception is not, so
+    /// the target may never cash in the second for the first. Survival is the
+    /// one case where it may, because there the alternative is not "slightly
+    /// more memory" but a dead application.
+    #[must_use]
+    pub fn hard_ceiling_bytes(self) -> u64 {
+        self.hard_ceiling_bytes
     }
 
     /// How the figure was arrived at.

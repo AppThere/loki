@@ -175,6 +175,19 @@ pub struct DeviceProfile {
     /// shares system RAM (so the system figure *is* the constraint), and a
     /// discrete one has its own budget we cannot see.
     pub gpu_class: GpuClass,
+    /// Physical pixels per CSS pixel on the display this window is on, when
+    /// observed.
+    ///
+    /// `None` means no page tile has painted yet, and is deliberately distinct
+    /// from `Some(1.0)`: a consumer must be able to tell an unprobed HiDPI
+    /// display from a genuine standard-DPI one, because resident texture bytes go
+    /// as the *square* of this number (Spec 08 §3.2a) and assuming 1.0 on a 3x
+    /// display under-states the cost ninefold.
+    ///
+    /// Owned by the compositor rather than by us, so it is observed on the way
+    /// past rather than queried — see `loki_renderer::dpr_probe` — and it can
+    /// change mid-session when a window moves between displays.
+    pub device_scale_factor: Option<f64>,
     /// The current display's physical characteristics.
     pub display: Option<PhysicalDisplay>,
     /// How the window is presented.

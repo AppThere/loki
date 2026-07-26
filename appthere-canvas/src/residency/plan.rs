@@ -17,14 +17,37 @@
 //!    at full scale.
 //! 3. Drop off-centre tiles, furthest from the viewport first. They become
 //!    blank placeholders, exactly as an un-windowed page already is.
-//! 4. Only if the **visible** tiles alone still exceed the budget, reduce
-//!    *their* scale — to the exact factor that fits, not a ladder step, and
-//!    never below [`MIN_RASTER_SCALE`]. This is the 400%-on-a-3×-display corner.
+//! 4. If the **visible** tiles alone still exceed the budget, **stop**. Mount
+//!    them at full scale and report [`ResidencyPlan::over_budget`]. The budget is
+//!    a target, and it has run out of things it is allowed to spend.
+//! 5. Only above the **survival ceiling** — `TextureBudget::hard_ceiling_bytes`,
+//!    a threshold far above the target — reduce the visible set's scale, to the
+//!    exact factor that fits and never below [`MIN_RASTER_SCALE`].
 //!
-//! Visible tiles are never dropped, at any budget. That is the acceptance
-//! criterion, and it is why step 4 exists at all: without it a small budget
-//! would have no legal move left and the only remaining lever would be
-//! eviction.
+//! Visible tiles are never dropped, at any budget or ceiling.
+//!
+//! # Why step 5 is not step 4 (ADR L08-026)
+//!
+//! Until r15 there was no step 5: the visible set was reduced as soon as it
+//! exceeded the *target*. That looked like a corner case and was not one. With
+//! the real device scale factor wired (R27), the visible set exceeds a derived
+//! target during ordinary reading: at 200% zoom on an 8 GiB machine with a 2×
+//! display it does so at **40% of scroll offsets** — every offset where a page
+//! boundary sits inside the viewport — so body text would soften and re-sharpen
+//! as the reader scrolls. At 200% on a 3× display it is 100% of offsets at 0.51
+//! scale, and even a 16 GiB desktop softens on a 3× display.
+//!
+//! That is not a memory policy, it is a rendering defect. The byte target is
+//! ours to choose; the reader's perception is not. So the target may only ever
+//! buy memory back from work the user cannot see, and the one case where
+//! degrading visible text is the right answer is the case where the alternative
+//! is the process being killed — which is what the survival ceiling names.
+//!
+//! **Why not "decline to mount" instead?** It was considered and rejected: for
+//! *visible* content, refusing to mount is a blank page where the user is
+//! reading, which is strictly worse than a soft one and contradicts the
+//! never-drop-visible criterion. Declining is the honest answer for off-centre
+//! tiles, and that is exactly what step 3 already does.
 //!
 //! # Why a ladder for off-centre and an exact factor for visible
 //!
@@ -50,6 +73,11 @@ pub const RASTER_SCALE_LADDER: &[f32] = &[1.0, 0.75, 0.5, 0.35, 0.25];
 /// at 400% zoom that is still an effective 100%, soft but legible. Below this
 /// the degradation stops reading as "not settled yet" and starts reading as
 /// broken, which is the failure R5 tracks.
+///
+/// Since r15 this floor binds in two very different places: on off-centre tiles,
+/// where it is never seen at rest (R5a), and on the visible set in the survival
+/// regime only (R5b), where it is seen but the alternative is an allocation the
+/// device cannot satisfy.
 pub const MIN_RASTER_SCALE: f32 = 0.25;
 
 /// One tile in a residency plan.
@@ -73,14 +101,22 @@ pub struct ResidencyPlan {
     pub tiles: Vec<TilePlan>,
     /// Requested texture bytes across [`Self::tiles`].
     pub total_bytes: u64,
-    /// `true` when the plan could not reach the budget without breaking a rule
-    /// it will not break — i.e. the visible set exceeds the budget even at
-    /// [`MIN_RASTER_SCALE`].
+    /// `true` when the plan exceeds the byte **target** after spending
+    /// everything the target is allowed to spend.
     ///
-    /// Reported rather than resolved. The alternatives are dropping a page the
-    /// user is looking at or rendering it below legibility, and both are worse
-    /// than being over budget on a device that cannot do better.
+    /// Reported rather than resolved, and since r15 this is an ordinary outcome
+    /// rather than a corner: the visible set at full scale can exceed a derived
+    /// target during normal reading on a HiDPI machine, and the correct response
+    /// is to say so, not to soften the page. See the module docs for why.
     pub over_budget: bool,
+    /// `true` when the visible set's scale was reduced to stay under the
+    /// **survival ceiling** — the only circumstance in which this planner
+    /// degrades what the user is looking at.
+    ///
+    /// Distinct from [`Self::over_budget`] because they carry opposite meanings
+    /// for a reader of a diagnostic: over-target is the design working, while
+    /// this is the device having run out of room.
+    pub survival_reduced: bool,
 }
 
 impl ResidencyPlan {
@@ -141,7 +177,7 @@ pub fn plan_residency(
 
     let cap = budget.bytes();
     if total(&tiles) <= cap {
-        return finish(tiles, false);
+        return finish(tiles, false, false);
     }
 
     // Step 2: walk the ladder for off-centre tiles.
@@ -151,7 +187,7 @@ pub fn plan_residency(
             tile.bytes = scaled_bytes(pages[tile.page_index], vp, scale);
         }
         if total(&tiles) <= cap {
-            return finish(tiles, false);
+            return finish(tiles, false, false);
         }
     }
 
@@ -170,24 +206,30 @@ pub fn plan_residency(
         tiles.remove(pos);
     }
     if total(&tiles) <= cap {
-        return finish(tiles, false);
+        return finish(tiles, false, false);
     }
 
-    // Step 4: the visible set alone is over budget. Reduce its scale to the
-    // exact factor that fits — bytes go as the square of the scale, so the
-    // factor is the square root of the ratio — floored at legibility.
+    // Step 4: the visible set alone is over target. That is where the target's
+    // authority ends — it may not spend legibility (L08-026). Mount full scale
+    // and report it.
     let visible_bytes = total(&tiles);
-    if visible_bytes == 0 {
-        return finish(tiles, false);
+    let ceiling = budget.hard_ceiling_bytes();
+    if visible_bytes == 0 || visible_bytes <= ceiling {
+        return finish(tiles, true, false);
     }
+
+    // Step 5: above the survival ceiling there is no benign move left — refusing
+    // to degrade means requesting an allocation the device cannot satisfy. Reduce
+    // to the exact factor that fits *the ceiling*; bytes go as the square of the
+    // scale, so the factor is the square root of the ratio, floored at legibility.
     let mut scale =
-        ((cap as f64 / visible_bytes as f64).sqrt() as f32).clamp(MIN_RASTER_SCALE, 1.0);
+        ((ceiling as f64 / visible_bytes as f64).sqrt() as f32).clamp(MIN_RASTER_SCALE, 1.0);
     loop {
         for tile in &mut tiles {
             tile.raster_scale = scale;
             tile.bytes = scaled_bytes(pages[tile.page_index], vp, scale);
         }
-        if total(&tiles) <= cap || scale <= MIN_RASTER_SCALE {
+        if total(&tiles) <= ceiling || scale <= MIN_RASTER_SCALE {
             break;
         }
         // The closed form is slightly optimistic: each axis rounds *up* to whole
@@ -198,15 +240,16 @@ pub fn plan_residency(
         scale = (scale * 0.98).max(MIN_RASTER_SCALE);
     }
     let over = total(&tiles) > cap;
-    finish(tiles, over)
+    finish(tiles, over, true)
 }
 
-fn finish(tiles: Vec<TilePlan>, over_budget: bool) -> ResidencyPlan {
+fn finish(tiles: Vec<TilePlan>, over_budget: bool, survival_reduced: bool) -> ResidencyPlan {
     let total_bytes = total(&tiles);
     ResidencyPlan {
         tiles,
         total_bytes,
         over_budget,
+        survival_reduced,
     }
 }
 
