@@ -253,3 +253,29 @@ pub fn repeat_doc(doc: &Document, times: usize) -> Document {
     }
     out
 }
+
+/// Least-squares fit of `rate = intercept + slope · x`, returning
+/// `(intercept, slope)`.
+///
+/// Used by the duplication sweep: with `x = unique/total` (i.e. `1/n` for an
+/// n-fold repeated document), the intercept is the **per-placement** cost that
+/// every copy pays and the slope is the **content-keyed** cost that
+/// deduplicates. Returns `(0, 0)` for fewer than two distinct `x` values —
+/// callers must not report a fit they did not get.
+pub fn fit_line(points: &[(f64, f64)]) -> (f64, f64) {
+    let n = points.len() as f64;
+    if points.len() < 2 {
+        return (0.0, 0.0);
+    }
+    let sx: f64 = points.iter().map(|p| p.0).sum();
+    let sy: f64 = points.iter().map(|p| p.1).sum();
+    let sxx: f64 = points.iter().map(|p| p.0 * p.0).sum();
+    let sxy: f64 = points.iter().map(|p| p.0 * p.1).sum();
+    let denom = n * sxx - sx * sx;
+    if denom.abs() < f64::EPSILON {
+        return (0.0, 0.0);
+    }
+    let slope = (n * sxy - sx * sy) / denom;
+    let intercept = (sy - slope * sx) / n;
+    (intercept, slope)
+}

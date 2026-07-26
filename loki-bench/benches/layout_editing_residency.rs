@@ -60,6 +60,12 @@ use std::hint::black_box;
 /// the rate rather than hidden, so a reader can discount the row themselves.
 const RATE_FLOOR_CHARS: usize = 5_000;
 
+/// How far the first and last reading of the same document may differ before
+/// the run is declared order-dependent. Tight on purpose: warm, the two agree
+/// exactly, so any real drift means a one-time cost is still leaking into a
+/// measured region.
+const ORDER_DRIFT_TOLERANCE: f64 = 0.05;
+
 fn layout_peak(resources: &mut FontResources, doc: &Document, preserve: bool) -> AllocStats {
     let options = LayoutOptions {
         preserve_for_editing: preserve,
@@ -160,8 +166,9 @@ fn report_doc(resources: &mut FontResources, label: &str, doc: &Document) -> (i6
 fn main() {
     support::header("Spec 09 E0 — editing residency: preserve_for_editing on vs off");
     eprintln!(
-        "  Target is the evictable FRACTION (L9-008); the B/char rate is not\n  \
-         comparable across document classes. Rows under {RATE_FLOOR_CHARS} chars are flagged."
+        "  The evictable % below is a property of each DOCUMENT, not a target for us\n  \
+         (L9-008): the engineering goal is what fraction of it we actually reclaim.\n  \
+         Rows under {RATE_FLOOR_CHARS} chars are flagged — small documents are fixed-cost heavy."
     );
 
     let mut resources = FontResources::new();
@@ -199,44 +206,74 @@ fn main() {
         }
     }
 
-    // Attempted: size at a constant formatting profile, by repeating the one
-    // corpus fixture large enough to draw a rate from.
+    // ── Duplication sweep: decomposing per-placement from content-keyed ─────
     //
-    // **This does not measure what it was meant to, and the ×10 row must not be
-    // read as evidence.** Repeating blocks makes them byte-identical, so
-    // `ParaCache` keys collide and nine of every ten paragraphs are cache hits
-    // rather than fresh layouts. The cache then holds a tenth as many entries
-    // per character while `editing_data` still holds an `Arc` per placement, so
-    // the per-character rate falls for a reason that has nothing to do with
-    // document size. Retained here, labelled, because deleting it would lose
-    // the lesson: scaling a document by repetition changes its cache-hit
-    // profile, and a genuinely larger document with *distinct* content would
-    // not behave this way. Answering the size question needs larger real
-    // fixtures, not synthesised ones (Spec 09 §4.1, R9-09).
+    // Repeating a document's blocks makes them byte-identical, so `ParaCache`
+    // keys collide: at ×n only 1/n of the paragraphs are distinct content, while
+    // `editing_data` still holds an `Arc` per placement. That started as a
+    // failed attempt to vary size at constant formatting — it cannot do that,
+    // because it changes the cache-hit profile — but the failure measures
+    // something no other run in this program does.
+    //
+    // With `x = unique/total = 1/n`, residency per character is
+    // `rate(x) = P + C·x`, where **P is the per-placement cost every copy pays**
+    // and **C is the content-keyed cost that deduplicates**. Fitting the line
+    // separates them. That bears directly on S9-1: sharing one allocation
+    // between `ParaCache` and the editing index removes a copy of the
+    // *content-keyed* portion specifically.
+    //
+    // Product consequence, not just a bench one: residency is per unique
+    // paragraph content plus per placement, so documents with repeated
+    // boilerplate — form rows, repeated headers, template blocks — deduplicate
+    // for free, and a flat B/char figure overstates them.
     if let Some(iris) = iris {
-        eprintln!("\n  size-by-repetition (INVALID — cache-hit contaminated, see source):");
-        report_doc(&mut resources, "iris-blueprint ×1", &iris);
-        report_doc(
-            &mut resources,
-            "iris ×10 (not evidence)",
-            &support::repeat_doc(&iris, 10),
+        eprintln!("\n  duplication sweep (x = unique/total; rate = P + C·x):");
+        let mut points: Vec<(f64, f64)> = Vec::new();
+        for &n in &[1_usize, 2, 5, 10] {
+            let doc = if n == 1 {
+                iris.clone()
+            } else {
+                support::repeat_doc(&iris, n)
+            };
+            let (_, rate) = report_doc(&mut resources, &format!("iris ×{n}"), &doc);
+            points.push((1.0 / n as f64, rate));
+        }
+        let (per_placement, content_keyed) = support::fit_line(&points);
+        eprintln!(
+            "  fit over {} points: content-keyed C={content_keyed:.1} B/char, \
+             per-placement P={per_placement:.1} B/char",
+            points.len(),
+        );
+        eprintln!(
+            "  → {:.0}% of editing residency deduplicates across identical paragraphs",
+            100.0 * content_keyed / (content_keyed + per_placement).max(1.0),
         );
     }
 
-    // Ordering control — see the module docs. Prints the first and last reading
-    // of the same document so order-dependence is visible rather than assumed
-    // away.
+    // ── Ordering control (L9-011) ───────────────────────────────────────────
+    // Re-measures the first subject last. This **asserts** rather than reports:
+    // sentinel checks catch an instrument that fails silently, but only a
+    // self-consistency check catches one that fails *plausibly*, and plausible
+    // wrong answers are the ones that get ratified into specs. 39,264 B/char
+    // read exactly like a small-document artefact and was written into Spec 09
+    // r3 as established fact; it died only because two of this harness's own
+    // rows disagreed by more than any model allowed.
     eprintln!("\n  ordering control (same document, measured last):");
     let small = support::build_doc(support::DOC_TIERS[0].1, support::WORDS_PER_PARA);
     let (_, last_small) = report_doc(&mut resources, "small (control)", &small);
+    let drift = (first_small - last_small).abs() / first_small.max(1.0);
     eprintln!(
-        "  small tier: first={first_small:.1} B/char  last={last_small:.1} B/char  \
-         {}",
-        if (first_small - last_small).abs() < 0.15 * first_small.max(1.0) {
-            "→ order-independent"
-        } else {
-            "→ ORDER-DEPENDENT, treat every rate as suspect"
-        }
+        "  small tier: first={first_small:.1} B/char  last={last_small:.1} B/char  drift={:.1}%",
+        drift * 100.0
+    );
+    assert!(
+        drift <= ORDER_DRIFT_TOLERANCE,
+        "E0 is order-dependent: the same document read {first_small:.1} B/char first \
+         and {last_small:.1} B/char last ({:.1}% drift, tolerance {:.0}%). Every rate in \
+         this run is contaminated by whatever one-time cost the earlier measurement \
+         absorbed — fix the warm-up before trusting any figure here.",
+        drift * 100.0,
+        ORDER_DRIFT_TOLERANCE * 100.0,
     );
 
     if corpus_seen == 0 {

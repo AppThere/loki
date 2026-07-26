@@ -32,8 +32,15 @@ almost every corpus figure changed, by up to **252×**, and the "floor artefact 
 4.5k characters" turned out not to exist. Corrected numbers in S09.0 §10a: real
 formatting costs 1.7× the synthetic rate (not 2.5×), and the evictable band is
 **45–63% for text-bearing documents** with object-heavy content far higher.
-Spec 09 should still target the fraction — it moves by less than two while the
-rate moves by sixty — but on the corrected band.
+Spec 09 should still target the fraction — but note it is a property of
+*documents*, not a goal for us; what we control is how much of it we reclaim.
+
+The failed ×10 experiment then paid for itself. Repetition cannot vary size at
+constant formatting (it changes the cache-hit profile), but run as a sweep at
+×1/×2/×5/×10 it decomposes residency into **~78 B/char keyed to paragraph
+content and ~39 B/char paid per placement**, with residuals under 0.04 B/char.
+That sizes S9-1 from measurement rather than struct arithmetic, and means
+boilerplate-heavy documents deduplicate for free (S09.0 §10b).
 
 ## Loki Spec 08 — UX & Memory Remediation Program, Phase 0
 
