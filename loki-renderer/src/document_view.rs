@@ -5,7 +5,15 @@
 
 use std::sync::{Arc, Mutex};
 
-#[cfg(any(not(target_os = "android"), android_gpu))]
+// Unconditional, and it must stay that way: `DocumentView` below is compiled on
+// every target (`lib.rs` declares this module ungated), and both of its arms —
+// the Android CPU early-return and the GPU/desktop body — use `#[component]`,
+// `Element`, `rsx!`, `use_hook` and `provide_context` from this prelude. Gating
+// it to the GPU path broke `--target aarch64-linux-android` with six
+// name-resolution errors while desktop builds stayed green, which is the I-16
+// failure shape exactly. The sibling views get this right by gating the *module*
+// in `lib.rs` and importing the prelude unconditionally inside; this file is the
+// one that gated the import instead.
 use dioxus::prelude::*;
 
 // PageTile (and the wgpu paint path under it) is enabled on: desktop, and
