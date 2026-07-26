@@ -12,7 +12,7 @@ document is evidence for a decision taken later.
 
 | ID | Document | Answers | Verdict |
 | --- | --- | --- | --- |
-| S09.0 | [Layout residency census](S09.0-layout-residency-census.md) | Spec 09 §3 Q1–Q7 **and E0** | **124 B/char resident, 70 of it evictable — measured, not derived.** Eviction is **safe** (layout is a pure function of the CRDT) but not currently *representable* — `None` already means "read-only", so an evicted page would read as a silently wrong answer. Checkpoint recovery exists but only at clean page tops. New: glyph items are stored **three** times, so sharing one allocation removes ~26% of residency with no eviction machinery |
+| S09.0 | [Layout residency census](S09.0-layout-residency-census.md) | Spec 09 §3 Q1–Q7 **and E0** | **~50–70% of layout residency is evictable — measured on synthetic and real documents.** Body text runs 124 B/char (70 evictable); real documents range far higher, so the *fraction* is the durable number, not the rate. Eviction is **safe** (layout is a pure function of the CRDT) but not *representable* — `None` already means "read-only", so an evicted page would read as a silently wrong answer. Checkpoint recovery exists but only at clean page tops. Glyph items are stored **three** times: sharing one allocation removes ~26% with no eviction machinery |
 
 **E0 has been run** (S09.0 §10), so Spec 09 L9-005 is satisfied and the phase
 plan is unblocked. Spec 09 §4 describes E0 as a manual RSS comparison needing
@@ -24,6 +24,13 @@ guard for the steps that follow.
 The census's headline figure survived contact with the instrument (predicted 72
 B/char, measured 70.1, flat across a 4× document-size change). Its *total* did
 not, and the 36 B/char gap led to the cheapest win on the list.
+
+Then E0 was pointed at the conformance corpus, and the per-character model did
+**not** survive real documents: the rate ranges 71 → 3950 B/char, while the
+evictable *fraction* stays between 49% and 74%. **Spec 09 should target the
+fraction.** Note the corpus is six documents, not the ~130 the `TC-*` case
+catalog implies — only one is large enough to draw a rate from, so this is
+suggestive rather than settled (S09.0 §10a).
 
 ## Loki Spec 08 — UX & Memory Remediation Program, Phase 0
 

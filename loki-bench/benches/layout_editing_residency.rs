@@ -9,6 +9,12 @@
 //! definitions? If not, the census is wrong and everything built on it is built
 //! on sand.
 //!
+//! It does, for body text — measured 70.1 B/char against 72 predicted, flat
+//! across a 4× document-size change. On **real** documents the per-character
+//! rate is the wrong unit (71 → 3950 B/char across the corpus) while the
+//! *evictable fraction* stays in a 49–74% band. Watch the fraction in the last
+//! column, not the rate: that is the number Spec 09 targets (S09.0 §10a).
+//!
 //! # Why this is a bench and not a manual RSS comparison
 //!
 //! Spec 09 §4 proposes opening a document read-only, opening it for editing,
@@ -47,30 +53,53 @@ mod support;
 
 use loki_bench::{AllocStats, measure};
 use loki_doc_model::content::block::Block;
-use loki_doc_model::content::inline::Inline;
+use loki_doc_model::content::toc::inline_plain_text;
 use loki_doc_model::document::Document;
 use loki_layout::{FontResources, LayoutMode, LayoutOptions, layout_document};
 use std::hint::black_box;
 
-/// Counts the characters of text in a document, so residency can be reported
-/// per character and compared against the census's ~72 B/char prediction.
+/// Counts the characters of display text in a document, so residency can be
+/// reported per character.
+///
+/// Built on `inline_plain_text`, which already flattens every inline variant,
+/// rather than matching on a subset — a hand-rolled counter silently returned
+/// zero for every real document in the corpus, because they use `StyledPara`
+/// and `Heading` where the synthetic builder uses `Para`.
 fn char_count(doc: &Document) -> usize {
-    fn inline_chars(i: &Inline) -> usize {
-        match i {
-            Inline::Str(s) => s.chars().count(),
-            Inline::Strong(v) | Inline::Emph(v) => v.iter().map(inline_chars).sum(),
+    fn block_chars(b: &Block) -> usize {
+        match b {
+            Block::Para(i) | Block::Plain(i) => inline_plain_text(i).chars().count(),
+            Block::Heading(_, _, i) => inline_plain_text(i).chars().count(),
+            Block::StyledPara(p) => inline_plain_text(&p.inlines).chars().count(),
+            Block::BlockQuote(inner) => inner.iter().map(block_chars).sum(),
+            Block::OrderedList(_, items) | Block::BulletList(items) => items
+                .iter()
+                .flat_map(|blocks| blocks.iter())
+                .map(block_chars)
+                .sum(),
+            Block::Table(t) => table_chars(t),
             _ => 0,
         }
+    }
+    fn table_chars(t: &loki_doc_model::content::table::Table) -> usize {
+        t.head
+            .rows
+            .iter()
+            .chain(
+                t.bodies
+                    .iter()
+                    .flat_map(|b| b.head_rows.iter().chain(b.body_rows.iter())),
+            )
+            .chain(t.foot.rows.iter())
+            .flat_map(|row| row.cells.iter())
+            .flat_map(|cell| cell.blocks.iter())
+            .map(block_chars)
+            .sum()
     }
     doc.sections
         .iter()
         .flat_map(|s| s.blocks.iter())
-        .map(|b| match b {
-            Block::Para(inlines) | Block::Plain(inlines) => {
-                inlines.iter().map(inline_chars).sum::<usize>()
-            }
-            _ => 0,
-        })
+        .map(block_chars)
         .sum()
 }
 
@@ -89,6 +118,79 @@ fn layout_peak(resources: &mut FontResources, doc: &Document, preserve: bool) ->
         // not the transient cost of producing it.
         black_box(&layout);
     })
+}
+
+/// Real documents from the conformance corpus, as `(label, relative path)`.
+///
+/// The synthetic tiers above carry three style runs per paragraph, which is
+/// denser than plain prose but far lighter than a real document. Laying out the
+/// actual fixtures answers the question the synthetic corpus cannot: does the
+/// per-character model survive real formatting density, or do the per-run and
+/// per-line terms take over?
+///
+/// Read from disk by path rather than through `appthere-conformance`, so this
+/// bench adds no crate edge for the dependency-direction gate to weigh.
+const CORPUS: &[(&str, &str)] = &[
+    (
+        "acid-docx",
+        "../appthere-conformance/fixtures/docx/acid-docx.docx",
+    ),
+    (
+        "acid2-docx",
+        "../appthere-conformance/fixtures/docx/acid2-docx.docx",
+    ),
+    (
+        "iris-blueprint",
+        "../appthere-conformance/fixtures/docx/iris-blueprint.docx",
+    ),
+    (
+        "styles-tinos",
+        "../appthere-conformance/fixtures/odt/styles-tinos.odt",
+    ),
+    (
+        "para-gelasio",
+        "../appthere-conformance/fixtures/odt/para-gelasio.odt",
+    ),
+    (
+        "para-carlito",
+        "../appthere-conformance/fixtures/odt/para-carlito.odt",
+    ),
+];
+
+/// Imports a corpus fixture, or `None` when it is absent or fails to import.
+///
+/// Absence is tolerated rather than fatal: this is a bench, and the synthetic
+/// tiers above are the part that gates Spec 09. A missing corpus degrades the
+/// run to "no real-document evidence", which the report states plainly.
+fn load_corpus_doc(rel: &str) -> Option<Document> {
+    use loki_doc_model::io::DocumentImport;
+    use std::io::Cursor;
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(rel);
+    let bytes = std::fs::read(&path).ok()?;
+    if rel.ends_with(".docx") {
+        loki_ooxml::DocxImport::import(Cursor::new(bytes.as_slice()), Default::default()).ok()
+    } else {
+        loki_odf::OdtImport::import(Cursor::new(bytes.as_slice()), Default::default()).ok()
+    }
+}
+
+/// Measures one document and prints its per-character residency.
+fn report_doc(resources: &mut FontResources, label: &str, doc: &Document) -> i64 {
+    let chars = char_count(doc);
+    if chars == 0 {
+        eprintln!("  {label:<26} skipped — no text content");
+        return 0;
+    }
+    let editing = layout_peak(resources, doc, true);
+    let read_only = layout_peak(resources, doc, false);
+    let delta = editing.max_bytes as i64 - read_only.max_bytes as i64;
+    eprintln!(
+        "  {label:<26} chars={chars:>8}  retained={delta:>11} B  \
+         editing={:>6.1} B/char  total={:>6.1} B/char",
+        delta as f64 / chars as f64,
+        editing.max_bytes as f64 / chars as f64,
+    );
+    delta
 }
 
 fn main() {
@@ -128,6 +230,24 @@ fn main() {
             format!("{name} ({paras}p) E0"),
         );
         worst_delta = worst_delta.max(delta);
+    }
+
+    // ── Real documents ──────────────────────────────────────────────────────
+    // The synthetic tiers establish the model; these test it against actual
+    // formatting density, which is the open question S09.0 §11 item 1 records.
+    eprintln!("\n  real documents (conformance corpus):");
+    let mut corpus_seen = 0_usize;
+    for &(label, rel) in CORPUS {
+        match load_corpus_doc(rel) {
+            Some(doc) => {
+                report_doc(&mut resources, label, &doc);
+                corpus_seen += 1;
+            }
+            None => eprintln!("  {label:<26} unavailable (absent or import failed)"),
+        }
+    }
+    if corpus_seen == 0 {
+        eprintln!("  (no corpus documents loaded — synthetic tiers only)");
     }
 
     // The experiment is only meaningful if the two conditions differ at all. A
