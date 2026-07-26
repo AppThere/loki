@@ -24,6 +24,7 @@
 //! [`crate::render_layout`].  Switching modes invalidates the cache and
 //! advances the generation so every tile re-renders.
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -82,7 +83,16 @@ pub struct DocPageSource {
     /// tile CSS size and the paint transform together, leaving the layout —
     /// which stays in points — untouched. Reflow keeps 1.0 (its "zoom" is the
     /// layout width). See `DocumentView` / `LokiPageSource::render`.
-    zoom: Mutex<f32>,
+    pub(crate) zoom: Mutex<f32>,
+    /// Per-page rasterisation scale in thousandths, set by the tile planner
+    /// under texture-budget pressure (Spec 08 T2.2). Absent means full scale.
+    ///
+    /// It lives here rather than on the tile props because `LokiPageSource` is
+    /// created once by `use_wgpu` and never sees a later prop update — the same
+    /// reason `zoom` is here. Keyed by page index and never pruned: an entry is
+    /// two bytes, bounded by the page count, and pruning would need a second
+    /// notion of which pages are live.
+    pub(crate) raster_permille: Mutex<HashMap<usize, u16>>,
 }
 
 impl DocPageSource {
@@ -97,20 +107,8 @@ impl DocPageSource {
             renderer: Mutex::new(None),
             generation: Arc::new(AtomicU64::new(1)),
             zoom: Mutex::new(1.0),
+            raster_permille: Mutex::new(HashMap::new()),
         }
-    }
-
-    /// Sets the paginated render zoom factor (clamped to a sane range). The
-    /// next paint picks it up; the tile resize that accompanies a zoom change
-    /// forces the repaint (texture-size mismatch), so no generation bump is
-    /// needed.
-    pub fn set_zoom(&self, zoom: f32) {
-        *self.zoom.lock().unwrap_or_else(|e| e.into_inner()) = zoom.clamp(0.25, 4.0);
-    }
-
-    /// The current paginated render zoom factor.
-    pub fn zoom(&self) -> f32 {
-        *self.zoom.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Returns the current document.

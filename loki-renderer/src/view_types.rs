@@ -135,6 +135,22 @@ pub struct DocumentViewProps {
     /// `appthere_ui::tokens::SPACE_6`). Injected for the same reason as
     /// `page_gap_px`.
     pub content_padding_bottom_px: f32,
+    /// Resident page-texture byte budget (Spec 08 T2.1).
+    ///
+    /// Injected rather than derived here for the same reason as `page_gap_px`:
+    /// it comes from `appthere_ui::DeviceProfile`, which is L5, and this crate
+    /// is L4. The application derives it with
+    /// `appthere_canvas::residency::TextureBudget::derive` and passes the
+    /// figure down.
+    pub texture_budget_bytes: u64,
+    /// Physical pixels per CSS pixel on the display this window is on.
+    ///
+    /// Needed because the budget is a *physical* byte count while everything
+    /// else in these props is CSS px, and the paint source only learns the
+    /// factor inside Blitz's render callback — too late to decide what to
+    /// mount. Spec 08 T2.3 lists a device-scale-factor change as an
+    /// invalidation trigger, and it reaches the tiles through this field.
+    pub device_scale_factor: f64,
 }
 
 impl PartialEq for DocumentViewProps {
@@ -160,5 +176,7 @@ impl PartialEq for DocumentViewProps {
             && self.zoom == other.zoom
             && self.page_gap_px == other.page_gap_px
             && self.content_padding_bottom_px == other.content_padding_bottom_px
+            && self.texture_budget_bytes == other.texture_budget_bytes
+            && self.device_scale_factor == other.device_scale_factor
     }
 }

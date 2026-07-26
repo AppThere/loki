@@ -46,11 +46,21 @@
 //! confirms. It also excludes Vello's own scratch buffers, which are shared
 //! across tiles rather than per-tile.
 
+mod budget;
 mod counter;
 mod geometry;
+mod plan;
 
+pub use budget::{
+    BUDGET_BASELINE_BYTES, BUDGET_CEILING_BYTES, BUDGET_FLOOR_BYTES, BudgetInputs, BudgetSource,
+    TextureBudget,
+};
 pub use counter::{TextureResidency, TextureResidencySnapshot};
 pub use geometry::{
     BYTES_PER_TEXEL, PT_TO_CSS_PX, PageBox, ViewportSpec, resident_pages, resident_texture_bytes,
     texture_bytes, visible_window,
+};
+pub use plan::{
+    MIN_RASTER_SCALE, RASTER_SCALE_LADDER, ResidencyPlan, TilePlan, plan_residency,
+    strictly_visible,
 };

@@ -16,6 +16,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use crate::tile_key::TileKey;
 use anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle};
 use appthere_canvas::residency::{TextureResidency, texture_bytes};
 use vello::{AaConfig, RenderParams, Scene};
@@ -50,14 +51,15 @@ pub(crate) struct LokiPageSource {
     wgpu_queue: Option<anyrender_vello::wgpu::Queue>,
     /// Currently registered Blitz texture handle.
     texture_handle: Option<TextureHandle>,
-    /// Document generation at which `texture_handle` was rendered.
-    texture_generation: u64,
-    /// Physical pixel dimensions `(w, h)` of `texture_handle`.
+    /// Everything `texture_handle` depends on, at the render that produced it.
+    /// `None` before the first render. See [`TileKey`] for the trigger list.
+    texture_key: Option<TileKey>,
+    /// Physical pixel dimensions `(w, h)` of `texture_handle`, kept separately
+    /// from the key because the residency counter needs them after the key has
+    /// been replaced.
     texture_size: (u32, u32),
     /// Shared cursor position written by PageTile on every Dioxus render.
     cursor_holder: Arc<Mutex<Option<RendererSelection>>>,
-    /// Cursor at last render — invalidates the reuse guard on cursor moves.
-    cursor_at_render: Option<RendererSelection>,
 }
 
 // ── CustomPaintSource ─────────────────────────────────────────────────────────
@@ -92,12 +94,18 @@ impl CustomPaintSource for LokiPageSource {
             return None;
         };
 
-        // Step 1: target physical texture dimensions. Every mounted tile renders
-        // at full resolution — the canvas's own physical pixel size — so the
-        // texture is 1:1 with what Blitz composites; virtualization bounds memory
-        // by limiting which pages mount.
-        let w_phys = width.max(1);
-        let h_phys = height.max(1);
+        // Step 1: target physical texture dimensions. A tile normally renders at
+        // the canvas's own physical pixel size, 1:1 with what Blitz composites.
+        // Under texture-budget pressure the planner asks for a *smaller*
+        // texture for off-centre pages (T2.2); it is sampled up to the same
+        // on-screen box, which is what makes the concession resolution rather
+        // than eviction.
+        let raster_permille = self.source.raster_permille(self.page_index);
+        let raster_scale = f32::from(raster_permille) / 1000.0;
+        let scale_dim =
+            |v: u32| ((f64::from(v) * f64::from(raster_scale)).round().max(1.0) as u32).max(1);
+        let w_phys = scale_dim(width.max(1));
+        let h_phys = scale_dim(height.max(1));
 
         // Step 2: read current document generation.
         let current_generation = self.source.current_generation();
@@ -107,11 +115,16 @@ impl CustomPaintSource for LokiPageSource {
             self.cursor_holder.lock().ok().and_then(|g| *g);
 
         // Step 3: reuse guard — return existing handle when nothing changed.
-        if self.texture_handle.is_some()
-            && self.texture_generation == current_generation
-            && self.texture_size == (w_phys, h_phys)
-            && self.cursor_at_render == current_sel
-        {
+        // The rule lives in `tile_key` so T2.3's triggers are testable without a
+        // wgpu device; R10's zoom case in particular could not be written while
+        // it was four `&&`s inside this callback.
+        let want = TileKey::new(
+            current_generation,
+            (w_phys, h_phys),
+            current_sel,
+            raster_scale,
+        );
+        if self.texture_handle.is_some() && self.texture_key == Some(want) {
             return self.texture_handle.clone();
         }
 
@@ -132,8 +145,10 @@ impl CustomPaintSource for LokiPageSource {
         // is invisible: residency simply reads high forever after.
         let abandon = || TextureResidency::record_free(texture_bytes(w_phys, h_phys));
 
-        // Step 6: build Vello scene for this page.
-        let render_scale = scale as f32 * (96.0 / 72.0) * self.source.zoom();
+        // Step 6: build Vello scene for this page. The rasterisation scale
+        // multiplies in here as well as into the texture size, so a reduced
+        // tile paints the whole page smaller rather than a crop of it.
+        let render_scale = scale as f32 * (96.0 / 72.0) * self.source.zoom() * raster_scale;
 
         // Compute cursor paint data (scoped so its layout guard is dropped
         // before the second layout_for_generation call below).
@@ -230,14 +245,14 @@ impl CustomPaintSource for LokiPageSource {
         // Step 7: register with Blitz and record the reuse-guard state.
         let handle = ctx.register_texture(texture);
         self.texture_handle = Some(handle.clone());
-        self.texture_generation = current_generation;
+        self.texture_key = Some(want);
         self.texture_size = (w_phys, h_phys);
-        self.cursor_at_render = current_sel;
 
         tracing::debug!(
             page = self.page_index,
             w = w_phys,
             h = h_phys,
+            raster_permille,
             "LokiPageSource: rendered",
         );
 

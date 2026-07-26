@@ -10,6 +10,7 @@
 //! All editing logic lives in [`editor_inner::EditorInner`].
 
 mod editor_canvas;
+mod editor_canvas_click;
 mod editor_canvas_loading;
 mod editor_canvas_spell;
 mod editor_caret_follow;

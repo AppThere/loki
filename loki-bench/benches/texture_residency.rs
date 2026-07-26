@@ -56,9 +56,12 @@
 //!
 //! Run: `cargo bench -p loki-bench --bench texture_residency`
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use appthere_canvas::residency::{PageBox, TextureResidency, ViewportSpec, visible_window};
+use appthere_canvas::residency::{
+    BudgetInputs, PageBox, TextureBudget, TextureResidency, ViewportSpec, plan_residency,
+    strictly_visible, visible_window,
+};
 
 /// Viewport height in CSS px. S0.2 §3's resident-set table assumes 900, so the
 /// baseline is directly comparable with the spike it is checking.
@@ -85,6 +88,10 @@ struct Reading {
     peak_tiles: usize,
     /// Allocations recorded over the traversal.
     allocs: u64,
+    /// `true` when the plan reported, at any scroll offset, that it could not
+    /// reach the budget without dropping a visible page or rendering below
+    /// legibility. Always `false` for an unbudgeted traversal.
+    over_budget: bool,
 }
 
 /// Scrolls a document end to end, maintaining the mounted set exactly as the
@@ -163,6 +170,7 @@ fn traverse(pages: &[PageBox], zoom: f64, device_scale_factor: f64) -> Reading {
         peak_bytes,
         peak_tiles,
         allocs: snap.allocs,
+        over_budget: false,
     }
 }
 
@@ -192,6 +200,191 @@ fn warm_subject(pages: &[PageBox], zoom: f64, scale: f64) {
 fn measure(pages: &[PageBox], zoom: f64, scale: f64) -> Reading {
     warm_subject(pages, zoom, scale);
     traverse(pages, zoom, scale)
+}
+
+// ── T2.1-T2.3: the same traversal, under a budget ────────────────────────────
+
+/// Device classes the budget is derived for. Same binary, different machines —
+/// which is the whole of L08-011, and the reason the budget takes measured RAM
+/// rather than a compile target.
+const DEVICES: &[(&str, u64)] = &[
+    ("phone 4 GiB", 2 * 1024 * 1024 * 1024),
+    ("design floor 8 GiB", 4 * 1024 * 1024 * 1024),
+    ("desktop 16 GiB", 11 * 1024 * 1024 * 1024),
+];
+
+fn budget_for(available_ram_bytes: u64) -> TextureBudget {
+    TextureBudget::derive(BudgetInputs {
+        available_ram_bytes: Some(available_ram_bytes),
+        gpu_paint_path: Some(true),
+        ..Default::default()
+    })
+}
+
+/// A budgeted traversal. Same scroll walk, but the mounted set and each tile's
+/// rasterisation scale come from `plan_residency` — the function the renderer
+/// itself calls.
+fn traverse_budgeted(
+    pages: &[PageBox],
+    zoom: f64,
+    device_scale_factor: f64,
+    budget: TextureBudget,
+) -> Reading {
+    TextureResidency::reset();
+    let mut vp = ViewportSpec {
+        scroll_top_px: 0.0,
+        client_height_px: VIEWPORT_H,
+        page_gap_px: 24.0,
+        zoom,
+        device_scale_factor,
+    };
+    let heights: Vec<f64> = pages.iter().map(|p| p.css_size(zoom).1).collect();
+    let doc_height: f64 = heights.iter().map(|h| h + vp.page_gap_px).sum();
+
+    // page -> bytes currently charged for it, so a scale change is a free plus
+    // an alloc rather than an untracked delta.
+    let mut mounted: BTreeMap<usize, u64> = BTreeMap::new();
+    let mut peak_bytes = 0_u64;
+    let mut peak_tiles = 0_usize;
+    let mut over_budget = false;
+
+    let step = VIEWPORT_H / 2.0;
+    let last_top = (doc_height - VIEWPORT_H).max(0.0);
+    loop {
+        let plan = plan_residency(pages, &vp, budget);
+        over_budget |= plan.over_budget;
+        let want: BTreeMap<usize, u64> =
+            plan.tiles.iter().map(|t| (t.page_index, t.bytes)).collect();
+
+        // The acceptance criterion, checked at every scroll offset rather than
+        // at one: a visible page is never traded away for the budget.
+        for (i, visible) in strictly_visible(pages, &vp).iter().enumerate() {
+            assert!(
+                !visible || want.contains_key(&i),
+                "page {i} is visible at top {} (zoom {zoom} dsf {device_scale_factor}) \
+                 and the plan dropped it",
+                vp.scroll_top_px,
+            );
+        }
+
+        for (page, bytes) in std::mem::take(&mut mounted) {
+            if want.get(&page) != Some(&bytes) {
+                TextureResidency::record_free(bytes);
+            } else {
+                mounted.insert(page, bytes);
+            }
+        }
+        for (&page, &bytes) in &want {
+            if !mounted.contains_key(&page) {
+                TextureResidency::record_alloc(bytes);
+                mounted.insert(page, bytes);
+            }
+        }
+
+        let resident = TextureResidency::resident();
+        if resident > peak_bytes {
+            peak_bytes = resident;
+            peak_tiles = mounted.len();
+        }
+
+        if vp.scroll_top_px >= last_top {
+            break;
+        }
+        vp.scroll_top_px = (vp.scroll_top_px + step).min(last_top);
+    }
+
+    for (_, bytes) in std::mem::take(&mut mounted) {
+        TextureResidency::record_free(bytes);
+    }
+    let snap = TextureResidency::snapshot();
+    assert!(
+        snap.is_balanced(),
+        "budgeted mount/unmount is unbalanced at zoom {zoom} dsf {device_scale_factor}: {snap:?}",
+    );
+    Reading {
+        peak_bytes,
+        peak_tiles,
+        allocs: snap.allocs,
+        over_budget,
+    }
+}
+
+fn measure_budgeted(pages: &[PageBox], zoom: f64, scale: f64, budget: TextureBudget) -> Reading {
+    let _ = traverse_budgeted(pages, zoom, scale, budget);
+    TextureResidency::reset();
+    traverse_budgeted(pages, zoom, scale, budget)
+}
+
+/// Step 5 of Phase 2's running order: re-measure and compare against the
+/// baseline, per device class.
+fn budget_comparison() {
+    let pages = doc(PageBox::us_letter(), 500);
+    for (label, ram) in DEVICES {
+        let budget = budget_for(*ram);
+        eprintln!(
+            "\nUnder budget — {label} ({} MiB budget, {:?})",
+            mib(budget.bytes()) as u64,
+            budget.source(),
+        );
+        eprintln!(
+            "  {:>6}  {:>5}  {:>10}  {:>10}  {:>7}  {:>10}",
+            "zoom", "dsf", "before MiB", "after MiB", "tiles", "change"
+        );
+        eprintln!("  (`!` marks a row the plan cannot satisfy without dropping a visible page)");
+        for &zoom in ZOOMS {
+            for &scale in SCALES {
+                let before = measure(&pages, zoom, scale);
+                let after = measure_budgeted(&pages, zoom, scale, budget);
+                let change = if after.peak_bytes == before.peak_bytes {
+                    "unchanged".to_string()
+                } else if after.over_budget {
+                    format!(
+                        "-{:.0}% !",
+                        100.0 * (1.0 - after.peak_bytes as f64 / before.peak_bytes as f64)
+                    )
+                } else {
+                    format!(
+                        "-{:.0}%",
+                        100.0 * (1.0 - after.peak_bytes as f64 / before.peak_bytes as f64)
+                    )
+                };
+                eprintln!(
+                    "  {:>5.0}%  {:>5.1}  {:>10.1}  {:>10.1}  {:>7}  {:>10}",
+                    zoom * 100.0,
+                    scale,
+                    mib(before.peak_bytes),
+                    mib(after.peak_bytes),
+                    after.peak_tiles,
+                    change,
+                );
+
+                // Prediction 1 (L9-013): a row already inside the budget must be
+                // byte-identical afterwards, not merely close. A budget that
+                // moved an unpressured row would mean the plan is doing
+                // something other than bounding the total.
+                if before.peak_bytes <= budget.bytes() {
+                    assert_eq!(
+                        after.peak_bytes, before.peak_bytes,
+                        "{label} at zoom {zoom} dsf {scale} was already inside the \
+                         budget and must be untouched",
+                    );
+                }
+
+                // The budget must bind, except where the plan reported — at
+                // some scroll offset during the traversal — that it cannot
+                // without breaking a rule it will not break. Checked against the
+                // whole walk rather than one offset: the un-satisfiable case is
+                // a page boundary, where two visible pages must both be held.
+                assert!(
+                    after.peak_bytes <= budget.bytes() || after.over_budget,
+                    "{label} at zoom {zoom} dsf {scale}: {} bytes over a {} byte \
+                     budget without reporting over_budget",
+                    after.peak_bytes,
+                    budget.bytes(),
+                );
+            }
+        }
+    }
 }
 
 /// The headline table: resident texture bytes across zoom × device scale, on a
@@ -338,6 +531,7 @@ fn main() {
     document_length_table();
     default_page_table();
     check_stop_conditions();
+    budget_comparison();
 
     let control_last = measure(&control_doc, 2.0, 2.0);
     assert_eq!(

@@ -5082,6 +5082,7 @@ version = "0.1.0"
 dependencies = [
  "android-activity",
  "android_logger",
+ "appthere-canvas",
  "appthere-ui",
  "base64",
  "blitz-shell",

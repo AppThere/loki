@@ -553,6 +553,39 @@ renderer is `Active`) before suspending and dropping the source.
 
 **Updated:** 2026-06-21
 
+**Additional fix (a custom source may return a smaller texture than its box):**
+`VelloScenePainter::fill` now compares the texture a custom paint source
+returned against the dimensions it was asked for, and scales the image brush to
+compensate when they differ.
+
+- *Root cause:* `render_custom_source` wraps the returned texture in an
+  `ImageBrush` and `fill` passes the caller's `brush_transform` through
+  untouched — which `blitz-paint`'s `draw_canvas` leaves `None`. The image is
+  therefore sampled 1:1 against a rect sized from the element's content box, so
+  a texture smaller than that box lands in the top-left corner with the rest of
+  the box showing the brush's extend mode. Not a scaled-down page; a broken one.
+- *Loki consumer:* Spec 08 T2.2. The resident-texture budget reduces the
+  rasterisation scale of off-centre pages under memory pressure
+  (`appthere_canvas::residency::plan_residency`), which is exactly this case —
+  the tile keeps its on-screen box and its texture shrinks. Without the patch
+  the budget's only remaining lever would be evicting visible content, which
+  ADR L08-002 forbids.
+- *Inert without a consumer:* the branch only fires when a source returns a
+  texture of a different size from the one requested, which no upstream source
+  does and which Loki itself does not do until the budget binds.
+- *Upstream status:* candidate upstream fix — the custom-paint API already lets
+  a source return any texture it likes, so the compositing side arguably has to
+  handle the size mismatch rather than silently mis-sampling it.
+- *Removal condition:* an anyrender_vello release that either scales a
+  mismatched custom-paint texture itself or forwards the source's own brush
+  transform.
+- **Not visually verified.** The arithmetic and the policy that drives it are
+  unit-tested headlessly; whether a reduced-scale tile *looks* right — and how
+  soft 0.25 scale reads at 400% zoom — needs a screen. Recorded in Spec 08 §3.6
+  as verification debt, and it is what Phase 2's closing on-device run checks.
+
+**Updated:** 2026-07-26
+
 ---
 
 ## Upgrading Dioxus

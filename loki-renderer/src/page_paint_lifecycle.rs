@@ -37,10 +37,9 @@ impl LokiPageSource {
             device: None,
             wgpu_queue: None,
             texture_handle: None,
-            texture_generation: 0,
+            texture_key: None,
             texture_size: (0, 0),
             cursor_holder,
-            cursor_at_render: None,
         }
     }
 
@@ -106,7 +105,7 @@ impl LokiPageSource {
         self.device = None;
         self.wgpu_queue = None;
         self.texture_handle = None;
-        self.texture_generation = 0;
+        self.texture_key = None;
         // The window renderer is recreated on resume, dropping every registered
         // texture — so the GPU memory does go, and the counter must see it.
         self.record_texture_released();
@@ -121,7 +120,7 @@ impl LokiPageSource {
         if let Some(handle) = self.texture_handle.take() {
             ctx.unregister_texture(handle);
         }
-        self.texture_generation = 0;
+        self.texture_key = None;
         self.record_texture_released();
     }
 }

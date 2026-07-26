@@ -185,4 +185,119 @@ figures never needed one.
 
 ## 6. Re-measurement after T2.1–T2.3
 
-See §7 below, added when the budget lands.
+Same bench, same conditions, with the mounted set and each tile's rasterisation
+scale coming from `plan_residency` — the function the renderer itself calls.
+Three device classes, **one binary**: the budget is derived from measured
+available RAM, so what differs between these tables is the machine and nothing
+else (L08-011, D-08).
+
+`!` marks a row where the plan reported it cannot reach the budget without
+dropping a visible page or rendering below legibility.
+
+### Phone — 4 GiB, ~2 GiB available → **32 MiB budget**
+
+| zoom | dsf | before MiB | after MiB | tiles | change |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 25% | 1.0 | 2.3 | 2.3 | 11 | unchanged |
+| 25% | 3.0 | 20.3 | 20.3 | 11 | unchanged |
+| 50% | 3.0 | 44.4 | 31.4 | 6 | −29% |
+| 100% | 1.0 | 13.1 | 13.1 | 4 | unchanged |
+| 100% | 2.0 | 52.6 | 29.6 | 3 | −44% |
+| 200% | 2.0 | 157.8 | 32.0 | 2 | −80% |
+| 200% | 3.0 | 355.0 | 32.0 | 2 | −91% |
+| 400% | 2.0 | 420.8 | 32.0 | 2 | −92% |
+| 400% | 3.0 | 946.7 | 59.2 | 2 | −94% ! |
+
+### Design floor — 8 GiB, ~4 GiB available → **64 MiB budget**
+
+| zoom | dsf | before MiB | after MiB | tiles | change |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 50% | 3.0 | 44.4 | 44.4 | 6 | unchanged |
+| 100% | 2.0 | 52.6 | 52.6 | 4 | unchanged |
+| 100% | 3.0 | 118.3 | 62.9 | 4 | −47% |
+| 200% | 1.0 | 39.4 | 39.4 | 3 | unchanged |
+| **200%** | **2.0** | **157.8** | **61.5** | **2** | **−61%** |
+| 200% | 3.0 | 355.0 | 61.5 | 1 | −83% |
+| 400% | 3.0 | 946.7 | 61.5 | 1 | −94% |
+
+### Desktop — 16 GiB, ~11 GiB available → **176 MiB budget**
+
+| zoom | dsf | before MiB | after MiB | tiles | change |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 100% | 3.0 | 118.3 | 118.3 | 4 | unchanged |
+| **200%** | **2.0** | **157.8** | **157.8** | **3** | **unchanged** |
+| 200% | 3.0 | 355.0 | 169.1 | 2 | −52% |
+| 400% | 1.0 | 105.2 | 105.2 | 2 | unchanged |
+| 400% | 2.0 | 420.8 | 169.1 | 2 | −60% |
+| 400% | 3.0 | 946.7 | 169.1 | 2 | −82% |
+
+## 7. Did it land where predicted? (L9-013)
+
+**Prediction 1 — rows already under budget are byte-identical.** ✅ Held, and
+asserted in the bench rather than eyeballed. Every row at or below the device's
+budget reads the same byte value before and after. One refinement the prediction
+did not anticipate: it said "every row at or below 100%/2×", which is only true
+of a device whose budget is at least 52.6 MiB. On the phone (32 MiB) that row is
+legitimately over budget and moves. The prediction silently assumed the design
+floor; the property it was reaching for — *unpressured rows are untouched* — is
+what actually holds.
+
+**Prediction 2 — the high-zoom rows come down to the budget.** ✅ Held.
+200%/3× and both 400% rows at dsf ≥ 2 are reduced on every device class.
+
+**Prediction 3 — the discriminating row.** ✅ Held **exactly**. 200%/2× —
+157.8 MiB, above a 64 MiB baseline and below a 256 MiB ceiling — is
+**unchanged on the 16 GiB desktop and 61.5 MiB on the 8 GiB machine, from the
+same binary**. That is the row whose behaviour is decided entirely by the
+derivation rather than by a clamp, and it is the strongest evidence available
+that L08-011 is true in practice and not merely asserted (R24).
+
+**Prediction 4 — the saving lands in rasterisation scale, not eviction.**
+❌ **Mis-stated, and the falsification criterion as written would have fired.**
+The prediction said "the peak tile count must be unchanged at every row"; it is
+not — 3 tiles become 2, and at 200%/3× on the 8 GiB machine 1. The error is in
+the prediction, not the implementation: L08-002 forbids evicting **visible**
+content, and the tiles being dropped are the off-centre pre-render margin, which
+step 3 of the policy drops *after* exhausting the scale ladder and which was
+already blank for any page outside the window. "Tile count unchanged" was a
+proxy for "nothing visible is evicted", and it is a bad proxy.
+
+The property actually worth asserting is the direct one, and the bench now
+checks it **at every scroll offset of the traversal** rather than at a single
+position: every strictly-visible page is present in the plan. That assertion is
+what would fire if the budget ever started paying for itself with the visible
+set — and it is stricter than the tile-count proxy, not weaker.
+
+Recording this the way L9-013 asks: the *model* was right (scale first, then the
+margin, never the visible set) and the *metric chosen to falsify it* was wrong.
+A prediction that is confirmed by a bad proxy is worth less than one refuted by
+a good one.
+
+### Both conditions (L9-014)
+
+The targeted condition is high-zoom residency, and it moved the right way. The
+untargeted condition — **rows already inside the budget** — is reported beside
+it in every table above and did not move at all, byte for byte. That is the
+check Spec 09's S9-1 needed and did not have: it moved its target 35 B/char the
+right way and read-only 11 B/char the wrong way, and only a two-condition report
+caught it.
+
+### What remains not established
+
+- **The device scale factor is still 1.0 in the running application.**
+  `loki_text::texture_budget::device_scale_factor` returns a constant with a
+  `TODO(device-profile-dpr)`: Blitz owns the real value and hands it to the
+  paint source as `render`'s `scale`, but nothing surfaces it to the layer that
+  must decide what to mount. Every table above sweeps DPI correctly; the shipped
+  binary currently plans as though every display were standard-DPI, which makes
+  the budget bind later than it should rather than earlier. The failure mode is
+  a missed saving, never a blank page — but the axis Phase 2 exists to bound is
+  zoom × **DPI**, and half of it is not yet wired.
+- **Whether a reduced-scale tile looks acceptable.** The policy, the arithmetic
+  and the invalidation are unit-tested; how 0.25 scale reads at 400% zoom is a
+  question for a screen. R5.
+- **The `anyrender_vello` brush-scaling patch has never rendered a frame.** It
+  is inert unless a source returns a mismatched texture size, so it cannot
+  regress anything today, but the first time the budget binds on a real display
+  is the first time it runs.
+- **Driver-side overhead**, unchanged from §3.

@@ -55,6 +55,10 @@ loki-epub       = { path = "../loki-epub" }
 loki-layout     = { path = "../loki-layout" }
 # Shared AppThere design tokens and UI components.
 appthere-ui     = { path = "../appthere-ui" }
+# Spec 08 T2.1: the resident page-texture budget's arithmetic. Taken directly
+# (rather than through loki-renderer) because this crate is the only layer that
+# sees both it and `appthere_ui::DeviceProfile`, which supplies its inputs.
+appthere-canvas = { workspace = true }
 loki-app-shell  = { path = "../loki-app-shell" }
 # Cross-platform file picker (crates.io).
 loki-file-access.workspace = true

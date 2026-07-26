@@ -51,8 +51,8 @@ use super::editor_scrollbar::{
 };
 use super::editor_spell::SpellMenu;
 use crate::editing::cursor::{CursorState, DocumentPosition};
-use crate::editing::hit_test::{link_at_point, open_or_run};
-use crate::editing::{hit_test::hit_test_page, state::DocumentState, touch::TouchInteractionState};
+use crate::editing::hit_test::open_or_run;
+use crate::editing::{state::DocumentState, touch::TouchInteractionState};
 use crate::error::LoadError;
 
 /// Fallback viewport height (CSS px) for tile virtualization before the scroll
@@ -330,32 +330,28 @@ pub(super) fn render_canvas_area(
                             // depend on appthere_ui (Spec 01 audit A-8).
                             page_gap_px: tokens::PAGE_GAP_PX as f64,
                             content_padding_bottom_px: tokens::SPACE_6,
+                            // Resident page-texture budget (Spec 08 T2.1),
+                            // derived from the live DeviceProfile, plus the
+                            // display's device pixel ratio — the renderer needs
+                            // both to decide what to mount and at what
+                            // rasterisation scale, and neither is reachable from
+                            // L4 (DeviceProfile is L5).
+                            texture_budget_bytes: crate::texture_budget::current(),
+                            device_scale_factor: crate::texture_budget::device_scale_factor(),
                             // Paginated: hit-test against the editor's paginated
                             // layout (reflow clicks arrive via on_reflow_click).
-                            on_tile_click: move |c: (usize, f32, f32, bool)| {
-                                let (page_index, x_pt, y_pt, open_link) = c;
-                                let layout_opt = {
-                                    let Ok(state) = doc_state_mousedown.lock() else { return };
-                                    state.paginated_layout.clone()
+                            on_tile_click: {
+                                let mut ctx = super::editor_canvas_click::TileClickCtx {
+                                    doc_state: doc_state_mousedown.clone(),
+                                    loro_doc,
+                                    cursor_state,
+                                    macro_run_request,
                                 };
-                                let Some(layout) = layout_opt else { return };
-                                if open_link
-                                    && let Some(url) = link_at_point(&layout, page_index, x_pt, y_pt)
-                                {
-                                    open_or_run(&url, macro_run_request);
-                                    return; // Ctrl/Cmd+click hit a link/button; no caret move.
+                                move |c: (usize, f32, f32, bool)| {
+                                    super::editor_canvas_click::on_tile_click(
+                                        &mut ctx, c.0, c.1, c.2, c.3,
+                                    )
                                 }
-                                let Some(pos) = hit_test_page(page_index, x_pt, y_pt, &layout)
-                                else {
-                                    return;
-                                };
-                                let loro_cursor = loro_doc.read().as_ref().and_then(|ldoc| {
-                                    derive_loro_cursor(ldoc, pos.paragraph_index, pos.byte_offset)
-                                });
-                                let mut cs = cursor_state.write();
-                                cs.loro_cursor = loro_cursor;
-                                cs.anchor = Some(pos.clone());
-                                cs.focus = Some(pos);
                             },
                             // Reflow: DocumentView already resolved the click to a
                             // (paragraph, byte) position in the continuous layout.

@@ -103,32 +103,9 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         }
         let doc_gen = renderer.source.current_generation();
 
-        // Tile virtualization bounds rendered pages to the viewport
-        // neighbourhood, and every mounted tile renders at full resolution
-        // (see LokiPageSource) — there is no resolution-tiering cache.
-
-        const PTS_TO_CSS_PX: f64 = 96.0 / 72.0;
-        let layout_guard = renderer.source.layout_for_generation(doc_gen);
-        let is_reflow = layout_guard
-            .as_ref()
-            .map(|(_, l)| l.is_reflow())
-            .unwrap_or(false);
-        let pages: Vec<(usize, f64, f64)> = if let Some((_, layout)) = layout_guard.as_ref() {
-            (0..layout.page_count())
-                .filter_map(|i| {
-                    layout.page_size_pts(i).map(|(w, h)| {
-                        (
-                            i,
-                            w as f64 * PTS_TO_CSS_PX * zoom,
-                            h as f64 * PTS_TO_CSS_PX * zoom,
-                        )
-                    })
-                })
-                .collect()
-        } else {
-            vec![]
-        };
-        drop(layout_guard);
+        // Tile boxes in CSS px at the current zoom, plus whether this is a
+        // reflow layout. Both come off one layout guard (see `tile_plan`).
+        let (pages, is_reflow) = crate::tile_plan::tile_boxes(&renderer.source, doc_gen, zoom);
 
         tracing::debug!(is_reflow, "DocumentView rendered");
 
@@ -184,18 +161,20 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         // component to scroll, so the window follows the viewport; unchanged
         // tiles are skipped by `PageTile`'s `PartialEq`, so scrolling repaints
         // nothing on the GPU until a new page enters the window.
-        let heights: Vec<f64> = pages.iter().map(|&(_, _, h)| h).collect();
-        let visibility = crate::virtualize::visible_window(
-            &heights,
+        // Spec 08 T2.1-T2.3: the window is now filtered by the texture budget as
+        // well, and a surviving tile carries the rasterisation scale it may use.
+        // The policy is `appthere_canvas::residency`'s, so this and the Phase 2
+        // bench run the same code — a second implementation would drift, and a
+        // drifted model measures itself.
+        let tiles = crate::tile_plan::plan_tiles(
+            &pages,
             gap_px,
             props.viewport_top_px,
             props.viewport_height_px,
+            zoom,
+            props.device_scale_factor,
+            props.texture_budget_bytes,
         );
-        let tiles: Vec<(usize, f64, f64, bool)> = pages
-            .iter()
-            .zip(visibility)
-            .map(|(&(idx, w, h), visible)| (idx, w, h, visible))
-            .collect();
 
         return rsx! {
             div {
@@ -221,14 +200,15 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                         pb = props.content_padding_bottom_px,
                         bg = wrapper_bg,
                     ),
-                    for (idx, w, h, visible) in tiles {
-                        if visible {
+                    for tile in tiles {
+                        if let Some(raster_scale) = tile.mount {
                             PageTile {
-                                key: "{idx}",
+                                key: "{tile.index}",
                                 source: renderer.source.clone(),
-                                page_index: idx,
-                                w,
-                                h,
+                                page_index: tile.index,
+                                w: tile.w,
+                                h: tile.h,
+                                raster_scale,
                                 zoom,
                                 shared_renderer: renderer.shared_renderer.clone(),
                                 cursor_holder: cursor_holder.clone(),
@@ -279,15 +259,18 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
                                 },
                             }
                         } else {
-                            // Off-window placeholder: same box as the tile (so the
-                            // scroll geometry and scrollbar are unchanged), painted
-                            // as a blank page. Becomes a real tile when scrolled near.
+                            // Placeholder: same box as the tile (so the scroll
+                            // geometry and scrollbar are unchanged), painted as a
+                            // blank page. Becomes a real tile when scrolled near —
+                            // or when the texture budget has room for it again.
                             div {
-                                key: "{idx}",
+                                key: "{tile.index}",
                                 style: format!(
                                     "display: block; width: {w}px; height: {h}px; \
                                      margin-left: auto; margin-right: auto; \
                                      margin-bottom: {gap}px; background: #FFFFFF;",
+                                    w = tile.w,
+                                    h = tile.h,
                                     gap = gap_px,
                                 ),
                             }

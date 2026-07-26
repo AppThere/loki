@@ -21,6 +21,7 @@ pub mod recent_documents;
 pub mod routes;
 pub mod sessions;
 pub mod tabs;
+pub mod texture_budget;
 pub mod utils;
 pub mod window_state;
 

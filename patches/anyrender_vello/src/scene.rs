@@ -93,6 +93,22 @@ impl PaintScene for VelloScenePainter<'_, '_> {
         let paint: PaintRef<'_> = paint.into();
 
         let dummy_image: peniko::ImageBrush;
+        // PATCH(loki): a custom paint source may return a texture *smaller* than
+        // the box it fills. Upstream passes the image brush through with the
+        // caller's `brush_transform` (which blitz-paint leaves `None` for a
+        // canvas), so the image is sampled 1:1 and a smaller texture lands in
+        // the top-left corner with the rest of the box showing the brush's
+        // extend mode — not a scaled-down page, just a broken one.
+        //
+        // Loki's texture budget (Spec 08 T2.2) reduces the rasterisation scale
+        // of off-centre pages under memory pressure, which is exactly that case:
+        // the tile keeps its on-screen box and its texture shrinks. So when the
+        // returned texture's dimensions differ from the requested ones, scale
+        // the brush to compensate.
+        //
+        // Inert whenever a source returns a texture of the size it was asked
+        // for, which is every source upstream has. See docs/patches.md.
+        let mut brush_transform = brush_transform;
         let brush_ref: BrushRef<'_> = match paint {
             Paint::Solid(color) => BrushRef::Solid(color),
             Paint::Gradient(gradient) => BrushRef::Gradient(gradient),
@@ -101,10 +117,21 @@ impl PaintScene for VelloScenePainter<'_, '_> {
                 let Some(custom_paint) = custom_paint.downcast_ref::<CustomPaint>() else {
                     return;
                 };
+                let requested = (custom_paint.width, custom_paint.height);
                 let Some(image) = self.render_custom_source(*custom_paint) else {
                     return;
                 };
                 dummy_image = image;
+                let got = (dummy_image.image.width, dummy_image.image.height);
+                if got != requested && got.0 > 0 && got.1 > 0 {
+                    let sx = f64::from(requested.0) / f64::from(got.0);
+                    let sy = f64::from(requested.1) / f64::from(got.1);
+                    brush_transform = Some(
+                        brush_transform
+                            .unwrap_or(Affine::IDENTITY)
+                            .pre_scale_non_uniform(sx, sy),
+                    );
+                }
                 BrushRef::Image(dummy_image.as_ref())
             }
         };

@@ -15,6 +15,7 @@
 
 pub mod doc_page_source;
 mod doc_page_source_reflow;
+mod doc_page_source_scale;
 pub mod document_view;
 // Deliberately ungated. `record` is only ever called from the GPU paint path,
 // but `observed_adapter` must resolve on every target so the application-side
@@ -36,9 +37,11 @@ pub mod render_layout;
 pub mod renderer_state;
 pub mod revision;
 pub mod spell;
-pub(crate) mod vello_init;
 #[cfg(any(not(target_os = "android"), android_gpu))]
-pub(crate) mod virtualize;
+pub(crate) mod tile_key;
+#[cfg(any(not(target_os = "android"), android_gpu))]
+pub(crate) mod tile_plan;
+pub(crate) mod vello_init;
 
 pub use doc_page_source::DocPageSource;
 pub use document_view::{
