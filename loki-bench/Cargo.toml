@@ -47,6 +47,10 @@ name = "layout_editing_residency"
 harness = false
 
 [[bench]]
+name = "relayout_edit_position"
+harness = false
+
+[[bench]]
 name = "session_layout_residual"
 harness = false
 
