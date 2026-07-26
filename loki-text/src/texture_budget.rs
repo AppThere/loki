@@ -74,12 +74,25 @@ pub fn current() -> u64 {
 /// but nothing surfaces it to the application, and the tile planner needs it
 /// *before* the render callback in order to decide what to mount. Until a probe
 /// lands this returns 1.0, which under-states the texture cost on a HiDPI
-/// display: the budget then binds later than it should rather than earlier, so
-/// the failure is a missed saving and never a blank page.
+/// display. The failure direction is benign — under-planning over-mounts, it
+/// never evicts, so the cost is a missed saving and never a blank page.
 ///
-/// This is the one input to Phase 2 that is still assumed rather than measured,
-/// and it is recorded here rather than buried because the axis Phase 2 exists to
-/// bound is zoom × **DPI**.
+/// **The magnitude is not benign, which is why this is Spec 08 R27 and blocks
+/// Phase 2 from closing.** Residency is *quadratic* in this factor and only
+/// sub-quadratic in zoom (the virtualization window is measured in CSS pixels,
+/// so DPI scales both tile dimensions with the mounted count unchanged, while
+/// zoom enlarges tiles *and* shrinks the count). DPI is therefore the dominant
+/// axis, and a 2x display's true requirement is 4x what this reports — enough
+/// that the budget does not bind at all and the pressure policy never fires, on
+/// exactly the hardware Phase 2 exists to protect.
+///
+/// The fix has a precedent in this tree: [`crate::device_probe`] already lifts
+/// an equally late-bound value — the GPU adapter class, unknowable until the
+/// paint path resumes — from a process-wide record into the reactive
+/// `DeviceProfile`, holding `Unknown` distinct from a default so "not probed"
+/// never reads as an answer. This takes the same shape, recording from
+/// `render`'s `scale` rather than from `resume`, and inherits the same one-frame
+/// lag in the same benign direction.
 #[must_use]
 pub fn device_scale_factor() -> f64 {
     1.0
