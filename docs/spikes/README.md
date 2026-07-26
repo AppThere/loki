@@ -42,6 +42,19 @@ content and ~39 B/char paid per placement**, with residuals under 0.04 B/char.
 That sizes S9-1 from measurement rather than struct arithmetic, and means
 boilerplate-heavy documents deduplicate for free (S09.0 §10b).
 
+**S9-1 has shipped** (S09.0 §10c prediction, §10d result). `ParaCache` now holds
+`Arc<ParagraphLayout>`, so the cache and the page editing index share one
+allocation: body-text editing residency **69.4 → 34.8 B/char**, total
+**123.3 → 89.0** (−27.8%), with `C` unchanged at 78.2 and `P` collapsing
+39.3 → 1.1 — exactly the split predicted before the code was written, per
+L9-013. The total now lands on the census's *original* ~88 B/char prediction,
+which the extra copy had been hiding. The prediction protocol earned its keep
+before the measurement did: deriving it found that §10b's account of which
+coefficient S9-1 would move was wrong, and corrected it ahead of the work. The
+run also caught what the prediction missed — read-only residency rose ~11 B/char,
+because the deep `clone` into the cache had been compacting glyph vectors as a
+side effect nothing had named.
+
 ## Loki Spec 08 — UX & Memory Remediation Program, Phase 0
 
 | ID | Document | Gates | Verdict |

@@ -8,11 +8,17 @@
 //! `docs/spikes/S09.0-layout-residency-census.md` predicts from struct
 //! definitions?
 //!
-//! It does, for body text — 69.4 B/char against 72 predicted, flat across a 25×
+//! It did, for body text — 69.4 B/char against 72 predicted, flat across a 25×
 //! document-size change. On **real** documents the rate is a different number
-//! per document (72 → 4191 B/char) while the *evictable fraction* stays far
-//! narrower. Watch the fraction, not the rate: that is what Spec 09 targets
-//! (L9-008, S09.0 §10a).
+//! per document while the *evictable fraction* stays far narrower. Watch the
+//! fraction, not the rate: that is what Spec 09 targets (L9-008, S09.0 §10a).
+//!
+//! **S9-1 has since landed**, so the numbers this prints are post-change: body
+//! text reads ~34.8 B/char editing and ~89.0 total, down from 69.4 and 123.3.
+//! The bench now guards that result rather than establishing it. Per L9-013 each
+//! later step records its predicted effect on `C` and `P` before implementation
+//! and re-runs the sweep to see which coefficient actually moved — S9-1's
+//! prediction and outcome are S09.0 §10c and §10d.
 //!
 //! # Why this is a bench and not a manual RSS comparison
 //!
@@ -226,6 +232,12 @@ fn main() {
     // paragraph content plus per placement, so documents with repeated
     // boilerplate — form rows, repeated headers, template blocks — deduplicate
     // for free, and a flat B/char figure overstates them.
+    //
+    // Post-S9-1 this is also the regression guard for the change: `P` is 1.1
+    // B/char because the editing index shares the cache's allocation. If a
+    // future edit reintroduces a per-placement copy, `P` climbs back toward 39
+    // here long before any behavioural test notices — nothing about the output
+    // changes when a layout is copied instead of shared.
     if let Some(iris) = iris {
         eprintln!("\n  duplication sweep (x = unique/total; rate = P + C·x):");
         let mut points: Vec<(f64, f64)> = Vec::new();

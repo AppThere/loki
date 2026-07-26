@@ -243,6 +243,27 @@ pub struct ParagraphLayout {
     pub drop_shift: f32,
 }
 
+impl ParagraphLayout {
+    /// Releases spare capacity in every owned vector, glyph runs included.
+    ///
+    /// Called once per cache miss before the layout is shared (S9-1). These
+    /// vectors are built by `push`, so they carry up to 2× slack from doubling,
+    /// and a cached layout is long-lived — the slack is retained for as long as
+    /// the entry survives. It must reach the *nested* glyph vectors, not just
+    /// the top-level ones: the deep clone this replaces compacted every level,
+    /// and a shallow shrink recovers only about a quarter of what it did. Costs
+    /// one realloc per vector on the shaping path; cache hits never touch it.
+    pub(crate) fn shrink_to_fit(&mut self) {
+        self.items.shrink_to_fit();
+        for item in &mut self.items {
+            item.shrink_to_fit();
+        }
+        self.line_boundaries.shrink_to_fit();
+        self.orig_to_clean.shrink_to_fit();
+        self.clean_to_orig.shrink_to_fit();
+    }
+}
+
 impl std::fmt::Debug for ParagraphLayout {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ParagraphLayout")

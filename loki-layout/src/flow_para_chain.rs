@@ -9,6 +9,8 @@
 //! `super::place_paragraph_layout` and the block synthesizers via
 //! `super::super::` (the `flow` module).
 
+use std::sync::Arc;
+
 use loki_doc_model::content::block::{Block, StyledParagraph};
 
 use crate::para::{ParagraphLayout, ResolvedParaProps, layout_paragraph_spelled};
@@ -20,7 +22,10 @@ use super::{FlowState, LayoutWarning, break_column, finish_page, place_paragraph
 /// and the footnotes/endnotes it collected (committed to `pending_footnotes`
 /// only when the block is actually placed, so a re-flowed too-tall suffix does
 /// not double-collect).
-type ChainEntry = (ResolvedParaProps, ParagraphLayout, Vec<CollectedNote>);
+///
+/// The layout is the shaping cache's `Arc` (S9-1); a chain member with images
+/// takes a private copy via `Arc::make_mut`, the rest share the entry.
+type ChainEntry = (ResolvedParaProps, Arc<ParagraphLayout>, Vec<CollectedNote>);
 
 /// Maximum keep-with-next chain length before truncation (ADR 004 §4).
 const CHAIN_LIMIT: usize = 5;
@@ -167,14 +172,18 @@ fn build_chain_layouts<'s>(
             // Block-stack any inline images (a captioned figure with
             // `keepNext` on its image paragraph would otherwise vanish —
             // the chain path formerly discarded the collected images).
-            let overlay = super::stack_block_images(&mut layout, &images, state.content_width);
-            super::apply_overlay_images(&mut layout, overlay);
+            // Copy-on-write only when there are images to stack (S9-1).
+            if !images.is_empty() {
+                let l = Arc::make_mut(&mut layout);
+                let overlay = super::stack_block_images(l, &images, state.content_width);
+                super::apply_overlay_images(l, overlay);
+            }
             out.push((resolved, layout, notes));
         } else {
             // Non-text block (HR, table, etc.): contribute zero height.
             out.push((
                 ResolvedParaProps::default(),
-                ParagraphLayout {
+                Arc::new(ParagraphLayout {
                     height: 0.0,
                     width: 0.0,
                     items: vec![],
@@ -188,7 +197,7 @@ fn build_chain_layouts<'s>(
                     indent_hanging: 0.0,
                     drop_lines: 0,
                     drop_shift: 0.0,
-                },
+                }),
                 Vec::new(),
             ));
         }

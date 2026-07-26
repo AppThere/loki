@@ -20,6 +20,8 @@ use crate::items::{PositionedBorderRect, PositionedItem};
 
 #[path = "para_build.rs"]
 mod build;
+#[path = "para_clean.rs"]
+mod clean;
 #[path = "para_layout_types.rs"]
 mod layout_types;
 #[path = "para_query.rs"]
@@ -43,67 +45,6 @@ pub use types::{
 
 use build::push_math_inline_boxes;
 pub(crate) use build::push_para_styles;
-
-/// Strips characters Parley must not see (control chars and the BOM, keeping
-/// `\t`/`\n`) and remaps the style spans onto the cleaned text.
-///
-/// Returns `(clean_text, clean_spans, orig_to_clean, clean_to_orig)` — the two
-/// byte-index maps let editor hit-testing translate between the original and
-/// cleaned coordinate spaces.
-fn clean_text_and_spans(
-    text: &str,
-    spans: &[StyleSpan],
-) -> (String, Vec<StyleSpan>, Vec<usize>, Vec<usize>) {
-    let mut clean_text = String::with_capacity(text.len());
-    let mut orig_to_clean = vec![0; text.len() + 1];
-    let mut clean_to_orig = Vec::with_capacity(text.len() + 1);
-
-    let mut orig_idx = 0;
-    let mut clean_idx = 0;
-
-    for c in text.chars() {
-        let c_len = c.len_utf8();
-        // Drop `\t`: a tab is pure positioning (an inline box). Left in, it
-        // shapes to a `.notdef` (fonts lacking a tab glyph, e.g. Arimo) whose
-        // advance stacks on the box and overshoots the stop; byte maps anyway.
-        let keep = c == '\n' || (!c.is_control() && c != '\u{feff}');
-        if keep {
-            for i in 0..c_len {
-                orig_to_clean[orig_idx + i] = clean_idx + i;
-                clean_to_orig.push(orig_idx + i);
-            }
-            clean_text.push(c);
-            orig_idx += c_len;
-            clean_idx += c_len;
-        } else {
-            for i in 0..c_len {
-                orig_to_clean[orig_idx + i] = clean_idx;
-            }
-            orig_idx += c_len;
-        }
-    }
-    orig_to_clean[orig_idx] = clean_idx;
-    clean_to_orig.push(orig_idx);
-
-    let clean_spans = spans
-        .iter()
-        .map(|span| {
-            let mut clean_span = span.clone();
-            let start = orig_to_clean
-                .get(span.range.start)
-                .copied()
-                .unwrap_or(clean_idx);
-            let end = orig_to_clean
-                .get(span.range.end)
-                .copied()
-                .unwrap_or(clean_idx);
-            clean_span.range = start..end;
-            clean_span
-        })
-        .collect();
-
-    (clean_text, clean_spans, orig_to_clean, clean_to_orig)
-}
 
 /// Inline-box id base for math placeholders, kept clear of the tab-stop ids
 /// (which count up from 0) so the two can coexist in one paragraph.
@@ -134,6 +75,10 @@ const END_ID: u64 = 1 << 30;
 /// laid out again (e.g. every paragraph except the edited one, on a keystroke)
 /// the cached layout is cloned instead of re-shaped. See
 /// [`crate::para_cache`].
+///
+/// The cache holds `Arc<ParagraphLayout>` (S9-1), so this owned-value entry
+/// point clones once out of the shared entry. Callers inside the flow engine use
+/// [`layout_paragraph_spelled`] and keep the `Arc`.
 pub fn layout_paragraph(
     resources: &mut FontResources,
     text_content: &str,
@@ -143,7 +88,7 @@ pub fn layout_paragraph(
     display_scale: f32,
     preserve_for_editing: bool,
 ) -> ParagraphLayout {
-    layout_paragraph_spelled(
+    let shared = layout_paragraph_spelled(
         resources,
         text_content,
         style_spans,
@@ -152,14 +97,21 @@ pub fn layout_paragraph(
         display_scale,
         preserve_for_editing,
         None,
-    )
+    );
+    // The caller wants ownership; the cache keeps its entry.
+    Arc::unwrap_or_clone(shared)
 }
 
-/// [`layout_paragraph`] with an optional spell checker.
+/// [`layout_paragraph`] with an optional spell checker, returning the cache's
+/// own `Arc` rather than a copy.
 ///
 /// When `spell` is `Some`, misspelled words emit [`DecorationKind::Spelling`]
 /// squiggles. The checker's `generation` folds into the cache key so cached
 /// layouts are reused only while the dictionary/word-lists are unchanged.
+///
+/// Callers that need to modify the layout — the flow engine injects inline
+/// images, floats and picture bullets after shaping — use `Arc::make_mut`, which
+/// copies only for the paragraphs that actually need it (S9-1).
 // One arg over the limit: the optional spell checker on the shaping hot path.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn layout_paragraph_spelled(
@@ -171,7 +123,7 @@ pub(crate) fn layout_paragraph_spelled(
     display_scale: f32,
     preserve_for_editing: bool,
     spell: Option<&crate::SpellState>,
-) -> ParagraphLayout {
+) -> Arc<ParagraphLayout> {
     let spell_generation = spell.map_or(0, |s| s.generation);
     let key = crate::para_cache::para_key(
         text_content,
@@ -195,8 +147,20 @@ pub(crate) fn layout_paragraph_spelled(
         preserve_for_editing,
         spell,
     );
-    resources.para_cache.put(key, result.clone());
-    result
+    // Moved into the `Arc`, not cloned into it: the cache and every consumer of
+    // this call now hold the same allocation.
+    //
+    // Trim first. Before S9-1 the cache held `result.clone()`, and `Vec::clone`
+    // allocates capacity == len, so the *tight* copy was cached and the
+    // push-grown original was transient. Moving the original in reverses that
+    // and retains its slack — worth ~15 B/char of read-only residency, which the
+    // E0 sweep caught as a rise in the non-editing condition. One realloc per
+    // cache miss buys it back; misses are the shaping path, so the cost is noise.
+    let mut result = result;
+    result.shrink_to_fit();
+    let shared = Arc::new(result);
+    resources.para_cache.put(key, Arc::clone(&shared));
+    shared
 }
 
 /// Prepends the paragraph's border and background-fill rects to `items` (so
@@ -251,7 +215,7 @@ fn layout_paragraph_uncached(
     spell: Option<&crate::SpellState>,
 ) -> ParagraphLayout {
     let (mut clean_text, mut clean_spans, mut orig_to_clean, mut clean_to_orig) =
-        clean_text_and_spans(text_content, style_spans);
+        clean::clean_text_and_spans(text_content, style_spans);
 
     for span in &mut clean_spans {
         if let Some(ref name) = span.font_name {
