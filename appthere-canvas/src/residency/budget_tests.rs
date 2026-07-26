@@ -5,7 +5,7 @@
 
 use super::{
     BUDGET_BASELINE_BYTES, BUDGET_CEILING_BYTES, BUDGET_FLOOR_BYTES, BudgetInputs, BudgetSource,
-    TextureBudget,
+    SURVIVAL_CAP_BYTES, TextureBudget,
 };
 
 const GIB: u64 = 1024 * 1024 * 1024;
@@ -133,4 +133,37 @@ fn an_unprobed_gpu_does_not_throttle() {
         ..Default::default()
     });
     assert_eq!(b.bytes(), 11 * GIB / 64);
+}
+
+#[test]
+fn the_survival_ceiling_is_capped_absolutely_and_not_only_proportionally() {
+    // L08-027's second half: a purely proportional ceiling has no opinion about
+    // absurdity. A 64 GiB workstation reporting ~50 GiB available would derive
+    // 6.4 GiB of texture ceiling for a word processor.
+    let big = TextureBudget::derive(BudgetInputs {
+        available_ram_bytes: Some(50 * 1024 * 1024 * 1024),
+        ..BudgetInputs::default()
+    });
+    assert_eq!(
+        big.hard_ceiling_bytes(),
+        SURVIVAL_CAP_BYTES,
+        "a large machine is capped, not scaled without limit",
+    );
+
+    // The cap binds only where the proportional figure exceeds it — a smaller
+    // machine still gets its own, smaller ceiling.
+    let floor = TextureBudget::derive(BudgetInputs {
+        available_ram_bytes: Some(4 * 1024 * 1024 * 1024),
+        ..BudgetInputs::default()
+    });
+    assert_eq!(floor.hard_ceiling_bytes(), 512 * 1024 * 1024);
+    assert!(floor.hard_ceiling_bytes() < SURVIVAL_CAP_BYTES);
+
+    // And the ceiling >= target invariant survives the cap: a person may set a
+    // target above it, and the cap must not then invert the two.
+    let over = TextureBudget::exact(2 * 1024 * 1024 * 1024);
+    assert!(
+        over.hard_ceiling_bytes() >= over.bytes(),
+        "an explicit target above the cap must not end up above its own ceiling",
+    );
 }

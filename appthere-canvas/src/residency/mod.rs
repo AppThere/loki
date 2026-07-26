@@ -53,7 +53,7 @@ mod plan;
 
 pub use budget::{
     BUDGET_BASELINE_BYTES, BUDGET_CEILING_BYTES, BUDGET_FLOOR_BYTES, BudgetInputs, BudgetSource,
-    TextureBudget,
+    SURVIVAL_AVAILABLE_RAM_DIVISOR, SURVIVAL_CAP_BYTES, SURVIVAL_TOTAL_RAM_DIVISOR, TextureBudget,
 };
 pub use counter::{TextureResidency, TextureResidencySnapshot};
 pub use geometry::{

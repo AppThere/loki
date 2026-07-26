@@ -67,10 +67,17 @@ use appthere_canvas::residency::{
 /// baseline is directly comparable with the spike it is checking.
 const VIEWPORT_H: f64 = 900.0;
 
-/// Zoom levels swept. 0.25 is the clamp floor `document_view.rs` applies; 4.0 is
-/// past anything the zoom control offers today and is there to show the law
-/// rather than a supported state.
-const ZOOMS: &[f64] = &[0.25, 0.5, 1.0, 2.0, 4.0];
+/// Zoom levels swept. 0.25 is the clamp floor `document_view.rs` applies; 4.0 and
+/// 6.0 are past anything the zoom control offers today and are there to show the
+/// law rather than a supported state.
+///
+/// 6.0 is specifically T5.4's planned zoom ceiling, swept ahead of that control
+/// existing so `SURVIVAL_CAP_BYTES` has a visible effect in the table rather than
+/// only in a unit test: at 600% on a 3x display two pages ask ~2.1 GiB, and that
+/// is the first operating point at which the absolute cap binds on a large
+/// machine. A policy whose only evidence is the test that asserts it is a policy
+/// nobody can check.
+const ZOOMS: &[f64] = &[0.25, 0.5, 1.0, 2.0, 4.0, 6.0];
 
 /// Device scale factors swept: standard DPI, HiDPI, and the 3× Android phones
 /// reach. This is the axis Phase 2 exists to bound, together with zoom.
@@ -220,6 +227,9 @@ const DEVICES: &[(&str, u64)] = &[
     ("phone 4 GiB", 2 * 1024 * 1024 * 1024),
     ("design floor 8 GiB", 4 * 1024 * 1024 * 1024),
     ("desktop 16 GiB", 11 * 1024 * 1024 * 1024),
+    // Present to exercise SURVIVAL_CAP_BYTES: proportional derivation alone would
+    // give this machine a ~6.4 GiB texture ceiling.
+    ("workstation 64 GiB", 50 * 1024 * 1024 * 1024),
 ];
 
 fn budget_for(available_ram_bytes: u64) -> TextureBudget {

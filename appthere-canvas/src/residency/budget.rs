@@ -13,6 +13,14 @@
 //! and this crate is L4, so the application supplies the adaptation and the
 //! arithmetic stays testable without a UI.
 
+#[path = "budget_survival.rs"]
+mod survival;
+
+use survival::survival_ceiling;
+pub use survival::{
+    SURVIVAL_AVAILABLE_RAM_DIVISOR, SURVIVAL_CAP_BYTES, SURVIVAL_TOTAL_RAM_DIVISOR,
+};
+
 /// Smallest budget the derivation will produce, in bytes (24 MiB).
 ///
 /// Below this a single visible page at moderate zoom cannot be held even at the
@@ -41,39 +49,6 @@ pub const BUDGET_CEILING_BYTES: u64 = 256 * 1024 * 1024;
 /// and 4 GiB / 64 is exactly [`BUDGET_BASELINE_BYTES`]. The whole scale is
 /// anchored on that one point.
 pub const AVAILABLE_RAM_DIVISOR: u64 = 64;
-
-/// Share of *available* RAM at which the renderer stops protecting resolution
-/// and starts protecting the process: one eighth.
-///
-/// This is **not** the budget. It is the line past which continuing to honour
-/// full-resolution visible pages risks the OS killing us, and a soft page beats
-/// a dead application. See [`TextureBudget::hard_ceiling_bytes`] for why the two
-/// thresholds exist and why only this one may degrade what the user is reading.
-///
-/// # Why an eighth and not a quarter
-///
-/// Both were measured. A quarter never softens an ordinary operating point on any
-/// device, but it permits a **946.7 MiB** peak on the 8 GB design floor (400% zoom
-/// on a 3x display, two pages straddling a boundary), and a gigabyte of texture in
-/// a document viewer is not defensible next to Spec 09's layout residency on the
-/// same machine.
-///
-/// An eighth caps that case at 512 MiB and still clears every ordinary point on
-/// every device with headroom — the worst ordinary case is 236.7 MiB at 200% on a
-/// 3x display, against a 512 MiB ceiling on the design floor.
-///
-/// It does bind earlier on a genuinely memory-poor device: a phone reporting under
-/// ~1.9 GiB available has a ceiling below that 236.7 MiB, so 200% on a 3x display
-/// softens there. **That is the regime working rather than a regression.** On a
-/// device that cannot afford two full-resolution pages, refusing to degrade does
-/// not buy sharp text — it buys an OOM kill, and Android's killer is neither slow
-/// nor negotiable.
-pub const SURVIVAL_AVAILABLE_RAM_DIVISOR: u64 = 8;
-
-/// Share of *total* RAM used for the survival ceiling when available is missing:
-/// one sixteenth. Agrees with [`SURVIVAL_AVAILABLE_RAM_DIVISOR`] at the design
-/// floor by the same construction as [`TOTAL_RAM_DIVISOR`].
-pub const SURVIVAL_TOTAL_RAM_DIVISOR: u64 = 16;
 
 /// Share of *total* RAM used when the available figure is missing: one 128th.
 ///
@@ -143,7 +118,10 @@ impl TextureBudget {
             // The baseline stands for the 8 GB design floor's ~4 GiB available,
             // so its ceiling is that machine's ceiling, by the same
             // construction that anchors the budget itself.
-            hard_ceiling_bytes: (4 * 1024 * 1024 * 1024_u64) / SURVIVAL_AVAILABLE_RAM_DIVISOR,
+            hard_ceiling_bytes: survival_ceiling(
+                (4 * 1024 * 1024 * 1024_u64) / SURVIVAL_AVAILABLE_RAM_DIVISOR,
+                BUDGET_BASELINE_BYTES,
+            ),
             source: BudgetSource::Baseline,
         }
     }
@@ -199,7 +177,10 @@ impl TextureBudget {
             let bytes = clamp(available / AVAILABLE_RAM_DIVISOR);
             return Self {
                 bytes,
-                hard_ceiling_bytes: (available / SURVIVAL_AVAILABLE_RAM_DIVISOR).max(bytes),
+                hard_ceiling_bytes: survival_ceiling(
+                    available / SURVIVAL_AVAILABLE_RAM_DIVISOR,
+                    bytes,
+                ),
                 source: BudgetSource::AvailableRam,
             };
         }
@@ -207,7 +188,7 @@ impl TextureBudget {
             let bytes = clamp(total / TOTAL_RAM_DIVISOR);
             return Self {
                 bytes,
-                hard_ceiling_bytes: (total / SURVIVAL_TOTAL_RAM_DIVISOR).max(bytes),
+                hard_ceiling_bytes: survival_ceiling(total / SURVIVAL_TOTAL_RAM_DIVISOR, bytes),
                 source: BudgetSource::TotalRam,
             };
         }

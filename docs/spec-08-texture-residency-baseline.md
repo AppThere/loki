@@ -463,3 +463,41 @@ traversal** rather than at one position:
 The swept invariant also runs as a unit test across five memory sizes x four
 zoom/DPI combinations x forty scroll offsets, so the property is pinned
 independently of the bench.
+
+### The ceiling also needs an absolute cap, not only a divisor
+
+`available / 8` is purely proportional, and proportional has no opinion about
+absurdity. A 64 GiB workstation reporting ~50 GiB available derives a **6.4 GiB**
+texture ceiling for a word processor, and nothing else in the policy objects. The
+byte *target* has had a floor and a ceiling clamp since T2.1 for exactly this
+reason; the survival line had only a divisor.
+
+`SURVIVAL_CAP_BYTES` is 1 GiB. The justification is not "enough pixels for the
+screen" — it is far more than that, deliberately. It is the point past which the
+extra bytes are overwhelmingly **page area that is not on screen**: tiles are
+whole pages, so a page counts as visible when any part of it overlaps the
+viewport, and at 400% zoom a US Letter page is ~12,700 device pixels tall on a 3x
+display against a ~1,800 px viewport. Roughly 85% of a "visible" page's texture is
+off-screen at any moment. Raising the ceiling past 1 GiB spends memory almost
+entirely on page area the reader is not looking at — which is exactly what the
+target exists to avoid spending on.
+
+The cap changes **no measured row at 400% or below**, which is why the sweep was
+extended to 600% — T5.4's planned zoom ceiling — rather than leaving a policy
+whose only evidence is the test that asserts it:
+
+| device | 600% / 1x | 600% / 2x | 600% / 3x |
+| --- | ---: | ---: | ---: |
+| workstation 64 GiB (cap 1024 MiB) | 236.7 | 946.7 `*` | **1024.0 `!`** (from 2130.0) |
+| desktop 16 GiB (ceiling 1024 MiB, capped) | 236.7 | 946.7 `*` | 1024.0 `!` |
+| design floor 8 GiB (ceiling 512 MiB) | 236.7 `*` | 512.0 `!` | 512.0 `!` |
+
+Without the cap the workstation row would read 2130.0 MiB — 2.1 GiB of page
+texture, held at full resolution, on the grounds that the machine could afford it.
+
+**Sub-page tiling is the real fix for this regime and is not in Phase 2.**
+Rasterising the visible *band* of a page rather than the whole page would make
+visible residency proportional to viewport area — bounded by the display and
+independent of zoom — instead of to page area, which would dissolve both the cap
+and most of the survival regime. It is a change to the whole-page `PageTile`
+abstraction rather than to this policy. `TODO(subpage-tiling)`.
