@@ -144,3 +144,112 @@ pub fn report_row(label: &str, s: AllocStats) {
         s.total_bytes, s.total_blocks, s.max_bytes,
     );
 }
+
+// ── Spec 09 E0 helpers (layout residency) ────────────────────────────────────
+
+/// Counts the characters of display text in a document.
+///
+/// Built on `inline_plain_text`, which already flattens every inline variant.
+/// A hand-rolled matcher over a subset of `Block`/`Inline` silently returned
+/// zero for every real document in the corpus, because they use `StyledPara`
+/// and `Heading` where [`build_doc`] uses `Para` — the quiet-wrong-answer shape
+/// Spec 09 L9-009 now forbids.
+pub fn char_count(doc: &Document) -> usize {
+    use loki_doc_model::content::toc::inline_plain_text;
+
+    fn block_chars(b: &Block) -> usize {
+        match b {
+            Block::Para(i) | Block::Plain(i) | Block::Heading(_, _, i) => {
+                inline_plain_text(i).chars().count()
+            }
+            Block::StyledPara(p) => inline_plain_text(&p.inlines).chars().count(),
+            Block::BlockQuote(inner) => inner.iter().map(block_chars).sum(),
+            Block::OrderedList(_, items) | Block::BulletList(items) => items
+                .iter()
+                .flat_map(|blocks| blocks.iter())
+                .map(block_chars)
+                .sum(),
+            Block::Table(t) => t
+                .head
+                .rows
+                .iter()
+                .chain(
+                    t.bodies
+                        .iter()
+                        .flat_map(|b| b.head_rows.iter().chain(b.body_rows.iter())),
+                )
+                .chain(t.foot.rows.iter())
+                .flat_map(|row| row.cells.iter())
+                .flat_map(|cell| cell.blocks.iter())
+                .map(block_chars)
+                .sum(),
+            _ => 0,
+        }
+    }
+    doc.sections
+        .iter()
+        .flat_map(|s| s.blocks.iter())
+        .map(block_chars)
+        .sum()
+}
+
+/// Conformance-corpus documents, as `(label, path relative to `loki-bench/`)`.
+///
+/// Read by path rather than by depending on `appthere-conformance`, so no crate
+/// edge is added for the dependency-direction gate to weigh. Note the corpus is
+/// **six** documents — the ~143 `TC-*` entries elsewhere in that crate are a
+/// planned case catalog, not fixtures on disk.
+pub const CORPUS: &[(&str, &str)] = &[
+    (
+        "acid-docx",
+        "../appthere-conformance/fixtures/docx/acid-docx.docx",
+    ),
+    (
+        "acid2-docx",
+        "../appthere-conformance/fixtures/docx/acid2-docx.docx",
+    ),
+    (
+        "iris-blueprint",
+        "../appthere-conformance/fixtures/docx/iris-blueprint.docx",
+    ),
+    (
+        "styles-tinos",
+        "../appthere-conformance/fixtures/odt/styles-tinos.odt",
+    ),
+    (
+        "para-gelasio",
+        "../appthere-conformance/fixtures/odt/para-gelasio.odt",
+    ),
+    (
+        "para-carlito",
+        "../appthere-conformance/fixtures/odt/para-carlito.odt",
+    ),
+];
+
+/// Imports a corpus fixture, or `None` when it is absent or fails to import.
+pub fn load_corpus_doc(rel: &str) -> Option<Document> {
+    use loki_doc_model::io::DocumentImport;
+    use std::io::Cursor;
+
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(rel);
+    let bytes = std::fs::read(&path).ok()?;
+    if rel.ends_with(".docx") {
+        loki_ooxml::DocxImport::import(Cursor::new(bytes.as_slice()), Default::default()).ok()
+    } else {
+        loki_odf::OdtImport::import(Cursor::new(bytes.as_slice()), Default::default()).ok()
+    }
+}
+
+/// Repeats a document's blocks `times` over, holding its formatting profile
+/// constant while scaling size — the way to vary size independently of
+/// formatting density (Spec 09 §4.1).
+pub fn repeat_doc(doc: &Document, times: usize) -> Document {
+    let mut out = doc.clone();
+    for section in &mut out.sections {
+        let original = section.blocks.clone();
+        for _ in 1..times {
+            section.blocks.extend(original.iter().cloned());
+        }
+    }
+    out
+}

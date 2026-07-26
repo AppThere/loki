@@ -12,7 +12,7 @@ document is evidence for a decision taken later.
 
 | ID | Document | Answers | Verdict |
 | --- | --- | --- | --- |
-| S09.0 | [Layout residency census](S09.0-layout-residency-census.md) | Spec 09 §3 Q1–Q7 **and E0** | **~50–70% of layout residency is evictable — measured on synthetic and real documents.** Body text runs 124 B/char (70 evictable); real documents range far higher, so the *fraction* is the durable number, not the rate. Eviction is **safe** (layout is a pure function of the CRDT) but not *representable* — `None` already means "read-only", so an evicted page would read as a silently wrong answer. Checkpoint recovery exists but only at clean page tops. Glyph items are stored **three** times: sharing one allocation removes ~26% with no eviction machinery |
+| S09.0 | [Layout residency census](S09.0-layout-residency-census.md) | Spec 09 §3 Q1–Q7 **and E0** | **45–63% of layout residency is evictable for text-bearing documents; object-heavy content is far higher (98%).** Body text runs 123 B/char, 69 of it evictable, flat across a 25× size change. The *fraction* is the durable number — it moves by under 2× where the rate moves 60×. Eviction is **safe** (layout is a pure function of the CRDT) but not *representable*: `None` already means "read-only", so an evicted page would read as a silently wrong answer. Checkpoint recovery exists but only at clean page tops. Glyph items are stored **three** times — sharing one allocation removes ~26% with no eviction machinery |
 
 **E0 has been run** (S09.0 §10), so Spec 09 L9-005 is satisfied and the phase
 plan is unblocked. Spec 09 §4 describes E0 as a manual RSS comparison needing
@@ -25,12 +25,15 @@ The census's headline figure survived contact with the instrument (predicted 72
 B/char, measured 70.1, flat across a 4× document-size change). Its *total* did
 not, and the 36 B/char gap led to the cheapest win on the list.
 
-Then E0 was pointed at the conformance corpus, and the per-character model did
-**not** survive real documents: the rate ranges 71 → 3950 B/char, while the
-evictable *fraction* stays between 49% and 74%. **Spec 09 should target the
-fraction.** Note the corpus is six documents, not the ~130 the `TC-*` case
-catalog implies — only one is large enough to draw a rate from, so this is
-suggestive rather than settled (S09.0 §10a).
+Then E0 was pointed at the conformance corpus — and chasing an inconsistency in
+the result found that **the instrument was order-dependent**: one-time costs,
+font loading above all, were billed to whichever measurement ran first. Warm,
+almost every corpus figure changed, by up to **252×**, and the "floor artefact at
+4.5k characters" turned out not to exist. Corrected numbers in S09.0 §10a: real
+formatting costs 1.7× the synthetic rate (not 2.5×), and the evictable band is
+**45–63% for text-bearing documents** with object-heavy content far higher.
+Spec 09 should still target the fraction — it moves by less than two while the
+rate moves by sixty — but on the corrected band.
 
 ## Loki Spec 08 — UX & Memory Remediation Program, Phase 0
 

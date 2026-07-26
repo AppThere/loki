@@ -3,46 +3,45 @@
 
 //! **Spec 09 E0** — how much resident memory is editing residency?
 //!
-//! Spec 09 gates its whole phase plan (L9-005) on one experiment: does turning
+//! Spec 09 gated its phase plan (L9-005) on one experiment: does turning
 //! `preserve_for_editing` off actually recover the ~72 bytes per character that
 //! `docs/spikes/S09.0-layout-residency-census.md` predicts from struct
-//! definitions? If not, the census is wrong and everything built on it is built
-//! on sand.
+//! definitions?
 //!
-//! It does, for body text — measured 70.1 B/char against 72 predicted, flat
-//! across a 4× document-size change. On **real** documents the per-character
-//! rate is the wrong unit (71 → 3950 B/char across the corpus) while the
-//! *evictable fraction* stays in a 49–74% band. Watch the fraction in the last
-//! column, not the rate: that is the number Spec 09 targets (S09.0 §10a).
+//! It does, for body text — 69.4 B/char against 72 predicted, flat across a 25×
+//! document-size change. On **real** documents the rate is a different number
+//! per document (72 → 4191 B/char) while the *evictable fraction* stays far
+//! narrower. Watch the fraction, not the rate: that is what Spec 09 targets
+//! (L9-008, S09.0 §10a).
 //!
 //! # Why this is a bench and not a manual RSS comparison
 //!
-//! Spec 09 §4 proposes opening a document read-only, opening it for editing,
-//! and diffing RSS across two process runs — with caveats about forcing a full
-//! layout pass and about allocator retention masking the difference.
+//! Spec 09 r1 proposed diffing RSS across two process runs on real hardware.
+//! **Layout is CPU-only** (Parley shaping plus our pagination; the GPU is
+//! involved in painting, not layout), so it runs headless, and dhat measures
+//! live heap directly — which also dissolves r1's two caveats: the full layout
+//! pass is forced by construction, and allocator retention cannot mask what
+//! dhat counts. Committed as a bench so it guards S9-1 … S9-5 rather than being
+//! spent once (L9-006).
 //!
-//! None of that is necessary. **Layout is CPU-only** (Parley shaping plus our
-//! pagination; the GPU is involved in painting, not in layout), so the
-//! comparison runs headless, and dhat measures the region directly:
+//! # Measurement hygiene
 //!
-//! - the full layout pass is forced by construction — we call
-//!   `layout_document` and hold the result, so there is no lazy pagination to
-//!   confound;
-//! - allocator retention cannot mask anything, because dhat counts live heap
-//!   bytes rather than what the allocator has returned to the OS;
-//! - it is repeatable and diffable, so it also serves as the regression guard
-//!   for S9-1 … S9-4 rather than being spent once.
+//! Three things this harness does deliberately, all learned from its own bad
+//! numbers:
 //!
-//! # What the numbers mean
-//!
-//! `peak_bytes` is the peak *live* heap during the region. The layout is held
-//! live at that peak, so the delta between the two conditions is the retained
-//! editing data — the quantity Spec 09 proposes to window.
-//!
-//! `preserve_for_editing: false` still *builds* each Parley layout (line
-//! breaking needs it) and drops it per paragraph, so the false condition
-//! carries at most one paragraph's shaping at a time while the true condition
-//! accumulates all of them. The delta is therefore retention, not shaping work.
+//! - **A process warm-up runs before any measurement**, so shared one-time
+//!   costs are not billed to whichever tier happens to run first. Without it the
+//!   10-paragraph tier read 411 B/char and looked like a size-dependent floor
+//!   artefact; warm, it reads 69.5, indistinguishable from the 250-paragraph
+//!   tier. There is no size floor — there was a *first-measurement* artefact.
+//! - **A per-document warm-up runs before each row.** The process warm-up
+//!   covers only shared costs; a document introducing new fonts pays its own
+//!   loading inside its own first measurement. This was worth up to **252×**:
+//!   `styles-tinos` read 39,264 B/char cold and 155.7 warm.
+//! - **A control re-measures the first document last.** If the warm-ups work,
+//!   the two readings agree; if they diverge, the instrument is order-dependent
+//!   and every rate in the table is suspect. Printed rather than asserted —
+//!   its value is the comparison, not a threshold.
 //!
 //! Run: `cargo bench -p loki-bench --bench layout_editing_residency`
 
@@ -52,56 +51,14 @@ loki_bench::dhat_global_allocator!();
 mod support;
 
 use loki_bench::{AllocStats, measure};
-use loki_doc_model::content::block::Block;
-use loki_doc_model::content::toc::inline_plain_text;
 use loki_doc_model::document::Document;
 use loki_layout::{FontResources, LayoutMode, LayoutOptions, layout_document};
 use std::hint::black_box;
 
-/// Counts the characters of display text in a document, so residency can be
-/// reported per character.
-///
-/// Built on `inline_plain_text`, which already flattens every inline variant,
-/// rather than matching on a subset — a hand-rolled counter silently returned
-/// zero for every real document in the corpus, because they use `StyledPara`
-/// and `Heading` where the synthetic builder uses `Para`.
-fn char_count(doc: &Document) -> usize {
-    fn block_chars(b: &Block) -> usize {
-        match b {
-            Block::Para(i) | Block::Plain(i) => inline_plain_text(i).chars().count(),
-            Block::Heading(_, _, i) => inline_plain_text(i).chars().count(),
-            Block::StyledPara(p) => inline_plain_text(&p.inlines).chars().count(),
-            Block::BlockQuote(inner) => inner.iter().map(block_chars).sum(),
-            Block::OrderedList(_, items) | Block::BulletList(items) => items
-                .iter()
-                .flat_map(|blocks| blocks.iter())
-                .map(block_chars)
-                .sum(),
-            Block::Table(t) => table_chars(t),
-            _ => 0,
-        }
-    }
-    fn table_chars(t: &loki_doc_model::content::table::Table) -> usize {
-        t.head
-            .rows
-            .iter()
-            .chain(
-                t.bodies
-                    .iter()
-                    .flat_map(|b| b.head_rows.iter().chain(b.body_rows.iter())),
-            )
-            .chain(t.foot.rows.iter())
-            .flat_map(|row| row.cells.iter())
-            .flat_map(|cell| cell.blocks.iter())
-            .map(block_chars)
-            .sum()
-    }
-    doc.sections
-        .iter()
-        .flat_map(|s| s.blocks.iter())
-        .map(block_chars)
-        .sum()
-}
+/// Documents below this many characters are dominated by per-document fixed
+/// costs, so their per-character rate is not a data point. Reported alongside
+/// the rate rather than hidden, so a reader can discount the row themselves.
+const RATE_FLOOR_CHARS: usize = 5_000;
 
 fn layout_peak(resources: &mut FontResources, doc: &Document, preserve: bool) -> AllocStats {
     let options = LayoutOptions {
@@ -120,140 +77,175 @@ fn layout_peak(resources: &mut FontResources, doc: &Document, preserve: bool) ->
     })
 }
 
-/// Real documents from the conformance corpus, as `(label, relative path)`.
-///
-/// The synthetic tiers above carry three style runs per paragraph, which is
-/// denser than plain prose but far lighter than a real document. Laying out the
-/// actual fixtures answers the question the synthetic corpus cannot: does the
-/// per-character model survive real formatting density, or do the per-run and
-/// per-line terms take over?
-///
-/// Read from disk by path rather than through `appthere-conformance`, so this
-/// bench adds no crate edge for the dependency-direction gate to weigh.
-const CORPUS: &[(&str, &str)] = &[
-    (
-        "acid-docx",
-        "../appthere-conformance/fixtures/docx/acid-docx.docx",
-    ),
-    (
-        "acid2-docx",
-        "../appthere-conformance/fixtures/docx/acid2-docx.docx",
-    ),
-    (
-        "iris-blueprint",
-        "../appthere-conformance/fixtures/docx/iris-blueprint.docx",
-    ),
-    (
-        "styles-tinos",
-        "../appthere-conformance/fixtures/odt/styles-tinos.odt",
-    ),
-    (
-        "para-gelasio",
-        "../appthere-conformance/fixtures/odt/para-gelasio.odt",
-    ),
-    (
-        "para-carlito",
-        "../appthere-conformance/fixtures/odt/para-carlito.odt",
-    ),
-];
-
-/// Imports a corpus fixture, or `None` when it is absent or fails to import.
-///
-/// Absence is tolerated rather than fatal: this is a bench, and the synthetic
-/// tiers above are the part that gates Spec 09. A missing corpus degrades the
-/// run to "no real-document evidence", which the report states plainly.
-fn load_corpus_doc(rel: &str) -> Option<Document> {
-    use loki_doc_model::io::DocumentImport;
-    use std::io::Cursor;
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(rel);
-    let bytes = std::fs::read(&path).ok()?;
-    if rel.ends_with(".docx") {
-        loki_ooxml::DocxImport::import(Cursor::new(bytes.as_slice()), Default::default()).ok()
-    } else {
-        loki_odf::OdtImport::import(Cursor::new(bytes.as_slice()), Default::default()).ok()
-    }
+/// Lays out `doc` once and discards the result, so any one-time cost it
+/// introduces — font loading above all — is paid outside the measured region.
+fn warm_doc(resources: &mut FontResources, doc: &Document) {
+    let options = LayoutOptions {
+        preserve_for_editing: true,
+        spell: None,
+        ..Default::default()
+    };
+    black_box(layout_document(
+        resources,
+        doc,
+        LayoutMode::Paginated,
+        1.0,
+        &options,
+    ));
+    resources.clear_paragraph_cache();
 }
 
-/// Measures one document and prints its per-character residency.
-fn report_doc(resources: &mut FontResources, label: &str, doc: &Document) -> i64 {
-    let chars = char_count(doc);
-    if chars == 0 {
-        eprintln!("  {label:<26} skipped — no text content");
-        return 0;
-    }
+/// Lays out a throwaway document so process-wide one-time costs are paid before
+/// the first measurement.
+fn warm_up(resources: &mut FontResources) {
+    let doc = support::build_doc(4, support::WORDS_PER_PARA);
+    let options = LayoutOptions {
+        preserve_for_editing: true,
+        spell: None,
+        ..Default::default()
+    };
+    black_box(layout_document(
+        resources,
+        &doc,
+        LayoutMode::Paginated,
+        1.0,
+        &options,
+    ));
+    resources.clear_paragraph_cache();
+}
+
+/// One measured row: both conditions, the retained delta, and the evictable
+/// fraction. Returns `(retained_bytes, editing_per_char)`.
+fn report_doc(resources: &mut FontResources, label: &str, doc: &Document) -> (i64, f64) {
+    let chars = support::char_count(doc);
+    // L9-009: a document that yields no characters means the extractor failed,
+    // not that the document is empty — the corpus has no empty fixtures. Fail
+    // rather than print a tidy "skipped", which is how six fixtures once
+    // measured nothing and said so in a way that read as normal.
+    assert!(
+        chars > 0,
+        "{label}: char_count returned 0 — the extractor did not match this \
+         document's block or inline shapes, so this row would measure nothing"
+    );
+
+    // Per-document warm-up. A process-wide warm-up covers only the *shared*
+    // one-time costs; each document that introduces new fonts pays its own
+    // loading cost inside whichever of its measurements runs first. Without
+    // this, `iris-blueprint` read 176.4 B/char in the corpus loop and 117.5
+    // when measured again later in the same run — the same document, 33% apart.
+    warm_doc(resources, doc);
+
     let editing = layout_peak(resources, doc, true);
     let read_only = layout_peak(resources, doc, false);
     let delta = editing.max_bytes as i64 - read_only.max_bytes as i64;
+    let per_char = delta as f64 / chars as f64;
+    let total_per_char = editing.max_bytes as f64 / chars as f64;
+    let evictable = if editing.max_bytes > 0 {
+        100.0 * delta as f64 / editing.max_bytes as f64
+    } else {
+        0.0
+    };
+    let flag = if chars < RATE_FLOOR_CHARS {
+        " (below rate floor)"
+    } else {
+        ""
+    };
     eprintln!(
-        "  {label:<26} chars={chars:>8}  retained={delta:>11} B  \
-         editing={:>6.1} B/char  total={:>6.1} B/char",
-        delta as f64 / chars as f64,
-        editing.max_bytes as f64 / chars as f64,
+        "  {label:<24} chars={chars:>7}  editing={per_char:>7.1} B/char  \
+         total={total_per_char:>7.1} B/char  evictable={evictable:>5.1}%{flag}",
     );
-    delta
+    (delta, per_char)
 }
 
 fn main() {
     support::header("Spec 09 E0 — editing residency: preserve_for_editing on vs off");
     eprintln!(
-        "  Predicted by S09.0: ~72 B/char retained for editing, ~88 B/char total.\n\
-           A large divergence here invalidates the census (Spec 09 L9-005)."
+        "  Target is the evictable FRACTION (L9-008); the B/char rate is not\n  \
+         comparable across document classes. Rows under {RATE_FLOOR_CHARS} chars are flagged."
     );
 
     let mut resources = FontResources::new();
-    let mut worst_delta = 0_i64;
+    // Before anything is measured — see the module docs.
+    warm_up(&mut resources);
 
+    let mut worst_delta = 0_i64;
+    let mut first_small = 0.0_f64;
+
+    eprintln!("\n  synthetic tiers:");
     for &(name, paras) in support::DOC_TIERS {
         let doc = support::build_doc(paras, support::WORDS_PER_PARA);
-        let chars = char_count(&doc);
-
-        let editing = layout_peak(&mut resources, &doc, true);
-        let read_only = layout_peak(&mut resources, &doc, false);
-
-        support::report_row(&format!("{name} ({paras}p) editing"), editing);
-        support::report_row(&format!("{name} ({paras}p) read-only"), read_only);
-
-        let delta = editing.max_bytes as i64 - read_only.max_bytes as i64;
-        let per_char = if chars > 0 {
-            delta as f64 / chars as f64
-        } else {
-            0.0
-        };
-        let total_per_char = if chars > 0 {
-            editing.max_bytes as f64 / chars as f64
-        } else {
-            0.0
-        };
-        eprintln!(
-            "  {:<26} chars={chars:>8}  retained={delta:>11} B  \
-             editing={per_char:>6.1} B/char  total={total_per_char:>6.1} B/char",
-            format!("{name} ({paras}p) E0"),
-        );
+        let (delta, per_char) = report_doc(&mut resources, &format!("{name} ({paras}p)"), &doc);
+        if name == "small" {
+            first_small = per_char;
+        }
         worst_delta = worst_delta.max(delta);
     }
 
-    // ── Real documents ──────────────────────────────────────────────────────
-    // The synthetic tiers establish the model; these test it against actual
-    // formatting density, which is the open question S09.0 §11 item 1 records.
-    eprintln!("\n  real documents (conformance corpus):");
+    eprintln!("\n  real documents (conformance corpus — six fixtures):");
     let mut corpus_seen = 0_usize;
-    for &(label, rel) in CORPUS {
-        match load_corpus_doc(rel) {
+    let mut iris: Option<Document> = None;
+    for &(label, rel) in support::CORPUS {
+        match support::load_corpus_doc(rel) {
             Some(doc) => {
                 report_doc(&mut resources, label, &doc);
+                if label == "iris-blueprint" {
+                    iris = Some(doc);
+                }
                 corpus_seen += 1;
             }
-            None => eprintln!("  {label:<26} unavailable (absent or import failed)"),
+            // Absence is tolerated (the fixture may not be checked out); a
+            // document that loads but measures nothing is not — see report_doc.
+            None => eprintln!("  {label:<24} unavailable (absent or import failed)"),
         }
     }
+
+    // Attempted: size at a constant formatting profile, by repeating the one
+    // corpus fixture large enough to draw a rate from.
+    //
+    // **This does not measure what it was meant to, and the ×10 row must not be
+    // read as evidence.** Repeating blocks makes them byte-identical, so
+    // `ParaCache` keys collide and nine of every ten paragraphs are cache hits
+    // rather than fresh layouts. The cache then holds a tenth as many entries
+    // per character while `editing_data` still holds an `Arc` per placement, so
+    // the per-character rate falls for a reason that has nothing to do with
+    // document size. Retained here, labelled, because deleting it would lose
+    // the lesson: scaling a document by repetition changes its cache-hit
+    // profile, and a genuinely larger document with *distinct* content would
+    // not behave this way. Answering the size question needs larger real
+    // fixtures, not synthesised ones (Spec 09 §4.1, R9-09).
+    if let Some(iris) = iris {
+        eprintln!("\n  size-by-repetition (INVALID — cache-hit contaminated, see source):");
+        report_doc(&mut resources, "iris-blueprint ×1", &iris);
+        report_doc(
+            &mut resources,
+            "iris ×10 (not evidence)",
+            &support::repeat_doc(&iris, 10),
+        );
+    }
+
+    // Ordering control — see the module docs. Prints the first and last reading
+    // of the same document so order-dependence is visible rather than assumed
+    // away.
+    eprintln!("\n  ordering control (same document, measured last):");
+    let small = support::build_doc(support::DOC_TIERS[0].1, support::WORDS_PER_PARA);
+    let (_, last_small) = report_doc(&mut resources, "small (control)", &small);
+    eprintln!(
+        "  small tier: first={first_small:.1} B/char  last={last_small:.1} B/char  \
+         {}",
+        if (first_small - last_small).abs() < 0.15 * first_small.max(1.0) {
+            "→ order-independent"
+        } else {
+            "→ ORDER-DEPENDENT, treat every rate as suspect"
+        }
+    );
+
     if corpus_seen == 0 {
-        eprintln!("  (no corpus documents loaded — synthetic tiers only)");
+        eprintln!("\n  note: no corpus documents loaded — synthetic evidence only");
     }
 
     // The experiment is only meaningful if the two conditions differ at all. A
-    // zero (or negative) delta means `preserve_for_editing` is not the switch
-    // the census assumes it is, which is itself the finding — fail loudly
-    // rather than reporting a tidy zero.
+    // zero delta means `preserve_for_editing` is not the switch the census
+    // assumes it is, which is itself the finding — fail loudly.
     assert!(
         worst_delta > 0,
         "E0: preserve_for_editing recovered no memory at any tier — \
