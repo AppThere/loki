@@ -22,8 +22,12 @@ fn a_generous_budget_changes_nothing() {
     // under budget must be byte-identical, not merely close.
     let doc = letter_doc(500);
     let v = vp(1.0, 1.0);
-    let plan = plan_residency(&doc, &v, TextureBudget::exact(BUDGET_CEILING_BYTES));
-    assert!(!plan.over_budget);
+    let plan = plan_residency(
+        &doc,
+        &v,
+        TextureBudget::with_baseline_ceiling(BUDGET_CEILING_BYTES),
+    );
+    assert!(!plan.over_target);
     assert!(plan.tiles.iter().all(|t| t.raster_scale == 1.0));
     assert_eq!(
         plan.total_bytes,
@@ -38,7 +42,7 @@ fn the_visible_set_is_never_dropped_at_any_budget() {
     // smallest budget the derivation can produce, because a policy that holds
     // at one operating point and not another is not a policy.
     let doc = letter_doc(500);
-    let tiny = TextureBudget::exact(0); // clamps up to the 24 MiB floor
+    let tiny = TextureBudget::with_baseline_ceiling(0); // clamps up to the 24 MiB floor
     for zoom in [0.25, 0.5, 1.0, 2.0, 4.0] {
         for dsf in [1.0, 2.0, 3.0] {
             let v = vp(zoom, dsf);
@@ -68,7 +72,7 @@ fn pressure_reduces_off_centre_scale_before_it_drops_anything() {
     let doc = letter_doc(500);
     let v = vp(2.0, 2.0);
     let full = super::super::geometry::resident_texture_bytes(&doc, &v);
-    let plan = plan_residency(&doc, &v, TextureBudget::exact(full - 1));
+    let plan = plan_residency(&doc, &v, TextureBudget::with_baseline_ceiling(full - 1));
 
     let mounted_before = super::super::geometry::resident_pages(&doc, &v)
         .iter()
@@ -97,8 +101,12 @@ fn a_hard_budget_drops_off_centre_tiles_furthest_first() {
     let v = vp(2.0, 2.0);
     // Well under the 157.8 MiB this configuration wants, but comfortably over
     // what the visible set alone costs, so step 3 is the operative one.
-    let plan = plan_residency(&doc, &v, TextureBudget::exact(60 * 1024 * 1024));
-    assert!(!plan.over_budget);
+    let plan = plan_residency(
+        &doc,
+        &v,
+        TextureBudget::with_baseline_ceiling(60 * 1024 * 1024),
+    );
+    assert!(!plan.over_target);
     assert!(plan.total_bytes <= 60 * 1024 * 1024);
     let visible_count = strictly_visible(&doc, &v).iter().filter(|&&b| b).count();
     assert!(
@@ -123,7 +131,7 @@ fn the_visible_set_keeps_full_scale_when_over_target_but_under_the_ceiling() {
         2,
         "the case under test requires two visible pages",
     );
-    let budget = TextureBudget::exact_with_ceiling(64 * 1024 * 1024, 1024 * 1024 * 1024);
+    let budget = TextureBudget::with_ceiling(64 * 1024 * 1024, 1024 * 1024 * 1024);
     let plan = plan_residency(&doc, &v, budget);
     assert!(
         plan.tiles
@@ -133,7 +141,7 @@ fn the_visible_set_keeps_full_scale_when_over_target_but_under_the_ceiling() {
         "visible pages must not be softened to reach a target",
     );
     assert!(
-        plan.over_budget,
+        plan.over_target,
         "the overage is reported rather than hidden"
     );
     assert!(
@@ -150,7 +158,7 @@ fn the_visible_set_is_reduced_only_above_the_survival_ceiling() {
     // and the page is still never dropped.
     let doc = letter_doc(500);
     let v = vp(4.0, 3.0);
-    let budget = TextureBudget::exact_with_ceiling(64 * 1024 * 1024, 256 * 1024 * 1024);
+    let budget = TextureBudget::with_ceiling(64 * 1024 * 1024, 256 * 1024 * 1024);
     let plan = plan_residency(&doc, &v, budget);
     assert!(
         plan.tiles.iter().any(|t| t.visible),
@@ -203,15 +211,15 @@ fn the_target_never_degrades_visible_text_at_any_derived_budget() {
 }
 
 #[test]
-fn over_budget_is_reported_rather_than_resolved_below_legibility() {
+fn over_target_is_reported_rather_than_resolved_below_legibility() {
     // The corner where no legal move remains: the visible page at the scale
     // floor still exceeds the budget floor. Being over budget is the honest
     // outcome — the alternatives are a blank page or an illegible one.
     let doc = letter_doc(500);
     let v = vp(4.0, 3.0);
-    let budget = TextureBudget::exact_with_ceiling(0, 24 * 1024 * 1024); // both at the floor
+    let budget = TextureBudget::with_ceiling(0, 24 * 1024 * 1024); // both at the floor
     let plan = plan_residency(&doc, &v, budget);
-    assert!(plan.over_budget, "this cannot be satisfied and must say so");
+    assert!(plan.over_target, "this cannot be satisfied and must say so");
     assert!(
         plan.survival_reduced,
         "and it is the ceiling that forced it"
@@ -242,7 +250,7 @@ fn an_empty_document_plans_nothing() {
     let plan = plan_residency(&[], &vp(1.0, 1.0), TextureBudget::baseline());
     assert!(plan.tiles.is_empty());
     assert_eq!(plan.total_bytes, 0);
-    assert!(!plan.over_budget);
+    assert!(!plan.over_target);
 }
 
 #[test]

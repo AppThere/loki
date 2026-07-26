@@ -18,7 +18,7 @@
 //! 3. Drop off-centre tiles, furthest from the viewport first. They become
 //!    blank placeholders, exactly as an un-windowed page already is.
 //! 4. If the **visible** tiles alone still exceed the budget, **stop**. Mount
-//!    them at full scale and report [`ResidencyPlan::over_budget`]. The budget is
+//!    them at full scale and report [`ResidencyPlan::over_target`]. The budget is
 //!    a target, and it has run out of things it is allowed to spend.
 //! 5. Only above the **survival ceiling** — `TextureBudget::hard_ceiling_bytes`,
 //!    a threshold far above the target — reduce the visible set's scale, to the
@@ -108,12 +108,12 @@ pub struct ResidencyPlan {
     /// rather than a corner: the visible set at full scale can exceed a derived
     /// target during normal reading on a HiDPI machine, and the correct response
     /// is to say so, not to soften the page. See the module docs for why.
-    pub over_budget: bool,
+    pub over_target: bool,
     /// `true` when the visible set's scale was reduced to stay under the
     /// **survival ceiling** — the only circumstance in which this planner
     /// degrades what the user is looking at.
     ///
-    /// Distinct from [`Self::over_budget`] because they carry opposite meanings
+    /// Distinct from [`Self::over_target`] because they carry opposite meanings
     /// for a reader of a diagnostic: over-target is the design working, while
     /// this is the device having run out of room.
     pub survival_reduced: bool,
@@ -243,12 +243,12 @@ pub fn plan_residency(
     finish(tiles, over, true)
 }
 
-fn finish(tiles: Vec<TilePlan>, over_budget: bool, survival_reduced: bool) -> ResidencyPlan {
+fn finish(tiles: Vec<TilePlan>, over_target: bool, survival_reduced: bool) -> ResidencyPlan {
     let total_bytes = total(&tiles);
     ResidencyPlan {
         tiles,
         total_bytes,
-        over_budget,
+        over_target,
         survival_reduced,
     }
 }

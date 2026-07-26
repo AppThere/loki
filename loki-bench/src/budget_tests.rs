@@ -6,7 +6,7 @@
 use super::*;
 
 #[test]
-fn within_and_over_budget() {
+fn within_and_over_target() {
     assert_eq!(check(500, 1_000), BudgetStatus::WithinBudget);
     assert_eq!(check(1_000, 1_000), BudgetStatus::WithinBudget); // boundary is within
     assert_eq!(check(1_001, 1_000), BudgetStatus::OverBudget);

@@ -161,7 +161,7 @@ fn the_survival_ceiling_is_capped_absolutely_and_not_only_proportionally() {
 
     // And the ceiling >= target invariant survives the cap: a person may set a
     // target above it, and the cap must not then invert the two.
-    let over = TextureBudget::exact(2 * 1024 * 1024 * 1024);
+    let over = TextureBudget::with_baseline_ceiling(2 * 1024 * 1024 * 1024);
     assert!(
         over.hard_ceiling_bytes() >= over.bytes(),
         "an explicit target above the cap must not end up above its own ceiling",

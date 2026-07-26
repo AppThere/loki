@@ -94,7 +94,7 @@ fn the_same_ram_gives_the_same_budget_on_every_device_class() {
 #[test]
 fn the_derived_survival_ceiling_is_device_specific_not_the_baseline() {
     // Regression for the r18 delivery defect. `current()` returned a bare `u64`
-    // target, so the renderer rebuilt the budget with `TextureBudget::exact` —
+    // target, so the renderer rebuilt the budget with `TextureBudget::with_baseline_ceiling` —
     // which derives its ceiling from the *baseline* machine. Every device
     // therefore ran with a 512 MiB survival ceiling, including a phone that had
     // correctly derived 256 MiB, and nothing in the type system objected because
@@ -119,7 +119,7 @@ fn the_derived_survival_ceiling_is_device_specific_not_the_baseline() {
 
     // And the shape that caused it: reconstructing from the target alone loses
     // the ceiling. This is what the props used to do.
-    let rebuilt = TextureBudget::exact(phone.bytes());
+    let rebuilt = TextureBudget::with_baseline_ceiling(phone.bytes());
     assert_ne!(
         rebuilt.hard_ceiling_bytes(),
         phone.hard_ceiling_bytes(),

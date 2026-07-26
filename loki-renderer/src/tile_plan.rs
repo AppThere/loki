@@ -106,16 +106,24 @@ pub(crate) fn plan_tiles(
     // passing *without running*. On a 2x display at ordinary zoom the pressure
     // path never engages, so "scrolled around, looked fine" is not evidence about
     // anything. `reduced_tiles` reading non-zero is what makes it evidence.
+    //
+    // The instrument needs its own control, because a diagnostic reporting zero
+    // reductions is indistinguishable from zero reductions occurring — which is
+    // the exact ambiguity it exists to remove (L9-011). So the screen procedure
+    // is two settings, not one: force `LOKI_TEXTURE_BUDGET_MB` absurdly low and
+    // confirm this line reports a non-zero `reduced_tiles` *first*, establishing
+    // that it can speak, and only then set the value under test and trust it when
+    // it says nothing. See Spec 08 §Phase 2's closing procedure.
     let reduced_tiles = plan.tiles.iter().filter(|t| t.raster_scale < 1.0).count();
-    if plan.over_budget || reduced_tiles > 0 {
+    if plan.over_target || reduced_tiles > 0 {
         tracing::debug!(
             budget_bytes = budget.bytes(),
             ceiling_bytes = budget.hard_ceiling_bytes(),
             planned_bytes = plan.total_bytes,
             tiles = plan.tiles.len(),
             reduced_tiles,
-            over_budget = plan.over_budget,
-            // The distinction L08-026 turns on: over_budget alone is the design
+            over_target = plan.over_target,
+            // The distinction L08-026 turns on: over_target alone is the design
             // working (visible pages full scale, target exceeded and reported),
             // while this means a page the reader is looking at was degraded.
             survival_reduced = plan.survival_reduced,

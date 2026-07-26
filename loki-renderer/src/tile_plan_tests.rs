@@ -15,7 +15,7 @@ use appthere_canvas::residency::TextureBudget;
 /// otherwise cap it at the baseline 512 MiB and quietly reintroduce pressure
 /// into tests that are not about pressure.
 fn huge_budget() -> TextureBudget {
-    TextureBudget::exact_with_ceiling(4 * 1024 * 1024 * 1024, 4 * 1024 * 1024 * 1024)
+    TextureBudget::with_ceiling(4 * 1024 * 1024 * 1024, 4 * 1024 * 1024 * 1024)
 }
 
 /// US Letter tile boxes in CSS px at `zoom`.
@@ -79,7 +79,7 @@ fn a_tight_budget_reduces_scale_rather_than_the_mounted_count_first() {
         900.0,
         2.0,
         2.0,
-        TextureBudget::exact_with_ceiling(150 * 1024 * 1024, 4 * 1024 * 1024 * 1024),
+        TextureBudget::with_ceiling(150 * 1024 * 1024, 4 * 1024 * 1024 * 1024),
     );
     let full_count = full.iter().filter(|t| t.mount.is_some()).count();
     let tight_count = tight.iter().filter(|t| t.mount.is_some()).count();

@@ -52,7 +52,7 @@ fn override_bytes() -> Option<u64> {
 ///
 /// Returns the whole [`TextureBudget`] rather than its byte target. Handing the
 /// renderer a bare `u64` was a real defect until r18: it rebuilt the budget with
-/// `TextureBudget::exact`, which derives a survival ceiling from the *baseline*
+/// `TextureBudget::with_baseline_ceiling`, which derives a survival ceiling from the *baseline*
 /// rather than from this device, so every machine got 512 MiB — including a phone
 /// that had correctly derived 256 MiB. Deriving a value and then not delivering it
 /// is indistinguishable from never deriving it (L08-028).

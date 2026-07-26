@@ -126,13 +126,24 @@ impl TextureBudget {
         }
     }
 
-    /// An explicit figure, for tests and for the user override path.
+    /// An explicit **target**, with the survival ceiling taken from
+    /// [`Self::baseline`] — for the user-override path and for tests that only
+    /// care about the target.
     ///
-    /// Clamped up to [`BUDGET_FLOOR_BYTES`] but **not** down to the ceiling: the
-    /// ceiling bounds an automatic derivation, not a person who knows their
-    /// machine.
+    /// # The name says what it substitutes, deliberately
+    ///
+    /// This was `exact` until r18, and the name was a load-bearing part of a real
+    /// defect: it is exact about one of the two numbers and silently substitutive
+    /// about the other, so `TextureBudget::exact(budget_bytes)` read as
+    /// "reconstruct the budget" at the call site while quietly handing every
+    /// device the baseline machine's ceiling (L08-031). If you want both numbers
+    /// to be yours, use [`Self::with_ceiling`].
+    ///
+    /// Clamped up to [`BUDGET_FLOOR_BYTES`] but **not** down to
+    /// [`BUDGET_CEILING_BYTES`]: that ceiling bounds an automatic derivation, not
+    /// a person who knows their machine.
     #[must_use]
-    pub fn exact(bytes: u64) -> Self {
+    pub fn with_baseline_ceiling(bytes: u64) -> Self {
         let bytes = bytes.max(BUDGET_FLOOR_BYTES);
         Self {
             bytes,
@@ -145,9 +156,14 @@ impl TextureBudget {
         }
     }
 
-    /// Builds a budget with both thresholds explicit, for tests.
+    /// Builds a budget with **both** thresholds explicit.
+    ///
+    /// Prefer this in any test whose subject is not the pressure policy itself:
+    /// [`Self::with_baseline_ceiling`] silently supplies a 512 MiB ceiling, which
+    /// is enough to make a geometry test start exercising the survival regime
+    /// without saying so.
     #[must_use]
-    pub fn exact_with_ceiling(bytes: u64, hard_ceiling_bytes: u64) -> Self {
+    pub fn with_ceiling(bytes: u64, hard_ceiling_bytes: u64) -> Self {
         let bytes = bytes.max(BUDGET_FLOOR_BYTES);
         Self {
             bytes,
@@ -160,7 +176,7 @@ impl TextureBudget {
     #[must_use]
     pub fn derive(inputs: BudgetInputs) -> Self {
         if let Some(bytes) = inputs.user_override_bytes {
-            return Self::exact(bytes);
+            return Self::with_baseline_ceiling(bytes);
         }
         // A device with no GPU paint path allocates no page textures, so this
         // arm never binds anything in practice; it is here so the budget

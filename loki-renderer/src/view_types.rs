@@ -145,7 +145,7 @@ pub struct DocumentViewProps {
     ///
     /// The whole value crosses the boundary rather than a byte count, and that
     /// is deliberate. It was a `u64` target until r18, which meant the renderer
-    /// rebuilt the budget with `TextureBudget::exact` and silently got the
+    /// rebuilt the budget with `TextureBudget::with_baseline_ceiling` and silently got the
     /// *baseline* survival ceiling — 512 MiB on every device, including a phone
     /// that had derived 256 MiB. A derived value that is not delivered is the
     /// same failure as one that was never derived (R27, L08-028), so the type

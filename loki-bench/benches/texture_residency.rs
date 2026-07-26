@@ -99,7 +99,7 @@ struct Reading {
     /// byte **target** after spending everything the target may spend. Since r15
     /// this is an ordinary outcome, not a failure — see ADR L08-026. Always
     /// `false` for an unbudgeted traversal.
-    over_budget: bool,
+    over_target: bool,
     /// `true` when the **survival ceiling** forced the visible set's scale down
     /// at any offset — the only circumstance in which visible text degrades.
     survival_reduced: bool,
@@ -184,7 +184,7 @@ fn traverse(pages: &[PageBox], zoom: f64, device_scale_factor: f64) -> Reading {
         peak_bytes,
         peak_tiles,
         allocs: snap.allocs,
-        over_budget: false,
+        over_target: false,
         survival_reduced: false,
         min_visible_scale: 1.0,
     }
@@ -265,7 +265,7 @@ fn traverse_budgeted(
     let mut mounted: BTreeMap<usize, u64> = BTreeMap::new();
     let mut peak_bytes = 0_u64;
     let mut peak_tiles = 0_usize;
-    let mut over_budget = false;
+    let mut over_target = false;
     let mut survival_reduced = false;
     let mut min_visible_scale = 1.0_f32;
 
@@ -273,7 +273,7 @@ fn traverse_budgeted(
     let last_top = (doc_height - VIEWPORT_H).max(0.0);
     loop {
         let plan = plan_residency(pages, &vp, budget);
-        over_budget |= plan.over_budget;
+        over_target |= plan.over_target;
         survival_reduced |= plan.survival_reduced;
         for t in plan.tiles.iter().filter(|t| t.visible) {
             min_visible_scale = min_visible_scale.min(t.raster_scale);
@@ -330,7 +330,7 @@ fn traverse_budgeted(
         peak_bytes,
         peak_tiles,
         allocs: snap.allocs,
-        over_budget,
+        over_target,
         survival_reduced,
         min_visible_scale,
     }
@@ -371,7 +371,7 @@ fn budget_comparison() {
                 // hide the L08-026 outcome the table exists to show.
                 let mark = if after.survival_reduced {
                     " !"
-                } else if after.over_budget {
+                } else if after.over_target {
                     " *"
                 } else {
                     ""
@@ -383,7 +383,7 @@ fn budget_comparison() {
                         "-{:.0}% !",
                         100.0 * (1.0 - after.peak_bytes as f64 / before.peak_bytes as f64)
                     )
-                } else if after.over_budget {
+                } else if after.over_target {
                     format!(
                         "-{:.0}% *",
                         100.0 * (1.0 - after.peak_bytes as f64 / before.peak_bytes as f64)
@@ -422,9 +422,9 @@ fn budget_comparison() {
                 // whole walk rather than one offset: the un-satisfiable case is
                 // a page boundary, where two visible pages must both be held.
                 assert!(
-                    after.peak_bytes <= budget.bytes() || after.over_budget,
+                    after.peak_bytes <= budget.bytes() || after.over_target,
                     "{label} at zoom {zoom} dsf {scale}: {} bytes over a {} byte \
-                     budget without reporting over_budget",
+                     budget without reporting over_target",
                     after.peak_bytes,
                     budget.bytes(),
                 );
