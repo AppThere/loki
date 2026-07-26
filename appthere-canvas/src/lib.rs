@@ -8,6 +8,10 @@
 //! Feature flags:
 //! - `gpu` — enables wgpu texture utilities and [`PageSource`].
 //! - `font-cache` — enables [`FontDataCache`].
+//!
+//! [`residency`] is unconditional: it is pure arithmetic plus a byte counter,
+//! with no wgpu in it, so a headless bench can sweep the texture-memory model
+//! without building the GPU stack (Spec 08 T2.5a).
 
 // The page-source trait, key trait, and GPU texture handle are the canonical
 // implementation in `loki-render-cache`, re-exported here so existing
@@ -27,3 +31,7 @@ pub mod font_cache;
 
 #[cfg(feature = "font-cache")]
 pub use font_cache::FontDataCache;
+
+pub mod residency;
+
+pub use residency::{TextureResidency, TextureResidencySnapshot};

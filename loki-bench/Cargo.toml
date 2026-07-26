@@ -50,6 +50,13 @@ harness = false
 name = "session_layout_residual"
 harness = false
 
+# Spec 08 T2.5a: the Phase 2 baseline — resident page-texture bytes across
+# zoom x DPI. Headless: the accounting is CPU-side arithmetic at the allocation
+# call sites (R16 revised), so no GPU is involved.
+[[bench]]
+name = "texture_residency"
+harness = false
+
 [[bench]]
 name = "portable_smoke"
 harness = false

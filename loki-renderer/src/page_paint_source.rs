@@ -17,6 +17,7 @@
 use std::sync::{Arc, Mutex};
 
 use anyrender_vello::{CustomPaintCtx, CustomPaintSource, DeviceHandle, TextureHandle};
+use appthere_canvas::residency::{TextureResidency, texture_bytes};
 use vello::{AaConfig, RenderParams, Scene};
 
 use crate::doc_page_source::DocPageSource;
@@ -24,6 +25,9 @@ use crate::document_view::RendererSelection;
 
 #[path = "page_paint_render.rs"]
 mod render;
+
+#[path = "page_paint_lifecycle.rs"]
+mod lifecycle;
 
 /// Set once, when the first page tile is rendered, to attribute Vello's one-time
 /// pipeline warm-up to the open-path timing log (see the render path below).
@@ -56,76 +60,22 @@ pub(crate) struct LokiPageSource {
     cursor_at_render: Option<RendererSelection>,
 }
 
-impl LokiPageSource {
-    pub(crate) fn new(
-        source: Arc<DocPageSource>,
-        page_index: usize,
-        renderer: Arc<Mutex<Option<vello::Renderer>>>,
-        cursor_holder: Arc<Mutex<Option<RendererSelection>>>,
-    ) -> Self {
-        Self {
-            source,
-            page_index,
-            renderer,
-            device: None,
-            wgpu_queue: None,
-            texture_handle: None,
-            texture_generation: 0,
-            texture_size: (0, 0),
-            cursor_holder,
-            cursor_at_render: None,
-        }
-    }
-}
-
 // ── CustomPaintSource ─────────────────────────────────────────────────────────
 
+// A trait impl cannot be split across modules, so the lifecycle half delegates
+// to inherent methods in `lifecycle`; `render` — the substantive one — stays
+// here. See `page_paint_lifecycle.rs` for why those three group together.
 impl CustomPaintSource for LokiPageSource {
     fn resume(&mut self, device_handle: &DeviceHandle) {
-        self.device = Some(device_handle.device.clone());
-        self.wgpu_queue = Some(device_handle.queue.clone());
-
-        let mut guard = self.renderer.lock().unwrap_or_else(|p| p.into_inner());
-        if guard.is_none() {
-            match crate::vello_init::create_vello_renderer(&device_handle.device) {
-                Ok(r) => *guard = Some(r),
-                Err(e) => tracing::warn!(
-                    page = self.page_index,
-                    error = %e,
-                    "LokiPageSource: vello renderer init failed",
-                ),
-            }
-        }
+        self.on_resume(device_handle);
     }
 
     fn suspend(&mut self) {
-        // Renderer intentionally not dropped on suspend — shared across all page
-        // sources; dropped when RendererState is dropped.
-        //
-        // The texture handle is cleared here without unregistering it from the
-        // renderer because suspend() has no CustomPaintCtx. That is safe for the
-        // app-level suspend path (the window renderer is recreated on resume,
-        // dropping every registered texture). Per-source teardown — a tile
-        // scrolling out of the virtualization window — instead goes through
-        // `release` below, which DOES unregister the texture; otherwise each
-        // unmounted page would leak its full-resolution texture (~10+ MB) in the
-        // renderer's registry, growing RAM without bound as the user scrolls.
-        self.device = None;
-        self.wgpu_queue = None;
-        self.texture_handle = None;
-        self.texture_generation = 0;
-        self.texture_size = (0, 0);
+        self.on_suspend();
     }
 
-    fn release(&mut self, mut ctx: CustomPaintCtx<'_>) {
-        // The tile is being unregistered while the renderer is still live, so
-        // free the GPU texture this source registered. Without this the texture
-        // outlives the source in the renderer's registry (see suspend()).
-        if let Some(handle) = self.texture_handle.take() {
-            ctx.unregister_texture(handle);
-        }
-        self.texture_generation = 0;
-        self.texture_size = (0, 0);
+    fn release(&mut self, ctx: CustomPaintCtx<'_>) {
+        self.on_release(ctx);
     }
 
     fn render(
@@ -135,7 +85,10 @@ impl CustomPaintSource for LokiPageSource {
         height: u32,
         scale: f64,
     ) -> Option<TextureHandle> {
-        let (Some(device), Some(queue)) = (self.device.as_ref(), self.wgpu_queue.as_ref()) else {
+        // Cloned rather than borrowed: `wgpu::Device`/`Queue` are handles over
+        // shared state, so this is a refcount bump, and holding them by value
+        // frees `self` for the residency bookkeeping below (which needs `&mut`).
+        let (Some(device), Some(queue)) = (self.device.clone(), self.wgpu_queue.clone()) else {
             return None;
         };
 
@@ -162,13 +115,22 @@ impl CustomPaintSource for LokiPageSource {
             return self.texture_handle.clone();
         }
 
-        // Step 4: unregister stale texture before reallocating.
+        // Step 4: unregister stale texture before reallocating. Recorded before
+        // the new allocation, matching the real order: the old texture is
+        // released first, so a zoom change does not transiently double-count.
         if let Some(old) = self.texture_handle.take() {
             ctx.unregister_texture(old);
         }
+        self.record_texture_released();
 
         // Step 6: allocate new GPU texture.
-        let (texture, view) = render::allocate_page_texture(device, w_phys, h_phys);
+        let (texture, view) = render::allocate_page_texture(&device, w_phys, h_phys);
+        // Every early return between here and registration abandons that
+        // texture — it is dropped at end of scope, so the GPU memory goes but
+        // the counter would not see it, and the drift is permanent. Recorded at
+        // each such site rather than trusted to a reviewer, because the failure
+        // is invisible: residency simply reads high forever after.
+        let abandon = || TextureResidency::record_free(texture_bytes(w_phys, h_phys));
 
         // Step 6: build Vello scene for this page.
         let render_scale = scale as f32 * (96.0 / 72.0) * self.source.zoom();
@@ -196,7 +158,10 @@ impl CustomPaintSource for LokiPageSource {
 
         let paint_start = std::time::Instant::now();
         let layout_guard = self.source.layout_for_generation(current_generation);
-        let (_, layout) = layout_guard.as_ref()?;
+        let Some((_, layout)) = layout_guard.as_ref() else {
+            abandon();
+            return None;
+        };
         let mut scene = Scene::new();
         // One FontDataCache per document, shared across all page tiles via
         // DocPageSource (memory F5 / BM-9) — tiles no longer each clone the
@@ -224,7 +189,10 @@ impl CustomPaintSource for LokiPageSource {
         // AUDIT: Mutex poisoning on render — lock is held for the duration of
         // render_to_texture; poisoning here would mean the renderer is unusable.
         let mut guard = self.renderer.lock().unwrap_or_else(|p| p.into_inner());
-        let renderer = guard.as_mut()?;
+        let Some(renderer) = guard.as_mut() else {
+            abandon();
+            return None;
+        };
         let params = RenderParams {
             base_color: vello::peniko::Color::WHITE,
             width: w_phys,
@@ -235,12 +203,13 @@ impl CustomPaintSource for LokiPageSource {
             #[cfg(not(target_os = "android"))]
             antialiasing_method: AaConfig::Msaa16,
         };
-        if let Err(e) = renderer.render_to_texture(device, queue, &scene, &view, &params) {
+        if let Err(e) = renderer.render_to_texture(&device, &queue, &scene, &view, &params) {
             tracing::error!(
                 page = self.page_index,
                 error = %e,
                 "LokiPageSource: render_to_texture failed",
             );
+            abandon();
             return None;
         }
         drop(guard);

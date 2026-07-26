@@ -10,15 +10,26 @@ use anyrender_vello::wgpu::{
     Device, Extent3d, Texture, TextureDimension, TextureFormat, TextureUsages, TextureView,
     TextureViewDescriptor,
 };
+use appthere_canvas::residency::{TextureResidency, texture_bytes};
 
 use crate::doc_page_source::DocPageSource;
 use crate::document_view::RendererSelection;
 
 /// Allocate the per-page GPU texture and its default view.
 ///
+/// Records the allocation with [`TextureResidency`] (Spec 08 T2.5). This is the
+/// only live texture-allocation site in the workspace — the standalone
+/// `impl PageSource for DocPageSource` in `page_source_impl.rs` also allocates
+/// but has no callers — so the counter's `resident` figure is the process's
+/// page-texture residency, not a sample of it. Every release path in
+/// `page_paint_source.rs` records the matching free; an unbalanced pair drifts
+/// the counter for the rest of the session rather than mis-reporting once.
+///
 // COMPAT(blitz): Rgba8Unorm + STORAGE_BINDING|TEXTURE_BINDING matches the
 // format expected by anyrender_vello `register_texture`; COPY_SRC allows the
-// composited read-back path.
+// composited read-back path. The format is why
+// `appthere_canvas::residency::BYTES_PER_TEXEL` is 4 — changing one without the
+// other makes every Phase 2 byte figure wrong.
 pub(super) fn allocate_page_texture(
     device: &Device,
     w_phys: u32,
@@ -41,6 +52,7 @@ pub(super) fn allocate_page_texture(
         view_formats: &[],
     });
     let view = texture.create_view(&TextureViewDescriptor::default());
+    TextureResidency::record_alloc(texture_bytes(w_phys, h_phys));
     (texture, view)
 }
 

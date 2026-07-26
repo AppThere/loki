@@ -28,6 +28,10 @@ fn allocation_and_op_metrics_are_portable() {
         Metric::AllocBlocks,
         Metric::OpCount,
         Metric::RenderCost,
+        // Spec 08 T2.5/R16: texture byte accounting is CPU-side arithmetic at
+        // the allocation call sites, so it is tracked continuously like the
+        // allocation metrics rather than parked behind hardware.
+        Metric::TextureBytes,
     ] {
         assert_eq!(m.axis(), Axis::Portable, "{m:?} must be portable");
         assert!(m.is_agent_runnable(), "{m:?} must run headless");
