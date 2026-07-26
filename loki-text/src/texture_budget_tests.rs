@@ -76,13 +76,11 @@ fn the_same_ram_gives_the_same_budget_on_every_device_class() {
     let a = DeviceProfile {
         available_ram_bytes: Some(8 * 1024 * 1024 * 1024),
         gpu_class: GpuClass::Discrete,
-        hardware_keyboard: true,
         ..Default::default()
     };
     let b = DeviceProfile {
         available_ram_bytes: Some(8 * 1024 * 1024 * 1024),
         gpu_class: GpuClass::Integrated,
-        hardware_keyboard: false,
         ..Default::default()
     };
     assert_eq!(

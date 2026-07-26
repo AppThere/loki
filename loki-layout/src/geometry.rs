@@ -7,6 +7,31 @@
 //! `loki_primitives::geometry` (which uses typed `Length<U>` units) to avoid
 //! unit confusion in layout arithmetic.
 
+/// Comparison tolerance for lengths and coordinates in layout space, in points.
+///
+/// # Why not `f32::EPSILON`
+///
+/// `f32::EPSILON` is the distance between 1.0 and the next representable float —
+/// about 1.2e-7 **at 1.0**. Layout coordinates here are tens to thousands of
+/// points, and at magnitude 100 a single representable step is already ~7.6e-6,
+/// larger than `EPSILON` itself. So `(a - b).abs() < f32::EPSILON` on two
+/// coordinates is not a loose comparison, it is very nearly an exact one, and it
+/// fails on arithmetic that is correct. That is not hypothetical: it produced a
+/// false test failure at 3.8e-6 pt while verifying the I-06 fix.
+///
+/// A thousandth of a point is ~4e-3 physical pixels even at a 3x device scale
+/// factor, so a difference below this tolerance cannot correspond to anything
+/// visible, while still being far tighter than any real defect.
+///
+/// # Where `f32::EPSILON` remains correct
+///
+/// For quantities whose natural magnitude *is* around 1 — scale factors, ratios,
+/// "is this essentially zero" tests near the origin — `f32::EPSILON` is the right
+/// choice and the existing uses in `resolve_char_span` (font scales against 1.0),
+/// `para_emit` (scale equality) and `flow_split` (a coordinate against 0.0) are
+/// not defects. Do not sweep them.
+pub const LAYOUT_EPSILON_PT: f32 = 1e-3;
+
 /// A 2D point in layout space (points, `f32`).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct LayoutPoint {

@@ -13,7 +13,6 @@ fn everything_starts_unknown() {
     assert_eq!(p.window_mode, WindowMode::Unknown);
     assert_eq!(p.system_ram_bytes, None);
     assert!(p.display.is_none());
-    assert!(!p.hardware_keyboard);
     assert!(!p.reduced_motion);
 }
 
@@ -112,7 +111,6 @@ fn a_synthetic_profile_can_describe_an_android_desktop() {
     // R12's mitigation: the device we cannot buy, constructed in a test.
     let p = DeviceProfile {
         pointer: PointerPrecision::Both,
-        hardware_keyboard: true,
         system_ram_bytes: Some(16 * 1024 * 1024 * 1024),
         available_ram_bytes: Some(11 * 1024 * 1024 * 1024),
         gpu_class: GpuClass::Integrated,

@@ -148,14 +148,26 @@ pub enum WindowMode {
 /// field is independently `Unknown`/`None` until then, and consumers must
 /// behave sensibly in that state rather than waiting for it.
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
+/// There is deliberately **no `hardware_keyboard`** field. It existed until r20
+/// and was removed rather than left unwired.
+///
+/// S0.6 introduced it and §3.5 assigned it two consumers, I-05 and I-07. Both
+/// collapsed for the same reason: the Android inset chain reports *actual* IME
+/// visibility (`WindowInsets.Type.ime()` folded into the mask, re-queried on every
+/// visibility change), so no consumer needs to ask whether a keyboard is attached —
+/// with a hardware keyboard there is no IME, so the inset is 0 and nothing is
+/// reserved, for free.
+///
+/// That left a `bool` nothing read, whose own doc comment forbade using it to
+/// reserve space — its only intended purpose. An API that invites a use its
+/// contract forbids is the trap L08-031 is about, and an unread field is the
+/// version of that trap nobody notices until they reach for it. If a genuine
+/// consumer appears — surfacing keyboard shortcuts only when a keyboard exists is
+/// the plausible one — adding a probed `bool` back is a smaller change than
+/// discovering this one was never wired.
 pub struct DeviceProfile {
     /// What is pointing at the app.
     pub pointer: PointerPrecision,
-    /// Whether a hardware keyboard is attached. Advisory: the IME safe area is
-    /// driven by the actual inset value, which is already 0 when no soft
-    /// keyboard is shown (S0.4 §7), so this must not be used to *reserve*
-    /// space.
-    pub hardware_keyboard: bool,
     /// Total system RAM, when the platform has been queried.
     pub system_ram_bytes: Option<u64>,
     /// RAM the OS believes is available without swapping, when known.

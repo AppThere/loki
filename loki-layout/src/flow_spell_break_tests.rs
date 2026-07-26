@@ -38,6 +38,7 @@ use loki_primitives::units::Points;
 
 use crate::LayoutOptions;
 use crate::font::FontResources;
+use crate::geometry::LAYOUT_EPSILON_PT;
 use crate::items::{DecorationKind, PositionedDecoration, PositionedItem};
 use crate::mode::LayoutMode;
 use crate::{FlowOutput, flow_section};
@@ -153,12 +154,6 @@ fn clipped_squiggles(pages: &[crate::result::LayoutPage]) -> Vec<(PositionedDeco
 /// Asserted over *every* squiggle rather than a chosen one, because the defect
 /// appears only on the line adjacent to the boundary and picking a line by hand is
 /// how it stayed hidden.
-/// Comparison tolerance, in points. `f32::EPSILON` is the wrong scale here: it is
-/// ~1.2e-7 *at 1.0*, and these coordinates are tens of points, where a single
-/// representable step is already larger than that. A thousandth of a point is
-/// ~4e-3 physical pixels even at 3x, so it cannot correspond to a visible cut,
-/// while still failing on the 0.25pt overflow the defect actually produced.
-const TOLERANCE_PT: f32 = 1e-3;
 
 fn assert_no_squiggle_is_cut(pages: &[crate::result::LayoutPage], what: &str) {
     let all = clipped_squiggles(pages);
@@ -171,12 +166,12 @@ fn assert_no_squiggle_is_cut(pages: &[crate::result::LayoutPage], what: &str) {
         let band_top = d.y;
         let band_bottom = d.y + d.thickness;
         assert!(
-            band_top >= *clip_top - TOLERANCE_PT,
+            band_top >= *clip_top - LAYOUT_EPSILON_PT,
             "{what}: squiggle band starts at {band_top} above its clip top \
              {clip_top} — it belongs to the previous fragment and will be cut",
         );
         assert!(
-            band_bottom <= *clip_bottom + TOLERANCE_PT,
+            band_bottom <= *clip_bottom + LAYOUT_EPSILON_PT,
             "{what}: squiggle band ends at {band_bottom} below its clip bottom \
              {clip_bottom} — {overflow}pt of a {thickness}pt band is cut",
             overflow = band_bottom - clip_bottom,
@@ -217,7 +212,7 @@ fn squiggles_survive_a_line_break() {
         let (_, prev_bottom) = pair[0];
         let (next_top, _) = pair[1];
         assert!(
-            prev_bottom <= next_top + TOLERANCE_PT,
+            prev_bottom <= next_top + LAYOUT_EPSILON_PT,
             "a squiggle band ending at {prev_bottom} overlaps the next line's band \
              starting at {next_top}",
         );
