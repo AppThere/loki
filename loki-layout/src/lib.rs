@@ -87,3 +87,7 @@ pub const MIN_ROW_HEIGHT: f32 = 0.0;
 /// this much when a paginated layout contains comment items, so the panel is
 /// reachable. See [`result::LayoutPage::comment_items`].
 pub const COMMENT_GUTTER_WIDTH: f32 = 192.0;
+
+#[cfg(test)]
+#[path = "flow_spell_break_tests.rs"]
+mod flow_spell_break_tests;

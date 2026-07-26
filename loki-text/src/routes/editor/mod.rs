@@ -76,6 +76,7 @@ mod editor_save;
 mod editor_save_banner;
 mod editor_save_callbacks;
 mod editor_scrollbar;
+mod editor_seed_publish;
 mod editor_spell;
 mod editor_spell_panel;
 mod editor_state;

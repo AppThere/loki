@@ -14,6 +14,7 @@
 use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
+use futures_channel::oneshot;
 use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::Inline;
 use loki_doc_model::document::Document;
@@ -145,27 +146,87 @@ fn count_inlines(inlines: &[Inline], counter: &mut Counter) {
     }
 }
 
-/// Memoised, localised status-bar word-count label (`editor-word-count`),
-/// recomputed after every document mutation (the cursor's mirrored
-/// `document_generation` is the change signal).
+/// Localised status-bar word-count label (`editor-word-count`), recomputed off
+/// the UI thread whenever the document changes.
+///
+/// # Why this is a task and not a memo (I-10)
+///
+/// It was a `use_memo` calling [`count_words`] inline, which had two defects.
+///
+/// **The reported one:** the label read `0` until the first interaction. The memo's
+/// only dependency is the cursor's mirrored `document_generation`, and the
+/// fresh-open path bumps `DocumentState::generation` without mirroring it — so the
+/// memo ran once at mount, when `state.document` was still `None`, produced `0`,
+/// and did not re-run until the first edit. The mirror is now written at the seed
+/// publish (`editor_inner`), which is the actual fix; this function's part is to
+/// stop publishing a count nobody has computed.
+///
+/// **The unreported one, found by measuring:** the walk is O(document) and ran
+/// synchronously on the UI thread *per mutation*. Measured at 0.32 ms for 10
+/// pages, 3.0 ms for 100, **15.3 ms for 500** and 62.8 ms for 2000 — so from a few
+/// hundred pages on, every keystroke dropped a frame on the count alone. That was
+/// pre-existing and is not what I-10 describes, but the same fix removes it.
+///
+/// # Why there is no size threshold
+///
+/// Deciding "inline if small" needs the document's size before counting it, and
+/// the only honest proxy (block count) does not bound text length — one paragraph
+/// can hold a megabyte. So every count goes to a worker, and the label keeps the
+/// **previous** value while a new one is computed rather than flickering to an
+/// indeterminate state on each keystroke. `None` — and so the pending label —
+/// therefore appears only when there is no previous value, which is exactly the
+/// load case I-10 is about.
 pub fn use_word_count_label(
     doc_state: Arc<Mutex<DocumentState>>,
     cursor_state: Signal<CursorState>,
 ) -> Memo<String> {
-    // Narrow the change signal. Reading `cursor_state` directly in the count
-    // memo would subscribe it to *every* CursorState write — each cursor move,
-    // click, and drag update — re-running the full-document walk on the UI path
-    // even when the document did not change. This cheap intermediate memo reads
-    // the generation on every write, but its `u64` output only changes on a real
-    // mutation, so the expensive count below is gated on that.
+    // Narrow the change signal. Reading `cursor_state` directly would subscribe
+    // to *every* CursorState write — each cursor move, click, and drag update —
+    // spawning a counting worker even when the document did not change. This
+    // cheap intermediate memo reads the generation on every write, but its `u64`
+    // output only changes on a real mutation.
     let generation = use_memo(move || cursor_state.read().document_generation);
-    use_memo(move || {
-        let _generation = generation();
-        let count = doc_state
+
+    // `None` = no count has landed yet. Distinct from `Some(0)`, which is a real
+    // count of an empty document — the distinction I-10 turns on.
+    let mut count = use_signal(|| None::<usize>);
+
+    use_effect(move || {
+        let observed_gen = generation();
+        let Some(doc) = doc_state
             .lock()
             .ok()
-            .and_then(|s| s.document.as_ref().map(|d| count_words(d)))
-            .unwrap_or(0);
-        fl!("editor-word-count", count = count as i64)
+            .and_then(|state| state.document.clone())
+        else {
+            // No document yet. Leave any previous value alone rather than
+            // publishing a `0` for a document that has not arrived.
+            return;
+        };
+        spawn(async move {
+            let (tx, rx) = oneshot::channel();
+            let worker = std::thread::Builder::new()
+                .name("loki-word-count".into())
+                // `doc` is an `Arc<Document>`, so this moves a refcount rather
+                // than the document.
+                .spawn(move || {
+                    let _ = tx.send(count_words(&doc));
+                });
+            if worker.is_err() {
+                return;
+            }
+            let Ok(counted) = rx.await else { return };
+            // Discard a superseded worker. Workers are not ordered, so a slow
+            // count of an older document could otherwise land after a fast count
+            // of a newer one and leave the label describing a document that no
+            // longer exists.
+            if *generation.peek() == observed_gen {
+                count.set(Some(counted));
+            }
+        });
+    });
+
+    use_memo(move || match count() {
+        Some(words) => fl!("editor-word-count", count = words as i64),
+        None => fl!("editor-word-count-pending"),
     })
 }

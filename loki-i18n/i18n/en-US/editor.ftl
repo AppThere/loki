@@ -10,6 +10,9 @@ editor-word-count = { $count ->
     [one]   1 word
    *[other] { $count } words
 }
+# Shown while the first word count is still being computed. Deliberately not
+# "0 words": a figure nobody has computed yet must not read as a figure (I-10).
+editor-word-count-pending = Counting words…
 editor-language = English (US)
 editor-zoom-aria = Zoom level
 

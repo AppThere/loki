@@ -195,11 +195,20 @@ fn emit_fragment(
 ) {
     // Floor to prevent sub-pixel clip expansion.  Parley's max_coord equals
     // baseline + descent + leading_below; glyphs never reach max_coord, so
-    // flooring by up to 1 pt never clips visible ink.  Without this, a
-    // fractional max_coord × display-scale rounds up one physical pixel and
-    // leaks the next line's top row through the clip. Fragment B uses unrounded
-    // split_y for its translation (ty = -split_y), so the next page has no gap.
+    // flooring never clips visible *glyph* ink.  Without this, a fractional
+    // max_coord × display-scale rounds up one physical pixel and leaks the next
+    // line's top row through the clip. Fragment B uses unrounded split_y for its
+    // translation (ty = -split_y), so the next page has no gap.
+    //
+    // The amount shaved is bounded by `FRAGMENT_CLIP_FLOOR_SLACK_PT`, which is
+    // named rather than left implicit because decoration placement has to respect
+    // it — the "never clips visible ink" argument holds for glyphs and not for
+    // decorations, which is I-06. See that constant's docs.
     let clip_height = (split_y - frag_start).floor();
+    debug_assert!(
+        (split_y - frag_start) - clip_height < crate::items::FRAGMENT_CLIP_FLOOR_SLACK_PT,
+        "the clip floor shaved more than the slack decoration placement assumes",
+    );
     let clip_rect = LayoutRect::new(0.0, state.cursor_y, state.content_width, clip_height);
     let ty = state.cursor_y - frag_start;
     if let Some(al) = arc_layout {

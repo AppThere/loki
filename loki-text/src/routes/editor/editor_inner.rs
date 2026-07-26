@@ -45,6 +45,7 @@ use super::editor_ribbon::write_tab_content;
 use super::editor_ribbon_insert::insert_tab_content;
 use super::editor_ribbon_publish::publish_tab_content;
 use super::editor_save_banner::save_banner;
+use super::editor_seed_publish::publish_seed_and_mirror;
 use super::editor_spell::SpellMenu;
 use super::editor_state::{EditorState, StyleDraft, use_editor_state};
 use super::editor_style::style_picker_panel;
@@ -315,10 +316,9 @@ pub(super) fn EditorInner(path: String) -> Element {
                     return;
                 }
 
-                // Seed the layout so hit-testing works on the very first click,
-                // before any Loro mutation triggers apply_mutation_and_relayout.
+                // Seed layout + mirror the generation (I-10; before baseline_gen).
                 let page_count =
-                    crate::editing::state::publish_seed_layout(&doc_state_seed, &doc, layout);
+                    publish_seed_and_mirror(&doc_state_seed, &doc, layout, cursor_state);
 
                 match document_to_loro(&doc) {
                     Ok(l_doc) => {
