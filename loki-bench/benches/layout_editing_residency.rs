@@ -194,6 +194,44 @@ fn main() {
         worst_delta = worst_delta.max(delta);
     }
 
+    // ── CJK tier (R9-15) ────────────────────────────────────────────────────
+    // Every other figure in this program is Latin text. CJK is the sharpest
+    // test of whether the per-character model transfers: ~3 bytes per character
+    // in UTF-8 against 1, no spaces to break on, and glyph coverage in the
+    // thousands rather than under a hundred. The index maps are sized per source
+    // *byte*, so S9-2's benefit should be roughly three times larger here — a
+    // prediction this row either confirms or kills.
+    eprintln!("\n  CJK tier (R9-15 — the per-character model on non-Latin text):");
+    {
+        let doc = support::build_cjk_doc(120, 6);
+        // Coverage sentinel before the rate. A CJK run against Latin-only fonts
+        // shapes to a page of tofu that still allocates and still yields a
+        // perfectly believable B/char figure — R9-13's failure mode, so it fails
+        // rather than prints. Fonts present here: wqy-zenhei, ipafont-gothic.
+        let probe = layout_document(
+            &mut resources,
+            &doc,
+            LayoutMode::Paginated,
+            1.0,
+            &LayoutOptions {
+                preserve_for_editing: true,
+                spell: None,
+                ..Default::default()
+            },
+        );
+        let (glyphs, notdef) = support::glyph_coverage(&probe);
+        drop(probe);
+        resources.clear_paragraph_cache();
+        assert!(
+            glyphs > 0 && notdef * 10 < glyphs,
+            "CJK tier shaped {glyphs} glyphs of which {notdef} are .notdef — no \
+             CJK-capable font resolved, so this row would measure tofu and report \
+             it as a per-character rate"
+        );
+        eprintln!("  (coverage: {glyphs} glyphs, {notdef} .notdef)");
+        report_doc(&mut resources, "cjk (120p)", &doc);
+    }
+
     eprintln!("\n  real documents (conformance corpus — six fixtures):");
     let mut corpus_seen = 0_usize;
     let mut iris: Option<Document> = None;

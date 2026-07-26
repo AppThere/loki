@@ -57,6 +57,10 @@ jobs:
     - name: Viewport-dimension guard (no assumed screen sizes)
       # Spec 01 audit A-1. No bare 1280-class literals in editor input/viewport paths.
       run: python3 scripts/check-no-hardcoded-viewport-dims.py
+    - name: Arc::get_mut ban in loki-layout (copy-on-write must not be fallible)
+      # Spec 09 L9-016. Arc::get_mut returns None whenever the layout is shared —
+      # always, for a cached one — so it silently skips the mutation. Use make_mut.
+      run: python3 scripts/check-arc-get-mut.py
     - name: Format check
       run: cargo fmt --all --check
     - name: Clippy (workspace, all features, warnings denied)

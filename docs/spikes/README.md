@@ -64,6 +64,19 @@ move, and did not, because after S9-1 the maps live in one place and appear in
 both measured conditions. A harness reporting only the duplication sweep would
 have called S9-2 a no-op while total residency fell 18%.
 
+**Three follow-ups landed with S9-2's review** (S09.0 §10h, §10i). R9-15 is now
+measured rather than recorded: E0 has a CJK tier, and **CJK costs ~3× Latin per
+character** (111.7 vs 34.8 B/char editing) while the evictable fraction stays
+inside the text-bearing band (50.9% vs 47.7%) — so the rate does not transfer
+across scripts and the fraction does, the same split the duplication sweep found
+on an independent axis. The tier fails rather than prints if no CJK face resolves,
+since tofu shapes into a perfectly believable number. L9-016's `Arc::get_mut` ban
+is a CI gate (`scripts/check-arc-get-mut.py`), verified by negative test to fail
+on a real call and pass on prose about one. And S9-3's governing metric is
+derived as **page-access-set bounds** rather than C and P — which found that the
+scan inventory is four sites, not one, and that the worst of them
+(`recompute_page_index`) starts at page 0 and runs on *every keystroke*.
+
 ## Loki Spec 08 — UX & Memory Remediation Program, Phase 0
 
 | ID | Document | Gates | Verdict |

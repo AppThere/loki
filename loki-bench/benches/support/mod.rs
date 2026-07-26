@@ -21,6 +21,7 @@ use loki_doc_model::layout::section::Section;
 use loki_doc_model::style::props::char_props::CharProps;
 use loki_doc_model::style::props::para_props::{ParaProps, ParagraphAlignment};
 use loki_doc_model::style::{ParagraphStyle, StyleCatalog, StyleId};
+use loki_layout::{DocumentLayout, PositionedItem};
 
 /// A small fixed word pool — cycling it gives varied line breaks without a
 /// Lorem-ipsum dependency.
@@ -237,6 +238,80 @@ pub fn load_corpus_doc(rel: &str) -> Option<Document> {
         loki_ooxml::DocxImport::import(Cursor::new(bytes.as_slice()), Default::default()).ok()
     } else {
         loki_odf::OdtImport::import(Cursor::new(bytes.as_slice()), Default::default()).ok()
+    }
+}
+
+/// Japanese and Simplified-Chinese sentences for the CJK tier.
+///
+/// Real sentences rather than repeated ideographs: glyph coverage and shaping
+/// cost both depend on how many *distinct* characters appear, so a repeated
+/// character would understate the font-cache side of the measurement.
+const CJK_SENTENCES: &[&str] = &[
+    "文書のレイアウトは段落ごとに計算されます。",
+    "この行は日本語の文字送りを確認するためのものです。",
+    "编辑器需要在每次按键后重新计算段落布局。",
+    "字形缓存的大小取决于文档中不同字符的数量。",
+    "改行位置は字送りと行間の設定によって変わります。",
+    "表格单元格中的文本会按照列宽自动换行。",
+];
+
+/// Builds a CJK document of `paras` paragraphs, each `sentences` sentences long.
+///
+/// Spec 09 R9-15: every B/char figure in the census is measured on Latin text,
+/// and the per-character model may not transfer. CJK is the sharpest test —
+/// three bytes per character in UTF-8 against one, no spaces to break on, and
+/// glyph coverage in the thousands rather than under a hundred.
+///
+/// Paragraphs are seeded so each is distinct, matching [`build_doc`]: identical
+/// paragraphs would collide in `ParaCache` and measure deduplication instead of
+/// size (L9-012).
+pub fn build_cjk_doc(paras: usize, sentences: usize) -> Document {
+    let blocks: Vec<Block> = (0..paras)
+        .map(|i| {
+            let mut s = format!("{}. ", i + 1);
+            for j in 0..sentences {
+                s.push_str(CJK_SENTENCES[(i + j) % CJK_SENTENCES.len()]);
+            }
+            Block::Para(vec![Inline::Str(s)])
+        })
+        .collect();
+    let section = Section::with_layout_and_blocks(PageLayout::default(), blocks);
+    let mut doc = Document::new();
+    doc.sections = vec![section];
+    doc
+}
+
+/// Counts shaped glyphs in a laid-out document, and how many are `.notdef`.
+///
+/// Returns `(total, notdef)`. Glyph id 0 is `.notdef` in every OpenType face, so
+/// a CJK run against a Latin-only font resolves to a page of tofu that still
+/// allocates, shapes, and produces a perfectly plausible B/char figure. That is
+/// the R9-13 failure mode exactly — an instrument reporting a believable wrong
+/// number — so the CJK tier checks coverage before reporting a rate.
+pub fn glyph_coverage(layout: &DocumentLayout) -> (usize, usize) {
+    fn count(items: &mut dyn Iterator<Item = &PositionedItem>) -> (usize, usize) {
+        let (mut total, mut notdef) = (0usize, 0usize);
+        for item in items {
+            if let PositionedItem::GlyphRun(run) = item {
+                total += run.glyphs.len();
+                notdef += run.glyphs.iter().filter(|g| g.id == 0).count();
+            }
+        }
+        (total, notdef)
+    }
+    match layout {
+        DocumentLayout::Paginated(p) => {
+            let (mut total, mut notdef) = (0usize, 0usize);
+            for page in &p.pages {
+                let (t, n) = count(&mut page.all_items());
+                total += t;
+                notdef += n;
+            }
+            (total, notdef)
+        }
+        // Only the paginated mode is measured; anything else reports no
+        // coverage rather than a number the caller might trust.
+        _ => (0, 0),
     }
 }
 
