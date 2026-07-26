@@ -11,6 +11,9 @@
 
 #![allow(dead_code)] // Each bench uses a different subset of these helpers.
 
+#[path = "timing.rs"]
+pub mod timing;
+
 use loki_bench::AllocStats;
 use loki_doc_model::content::attr::ExtensionBag;
 use loki_doc_model::content::block::Block;

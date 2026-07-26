@@ -16,14 +16,22 @@
 //!
 //! | blocks | at start | at end | no-op | full layout |
 //! | ---: | ---: | ---: | ---: | ---: |
-//! | 100 | 0.376 ms | 0.384 | 0.002 | 0.402 |
-//! | 500 | 2.870 | 2.066 | 0.019 | 2.146 |
-//! | 2500 | 16.203 | 11.031 | 0.080 | 10.545 |
+//! | 100 | 0.448 ms | 0.415 | 0.002 | 0.405 |
+//! | 500 | 2.807 | 2.258 | 0.017 | 2.208 |
+//! | 2500 | 16.601 | 11.895 | 0.084 | 11.338 |
 //!
-//! **The incremental path never wins.** An edit at the last block is parity with a
-//! full relayout at every size; an edit near the *start* is 34% worse at 500
-//! blocks and 54% worse at 2500. So the optimisation delivers none of its intended
-//! benefit and costs extra where it fails hardest.
+//! And the crossover sweep, which is the cleaner statement: **parity at every size
+//! from 50 to 2500 blocks.** The incremental path costs the same as a full
+//! relayout, which is exactly what "resume from block 0" predicts — it *is* a full
+//! relayout, plus bookkeeping.
+//!
+//! An edit near the **start** is worse still (47% at 2500 blocks): the resync
+//! machinery runs and never succeeds, so that overhead is pure loss.
+//!
+//! **There is no crossover and no size at which reuse pays.** Do not read this as
+//! an argument against reuse — it is a measurement of reuse resuming from block 0.
+//! Fix the checkpoint density and re-measure before concluding anything about the
+//! design.
 //!
 //! The no-op column is the control that rules out the cheap explanations: an
 //! identical document takes the reuse-verbatim early return and costs 0.080 ms at
@@ -103,6 +111,9 @@ use loki_layout::{
     relayout_paginated_incremental,
 };
 
+#[path = "support/mod.rs"]
+mod support;
+
 fn resources() -> FontResources {
     let mut r = FontResources::new();
     for p in ["/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"] {
@@ -176,24 +187,18 @@ fn main() {
         let doc = doc_of_blocks(blocks);
         let (layout, reuse) = layout_paginated_full(&mut fr, &doc, 1.0, &opts);
 
-        // Best of three throughout. Single-shot figures put this table 40% apart
-        // from the crossover sweep below on the same quantity — a bench that
-        // contradicts itself is worse than one that says nothing, and the minimum
-        // of a few runs is the right estimator when comparing two implementations
-        // whose difference is smaller than the run-to-run spread.
+        // Warm-up and best-of-N come from the shared harness rather than from
+        // this file remembering them (L08-035).
         let mut run = |index: usize| -> (f64, bool) {
             let edited = edit_block(&doc, index);
-            let mut best = f64::MAX;
             let mut taken = false;
-            for _ in 0..3 {
-                let t = Instant::now();
-                let got = relayout_paginated_incremental(
+            let t = support::timing::timed(|| {
+                taken = relayout_paginated_incremental(
                     &mut fr, &edited, &doc, &layout, &reuse, 1.0, &opts,
-                );
-                best = best.min(t.elapsed().as_secs_f64() * 1000.0);
-                taken = got.is_some();
-            }
-            (best, taken)
+                )
+                .is_some();
+            });
+            (t.best_ms, taken)
         };
         let (start_ms, start_incr) = run(0);
         let (end_ms, end_incr) = run(blocks - 1);
@@ -218,13 +223,10 @@ fn main() {
         // for exactly this, and this bench still walked into it).
         let full_ms = {
             let edited = edit_block(&doc, blocks - 1);
-            let mut best = f64::MAX;
-            for _ in 0..3 {
-                let t = Instant::now();
+            support::timing::timed(|| {
                 let _ = layout_paginated_full(&mut fr, &edited, 1.0, &opts);
-                best = best.min(t.elapsed().as_secs_f64() * 1000.0);
-            }
-            best
+            })
+            .best_ms
         };
         println!(
             "  {blocks:>6}  {start_ms:>9.3}  {end_ms:>9.3}  {noop_ms:>9.3}  {full_ms:>11.3}   \
@@ -263,26 +265,27 @@ fn main() {
         let doc = doc_of_blocks(blocks);
         let (layout, reuse) = layout_paginated_full(&mut fr, &doc, 1.0, &opts);
         let edited = edit_block(&doc, blocks - 1);
-        // Best of three: this is a comparison between two implementations, and a
-        // single noisy sample either side can invert the verdict near the crossing.
-        let mut incr = f64::MAX;
-        let mut full = f64::MAX;
-        for _ in 0..3 {
-            let t = Instant::now();
-            let _ =
-                relayout_paginated_incremental(&mut fr, &edited, &doc, &layout, &reuse, 1.0, &opts);
-            incr = incr.min(t.elapsed().as_secs_f64() * 1000.0);
-            let t = Instant::now();
-            let _ = layout_paginated_full(&mut fr, &edited, 1.0, &opts);
-            full = full.min(t.elapsed().as_secs_f64() * 1000.0);
-        }
+        // `compare` warms *both* sides before timing *either* — the control whose
+        // absence produced the retracted r21 figures (L08-035).
+        let (incr, full) = {
+            let mut fr_a = resources();
+            let mut fr_b = resources();
+            support::timing::compare(
+                || {
+                    let _ = relayout_paginated_incremental(
+                        &mut fr_a, &edited, &doc, &layout, &reuse, 1.0, &opts,
+                    );
+                },
+                || {
+                    let _ = layout_paginated_full(&mut fr_b, &edited, 1.0, &opts);
+                },
+            )
+        };
         println!(
-            "  {blocks:>6}   {incr:>11.3}   {full:>11.3}   {}",
-            if incr < full {
-                format!("saves {:.0}%", 100.0 * (1.0 - incr / full))
-            } else {
-                format!("COSTS {:.0}% more", 100.0 * (incr / full - 1.0))
-            }
+            "  {blocks:>6}   {:>11.3}   {:>11.3}   {}",
+            incr.best_ms,
+            full.best_ms,
+            support::timing::verdict(incr, full),
         );
     }
     println!();
