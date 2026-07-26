@@ -51,13 +51,31 @@
 //! is why the mid-document row exists: an edit at the last block exercises only the
 //! resume half, since after the last page there is nothing left to stop for.
 //!
-//! | measurement (2500 blocks) | now | predicted after | reasoning |
-//! | --- | ---: | ---: | --- |
-//! | edit at **first** block | 17.161 ms | **~10.5 ms — unchanged, and correct** | an edit at block 0 legitimately shifts everything after it, so full-layout cost is the right answer |
-//! | edit at **middle** block | 13.275 ms | **0.1 – 0.3 ms** | resume one page before the edit, stop once pagination reconverges: a page or two of flow plus bookkeeping |
-//! | edit at **last** block | 10.885 ms | **0.1 – 0.2 ms** | one page of flow (~10.5/327 ≈ 0.032) plus bookkeeping (~0.096, the no-op cost) |
-//! | no-op | 0.096 ms | unchanged | already takes the reuse-verbatim early return |
-//! | checkpoints | 1 | **327** (= page count) | one per page is the property both consumers want |
+//! | measurement (2500 blocks) | now | predicted after |
+//! | --- | ---: | ---: |
+//! | edit at **first** block | 24.143 ms / **327 pages** | ~11 ms / **~327 pages** — unchanged, and correct |
+//! | edit at **middle** block | 14.403 ms / **327 pages** | 0.1–0.3 ms / **1–3 pages** |
+//! | edit at **last** block | 11.372 ms / **327 pages** | 0.1–0.2 ms / **1–2 pages** |
+//! | no-op | 0.097 ms / 0 pages | unchanged |
+//! | checkpoints | 1 | **327** (= page count) |
+//!
+//! **Report pages re-flowed beside elapsed time, and read the pair.** Time alone
+//! cannot judge a reuse result: a mid-document edit at 5 ms is either resync
+//! failing to stop, or resync working correctly on a document whose pages are
+//! packed tightly enough that the pagination cascade legitimately runs a long way.
+//! Opposite verdicts, identical stopwatches. Two pages at 5 ms is a per-page cost
+//! problem; 150 pages at 5 ms is the mechanism working on a hard document.
+//!
+//! **The pre-fix counts settle the current case beyond argument: 327 of 327 pages
+//! re-flowed at *every* edit position.** The whole document, every time. So the
+//! timing spread across positions (24.1 / 14.4 / 11.4) is not layout work at all —
+//! the page work is identical — it is the cost of resync attempts that never
+//! succeed, which scales with how many blocks `blocks_equal_from` must compare.
+//!
+//! **Fixture caveat (L9-018).** These are uniform synthetic paragraphs, which may
+//! absorb pagination slack more or less readily than real prose. The cascade-depth
+//! half of the post-fix prediction (1–3 pages) is therefore the softer half; the
+//! checkpoint count is not, being deterministic.
 //!
 //! **The middle row is the discriminating one, and it separates two failures the
 //! other rows cannot:**
@@ -236,7 +254,10 @@ fn main() {
         ..Default::default()
     };
     println!("\nincremental relayout, one character inserted, by edit position");
-    println!("  blocks    at start     at mid      at end     no-op   full layout   incr taken?");
+    println!(
+        "  blocks    at start     at mid      at end     no-op   full layout   \
+         reflowed pages (start/mid/end)"
+    );
     for blocks in [100_usize, 500, 2500] {
         let mut fr = resources();
         let doc = doc_of_blocks(blocks);
@@ -244,18 +265,24 @@ fn main() {
 
         // Warm-up and best-of-N come from the shared harness rather than from
         // this file remembering them (L08-035).
-        let mut run = |index: usize| -> (f64, bool) {
+        // Reports pages re-flowed alongside elapsed time. Time alone cannot judge
+        // a reuse result: a mid-document edit at 5 ms is either resync failing to
+        // stop, or resync working on a document whose pages are packed tightly
+        // enough that the pagination cascade legitimately runs a long way. Opposite
+        // verdicts, identical stopwatches. The count separates them.
+        let mut run = |index: usize| -> (f64, usize) {
             let edited = edit_block(&doc, index);
-            let mut taken = false;
+            let mut pages_reflowed = 0;
             let t = support::timing::timed(|| {
-                taken = relayout_paginated_incremental(
+                if let Some((_, r)) = relayout_paginated_incremental(
                     &mut fr, &edited, &doc, &layout, &reuse, 1.0, &opts,
-                )
-                .is_some();
+                ) {
+                    pages_reflowed = r.reflowed_pages;
+                }
             });
-            (t.best_ms, taken)
+            (t.best_ms, pages_reflowed)
         };
-        let (start_ms, start_incr) = run(0);
+        let (start_ms, start_pages) = run(0);
         // The mid-document row is the one that exercises *both* halves of the
         // reflow. Checkpoints give the resume point; resync gives the stop point,
         // and resync matches on `cp.block_index == b && cp.checkpoint == s` — so
@@ -263,8 +290,8 @@ fn main() {
         // can no more fire than resumption can. An edit at the last block tests
         // only the resume half, because after the last page there is nothing left
         // to stop for.
-        let (mid_ms, _) = run(blocks / 2);
-        let (end_ms, end_incr) = run(blocks - 1);
+        let (mid_ms, mid_pages) = run(blocks / 2);
+        let (end_ms, end_pages) = run(blocks - 1);
 
         // Discriminator: an *identical* document takes the early return that
         // clones the previous layout verbatim and does no layout work at all. If
@@ -293,7 +320,8 @@ fn main() {
         };
         println!(
             "  {blocks:>6}  {start_ms:>9.3}  {mid_ms:>9.3}  {end_ms:>9.3}  {noop_ms:>9.3}  \
-             {full_ms:>11.3}   start={start_incr} end={end_incr}"
+             {full_ms:>11.3}   {start_pages}/{mid_pages}/{end_pages} of {} pages",
+            layout.pages.len()
         );
     }
     println!();

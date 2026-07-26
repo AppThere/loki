@@ -86,6 +86,21 @@ pub struct PaginatedReuse {
     /// section end, so a content change can renumber/repaginate the tail —
     /// incremental reuse is disabled when this is set.
     pub has_footnotes: bool,
+    /// How many pages this relayout actually re-flowed, as opposed to reusing.
+    /// Zero after a full layout, which reuses nothing by definition.
+    ///
+    /// # Why elapsed time alone cannot judge a reuse result
+    ///
+    /// A mid-document edit that takes 5 ms is ambiguous: resync may have failed to
+    /// stop, re-flowing to the end of the document, **or** resync may be working
+    /// perfectly on a document whose pages are all tightly packed, where the
+    /// pagination cascade legitimately runs a long way. Those are opposite verdicts
+    /// and identical stopwatches.
+    ///
+    /// With this count they separate immediately — 2 pages at 5 ms is a per-page
+    /// cost problem, 150 pages at 5 ms is the mechanism working on a hard document.
+    /// Same move as counting reduced tiles instead of judging blur (Spec 08 R5a).
+    pub reflowed_pages: usize,
 }
 
 /// Attempts an incremental paginated relayout of `doc` given the previous
@@ -127,7 +142,7 @@ pub fn relayout_paginated_incremental(
     }
     let Some(sc) = changed else {
         // Nothing changed — reuse the previous layout verbatim.
-        return Some((prev_layout.clone(), prev_reuse.clone()));
+        return Some((prev_layout.clone(), reuse_verbatim(prev_reuse)));
     };
 
     // Multi-column sections are column-balanced by the full flow, not the resume
@@ -149,7 +164,7 @@ pub fn relayout_paginated_incremental(
     if c == old_blocks.len() && c == new_blocks.len() {
         // Blocks are identical (the section differed only in non-block data);
         // the layout is unchanged, so reuse it verbatim.
-        return Some((prev_layout.clone(), prev_reuse.clone()));
+        return Some((prev_layout.clone(), reuse_verbatim(prev_reuse)));
     }
     let suffix = common_suffix_len(old_blocks, new_blocks, c);
     // A footnote introduced anywhere in the changed region disables reuse (the
@@ -214,6 +229,7 @@ pub fn relayout_paginated_incremental(
     // Re-flowed ("middle") pages carry section-local numbers from the resumed
     // flow; lift them to document-global by the section's page start (0 for a
     // single-section document). Reused pages keep their numbers — no `make_mut`.
+    let reflowed_pages = resumed.pages.len();
     let mut middle = resumed.pages;
     for page in &mut middle {
         page.page_number += sc_start;
@@ -287,8 +303,19 @@ pub fn relayout_paginated_incremental(
         PaginatedReuse {
             checkpoints: new_checkpoints,
             has_footnotes: false,
+            reflowed_pages,
         },
     ))
+}
+
+/// Clones `prev` for a verbatim reuse, resetting the re-flow count to zero —
+/// carrying the previous run's figure forward would report work this pass did not
+/// do, which is the reading the counter exists to prevent.
+fn reuse_verbatim(prev: &PaginatedReuse) -> PaginatedReuse {
+    PaginatedReuse {
+        reflowed_pages: 0,
+        ..prev.clone()
+    }
 }
 
 #[cfg(test)]

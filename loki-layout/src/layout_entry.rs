@@ -266,6 +266,9 @@ pub fn layout_paginated_full(
         PaginatedReuse {
             checkpoints,
             has_footnotes: incremental::document_has_notes(doc),
+            // A full layout reuses nothing, so it re-flows nothing in the sense
+            // this counter measures — it is a reuse metric, not a work metric.
+            reflowed_pages: 0,
         },
     )
 }
