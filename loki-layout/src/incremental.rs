@@ -26,7 +26,7 @@ use crate::font::FontResources;
 use crate::result::{LayoutPage, PaginatedLayout};
 
 #[path = "incremental_diff.rs"]
-mod diff;
+pub mod diff;
 use diff::{blocks_equal_from, common_prefix_len, common_suffix_len, section_page_start};
 #[path = "incremental_notes.rs"]
 mod notes;

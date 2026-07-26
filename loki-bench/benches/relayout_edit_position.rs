@@ -67,10 +67,36 @@
 //! problem; 150 pages at 5 ms is the mechanism working on a hard document.
 //!
 //! **The pre-fix counts settle the current case beyond argument: 327 of 327 pages
-//! re-flowed at *every* edit position.** The whole document, every time. So the
-//! timing spread across positions (24.1 / 14.4 / 11.4) is not layout work at all —
-//! the page work is identical — it is the cost of resync attempts that never
-//! succeed, which scales with how many blocks `blocks_equal_from` must compare.
+//! re-flowed at *every* edit position.** The whole document, every time.
+//!
+//! # The timing spread is *not* comparison cost — an attribution, refuted
+//!
+//! Page work is constant, so the spread across positions is something else, and it
+//! was attributed here to the diff scans. **The comparison counter refutes that,
+//! and backwards:**
+//!
+//! | position | block comparisons | time |
+//! | --- | ---: | ---: |
+//! | start | 2,502 | 18.405 ms |
+//! | mid | 3,752 | 15.435 ms |
+//! | end | **5,001** | **11.975 ms** |
+//!
+//! Comparisons rise as time falls. Edit-at-end performs twice the comparisons in
+//! two-thirds the time, so they cannot be what the spread is made of.
+//!
+//! The counts are fully accounted for, which is what makes this a refutation
+//! rather than noise: `common_prefix_len` scans from the front, `common_suffix_len`
+//! from the back, and `blocks_equal_from` from `from` to the first difference. For
+//! an edit at block 0 that is 1 + 2500 + 1 = 2502; at the last block,
+//! 2500 + 1 + 2500 = 5001; at the middle, 1251 + 1251 + 1250 = 3752. All three
+//! match to the unit.
+//!
+//! **What the spread actually is remains unidentified**, and is recorded as unknown
+//! rather than guessed at a second time. What matters for T3.4 is the consequence:
+//! the predicted 0.1–0.3 ms assumed this overhead would vanish with the resume
+//! point. It is not this overhead, so that assumption is unsupported from a
+//! different direction than feared — a scan that is *cheap* cannot be the thing to
+//! remove.
 //!
 //! **Fixture caveat (L9-018).** These are uniform synthetic paragraphs, which may
 //! absorb pagination slack more or less readily than real prose. The cascade-depth
@@ -270,7 +296,7 @@ fn main() {
         // stop, or resync working on a document whose pages are packed tightly
         // enough that the pagination cascade legitimately runs a long way. Opposite
         // verdicts, identical stopwatches. The count separates them.
-        let mut run = |index: usize| -> (f64, usize) {
+        let mut run = |index: usize| -> (f64, usize, u64) {
             let edited = edit_block(&doc, index);
             let mut pages_reflowed = 0;
             let t = support::timing::timed(|| {
@@ -280,9 +306,14 @@ fn main() {
                     pages_reflowed = r.reflowed_pages;
                 }
             });
-            (t.best_ms, pages_reflowed)
+            // Counted on a clean pass of its own: `timed` runs the closure several
+            // times, so a counter left running across them would report the sum.
+            loki_layout::reset_block_comparisons();
+            let _ =
+                relayout_paginated_incremental(&mut fr, &edited, &doc, &layout, &reuse, 1.0, &opts);
+            (t.best_ms, pages_reflowed, loki_layout::block_comparisons())
         };
-        let (start_ms, start_pages) = run(0);
+        let (start_ms, start_pages, start_cmp) = run(0);
         // The mid-document row is the one that exercises *both* halves of the
         // reflow. Checkpoints give the resume point; resync gives the stop point,
         // and resync matches on `cp.block_index == b && cp.checkpoint == s` — so
@@ -290,8 +321,8 @@ fn main() {
         // can no more fire than resumption can. An edit at the last block tests
         // only the resume half, because after the last page there is nothing left
         // to stop for.
-        let (mid_ms, mid_pages) = run(blocks / 2);
-        let (end_ms, end_pages) = run(blocks - 1);
+        let (mid_ms, mid_pages, mid_cmp) = run(blocks / 2);
+        let (end_ms, end_pages, end_cmp) = run(blocks - 1);
 
         // Discriminator: an *identical* document takes the early return that
         // clones the previous layout verbatim and does no layout work at all. If
@@ -320,7 +351,8 @@ fn main() {
         };
         println!(
             "  {blocks:>6}  {start_ms:>9.3}  {mid_ms:>9.3}  {end_ms:>9.3}  {noop_ms:>9.3}  \
-             {full_ms:>11.3}   {start_pages}/{mid_pages}/{end_pages} of {} pages",
+             {full_ms:>11.3}   {start_pages}/{mid_pages}/{end_pages} of {} pages   \
+             cmp {start_cmp}/{mid_cmp}/{end_cmp}",
             layout.pages.len()
         );
     }

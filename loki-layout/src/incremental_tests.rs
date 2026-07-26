@@ -341,3 +341,48 @@ fn sequential_edits_keep_matching() {
         cur_doc = edited;
     }
 }
+
+/// Records how much of the incremental path the property tests above actually
+/// reach — which is currently far less than their names suggest (Spec 08 R30).
+///
+/// `check_edit` asserts `incremental == full`, and that assertion is real. But a
+/// resume can only begin at a checkpoint, and this fixture produces **one**, at
+/// block 0. So every "incremental" result those tests compare was produced by
+/// resuming from the very start of the document and re-flowing all of it. The
+/// property they guard — that a resume from an *arbitrary* point reproduces a full
+/// layout — has never been exercised.
+///
+/// That is the `preserve_for_editing: false` trap in a different costume: a test
+/// that passes without running the thing it protects. It is recorded here as a
+/// measured fact rather than a comment so that **T3.4 will fail this test**, which
+/// is the intended signal — at that point the checkpoint count becomes the page
+/// count, resume-from-anywhere starts happening for the first time, and the
+/// property tests above become meaningful.
+///
+/// When T3.4 lands: update the expectation to the page count, and treat the
+/// silent-splice hazard as *newly* covered — but verify that coverage red-first, by
+/// introducing an off-by-one on the resume line index and confirming `check_edit`
+/// catches it. If it does not, the top-ranked hazard has no net beneath it.
+#[test]
+fn the_property_tests_only_ever_resume_from_block_zero() {
+    let mut fonts = FontResources::new();
+    let doc = base_doc();
+    let (layout, reuse) = layout_paginated_full(&mut fonts, &doc, 1.0, &opts());
+
+    assert!(
+        layout.pages.len() > 1,
+        "fixture must span several pages for this to say anything",
+    );
+    assert_eq!(
+        reuse.checkpoints.len(),
+        1,
+        "expected the pre-T3.4 state: one checkpoint per document. If this now \
+         equals the page count ({}), T3.4 has landed — see this test's docs for \
+         what to do next.",
+        layout.pages.len(),
+    );
+    assert_eq!(
+        reuse.checkpoints[0].block_index, 0,
+        "the single checkpoint is at block 0, so every resume starts there",
+    );
+}

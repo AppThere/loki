@@ -56,6 +56,7 @@ pub use font::FontResources;
 pub use font_handle::SharedFontResources;
 pub use geometry::{LAYOUT_EPSILON_PT, LayoutInsets, LayoutPoint, LayoutRect, LayoutSize};
 pub use hatch::{HatchPattern, HatchSegment, PositionedHatch};
+pub use incremental::diff::{block_comparisons, reset_block_comparisons};
 pub use incremental::{
     FlowCheckpoint, PageStart, PaginatedReuse, document_has_notes, relayout_paginated_incremental,
 };
