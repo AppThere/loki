@@ -86,11 +86,22 @@ bytes are invariant — but the **evictable fraction is, across all three script
 (47.7 / 50.4 / 50.9%)**, now the third independent axis supporting L9-008. And
 **the per-keystroke scan is measured** (§10l): 3.3 µs at 445 pages, 13.6 µs at
 889, so it is not a present-day latency defect and S9-3 stays architecture — but
-the flat-in-caret-position curve is unexplained: it was read as proof that the
-loop never breaks, and a **characterisation test on real geometry refuted that**
-(the `visible` exit does fire), so R9-18 is retracted and the access-set question
-is open until S9-3's counting accessor exists. A timing curve is evidence about
-time; a claim about control flow drawn from it needs its own observation.
+a **characterisation test on real geometry refuted the mechanism claim** — the
+`visible` exit does fire, so R9-18 is gone. The access-set claim was bundled with
+it and survives on its own evidence (cost is not proportional to `M` but is
+superlinear in `N`), so it carries forward as **R9-19** with the prior pointing at
+`N` — the worse case, and the one S9-3 must plan against. The two observations
+are compatible: they cover different geometries, and which one the keystroke path
+takes is what remains open.
+
+Both refuted claims here — the per-byte denominator and the never-firing exit —
+share one shape (§10m, L9-018): each crossed an observable domain boundary
+without an observation in the target domain, inferring unit invariance from byte
+counts and control flow from time. Coherence in the domain you measured says
+nothing about the domain you are concluding about. Findings in both specs are now
+recorded in the three-way **Observed / Not established / What would settle it**
+form (L9-019) so the gap is visible when the claim is written, not after it is
+corrected.
 
 ## Loki Spec 08 — UX & Memory Remediation Program, Phase 0
 

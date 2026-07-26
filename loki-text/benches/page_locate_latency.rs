@@ -8,10 +8,11 @@
 //! scanning its paragraph list on the way. It runs on **every keystroke**
 //! (`editor_keydown_text.rs`, `editor_keydown.rs`, `editor_keydown_ctrl.rs`).
 //!
-//! Its access set is `0..=M` for a caret on page `M` — from the code's shape;
-//! this bench does *not* establish it, see below — which is why S9-3 exists:
-//! under windowing every page in that set must be resident, so the scan would
-//! defeat the windowing it is meant to enable (R9-04).
+//! How many pages' `editing_data` it dereferences per call is **open** (Spec 09
+//! R9-19): the code's shape suggests the prefix `0..=M`, this bench's timing
+//! points at all `N`, and neither is an observation of the thing itself. That
+//! matters because under windowing every dereferenced page must be resident, so
+//! the scan would defeat the windowing it is meant to enable (R9-04).
 //!
 //! But the access set is a residency argument, and this bench asks a different
 //! question that decides how S9-3 should be *scoped*: **is the walk measurable
@@ -32,10 +33,16 @@
 //!
 //! It does **not** show control flow. The flat curve was once read as proof that
 //! the `visible` early exit never fires (Spec 09 R9-18); a characterisation test
-//! on real geometry then showed it does fire, and R9-18 was retracted. The
-//! timing remains unexplained. A clock measures time; a claim about which branch
-//! runs needs its own observation, which is the counting accessor S9-3 has to
-//! build anyway.
+//! on real geometry showed it does fire, and R9-18 is retracted. A clock measures
+//! time, and a claim about which branch runs needs its own observation (L9-018).
+//!
+//! What the timing *does* support, independently of that, is the residency
+//! concern it was bundled with: cost is not proportional to `M` (page 0 and page
+//! 444 cost the same) yet is superlinear in `N` (445 → 889 pages, 3.3 → 13.6 µs).
+//! Something `N`-sized is touched per call regardless of caret position. Whether
+//! that reaches `editing_data` — harmless if it is metadata, fatal if it is not —
+//! is R9-19, and settling it needs the counting accessor, which is therefore a
+//! prerequisite for S9-3 rather than a part of it.
 //!
 //! Run: `cargo bench -p loki-text --bench page_locate_latency`
 
