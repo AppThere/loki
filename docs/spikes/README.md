@@ -86,13 +86,16 @@ bytes are invariant — but the **evictable fraction is, across all three script
 (47.7 / 50.4 / 50.9%)**, now the third independent axis supporting L9-008. And
 **the per-keystroke scan is measured** (§10l): 3.3 µs at 445 pages, 13.6 µs at
 889, so it is not a present-day latency defect and S9-3 stays architecture — but
-a **characterisation test on real geometry refuted the mechanism claim** — the
-`visible` exit does fire, so R9-18 is gone. The access-set claim was bundled with
-it and survives on its own evidence (cost is not proportional to `M` but is
-superlinear in `N`), so it carries forward as **R9-19** with the prior pointing at
-`N` — the worse case, and the one S9-3 must plan against. The two observations
-are compatible: they cover different geometries, and which one the keystroke path
-takes is what remains open.
+a characterisation test showed the `visible` exit **does** fire on split-page
+geometry, so **R9-18 is over-generalised rather than false** — it survives with a
+geometry qualifier, since for the bench's byte-0 single-page probes the original
+evidence still holds. The access-set claim was bundled with it and survives
+independently (cost is not proportional to `M` but is superlinear in `N`), and
+carries forward as **R9-19**. Geometry, not caret position, is the variable that
+selects the path, and the bench swept the wrong axis: a four-case geometry sweep
+discriminates both, and **the keystroke path is neither geometry yet measured** —
+typing is mid-paragraph at arbitrary offsets, which Q4 makes the common case in
+prose, so R9-19's `N` prior may be pessimistic for exactly the path that matters.
 
 Both refuted claims here — the per-byte denominator and the never-firing exit —
 share one shape (§10m, L9-018): each crossed an observable domain boundary

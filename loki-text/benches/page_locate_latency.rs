@@ -33,8 +33,23 @@
 //!
 //! It does **not** show control flow. The flat curve was once read as proof that
 //! the `visible` early exit never fires (Spec 09 R9-18); a characterisation test
-//! on real geometry showed it does fire, and R9-18 is retracted. A clock measures
-//! time, and a claim about which branch runs needs its own observation (L9-018).
+//! showed it fires on split-page geometry, so that claim survives only with a
+//! geometry qualifier. A clock measures time, and a claim about which branch runs
+//! needs its own observation (L9-018).
+//!
+//! # Known limitation: this bench varies the wrong axis
+//!
+//! It sweeps **caret position** while holding **geometry** fixed — every probe is
+//! byte 0 of a single-page paragraph. Geometry is what selects the branch, so the
+//! sweep varies the axis that does not matter and holds the one that does. The
+//! four cases worth timing are byte 0 of a single-page paragraph (here),
+//! mid-paragraph single-page, the first byte of a paragraph carried over from the
+//! previous page, and the last byte of one continuing onto the next.
+//!
+//! Note the keystroke path is **none of the two geometries so far measured**:
+//! typing is mid-paragraph at arbitrary offsets, and Q4 found pages starting
+//! mid-paragraph to be the common case in prose. If the straddling cases are
+//! cheap, R9-19's `N` prior is pessimistic for exactly the path that matters.
 //!
 //! What the timing *does* support, independently of that, is the residency
 //! concern it was bundled with: cost is not proportional to `M` (page 0 and page
