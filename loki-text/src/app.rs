@@ -19,7 +19,8 @@
 
 use appthere_ui::tokens;
 use appthere_ui::{
-    AtBackdropHost, AtThemeContext, use_provide_backdrop, use_provide_responsive, use_safe_area,
+    AtBackdropHost, AtThemeContext, use_provide_backdrop, use_provide_device_profile,
+    use_provide_responsive, use_safe_area,
 };
 use dioxus::prelude::*;
 
@@ -95,6 +96,12 @@ fn SafeAreaResizeSensor() -> Element {
 pub fn App() -> Element {
     // Inject the theme context before any shell component renders.
     provide_context(AtThemeContext::default());
+
+    // Runtime device capabilities (Spec 08 T1.6 / T2.0). Provided before any
+    // consumer renders; `DeviceProbeSensor` below fills it in from the
+    // platform. Without this the profile has no context and every reader falls
+    // back to `Unknown`, which is where L08-011 sat for three phases (R24).
+    use_provide_device_profile();
 
     // Provide the shared responsive context (Spec 03 M1). Seeded unmeasured
     // (→ Breakpoint::Compact); the editor funnels the one measured scroll-
@@ -222,6 +229,10 @@ pub fn App() -> Element {
 
             // Re-query safe-area insets on resize (Android orientation change).
             SafeAreaResizeSensor {}
+
+            // Fill in the device profile: memory now, GPU class once the paint
+            // path has resumed and there is an adapter to describe (T2.0).
+            crate::device_probe::DeviceProbeSensor {}
 
             // Persist the window size across sessions (debounced; desktop only
             // in effect — Android windows are fullscreen and the geometry file

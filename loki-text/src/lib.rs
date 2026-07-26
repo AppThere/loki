@@ -13,6 +13,7 @@
 
 pub mod app;
 pub mod components;
+pub mod device_probe;
 pub mod editing;
 pub mod error;
 pub mod new_document;

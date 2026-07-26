@@ -64,11 +64,18 @@ impl LokiPageSource {
         }
     }
 
-    /// `CustomPaintSource::resume` — take the device and make sure the shared
-    /// Vello renderer exists.
+    /// `CustomPaintSource::resume` — take the device, record what GPU we landed
+    /// on, and make sure the shared Vello renderer exists.
     pub(super) fn on_resume(&mut self, device_handle: &DeviceHandle) {
         self.device = Some(device_handle.device.clone());
         self.wgpu_queue = Some(device_handle.queue.clone());
+        // T2.0: the adapter Blitz actually chose, which is the one a texture
+        // budget must be sized against. `get_info()` is a cheap read of cached
+        // adapter metadata, and every source resumes on the same adapter, so
+        // repeating it per tile costs nothing and needs no first-time guard.
+        crate::gpu_probe::record(crate::gpu_probe::kind_of(
+            device_handle.adapter.get_info().device_type,
+        ));
 
         let mut guard = self.renderer.lock().unwrap_or_else(|p| p.into_inner());
         if guard.is_none() {

@@ -158,7 +158,22 @@ pub struct DeviceProfile {
     pub hardware_keyboard: bool,
     /// Total system RAM, when the platform has been queried.
     pub system_ram_bytes: Option<u64>,
+    /// RAM the OS believes is available without swapping, when known.
+    ///
+    /// Prefer this over [`Self::system_ram_bytes`] when sizing a budget: total
+    /// RAM says what the machine has, not what this process may take while a
+    /// browser and the OS are also resident — which is the situation Spec 06's
+    /// 8 GB design floor describes.
+    pub available_ram_bytes: Option<u64>,
     /// GPU capability class.
+    ///
+    /// There is deliberately no `gpu_memory_bytes` beside it.
+    /// TODO(device-profile-gpu-memory): wgpu exposes no portable VRAM figure —
+    /// `AdapterInfo` carries a device type, vendor and backend but no capacity —
+    /// so a budget derives from system RAM and this class instead. Recording the
+    /// absence rather than inventing a number is the point: an integrated GPU
+    /// shares system RAM (so the system figure *is* the constraint), and a
+    /// discrete one has its own budget we cannot see.
     pub gpu_class: GpuClass,
     /// The current display's physical characteristics.
     pub display: Option<PhysicalDisplay>,

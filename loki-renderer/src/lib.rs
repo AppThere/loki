@@ -9,12 +9,19 @@
 //! | [`page_paint_source`] | Per-page `CustomPaintSource` (`LokiPageSource`) |
 //! | [`renderer_state`] | [`RendererState`] — Dioxus context holding the page source + renderer |
 //! | [`document_view`] | [`DocumentView`] root component |
+//! | [`gpu_probe`] | which GPU adapter the paint path resumed on (Spec 08 T2.0) |
 
 #![forbid(unsafe_code)]
 
 pub mod doc_page_source;
 mod doc_page_source_reflow;
 pub mod document_view;
+// Deliberately ungated. `record` is only ever called from the GPU paint path,
+// but `observed_adapter` must resolve on every target so the application-side
+// sensor is one code path rather than two — the shape the android-check job
+// caught in `document_view.rs`, where a module was ungated and its import was
+// not. On the Android CPU path it simply always answers `None`, which is true.
+pub mod gpu_probe;
 #[cfg(any(not(target_os = "android"), android_gpu))]
 pub mod page_paint_source;
 pub(crate) mod page_source_impl;

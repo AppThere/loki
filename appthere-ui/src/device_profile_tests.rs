@@ -114,6 +114,7 @@ fn a_synthetic_profile_can_describe_an_android_desktop() {
         pointer: PointerPrecision::Both,
         hardware_keyboard: true,
         system_ram_bytes: Some(16 * 1024 * 1024 * 1024),
+        available_ram_bytes: Some(11 * 1024 * 1024 * 1024),
         gpu_class: GpuClass::Integrated,
         display: None,
         window_mode: WindowMode::Windowed,
