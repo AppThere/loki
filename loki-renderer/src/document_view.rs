@@ -173,7 +173,7 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
             props.viewport_height_px,
             zoom,
             props.device_scale_factor,
-            props.texture_budget_bytes,
+            props.texture_budget,
         );
 
         return rsx! {

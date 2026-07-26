@@ -90,3 +90,39 @@ fn the_same_ram_gives_the_same_budget_on_every_device_class() {
         TextureBudget::derive(inputs_for(b, None)).bytes(),
     );
 }
+
+#[test]
+fn the_derived_survival_ceiling_is_device_specific_not_the_baseline() {
+    // Regression for the r18 delivery defect. `current()` returned a bare `u64`
+    // target, so the renderer rebuilt the budget with `TextureBudget::exact` —
+    // which derives its ceiling from the *baseline* machine. Every device
+    // therefore ran with a 512 MiB survival ceiling, including a phone that had
+    // correctly derived 256 MiB, and nothing in the type system objected because
+    // both sides were talking about "the budget".
+    //
+    // The property that must hold: two devices that derive different ceilings
+    // must still have different ceilings after the value crosses the boundary.
+    let phone = TextureBudget::derive(BudgetInputs {
+        available_ram_bytes: Some(2 * 1024 * 1024 * 1024),
+        ..BudgetInputs::default()
+    });
+    let desktop = TextureBudget::derive(BudgetInputs {
+        available_ram_bytes: Some(11 * 1024 * 1024 * 1024),
+        ..BudgetInputs::default()
+    });
+    assert_ne!(
+        phone.hard_ceiling_bytes(),
+        desktop.hard_ceiling_bytes(),
+        "the ceiling is device-derived and must stay so",
+    );
+    assert_eq!(phone.hard_ceiling_bytes(), 256 * 1024 * 1024);
+
+    // And the shape that caused it: reconstructing from the target alone loses
+    // the ceiling. This is what the props used to do.
+    let rebuilt = TextureBudget::exact(phone.bytes());
+    assert_ne!(
+        rebuilt.hard_ceiling_bytes(),
+        phone.hard_ceiling_bytes(),
+        "if this ever becomes equal, the delivery bug is undetectable by this test",
+    );
+}

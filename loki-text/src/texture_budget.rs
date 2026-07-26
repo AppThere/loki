@@ -45,12 +45,19 @@ fn override_bytes() -> Option<u64> {
     })
 }
 
-/// The current budget in bytes, derived from the live device profile.
+/// The current budget, derived from the live device profile.
 ///
 /// Call from a component: it reads the profile through context, so it
 /// participates in reactivity and the budget follows a probe landing.
+///
+/// Returns the whole [`TextureBudget`] rather than its byte target. Handing the
+/// renderer a bare `u64` was a real defect until r18: it rebuilt the budget with
+/// `TextureBudget::exact`, which derives a survival ceiling from the *baseline*
+/// rather than from this device, so every machine got 512 MiB — including a phone
+/// that had correctly derived 256 MiB. Deriving a value and then not delivering it
+/// is indistinguishable from never deriving it (L08-028).
 #[must_use]
-pub fn current() -> u64 {
+pub fn current() -> TextureBudget {
     let profile = use_device_profile();
     TextureBudget::derive(BudgetInputs {
         available_ram_bytes: profile.available_ram_bytes,
@@ -64,7 +71,6 @@ pub fn current() -> u64 {
         },
         user_override_bytes: override_bytes(),
     })
-    .bytes()
 }
 
 /// Physical pixels per CSS pixel on the display this window is on.

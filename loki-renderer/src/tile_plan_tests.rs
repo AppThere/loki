@@ -8,8 +8,15 @@
 //! module can be wrong on its own.
 
 use super::plan_tiles;
+use appthere_canvas::residency::TextureBudget;
 
-const HUGE_BUDGET: u64 = 4 * 1024 * 1024 * 1024;
+/// A budget nothing can exceed, so these tests isolate tile *geometry* from the
+/// pressure policy. The ceiling is raised with the target — `exact` would
+/// otherwise cap it at the baseline 512 MiB and quietly reintroduce pressure
+/// into tests that are not about pressure.
+fn huge_budget() -> TextureBudget {
+    TextureBudget::exact_with_ceiling(4 * 1024 * 1024 * 1024, 4 * 1024 * 1024 * 1024)
+}
 
 /// US Letter tile boxes in CSS px at `zoom`.
 fn letter_pages(n: usize, zoom: f64) -> Vec<(usize, f64, f64)> {
@@ -23,7 +30,7 @@ fn every_page_appears_in_the_render_list_mounted_or_not() {
     // The list drives layout as well as painting: an unmounted page still needs
     // its box, or the scroll geometry and the scrollbar are wrong.
     let pages = letter_pages(200, 1.0);
-    let tiles = plan_tiles(&pages, 24.0, 20_000.0, 900.0, 1.0, 1.0, HUGE_BUDGET);
+    let tiles = plan_tiles(&pages, 24.0, 20_000.0, 900.0, 1.0, 1.0, huge_budget());
     assert_eq!(tiles.len(), 200);
     assert!(tiles.iter().any(|t| t.mount.is_some()));
     assert!(tiles.iter().any(|t| t.mount.is_none()));
@@ -36,7 +43,7 @@ fn the_css_box_survives_the_round_trip_through_points() {
     // and rasterised for another.
     for zoom in [0.25, 0.5, 1.0, 2.0, 4.0] {
         let pages = letter_pages(20, zoom);
-        let tiles = plan_tiles(&pages, 24.0, 0.0, 900.0, zoom, 2.0, HUGE_BUDGET);
+        let tiles = plan_tiles(&pages, 24.0, 0.0, 900.0, zoom, 2.0, huge_budget());
         for (page, tile) in pages.iter().zip(&tiles) {
             assert_eq!((tile.w, tile.h), (page.1, page.2), "at zoom {zoom}");
         }
@@ -46,7 +53,7 @@ fn the_css_box_survives_the_round_trip_through_points() {
 #[test]
 fn an_unpressured_plan_mounts_the_window_at_full_scale() {
     let pages = letter_pages(200, 1.0);
-    let tiles = plan_tiles(&pages, 24.0, 20_000.0, 900.0, 1.0, 1.0, HUGE_BUDGET);
+    let tiles = plan_tiles(&pages, 24.0, 20_000.0, 900.0, 1.0, 1.0, huge_budget());
     assert!(
         tiles
             .iter()
@@ -61,8 +68,19 @@ fn a_tight_budget_reduces_scale_rather_than_the_mounted_count_first() {
     // 200% on a HiDPI display wants 157.8 MiB across three tiles. A budget just
     // under that must be met by resolution, which is L08-002's ordering.
     let pages = letter_pages(200, 2.0);
-    let full = plan_tiles(&pages, 24.0, 20_000.0, 900.0, 2.0, 2.0, HUGE_BUDGET);
-    let tight = plan_tiles(&pages, 24.0, 20_000.0, 900.0, 2.0, 2.0, 150 * 1024 * 1024);
+    let full = plan_tiles(&pages, 24.0, 20_000.0, 900.0, 2.0, 2.0, huge_budget());
+    // A tight *target* with a ceiling well clear of it, so what this exercises is
+    // the target's ordering (reduce off-centre scale before dropping tiles) and
+    // not the survival regime, which is a different policy with a different test.
+    let tight = plan_tiles(
+        &pages,
+        24.0,
+        20_000.0,
+        900.0,
+        2.0,
+        2.0,
+        TextureBudget::exact_with_ceiling(150 * 1024 * 1024, 4 * 1024 * 1024 * 1024),
+    );
     let full_count = full.iter().filter(|t| t.mount.is_some()).count();
     let tight_count = tight.iter().filter(|t| t.mount.is_some()).count();
     assert_eq!(
@@ -82,7 +100,7 @@ fn degenerate_zoom_and_scale_factor_do_not_produce_a_nonsense_plan() {
     // that mounts nothing.
     let pages = letter_pages(20, 1.0);
     for (zoom, dsf) in [(0.0, 1.0), (f64::NAN, 1.0), (1.0, 0.0), (1.0, f64::NAN)] {
-        let tiles = plan_tiles(&pages, 24.0, 0.0, 900.0, zoom, dsf, HUGE_BUDGET);
+        let tiles = plan_tiles(&pages, 24.0, 0.0, 900.0, zoom, dsf, huge_budget());
         assert_eq!(tiles.len(), 20);
         assert!(
             tiles.iter().any(|t| t.mount.is_some()),

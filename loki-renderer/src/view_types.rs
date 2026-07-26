@@ -5,6 +5,7 @@
 //! selection positions, tile context, and [`DocumentViewProps`]. Extracted to
 //! keep `document_view.rs` under the file-size ceiling.
 
+use appthere_canvas::residency::TextureBudget;
 use std::sync::Arc;
 
 use dioxus::prelude::*;
@@ -135,14 +136,21 @@ pub struct DocumentViewProps {
     /// `appthere_ui::tokens::SPACE_6`). Injected for the same reason as
     /// `page_gap_px`.
     pub content_padding_bottom_px: f32,
-    /// Resident page-texture byte budget (Spec 08 T2.1).
+    /// Resident page-texture budget (Spec 08 T2.1) — **both** thresholds.
     ///
     /// Injected rather than derived here for the same reason as `page_gap_px`:
     /// it comes from `appthere_ui::DeviceProfile`, which is L5, and this crate
     /// is L4. The application derives it with
-    /// `appthere_canvas::residency::TextureBudget::derive` and passes the
-    /// figure down.
-    pub texture_budget_bytes: u64,
+    /// `appthere_canvas::residency::TextureBudget::derive` and passes it down.
+    ///
+    /// The whole value crosses the boundary rather than a byte count, and that
+    /// is deliberate. It was a `u64` target until r18, which meant the renderer
+    /// rebuilt the budget with `TextureBudget::exact` and silently got the
+    /// *baseline* survival ceiling — 512 MiB on every device, including a phone
+    /// that had derived 256 MiB. A derived value that is not delivered is the
+    /// same failure as one that was never derived (R27, L08-028), so the type
+    /// that owns both numbers travels rather than one of them.
+    pub texture_budget: TextureBudget,
     /// Physical pixels per CSS pixel on the display this window is on.
     ///
     /// Needed because the budget is a *physical* byte count while everything
@@ -176,7 +184,7 @@ impl PartialEq for DocumentViewProps {
             && self.zoom == other.zoom
             && self.page_gap_px == other.page_gap_px
             && self.content_padding_bottom_px == other.content_padding_bottom_px
-            && self.texture_budget_bytes == other.texture_budget_bytes
+            && self.texture_budget == other.texture_budget
             && self.device_scale_factor == other.device_scale_factor
     }
 }

@@ -336,7 +336,7 @@ pub(super) fn render_canvas_area(
                             // both to decide what to mount and at what
                             // rasterisation scale, and neither is reachable from
                             // L4 (DeviceProfile is L5).
-                            texture_budget_bytes: crate::texture_budget::current(),
+                            texture_budget: crate::texture_budget::current(),
                             device_scale_factor: crate::texture_budget::device_scale_factor(),
                             // Paginated: hit-test against the editor's paginated
                             // layout (reflow clicks arrive via on_reflow_click).

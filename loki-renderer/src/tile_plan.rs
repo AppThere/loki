@@ -77,7 +77,7 @@ pub(crate) fn plan_tiles(
     viewport_height_px: f64,
     zoom: f64,
     device_scale_factor: f64,
-    budget_bytes: u64,
+    budget: TextureBudget,
 ) -> Vec<PlannedTile> {
     let zoom = if zoom.is_finite() && zoom > 0.0 {
         zoom
@@ -99,18 +99,27 @@ pub(crate) fn plan_tiles(
             1.0
         },
     };
-    let plan = plan_residency(&boxes, &vp, TextureBudget::exact(budget_bytes));
+    let plan = plan_residency(&boxes, &vp, budget);
 
-    if plan.over_budget {
-        // Not an error: the visible page cannot be held inside the budget even
-        // at the legibility floor (400% on a 3x display, roughly). Logged once
-        // per plan so an on-device run can tell "the budget is working" from
-        // "the budget is being exceeded", which the byte figure alone cannot.
+    // Runtime observability for the R5a/R28/R29 screen session, and the reason it
+    // reports counts rather than only flags: that session's failure mode is
+    // passing *without running*. On a 2x display at ordinary zoom the pressure
+    // path never engages, so "scrolled around, looked fine" is not evidence about
+    // anything. `reduced_tiles` reading non-zero is what makes it evidence.
+    let reduced_tiles = plan.tiles.iter().filter(|t| t.raster_scale < 1.0).count();
+    if plan.over_budget || reduced_tiles > 0 {
         tracing::debug!(
-            budget_bytes,
+            budget_bytes = budget.bytes(),
+            ceiling_bytes = budget.hard_ceiling_bytes(),
             planned_bytes = plan.total_bytes,
             tiles = plan.tiles.len(),
-            "texture budget cannot be met without dropping visible content",
+            reduced_tiles,
+            over_budget = plan.over_budget,
+            // The distinction L08-026 turns on: over_budget alone is the design
+            // working (visible pages full scale, target exceeded and reported),
+            // while this means a page the reader is looking at was degraded.
+            survival_reduced = plan.survival_reduced,
+            "texture residency under pressure",
         );
     }
 
