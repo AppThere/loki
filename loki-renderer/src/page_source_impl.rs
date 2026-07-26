@@ -113,10 +113,10 @@ impl PageSource for DocPageSource {
             "page rendered",
         );
 
-        Ok(GpuTexture {
-            inner,
-            width: w,
-            height: h,
-        })
+        // `GpuTexture::new` records the allocation with the Phase 2 residency
+        // counter and its `Drop` records the release, so this path is accounted
+        // for without a hand-written free — unlike the Blitz path, whose texture
+        // is handed to the renderer's registry and outlives any Rust owner.
+        Ok(GpuTexture::new(inner, w, h))
     }
 }

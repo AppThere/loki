@@ -47,7 +47,7 @@ LAYERS: dict[str, float] = {
     # L3b exporter-above-layout
     "loki-pdf": 3.5,
     # L4 render
-    "loki-render-cache": 4, "appthere-canvas": 4, "loki-vello": 4,
+    "appthere-canvas": 4, "loki-vello": 4,
     "loki-renderer": 4, "loki-render-cpu": 4,
     # L5 ui / app-shell
     "appthere-ui": 5, "loki-app-shell": 5,

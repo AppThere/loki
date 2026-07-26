@@ -52,8 +52,14 @@ Process baseline peak RSS: **2.4 MiB**.
 The agent has **no GPU**, so none of the resident cost that actually dominates on
 device is present:
 
-- **No GPU page textures** — the tiered render cache (Hot/Warm/Cold, the
-  ~240 MB→45 MB and >3 GB idle findings) is entirely device-side.
+- **No GPU page textures** — the resident page-texture set (the ~240 MB→45 MB
+  and >3 GB idle findings) is device-side *as allocated memory*.
+  **Corrected 2026-07-26 (Spec 08 T2.4, ADR-0016):** this read "the tiered
+  render cache (Hot/Warm/Cold, …)". There is no tiering and there was none when
+  this was written. It is also only half true that a headless run cannot see
+  it — the *requested* bytes are CPU-side arithmetic and are now measured
+  headlessly (`loki-bench --bench texture_residency`); what stays device-side is
+  driver overhead on top of them.
 - **Different allocator / OS accounting** than Windows or macOS.
 - **No wgpu / driver working set.**
 

@@ -4,7 +4,7 @@
 //! Tests for the residency model. Extracted per the file-ceiling idiom.
 
 use super::{
-    resident_pages, resident_texture_bytes, texture_bytes, visible_window, PageBox, ViewportSpec,
+    PageBox, ViewportSpec, resident_pages, resident_texture_bytes, texture_bytes, visible_window,
 };
 
 const H: f64 = 1000.0; // page height, CSS px

@@ -51,6 +51,6 @@ mod geometry;
 
 pub use counter::{TextureResidency, TextureResidencySnapshot};
 pub use geometry::{
-    resident_pages, resident_texture_bytes, texture_bytes, visible_window, PageBox, ViewportSpec,
-    BYTES_PER_TEXEL, PT_TO_CSS_PX,
+    BYTES_PER_TEXEL, PT_TO_CSS_PX, PageBox, ViewportSpec, resident_pages, resident_texture_bytes,
+    texture_bytes, visible_window,
 };

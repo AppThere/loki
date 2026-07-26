@@ -377,9 +377,10 @@ dependencies = [
 name = "appthere-canvas"
 version = "0.1.0"
 dependencies = [
- "loki-render-cache",
  "peniko 0.5.0",
  "read-fonts 0.40.2",
+ "thiserror 2.0.18",
+ "wgpu",
 ]
 
 [[package]]
@@ -4873,14 +4874,6 @@ version = "0.1.0"
 dependencies = [
  "ipp",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "loki-render-cache"
-version = "0.1.0"
-dependencies = [
- "thiserror 2.0.18",
- "wgpu",
 ]
 
 [[package]]

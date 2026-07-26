@@ -305,8 +305,11 @@ The workspace is a set of focused crates (one responsibility each). Key groups:
     `loki-layout` for positioning, embeds fonts + images (CMYK).
   - `loki-epub` — **EPUB 3.3** export (XHTML + OCF ZIP).
 - **Layout & rendering:** `loki-layout` (renderer-agnostic, Parley-based),
-  `loki-vello` / `loki-renderer` / `loki-render-cache` (GPU paint; per-page
-  tiles bounded by viewport virtualization).
+  `loki-vello` / `loki-renderer` / `appthere-canvas` (GPU paint; per-page
+  tiles bounded by viewport virtualization plus the `appthere_canvas::residency`
+  byte budget across zoom × DPI — ADR-0016). `loki-render-cache` was deleted
+  by Spec 08 T2.4; its `PageSource` / `GpuTexture` / `PageIndex` types are in
+  `appthere-canvas`, at the same public paths.
 - **Spell check:** `loki-spell` — Hunspell-compatible spell checking via the
   pure-Rust `spellbook` engine (no FFI). Tokenises text into checkable words,
   returns misspelled byte ranges + ranked suggestions; bundles a permissive
