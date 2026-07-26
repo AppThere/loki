@@ -41,6 +41,11 @@ loki-odf = { path = "../loki-odf" }
 name = "font_cache_dedup"
 harness = false
 
+# Spec 09 E0: the experiment that gates that spec's phase plan (L9-005).
+[[bench]]
+name = "layout_editing_residency"
+harness = false
+
 [[bench]]
 name = "session_layout_residual"
 harness = false
