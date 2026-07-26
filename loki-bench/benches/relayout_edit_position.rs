@@ -34,8 +34,42 @@
 //! section diff — it is genuine layout work being redone for content the edit
 //! cannot have affected.
 //!
-//! **Not established:** why prefix reuse fails to bound it. `ParaCache` hit/miss
-//! counters would localise it and do not exist yet.
+//! # Root cause, measured 2026-07-26
+//!
+//! The r22 amendment predicted checkpoint sparsity from the start≈end signature,
+//! and the diagnostic confirms it — more sharply than the hypothesis:
+//!
+//! | blocks | words/block | pages | checkpoints | resume block for an edit at 2499 |
+//! | ---: | ---: | ---: | ---: | ---: |
+//! | 2500 | 50 | 327 | **1** | **0** |
+//! | 2500 | 5 | 55 | **1** | **0** |
+//!
+//! **327 pages, one checkpoint.** `PaginatedReuse::checkpoints` holds a single
+//! entry — the one at block 0 — so `relayout_paginated_incremental`'s resume rule
+//! (`checkpoints.rfind(|cp| cp.block_index <= first_changed)`) resolves to block 0
+//! for *every* edit, at any position. The incremental path then re-flows the whole
+//! document and pays the reuse machinery's overhead on top, which is exactly why
+//! it costs more than the full pass it replaces.
+//!
+//! It is not paragraph length: 5-word blocks produce one checkpoint too.
+//!
+//! **The mechanism.** `flow_run` records a `PageStart` when, at the *top of a
+//! block iteration*, `cursor_y == 0.0 && current_items.is_empty()`. `flush_page`
+//! does set both exactly, so the float comparison is not at fault — but the flush
+//! happens *inside* a block iteration, when a block overflows the page. By the top
+//! of the next iteration the overflowing block's remainder is already placed, so
+//! the cursor has moved and the condition is false. A checkpoint is therefore
+//! recorded only when a page break falls exactly on a block boundary, which
+//! continuous prose almost never does.
+//!
+//! This is Spec 09 Q4's "checkpoints land only at clean page tops on a block
+//! boundary" — but the practical consequence is stronger than that phrasing
+//! suggests: for ordinary documents the set is effectively empty, so the whole
+//! incremental path is a full relayout wearing a reuse jacket.
+//!
+//! **Not established:** whether recording a checkpoint after a flush is safe for
+//! resync and page numbering. That is a layout-engine change with real blast
+//! radius, not a bench's business.
 //!
 //! # A trap this bench walked into first
 //!
@@ -51,7 +85,8 @@ use loki_doc_model::content::block::Block;
 use loki_doc_model::content::inline::Inline;
 use loki_doc_model::document::Document;
 use loki_layout::{
-    FontResources, LayoutOptions, layout_paginated_full, relayout_paginated_incremental,
+    FontResources, LayoutOptions, PaginatedReuse, layout_paginated_full,
+    relayout_paginated_incremental,
 };
 
 fn resources() -> FontResources {
@@ -65,8 +100,16 @@ fn resources() -> FontResources {
 }
 
 fn doc_of_blocks(n: usize) -> Document {
+    doc_of_blocks_sized(n, 50)
+}
+
+/// `words_per_block` controls checkpoint density indirectly: a `PageStart` lands
+/// only at a clean page top that is also a block boundary, so long paragraphs
+/// straddle page tops and produce few checkpoints, while short ones produce many.
+/// That is the variable the R30 sparsity hypothesis turns on.
+fn doc_of_blocks_sized(n: usize, words_per_block: usize) -> Document {
     let mut doc = Document::new();
-    let text = (0..50)
+    let text = (0..words_per_block)
         .map(|i| format!("word{i}"))
         .collect::<Vec<_>>()
         .join(" ");
@@ -74,6 +117,21 @@ fn doc_of_blocks(n: usize) -> Document {
         .map(|_| Block::Para(vec![Inline::Str(text.clone())]))
         .collect();
     doc
+}
+
+/// Which checkpoint the incremental path would resume from for an edit at
+/// `changed_block`, by the same rule `relayout_paginated_incremental` applies:
+/// the last checkpoint in the section at or before the first changed block.
+///
+/// This is the R30 diagnostic. If it reads near zero for an edit near the end of
+/// the document, the resume point is far behind the edit and reuse cannot bound
+/// the work however well the rest of the machinery behaves.
+fn resume_block_for(reuse: &PaginatedReuse, changed_block: usize) -> Option<usize> {
+    reuse
+        .checkpoints
+        .iter()
+        .rfind(|cp| cp.section_index == 0 && cp.block_index <= changed_block)
+        .map(|cp| cp.block_index)
 }
 
 /// Edits one block by index, returning the mutated document.
@@ -137,6 +195,27 @@ fn main() {
         println!(
             "  {blocks:>6}  {start_ms:>9.3}  {end_ms:>9.3}  {noop_ms:>9.3}  {full_ms:>11.3}   \
              start={start_incr} end={end_incr}"
+        );
+    }
+    println!();
+
+    // ── R30 diagnostic: where does reuse actually resume from? ──────────────
+    println!("checkpoint density and resume point (50-word blocks vs 5-word blocks)");
+    println!("  blocks  words/blk   pages  checkpoints  resume@last  end-edit ms");
+    for &(blocks, wpb) in &[(2500_usize, 50_usize), (2500, 5)] {
+        let mut fr = resources();
+        let doc = doc_of_blocks_sized(blocks, wpb);
+        let (layout, reuse) = layout_paginated_full(&mut fr, &doc, 1.0, &opts);
+        let last = blocks - 1;
+        let edited = edit_block(&doc, last);
+        let t = Instant::now();
+        let _ = relayout_paginated_incremental(&mut fr, &edited, &doc, &layout, &reuse, 1.0, &opts);
+        let end_ms = t.elapsed().as_secs_f64() * 1000.0;
+        println!(
+            "  {blocks:>6}  {wpb:>9}  {:>6}  {:>11}  {:>11?}  {end_ms:>11.3}",
+            layout.pages.len(),
+            reuse.checkpoints.len(),
+            resume_block_for(&reuse, last),
         );
     }
     println!();
