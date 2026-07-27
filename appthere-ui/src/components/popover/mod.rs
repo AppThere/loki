@@ -47,6 +47,12 @@
 //! - **Tooltips share the host, not the [`interaction::Role`].** See
 //!   [`host`]: T4.3's Open-button tooltip is the same out-of-flow child in the
 //!   same clipping container as T4.2's menu.
+//! - **A band between two modules.** [`geometry::place`] clamps a partly-visible
+//!   anchor's overlay into the viewport; [`interaction::on_anchor_change`]
+//!   dismisses when the anchor is not visible — and while "visible" was a
+//!   caller's `bool`, neither module owned the case in between.
+//!   [`interaction::anchor_is_anchorable`] now decides the viewport half in one
+//!   place, leaving the caller only what geometry cannot see.
 //! - **Identity, checked before geometry.** [`wiring::on_anchor_identity`]. A
 //!   virtualised list recycling a different row into the same node leaves the
 //!   anchor rect unchanged, so the geometric comparison correctly says `Ignore`
@@ -94,8 +100,8 @@ pub use dismiss_order::{dismiss_sequence, DismissStep};
 pub use geometry::{place, Align, Placement, PlacementRequest, Rect, Side};
 pub use host::RootLayer;
 pub use interaction::{
-    focus_after_dismiss, on_anchor_change, repositions, reset_repositions, route_key,
-    AnchorResponse, DismissCause, FocusTarget, Key, KeyAction, Role,
+    anchor_is_anchorable, focus_after_dismiss, on_anchor_change, repositions, reset_repositions,
+    route_key, AnchorResponse, DismissCause, FocusTarget, Key, KeyAction, Role,
 };
 pub use wiring::{
     is_outside_dismiss, on_anchor_identity, open_response, AnchorKey, IdentityCheck, OpenResponse,

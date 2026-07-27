@@ -110,7 +110,7 @@ fn an_overlay_never_covers_its_own_anchor() {
             req.anchor = Rect::new(100.0, step as f32 * 10.0, 2.0, 18.0);
             let p = place(req);
             assert!(
-                !p.rect.overlaps(req.anchor),
+                !p.rect.covers_vertically(req.anchor),
                 "overlay {:?} covers its anchor {:?} (preferred {preferred:?})",
                 p.rect,
                 req.anchor,
@@ -324,6 +324,147 @@ fn a_request_that_fits_on_either_side_is_never_clamped() {
     }
 }
 
+/// **Containment over generated anchors, including every kind of straddle.**
+///
+/// The main-axis defect below was found by a fixture in another crate, not by
+/// this file — and the reason is visible in the file: every anchor here was one
+/// somebody chose, and nobody chooses an anchor half off the top edge. Hand-written
+/// cases cover the situations their author imagined, which is the one thing they
+/// structurally cannot fix about themselves.
+///
+/// So the discipline that found it is imported rather than the case: the spell
+/// suite's `the_menu_is_on_screen_wherever_the_click_lands` sweeps 65×41 clicks
+/// and asserts one property. This does the same over anchor **rects** — positions
+/// beyond all four edges, degenerate and oversized sizes, both sides, all three
+/// alignments, and viewports with and without an inset — because a rect straddles
+/// in ways a point cannot.
+///
+/// Both properties are asserted at once: the overlay stays inside the viewport,
+/// and it does not cover its anchor. The second is worth sweeping here because a
+/// clamp is exactly the operation that could push an overlay back onto a large
+/// anchor, and no fixed case would notice.
+#[test]
+fn an_overlay_is_contained_for_every_generated_anchor_including_straddles() {
+    let base = near_bottom();
+    let viewports = [
+        Rect::new(0.0, 0.0, 900.0, 700.0),
+        // An inset viewport, as a safe area or a soft keyboard gives.
+        Rect::new(12.0, 34.0, 876.0, 620.0),
+    ];
+    // Sizes: a caret, a degenerate point, an ordinary control, a row wider than
+    // the overlay, and an anchor taller than the viewport itself.
+    let sizes = [
+        (0.0_f32, 18.0_f32),
+        (0.0, 0.0),
+        (60.0, 24.0),
+        (400.0, 40.0),
+        (2.0, 900.0),
+    ];
+    for vp in viewports {
+        for preferred in [Side::Above, Side::Below] {
+            for align in [Align::Start, Align::Center, Align::End] {
+                for size in sizes {
+                    for ax in (-2..=20).map(|i| i as f32 * 50.0) {
+                        for ay in (-2..=16).map(|i| i as f32 * 50.0) {
+                            let mut req = base;
+                            req.viewport = vp;
+                            req.preferred = preferred;
+                            req.align = align;
+                            req.anchor = Rect::new(ax, ay, size.0, size.1);
+                            let p = place(req);
+                            assert!(
+                                p.rect.is_inside(vp),
+                                "overlay {:?} escaped viewport {vp:?} for anchor \
+                                 {:?} ({preferred:?}, {align:?})",
+                                p.rect,
+                                req.anchor,
+                            );
+                            assert!(
+                                !p.rect.covers_vertically(req.anchor),
+                                "overlay {:?} covers its anchor {:?} \
+                                 ({preferred:?}, {align:?}) — a clamp pushed it \
+                                 back onto the thing it belongs to",
+                                p.rect,
+                                req.anchor,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// **The positive control the old predicate never had** — and the absence of
+/// which is why it could be vacuous for a year without anyone noticing.
+///
+/// Every other use of this predicate is `assert!(!covers)`. A weakened predicate
+/// therefore passes *everything*: found by mutation — reinstating the horizontal
+/// test inside `covers_vertically` broke no test in the file, because making a
+/// predicate return `false` more often cannot fail a suite that only ever asserts
+/// `false`. The suite needs one case that requires it to fire.
+///
+/// Both cases below are that. The second also pins the deliberate
+/// over-approximation: with vertical-only placement there is no "beside", so an
+/// overlay sharing the anchor's vertical band is reported as covering it whatever
+/// its x — the conservative direction, and the one the horizontal test destroys.
+#[test]
+fn the_covering_predicate_fires_when_an_overlay_is_on_top_of_a_caret() {
+    let caret = Rect::new(400.0, 300.0, 0.0, 18.0);
+    let on_top = Rect::new(400.0, 295.0, 300.0, 320.0);
+    assert!(
+        on_top.covers_vertically(caret),
+        "a menu drawn straight over the caret must be reported as covering it — \
+         a zero-width anchor is exactly where a rectangle intersection quietly \
+         says no",
+    );
+    let beside = Rect::new(700.0, 295.0, 300.0, 320.0);
+    assert!(
+        beside.covers_vertically(caret),
+        "an overlay in the caret's vertical band is a collision however its x \
+         falls; `Side` has no horizontal axis for it to be legitimately beside",
+    );
+}
+
+/// **What the sweep turned up: an anchor taller than its viewport has no room on
+/// either side, and the result is an overlay of zero height** — a menu that
+/// simply does not appear.
+///
+/// Recorded rather than fixed, with the reason for each half:
+///
+/// * It is **not silently fine**: `clamped` is true, which is the signal a
+///   consumer already has to check, and a consumer that renders a
+///   zero-height box gets nothing rather than something wrong.
+/// * It is **not reachable for any named consumer**: a caret, a list entry, a
+///   swatch, a status-bar control. None is 700px tall. Designing a concession
+///   for it now would be the `Before`/`After` mistake — building for a consumer
+///   nobody has named.
+///
+/// So the assertion is that the case stays *reported*, not that it is
+/// accommodated. If a fifth consumer ever anchors to something that tall, this
+/// is where the decision is written down.
+#[test]
+fn an_anchor_taller_than_the_viewport_yields_a_reported_empty_placement() {
+    let mut req = near_bottom();
+    req.anchor = Rect::new(50.0, -100.0, 2.0, 900.0);
+    let (above, below) = rooms(req);
+    assert!(
+        above == 0.0 && below == 0.0,
+        "precondition: the anchor must leave no room on either side: above \
+         {above}, below {below}",
+    );
+    let p = place(req);
+    assert_eq!(
+        p.rect.height, 0.0,
+        "there is nowhere to put it: {:?}",
+        p.rect
+    );
+    assert!(
+        p.clamped,
+        "an unshowable placement must at least say it was reduced",
+    );
+}
+
 /// **The unstated precondition, found by a real fixture.** Containment on the
 /// main axis was conditional on the anchor lying inside the viewport — every
 /// case above has one, so nothing here noticed.
@@ -332,6 +473,9 @@ fn a_request_that_fits_on_either_side_is_never_clamped() {
 /// of an Android window whose safe area starts at 34px put the menu at y=24,
 /// under the status bar. The mutation that removes the clamp passes this whole
 /// file without it.
+///
+/// Kept beside the sweep above rather than replaced by it: the sweep is what
+/// would have found this, and this is what names where it came from.
 #[test]
 fn an_anchor_outside_the_viewport_still_yields_a_contained_overlay() {
     let base = near_bottom();

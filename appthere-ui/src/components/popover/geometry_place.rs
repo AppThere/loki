@@ -97,9 +97,12 @@ pub fn place(req: PlacementRequest) -> Placement {
     // starts at 34px put the menu at y=24, under the status bar.
     //
     // A caller whose anchor has left the viewport gets an overlay at the edge
-    // rather than off-screen, and `on_anchor_change` dismisses it on the next
-    // frame regardless — so the clamp is a floor under a transient, not a new
-    // behaviour anyone will rely on.
+    // rather than off-screen, and `interaction::anchor_is_anchorable` — the one
+    // place the boundary is decided — makes `on_anchor_change` dismiss it on the
+    // next frame. So the clamp is a floor under a one-frame transient, not a new
+    // behaviour anyone will rely on. That sentence used to be an assumption
+    // about a caller's `bool`; it is now a property of a shared predicate, and
+    // `the_two_modules_agree_on_the_anchor_visibility_boundary` holds it.
     let y_lo = vp.y + margin;
     let y_hi = (vp.bottom() - margin - height).max(y_lo);
     let y = unclamped_y.clamp(y_lo, y_hi);

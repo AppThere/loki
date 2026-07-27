@@ -7,17 +7,24 @@ use super::super::geometry::{place, Align, PlacementRequest, Rect, Side};
 use std::sync::Mutex;
 
 use super::{
-    focus_after_dismiss, on_anchor_change, repositions, route_key, AnchorResponse, DismissCause,
-    FocusTarget, Key, KeyAction, Role,
+    anchor_is_anchorable, focus_after_dismiss, on_anchor_change, repositions, route_key,
+    AnchorResponse, DismissCause, FocusTarget, Key, KeyAction, Role,
 };
 
-/// Serialises the two tests that read the process-wide reposition counter.
+/// Serialises every test that reads **or moves** the process-wide reposition
+/// counter.
 ///
 /// `cargo test` runs tests in parallel, so two tests sharing one global would
 /// interleave: reset-then-assert-zero can observe another test's increment, and
 /// the failure appears as an intermittent CI red with no local reproduction.
 /// Holding a lock **and comparing deltas rather than absolutes** removes both
 /// halves — no reset is needed, so nothing is destroyed for a concurrent reader.
+///
+/// **Writers must hold it too**, which the first draft missed: a delta is only a
+/// delta if nothing else increments in between, so a test that merely *causes* a
+/// reposition races the two that measure one. Latent while every such test did a
+/// single reposition; the boundary sweep below does hundreds, which would have
+/// turned it into a regular flake.
 static COUNTER_LOCK: Mutex<()> = Mutex::new(());
 
 /// A tall viewport, so `a_resize_that_leaves_the_anchor_still_re_places` can
@@ -153,6 +160,7 @@ fn causes_that_moved_focus_deliberately_are_left_alone() {
 /// A flat dismiss-on-scroll rule closes the menu on the first trackpad nudge.
 #[test]
 fn scrolling_the_anchors_own_list_repositions_rather_than_closing() {
+    let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let before = req_at(Rect::new(100.0, 300.0, 200.0, 24.0), VIEWPORT);
     let after = req_at(Rect::new(100.0, 280.0, 200.0, 24.0), VIEWPORT);
     assert!(
@@ -169,6 +177,106 @@ fn scrolling_the_anchors_own_list_repositions_rather_than_closing() {
 fn scrolling_the_anchor_out_of_view_dismisses() {
     let r = req_at(Rect::new(100.0, 300.0, 200.0, 24.0), VIEWPORT);
     assert_eq!(on_anchor_change(r, r, false), AnchorResponse::Dismiss);
+}
+
+/// **The band neither module owned.** `place` clamps an overlay into the
+/// viewport whatever the anchor does; `on_anchor_change` dismissed on a caller's
+/// `bool`. A caller that answered "still visible" for an anchor scrolled off the
+/// screen therefore kept a popover alive, pinned to a viewport edge, pointing at
+/// nothing — and no test anywhere would have said so, because each module was
+/// individually right.
+///
+/// The caller's `bool` no longer covers the viewport: it answers only for the
+/// things geometry cannot see.
+#[test]
+fn an_anchor_off_screen_dismisses_even_when_its_container_says_otherwise() {
+    let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let gone = req_at(Rect::new(100.0, -600.0, 200.0, 24.0), VIEWPORT);
+    assert!(
+        !anchor_is_anchorable(gone.anchor, gone.viewport),
+        "precondition: the fixture's anchor must be wholly off-screen",
+    );
+    assert_eq!(
+        on_anchor_change(gone, gone, true),
+        AnchorResponse::Dismiss,
+        "the caller said the anchor was still in its container, and it is off \
+         the screen — the viewport half of that judgement is not the caller's",
+    );
+}
+
+/// A caret is a **zero-width** rect, so a strict intersection test would report
+/// every caret sitting exactly on a viewport edge as gone and dismiss the
+/// spelling menu on the left margin. Touching counts.
+#[test]
+fn a_caret_touching_the_viewport_edge_is_still_anchorable() {
+    let vp = Rect::new(0.0, 34.0, 900.0, 742.0);
+    for caret in [
+        Rect::new(0.0, 300.0, 0.0, 18.0),   // On the left edge.
+        Rect::new(900.0, 300.0, 0.0, 18.0), // On the right edge.
+        Rect::new(100.0, 16.0, 0.0, 18.0),  // Bottom exactly on the top inset.
+        Rect::new(100.0, 776.0, 0.0, 18.0), // Top exactly on the bottom edge.
+    ] {
+        assert!(
+            anchor_is_anchorable(caret, vp),
+            "caret {caret:?} touching viewport {vp:?} was called un-anchorable",
+        );
+    }
+}
+
+/// **The two modules agree on where the boundary is**, swept rather than argued.
+///
+/// The property: for every anchor, *either* it is anchorable — and then `place`
+/// yields an overlay inside the viewport that does not cover it, so keeping the
+/// popover open is meaningful — *or* it is not, and `on_anchor_change` dismisses.
+/// There is no third outcome, which is exactly what "no unowned band" means.
+///
+/// Swept across the edges and well past them, because the case that existed was
+/// a *partial* overlap: it is what every scroll passes through, and it is the
+/// region hand-written fixtures skip on their way from inside to outside.
+#[test]
+fn the_two_modules_agree_on_the_anchor_visibility_boundary() {
+    let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let vp = Rect::new(0.0, 34.0, 900.0, 742.0);
+    let mut anchorable = 0_u32;
+    let mut dismissed = 0_u32;
+    for ax in [-300.0_f32, -1.0, 0.0, 100.0, 899.0, 900.0, 901.0, 1200.0] {
+        for ay in [-300.0_f32, -20.0, 15.0, 34.0, 400.0, 775.0, 776.0, 1000.0] {
+            for (w, h) in [(0.0_f32, 18.0_f32), (200.0, 24.0), (2.0, 0.0)] {
+                let req = req_at(Rect::new(ax, ay, w, h), vp);
+                if anchor_is_anchorable(req.anchor, req.viewport) {
+                    anchorable += 1;
+                    let p = place(req);
+                    assert!(
+                        p.rect.is_inside(vp),
+                        "anchor {:?} is anchorable, so the overlay must be on \
+                         screen; got {:?}",
+                        req.anchor,
+                        p.rect,
+                    );
+                    assert!(
+                        !p.rect.covers_vertically(req.anchor),
+                        "overlay {:?} covers the anchor {:?} it is kept open for",
+                        p.rect,
+                        req.anchor,
+                    );
+                } else {
+                    dismissed += 1;
+                    assert_eq!(
+                        on_anchor_change(req, req, true),
+                        AnchorResponse::Dismiss,
+                        "anchor {:?} is outside viewport {vp:?} and was not \
+                         dismissed",
+                        req.anchor,
+                    );
+                }
+            }
+        }
+    }
+    assert!(
+        anchorable > 0 && dismissed > 0,
+        "the sweep must reach both sides of the boundary to say anything: \
+         {anchorable} anchorable, {dismissed} dismissed",
+    );
 }
 
 /// The direction a flat rule gets wrong the other way: an unrelated pane
@@ -189,6 +297,7 @@ fn an_unrelated_scroll_leaves_the_popover_alone() {
 /// popover is inside the viewport. A stale placement is one that is not.
 #[test]
 fn a_container_scrolling_within_the_page_re_places_against_the_viewport() {
+    let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     // A 700-tall viewport, not the module's tall one: the point is that moving
     // the anchor down it exhausts the room below, which a 1400-tall viewport
     // would not do — an earlier draft used it and the test passed while
@@ -234,6 +343,7 @@ fn a_container_scrolling_within_the_page_re_places_against_the_viewport() {
 /// that gets forgotten, because nothing moved.
 #[test]
 fn a_resize_that_leaves_the_anchor_still_re_places() {
+    let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let before = req_at(Rect::new(100.0, 600.0, 200.0, 24.0), VIEWPORT);
     // The window shortens: the anchor is unchanged, the room below is not.
     let after = req_at(

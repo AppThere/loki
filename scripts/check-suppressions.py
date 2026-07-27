@@ -10,9 +10,12 @@ as `check-file-ceiling.py`:
   * `let _ = …`  — a discarded binding. In the writers these are deliberate
     (in-memory `quick-xml` writes cannot fail), but each one is also a swallowed
     `Result`; we cap them so the count can only fall.
-  * `#[allow(…)]` — a lint suppression. CLAUDE.md permits narrowly-scoped,
-    justified allows, so we do not forbid them outright — we freeze the current
-    population and require every *new* one to be a conscious `--update`.
+  * `#[allow(…)]` / `#[expect(…)]` — a lint suppression. CLAUDE.md permits
+    narrowly-scoped, justified allows, so we do not forbid them outright — we
+    freeze the current population and require every *new* one to be a conscious
+    `--update`. `expect` counts as well as `allow`: it is the same debt with an
+    expiry, and counting only `allow` would leave a spelling that walks past
+    this gate.
 
 Ratchet rules (per file, per metric):
 
@@ -47,8 +50,15 @@ BASELINE_FILE = REPO / "scripts" / "suppressions-baseline.txt"
 # `let _ = …` (optionally typed: `let _: T = …`). Anchored at a statement
 # boundary so `slet _ =` / identifiers ending in "let" do not match.
 LET_UNDERSCORE = re.compile(r"(?<![\w])let\s+_\s*(?::[^=]+)?=")
-# `#[allow(` and `#![allow(` (inner attribute) — count both.
-ALLOW = re.compile(r"#!?\[allow\(")
+# `#[allow(` / `#![allow(`, and the same two spellings of `expect`.
+#
+# `#[expect]` counts because it is the same debt with a better expiry: it is a
+# lint suppression that *fails the build* once the lint would no longer fire.
+# Counting only `allow` left a silent way around this ratchet — write `expect`
+# and the file reads as clean — which is the surface-that-permits shape
+# (L08-043). Prefer `expect` where the suppression is meant to expire; it still
+# has to go through `--update`.
+ALLOW = re.compile(r"#!?\[(?:allow|expect)\(")
 
 
 def is_test(rel: str) -> bool:
@@ -102,9 +112,9 @@ def write_baseline(counts: dict[str, tuple[int, int]]) -> None:
     total_lets = sum(t[0] for t in debted)
     total_allows = sum(t[1] for t in debted)
     lines = [
-        "# Suppression baseline — pre-existing `let _ =` swallows + `#[allow]` "
+        "# Suppression baseline — pre-existing `let _ =` swallows + `#[allow]`/`#[expect]` "
         "(Q-3/Q-4).",
-        "# Format: `<let_underscore_count> <allow_count> <path>`. Ratcheted by",
+        "# Format: `<let_underscore_count> <allow_or_expect_count> <path>`. Ratcheted by",
         "# scripts/check-suppressions.py: neither count may GROW; a file must be",
         "# removed once both reach 0. New files must start at 0/0.",
         "# Regenerate with: scripts/check-suppressions.py --update",

@@ -5,6 +5,17 @@
 //!
 //! Each names the pre-migration behaviour it replaces, with the measurement that
 //! established it, so a later reader can tell a fix from a coincidence.
+//!
+//! # These are green and the defects are **not closed**
+//!
+//! `spell_menu_placement` has no caller (see the module's status section), so
+//! everything below is a property of a function that is not in the product. All
+//! three defects are live in the shipping app; what is established here is that
+//! the reroute has somewhere correct to land.
+//!
+//! Stated at the top rather than in a footnote because the failure mode is a
+//! reader seeing three green defect tests and stopping — which is the same
+//! mistake as "the proven popup", one level up.
 
 use appthere_ui::SafeAreaInsets;
 use appthere_ui::components::popover::{Side, place};
@@ -152,7 +163,7 @@ fn the_menu_never_covers_the_caret_it_belongs_to() {
         let req = spell_menu_placement(400.0, cy as f32 * 20.0, WINDOW, desktop());
         let p = place(req);
         assert!(
-            !p.rect.overlaps(req.anchor),
+            !p.rect.covers_vertically(req.anchor),
             "menu {:?} covers the caret {:?}",
             p.rect,
             req.anchor,

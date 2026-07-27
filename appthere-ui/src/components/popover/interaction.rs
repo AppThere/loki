@@ -35,7 +35,9 @@
 
 #[path = "interaction_anchor.rs"]
 mod anchor;
-pub use anchor::{on_anchor_change, repositions, reset_repositions, AnchorResponse};
+pub use anchor::{
+    anchor_is_anchorable, on_anchor_change, repositions, reset_repositions, AnchorResponse,
+};
 
 /// Which interaction model a popover follows.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]

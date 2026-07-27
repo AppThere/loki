@@ -2,18 +2,22 @@
 
 //! Floating spelling-suggestions menu (the right-click context menu).
 //!
-//! Rendered as a `position: absolute` element anchored at the cursor — verified
-//! to work in the current Blitz stack (Stylo + stylo_taffy + Taffy 0.9). A
-//! full-size transparent backdrop sits behind it so a click anywhere outside
-//! dismisses the menu. The editor root is `position: relative`, so the menu's
-//! containing block is the editor area and the click's window-relative
-//! coordinates place it at the cursor.
+//! Rendered as a `position: absolute` element with a full-size transparent
+//! backdrop behind it, so a click anywhere outside dismisses the menu. Its
+//! containing block is the editor root (`position: relative`) — which is *not*
+//! the coordinate space the click arrives in; that is defect 3 below.
 //!
-//! # Three known defects, all fixed by T4.1's `Popover` rather than here
+//! # Three known defects, all live — **pending reroute**, not fixed
 //!
 //! Recorded so this file is not mistaken for a working reference — the r4
 //! framing called it "the proven popup", and it is proven only in the region it
 //! happened to be used in.
+//!
+//! **Status.** The replacement placement exists and is tested
+//! (`editor_spell_place`) but has no caller: this file still positions itself,
+//! so all three defects below are in the shipping app today. T4.1's `Popover`
+//! closes them **when this file renders into `AtPopoverHost`** — mounted in
+//! `app.rs` and waiting — and not before.
 //!
 //! 1. **No bottom-edge collision.** Placement is a horizontal clamp against
 //!    `viewport_width` and `anchor_y.max(0.0)`; viewport *height* is not even a
@@ -41,10 +45,9 @@
 //!    menu appearing just under the cursor looks like ordinary behaviour. It is
 //!    the one of the three that would have survived a screen session.
 //!
-//! All three go away when this becomes a consumer of `appthere_ui::components::popover`,
-//! which flips at the bottom edge, renders into a root-mounted host outside any
-//! clipping ancestor, and works in viewport coordinates throughout. `TODO(t4.1-popover): migrate this to the shared
-//! primitive.`
+//! `appthere_ui::components::popover` closes all three: it flips at the bottom
+//! edge, hosts outside every clipping ancestor, and works in window coordinates
+//! throughout. `TODO(t4.1-popover): migrate this to the shared primitive.`
 
 use std::sync::{Arc, Mutex};
 

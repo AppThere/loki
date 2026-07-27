@@ -35,7 +35,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::super::geometry::{place, Placement, PlacementRequest};
+use super::super::geometry::{place, Placement, PlacementRequest, Rect};
 
 /// Repositions performed since the last [`reset_repositions`].
 ///
@@ -95,6 +95,49 @@ pub enum AnchorResponse {
     Dismiss,
 }
 
+/// Whether an anchor is still something an overlay can be attached to — i.e.
+/// whether it touches the usable viewport at all.
+///
+/// # This exists because two modules were judging the same thing from opposite
+/// ends
+///
+/// [`on_anchor_change`] dismisses when the anchor is not visible;
+/// [`super::place`] clamps an overlay into the viewport when the anchor is
+/// partly (or wholly) outside it. Neither stated where the boundary was, and a
+/// caller was free to answer "visible" any way it liked — so there was a band
+/// nobody owned: an anchor mostly off-screen that the caller still called
+/// visible would keep a popover alive, pinned to a viewport edge, pointing at
+/// something the user cannot see. Partial overlap is not exotic; it is what
+/// every scroll passes through.
+///
+/// The band is closed by taking the viewport half of the judgement away from the
+/// caller (L08-043): `on_anchor_change` computes it here, and its `bool`
+/// parameter now covers **only** what geometry cannot see.
+///
+/// # The boundary, chosen and stated
+///
+/// **Any intersection keeps the popover; an empty one dismisses it.** The
+/// alternatives were a fraction ("dismiss below 50% visible", a magic number
+/// with no consumer behind it) and whole-containment (which dismisses the
+/// instant a scroll clips one pixel of a row — the flat rule this module exists
+/// to avoid). With this boundary, `place`'s main-axis clamp is exactly a floor
+/// under a one-frame transient, which is what its comment claims and could not
+/// previously rely on.
+///
+/// # Inclusive edges, because the zeroth consumer's anchor has zero width
+///
+/// A caret is a zero-width rect ([`PlacementRequest::anchor`] says so), so a
+/// strict `<` test would report every caret sitting exactly on a viewport edge
+/// as un-anchorable and dismiss the spelling menu on the left margin. Touching
+/// counts.
+#[must_use]
+pub fn anchor_is_anchorable(anchor: Rect, viewport: Rect) -> bool {
+    anchor.right() >= viewport.x
+        && anchor.x <= viewport.right()
+        && anchor.bottom() >= viewport.y
+        && anchor.y <= viewport.bottom()
+}
+
 /// How an open popover responds when its anchor's viewport rect may have moved.
 ///
 /// # "Dismiss on scroll" is too blunt, and "reposition" is easy to get wrong
@@ -111,6 +154,19 @@ pub enum AnchorResponse {
 /// | no longer visible | `Dismiss` — anchoring to something off-screen is meaningless |
 /// | rect changed | `Reposition` |
 /// | rect unchanged | `Ignore` — covers the unrelated-pane scroll for free |
+///
+/// # Who decides "no longer visible", and where the boundary is
+///
+/// Two things can hide an anchor and only one of them is geometry. The viewport
+/// half is decided here by [`anchor_is_anchorable`] — the caller cannot get it
+/// wrong because it is no longer asked. `still_in_container` carries the half
+/// this module genuinely cannot see: a row scrolled out of an inner list, a
+/// collapsed section, a `display: none`. Its rect can be perfectly inside the
+/// viewport while the element is not on screen at all.
+///
+/// Splitting it this way is what stops [`super::place`] and this function from
+/// disagreeing about a partly-visible anchor — see [`anchor_is_anchorable`] for
+/// the band that existed while the whole judgement was a caller's `bool`.
 ///
 /// # Viewport coordinates, not container coordinates
 ///
@@ -147,9 +203,9 @@ pub enum AnchorResponse {
 pub fn on_anchor_change(
     previous: PlacementRequest,
     current: PlacementRequest,
-    anchor_visible: bool,
+    still_in_container: bool,
 ) -> AnchorResponse {
-    if !anchor_visible {
+    if !still_in_container || !anchor_is_anchorable(current.anchor, current.viewport) {
         return AnchorResponse::Dismiss;
     }
     // Both halves compared, and both in viewport coordinates: the anchor may

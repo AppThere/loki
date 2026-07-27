@@ -8,6 +8,27 @@
 //! `editor_spell_panel` keeps the "wires, does not decide" shape the primitive's
 //! own modules have.
 //!
+//! # Status: **pending reroute — all three defects are live in the product**
+//!
+//! Read this before reading the tests. `spell_menu_placement` has no caller:
+//! `editor_spell_panel` still renders in place and still positions itself, so
+//! **every one of the three defects below is present in the shipping app today**
+//! — including the ~41px offset, which is the one that looks like ordinary
+//! behaviour on screen.
+//!
+//! What the six tests in `editor_spell_place_tests.rs` establish is that *this
+//! function* would place correctly **if it were called**. That is a real result
+//! — it is what makes the reroute a wiring change rather than a design one — but
+//! it is not a fix, and six green tests next to a defect list are exactly the
+//! arrangement in which a later reader concludes it is. The reroute is the thing
+//! that converts them; nothing else does.
+//!
+//! **The status is mechanical, not a promise.** The three suppressions in this
+//! file are `expect(dead_code)`, not `allow`: the moment a caller appears,
+//! each expectation goes unfulfilled and the build fails under CI's `-D
+//! warnings`. So the reroute cannot land while this section still says pending —
+//! whoever wires it has to come here and delete it.
+//!
 //! # Why the migration fixes all three at once
 //!
 //! | defect | what changes |
@@ -42,10 +63,10 @@ pub(super) const MENU_MAX_HEIGHT_PX: f32 = 320.0;
 /// Distance kept from every viewport edge.
 pub(super) const EDGE_MARGIN_PX: f32 = 8.0;
 /// Gap between the caret and the menu.
-#[allow(dead_code)]
+#[expect(dead_code, reason = "pending reroute — see the module status section")]
 const CARET_GAP_PX: f32 = 4.0;
 /// Caret height, so the menu clears the line rather than sitting on it.
-#[allow(dead_code)]
+#[expect(dead_code, reason = "pending reroute — see the module status section")]
 const CARET_HEIGHT_PX: f32 = 18.0;
 
 /// Builds the placement request for a right-click at `(click_x, click_y)` in
@@ -56,8 +77,8 @@ const CARET_HEIGHT_PX: f32 = 18.0;
 /// `editor_spell_panel` still positions itself, so this function is exercised
 /// only by its tests. Said plainly rather than left to be discovered, because it
 /// is the same shape as `max_servable_zoom_permille`: **tests that guard a
-/// function nobody calls**. Its six cases assert that all three defects are
-/// closed, and they will keep passing while the panel keeps all three.
+/// function nobody calls**. Its six cases show that all three defects *would* be
+/// closed here, and they will keep passing while the panel keeps all three.
 ///
 /// What wires it is one change and it is all-or-nothing: the panel must render
 /// **into `AtPopoverHost`** rather than in place. Using this placement while
@@ -68,9 +89,10 @@ const CARET_HEIGHT_PX: f32 = 18.0;
 /// `window` is the full window size; `insets` are the safe-area insets, which
 /// bound the usable viewport.
 // TODO(t4.1-popover): render the panel into `AtPopoverHost` and call this.
-// Deliberately not called yet — see the doc comment. The alternative to this
-// allow was a half-migration, which is worse than an honest gap.
-#[allow(dead_code)]
+// Deliberately not called yet — see the module's status section. The alternative
+// to this suppression was a half-migration, which is worse than an honest gap;
+// `expect` rather than `allow` so wiring a caller breaks the build here.
+#[expect(dead_code, reason = "pending reroute — see the module status section")]
 #[must_use]
 pub(super) fn spell_menu_placement(
     click_x: f32,

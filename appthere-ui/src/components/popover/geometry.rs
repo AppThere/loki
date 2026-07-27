@@ -86,15 +86,42 @@ impl Rect {
             && self.bottom() <= outer.bottom()
     }
 
-    /// Whether `self` and `other` share any area.
-    ///
-    /// Used to assert an overlay never covers its own anchor — the failure a
+    /// Whether `self` sits over `other` **on the placement axis** — the failure a
     /// reader sees when a flip is computed with the wrong sign, and one that
     /// plausible-looking offsets will not reveal.
+    ///
+    /// # Why this replaced a plain rectangle intersection
+    ///
+    /// The obvious predicate — "do the two rects share any area" — is
+    /// **vacuously false for the anchor shape the first consumer uses**. A caret
+    /// is a zero-width rect and `Align::Start` puts the overlay's left edge on
+    /// it, so `overlay.x < caret.right()` is `400.0 < 400.0`: false, whatever the
+    /// vertical arithmetic did. `the_menu_never_covers_the_caret_it_belongs_to`
+    /// was written with it and **could not fail** — a menu placed deliberately
+    /// on top of the caret reported no overlap. Checked, not inferred.
+    ///
+    /// Two separate causes, both fixed here:
+    ///
+    /// 1. **The horizontal test does not belong in this question.** An overlay is
+    ///    *aligned* to its anchor, so sharing its x range is the design, not the
+    ///    defect. Including x turns a real assertion into a coin flip on the
+    ///    alignment.
+    /// 2. **Degenerate rects cover nothing.** A zero-height overlay is not on
+    ///    screen, so it obscures nothing — and a strict interval test says
+    ///    otherwise for a rect *contained* in another. Handled here rather than
+    ///    as an `if` in each test, so no caller has to remember it.
+    ///
+    /// # PRECONDITION: placement is vertical
+    ///
+    /// `Side` has only `Above`/`Below`, so an overlay sharing the anchor's
+    /// vertical band **is** on top of it. Should `Before`/`After` ever be added
+    /// (see the module docs — deliberately absent), this becomes wrong in the
+    /// direction that reports a correct side-by-side placement as a collision,
+    /// and it must gain the horizontal case at the same time.
     #[must_use]
-    pub fn overlaps(self, other: Rect) -> bool {
-        self.x < other.right()
-            && other.x < self.right()
+    pub fn covers_vertically(self, other: Rect) -> bool {
+        self.height > 0.0
+            && other.height > 0.0
             && self.y < other.bottom()
             && other.y < self.bottom()
     }
