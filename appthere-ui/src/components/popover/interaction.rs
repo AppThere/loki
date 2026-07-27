@@ -33,6 +33,8 @@
 //! is *derived* rather than accepted as a second prop — a `Menu` that traps, or a
 //! `Panel` that does not, are states this API cannot express.
 
+use super::{place, Placement, PlacementRequest};
+
 /// Which interaction model a popover follows.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Role {
@@ -135,7 +137,17 @@ pub fn route_key(role: Role, key: Key) -> KeyAction {
         // Everything else belongs to whichever control has focus: a text field
         // needs its own Home/End and its own characters, and a slider needs its
         // own arrows.
-        (Role::Panel, _) => KeyAction::PassThrough,
+        //
+        // Spelled out rather than written `(Role::Panel, _)`. A catch-all would
+        // absorb a future `Key` variant into `PassThrough` silently, which is the
+        // same expiring guarantee that made the deleted
+        // `every_key_is_routed_for_every_role` worthless — a promise that holds
+        // only until someone adds a variant, and then keeps looking kept. With
+        // both roles exhaustive, a new `Key` is a **compile error** in this
+        // function, so the property needs no test at all.
+        (Role::Panel, Key::Down | Key::Up | Key::Home | Key::End) => KeyAction::PassThrough,
+        (Role::Panel, Key::Activate) => KeyAction::PassThrough,
+        (Role::Panel, Key::Char(_)) => KeyAction::PassThrough,
     }
 }
 
@@ -189,54 +201,83 @@ pub fn focus_after_dismiss(cause: DismissCause) -> FocusTarget {
     }
 }
 
-/// Where a scroll happened, relative to the anchor.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ScrollSource {
-    /// A scroll container the anchor lives inside — the anchor moved.
-    AnchorContainer,
-    /// Anywhere else — the anchor did not move.
-    Elsewhere,
-}
-
-/// What a scroll does to an open popover.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ScrollResponse {
-    /// Nothing: the anchor did not move.
+/// What a scroll or resize does to an open popover.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum AnchorResponse {
+    /// Nothing moved that matters.
     Ignore,
-    /// Re-run placement against the anchor's new position.
-    Reposition,
-    /// Close.
+    /// Re-place the popover. **Carries the recomputed placement** — see
+    /// [`on_anchor_change`] for why it is not a bare marker.
+    Reposition(Placement),
+    /// Close: the anchor is no longer visible.
     Dismiss,
 }
 
-/// How an open popover responds to a scroll.
+/// How an open popover responds when its anchor's viewport rect may have moved.
 ///
-/// # "Dismiss on scroll" is too blunt for T4.2
+/// # "Dismiss on scroll" is too blunt, and "reposition" is easy to get wrong
 ///
-/// The Recent Documents menu anchors to an entry *inside a scrolling list*.
+/// T4.2's Recent Documents menu anchors to an entry *inside a scrolling list*.
 /// Under a flat dismiss-on-scroll rule, nudging a trackpad closes the menu — and
-/// the list is the thing you scroll to reach entries in the first place.
+/// the list is the thing you scroll to reach entries. A flat rule also errs the
+/// other way: an unrelated pane scrolling should not close a menu being read.
 ///
-/// The rule that serves both cases keys on **whether the anchor is still
-/// visible**, not on whether a scroll occurred:
+/// So the decision keys on the anchor's rect **in viewport coordinates**:
 ///
-/// | source | anchor visible | response |
-/// | --- | --- | --- |
-/// | anchor's container | yes | reposition — the menu follows its entry |
-/// | anchor's container | no | dismiss — anchoring to something off-screen is meaningless |
-/// | elsewhere | either | ignore — the anchor did not move |
+/// | condition | response |
+/// | --- | --- |
+/// | no longer visible | `Dismiss` — anchoring to something off-screen is meaningless |
+/// | rect changed | `Reposition` |
+/// | rect unchanged | `Ignore` — covers the unrelated-pane scroll for free |
 ///
-/// A nudge repositions; scrolling the entry away closes; scrolling an unrelated
-/// pane does nothing. `Ignore` for `Elsewhere` is the part a flat rule gets
-/// wrong in the other direction — an unrelated scroll should not close a menu
-/// the user is reading.
+/// # Viewport coordinates, not container coordinates
+///
+/// An earlier draft asked "is the anchor still visible *in its container*", and
+/// that predicate is wrong in a way this component exists to prevent. A Recent
+/// Documents entry can sit unmoved and fully visible inside its list while the
+/// *list* scrolls in the page, or while the window resizes. Container-visibility
+/// stays true, so the popover holds its position — and the flip decision it was
+/// placed with has gone stale. A menu that opened downward with room below now
+/// hangs off the bottom: **the exact defect T4.1 exists to fix, arriving by a
+/// path the geometry cannot see.**
+///
+/// The caller passes the request it **last placed against** and the request that
+/// is **true now**; the difference between them is the whole input. That is one
+/// comparison rather than a scroll-delta plus a resize hook, so there is no
+/// second path for the two to diverge along (L08-028).
+///
+/// # Why `Reposition` carries a `Placement`
+///
+/// Because the tempting implementation is to offset the popover by the scroll
+/// delta, and that is wrong for the same reason: an offset preserves a flip
+/// decision made against different viewport bounds. Re-placement has to re-run
+/// [`super::place`] against the *current* anchor and the *current* viewport.
+///
+/// Handing back the recomputed `Placement` rather than a bare `Reposition`
+/// marker makes the delta shortcut unavailable — there is nothing for a caller
+/// to offset, only a position to adopt. Same move as deriving the focus trap
+/// from the role: the wrong state is not expressible.
+///
+/// **Window resize routes here too**, deliberately. It is the same class —
+/// anchor unmoved in its container, viewport bounds changed — and giving it its
+/// own path is how the two drift.
 #[must_use]
-pub fn on_scroll(source: ScrollSource, anchor_still_visible: bool) -> ScrollResponse {
-    match source {
-        ScrollSource::Elsewhere => ScrollResponse::Ignore,
-        ScrollSource::AnchorContainer if anchor_still_visible => ScrollResponse::Reposition,
-        ScrollSource::AnchorContainer => ScrollResponse::Dismiss,
+pub fn on_anchor_change(
+    previous: PlacementRequest,
+    current: PlacementRequest,
+    anchor_visible: bool,
+) -> AnchorResponse {
+    if !anchor_visible {
+        return AnchorResponse::Dismiss;
     }
+    // Both halves compared, and both in viewport coordinates: the anchor may
+    // have moved under a still viewport (a list scrolling), or the viewport may
+    // have moved under a still anchor (a window resize). Either invalidates the
+    // flip decision, and comparing only one of them is how the two drift.
+    if previous.anchor == current.anchor && previous.viewport == current.viewport {
+        return AnchorResponse::Ignore;
+    }
+    AnchorResponse::Reposition(place(current))
 }
 
 #[cfg(test)]

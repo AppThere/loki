@@ -3,10 +3,33 @@
 
 //! The three interaction decisions, asserted as the failures a user would hit.
 
+use super::super::geometry::{Align, Rect, Side};
 use super::{
-    focus_after_dismiss, on_scroll, route_key, DismissCause, FocusTarget, Key, KeyAction, Role,
-    ScrollResponse, ScrollSource,
+    focus_after_dismiss, on_anchor_change, place, route_key, AnchorResponse, DismissCause,
+    FocusTarget, Key, KeyAction, PlacementRequest, Role,
 };
+
+/// A tall viewport, so `a_resize_that_leaves_the_anchor_still_re_places` can
+/// shorten it and change the answer.
+const VIEWPORT: Rect = Rect {
+    x: 0.0,
+    y: 0.0,
+    width: 900.0,
+    height: 1400.0,
+};
+
+fn req_at(anchor: Rect, viewport: Rect) -> PlacementRequest {
+    PlacementRequest {
+        anchor,
+        width: 300.0,
+        height: 320.0,
+        viewport,
+        preferred: Side::Below,
+        align: Align::Start,
+        gap: 4.0,
+        margin: 8.0,
+    }
+}
 
 /// **The failure that makes `Role` necessary:** arrows stolen from a control
 /// inside a panel.
@@ -119,34 +142,89 @@ fn causes_that_moved_focus_deliberately_are_left_alone() {
 /// A flat dismiss-on-scroll rule closes the menu on the first trackpad nudge.
 #[test]
 fn scrolling_the_anchors_own_list_repositions_rather_than_closing() {
-    assert_eq!(
-        on_scroll(ScrollSource::AnchorContainer, true),
-        ScrollResponse::Reposition,
+    let before = req_at(Rect::new(100.0, 300.0, 200.0, 24.0), VIEWPORT);
+    let after = req_at(Rect::new(100.0, 280.0, 200.0, 24.0), VIEWPORT);
+    assert!(
+        matches!(
+            on_anchor_change(before, after, true),
+            AnchorResponse::Reposition(_)
+        ),
         "a nudge that leaves the entry visible must move the menu, not close it",
     );
 }
 
-/// Once the anchor is gone there is nothing to anchor to, so closing is the
-/// honest answer rather than leaving a menu pointing at nothing.
+/// Once the anchor is gone there is nothing to anchor to.
 #[test]
 fn scrolling_the_anchor_out_of_view_dismisses() {
-    assert_eq!(
-        on_scroll(ScrollSource::AnchorContainer, false),
-        ScrollResponse::Dismiss,
-    );
+    let r = req_at(Rect::new(100.0, 300.0, 200.0, 24.0), VIEWPORT);
+    assert_eq!(on_anchor_change(r, r, false), AnchorResponse::Dismiss);
 }
 
 /// The direction a flat rule gets wrong the other way: an unrelated pane
-/// scrolling must not close a menu the user is reading.
+/// scrolling must not close a menu the user is reading. Falls out of the anchor
+/// rect being unchanged — no separate case needed.
 #[test]
-fn scrolling_elsewhere_does_nothing() {
-    for visible in [true, false] {
-        assert_eq!(
-            on_scroll(ScrollSource::Elsewhere, visible),
-            ScrollResponse::Ignore,
-            "an unrelated scroll changed the popover (anchor visible: {visible})",
-        );
-    }
+fn an_unrelated_scroll_leaves_the_popover_alone() {
+    let r = req_at(Rect::new(100.0, 300.0, 200.0, 24.0), VIEWPORT);
+    assert_eq!(on_anchor_change(r, r, true), AnchorResponse::Ignore);
+}
+
+/// **The gap a container-visibility predicate would have left.** An entry can sit
+/// unmoved and fully visible inside its list while the *list* scrolls in the
+/// page — so the anchor's viewport rect changes even though nothing about its
+/// container did, and the flip decision it was placed with is stale.
+///
+/// The assertion is on the outcome a reader would see: after repositioning, the
+/// popover is inside the viewport. A stale placement is one that is not.
+#[test]
+fn a_container_scrolling_within_the_page_re_places_against_the_viewport() {
+    // A 700-tall viewport, not the module's tall one: the point is that moving
+    // the anchor down it exhausts the room below, which a 1400-tall viewport
+    // would not do — an earlier draft used it and the test passed while
+    // asserting nothing about a flip.
+    let screen = Rect::new(0.0, 0.0, 900.0, 700.0);
+    // Placed with room below: anchor high in the viewport, opens downward.
+    let before = req_at(Rect::new(100.0, 100.0, 200.0, 24.0), screen);
+    let placed = place(before);
+    assert_eq!(placed.side, Side::Below, "precondition: it opened downward");
+
+    // The list scrolls down the page. The entry has not moved inside its list,
+    // but it is now near the bottom of the viewport.
+    let after = req_at(Rect::new(100.0, 660.0, 200.0, 24.0), screen);
+    let AnchorResponse::Reposition(p) = on_anchor_change(before, after, true) else {
+        panic!("expected a reposition");
+    };
+    assert!(
+        p.rect.is_inside(after.viewport),
+        "re-placed overlay {:?} hangs outside the viewport — offsetting by the \
+         scroll delta would have preserved the stale downward flip",
+        p.rect,
+    );
+    assert_eq!(p.side, Side::Above, "there is no longer room below");
+}
+
+/// **Window resize is the same class and must route the same way.** The anchor
+/// has not moved at all; the bounds it was placed against have.
+///
+/// Given its own path, resize and scroll drift apart — and resize is the one
+/// that gets forgotten, because nothing moved.
+#[test]
+fn a_resize_that_leaves_the_anchor_still_re_places() {
+    let before = req_at(Rect::new(100.0, 600.0, 200.0, 24.0), VIEWPORT);
+    // The window shortens: the anchor is unchanged, the room below is not.
+    let after = req_at(
+        Rect::new(100.0, 600.0, 200.0, 24.0),
+        Rect::new(0.0, 0.0, 900.0, 700.0),
+    );
+    let r = on_anchor_change(before, after, true);
+    assert!(
+        matches!(r, AnchorResponse::Reposition(_)),
+        "a resize with an unmoved anchor must still re-place; got {r:?}",
+    );
+    let AnchorResponse::Reposition(p) = r else {
+        unreachable!()
+    };
+    assert!(p.rect.is_inside(after.viewport));
 }
 
 /// **A menu must handle every key itself.**
