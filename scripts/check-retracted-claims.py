@@ -27,6 +27,27 @@ the wrong version in order to correct it. That is deliberate: the remedy for a
 wrong claim is a visible correction next to it, not deletion, because a phrase
 that merely disappears teaches nobody.
 
+What this control can and cannot catch
+--------------------------------------
+Stated because L08-022 requires saying what a control's power actually is, and
+because a gate trusted past its power is worse than no gate.
+
+- **Catches:** a *copy* of a retracted claim — the same wording, restated
+  elsewhere. That is what actually happened with I-06: the phrase travelled
+  verbatim from a test module into a status registry and back into a review.
+- **Does not catch:** a **paraphrase**. Someone writing "when there is no room
+  below the descender" instead of "tight leading" passes cleanly, and the reader
+  is misled by exactly the same wrong mechanism. This matches phrasings, not
+  ideas, and no amount of adding rows fixes that — the next paraphrase is not in
+  the list either.
+- **Does not catch:** a wrong claim that was never retracted. The list is fed by
+  retractions, so a claim nobody noticed was wrong is invisible here.
+
+The honest summary is that this closes the specific hole that was measured, not
+the class it belongs to. A paraphrase still needs a reader who knows the
+correction — which is why the remedy is to put the correction where the reader
+lands, and this gate only enforces that the *known* wordings do so.
+
 Usage:
     scripts/check-retracted-claims.py
 """
