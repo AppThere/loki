@@ -42,6 +42,27 @@ the ceiling, since it is about the OOM killer rather than preference. So 520 is
 the smallest setting that makes ceiling and target coincide, which is what puts
 step 5 within reach at 2x. Predicted first firing: 325% zoom.
 
+What to look for, and what not to
+---------------------------------
+Do not judge "is it soft" by eye. R5a and R5b have *different log signatures*
+and the difference is deterministic:
+
+- **R5a (transient):** `raster_permille=750` for a page, followed within ~2 ms by
+  `raster_permille=1000` for the same page. Reduced, then replaced.
+- **R5b (persistent):** a reduced `raster_permille` with **no follow-up line for
+  that page at all**, alongside `survival_reduced=true` on the residency line.
+  The absent line is the finding.
+
+So the observation is "did the follow-up line appear", which needs no squinting
+and cannot be talked into. The subjective judgement is the separate one, and it
+is a design call rather than an observation: *given* that it is persistent, is a
+page held at that scale acceptable to ship?
+
+For that judgement the scale matters, and the reachable range is wide — an
+ordinary large machine at 3x is reduced to ~0.71, while A3 on 2 GiB at 4x sits at
+0.271, hard against the 0.25 floor. Those are different things to look at. The
+`raster_permille` on the line says which one is on screen.
+
 The document is deliberately minimal — no styles, no numbering, no theme — so
 that what is on screen is page geometry and text, and a squiggle or a layout
 oddity is not competing for attention with the thing being looked at.
@@ -113,8 +134,11 @@ def main(argv: list[str]) -> int:
     print("\nThen, for Spec 08 R5b:")
     print(f"  LOKI_TEXTURE_BUDGET_MB=520 RUST_LOG=loki_renderer=debug \\")
     print(f"      target/release/loki-text-desktop {out}")
-    print("  scroll so a page BOUNDARY is in view, then zoom past 325%,")
-    print("  and look for survival_reduced=true")
+    print("  scroll so a page BOUNDARY is in view, then zoom past 325%")
+    print("")
+    print("Look for survival_reduced=true, then for a reduced raster_permille")
+    print("with NO follow-up 1000 line for that page. The absent line is R5b;")
+    print("a follow-up within ~2ms would be R5a. Do not judge softness by eye.")
     return 0
 
 

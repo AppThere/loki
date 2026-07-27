@@ -32,9 +32,7 @@
 //! one that must decide at launch — should not reuse this sensor without
 //! checking that reasoning still holds for it.
 
-use appthere_ui::{
-    GpuClass, note_device_scale_factor, note_gpu_class, note_system_memory, probe_system_memory,
-};
+use appthere_ui::{GpuClass, note_device_scale_factor, note_gpu_class, use_memory_resampling};
 use dioxus::prelude::*;
 use loki_renderer::dpr_probe::observed_scale;
 use loki_renderer::gpu_probe::{AdapterKind, observed_adapter};
@@ -67,11 +65,19 @@ fn gpu_class_of(kind: AdapterKind) -> GpuClass {
 /// Mounted once at the application root. Renders nothing.
 #[component]
 pub fn DeviceProbeSensor() -> Element {
-    // Memory: answerable immediately, and it does not change during a session
-    // in any way a budget should chase. `available` does move, but re-reading it
-    // per frame would make the budget jitter with whatever else the machine is
-    // doing — worse than a slightly stale figure.
-    use_hook(|| note_system_memory(probe_system_memory()));
+    // Memory: seeded synchronously and then re-read on a cadence, per T1.6's
+    // "observable, not sampled once".
+    //
+    // This was a bare `use_hook(|| note_system_memory(probe_system_memory()))`,
+    // justified by "re-reading it per frame would make the budget jitter". The
+    // objection to per-frame is right and the conclusion did not follow — those
+    // are not the only two options — and once-at-mount undercut the reason the
+    // derivation prefers `MemAvailable` over `MemTotal` at all: reacting to
+    // pressure the app cannot see at startup. Launch is close to the worst
+    // sampling moment, since this process is about to allocate.
+    //
+    // `use_memory_resampling` owns the cadence and the materiality grid.
+    use_memory_resampling();
 
     // GPU: not answerable until the paint path has resumed. `note_gpu_class`
     // ignores `Unknown` and writes only on a change, so the common case — every

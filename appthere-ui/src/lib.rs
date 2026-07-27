@@ -27,6 +27,7 @@
 
 pub mod components;
 pub mod device_probe;
+pub mod device_probe_memory;
 pub mod device_profile;
 pub mod responsive;
 pub mod safe_area;
@@ -65,6 +66,9 @@ pub use components::{
 pub use device_probe::{
     note_device_scale_factor, note_gpu_class, note_system_memory, parse_meminfo,
     probe_system_memory, SystemMemory,
+};
+pub use device_probe_memory::{
+    quantise_bytes, quantised, use_memory_resampling, MEMORY_QUANTUM_BYTES, MEMORY_RESAMPLE_SECS,
 };
 pub use device_profile::{
     note_pointer, use_device_profile, use_provide_device_profile, AtDeviceProfileContext,

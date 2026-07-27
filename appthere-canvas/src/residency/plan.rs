@@ -282,3 +282,7 @@ mod tests;
 #[cfg(test)]
 #[path = "plan_reachability_tests.rs"]
 mod reachability_tests;
+
+#[cfg(test)]
+#[path = "plan_depth_tests.rs"]
+mod depth_tests;
