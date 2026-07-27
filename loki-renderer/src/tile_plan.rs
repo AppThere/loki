@@ -99,6 +99,7 @@ pub(crate) fn plan_tiles(
             1.0
         },
     };
+    log_budget_change(budget);
     let plan = plan_residency(&boxes, &vp, budget);
 
     // Runtime observability for the R5a/R28/R29 screen session, and the reason it
@@ -140,6 +141,56 @@ pub(crate) fn plan_tiles(
             mount: plan.raster_scale(index),
         })
         .collect()
+}
+
+/// Reports the budget in force whenever it changes, including the first time it
+/// is observed.
+///
+/// # Why the pressure line above is not enough
+///
+/// That line carries `budget_bytes`, but it is only emitted *under pressure* — so
+/// a run that prints nothing tells you neither what the budget was nor that the
+/// budget was large enough to avoid pressure. Those are the two readings the
+/// screen procedure has to distinguish, and the control it already has (force the
+/// budget absurdly low, confirm the line can speak) only establishes the
+/// instrument works; it says nothing about the value in force on the *next* run,
+/// which is the run under test.
+///
+/// This is the same defect one level up from the one the pressure line's own
+/// comment describes (L9-011): a diagnostic that is silent in the success case
+/// cannot be told from a diagnostic that is broken. So the resolved budget is
+/// announced unconditionally, and a quiet run becomes evidence rather than an
+/// absence of it.
+///
+/// Logged on change rather than once per process because the budget is reactive:
+/// it follows the device profile, so it moves when the DPR probe lands or RAM
+/// availability is re-read. Once-per-process would report a pre-probe value and
+/// then never correct it.
+fn log_budget_change(budget: TextureBudget) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    // `u64::MAX` is the "nothing observed yet" sentinel: it is not a reachable
+    // budget, so the first call always differs and always logs.
+    static LAST_BYTES: AtomicU64 = AtomicU64::new(u64::MAX);
+    static LAST_CEILING: AtomicU64 = AtomicU64::new(u64::MAX);
+
+    let bytes = budget.bytes();
+    let ceiling = budget.hard_ceiling_bytes();
+    // Separate statements, so both swaps run whatever the first compares to —
+    // `||` would short-circuit and leave the ceiling's record stale.
+    let bytes_changed = LAST_BYTES.swap(bytes, Ordering::Relaxed) != bytes;
+    let ceiling_changed = LAST_CEILING.swap(ceiling, Ordering::Relaxed) != ceiling;
+    if bytes_changed || ceiling_changed {
+        tracing::debug!(
+            budget_bytes = bytes,
+            ceiling_bytes = ceiling,
+            // Which arm of the derivation produced it — the difference between
+            // "this machine was measured" and "the override or the baseline
+            // stood in for it", which the byte figure alone does not show.
+            source = ?budget.source(),
+            "texture budget in force",
+        );
+    }
 }
 
 #[cfg(test)]
