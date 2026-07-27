@@ -87,11 +87,21 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         // divided by the same factor, so the on-screen tile width is unchanged
         // while Compact type renders larger.
         let zoom = if render_mode == RenderMode::Paginated {
-            props.zoom.max(0.25)
+            // No floor here: `set_zoom` clamps to the shared residency range, and
+            // a second literal 0.25 alongside `ZOOM_RANGE_MIN` is the duplication
+            // that renaming those constants was meant to discourage.
+            props.zoom
         } else {
             f64::from(reflow_type_scale(props.reflow_width_px as f32))
         };
         renderer.source.set_zoom(zoom as f32);
+        // Read back rather than reuse the local. `set_zoom` records what was
+        // *requested*; the source renders `min(requested, capability_limit)`, and
+        // the CSS tile boxes below must be sized from what is actually rendered.
+        // Sizing a box from a zoom the texture was not rendered at paints the
+        // page at the wrong size — inert today because nothing sets a capability
+        // limit, and the first thing Spec 08 T5.4 would trip over.
+        let zoom = f64::from(renderer.source.zoom());
         // Single canonical layout: in paginated mode reuse the layout the editor
         // already computed for this document instead of laying it out again.
         // Provided after set_render_mode so it is keyed to the current
