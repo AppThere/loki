@@ -79,6 +79,7 @@ mod editor_scrollbar;
 mod editor_seed_publish;
 mod editor_spell;
 mod editor_spell_panel;
+mod editor_spell_place;
 mod editor_state;
 mod editor_style;
 mod editor_style_catalog;

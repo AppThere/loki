@@ -87,4 +87,17 @@ pub mod host;
 pub mod interaction;
 pub mod wiring;
 
+pub use component::{
+    use_popover, use_provide_popover, AtPopoverContext, AtPopoverHost, PopoverRequest,
+};
+pub use dismiss_order::{dismiss_sequence, DismissStep};
 pub use geometry::{place, Align, Placement, PlacementRequest, Rect, Side};
+pub use host::RootLayer;
+pub use interaction::{
+    focus_after_dismiss, on_anchor_change, repositions, reset_repositions, route_key,
+    AnchorResponse, DismissCause, FocusTarget, Key, KeyAction, Role,
+};
+pub use wiring::{
+    is_outside_dismiss, on_anchor_identity, open_response, AnchorKey, IdentityCheck, OpenResponse,
+    PopoverId,
+};

@@ -83,10 +83,26 @@ pub fn place(req: PlacementRequest) -> Placement {
     };
 
     let height = wanted.min(room);
-    let y = match side {
+    let unclamped_y = match side {
         Side::Below => req.anchor.bottom() + gap,
         Side::Above => req.anchor.y - gap - height,
     };
+    // Clamp on the main axis too, not only across it.
+    //
+    // Every other assertion in this module is "the overlay is inside the
+    // viewport", and without this that property was **conditional on the anchor
+    // being inside the viewport** — an unstated precondition, which is the
+    // surface-that-permits failure L08-043 is about. It surfaced from a real
+    // fixture: a click 2px from the top of an Android window whose safe area
+    // starts at 34px put the menu at y=24, under the status bar.
+    //
+    // A caller whose anchor has left the viewport gets an overlay at the edge
+    // rather than off-screen, and `on_anchor_change` dismisses it on the next
+    // frame regardless — so the clamp is a floor under a transient, not a new
+    // behaviour anyone will rely on.
+    let y_lo = vp.y + margin;
+    let y_hi = (vp.bottom() - margin - height).max(y_lo);
+    let y = unclamped_y.clamp(y_lo, y_hi);
 
     let ideal_x = match req.align {
         Align::Start => req.anchor.x,
@@ -104,7 +120,7 @@ pub fn place(req: PlacementRequest) -> Placement {
         // Compared against the ideal rather than recomputed from the result: the
         // question is "did alignment survive", and only the ideal knows what
         // alignment asked for.
-        shifted: (x - ideal_x).abs() > f32::EPSILON,
+        shifted: (x - ideal_x).abs() > f32::EPSILON || (y - unclamped_y).abs() > f32::EPSILON,
         clamped: height < wanted || width < req.width,
     }
 }

@@ -49,6 +49,7 @@ pub use components::icons::{
     LUCIDE_STRIKETHROUGH, LUCIDE_SUBSCRIPT, LUCIDE_SUPERSCRIPT, LUCIDE_TABLE, LUCIDE_TRASH_2,
     LUCIDE_UNDERLINE, LUCIDE_UNDO,
 };
+pub use components::popover::{use_popover, use_provide_popover, AtPopoverHost, PopoverRequest};
 pub use components::ribbon::{
     AtRibbon, AtRibbonGroup, AtRibbonGroups, AtRibbonIconButton, AtRibbonSelect, RibbonGroupSpec,
     RibbonTabDesc, RibbonTabIndex,

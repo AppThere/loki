@@ -58,12 +58,10 @@ use crate::routes::editor::editor_spell::{
     SpellMenu, SpellSync, add_to_dictionary, ignore_word, replace_word,
 };
 
-/// Width of the floating menu in CSS pixels.
-const MENU_WIDTH_PX: f32 = 300.0;
-/// Maximum height before the menu scrolls.
-const MENU_MAX_HEIGHT_PX: f32 = 320.0;
-/// Gap kept between the menu and the viewport's right edge when clamping.
-const EDGE_MARGIN_PX: f32 = 8.0;
+// One definition, in the module that computes placement from them — the panel
+// and the placement disagreeing about the menu's width would put the flip and
+// the render out of step, and the disagreement would look like a placement bug.
+use super::editor_spell_place::{EDGE_MARGIN_PX, MENU_MAX_HEIGHT_PX, MENU_WIDTH_PX};
 
 /// Renders the floating suggestions menu when `spell_menu` is `Some`.
 ///

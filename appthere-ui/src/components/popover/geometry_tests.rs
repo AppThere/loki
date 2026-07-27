@@ -323,3 +323,34 @@ fn a_request_that_fits_on_either_side_is_never_clamped() {
         }
     }
 }
+
+/// **The unstated precondition, found by a real fixture.** Containment on the
+/// main axis was conditional on the anchor lying inside the viewport — every
+/// case above has one, so nothing here noticed.
+///
+/// It surfaced from `loki-text`'s spell-menu placement: a click 2px from the top
+/// of an Android window whose safe area starts at 34px put the menu at y=24,
+/// under the status bar. The mutation that removes the clamp passes this whole
+/// file without it.
+#[test]
+fn an_anchor_outside_the_viewport_still_yields_a_contained_overlay() {
+    let base = near_bottom();
+    // A viewport inset from the window, as a safe area is.
+    let vp = Rect::new(0.0, 34.0, 900.0, 742.0);
+    for preferred in [Side::Above, Side::Below] {
+        for ay in [-40.0_f32, -10.0, 0.0, 2.0, 20.0, 770.0, 800.0] {
+            let mut req = base;
+            req.viewport = vp;
+            req.preferred = preferred;
+            req.anchor = Rect::new(100.0, ay, 2.0, 18.0);
+            let p = place(req);
+            assert!(
+                p.rect.is_inside(vp),
+                "overlay {:?} escaped viewport {vp:?} for an anchor at y={ay} \
+                 ({preferred:?}) — the anchor is outside the viewport, which is \
+                 not a reason for the overlay to be",
+                p.rect,
+            );
+        }
+    }
+}

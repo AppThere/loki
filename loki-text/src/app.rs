@@ -19,8 +19,8 @@
 
 use appthere_ui::tokens;
 use appthere_ui::{
-    AtBackdropHost, AtThemeContext, use_provide_backdrop, use_provide_device_profile,
-    use_provide_responsive, use_safe_area,
+    AtBackdropHost, AtPopoverHost, AtThemeContext, use_provide_backdrop,
+    use_provide_device_profile, use_provide_popover, use_provide_responsive, use_safe_area,
 };
 use dioxus::prelude::*;
 
@@ -113,6 +113,8 @@ pub fn App() -> Element {
     // ribbon overflow menu and future anchored popups); AtBackdropHost below
     // renders the active backdrop inside this positioned root.
     use_provide_backdrop();
+    // Anchored-overlay state, read by `AtPopoverHost` below (Spec 08 T4.1).
+    let _popover = use_provide_popover();
 
     // Start the document font warm-up (system-font scan + family-index build)
     // on a background thread now, so it overlaps the Home screen instead of
@@ -246,6 +248,21 @@ pub fn App() -> Element {
             // Window-level dismiss backdrop (e.g. the ribbon overflow menu's
             // outside-click-to-close). Renders nothing while no popup is open.
             AtBackdropHost {}
+
+            // Anchored overlays (Spec 08 T4.1). **Must follow AtBackdropHost.**
+            //
+            // `position: fixed` collapses to `absolute` and there is no top
+            // layer, so `z-index` cannot arbitrate between two children of the
+            // positioned root — DOM order does. A backdrop painting over the
+            // popup would leave it visible and unclickable, which reads as a
+            // dead menu rather than as a stacking bug. `popover::RootLayer`
+            // states the order; this is the site that has to honour it.
+            //
+            // Hosting here rather than beside each anchor is what puts overlays
+            // outside every `overflow` ancestor — no `z-index` escapes a clip —
+            // and, because this container's padding box starts at the window
+            // origin, it also makes window coordinates directly usable.
+            AtPopoverHost {}
         }
     }
 }
