@@ -335,7 +335,7 @@ our invention; the reader's perception is not. So:
 - **The target may only buy memory back from work the user cannot see.** Steps
   1–3 (full scale, ladder off-centre tiles, drop off-centre tiles) are unchanged.
 - **Step 4 now stops.** If the visible set alone exceeds the target, it is mounted
-  at full scale and `over_budget` is reported. Being over target is an ordinary,
+  at full scale and `over_target` is reported. Being over target is an ordinary,
   reported outcome rather than a failure to correct.
 - **A new step 5 degrades visible scale only above a survival ceiling**, far
   above the target, where the alternative is not "slightly more memory" but the

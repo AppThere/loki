@@ -194,14 +194,37 @@ impl PaintScene for VelloScenePainter<'_, '_> {
 ///
 /// Returns `existing` unchanged when no correction applies, so a source that
 /// returns the size it was asked for (every source upstream has) is untouched.
+///
+/// # Total, deliberately — no `debug_assert` on the shrink direction
+///
+/// Loki's budget only ever *reduces* rasterisation scale, so `got > requested`
+/// should not arise, and asserting that is a tempting way to record the
+/// assumption. It is the wrong instrument here. The assert would fire in the very
+/// test that pins the oversized behaviour, so keeping both means keeping neither;
+/// and a debug-only invariant on a rendering path means the release build — the
+/// only one a reader ever runs — falls through to whatever the arithmetic does,
+/// unexamined. A ratio is direction-agnostic at no extra cost, so the function
+/// handles both and `an_oversized_texture_is_scaled_down_to_the_box` says which
+/// direction is the exercised one.
 fn fit_brush_to_box(
     requested: (u32, u32),
     got: (u32, u32),
     existing: Option<Affine>,
 ) -> Option<Affine> {
-    // A zero-sized texture would divide by zero; leaving the brush alone draws
-    // nothing useful but draws nothing wrong either.
-    if got == requested || got.0 == 0 || got.1 == 0 {
+    // Degenerate sizes bail out rather than producing a transform, and both
+    // directions matter for a different reason:
+    //
+    // - `got` zero divides by zero, giving an infinite or NaN transform. A NaN
+    //   affine does not raise anything — it renders as nothing, or as garbage,
+    //   which is the quiet-failure shape rather than a crash.
+    // - `requested` zero yields scale 0, which is finite and therefore worse: it
+    //   collapses the texture to a point and looks like a deliberate transform.
+    //   A zero-area box has nothing to fill either way, so declining is honest.
+    //
+    // Reachable in principle whenever a page fails to rasterise or a tile is laid
+    // out at zero size, neither of which the budget produces but neither of which
+    // this function is in a position to rule out.
+    if got == requested || got.0 == 0 || got.1 == 0 || requested.0 == 0 || requested.1 == 0 {
         return existing;
     }
     let sx = f64::from(requested.0) / f64::from(got.0);

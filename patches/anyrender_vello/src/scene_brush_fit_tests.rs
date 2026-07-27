@@ -102,13 +102,38 @@ fn a_caller_transform_composes_outside_the_fit() {
     assert_eq!(maps(t, 200.0, 200.0), Point::new(410.0, 420.0));
 }
 
-/// A zero-sized texture must not divide by zero. Nothing sensible can be drawn
-/// either way; the requirement is that the brush is left alone rather than
-/// carrying an infinity into the scene.
+/// A zero-sized texture must not divide by zero — a page that failed to
+/// rasterise is the reachable case. Nothing sensible can be drawn either way; the
+/// requirement is that the brush is left alone rather than carrying an infinity
+/// or a NaN into the scene, since neither raises anything and both render as
+/// nothing or as garbage.
 #[test]
 fn a_zero_sized_texture_is_left_alone() {
-    assert_eq!(fit_brush_to_box((400, 400), (0, 300), None), None);
-    assert_eq!(fit_brush_to_box((400, 400), (300, 0), None), None);
+    for got in [(0, 300), (300, 0), (0, 0)] {
+        let t = fit_brush_to_box((400, 400), got, None);
+        assert_eq!(t, None, "got {got:?} produced a transform");
+    }
+}
+
+/// A zero-sized *box* is the other degenerate direction and the more insidious
+/// one: it divides cleanly, giving scale 0, which is finite. A finite transform
+/// that collapses the texture to a point reads as deliberate — nothing downstream
+/// can tell it from an intended one — so it must be declined at the source rather
+/// than propagated.
+#[test]
+fn a_zero_sized_box_is_declined_rather_than_collapsing_the_texture() {
+    for requested in [(0, 400), (400, 0), (0, 0)] {
+        let t = fit_brush_to_box(requested, (200, 200), None);
+        assert_eq!(t, None, "requested {requested:?} produced a transform");
+    }
+    // The specific failure being prevented: without the guard this is a valid
+    // affine that maps the whole texture onto the origin.
+    let collapsed = Affine::IDENTITY.pre_scale_non_uniform(0.0, 0.0);
+    assert!(
+        collapsed.as_coeffs().iter().all(|c| c.is_finite()),
+        "scale-0 is finite, which is why it needs an explicit guard rather than \
+         a NaN check downstream",
+    );
 }
 
 /// A texture *larger* than the box. The budget never produces this today — scales

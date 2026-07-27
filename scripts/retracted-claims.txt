@@ -1,0 +1,34 @@
+# Retracted claims, and the phrasings that carry them.
+#
+# Why this file exists
+# --------------------
+# Spec 08 retracted the "tight leading" account of I-06 and filed it as L08-032.
+# One turn later the same account was restated, in a review of a different
+# subject, by the author of the retraction. The reason was structural: the
+# retraction lived in `flow_spell_condition_tests.rs`, while the wrong account
+# lived in the module docs of the file *named for the bug* and in the status
+# registry — the two places anyone looking up I-06 lands first. A ledger entry
+# was competing against a mechanism the reader can picture, at the point of use,
+# and losing.
+#
+# The remedy is not a discipline ("remember to search when you retract"), which
+# is the class of control this program has already watched fail twice. It is a
+# grep. The wording of a wrong claim is its handle, so retracting a claim means
+# retracting every copy, and a copy is findable by the phrase that carries it.
+#
+# Format
+# ------
+#   <regex><TAB><what is wrong with it, and where the correction lives>
+#
+# A line matches only if the phrase appears WITHOUT a nearby marker showing the
+# site knows it is retracted — see `scripts/check-retracted-claims.py`. So the
+# retraction itself, and any doc that quotes the wrong version in order to
+# correct it, pass. Add a row when you retract something; do not remove rows,
+# because a retracted claim does not become true by being cleaned up.
+
+tight leading	I-06's condition is fractional phase between accumulated fragment height and the whole-point clip grid, not leading slack. Default leading loses 0.473pt at 9pt and the entire band at 14pt. Correction and sweep: loki-layout/src/flow_spell_condition_tests.rs (Spec 08 L08-032).
+leading to spare	Same as "tight leading" — implies the fix is inert wherever leading is generous, which the 8x4 sweep refutes. See loki-layout/src/flow_spell_condition_tests.rs.
+leading slack	Same as "tight leading". The governing quantity is fractional phase, not slack.
+cost falls with edit position	A measurement artifact: three sequential timed calls sharing one FontResources, where the first paid process- and document-level first touch. The sign reversed when the order reversed. Fixed by `sweep` in loki-bench/benches/support/timing.rs, which warms every subject before timing any.
+150 ?ms settle target	No such target exists. The pipeline it referred to was deleted rather than fixed; do not cite it as a criterion.
+over_budget	Renamed to `over_target` in Spec 08 r15, because being over the byte target is an ordinary reported outcome and "over budget" reads as a failure. (The unrelated loki-odf/loki-opc zip limits keep the name legitimately and are excluded by path.)

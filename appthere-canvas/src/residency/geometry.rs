@@ -20,6 +20,32 @@ pub const BYTES_PER_TEXEL: u64 = 4;
 /// when turning a page's point size into its on-screen box.
 pub const PT_TO_CSS_PX: f64 = 96.0 / 72.0;
 
+/// Lowest and highest zoom the document view will accept.
+///
+/// # Why the residency model owns these rather than the renderer
+///
+/// They were a literal `zoom.clamp(0.25, 4.0)` in
+/// `loki-renderer/src/doc_page_source_scale.rs`, which is the right place to
+/// *apply* them and the wrong place to *define* them. Texture demand goes as the
+/// square of zoom, so this pair is what bounds the whole residency problem: it
+/// decides the peak byte figure any device can be asked for, and therefore
+/// whether the survival regime (`plan::plan_residency` step 5) is reachable at
+/// all.
+/// `plan_reachability_tests::the_survival_regime_is_reachable_within_the_zoom_clamp`
+/// depends on the value, so raising the clamp here re-runs that question instead
+/// of silently changing the answer in another crate.
+pub const MIN_ZOOM: f64 = 0.25;
+
+/// See [`MIN_ZOOM`].
+pub const MAX_ZOOM: f64 = 4.0;
+
+// An inverted or empty range would make every zoom sweep in this crate — and the
+// reachability answer that depends on one — silently vacuous. Checked at compile
+// time rather than in a test, because a test asserting a relation between two
+// constants is a lint (`clippy::assertions_on_constants`) and, more to the point,
+// is checking something the compiler can simply refuse to build.
+const _: () = assert!(MIN_ZOOM > 0.0 && MIN_ZOOM < MAX_ZOOM);
+
 /// A page's paper size in points, the unit `loki-layout` reports.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct PageBox {

@@ -278,3 +278,7 @@ fn viewport_centre_page(heights: &[f64], vp: &ViewportSpec) -> usize {
 #[cfg(test)]
 #[path = "plan_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "plan_reachability_tests.rs"]
+mod reachability_tests;

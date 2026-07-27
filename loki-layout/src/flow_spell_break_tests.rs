@@ -21,7 +21,7 @@
 //! which is exactly why the original report reads as the indicator having *moved*
 //! to the next page.
 //!
-//! ## The condition is fractional phase, not leading slack
+//! ## The condition is fractional phase
 //!
 //! **Read `flow_spell_condition_tests.rs` before reasoning about when this
 //! reproduces.** This file's fixture uses `LineHeight::Exact`, and an earlier

@@ -44,6 +44,10 @@ jobs:
     - name: Suppression ratchet (`let _ =` swallows + `#[allow]`)
       # Audit Q-3/Q-4. Per-file counts may only shrink; new files start at 0/0.
       run: python3 scripts/check-suppressions.py
+    - name: Retracted-claim sweep (a withdrawn claim, restated elsewhere)
+      # Spec 08 L08-032, generalised. A retraction filed in a ledger loses to the
+      # wrong story sitting at the point of use; this greps for the phrasings.
+      run: python3 scripts/check-retracted-claims.py
     - name: TODO-format gate (TODO(<topic>) tags)
       # Spec 01 audit A-11. No bare TODO / FIXME / HACK / XXX in production code.
       run: python3 scripts/check-todo-format.py

@@ -57,8 +57,8 @@ pub use budget::{
 };
 pub use counter::{TextureResidency, TextureResidencySnapshot};
 pub use geometry::{
-    BYTES_PER_TEXEL, PT_TO_CSS_PX, PageBox, ViewportSpec, resident_pages, resident_texture_bytes,
-    texture_bytes, visible_window,
+    BYTES_PER_TEXEL, MAX_ZOOM, MIN_ZOOM, PT_TO_CSS_PX, PageBox, ViewportSpec, resident_pages,
+    resident_texture_bytes, texture_bytes, visible_window,
 };
 pub use plan::{
     MIN_RASTER_SCALE, RASTER_SCALE_LADDER, ResidencyPlan, TilePlan, plan_residency,

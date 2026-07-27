@@ -27,7 +27,7 @@
 //! time falls (2,502 / 3,752 / 5,001 against 18.2 / 15.4 / 12.0), and the counts
 //! are fully accounted for by prefix + suffix + `blocks_equal_from` to the unit.
 //!
-//! The second fell to an ordering check. The three positions were timed in sequence
+//! The second was an ordering artifact, caught by an ordering check. The three positions were timed in sequence
 //! against one shared `FontResources`, so the first call paid process- and
 //! document-level first touch and each later one inherited it warm — producing a
 //! monotonic decrease that reads exactly like "cost falls with edit position".

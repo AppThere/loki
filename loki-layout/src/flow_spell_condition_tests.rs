@@ -22,14 +22,15 @@
 //!
 //! So it reproduces with **default leading**, and at 14pt the loss is 0.844 of a
 //! 0.844pt band — the squiggle disappears entirely. The governing quantity is not
-//! "is there leading slack" but the *fractional phase* between accumulated line
+//! "is there leading slack" — that framing is retracted — but the *fractional
+//! phase* between accumulated line
 //! height and the whole-point grid the clip is floored to: the band is lost when a
 //! fragment's height lands just past a whole point, which depends on font size,
 //! leading rule and how many lines precede the break.
 //!
 //! That phase dependence is what makes the original report's word "often" the
 //! right one — it appears for some documents and sizes and not others, with no
-//! pattern a user could infer. A "tight leading only" story would not have
+//! pattern a user could infer. The retracted "tight leading only" story would not have
 //! predicted 14pt default leading, which is an ordinary configuration.
 
 use loki_doc_model::content::attr::NodeAttr;
