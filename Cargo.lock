@@ -414,6 +414,7 @@ dependencies = [
  "futures-channel",
  "futures-util",
  "loki-i18n",
+ "tracing",
 ]
 
 [[package]]

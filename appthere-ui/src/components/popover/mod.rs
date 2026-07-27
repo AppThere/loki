@@ -24,9 +24,17 @@
 //!
 //! - **Reposition loops.** [`interaction::on_anchor_change`] compares rects for
 //!   exact float equality, which is correct and would loop if layout ever
-//!   returned a sub-pixel-different rect for an unmoved anchor. A consumer should
-//!   assert [`interaction::repositions`] does not advance across idle frames;
-//!   a loop otherwise presents as a frame-rate symptom.
+//!   returned a sub-pixel-different rect for an unmoved anchor. It **warns in
+//!   production** after `REPOSITION_BURST_WARN` consecutive repositions, because
+//!   the cause is sub-pixel jitter on real re-renders and a test-only assertion
+//!   is an instrument that speaks only where the hazard is not. Tests also assert
+//!   [`interaction::repositions`] does not advance across idle frames.
+//! - **The anchor is not "outside".** [`wiring::is_outside_dismiss`] excludes it,
+//!   or clicking the trigger dismisses and the trigger's own handler reopens —
+//!   the control stops toggling and both handlers look correct.
+//! - **One popover at a time.** [`wiring::open_response`] enforces it, since the
+//!   reposition counter is process-wide and a focus restoration needs one
+//!   candidate anchor. Opening a second dismisses the first.
 //! - **Dismissal ordering.** Focus must move *before* the popover unmounts —
 //!   see [`dismiss_order`], which returns the sequence rather than leaving the
 //!   order to whichever line was typed first.
@@ -34,5 +42,6 @@
 pub mod dismiss_order;
 pub mod geometry;
 pub mod interaction;
+pub mod wiring;
 
 pub use geometry::{place, Align, Placement, PlacementRequest, Rect, Side};

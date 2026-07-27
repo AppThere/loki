@@ -30,6 +30,21 @@ use super::super::geometry::{place, Placement, PlacementRequest};
 /// frames.**
 static REPOSITIONS: AtomicU64 = AtomicU64::new(0);
 
+/// Consecutive repositions with no intervening [`AnchorResponse::Ignore`].
+///
+/// This is the loop's *signature*, and it needs no clock: a settled popover
+/// emits `Ignore` on nearly every frame, while jitter emits `Reposition` on
+/// every frame. Counting a burst is therefore both cheaper and more specific
+/// than a rate over a window.
+static CONSECUTIVE: AtomicU64 = AtomicU64::new(0);
+
+/// Consecutive repositions after which the loop is reported.
+///
+/// Half a second at 60 Hz. Long enough that a genuine burst — a momentum scroll
+/// through a long list — passes without comment, short enough that a loop is
+/// named while someone is still looking at it.
+pub const REPOSITION_BURST_WARN: u64 = 30;
+
 /// Repositions since the last reset. Assert this is unchanged across frames in
 /// which nothing moved.
 #[must_use]
@@ -116,10 +131,26 @@ pub fn on_anchor_change(
     // have moved under a still anchor (a window resize). Either invalidates the
     // flip decision, and comparing only one of them is how the two drift.
     if previous.anchor == current.anchor && previous.viewport == current.viewport {
+        CONSECUTIVE.store(0, Ordering::Relaxed);
         return AnchorResponse::Ignore;
     }
     // Counted here rather than at the call site: this is the only place a
     // reposition is decided, so a consumer cannot forget to count one.
     REPOSITIONS.fetch_add(1, Ordering::Relaxed);
+    // The counter's production voice. Emitted at the threshold only, so a
+    // sustained loop reports once rather than every frame — and reports at all,
+    // which a test-only assertion cannot: the cause is sub-pixel layout jitter
+    // on real re-renders, which is precisely what tests do not produce. Same
+    // correction as logging `reduced_tiles` unconditionally rather than only
+    // under pressure (L9-011).
+    if CONSECUTIVE.fetch_add(1, Ordering::Relaxed) + 1 == REPOSITION_BURST_WARN {
+        tracing::warn!(
+            consecutive = REPOSITION_BURST_WARN,
+            ?previous.anchor,
+            ?current.anchor,
+            "popover repositioned on every frame — the anchor rect is changing \
+             when nothing moved, which is layout jitter rather than a scroll",
+        );
+    }
     AnchorResponse::Reposition(place(current))
 }

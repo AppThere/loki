@@ -19,3 +19,7 @@ loki-i18n  = { path = "../loki-i18n" }
 futures-channel = "0.3"
 # StreamExt::next, to drain those ticks on the UI thread.
 futures-util = { version = "0.3", default-features = false }
+# A reposition loop (popover::interaction_anchor) must surface as a log line
+# rather than as a frame-rate complaint. A counter with no production voice is
+# an instrument that speaks only where the hazard is not.
+tracing = "0.1"
