@@ -102,10 +102,95 @@ pub fn compare(mut a: impl FnMut(), mut b: impl FnMut()) -> (Timing, Timing) {
     (Timing { best_ms: best_a }, Timing { best_ms: best_b })
 }
 
+/// Times N subjects, warming **all** of them before timing **any** of them.
+///
+/// The n-ary [`compare`]. Three sequential [`timed`] calls against one shared
+/// `FontResources` cannot get this control, and that produced a real false finding:
+/// an apparent "cost falls with edit position" that was the first call paying
+/// process- and document-level first touch while each later one inherited it warm.
+/// The sign reversed when the order reversed.
+///
+/// The rule — *when several measurements share warm-able state, warm every subject
+/// before timing any of them* — was first written down as a note in this module's
+/// docs, which is exactly the form L08-035 says does not hold. This function is the
+/// enforceable version.
+///
+/// Subjects are `&mut dyn FnMut()` so heterogeneous closures can share a slice.
+/// Results are returned in argument order.
+pub fn sweep(subjects: &mut [&mut dyn FnMut()]) -> Vec<Timing> {
+    for subject in subjects.iter_mut() {
+        subject();
+    }
+    let mut best = vec![f64::MAX; subjects.len()];
+    for _ in 0..RUNS {
+        for (i, subject) in subjects.iter_mut().enumerate() {
+            let t = Instant::now();
+            subject();
+            best[i] = best[i].min(t.elapsed().as_secs_f64() * 1000.0);
+        }
+    }
+    best.into_iter().map(|best_ms| Timing { best_ms }).collect()
+}
+
+/// How reproducible this harness's own output is for one unchanging subject.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Repeatability {
+    /// Lowest reported figure across rounds.
+    pub best_ms: f64,
+    /// Highest reported figure across rounds.
+    pub worst_ms: f64,
+}
+
+impl Repeatability {
+    /// Worst over best — 1.20 means the same subject varied by 20%.
+    #[must_use]
+    pub fn spread_ratio(self) -> f64 {
+        if self.best_ms == 0.0 {
+            return f64::NAN;
+        }
+        self.worst_ms / self.best_ms
+    }
+}
+
+/// Measures the harness against an unchanging subject: the **noise floor** below
+/// which no difference this bench reports means anything.
+///
+/// # Why a chosen band is not enough
+///
+/// [`verdict`]'s ±5% is a *chosen* threshold, and nothing established that this
+/// harness resolves 5%. If real round-to-round spread on one subject is 20%, then
+/// `verdict` will confidently report non-parity on noise — in the same register
+/// that produced two retracted attributions. Measure the floor, then read
+/// differences against it.
+///
+/// Note what is being repeated: the whole [`timed`] measurement, not a single pass.
+/// The quantity that needs a floor is the figure actually reported, and best-of-N
+/// is already more stable than one run.
+pub fn repeatability(rounds: usize, mut f: impl FnMut()) -> Repeatability {
+    let mut best_ms = f64::MAX;
+    let mut worst_ms = 0.0_f64;
+    for _ in 0..rounds.max(2) {
+        let t = timed(&mut f).best_ms;
+        best_ms = best_ms.min(t);
+        worst_ms = worst_ms.max(t);
+    }
+    Repeatability { best_ms, worst_ms }
+}
+
 /// Renders a comparison verdict, so benches phrase "faster"/"slower" identically
 /// and a reader can scan a column without re-deriving the direction each time.
 #[must_use]
 pub fn verdict(subject: Timing, baseline: Timing) -> String {
+    verdict_within(subject, baseline, 0.05)
+}
+
+/// [`verdict`] against a **measured** noise floor rather than the default band.
+///
+/// Prefer this wherever a [`repeatability`] figure exists: it is the difference
+/// between "below a threshold someone picked" and "below what this instrument can
+/// resolve today, on this machine".
+#[must_use]
+pub fn verdict_within(subject: Timing, baseline: Timing, floor_ratio: f64) -> String {
     let r = subject.ratio_to(baseline);
     if !r.is_finite() {
         return "n/a".to_string();
@@ -113,7 +198,9 @@ pub fn verdict(subject: Timing, baseline: Timing) -> String {
     // Inside this band the two are not distinguishable by this harness, and
     // saying so is more honest than printing a signed percentage that invites a
     // conclusion the measurement cannot support.
-    if (0.95..=1.05).contains(&r) {
+    let lo = 1.0 - floor_ratio;
+    let hi = 1.0 + floor_ratio;
+    if (lo..=hi).contains(&r) {
         return "parity".to_string();
     }
     if r < 1.0 {

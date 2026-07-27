@@ -47,6 +47,29 @@
 //! mechanism's behaviour is fully explained by the checkpoint finding, with nothing
 //! left over.
 //!
+//! # This bench cannot resolve small timing differences at all
+//!
+//! Measured, rather than assumed: running the *same unchanging subject* through the
+//! harness five times gives a spread of **4.4% on one run and 36.5% on the next**.
+//! The noise floor is not merely large, it is **unstable between runs**.
+//!
+//! `verdict`'s ±5% band was a chosen threshold with nothing establishing that 5% is
+//! resolvable, and it is not. Any difference this bench reports below roughly a
+//! third is noise, and reporting it as a percentage invites exactly the confident
+//! misreading that produced three retracted attributions in a row.
+//!
+//! **So read the deterministic columns and distrust the timings.** Pages re-flowed,
+//! checkpoint count and block comparisons are exact and reproducible; they are what
+//! established every real finding here — 327 pages with one checkpoint, resume at
+//! block 0 always, 327/327 pages re-flowed at every position. The timing columns are
+//! only load-bearing where the gap is an order of magnitude, which T3.4's predicted
+//! 11 ms → 0.1 ms is by a factor of ~40.
+//!
+//! One casualty of measuring this: the "mid is highest" reading from the previous
+//! revision does not survive `sweep` (10.196 / 10.253 / 10.870 at 2500 blocks). It
+//! was ordering leakage again, in a third form — the pre-warm removed the monotonic
+//! artifact but three sequential `timed` calls still shared state.
+//!
 //! # The harness gap this exposed
 //!
 //! `support::timing::compare` warms both sides before timing either, which is the
@@ -355,6 +378,47 @@ fn edit_block(doc: &Document, index: usize) -> Document {
 }
 
 fn main() {
+    // ── The noise floor, measured before anything is read against it ─────────
+    //
+    // Every figure below is a difference between timings, and a difference is only
+    // a finding if it exceeds what this harness can resolve. `verdict`'s +/-5% was
+    // a chosen band with nothing establishing that 5% is resolvable — so measure
+    // the same unchanging subject repeatedly and let the spread set the threshold.
+    let noise_floor = {
+        let opts = LayoutOptions {
+            preserve_for_editing: true,
+            ..Default::default()
+        };
+        let mut fr = resources();
+        let doc = doc_of_blocks(2500);
+        let (layout, reuse) = layout_paginated_full(&mut fr, &doc, 1.0, &opts);
+        let edited = edit_block(&doc, 1250);
+        let r = support::timing::repeatability(5, || {
+            let _ =
+                relayout_paginated_incremental(&mut fr, &edited, &doc, &layout, &reuse, 1.0, &opts);
+        });
+        let ratio = r.spread_ratio() - 1.0;
+        println!(
+            "harness noise floor (same subject, 5 rounds of best-of-3): \
+             {:.3}–{:.3} ms, spread {:.1}%",
+            r.best_ms,
+            r.worst_ms,
+            ratio * 100.0
+        );
+        println!(
+            "  => differences below {:.1}% are not resolvable by this bench",
+            ratio * 100.0
+        );
+        println!(
+            "  NOTE: this floor is itself unstable — 4.4% and 36.5% on consecutive\n\
+             \x20       runs of this machine. Treat the DETERMINISTIC columns (pages\n\
+             \x20       re-flowed, checkpoints, block comparisons) as this bench's\n\
+             \x20       findings, and timings only where the gap is an order of\n\
+             \x20       magnitude — as T3.4's 11 ms -> 0.1 ms prediction is.\n"
+        );
+        ratio
+    };
+
     // The editor's own options — `preserve_for_editing` is the incremental path's
     // first guard, and `LayoutOptions::default()` has it false, so a probe using
     // the default measures the fallback and calls it the fast path.
@@ -372,45 +436,70 @@ fn main() {
         let doc = doc_of_blocks(blocks);
         let (layout, reuse) = layout_paginated_full(&mut fr, &doc, 1.0, &opts);
 
-        // Warm the whole subject before *any* position is timed. `timed` warms the
-        // closure it is given, which is not enough here: the three positions are
-        // timed in sequence against one shared FontResources, so the first call
-        // pays process- and document-level first touch and every later one inherits
-        // it warm. That produced an apparent monotonic "cost falls with edit
-        // position" that reversed when the order reversed — the artifact this line
-        // removes. L08-022's ordering control, applied *across* measurements rather
-        // than within one.
-        for warm in [0, blocks / 2, blocks - 1] {
-            let edited = edit_block(&doc, warm);
-            let _ =
-                relayout_paginated_incremental(&mut fr, &edited, &doc, &layout, &reuse, 1.0, &opts);
-        }
-
-        // Warm-up and best-of-N come from the shared harness rather than from
-        // this file remembering them (L08-035).
-        // Reports pages re-flowed alongside elapsed time. Time alone cannot judge
-        // a reuse result: a mid-document edit at 5 ms is either resync failing to
-        // stop, or resync working on a document whose pages are packed tightly
-        // enough that the pagination cascade legitimately runs a long way. Opposite
-        // verdicts, identical stopwatches. The count separates them.
-        let mut run = |index: usize| -> (f64, usize, u64) {
+        // Pages re-flowed and block comparisons are *counts*, not timings, so they
+        // need no warm-up discipline — they are deterministic for a given edit.
+        let mut counts_at = |index: usize| -> (usize, u64) {
             let edited = edit_block(&doc, index);
-            let mut pages_reflowed = 0;
-            let t = support::timing::timed(|| {
-                if let Some((_, r)) = relayout_paginated_incremental(
-                    &mut fr, &edited, &doc, &layout, &reuse, 1.0, &opts,
-                ) {
-                    pages_reflowed = r.reflowed_pages;
-                }
-            });
-            // Counted on a clean pass of its own: `timed` runs the closure several
-            // times, so a counter left running across them would report the sum.
             loki_layout::reset_block_comparisons();
-            let _ =
-                relayout_paginated_incremental(&mut fr, &edited, &doc, &layout, &reuse, 1.0, &opts);
-            (t.best_ms, pages_reflowed, loki_layout::block_comparisons())
+            let pages =
+                relayout_paginated_incremental(&mut fr, &edited, &doc, &layout, &reuse, 1.0, &opts)
+                    .map_or(0, |(_, r)| r.reflowed_pages);
+            (pages, loki_layout::block_comparisons())
         };
-        let (start_ms, start_pages, start_cmp) = run(0);
+        let (start_pages, start_cmp) = counts_at(0);
+        let (mid_pages, mid_cmp) = counts_at(blocks / 2);
+        let (end_pages, end_cmp) = counts_at(blocks - 1);
+
+        // All three positions are timed by `sweep`, which warms every subject
+        // before timing any of them. Three sequential `timed` calls cannot get that
+        // control, and that is exactly what produced the retracted "cost falls with
+        // edit position" artifact — L08-035 made enforceable rather than remembered.
+        let edited_start = edit_block(&doc, 0);
+        let edited_mid = edit_block(&doc, blocks / 2);
+        let edited_end = edit_block(&doc, blocks - 1);
+        let timings = {
+            let mut fr_a = resources();
+            let mut fr_b = resources();
+            let mut fr_c = resources();
+            let mut a = || {
+                let _ = relayout_paginated_incremental(
+                    &mut fr_a,
+                    &edited_start,
+                    &doc,
+                    &layout,
+                    &reuse,
+                    1.0,
+                    &opts,
+                );
+            };
+            let mut b = || {
+                let _ = relayout_paginated_incremental(
+                    &mut fr_b,
+                    &edited_mid,
+                    &doc,
+                    &layout,
+                    &reuse,
+                    1.0,
+                    &opts,
+                );
+            };
+            let mut c = || {
+                let _ = relayout_paginated_incremental(
+                    &mut fr_c,
+                    &edited_end,
+                    &doc,
+                    &layout,
+                    &reuse,
+                    1.0,
+                    &opts,
+                );
+            };
+            support::timing::sweep(&mut [&mut a, &mut b, &mut c])
+        };
+        let start_ms = timings[0].best_ms;
+        let mid_ms = timings[1].best_ms;
+        let end_ms = timings[2].best_ms;
+
         // The mid-document row is the one that exercises *both* halves of the
         // reflow. Checkpoints give the resume point; resync gives the stop point,
         // and resync matches on `cp.block_index == b && cp.checkpoint == s` — so
@@ -418,8 +507,6 @@ fn main() {
         // can no more fire than resumption can. An edit at the last block tests
         // only the resume half, because after the last page there is nothing left
         // to stop for.
-        let (mid_ms, mid_pages, mid_cmp) = run(blocks / 2);
-        let (end_ms, end_pages, end_cmp) = run(blocks - 1);
 
         // Discriminator: an *identical* document takes the early return that
         // clones the previous layout verbatim and does no layout work at all. If
@@ -560,7 +647,7 @@ fn main() {
             "  {blocks:>6}   {:>11.3}   {:>11.3}   {}",
             incr.best_ms,
             full.best_ms,
-            support::timing::verdict(incr, full),
+            support::timing::verdict_within(incr, full, noise_floor.max(0.05)),
         );
     }
     println!();
