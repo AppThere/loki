@@ -33,7 +33,9 @@
 //! is *derived* rather than accepted as a second prop — a `Menu` that traps, or a
 //! `Panel` that does not, are states this API cannot express.
 
-use super::{place, Placement, PlacementRequest};
+#[path = "interaction_anchor.rs"]
+mod anchor;
+pub use anchor::{on_anchor_change, repositions, reset_repositions, AnchorResponse};
 
 /// Which interaction model a popover follows.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -199,85 +201,6 @@ pub fn focus_after_dismiss(cause: DismissCause) -> FocusTarget {
         DismissCause::TabOut => FocusTarget::PastAnchor,
         DismissCause::OutsideClick => FocusTarget::Unchanged,
     }
-}
-
-/// What a scroll or resize does to an open popover.
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum AnchorResponse {
-    /// Nothing moved that matters.
-    Ignore,
-    /// Re-place the popover. **Carries the recomputed placement** — see
-    /// [`on_anchor_change`] for why it is not a bare marker.
-    Reposition(Placement),
-    /// Close: the anchor is no longer visible.
-    Dismiss,
-}
-
-/// How an open popover responds when its anchor's viewport rect may have moved.
-///
-/// # "Dismiss on scroll" is too blunt, and "reposition" is easy to get wrong
-///
-/// T4.2's Recent Documents menu anchors to an entry *inside a scrolling list*.
-/// Under a flat dismiss-on-scroll rule, nudging a trackpad closes the menu — and
-/// the list is the thing you scroll to reach entries. A flat rule also errs the
-/// other way: an unrelated pane scrolling should not close a menu being read.
-///
-/// So the decision keys on the anchor's rect **in viewport coordinates**:
-///
-/// | condition | response |
-/// | --- | --- |
-/// | no longer visible | `Dismiss` — anchoring to something off-screen is meaningless |
-/// | rect changed | `Reposition` |
-/// | rect unchanged | `Ignore` — covers the unrelated-pane scroll for free |
-///
-/// # Viewport coordinates, not container coordinates
-///
-/// An earlier draft asked "is the anchor still visible *in its container*", and
-/// that predicate is wrong in a way this component exists to prevent. A Recent
-/// Documents entry can sit unmoved and fully visible inside its list while the
-/// *list* scrolls in the page, or while the window resizes. Container-visibility
-/// stays true, so the popover holds its position — and the flip decision it was
-/// placed with has gone stale. A menu that opened downward with room below now
-/// hangs off the bottom: **the exact defect T4.1 exists to fix, arriving by a
-/// path the geometry cannot see.**
-///
-/// The caller passes the request it **last placed against** and the request that
-/// is **true now**; the difference between them is the whole input. That is one
-/// comparison rather than a scroll-delta plus a resize hook, so there is no
-/// second path for the two to diverge along (L08-028).
-///
-/// # Why `Reposition` carries a `Placement`
-///
-/// Because the tempting implementation is to offset the popover by the scroll
-/// delta, and that is wrong for the same reason: an offset preserves a flip
-/// decision made against different viewport bounds. Re-placement has to re-run
-/// [`super::place`] against the *current* anchor and the *current* viewport.
-///
-/// Handing back the recomputed `Placement` rather than a bare `Reposition`
-/// marker makes the delta shortcut unavailable — there is nothing for a caller
-/// to offset, only a position to adopt. Same move as deriving the focus trap
-/// from the role: the wrong state is not expressible.
-///
-/// **Window resize routes here too**, deliberately. It is the same class —
-/// anchor unmoved in its container, viewport bounds changed — and giving it its
-/// own path is how the two drift.
-#[must_use]
-pub fn on_anchor_change(
-    previous: PlacementRequest,
-    current: PlacementRequest,
-    anchor_visible: bool,
-) -> AnchorResponse {
-    if !anchor_visible {
-        return AnchorResponse::Dismiss;
-    }
-    // Both halves compared, and both in viewport coordinates: the anchor may
-    // have moved under a still viewport (a list scrolling), or the viewport may
-    // have moved under a still anchor (a window resize). Either invalidates the
-    // flip decision, and comparing only one of them is how the two drift.
-    if previous.anchor == current.anchor && previous.viewport == current.viewport {
-        return AnchorResponse::Ignore;
-    }
-    AnchorResponse::Reposition(place(current))
 }
 
 #[cfg(test)]

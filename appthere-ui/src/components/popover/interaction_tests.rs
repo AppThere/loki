@@ -3,11 +3,22 @@
 
 //! The three interaction decisions, asserted as the failures a user would hit.
 
-use super::super::geometry::{Align, Rect, Side};
+use super::super::geometry::{place, Align, PlacementRequest, Rect, Side};
+use std::sync::Mutex;
+
 use super::{
-    focus_after_dismiss, on_anchor_change, place, route_key, AnchorResponse, DismissCause,
-    FocusTarget, Key, KeyAction, PlacementRequest, Role,
+    focus_after_dismiss, on_anchor_change, repositions, route_key, AnchorResponse, DismissCause,
+    FocusTarget, Key, KeyAction, Role,
 };
+
+/// Serialises the two tests that read the process-wide reposition counter.
+///
+/// `cargo test` runs tests in parallel, so two tests sharing one global would
+/// interleave: reset-then-assert-zero can observe another test's increment, and
+/// the failure appears as an intermittent CI red with no local reproduction.
+/// Holding a lock **and comparing deltas rather than absolutes** removes both
+/// halves — no reset is needed, so nothing is destroyed for a concurrent reader.
+static COUNTER_LOCK: Mutex<()> = Mutex::new(());
 
 /// A tall viewport, so `a_resize_that_leaves_the_anchor_still_re_places` can
 /// shorten it and change the answer.
@@ -293,4 +304,49 @@ fn a_panel_claims_only_tab_and_escape() {
     }
     assert_ne!(route_key(Role::Panel, Key::Tab), KeyAction::PassThrough);
     assert_ne!(route_key(Role::Panel, Key::Escape), KeyAction::PassThrough);
+}
+
+/// **The jitter loop, made observable.** The anchor comparison is exact float
+/// equality, so a layout that returns a sub-pixel-different rect for an unmoved
+/// anchor would re-place every frame.
+///
+/// Exact is still the right comparison — an epsilon buys a jitter loop off at the
+/// price of staleness, which is the defect this module exists to prevent. What
+/// was missing was a way to *see* a loop, since it presents as a frame-rate
+/// symptom and sends you looking at rendering.
+///
+/// Asserted the way a consumer should assert it at runtime: nothing moved, so
+/// the count must not advance.
+#[test]
+fn idle_frames_perform_no_repositions() {
+    let guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let r = req_at(Rect::new(100.0, 300.0, 200.0, 24.0), VIEWPORT);
+    let before = repositions();
+    for _ in 0..120 {
+        assert_eq!(on_anchor_change(r, r, true), AnchorResponse::Ignore);
+    }
+    let moved = repositions() - before;
+    drop(guard);
+    assert_eq!(
+        moved, 0,
+        "an unmoved anchor re-placed {moved} times across 120 idle frames — the \
+         exact-equality comparison is seeing jitter from layout",
+    );
+}
+
+/// The counter must actually count, or the guard above passes for the wrong
+/// reason — a counter that never increments reports quiet as easily as a loop.
+#[test]
+fn a_real_move_advances_the_reposition_counter() {
+    let guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let before = req_at(Rect::new(100.0, 300.0, 200.0, 24.0), VIEWPORT);
+    let after = req_at(Rect::new(100.0, 280.0, 200.0, 24.0), VIEWPORT);
+    let start = repositions();
+    let _ = on_anchor_change(before, after, true);
+    let moved = repositions() - start;
+    drop(guard);
+    assert_eq!(
+        moved, 1,
+        "a real move must advance the counter exactly once"
+    );
 }
