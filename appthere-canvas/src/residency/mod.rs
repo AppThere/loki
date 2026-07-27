@@ -50,6 +50,7 @@ mod budget;
 mod counter;
 mod geometry;
 mod plan;
+mod plan_capability;
 
 pub use budget::{
     BUDGET_BASELINE_BYTES, BUDGET_CEILING_BYTES, BUDGET_FLOOR_BYTES, BudgetInputs, BudgetSource,
@@ -64,3 +65,4 @@ pub use plan::{
     MIN_RASTER_SCALE, RASTER_SCALE_LADDER, ResidencyPlan, TilePlan, plan_residency,
     strictly_visible,
 };
+pub use plan_capability::{ZOOM_PROBE_STEP, is_servable_at_all, max_servable_zoom};
