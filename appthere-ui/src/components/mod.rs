@@ -15,6 +15,7 @@ pub mod macro_security;
 pub mod overlay;
 pub mod panel_host;
 pub mod platform;
+pub mod popover;
 pub mod ribbon;
 pub mod status_bar;
 pub mod tab_bar;
