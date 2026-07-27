@@ -14,6 +14,25 @@
 
 use super::{place, Align, PlacementRequest, Rect, Side};
 
+/// Room above and below the anchor, by the same arithmetic `place` uses.
+///
+/// Exists so a test can assert **its fixture still creates the condition it is
+/// named for** before asserting the outcome. A fixture drifts silently: an
+/// earlier draft of `a_container_scrolling_within_the_page_re_places_against_the_viewport`
+/// used a 1400-tall viewport, so its "near the bottom" anchor still had ample
+/// room below — it passed while testing nothing, and was caught only because one
+/// assertion happened to name the side.
+///
+/// Same rule as R5a's step 2 (confirm `reduced_tiles` is non-zero before judging
+/// softness) and I-06's red-before-green: **verify the fixture produces the
+/// precondition, in the test, not in the author's head** (L08-044).
+fn rooms(req: PlacementRequest) -> (f32, f32) {
+    (
+        (req.anchor.y - req.viewport.y - req.gap - req.margin).max(0.0),
+        (req.viewport.bottom() - req.anchor.bottom() - req.gap - req.margin).max(0.0),
+    )
+}
+
 /// A 900×700 viewport with a caret near its bottom edge — a right-click on the
 /// last line of a page.
 fn near_bottom() -> PlacementRequest {
@@ -34,6 +53,14 @@ fn near_bottom() -> PlacementRequest {
 #[test]
 fn an_overlay_near_the_bottom_edge_stays_inside_the_viewport() {
     let req = near_bottom();
+    let (above, below) = rooms(req);
+    assert!(
+        below < req.height && above >= req.height,
+        "fixture no longer creates the condition: room below {below}, above \
+         {above}, overlay {}. This test is only about the bottom edge if the \
+         overlay cannot fit below and can fit above",
+        req.height,
+    );
     let p = place(req);
     assert!(
         p.rect.is_inside(req.viewport),
@@ -53,6 +80,11 @@ fn an_overlay_near_the_bottom_edge_stays_inside_the_viewport() {
 fn an_overlay_near_the_right_edge_stays_inside_the_viewport() {
     let mut req = near_bottom();
     req.anchor = Rect::new(880.0, 100.0, 2.0, 18.0);
+    assert!(
+        req.anchor.x + req.width > req.viewport.right() - req.margin,
+        "fixture must place the aligned overlay past the right edge, or the \
+         horizontal case is not exercised",
+    );
     let p = place(req);
     assert!(
         p.rect.is_inside(req.viewport),
@@ -123,7 +155,13 @@ fn an_overlay_is_inside_the_viewport_at_every_anchor_position() {
 #[test]
 fn a_flip_is_preferred_to_a_truncation() {
     let req = near_bottom();
-    // Room above: 660 - 4 - 8 = 648, ample. Room below: 700 - 678 - 4 - 8 = 10.
+    let (above, below) = rooms(req);
+    assert!(
+        below < req.height && above >= req.height,
+        "fixture must offer a full-height home on exactly one side: above \
+         {above}, below {below}, overlay {}",
+        req.height,
+    );
     let p = place(req);
     assert!(p.flipped, "expected a flip");
     assert!(
@@ -142,6 +180,13 @@ fn a_viewport_too_small_for_either_side_clamps_and_says_so() {
     let mut req = near_bottom();
     req.viewport = Rect::new(0.0, 0.0, 900.0, 200.0);
     req.anchor = Rect::new(100.0, 90.0, 2.0, 18.0);
+    let (above, below) = rooms(req);
+    assert!(
+        above < req.height && below < req.height,
+        "fixture must fit on neither side, or this tests clamping that is not \
+         forced: above {above}, below {below}, overlay {}",
+        req.height,
+    );
     let p = place(req);
     assert!(p.clamped, "expected the height to be reduced: {:?}", p.rect);
     assert!(p.rect.is_inside(req.viewport));
@@ -217,6 +262,14 @@ fn a_preference_that_fits_is_honoured_over_a_roomier_alternative() {
     // Room above 388, room below 264, overlay 200: both fit, above is roomier.
     req.anchor = Rect::new(100.0, 400.0, 60.0, 24.0);
     req.height = 200.0;
+    let (above, below) = rooms(req);
+    assert!(
+        above >= req.height && below >= req.height && above != below,
+        "fixture must have BOTH sides fitting and one roomier — that is the \
+         decorrelated quadrant this test exists for: above {above}, below \
+         {below}, overlay {}",
+        req.height,
+    );
     for preferred in [Side::Above, Side::Below] {
         req.preferred = preferred;
         let p = place(req);

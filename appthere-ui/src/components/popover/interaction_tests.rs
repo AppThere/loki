@@ -187,10 +187,23 @@ fn a_container_scrolling_within_the_page_re_places_against_the_viewport() {
     let before = req_at(Rect::new(100.0, 100.0, 200.0, 24.0), screen);
     let placed = place(before);
     assert_eq!(placed.side, Side::Below, "precondition: it opened downward");
+    assert!(
+        !placed.flipped && !placed.clamped,
+        "precondition: the original placement must be the unconstrained one, or \
+         the staleness under test is not what is being observed",
+    );
 
     // The list scrolls down the page. The entry has not moved inside its list,
     // but it is now near the bottom of the viewport.
     let after = req_at(Rect::new(100.0, 660.0, 200.0, 24.0), screen);
+    let room_below = after.viewport.bottom() - after.anchor.bottom() - after.gap - after.margin;
+    assert!(
+        room_below < after.height,
+        "fixture no longer creates the condition: after the scroll there is \
+         still {room_below}px below for a {}px overlay, so nothing would go \
+         stale and this test asserts nothing",
+        after.height,
+    );
     let AnchorResponse::Reposition(p) = on_anchor_change(before, after, true) else {
         panic!("expected a reposition");
     };
