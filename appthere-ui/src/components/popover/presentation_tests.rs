@@ -8,7 +8,7 @@
 //! pathological rect.
 
 use super::super::geometry::{place, Align, PlacementRequest, Rect, Side};
-use super::{present, Presentation, MIN_ANCHORED_HEIGHT_PX};
+use super::{present, Presentation, MIN_ANCHORED_HEIGHT_PX, MIN_ANCHORED_MENU_PX};
 
 /// A phone in landscape with the soft keyboard up: a ~360 dp window, less a ~30
 /// px top inset and a ~180 px IME (which the platform adds to the **bottom**
@@ -35,6 +35,7 @@ fn tile(label_px: f32, viewport: Rect) -> PlacementRequest {
         align: Align::Start,
         gap: 4.0,
         margin: 8.0,
+        min_anchored_height: MIN_ANCHORED_MENU_PX,
     }
 }
 
@@ -130,27 +131,57 @@ fn an_ordinary_anchor_stays_anchored() {
     assert!(p.rect.height >= MIN_ANCHORED_HEIGHT_PX);
 }
 
-/// **The threshold is one touch target, and it is asserted as one.** A menu that
-/// can show 43px cannot present a single WCAG 2.5.8 target, so it is not a
-/// cramped menu — it is one the house standard does not permit.
+/// **N is two rows, and that is a decision rather than an inheritance.**
+///
+/// One touch target is the floor — it bounds *unusable*. It is a poor place to
+/// stay anchored: a 44px window over a four-action menu shows one item with no
+/// sign that the others exist, so the user does not scroll and never learns what
+/// was there. The second row is the affordance that makes a list read as a list.
+///
+/// This is the band the decision lives in: room for one row but not two.
 #[test]
-fn an_overlay_shorter_than_one_touch_target_is_modal() {
-    // A viewport sized so the room below the anchor lands just under, then just
-    // over, the touch minimum.
-    for (room, expect_modal) in [
-        (MIN_ANCHORED_HEIGHT_PX - 1.0, true),
-        (MIN_ANCHORED_HEIGHT_PX, false),
-    ] {
-        let vp = Rect::new(0.0, 0.0, 900.0, 100.0 + room + 4.0 + 8.0);
-        let mut req = tile(16.0, vp);
-        // Anchor ending at y=100, so the room below is exactly `room`.
-        req.anchor = Rect::new(50.0, 0.0, 100.0, 100.0);
-        let got = present(req);
-        assert_eq!(
-            got == Presentation::Modal,
-            expect_modal,
-            "with {room}px of room and a {MIN_ANCHORED_HEIGHT_PX}px minimum, got \
-             {got:?}",
-        );
-    }
+fn a_menu_with_room_for_one_row_but_not_two_is_modal() {
+    let room = MIN_ANCHORED_HEIGHT_PX + 1.0; // 45px: one row fits, two do not.
+    assert!(
+        room >= MIN_ANCHORED_HEIGHT_PX && room < MIN_ANCHORED_MENU_PX,
+        "fixture must sit between the floor and the menu minimum: {room}",
+    );
+    let req = req_with_room_below(room, MIN_ANCHORED_MENU_PX);
+    assert_eq!(
+        present(req),
+        Presentation::Modal,
+        "one row is legal and not worth anchoring — the modal shows the whole \
+         menu at once",
+    );
+    // And two rows is enough to stay.
+    let req = req_with_room_below(MIN_ANCHORED_MENU_PX, MIN_ANCHORED_MENU_PX);
+    assert!(matches!(present(req), Presentation::Anchored(_)));
+}
+
+/// **The floor holds against a consumer that asks for less.** A request of `0.0`
+/// is not a way back to the pre-r48 behaviour: a sub-touch-target menu is not
+/// permitted whoever asks for it (L08-043).
+#[test]
+fn a_consumer_asking_below_the_floor_still_gets_the_floor() {
+    let just_under = req_with_room_below(MIN_ANCHORED_HEIGHT_PX - 1.0, 0.0);
+    assert_eq!(
+        present(just_under),
+        Presentation::Modal,
+        "43px is below one touch target, and asking for 0 does not license it",
+    );
+    let at_the_floor = req_with_room_below(MIN_ANCHORED_HEIGHT_PX, 0.0);
+    assert!(
+        matches!(present(at_the_floor), Presentation::Anchored(_)),
+        "but the floor itself is honoured — a consumer that genuinely wants one \
+         row gets one row",
+    );
+}
+
+/// A request whose room below the anchor is exactly `room`, asking for
+/// `min_anchored` as its minimum.
+fn req_with_room_below(room: f32, min_anchored: f32) -> PlacementRequest {
+    let mut req = tile(16.0, Rect::new(0.0, 0.0, 900.0, 100.0 + room + 4.0 + 8.0));
+    req.anchor = Rect::new(50.0, 0.0, 100.0, 100.0);
+    req.min_anchored_height = min_anchored;
+    req
 }

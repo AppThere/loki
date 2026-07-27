@@ -12,6 +12,7 @@
 //! watched to fail against the pre-T4.1 behaviour, which put 298px of a 320px
 //! menu below the fold. That opportunity existed once.
 
+use super::super::presentation::MIN_ANCHORED_MENU_PX;
 use super::{place, Align, PlacementRequest, Rect, Side};
 
 /// Room above and below the anchor, by the same arithmetic `place` uses.
@@ -45,6 +46,7 @@ fn near_bottom() -> PlacementRequest {
         align: Align::Start,
         gap: 4.0,
         margin: 8.0,
+        min_anchored_height: MIN_ANCHORED_MENU_PX,
     }
 }
 

@@ -104,7 +104,7 @@ pub use interaction::{
     anchor_is_anchorable, focus_after_dismiss, on_anchor_change, repositions, reset_repositions,
     route_key, AnchorResponse, DismissCause, FocusTarget, Key, KeyAction, Role,
 };
-pub use presentation::{present, Presentation, MIN_ANCHORED_HEIGHT_PX};
+pub use presentation::{present, Presentation, MIN_ANCHORED_HEIGHT_PX, MIN_ANCHORED_MENU_PX};
 pub use wiring::{
     is_outside_dismiss, on_anchor_identity, open_response, AnchorKey, IdentityCheck, OpenResponse,
     PopoverId,

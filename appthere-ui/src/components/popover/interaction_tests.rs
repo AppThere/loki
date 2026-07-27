@@ -4,7 +4,7 @@
 //! The three interaction decisions, asserted as the failures a user would hit.
 
 use super::super::geometry::{place, Align, PlacementRequest, Rect, Side};
-use super::super::presentation::Presentation;
+use super::super::presentation::{present, Presentation, MIN_ANCHORED_MENU_PX};
 use std::sync::Mutex;
 
 use super::{
@@ -47,6 +47,7 @@ fn req_at(anchor: Rect, viewport: Rect) -> PlacementRequest {
         align: Align::Start,
         gap: 4.0,
         margin: 8.0,
+        min_anchored_height: MIN_ANCHORED_MENU_PX,
     }
 }
 
@@ -135,6 +136,12 @@ fn dismissal_returns_focus_to_the_control_that_opened_it() {
     assert_eq!(
         focus_after_dismiss(DismissCause::AnchorScrolledAway),
         FocusTarget::Anchor,
+    );
+    assert_eq!(
+        focus_after_dismiss(DismissCause::PresentationChanged),
+        FocusTarget::Anchor,
+        "the anchor still exists and the user did not move focus themselves — \
+         and re-opening from it is how they get the new form",
     );
 }
 
@@ -325,10 +332,8 @@ fn a_container_scrolling_within_the_page_re_places_against_the_viewport() {
          stale and this test asserts nothing",
         after.height,
     );
-    let AnchorResponse::Reposition(Presentation::Anchored(p)) =
-        on_anchor_change(before, after, true)
-    else {
-        panic!("expected a reposition that still fits anchored");
+    let AnchorResponse::Reposition(p) = on_anchor_change(before, after, true) else {
+        panic!("expected a reposition");
     };
     assert!(
         p.rect.is_inside(after.viewport),
@@ -358,10 +363,105 @@ fn a_resize_that_leaves_the_anchor_still_re_places() {
         matches!(r, AnchorResponse::Reposition(_)),
         "a resize with an unmoved anchor must still re-place; got {r:?}",
     );
-    let AnchorResponse::Reposition(Presentation::Anchored(p)) = r else {
+    let AnchorResponse::Reposition(p) = r else {
         unreachable!()
     };
     assert!(p.rect.is_inside(after.viewport));
+}
+
+/// **Rotation, the transition this rule is for.** A menu open in portrait, with
+/// the device turned to landscape: the viewport goes from tall to short, and the
+/// anchored form stops being available.
+///
+/// It **dismisses** rather than becoming a sheet under the user's hands. The
+/// alternative was defensible, and this one wins on the trigger: rotation is
+/// large, rare, and something the user just did deliberately — so a menu closing
+/// is the ordinary consequence of their own action, while a menu surviving into
+/// a different presentation is odd in either direction.
+#[test]
+fn a_rotation_that_changes_the_form_dismisses_rather_than_transforming() {
+    let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let portrait = Rect::new(0.0, 0.0, 400.0, 800.0);
+    let landscape = Rect::new(0.0, 0.0, 800.0, 150.0);
+    let before = req_at(Rect::new(50.0, 100.0, 200.0, 120.0), portrait);
+    let after = req_at(Rect::new(50.0, 20.0, 200.0, 120.0), landscape);
+    assert!(
+        matches!(present(before), Presentation::Anchored(_)),
+        "precondition: it must fit anchored in portrait",
+    );
+    assert_eq!(
+        present(after),
+        Presentation::Modal,
+        "precondition: it must NOT fit anchored in landscape, or there is no \
+         form change to test",
+    );
+    assert_eq!(
+        on_anchor_change(before, after, true),
+        AnchorResponse::Dismiss,
+        "a form change must close the popover, not transform it",
+    );
+}
+
+/// **And the rule must not fire on the ordinary case**, or every scroll in a
+/// small viewport would close the menu it is trying to reach.
+#[test]
+fn a_scroll_that_keeps_the_same_form_still_repositions() {
+    let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let vp = Rect::new(0.0, 0.0, 900.0, 700.0);
+    let before = req_at(Rect::new(100.0, 300.0, 200.0, 24.0), vp);
+    let after = req_at(Rect::new(100.0, 260.0, 200.0, 24.0), vp);
+    for r in [present(before), present(after)] {
+        assert!(
+            matches!(r, Presentation::Anchored(_)),
+            "precondition: both ends of the scroll must be anchored",
+        );
+    }
+    assert!(matches!(
+        on_anchor_change(before, after, true),
+        AnchorResponse::Reposition(_)
+    ));
+}
+
+/// **The invariant that lets `Reposition` carry a bare `Placement` again:** a
+/// reposition is always still anchored, and always at a height the consumer
+/// called usable.
+///
+/// Swept down a viewport small enough that the anchored form runs out partway,
+/// so the sweep crosses the boundary rather than staying on one side of it.
+#[test]
+fn every_reposition_carries_a_usable_placement() {
+    let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    // A 200-tall viewport and a 100-tall anchor: at the top edge there is
+    // exactly 88px below, and any downward movement takes it under. A 24px
+    // anchor in a 300-tall viewport — the first draft — always leaves 126px on
+    // one side, so it never crossed and the counter assertion below said so.
+    let vp = Rect::new(0.0, 0.0, 900.0, 200.0);
+    let mut repositioned = 0_u32;
+    let mut dismissed = 0_u32;
+    for ay in 0..=20 {
+        let before = req_at(Rect::new(100.0, 0.0, 200.0, 100.0), vp);
+        let after = req_at(Rect::new(100.0, ay as f32 * 5.0, 200.0, 100.0), vp);
+        match on_anchor_change(before, after, true) {
+            AnchorResponse::Reposition(p) => {
+                repositioned += 1;
+                assert!(
+                    p.rect.height >= MIN_ANCHORED_MENU_PX,
+                    "reposition handed back {}px, below the {MIN_ANCHORED_MENU_PX}px \
+                     the consumer asked for: {:?}",
+                    p.rect.height,
+                    p.rect,
+                );
+                assert!(p.rect.is_inside(vp));
+            }
+            AnchorResponse::Dismiss => dismissed += 1,
+            AnchorResponse::Ignore => {}
+        }
+    }
+    assert!(
+        repositioned > 0 && dismissed > 0,
+        "the sweep must cross the boundary to say anything: {repositioned} \
+         repositions, {dismissed} dismissals",
+    );
 }
 
 /// **A menu must handle every key itself.**

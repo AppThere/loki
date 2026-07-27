@@ -50,12 +50,42 @@
 use super::geometry::{place, Placement, PlacementRequest};
 use crate::tokens::spacing::TOUCH_MIN;
 
-/// Shortest anchored overlay worth showing: one WCAG 2.5.8 touch target.
+/// Absolute floor for an anchored overlay: one WCAG 2.5.8 touch target.
 ///
 /// Below this the anchored form cannot present a single actionable row at the
 /// minimum size the house standard requires, so it is not a small menu — it is
-/// an unusable one.
+/// an unusable one. Applied by [`present`] whatever a consumer asks for, so a
+/// request of `0.0` still cannot produce a sub-target menu.
+///
+/// **This is a floor, not the decision point.** It bounds *unusable*; it does
+/// not mark where the modal becomes the better presentation — see
+/// [`MIN_ANCHORED_MENU_PX`].
 pub const MIN_ANCHORED_HEIGHT_PX: f32 = TOUCH_MIN;
+
+/// What a **menu** should pass as its minimum anchored height: two rows.
+///
+/// # Why two, and why it is not inherited from the floor
+///
+/// The floor above was chosen to bound "unusable" — one touch target — and one
+/// row is a poor place to *stay anchored*: a 44px window scrolling a list of
+/// four actions shows one item with **no indication that the others exist**. The
+/// second row is the affordance. A list that visibly continues reads as a list;
+/// a single row reads as the whole menu, so a user does not scroll and never
+/// learns what was there.
+///
+/// Two also names the point where the alternative is plainly better rather than
+/// merely different: at two rows a modal shows the same four actions at once,
+/// with no scrolling and no ambiguity. Since the fallback exists and is good,
+/// the threshold should sit where it wins, not at the last pixel where the
+/// anchored form is technically legal.
+///
+/// The named consumers are why one row is not enough for any of them: T4.2's
+/// Recent Documents entry menu carries several actions, and T5.4's zoom popover
+/// carries a preset list plus a field. **Panels are not menus** — T5.2's colour
+/// picker has a content minimum of its own (an SV square has a size below which
+/// it cannot be used), which is why this is a value a consumer passes rather
+/// than a constant the primitive applies to everything.
+pub const MIN_ANCHORED_MENU_PX: f32 = 2.0 * TOUCH_MIN;
 
 /// How the overlay should be presented.
 ///
@@ -82,7 +112,11 @@ pub enum Presentation {
 #[must_use]
 pub fn present(req: PlacementRequest) -> Presentation {
     let placed = place(req);
-    if placed.rect.height < MIN_ANCHORED_HEIGHT_PX || placed.rect.width <= 0.0 {
+    // The consumer's minimum, floored by the house standard: a request below one
+    // touch target is not honoured, so `min_anchored_height: 0.0` is not a way
+    // back to the old behaviour (L08-043).
+    let min = req.min_anchored_height.max(MIN_ANCHORED_HEIGHT_PX);
+    if placed.rect.height < min || placed.rect.width <= 0.0 {
         return Presentation::Modal;
     }
     Presentation::Anchored(placed)

@@ -60,7 +60,7 @@
 //! the usable rect, which is exactly what that field documents.
 
 use appthere_ui::SafeAreaInsets;
-use appthere_ui::components::popover::{Align, PlacementRequest, Rect, Side};
+use appthere_ui::components::popover::{Align, MIN_ANCHORED_MENU_PX, PlacementRequest, Rect, Side};
 
 /// Menu width in CSS pixels.
 pub(super) const MENU_WIDTH_PX: f32 = 300.0;
@@ -132,6 +132,7 @@ pub(super) fn spell_menu_placement(
         align: Align::Start,
         gap: CARET_GAP_PX,
         margin: EDGE_MARGIN_PX,
+        min_anchored_height: MIN_ANCHORED_MENU_PX,
     }
 }
 

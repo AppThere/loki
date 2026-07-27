@@ -234,6 +234,28 @@ pub struct PlacementRequest {
     pub gap: f32,
     /// Minimum distance kept from every viewport edge.
     pub margin: f32,
+    /// Below this height the **anchored** form is not worth showing and
+    /// [`super::presentation::present`] falls back to a modal.
+    ///
+    /// # Why the consumer states it and the primitive decides
+    ///
+    /// The consumer knows its content — a menu of four actions, a preset list, a
+    /// colour picker whose SV square has a minimum of its own — and the
+    /// primitive knows the geometry. Splitting it that way keeps the "wires,
+    /// does not decide" invariant intact in both directions: no consumer picks
+    /// its own anchored-vs-modal rule, and the primitive does not pretend to know
+    /// how tall a picker needs to be.
+    ///
+    /// [`place`] ignores this field. It lives on the request rather than in
+    /// `present`'s signature because `on_anchor_change` needs the same value to
+    /// judge a mid-life change, and two paths carrying it separately is exactly
+    /// how they drift (L08-028).
+    ///
+    /// **A floor applies regardless**: `present` raises anything below
+    /// [`super::presentation::MIN_ANCHORED_HEIGHT_PX`] to it, so passing `0.0`
+    /// cannot produce a menu shorter than one touch target. Menus should pass
+    /// [`super::presentation::MIN_ANCHORED_MENU_PX`].
+    pub min_anchored_height: f32,
 }
 
 /// The resolved position, with what had to be conceded to reach it.

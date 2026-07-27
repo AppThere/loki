@@ -32,10 +32,33 @@
 //!
 //! The frame source already exists: the scroll animator's worker-thread tick
 //! (`crate::scroll::animate`).
+//!
+//! # The form is decided at open, and a change of form dismisses
+//!
+//! Plumbing a `Presentation` through `Reposition` would have let an open menu
+//! **become a full-screen sheet under the user's hands**, which is a startling
+//! event and has no focus story: the anchored form's focus lives in a list, the
+//! modal's does not. Dismissing is the other defensible answer, and it is the one
+//! taken, because of what actually causes the change.
+//!
+//! **It is not the soft keyboard.** The keyboard is the largest single viewport
+//! change available, but it cannot arrive here: while a popover is open, focus is
+//! *inside the popover*, so no text field is gaining focus and no IME is being
+//! raised. A viewport already shortened by the keyboard is an **open-time**
+//! condition, which `present` handles at open — not a mid-life transition.
+//!
+//! What is left is **rotation and multi-window resize**: rarer, much larger, and
+//! — the deciding property — **deliberately initiated by the user**. Someone who
+//! has just rotated the device has started something; a menu that survives the
+//! rotation in a different presentation is odd whichever form it lands in, while
+//! a menu that closes is the ordinary consequence of a big deliberate change.
+//! Dismissal also reuses a path that already works: focus returns to the anchor
+//! ([`super::DismissCause::PresentationChanged`]), and re-opening gives the form
+//! the new viewport calls for.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::super::geometry::{PlacementRequest, Rect};
+use super::super::geometry::{Placement, PlacementRequest, Rect};
 use super::super::presentation::{present, Presentation};
 
 /// Repositions performed since the last [`reset_repositions`].
@@ -89,15 +112,16 @@ pub fn reset_repositions() {
 pub enum AnchorResponse {
     /// Nothing moved that matters.
     Ignore,
-    /// Re-place the popover. **Carries the recomputed presentation** — see
-    /// [`on_anchor_change`] for why it is not a bare marker, and
-    /// [`super::super::presentation`] for why it is a `Presentation` rather than
-    /// a `Placement`: the viewport shrinking mid-life is exactly how a menu that
-    /// fitted when it opened stops fitting, and the soft keyboard appearing is
-    /// the common cause. Handing back a placement here would make the anchored
-    /// form the only reachable outcome of a resize.
-    Reposition(Presentation),
-    /// Close: the anchor is no longer visible.
+    /// Re-place the popover. **Carries the recomputed placement** — see
+    /// [`on_anchor_change`] for why it is not a bare marker.
+    ///
+    /// A `Placement` rather than a `Presentation` because of the invariant
+    /// below: a reposition is always *still anchored*, and always at a size the
+    /// consumer said was usable. A change of form does not arrive here — it
+    /// arrives as `Dismiss`.
+    Reposition(Placement),
+    /// Close: the anchor is no longer visible, or the presentation would have to
+    /// change form — see [`DismissCause`](super::DismissCause).
     Dismiss,
 }
 
@@ -237,5 +261,20 @@ pub fn on_anchor_change(
              when nothing moved, which is layout jitter rather than a scroll",
         );
     }
-    AnchorResponse::Reposition(present(current))
+    match present(current) {
+        // **This is the form-change rule**, and it needs no comparison against
+        // the previous form.
+        //
+        // A first draft had one — `presentation_class(previous) !=
+        // presentation_class(current)` — and a mutation removing it broke no
+        // test. The surviving mutation was the finding, not a gap in the suite:
+        // an open popover is anchored by definition (a modal one is not driven
+        // from here, having no anchor geometry), so "the form changed" and "the
+        // current geometry is not anchored" are the same condition. The
+        // comparison was unreachable-by-subsumption — the same shape the M4
+        // mutation found in `place`, and the second time L08-041 has returned
+        // redundant code rather than a missing case.
+        Presentation::Modal => AnchorResponse::Dismiss,
+        Presentation::Anchored(p) => AnchorResponse::Reposition(p),
+    }
 }

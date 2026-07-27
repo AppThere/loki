@@ -207,6 +207,20 @@ pub enum DismissCause {
     /// anchor is. The anchor's own cleanup must raise this — wiring the pure
     /// modules cannot see, which is why it is a named cause rather than a note.
     AnchorUnmounted,
+    /// The viewport changed enough that the popover would have to change
+    /// **form** — anchored to modal, or back.
+    ///
+    /// # Why this closes rather than transforms
+    ///
+    /// A menu becoming a full-screen sheet under the user's hands is startling,
+    /// and the two forms do not share a focus model. The cause is also
+    /// diagnostic: it cannot be the soft keyboard (focus is inside the popover
+    /// while it is open, so no IME is being raised — a short viewport is an
+    /// *open-time* condition), which leaves rotation and multi-window resize.
+    /// Both are large, rare, and **deliberately initiated**, so closing reads as
+    /// a consequence of what the user just did rather than as the app losing
+    /// track of itself. See `interaction_anchor`.
+    PresentationChanged,
 }
 
 /// Where focus goes when a popover closes.
@@ -236,9 +250,14 @@ pub enum FocusTarget {
 #[must_use]
 pub fn focus_after_dismiss(cause: DismissCause) -> FocusTarget {
     match cause {
-        DismissCause::Escape | DismissCause::Activated | DismissCause::AnchorScrolledAway => {
-            FocusTarget::Anchor
-        }
+        // `PresentationChanged` joins these: the anchor still exists and the
+        // user did not move focus themselves, so returning it there is both
+        // available and correct — and re-opening from the anchor is exactly how
+        // they get the form the new viewport calls for.
+        DismissCause::Escape
+        | DismissCause::Activated
+        | DismissCause::AnchorScrolledAway
+        | DismissCause::PresentationChanged => FocusTarget::Anchor,
         DismissCause::TabOut => FocusTarget::PastAnchor,
         // Both leave focus alone, for different reasons. An outside click put
         // focus where the user aimed it. An unmount has no anchor to return to
