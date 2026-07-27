@@ -58,11 +58,14 @@ pub use budget::{
 };
 pub use counter::{TextureResidency, TextureResidencySnapshot};
 pub use geometry::{
-    BYTES_PER_TEXEL, MAX_ZOOM, MIN_ZOOM, PT_TO_CSS_PX, PageBox, ViewportSpec, resident_pages,
-    resident_texture_bytes, texture_bytes, visible_window,
+    BYTES_PER_TEXEL, MAX_ZOOM, MAX_ZOOM_PERMILLE, MIN_ZOOM, MIN_ZOOM_PERMILLE, PT_TO_CSS_PX,
+    PageBox, ViewportSpec, resident_pages, resident_texture_bytes, texture_bytes, visible_window,
+    zoom_from_permille,
 };
 pub use plan::{
     MIN_RASTER_SCALE, RASTER_SCALE_LADDER, ResidencyPlan, TilePlan, plan_residency,
     strictly_visible,
 };
-pub use plan_capability::{ZOOM_PROBE_STEP, is_servable_at_all, max_servable_zoom};
+pub use plan_capability::{
+    ZOOM_PROBE_STEP_PERMILLE, is_servable_at_all, max_servable_zoom_permille,
+};

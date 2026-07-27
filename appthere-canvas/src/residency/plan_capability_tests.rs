@@ -1,16 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! The property Phase 5 will depend on: clamping to [`max_servable_zoom`] makes
-//! `ceiling_exceeded` unreachable.
+//! The property Phase 5 will depend on: clamping to
+//! [`max_servable_zoom_permille`] makes `ceiling_exceeded` unreachable.
 //!
 //! Stated as an implication rather than as a table of numbers, because the
 //! numbers are the device's and the implication is the contract.
+//!
+//! # This guards a function nobody calls
+//!
+//! Said plainly, because it is the limitation that matters: nothing in
+//! production calls `max_servable_zoom_permille` yet. If T5.4 implements zoom
+//! limiting from first principles — or with its own constant — every test here
+//! stays green while production still exceeds the ceiling. That is exactly
+//! L08-029's two-derivations failure.
+//!
+//! So the requirement is recorded in T5.4's text and on the function itself:
+//! **call it, do not re-derive it.** `DocPageSource::set_zoom` is the single
+//! clamp site in the tree, so the wiring is one call.
 
 use super::super::budget::{BudgetInputs, TextureBudget};
-use super::super::geometry::{MAX_ZOOM, MIN_ZOOM, PageBox, ViewportSpec};
+use super::super::geometry::{
+    MAX_ZOOM_PERMILLE, MIN_ZOOM_PERMILLE, PageBox, ViewportSpec, zoom_from_permille,
+};
 use super::super::plan::plan_residency;
-use super::{ZOOM_PROBE_STEP, is_servable_at_all, max_servable_zoom};
+use super::{ZOOM_PROBE_STEP_PERMILLE, is_servable_at_all, max_servable_zoom_permille};
 
 fn iso_a(n: usize) -> PageBox {
     let sizes = [
@@ -46,22 +60,23 @@ fn clamping_to_the_servable_zoom_makes_the_oom_branch_unreachable() {
             for dsf in [1.0_f64, 2.0, 3.0, 4.0] {
                 let page = iso_a(n);
                 let budget = budget_for(gib);
-                let limit = max_servable_zoom(page, dsf, budget);
-                let doc = vec![page; 8];
-                let mut zoom = MIN_ZOOM;
-                while zoom <= limit + f64::EPSILON {
+                let limit = max_servable_zoom_permille(page, dsf, budget);
+                let doc = [page; 8];
+                let mut permille = MIN_ZOOM_PERMILLE;
+                while permille <= limit {
+                    let zoom = zoom_from_permille(permille);
                     let pitch = doc[0].css_size(zoom).1 + 24.0;
                     for i in 0..40 {
                         let top = pitch * 2.0 + pitch * f64::from(i) / 40.0 * 3.0;
                         let vp = ViewportSpec::new(top, 900.0, zoom, dsf);
                         assert!(
                             !plan_residency(&doc, &vp, budget).ceiling_exceeded,
-                            "A{n} at {gib} GiB / {dsf}x exceeded the ceiling at zoom \
-                             {zoom}, which is at or below the reported servable \
+                            "A{n} at {gib} GiB / {dsf}x exceeded the ceiling at \
+                             {permille} permille, at or below the reported servable \
                              limit {limit}",
                         );
                     }
-                    zoom += ZOOM_PROBE_STEP;
+                    permille += ZOOM_PROBE_STEP_PERMILLE;
                 }
             }
         }
@@ -77,9 +92,9 @@ fn the_clamp_bites_only_where_the_device_cannot_serve() {
     for n in [4_usize, 3] {
         for gib in [2.0_f64, 4.0, 8.0, 16.0, 64.0] {
             for dsf in [1.0_f64, 2.0, 3.0, 4.0] {
-                let limit = max_servable_zoom(iso_a(n), dsf, budget_for(gib));
-                assert!(
-                    limit >= MAX_ZOOM - f64::EPSILON,
+                let limit = max_servable_zoom_permille(iso_a(n), dsf, budget_for(gib));
+                assert_eq!(
+                    limit, MAX_ZOOM_PERMILLE,
                     "A{n} at {gib} GiB / {dsf}x was limited to {limit}; ordinary \
                      paper must reach full zoom on every device",
                 );
@@ -87,11 +102,11 @@ fn the_clamp_bites_only_where_the_device_cannot_serve() {
         }
     }
     // A0 on a small HiDPI device is the case the clamp exists for.
-    let limit = max_servable_zoom(iso_a(0), 4.0, budget_for(2.0));
+    let limit = max_servable_zoom_permille(iso_a(0), 4.0, budget_for(2.0));
     assert!(
-        (1.0..1.75).contains(&limit),
-        "A0 on 2 GiB at 4x reported a servable limit of {limit}; it was measured \
-         as first exceeding at 175%, so the limit belongs just below that",
+        (1000..1750).contains(&limit),
+        "A0 on 2 GiB at 4x reported a servable limit of {limit} permille; it was \
+         measured as first exceeding at 1750, so the limit belongs just below that",
     );
 }
 
@@ -120,10 +135,10 @@ fn every_page_size_is_servable_at_minimum_zoom() {
 #[test]
 fn the_reported_limit_stays_inside_the_zoom_clamp() {
     for n in 0..=4_usize {
-        let limit = max_servable_zoom(iso_a(n), 4.0, budget_for(2.0));
+        let limit = max_servable_zoom_permille(iso_a(n), 4.0, budget_for(2.0));
         assert!(
-            (MIN_ZOOM..=MAX_ZOOM).contains(&limit),
-            "A{n} reported {limit}, outside [{MIN_ZOOM}, {MAX_ZOOM}]",
+            (MIN_ZOOM_PERMILLE..=MAX_ZOOM_PERMILLE).contains(&limit),
+            "A{n} reported {limit}, outside [{MIN_ZOOM_PERMILLE}, {MAX_ZOOM_PERMILLE}]",
         );
     }
 }

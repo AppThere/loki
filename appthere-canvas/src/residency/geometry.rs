@@ -39,12 +39,44 @@ pub const MIN_ZOOM: f64 = 0.25;
 /// See [`MIN_ZOOM`].
 pub const MAX_ZOOM: f64 = 4.0;
 
+/// [`MIN_ZOOM`] and [`MAX_ZOOM`] in **thousandths**, the representation a zoom
+/// control should store.
+///
+/// # Why an integer, and why here
+///
+/// Zoom is about to become a user-editable value compared against a *derived
+/// bound* (Phase 5 T5.4, `plan_capability::max_servable_zoom_permille`). That
+/// combination is a predicate hazard: accumulating `zoom += 0.05` from 0.25
+/// lands on 3.999999999999994, so a user typing exactly the limit would fall
+/// microscopically below it and be clamped. The float error is negligible; what
+/// it does to a comparison is not.
+///
+/// Integers remove the hazard by construction rather than by careful stepping,
+/// and the convention already exists in this codebase — `raster_permille` is
+/// thousandths for the same reason, because it is compared for equality in a
+/// tile's reuse key.
+pub const MIN_ZOOM_PERMILLE: u16 = 250;
+
+/// See [`MIN_ZOOM_PERMILLE`].
+pub const MAX_ZOOM_PERMILLE: u16 = 4000;
+
+/// A permille zoom as the factor the planner works in.
+#[must_use]
+pub fn zoom_from_permille(permille: u16) -> f64 {
+    f64::from(permille) / 1000.0
+}
+
 // An inverted or empty range would make every zoom sweep in this crate — and the
 // reachability answer that depends on one — silently vacuous. Checked at compile
 // time rather than in a test, because a test asserting a relation between two
 // constants is a lint (`clippy::assertions_on_constants`) and, more to the point,
 // is checking something the compiler can simply refuse to build.
 const _: () = assert!(MIN_ZOOM > 0.0 && MIN_ZOOM < MAX_ZOOM);
+// The two representations must not drift; a permille bound that disagreed with
+// the float one would reintroduce exactly the predicate hazard it exists to
+// remove.
+const _: () = assert!(MIN_ZOOM_PERMILLE as f64 / 1000.0 == MIN_ZOOM);
+const _: () = assert!(MAX_ZOOM_PERMILLE as f64 / 1000.0 == MAX_ZOOM);
 
 /// A page's paper size in points, the unit `loki-layout` reports.
 #[derive(Clone, Copy, PartialEq, Debug)]

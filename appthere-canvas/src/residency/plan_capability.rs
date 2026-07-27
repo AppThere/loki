@@ -17,7 +17,8 @@
 //! granularity, and ADR L08-030 says exactly what to do with those: **further
 //! refinement of the budget policy is work sub-page tiling deletes.** So the
 //! answer is not another step. It is to never enter the regime, by bounding zoom
-//! at what the device can serve rather than at the constant [`MAX_ZOOM`].
+//! at what the device can serve rather than at the constant
+//! [`super::MAX_ZOOM`].
 //!
 //! That is honest in the way a branch is not — the limit is real, so it belongs
 //! in the control — and it costs the planner nothing, because this function is
@@ -26,7 +27,7 @@
 //! # The check that made a clamp the right answer rather than a hopeful one
 //!
 //! A clamp only helps if the unservable regime has a *lower* edge inside the zoom
-//! range. If a page exceeded the ceiling at [`MIN_ZOOM`], no zoom limit would
+//! range. If a page exceeded the ceiling at [`super::MIN_ZOOM`], no zoom limit would
 //! reach it and the honest interim would be a load-time refusal instead.
 //!
 //! Measured — the zoom at which each exceeding row first crosses the ceiling:
@@ -46,12 +47,16 @@
 //! 4x device would be limited to about 150% zoom.
 
 use super::budget::TextureBudget;
-use super::geometry::{MAX_ZOOM, MIN_ZOOM, PageBox, ViewportSpec};
+use super::geometry::{
+    MAX_ZOOM_PERMILLE, MIN_ZOOM, MIN_ZOOM_PERMILLE, PageBox, ViewportSpec, zoom_from_permille,
+};
 use super::plan::plan_residency;
 
-/// Zoom granularity this search reports at. Finer than any control is likely to
-/// offer, so the answer is limited by the device rather than by this constant.
-pub const ZOOM_PROBE_STEP: f64 = 0.05;
+/// Zoom granularity this search reports at, in thousandths — 5%.
+///
+/// Finer than any control is likely to offer, so the answer is limited by the
+/// device rather than by this constant.
+pub const ZOOM_PROBE_STEP_PERMILLE: u16 = 50;
 
 /// Scroll offsets sampled per candidate zoom.
 ///
@@ -62,44 +67,73 @@ pub const ZOOM_PROBE_STEP: f64 = 0.05;
 const OFFSET_SAMPLES: u32 = 40;
 
 /// The largest zoom at which `page` can be mounted without exceeding `budget`'s
-/// survival ceiling, on a display of `device_scale_factor`.
+/// survival ceiling, on a display of `device_scale_factor`. **In thousandths.**
 ///
-/// Returns [`MAX_ZOOM`] when the device can serve the whole range, which is the
-/// common case for A4 and Letter on every memory size measured. Never returns
-/// below [`MIN_ZOOM`]: if even minimum zoom were unservable a clamp would be the
-/// wrong instrument, and the caller needs to distinguish that — see
-/// [`is_servable_at_all`].
+/// Returns [`MAX_ZOOM_PERMILLE`] when the device can serve the whole range,
+/// which is the case for A4 and Letter on every memory size measured. Never
+/// returns below [`MIN_ZOOM_PERMILLE`]: if even minimum zoom were unservable a
+/// clamp would be the wrong instrument, and the caller needs to distinguish that
+/// — see [`is_servable_at_all`].
 ///
-/// # Not wired
+/// # Thousandths, not a factor
+///
+/// This value is a **bound a caller compares against**, which makes it a
+/// predicate hazard in floating point. The first draft returned `f64` and
+/// accumulated `zoom += 0.05`, landing on 3.999999999999994 — unservable by
+/// 4e-15, which would have clamped every device on ordinary paper. Stepping by
+/// integer index fixed that instance; returning an integer removes the class,
+/// including the one still ahead: a user typing exactly the limit in a Phase 5
+/// zoom control must land *on* it.
+///
+/// # Not wired, and what T5.4 must do with it
 ///
 /// Nothing calls this yet. Phase 5's T5.4 rewrites the zoom control and is where
-/// it belongs; landing it there makes it a feature of the control rather than a
-/// branch in the policy. It lives here because this is where the arithmetic and
-/// its tests are, and because a successor inheriting a function has less room to
-/// re-derive it slightly differently than one inheriting a paragraph.
+/// the clamp belongs — landing it there makes it a feature of the control rather
+/// than a branch in the policy.
+///
+/// **T5.4 must call this rather than derive its own bound.** The property test
+/// `clamping_to_the_servable_zoom_makes_the_oom_branch_unreachable` guards a
+/// function nobody calls; if T5.4 limits zoom from first principles, that test
+/// stays green while production still exceeds the ceiling. That is L08-029's
+/// two-derivations failure, and it is cheap to avoid: `DocPageSource::set_zoom`
+/// is the single clamp site in the tree, so wiring is one call there.
+///
+/// **The limit is live, and must not act retroactively.** The memory probe
+/// re-samples every 5 s, the ceiling derives from available RAM, and this
+/// derives from the ceiling — so a user sitting at 300% can have the limit fall
+/// below them when another process takes memory. Forcing a zoom-out mid-edit is
+/// worse than never having offered 300%, and reads as the app malfunctioning.
+/// The rule T5.4 should implement: **this gates new zoom requests and never
+/// reduces a zoom already in effect.** A session may sit above the current limit
+/// — it was servable when entered, `ceiling_exceeded` reports it if it stops
+/// being so, and the alternative is worse.
 #[must_use]
-pub fn max_servable_zoom(page: PageBox, device_scale_factor: f64, budget: TextureBudget) -> f64 {
+pub fn max_servable_zoom_permille(
+    page: PageBox,
+    device_scale_factor: f64,
+    budget: TextureBudget,
+) -> u16 {
     // Searched against the real planner rather than solved in closed form. The
     // closed form needs the visible-page count, the per-axis whole-pixel
     // rounding and the floor's interaction with the ceiling — all of which are
     // already decided in `plan_residency`, and a second derivation of them is a
     // second thing that can disagree with production. Same reason
     // `visible_window` is the production mounting rule rather than a model of it.
-    let doc = vec![page; 8];
-    let mut best = MIN_ZOOM;
-    // Stepped by integer index rather than by accumulating `zoom +=`. Accumulating
-    // 0.05 seventy-five times lands on 3.999999999999994, and this value is a
-    // *bound a caller compares against* — so an unservable-by-4e-15 answer would
-    // reject exactly-MAX_ZOOM and silently clamp every device on ordinary paper.
-    // The float error is tiny; what it does to the predicate is not.
-    let steps = ((MAX_ZOOM - MIN_ZOOM) / ZOOM_PROBE_STEP).round() as u32;
-    for step in 0..=steps {
-        let zoom = (MIN_ZOOM + f64::from(step) * ZOOM_PROBE_STEP).min(MAX_ZOOM);
-        if !servable(&doc, zoom, device_scale_factor, budget) {
+    let doc = [page; 8];
+    let mut best = MIN_ZOOM_PERMILLE;
+    let mut permille = MIN_ZOOM_PERMILLE;
+    while permille <= MAX_ZOOM_PERMILLE {
+        if !servable(
+            &doc,
+            zoom_from_permille(permille),
+            device_scale_factor,
+            budget,
+        ) {
             // Demand is monotonic in zoom, so the first failure is the edge.
             break;
         }
-        best = zoom;
+        best = permille;
+        permille = permille.saturating_add(ZOOM_PROBE_STEP_PERMILLE);
     }
     best
 }
