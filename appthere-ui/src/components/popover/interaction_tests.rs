@@ -350,3 +350,19 @@ fn a_real_move_advances_the_reposition_counter() {
         "a real move must advance the counter exactly once"
     );
 }
+
+/// **The cause root hosting created.** Rendered beside its trigger, a popup died
+/// with its subtree; hosted at the root it does not, so a navigation leaves a
+/// menu outliving the screen it belongs to.
+///
+/// Focus is left alone: there is no anchor to return to, and a navigation has
+/// already placed focus on whatever replaced the screen.
+#[test]
+fn an_unmounted_anchor_dismisses_without_moving_focus() {
+    assert_eq!(
+        focus_after_dismiss(DismissCause::AnchorUnmounted),
+        FocusTarget::Unchanged,
+        "an unmount has no anchor to restore to, and the navigation that caused \
+         it has already placed focus",
+    );
+}

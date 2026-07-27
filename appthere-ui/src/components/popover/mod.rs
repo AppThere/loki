@@ -35,6 +35,18 @@
 //! - **One popover at a time.** [`wiring::open_response`] enforces it, since the
 //!   reposition counter is process-wide and a focus restoration needs one
 //!   candidate anchor. Opening a second dismisses the first.
+//! - **Lifetime.** Root hosting decouples the popup's life from its anchor's
+//!   subtree, so the anchor's cleanup must raise
+//!   [`interaction::DismissCause::AnchorUnmounted`] — otherwise a navigation
+//!   leaves a menu outliving the screen it belongs to. Nothing else covers it:
+//!   `AnchorScrolledAway` and [`wiring::IdentityCheck`] both assume the list
+//!   still exists.
+//! - **Root layer order.** [`host::RootLayer`] — `z-index` cannot arbitrate
+//!   between two children of the positioned root, so DOM order does, and a
+//!   backdrop painting over its own popup reads as a dead menu.
+//! - **Tooltips share the host, not the [`interaction::Role`].** See
+//!   [`host`]: T4.3's Open-button tooltip is the same out-of-flow child in the
+//!   same clipping container as T4.2's menu.
 //! - **Identity, checked before geometry.** [`wiring::on_anchor_identity`]. A
 //!   virtualised list recycling a different row into the same node leaves the
 //!   anchor rect unchanged, so the geometric comparison correctly says `Ignore`
@@ -70,6 +82,7 @@
 
 pub mod dismiss_order;
 pub mod geometry;
+pub mod host;
 pub mod interaction;
 pub mod wiring;
 

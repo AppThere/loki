@@ -166,6 +166,22 @@ pub enum DismissCause {
     TabOut,
     /// The anchor scrolled out of view.
     AnchorScrolledAway,
+    /// The anchor's subtree was unmounted — a navigation, a tab close, the
+    /// screen the anchor belonged to going away.
+    ///
+    /// # Root hosting created this cause
+    ///
+    /// Rendered beside its trigger, a popup was unmounted for free when its
+    /// subtree was: no cause was needed. Hosted at the root and driven by a
+    /// signal, its lifetime is **decoupled from its anchor's** — so opening a
+    /// Recent Documents menu and then navigating from anywhere that is not the
+    /// popup leaves the menu outliving the screen it belongs to.
+    ///
+    /// Neither [`Self::AnchorScrolledAway`] nor `wiring::IdentityCheck` covers
+    /// it: both assume the list still exists and are asking where in it the
+    /// anchor is. The anchor's own cleanup must raise this — wiring the pure
+    /// modules cannot see, which is why it is a named cause rather than a note.
+    AnchorUnmounted,
 }
 
 /// Where focus goes when a popover closes.
@@ -199,7 +215,11 @@ pub fn focus_after_dismiss(cause: DismissCause) -> FocusTarget {
             FocusTarget::Anchor
         }
         DismissCause::TabOut => FocusTarget::PastAnchor,
-        DismissCause::OutsideClick => FocusTarget::Unchanged,
+        // Both leave focus alone, for different reasons. An outside click put
+        // focus where the user aimed it. An unmount has no anchor to return to
+        // *and* is nearly always a navigation, which has already placed focus
+        // on whatever replaced the screen — moving it again would fight that.
+        DismissCause::OutsideClick | DismissCause::AnchorUnmounted => FocusTarget::Unchanged,
     }
 }
 
