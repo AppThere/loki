@@ -21,7 +21,7 @@
 
 use super::super::budget::{BudgetInputs, TextureBudget};
 use super::super::geometry::{
-    MAX_ZOOM_PERMILLE, MIN_ZOOM_PERMILLE, PageBox, ViewportSpec, zoom_from_permille,
+    PageBox, ViewportSpec, ZOOM_RANGE_MAX_PERMILLE, ZOOM_RANGE_MIN_PERMILLE, zoom_from_permille,
 };
 use super::super::plan::plan_residency;
 use super::{ZOOM_PROBE_STEP_PERMILLE, is_servable_at_all, max_servable_zoom_permille};
@@ -62,7 +62,7 @@ fn clamping_to_the_servable_zoom_makes_the_oom_branch_unreachable() {
                 let budget = budget_for(gib);
                 let limit = max_servable_zoom_permille(page, dsf, budget);
                 let doc = [page; 8];
-                let mut permille = MIN_ZOOM_PERMILLE;
+                let mut permille = ZOOM_RANGE_MIN_PERMILLE;
                 while permille <= limit {
                     let zoom = zoom_from_permille(permille);
                     let pitch = doc[0].css_size(zoom).1 + 24.0;
@@ -87,14 +87,14 @@ fn clamping_to_the_servable_zoom_makes_the_oom_branch_unreachable() {
 /// branch it has to actually bite, and on ordinary paper it must not.
 #[test]
 fn the_clamp_bites_only_where_the_device_cannot_serve() {
-    // A4 and A3 are what real documents use; a limit below MAX_ZOOM there would
+    // A4 and A3 are what real documents use; a limit below ZOOM_RANGE_MAX there would
     // be a regression dressed as a safety feature.
     for n in [4_usize, 3] {
         for gib in [2.0_f64, 4.0, 8.0, 16.0, 64.0] {
             for dsf in [1.0_f64, 2.0, 3.0, 4.0] {
                 let limit = max_servable_zoom_permille(iso_a(n), dsf, budget_for(gib));
                 assert_eq!(
-                    limit, MAX_ZOOM_PERMILLE,
+                    limit, ZOOM_RANGE_MAX_PERMILLE,
                     "A{n} at {gib} GiB / {dsf}x was limited to {limit}; ordinary \
                      paper must reach full zoom on every device",
                 );
@@ -137,8 +137,8 @@ fn the_reported_limit_stays_inside_the_zoom_clamp() {
     for n in 0..=4_usize {
         let limit = max_servable_zoom_permille(iso_a(n), 4.0, budget_for(2.0));
         assert!(
-            (MIN_ZOOM_PERMILLE..=MAX_ZOOM_PERMILLE).contains(&limit),
-            "A{n} reported {limit}, outside [{MIN_ZOOM_PERMILLE}, {MAX_ZOOM_PERMILLE}]",
+            (ZOOM_RANGE_MIN_PERMILLE..=ZOOM_RANGE_MAX_PERMILLE).contains(&limit),
+            "A{n} reported {limit}, outside [{ZOOM_RANGE_MIN_PERMILLE}, {ZOOM_RANGE_MAX_PERMILLE}]",
         );
     }
 }

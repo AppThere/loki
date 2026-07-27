@@ -13,21 +13,21 @@
 //! shrinks only the texture and leaves the box alone. That asymmetry is the
 //! whole of Spec 08 T2.2.
 
-use appthere_canvas::residency::{MAX_ZOOM, MIN_ZOOM};
+use appthere_canvas::residency::{ZOOM_RANGE_MAX, ZOOM_RANGE_MIN};
 
 use crate::doc_page_source::DocPageSource;
 
 impl DocPageSource {
     /// Sets the paginated render zoom factor, clamped to
-    /// [`MIN_ZOOM`]..=[`MAX_ZOOM`]. The next paint picks it up; the tile resize
+    /// [`ZOOM_RANGE_MIN`]..=[`ZOOM_RANGE_MAX`]. The next paint picks it up; the tile resize
     /// that accompanies a zoom change forces the repaint (texture-size
     /// mismatch), so no generation bump is needed.
     ///
     /// The bounds live in `appthere_canvas::residency` rather than here because
-    /// they are what bounds peak texture demand — see [`MIN_ZOOM`]'s docs.
+    /// they are what bounds peak texture demand — see [`ZOOM_RANGE_MIN`]'s docs.
     pub fn set_zoom(&self, zoom: f32) {
         *self.zoom.lock().unwrap_or_else(|e| e.into_inner()) =
-            zoom.clamp(MIN_ZOOM as f32, MAX_ZOOM as f32);
+            zoom.clamp(ZOOM_RANGE_MIN as f32, ZOOM_RANGE_MAX as f32);
     }
 
     /// The current paginated render zoom factor.
@@ -65,7 +65,7 @@ impl DocPageSource {
 mod tests {
     use std::sync::Arc;
 
-    use appthere_canvas::residency::{MAX_ZOOM, MIN_ZOOM};
+    use appthere_canvas::residency::{ZOOM_RANGE_MAX, ZOOM_RANGE_MIN};
     use loki_doc_model::document::Document;
 
     use crate::doc_page_source::DocPageSource;
@@ -87,9 +87,9 @@ mod tests {
     fn the_zoom_clamp_is_the_shared_residency_bound() {
         let source = DocPageSource::new(Arc::new(Document::default()));
         source.set_zoom(1000.0);
-        assert_eq!(f64::from(source.zoom()), MAX_ZOOM);
+        assert_eq!(f64::from(source.zoom()), ZOOM_RANGE_MAX);
         source.set_zoom(0.0);
-        assert_eq!(f64::from(source.zoom()), MIN_ZOOM);
+        assert_eq!(f64::from(source.zoom()), ZOOM_RANGE_MIN);
         source.set_zoom(1.5);
         assert_eq!(source.zoom(), 1.5, "an in-range zoom must pass through");
     }

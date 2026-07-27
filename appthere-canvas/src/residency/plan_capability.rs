@@ -18,7 +18,7 @@
 //! refinement of the budget policy is work sub-page tiling deletes.** So the
 //! answer is not another step. It is to never enter the regime, by bounding zoom
 //! at what the device can serve rather than at the constant
-//! [`super::MAX_ZOOM`].
+//! [`super::ZOOM_RANGE_MAX`].
 //!
 //! That is honest in the way a branch is not — the limit is real, so it belongs
 //! in the control — and it costs the planner nothing, because this function is
@@ -27,7 +27,7 @@
 //! # The check that made a clamp the right answer rather than a hopeful one
 //!
 //! A clamp only helps if the unservable regime has a *lower* edge inside the zoom
-//! range. If a page exceeded the ceiling at [`super::MIN_ZOOM`], no zoom limit would
+//! range. If a page exceeded the ceiling at [`super::ZOOM_RANGE_MIN`], no zoom limit would
 //! reach it and the honest interim would be a load-time refusal instead.
 //!
 //! Measured — the zoom at which each exceeding row first crosses the ceiling:
@@ -48,7 +48,8 @@
 
 use super::budget::TextureBudget;
 use super::geometry::{
-    MAX_ZOOM_PERMILLE, MIN_ZOOM, MIN_ZOOM_PERMILLE, PageBox, ViewportSpec, zoom_from_permille,
+    PageBox, ViewportSpec, ZOOM_RANGE_MAX_PERMILLE, ZOOM_RANGE_MIN, ZOOM_RANGE_MIN_PERMILLE,
+    zoom_from_permille,
 };
 use super::plan::plan_residency;
 
@@ -69,9 +70,9 @@ const OFFSET_SAMPLES: u32 = 40;
 /// The largest zoom at which `page` can be mounted without exceeding `budget`'s
 /// survival ceiling, on a display of `device_scale_factor`. **In thousandths.**
 ///
-/// Returns [`MAX_ZOOM_PERMILLE`] when the device can serve the whole range,
+/// Returns [`ZOOM_RANGE_MAX_PERMILLE`] when the device can serve the whole range,
 /// which is the case for A4 and Letter on every memory size measured. Never
-/// returns below [`MIN_ZOOM_PERMILLE`]: if even minimum zoom were unservable a
+/// returns below [`ZOOM_RANGE_MIN_PERMILLE`]: if even minimum zoom were unservable a
 /// clamp would be the wrong instrument, and the caller needs to distinguish that
 /// — see [`is_servable_at_all`].
 ///
@@ -120,9 +121,9 @@ pub fn max_servable_zoom_permille(
     // second thing that can disagree with production. Same reason
     // `visible_window` is the production mounting rule rather than a model of it.
     let doc = [page; 8];
-    let mut best = MIN_ZOOM_PERMILLE;
-    let mut permille = MIN_ZOOM_PERMILLE;
-    while permille <= MAX_ZOOM_PERMILLE {
+    let mut best = ZOOM_RANGE_MIN_PERMILLE;
+    let mut permille = ZOOM_RANGE_MIN_PERMILLE;
+    while permille <= ZOOM_RANGE_MAX_PERMILLE {
         if !servable(
             &doc,
             zoom_from_permille(permille),
@@ -147,7 +148,7 @@ pub fn max_servable_zoom_permille(
 /// case rather than assume it away.
 #[must_use]
 pub fn is_servable_at_all(page: PageBox, device_scale_factor: f64, budget: TextureBudget) -> bool {
-    servable(&[page; 8], MIN_ZOOM, device_scale_factor, budget)
+    servable(&[page; 8], ZOOM_RANGE_MIN, device_scale_factor, budget)
 }
 
 fn servable(doc: &[PageBox], zoom: f64, dsf: f64, budget: TextureBudget) -> bool {

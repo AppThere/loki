@@ -12,7 +12,7 @@
 //! from outside. Code that can never run is either a ceiling set too generously or
 //! a path that should not ship, and Phase 2 should close knowing which.
 //!
-//! Zoom is clamped to [`MAX_ZOOM`], so this is a bounded question rather than an
+//! Zoom is clamped to [`ZOOM_RANGE_MAX`], so this is a bounded question rather than an
 //! open one, and answerable without a device.
 //!
 //! # The answer, and it is not the intuitive one
@@ -25,7 +25,7 @@
 //! 1 GiB wall that US Letter cannot quite climb.
 //!
 //! Measured peak *visible* bytes and the lowest zoom at which step 5 fires, over
-//! 40 scroll offsets per zoom in 0.25 steps up to [`MAX_ZOOM`]:
+//! 40 scroll offsets per zoom in 0.25 steps up to [`ZOOM_RANGE_MAX`]:
 //!
 //! | available | display | ceiling | US Letter | A3 |
 //! | ---: | ---: | ---: | --- | --- |
@@ -42,7 +42,7 @@
 //! into a hit. The `A3` column is that same machine with a bigger page.
 
 use super::super::budget::{BudgetInputs, TextureBudget};
-use super::super::geometry::{MAX_ZOOM, PageBox, ViewportSpec};
+use super::super::geometry::{PageBox, ViewportSpec, ZOOM_RANGE_MAX};
 use super::plan_residency;
 
 /// A3 in points — the largest paper size an ordinary word processor offers, and
@@ -72,8 +72,8 @@ fn sweep(page: PageBox, available_gib: f64, dsf: f64) -> (Option<f64>, u64) {
     let budget = budget_for(available_gib);
     let mut fires_at = None;
     let mut peak = 0_u64;
-    let mut zoom = super::super::geometry::MIN_ZOOM;
-    while zoom <= MAX_ZOOM + f64::EPSILON {
+    let mut zoom = super::super::geometry::ZOOM_RANGE_MIN;
+    while zoom <= ZOOM_RANGE_MAX + f64::EPSILON {
         for offset in 0..40 {
             let vp = ViewportSpec::new(20_000.0 + f64::from(offset) * 500.0, 900.0, zoom, dsf);
             let plan = plan_residency(&doc, &vp, budget);
@@ -106,7 +106,7 @@ fn the_survival_regime_is_reachable_within_the_zoom_clamp() {
         assert!(
             fires_at.is_some(),
             "the survival regime is unreachable on a {available_gib} GiB machine at \
-             any zoom up to {MAX_ZOOM} on a 3x display, even at A3 — step 5 would \
+             any zoom up to {ZOOM_RANGE_MAX} on a 3x display, even at A3 — step 5 would \
              be dead code there, which is a ceiling set too generously rather than \
              a policy",
         );
@@ -165,7 +165,7 @@ fn the_large_machine_near_miss_stays_a_near_miss() {
 fn the_sweep_covers_the_whole_clamped_range() {
     let (_, peak_at_max) = sweep(PageBox::us_letter(), 16.0, 3.0);
     let doc = vec![PageBox::us_letter(); 500];
-    let at_max = ViewportSpec::new(20_000.0, 900.0, MAX_ZOOM, 3.0);
+    let at_max = ViewportSpec::new(20_000.0, 900.0, ZOOM_RANGE_MAX, 3.0);
     let plan = plan_residency(&doc, &at_max, budget_for(16.0));
     let visible: u64 = plan
         .tiles
@@ -176,7 +176,7 @@ fn the_sweep_covers_the_whole_clamped_range() {
     assert!(
         peak_at_max >= visible,
         "the sweep peaked at {peak_at_max} B but the clamp's own top end demands \
-         {visible} B — the sweep is not reaching {MAX_ZOOM}, so every reachability \
+         {visible} B — the sweep is not reaching {ZOOM_RANGE_MAX}, so every reachability \
          answer above is measured over less than the app permits",
     );
 }

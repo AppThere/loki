@@ -20,7 +20,21 @@ pub const BYTES_PER_TEXEL: u64 = 4;
 /// when turning a page's point size into its on-screen box.
 pub const PT_TO_CSS_PX: f64 = 96.0 / 72.0;
 
-/// Lowest and highest zoom the document view will accept.
+/// The widest zoom range the document view's control may offer.
+///
+/// **Not a capability bound.** These say what the control *offers*; whether a
+/// given page can be *served* at a given zoom on a given device is
+/// `plan_capability::max_servable_zoom_permille`, and clamping to
+/// `ZOOM_RANGE_MAX` instead is exactly what produces the branch that mounts
+/// above the OOM-calibrated ceiling. The names carry that distinction because a
+/// constant is easier to reach for than a function taking page geometry, display
+/// scale and a budget — and when both are available and one is easier, the
+/// easier wrong one wins.
+///
+/// `ZOOM_RANGE_MAX_PERMILLE` is therefore **not exported** from this crate: it is
+/// new, has no external consumer, and is precisely what an integer clamp in a
+/// zoom control would grab. The only public upper bound is the function, which
+/// returns this value when the device can serve the whole range.
 ///
 /// # Why the residency model owns these rather than the renderer
 ///
@@ -34,12 +48,12 @@ pub const PT_TO_CSS_PX: f64 = 96.0 / 72.0;
 /// `plan_reachability_tests::the_survival_regime_is_reachable_within_the_zoom_clamp`
 /// depends on the value, so raising the clamp here re-runs that question instead
 /// of silently changing the answer in another crate.
-pub const MIN_ZOOM: f64 = 0.25;
+pub const ZOOM_RANGE_MIN: f64 = 0.25;
 
-/// See [`MIN_ZOOM`].
-pub const MAX_ZOOM: f64 = 4.0;
+/// See [`ZOOM_RANGE_MIN`].
+pub const ZOOM_RANGE_MAX: f64 = 4.0;
 
-/// [`MIN_ZOOM`] and [`MAX_ZOOM`] in **thousandths**, the representation a zoom
+/// [`ZOOM_RANGE_MIN`] and [`ZOOM_RANGE_MAX`] in **thousandths**, the representation a zoom
 /// control should store.
 ///
 /// # Why an integer, and why here
@@ -55,10 +69,10 @@ pub const MAX_ZOOM: f64 = 4.0;
 /// and the convention already exists in this codebase — `raster_permille` is
 /// thousandths for the same reason, because it is compared for equality in a
 /// tile's reuse key.
-pub const MIN_ZOOM_PERMILLE: u16 = 250;
+pub const ZOOM_RANGE_MIN_PERMILLE: u16 = 250;
 
-/// See [`MIN_ZOOM_PERMILLE`].
-pub const MAX_ZOOM_PERMILLE: u16 = 4000;
+/// See [`ZOOM_RANGE_MIN_PERMILLE`].
+pub(crate) const ZOOM_RANGE_MAX_PERMILLE: u16 = 4000;
 
 /// A permille zoom as the factor the planner works in.
 #[must_use]
@@ -71,12 +85,12 @@ pub fn zoom_from_permille(permille: u16) -> f64 {
 // time rather than in a test, because a test asserting a relation between two
 // constants is a lint (`clippy::assertions_on_constants`) and, more to the point,
 // is checking something the compiler can simply refuse to build.
-const _: () = assert!(MIN_ZOOM > 0.0 && MIN_ZOOM < MAX_ZOOM);
+const _: () = assert!(ZOOM_RANGE_MIN > 0.0 && ZOOM_RANGE_MIN < ZOOM_RANGE_MAX);
 // The two representations must not drift; a permille bound that disagreed with
 // the float one would reintroduce exactly the predicate hazard it exists to
 // remove.
-const _: () = assert!(MIN_ZOOM_PERMILLE as f64 / 1000.0 == MIN_ZOOM);
-const _: () = assert!(MAX_ZOOM_PERMILLE as f64 / 1000.0 == MAX_ZOOM);
+const _: () = assert!(ZOOM_RANGE_MIN_PERMILLE as f64 / 1000.0 == ZOOM_RANGE_MIN);
+const _: () = assert!(ZOOM_RANGE_MAX_PERMILLE as f64 / 1000.0 == ZOOM_RANGE_MAX);
 
 /// A page's paper size in points, the unit `loki-layout` reports.
 #[derive(Clone, Copy, PartialEq, Debug)]

@@ -47,7 +47,7 @@
 //! is recorded rather than taken.
 
 use super::super::budget::{BudgetInputs, TextureBudget};
-use super::super::geometry::{MAX_ZOOM, MIN_ZOOM, PageBox, ViewportSpec};
+use super::super::geometry::{PageBox, ViewportSpec, ZOOM_RANGE_MAX, ZOOM_RANGE_MIN};
 use super::{MIN_RASTER_SCALE, plan_residency};
 
 /// ISO A series in points, A4 through A0.
@@ -80,8 +80,8 @@ fn worst_overshoot(page: PageBox, available_gib: f64, dsf: f64) -> (u64, bool) {
     let ceiling = budget.hard_ceiling_bytes();
     let mut over = 0_u64;
     let mut one_page_would_fit = true;
-    let mut zoom = MIN_ZOOM;
-    while zoom <= MAX_ZOOM + f64::EPSILON {
+    let mut zoom = ZOOM_RANGE_MIN;
+    while zoom <= ZOOM_RANGE_MAX + f64::EPSILON {
         for offset in 0..40 {
             let vp = ViewportSpec::new(20_000.0 + f64::from(offset) * 500.0, 900.0, zoom, dsf);
             let plan = plan_residency(&doc, &vp, budget);
@@ -154,8 +154,8 @@ fn exceeding_the_ceiling_implies_the_survival_regime() {
     let doc = vec![iso_a(0); 500];
     let budget = budget_for(2.0);
     let mut seen = false;
-    let mut zoom = MIN_ZOOM;
-    while zoom <= MAX_ZOOM + f64::EPSILON {
+    let mut zoom = ZOOM_RANGE_MIN;
+    while zoom <= ZOOM_RANGE_MAX + f64::EPSILON {
         for offset in 0..40 {
             let vp = ViewportSpec::new(20_000.0 + f64::from(offset) * 500.0, 900.0, zoom, 4.0);
             let plan = plan_residency(&doc, &vp, budget);

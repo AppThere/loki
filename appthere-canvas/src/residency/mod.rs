@@ -58,8 +58,8 @@ pub use budget::{
 };
 pub use counter::{TextureResidency, TextureResidencySnapshot};
 pub use geometry::{
-    BYTES_PER_TEXEL, MAX_ZOOM, MAX_ZOOM_PERMILLE, MIN_ZOOM, MIN_ZOOM_PERMILLE, PT_TO_CSS_PX,
-    PageBox, ViewportSpec, resident_pages, resident_texture_bytes, texture_bytes, visible_window,
+    BYTES_PER_TEXEL, PT_TO_CSS_PX, PageBox, ViewportSpec, ZOOM_RANGE_MAX, ZOOM_RANGE_MIN,
+    ZOOM_RANGE_MIN_PERMILLE, resident_pages, resident_texture_bytes, texture_bytes, visible_window,
     zoom_from_permille,
 };
 pub use plan::{

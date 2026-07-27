@@ -59,7 +59,7 @@
 //! should fail these and be re-measured rather than pass quietly.
 
 use super::super::budget::{BudgetInputs, TextureBudget};
-use super::super::geometry::{MAX_ZOOM, MIN_ZOOM, PageBox, ViewportSpec};
+use super::super::geometry::{PageBox, ViewportSpec, ZOOM_RANGE_MAX, ZOOM_RANGE_MIN};
 use super::{MIN_RASTER_SCALE, plan_residency};
 
 fn a3() -> PageBox {
@@ -81,8 +81,8 @@ fn worst_visible_scale(page: PageBox, available_gib: f64, dsf: f64) -> f32 {
     let doc = vec![page; 500];
     let budget = budget_for(available_gib);
     let mut worst = 1.0_f32;
-    let mut zoom = MIN_ZOOM;
-    while zoom <= MAX_ZOOM + f64::EPSILON {
+    let mut zoom = ZOOM_RANGE_MIN;
+    while zoom <= ZOOM_RANGE_MAX + f64::EPSILON {
         for offset in 0..40 {
             let vp = ViewportSpec::new(20_000.0 + f64::from(offset) * 500.0, 900.0, zoom, dsf);
             let plan = plan_residency(&doc, &vp, budget);
