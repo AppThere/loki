@@ -230,3 +230,43 @@ fn a_preference_that_fits_is_honoured_over_a_roomier_alternative() {
         assert!(p.rect.is_inside(req.viewport));
     }
 }
+
+/// **The precondition M4's collapse rests on**, asserted as its consequence: if
+/// *either* side can accommodate the request, the result is not truncated.
+///
+/// The one-comparison side selector is only correct while the required height is
+/// the same on both sides. Should it ever become side-dependent — a caret drawn
+/// only when opening downward is the likely cause — the selector could choose a
+/// roomier side that nonetheless does not fit, and this fails. It is cheaper
+/// than rediscovering the hazard as a menu that clips only when it opens upward.
+///
+/// Swept rather than sampled: the failure would appear in a narrow band of anchor
+/// positions where the two sides' room straddles the requirement.
+#[test]
+fn a_request_that_fits_on_either_side_is_never_clamped() {
+    let base = near_bottom();
+    for preferred in [Side::Above, Side::Below] {
+        for ay in 0..=70 {
+            for height in [40.0_f32, 200.0, 320.0, 600.0] {
+                let mut req = base;
+                req.preferred = preferred;
+                req.height = height;
+                req.anchor = Rect::new(100.0, ay as f32 * 10.0, 2.0, 18.0);
+                let above = (req.anchor.y - req.viewport.y - req.gap - req.margin).max(0.0);
+                let below =
+                    (req.viewport.bottom() - req.anchor.bottom() - req.gap - req.margin).max(0.0);
+                if above < height && below < height {
+                    continue; // Genuinely does not fit; clamping is correct.
+                }
+                let p = place(req);
+                assert!(
+                    !p.clamped,
+                    "request of {height}px was truncated to {:?} although room \
+                     was above={above} below={below} — the side selector chose a \
+                     side that could not take it",
+                    p.rect,
+                );
+            }
+        }
+    }
+}

@@ -55,6 +55,24 @@ pub fn place(req: PlacementRequest) -> Placement {
     // out. Take the preferred side when it fits or when it is the roomier of the
     // two; otherwise flip. Height is clamped afterwards to whatever the chosen
     // side actually has.
+    //
+    // # PRECONDITION: `wanted` is the same on both sides
+    //
+    // The subsumption above depends on it. `preferred_room < wanted` and
+    // `other_room >= wanted` give `other_room > preferred_room` **only because
+    // `wanted` is one quantity**. Make the requirement side-dependent — a caret
+    // that draws only when the popover opens downward, asymmetric padding, a
+    // shadow on one side — and a side can *fit* while being *less roomy* than
+    // the preferred side. The collapsed comparison would then pick the roomier
+    // side and clip, and it would clip only in one direction, which is the
+    // expensive kind of bug to chase.
+    //
+    // A caret is the most likely thing to be added to a popover once it works,
+    // so this is a near-future hazard rather than a theoretical one. If the
+    // requirement ever becomes side-dependent, restore the explicit
+    // does-it-fit test for each side — and
+    // `a_request_that_fits_on_either_side_is_never_clamped` will fail until you
+    // do.
     let preferred_room = room_for(req.preferred, room_above, room_below);
     let other = req.preferred.flipped();
     let other_room = room_for(other, room_above, room_below);
