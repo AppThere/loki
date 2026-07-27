@@ -58,6 +58,16 @@
 //! third is noise, and reporting it as a percentage invites exactly the confident
 //! misreading that produced three retracted attributions in a row.
 //!
+//! **But compare gaps to the *measured* floor, not to a fixed 10×, and separate
+//! ordering from magnitude.** A blunt "under an order of magnitude is not
+//! established" discards findings that are comfortably resolvable. Worked example:
+//! 15.6 ms against 2.2 ms is a 7.09× gap. Even if *both* measurements are wrong by
+//! the full 36% floor in opposing directions, the ratio only compresses to
+//! 7.09 / 1.36² ≈ **3.8×** — still far from 1. So "the first costs more than the
+//! second" is established; "7× more" is not. **Ordering survives vastly more noise
+//! than magnitude does**, and saying which of the two you are claiming is more
+//! useful than discarding both.
+//!
 //! **So read the deterministic columns and distrust the timings.** Pages re-flowed,
 //! checkpoint count and block comparisons are exact and reproducible; they are what
 //! established every real finding here — 327 pages with one checkpoint, resume at
