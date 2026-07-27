@@ -123,15 +123,7 @@ impl PaintScene for VelloScenePainter<'_, '_> {
                 };
                 dummy_image = image;
                 let got = (dummy_image.image.width, dummy_image.image.height);
-                if got != requested && got.0 > 0 && got.1 > 0 {
-                    let sx = f64::from(requested.0) / f64::from(got.0);
-                    let sy = f64::from(requested.1) / f64::from(got.1);
-                    brush_transform = Some(
-                        brush_transform
-                            .unwrap_or(Affine::IDENTITY)
-                            .pre_scale_non_uniform(sx, sy),
-                    );
-                }
+                brush_transform = fit_brush_to_box(requested, got, brush_transform);
                 BrushRef::Image(dummy_image.as_ref())
             }
         };
@@ -184,3 +176,46 @@ impl PaintScene for VelloScenePainter<'_, '_> {
             .draw_blurred_rounded_rect(transform, rect, brush, radius, std_dev);
     }
 }
+
+/// Brush transform that makes a texture of size `got` cover a box of size
+/// `requested`, composed with whatever `existing` transform the caller supplied.
+///
+/// PATCH(loki): extracted from [`VelloScenePainter::fill`] so the correction can
+/// be asserted without rendering. Spec 08 R28 was argued from a screen session —
+/// "a mis-scaled tile would have been noticed and wasn't" — and that argument
+/// does not hold: the same log shows a reduced tile replaced within ~2 ms, so a
+/// *misplaced* tile had the same sub-frame window in which to go unseen. Absence
+/// of a report across one frame is not evidence, and the R5a conclusion drawn
+/// from that same 2 ms cannot be run in the opposite direction here.
+///
+/// So the gross case is settled deterministically instead. Sub-pixel correctness
+/// — filtering, half-texel offsets at the edges — is not covered and remains
+/// open, which is where it already was.
+///
+/// Returns `existing` unchanged when no correction applies, so a source that
+/// returns the size it was asked for (every source upstream has) is untouched.
+fn fit_brush_to_box(
+    requested: (u32, u32),
+    got: (u32, u32),
+    existing: Option<Affine>,
+) -> Option<Affine> {
+    // A zero-sized texture would divide by zero; leaving the brush alone draws
+    // nothing useful but draws nothing wrong either.
+    if got == requested || got.0 == 0 || got.1 == 0 {
+        return existing;
+    }
+    let sx = f64::from(requested.0) / f64::from(got.0);
+    let sy = f64::from(requested.1) / f64::from(got.1);
+    // `pre_scale` rather than `post_scale`: the texture-fitting scale belongs in
+    // brush space, *inside* whatever the caller was already doing to the brush,
+    // so a caller-supplied rotation or offset still applies to the fitted result.
+    Some(
+        existing
+            .unwrap_or(Affine::IDENTITY)
+            .pre_scale_non_uniform(sx, sy),
+    )
+}
+
+#[cfg(test)]
+#[path = "scene_brush_fit_tests.rs"]
+mod brush_fit_tests;

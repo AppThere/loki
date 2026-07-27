@@ -579,12 +579,25 @@ compensate when they differ.
 - *Removal condition:* an anyrender_vello release that either scales a
   mismatched custom-paint texture itself or forwards the source's own brush
   transform.
-- **Not visually verified.** The arithmetic and the policy that drives it are
-  unit-tested headlessly; whether a reduced-scale tile *looks* right — and how
-  soft 0.25 scale reads at 400% zoom — needs a screen. Recorded in Spec 08 §3.6
-  as verification debt, and it is what Phase 2's closing on-device run checks.
+- *Tested:* `scene_brush_fit_tests.rs`, against `fit_brush_to_box` — the
+  arithmetic extracted from `fill` so it can be asserted without a GPU. The
+  assertions are **point mappings, not scale factors**: brush space is texture
+  space for an image brush, so "the texture covers its box" is "the transform
+  carries `(0,0)` to the box origin and `(got.w, got.h)` to the box's far
+  corner". Correct factors composed on the wrong side still read as `sx = 0.5`
+  while placing the texture elsewhere, and the corner is what a reader would
+  see. Verified discriminating by mutation: dropping the correction, swapping
+  `pre_scale` for `then_scale`, and using one factor for both axes each fail
+  it.
+- **Sub-pixel correctness is still open**, and only that. Filtering choice and
+  half-texel edge offsets need pixels; the gross case no longer does.
 
-**Updated:** 2026-07-26
+  *Previously this bullet read "the arithmetic and the policy that drives it
+  are unit-tested headlessly". Only the policy was — `plan_residency` had
+  tests, `fill`'s correction had none. The claim was corrected on 2026-07-27
+  when the tests above were written.*
+
+**Updated:** 2026-07-27
 
 ---
 
