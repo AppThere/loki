@@ -4,5 +4,6 @@
 //! The shared overlay primitive (Spec 08 T4.1).
 
 pub mod geometry;
+pub mod interaction;
 
 pub use geometry::{place, Align, Placement, PlacementRequest, Rect, Side};
