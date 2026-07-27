@@ -6,7 +6,39 @@
 //! Launches the Dioxus Native application.  All application logic lives in the
 //! `loki_text` library crate (`src/lib.rs`).
 
+/// Installs a log sink so `tracing` macros reach a terminal.
+///
+/// Without this every `tracing::debug!`/`warn!` in the workspace is a silent
+/// no-op on desktop — the macros compile and run and their output goes nowhere.
+/// That is how Spec 08's texture-residency diagnostic came to be written,
+/// committed, and relied on by a screen-test procedure while being impossible to
+/// observe. An instrument nobody can read is not an instrument.
+///
+/// Off by default (`RUST_LOG` unset means errors only), so ordinary runs are
+/// quiet. To watch the texture budget:
+///
+/// ```text
+/// RUST_LOG=loki_renderer=debug LOKI_TEXTURE_BUDGET_MB=24 cargo run -p loki-text --bin loki-text-desktop
+/// ```
+fn init_logging() {
+    use tracing_subscriber::EnvFilter;
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("error"));
+    // `try_init` rather than `init`, so a failure cannot take the app down over
+    // logging. The desktop binary installs this once, so the only realistic
+    // failure is an environment that already has a global subscriber — worth
+    // saying out loud, because the symptom otherwise is a diagnostic that prints
+    // nothing and reads as "the code path never ran".
+    if let Err(err) = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(true)
+        .try_init()
+    {
+        eprintln!("loki-text: logging unavailable ({err}); RUST_LOG will have no effect");
+    }
+}
+
 fn main() {
+    init_logging();
     loki_i18n::init();
     // Window: proper product title (instead of winit's "Dioxus App") and the
     // last session's inner size (persisted by `window_state`; falls back to a

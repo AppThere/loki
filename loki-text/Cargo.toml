@@ -68,6 +68,10 @@ webbrowser       = "1"
 thiserror       = "2"
 # Async event tracing — used for warn!/error!.
 tracing          = "0.1"
+# Desktop log sink. Without a subscriber every `tracing` macro in the workspace is
+# a no-op, which silently disabled the diagnostics the Spec 08 screen procedure
+# depends on — see `main.rs`.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Force fontconfig-dlopen on fontique so it uses the same dlopen path as
 # fontique v0.6 (pulled in by blitz-dom), which activates
 # yeslogic-fontconfig-sys/dlopen for the whole workspace.  Without this,
