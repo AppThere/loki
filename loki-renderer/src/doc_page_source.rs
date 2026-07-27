@@ -83,7 +83,16 @@ pub struct DocPageSource {
     /// tile CSS size and the paint transform together, leaving the layout —
     /// which stays in points — untouched. Reflow keeps 1.0 (its "zoom" is the
     /// layout width). See `DocumentView` / `LokiPageSource::render`.
+    /// Holds the **requested** zoom, not the rendered one — see
+    /// `DocPageSource::set_zoom`. Read it through `requested_zoom()` /
+    /// `zoom()` rather than directly, so the capability cap cannot be bypassed.
     pub(crate) zoom: Mutex<f32>,
+    /// Capability cap on rendered zoom, in thousandths; `None` is uncapped.
+    ///
+    /// Separate from `zoom` so a cap never overwrites intent: what a device can
+    /// serve varies with memory, page area and display scale, and a clamp that
+    /// stored its result would make a temporary constraint permanent.
+    pub(crate) zoom_capability_permille: Mutex<Option<u16>>,
     /// Per-page rasterisation scale in thousandths, set by the tile planner
     /// under texture-budget pressure (Spec 08 T2.2). Absent means full scale.
     ///
@@ -107,6 +116,7 @@ impl DocPageSource {
             renderer: Mutex::new(None),
             generation: Arc::new(AtomicU64::new(1)),
             zoom: Mutex::new(1.0),
+            zoom_capability_permille: Mutex::new(None),
             raster_permille: Mutex::new(HashMap::new()),
         }
     }
