@@ -116,6 +116,21 @@ pub(crate) fn plan_tiles(
     // that it can speak, and only then set the value under test and trust it when
     // it says nothing. See Spec 08 §Phase 2's closing procedure.
     let reduced_tiles = plan.tiles.iter().filter(|t| t.raster_scale < 1.0).count();
+    if plan.ceiling_exceeded {
+        // Its own line, at warn, because it is the only outcome this planner
+        // produces that it did not choose: the scale search hit its floor and
+        // the plan was mounted over the OOM-calibrated ceiling regardless. A
+        // debug line alongside the ordinary pressure reporting would put it in
+        // a stream people filter out, which is how it stayed silent until r30.
+        tracing::warn!(
+            ceiling_bytes = budget.hard_ceiling_bytes(),
+            planned_bytes = plan.total_bytes,
+            over_by_bytes = plan.total_bytes.saturating_sub(budget.hard_ceiling_bytes()),
+            tiles = plan.tiles.len(),
+            "texture residency ABOVE the survival ceiling — page too large to \
+             serve at this zoom on this device, mounting anyway",
+        );
+    }
     if plan.over_target || reduced_tiles > 0 {
         tracing::debug!(
             budget_bytes = budget.bytes(),
@@ -128,6 +143,7 @@ pub(crate) fn plan_tiles(
             // working (visible pages full scale, target exceeded and reported),
             // while this means a page the reader is looking at was degraded.
             survival_reduced = plan.survival_reduced,
+            ceiling_exceeded = plan.ceiling_exceeded,
             "texture residency under pressure",
         );
     }

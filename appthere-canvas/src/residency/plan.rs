@@ -26,6 +26,19 @@
 //!
 //! Visible tiles are never dropped, at any budget or ceiling.
 //!
+//! # When step 5 cannot succeed either (r30)
+//!
+//! The scale search is floored at [`MIN_RASTER_SCALE`], and on a large enough
+//! page it reaches that floor still over the ceiling — at which point the plan is
+//! mounted **above the threshold calibrated against the OOM killer**. That is not
+//! a concession the policy chose; it is one it could not make.
+//!
+//! It used to happen silently. It now sets [`ResidencyPlan::ceiling_exceeded`],
+//! because silently crossing that particular line is worse than either a soft
+//! page or a visible failure — it is trying and hoping, with nothing recorded if
+//! the hope fails. What the application does in response is a separate decision
+//! and deliberately not made here.
+//!
 //! # Why step 5 is not step 4 (ADR L08-026)
 //!
 //! Until r15 there was no step 5: the visible set was reduced as soon as it
@@ -64,6 +77,14 @@
 use super::budget::TextureBudget;
 use super::geometry::{PageBox, ViewportSpec, visible_window};
 
+#[path = "plan_types.rs"]
+mod types;
+
+#[path = "plan_survival.rs"]
+mod survival;
+
+pub use types::{ResidencyPlan, TilePlan};
+
 /// Rasterisation scales an off-centre tile may take, in order of preference.
 pub const RASTER_SCALE_LADDER: &[f32] = &[1.0, 0.75, 0.5, 0.35, 0.25];
 
@@ -79,56 +100,6 @@ pub const RASTER_SCALE_LADDER: &[f32] = &[1.0, 0.75, 0.5, 0.35, 0.25];
 /// regime only (R5b), where it is seen but the alternative is an allocation the
 /// device cannot satisfy.
 pub const MIN_RASTER_SCALE: f32 = 0.25;
-
-/// One tile in a residency plan.
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub struct TilePlan {
-    /// Page index in document order.
-    pub page_index: usize,
-    /// Rasterisation scale to allocate this tile's texture at, in `(0, 1]`.
-    pub raster_scale: f32,
-    /// Requested texture bytes at that scale.
-    pub bytes: u64,
-    /// Whether the page overlaps the visible rect, as opposed to the grown
-    /// window. Visible tiles are never dropped.
-    pub visible: bool,
-}
-
-/// The mounting decision for one viewport state.
-#[derive(Clone, PartialEq, Debug)]
-pub struct ResidencyPlan {
-    /// Tiles to mount, in document order.
-    pub tiles: Vec<TilePlan>,
-    /// Requested texture bytes across [`Self::tiles`].
-    pub total_bytes: u64,
-    /// `true` when the plan exceeds the byte **target** after spending
-    /// everything the target is allowed to spend.
-    ///
-    /// Reported rather than resolved, and since r15 this is an ordinary outcome
-    /// rather than a corner: the visible set at full scale can exceed a derived
-    /// target during normal reading on a HiDPI machine, and the correct response
-    /// is to say so, not to soften the page. See the module docs for why.
-    pub over_target: bool,
-    /// `true` when the visible set's scale was reduced to stay under the
-    /// **survival ceiling** — the only circumstance in which this planner
-    /// degrades what the user is looking at.
-    ///
-    /// Distinct from [`Self::over_target`] because they carry opposite meanings
-    /// for a reader of a diagnostic: over-target is the design working, while
-    /// this is the device having run out of room.
-    pub survival_reduced: bool,
-}
-
-impl ResidencyPlan {
-    /// The scale for `page_index`, or `None` when the page is not mounted.
-    #[must_use]
-    pub fn raster_scale(&self, page_index: usize) -> Option<f32> {
-        self.tiles
-            .iter()
-            .find(|t| t.page_index == page_index)
-            .map(|t| t.raster_scale)
-    }
-}
 
 /// Which pages overlap the visible rect itself, rather than the grown window.
 #[must_use]
@@ -218,29 +189,7 @@ pub fn plan_residency(
         return finish(tiles, true, false);
     }
 
-    // Step 5: above the survival ceiling there is no benign move left — refusing
-    // to degrade means requesting an allocation the device cannot satisfy. Reduce
-    // to the exact factor that fits *the ceiling*; bytes go as the square of the
-    // scale, so the factor is the square root of the ratio, floored at legibility.
-    let mut scale =
-        ((ceiling as f64 / visible_bytes as f64).sqrt() as f32).clamp(MIN_RASTER_SCALE, 1.0);
-    loop {
-        for tile in &mut tiles {
-            tile.raster_scale = scale;
-            tile.bytes = scaled_bytes(pages[tile.page_index], vp, scale);
-        }
-        if total(&tiles) <= ceiling || scale <= MIN_RASTER_SCALE {
-            break;
-        }
-        // The closed form is slightly optimistic: each axis rounds *up* to whole
-        // device pixels, so the realised area can exceed the ideal by a fraction
-        // of a row and column. Stepping down settles it in a few iterations and
-        // is bounded by the legibility floor — worth more than a closed form
-        // that is right on paper and over budget in practice.
-        scale = (scale * 0.98).max(MIN_RASTER_SCALE);
-    }
-    let over = total(&tiles) > cap;
-    finish(tiles, over, true)
+    survival::reduce_to_ceiling(tiles, pages, vp, cap, ceiling, visible_bytes)
 }
 
 fn finish(tiles: Vec<TilePlan>, over_target: bool, survival_reduced: bool) -> ResidencyPlan {
@@ -250,14 +199,19 @@ fn finish(tiles: Vec<TilePlan>, over_target: bool, survival_reduced: bool) -> Re
         total_bytes,
         over_target,
         survival_reduced,
+        // Only step 5 can exceed the ceiling; every earlier return is at or
+        // under it by construction, so this is false there rather than unknown.
+        ceiling_exceeded: false,
     }
 }
 
-fn total(tiles: &[TilePlan]) -> u64 {
+/// [`finish`] for step 5, which is the only path that can leave the plan above
+/// the survival ceiling.
+pub(super) fn total(tiles: &[TilePlan]) -> u64 {
     tiles.iter().map(|t| t.bytes).sum()
 }
 
-fn scaled_bytes(page: PageBox, vp: &ViewportSpec, scale: f32) -> u64 {
+pub(super) fn scaled_bytes(page: PageBox, vp: &ViewportSpec, scale: f32) -> u64 {
     page.texture_bytes(vp.zoom, vp.device_scale_factor * f64::from(scale))
 }
 
@@ -286,3 +240,7 @@ mod reachability_tests;
 #[cfg(test)]
 #[path = "plan_depth_tests.rs"]
 mod depth_tests;
+
+#[cfg(test)]
+#[path = "plan_ceiling_tests.rs"]
+mod ceiling_tests;
