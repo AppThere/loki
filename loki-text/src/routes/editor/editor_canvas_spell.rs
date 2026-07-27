@@ -53,6 +53,12 @@ pub(super) fn open_spell_panel_at(
             // is excluded, which is harmless only while the containing block is
             // the anchor's scroll parent — TODO(t4.1-popover): no longer true
             // once this is root-hosted.
+            //
+            // These are window coordinates used against a containing block that
+            // is NOT at the window origin: the editor root sits below the tab bar
+            // (40px + 1px border) and the top safe-area inset, so the menu lands
+            // ~41px below the click today. Confirmed by tracing app.rs -> Shell
+            // -> AtTabBar -> Outlet -> EditorInner, not by looking at it.
             menu.anchor_x = ctx.client_x;
             menu.anchor_y = ctx.client_y;
             // Select the whole word so the user sees what the suggestions apply to.

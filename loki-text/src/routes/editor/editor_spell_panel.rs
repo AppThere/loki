@@ -9,7 +9,7 @@
 //! containing block is the editor area and the click's window-relative
 //! coordinates place it at the cursor.
 //!
-//! # Two known defects, both fixed by T4.1's `Popover` rather than here
+//! # Three known defects, all fixed by T4.1's `Popover` rather than here
 //!
 //! Recorded so this file is not mistaken for a working reference — the r4
 //! framing called it "the proven popup", and it is proven only in the region it
@@ -26,9 +26,24 @@
 //!    which is why the symptom reads as a truncated menu rather than one that
 //!    obviously ran off, and why no `z-index` would have helped.
 //!
-//! Both go away when this becomes a consumer of `appthere_ui::components::popover`,
-//! which flips at the bottom edge and renders into a root-mounted host outside
-//! any clipping ancestor. `TODO(t4.1-popover): migrate this to the shared
+//! 3. **It is displaced downward by the shell chrome.** The anchor is
+//!    `client_x/client_y`, which in this stack is **window**-relative (plus a
+//!    top-level scroll that is always zero here) — see "Documented stack
+//!    deviations" in `docs/patches.md`. But it is used as `top`/`left` on an
+//!    element whose containing block is the **editor root**, and the editor root
+//!    is not at the window origin: `app.rs` root → `Shell` → `AtTabBar`
+//!    (`TAB_BAR_HEIGHT` 40px + 1px bottom border) → Outlet container →
+//!    `EditorInner`'s `position: relative` div. So the menu renders about
+//!    **41px below the click** on desktop, and further on Android where the top
+//!    safe-area inset adds.
+//!
+//!    A downward offset of that size is why nobody has reported it: a context
+//!    menu appearing just under the cursor looks like ordinary behaviour. It is
+//!    the one of the three that would have survived a screen session.
+//!
+//! All three go away when this becomes a consumer of `appthere_ui::components::popover`,
+//! which flips at the bottom edge, renders into a root-mounted host outside any
+//! clipping ancestor, and works in viewport coordinates throughout. `TODO(t4.1-popover): migrate this to the shared
 //! primitive.`
 
 use std::sync::{Arc, Mutex};
