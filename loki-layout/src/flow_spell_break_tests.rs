@@ -11,10 +11,9 @@
 //!
 //! The squiggle band is centred on the descender bottom (`baseline + descent`),
 //! while a fragment's clip ends at the line box bottom (`baseline + descent +
-//! leading_below`), floored to whole points. With ordinary leading there is slack
-//! and the band fits. With **exact line height** there is no leading below the
-//! descender, so the band straddles the boundary: measured at 0.25pt of a 0.84pt
-//! band cut at the bottom of one page, and the same line's squiggles re-emitted
+//! leading_below`), **floored to whole points**. When the band straddles that
+//! floored boundary it is cut on both sides of it: measured at 0.25pt of a 0.84pt
+//! band lost at the bottom of one page, with the same line's squiggles re-emitted
 //! into the next fragment at **negative y**, above its content top, where they are
 //! clipped again.
 //!
@@ -22,10 +21,30 @@
 //! which is exactly why the original report reads as the indicator having *moved*
 //! to the next page.
 //!
-//! The fix is therefore in the decoration's placement, not in the clip: the band
-//! is anchored just below the descender but is now clamped to stay within its own
-//! line box. Where there is leading to spare nothing moves, which is why this does
-//! not churn the goldens.
+//! ## The condition is fractional phase, not leading slack
+//!
+//! **Read `flow_spell_condition_tests.rs` before reasoning about when this
+//! reproduces.** This file's fixture uses `LineHeight::Exact`, and an earlier
+//! version of these docs generalised from it to "tight leading leaves no room
+//! below the descender". The sweep in that file falsified it: **default** leading
+//! reproduces at 9pt (0.473pt lost) and at 14pt (0.844 of a 0.844pt band — the
+//! whole squiggle), while `Multiple(150%)` never reproduces at any size. The
+//! governing quantity is the fractional phase between accumulated fragment height
+//! and the whole-point grid, which depends on size, rule *and* how many lines
+//! precede the break — not on how much leading there is.
+//!
+//! That story was retracted once and then restated a turn later, in a review of a
+//! different subject, by the person who retracted it (Spec 08 L08-032). It is more
+//! memorable than the correction because "tight leading" is a mechanism you can
+//! picture and "fractional phase against a point grid" is not. Hence this note,
+//! sitting where the wrong version used to be: do not infer the condition, read
+//! the sweep table.
+//!
+//! The fix is in the decoration's placement, not in the clip: the band is anchored
+//! just below the descender but is now clamped to stay within its own line box. It
+//! only ever raises the band, and only where the band would otherwise cross the
+//! floored boundary, so the cells that measured 0.000 are untouched and no
+//! goldens moved.
 
 use loki_doc_model::content::attr::NodeAttr;
 use loki_doc_model::content::block::{Block, StyledParagraph};
@@ -53,9 +72,13 @@ fn test_resources() -> FontResources {
     r
 }
 
-/// Exact line height, which is the condition the defect needs: it removes the
-/// leading below the descender that otherwise hides the overflow.
-fn tight_props() -> Box<ParaProps> {
+/// `Exact(12pt)`: **one** cell of the condition space that reproduces, chosen
+/// here because it does so at a size the break tests below can paginate quickly.
+///
+/// Not "the condition the defect needs" — that framing is the retracted one; see
+/// the module docs. `flow_spell_condition_tests.rs` owns the condition space and
+/// shows default leading reproducing too.
+fn reproducing_props() -> Box<ParaProps> {
     Box::new(ParaProps {
         line_height: Some(LineHeight::Exact(Points::new(12.0))),
         ..Default::default()
@@ -100,7 +123,7 @@ fn spelled_pages(text: String, layout: PageLayout) -> Vec<crate::result::LayoutP
     };
     let para = StyledParagraph {
         style_id: None,
-        direct_para_props: Some(tight_props()),
+        direct_para_props: Some(reproducing_props()),
         direct_char_props: None,
         inlines: vec![Inline::Str(text.into())],
         attr: NodeAttr::default(),
