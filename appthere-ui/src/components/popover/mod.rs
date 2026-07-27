@@ -35,6 +35,35 @@
 //! - **One popover at a time.** [`wiring::open_response`] enforces it, since the
 //!   reposition counter is process-wide and a focus restoration needs one
 //!   candidate anchor. Opening a second dismisses the first.
+//! - **Identity, checked before geometry.** [`wiring::on_anchor_identity`]. A
+//!   virtualised list recycling a different row into the same node leaves the
+//!   anchor rect unchanged, so the geometric comparison correctly says `Ignore`
+//!   and the menu acts on the wrong document.
+//!
+//! # Where this must mount, and why it is not a z-index question
+//!
+//! Measured against the tree rather than assumed, because it decides the
+//! component's mount point and that is expensive to change once four consumers
+//! exist:
+//!
+//! 1. **There is no portal and no top layer.** Nothing in the workspace
+//!    implements one, and `position: fixed` collapses to `absolute` in this Blitz
+//!    stack (`components::overlay`).
+//! 2. **`AtBackdropHost` hosts the *backdrop* at the app's positioned root, not
+//!    the popup.** Its own docs say the popup "stays wherever the requester
+//!    rendered it".
+//! 3. **The binding constraint is clipping, not stacking.** The Home screen's
+//!    Recent Documents list carries `overflow-y: auto` (and `overflow: hidden` on
+//!    its expanded sibling), and an out-of-flow child is clipped by an ancestor's
+//!    overflow — **no `z-index` escapes a clip**.
+//!
+//! So T4.2 is the first consumer that needs the *popup itself* hosted at the
+//! root, not merely its backdrop: rendered in place it would be correctly
+//! placed and invisible below the fold of its own list, which is
+//! indistinguishable from being placed wrong. The component therefore renders
+//! into a root-mounted host, on the `AtBackdropHost` pattern, rather than beside
+//! its anchor — and [`geometry::place`] already works in viewport coordinates,
+//! which is the coordinate space a root-mounted host needs.
 //! - **Dismissal ordering.** Focus must move *before* the popover unmounts —
 //!   see [`dismiss_order`], which returns the sequence rather than leaving the
 //!   order to whichever line was typed first.

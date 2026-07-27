@@ -74,3 +74,35 @@ fn reopening_the_same_popover_is_a_no_op() {
 fn opening_with_nothing_open_just_opens() {
     assert_eq!(open_response(None, PopoverId(1)), OpenResponse::Open);
 }
+
+use super::{on_anchor_identity, AnchorKey, IdentityCheck};
+
+/// **The failure the geometric comparison reports as `Ignore`:** a virtualised
+/// list recycles a different row into the same node, the anchor rect never
+/// moves, and the open menu now acts on the wrong document.
+#[test]
+fn a_recycled_row_dismisses_even_though_the_rect_did_not_move() {
+    let check = on_anchor_identity(AnchorKey(7), Some(AnchorKey(9)));
+    assert_eq!(check, IdentityCheck::Recycled);
+    assert!(
+        check.must_dismiss(),
+        "a menu left open over a recycled row acts on the wrong document",
+    );
+}
+
+/// An emptied node is the same class — the commands have no target.
+#[test]
+fn an_emptied_anchor_dismisses() {
+    let check = on_anchor_identity(AnchorKey(7), None);
+    assert_eq!(check, IdentityCheck::Gone);
+    assert!(check.must_dismiss());
+}
+
+/// The ordinary case must not dismiss, or a scrolling list closes its own menu
+/// on every frame.
+#[test]
+fn the_same_target_carries_on() {
+    let check = on_anchor_identity(AnchorKey(7), Some(AnchorKey(7)));
+    assert_eq!(check, IdentityCheck::Same);
+    assert!(!check.must_dismiss());
+}

@@ -77,3 +77,65 @@ pub fn open_response(currently_open: Option<PopoverId>, opening: PopoverId) -> O
 #[cfg(test)]
 #[path = "wiring_tests.rs"]
 mod tests;
+
+/// A stable identifier for whatever the anchor *is* — a document id, a command
+/// id — as opposed to where it sits.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct AnchorKey(pub u64);
+
+/// Whether the thing under the anchor is still the thing the popover was opened
+/// for.
+///
+/// # The failure geometry cannot see
+///
+/// A virtualised list recycles DOM nodes. If the row a menu is open for scrolls
+/// away and a **different** row is recycled into the same node, the anchor rect
+/// is unchanged — so [`super::interaction::on_anchor_change`] correctly reports
+/// `Ignore`, the menu stays open, and every command in it now acts on the wrong
+/// document. Silent, plausible, and destructive.
+///
+/// `AnchorScrolledAway` does not cover it: nothing scrolled away from the
+/// popover's point of view, because the rect it watches never moved.
+///
+/// **The guard belongs in identity, not in geometry**, which is why it is a
+/// separate question with a separate input. Retrofitting identity into a
+/// component whose comparison is purely geometric would mean revisiting all four
+/// consumers, so it is here before the first of them exists.
+///
+/// The Recent Documents list is not virtualised today, so this is a guard rather
+/// than a fix — but the cost of having it now is one `u64` per open popover.
+///
+/// # Check this *before* the geometric comparison
+///
+/// A recycled row returns `Ignore` from the geometry, so a caller that asks
+/// geometry first and identity second has already decided to do nothing.
+#[must_use]
+pub fn on_anchor_identity(opened_for: AnchorKey, under_anchor: Option<AnchorKey>) -> IdentityCheck {
+    match under_anchor {
+        Some(key) if key == opened_for => IdentityCheck::Same,
+        // Both "nothing there" and "something else there" dismiss, and for the
+        // same reason: the popover's commands have no valid target. They are
+        // distinguished only so a diagnostic can say which happened.
+        Some(_) => IdentityCheck::Recycled,
+        None => IdentityCheck::Gone,
+    }
+}
+
+/// The outcome of an anchor identity check.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum IdentityCheck {
+    /// Still the same target — carry on to the geometric comparison.
+    Same,
+    /// A different target now occupies the anchor. Dismiss.
+    Recycled,
+    /// Nothing occupies the anchor. Dismiss.
+    Gone,
+}
+
+impl IdentityCheck {
+    /// Whether the popover must close.
+    #[must_use]
+    pub fn must_dismiss(self) -> bool {
+        !matches!(self, Self::Same)
+    }
+}
