@@ -251,37 +251,6 @@ pub struct Placement {
     pub clamped: bool,
 }
 
-impl Placement {
-    /// Whether there is anything to render. A placement with no extent is not a
-    /// small menu, it is an invisible one.
-    ///
-    /// # Reachable, which is why this is a method and not a comment
-    ///
-    /// When the anchor leaves no room on either side, `place` clamps the height
-    /// to the room available — zero. The first pass judged that unreachable
-    /// ("no consumer is 700 px tall"), which was the right question in the wrong
-    /// units: what matters is the anchor against the **smallest supported
-    /// viewport**, not against a desktop one.
-    ///
-    /// In those units it is reachable. The condition is
-    /// `anchor.height >= viewport.height - 2 * (gap + margin)` — about
-    /// `viewport - 24` at the popover's defaults. T4.4's template tile measures
-    /// ~120 px today (12 padding + 72 thumbnail + 8 gap + ~16 label + 12
-    /// padding), and a phone in landscape with the IME up leaves a viewport of
-    /// roughly 130–155 px (≈360 dp window − ~30 top inset − ~180 IME, which the
-    /// soft keyboard adds to the *bottom* inset — see `safe_area`). Those
-    /// overlap. Severe clamping arrives well before that: the same tile in a
-    /// 200 px viewport leaves ~56 px, a one-item menu.
-    ///
-    /// So a consumer needs to be able to *ask*, rather than render a zero-height
-    /// box and show nothing. `clamped` cannot answer it — clamped-to-scrollable
-    /// and clamped-to-nothing are the same flag.
-    #[must_use]
-    pub fn is_showable(self) -> bool {
-        self.rect.width > 0.0 && self.rect.height > 0.0
-    }
-}
-
 #[path = "geometry_place.rs"]
 mod place_impl;
 pub use place_impl::place;

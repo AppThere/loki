@@ -4,6 +4,7 @@
 //! The three interaction decisions, asserted as the failures a user would hit.
 
 use super::super::geometry::{place, Align, PlacementRequest, Rect, Side};
+use super::super::presentation::Presentation;
 use std::sync::Mutex;
 
 use super::{
@@ -324,8 +325,10 @@ fn a_container_scrolling_within_the_page_re_places_against_the_viewport() {
          stale and this test asserts nothing",
         after.height,
     );
-    let AnchorResponse::Reposition(p) = on_anchor_change(before, after, true) else {
-        panic!("expected a reposition");
+    let AnchorResponse::Reposition(Presentation::Anchored(p)) =
+        on_anchor_change(before, after, true)
+    else {
+        panic!("expected a reposition that still fits anchored");
     };
     assert!(
         p.rect.is_inside(after.viewport),
@@ -355,7 +358,7 @@ fn a_resize_that_leaves_the_anchor_still_re_places() {
         matches!(r, AnchorResponse::Reposition(_)),
         "a resize with an unmoved anchor must still re-place; got {r:?}",
     );
-    let AnchorResponse::Reposition(p) = r else {
+    let AnchorResponse::Reposition(Presentation::Anchored(p)) = r else {
         unreachable!()
     };
     assert!(p.rect.is_inside(after.viewport));

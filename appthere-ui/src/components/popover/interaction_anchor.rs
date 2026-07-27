@@ -35,7 +35,8 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::super::geometry::{place, Placement, PlacementRequest, Rect};
+use super::super::geometry::{PlacementRequest, Rect};
+use super::super::presentation::{present, Presentation};
 
 /// Repositions performed since the last [`reset_repositions`].
 ///
@@ -88,9 +89,14 @@ pub fn reset_repositions() {
 pub enum AnchorResponse {
     /// Nothing moved that matters.
     Ignore,
-    /// Re-place the popover. **Carries the recomputed placement** — see
-    /// [`on_anchor_change`] for why it is not a bare marker.
-    Reposition(Placement),
+    /// Re-place the popover. **Carries the recomputed presentation** — see
+    /// [`on_anchor_change`] for why it is not a bare marker, and
+    /// [`super::super::presentation`] for why it is a `Presentation` rather than
+    /// a `Placement`: the viewport shrinking mid-life is exactly how a menu that
+    /// fitted when it opened stops fitting, and the soft keyboard appearing is
+    /// the common cause. Handing back a placement here would make the anchored
+    /// form the only reachable outcome of a resize.
+    Reposition(Presentation),
     /// Close: the anchor is no longer visible.
     Dismiss,
 }
@@ -231,5 +237,5 @@ pub fn on_anchor_change(
              when nothing moved, which is layout jitter rather than a scroll",
         );
     }
-    AnchorResponse::Reposition(place(current))
+    AnchorResponse::Reposition(present(current))
 }

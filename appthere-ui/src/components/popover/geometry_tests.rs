@@ -404,6 +404,18 @@ fn an_overlay_is_contained_for_every_generated_anchor_including_straddles() {
 /// make every sweep here vacuous at once, including the ones written to catch
 /// the bottom-edge defect.
 ///
+/// # Breadth is not discrimination
+///
+/// Worth stating where it happened, because the contrast is inside this one
+/// file. `an_overlay_near_the_bottom_edge_stays_inside_the_viewport` was written
+/// **to fail first**, against the pre-T4.1 behaviour, and is sound. The sweeps
+/// were written to be *broad* — every anchor position, both sides, three
+/// alignments — and were trusted for that breadth. Breadth is what made them feel
+/// safer, and it conferred nothing: all of it ran through one predicate that
+/// could not say no.
+///
+/// **The number of cases is not evidence. The inversion is.**
+///
 /// One case per edge, because a containment test can also be wrong in one
 /// direction only.
 #[test]
@@ -485,38 +497,18 @@ fn the_covering_predicate_fires_when_an_overlay_is_on_top_of_a_caret() {
     );
 }
 
-/// **What the sweep turned up: an anchor that leaves no room on either side
-/// yields an overlay of zero height** — a menu that simply does not appear.
+/// **The raw geometric fact the fallback rests on**: an anchor that leaves no
+/// room on either side yields an overlay with no usable height.
 ///
-/// The first pass called it unreachable because "no named consumer is 700px
-/// tall". That was the right question in the wrong units — the bound is the
-/// anchor against the **smallest supported viewport**, not against a desktop
-/// one — and in those units it is not comfortably unreachable:
-///
-/// | quantity | value |
-/// | --- | ---: |
-/// | T4.4 template tile, measured (`template_gallery.rs`: 12 + 72 + 8 + ~16 + 12) | ~120 px |
-/// | phone landscape window | ~360 dp |
-/// | top inset + IME (the soft keyboard grows the *bottom* inset — see `safe_area`) | ~30 + ~180 |
-/// | remaining viewport | **~150 px** |
-/// | zero-height condition, `anchor >= viewport - 2 * (gap + margin)` | `120 >= 126` |
-///
-/// It clears the line by six pixels, and moves to the wrong side of it on a
-/// shorter window, a taller tile, or a keyboard with a suggestion strip — none
-/// of which is exotic, and T4.4's tile is not built yet. That is a different
-/// status from unreachable, and the reason [`Placement::is_showable`] exists as
-/// a method a consumer can ask rather than as a comment nobody reads.
-///
-/// The fixture is stated in those units rather than with the 900px anchor the
-/// sweep found it with, so the test carries the reachability argument instead of
-/// a pathological rect.
+/// What a consumer *does* about it is not decided here — see
+/// `presentation::present`, which turns this into a modal rather than a menu
+/// nobody can see. This test keeps the geometry honest; the reachability
+/// argument and the fallback live with the decision.
 #[test]
-fn a_tall_anchor_in_a_phone_landscape_viewport_yields_an_unshowable_placement() {
+fn an_anchor_that_leaves_no_room_yields_an_overlay_with_no_height() {
     let mut req = near_bottom();
-    // ~360 dp window, less a ~30 px top inset and a ~180 px IME.
+    // ~360 dp phone window in landscape, less a ~30px top inset and a ~180px IME.
     req.viewport = Rect::new(0.0, 30.0, 640.0, 150.0);
-    // A template tile 10px taller than today's — the "slightly taller tile" the
-    // table above names, since today's ~120 clears the 126 threshold by six.
     req.anchor = Rect::new(50.0, 40.0, 100.0, 130.0);
     let (above, below) = rooms(req);
     assert!(
@@ -525,24 +517,11 @@ fn a_tall_anchor_in_a_phone_landscape_viewport_yields_an_unshowable_placement() 
          clamping: above {above}, below {below}",
     );
     let p = place(req);
-    assert!(
-        !p.is_showable(),
-        "a placement with no room is not a small menu, it is an absent one: {:?}",
-        p.rect,
-    );
+    assert_eq!(p.rect.height, 0.0, "{:?}", p.rect);
     assert!(
         p.clamped,
-        "and it must still report that the request was reduced",
+        "and it must still report that the request was reduced"
     );
-}
-
-/// The other polarity of the same predicate (L08-045): an ordinary placement is
-/// showable, so `is_showable` cannot be a constant `false` that silently makes
-/// every consumer's guard fire.
-#[test]
-fn an_ordinary_placement_is_showable() {
-    let p = place(near_bottom());
-    assert!(p.is_showable(), "{:?}", p.rect);
 }
 
 /// **The unstated precondition, found by a real fixture.** Containment on the
