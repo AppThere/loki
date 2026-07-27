@@ -80,6 +80,7 @@
 //!   see [`dismiss_order`], which returns the sequence rather than leaving the
 //!   order to whichever line was typed first.
 
+pub mod component;
 pub mod dismiss_order;
 pub mod geometry;
 pub mod host;

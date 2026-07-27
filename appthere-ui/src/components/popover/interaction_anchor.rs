@@ -6,6 +6,32 @@
 //! Split from `interaction.rs` at the 300-line ceiling, on a natural seam: the
 //! keyboard and focus tables are about a *user action*, this is about the world
 //! changing underneath one.
+//!
+//! # This must be driven per frame, not by scroll events
+//!
+//! Stated here because two instruments below depend on it and would silently
+//! measure something else otherwise (L08-042).
+//!
+//! **Events are the wrong driver.** An anchor's viewport position changes when
+//! *any* ancestor scrolls, so listening on the anchor's own container misses an
+//! outer scroll — and the Recent Documents list sits inside a page that may
+//! scroll too. Subscribing to every ancestor is fragile and goes stale whenever
+//! the tree changes, which is exactly when it matters.
+//!
+//! **A per-frame rect comparison catches every cause with no plumbing at all**:
+//! scroll at any depth, resize, layout shift, animation, a font finishing
+//! loading. That is why the comparison is against a whole `PlacementRequest`
+//! rather than a scroll delta.
+//!
+//! **And the counters assume it.** [`REPOSITION_BURST_WARN`] counts *consecutive*
+//! repositions because a settled popover emits `Ignore` on nearly every frame —
+//! a statement about frames. Driven by events, "consecutive" would count
+//! consecutive *scroll events*, which a slow drag produces indefinitely without
+//! anything being wrong, and the threshold would be arbitrary rather than half a
+//! second.
+//!
+//! The frame source already exists: the scroll animator's worker-thread tick
+//! (`crate::scroll::animate`).
 
 use std::sync::atomic::{AtomicU64, Ordering};
 

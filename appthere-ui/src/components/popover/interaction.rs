@@ -109,6 +109,29 @@ pub enum KeyAction {
     PassThrough,
 }
 
+impl KeyAction {
+    /// Whether the popover **consumed** this key, so the wiring must stop
+    /// propagation.
+    ///
+    /// # What `route_key` cannot say
+    ///
+    /// It says what the popover does; it cannot say what happens next. If
+    /// Escape propagates, closing a menu *also* cancels whatever the editor
+    /// beneath does on Escape — one keypress, two effects, and the second is
+    /// invisible until someone loses an edit. Enter is the same shape: it
+    /// activates a menu item and then reaches a form or the editor below.
+    ///
+    /// Derived from the action rather than configured beside it, for the reason
+    /// [`Role::traps_focus`] is: "handled but not consumed" is not a state
+    /// anyone wants, so it should not be expressible. Everything except
+    /// [`Self::PassThrough`] consumes — and `PassThrough` must *not*, or a
+    /// panel's own controls would never see their keys.
+    #[must_use]
+    pub fn consumes(self) -> bool {
+        !matches!(self, Self::PassThrough)
+    }
+}
+
 /// Routes `key` for a popover of `role`.
 ///
 /// The two rows that matter, and the reason [`Role`] exists:

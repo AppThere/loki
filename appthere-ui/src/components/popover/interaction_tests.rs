@@ -366,3 +366,40 @@ fn an_unmounted_anchor_dismisses_without_moving_focus() {
          it has already placed focus",
     );
 }
+
+/// **What `route_key` cannot say:** Escape closing a menu must not also reach the
+/// editor beneath, or one keypress has two effects and the second is invisible
+/// until someone loses an edit.
+#[test]
+fn everything_the_popover_handles_is_also_consumed() {
+    for role in [Role::Menu, Role::Panel] {
+        for key in [
+            Key::Down,
+            Key::Up,
+            Key::Home,
+            Key::End,
+            Key::Activate,
+            Key::Escape,
+            Key::Tab,
+            Key::ShiftTab,
+            Key::Char('a'),
+        ] {
+            let action = route_key(role, key);
+            assert_eq!(
+                action.consumes(),
+                action != KeyAction::PassThrough,
+                "{role:?} / {key:?} -> {action:?}: handled keys must stop \
+                 propagation and passed-through keys must not",
+            );
+        }
+    }
+}
+
+/// The half that a blanket "consume everything" would break: a panel's own
+/// controls must still see their keys.
+#[test]
+fn a_passed_through_key_is_not_consumed() {
+    assert!(!KeyAction::PassThrough.consumes());
+    assert!(!route_key(Role::Panel, Key::Down).consumes());
+    assert!(route_key(Role::Panel, Key::Escape).consumes());
+}
