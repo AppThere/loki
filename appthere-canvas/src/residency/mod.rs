@@ -67,5 +67,6 @@ pub use plan::{
     strictly_visible,
 };
 pub use plan_capability::{
-    ZOOM_PROBE_STEP_PERMILLE, is_servable_at_all, max_servable_zoom_permille,
+    ZOOM_PROBE_STEP_PERMILLE, is_servable_at_all, max_full_scale_zoom_permille,
+    max_servable_zoom_permille,
 };

@@ -24,7 +24,10 @@ use super::super::geometry::{
     PageBox, ViewportSpec, ZOOM_RANGE_MAX_PERMILLE, ZOOM_RANGE_MIN_PERMILLE, zoom_from_permille,
 };
 use super::super::plan::plan_residency;
-use super::{ZOOM_PROBE_STEP_PERMILLE, is_servable_at_all, max_servable_zoom_permille};
+use super::{
+    ZOOM_PROBE_STEP_PERMILLE, is_servable_at_all, max_full_scale_zoom_permille,
+    max_servable_zoom_permille,
+};
 
 fn iso_a(n: usize) -> PageBox {
     let sizes = [
@@ -141,4 +144,51 @@ fn the_reported_limit_stays_inside_the_zoom_clamp() {
             "A{n} reported {limit}, outside [{ZOOM_RANGE_MIN_PERMILLE}, {ZOOM_RANGE_MAX_PERMILLE}]",
         );
     }
+}
+
+/// The two bounds are ordered, and the gap between them is the whole reason a
+/// "never reduce a zoom already in effect" rule can be stated at all.
+///
+/// Below the full-scale bound nothing is degraded. Between the two the page is
+/// soft but the allocation is bounded — that band is where the rule applies, and
+/// if it were empty the rule would have nowhere to live. Above the servable bound
+/// the plan requests more than the OOM ceiling, and no policy about user
+/// disruption can apply there.
+#[test]
+fn the_full_scale_bound_never_exceeds_the_servable_bound() {
+    for n in 0..=4_usize {
+        for gib in [2.0_f64, 4.0, 8.0, 16.0, 64.0] {
+            for dsf in [1.0_f64, 2.0, 3.0, 4.0] {
+                let page = iso_a(n);
+                let budget = budget_for(gib);
+                let sharp = max_full_scale_zoom_permille(page, dsf, budget);
+                let servable = max_servable_zoom_permille(page, dsf, budget);
+                assert!(
+                    sharp <= servable,
+                    "A{n} at {gib} GiB / {dsf}x reports full scale to {sharp} but \
+                     servable only to {servable}; a zoom cannot be sharp and \
+                     unservable at once",
+                );
+            }
+        }
+    }
+}
+
+/// The band is wide where it matters, so the non-retroactive rule protects a
+/// real range rather than a rounding error.
+///
+/// A0 on 2 GiB at 4x was measured soft from 50% and over the ceiling from 175%:
+/// most of the usable zoom range is degraded-but-safe, which is exactly the
+/// territory a user should not be forcibly moved out of.
+#[test]
+fn the_soft_but_bounded_band_is_wide_on_the_extreme_device() {
+    let budget = budget_for(2.0);
+    let sharp = max_full_scale_zoom_permille(iso_a(0), 4.0, budget);
+    let servable = max_servable_zoom_permille(iso_a(0), 4.0, budget);
+    assert!(
+        servable >= sharp + 500,
+        "the soft-but-bounded band on A0 / 2 GiB / 4x is {sharp}..{servable} \
+         permille, narrower than the 50 percentage points it was measured at — \
+         a rule that lives in that band needs it to exist",
+    );
 }

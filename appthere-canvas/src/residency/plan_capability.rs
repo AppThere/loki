@@ -139,6 +139,48 @@ pub fn max_servable_zoom_permille(
     best
 }
 
+/// The largest zoom at which no visible tile is reduced at all — the onset of
+/// the survival regime, in thousandths.
+///
+/// # Why a caller needs both bounds
+///
+/// [`max_servable_zoom_permille`] thresholds on `ceiling_exceeded`, so it marks
+/// where the plan starts requesting **more than the OOM-calibrated ceiling**. It
+/// is not where the page starts looking soft. Between the two there is a wide
+/// band that is degraded but bounded — on A0 at 2 GiB on a 4x display, softness
+/// begins at 50% zoom and the ceiling is not exceeded until 175%.
+///
+/// That gap is what a "never reduce a zoom already in effect" rule turns on. The
+/// rule is right across the soft-but-bounded band: the user chose that zoom, it
+/// is legible, and disrupting an edit is worse. It **cannot** hold above the
+/// servable limit, because that is not degradation, it is the allocation the
+/// ceiling exists to prevent. Spec 08 r33 stated the rule against a single bound
+/// and so accepted the OOM branch indefinitely; both bounds are needed to state
+/// it correctly.
+#[must_use]
+pub fn max_full_scale_zoom_permille(
+    page: PageBox,
+    device_scale_factor: f64,
+    budget: TextureBudget,
+) -> u16 {
+    let doc = [page; 8];
+    let mut best = ZOOM_RANGE_MIN_PERMILLE;
+    let mut permille = ZOOM_RANGE_MIN_PERMILLE;
+    while permille <= ZOOM_RANGE_MAX_PERMILLE {
+        if !full_scale(
+            &doc,
+            zoom_from_permille(permille),
+            device_scale_factor,
+            budget,
+        ) {
+            break;
+        }
+        best = permille;
+        permille = permille.saturating_add(ZOOM_PROBE_STEP_PERMILLE);
+    }
+    best
+}
+
 /// Whether `page` can be served at *any* zoom on this device.
 ///
 /// `false` means a zoom clamp is the wrong instrument — the document does not
@@ -151,15 +193,39 @@ pub fn is_servable_at_all(page: PageBox, device_scale_factor: f64, budget: Textu
     servable(&[page; 8], ZOOM_RANGE_MIN, device_scale_factor, budget)
 }
 
+/// Whether every visible tile mounts at full rasterisation scale at this zoom.
+fn full_scale(doc: &[PageBox], zoom: f64, dsf: f64, budget: TextureBudget) -> bool {
+    for_each_offset(doc, zoom, |top| {
+        let vp = ViewportSpec::new(top, 900.0, zoom, dsf);
+        plan_residency(doc, &vp, budget)
+            .tiles
+            .iter()
+            .filter(|t| t.visible)
+            .all(|t| t.raster_scale >= 1.0)
+    })
+}
+
 fn servable(doc: &[PageBox], zoom: f64, dsf: f64, budget: TextureBudget) -> bool {
+    for_each_offset(doc, zoom, |top| {
+        let vp = ViewportSpec::new(top, 900.0, zoom, dsf);
+        !plan_residency(doc, &vp, budget).ceiling_exceeded
+    })
+}
+
+/// Runs `holds` at every sampled scroll offset, returning `false` on the first
+/// offset where it does not.
+///
+/// Shared so the two bounds sample identically. If they disagreed about which
+/// offsets to look at, one could report a wider range than the other for a reason
+/// that has nothing to do with the property being measured.
+fn for_each_offset(doc: &[PageBox], zoom: f64, mut holds: impl FnMut(f64) -> bool) -> bool {
     let page_h = doc.first().map_or(1.0, |p| p.css_size(zoom).1);
     // Offsets spread over a few page pitches, so boundary-in-viewport offsets are
     // sampled whatever the page height at this zoom.
     let pitch = (page_h + 24.0).max(1.0);
     for i in 0..OFFSET_SAMPLES {
         let top = pitch * 2.0 + pitch * f64::from(i) / f64::from(OFFSET_SAMPLES) * 3.0;
-        let vp = ViewportSpec::new(top, 900.0, zoom, dsf);
-        if plan_residency(doc, &vp, budget).ceiling_exceeded {
+        if !holds(top) {
             return false;
         }
     }
