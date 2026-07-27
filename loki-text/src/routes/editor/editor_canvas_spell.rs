@@ -43,6 +43,16 @@ pub(super) fn open_spell_panel_at(
     match resolve_spell_menu(loro_doc, service, pos.paragraph_index, pos.byte_offset) {
         Some(mut menu) => {
             // Anchor the floating menu at the cursor (window-relative coords).
+            // NOT viewport-relative, despite the name: this stack returns the
+            // DOM's `pageX/pageY` from `client_coordinates()` and leaves
+            // `page_coordinates()` unimplemented — the two are swapped. See
+            // "Documented stack deviations" in docs/patches.md.
+            //
+            // Window-relative plus *top-level* scroll, which is always zero here
+            // (the app root is 100vh / overflow: hidden). Inner container scroll
+            // is excluded, which is harmless only while the containing block is
+            // the anchor's scroll parent — TODO(t4.1-popover): no longer true
+            // once this is root-hosted.
             menu.anchor_x = ctx.client_x;
             menu.anchor_y = ctx.client_y;
             // Select the whole word so the user sees what the suggestions apply to.

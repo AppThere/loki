@@ -489,6 +489,58 @@ with matching changes in the blitz-shell and dioxus-native(-dom) patches.
 
 ---
 
+## Documented stack deviations (not patches)
+
+Behaviours where this Blitz stack differs from the specification a reader would
+otherwise assume. Not patched — either because the deviation is upstream's to
+fix, or because working around it locally would be worse than knowing about it.
+Recorded here because the failure mode is always the same: a call site that
+reads correctly against the spec and is wrong against the implementation, which
+no amount of care at the call site can catch.
+
+### `clientX`/`clientY` are page coordinates, and `pageX`/`pageY` are missing
+
+**What the DOM guarantees:** `clientX/clientY` are **viewport**-relative and
+exclude scroll; `pageX/pageY` are **document**-relative and include it.
+
+**What this stack does:** `blitz-dom/src/events/driver.rs` builds the mouse
+event as
+
+```rust
+UiEvent::MouseDown(data) => DomEventData::MouseDown(BlitzMouseButtonEvent {
+    x: data.x + viewport_scroll.x as f32 / zoom,
+    y: data.y + viewport_scroll.y as f32 / zoom,
+```
+
+— winit's window-relative cursor position **plus the viewport scroll** — and
+`dioxus-native-dom/src/events.rs` returns that verbatim from
+`client_coordinates()`. That is the DOM's `pageX/pageY`. Meanwhile
+`page_coordinates()` is `unimplemented!()`.
+
+**So the two are swapped, not approximated.** A call site reading `client_x` gets
+the opposite of the guarantee it is relying on, and the error is invisible
+wherever scroll happens to be zero — which is most of the time, and all of the
+time in a fixture.
+
+**Same class as `position: fixed` collapsing to `absolute`** (see
+`appthere-ui/src/components/overlay.rs`): a spec-conformant reading of the call
+site is wrong, and only the source settles it.
+
+**Consequence for anyone consuming mouse coordinates:** the value is
+window-relative plus *top-level* scroll. **Inner scroll-container scroll is not
+included.** Today that is harmless in `loki-text` — the app root is `100vh` with
+`overflow: hidden` so top-level scroll is always zero, and the spelling menu's
+containing block is the editor root, so an inner scroll moves anchor and
+containing block together. It stops being harmless the moment a consumer's
+containing block is *not* the anchor's scroll parent — which is exactly what
+Spec 08 T4.1's root-hosted popover does.
+
+**Found:** 2026-07-27, tracing Spec 08 T4.1's coordinate-space question.
+**Upstream status:** not filed. **Removal condition:** a Blitz release where
+`client_coordinates()` excludes scroll and `page_coordinates()` is implemented.
+
+---
+
 ### anyrender_vello — 0.6.2
 
 **Source:** `patches/anyrender_vello/` (local), vendored from crates.io 0.6.2.
