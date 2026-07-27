@@ -169,6 +169,14 @@ pub fn note_gpu_class(observed: GpuClass) {
 /// change and worth a re-plan, and an epsilon would silently swallow the 2.0 →
 /// 2.25 move between two Retina displays.
 pub fn note_device_scale_factor(observed: f64) {
+    // A forced scale factor wins: the first real paint would otherwise overwrite
+    // it, and the 3x/4x rows this exists to reach would never be reached.
+    if crate::device_profile_override::current()
+        .device_scale_factor
+        .is_some()
+    {
+        return;
+    }
     if !observed.is_finite() || observed <= 0.0 {
         return;
     }

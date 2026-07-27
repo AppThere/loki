@@ -249,6 +249,12 @@ pub fn use_device_profile() -> DeviceProfile {
 /// precision actually changes, so a stream of mouse-moves does not wake the
 /// consumers of the signal.
 pub fn note_pointer(seen: PointerPrecision) {
+    // A forced pointer wins over every observation. Otherwise the first real
+    // mouse-move would overwrite it and the branch under test would stop being
+    // the branch that runs — which is the whole failure the override addresses.
+    if crate::device_profile_override::current().pointer.is_some() {
+        return;
+    }
     let Some(ctx) = try_consume_context::<AtDeviceProfileContext>() else {
         return;
     };
@@ -259,6 +265,10 @@ pub fn note_pointer(seen: PointerPrecision) {
         profile.write().pointer = next;
     }
 }
+
+#[path = "device_profile_apply.rs"]
+mod apply;
+pub use apply::apply_profile_override;
 
 #[cfg(test)]
 #[path = "device_profile_tests.rs"]

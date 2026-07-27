@@ -65,6 +65,21 @@ fn gpu_class_of(kind: AdapterKind) -> GpuClass {
 /// Mounted once at the application root. Renders nothing.
 #[component]
 pub fn DeviceProbeSensor() -> Element {
+    // Overrides first, so a forced field stands and the probes fill in the rest.
+    // Logged when non-empty: an override that silently did nothing — a typo, a
+    // variable set in the wrong shell — would make a session report a branch as
+    // exercised when it ran the default path, which is the failure the mechanism
+    // exists to prevent (L9-011, and the reason the texture-budget procedure
+    // needs two settings rather than one).
+    use_hook(|| {
+        appthere_ui::device_profile::apply_profile_override();
+        if let Some(what) =
+            appthere_ui::describe_device_profile_override(appthere_ui::device_profile_override())
+        {
+            tracing::info!(forced = %what, "device profile OVERRIDDEN");
+        }
+    });
+
     // Memory: seeded synchronously and then re-read on a cadence, per T1.6's
     // "observable, not sampled once".
     //

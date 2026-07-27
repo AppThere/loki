@@ -29,6 +29,7 @@ pub mod components;
 pub mod device_probe;
 pub mod device_probe_memory;
 pub mod device_profile;
+pub mod device_profile_override;
 pub mod responsive;
 pub mod safe_area;
 pub mod scroll;
@@ -73,6 +74,10 @@ pub use device_probe_memory::{
 pub use device_profile::{
     note_pointer, use_device_profile, use_provide_device_profile, AtDeviceProfileContext,
     DeviceProfile, GpuClass, PhysicalDisplay, PointerPrecision, WindowMode,
+};
+pub use device_profile_override::{
+    current as device_profile_override, describe as describe_device_profile_override,
+    ProfileOverride, OVERRIDE_ENV as DEVICE_PROFILE_OVERRIDE_ENV,
 };
 pub use responsive::{
     estimate_group_metrics, group_layout, page_fits, required_page_width, resolve_cascade,
