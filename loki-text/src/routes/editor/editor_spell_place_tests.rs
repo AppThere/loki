@@ -163,7 +163,7 @@ fn the_menu_never_covers_the_caret_it_belongs_to() {
         let req = spell_menu_placement(400.0, cy as f32 * 20.0, WINDOW, desktop());
         let p = place(req);
         assert!(
-            !p.rect.covers_vertically(req.anchor),
+            !p.rect.covers_vertically_open(req.anchor),
             "menu {:?} covers the caret {:?}",
             p.rect,
             req.anchor,

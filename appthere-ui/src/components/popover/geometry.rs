@@ -41,6 +41,27 @@
 /// Local rather than `loki_primitives::Rect`, which is generic over units and
 /// carries `Length<U>`: overlay geometry is CSS pixels and nothing else, and
 /// `appthere-ui` does not otherwise depend on the document model.
+///
+/// # Edge conventions, because there are three of them
+///
+/// | predicate | axes | edges | degenerate rects |
+/// | --- | --- | --- | --- |
+/// | [`Rect::is_inside`] | both | **closed** — flush is inside | a zero-size rect on the edge is inside |
+/// | [`Rect::intersects_closed`] | both | **closed** — touching counts | a caret on the edge intersects |
+/// | [`Rect::covers_vertically_open`] | y only | **open** — flush is not covering | an empty rect covers nothing |
+/// | `wiring::contains` (point) | both | **closed** | a zero-size rect contains its own corner |
+///
+/// The conventions genuinely differ — a caret flush with the viewport edge must
+/// keep its menu (closed), while a menu resting flush against that caret is not
+/// on top of it (open) — so the divergence is stated once here and carried in the
+/// method names rather than left to be discovered. A name that does not say
+/// which convention it uses is the L08-031 shape: the next author picks whichever
+/// reads right and inherits the edge behaviour they did not ask about.
+///
+/// **A strict test collapses on degenerate rects**, which is not a corner case
+/// here: a caret is zero-width *by nature*, and `a < b.right()` reading
+/// `400.0 < 400.0` is how `overlaps` — the predicate these replaced — reported
+/// "no collision" for a menu drawn straight over its caret.
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub struct Rect {
     /// Left edge.
@@ -77,7 +98,11 @@ impl Rect {
         self.y + self.height
     }
 
-    /// Whether `self` lies wholly within `outer`.
+    /// Whether `self` lies wholly within `outer`. **Edges closed**: a rect flush
+    /// with a viewport edge is inside it.
+    ///
+    /// See the type's docs for the table of edge conventions — this crate has
+    /// three of them and the names now say which.
     #[must_use]
     pub fn is_inside(self, outer: Rect) -> bool {
         self.x >= outer.x
@@ -86,9 +111,27 @@ impl Rect {
             && self.bottom() <= outer.bottom()
     }
 
-    /// Whether `self` sits over `other` **on the placement axis** — the failure a
-    /// reader sees when a flip is computed with the wrong sign, and one that
-    /// plausible-looking offsets will not reveal.
+    /// Whether `self` and `other` share at least a point, **edges closed** —
+    /// touching counts.
+    ///
+    /// The convention is in the name because this crate also has an *open* one
+    /// two methods down, and the difference decides whether a caret sitting
+    /// exactly on the viewport edge keeps its menu open. `_closed` is what
+    /// [`super::interaction::anchor_is_anchorable`] needs: a caret is a
+    /// zero-width rect, so an open test reports every caret on the left margin
+    /// as gone.
+    #[must_use]
+    pub fn intersects_closed(self, other: Rect) -> bool {
+        self.right() >= other.x
+            && other.right() >= self.x
+            && self.bottom() >= other.y
+            && other.bottom() >= self.y
+    }
+
+    /// Whether `self` sits over `other` **on the placement axis**, **edges
+    /// open** — resting flush against the anchor is not covering it — the
+    /// failure a reader sees when a flip is computed with the wrong sign, and one
+    /// that plausible-looking offsets will not reveal.
     ///
     /// # Why this replaced a plain rectangle intersection
     ///
@@ -96,7 +139,14 @@ impl Rect {
     /// **vacuously false for the anchor shape the first consumer uses**. A caret
     /// is a zero-width rect and `Align::Start` puts the overlay's left edge on
     /// it, so `overlay.x < caret.right()` is `400.0 < 400.0`: false, whatever the
-    /// vertical arithmetic did. `the_menu_never_covers_the_caret_it_belongs_to`
+    /// vertical arithmetic did.
+    ///
+    /// The mechanism is **flush contact, not degeneracy on its own** — a
+    /// zero-width rect strictly inside another does register under an open test
+    /// (checked in `loki_primitives::Rect`'s suite, which pins both halves).
+    /// Degeneracy matters because a caret is *entirely* boundary, and alignment
+    /// is what puts that boundary on an edge. Which is to say: in laid-out UI
+    /// geometry the collapsing case is the ordinary one. `the_menu_never_covers_the_caret_it_belongs_to`
     /// was written with it and **could not fail** — a menu placed deliberately
     /// on top of the caret reported no overlap. Checked, not inferred.
     ///
@@ -119,7 +169,7 @@ impl Rect {
     /// direction that reports a correct side-by-side placement as a collision,
     /// and it must gain the horizontal case at the same time.
     #[must_use]
-    pub fn covers_vertically(self, other: Rect) -> bool {
+    pub fn covers_vertically_open(self, other: Rect) -> bool {
         self.height > 0.0
             && other.height > 0.0
             && self.y < other.bottom()
@@ -199,6 +249,37 @@ pub struct Placement {
     pub shifted: bool,
     /// The requested size did not fit and was reduced — the content must scroll.
     pub clamped: bool,
+}
+
+impl Placement {
+    /// Whether there is anything to render. A placement with no extent is not a
+    /// small menu, it is an invisible one.
+    ///
+    /// # Reachable, which is why this is a method and not a comment
+    ///
+    /// When the anchor leaves no room on either side, `place` clamps the height
+    /// to the room available — zero. The first pass judged that unreachable
+    /// ("no consumer is 700 px tall"), which was the right question in the wrong
+    /// units: what matters is the anchor against the **smallest supported
+    /// viewport**, not against a desktop one.
+    ///
+    /// In those units it is reachable. The condition is
+    /// `anchor.height >= viewport.height - 2 * (gap + margin)` — about
+    /// `viewport - 24` at the popover's defaults. T4.4's template tile measures
+    /// ~120 px today (12 padding + 72 thumbnail + 8 gap + ~16 label + 12
+    /// padding), and a phone in landscape with the IME up leaves a viewport of
+    /// roughly 130–155 px (≈360 dp window − ~30 top inset − ~180 IME, which the
+    /// soft keyboard adds to the *bottom* inset — see `safe_area`). Those
+    /// overlap. Severe clamping arrives well before that: the same tile in a
+    /// 200 px viewport leaves ~56 px, a one-item menu.
+    ///
+    /// So a consumer needs to be able to *ask*, rather than render a zero-height
+    /// box and show nothing. `clamped` cannot answer it — clamped-to-scrollable
+    /// and clamped-to-nothing are the same flag.
+    #[must_use]
+    pub fn is_showable(self) -> bool {
+        self.rect.width > 0.0 && self.rect.height > 0.0
+    }
 }
 
 #[path = "geometry_place.rs"]

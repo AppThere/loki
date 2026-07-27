@@ -254,7 +254,7 @@ fn the_two_modules_agree_on_the_anchor_visibility_boundary() {
                         p.rect,
                     );
                     assert!(
-                        !p.rect.covers_vertically(req.anchor),
+                        !p.rect.covers_vertically_open(req.anchor),
                         "overlay {:?} covers the anchor {:?} it is kept open for",
                         p.rect,
                         req.anchor,

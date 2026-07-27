@@ -110,7 +110,7 @@ fn an_overlay_never_covers_its_own_anchor() {
             req.anchor = Rect::new(100.0, step as f32 * 10.0, 2.0, 18.0);
             let p = place(req);
             assert!(
-                !p.rect.covers_vertically(req.anchor),
+                !p.rect.covers_vertically_open(req.anchor),
                 "overlay {:?} covers its anchor {:?} (preferred {preferred:?})",
                 p.rect,
                 req.anchor,
@@ -380,7 +380,7 @@ fn an_overlay_is_contained_for_every_generated_anchor_including_straddles() {
                                 req.anchor,
                             );
                             assert!(
-                                !p.rect.covers_vertically(req.anchor),
+                                !p.rect.covers_vertically_open(req.anchor),
                                 "overlay {:?} covers its anchor {:?} \
                                  ({preferred:?}, {align:?}) — a clamp pushed it \
                                  back onto the thing it belongs to",
@@ -393,6 +393,65 @@ fn an_overlay_is_contained_for_every_generated_anchor_including_straddles() {
             }
         }
     }
+}
+
+/// **The negative control every containment sweep in this file depends on.**
+///
+/// Found by applying L08-045 in the other direction: forcing `is_inside` to
+/// return `true` passed the **entire** suite. Hundreds of thousands of
+/// `assert!(p.rect.is_inside(vp))` assertions, and not one of them requires the
+/// predicate to be able to say no — so a too-permissive containment test would
+/// make every sweep here vacuous at once, including the ones written to catch
+/// the bottom-edge defect.
+///
+/// One case per edge, because a containment test can also be wrong in one
+/// direction only.
+#[test]
+fn the_containment_predicate_can_say_no_on_every_edge() {
+    let vp = Rect::new(0.0, 0.0, 900.0, 700.0);
+    for (name, r) in [
+        ("past the left", Rect::new(-1.0, 100.0, 300.0, 320.0)),
+        ("past the top", Rect::new(100.0, -1.0, 300.0, 320.0)),
+        ("past the right", Rect::new(601.0, 100.0, 300.0, 320.0)),
+        ("past the bottom", Rect::new(100.0, 381.0, 300.0, 320.0)),
+    ] {
+        assert!(
+            !r.is_inside(vp),
+            "a rect {name} edge of {vp:?} was reported inside it: {r:?}",
+        );
+    }
+    assert!(
+        Rect::new(0.0, 0.0, 900.0, 700.0).is_inside(vp),
+        "flush with every edge is inside — the convention is closed, and a \
+         predicate that says no here would fail every legitimate placement",
+    );
+}
+
+/// **The two edge conventions, pinned against the same pair of rects**, so the
+/// divergence is executable rather than a claim in a doc table.
+///
+/// A caret flush with the viewport edge must keep its menu open (closed); a menu
+/// resting flush against that caret is not on top of it (open). Both are
+/// deliberate, they disagree by design, and the names are what tell them apart.
+#[test]
+fn the_closed_and_open_predicates_differ_exactly_at_the_shared_edge() {
+    let caret = Rect::new(0.0, 300.0, 0.0, 18.0);
+    let viewport = Rect::new(0.0, 0.0, 900.0, 700.0);
+    assert!(
+        caret.intersects_closed(viewport),
+        "a zero-width caret on the left margin still touches the viewport",
+    );
+    let flush_below = Rect::new(0.0, 318.0, 300.0, 320.0);
+    assert!(
+        !flush_below.covers_vertically_open(caret),
+        "an overlay whose top is exactly the caret's bottom rests against it, \
+         and resting against is not covering",
+    );
+    let one_px_over = Rect::new(0.0, 317.0, 300.0, 320.0);
+    assert!(
+        one_px_over.covers_vertically_open(caret),
+        "one pixel of genuine overlap is a collision",
+    );
 }
 
 /// **The positive control the old predicate never had** — and the absence of
@@ -413,56 +472,77 @@ fn the_covering_predicate_fires_when_an_overlay_is_on_top_of_a_caret() {
     let caret = Rect::new(400.0, 300.0, 0.0, 18.0);
     let on_top = Rect::new(400.0, 295.0, 300.0, 320.0);
     assert!(
-        on_top.covers_vertically(caret),
+        on_top.covers_vertically_open(caret),
         "a menu drawn straight over the caret must be reported as covering it — \
          a zero-width anchor is exactly where a rectangle intersection quietly \
          says no",
     );
     let beside = Rect::new(700.0, 295.0, 300.0, 320.0);
     assert!(
-        beside.covers_vertically(caret),
+        beside.covers_vertically_open(caret),
         "an overlay in the caret's vertical band is a collision however its x \
          falls; `Side` has no horizontal axis for it to be legitimately beside",
     );
 }
 
-/// **What the sweep turned up: an anchor taller than its viewport has no room on
-/// either side, and the result is an overlay of zero height** — a menu that
-/// simply does not appear.
+/// **What the sweep turned up: an anchor that leaves no room on either side
+/// yields an overlay of zero height** — a menu that simply does not appear.
 ///
-/// Recorded rather than fixed, with the reason for each half:
+/// The first pass called it unreachable because "no named consumer is 700px
+/// tall". That was the right question in the wrong units — the bound is the
+/// anchor against the **smallest supported viewport**, not against a desktop
+/// one — and in those units it is not comfortably unreachable:
 ///
-/// * It is **not silently fine**: `clamped` is true, which is the signal a
-///   consumer already has to check, and a consumer that renders a
-///   zero-height box gets nothing rather than something wrong.
-/// * It is **not reachable for any named consumer**: a caret, a list entry, a
-///   swatch, a status-bar control. None is 700px tall. Designing a concession
-///   for it now would be the `Before`/`After` mistake — building for a consumer
-///   nobody has named.
+/// | quantity | value |
+/// | --- | ---: |
+/// | T4.4 template tile, measured (`template_gallery.rs`: 12 + 72 + 8 + ~16 + 12) | ~120 px |
+/// | phone landscape window | ~360 dp |
+/// | top inset + IME (the soft keyboard grows the *bottom* inset — see `safe_area`) | ~30 + ~180 |
+/// | remaining viewport | **~150 px** |
+/// | zero-height condition, `anchor >= viewport - 2 * (gap + margin)` | `120 >= 126` |
 ///
-/// So the assertion is that the case stays *reported*, not that it is
-/// accommodated. If a fifth consumer ever anchors to something that tall, this
-/// is where the decision is written down.
+/// It clears the line by six pixels, and moves to the wrong side of it on a
+/// shorter window, a taller tile, or a keyboard with a suggestion strip — none
+/// of which is exotic, and T4.4's tile is not built yet. That is a different
+/// status from unreachable, and the reason [`Placement::is_showable`] exists as
+/// a method a consumer can ask rather than as a comment nobody reads.
+///
+/// The fixture is stated in those units rather than with the 900px anchor the
+/// sweep found it with, so the test carries the reachability argument instead of
+/// a pathological rect.
 #[test]
-fn an_anchor_taller_than_the_viewport_yields_a_reported_empty_placement() {
+fn a_tall_anchor_in_a_phone_landscape_viewport_yields_an_unshowable_placement() {
     let mut req = near_bottom();
-    req.anchor = Rect::new(50.0, -100.0, 2.0, 900.0);
+    // ~360 dp window, less a ~30 px top inset and a ~180 px IME.
+    req.viewport = Rect::new(0.0, 30.0, 640.0, 150.0);
+    // A template tile 10px taller than today's — the "slightly taller tile" the
+    // table above names, since today's ~120 clears the 126 threshold by six.
+    req.anchor = Rect::new(50.0, 40.0, 100.0, 130.0);
     let (above, below) = rooms(req);
     assert!(
         above == 0.0 && below == 0.0,
-        "precondition: the anchor must leave no room on either side: above \
-         {above}, below {below}",
+        "fixture must leave no room on either side, or it is testing ordinary \
+         clamping: above {above}, below {below}",
     );
     let p = place(req);
-    assert_eq!(
-        p.rect.height, 0.0,
-        "there is nowhere to put it: {:?}",
-        p.rect
+    assert!(
+        !p.is_showable(),
+        "a placement with no room is not a small menu, it is an absent one: {:?}",
+        p.rect,
     );
     assert!(
         p.clamped,
-        "an unshowable placement must at least say it was reduced",
+        "and it must still report that the request was reduced",
     );
+}
+
+/// The other polarity of the same predicate (L08-045): an ordinary placement is
+/// showable, so `is_showable` cannot be a constant `false` that silently makes
+/// every consumer's guard fire.
+#[test]
+fn an_ordinary_placement_is_showable() {
+    let p = place(near_bottom());
+    assert!(p.is_showable(), "{:?}", p.rect);
 }
 
 /// **The unstated precondition, found by a real fixture.** Containment on the

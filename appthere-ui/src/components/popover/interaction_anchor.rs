@@ -132,10 +132,7 @@ pub enum AnchorResponse {
 /// counts.
 #[must_use]
 pub fn anchor_is_anchorable(anchor: Rect, viewport: Rect) -> bool {
-    anchor.right() >= viewport.x
-        && anchor.x <= viewport.right()
-        && anchor.bottom() >= viewport.y
-        && anchor.y <= viewport.bottom()
+    anchor.intersects_closed(viewport)
 }
 
 /// How an open popover responds when its anchor's viewport rect may have moved.

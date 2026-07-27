@@ -24,10 +24,16 @@
 //! that converts them; nothing else does.
 //!
 //! **The status is mechanical, not a promise.** The three suppressions in this
-//! file are `expect(dead_code)`, not `allow`: the moment a caller appears,
-//! each expectation goes unfulfilled and the build fails under CI's `-D
-//! warnings`. So the reroute cannot land while this section still says pending —
-//! whoever wires it has to come here and delete it.
+//! file are `expect(dead_code)`, not `allow`: once a **reachable** caller
+//! appears, each expectation goes unfulfilled and the build fails under CI's
+//! `-D warnings`, quoting the `reason` as the failure's own note. So the reroute
+//! cannot land while this section still says pending — whoever wires it has to
+//! come here and delete it.
+//!
+//! *Reachable* is not pedantry: dead-code analysis is transitive, so a caller
+//! that is itself dead leaves the expectation fulfilled and silent. Checked, by
+//! wiring a call from `spelling_panel` and reading the message rustc emits — the
+//! real reroute is a call from a live component, which does trip it.
 //!
 //! # Why the migration fixes all three at once
 //!
@@ -63,10 +69,16 @@ pub(super) const MENU_MAX_HEIGHT_PX: f32 = 320.0;
 /// Distance kept from every viewport edge.
 pub(super) const EDGE_MARGIN_PX: f32 = 8.0;
 /// Gap between the caret and the menu.
-#[expect(dead_code, reason = "pending reroute — see the module status section")]
+#[expect(
+    dead_code,
+    reason = "pending T4.1 reroute — delete this and the status section above when `editor_spell_panel` renders into `AtPopoverHost`"
+)]
 const CARET_GAP_PX: f32 = 4.0;
 /// Caret height, so the menu clears the line rather than sitting on it.
-#[expect(dead_code, reason = "pending reroute — see the module status section")]
+#[expect(
+    dead_code,
+    reason = "pending T4.1 reroute — delete this and the status section above when `editor_spell_panel` renders into `AtPopoverHost`"
+)]
 const CARET_HEIGHT_PX: f32 = 18.0;
 
 /// Builds the placement request for a right-click at `(click_x, click_y)` in
@@ -92,7 +104,10 @@ const CARET_HEIGHT_PX: f32 = 18.0;
 // Deliberately not called yet — see the module's status section. The alternative
 // to this suppression was a half-migration, which is worse than an honest gap;
 // `expect` rather than `allow` so wiring a caller breaks the build here.
-#[expect(dead_code, reason = "pending reroute — see the module status section")]
+#[expect(
+    dead_code,
+    reason = "pending T4.1 reroute — delete this and the status section above when `editor_spell_panel` renders into `AtPopoverHost`"
+)]
 #[must_use]
 pub(super) fn spell_menu_placement(
     click_x: f32,
