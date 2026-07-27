@@ -9,6 +9,67 @@
 //! Wall time against document size cannot separate them: inserting at the *start*
 //! legitimately shifts everything after it, so O(N) there is correct behaviour.
 //! Sweeping **edit position** discriminates — an edit at the last block should be
+//! bounded by the work after it, which is nearly nothing.
+//!
+//! **The answer is that position does not matter at all**, because reuse resumes
+//! from block 0 in every case — see the checkpoint section below. The apparent
+//! position dependence in earlier revisions was this bench's own measurement
+//! ordering, retracted below.
+//!
+//! # The position-dependent spread does not exist — it was this bench's ordering
+//!
+//! Two attributions were made for an apparent spread across edit positions (start
+//! 18.2 ms, mid 15.4, end 12.0 at 2500 blocks): first `blocks_equal_from`
+//! comparison cost, then an unidentified O(N^1.8) term. **Both were explaining an
+//! artifact.**
+//!
+//! The comparison counter refuted the first, and *backwards* — comparisons rise as
+//! time falls (2,502 / 3,752 / 5,001 against 18.2 / 15.4 / 12.0), and the counts
+//! are fully accounted for by prefix + suffix + `blocks_equal_from` to the unit.
+//!
+//! The second fell to an ordering check. The three positions were timed in sequence
+//! against one shared `FontResources`, so the first call paid process- and
+//! document-level first touch and each later one inherited it warm — producing a
+//! monotonic decrease that reads exactly like "cost falls with edit position".
+//! **Reversing the order reverses the sign:**
+//!
+//! | fixture | start-first / end-second | end-first / start-second |
+//! | --- | --- | --- |
+//! | 2500 blocks, 50 w/b | 12.311 / 12.057 → +0.254 | 12.863 / 12.226 → **−0.637** |
+//! | 2500 blocks, 5 w/b | 7.573 / 7.449 → +0.124 | 7.627 / 7.420 → **−0.207** |
+//!
+//! Whichever position runs first is slower. With all positions warmed before any is
+//! timed, the spread is gone: 11.561 / 14.339 / 12.953 at 2500 blocks — not
+//! monotonic, and start is now the cheapest of the three.
+//!
+//! **So edit position has no measurable effect on incremental relayout cost**, which
+//! is exactly what "resume from block 0 and re-flow everything" predicts. The
+//! mechanism's behaviour is fully explained by the checkpoint finding, with nothing
+//! left over.
+//!
+//! # The harness gap this exposed
+//!
+//! `support::timing::compare` warms both sides before timing either, which is the
+//! control that caught the cold-cache fault. It does **not** help across *separate*
+//! `timed` calls that share mutable state — and three sequential `timed` calls
+//! against one `FontResources` is precisely that case. The rule the harness cannot
+//! enforce for you: **when several measurements share warm-able state, warm every
+//! subject before timing any of them.** This bench now does that explicitly.
+//!
+//! Two wrong attributions in a row, both of an artifact, is also the argument for
+//! reaching for an ordering check *before* a third hypothesis.
+//!
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 AppThere Loki contributors
+
+//! **Spec 08 I-23** — is the editor's incremental relayout O(changed) or
+//! O(document)?
+//!
+//! # Why edit position and not document size
+//!
+//! Wall time against document size cannot separate them: inserting at the *start*
+//! legitimately shifts everything after it, so O(N) there is correct behaviour.
+//! Sweeping **edit position** discriminates — an edit at the last block should be
 //! bounded by the work after it, which is nearly nothing. If both ends are O(N),
 //! reuse is not delivering.
 //!
@@ -114,21 +175,11 @@
 //! from any theory of what the spread is. **T3.4 does not need the spread explained
 //! first.**
 //!
-//! **The gap that argument does not close.** It bounds a *constant*. The
-//! position-dependent spread is not constant — it grows superlinearly per page:
-//!
-//! | pages | spread (start − end) | per page |
-//! | ---: | ---: | ---: |
-//! | 14 | 0.024 ms | 0.0017 |
-//! | 66 | 0.481 | 0.0073 |
-//! | 327 | 7.251 | 0.0222 |
-//!
-//! So if that component scales with **document size** rather than with **pages
-//! re-flowed**, it survives T3.4 and the prediction is wrong. Today's data cannot
-//! separate those two, because re-flowed *is* the document (327/327). Post-fix they
-//! diverge for the first time, and the re-flowed-page count is exactly the
-//! instrument that tells them apart — which is the other reason not to chase the
-//! spread now: it is about to become measurable for free.
+//! **The gap that argument left open is now closed, in the prediction's favour.**
+//! It bounded a *constant* while leaving room for a position-dependent term that
+//! might survive T3.4. That term does not exist (see above), so the cost model is
+//! simply `t ≈ 0.034 ms × pages re-flowed` with nothing else in it. The predicted
+//! band needs no caveat.
 //!
 //! **Fixture caveat (L9-018).** These are uniform synthetic paragraphs, which may
 //! absorb pagination slack more or less readily than real prose. The cascade-depth
@@ -321,6 +372,20 @@ fn main() {
         let doc = doc_of_blocks(blocks);
         let (layout, reuse) = layout_paginated_full(&mut fr, &doc, 1.0, &opts);
 
+        // Warm the whole subject before *any* position is timed. `timed` warms the
+        // closure it is given, which is not enough here: the three positions are
+        // timed in sequence against one shared FontResources, so the first call
+        // pays process- and document-level first touch and every later one inherits
+        // it warm. That produced an apparent monotonic "cost falls with edit
+        // position" that reversed when the order reversed — the artifact this line
+        // removes. L08-022's ordering control, applied *across* measurements rather
+        // than within one.
+        for warm in [0, blocks / 2, blocks - 1] {
+            let edited = edit_block(&doc, warm);
+            let _ =
+                relayout_paginated_incremental(&mut fr, &edited, &doc, &layout, &reuse, 1.0, &opts);
+        }
+
         // Warm-up and best-of-N come from the shared harness rather than from
         // this file remembering them (L08-035).
         // Reports pages re-flowed alongside elapsed time. Time alone cannot judge
@@ -407,6 +472,61 @@ fn main() {
             layout.pages.len(),
             reuse.checkpoints.len(),
             resume_block_for(&reuse, last),
+        );
+    }
+    println!();
+
+    // ── Does the position-dependent spread scale with pages or with blocks? ──
+    //
+    // The two are confounded in every row above, because block count and page count
+    // move together there. Holding *blocks* fixed at 2500 and varying words-per-
+    // block separates them at 6x: 50 words gives 327 pages, 5 words gives 55, and
+    // both still re-flow the whole document. If the spread is per-page the short row
+    // shows roughly a sixth of it; if per-block it is unchanged.
+    //
+    // Worth settling before T3.4 rather than after, for a narrow reason: if the
+    // component scales with blocks, T3.4's 0.1-0.3 ms band is wrong, mid and end
+    // edits land high, and the natural reading is that resume did not take — when
+    // the checkpoint count would say it did. Better to enter with a prediction that
+    // can be trusted than to spend the post-fix session disentangling two failures.
+    println!("spread basis — 2500 blocks throughout, words/block varied");
+    println!("  words/blk   pages   at start     at end     spread   per page   per block");
+    for wpb in [50_usize, 5] {
+        let mut fr = resources();
+        let doc = doc_of_blocks_sized(2500, wpb);
+        let (layout, reuse) = layout_paginated_full(&mut fr, &doc, 1.0, &opts);
+        let mut timed_at = |index: usize| {
+            let edited = edit_block(&doc, index);
+            support::timing::timed(|| {
+                let _ = relayout_paginated_incremental(
+                    &mut fr, &edited, &doc, &layout, &reuse, 1.0, &opts,
+                );
+            })
+            .best_ms
+        };
+        // Measured in both orders. The main table runs start, then mid, then end
+        // against one shared FontResources, so each later position begins with a
+        // warmer paragraph cache — which would produce a monotonic decrease with no
+        // dependence on edit position at all. Reversing the order is what tells the
+        // two apart, and it is the ordering control L08-022 asks for applied
+        // *across* measurements rather than within one.
+        let start_first = timed_at(0);
+        let end_second = timed_at(2499);
+        let end_first = timed_at(2499);
+        let start_second = timed_at(0);
+        let (start, end) = (start_first, end_second);
+        let spread = start - end;
+        let pages = layout.pages.len();
+        println!(
+            "  {wpb:>9}   {pages:>5}   {start:>8.3}   {end:>8.3}   {spread:>8.3}   \
+             {:>8.5}   {:>9.6}",
+            spread / pages as f64,
+            spread / 2500.0,
+        );
+        println!(
+            "            reversed order: end-first {end_first:.3}, start-second \
+             {start_second:.3} (spread {:.3})",
+            start_second - end_first,
         );
     }
     println!();
