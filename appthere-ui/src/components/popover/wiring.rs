@@ -80,6 +80,21 @@ mod tests;
 
 /// A stable identifier for whatever the anchor *is* — a document id, a command
 /// id — as opposed to where it sits.
+///
+/// # Derive it from content, never from position
+///
+/// An index into the list is not a key. **Recent Documents reorders** — opening
+/// a document moves it to the top — so under an index-based key
+/// `opened_for == under_anchor` holds while a *different* document sits under
+/// the anchor. That is precisely the failure this type exists to catch,
+/// reintroduced through a weak key, and it is worse than having no check because
+/// the check now reports `Same`.
+///
+/// A path hash is stable under both reordering and recycling; an index is stable
+/// under neither. Recycling alone would be caught by an index — which is what
+/// makes the trap easy to fall into, since the virtualisation case is the one
+/// the guard was written for and the reordering case is the one the list
+/// actually does today.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct AnchorKey(pub u64);
 

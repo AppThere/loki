@@ -8,6 +8,21 @@
 //! that gets settled by whichever order happened to be typed first — so it is
 //! decided here, with the reason, rather than left to a diff.
 //!
+//! # Root hosting makes every focus move explicit
+//!
+//! The popover renders into a root-mounted host rather than beside its anchor,
+//! because an ancestor's `overflow` clips an out-of-flow child and no `z-index`
+//! escapes a clip. One consequence lands here: **nothing about DOM adjacency can
+//! be relied on**. Every step below is a programmatic focus move, including the
+//! one that reads like deferring to the platform.
+//!
+//! The same root cause affects *announcement*: a popup at the root is unrelated
+//! to its trigger unless something associates them. `aria-expanded` and
+//! `aria-label` are already passed through to Blitz elsewhere in this crate, so
+//! attributes reach the tree; whether the accessibility layer consumes
+//! `aria-controls` specifically is **not established** and is a screen check
+//! rather than an assumption.
+//!
 //! # Restore first, then unmount
 //!
 //! Unmounting first leaves focus on a node that no longer exists. The platform
@@ -34,7 +49,20 @@ use super::interaction::FocusTarget;
 pub enum DismissStep {
     /// Move focus to the anchor. Skipped when the target is `Unchanged`.
     RestoreFocusToAnchor,
-    /// Move focus past the anchor in tab order — a menu's Tab exit.
+    /// Move focus to the anchor's **next focusable sibling**, explicitly.
+    ///
+    /// Not "let the platform's tab order carry on". `focus_after_dismiss`'s
+    /// reasoning — that Tab out of a menu is a request to continue past the
+    /// anchor — was written assuming the popup sits next to its trigger, where
+    /// natural order does the work. **Hosted at the app root** (see
+    /// `popover`'s module docs on clipping), the element after the popup in DOM
+    /// order is whatever follows the root host: nothing, or something
+    /// unrelated. So Tab would land somewhere arbitrary, which is worse than
+    /// the restoration the rule was avoiding.
+    ///
+    /// The target was right and the mechanism was implicit. This step is the
+    /// explicit programmatic move, and the popup must not be in the tab path at
+    /// all.
     AdvanceFocusPastAnchor,
     /// Move focus to the anchor's scroll container, because the anchor itself is
     /// gone. Only ever follows a failed restore.

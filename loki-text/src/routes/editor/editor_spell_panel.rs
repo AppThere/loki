@@ -8,6 +8,28 @@
 //! dismisses the menu. The editor root is `position: relative`, so the menu's
 //! containing block is the editor area and the click's window-relative
 //! coordinates place it at the cursor.
+//!
+//! # Two known defects, both fixed by T4.1's `Popover` rather than here
+//!
+//! Recorded so this file is not mistaken for a working reference — the r4
+//! framing called it "the proven popup", and it is proven only in the region it
+//! happened to be used in.
+//!
+//! 1. **No bottom-edge collision.** Placement is a horizontal clamp against
+//!    `viewport_width` and `anchor_y.max(0.0)`; viewport *height* is not even a
+//!    parameter. A menu opened near the bottom runs off it — measured at 298px
+//!    of a 320px menu below the fold.
+//! 2. **It is clipped by its own containing block.** The editor root carries
+//!    `position: relative` **and `overflow: hidden`**
+//!    (`editor_inner.rs`), and an out-of-flow child is clipped by an ancestor's
+//!    overflow. So the overflow in (1) is not merely off-screen, it is *cut* —
+//!    which is why the symptom reads as a truncated menu rather than one that
+//!    obviously ran off, and why no `z-index` would have helped.
+//!
+//! Both go away when this becomes a consumer of `appthere_ui::components::popover`,
+//! which flips at the bottom edge and renders into a root-mounted host outside
+//! any clipping ancestor. `TODO(t4.1-popover): migrate this to the shared
+//! primitive.`
 
 use std::sync::{Arc, Mutex};
 
