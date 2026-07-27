@@ -112,10 +112,22 @@
 //! An edit near the **start** is worse still (47% at 2500 blocks): the resync
 //! machinery runs and never succeeds, so that overhead is pure loss.
 //!
-//! **There is no crossover and no size at which reuse pays.** Do not read this as
-//! an argument against reuse — it is a measurement of reuse resuming from block 0.
-//! Fix the checkpoint density and re-measure before concluding anything about the
-//! design.
+//! **There is no crossover and no size at which reuse pays** — but note carefully
+//! what establishes that, because it is *not* this sweep. The sweep's "parity"
+//! readings sit inside a noise floor measured at 4.4–36.5%, so they establish
+//! nothing on their own, and the earlier revision that leant on them was resting a
+//! live claim on retracted evidence (L08-028's shape).
+//!
+//! **The claim survives on the deterministic finding instead, and more strongly.**
+//! 327 of 327 pages are re-flowed at every edit position and the resume point is
+//! always block 0. So the incremental path re-flows the *entire* document and pays
+//! reuse bookkeeping on top of it. It cannot beat a full layout — structurally, by
+//! construction, with no stopwatch involved. The timings are consistent with that
+//! and are not what shows it.
+//!
+//! Do not read any of it as an argument against reuse: it measures reuse resuming
+//! from block 0. Fix the checkpoint density and re-measure before concluding
+//! anything about the design.
 //!
 //! The no-op column is the control that rules out the cheap explanations: an
 //! identical document takes the reuse-verbatim early return and costs 0.080 ms at
