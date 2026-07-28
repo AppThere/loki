@@ -8,7 +8,9 @@
 //! pathological rect.
 
 use super::super::geometry::{place, Align, PlacementRequest, Rect, Side};
-use super::{present, Presentation, MIN_ANCHORED_HEIGHT_PX, MIN_ANCHORED_MENU_PX};
+use super::{
+    present, Presentation, MENU_ROW_HEIGHT_PX, MIN_ANCHORED_HEIGHT_PX, MIN_ANCHORED_MENU_PX,
+};
 
 /// A phone in landscape with the soft keyboard up: a ~360 dp window, less a ~30
 /// px top inset and a ~180 px IME (which the platform adds to the **bottom**
@@ -149,14 +151,21 @@ fn an_ordinary_anchor_stays_anchored() {
 /// was there. The second row is the affordance that makes a list read as a list.
 ///
 /// This is the band the decision lives in: room for one row but not two.
+///
+/// **Stated in rows, not in pixels.** The fixtures are `MENU_ROW_HEIGHT_PX`
+/// multiples, so when I-24 makes a row text-relative this test keeps asserting
+/// *one row versus two* rather than *45px versus 88px* — which is the thing that
+/// would otherwise pass while the threshold stopped meaning what it was derived
+/// to mean.
 #[test]
 fn a_menu_with_room_for_one_row_but_not_two_is_modal() {
-    let room = MIN_ANCHORED_HEIGHT_PX + 1.0; // 45px: one row fits, two do not.
+    let one_and_a_bit = MENU_ROW_HEIGHT_PX + 1.0;
     assert!(
-        room >= MIN_ANCHORED_HEIGHT_PX && room < MIN_ANCHORED_MENU_PX,
-        "fixture must sit between the floor and the menu minimum: {room}",
+        one_and_a_bit >= MIN_ANCHORED_HEIGHT_PX && one_and_a_bit < 2.0 * MENU_ROW_HEIGHT_PX,
+        "fixture must hold one row and not two: {one_and_a_bit}px against a \
+         {MENU_ROW_HEIGHT_PX}px row",
     );
-    let req = req_with_room_below(room, MIN_ANCHORED_MENU_PX);
+    let req = req_with_room_below(one_and_a_bit, MIN_ANCHORED_MENU_PX);
     assert_eq!(
         present(req),
         Presentation::Modal,
@@ -164,8 +173,24 @@ fn a_menu_with_room_for_one_row_but_not_two_is_modal() {
          menu at once",
     );
     // And two rows is enough to stay.
-    let req = req_with_room_below(MIN_ANCHORED_MENU_PX, MIN_ANCHORED_MENU_PX);
+    let req = req_with_room_below(2.0 * MENU_ROW_HEIGHT_PX, MIN_ANCHORED_MENU_PX);
     assert!(matches!(present(req), Presentation::Anchored(_)));
+}
+
+/// **The menu minimum means two rows**, and says so in row units so the meaning
+/// survives the row height changing under it.
+#[test]
+fn the_menu_minimum_is_two_rows_whatever_a_row_measures() {
+    assert!(
+        (MIN_ANCHORED_MENU_PX - 2.0 * MENU_ROW_HEIGHT_PX).abs() < f32::EPSILON,
+        "the menu minimum has drifted from two rows: {MIN_ANCHORED_MENU_PX} vs \
+         2 x {MENU_ROW_HEIGHT_PX}",
+    );
+    assert!(
+        MENU_ROW_HEIGHT_PX >= MIN_ANCHORED_HEIGHT_PX,
+        "a row must be at least a touch target, or the floor would bind before \
+         the row count does and N would stop being the operative decision",
+    );
 }
 
 /// **The floor holds against a consumer that asks for less.** A request of `0.0`

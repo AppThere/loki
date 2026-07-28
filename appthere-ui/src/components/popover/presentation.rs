@@ -62,6 +62,25 @@ use crate::tokens::spacing::TOUCH_MIN;
 /// [`MIN_ANCHORED_MENU_PX`].
 pub const MIN_ANCHORED_HEIGHT_PX: f32 = TOUCH_MIN;
 
+/// The height of one menu row.
+///
+/// # Equal to the touch minimum *today*, and that is a coincidence worth naming
+///
+/// A menu row is sized by its touch target while every dimension in this crate
+/// is device-fixed. Once I-24 lands and row heights become text-relative, a row
+/// at 2.0× text is **taller than a touch target** — and
+/// [`MIN_ANCHORED_MENU_PX`], written as `2 × TOUCH_MIN`, would silently stop
+/// meaning *two rows*. The popover would then fall back to modal later than
+/// intended and show two **clipped** rows instead of two whole ones: the
+/// threshold still passing its own test while no longer bounding what it was
+/// derived to bound.
+///
+/// Naming the term now makes that a one-line change at the right knob instead of
+/// a rediscovery. When rows scale, this becomes the scaling quantity and the
+/// derivation below stays correct by construction — which is the difference
+/// between a constant that ages and one that misleads (L08-031).
+pub const MENU_ROW_HEIGHT_PX: f32 = TOUCH_MIN;
+
 /// What a **menu** should pass as its minimum anchored height: two rows.
 ///
 /// # Why two, and why it is not inherited from the floor
@@ -79,13 +98,17 @@ pub const MIN_ANCHORED_HEIGHT_PX: f32 = TOUCH_MIN;
 /// the threshold should sit where it wins, not at the last pixel where the
 /// anchored form is technically legal.
 ///
+/// Expressed in [`MENU_ROW_HEIGHT_PX`] rather than in touch targets, because
+/// **two rows** is the decision and two touch targets is only what that measures
+/// today.
+///
 /// The named consumers are why one row is not enough for any of them: T4.2's
 /// Recent Documents entry menu carries several actions, and T5.4's zoom popover
 /// carries a preset list plus a field. **Panels are not menus** — T5.2's colour
 /// picker has a content minimum of its own (an SV square has a size below which
 /// it cannot be used), which is why this is a value a consumer passes rather
 /// than a constant the primitive applies to everything.
-pub const MIN_ANCHORED_MENU_PX: f32 = 2.0 * TOUCH_MIN;
+pub const MIN_ANCHORED_MENU_PX: f32 = 2.0 * MENU_ROW_HEIGHT_PX;
 
 /// How the overlay should be presented.
 ///
