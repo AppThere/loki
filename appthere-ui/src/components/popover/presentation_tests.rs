@@ -43,19 +43,29 @@ fn tile(label_px: f32, viewport: Rect) -> PlacementRequest {
 ///
 /// The bound was first derived with the label at nominal size against the
 /// *blank box* condition (no room at all): `anchor >= viewport - 2*(gap+margin)`
-/// = 126px here, which a 120px tile clears by six. Only the label scales with
-/// the user's text-size setting, and Android's runs to 2.0 — so putting that
-/// term at maximum, as the honest derivation must, crosses it:
+/// = 126px here, which a 120px tile clears by six. The label is the one term
+/// that would scale with the user's text-size setting, and Android's runs to
+/// 2.0 — so the honest derivation puts it at maximum:
 ///
-/// | label | tile | ≥ 126? |
-/// | --- | ---: | --- |
-/// | 16px — one line at 1.0× | 120 | no, by 6 |
-/// | 24px — one line at 1.5× | 128 | **yes** |
-/// | 32px — one line at 2.0×, or two lines at 1.0× | 136 | **yes** |
-/// | 64px — two lines at 2.0× | 168 | **yes** |
+/// | label | tile | ≥ 126? | reachable today? |
+/// | --- | ---: | --- | --- |
+/// | 16px — one line at 1.0× | 120 | no, by 6 | — |
+/// | 24px — one line at 1.5× | 128 | **yes** | **only once I-24 lands** |
+/// | 32px — one line at 2.0× | 136 | **yes** | **only once I-24 lands** |
+/// | 32px — **two lines at 1.0×**, a name that wraps | 136 | **yes** | **yes, today** |
+/// | 64px — two lines at 2.0× | 168 | **yes** | only once I-24 lands |
 ///
-/// A wrapped template name reaches it at nominal size with no accessibility
-/// setting at all.
+/// # The font-scale rows describe a future state, deliberately
+///
+/// **Loki does not apply any platform's text-size setting today** (I-24, settled
+/// from source: no font-scale term exists in `Viewport`, and the type tokens are
+/// absolute px constants). So a reader who takes those rows as current behaviour
+/// will go looking for a blank box they cannot reproduce. They are kept because
+/// I-24 is a defect to fix rather than a decision to keep, and this is the table
+/// that says what fixing it exposes.
+///
+/// **The wrapped-name row needs no accessibility setting and fires today** — it
+/// is the one that makes this a present-tense case rather than a forecast.
 ///
 /// **And the usable threshold is earlier still.** Requiring one touch target
 /// rather than one pixel moves the bound to `anchor >= viewport - 24 - 44` =
