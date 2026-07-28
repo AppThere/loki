@@ -59,12 +59,22 @@ impl SystemMemory {
 /// Reads the platform's memory figures, or an empty [`SystemMemory`] where no
 /// probe is implemented.
 ///
-/// TODO(device-profile-memory): macOS (`sysctl hw.memsize` +
-/// `host_statistics64`) and Windows (`GlobalMemoryStatusEx`) report nothing
-/// today, so a budget derived from this collapses to its baseline there. That
-/// is the correct failure — a guessed total would set a real budget from a
-/// number nobody measured — but it does mean L08-011 is only *demonstrated* on
-/// Linux and Android until those land.
+/// # macOS reports a total and deliberately no *available* figure
+///
+/// `hw.memsize` is exact and static, so it is read once. There is no macOS
+/// equivalent of `MemAvailable` that means the same thing: the OS compresses
+/// memory, and the candidate sum from `vm_stat` (free + inactive + speculative +
+/// purgeable) is an estimate whose relationship to "what this process may take"
+/// is not the one Linux's field states. **A guessed *available* is worse than
+/// none** — it is preferred over total by the derivation, so a number that does
+/// not mean what the design assumes would drive the budget confidently wrong.
+/// The `TOTAL_RAM_DIVISOR` path exists for exactly this shape of platform, and
+/// the two agree at Spec 06's design floor by construction.
+///
+/// TODO(device-profile-memory): Windows (`GlobalMemoryStatusEx`) still reports
+/// nothing, so a budget derived from this collapses to its baseline there.
+/// That remains the correct failure, and it means L08-011 is demonstrated on
+/// Linux, Android and macOS but not yet on Windows.
 #[must_use]
 pub fn probe_system_memory() -> SystemMemory {
     #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -78,7 +88,14 @@ pub fn probe_system_memory() -> SystemMemory {
             Err(_) => SystemMemory::default(),
         }
     }
-    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    #[cfg(target_os = "macos")]
+    {
+        SystemMemory {
+            total_bytes: macos_total_bytes(),
+            available_bytes: None,
+        }
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
     {
         SystemMemory::default()
     }
@@ -111,6 +128,46 @@ pub fn parse_meminfo(text: &str) -> SystemMemory {
     SystemMemory {
         total_bytes: field(text, "MemTotal"),
         available_bytes: field(text, "MemAvailable"),
+    }
+}
+
+/// Total physical RAM on macOS, from `sysctl -n hw.memsize`.
+///
+/// # Why a subprocess, and why exactly once
+///
+/// The native call is `sysctlbyname`, which is FFI, and this crate carries
+/// `#![forbid(unsafe_code)]`. The alternatives were to relax that for one read,
+/// to add a system-info dependency to a UI crate, or to shell out — and shelling
+/// out is the smallest commitment of the three for a value that **cannot
+/// change**: physical RAM is fixed for the life of the process, so this is
+/// cached and the 5-second resample never spawns anything.
+///
+/// A failure — `sysctl` missing, output unparseable — yields `None` and the
+/// budget falls back exactly as it did before, which is the behaviour this
+/// replaces rather than a new risk.
+#[cfg(target_os = "macos")]
+fn macos_total_bytes() -> Option<u64> {
+    use std::sync::OnceLock;
+    static TOTAL: OnceLock<Option<u64>> = OnceLock::new();
+    *TOTAL.get_or_init(|| {
+        let out = std::process::Command::new("sysctl")
+            .args(["-n", "hw.memsize"])
+            .output()
+            .ok()?;
+        parse_memsize(&String::from_utf8_lossy(&out.stdout))
+    })
+}
+
+/// Parses `sysctl -n hw.memsize` output: a bare byte count.
+///
+/// Split from the call so it is tested on every platform, like `parse_meminfo`.
+/// Zero is rejected: a machine with no RAM is not a reading, and zero would
+/// drive the budget to its floor while looking like a successful probe.
+#[must_use]
+pub fn parse_memsize(text: &str) -> Option<u64> {
+    match text.trim().parse::<u64>() {
+        Ok(0) | Err(_) => None,
+        Ok(bytes) => Some(bytes),
     }
 }
 

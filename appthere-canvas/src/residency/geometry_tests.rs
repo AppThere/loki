@@ -154,3 +154,67 @@ fn an_empty_document_is_free() {
     let vp = ViewportSpec::new(0.0, 900.0, 1.0, 1.0);
     assert_eq!(resident_texture_bytes(&[], &vp), 0);
 }
+
+/// **Which mechanism drops a page on scroll-back: the mount window, or the
+/// budget?** Settled with the model rather than by arithmetic on a log.
+///
+/// A screen session on macOS at 100% zoom on a 2× display showed pages 11, 10,
+/// 9 and 8 re-rasterising while scrolling back up from page 13, with the budget
+/// reporting `source=Baseline` (64 MiB). The reading offered was eviction under
+/// budget pressure — 64 MiB holds 4.87 of these 13.15 MiB pages — which would
+/// make the dead memory probe a live performance cost.
+///
+/// It is not what happened, and this table is why. The mount window is the
+/// visible rect **grown by one screen on each side** (`visible_window`), so on a
+/// laptop-sized viewport it asks for three or four pages — 39–53 MiB, inside the
+/// baseline with room to spare. Pages four pitches away were never resident, at
+/// any budget.
+///
+/// **The log carries its own confirmation:** `tile_plan` emits "texture
+/// residency under pressure" whenever `over_target || reduced_tiles > 0`, and no
+/// such line appeared. The budget never bound.
+///
+/// Where the baseline *does* bind is a large HiDPI display: from roughly
+/// 1100–1200 CSS px of viewport the window reaches five pages. That is a real
+/// finding and a different one — a forecast about big screens, not an
+/// observation about this session.
+///
+/// The consequence for what to fix: if scroll-back re-rasterisation is judged
+/// too costly, the lever is **retention hysteresis** — a wider window, or an
+/// eviction policy with memory — and not a larger budget. Raising the budget
+/// would change nothing on the machine that produced the log.
+#[test]
+fn the_mount_window_not_the_budget_decides_scroll_back_residency_at_100_percent() {
+    // US Letter at 96 dpi on a 2x display: 1632 x 2112 device px = 13.15 MiB.
+    let page = PageBox::us_letter();
+    let pages: Vec<PageBox> = (0..24).map(|_| page).collect();
+    let per_page = page.texture_bytes(1.0, 2.0);
+    assert_eq!(
+        per_page, 13_787_136,
+        "fixture must be the page the log reported, or the table below is about \
+         a different machine",
+    );
+    let baseline = 64 * 1024 * 1024;
+
+    for (client_h, expect_binds) in [
+        (700.0_f64, false),
+        (835.0, false), // ~13" laptop, chrome subtracted — the session's shape.
+        (1000.0, false),
+        (1200.0, true), // A large HiDPI display: five pages in the window.
+        (1600.0, true),
+    ] {
+        // Scrolled well into the document, so the window is interior and the
+        // count is the steady-state one rather than a document-edge case.
+        let vp = ViewportSpec::new(6.0 * (page.css_size(1.0).1 + 24.0), client_h, 1.0, 2.0);
+        let bytes = resident_texture_bytes(&pages, &vp);
+        let resident = resident_pages(&pages, &vp).iter().filter(|r| **r).count();
+        assert_eq!(
+            bytes > baseline,
+            expect_binds,
+            "at a {client_h}px viewport the window holds {resident} pages \
+             ({:.2} MiB) against a {:.0} MiB baseline",
+            bytes as f64 / 1_048_576.0,
+            baseline as f64 / 1_048_576.0,
+        );
+    }
+}

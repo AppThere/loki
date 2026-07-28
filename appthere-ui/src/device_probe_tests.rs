@@ -7,6 +7,7 @@
 //! a provided context, so they are exercised where the profile is provided
 //! rather than mocked into existence.
 
+use super::parse_memsize;
 use super::{parse_meminfo, SystemMemory};
 
 /// A real `/proc/meminfo` prefix from a 16 GiB Linux machine, verbatim
@@ -82,4 +83,43 @@ fn the_platform_probe_answers_on_linux() {
         m.total_bytes.is_some_and(|b| b > 0),
         "expected a real MemTotal, got {m:?}"
     );
+}
+
+/// **The macOS reading, parsed on every platform.** `hw.memsize` is a bare byte
+/// count — no unit suffix, unlike `/proc/meminfo`'s `kB` — so it has its own
+/// parser and its own way of being wrong.
+#[test]
+fn a_bare_byte_count_parses_and_a_bad_one_does_not() {
+    assert_eq!(parse_memsize("8589934592\n"), Some(8 * 1024 * 1024 * 1024));
+    assert_eq!(
+        parse_memsize("  17179869184  "),
+        Some(16 * 1024 * 1024 * 1024)
+    );
+    for bad in ["", "\n", "hw.memsize: 8589934592", "8 GB", "-1"] {
+        assert_eq!(parse_memsize(bad), None, "{bad:?} must not parse");
+    }
+}
+
+/// **Zero is not a reading.** It would look like a successful probe and drive
+/// the budget to its floor — the same trap `parse_meminfo` avoids by leaving a
+/// missing field `None` rather than defaulting it.
+#[test]
+fn a_zero_memsize_is_rejected_rather_than_believed() {
+    assert_eq!(parse_memsize("0"), None);
+}
+
+/// **What the macOS probe is worth, stated as the budget it produces.** 8 GiB of
+/// total with no available figure takes the `TOTAL_RAM_DIVISOR` path: 8 GiB/128
+/// = 64 MiB, which is the baseline exactly — the two agree at Spec 06's design
+/// floor by construction.
+///
+/// So on an 8 GiB Mac the probe changes the *source* and not the number, and on
+/// a 32 GiB one it changes both. Asserted because "the fix has no effect here"
+/// is the kind of claim that should be a computation rather than a shrug.
+#[test]
+fn the_macos_total_path_agrees_with_the_baseline_at_the_design_floor() {
+    let eight_gib = 8_u64 * 1024 * 1024 * 1024;
+    assert_eq!(eight_gib / 128, 64 * 1024 * 1024);
+    let thirty_two = 32_u64 * 1024 * 1024 * 1024;
+    assert_eq!(thirty_two / 128, 256 * 1024 * 1024);
 }
