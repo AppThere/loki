@@ -30,6 +30,7 @@ cd "$(git rev-parse --show-toplevel)" || exit 1
 GATES=(
     check-arc-get-mut.py
     check-dependency-direction.py
+    check-document-scale-isolation.py
     check-file-ceiling.py
     check-license-headers.py
     check-loki-basic-pure.py

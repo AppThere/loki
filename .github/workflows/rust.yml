@@ -51,6 +51,11 @@ jobs:
     - name: TODO-format gate (TODO(<topic>) tags)
       # Spec 01 audit A-11. No bare TODO / FIXME / HACK / XXX in production code.
       run: python3 scripts/check-todo-format.py
+    - name: Document scale isolation (I-24 must not reach page pixels)
+      # Spec 08 r51. Chrome scales with the platform text setting; document
+      # content does not. If a text-scale term crossed into rendering, a 2.0x
+      # setting would multiply texture demand ~4x on the axis Phase 2 bounded.
+      run: python3 scripts/check-document-scale-isolation.py
     - name: Dependency-direction gate (acyclic, downhill-only)
       # Spec 01 audit A-13 / ADR-0009. Fails on any uphill internal edge.
       run: python3 scripts/check-dependency-direction.py

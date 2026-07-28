@@ -7,6 +7,13 @@
 //! Pure arithmetic over page sizes and viewport geometry — no wgpu, no Dioxus,
 //! no document. That is what lets Phase 2's budget be swept headlessly across
 //! zoom × DPI (Spec 08 T2.5a, R16) instead of waiting on hardware.
+//!
+//! # Demand has exactly three inputs, and a text-size setting is not one
+//!
+//! `page_px × zoom × display_scale`. See the module docs (`residency`) for why
+//! I-24 must not add a fourth, and for the gate that refuses it. The
+//! `appthere_ui::…` names in the doc comments below are deliberately *names*:
+//! those values are injected, never imported.
 
 /// Bytes per texel of a page texture.
 ///

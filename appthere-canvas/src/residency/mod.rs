@@ -45,6 +45,26 @@
 //! observable without a device and is what Spec 08 R16's on-device run
 //! confirms. It also excludes Vello's own scratch buffers, which are shared
 //! across tiles rather than per-tile.
+//!
+//! # The accessibility text scale must never reach page pixels (Spec 08 I-24)
+//!
+//! Texture demand is `page_px × zoom × display_scale` — three inputs, and a
+//! platform text-size setting is not among them. I-24 will make *chrome*
+//! respond to that setting; **document content must not**, and this is where
+//! the cost of getting it wrong would land. A 2.0× term reaching page pixels
+//! multiplies area by ~4 on the one axis Phase 2 spent a whole phase bounding:
+//! §3.6b measured the survival ceiling as reachable on **every** memory size
+//! from 2 to 64 GiB inside the app's own zoom clamp, so the ceiling would begin
+//! firing at ordinary zoom. The symptom — soft text at rest — reads as a memory
+//! regression, so it would be chased here rather than in the accessibility
+//! change that caused it.
+//!
+//! Two mechanisms could carry the term across: a crate dependency on
+//! `appthere-ui`, or a font-relative CSS unit (`rem`/`em`/`ch`/`lh`) sizing the
+//! canvas subtree. Both are refused mechanically by
+//! `scripts/check-document-scale-isolation.py` rather than by convention — the
+//! boundary was correct already, but it rested on nobody wiring the two
+//! together.
 
 mod budget;
 mod counter;
