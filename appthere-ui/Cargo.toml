@@ -23,3 +23,19 @@ futures-util = { version = "0.3", default-features = false }
 # rather than as a frame-rate complaint. A counter with no production voice is
 # an instrument that speaks only where the hazard is not.
 tracing = "0.1"
+
+# The memory probe on the two platforms with no `/proc/meminfo` (Spec 08 I-25).
+#
+# **Target-scoped deliberately**: Linux and Android keep the hand-parsed
+# `MemAvailable` path that the budget divisors are calibrated against, so this
+# adds nothing to those builds and changes nothing about the anchor point.
+#
+# Chosen over an `unsafe` FFI exception on a *stated standard*, not a taste:
+# `#![forbid(unsafe_code)]` at crate roots is written down in CLAUDE.md and
+# enforced by `scripts/check-unsafe-policy.py`; "take no new dependencies" is
+# not. The exception route would have traded a written rule for an unwritten
+# one — and measured, `default-features = false, features = ["system"]` is one
+# crate whose entire transitive closure (`libc`, `memchr`) is already in this
+# lockfile at the same versions.
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+sysinfo = { version = "0.38", default-features = false, features = ["system"] }

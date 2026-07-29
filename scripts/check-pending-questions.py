@@ -21,8 +21,24 @@ forward-looking discipline misses.
 Resolving a row means doing the sweep and moving it to `landed` with the outcome
 written in. Rows are never deleted.
 
+# The blind spot, and its control
+
+**This gate detects an instrument arriving where a row predicted it would.** If
+one lands somewhere else — a different module, a different name, folded into an
+existing file — the gate stays silent and the row sits in the register reading as
+still-open while the question has quietly become answerable. That is the same
+class as an instrument that cannot speak, one level up: a register that cannot
+detect arrival.
+
+The path prediction is the right *primary* trigger — it is specific, and it fires
+at the moment that matters. What it needs is a control that does not depend on
+the prediction being right, and the control is a fixed moment rather than a
+cleverer pattern: **review the whole register at every phase close**, which is
+already a ritual with a checklist. `--list` prints it for exactly that.
+
 Usage:
     scripts/check-pending-questions.py
+    scripts/check-pending-questions.py --list   # for the phase-close review
 """
 
 from __future__ import annotations
@@ -89,6 +105,13 @@ def instrument_exists(glob: str, pattern: str) -> list[str]:
 
 
 def main() -> int:
+    if "--list" in sys.argv:
+        # The phase-close control: every row, whatever the path prediction did.
+        for state, glob, instrument, question, num in rows():
+            print(f"[{state}] line {num}: {instrument}  (looking in {glob})")
+            print(f"    {question}\n")
+        return 0
+
     failures: list[str] = []
     awaiting = landed = 0
 

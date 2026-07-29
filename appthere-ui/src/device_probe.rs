@@ -129,14 +129,20 @@ pub fn probe_system_memory() -> SystemMemory {
             Err(_) => SystemMemory::default(),
         }
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
+        let (total_bytes, available_bytes) = macos::sysinfo_memory();
         SystemMemory {
-            total_bytes: macos_total_bytes(),
-            available_bytes: None,
+            total_bytes,
+            available_bytes,
         }
     }
-    #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "windows"
+    )))]
     {
         SystemMemory::default()
     }
@@ -267,8 +273,6 @@ pub fn note_device_scale_factor(observed: f64) {
 
 #[path = "device_probe_macos.rs"]
 mod macos;
-#[cfg(target_os = "macos")]
-use macos::macos_total_bytes;
 pub use macos::parse_memsize;
 
 #[cfg(test)]
