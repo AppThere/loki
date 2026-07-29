@@ -39,3 +39,14 @@ tracing = "0.1"
 # lockfile at the same versions.
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 sysinfo = { version = "0.38", default-features = false, features = ["system"] }
+
+# Linux-only, and **dev-only**: the equivalence test below never ships.
+#
+# The production Linux path stays hand-parsed (see `device_probe_macos.rs` for
+# why), which leaves two live derivations of one quantity — the shape L08-029
+# says drifts invisibly. `sysinfo`'s Linux `available_memory` reads the same
+# `MemAvailable`, so asserting the two agree converts "unifying later would be
+# semantics-preserving" from a claim into a test, in the one environment that
+# can run it.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+sysinfo = { version = "0.38", default-features = false, features = ["system"] }

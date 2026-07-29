@@ -123,3 +123,60 @@ fn the_macos_total_path_agrees_with_the_baseline_at_the_design_floor() {
     let thirty_two = 32_u64 * 1024 * 1024 * 1024;
     assert_eq!(thirty_two / 128, 256 * 1024 * 1024);
 }
+
+/// **Two live derivations of one quantity, pinned against each other** (Spec 08
+/// r59).
+///
+/// Linux keeps the hand-parsed `/proc/meminfo` path while macOS and Windows use
+/// `sysinfo`, deliberately: the budget divisors are calibrated against
+/// `MemAvailable`, and changing the one platform this environment can test to
+/// gain tidiness is the wrong trade. But two derivations of one value is exactly
+/// the shape L08-029 recorded as drifting invisibly — the drift is free until
+/// something depends on the difference.
+///
+/// `sysinfo`'s Linux implementation reads the same two fields, so the claim
+/// "unifying later would be semantics-preserving" is checkable rather than
+/// merely plausible. This is that check.
+///
+/// **Tolerances say what they distinguish.** `MemTotal` does not move, so it is
+/// asserted exactly — a difference there is a different field, not a different
+/// instant. `MemAvailable` can move between the two reads, so 5% absorbs a
+/// sampling gap while still failing loudly if either side switched to a
+/// different quantity: `MemFree` differs from `MemAvailable` by the page cache,
+/// which is gigabytes on an ordinary machine rather than percent.
+#[cfg(target_os = "linux")]
+#[test]
+fn the_hand_parsed_linux_path_agrees_with_sysinfo() {
+    use sysinfo::{MemoryRefreshKind, RefreshKind, System};
+
+    let Ok(text) = std::fs::read_to_string("/proc/meminfo") else {
+        panic!("no /proc/meminfo on a linux target — this test's subject is absent");
+    };
+    let parsed = parse_meminfo(&text);
+    let sys = System::new_with_specifics(
+        RefreshKind::nothing().with_memory(MemoryRefreshKind::nothing().with_ram()),
+    );
+
+    let (Some(total), Some(available)) = (parsed.total_bytes, parsed.available_bytes) else {
+        panic!(
+            "the hand parser found no MemTotal/MemAvailable, so there is nothing \
+             to compare: {parsed:?}"
+        );
+    };
+    assert_eq!(
+        total,
+        sys.total_memory(),
+        "MemTotal disagrees between the two paths — that figure does not move \
+         between reads, so this is a different field rather than a different \
+         instant",
+    );
+    let delta = available.abs_diff(sys.available_memory());
+    let tolerance = available / 20;
+    assert!(
+        delta <= tolerance,
+        "available disagrees by {delta} bytes ({}%), beyond the {tolerance} that \
+         a sampling gap explains — one path has changed which quantity it reads, \
+         and unifying them would no longer be semantics-preserving",
+        delta * 100 / available.max(1),
+    );
+}

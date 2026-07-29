@@ -66,9 +66,25 @@ pub const BUDGET_CEILING_BYTES: u64 = 256 * 1024 * 1024;
 ///
 /// **It is collectable rather than arguable**, and the instrument is already in:
 /// `appthere_ui::device_probe::note_system_memory` logs
-/// `available_permille_of_total` whenever a platform reports both figures. Three
-/// platforms under comparable load answer it. Recorded here rather than
-/// discovered later as "one platform behaves differently under identical load".
+/// `available_permille_of_total` whenever a platform reports both figures — which
+/// since I-25 is all three. Recorded here rather than discovered later as "one
+/// platform behaves differently under identical load".
+///
+/// # Where the answer would land, if the platforms turn out to differ
+///
+/// **The fix would be per-platform divisors, and the thing that makes that a
+/// wide change is not this constant — it is that [`BudgetInputs`] has no
+/// provenance.** `available_ram_bytes: Option<u64>` says how many bytes; it does
+/// not say which platform's notion of "available" produced them, so there is
+/// nothing here to key a divisor on. The first step of that change is a field on
+/// the input, not a second constant.
+///
+/// That field is deliberately **not** added now. Nothing consumes it, and adding
+/// a parameter for a consumer nobody has named is the `Before`/`After` mistake
+/// this program already recorded once. What is added is the sign: the coupling
+/// is named at the constant it couples, so I-25's eventual answer has an obvious
+/// place to arrive and does not have to be rediscovered from the permille data
+/// alone.
 pub const AVAILABLE_RAM_DIVISOR: u64 = 64;
 
 /// Share of *total* RAM used when the available figure is missing: one 128th.
