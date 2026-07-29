@@ -73,3 +73,45 @@ pub fn AtWindowSizeSensor(
         }
     }
 }
+
+/// The window's measured logical size, shared with anything that places against
+/// the window rather than against a container.
+///
+/// # Why this exists when the sensor already did
+///
+/// [`AtWindowSizeSensor`] has reported `(width, height)` on mount and resize
+/// since Spec 04 — and its only consumer persisted the geometry to disk. So the
+/// measurement existed and the *value* did not reach anyone, which is
+/// indistinguishable from not measuring it: wiring T4.1's popover host, the
+/// first look for a window height found `ScrollMetrics` (the editor scroll
+/// container) and `responsive::Viewport::inner_width_px` (that container's
+/// width, no height) and concluded the workspace had none.
+///
+/// It had one. Deriving a window height from a container plus known chrome is
+/// exactly the ~41px class of error T4.1 exists to remove, so the fix is to
+/// publish what is already measured rather than to measure it again.
+#[derive(Clone, Copy)]
+pub struct AtWindowSizeContext {
+    /// Logical `(width, height)`; `(0, 0)` until the first measurement lands.
+    pub size: Signal<(f64, f64)>,
+}
+
+/// Provides [`AtWindowSizeContext`] at the app root. Returns the signal so the
+/// root can feed it from [`AtWindowSizeSensor`].
+#[must_use]
+pub fn use_provide_window_size() -> Signal<(f64, f64)> {
+    let size = use_signal(|| (0.0_f64, 0.0_f64));
+    use_context_provider(|| AtWindowSizeContext { size });
+    size
+}
+
+/// The measured window size, or `None` where no root provided it.
+///
+/// `None` and `Some((0.0, 0.0))` are different answers and both are possible:
+/// the first means nobody is measuring, the second that measurement has not
+/// arrived yet. A consumer that treats them alike will place against a
+/// zero-sized viewport on the first frame.
+#[must_use]
+pub fn use_window_size() -> Option<(f64, f64)> {
+    try_consume_context::<AtWindowSizeContext>().map(|c| *c.size.read())
+}

@@ -115,6 +115,7 @@ pub fn App() -> Element {
     use_provide_backdrop();
     // Anchored-overlay state, read by `AtPopoverHost` below (Spec 08 T4.1).
     let _popover = use_provide_popover();
+    let mut window_size = appthere_ui::use_provide_window_size();
 
     // Start the document font warm-up (system-font scan + family-index build)
     // on a background thread now, so it overlaps the Home screen instead of
@@ -239,8 +240,15 @@ pub fn App() -> Element {
             // Persist the window size across sessions (debounced; desktop only
             // in effect — Android windows are fullscreen and the geometry file
             // simply never resolves there).
+            // Two consumers of one measurement (Spec 08 r60): the geometry
+            // file, and — since T4.1 — the popover host, which places against
+            // the window and had no other way to know its height. The sensor
+            // already reported it; only persistence was listening.
             appthere_ui::AtWindowSizeSensor {
-                on_size: |size: (f64, f64)| crate::window_state::persist_geometry_debounced(size),
+                on_size: move |size: (f64, f64)| {
+                    window_size.set(size);
+                    crate::window_state::persist_geometry_debounced(size);
+                },
             }
 
             Router::<Route> {}

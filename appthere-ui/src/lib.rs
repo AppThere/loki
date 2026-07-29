@@ -82,9 +82,10 @@ pub use device_profile_override::{
 };
 pub use responsive::{
     estimate_group_metrics, group_layout, page_fits, required_page_width, resolve_cascade,
-    resolve_page_fit, use_breakpoint, use_provide_responsive, use_responsive, use_ribbon_cascade,
-    use_viewport, AtResponsiveContext, AtViewportWidthSensor, AtWindowSizeSensor, Breakpoint,
-    GroupCollapse, GroupLayout, GroupMetrics, PageFit, RibbonCascade, Viewport, DEFAULT_DPI,
+    resolve_page_fit, use_breakpoint, use_provide_responsive, use_provide_window_size,
+    use_responsive, use_ribbon_cascade, use_viewport, use_window_size, AtResponsiveContext,
+    AtViewportWidthSensor, AtWindowSizeContext, AtWindowSizeSensor, Breakpoint, GroupCollapse,
+    GroupLayout, GroupMetrics, PageFit, RibbonCascade, Viewport, DEFAULT_DPI,
 };
 pub use safe_area::{set_safe_area_insets, update_safe_area_insets, use_safe_area, SafeAreaInsets};
 pub use scroll::{

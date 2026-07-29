@@ -64,11 +64,17 @@ def rows() -> list[tuple[str, str, str, str, int]]:
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         parts = line.split("\t")
-        if len(parts) < 4:
+        if len(parts) < 5:
             out.append(("malformed", line.strip(), "", "", num))
             continue
         out.append(
-            (parts[0].strip(), parts[1].strip(), parts[2].strip(), parts[3].strip(), num)
+            (
+                parts[0].strip(),
+                parts[1].strip(),
+                parts[2].strip(),
+                f"{parts[3].strip()}\n      ON FIRE: {parts[4].strip()}",
+                num,
+            )
         )
     return out
 
@@ -118,8 +124,11 @@ def main() -> int:
     for state, glob, instrument, question, num in rows():
         if state == "malformed":
             failures.append(
-                f"line {num}: expected four tab-separated fields (state, "
-                f"path glob, instrument, question), got: {glob[:60]}"
+                f"line {num}: expected five tab-separated fields (state, path "
+                f"glob, instrument, question, on-fire). The last is required: a "
+                f"row that names an instrument without saying what to re-read "
+                f"fires uselessly months later, when whoever could have written "
+                f"it well is gone from the context. Got: {glob[:60]}"
             )
             continue
         try:
