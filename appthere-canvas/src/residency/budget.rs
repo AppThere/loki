@@ -48,6 +48,27 @@ pub const BUDGET_CEILING_BYTES: u64 = 256 * 1024 * 1024;
 /// also running a browser and an OS, which typically reports ~4 GiB available,
 /// and 4 GiB / 64 is exactly [`BUDGET_BASELINE_BYTES`]. The whole scale is
 /// anchored on that one point.
+///
+/// # NOT ESTABLISHED: that "available" means the same thing on every platform
+///
+/// The anchor point is a **Linux** observation, and `MemAvailable` is a kernel
+/// estimate of reclaimable memory that *includes page cache*. The figures this
+/// divisor will be applied to elsewhere are not the same construction: Windows'
+/// `ullAvailPhys` is free plus standby, and macOS's equivalent is assembled from
+/// free, inactive and purgeable pages. Similar in intent; **not measured** to
+/// report the same fraction of total under the same load.
+///
+/// So one divisor across three platforms carries an unstated comparability
+/// assumption. This is the same shape as
+/// `the_total_and_available_divisors_stay_calibrated_against_each_other`, one
+/// level out: that test pins *total versus available on one machine*, and the
+/// open question is *available versus available across platforms*.
+///
+/// **It is collectable rather than arguable**, and the instrument is already in:
+/// `appthere_ui::device_probe::note_system_memory` logs
+/// `available_permille_of_total` whenever a platform reports both figures. Three
+/// platforms under comparable load answer it. Recorded here rather than
+/// discovered later as "one platform behaves differently under identical load".
 pub const AVAILABLE_RAM_DIVISOR: u64 = 64;
 
 /// Share of *total* RAM used when the available figure is missing: one 128th.

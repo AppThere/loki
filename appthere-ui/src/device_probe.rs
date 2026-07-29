@@ -59,22 +59,39 @@ impl SystemMemory {
 /// Reads the platform's memory figures, or an empty [`SystemMemory`] where no
 /// probe is implemented.
 ///
-/// # macOS reports a total and deliberately no *available* figure
+/// # macOS reports a total and, for now, no *available* figure
 ///
 /// `hw.memsize` is exact and static, so it is read once. There is no macOS
-/// equivalent of `MemAvailable` that means the same thing: the OS compresses
-/// memory, and the candidate sum from `vm_stat` (free + inactive + speculative +
+/// equivalent of `MemAvailable` reachable without FFI: the OS compresses memory,
+/// and the candidate sum from `vm_stat` (free + inactive + speculative +
 /// purgeable) is an estimate whose relationship to "what this process may take"
 /// is not the one Linux's field states. **A guessed *available* is worse than
-/// none** — it is preferred over total by the derivation, so a number that does
-/// not mean what the design assumes would drive the budget confidently wrong.
-/// The `TOTAL_RAM_DIVISOR` path exists for exactly this shape of platform, and
-/// the two agree at Spec 06's design floor by construction.
+/// none** — the derivation prefers it over total, so a number that does not mean
+/// what the design assumes would drive the budget confidently wrong.
 ///
-/// TODO(device-profile-memory): Windows (`GlobalMemoryStatusEx`) still reports
-/// nothing, so a budget derived from this collapses to its baseline there.
-/// That remains the correct failure, and it means L08-011 is demonstrated on
-/// Linux, Android and macOS but not yet on Windows.
+/// **That reasoning still holds and it is no longer sufficient (Spec 08 r55).**
+/// A regime sweep measured what total-only costs: over machine size × display
+/// scale × page size × load, **26 of 72 cells change the zoom at which the
+/// survival regime fires**, and the error is asymmetric in the direction that
+/// matters. On a *loaded* machine — 35% available, the case the whole
+/// available-RAM design exists for — total-only fires **later or never**, which
+/// means mounting at full scale against a ceiling derived from RAM the machine
+/// does not have. The sharpest cell is 8 GiB at 2× on US Letter: available-based
+/// fires at 375%, total-only never.
+///
+/// So the honest reading is that total-only is a correct *failure* and an
+/// inadequate *destination*. macOS is in the same position as Windows, not a
+/// solved case: both need a real available figure — `host_statistics64` here,
+/// `GlobalMemoryStatusEx` there — and both routes need either a dependency or a
+/// documented `unsafe` exception, which this crate forbids.
+///
+/// TODO(device-profile-memory): macOS `host_statistics64` and Windows
+/// `GlobalMemoryStatusEx`. **Two platforms, two FFI surfaces, two exceptions —
+/// or one `sysinfo` dependency covering all three.** The comparison is not the
+/// one r54 stated: the exception route's cost doubles once macOS is counted with
+/// Windows, while a single safe-API dependency stays flat. Until then L08-011 is
+/// demonstrated on Linux and Android only, and macOS/Windows run on a budget
+/// derived from total.
 #[must_use]
 pub fn probe_system_memory() -> SystemMemory {
     #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -188,6 +205,34 @@ pub fn note_system_memory(observed: SystemMemory) {
         && current.available_ram_bytes == observed.available_bytes
     {
         return;
+    }
+    // The cross-platform assumption, collected rather than assumed (Spec 08
+    // r56). `AVAILABLE_RAM_DIVISOR` is calibrated against Linux's
+    // `MemAvailable`, which estimates reclaimable memory *including* page cache.
+    // Windows' `ullAvailPhys` counts free plus standby; macOS's equivalent is
+    // assembled from free, inactive and purgeable pages. Similar in intent, and
+    // **not established** to report the same fraction of total under the same
+    // load — so one divisor across three platforms is an assumption nothing has
+    // measured.
+    //
+    // It is measurable the moment a platform reports both figures, which is
+    // every platform that takes the available path at all. Logged here rather
+    // than at the budget, because it is a property of the probe: the budget only
+    // sees whichever figure arrived.
+    if let (Some(total), Some(available)) = (observed.total_bytes, observed.available_bytes) {
+        // `checked_div` rather than a guard: a zero total is not a reading, and
+        // reporting 0 permille for one is the same statement as reporting
+        // nothing while keeping the line's shape stable.
+        let permille = available
+            .saturating_mul(1000)
+            .checked_div(total)
+            .unwrap_or(0);
+        tracing::debug!(
+            total_bytes = total,
+            available_bytes = available,
+            available_permille_of_total = permille,
+            "memory probe: available as a fraction of total",
+        );
     }
     let mut w = profile.write();
     w.system_ram_bytes = observed.total_bytes;
