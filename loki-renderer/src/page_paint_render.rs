@@ -5,6 +5,29 @@
 //! `page_paint_source.rs` for the 300-line ceiling. Both are pure helpers that
 //! take only the data the render loop passes in — no `LokiPageSource` state is
 //! reached except through the `source` handle.
+//!
+//! # `gpu_submit_ms` is submission, not completion (Spec 08 r55)
+//!
+//! Both paint log lines carry a duration around `render_to_texture`, and it
+//! measures **the wrong side of the CPU/GPU boundary for the question people
+//! will ask of it**. Read from source: vello's `render_to_texture` calls
+//! `run_recording`, which ends at `queue.submit(...)` — no `device.poll`, no
+//! `Maintain::Wait`, no buffer map. It returns as soon as the commands are
+//! encoded and handed to the driver.
+//!
+//! An earlier draft named it `gpu_render_ms`. That is exactly the failure this
+//! program keeps meeting: a small, stable number measuring the wrong quantity,
+//! from which "re-rasterisation is cheap" would follow with nothing visibly
+//! wrong. **It bounds the CPU work the paint callback blocks the frame with; it
+//! says nothing about how long the GPU then takes.**
+//!
+//! Completion timing is deliberately not added. `device.poll(Wait)` would
+//! serialise the pipeline in production to satisfy a diagnostic, and timestamp
+//! queries are a feature-gated apparatus for a question with a cheaper
+//! observable: **total frame time**, which does not require getting this
+//! boundary right at all. The structural half needs no instrument either —
+//! `LokiPageSource::render` *is* Blitz's paint callback, so the work is
+//! synchronous on the calling thread whatever the split between the two halves.
 
 use anyrender_vello::wgpu::{
     Device, Extent3d, Texture, TextureDimension, TextureFormat, TextureUsages, TextureView,

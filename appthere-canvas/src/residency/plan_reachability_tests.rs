@@ -180,3 +180,135 @@ fn the_sweep_covers_the_whole_clamped_range() {
          answer above is measured over less than the app permits",
     );
 }
+
+/// A budget derived the way a **total-only** platform derives it — macOS today,
+/// and Windows if it ships without an available-memory probe.
+fn budget_from_total(total_gib: f64) -> TextureBudget {
+    TextureBudget::derive(BudgetInputs {
+        available_ram_bytes: None,
+        total_ram_bytes: Some((total_gib * 1024.0 * 1024.0 * 1024.0) as u64),
+        gpu_paint_path: Some(true),
+        user_override_bytes: None,
+    })
+}
+
+/// The same sweep, against a budget supplied rather than derived from available.
+fn sweep_with(page: PageBox, budget: TextureBudget, dsf: f64) -> (Option<f64>, u64) {
+    let doc = vec![page; 500];
+    let mut fires_at = None;
+    let mut peak = 0_u64;
+    let mut zoom = super::super::geometry::ZOOM_RANGE_MIN;
+    while zoom <= ZOOM_RANGE_MAX + f64::EPSILON {
+        for offset in 0..40 {
+            let vp = ViewportSpec::new(20_000.0 + f64::from(offset) * 500.0, 900.0, zoom, dsf);
+            let plan = plan_residency(&doc, &vp, budget);
+            peak = peak.max(
+                plan.tiles
+                    .iter()
+                    .filter(|t| t.visible)
+                    .map(|t| t.bytes)
+                    .sum(),
+            );
+            if plan.survival_reduced && fires_at.is_none() {
+                fires_at = Some(zoom);
+            }
+        }
+        zoom += 0.25;
+    }
+    (fires_at, peak)
+}
+
+/// **Does a total-only probe cost any behaviour? Measured: yes, in 26 of 72
+/// cells** — the Windows decision taken with a counter rather than a preference
+/// (Spec 08 r55).
+///
+/// Windows can report a meaningful *available* figure, but only through
+/// `GlobalMemoryStatusEx`, which needs either a dependency or a documented
+/// `unsafe` exception. The alternative was to do what macOS does and report total
+/// only, and the argument for it was the calibration band: the two paths agree
+/// within 30% across a 35–65% available fraction, so perhaps the fidelity is
+/// below the resolution that matters.
+///
+/// **It is not.** 30% of budget turns out to be 30% of behaviour often enough to
+/// decide the question: over machine size × display scale × page size × load,
+/// more than a third of the grid moves the zoom at which the survival regime
+/// fires — the one place this planner degrades what the reader is looking at.
+///
+/// # The error is asymmetric, and the dangerous side is a loaded machine
+///
+/// At **35%** available — a machine under real load, which is the case the whole
+/// available-RAM design exists for — total-only fires **later or not at all**.
+/// The sharpest cell is 8 GiB, 2×, US Letter: available-based fires at 375%,
+/// total-only **never**. Never firing is not "less cautious"; it means mounting
+/// at full scale against a ceiling derived from RAM the machine does not have,
+/// which is the OOM branch §3.6e exists to keep out of.
+///
+/// At **65%** available the error runs the other way and is merely wasteful:
+/// total-only fires earlier than needed, softening text on a machine with room
+/// to spare.
+///
+/// So the measured answer is that Windows should pay for the available figure —
+/// dependency or exception — rather than inherit macOS's total-only shape. And
+/// `windows-sys` does not avoid the exception: it supplies declarations, not safe
+/// wrappers, so the call is still `unsafe`. That makes the real choice
+/// `sysinfo` (safe API, heaviest dependency) against `windows-sys` (exception
+/// required, correct signature from Microsoft's metadata, near-zero transitive
+/// deps) — and hand-rolling only wins under an absolute zero-dependency rule,
+/// since it costs the same exception for a signature you must get right yourself.
+///
+/// # This test asserts the finding, not a guard
+///
+/// It fails if the two paths ever become equivalent, which would mean either the
+/// divisors were re-tuned into agreement or the regime boundary moved. Both are
+/// reasons to re-open the Windows decision rather than to quietly keep it.
+#[test]
+fn a_total_only_probe_changes_the_survival_regime_across_the_load_band() {
+    let mut compared = 0_u32;
+    let mut differed = 0_u32;
+    // The safety-relevant cell, named so a later edit cannot lose it in an
+    // aggregate: a loaded 8 GiB machine at 2x on US Letter.
+    let mut never_fires_when_it_should = false;
+    for total_gib in [4.0_f64, 8.0, 16.0, 32.0] {
+        for dsf in [2.0_f64, 3.0, 4.0] {
+            for page in [PageBox::us_letter(), a3()] {
+                let (total_fires, _) = sweep_with(page, budget_from_total(total_gib), dsf);
+                for pct in [35.0_f64, 50.0, 65.0] {
+                    let (avail_fires, _) = sweep(page, total_gib * pct / 100.0, dsf);
+                    compared += 1;
+                    if total_fires != avail_fires {
+                        differed += 1;
+                    }
+                    if total_fires.is_none() && avail_fires.is_some() {
+                        never_fires_when_it_should = true;
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(compared, 72, "the grid changed shape: {compared} cells");
+    assert!(
+        differed >= 20,
+        "only {differed} of {compared} cells differ — if the two paths have \
+         converged, the Windows decision (r55: pay for the available figure) \
+         rests on a measurement that no longer holds and must be re-taken",
+    );
+    assert!(
+        never_fires_when_it_should,
+        "no cell where total-only never degrades while available-based does — \
+         that case is the reason the fidelity matters rather than merely differs, \
+         and losing it changes the argument",
+    );
+    // The agreement point, as a control: at exactly half, the paths coincide by
+    // construction, so a difference there would mean the calibration is broken
+    // rather than that the platforms differ.
+    for total_gib in [4.0_f64, 8.0, 16.0, 32.0] {
+        let (t, _) = sweep_with(PageBox::us_letter(), budget_from_total(total_gib), 3.0);
+        let (a, _) = sweep(PageBox::us_letter(), total_gib / 2.0, 3.0);
+        assert_eq!(
+            t, a,
+            "{total_gib} GiB at exactly 50% available must agree — that is the \
+             calibration point, and disagreement there is a broken relation \
+             rather than a platform difference",
+        );
+    }
+}

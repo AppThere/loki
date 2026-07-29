@@ -105,7 +105,8 @@
       "mcp__code-review-graph__refactor_tool",
       "mcp__code-review-graph__build_or_update_graph_tool",
       "Bash(sed -n '/\\\\[features\\\\]/,/\\\\[/p' /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rcgen-0.13.2/Cargo.toml)",
-      "Read(//root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rcgen-0.13.2/src/**)"
+      "Read(//root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rcgen-0.13.2/src/**)",
+      "Bash(S=/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/vello-0.6.0; sed -n '/fn run_recording/,/^    pub fn/p' $S/src/wgpu_engine.rs | grep -nE \"submit|poll|Maintain|wait|free_bind_groups|Ok\\\\\\(\\\\\\(\\\\\\)\\\\\\)\" | head -10)"
     ]
   },
   "enableAllProjectMcpServers": true,
