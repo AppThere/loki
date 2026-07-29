@@ -51,6 +51,11 @@ jobs:
     - name: TODO-format gate (TODO(<topic>) tags)
       # Spec 01 audit A-11. No bare TODO / FIXME / HACK / XXX in production code.
       run: python3 scripts/check-todo-format.py
+    - name: Pending-question trigger (an instrument landing re-opens decisions)
+      # Spec 08 r57, L9-019 made mechanical. Fails when a recorded "what would
+      # settle it" instrument appears, so the sweep of decisions taken while the
+      # question was open happens at that moment rather than three commits later.
+      run: python3 scripts/check-pending-questions.py
     - name: Document scale isolation (I-24 must not reach page pixels)
       # Spec 08 r51. Chrome scales with the platform text setting; document
       # content does not. If a text-scale term crossed into rendering, a 2.0x

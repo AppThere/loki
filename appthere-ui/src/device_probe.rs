@@ -22,6 +22,30 @@
 //!
 //! # `cfg(target_os)` here is API selection, not behaviour
 //!
+//! # `available_permille_of_total`: collected, and currently mute where it matters
+//!
+//! `AVAILABLE_RAM_DIVISOR` is calibrated against Linux's `MemAvailable`, which
+//! estimates reclaimable memory *including page cache*. Windows' `ullAvailPhys`
+//! is free plus standby; macOS's equivalent is assembled from free, inactive and
+//! purgeable pages. Similar in intent, and **not established** to report the same
+//! fraction of total under the same load — so one divisor across three platforms
+//! is an assumption nothing has measured.
+//!
+//! [`note_system_memory`] logs the ratio whenever both figures arrive, so the
+//! datum collects itself from ordinary runs. **But that is Linux only today** —
+//! the one platform whose divisor is already calibrated. macOS and Windows are
+//! total-only, so the instrument reports on the case that is not open and is
+//! silent on the two that are, and will stay silent until the platform work it
+//! exists to validate has shipped.
+//!
+//! That is the R5a shape from the other side: there an instrument could not speak
+//! where the hazard was; here one speaks only where the question is already
+//! answered. Pre-positioning it is still right — the datum then arrives *with*
+//! the platform work rather than needing a second pass — but "three platforms
+//! answer it from ordinary runs" is **contingent, not current**, and
+//! `scripts/pending-questions.txt` carries the trigger that fires when the
+//! platform probes land.
+//!
 //! [`probe_system_memory`] reads `/proc/meminfo` where that file is the
 //! platform's answer and reports nothing elsewhere. L08-011 forbids gating
 //! *behaviour* on the compile target; picking the API that answers a question
@@ -148,46 +172,6 @@ pub fn parse_meminfo(text: &str) -> SystemMemory {
     }
 }
 
-/// Total physical RAM on macOS, from `sysctl -n hw.memsize`.
-///
-/// # Why a subprocess, and why exactly once
-///
-/// The native call is `sysctlbyname`, which is FFI, and this crate carries
-/// `#![forbid(unsafe_code)]`. The alternatives were to relax that for one read,
-/// to add a system-info dependency to a UI crate, or to shell out — and shelling
-/// out is the smallest commitment of the three for a value that **cannot
-/// change**: physical RAM is fixed for the life of the process, so this is
-/// cached and the 5-second resample never spawns anything.
-///
-/// A failure — `sysctl` missing, output unparseable — yields `None` and the
-/// budget falls back exactly as it did before, which is the behaviour this
-/// replaces rather than a new risk.
-#[cfg(target_os = "macos")]
-fn macos_total_bytes() -> Option<u64> {
-    use std::sync::OnceLock;
-    static TOTAL: OnceLock<Option<u64>> = OnceLock::new();
-    *TOTAL.get_or_init(|| {
-        let out = std::process::Command::new("sysctl")
-            .args(["-n", "hw.memsize"])
-            .output()
-            .ok()?;
-        parse_memsize(&String::from_utf8_lossy(&out.stdout))
-    })
-}
-
-/// Parses `sysctl -n hw.memsize` output: a bare byte count.
-///
-/// Split from the call so it is tested on every platform, like `parse_meminfo`.
-/// Zero is rejected: a machine with no RAM is not a reading, and zero would
-/// drive the budget to its floor while looking like a successful probe.
-#[must_use]
-pub fn parse_memsize(text: &str) -> Option<u64> {
-    match text.trim().parse::<u64>() {
-        Ok(0) | Err(_) => None,
-        Ok(bytes) => Some(bytes),
-    }
-}
-
 /// Folds a memory observation into the ambient profile.
 ///
 /// Writes only when something changed, so a probe re-run on resume does not
@@ -206,19 +190,8 @@ pub fn note_system_memory(observed: SystemMemory) {
     {
         return;
     }
-    // The cross-platform assumption, collected rather than assumed (Spec 08
-    // r56). `AVAILABLE_RAM_DIVISOR` is calibrated against Linux's
-    // `MemAvailable`, which estimates reclaimable memory *including* page cache.
-    // Windows' `ullAvailPhys` counts free plus standby; macOS's equivalent is
-    // assembled from free, inactive and purgeable pages. Similar in intent, and
-    // **not established** to report the same fraction of total under the same
-    // load — so one divisor across three platforms is an assumption nothing has
-    // measured.
-    //
-    // It is measurable the moment a platform reports both figures, which is
-    // every platform that takes the available path at all. Logged here rather
-    // than at the budget, because it is a property of the probe: the budget only
-    // sees whichever figure arrived.
+    // The cross-platform assumption, collected rather than assumed — and mute
+    // today on the two platforms it is about. See this module's docs.
     if let (Some(total), Some(available)) = (observed.total_bytes, observed.available_bytes) {
         // `checked_div` rather than a guard: a zero total is not a reading, and
         // reporting 0 permille for one is the same statement as reporting
@@ -291,6 +264,12 @@ pub fn note_device_scale_factor(observed: f64) {
     }
     profile.write().device_scale_factor = Some(observed);
 }
+
+#[path = "device_probe_macos.rs"]
+mod macos;
+#[cfg(target_os = "macos")]
+use macos::macos_total_bytes;
+pub use macos::parse_memsize;
 
 #[cfg(test)]
 #[path = "device_probe_tests.rs"]

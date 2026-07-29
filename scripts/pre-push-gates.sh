@@ -36,6 +36,7 @@ GATES=(
     check-loki-basic-pure.py
     check-no-hardcoded-viewport-dims.py
     check-no-panics.py
+    check-pending-questions.py
     check-retracted-claims.py
     check-suppressions.py
     check-todo-format.py

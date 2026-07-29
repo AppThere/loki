@@ -1,0 +1,40 @@
+# Open questions, indexed by the instrument that would settle them.
+#
+# Why this file exists
+# --------------------
+# L9-019's third clause requires every open finding to record **what would
+# settle it**. That is already a register of pending questions keyed by their
+# instrument — what it lacked was a trigger. Nothing prompted anyone to re-read
+# the register when an instrument finally landed, so a decision taken while a
+# question was open could stand for three commits after the counter that
+# condemned it existed (Spec 08 r55/r56: the macOS total-only probe shipped in
+# r53, the regime sweep that refuted it landed in r55, and nothing connected
+# them until a human did).
+#
+# This is that trigger. Each row names a symbol or path that does not exist yet;
+# the gate fails the moment it does, with the question attached. The failure is
+# the prompt to ask **"what did I decide while this was open?"** — not just to
+# answer the question going forward.
+#
+# Format
+# ------
+#   <state><TAB><path glob><TAB><instrument regex><TAB><question>
+#
+# The path glob scopes where the instrument would be *built*, which is what
+# makes the row falsifiable: a comment naming `host_statistics64` is a statement
+# that it is missing, and matching it would fire the gate on the very prose that
+# records the gap. Comment lines are skipped for the same reason.
+#
+# state is one of:
+#   awaiting   the instrument does not exist; the gate fails if it appears
+#   landed     the instrument exists and the sweep has been done; kept as a record
+#
+# So resolving a row means doing the sweep and moving it to `landed` with the
+# outcome written into the question text. Rows are not deleted: an answered
+# question is evidence about how the answer was reached.
+#
+# Usage: scripts/check-pending-questions.py
+
+awaiting	appthere-ui/src/device_probe*.rs	host_statistics64|GlobalMemoryStatusEx|sysinfo::	Cross-platform comparability of the "available RAM" figure (Spec 08 r56). AVAILABLE_RAM_DIVISOR is calibrated against Linux MemAvailable, which includes page cache; Windows ullAvailPhys is free+standby and macOS assembles free+inactive+purgeable. ARRIVAL RE-OPENS: (a) whether one divisor fits three platforms — `available_permille_of_total` becomes informative on macOS/Windows only once one of these lands, and is mute there today; (b) every decision taken while those platforms were total-only, including the r53 macOS choice and any Phase 2 claim that assumed the fallback was adequate.
+awaiting	loki-renderer/src/*.rs	frame_time_ms|frame_ms|FrameTimer	Is page re-rasterisation perceptible (Spec 08 r54/r55)? scene_build_ms + gpu_submit_ms is a LOWER BOUND — submission, not completion — so it cannot answer this alone. ARRIVAL RE-OPENS: whether the mount window needs retention hysteresis at all, which was left undecided pending exactly this measurement.
+awaiting	appthere-ui/src/device_profile*.rs	font_scale|FontScale	The platform accessibility text scale reaching DeviceProfile (Spec 08 I-24). ARRIVAL RE-OPENS: the popover reachability table's 1.5x/2.0x rows, which are marked "only once I-24 lands" and become present-tense; MENU_ROW_HEIGHT_PX, which equals TOUCH_MIN only while rows are device-fixed; and the token split by purpose, whose max(text-relative, device-fixed) rule has never been exercised.
