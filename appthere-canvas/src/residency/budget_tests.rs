@@ -4,8 +4,9 @@
 //! Tests for the budget derivation. Extracted per the file-ceiling idiom.
 
 use super::{
-    BUDGET_BASELINE_BYTES, BUDGET_CEILING_BYTES, BUDGET_FLOOR_BYTES, BudgetInputs, BudgetSource,
-    SURVIVAL_CAP_BYTES, TextureBudget,
+    AVAILABLE_RAM_DIVISOR, BUDGET_BASELINE_BYTES, BUDGET_CEILING_BYTES, BUDGET_FLOOR_BYTES,
+    BudgetInputs, BudgetSource, SURVIVAL_AVAILABLE_RAM_DIVISOR, SURVIVAL_CAP_BYTES,
+    SURVIVAL_TOTAL_RAM_DIVISOR, TOTAL_RAM_DIVISOR, TextureBudget,
 };
 
 const GIB: u64 = 1024 * 1024 * 1024;
@@ -166,4 +167,88 @@ fn the_survival_ceiling_is_capped_absolutely_and_not_only_proportionally() {
         over.hard_ceiling_bytes() >= over.bytes(),
         "an explicit target above the cap must not end up above its own ceiling",
     );
+}
+
+/// **The two platform paths must not diverge silently.**
+///
+/// Linux reports *available* RAM and takes the `AVAILABLE_RAM_DIVISOR` path;
+/// macOS reports only *total* and takes `TOTAL_RAM_DIVISOR` (see
+/// `appthere_ui::device_probe` for why a guessed available is worse than none).
+/// The same physical machine should therefore land on comparable budgets under
+/// both — and nothing enforced that, so tuning either constant alone would move
+/// one platform and not the other, silently.
+///
+/// **The relation is `total = 2 x available`**, and it encodes a stated
+/// assumption: a loaded machine reports roughly half its RAM as available. That
+/// is Spec 06's design-floor calibration point — an 8 GiB machine with a browser
+/// and an OS resident reports ~4 GiB, and `4 GiB / 64` and `8 GiB / 128` are the
+/// same number by construction.
+///
+/// Pinned for the survival ceiling too, which carries the same pair (8 / 16).
+#[test]
+fn the_total_and_available_divisors_stay_calibrated_against_each_other() {
+    assert_eq!(
+        TOTAL_RAM_DIVISOR,
+        2 * AVAILABLE_RAM_DIVISOR,
+        "the total path assumes available is half of total; changing one \
+         divisor without the other makes Linux and macOS disagree about the \
+         same machine",
+    );
+    assert_eq!(
+        SURVIVAL_TOTAL_RAM_DIVISOR,
+        2 * SURVIVAL_AVAILABLE_RAM_DIVISOR,
+        "same relation, same reason, for the survival ceiling",
+    );
+}
+
+/// The relation asserted as the outcome it exists for: **one machine, two
+/// platforms, the same budget** — and a bounded disagreement when the machine is
+/// more or less loaded than the assumption.
+///
+/// The band is not a fudge factor; it is the assumption's own sensitivity. A
+/// budget from available is `T x r / 64` and from total is `T / 128`, so the
+/// ratio is exactly `2r`: an available fraction anywhere in 0.35-0.65 keeps the
+/// two platforms within 30% of each other, which is the honest statement of how
+/// much the platform split can cost.
+#[test]
+fn one_machine_lands_on_the_same_budget_whichever_figure_its_platform_reports() {
+    for gib in [4_u64, 8, 16, 32] {
+        let total = gib * GIB;
+        let from_total = TextureBudget::derive(BudgetInputs {
+            total_ram_bytes: Some(total),
+            ..BudgetInputs::default()
+        });
+        // The assumption, exactly: half the machine is available.
+        let from_available = TextureBudget::derive(BudgetInputs {
+            available_ram_bytes: Some(total / 2),
+            ..BudgetInputs::default()
+        });
+        assert_eq!(
+            from_total.bytes(),
+            from_available.bytes(),
+            "{gib} GiB: total path gave {} and available path gave {} — the two \
+             platforms disagree about one machine",
+            from_total.bytes(),
+            from_available.bytes(),
+        );
+        assert_eq!(
+            from_total.hard_ceiling_bytes(),
+            from_available.hard_ceiling_bytes(),
+            "{gib} GiB: the survival ceilings disagree",
+        );
+
+        // And the sensitivity, at the edges of a plausible load.
+        for pct in [35_u64, 65] {
+            let loaded = TextureBudget::derive(BudgetInputs {
+                available_ram_bytes: Some(total * pct / 100),
+                ..BudgetInputs::default()
+            });
+            let ratio = loaded.bytes() as f64 / from_total.bytes() as f64;
+            assert!(
+                (0.69..=1.31).contains(&ratio),
+                "{gib} GiB at {pct}% available: the available path is {ratio:.2}x \
+                 the total path, outside the band the calibration claims",
+            );
+        }
+    }
 }

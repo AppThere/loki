@@ -253,11 +253,30 @@ impl CustomPaintSource for LokiPageSource {
         self.texture_key = Some(want);
         self.texture_size = (w_phys, h_phys);
 
+        // Timed on **every** tile, not only the first (Spec 08 r54).
+        //
+        // This line already fires exactly on the events in question — a page
+        // re-entering the mount window is a `rendered` line — so carrying the two
+        // durations turns "is re-rasterisation perceptible?" from a design
+        // argument into a number the next screen session prints for free.
+        //
+        // The half that needs no measurement is already settled from source:
+        // this whole function is Blitz's paint callback, and both the scene build
+        // and `render_to_texture` run synchronously on the calling thread. **A
+        // re-raster blocks the frame that wants the tile.** What is unknown is
+        // only *how long*, and against a 16.7 ms frame these two numbers answer
+        // it directly.
+        //
+        // The first-tile line above stays: it carries Vello's one-time pipeline
+        // warm-up, so including it in a steady-state figure would overstate every
+        // later tile (L08-022's ordering hazard, in the small).
         tracing::debug!(
             page = self.page_index,
             w = w_phys,
             h = h_phys,
             raster_permille,
+            scene_build_ms = scene_ms,
+            gpu_render_ms = render_start.elapsed().as_secs_f64() * 1000.0,
             "LokiPageSource: rendered",
         );
 
