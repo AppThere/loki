@@ -20,12 +20,25 @@
 //! `editor_spell_place_tests.rs`, and that the wiring compiles and type-checks.
 //!
 //! **What is not:** that the menu appears where it should on a screen. Nothing in
-//! this environment can render it. The first observation of the session that can
-//! is the **scroll-drift check** — open the same menu with the editor scrolled to
-//! different positions — because a correct placement stays pinned to the word
-//! while an origin error drifts with the container, and those two are only
-//! separable while both are still in view. Judged "working" first, the
-//! distinction is gone.
+//! this environment can render it. The first observation of the next session is
+//! the **scroll-drift check**, and its procedure has to be stated precisely,
+//! because the obvious phrasing is ambiguous between two experiments that answer
+//! different questions:
+//!
+//! > **Open the menu fresh at several editor scroll positions** — same word,
+//! > different container offsets, closing and re-opening each time.
+//!
+//! **Not** "scroll while the menu is open". The per-frame anchor driver
+//! (`popover::interaction::on_anchor_change`) is not wired, so scrolling with the
+//! menu open leaves it where it was — and that is the *same visible symptom* as a
+//! coordinate-space error: menu and word separating as the document moves. The
+//! two are indistinguishable that way, and the wrong reading reports an origin
+//! defect that does not exist.
+//!
+//! Opening fresh isolates the conversion from the driver: each open re-reads the
+//! anchor, so a correct placement lands on the word at *every* scroll offset,
+//! while an origin error is displaced by the container's offset and therefore
+//! grows with it.
 //!
 //! # Why the migration fixes all three at once
 //!

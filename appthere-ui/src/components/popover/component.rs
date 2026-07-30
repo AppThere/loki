@@ -25,6 +25,31 @@ pub struct PopoverRequest {
     pub id: PopoverId,
     /// Where and how big — resolved by [`super::geometry::place`], never here.
     pub placement: PlacementRequest,
+    /// Called when a click lands outside the popover.
+    ///
+    /// # The backdrop belongs to the host, and r64 is why
+    ///
+    /// The spelling menu kept its own backdrop through the r63 migration, at
+    /// `z-index: 1000` inside the editor root — which has `position: relative`
+    /// and **no `z-index`**, so it creates no stacking context. The backdrop and
+    /// this host therefore competed in the same context, 1000 against 41, and
+    /// **the transparent backdrop painted over the menu**: correctly placed,
+    /// fully visible, and every click on a suggestion dismissing instead of
+    /// choosing it.
+    ///
+    /// That is exactly [`super::host::RootLayer`]'s hazard arriving by a path its
+    /// docs did not name — not two root children in the wrong DOM order, but a
+    /// backdrop left behind in the consumer while the popup moved to the root.
+    /// The remedy is the same: both layers at the root, ordered by DOM.
+    pub on_dismiss: Rc<dyn Fn()>,
+    /// Called when the pointer moves outside the popover, where a consumer needs
+    /// it.
+    ///
+    /// Blitz dispatches no `mouseleave` and honours no CSS `:hover`, so a menu
+    /// that tints the row under the pointer has no other way to learn the pointer
+    /// left. Optional because only hover-tinting consumers need it — discovered
+    /// by migrating the one that does.
+    pub on_outside_move: Option<Rc<dyn Fn()>>,
     /// What to render, as a **closure invoked during the host's render**.
     ///
     /// # Why not an `Element`
@@ -173,7 +198,24 @@ pub fn AtPopoverHost() -> Element {
     let Some(Placement { rect, .. }) = *ctx.resolved.read() else {
         return rsx! {};
     };
+    let dismiss = Rc::clone(&request.on_dismiss);
+    let outside_move = request.on_outside_move.clone();
     rsx! {
+        // Backdrop first: DOM order is what orders two children of the same
+        // positioned root, since `z-index` cannot arbitrate between them.
+        div {
+            style: format!(
+                "position: absolute; top: 0; left: 0; width: 100%; height: 100%; \
+                 z-index: {z};",
+                z = super::super::BACKDROP_Z_INDEX,
+            ),
+            onclick: move |_| dismiss(),
+            onmousemove: move |_| {
+                if let Some(f) = outside_move.as_ref() {
+                    f();
+                }
+            },
+        }
         div {
             style: format!(
                 "position: absolute; left: {left}px; top: {top}px; \

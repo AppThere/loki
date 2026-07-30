@@ -529,8 +529,9 @@ pub(super) fn EditorInner(path: String) -> Element {
     rsx! {
         div {
             style: format!(
-                // `position: relative` establishes the containing block for the
-                // floating spelling menu (an absolutely-positioned child).
+                // `position: relative`, and NO `z-index` — so no stacking
+                // context. The spelling menu left for `AtPopoverHost` in r63; the
+                // comment that named it as a child here outlived it by a commit.
                 "display: flex; flex-direction: column; flex: 1; position: relative; \
                  overflow: hidden; background: {bg}; font-family: {ff};",
                 bg = tokens::COLOR_SURFACE_BASE,

@@ -25,9 +25,9 @@
 //!
 //! # Touch target
 //!
-//! This component renders only the dismiss backdrop, which is not interactive in
-//! the 44 × 44 sense — it is a whole-area click target. The menu's rows carry the
-//! WCAG 2.5.8 minimum and are built in `editor_spell_panel`.
+//! This component renders **nothing** — both the menu and its dismiss backdrop
+//! are the host's, at the app root. The menu's rows carry the WCAG 2.5.8
+//! minimum and are built in `editor_spell_panel`.
 
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -72,15 +72,14 @@ impl PartialEq for SpellPopoverProps {
     }
 }
 
-/// Hands the spelling menu to the popover host, and renders the dismiss
-/// backdrop.
+/// Hands the spelling menu to the popover host.
 // PascalCase for rsx; `#[component]` cannot be used here — see the module docs.
 #[allow(non_snake_case)]
 pub(super) fn SpellPopover(props: SpellPopoverProps) -> Element {
     let popover = use_popover();
     let window = use_window_size();
     let insets = use_safe_area();
-    let mut spell_menu = props.spell_menu;
+    let spell_menu = props.spell_menu;
     let spell_hover = props.spell_hover;
 
     // The one write, and it is in an effect rather than in the render.
@@ -109,6 +108,23 @@ pub(super) fn SpellPopover(props: SpellPopoverProps) -> Element {
                 // block starts at the window origin, so no conversion — see
                 // `editor_spell_place`. The viewport is the host's to fill.
                 placement: spell_menu_placement(menu.anchor_x, menu.anchor_y),
+                // Both layers are the host's now (r64). Keeping the backdrop
+                // here put it at `z-index: 1000` inside an editor root that
+                // creates no stacking context, so it painted over a menu the
+                // host had placed correctly — every suggestion click dismissing
+                // rather than choosing.
+                on_dismiss: Rc::new(move || {
+                    let mut menu = spell_menu;
+                    menu.set(None);
+                }),
+                on_outside_move: Some(Rc::new(move || {
+                    // `Signal` is `Copy`, so a fresh binding inside the `Fn` gives
+                    // the mutable handle a `Fn` closure cannot capture.
+                    let mut hover = spell_hover;
+                    if hover.peek().is_some() {
+                        hover.set(None);
+                    }
+                })),
                 content: Rc::new(move || {
                     spell_menu_content(
                         Arc::clone(&doc_state),
@@ -125,22 +141,8 @@ pub(super) fn SpellPopover(props: SpellPopoverProps) -> Element {
         );
     });
 
-    // The backdrop stays here rather than moving to the host: it dismisses on an
-    // outside click, and `wiring::is_outside_dismiss` — which knows the anchor is
-    // not "outside" — is not wired yet either. Moving over it clears the hover
-    // highlight, since Blitz delivers no `mouseleave`.
-    rsx! {
-        div {
-            style: "position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000;",
-            onclick: move |_| { spell_menu.set(None); },
-            onmousemove: {
-                let mut spell_hover = spell_hover;
-                move |_| {
-                    if spell_hover.peek().is_some() {
-                        spell_hover.set(None);
-                    }
-                }
-            },
-        }
-    }
+    // Renders nothing: both the menu and its backdrop are the host's, at the app
+    // root. What is left here is the effect above — which is the whole reason
+    // this had to become a component.
+    rsx! {}
 }
