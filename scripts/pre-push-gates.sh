@@ -38,6 +38,7 @@ GATES=(
     check-no-panics.py
     check-pending-questions.py
     check-retracted-claims.py
+    check-root-layer-band.py
     check-suppressions.py
     check-todo-format.py
     check-unsafe-policy.py

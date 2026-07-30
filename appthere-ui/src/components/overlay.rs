@@ -21,6 +21,21 @@ use dioxus::prelude::*;
 /// render above this (the ribbon overflow menu uses 41).
 pub const BACKDROP_Z_INDEX: i32 = 40;
 
+/// This value is also the floor of the **reserved root-layer band**, enforced by
+/// `scripts/check-root-layer-band.py`.
+///
+/// The design system owns everything from here up: the backdrop at 40, the
+/// popover host at 41, the ribbon's overflow menu at 41 (deliberately above the
+/// backdrop so its controls stay clickable), and the modal dialogs at 2000+.
+/// **Application crates may not enter the band**, because a value there competes
+/// with a root layer in a stacking context the consumer cannot see — which is how
+/// a leftover backdrop at 1000 came to paint over a correctly-placed menu at 41
+/// and swallow every click meant to use it (Spec 08 r64).
+///
+/// The gate duplicates this number as a literal, and says so; if this moves, that
+/// moves.
+const _ROOT_LAYER_BAND_FLOOR: i32 = BACKDROP_Z_INDEX;
+
 /// Context handle for the window-level dismiss backdrop.
 #[derive(Clone, Copy)]
 pub struct AtBackdropContext {

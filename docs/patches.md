@@ -498,6 +498,34 @@ Recorded here because the failure mode is always the same: a call site that
 reads correctly against the spec and is wrong against the implementation, which
 no amount of care at the call site can catch.
 
+**Three of these have been found one at a time, each by a consumer walking into
+it rather than by anyone reading a list** — `position: fixed`, the coordinate
+swap, and the absent `mouseleave`. Each cost a debugging session. The list is the
+artifact rather than the individual entries: **before writing against a DOM
+behaviour in this stack, read this section.** The next consumer of mouse events
+will otherwise make the same inference from the same specification.
+
+### `mouseenter` / `mouseleave` are not dispatched, and CSS `:hover` does nothing
+
+**What the DOM guarantees:** a pointer entering and leaving an element produces
+`mouseenter`/`mouseleave`, and `:hover` styles apply for the duration.
+
+**What this stack does:** neither. Blitz dispatches no enter/leave pair and
+honours no `:hover` rule, so an element cannot learn that the pointer has left
+it.
+
+**The consequence, and the shape of the workaround:** hover state has to be
+tracked positively from `onmousemove` on each candidate element — entering a row
+sets its key — and cleared by a *sibling* that covers the area outside them. The
+spelling menu does exactly this, and it is why
+`PopoverRequest::on_outside_move` exists: when the menu's own backdrop moved to
+the popover host (r64), the clear signal had to move with it or the row tint
+would have stuck to whichever row the pointer last crossed.
+
+**Watch for:** any control whose appearance depends on the pointer being over it.
+It will look correct while the pointer is moving and wrong the moment it stops
+somewhere else, which reads as a repaint bug rather than a missing event.
+
 ### `clientX`/`clientY` are page coordinates, and `pageX`/`pageY` are missing
 
 **What the DOM guarantees:** `clientX/clientY` are **viewport**-relative and
