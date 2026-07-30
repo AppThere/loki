@@ -12,25 +12,48 @@
 //! click dismisses whatever the requester has open.
 //!
 //! The popup itself stays wherever the requester rendered it (anchored to its
-//! trigger) — only the backdrop is hosted at the window level. The popup must
-//! carry a `z-index` above [`BACKDROP_Z_INDEX`] to stay clickable.
+//! trigger) — only the backdrop is hosted at the window level.
+//!
+//! **That split does not work in this engine, and the ribbon overflow menu is
+//! the one consumer still relying on it.** A `z-index` above
+//! [`BACKDROP_Z_INDEX`] keeps a popup clickable only if the popup is a sibling
+//! of the backdrop; Blitz sorts siblings only, so a popup left in place is
+//! hit-tested *after* a root-hosted backdrop regardless of its value. The
+//! working arrangement is [`super::popover::AtPopoverHost`], which hosts both
+//! layers at the root — see the `TODO(popover-host)` in `ribbon::groups`.
 
 use dioxus::prelude::*;
 
-/// z-index of the backdrop click-catcher. Popups that use the backdrop must
-/// render above this (the ribbon overflow menu uses 41).
+/// z-index of the backdrop click-catcher.
+///
+/// A higher `z-index` on the popup only helps when the popup is a **sibling** of
+/// this backdrop — i.e. also hosted at the root. Blitz sorts each parent's
+/// children among themselves and has no stacking contexts, so a popup rendered in
+/// place cannot climb above a root-hosted backdrop no matter what value it
+/// carries. See the retraction on `_ROOT_LAYER_BAND_FLOOR`.
 pub const BACKDROP_Z_INDEX: i32 = 40;
 
 /// This value is also the floor of the **reserved root-layer band**, enforced by
 /// `scripts/check-root-layer-band.py`.
 ///
 /// The design system owns everything from here up: the backdrop at 40, the
-/// popover host at 41, the ribbon's overflow menu at 41 (deliberately above the
-/// backdrop so its controls stay clickable), and the modal dialogs at 2000+.
-/// **Application crates may not enter the band**, because a value there competes
-/// with a root layer in a stacking context the consumer cannot see — which is how
-/// a leftover backdrop at 1000 came to paint over a correctly-placed menu at 41
-/// and swallow every click meant to use it (Spec 08 r64).
+/// popover host at 41, the ribbon's overflow menu at 41, and the modal dialogs at
+/// 2000+. **Application crates may not enter the band.**
+///
+/// # The r64 rationale for the band is retracted; the band still earns its place
+///
+/// r64 said an app-crate value here "competes with a root layer in a stacking
+/// context the consumer cannot see". Blitz has **no stacking contexts**: each
+/// parent sorts its own `paint_children` by `z_index()` among siblings, and
+/// hit-testing walks that same list in reverse. Nothing below the root can
+/// outrank a root sibling, at any z-index — so the competition described never
+/// happens, and an app-crate 1000 is not dangerous for the stated reason.
+///
+/// What is true, and is worse: **a root-hosted layer outranks every application
+/// surface unconditionally.** That is why the band is reserved — not because app
+/// values win, but because they cannot, so a value up here is always a consumer
+/// that has misunderstood where its overlay lives. It also means a stale root
+/// layer is catastrophic rather than cosmetic, which is what r66 demonstrated.
 ///
 /// The gate duplicates this number as a literal, and says so; if this moves, that
 /// moves.

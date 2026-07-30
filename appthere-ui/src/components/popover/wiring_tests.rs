@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 AppThere Loki contributors
 
-//! The two wiring decisions, asserted as the failures a user would hit.
+//! The wiring decisions, asserted as the failures a user would hit.
 
 use super::super::geometry::Rect;
-use super::{is_outside_dismiss, open_response, OpenResponse, PopoverId};
+use super::{dismiss_on_unmount, is_outside_dismiss, open_response, OpenResponse, PopoverId};
 
 const POPOVER: Rect = Rect {
     x: 100.0,
@@ -105,4 +105,43 @@ fn the_same_target_carries_on() {
     let check = on_anchor_identity(AnchorKey(7), Some(AnchorKey(7)));
     assert_eq!(check, IdentityCheck::Same);
     assert!(!check.must_dismiss());
+}
+
+/// **The defect that killed the whole application.** `SpellPopover` is mounted
+/// behind `if spell_menu.read().is_some()`. Choosing a suggestion set that to
+/// `None`, the consumer unmounted, and the `use_effect` that was the only caller
+/// of `dismiss` went with it — so `open` stayed `Some` and the host kept
+/// rendering its window-sized backdrop, with nothing visible inside it. Every
+/// click in the application landed on that backdrop from then on.
+#[test]
+fn the_open_popovers_consumer_unmounting_closes_it() {
+    assert!(
+        dismiss_on_unmount(Some(PopoverId(1)), PopoverId(1)),
+        "the consumer that owns the open popover went away, so nothing is left \
+         to close it — leaving the host's backdrop over the whole application",
+    );
+}
+
+/// The polarity that makes the assertion above mean something (L08-045): keyed
+/// on the id, so it is not simply "always dismiss".
+///
+/// The case is real, not hypothetical — [`OpenResponse::DismissThenOpen`] means
+/// B can be open while A's consumer is still mounted, and A unmounting must not
+/// take B down with it. An unkeyed cleanup would produce a menu that vanishes
+/// because an unrelated component went away.
+#[test]
+fn a_different_popovers_consumer_unmounting_leaves_it_alone() {
+    assert!(
+        !dismiss_on_unmount(Some(PopoverId(2)), PopoverId(1)),
+        "popover 2 is open and 1's consumer unmounted — closing 2 here would be \
+         a menu disappearing for a reason the user cannot see",
+    );
+}
+
+/// The third polarity: nothing open is not a dismissal either. Without this the
+/// predicate could be `currently_open.is_none() || ...` and both tests above
+/// would still pass.
+#[test]
+fn unmounting_with_nothing_open_is_not_a_dismissal() {
+    assert!(!dismiss_on_unmount(None, PopoverId(1)));
 }

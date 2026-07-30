@@ -32,8 +32,8 @@
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use appthere_ui::components::popover::{PopoverId, PopoverRequest};
-use appthere_ui::{use_popover, use_safe_area, use_window_size};
+use appthere_ui::components::popover::{PopoverId, PopoverRequest, use_popover_anchor};
+use appthere_ui::{use_safe_area, use_window_size};
 use dioxus::prelude::*;
 use loki_app_shell::spell::SpellService;
 
@@ -76,7 +76,13 @@ impl PartialEq for SpellPopoverProps {
 // PascalCase for rsx; `#[component]` cannot be used here — see the module docs.
 #[allow(non_snake_case)]
 pub(super) fn SpellPopover(props: SpellPopoverProps) -> Element {
-    let popover = use_popover();
+    // `use_popover_anchor`, not `use_popover`: this component is mounted behind
+    // `if spell_menu.read().is_some()` in `editor_docked_panels`, so dismissing
+    // the menu unmounts it — and the effect below is the only thing that ever
+    // calls `dismiss`. Without the unmount cleanup this hook installs, `open`
+    // stayed `Some` forever and the host's window-sized backdrop was left over
+    // the whole application, swallowing every click while showing nothing (r66).
+    let popover = use_popover_anchor(SPELL_POPOVER_ID);
     let window = use_window_size();
     let insets = use_safe_area();
     let spell_menu = props.spell_menu;
@@ -90,29 +96,40 @@ pub(super) fn SpellPopover(props: SpellPopoverProps) -> Element {
     // is, the menu holds the position it opened at — which is the pre-migration
     // behaviour, so the migration does not regress it while not yet fixing it.
     use_effect(move || {
-        let Some(ctx) = popover else {
+        let Some(anchor) = popover else {
             return;
         };
         let Some(menu) = spell_menu.read().clone() else {
-            ctx.dismiss();
+            // Reached only if the signal clears while this component is still
+            // mounted; the ordinary path is the unmount cleanup in
+            // `use_popover_anchor`, because `editor_docked_panels` mounts this
+            // behind the same condition.
+            anchor.dismiss();
             return;
         };
         let doc_state = Arc::clone(&props.doc_state);
         let sync = props.sync;
         let service = props.service.clone();
         let is_language_panel_open = props.is_language_panel_open;
-        ctx.open_resolved(
+        anchor.open(
             PopoverRequest {
+                // Stamped by the anchor with the id passed to
+                // `use_popover_anchor`, so registration and open cannot disagree.
                 id: SPELL_POPOVER_ID,
                 // The click point is window-relative and the host's containing
                 // block starts at the window origin, so no conversion — see
                 // `editor_spell_place`. The viewport is the host's to fill.
                 placement: spell_menu_placement(menu.anchor_x, menu.anchor_y),
-                // Both layers are the host's now (r64). Keeping the backdrop
-                // here put it at `z-index: 1000` inside an editor root that
-                // creates no stacking context, so it painted over a menu the
-                // host had placed correctly — every suggestion click dismissing
-                // rather than choosing.
+                // Both layers are the host's now (r64) — one owner, one
+                // lifetime, and this is the backdrop the outside-click path
+                // consults.
+                //
+                // The r64 justification for it was wrong and is retracted: it
+                // said the leftover backdrop at 1000 "competed directly" with
+                // the host's 41 because the editor root creates no stacking
+                // context. Blitz creates none anywhere — z-index sorts siblings
+                // only — so the leftover, being inside `Router`, could never
+                // have outranked a root sibling. See `popover::anchor_scope`.
                 on_dismiss: Rc::new(move || {
                     let mut menu = spell_menu;
                     menu.set(None);

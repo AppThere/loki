@@ -27,20 +27,21 @@ pub struct PopoverRequest {
     pub placement: PlacementRequest,
     /// Called when a click lands outside the popover.
     ///
-    /// # The backdrop belongs to the host, and r64 is why
+    /// # The backdrop belongs to the host — and the r64 reason for it was wrong
     ///
-    /// The spelling menu kept its own backdrop through the r63 migration, at
-    /// `z-index: 1000` inside the editor root — which has `position: relative`
-    /// and **no `z-index`**, so it creates no stacking context. The backdrop and
-    /// this host therefore competed in the same context, 1000 against 41, and
-    /// **the transparent backdrop painted over the menu**: correctly placed,
-    /// fully visible, and every click on a suggestion dismissing instead of
-    /// choosing it.
+    /// One owner and one lifetime is the real reason: the backdrop is what the
+    /// outside-click path consults, and a backdrop outliving the popup it belongs
+    /// to is the r66 failure.
     ///
-    /// That is exactly [`super::host::RootLayer`]'s hazard arriving by a path its
-    /// docs did not name — not two root children in the wrong DOM order, but a
-    /// backdrop left behind in the consumer while the popup moved to the root.
-    /// The remedy is the same: both layers at the root, ordered by DOM.
+    /// **Retracted.** r64 said the spelling menu's leftover backdrop at
+    /// `z-index: 1000` "competed directly" with this host's 41 because the editor
+    /// root creates no stacking context. Blitz creates none *anywhere*:
+    /// `paint_children` is each parent's own layout children, sorted by
+    /// `z_index()` among **siblings only**, painted by walking that list and
+    /// hit-tested by walking it in reverse. A descendant's 1000 never meets a root
+    /// sibling's 41 — the entire `Router` subtree loses to any root sibling with a
+    /// higher z, at any value. So the predicted symptom could not have occurred,
+    /// and the one that did was a lifetime defect; see [`super::anchor_scope`].
     pub on_dismiss: Rc<dyn Fn()>,
     /// Called when the pointer moves outside the popover, where a consumer needs
     /// it.
@@ -132,7 +133,17 @@ impl AtPopoverContext {
     /// A `Modal` outcome stores no placement — the anchored form does not fit, and
     /// the consumer renders its own full-screen presentation. That is a change of
     /// form, not a suppression; see [`super::presentation`].
-    pub fn open_resolved(
+    ///
+    /// # `pub(crate)`: opening is reachable only through the anchor (r66)
+    ///
+    /// Consumers go through [`super::anchor_scope::PopoverAnchor::open`], which
+    /// exists only from [`super::anchor_scope::use_popover_anchor`], which
+    /// installs the unmount cleanup. Opening and closing had different owners
+    /// once, and a consumer that unmounted took its own `dismiss` call with it —
+    /// leaving the host's backdrop over a dead application. Making the opener
+    /// unreachable without the closer is what stops the other three consumers
+    /// repeating it (L08-043).
+    pub(crate) fn open_resolved(
         mut self,
         request: PopoverRequest,
         window: Option<(f64, f64)>,
@@ -149,11 +160,11 @@ impl AtPopoverContext {
         self.resolved.set(placement);
     }
 
-    /// Closes whatever is open.
-    pub fn dismiss(mut self) {
-        self.open.set(None);
-        self.resolved.set(None);
-    }
+    // There is deliberately **no unkeyed `dismiss`** (r66). One existed, and the
+    // singleton rule makes it a foot-gun: a consumer calling it after another
+    // popover replaced its own would close somebody else's menu, intermittently.
+    // Every dismissal goes through `dismiss_if_open`, which is keyed — including
+    // the per-frame driver's `AnchorScrolledAway` when that lands.
 }
 
 /// Provides popover state. Call at the app root, before mounting

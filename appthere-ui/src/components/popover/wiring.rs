@@ -74,6 +74,42 @@ pub fn open_response(currently_open: Option<PopoverId>, opening: PopoverId) -> O
     }
 }
 
+/// Whether an unmounting consumer should close what the host has open.
+///
+/// # The wiring [`super::interaction::DismissCause::AnchorUnmounted`] named and
+/// nobody supplied
+///
+/// That cause has documented this exact hazard since the primitive was written:
+/// root hosting decouples the popup's lifetime from its anchor's, so the anchor's
+/// cleanup must close it. It was a named decision with **no caller** — and a
+/// decision nothing calls is indistinguishable from one nobody made.
+///
+/// What it cost: `SpellPopover` is mounted `if spell_menu.read().is_some()`, so
+/// choosing a suggestion set the signal to `None`, the consumer unmounted, and
+/// its `use_effect` — the only thing that ever called `dismiss` — was gone with
+/// it. `open` stayed `Some` forever. The menu still *vanished*, because the
+/// content closure reads the same signal and renders nothing, so what was left on
+/// screen was the host's **backdrop alone**: transparent, window-sized, and a
+/// root sibling at `z-index` 40. Every subsequent click in the application hit it
+/// — editor, scrollbar, tab bar — and clicking it called `on_dismiss`, which set
+/// an already-`None` signal and changed nothing. The application was
+/// unrecoverably dead to input, from one right-click on a misspelled word.
+///
+/// # Why it is keyed on the id
+///
+/// Unconditionally dismissing on unmount would be wrong in the case the
+/// singleton rule creates: opening popover B dismisses A
+/// ([`OpenResponse::DismissThenOpen`]), and if A's consumer then unmounts, an
+/// unkeyed cleanup would close **B** — a menu vanishing because an unrelated
+/// component went away, which is worse than the bug it fixes because it is
+/// intermittent.
+///
+/// So: close it only when the thing going away is the thing that is open.
+#[must_use]
+pub fn dismiss_on_unmount(currently_open: Option<PopoverId>, unmounting: PopoverId) -> bool {
+    currently_open == Some(unmounting)
+}
+
 #[cfg(test)]
 #[path = "wiring_tests.rs"]
 mod tests;

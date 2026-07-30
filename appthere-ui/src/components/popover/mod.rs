@@ -40,7 +40,13 @@
 //!   [`interaction::DismissCause::AnchorUnmounted`] — otherwise a navigation
 //!   leaves a menu outliving the screen it belongs to. Nothing else covers it:
 //!   `AnchorScrolledAway` and [`wiring::IdentityCheck`] both assume the list
-//!   still exists.
+//!   still exists. **Wired by [`anchor_scope::use_popover_anchor`] (r66) — and
+//!   unwired it cost the whole application.** A conditionally-mounted consumer
+//!   took its own `dismiss` call away when it unmounted, leaving the host's
+//!   window-sized backdrop up with nothing visible inside it, swallowing every
+//!   click in the editor, the scrollbar and the tab bar. The cause was documented
+//!   here from the start and had no caller, which is why the remedy is a hook
+//!   that installs the cleanup as a condition of getting the context.
 //! - **Root layer order.** [`host::RootLayer`] — `z-index` cannot arbitrate
 //!   between two children of the positioned root, so DOM order does, and a
 //!   backdrop painting over its own popup reads as a dead menu.
@@ -86,6 +92,7 @@
 //!   see [`dismiss_order`], which returns the sequence rather than leaving the
 //!   order to whichever line was typed first.
 
+pub mod anchor_scope;
 pub mod component;
 pub mod dismiss_order;
 pub mod geometry;
@@ -94,6 +101,7 @@ pub mod interaction;
 pub mod presentation;
 pub mod wiring;
 
+pub use anchor_scope::{use_popover_anchor, PopoverAnchor};
 pub use component::{
     use_popover, use_provide_popover, AtPopoverContext, AtPopoverHost, PopoverRequest,
 };
@@ -108,6 +116,6 @@ pub use presentation::{
     present, Presentation, MENU_ROW_HEIGHT_PX, MIN_ANCHORED_HEIGHT_PX, MIN_ANCHORED_MENU_PX,
 };
 pub use wiring::{
-    is_outside_dismiss, on_anchor_identity, open_response, AnchorKey, IdentityCheck, OpenResponse,
-    PopoverId,
+    dismiss_on_unmount, is_outside_dismiss, on_anchor_identity, open_response, AnchorKey,
+    IdentityCheck, OpenResponse, PopoverId,
 };

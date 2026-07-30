@@ -141,10 +141,20 @@ pub fn AtRibbonGroups(
                     // is confirmed working in the current Blitz stack (see CLAUDE.md).
                     //
                     // Dismissal: outside-click via the window-level backdrop host
-                    // (raised in `set_menu_open`; the menu's z-index 41 sits above
-                    // `BACKDROP_Z_INDEX` 40 so its own controls stay clickable),
-                    // plus the More-button toggle and the auto-close on a widen
-                    // that removes the overflow.
+                    // (raised in `set_menu_open`), plus the More-button toggle and
+                    // the auto-close on a widen that removes the overflow.
+                    //
+                    // TODO(popover-host): the claim that "the menu's z-index 41
+                    // sits above `BACKDROP_Z_INDEX` 40 so its own controls stay
+                    // clickable" is **wrong and is retracted**. Blitz sorts
+                    // `paint_children` by z-index among siblings only — there are
+                    // no stacking contexts — and hit-tests the same list in
+                    // reverse. This menu is deep inside `Router`; the backdrop is
+                    // a root sibling. The backdrop is therefore hit first and
+                    // these controls are NOT clickable while it is raised. The fix
+                    // is to host this menu in `AtPopoverHost` like the spelling
+                    // menu (T4.2's work); the 41 is inert either way, since no
+                    // sibling here competes with it.
                     div {
                         style: format!(
                             "position: absolute; bottom: 100%; right: 0; z-index: 41; \
