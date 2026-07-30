@@ -212,6 +212,15 @@ pub struct DeviceProfile {
     /// `SPI_GETCLIENTAREAANIMATION`, macOS
     /// `accessibilityDisplayShouldReduceMotion`. Until then this is only ever
     /// set by an explicit user preference, and defaults to full motion.
+    /// **Never written and never read** (inventoried Spec 08 r61): the only
+    /// other mention in the workspace is prose. So it is not "the profile knows
+    /// about reduced motion" — it is a field nobody fills and nobody consults,
+    /// which reads as a capability from the outside.
+    ///
+    /// Kept rather than deleted because the scroll animator is its obvious
+    /// consumer and Phase 3 touches it. But **a reader must not take its
+    /// presence as evidence the platform preference is observed** — nothing
+    /// observes it, on any platform.
     pub reduced_motion: bool,
 }
 
