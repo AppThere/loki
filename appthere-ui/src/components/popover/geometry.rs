@@ -273,6 +273,10 @@ pub struct Placement {
     pub clamped: bool,
 }
 
+#[path = "geometry_viewport.rs"]
+mod viewport;
+pub use viewport::usable_viewport;
+
 #[path = "geometry_place.rs"]
 mod place_impl;
 pub use place_impl::place;

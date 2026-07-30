@@ -61,10 +61,10 @@ use crate::routes::editor::editor_spell::{
     SpellMenu, SpellSync, add_to_dictionary, ignore_word, replace_word,
 };
 
-// One definition, in the module that computes placement from them — the panel
-// and the placement disagreeing about the menu's width would put the flip and
-// the render out of step, and the disagreement would look like a placement bug.
-use super::editor_spell_place::{EDGE_MARGIN_PX, MENU_MAX_HEIGHT_PX, MENU_WIDTH_PX};
+// The width, max height and edge margin now live only in `editor_spell_place`,
+// which is where they belong: the host sizes the container from the resolved
+// placement, so a constant used here as well would be a second opinion about the
+// same measurement.
 
 /// Renders the floating suggestions menu when `spell_menu` is `Some`.
 ///
@@ -72,52 +72,41 @@ use super::editor_spell_place::{EDGE_MARGIN_PX, MENU_MAX_HEIGHT_PX, MENU_WIDTH_P
 /// Blitz dispatches no `mouseenter`/`mouseleave` (and no CSS `:hover`), so hover
 /// is tracked from `onmousemove` on each row — entering a row sets its key,
 /// moving over the backdrop clears it — and applied as an inline background.
-pub(super) fn spelling_panel(
+/// The menu's **content**, with no position of its own (Spec 08 T4.1, r63).
+///
+/// # What left this function, and why that is the migration
+///
+/// It used to place itself — a horizontal clamp against the editor's measured
+/// width, `anchor_y.max(0.0)` vertically, and a backdrop at `z-index: 1000`. All
+/// three of the defects recorded above lived in those four lines. Placement is
+/// now `editor_spell_place` → `popover::place`, resolved once by
+/// `AtPopoverContext::open_resolved` and rendered by `AtPopoverHost` at the app
+/// root, which is outside every clipping ancestor and in the same coordinate
+/// space as the click.
+///
+/// So this builds rows and nothing else. It is **invoked by the host during the
+/// host's render** (see `PopoverRequest::content`), which is what keeps the row
+/// highlight live: reading `spell_hover` here subscribes the host, so a pointer
+/// move re-renders the menu.
+pub(super) fn spell_menu_content(
     doc_state: Arc<Mutex<DocumentState>>,
     sync: SpellSync,
     service: SpellService,
     mut spell_menu: Signal<Option<SpellMenu>>,
     mut is_language_panel_open: Signal<bool>,
-    viewport_width: f32,
     spell_hover: Signal<Option<String>>,
 ) -> Element {
     let Some(menu) = spell_menu.read().clone() else {
         return rsx! {};
     };
 
-    // Clamp horizontally so the menu never spills off the measured viewport's
-    // right edge.
-    let max_left = (viewport_width - MENU_WIDTH_PX - EDGE_MARGIN_PX).max(0.0);
-    let left = menu.anchor_x.clamp(0.0, max_left);
-    let top = menu.anchor_y.max(0.0);
-
     rsx! {
-        // Backdrop: a transparent full-area layer that dismisses on click.
-        // Moving over it (i.e. off any row) clears the hover highlight, since
-        // Blitz delivers no `mouseleave`.
-        div {
-            style: "position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000;",
-            onclick: move |_| { spell_menu.set(None); },
-            onmousemove: {
-                let mut spell_hover = spell_hover;
-                move |_| {
-                    if spell_hover.peek().is_some() {
-                        spell_hover.set(None);
-                    }
-                }
-            },
-        }
-
-        // The menu itself, anchored at the cursor.
         div {
             style: format!(
-                "position: absolute; left: {left}px; top: {top}px; z-index: 1001; \
-                 width: {w}px; max-height: {mh}px; box-sizing: border-box; \
+                "width: 100%; box-sizing: border-box; \
                  display: flex; flex-direction: column; \
                  background: {bg}; border: 1px solid {border}; border-radius: 6px; \
-                 overflow-y: auto; overflow-x: hidden; padding: {pad}px;",
-                w = MENU_WIDTH_PX,
-                mh = MENU_MAX_HEIGHT_PX,
+                 overflow-x: hidden; padding: {pad}px;",
                 bg = tokens::COLOR_SURFACE_1,
                 border = tokens::COLOR_BORDER_CHROME,
                 pad = tokens::SPACE_2,

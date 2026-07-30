@@ -98,7 +98,7 @@ pub use component::{
     use_popover, use_provide_popover, AtPopoverContext, AtPopoverHost, PopoverRequest,
 };
 pub use dismiss_order::{dismiss_sequence, DismissStep};
-pub use geometry::{place, Align, Placement, PlacementRequest, Rect, Side};
+pub use geometry::{place, usable_viewport, Align, Placement, PlacementRequest, Rect, Side};
 pub use host::RootLayer;
 pub use interaction::{
     anchor_is_anchorable, focus_after_dismiss, on_anchor_change, repositions, reset_repositions,

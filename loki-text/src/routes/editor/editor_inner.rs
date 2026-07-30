@@ -660,7 +660,6 @@ pub(super) fn EditorInner(path: String) -> Element {
                 is_language_panel_open,
                 language_status,
                 spell_hover,
-                scroll_metrics().client_width,
                 link_draft,
             )}
 

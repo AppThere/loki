@@ -17,7 +17,7 @@ use loki_app_shell::spell::SpellService;
 use super::editor_insert_panel::{InsertLinkSync, insert_link_panel};
 use super::editor_language_panel::language_panel;
 use super::editor_spell::{SpellMenu, SpellSync};
-use super::editor_spell_panel::spelling_panel;
+use super::editor_spell_popover::{SpellPopover, SpellPopoverProps};
 use crate::editing::cursor::CursorState;
 use crate::editing::state::DocumentState;
 
@@ -71,7 +71,6 @@ pub(super) fn docked_panels(
     is_language_panel_open: Signal<bool>,
     language_status: Signal<Option<String>>,
     spell_hover: Signal<Option<String>>,
-    client_width: f32,
     link_draft: Signal<Option<String>>,
 ) -> Element {
     let ds_lang = Arc::clone(&doc_state);
@@ -84,16 +83,19 @@ pub(super) fn docked_panels(
         can_redo: sync.can_redo,
     };
     rsx! {
+        // ADR-0013 compliant, and the first of the seven (I-27): a component, so
+        // it has the hook scope the popover handover needs.
         if spell_menu.read().is_some() {
-            {spelling_panel(
-                doc_state,
-                spell_sync,
-                spell_service.clone(),
-                spell_menu,
-                is_language_panel_open,
-                client_width,
-                spell_hover,
-            )}
+            SpellPopover {
+                ..SpellPopoverProps {
+                    doc_state,
+                    sync: spell_sync,
+                    service: spell_service.clone(),
+                    spell_menu,
+                    is_language_panel_open,
+                    spell_hover,
+                }
+            }
         }
         if is_language_panel_open() {
             {language_panel(

@@ -6,24 +6,50 @@
 //! Each names the pre-migration behaviour it replaces, with the measurement that
 //! established it, so a later reader can tell a fix from a coincidence.
 //!
-//! # These are green and the defects are **not closed**
+//! # The viewport comes from the host's own rule
 //!
-//! `spell_menu_placement` has no caller (see the module's status section), so
-//! everything below is a property of a function that is not in the product. All
-//! three defects are live in the shipping app; what is established here is that
-//! the reroute has somewhere correct to land.
+//! `spell_menu_placement` no longer takes a window size: the host fills the
+//! viewport (r63). So these tests call `usable_viewport` — the *same* function the
+//! host calls — rather than computing window-minus-insets themselves, which would
+//! be a second derivation of the rule under test (L08-029).
 //!
-//! Stated at the top rather than in a footnote because the failure mode is a
-//! reader seeing three green defect tests and stopping — which is the same
-//! mistake as "the proven popup", one level up.
+//! # Rerouted (r63) — so these now guard code that runs
+//!
+//! Until r63 this header said the opposite, and had to: `spell_menu_placement`
+//! had no caller, so every assertion below was a property of a function outside
+//! the product. `editor_spell_popover` calls it now, and `AtPopoverHost` renders
+//! the result.
+//!
+//! **What that changes and what it does not.** These tests establish the
+//! placement *arithmetic*, and now that the arithmetic is reachable they also
+//! constrain the product. They still cannot see a screen: whether the menu
+//! appears where this says it should is the scroll-drift check's business, and
+//! that check has to run before the migration is judged working — see the module
+//! docs for why the two outcomes stop being separable afterwards.
 
 use appthere_ui::SafeAreaInsets;
-use appthere_ui::components::popover::{Side, place};
+use appthere_ui::components::popover::{Side, place, usable_viewport};
 
 use super::spell_menu_placement;
 
 /// A 1280×800 desktop window with no insets.
 const WINDOW: (f32, f32) = (1280.0, 800.0);
+
+/// A request as the host would resolve it: the consumer's anchor and
+/// preferences, with the viewport filled by the shared rule.
+fn placed_at(
+    x: f32,
+    y: f32,
+    insets: SafeAreaInsets,
+) -> appthere_ui::components::popover::PlacementRequest {
+    let mut req = spell_menu_placement(x, y);
+    req.viewport = usable_viewport(
+        Some((f64::from(WINDOW.0), f64::from(WINDOW.1))),
+        insets,
+        req.viewport,
+    );
+    req
+}
 
 fn desktop() -> SafeAreaInsets {
     SafeAreaInsets::default()
@@ -48,7 +74,7 @@ fn android() -> SafeAreaInsets {
 /// be the click plus the deliberate caret gap and height — and nothing else.
 #[test]
 fn the_menu_top_is_the_click_plus_only_the_deliberate_gap() {
-    let req = spell_menu_placement(400.0, 300.0, WINDOW, desktop());
+    let req = placed_at(400.0, 300.0, desktop());
     let p = place(req);
     assert_eq!(
         p.side,
@@ -74,7 +100,7 @@ fn the_menu_top_is_the_click_plus_only_the_deliberate_gap() {
 /// menu below the fold, because viewport height was never a parameter.
 #[test]
 fn a_click_near_the_bottom_opens_upward_and_stays_on_screen() {
-    let req = spell_menu_placement(400.0, 760.0, WINDOW, desktop());
+    let req = placed_at(400.0, 760.0, desktop());
     let room_below = req.viewport.bottom() - req.anchor.bottom() - req.gap - req.margin;
     assert!(
         room_below < req.height,
@@ -100,7 +126,7 @@ fn a_click_near_the_bottom_opens_upward_and_stays_on_screen() {
 /// shown not to have regressed it.
 #[test]
 fn a_click_near_the_right_edge_stays_on_screen() {
-    let req = spell_menu_placement(1250.0, 300.0, WINDOW, desktop());
+    let req = placed_at(1250.0, 300.0, desktop());
     assert!(
         req.anchor.x + req.width > req.viewport.right() - req.margin,
         "fixture must push the aligned menu past the right edge",
@@ -118,7 +144,7 @@ fn the_menu_stays_clear_of_the_system_insets() {
     let insets = android();
     // A click as close to each edge as the content area allows.
     for (x, y) in [(2.0_f32, 2.0_f32), (1270.0, 790.0)] {
-        let req = spell_menu_placement(x, y, WINDOW, insets);
+        let req = placed_at(x, y, insets);
         let p = place(req);
         assert!(
             p.rect.y >= insets.top,
@@ -141,7 +167,7 @@ fn the_menu_is_on_screen_wherever_the_click_lands() {
     for insets in [desktop(), android()] {
         for cx in 0..=64 {
             for cy in 0..=40 {
-                let req = spell_menu_placement(cx as f32 * 20.0, cy as f32 * 20.0, WINDOW, insets);
+                let req = placed_at(cx as f32 * 20.0, cy as f32 * 20.0, insets);
                 let p = place(req);
                 assert!(
                     p.rect.is_inside(req.viewport),
@@ -160,7 +186,7 @@ fn the_menu_is_on_screen_wherever_the_click_lands() {
 #[test]
 fn the_menu_never_covers_the_caret_it_belongs_to() {
     for cy in 0..=40 {
-        let req = spell_menu_placement(400.0, cy as f32 * 20.0, WINDOW, desktop());
+        let req = placed_at(400.0, cy as f32 * 20.0, desktop());
         let p = place(req);
         assert!(
             !p.rect.covers_vertically_open(req.anchor),

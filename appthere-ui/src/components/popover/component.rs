@@ -114,7 +114,8 @@ impl AtPopoverContext {
         insets: crate::SafeAreaInsets,
     ) {
         let mut filled = request.clone();
-        filled.placement.viewport = viewport_rect(window, insets, request.placement.viewport);
+        filled.placement.viewport =
+            super::geometry::usable_viewport(window, insets, request.placement.viewport);
         let placement = match super::presentation::present(filled.placement) {
             super::presentation::Presentation::Anchored(p) => Some(p),
             super::presentation::Presentation::Modal => None,
@@ -127,30 +128,6 @@ impl AtPopoverContext {
     pub fn dismiss(mut self) {
         self.open.set(None);
         self.resolved.set(None);
-    }
-}
-
-/// The usable window rect, or `fallback` where the window has not been measured.
-///
-/// `None` and `(0, 0)` are both "not measured": the first means nobody is
-/// publishing, the second that the sensor has not reported yet. Both keep the
-/// caller's own viewport rather than clamping into a zero rect, because on the
-/// first frame that is the difference between a menu where the consumer asked and
-/// a menu at the origin.
-#[must_use]
-fn viewport_rect(
-    window: Option<(f64, f64)>,
-    insets: crate::SafeAreaInsets,
-    fallback: super::geometry::Rect,
-) -> super::geometry::Rect {
-    match window {
-        Some((w, h)) if w > 0.0 && h > 0.0 => super::geometry::Rect::new(
-            insets.left,
-            insets.top,
-            (w as f32 - insets.left - insets.right).max(0.0),
-            (h as f32 - insets.top - insets.bottom).max(0.0),
-        ),
-        _ => fallback,
     }
 }
 
