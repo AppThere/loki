@@ -44,6 +44,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from gate_source import code_only
+
 REPO = Path(__file__).resolve().parent.parent
 BASELINE_FILE = REPO / "scripts" / "suppressions-baseline.txt"
 
@@ -73,7 +75,11 @@ def is_test(rel: str) -> bool:
 
 
 def counts_for(text: str) -> tuple[int, int]:
-    return len(LET_UNDERSCORE.findall(text)), len(ALLOW.findall(text))
+    # Comments and string literals stripped first: this gate's own historical
+    # false positive was a *comment about* `let _ =` (Spec 08 §8), which is the
+    # shape `gate_source` exists to remove once rather than per gate.
+    code = code_only(text)
+    return len(LET_UNDERSCORE.findall(code)), len(ALLOW.findall(code))
 
 
 def production_files() -> dict[str, tuple[int, int]]:

@@ -212,15 +212,25 @@ pub struct DeviceProfile {
     /// `SPI_GETCLIENTAREAANIMATION`, macOS
     /// `accessibilityDisplayShouldReduceMotion`. Until then this is only ever
     /// set by an explicit user preference, and defaults to full motion.
-    /// **Never written and never read** (inventoried Spec 08 r61): the only
-    /// other mention in the workspace is prose. So it is not "the profile knows
-    /// about reduced motion" — it is a field nobody fills and nobody consults,
-    /// which reads as a capability from the outside.
+    /// **Never written and never read — Spec 08 I-26.** Inventoried r61: the only
+    /// other mention of this field in the workspace is prose. So it is not "the
+    /// profile knows about reduced motion", it is a field nobody fills and nobody
+    /// consults, which from the outside reads as a capability.
     ///
-    /// Kept rather than deleted because the scroll animator is its obvious
-    /// consumer and Phase 3 touches it. But **a reader must not take its
-    /// presence as evidence the platform preference is observed** — nothing
-    /// observes it, on any platform.
+    /// # Why this one is worse than the other unwired probes
+    ///
+    /// `has_hover` and `hardware_keyboard` are also unwired, and absence there is
+    /// at least honest — nothing claims the app adapts. This field names an
+    /// **accessibility preference the system may be actively signalling**, and its
+    /// presence implies the signal is honoured. Someone with vestibular
+    /// sensitivity who has set that preference gets the animation anyway, and the
+    /// code that would tell you otherwise reads as though it wouldn't.
+    ///
+    /// Kept rather than deleted: T1.1's animation driver is its consumer and
+    /// Phase 5's zoom animation will be a second, so the field is where it
+    /// belongs and only the wiring is missing. **A reader must not take its
+    /// presence as evidence the preference is observed** — nothing observes it,
+    /// on any platform.
     pub reduced_motion: bool,
 }
 

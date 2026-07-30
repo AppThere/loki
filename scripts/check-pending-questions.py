@@ -48,6 +48,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from gate_source import is_prose_line
+
 REPO = Path(__file__).resolve().parent.parent
 REGISTER = REPO / "scripts" / "pending-questions.txt"
 
@@ -79,12 +81,11 @@ def rows() -> list[tuple[str, str, str, str, int]]:
     return out
 
 
-# A comment naming an instrument is not the instrument. The first draft of this
-# gate matched anywhere and fired on its own TODO comments, an OOXML schema and a
-# spike write-up — reporting three arrivals, none of them built. Prose that names
-# what is missing is exactly what an open question *looks* like, so matching it is
-# the failure mode rather than an edge case.
-COMMENT = re.compile(r"^\s*(//|#|\*|<!--)")
+# A comment naming an instrument is not the instrument. This gate's first draft
+# matched anywhere and fired on its own TODO comments, an OOXML schema and a spike
+# write-up — three arrivals, none built. Prose that names a missing instrument is
+# exactly what an open question looks like, so the exclusion is shared with every
+# other source-scanning gate rather than re-derived here (`gate_source`).
 
 
 def instrument_exists(glob: str, pattern: str) -> list[str]:
@@ -104,7 +105,7 @@ def instrument_exists(glob: str, pattern: str) -> list[str]:
         parts = line.split(":", 2)
         if len(parts) < 3 or parts[0] == SELF:
             continue
-        if COMMENT.match(parts[2]):
+        if is_prose_line(parts[2]):
             continue
         hits.append(f"{parts[0]}:{parts[1]}")
     return hits
