@@ -39,6 +39,29 @@ pub(super) struct DockedSync {
 
 /// Renders the spelling suggestions menu, the language picker, and the Insert
 /// hyperlink panel. Each self-gates on its trigger signal.
+///
+/// # ADR-0013 is violated here, and by six siblings — Spec 08 I-27
+///
+/// Every panel below is mounted as `if cond { plain_function(..) }`, which
+/// ADR-0013 forbids: only a component owns a hook scope, so a plain function
+/// cannot call `use_breakpoint()` and cannot adapt its posture without a
+/// `compact` flag threaded from here.
+///
+/// **Swept r62 rather than assumed local**: seven conditionally-mounted panels
+/// are plain functions — spelling, language, insert-link, publish, metadata,
+/// style-picker and style-editor — and `AtPanelHost`, the host the ADR names as
+/// the sanctioned boundary, has **zero consumers** in this crate. So the ADR's
+/// own remedy is unwired, which is the fourth instance of a capability that
+/// reached nobody.
+///
+/// The cause is dates: ADR-0013 is 2026-06-30 and these panels predate it by a
+/// day or more. **An ADR that arrives after the code needs a sweep, and nothing
+/// swept.**
+///
+/// T4.1's spell-panel migration is the forcing function for the first one —
+/// pushing a popover request is a signal write, which cannot happen during a
+/// plain function's render — so that conversion is **compliance the migration
+/// exposes, not new scope**. The other six are I-27 and not this session's work.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn docked_panels(
     doc_state: Arc<Mutex<DocumentState>>,

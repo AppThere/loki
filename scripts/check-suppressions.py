@@ -49,6 +49,23 @@ from gate_source import code_only
 REPO = Path(__file__).resolve().parent.parent
 BASELINE_FILE = REPO / "scripts" / "suppressions-baseline.txt"
 
+# Largest single-commit fall in either total this gate will accept without being
+# told to.
+#
+# # Why a downward guard on a ratchet whose whole point is downward
+#
+# Down was safe because down meant the debt went away. It does not always: when
+# `gate_source` first stripped a bare `#` as a comment, every `#[allow(…)]` line
+# became prose and this gate's allow count fell from 188 to **zero** — and it
+# reported that as a hundred files' debt cheerfully resolved. **A gate reporting
+# improvement is the one nobody double-checks.** It was caught by wanting a
+# number for a commit message, which is not a control.
+#
+# 15% in one commit is either a real sweep — in which case you are running
+# `--update` anyway and can say `--accept-collapse` — or a broken detector. Both
+# deserve a human; only one of them deserves a green build.
+MAX_COLLAPSE_FRACTION = 0.15
+
 # `let _ = …` (optionally typed: `let _: T = …`). Anchored at a statement
 # boundary so `slet _ =` / identifiers ending in "let" do not match.
 LET_UNDERSCORE = re.compile(r"(?<![\w])let\s+_\s*(?::[^=]+)?=")
@@ -137,14 +154,43 @@ def write_baseline(counts: dict[str, tuple[int, int]]) -> None:
     )
 
 
+def collapse_report(
+    baseline: dict[str, tuple[int, int]], counts: dict[str, tuple[int, int]]
+) -> str | None:
+    """A message when either total fell implausibly far, else `None`."""
+    base_l = sum(l for l, _ in baseline.values())
+    base_a = sum(a for _, a in baseline.values())
+    now_l = sum(l for l, _ in counts.values())
+    now_a = sum(a for _, a in counts.values())
+    for name, was, now in (("`let _ =`", base_l, now_l), ("allow/expect", base_a, now_a)):
+        if was > 0 and now < was * (1.0 - MAX_COLLAPSE_FRACTION):
+            fell = (was - now) * 100 // was
+            return (
+                f"{name} fell {fell}% in one step ({was} to {now}), past the "
+                f"{int(MAX_COLLAPSE_FRACTION * 100)}% this gate accepts unasked. "
+                f"That is either a real sweep or a **broken detector** — the "
+                f"second is what happened the one time it fired, and it looked "
+                f"exactly like the first. If the debt genuinely went away, run "
+                f"`--update --accept-collapse`."
+            )
+    return None
+
+
 def main() -> int:
     counts = production_files()
+    baseline = load_baseline()
+    collapse = collapse_report(baseline, counts)
+
     if "--update" in sys.argv:
+        if collapse and "--accept-collapse" not in sys.argv:
+            print(f"Refusing to rewrite the baseline:\n\n  ✗ {collapse}")
+            return 1
         write_baseline(counts)
         return 0
 
-    baseline = load_baseline()
     failures: list[str] = []
+    if collapse:
+        failures.append(collapse)
 
     for rel, (lets, allows) in sorted(counts.items()):
         base = baseline.get(rel)
