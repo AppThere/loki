@@ -39,6 +39,63 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 
 ---
 
+## Evidence discipline — six rules, read in full
+
+These compress ~15 ledger entries accumulated across Specs 08/09 (L08-029, -031,
+-041, -043, -044, -045, -046, -047, -048, -049, -050; L9-011, -019). **The
+individual entries hold the provenance; this is what gets carried forward.**
+
+They live here rather than in a spec because the ledger has two populations with
+different failure modes. The *mechanical* rules survive on their own — a gate
+enforces them. The rules below are about how a conclusion gets formed, so almost
+none of them can be gated, and they survive only by being read. A session that
+samples the recent ones and whichever a prompt happens to quote is running the
+oldest and most general as decoration — ADR-0013's failure shape applied to the
+ledger itself.
+
+1. **Report in three registers: Observed / Not established / What would settle
+   it.** The third is not optional — a finding without a discriminating next step
+   is an opinion. Say plainly when something is a workaround, partial, or
+   unverified.
+
+2. **An assertion the defect passes is not coverage.** Invert every predicate: if
+   nothing fails, coverage is one-sided. Mutate the code: if no test dies, the
+   test asserts nothing. Mutate the *guard* too — a precondition must be **false**
+   in a scenario where the bug cannot occur, or it is a description, not a
+   precondition. Breadth is not discrimination; the number of cases is not
+   evidence, the inversion is.
+
+3. **Instruments fail four ways, and three survive the checks that catch the
+   others**: one that cannot speak where the hazard is; one that speaks only
+   where the question is already settled; one whose own setup silences its
+   subject (so establish the phenomenon is reachable *without* a control before
+   using the control to reveal it); and one that speaks, correctly placed, about
+   a quantity *adjacent* to the one asked for. Before attributing a behaviour,
+   list the instruments that already report it — computing an attribution when a
+   direct report was available and unread is the common error.
+
+4. **One fact, one derivation — and a name that asserts a property it lacks is a
+   defect.** Two sources for one input drift silently; so do two copies of one
+   layout constant. Rename rather than fence. This applies to *predicates* too: a
+   name asking one question while its only caller needs another agrees everywhere
+   except where it matters.
+
+5. **Make the wrong thing unavailable rather than documented.** "Do not reorder
+   these" was followed and the defect happened anyway, on a branch the instruction
+   did not cover. Prefer a type, a constructor, or a hook that installs the
+   obligation as a condition of getting the capability. And a gate that reports
+   *improvement* is the one nobody double-checks — a counting gate needs a floor
+   as well as a ceiling.
+
+6. **Reachable-but-unimplemented is a defect; unreachable-and-marked is a
+   deferral.** A produced-but-unhandled outcome is a live inconsistency; a parked
+   one costs only its own tests. They have the same reference count, so only the
+   marking separates parked from forgotten — and the marking must be mechanical,
+   because a comment decays. Likewise, an instrument landing is retroactive
+   evidence: it re-opens the decisions taken while it was missing.
+
+---
+
 ## Engineering principles — fix the cause, not the symptom
 
 **Always prefer the correct, root-cause fix over a quick patch.** A change is

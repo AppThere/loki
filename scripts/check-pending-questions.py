@@ -89,10 +89,19 @@ def rows() -> list[tuple[str, str, str, str, int]]:
 
 
 def instrument_exists(glob: str, pattern: str) -> list[str]:
-    """Files under `glob` where the instrument appears **in code**, not prose."""
+    """Files under `glob` where the instrument appears **in code**, not prose.
+
+    `glob` may carry **several whitespace-separated pathspecs**, so a row can
+    exclude as well as include — `src/foo/*.rs :(exclude)src/foo/*_tests.rs`.
+
+    Added r70 for a row whose instrument is *a producer appearing*: the parked
+    `DismissCause::PresentationChanged` is already named in its own tests, so
+    without an exclusion the row would fire on the assertion that keeps the
+    parked decision honest — reporting arrival on the day it was parked.
+    """
     try:
         found = subprocess.run(
-            ["git", "grep", "-nE", pattern, "--", glob],
+            ["git", "grep", "-nE", pattern, "--", *glob.split()],
             cwd=REPO,
             capture_output=True,
             text=True,
