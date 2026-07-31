@@ -33,29 +33,43 @@
 //! The frame source already exists: the scroll animator's worker-thread tick
 //! (`crate::scroll::animate`).
 //!
-//! # The form is decided at open, and a change of form dismisses
+//! # A shrinking viewport repositions; it does not close the menu (r68)
 //!
-//! Plumbing a `Presentation` through `Reposition` would have let an open menu
-//! **become a full-screen sheet under the user's hands**, which is a startling
-//! event and has no focus story: the anchored form's focus lives in a list, the
-//! modal's does not. Dismissing is the other defensible answer, and it is the one
-//! taken, because of what actually causes the change.
+//! **Stated as a decision because it changed, and because the reasoning is not
+//! recoverable from the code.** The clamp in `present` makes this fall out
+//! mechanically, so a later reader will find the behaviour surprising and find
+//! nothing explaining it.
 //!
-//! **It is not the soft keyboard.** The keyboard is the largest single viewport
-//! change available, but it cannot arrive here: while a popover is open, focus is
-//! *inside the popover*, so no text field is gaining focus and no IME is being
-//! raised. A viewport already shortened by the keyboard is an **open-time**
-//! condition, which `present` handles at open — not a mid-life transition.
+//! The rule used to be *a change of form dismisses*. When `present` could return
+//! `Presentation::Modal`, plumbing that through `Reposition` would have let an
+//! open menu **become a full-screen sheet under the user's hands** — startling,
+//! and with no focus story, since the anchored form's focus lives in a list and
+//! the modal's does not. Dismissal was the other defensible answer and the one
+//! taken.
 //!
-//! What is left is **rotation and multi-window resize**: rarer, much larger, and
-//! — the deciding property — **deliberately initiated by the user**. Someone who
-//! has just rotated the device has started something; a menu that survives the
-//! rotation in a different presentation is odd whichever form it lands in, while
-//! a menu that closes is the ordinary consequence of a big deliberate change.
-//! Dismissal also reuses a path that already works: focus returns to the anchor
-//! ([`super::DismissCause::PresentationChanged`]), and re-opening gives the form
-//! the new viewport calls for.
-
+//! That argument was sound and its premise is gone. There is no second form:
+//! `present` clamps an overlay too small to use up to the usable floor and
+//! returns a `Placement`, because nothing ever implemented the modal one and its
+//! two recipients read it incompatibly (r68, see [`super::presentation`]). With
+//! one form there is no form change, so the only question left is what a
+//! *shrinking* viewport should do — and dismissal was never argued for on its
+//! own merits, only as the lesser of two bad transitions.
+//!
+//! **Repositioning is right on the merits.** The cause is rotation or a
+//! multi-window resize; the soft keyboard cannot arrive here, because while a
+//! popover is open focus is *inside* it, so no field is gaining focus and no IME
+//! is being raised (a viewport already shortened by the keyboard is an open-time
+//! condition `present` handles at open). Rotation is deliberate — but it is
+//! deliberate about the *window*, not about the menu. Someone rotating a phone
+//! to read a menu more comfortably is served badly by the menu closing, and
+//! nothing else in this shell closes on rotation. The overlay stays where the
+//! user put it, at the smallest size it can still be operated at, and scrolls.
+//!
+//! [`super::DismissCause::PresentationChanged`] survives for the focus table
+//! and now has no producer here; it is kept rather than deleted because a
+//! consumer that implements a real modal fallback (T5.2's colour picker is the
+//! likely first) will need exactly that cause.
+//!
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::super::geometry::{Placement, PlacementRequest, Rect};

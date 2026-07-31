@@ -210,16 +210,25 @@ pub enum DismissCause {
     /// The viewport changed enough that the popover would have to change
     /// **form** — anchored to modal, or back.
     ///
-    /// # Why this closes rather than transforms
+    /// # No producer today (r68), and kept deliberately
     ///
-    /// A menu becoming a full-screen sheet under the user's hands is startling,
-    /// and the two forms do not share a focus model. The cause is also
-    /// diagnostic: it cannot be the soft keyboard (focus is inside the popover
-    /// while it is open, so no IME is being raised — a short viewport is an
-    /// *open-time* condition), which leaves rotation and multi-window resize.
-    /// Both are large, rare, and **deliberately initiated**, so closing reads as
-    /// a consequence of what the user just did rather than as the app losing
-    /// track of itself. See `interaction_anchor`.
+    /// This was raised when `present` returned a modal form and the viewport
+    /// shrank past the anchored one. There is now **one form** — the modal was
+    /// withdrawn because nothing implemented it — so a shrinking viewport
+    /// repositions instead of closing, and nothing constructs this cause.
+    ///
+    /// Kept rather than deleted because the *first consumer to implement a real
+    /// modal fallback* needs exactly it, and because its focus answer is already
+    /// decided and tested: focus returns to the anchor, since the anchor still
+    /// exists and the user did not dismiss anything. Deleting it would discard a
+    /// settled decision that has to be remade the moment T5.2's colour picker —
+    /// whose SV square, hue strip and fields are tall — wants the fallback.
+    ///
+    /// The original argument, still the reason a *transform* is not the answer:
+    /// a menu becoming a full-screen sheet under the user's hands is startling,
+    /// and the two forms do not share a focus model. See `interaction_anchor`
+    /// for why closing is not the answer either, now that there is no transform
+    /// to avoid.
     PresentationChanged,
 }
 
