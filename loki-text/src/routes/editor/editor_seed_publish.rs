@@ -35,24 +35,52 @@ use crate::editing::state::{DocumentState, publish_seed_layout};
 /// stale on open, and patching one consumer would have left the others wrong while
 /// looking like the bug was fixed.
 ///
-/// # Ordering constraint, which is load-bearing
+/// # The baseline moves here, because "do not reorder these" is not a mechanism
 ///
 /// The dirty tracker reads `dirty = live_gen != baseline_gen`, so advancing the
-/// mirror without also moving the baseline would make every freshly opened
-/// document present as unsaved. The caller records `baseline_gen` from the mirror
-/// *after* this returns, which keeps them equal. **Do not reorder those two.**
+/// mirror without also moving the baseline makes a freshly opened document
+/// present as unsaved. This used to be a **written instruction** — the caller
+/// recorded `baseline_gen` after this returned, under a doc comment saying "do
+/// not reorder those two".
+///
+/// The instruction was followed and the defect happened anyway, which is the
+/// argument against instructions (L08-043). The caller set the baseline inside
+/// the `Ok(l_doc)` arm of `document_to_loro`, so a **bridge-init failure** left
+/// the mirror advanced and the baseline at `0`: an untouched document, just
+/// opened, reporting unsaved changes and offering to save over the file. Nothing
+/// was reordered; the second statement was simply on a branch the first was not.
+///
+/// So both values move in one place, from one read of the published generation.
+/// "Advanced the mirror without the baseline" is no longer expressible.
 pub(super) fn publish_seed_and_mirror(
     doc_state: &Arc<Mutex<DocumentState>>,
     doc: &Document,
     layout: LaidOut,
-    mut cursor_state: Signal<CursorState>,
+    mut targets: SeedTargets,
 ) -> usize {
     let page_count = publish_seed_layout(doc_state, doc, layout);
     let published = doc_state.lock().ok().map(|state| state.generation);
     if let Some(generation) = published {
-        cursor_state.write().document_generation = generation;
+        targets.cursor_state.write().document_generation = generation;
+        // A freshly published seed *is* the file on disk, on every path that
+        // reaches here — including the ones that go on to fail.
+        targets.baseline_gen.set(generation);
     }
     page_count
+}
+
+/// The two counters a seed publish has to move, carried together.
+///
+/// A struct rather than two parameters because the pair *is* the invariant: the
+/// dirty flag is `live_gen != baseline_gen`, so a caller holding one without the
+/// other has nothing useful. Passing them separately is what let the baseline
+/// end up on a branch the mirror was not on.
+#[derive(Clone, Copy)]
+pub(super) struct SeedTargets {
+    /// The reactive mirror of `DocumentState::generation`.
+    pub(super) cursor_state: Signal<CursorState>,
+    /// The generation that matches the file on disk.
+    pub(super) baseline_gen: Signal<u64>,
 }
 
 #[cfg(test)]

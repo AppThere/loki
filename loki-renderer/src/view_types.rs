@@ -136,6 +136,25 @@ pub struct DocumentViewProps {
     /// `appthere_ui::tokens::SPACE_6`). Injected for the same reason as
     /// `page_gap_px`.
     pub content_padding_bottom_px: f32,
+    /// Top padding **on the scroll container**, in CSS px — the distance from
+    /// scroll position 0 to the top of page 0.
+    ///
+    /// # Not cosmetic: it is the origin the residency plan measures from
+    ///
+    /// [`Self::viewport_top_px`] is the container's raw `scrollTop`, whose origin
+    /// is the padding edge, while `plan_residency` accumulates page tops from
+    /// `0.0`. Without this correction every page's modelled position is one
+    /// padding above its real one, so a page showing a sliver at the top of the
+    /// viewport is classified **not visible** — and under pressure the plan is
+    /// then free to reduce its raster scale or evict it outright, painting an
+    /// on-screen sliver blank. That contradicts the plan's own guarantee that
+    /// visible tiles are never dropped, which is a Phase 2 acceptance criterion
+    /// rather than a quality-of-plan matter.
+    ///
+    /// It was immaterial while only the ±1-screen mount window read the offset;
+    /// it became load-bearing when `strictly_visible` started deciding what may
+    /// be degraded.
+    pub content_padding_top_px: f32,
     /// Resident page-texture budget (Spec 08 T2.1) — **both** thresholds.
     ///
     /// Injected rather than derived here for the same reason as `page_gap_px`:
@@ -184,6 +203,7 @@ impl PartialEq for DocumentViewProps {
             && self.zoom == other.zoom
             && self.page_gap_px == other.page_gap_px
             && self.content_padding_bottom_px == other.content_padding_bottom_px
+            && self.content_padding_top_px == other.content_padding_top_px
             && self.texture_budget == other.texture_budget
             && self.device_scale_factor == other.device_scale_factor
     }

@@ -179,10 +179,13 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
         let tiles = crate::tile_plan::plan_tiles(
             &pages,
             gap_px,
-            props.viewport_top_px,
-            props.viewport_height_px,
-            zoom,
-            props.device_scale_factor,
+            crate::tile_plan::ViewportInput {
+                top_px: props.viewport_top_px,
+                content_padding_top_px: f64::from(props.content_padding_top_px),
+                height_px: props.viewport_height_px,
+                zoom,
+                device_scale_factor: props.device_scale_factor,
+            },
             props.texture_budget,
         );
 

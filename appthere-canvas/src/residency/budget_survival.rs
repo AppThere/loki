@@ -80,6 +80,6 @@ pub const SURVIVAL_TOTAL_RAM_DIVISOR: u64 = 16;
 /// can only come from a person setting one explicitly, and the cap exists to stop
 /// an *automatic* derivation running away — not to overrule someone who knows
 /// their machine (the same division [`super::BUDGET_CEILING_BYTES`] already draws).
-pub(super) fn survival_ceiling(derived: u64, target: u64) -> u64 {
+pub(crate) fn survival_ceiling(derived: u64, target: u64) -> u64 {
     derived.min(SURVIVAL_CAP_BYTES).max(target)
 }

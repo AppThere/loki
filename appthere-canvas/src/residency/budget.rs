@@ -14,7 +14,7 @@
 //! arithmetic stays testable without a UI.
 
 #[path = "budget_survival.rs"]
-mod survival;
+pub(super) mod survival;
 
 use survival::survival_ceiling;
 pub use survival::{
@@ -209,45 +209,6 @@ impl TextureBudget {
         }
     }
 
-    /// Derives the budget from what is known about the device.
-    #[must_use]
-    pub fn derive(inputs: BudgetInputs) -> Self {
-        if let Some(bytes) = inputs.user_override_bytes {
-            return Self::with_baseline_ceiling(bytes);
-        }
-        // A device with no GPU paint path allocates no page textures, so this
-        // arm never binds anything in practice; it is here so the budget
-        // reported in a diagnostic matches the device rather than describing a
-        // renderer that is not running.
-        if inputs.gpu_paint_path == Some(false) {
-            return Self {
-                bytes: BUDGET_FLOOR_BYTES,
-                hard_ceiling_bytes: BUDGET_FLOOR_BYTES,
-                source: BudgetSource::NoGpuPaintPath,
-            };
-        }
-        if let Some(available) = inputs.available_ram_bytes {
-            let bytes = clamp(available / AVAILABLE_RAM_DIVISOR);
-            return Self {
-                bytes,
-                hard_ceiling_bytes: survival_ceiling(
-                    available / SURVIVAL_AVAILABLE_RAM_DIVISOR,
-                    bytes,
-                ),
-                source: BudgetSource::AvailableRam,
-            };
-        }
-        if let Some(total) = inputs.total_ram_bytes {
-            let bytes = clamp(total / TOTAL_RAM_DIVISOR);
-            return Self {
-                bytes,
-                hard_ceiling_bytes: survival_ceiling(total / SURVIVAL_TOTAL_RAM_DIVISOR, bytes),
-                source: BudgetSource::TotalRam,
-            };
-        }
-        Self::baseline()
-    }
-
     /// The budget in bytes.
     #[must_use]
     pub fn bytes(self) -> u64 {
@@ -284,7 +245,24 @@ impl TextureBudget {
     }
 }
 
-fn clamp(bytes: u64) -> u64 {
+/// Builds a budget from already-decided parts, enforcing `ceiling >= target`.
+///
+/// The one way [`budget_derive`](super::budget_derive) constructs a
+/// `TextureBudget`, so the fields stay private to this module and the invariant
+/// is applied in one place rather than at each of the derivation's four arms.
+pub(super) fn from_parts(
+    bytes: u64,
+    hard_ceiling_bytes: u64,
+    source: BudgetSource,
+) -> TextureBudget {
+    TextureBudget {
+        bytes,
+        hard_ceiling_bytes: hard_ceiling_bytes.max(bytes),
+        source,
+    }
+}
+
+pub(super) fn clamp(bytes: u64) -> u64 {
     bytes.clamp(BUDGET_FLOOR_BYTES, BUDGET_CEILING_BYTES)
 }
 

@@ -252,3 +252,72 @@ fn one_machine_lands_on_the_same_budget_whichever_figure_its_platform_reports() 
         }
     }
 }
+
+/// **The r18 defect, reproduced inside `derive`.** The override sets the target;
+/// the survival ceiling is a fact about the machine and stays the machine's.
+///
+/// Before the fix this called `with_baseline_ceiling`, which supplies the 4
+/// GiB-available machine's ceiling whatever the device — so on a small machine a
+/// *lower* override produced a *higher* ceiling.
+#[test]
+fn a_user_override_does_not_move_the_devices_survival_ceiling() {
+    let available = 2 * GIB;
+    let derived = TextureBudget::derive(BudgetInputs {
+        available_ram_bytes: Some(available),
+        ..Default::default()
+    });
+    let overridden = TextureBudget::derive(BudgetInputs {
+        available_ram_bytes: Some(available),
+        // Deliberately *less* memory than the derivation chose.
+        user_override_bytes: Some(48 * 1024 * 1024),
+        ..Default::default()
+    });
+    assert_eq!(
+        overridden.hard_ceiling_bytes(),
+        derived.hard_ceiling_bytes(),
+        "asking for a smaller budget must not raise the line past which visible \
+         pages are degraded — it moved from {} to {} MiB before the fix",
+        derived.hard_ceiling_bytes() / (1024 * 1024),
+        overridden.hard_ceiling_bytes() / (1024 * 1024),
+    );
+    assert_eq!(
+        overridden.bytes(),
+        48 * 1024 * 1024,
+        "the target is the user's"
+    );
+}
+
+/// The polarity that keeps the assertion above from being satisfied by pinning
+/// the ceiling to a constant: a bigger machine still gets a bigger ceiling under
+/// an override.
+#[test]
+fn the_overridden_ceiling_still_tracks_the_device() {
+    let small = TextureBudget::derive(BudgetInputs {
+        available_ram_bytes: Some(2 * GIB),
+        user_override_bytes: Some(48 * 1024 * 1024),
+        ..Default::default()
+    });
+    let large = TextureBudget::derive(BudgetInputs {
+        available_ram_bytes: Some(16 * GIB),
+        user_override_bytes: Some(48 * 1024 * 1024),
+        ..Default::default()
+    });
+    assert!(
+        large.hard_ceiling_bytes() > small.hard_ceiling_bytes(),
+        "same override, 8x the RAM, same ceiling — the device stopped mattering",
+    );
+}
+
+/// With nothing known about the machine there is no device ceiling to keep, so
+/// the baseline is correct rather than a fallback that hides a missing input.
+#[test]
+fn an_override_with_no_memory_reading_keeps_the_baseline_ceiling() {
+    let b = TextureBudget::derive(BudgetInputs {
+        user_override_bytes: Some(48 * 1024 * 1024),
+        ..Default::default()
+    });
+    assert_eq!(
+        b.hard_ceiling_bytes(),
+        TextureBudget::baseline().hard_ceiling_bytes(),
+    );
+}

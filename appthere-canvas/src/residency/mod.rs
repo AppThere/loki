@@ -67,6 +67,7 @@
 //! together.
 
 mod budget;
+mod budget_derive;
 mod counter;
 mod geometry;
 mod plan;

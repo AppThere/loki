@@ -54,16 +54,48 @@ pub const MEMORY_RESAMPLE_SECS: u64 = 5;
 /// See the module docs for why this is a grid and not a percentage.
 pub const MEMORY_QUANTUM_BYTES: u64 = 256 * 1024 * 1024;
 
-/// Rounds a byte figure to the nearest [`MEMORY_QUANTUM_BYTES`], never to zero.
+/// Grid for the low band, where [`MEMORY_QUANTUM_BYTES`] would round to zero.
+///
+/// See [`quantise_bytes`]. Below half a quantum the main grid has no non-zero
+/// step to offer, so the band needs one of its own or it has no grid at all.
+pub const LOW_MEMORY_QUANTUM_BYTES: u64 = 32 * 1024 * 1024;
+
+/// Rounds a byte figure to a materiality grid, never to zero.
 ///
 /// Never to zero because a machine genuinely down to its last few MiB is the one
 /// case where the budget most needs to react, and reporting `0` there would read
 /// as "no probe" to a consumer that treats zero as absent.
+///
+/// # Two grids, because one of them was not a grid
+///
+/// This used to be a single rounding to [`MEMORY_QUANTUM_BYTES`] with a
+/// never-to-zero floor written as `snapped.max(QUANTUM.min(bytes.max(1)))`. For
+/// any figure below half a quantum, `snapped` is `0` and that floor term
+/// evaluates to `bytes` itself — so the function was **the identity below 128
+/// MiB**, precisely the regime the available-RAM design exists for. Every 5 s
+/// resample then differed by a few hundred KB, `note_system_memory` saw a
+/// changed value and wrote the profile signal, and every consumer re-derived its
+/// budget — while the module docs claimed jitter inside a bucket "writes nothing
+/// and wakes nobody". The floor was doing the rounding's job and losing.
+///
+/// # Why the low band may round up
+///
+/// Below `LOW_MEMORY_QUANTUM_BYTES / 2` there is no smaller non-zero step, so
+/// the result is the low quantum — an over-report of at most 16 MiB. It cannot
+/// change a decision: `AVAILABLE_RAM_DIVISOR` is 64, so anything under ~1.5 GiB
+/// available already derives below `BUDGET_FLOOR_BYTES` and is floored there.
+/// The whole low band is one budget outcome, so reporting it as one bucket is
+/// the honest shape as well as the stable one.
 #[must_use]
 pub fn quantise_bytes(bytes: u64) -> u64 {
-    let half = MEMORY_QUANTUM_BYTES / 2;
-    let snapped = ((bytes + half) / MEMORY_QUANTUM_BYTES) * MEMORY_QUANTUM_BYTES;
-    snapped.max(MEMORY_QUANTUM_BYTES.min(bytes.max(1)))
+    let grid = if bytes >= MEMORY_QUANTUM_BYTES / 2 {
+        MEMORY_QUANTUM_BYTES
+    } else {
+        LOW_MEMORY_QUANTUM_BYTES
+    };
+    let snapped = ((bytes + grid / 2) / grid) * grid;
+    // Only reachable in the low band, and only below half its step.
+    snapped.max(LOW_MEMORY_QUANTUM_BYTES)
 }
 
 /// A memory observation with its figures snapped to the materiality grid.

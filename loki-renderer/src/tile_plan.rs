@@ -62,6 +62,30 @@ pub(crate) struct PlannedTile {
     pub(crate) mount: Option<f32>,
 }
 
+/// What the planner needs to know about the viewport.
+///
+/// A struct rather than five positional `f64`s, because the fifth one is where
+/// this stopped being readable: `plan_tiles(&pages, 24.0, 2150.0, 24.0, 900.0,
+/// 1.0, 2.0, budget)` has two adjacent pixel counts that mean entirely different
+/// things, and swapping them compiles. Naming them also stops
+/// `content_padding_top_px` — added late, and the whole subject of r67 — from
+/// being the easy one to omit at a call site.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ViewportInput {
+    /// The scroll container's raw `scrollTop`, in CSS px.
+    pub top_px: f64,
+    /// The container's top padding: the distance from `top_px == 0` to the top
+    /// of page 0. See
+    /// [`crate::view_types::DocumentViewProps::content_padding_top_px`].
+    pub content_padding_top_px: f64,
+    /// The container's visible height, in CSS px.
+    pub height_px: f64,
+    /// Current zoom, as a multiplier.
+    pub zoom: f64,
+    /// The display's device pixel ratio.
+    pub device_scale_factor: f64,
+}
+
 /// Plans the render list for `pages` (page index, width and height in CSS px at
 /// the current zoom) under `budget`.
 ///
@@ -73,12 +97,16 @@ pub(crate) struct PlannedTile {
 pub(crate) fn plan_tiles(
     pages: &[(usize, f64, f64)],
     gap_px: f64,
-    viewport_top_px: f64,
-    viewport_height_px: f64,
-    zoom: f64,
-    device_scale_factor: f64,
+    viewport: ViewportInput,
     budget: TextureBudget,
 ) -> Vec<PlannedTile> {
+    let ViewportInput {
+        top_px: viewport_top_px,
+        content_padding_top_px,
+        height_px: viewport_height_px,
+        zoom,
+        device_scale_factor,
+    } = viewport;
     let zoom = if zoom.is_finite() && zoom > 0.0 {
         zoom
     } else {
@@ -89,7 +117,12 @@ pub(crate) fn plan_tiles(
         .map(|&(_, w, h)| PageBox::new(w / (PTS_TO_CSS_PX * zoom), h / (PTS_TO_CSS_PX * zoom)))
         .collect();
     let vp = ViewportSpec {
-        scroll_top_px: viewport_top_px,
+        // Into the model's origin: the model's page 0 starts at 0.0, the
+        // container's scroll 0 is one padding above it. Not clamped at 0 — a
+        // scroll position inside the padding band is legitimately *negative*
+        // in model space, and clamping would put the viewport's top edge on
+        // page 0 while the user is still looking at the gap above it.
+        scroll_top_px: viewport_top_px - content_padding_top_px,
         client_height_px: viewport_height_px,
         page_gap_px: gap_px,
         zoom,

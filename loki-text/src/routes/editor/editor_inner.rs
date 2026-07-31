@@ -45,7 +45,7 @@ use super::editor_ribbon::write_tab_content;
 use super::editor_ribbon_insert::insert_tab_content;
 use super::editor_ribbon_publish::publish_tab_content;
 use super::editor_save_banner::save_banner;
-use super::editor_seed_publish::publish_seed_and_mirror;
+use super::editor_seed_publish::{SeedTargets, publish_seed_and_mirror};
 use super::editor_spell::SpellMenu;
 use super::editor_state::{EditorState, StyleDraft, use_editor_state};
 use super::editor_style::style_picker_panel;
@@ -144,7 +144,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     // Stashed sessions for inactive tabs — unsaved edits survive tab switches.
     let doc_sessions = use_context::<Signal<DocSessions>>();
     // "Clean" generation (matches disk), captured at load/save; tab is dirty when live gen differs.
-    let mut baseline_gen = use_signal(|| 0_u64);
+    let baseline_gen = use_signal(|| 0_u64);
 
     // The per-document signals reset or restored on tab switch, bundled for the
     // three handover sites below (every field is a `Copy` signal).
@@ -316,9 +316,12 @@ pub(super) fn EditorInner(path: String) -> Element {
                     return;
                 }
 
-                // Seed layout + mirror the generation (I-10; before baseline_gen).
-                let page_count =
-                    publish_seed_and_mirror(&doc_state_seed, &doc, layout, cursor_state);
+                // Seed, mirror (I-10) and clean baseline together — see its docs.
+                let targets = SeedTargets {
+                    cursor_state,
+                    baseline_gen,
+                };
+                let page_count = publish_seed_and_mirror(&doc_state_seed, &doc, layout, targets);
 
                 match document_to_loro(&doc) {
                     Ok(l_doc) => {
@@ -330,10 +333,6 @@ pub(super) fn EditorInner(path: String) -> Element {
                         saved_state.set(tracker);
                         loro_doc.set(Some(l_doc));
                         undo_manager.set(Some(um));
-
-                        // The freshly-loaded document matches the file on disk:
-                        // record the current generation as the clean baseline.
-                        baseline_gen.set(cursor_state.peek().document_generation);
 
                         // Auto-place the cursor at the start of the document so
                         // the user can type immediately without clicking first.

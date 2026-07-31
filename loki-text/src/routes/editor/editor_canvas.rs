@@ -38,6 +38,7 @@ use loki_doc_model::loro_bridge::derive_loro_cursor;
 use loki_renderer::{DocumentView, RendererCursorPos, TileContext, ViewMode};
 
 use super::editor_canvas_loading::loading_view;
+use super::editor_canvas_metrics::{CANVAS_CONTENT_PADDING_PX, DEFAULT_VIEWPORT_HEIGHT_PX};
 use super::editor_canvas_spell::open_spell_panel_at;
 use super::editor_caret_follow::CaretFollow;
 use super::editor_error_view::EditorErrorView;
@@ -54,13 +55,6 @@ use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::hit_test::open_or_run;
 use crate::editing::{state::DocumentState, touch::TouchInteractionState};
 use crate::error::LoadError;
-
-/// Fallback viewport height (CSS px) for tile virtualization before the scroll
-/// container is first measured. A named default — not a hardcoded screen
-/// dimension assumed in a layout path (cf. the 1280px viewport bug, Spec 01
-/// audit A-1) — used only for the single frame until `get_client_rect` reports
-/// the real height.
-const DEFAULT_VIEWPORT_HEIGHT_PX: f64 = 800.0;
 
 /// Renders the scrollable canvas area for the document editor.
 ///
@@ -134,7 +128,7 @@ pub(super) fn render_canvas_area(
                  background: {bg}; padding: {p}px 0; \
                  scrollbar-width: thin; scrollbar-color: {thumb} transparent;",
                 bg    = tokens::COLOR_SURFACE_BASE,
-                p     = tokens::SPACE_6,
+                p     = CANVAS_CONTENT_PADDING_PX,
                 thumb = if canvas_hovered() {
                     tokens::COLOR_SCROLLBAR_THUMB_HOVER
                 } else {
@@ -269,7 +263,7 @@ pub(super) fn render_canvas_area(
                 page_gap_px,
                 // The scroll container's own top padding: content y = 0 is its
                 // top edge, and the first page starts one padding below.
-                content_top_px: tokens::SPACE_6,
+                content_top_px: CANVAS_CONTENT_PADDING_PX,
             }
 
             match &*document_load.value().read_unchecked() {
@@ -329,7 +323,11 @@ pub(super) fn render_canvas_area(
                             // Design tokens injected so the render layer need not
                             // depend on appthere_ui (Spec 01 audit A-8).
                             page_gap_px: tokens::PAGE_GAP_PX as f64,
-                            content_padding_bottom_px: tokens::SPACE_6,
+                            content_padding_bottom_px: CANVAS_CONTENT_PADDING_PX,
+                            // The same fact the CSS above applies, reaching the
+                            // residency plan so it measures visibility from the
+                            // origin the scroll offset actually uses.
+                            content_padding_top_px: CANVAS_CONTENT_PADDING_PX,
                             // Resident page-texture budget (Spec 08 T2.1),
                             // derived from the live DeviceProfile, plus the
                             // display's device pixel ratio — the renderer needs
