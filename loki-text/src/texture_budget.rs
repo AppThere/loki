@@ -67,7 +67,7 @@ pub fn current() -> TextureBudget {
         // paints and the adapter is observed (L9-009).
         gpu_paint_path: match profile.gpu_class {
             GpuClass::Unknown => None,
-            other => Some(other.supports_gpu_paint()),
+            other => Some(other.allocates_page_textures()),
         },
         user_override_bytes: override_bytes(),
     })

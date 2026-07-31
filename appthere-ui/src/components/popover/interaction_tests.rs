@@ -4,7 +4,7 @@
 //! The three interaction decisions, asserted as the failures a user would hit.
 
 use super::super::geometry::{place, Align, PlacementRequest, Rect, Side};
-use super::super::presentation::{present, Presentation, MIN_ANCHORED_MENU_PX};
+use super::super::presentation::{present, MIN_ANCHORED_HEIGHT_PX, MIN_ANCHORED_MENU_PX};
 use std::sync::Mutex;
 
 use super::{
@@ -378,27 +378,37 @@ fn a_resize_that_leaves_the_anchor_still_re_places() {
 /// large, rare, and something the user just did deliberately — so a menu closing
 /// is the ordinary consequence of their own action, while a menu surviving into
 /// a different presentation is odd in either direction.
+///
+/// **Reversed in r68, deliberately.** This asserted that the rotation
+/// *dismissed*, because a viewport too short for the anchored form produced
+/// `Presentation::Modal` and this site mapped that to `Dismiss` — while the host
+/// mapped the same outcome to "render nothing". Two readings of one value, and
+/// neither presented anything. With the modal form withdrawn, the overlay is
+/// grown to the usable floor and repositioned: **rotating a phone no longer
+/// closes the menu you were reading**, which is the behaviour a user would
+/// expect and the one neither previous branch delivered.
 #[test]
-fn a_rotation_that_changes_the_form_dismisses_rather_than_transforming() {
+fn a_rotation_into_a_short_viewport_repositions_rather_than_vanishing() {
     let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let portrait = Rect::new(0.0, 0.0, 400.0, 800.0);
     let landscape = Rect::new(0.0, 0.0, 800.0, 150.0);
     let before = req_at(Rect::new(50.0, 100.0, 200.0, 120.0), portrait);
     let after = req_at(Rect::new(50.0, 20.0, 200.0, 120.0), landscape);
     assert!(
-        matches!(present(before), Presentation::Anchored(_)),
-        "precondition: it must fit anchored in portrait",
+        !present(before).clamped,
+        "precondition: it must fit unclamped in portrait",
     );
-    assert_eq!(
-        present(after),
-        Presentation::Modal,
-        "precondition: it must NOT fit anchored in landscape, or there is no \
-         form change to test",
+    let landed = present(after);
+    assert!(
+        landed.clamped && landed.rect.height >= MIN_ANCHORED_HEIGHT_PX,
+        "precondition: landscape must be too short to fit it, or there is no \
+         form change to test — got {:?}",
+        landed.rect,
     );
     assert_eq!(
         on_anchor_change(before, after, true),
-        AnchorResponse::Dismiss,
-        "a form change must close the popover, not transform it",
+        AnchorResponse::Reposition(landed),
+        "the popover must move to the floored placement, not close",
     );
 }
 
@@ -412,8 +422,8 @@ fn a_scroll_that_keeps_the_same_form_still_repositions() {
     let after = req_at(Rect::new(100.0, 260.0, 200.0, 24.0), vp);
     for r in [present(before), present(after)] {
         assert!(
-            matches!(r, Presentation::Anchored(_)),
-            "precondition: both ends of the scroll must be anchored",
+            !r.clamped,
+            "precondition: both ends of the scroll must fit without clamping",
         );
     }
     assert!(matches!(
@@ -426,8 +436,15 @@ fn a_scroll_that_keeps_the_same_form_still_repositions() {
 /// reposition is always still anchored, and always at a height the consumer
 /// called usable.
 ///
-/// Swept down a viewport small enough that the anchored form runs out partway,
+/// Swept down a viewport small enough that the raw placement runs out partway,
 /// so the sweep crosses the boundary rather than staying on one side of it.
+///
+/// **The boundary changed in r68** and the counter had to change with it. It used
+/// to be anchored-versus-modal, so the guard counted dismissals; with the modal
+/// form withdrawn nothing on this fixture dismisses, and the guard would have
+/// been permanently unsatisfiable — a precondition failing loudly is the good
+/// outcome here, and it is what caught this. The boundary is now
+/// grown-versus-not, which is the same crossing under the new design.
 #[test]
 fn every_reposition_carries_a_usable_placement() {
     let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -437,13 +454,16 @@ fn every_reposition_carries_a_usable_placement() {
     // one side, so it never crossed and the counter assertion below said so.
     let vp = Rect::new(0.0, 0.0, 900.0, 200.0);
     let mut repositioned = 0_u32;
-    let mut dismissed = 0_u32;
+    let mut grown = 0_u32;
     for ay in 0..=20 {
         let before = req_at(Rect::new(100.0, 0.0, 200.0, 100.0), vp);
         let after = req_at(Rect::new(100.0, ay as f32 * 5.0, 200.0, 100.0), vp);
         match on_anchor_change(before, after, true) {
             AnchorResponse::Reposition(p) => {
                 repositioned += 1;
+                if place(after).rect.height < MIN_ANCHORED_MENU_PX {
+                    grown += 1;
+                }
                 assert!(
                     p.rect.height >= MIN_ANCHORED_MENU_PX,
                     "reposition handed back {}px, below the {MIN_ANCHORED_MENU_PX}px \
@@ -453,14 +473,14 @@ fn every_reposition_carries_a_usable_placement() {
                 );
                 assert!(p.rect.is_inside(vp));
             }
-            AnchorResponse::Dismiss => dismissed += 1,
+            AnchorResponse::Dismiss => {}
             AnchorResponse::Ignore => {}
         }
     }
     assert!(
-        repositioned > 0 && dismissed > 0,
+        repositioned > 0 && grown > 0 && grown < repositioned,
         "the sweep must cross the boundary to say anything: {repositioned} \
-         repositions, {dismissed} dismissals",
+         repositions, {grown} of them grown to the floor",
     );
 }
 

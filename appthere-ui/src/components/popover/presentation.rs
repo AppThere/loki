@@ -13,17 +13,20 @@
 //! be clicked or a key that routes nowhere. It is also the failure hardest to
 //! report, because nothing appears to go wrong.
 //!
-//! # The decision already exists — T7.4
+//! # The first answer was a modal fallback, and it is withdrawn (r68)
 //!
-//! Spec 08 decided this once: when nested scroll cannot support an in-place
-//! presentation, T7.3's oversized-element viewer **falls back to a modal
-//! full-screen viewer** rather than degrading. Same shape here, so the same
-//! answer: when the anchored form cannot fit, present modally rather than not at
-//! all.
+//! r48 borrowed T7.4's decision — when the anchored form will not fit, present
+//! modally — and returned a `Presentation::Modal` for the caller to honour.
+//! **No caller ever did.** Worse, the two that received it disagreed: the host
+//! rendered nothing and `interaction::on_anchor_change` dismissed. One outcome,
+//! two incompatible readings, in the module whose invariant is that a decision
+//! is made in exactly one place.
 //!
-//! Reusing it beats inventing a second answer to the same question, and it gives
-//! the popover **one** fallback rather than one per consumer — which is the
-//! failure the "scope for four consumers" instruction exists to prevent.
+//! So the floor is now applied by **clamping**: an overlay too small to use is
+//! grown to the minimum and scrolls its content. A real modal fallback should
+//! land with the consumer that wants one — T5.2's colour picker is the likely
+//! first — because that is the only way it acquires an implementation instead of
+//! a second interpretation.
 //!
 //! Dismissing the soft keyboard to reclaim its ~180px was the other candidate.
 //! It reads well for the keyboard case specifically and does not generalise: a
@@ -33,9 +36,9 @@
 //!
 //! [`MIN_ANCHORED_HEIGHT_PX`] is `TOUCH_MIN` — 44px, WCAG 2.5.8, which CLAUDE.md
 //! already requires every interactive component to meet. An anchored menu
-//! shorter than that cannot present **one** legal touch target, so the anchored
-//! form is not permitted rather than merely cramped. Picking any other number
-//! would have been a taste with no consumer behind it.
+//! shorter than that cannot present **one** legal touch target, so it is grown
+//! rather than shown cramped. Picking any other number would have been a taste
+//! with no consumer behind it.
 //!
 //! # Why the trigger cannot be predicted, only handled
 //!
@@ -47,7 +50,7 @@
 //! fallback conditioned on cause would therefore be unreliable by construction;
 //! this one is conditioned only on the geometry that comes out.
 
-use super::geometry::{place, Placement, PlacementRequest};
+use super::geometry::{place, Placement, PlacementRequest, Rect};
 use crate::tokens::spacing::TOUCH_MIN;
 
 /// Absolute floor for an anchored overlay: one WCAG 2.5.8 touch target.
@@ -110,39 +113,62 @@ pub const MENU_ROW_HEIGHT_PX: f32 = TOUCH_MIN;
 /// than a constant the primitive applies to everything.
 pub const MIN_ANCHORED_MENU_PX: f32 = 2.0 * MENU_ROW_HEIGHT_PX;
 
-/// How the overlay should be presented.
-///
-/// Returned instead of a bare [`Placement`] so "render an overlay too small to
-/// use" is not a state a consumer can reach by forgetting to check — the same
-/// move as deriving the focus trap from the role, and as `Reposition` carrying
-/// its recomputed placement (L08-043).
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum Presentation {
-    /// Anchored to its trigger at this placement.
-    Anchored(Placement),
-    /// Full-screen modal: the anchored form does not fit. **The consumer must
-    /// still show the content** — this is a change of form, not a suppression.
-    Modal,
-}
-
-/// Places the overlay, falling back to [`Presentation::Modal`] when the anchored
-/// form cannot carry a usable menu.
+/// Places the overlay, guaranteeing it is at least tall enough to use.
 ///
 /// This is the entry point consumers use. [`place`] stays public because
 /// repositioning and the geometry tests need the raw result, but a consumer that
 /// calls it directly has to make this decision itself, which is the thing this
 /// function exists to stop four of them doing four ways.
+///
+/// # The modal fallback is withdrawn (r68), and the reason is worse than "unused"
+///
+/// This returned a `Presentation` enum whose `Modal` arm meant "the anchored form
+/// does not fit; show the content some other way". **No consumer ever implemented
+/// it**, and the two call sites that received it disagreed about what it meant:
+/// `AtPopoverContext::open_resolved` stored no placement, so the host rendered
+/// *nothing*, while [`super::interaction::on_anchor_change`] mapped it to
+/// `Dismiss`. Suppress versus dismiss, for one outcome, inside the module whose
+/// stated invariant is that every decision is made in exactly one place. A
+/// consumer reading either site would have concluded the wrong thing about the
+/// other — L08-029 in the primitive built to prevent it.
+///
+/// A reachable outcome with no implementation is worse than a missing feature: it
+/// is a **dead control** that looks handled. So the variant is gone and the floor
+/// is applied by clamping instead. If T5.4's zoom popover or T5.2's colour picker
+/// wants a genuine modal fallback — plausible for the picker, whose SV square,
+/// hue strip and fields are tall — it lands **with** that consumer, which is the
+/// only way it gets an implementation rather than a second interpretation.
+///
+/// The floor is honoured even when the viewport cannot afford it. An overlay
+/// shorter than one touch target cannot be operated at all, whereas one that
+/// slightly overflows a very short viewport still can: the host renders with
+/// `overflow-y: auto`, so the content scrolls.
 #[must_use]
-pub fn present(req: PlacementRequest) -> Presentation {
+pub fn present(req: PlacementRequest) -> Placement {
     let placed = place(req);
     // The consumer's minimum, floored by the house standard: a request below one
     // touch target is not honoured, so `min_anchored_height: 0.0` is not a way
     // back to the old behaviour (L08-043).
     let min = req.min_anchored_height.max(MIN_ANCHORED_HEIGHT_PX);
-    if placed.rect.height < min || placed.rect.width <= 0.0 {
-        return Presentation::Modal;
+    if placed.rect.height >= min {
+        return placed;
     }
-    Presentation::Anchored(placed)
+    // Grow to the floor, then keep as much of it on screen as the viewport
+    // allows: prefer moving the top edge up over letting the bottom run off.
+    let top = placed
+        .rect
+        .y
+        .min(req.viewport.bottom() - min)
+        .max(req.viewport.y);
+    Placement {
+        rect: Rect {
+            y: top,
+            height: min,
+            ..placed.rect
+        },
+        clamped: true,
+        ..placed
+    }
 }
 
 #[cfg(test)]

@@ -36,6 +36,10 @@
 
 use dioxus::prelude::*;
 
+#[path = "device_profile_gpu.rs"]
+mod gpu;
+pub use gpu::GpuClass;
+
 /// What kind of pointing device is in use.
 ///
 /// Both variants can be true at once: an Android desktop device with a
@@ -88,35 +92,6 @@ impl PointerPrecision {
             (a, b) if a == b => a,
             _ => Self::Both,
         }
-    }
-}
-
-/// Rough capability class of the GPU, from the wgpu adapter.
-///
-/// Replaces `cfg!(target_os = "android")` as the renderer-path selector: the
-/// question the renderer actually asks is "can this device run Vello's compute
-/// pipelines", which an emulator on x86 answers differently from a physical
-/// Android device (S0.6 §2a, §3).
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum GpuClass {
-    /// Not yet probed.
-    #[default]
-    Unknown,
-    /// Discrete GPU.
-    Discrete,
-    /// Integrated GPU.
-    Integrated,
-    /// Software rasteriser (SwiftShader, llvmpipe) — cannot run Vello compute.
-    Software,
-    /// No usable adapter; the CPU renderer is the only option.
-    None,
-}
-
-impl GpuClass {
-    /// `true` when the GPU paint path is viable.
-    #[must_use]
-    pub fn supports_gpu_paint(self) -> bool {
-        matches!(self, Self::Discrete | Self::Integrated)
     }
 }
 

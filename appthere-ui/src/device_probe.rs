@@ -234,6 +234,22 @@ pub fn note_gpu_class(observed: GpuClass) {
     if profile.peek().gpu_class == observed {
         return;
     }
+    // A software adapter is announced, at warn, because it is the one class the
+    // user cannot see and would not guess: everything renders, nothing errors,
+    // and the machine is quietly rasterising every page on the CPU.
+    //
+    // It belongs here rather than in `BudgetSource`. The budget is derived from
+    // system RAM either way — a software adapter's textures live in the same RAM
+    // the divisor already bounds — so a distinct budget source would misdescribe
+    // where the number came from. The announceable fact is the adapter choice,
+    // which is this function's subject.
+    if observed == GpuClass::Software {
+        tracing::warn!(
+            "wgpu selected a software rasteriser (llvmpipe / SwiftShader): pages \
+             are rendered on the CPU. Texture memory is budgeted normally — the \
+             textures are in system RAM either way."
+        );
+    }
     profile.write().gpu_class = observed;
 }
 

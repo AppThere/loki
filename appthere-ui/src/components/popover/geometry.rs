@@ -234,8 +234,10 @@ pub struct PlacementRequest {
     pub gap: f32,
     /// Minimum distance kept from every viewport edge.
     pub margin: f32,
-    /// Below this height the **anchored** form is not worth showing and
-    /// [`super::presentation::present`] falls back to a modal.
+    /// Below this height the overlay is not worth showing at the size that fits,
+    /// so [`super::presentation::present`] grows it to this floor and lets the
+    /// content scroll. (Until r68 it returned a modal form instead; that is
+    /// retracted — nothing implemented it and its two recipients disagreed.)
     ///
     /// # Why the consumer states it and the primitive decides
     ///

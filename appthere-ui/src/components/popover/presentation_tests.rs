@@ -8,9 +8,7 @@
 //! pathological rect.
 
 use super::super::geometry::{place, Align, PlacementRequest, Rect, Side};
-use super::{
-    present, Presentation, MENU_ROW_HEIGHT_PX, MIN_ANCHORED_HEIGHT_PX, MIN_ANCHORED_MENU_PX,
-};
+use super::{present, MENU_ROW_HEIGHT_PX, MIN_ANCHORED_HEIGHT_PX, MIN_ANCHORED_MENU_PX};
 
 /// A phone in landscape with the soft keyboard up: a ~360 dp window, less a ~30
 /// px top inset and a ~180 px IME (which the platform adds to the **bottom**
@@ -77,7 +75,7 @@ fn tile(label_px: f32, viewport: Rect) -> PlacementRequest {
 /// reader cannot conclude the accessibility setting is what causes the problem;
 /// it is what makes the problem invisible.
 #[test]
-fn a_tile_in_a_landscape_keyboard_viewport_is_modal_at_every_text_size() {
+fn a_tile_in_a_landscape_keyboard_viewport_is_grown_at_every_text_size() {
     let blank_box_threshold = LANDSCAPE_IME_VIEWPORT.height - 2.0 * (4.0 + 8.0);
     assert!((blank_box_threshold - 126.0).abs() < 0.001);
     let cases = [
@@ -95,11 +93,10 @@ fn a_tile_in_a_landscape_keyboard_viewport_is_modal_at_every_text_size() {
              threshold",
             req.anchor.height,
         );
-        assert_eq!(
-            present(req),
-            Presentation::Modal,
+        assert!(
+            grown_to_floor(req, MIN_ANCHORED_MENU_PX),
             "{why}: the usable threshold is 44px earlier than the blank-box one, \
-             so this is modal whether or not it would have been blank",
+             so this is floored whether or not it would have been blank",
         );
     }
 }
@@ -126,7 +123,7 @@ fn the_nominal_tile_clears_the_blank_box_bound_and_fails_the_usable_one() {
         "but smaller than one touch target: {}px",
         placed.rect.height,
     );
-    assert_eq!(present(req), Presentation::Modal);
+    assert!(grown_to_floor(req, MIN_ANCHORED_MENU_PX));
 }
 
 /// The other polarity (L08-045): an ordinary anchor on an ordinary screen stays
@@ -136,9 +133,11 @@ fn the_nominal_tile_clears_the_blank_box_bound_and_fails_the_usable_one() {
 fn an_ordinary_anchor_stays_anchored() {
     let vp = Rect::new(0.0, 0.0, 900.0, 700.0);
     let req = tile(16.0, vp);
-    let Presentation::Anchored(p) = present(req) else {
-        panic!("a 120px tile in a 700px viewport must anchor");
-    };
+    let p = present(req);
+    assert!(
+        !grown_to_floor(req, MIN_ANCHORED_MENU_PX),
+        "a 120px tile in a 700px viewport needs no growing",
+    );
     assert!(p.rect.is_inside(vp));
     assert!(p.rect.height >= MIN_ANCHORED_HEIGHT_PX);
 }
@@ -158,7 +157,7 @@ fn an_ordinary_anchor_stays_anchored() {
 /// would otherwise pass while the threshold stopped meaning what it was derived
 /// to mean.
 #[test]
-fn a_menu_with_room_for_one_row_but_not_two_is_modal() {
+fn a_menu_with_room_for_one_row_but_not_two_is_grown_to_two() {
     let one_and_a_bit = MENU_ROW_HEIGHT_PX + 1.0;
     assert!(
         one_and_a_bit >= MIN_ANCHORED_HEIGHT_PX && one_and_a_bit < 2.0 * MENU_ROW_HEIGHT_PX,
@@ -166,15 +165,14 @@ fn a_menu_with_room_for_one_row_but_not_two_is_modal() {
          {MENU_ROW_HEIGHT_PX}px row",
     );
     let req = req_with_room_below(one_and_a_bit, MIN_ANCHORED_MENU_PX);
-    assert_eq!(
-        present(req),
-        Presentation::Modal,
-        "one row is legal and not worth anchoring — the modal shows the whole \
-         menu at once",
+    assert!(
+        grown_to_floor(req, MIN_ANCHORED_MENU_PX),
+        "one row of room is not enough to anchor a menu, so it is grown to two \
+         and scrolls rather than being shown one row at a time",
     );
-    // And two rows is enough to stay.
+    // And two rows of room needs no growing.
     let req = req_with_room_below(2.0 * MENU_ROW_HEIGHT_PX, MIN_ANCHORED_MENU_PX);
-    assert!(matches!(present(req), Presentation::Anchored(_)));
+    assert!(!grown_to_floor(req, MIN_ANCHORED_MENU_PX));
 }
 
 /// **The menu minimum means two rows**, and says so in row units so the meaning
@@ -199,17 +197,30 @@ fn the_menu_minimum_is_two_rows_whatever_a_row_measures() {
 #[test]
 fn a_consumer_asking_below_the_floor_still_gets_the_floor() {
     let just_under = req_with_room_below(MIN_ANCHORED_HEIGHT_PX - 1.0, 0.0);
-    assert_eq!(
-        present(just_under),
-        Presentation::Modal,
+    assert!(
+        grown_to_floor(just_under, MIN_ANCHORED_HEIGHT_PX),
         "43px is below one touch target, and asking for 0 does not license it",
     );
     let at_the_floor = req_with_room_below(MIN_ANCHORED_HEIGHT_PX, 0.0);
     assert!(
-        matches!(present(at_the_floor), Presentation::Anchored(_)),
-        "but the floor itself is honoured — a consumer that genuinely wants one \
-         row gets one row",
+        !grown_to_floor(at_the_floor, MIN_ANCHORED_HEIGHT_PX),
+        "but the floor itself needs no growing — a consumer that genuinely \
+         wants one row gets one row",
     );
+}
+
+/// Whether `present` **grew** this request to `min` because the raw placement
+/// could not carry a usable overlay.
+///
+/// The r68 replacement for `Presentation::Modal`, and it is deliberately stated
+/// against [`place`] rather than against the `clamped` flag. The first version
+/// asserted `height == min && clamped`, which does not discriminate: `place`
+/// sets `clamped` itself whenever it reduces a request to fit the room, so a
+/// placement that landed on exactly the floor *by ordinary reduction* satisfied
+/// it too. Comparing the raw height against the floor is what separates "was
+/// grown" from "happened to fit".
+fn grown_to_floor(req: super::PlacementRequest, min: f32) -> bool {
+    place(req).rect.height < min && (present(req).rect.height - min).abs() < 0.001
 }
 
 /// A request whose room below the anchor is exactly `room`, asking for

@@ -130,10 +130,6 @@ impl AtPopoverContext {
     /// [`super::presentation::present`] on a request filled the same way, so a
     /// reposition cannot land somewhere the open never would (L08-028).
     ///
-    /// A `Modal` outcome stores no placement — the anchored form does not fit, and
-    /// the consumer renders its own full-screen presentation. That is a change of
-    /// form, not a suppression; see [`super::presentation`].
-    ///
     /// # `pub(crate)`: opening is reachable only through the anchor (r66)
     ///
     /// Consumers go through [`super::anchor_scope::PopoverAnchor::open`], which
@@ -152,12 +148,13 @@ impl AtPopoverContext {
         let mut filled = request.clone();
         filled.placement.viewport =
             super::geometry::usable_viewport(window, insets, request.placement.viewport);
-        let placement = match super::presentation::present(filled.placement) {
-            super::presentation::Presentation::Anchored(p) => Some(p),
-            super::presentation::Presentation::Modal => None,
-        };
+        // Always a placement (r68): `present` clamps an overlay too small to use
+        // up to the floor rather than returning a modal form nothing implements.
+        // While it could, `resolved` stayed `None` here and the host rendered
+        // nothing — a right-click that produced no menu and no way to tell why.
+        let placement = super::presentation::present(filled.placement);
         self.open.set(Some(filled));
-        self.resolved.set(placement);
+        self.resolved.set(Some(placement));
     }
 
     // There is deliberately **no unkeyed `dismiss`** (r66). One existed, and the

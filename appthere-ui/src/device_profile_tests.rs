@@ -96,14 +96,45 @@ fn both_has_hover_and_touch() {
 }
 
 #[test]
-fn only_real_gpus_support_the_paint_path() {
+fn only_real_gpus_are_hardware_accelerated() {
     // The emulator case that `--cfg android_gpu` currently encodes at build
     // time: SwiftShader must not be handed the Vello compute path.
-    assert!(GpuClass::Discrete.supports_gpu_paint());
-    assert!(GpuClass::Integrated.supports_gpu_paint());
-    assert!(!GpuClass::Software.supports_gpu_paint());
-    assert!(!GpuClass::None.supports_gpu_paint());
-    assert!(!GpuClass::Unknown.supports_gpu_paint());
+    assert!(GpuClass::Discrete.is_hardware_accelerated());
+    assert!(GpuClass::Integrated.is_hardware_accelerated());
+    assert!(!GpuClass::Software.is_hardware_accelerated());
+    assert!(!GpuClass::None.is_hardware_accelerated());
+    assert!(!GpuClass::Unknown.is_hardware_accelerated());
+}
+
+/// **The two questions must disagree, and `Software` is where.** A single
+/// predicate answered both, and the budget — its only caller — read the
+/// acceleration answer as a memory answer: a software adapter paints and
+/// allocates page textures exactly like a hardware one, so treating it as
+/// "no textures" collapsed the budget to its floor and softened visible body
+/// text on every VM and headless desktop.
+///
+/// Asserted as the disagreement rather than as two separate tables, because a
+/// table of each would both pass if the two functions were ever collapsed back
+/// into one.
+#[test]
+fn a_software_rasteriser_allocates_textures_even_though_it_is_not_accelerated() {
+    assert!(
+        !GpuClass::Software.is_hardware_accelerated(),
+        "Software must stay off the fast path",
+    );
+    assert!(
+        GpuClass::Software.allocates_page_textures(),
+        "Software still runs the paint path and still allocates page textures — \
+         answering this with the acceleration predicate is what put the budget \
+         on its 24 MiB floor on every machine wgpu gave llvmpipe",
+    );
+}
+
+/// The polarity: `allocates_page_textures` is not simply `true`. Without an
+/// adapter there is no paint path and no page textures.
+#[test]
+fn no_adapter_allocates_no_page_textures() {
+    assert!(!GpuClass::None.allocates_page_textures());
 }
 
 #[test]
@@ -123,6 +154,6 @@ fn a_synthetic_profile_can_describe_an_android_desktop() {
     };
     assert!(p.pointer.has_hover(), "a mouse is attached: tooltips work");
     assert!(p.pointer.has_touch(), "the touchscreen still exists");
-    assert!(p.gpu_class.supports_gpu_paint());
+    assert!(p.gpu_class.is_hardware_accelerated());
     assert_eq!(p.window_mode, WindowMode::Windowed);
 }

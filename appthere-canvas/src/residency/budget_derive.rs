@@ -46,10 +46,15 @@ impl TextureBudget {
                 (None, None) => Self::with_baseline_ceiling(bytes),
             };
         }
-        // A device with no GPU paint path allocates no page textures, so this
-        // arm never binds anything in practice; it is here so the budget
-        // reported in a diagnostic matches the device rather than describing a
-        // renderer that is not running.
+        // A device with no adapter at all allocates no page textures, so this
+        // arm is here to make a diagnostic match the device rather than describe
+        // a renderer that is not running.
+        //
+        // Its old comment claimed it "never binds anything in practice", which is
+        // **retracted** (r68): the caller derived this flag from a predicate that
+        // answered "is this GPU-accelerated", so a software adapter — llvmpipe, a
+        // VM, a headless desktop — landed here while painting normally, pinning
+        // target and ceiling to the floor. See `GpuClass::allocates_page_textures`.
         if inputs.gpu_paint_path == Some(false) {
             return from_parts(
                 BUDGET_FLOOR_BYTES,

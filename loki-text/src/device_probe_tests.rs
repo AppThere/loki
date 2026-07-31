@@ -13,11 +13,11 @@ use loki_renderer::gpu_probe::AdapterKind;
 
 #[test]
 fn real_hardware_is_capable_and_a_software_rasteriser_is_not() {
-    assert!(gpu_class_of(AdapterKind::Discrete).supports_gpu_paint());
-    assert!(gpu_class_of(AdapterKind::Integrated).supports_gpu_paint());
+    assert!(gpu_class_of(AdapterKind::Discrete).is_hardware_accelerated());
+    assert!(gpu_class_of(AdapterKind::Integrated).is_hardware_accelerated());
     // The one that must be false: SwiftShader on the Android emulator reports
     // `Cpu`, and it cannot run Vello's compute pipelines.
-    assert!(!gpu_class_of(AdapterKind::Cpu).supports_gpu_paint());
+    assert!(!gpu_class_of(AdapterKind::Cpu).is_hardware_accelerated());
     assert_eq!(gpu_class_of(AdapterKind::Cpu), GpuClass::Software);
 }
 

@@ -59,7 +59,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::super::geometry::{Placement, PlacementRequest, Rect};
-use super::super::presentation::{present, Presentation};
+use super::super::presentation::present;
 
 /// Repositions performed since the last [`reset_repositions`].
 ///
@@ -261,20 +261,19 @@ pub fn on_anchor_change(
              when nothing moved, which is layout jitter rather than a scroll",
         );
     }
-    match present(current) {
-        // **This is the form-change rule**, and it needs no comparison against
-        // the previous form.
-        //
-        // A first draft had one — `presentation_class(previous) !=
-        // presentation_class(current)` — and a mutation removing it broke no
-        // test. The surviving mutation was the finding, not a gap in the suite:
-        // an open popover is anchored by definition (a modal one is not driven
-        // from here, having no anchor geometry), so "the form changed" and "the
-        // current geometry is not anchored" are the same condition. The
-        // comparison was unreachable-by-subsumption — the same shape the M4
-        // mutation found in `place`, and the second time L08-041 has returned
-        // redundant code rather than a missing case.
-        Presentation::Modal => AnchorResponse::Dismiss,
-        Presentation::Anchored(p) => AnchorResponse::Reposition(p),
-    }
+    // **The form-change rule is retired with the modal form itself (r68).**
+    //
+    // This used to `match present(current)` and map a `Modal` outcome to
+    // `Dismiss`. An earlier draft compared the previous form against the current
+    // one; a mutation removing that comparison broke no test, and the surviving
+    // mutation was the finding rather than a gap in the suite — an open popover
+    // is anchored by definition, so "the form changed" and "the current geometry
+    // is not anchored" were the same condition. Unreachable by subsumption, the
+    // same shape the M4 mutation found in `place`.
+    //
+    // The modal arm is now gone for a different reason: nothing implemented it,
+    // and this site read it as *dismiss* while the host read it as *suppress*.
+    // `present` clamps to the usable floor instead, so a popover no longer
+    // vanishes because the window got short.
+    AnchorResponse::Reposition(present(current))
 }
