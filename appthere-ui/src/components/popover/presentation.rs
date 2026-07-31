@@ -28,6 +28,15 @@
 //! first — because that is the only way it acquires an implementation instead of
 //! a second interpretation.
 //!
+//! # Deleted here, kept at `DismissCause::PresentationChanged` — the same rule
+//!
+//! Those two rulings look opposite and are not. **Reachable-but-unimplemented is
+//! a defect; unreachable-and-marked is a deferral.** `Modal` was produced and
+//! read two incompatible ways, so it was a live inconsistency and had to become
+//! unrepresentable. [`super::interaction::DismissCause::PresentationChanged`] is
+//! produced by nothing, so nothing can disagree about it — it parks a settled
+//! focus decision at the cost of one test, for the consumer that will need it.
+//!
 //! Dismissing the soft keyboard to reclaim its ~180px was the other candidate.
 //! It reads well for the keyboard case specifically and does not generalise: a
 //! short window with no keyboard up has nothing to reclaim.
