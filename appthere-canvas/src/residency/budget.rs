@@ -120,6 +120,28 @@ pub struct BudgetInputs {
     pub gpu_paint_path: Option<bool>,
     /// An explicit user setting, in bytes.
     pub user_override_bytes: Option<u64>,
+    /// A **diagnostic** survival-ceiling override, in bytes.
+    ///
+    /// # Separate from the budget override on purpose (r71)
+    ///
+    /// A user may raise the byte *target* — it is a preference about memory —
+    /// but may not move the survival ceiling, because that line stands in for
+    /// the OOM killer and a user asking for less memory must not be able to
+    /// raise their own risk. r67 enforced exactly that.
+    ///
+    /// Which removed the only lever R5b's screen procedure had. That procedure
+    /// needs the machine to *behave as if* it had less headroom, which is a
+    /// different request from a preference and deserves a different control: it
+    /// is a deliberate instruction to enter the survival regime, not a claim
+    /// about what the user wants.
+    ///
+    /// **Ceiling only, deliberately.** It cannot set the target, cannot pick a
+    /// `BudgetSource`, and cannot become a second route into the derivation
+    /// (L08-043). One lever, one quantity — which also retires step 2a's sharp
+    /// edge, where the *same* variable proved the instrument could speak when
+    /// set low and destroyed reachability when set high, distinguished only by
+    /// magnitude and a paragraph of prose.
+    pub diagnostic_ceiling_bytes: Option<u64>,
 }
 
 /// How a budget figure was arrived at. Reported so a surprising budget can be

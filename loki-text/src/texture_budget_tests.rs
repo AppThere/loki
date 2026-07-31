@@ -20,6 +20,11 @@ fn inputs_for(profile: DeviceProfile, override_bytes: Option<u64>) -> BudgetInpu
             other => Some(other.allocates_page_textures()),
         },
         user_override_bytes: override_bytes,
+        // The diagnostic ceiling is deliberately absent from this mapping's
+        // fixture: it is a separate lever with its own tests in
+        // `appthere-canvas`, and threading it here would make every assertion
+        // below quietly depend on a variable none of them are about.
+        diagnostic_ceiling_bytes: None,
     }
 }
 

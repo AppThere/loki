@@ -15,6 +15,14 @@
 //! T2.1 requires the budget to be user-overridable. It is, through
 //! `LOKI_TEXTURE_BUDGET_MB`, read once per process.
 //!
+//! # The diagnostic ceiling is a different lever, not a second budget
+//!
+//! `LOKI_TEXTURE_CEILING_MB` moves the survival ceiling and nothing else. It
+//! exists because r67 correctly stopped the *budget* override moving that
+//! ceiling — and in doing so removed the only route R5b's screen procedure had
+//! (L08-052). Two variables rather than one magnitude-dependent variable, so the
+//! wrong use is unavailable rather than warned against.
+//!
 //! TODO(texture-budget-ui): surface this as a setting rather than an
 //! environment variable. The variable is a real override and is documented, but
 //! it is not discoverable, so "always user-overridable" is satisfied in
@@ -26,6 +34,10 @@ use appthere_ui::{GpuClass, use_device_profile};
 
 /// Environment variable holding a user budget override, in whole MiB.
 pub const OVERRIDE_ENV: &str = "LOKI_TEXTURE_BUDGET_MB";
+
+/// Environment variable holding a **diagnostic** survival-ceiling override, in
+/// whole MiB. See [`ceiling_override_bytes`].
+pub const CEILING_ENV: &str = "LOKI_TEXTURE_CEILING_MB";
 
 /// Reads the override once and caches the result.
 ///
@@ -42,6 +54,46 @@ fn override_bytes() -> Option<u64> {
         // textures": the derivation's floor is what protects a small device,
         // and a typo in an environment variable should not blank the document.
         (mib > 0).then(|| mib * 1024 * 1024)
+    })
+}
+
+/// Reads the diagnostic ceiling override once, announcing it loudly.
+///
+/// # A separate lever, because it is a different request (r71)
+///
+/// [`OVERRIDE_ENV`] sets the byte *target* and may not move the survival
+/// ceiling — a user asking for less memory must not be able to raise the line
+/// that stands in for the OOM killer (r67). This one moves the ceiling and only
+/// the ceiling: it is a deliberate instruction to make the machine behave as if
+/// it had less headroom, which is what a test of the survival regime needs and
+/// is not a preference at all.
+///
+/// It replaces the ballast route, which achieved the same end by making the claim
+/// *true* rather than simulated — a whole session to set up, unvariable without a
+/// restart, and it moves a quantity other probes also read.
+///
+/// # It announces itself on every run, and that is not politeness
+///
+/// A machine sitting permanently in the survival regime because someone left an
+/// environment variable set is precisely the diagnostic shape this phase spent a
+/// week removing — `NoGpuPaintPath` collapsing a working machine to the floor
+/// with nothing in the log to say so. At **warn**, because a debug line beside
+/// the ordinary pressure stream is one people filter out.
+fn ceiling_override_bytes() -> Option<u64> {
+    use std::sync::OnceLock;
+    static CACHED: OnceLock<Option<u64>> = OnceLock::new();
+    *CACHED.get_or_init(|| {
+        let raw = std::env::var(CEILING_ENV).ok()?;
+        let mib: u64 = raw.trim().parse().ok()?;
+        let bytes = (mib > 0).then(|| mib * 1024 * 1024)?;
+        tracing::warn!(
+            ceiling_mib = mib,
+            "{CEILING_ENV} is set: the survival ceiling is forced to {mib} MiB \
+             for diagnostics. Visible pages will be reduced in scale wherever \
+             demand crosses it, which is NOT this machine's real headroom. Unset \
+             it for an ordinary run.",
+        );
+        Some(bytes)
     })
 }
 
@@ -70,6 +122,7 @@ pub fn current() -> TextureBudget {
             other => Some(other.allocates_page_textures()),
         },
         user_override_bytes: override_bytes(),
+        diagnostic_ceiling_bytes: ceiling_override_bytes(),
     })
 }
 

@@ -47,6 +47,7 @@ fn budget_for(available_gib: f64) -> TextureBudget {
         total_ram_bytes: None,
         gpu_paint_path: Some(true),
         user_override_bytes: None,
+        diagnostic_ceiling_bytes: None,
     })
 }
 

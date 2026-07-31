@@ -57,6 +57,7 @@ fn budget_for(available_gib: f64) -> TextureBudget {
         total_ram_bytes: None,
         gpu_paint_path: Some(true),
         user_override_bytes: None,
+        diagnostic_ceiling_bytes: None,
     })
 }
 
@@ -189,6 +190,7 @@ fn budget_from_total(total_gib: f64) -> TextureBudget {
         total_ram_bytes: Some((total_gib * 1024.0 * 1024.0 * 1024.0) as u64),
         gpu_paint_path: Some(true),
         user_override_bytes: None,
+        diagnostic_ceiling_bytes: None,
     })
 }
 

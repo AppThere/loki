@@ -19,6 +19,19 @@ impl TextureBudget {
     /// Derives the budget from what is known about the device.
     #[must_use]
     pub fn derive(inputs: BudgetInputs) -> Self {
+        let derived = Self::derive_uncapped(inputs);
+        match inputs.diagnostic_ceiling_bytes {
+            // Routed through `from_parts`, so `ceiling >= target` still holds: a
+            // diagnostic asking for a ceiling under the target gets the target,
+            // because a budget whose ceiling sits below its own target is not a
+            // state the planner has a meaning for. The app layer logs when this
+            // bites, so the lever cannot silently not work.
+            Some(bytes) => from_parts(derived.bytes(), bytes, derived.source()),
+            None => derived,
+        }
+    }
+
+    fn derive_uncapped(inputs: BudgetInputs) -> Self {
         if let Some(bytes) = inputs.user_override_bytes {
             // The override sets the **target**. The survival ceiling stays the
             // device's, because it is not a preference — it is the line past

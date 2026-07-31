@@ -80,6 +80,7 @@ fn the_same_ram_gives_the_same_budget_whatever_the_device_is() {
         total_ram_bytes: Some(16 * GIB),
         gpu_paint_path: Some(true),
         user_override_bytes: None,
+        diagnostic_ceiling_bytes: None,
     };
     assert_eq!(
         TextureBudget::derive(inputs).bytes(),
@@ -320,4 +321,78 @@ fn an_override_with_no_memory_reading_keeps_the_baseline_ceiling() {
         b.hard_ceiling_bytes(),
         TextureBudget::baseline().hard_ceiling_bytes(),
     );
+}
+
+/// **The diagnostic ceiling moves the ceiling and only the ceiling.** It exists
+/// because r67 correctly stopped the budget override moving it, which removed
+/// R5b's only route into the survival regime (L08-052).
+#[test]
+fn the_diagnostic_ceiling_lowers_the_ceiling_without_touching_the_target() {
+    let plain = TextureBudget::derive(BudgetInputs {
+        available_ram_bytes: Some(11 * GIB),
+        ..Default::default()
+    });
+    let forced = TextureBudget::derive(BudgetInputs {
+        available_ram_bytes: Some(11 * GIB),
+        diagnostic_ceiling_bytes: Some(300 * 1024 * 1024),
+        ..Default::default()
+    });
+    assert_eq!(
+        forced.bytes(),
+        plain.bytes(),
+        "the target is not this lever's business — one lever, one quantity",
+    );
+    assert_eq!(forced.hard_ceiling_bytes(), 300 * 1024 * 1024);
+    assert!(
+        plain.hard_ceiling_bytes() > forced.hard_ceiling_bytes(),
+        "precondition: the fixture must actually lower something — an 11 GiB \
+         machine derives {} MiB, which must exceed the forced 300",
+        plain.hard_ceiling_bytes() / (1024 * 1024),
+    );
+    assert_eq!(
+        forced.source(),
+        plain.source(),
+        "and it must not rewrite how the budget was arrived at",
+    );
+}
+
+/// It cannot be used to put the ceiling *below* the target, because a budget
+/// whose ceiling sits under its own target is not a state the planner has a
+/// meaning for. The invariant wins and the app layer says so.
+#[test]
+fn a_diagnostic_ceiling_under_the_target_is_raised_to_it() {
+    let b = TextureBudget::derive(BudgetInputs {
+        available_ram_bytes: Some(11 * GIB),
+        diagnostic_ceiling_bytes: Some(1024 * 1024),
+        ..Default::default()
+    });
+    assert_eq!(b.hard_ceiling_bytes(), b.bytes());
+}
+
+/// The polarity: absent, it changes nothing at all. Without this the lever could
+/// be a constant and both assertions above would still pass.
+#[test]
+fn no_diagnostic_ceiling_leaves_every_arm_alone() {
+    for inputs in [
+        BudgetInputs {
+            available_ram_bytes: Some(11 * GIB),
+            ..Default::default()
+        },
+        BudgetInputs {
+            total_ram_bytes: Some(8 * GIB),
+            ..Default::default()
+        },
+        BudgetInputs {
+            user_override_bytes: Some(48 * 1024 * 1024),
+            available_ram_bytes: Some(2 * GIB),
+            ..Default::default()
+        },
+        BudgetInputs::default(),
+    ] {
+        let with_none = TextureBudget::derive(BudgetInputs {
+            diagnostic_ceiling_bytes: None,
+            ..inputs
+        });
+        assert_eq!(TextureBudget::derive(inputs), with_none);
+    }
 }
