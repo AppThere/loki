@@ -2,52 +2,47 @@
 
 //! Floating spelling-suggestions menu (the right-click context menu).
 //!
-//! Rendered as a `position: absolute` element with a full-size transparent
-//! backdrop behind it, so a click anywhere outside dismisses the menu. Its
-//! containing block is the editor root (`position: relative`) — which is *not*
-//! the coordinate space the click arrives in; that is defect 3 below.
+//! **This file renders the menu's *contents*. It does not place them and it owns
+//! no backdrop** — both are `AtPopoverHost`'s at the app root, since r63/r64.
+//! `editor_spell_popover` hands the host a request built by `editor_spell_place`;
+//! what is left here is the rows.
 //!
-//! # Three known defects, all live — **pending reroute**, not fixed
+//! # The three defects this file used to have are closed (r63) — kept as history
 //!
-//! Recorded so this file is not mistaken for a working reference — the r4
-//! framing called it "the proven popup", and it is proven only in the region it
-//! happened to be used in.
+//! The header below described them as **live in the shipping app** until r73,
+//! ten commits after the migration that closed them. That is worth recording
+//! rather than deleting: the correction went into `editor_spell_place`'s status
+//! section and into a comment sixty lines further down *this* file, while the
+//! module header — the thing a reader opens when they look up the spelling menu —
+//! kept the pre-migration account. Right content, wrong place, which is L08-053
+//! and the reason this audit exists.
 //!
-//! **Status.** The replacement placement exists and is tested
-//! (`editor_spell_place`) but has no caller: this file still positions itself,
-//! so all three defects below are in the shipping app today. T4.1's `Popover`
-//! closes them **when this file renders into `AtPopoverHost`** — mounted in
-//! `app.rs` and waiting — and not before.
+//! What they were, and what closed each:
 //!
-//! 1. **No bottom-edge collision.** Placement is a horizontal clamp against
-//!    `viewport_width` and `anchor_y.max(0.0)`; viewport *height* is not even a
-//!    parameter. A menu opened near the bottom runs off it — measured at 298px
-//!    of a 320px menu below the fold.
-//! 2. **It is clipped by its own containing block.** The editor root carries
-//!    `position: relative` **and `overflow: hidden`**
-//!    (`editor_inner.rs`), and an out-of-flow child is clipped by an ancestor's
-//!    overflow. So the overflow in (1) is not merely off-screen, it is *cut* —
-//!    which is why the symptom reads as a truncated menu rather than one that
-//!    obviously ran off, and why no `z-index` would have helped.
+//! 1. **No bottom-edge collision.** Placement was a horizontal clamp with
+//!    viewport *height* not even a parameter; a menu opened near the bottom ran
+//!    298px of its 320px below the fold. `popover::place` flips.
+//! 2. **Clipped by its own containing block.** The editor root carries
+//!    `position: relative` **and `overflow: hidden`**, and an out-of-flow child
+//!    is clipped by an ancestor's overflow — so the overflow in (1) was *cut*,
+//!    not merely off-screen, and no `z-index` would have helped. The host is a
+//!    child of the app root, outside every clipping ancestor.
+//! 3. **Displaced ~41px downward by the shell chrome.** The anchor is
+//!    `client_x/client_y`, window-relative in this stack (see "Documented stack
+//!    deviations" in `docs/patches.md`), but it was used as `top`/`left` against
+//!    the **editor root**, which sits below `AtTabBar` (40px + 1px border). The
+//!    host's containing block is the app root, whose padding box starts at the
+//!    window origin, so the two spaces now agree.
 //!
-//! 3. **It is displaced downward by the shell chrome.** The anchor is
-//!    `client_x/client_y`, which in this stack is **window**-relative (plus a
-//!    top-level scroll that is always zero here) — see "Documented stack
-//!    deviations" in `docs/patches.md`. But it is used as `top`/`left` on an
-//!    element whose containing block is the **editor root**, and the editor root
-//!    is not at the window origin: `app.rs` root → `Shell` → `AtTabBar`
-//!    (`TAB_BAR_HEIGHT` 40px + 1px bottom border) → Outlet container →
-//!    `EditorInner`'s `position: relative` div. So the menu renders about
-//!    **41px below the click** on desktop, and further on Android where the top
-//!    safe-area inset adds.
+//!    That third one is the one that would have survived a screen session — a
+//!    context menu appearing just under the cursor looks like ordinary
+//!    behaviour. It is why `spell_menu_anchor` is a tested function rather than
+//!    two field reads.
 //!
-//!    A downward offset of that size is why nobody has reported it: a context
-//!    menu appearing just under the cursor looks like ordinary behaviour. It is
-//!    the one of the three that would have survived a screen session.
-//!
-//! `appthere_ui::components::popover` closes all three: it flips at the bottom
-//! edge, hosts outside every clipping ancestor, and works in window coordinates
-//! throughout. `TODO(t4.1-popover): migrate this to the shared primitive.`
+//! **Not established by any of this:** that the menu lands on the word on a real
+//! screen. The arithmetic and the absence of a scroll term in our path are
+//! tested; the platform half is the scroll-drift sitting, whose procedure and
+//! three readings are in `editor_spell_place`.
 
 use std::sync::{Arc, Mutex};
 

@@ -39,10 +39,10 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 
 ---
 
-## Evidence discipline — six rules, read in full
+## Evidence discipline — seven rules, read in full
 
-These compress ~15 ledger entries accumulated across Specs 08/09 (L08-029, -031,
--041, -043, -044, -045, -046, -047, -048, -049, -050; L9-011, -019). **The
+These compress ~17 ledger entries accumulated across Specs 08/09 (L08-029, -031,
+-041, -043, -044, -045, -046, -047, -048, -049, -050, -052, -053; L9-011, -019). **The
 individual entries hold the provenance; this is what gets carried forward.**
 
 They live here rather than in a spec because the ledger has two populations with
@@ -93,6 +93,20 @@ ledger itself.
    marking separates parked from forgotten — and the marking must be mechanical,
    because a comment decays. Likewise, an instrument landing is retroactive
    evidence: it re-opens the decisions taken while it was missing.
+
+   **And when a fix *removes* a behaviour, check whether a test procedure
+   depended on it.** A test affordance riding on production behaviour is
+   invisible to the fix's own review — it appears in no correctness diff.
+
+7. **Correctness is necessary; placement decides whether it takes effect.** A
+   rule that is right but lives where the default path does not pass through it
+   may as well not exist — a correction in a ledger loses to the wrong account at
+   the point of use, and a rule in a spec loses to one that loads automatically.
+   So when a rule is not taking effect, **the first hypothesis is placement, not
+   phrasing**: the recorded instances were all correct when written, and most were
+   rewritten before anyone moved them. This is rule 5 one level up — *make the
+   wrong thing unavailable* becomes *make the right thing unavoidable*, and the
+   mechanism is location rather than type.
 
 ---
 
