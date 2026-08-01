@@ -41,7 +41,8 @@ pub use ribbon_collapse::{
     GroupMetrics, RibbonCascade,
 };
 pub use size_sensor::{
-    use_provide_window_size, use_window_size, AtWindowSizeContext, AtWindowSizeSensor,
+    use_provide_window_size, use_window_size, window_size_signal, AtWindowSizeContext,
+    AtWindowSizeSensor,
 };
 pub use viewport::{Viewport, DEFAULT_DPI};
 pub use width_sensor::AtViewportWidthSensor;

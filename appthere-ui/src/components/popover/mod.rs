@@ -23,12 +23,14 @@
 //! # Two hazards the pure modules cannot see
 //!
 //! - **Reposition loops.** [`interaction::on_anchor_change`] compares rects for
-//!   exact float equality, which is correct and would loop if layout ever
-//!   returned a sub-pixel-different rect for an unmoved anchor. It **warns in
-//!   production** after `REPOSITION_BURST_WARN` consecutive repositions, because
-//!   the cause is sub-pixel jitter on real re-renders and a test-only assertion
-//!   is an instrument that speaks only where the hazard is not. Tests also assert
-//!   [`interaction::repositions`] does not advance across idle frames.
+//!   exact float equality, which is correct. Under the event driver (r74) the
+//!   loop that remains is *reactive* rather than temporal — a write feeding back
+//!   into the driver's own effect — so the instrument is an **invariant** rather
+//!   than a threshold: one event runs one comparison yielding at most one
+//!   reposition, so [`interaction::repositions`] exceeding [`interaction::events`]
+//!   is arithmetically impossible without re-entry, and it **warns in
+//!   production** because the cause is a signal graph, which tests do not
+//!   reproduce.
 //! - **The anchor is not "outside".** [`wiring::is_outside_dismiss`] excludes it,
 //!   or clicking the trigger dismisses and the trigger's own handler reopens —
 //!   the control stops toggling and both handlers look correct.
@@ -109,8 +111,8 @@ pub use dismiss_order::{dismiss_sequence, DismissStep};
 pub use geometry::{place, usable_viewport, Align, Placement, PlacementRequest, Rect, Side};
 pub use host::RootLayer;
 pub use interaction::{
-    anchor_is_anchorable, focus_after_dismiss, on_anchor_change, repositions, reset_repositions,
-    route_key, AnchorResponse, DismissCause, FocusTarget, Key, KeyAction, Role,
+    anchor_is_anchorable, events, focus_after_dismiss, note_event, on_anchor_change, repositions,
+    reset_repositions, route_key, AnchorResponse, DismissCause, FocusTarget, Key, KeyAction, Role,
 };
 pub use presentation::{present, MENU_ROW_HEIGHT_PX, MIN_ANCHORED_HEIGHT_PX, MIN_ANCHORED_MENU_PX};
 pub use wiring::{

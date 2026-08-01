@@ -67,11 +67,13 @@
 //! | --- | --- |
 //! | offset by the **same** amount at every scroll position | a coordinate-space error that survived r63 — a constant, so a fixed chrome height |
 //! | offset **grows** with the container's scroll | an origin error: the anchor and the host disagree about where zero is |
-//! | lands correctly, then **separates only while scrolling with it open** | the absent per-frame driver. **Expected, not a regression** — D-15 specifies it and it is unwritten |
+//! | lands correctly, then **separates only while scrolling with it open** | was the absent driver; **the driver landed in r74**, so this is now a defect rather than expected — the anchor is recomputed from the scroll delta, so separation means the delta and the platform's figure disagree |
 //!
-//! The third row is why the procedure says *open fresh*: scrolling with the menu
-//! open produces the same visible separation as row two, so an experiment that
-//! mixes them reports an origin defect that does not exist.
+//! The third row is why the procedure said *open fresh*, and the reason survives
+//! the driver landing: rows two and three still produce the same visible
+//! separation, so an experiment mixing them cannot say which it saw. Open-fresh
+//! isolates the conversion; scrolling-with-it-open now additionally exercises the
+//! driver, which is worth doing **second**, as a separate observation.
 //!
 //! # Why the migration fixes all three at once
 //!

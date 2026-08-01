@@ -113,5 +113,29 @@ pub fn use_provide_window_size() -> Signal<(f64, f64)> {
 /// zero-sized viewport on the first frame.
 #[must_use]
 pub fn use_window_size() -> Option<(f64, f64)> {
-    try_consume_context::<AtWindowSizeContext>().map(|c| *c.size.read())
+    window_size_signal().map(|s| *s.read())
+}
+
+/// The window-size **signal**, for a consumer that must read it from inside an
+/// effect rather than at render time.
+///
+/// # Why a second accessor rather than one that returns a value
+///
+/// [`use_window_size`] reads the signal where it is called, so a component gets
+/// the value and a subscription — correct for rendering. An **effect** captures
+/// that value and is therefore never re-run by a resize: the read happened
+/// outside the closure, so the effect subscribed to nothing.
+///
+/// The popover's anchor driver (Spec 08 D-15) is exactly that consumer — a
+/// resize is one of its two change sources, and it would silently respond only
+/// to the other. Handing back the signal lets the effect read it, and read is
+/// what creates the subscription.
+///
+/// Deliberately **not** a `use_` hook: it calls no hook, so it is legal inside an
+/// effect closure, which is the whole point. Naming it `use_window_size_signal`
+/// would assert a hook contract it does not have and cannot honour there
+/// (L08-031).
+#[must_use]
+pub fn window_size_signal() -> Option<Signal<(f64, f64)>> {
+    try_consume_context::<AtWindowSizeContext>().map(|c| c.size)
 }

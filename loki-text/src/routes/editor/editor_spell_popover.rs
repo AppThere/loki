@@ -33,7 +33,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use appthere_ui::components::popover::{PopoverId, PopoverRequest, use_popover_anchor};
-use appthere_ui::{use_safe_area, use_window_size};
+use appthere_ui::{use_safe_area, use_window_size, window_size_signal};
 use dioxus::prelude::*;
 use loki_app_shell::spell::SpellService;
 
@@ -57,6 +57,9 @@ pub(super) struct SpellPopoverProps {
     pub(super) spell_menu: Signal<Option<SpellMenu>>,
     pub(super) is_language_panel_open: Signal<bool>,
     pub(super) spell_hover: Signal<Option<String>>,
+    /// The editor container's scroll offset — one of the driver's two change
+    /// sources (Spec 08 D-15). See the effect below for why the menu needs it.
+    pub(super) scroll_offset: Signal<f32>,
 }
 
 impl PartialEq for SpellPopoverProps {
@@ -69,6 +72,7 @@ impl PartialEq for SpellPopoverProps {
             && self.spell_menu == other.spell_menu
             && self.is_language_panel_open == other.is_language_panel_open
             && self.spell_hover == other.spell_hover
+            && self.scroll_offset == other.scroll_offset
     }
 }
 
@@ -87,14 +91,16 @@ pub(super) fn SpellPopover(props: SpellPopoverProps) -> Element {
     let insets = use_safe_area();
     let spell_menu = props.spell_menu;
     let spell_hover = props.spell_hover;
+    let scroll_offset = props.scroll_offset;
+    // The container offset this menu was placed against. Captured in the open
+    // effect rather than at mount: re-opening on a different word leaves this
+    // component mounted, so a mount-time capture would go stale on the second
+    // word and the menu would be repositioned by a delta it never travelled.
+    let mut opened_at_scroll = use_signal(|| 0.0_f32);
 
-    // The one write, and it is in an effect rather than in the render.
-    //
-    // Resolved **once per menu change** rather than per frame: a window resize or
-    // an editor scroll after the menu opens is the per-frame driver's job
-    // (`popover::interaction::on_anchor_change`), which is not wired yet. Until it
-    // is, the menu holds the position it opened at — which is the pre-migration
-    // behaviour, so the migration does not regress it while not yet fixing it.
+    // The open write, in an effect rather than in the render. Repositioning is
+    // the second effect below (r74) — this one runs on a *menu change* and must
+    // not subscribe to the driver's change sources.
     use_effect(move || {
         let Some(anchor) = popover else {
             return;
@@ -111,6 +117,11 @@ pub(super) fn SpellPopover(props: SpellPopoverProps) -> Element {
         let sync = props.sync;
         let service = props.service.clone();
         let is_language_panel_open = props.is_language_panel_open;
+        // `peek`, not read: this effect must not subscribe to scroll, or opening
+        // the menu would re-run on every scroll event and re-place from a fresh
+        // baseline each time — which is the I-20 shape (a command subscribing to
+        // the state it acts on) in a different module.
+        opened_at_scroll.set(*scroll_offset.peek());
         anchor.open(
             PopoverRequest {
                 // Stamped by the anchor with the id passed to
@@ -158,8 +169,66 @@ pub(super) fn SpellPopover(props: SpellPopoverProps) -> Element {
         );
     });
 
+    // ── The anchor driver (Spec 08 D-15) ────────────────────────────────────
+    //
+    // Event-driven, because there is no frame source: `scroll::animate` is an
+    // animation clock (one thread per animation, 13 ticks, live only during a
+    // smooth scroll), so a frame model would compare rects during Find and Go To
+    // Page and never for a wheel, a drag or a resize.
+    //
+    // **Where the moved anchor comes from.** The menu is anchored to a word in
+    // the document, and nothing re-reports that word's window position after the
+    // click. But it does not need to be re-read: the word is fixed in *content*
+    // space, so scrolling the container by Δ moves it by −Δ in window space, and
+    // Δ is the difference between the current offset and the one captured at
+    // open. That is arithmetic on a figure the editor already publishes, not a
+    // second measurement of the same thing (L08-029).
+    //
+    // The resize half needs no anchor arithmetic at all: the word has not moved,
+    // the *viewport* has, and `on_anchor_change` compares both halves precisely
+    // so a resize cannot be mistaken for a scroll.
+    use_effect(move || {
+        let Some(anchor) = popover else {
+            return;
+        };
+        let Some(menu) = spell_menu.peek().clone() else {
+            return;
+        };
+        // Both change sources, read **inside** the closure — that is what
+        // subscribes this effect to them. `use_window_size()` reads at render
+        // time, so capturing its value here would leave the driver deaf to
+        // resizes while looking correct; `window_size_signal` exists for exactly
+        // that reason.
+        let scrolled_by = scroll_offset() - *opened_at_scroll.peek();
+        let window = window_size_signal().map(|s| *s.read());
+
+        // The container's own visible height bounds how far the word can travel
+        // before it has certainly left the scroll container. This is deliberately
+        // a *bound* and not the container's window rect: computing that rect is
+        // "container metrics plus known chrome", the arithmetic T4.1 exists to
+        // delete. Erring toward `true` is the safe direction — the viewport half
+        // of the judgement is `anchor_is_anchorable`'s, and it is not fooled.
+        //
+        // NOT ESTABLISHED: that a word scrolled behind the ribbon but still
+        // inside the window is caught. It is not, by either half. The menu would
+        // hold position pointing at content under the chrome until the word
+        // leaves the window entirely. Left as a known bound rather than papered
+        // over with a chrome constant.
+        let still_in_container = window.is_none_or(|(_, h)| scrolled_by.abs() < h as f32);
+
+        // Geometry only. The content closure and the callbacks stay as they were
+        // registered at open — `reposition` takes a `PlacementRequest` precisely
+        // so a driver cannot swap them by rebuilding the request.
+        anchor.reposition(
+            spell_menu_placement(menu.anchor_x, menu.anchor_y - scrolled_by),
+            window,
+            insets,
+            still_in_container,
+        );
+    });
+
     // Renders nothing: both the menu and its backdrop are the host's, at the app
-    // root. What is left here is the effect above — which is the whole reason
-    // this had to become a component.
+    // root. What is left here are the two effects above — which is the whole
+    // reason this had to become a component.
     rsx! {}
 }

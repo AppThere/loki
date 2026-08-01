@@ -39,7 +39,8 @@ mod anchor;
 #[path = "interaction_dismiss.rs"]
 mod dismiss;
 pub use anchor::{
-    anchor_is_anchorable, on_anchor_change, repositions, reset_repositions, AnchorResponse,
+    anchor_is_anchorable, events, note_event, on_anchor_change, repositions, reset_repositions,
+    AnchorResponse,
 };
 pub use dismiss::{focus_after_dismiss, DismissCause, FocusTarget};
 

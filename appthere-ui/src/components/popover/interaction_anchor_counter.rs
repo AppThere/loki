@@ -82,40 +82,46 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// A loop like that presents as a vague frame-rate symptom and sends you looking
 /// at rendering. Counting instead puts it in the register that has been reliable
 /// — four retracted timing attributions, no wrong counter — and turns it into an
-/// immediate, nameable failure: **repositions must not advance across idle
-/// frames.**
+/// immediate, nameable failure: **repositions must not advance on an event where
+/// nothing moved.**
 pub(super) static REPOSITIONS: AtomicU64 = AtomicU64::new(0);
 
-/// Consecutive repositions with no intervening [`AnchorResponse::Ignore`].
+/// Comparisons the driver has performed since the last reset.
 ///
-/// This is the loop's *signature*, and it needs no clock: a settled popover
-/// emits `Ignore` on nearly every frame, while jitter emits `Reposition` on
-/// every frame. Counting a burst is therefore both cheaper and more specific
-/// than a rate over a window.
-pub(super) static CONSECUTIVE: AtomicU64 = AtomicU64::new(0);
+/// # Why this replaces a threshold rather than re-deriving one
+///
+/// `REPOSITION_BURST_WARN = 30` was "half a second at 60 Hz" — a heuristic, and
+/// the only thing a frame driver allows: every frame runs a comparison whether
+/// or not anything moved, so a settled popover emits `Ignore` continuously and
+/// only a *rate* distinguishes jitter from work.
+///
+/// The event driver makes an exact statement available instead. Each event runs
+/// **one** comparison, which yields **at most one** reposition, so
+/// `repositions() <= events()` is an arithmetic invariant rather than a taste.
+/// Exceeding it is impossible without the comparison being re-entered inside a
+/// single event — which is the reactive loop D-15 names, and the only loop an
+/// event driver can have.
+///
+/// So the threshold is gone rather than rescaled, and the rename obligation is
+/// discharged by deletion: there is no "burst" left to misname. That is a better
+/// outcome than a new number, and it is available only because the driver's
+/// shape changed — the same reason this program moved from clocks to counters.
+pub(super) static EVENTS: AtomicU64 = AtomicU64::new(0);
 
-/// Consecutive repositions after which the loop is reported.
+/// Records that the driver is about to run one comparison.
 ///
-/// Half a second at 60 Hz. Long enough that a genuine burst — a momentum scroll
-/// through a long list — passes without comment, short enough that a loop is
-/// named while someone is still looking at it.
-///
-/// **This derivation assumes a frame driver, and there is none** (see
-/// `interaction_anchor`'s docs, D-15). When the event-driven driver lands, the
-/// unit becomes repositions *per event* and this number must be **re-derived
-/// rather than rescaled**: 30 is half a second of frames, and there is no
-/// defensible way to read that as a count of events. Left as-is because nothing
-/// drives the counter yet, and a number changed ahead of its consumer is one
-/// nobody can check.
-///
-/// **The name goes with it, in the same change and not after.** Under an event
-/// driver "burst" and "consecutive" describe an ordinary trackpad drag — 30
-/// consecutive events is a person scrolling — so the identifier would assert a
-/// property it does not have, which this program treats as a defect rather than
-/// a wart (L08-031). If this constant survives to the driver landing, renaming it
-/// is part of that commit; a correct threshold under a misleading name is the
-/// half-fix that reads as done.
-pub const REPOSITION_BURST_WARN: u64 = 30;
+/// Called by [`super::super::anchor_scope::PopoverAnchor::reposition`] before it
+/// compares, so the invariant above has a denominator. A consumer that never
+/// repositions never calls this, and `0 <= 0` holds trivially.
+pub fn note_event() {
+    EVENTS.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Comparisons performed since the last reset.
+#[must_use]
+pub fn events() -> u64 {
+    EVENTS.load(Ordering::Relaxed)
+}
 
 /// Repositions since the last reset. Assert this is unchanged across frames in
 /// which nothing moved.
@@ -124,7 +130,12 @@ pub fn repositions() -> u64 {
     REPOSITIONS.load(Ordering::Relaxed)
 }
 
-/// Resets the reposition counter.
+/// Resets both counters.
+///
+/// Both, because the invariant is a relation between them: resetting one alone
+/// would leave `repositions() <= events()` comparing figures from different
+/// windows, which is the two-sources-one-input shape (L08-029).
 pub fn reset_repositions() {
     REPOSITIONS.store(0, Ordering::Relaxed);
+    EVENTS.store(0, Ordering::Relaxed);
 }

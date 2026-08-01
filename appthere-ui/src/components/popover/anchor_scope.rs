@@ -38,6 +38,7 @@
 use dioxus::prelude::*;
 
 use super::component::{use_popover, AtPopoverContext, PopoverRequest};
+use super::interaction::{note_event, on_anchor_change, AnchorResponse};
 use super::wiring::{dismiss_on_unmount, PopoverId};
 
 impl AtPopoverContext {
@@ -97,6 +98,98 @@ impl PopoverAnchor {
         let mut request = request;
         request.id = self.id;
         self.ctx.open_resolved(request, window, insets);
+    }
+
+    /// Re-places this popover against an anchor that may have moved.
+    ///
+    /// **This is the driver** (Spec 08 D-15). Call it from an effect that reads
+    /// the change sources — the scroll container's metrics and the window size —
+    /// with `request` describing where the anchor is *now* and
+    /// `still_in_container` covering what geometry cannot see.
+    ///
+    /// # Event-driven, because there is no frame source
+    ///
+    /// `scroll::animate` is an animation clock, not a tick: one thread per
+    /// animation, 13 ticks, live only during a smooth scroll. Wired to it this
+    /// would never run for a wheel, a drag, a resize or a reflow. See
+    /// [`super::interaction::anchor::counter`] for what that changes about the
+    /// instrument.
+    ///
+    /// # It does not write unless the placement changed, and that is load-bearing
+    ///
+    /// `Signal::set` notifies unconditionally — it does not compare. Writing on
+    /// every event would re-render the host on every event, and the host's
+    /// re-render can re-enter this comparison; the cycle would terminate only
+    /// because the values stop differing, which is a coincidence of the input
+    /// settling rather than a guarantee.
+    ///
+    /// So: [`on_anchor_change`] returns `Ignore` when nothing moved and nothing
+    /// is written, and a `Reposition` is compared against what is stored before
+    /// either signal is touched. The reads here are **peeks**, never reactive
+    /// reads, for the same reason `ViewportController` separates observation from
+    /// command (L08-019): an effect that subscribed to what it writes is the loop
+    /// under a different name.
+    ///
+    /// # Both signals move together
+    ///
+    /// `open`'s stored `placement` is what the next comparison uses as
+    /// `previous`. Updating `resolved` without it would compare every subsequent
+    /// event against the placement the popover *opened* at, so a settled popover
+    /// would report a reposition forever — a live version of the loop this is
+    /// built to avoid. They are written in one place for that reason (L08-043).
+    /// # It takes a `PlacementRequest`, not a `PopoverRequest`, and that is a fix
+    ///
+    /// The first draft took the whole request. A reposition then *replaces* what
+    /// is stored — including `content` and the callbacks — so a consumer whose
+    /// driver rebuilt the request slightly differently would silently swap the
+    /// menu's content on the first scroll. The content is an `Rc<dyn Fn>`,
+    /// excluded from `PopoverRequest`'s `PartialEq` by design, so neither the
+    /// comparison here nor a test of it would have noticed; the symptom would be
+    /// a menu that empties when you scroll.
+    ///
+    /// Taking only the geometry makes that unrepresentable: the stored request's
+    /// content and callbacks are preserved by construction, and a driver has
+    /// nothing to get wrong (L08-043).
+    pub fn reposition(
+        mut self,
+        placement: super::geometry::PlacementRequest,
+        window: Option<(f64, f64)>,
+        insets: crate::SafeAreaInsets,
+        still_in_container: bool,
+    ) {
+        let Ok(open) = self.ctx.open.try_peek() else {
+            return;
+        };
+        // Only this popover's own driver may move it; the singleton rule means
+        // another may have replaced it since the effect was scheduled.
+        let Some(previous) = open.as_ref().filter(|r| r.id == self.id).cloned() else {
+            return;
+        };
+        drop(open);
+
+        // Everything but the geometry is carried over from what is stored.
+        let mut current = previous.clone();
+        current.placement = placement;
+        current.placement.viewport =
+            super::geometry::usable_viewport(window, insets, placement.viewport);
+        note_event();
+        match on_anchor_change(previous.placement, current.placement, still_in_container) {
+            // The whole idempotence obligation, in one arm: nothing moved, so
+            // nothing is written and the host does not re-render.
+            AnchorResponse::Ignore => {}
+            AnchorResponse::Dismiss => self.dismiss(),
+            AnchorResponse::Reposition(placement) => {
+                if previous.placement == current.placement {
+                    return;
+                }
+                if let Ok(mut slot) = self.ctx.open.try_write() {
+                    *slot = Some(current);
+                }
+                if let Ok(mut slot) = self.ctx.resolved.try_write() {
+                    *slot = Some(placement);
+                }
+            }
+        }
     }
 
     /// Closes this popover, and only this one.

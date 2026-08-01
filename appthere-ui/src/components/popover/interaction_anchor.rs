@@ -78,9 +78,9 @@
 //!
 #[path = "interaction_anchor_counter.rs"]
 mod counter;
-pub use counter::{repositions, reset_repositions, REPOSITION_BURST_WARN};
+pub use counter::{events, note_event, repositions, reset_repositions};
 
-use counter::{CONSECUTIVE, REPOSITIONS};
+use counter::REPOSITIONS;
 use std::sync::atomic::Ordering;
 
 use super::super::geometry::{Placement, PlacementRequest, Rect};
@@ -219,25 +219,25 @@ pub fn on_anchor_change(
     // have moved under a still anchor (a window resize). Either invalidates the
     // flip decision, and comparing only one of them is how the two drift.
     if previous.anchor == current.anchor && previous.viewport == current.viewport {
-        CONSECUTIVE.store(0, Ordering::Relaxed);
         return AnchorResponse::Ignore;
     }
     // Counted here rather than at the call site: this is the only place a
     // reposition is decided, so a consumer cannot forget to count one.
-    REPOSITIONS.fetch_add(1, Ordering::Relaxed);
-    // The counter's production voice. Emitted at the threshold only, so a
-    // sustained loop reports once rather than every frame — and reports at all,
-    // which a test-only assertion cannot: the cause is sub-pixel layout jitter
-    // on real re-renders, which is precisely what tests do not produce. Same
-    // correction as logging `reduced_tiles` unconditionally rather than only
-    // under pressure (L9-011).
-    if CONSECUTIVE.fetch_add(1, Ordering::Relaxed) + 1 == REPOSITION_BURST_WARN {
+    // The counter's production voice, and it fires on a violated invariant
+    // rather than a threshold: one event runs one comparison and yields at most
+    // one reposition, so more repositions than events means this function was
+    // re-entered inside a single event — the reactive loop D-15 names. Reported
+    // in production because the cause is a driver writing a signal its own
+    // effect reads, which tests do not reproduce (L9-011).
+    let repositions = REPOSITIONS.fetch_add(1, Ordering::Relaxed) + 1;
+    if repositions > counter::events() {
         tracing::warn!(
-            consecutive = REPOSITION_BURST_WARN,
+            repositions,
+            events = counter::events(),
             ?previous.anchor,
             ?current.anchor,
-            "popover repositioned on every frame — the anchor rect is changing \
-             when nothing moved, which is layout jitter rather than a scroll",
+            "popover repositioned more times than the driver ran comparisons — \
+             the placement write is feeding back into the driver's own effect",
         );
     }
     // **The form-change rule is retired with the modal form itself (r68).**

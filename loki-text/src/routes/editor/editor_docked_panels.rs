@@ -65,6 +65,7 @@ pub(super) struct DockedSync {
 #[allow(clippy::too_many_arguments)]
 pub(super) fn docked_panels(
     doc_state: Arc<Mutex<DocumentState>>,
+    scroll_offset: Signal<f32>,
     sync: DockedSync,
     spell_service: SpellService,
     spell_menu: Signal<Option<SpellMenu>>,
@@ -94,6 +95,7 @@ pub(super) fn docked_panels(
                     spell_menu,
                     is_language_panel_open,
                     spell_hover,
+                    scroll_offset,
                 }
             }
         }

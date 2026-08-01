@@ -8,8 +8,8 @@ use super::super::presentation::{present, MIN_ANCHORED_HEIGHT_PX, MIN_ANCHORED_M
 use std::sync::Mutex;
 
 use super::{
-    anchor_is_anchorable, focus_after_dismiss, on_anchor_change, repositions, route_key,
-    AnchorResponse, DismissCause, FocusTarget, Key, KeyAction, Role,
+    anchor_is_anchorable, events, focus_after_dismiss, note_event, on_anchor_change, repositions,
+    reset_repositions, route_key, AnchorResponse, DismissCause, FocusTarget, Key, KeyAction, Role,
 };
 
 /// Serialises every test that reads **or moves** the process-wide reposition
@@ -548,22 +548,74 @@ fn a_panel_claims_only_tab_and_escape() {
 /// was missing was a way to *see* a loop, since it presents as a frame-rate
 /// symptom and sends you looking at rendering.
 ///
-/// Asserted the way a consumer should assert it at runtime: nothing moved, so
-/// the count must not advance.
+/// **Restated for the event driver (r74).** This was
+/// `idle_frames_perform_no_repositions`, which asserted the count did not move
+/// across 120 idle *frames*. There are no frames: `scroll::animate` is an
+/// animation clock, and the driver is event-driven — so under the old name the
+/// assertion would have been true because nothing ran, which is the vacuity
+/// D-15 was written to avoid.
+///
+/// The event-driver form has content: an event whose inputs are unchanged runs a
+/// comparison and must still not reposition. That is the case a settled popover
+/// sits in while the user scrolls an unrelated pane.
 #[test]
-fn idle_frames_perform_no_repositions() {
+fn events_with_nothing_moved_perform_no_repositions() {
     let guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let r = req_at(Rect::new(100.0, 300.0, 200.0, 24.0), VIEWPORT);
     let before = repositions();
     for _ in 0..120 {
+        note_event();
         assert_eq!(on_anchor_change(r, r, true), AnchorResponse::Ignore);
     }
     let moved = repositions() - before;
     drop(guard);
     assert_eq!(
         moved, 0,
-        "an unmoved anchor re-placed {moved} times across 120 idle frames — the \
+        "an unmoved anchor re-placed {moved} times across 120 events — the \
          exact-equality comparison is seeing jitter from layout",
+    );
+}
+
+/// **The invariant that replaced the burst threshold.** One event runs one
+/// comparison yielding at most one reposition, so `repositions() <= events()`
+/// holds by arithmetic — and exceeding it is the reactive loop D-15 names, the
+/// only loop an event driver can have.
+///
+/// Swept over a mixture of moves and non-moves, because a run of pure moves
+/// satisfies the relation trivially at equality and would not distinguish a
+/// counter that increments in the wrong place.
+#[test]
+fn repositions_never_exceed_the_events_that_caused_them() {
+    let guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    reset_repositions();
+    let mut previous = req_at(Rect::new(100.0, 300.0, 200.0, 24.0), VIEWPORT);
+    for step in 0..40 {
+        // Every third event moves nothing, so events outrun repositions.
+        let y = if step % 3 == 0 {
+            300.0
+        } else {
+            300.0 - step as f32
+        };
+        let current = req_at(Rect::new(100.0, y, 200.0, 24.0), VIEWPORT);
+        note_event();
+        let _ = on_anchor_change(previous, current, true);
+        previous = current;
+        assert!(
+            repositions() <= events(),
+            "{} repositions from {} events at step {step} — the comparison was \
+             re-entered inside one event, which is the placement write feeding \
+             back into the driver's effect",
+            repositions(),
+            events(),
+        );
+    }
+    let (r, e) = (repositions(), events());
+    reset_repositions();
+    drop(guard);
+    assert!(
+        r > 0 && r < e,
+        "the sweep must produce both outcomes to say anything: {r} repositions, \
+         {e} events",
     );
 }
 

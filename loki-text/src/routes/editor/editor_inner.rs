@@ -648,6 +648,7 @@ pub(super) fn EditorInner(path: String) -> Element {
             // in flow; the spelling menu uses position: absolute (confirmed).
             {docked_panels(
                 doc_state_docked,
+                scroll_offset,
                 DockedSync {
                     loro_doc,
                     cursor_state,
