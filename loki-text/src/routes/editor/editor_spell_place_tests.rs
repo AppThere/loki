@@ -196,3 +196,112 @@ fn the_menu_never_covers_the_caret_it_belongs_to() {
         );
     }
 }
+
+// ── The scroll-drift check, headless half ────────────────────────────────────
+//
+// The sitting answers "does the menu land on the word at every scroll offset".
+// That question has two halves and only one of them needs a screen:
+//
+//   1. **Does the platform's `client_*` track the word as the container
+//      scrolls?** A property of Blitz's event dispatch. Not testable here.
+//   2. **Does our code introduce a scroll term?** Entirely ours, and the half
+//      that has been wrong twice (r42, r43). Tested below.
+//
+// Separating them is the point. If the sitting shows drift and these pass, the
+// defect is in (1) and no amount of re-reading our arithmetic will find it.
+
+use loki_renderer::TileContext;
+
+use super::spell_menu_anchor;
+
+/// A right-click on the same word, reported by the platform at two different
+/// container scroll offsets: the word has moved up the window by `scrolled_by`,
+/// so the platform reports a smaller `client_y` — and the tile-local point is
+/// **unchanged**, because the click is at the same place within the same page.
+fn click_on_the_same_word(client_y: f32, tile_y: f32) -> TileContext {
+    TileContext {
+        page_index: 3,
+        x_pt: 120.0,
+        y_pt: tile_y,
+        client_x: 400.0,
+        client_y,
+    }
+}
+
+/// **The anchor is the window coordinate, never the tile-local one.**
+///
+/// Both pairs come off the same event and both are plausible; picking the wrong
+/// one compiles and lands the menu at an offset that looks deliberate. This
+/// stack also swaps the DOM's `client_*`/`page_*` senses, so the field names
+/// cannot be trusted to disambiguate — which is why the choice is a function
+/// with a test rather than two field reads at the call site.
+#[test]
+fn the_anchor_is_the_window_coordinate_and_not_the_tile_local_one() {
+    let ctx = click_on_the_same_word(300.0, 87.5);
+    assert_eq!(
+        spell_menu_anchor(&ctx),
+        (400.0, 300.0),
+        "the anchor must be `client_*`; `x_pt`/`y_pt` are layout points inside \
+         the tile and would place the menu near the top-left of the page",
+    );
+}
+
+/// **The drift property itself, as far as it can be established headlessly.**
+///
+/// Scrolling the editor moves the word up the window, so the platform reports a
+/// smaller `client_y` for a click on it. The anchor must follow that figure
+/// *exactly* — any scroll compensation in our code would show up as a difference
+/// between the reported delta and the anchor delta, and that difference is
+/// precisely the "offset grows with scroll" reading in the procedure docs.
+///
+/// The tile-local `y_pt` is deliberately held constant across the sweep: the
+/// click is on the same word in the same page, so a correct implementation must
+/// ignore it here, and an implementation that mixed the two pairs would produce
+/// an anchor that does *not* move with the window figure.
+#[test]
+fn the_anchor_tracks_the_window_figure_with_no_scroll_term_of_our_own() {
+    let baseline = spell_menu_anchor(&click_on_the_same_word(600.0, 87.5));
+    for scrolled_by in [0.0_f32, 1.0, 40.0, 41.0, 240.0, 599.0] {
+        let ctx = click_on_the_same_word(600.0 - scrolled_by, 87.5);
+        let (_, anchor_y) = spell_menu_anchor(&ctx);
+        assert!(
+            (baseline.1 - anchor_y - scrolled_by).abs() < 0.001,
+            "scrolled {scrolled_by}px: the anchor moved {}px, not {scrolled_by}px \
+             — a difference here is a scroll term in our own path, which on a \
+             screen reads as the menu drifting further from the word the further \
+             the document is scrolled",
+            baseline.1 - anchor_y,
+        );
+    }
+}
+
+/// The polarity that stops the two tests above being satisfied by a constant:
+/// the anchor must also be *sensitive* to the window figure. Without this,
+/// `spell_menu_anchor` returning `(400.0, 300.0)` unconditionally passes the
+/// first test and — being constant — the second one too.
+#[test]
+fn a_click_somewhere_else_anchors_somewhere_else() {
+    assert_ne!(
+        spell_menu_anchor(&click_on_the_same_word(300.0, 87.5)),
+        spell_menu_anchor(&click_on_the_same_word(301.0, 87.5)),
+    );
+}
+
+/// **41 is not a magic number and must not reappear.** The pre-migration defect
+/// put the menu one tab-bar below the click, and the shape that produced it was
+/// a constant offset applied somewhere in this path. Asserted at the whole
+/// placement rather than at the anchor, so it also covers `spell_menu_placement`
+/// growing a compensation later.
+#[test]
+fn no_fixed_chrome_offset_survives_anywhere_in_the_path() {
+    let ctx = click_on_the_same_word(300.0, 87.5);
+    let (ax, ay) = spell_menu_anchor(&ctx);
+    let req = spell_menu_placement(ax, ay);
+    assert_eq!(
+        (req.anchor.x, req.anchor.y),
+        (ctx.client_x, ctx.client_y),
+        "a constant between the click and the placement request is the ~41px \
+         defect returning; on a screen it reads as the same offset at every \
+         scroll position",
+    );
+}

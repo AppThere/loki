@@ -17,6 +17,7 @@ use loki_app_shell::spell::SpellService;
 use loki_renderer::TileContext;
 
 use super::editor_spell::{SpellMenu, resolve_spell_menu};
+use super::editor_spell_place::spell_menu_anchor;
 use crate::editing::cursor::{CursorState, DocumentPosition};
 use crate::editing::{hit_test::hit_test_page, state::DocumentState};
 
@@ -42,25 +43,21 @@ pub(super) fn open_spell_panel_at(
     };
     match resolve_spell_menu(loro_doc, service, pos.paragraph_index, pos.byte_offset) {
         Some(mut menu) => {
-            // Anchor the floating menu at the cursor (window-relative coords).
-            // NOT viewport-relative, despite the name: this stack returns the
-            // DOM's `pageX/pageY` from `client_coordinates()` and leaves
-            // `page_coordinates()` unimplemented — the two are swapped. See
-            // "Documented stack deviations" in docs/patches.md.
+            // Which of `ctx`'s two coordinate pairs anchors the menu is a
+            // decision with a history, so it lives in `spell_menu_anchor` with a
+            // test rather than as two field reads here.
             //
-            // Window-relative plus *top-level* scroll, which is always zero here
-            // (the app root is 100vh / overflow: hidden). Inner container scroll
-            // is excluded, which is harmless only while the containing block is
-            // the anchor's scroll parent — TODO(t4.1-popover): no longer true
-            // once this is root-hosted.
-            //
-            // These are window coordinates used against a containing block that
-            // is NOT at the window origin: the editor root sits below the tab bar
-            // (40px + 1px border) and the top safe-area inset, so the menu lands
-            // ~41px below the click today. Confirmed by tracing app.rs -> Shell
-            // -> AtTabBar -> Outlet -> EditorInner, not by looking at it.
-            menu.anchor_x = ctx.client_x;
-            menu.anchor_y = ctx.client_y;
+            // **Both notes that used to sit here are resolved and are retracted.**
+            // The `TODO(t4.1-popover)` said excluding inner-container scroll was
+            // "harmless only while the containing block is the anchor's scroll
+            // parent" — r63 root-hosted the menu, so the containing block is now
+            // the app root, which does not scroll, and excluding it is simply
+            // correct. And the claim that the menu "lands ~41px below the click
+            // today" described the editor root as the containing block; that has
+            // not been true since r63.
+            let (anchor_x, anchor_y) = spell_menu_anchor(&ctx);
+            menu.anchor_x = anchor_x;
+            menu.anchor_y = anchor_y;
             // Select the whole word so the user sees what the suggestions apply to.
             let word_pos = |byte_offset| {
                 DocumentPosition::top_level(pos.page_index, menu.paragraph_index, byte_offset)

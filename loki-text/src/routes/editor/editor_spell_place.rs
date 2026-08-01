@@ -40,6 +40,23 @@
 //! while an origin error is displaced by the container's offset and therefore
 //! grows with it.
 //!
+//! ## The headless half is now tested (r73)
+//!
+//! The sitting's question splits in two, and only one half needs a screen:
+//! **(1)** does the platform's `client_*` track the word as the container
+//! scrolls — Blitz's business, not testable here; **(2)** does *our* code
+//! introduce a scroll term — entirely ours, and the half that has been wrong
+//! twice. [`spell_menu_anchor`] makes the coordinate choice a named function, and
+//! `editor_spell_place_tests` asserts (2) directly: the anchor tracks the window
+//! figure exactly across a scroll sweep, no constant survives anywhere in the
+//! path, and four mutations — the tile-local pair, a constant, a `+41.0`, and a
+//! mixed pair — all fail.
+//!
+//! **What that changes about the sitting.** It does not replace it; it makes its
+//! outcome diagnostic. Two of the three readings below are now *pre-excluded* by
+//! test, so if the menu drifts on screen with these green, the defect is in the
+//! platform half, and re-reading our arithmetic will not find it.
+//!
 //! ## Reading the result — the shape of the error names the defect
 //!
 //! Written here rather than worked out at the time, because all three look like
@@ -81,6 +98,40 @@
 //! the usable rect, which is exactly what that field documents.
 
 use appthere_ui::components::popover::{Align, MIN_ANCHORED_MENU_PX, PlacementRequest, Rect, Side};
+use loki_renderer::TileContext;
+
+/// The anchor point for a right-click, in **window** coordinates.
+///
+/// # A one-line function, because this choice has been wrong twice
+///
+/// [`TileContext`] carries two coordinate pairs from the same event, and they
+/// mean different things: `x_pt`/`y_pt` are **tile-local layout points**, used to
+/// hit-test which word was clicked, and `client_x`/`client_y` are
+/// **window-relative CSS pixels**, used to place the menu. Reading the wrong pair
+/// compiles, type-checks, and puts the menu at a plausible-looking offset — r42
+/// and r43 are both instances, and this stack additionally *swaps* the DOM's
+/// `client_*` and `page_*` senses (see `docs/patches.md`), so the names cannot be
+/// trusted to disambiguate.
+///
+/// Making the selection a named function with a test means a mutation to the
+/// other pair fails rather than reads plausibly. That is the half of the
+/// scroll-drift check that does not need a screen: **it establishes that no
+/// scroll term enters the anchor**, which is what makes placement independent of
+/// the editor's scroll offset. The other half — that the platform's `client_*`
+/// really do track the word as the container scrolls — is the sitting.
+///
+/// # Why no scroll term is correct, now that the host is at the root
+///
+/// Window coordinates need adjusting only when the containing block scrolls with
+/// the content. It does not: the popover host is a child of the app root, which
+/// is `100vh` with `overflow: hidden`. An absolutely-positioned child resolves
+/// against that root's padding box, which starts at window `(0, 0)`, so the
+/// anchor's space and the host's are the same space and the correct adjustment is
+/// none.
+#[must_use]
+pub(super) fn spell_menu_anchor(ctx: &TileContext) -> (f32, f32) {
+    (ctx.client_x, ctx.client_y)
+}
 
 /// Menu width in CSS pixels.
 pub(super) const MENU_WIDTH_PX: f32 = 300.0;
