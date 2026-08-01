@@ -40,6 +40,22 @@
 //! while an origin error is displaced by the container's offset and therefore
 //! grows with it.
 //!
+//! ## Reading the result — the shape of the error names the defect
+//!
+//! Written here rather than worked out at the time, because all three look like
+//! "the menu is in the wrong place" and the difference decides whether anything
+//! is wrong at all:
+//!
+//! | what you see | what it is |
+//! | --- | --- |
+//! | offset by the **same** amount at every scroll position | a coordinate-space error that survived r63 — a constant, so a fixed chrome height |
+//! | offset **grows** with the container's scroll | an origin error: the anchor and the host disagree about where zero is |
+//! | lands correctly, then **separates only while scrolling with it open** | the absent per-frame driver. **Expected, not a regression** — D-15 specifies it and it is unwritten |
+//!
+//! The third row is why the procedure says *open fresh*: scrolling with the menu
+//! open produces the same visible separation as row two, so an experiment that
+//! mixes them reports an origin defect that does not exist.
+//!
 //! # Why the migration fixes all three at once
 //!
 //! | defect | what changes |
