@@ -105,7 +105,7 @@ pub mod wiring;
 
 pub use anchor_scope::{use_popover_anchor, PopoverAnchor};
 pub use component::{
-    use_popover, use_provide_popover, AtPopoverContext, AtPopoverHost, PopoverRequest,
+    use_popover, use_provide_popover, AtPopoverContext, AtPopoverHost, OverlayKind, PopoverRequest,
 };
 pub use dismiss_order::{dismiss_sequence, DismissStep};
 pub use geometry::{place, usable_viewport, Align, Placement, PlacementRequest, Rect, Side};

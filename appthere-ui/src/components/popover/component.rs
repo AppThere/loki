@@ -14,6 +14,10 @@ use std::rc::Rc;
 
 use dioxus::prelude::*;
 
+#[path = "component_host.rs"]
+mod host_impl;
+pub use host_impl::AtPopoverHost;
+
 use super::geometry::{Placement, PlacementRequest};
 use super::wiring::PopoverId;
 
@@ -51,6 +55,23 @@ pub struct PopoverRequest {
     /// left. Optional because only hover-tinting consumers need it — discovered
     /// by migrating the one that does.
     pub on_outside_move: Option<Rc<dyn Fn()>>,
+    /// Whether an outside click dismisses this overlay — and therefore whether
+    /// the host renders a backdrop to catch one.
+    ///
+    /// # A tooltip with a backdrop makes the application unclickable
+    ///
+    /// The backdrop is a transparent, **window-sized** click-catcher. That is
+    /// exactly right for a menu, whose outside-click dismissal it implements, and
+    /// catastrophic for a tooltip: a tooltip is dismissed by the pointer leaving
+    /// its anchor, so its backdrop would capture every click in the application
+    /// for as long as the pointer rests on an icon — the r66 failure with a
+    /// different cause and no unmount to end it.
+    ///
+    /// Stated as an enum rather than a `bool` because the two are different
+    /// *kinds* of overlay rather than one with a flag, and because a `bool` at a
+    /// call site reads as "backdrop: false" — a rendering detail — rather than as
+    /// "this is not dismissed by clicking", which is the decision.
+    pub kind: OverlayKind,
     /// What to render, as a **closure invoked during the host's render**.
     ///
     /// # Why not an `Element`
@@ -68,6 +89,19 @@ pub struct PopoverRequest {
     /// re-renders when the content's inputs change. The consumer writes ordinary
     /// reactive code and does not think about it.
     pub content: Rc<dyn Fn() -> Element>,
+}
+
+/// What dismisses an overlay, and therefore what the host must mount for it.
+///
+/// See [`PopoverRequest::kind`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum OverlayKind {
+    /// A menu or panel. An outside click dismisses it, so the host mounts a
+    /// backdrop to capture that click.
+    Dismissible,
+    /// A tooltip. Driven entirely by the pointer over its anchor, so **no
+    /// backdrop** — see [`PopoverRequest::kind`] for what one would cost.
+    PointerDriven,
 }
 
 /// Two requests are the same popover when they have the same identity and
@@ -180,103 +214,4 @@ pub fn use_provide_popover() -> AtPopoverContext {
 #[must_use]
 pub fn use_popover() -> Option<AtPopoverContext> {
     try_consume_context::<AtPopoverContext>()
-}
-
-/// Renders the open popover at the app root.
-///
-/// # Mount after `AtBackdropHost`
-///
-/// [`super::host::RootLayer`] states why: `z-index` cannot arbitrate between two
-/// children of the positioned root, so DOM order does, and a backdrop painting
-/// over the popup makes it visible and unclickable.
-///
-/// # Touch target
-///
-/// The host imposes no size of its own; a 44 × 44 px minimum (WCAG 2.5.8) is the
-/// responsibility of the interactive rows inside `content`, which the host does
-/// not construct.
-#[component]
-pub fn AtPopoverHost() -> Element {
-    let ctx = use_context::<AtPopoverContext>();
-    let Some(request) = ctx.open.read().clone() else {
-        return rsx! {};
-    };
-    // Read, never computed. See `AtPopoverContext::resolved`: deriving placement
-    // here would take it off the one path the reposition counter watches.
-    let Some(Placement { rect, .. }) = *ctx.resolved.read() else {
-        return rsx! {};
-    };
-    let dismiss = Rc::clone(&request.on_dismiss);
-    let outside_move = request.on_outside_move.clone();
-    rsx! {
-        // Backdrop first: DOM order is what orders two children of the same
-        // positioned root, since `z-index` cannot arbitrate between them.
-        div {
-            style: format!(
-                "position: absolute; top: 0; left: 0; width: 100%; height: 100%; \
-                 z-index: {z};",
-                z = super::super::BACKDROP_Z_INDEX,
-            ),
-            onclick: move |_| dismiss(),
-            onmousemove: move |_| {
-                if let Some(f) = outside_move.as_ref() {
-                    f();
-                }
-            },
-        }
-        div {
-            style: format!(
-                "position: absolute; left: {left}px; top: {top}px; \
-                 width: {width}px; max-height: {height}px; overflow-y: auto; \
-                 z-index: {z};",
-                left = rect.x,
-                top = rect.y,
-                width = rect.width,
-                // `max-height` with `overflow-y: auto` rather than a fixed
-                // height, so a clamped placement scrolls its content instead of
-                // truncating it — which is what `Placement::clamped` reports.
-                height = rect.height,
-                z = super::super::BACKDROP_Z_INDEX + 1,
-            ),
-            {(request.content)()}
-        }
-    }
-}
-
-/// **The host must not decide.** Asserted against the source rather than by
-/// reading it, because the drift is one convenient line: `place(request.placement)`
-/// inside the render is shorter than reading a stored placement, and it silently
-/// takes placement off the path `on_anchor_change` — and therefore the reposition
-/// counter — watches.
-///
-/// A source assertion is a blunt instrument. It is the right blunt instrument
-/// here: the property is syntactic, the file is short by design, and the failure
-/// it guards produced no test failure at all when it happened.
-#[cfg(test)]
-mod host_purity {
-    /// The rendered host, as text.
-    const HOST: &str = include_str!("component.rs");
-
-    #[test]
-    fn the_host_render_never_calls_place() {
-        // Sliced to the function's own closing brace, and comment lines dropped.
-        // The first draft took everything after the `fn` and fired on this very
-        // test's assertion message — prose about a forbidden call is not the call,
-        // which is the same false positive the pending-questions gate had.
-        let after = HOST
-            .split("pub fn AtPopoverHost")
-            .nth(1)
-            .unwrap_or_default();
-        let body = after.split("\n}\n").next().unwrap_or_default();
-        let code: String = body
-            .lines()
-            .filter(|l| !l.trim_start().starts_with("//"))
-            .collect();
-        assert!(
-            !code.contains("place("),
-            "AtPopoverHost calls `place(` — placement must be read from \
-             `AtPopoverContext::resolved`, not derived during a render, or it \
-             changes on paths the reposition counter cannot see",
-        );
-    }
 }

@@ -39,8 +39,8 @@ use std::rc::Rc;
 use dioxus::prelude::*;
 
 use crate::components::popover::{
-    use_popover_anchor, Align, AnchorKey, PlacementRequest, PopoverId, PopoverRequest, Rect, Side,
-    MIN_ANCHORED_MENU_PX,
+    use_popover_anchor, Align, AnchorKey, OverlayKind, PlacementRequest, PopoverId, PopoverRequest,
+    Rect, Side, MIN_ANCHORED_MENU_PX,
 };
 use crate::tokens::colors::{
     COLOR_BORDER_CHROME, COLOR_STATUS_ERROR_TEXT, COLOR_SURFACE_PAGE, COLOR_TEXT_PRIMARY,
@@ -199,6 +199,7 @@ pub(super) fn RecentMenuPopover(props: RecentMenuPopoverProps) -> Element {
                 // Left `None` rather than wired to a no-op: an empty callback is
                 // indistinguishable from a forgotten one.
                 on_outside_move: None,
+                kind: OverlayKind::Dismissible,
                 content: Rc::new(move || menu_content(actions.clone(), index, on_dismiss)),
             },
             window,

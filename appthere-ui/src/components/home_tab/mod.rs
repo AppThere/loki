@@ -9,6 +9,7 @@
 //! All user-visible strings are accepted as [`String`] props so translated
 //! strings from `loki_i18n::fl!()` can be passed directly.
 
+mod open_button;
 mod recent_files;
 mod recent_menu;
 mod recent_row;
@@ -159,17 +160,16 @@ pub fn AtHomeTab(props: AtHomeTabProps) -> Element {
                     } else {
                         String::new()
                     },
-                    h2 {
-                        style: format!(
-                            "font-size: {size}px; color: {fg}; \
-                             margin: 0 0 {mb}px 0; font-weight: {weight};",
-                            size   = FONT_SIZE_BODY,
-                            fg     = COLOR_TEXT_ON_CHROME_SECONDARY,
-                            mb     = SPACE_2,
-                            weight = FONT_WEIGHT_SEMIBOLD,
-                        ),
-                        "{props.recent_label}"
-                    }
+                    // Heading + Open action on one row (T4.3 / I-02). The
+                    // action used to sit **below the list**, inside a container
+                    // that scrolls — so on a full list the primary way into the
+                    // application was below the fold. Built in `open_button` to
+                    // keep this file under the ceiling.
+                    {open_button::recent_heading(
+                        props.recent_label.clone(),
+                        props.open_file_label.clone(),
+                        move |()| props.on_open_file.call(()),
+                    )}
                     AtRecentFileList {
                         documents:       props.recent_documents.clone(),
                         recent_label:    props.recent_label.clone(),

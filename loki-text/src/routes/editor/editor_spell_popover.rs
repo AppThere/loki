@@ -32,7 +32,9 @@
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use appthere_ui::components::popover::{PopoverId, PopoverRequest, use_popover_anchor};
+use appthere_ui::components::popover::{
+    OverlayKind, PopoverId, PopoverRequest, use_popover_anchor,
+};
 use appthere_ui::{use_safe_area, use_window_size, window_size_signal};
 use dioxus::prelude::*;
 use loki_app_shell::spell::SpellService;
@@ -153,6 +155,7 @@ pub(super) fn SpellPopover(props: SpellPopoverProps) -> Element {
                         hover.set(None);
                     }
                 })),
+                kind: OverlayKind::Dismissible,
                 content: Rc::new(move || {
                     spell_menu_content(
                         Arc::clone(&doc_state),
