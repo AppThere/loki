@@ -10,6 +10,7 @@
 //! strings from `loki_i18n::fl!()` can be passed directly.
 
 mod recent_files;
+mod recent_menu;
 mod recent_row;
 mod template_gallery;
 

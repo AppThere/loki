@@ -3,8 +3,8 @@
 //! Root application component for loki-presentation.
 
 use appthere_ui::{
-    AtBackdropHost, AtThemeContext, AtViewportWidthSensor, use_provide_backdrop,
-    use_provide_responsive, use_safe_area,
+    AtBackdropHost, AtPopoverHost, AtThemeContext, AtViewportWidthSensor, use_provide_backdrop,
+    use_provide_popover, use_provide_responsive, use_safe_area,
 };
 use dioxus::prelude::*;
 
@@ -85,6 +85,12 @@ pub fn App() -> Element {
     // Window-level dismiss-backdrop context (kept identical to loki-text for
     // suite consistency; used by ribbon overflow menus and anchored popups).
     use_provide_backdrop();
+    // Anchored overlays. Provided here as well as in `loki-text` because the
+    // shared Home tab's Recent Documents menu is a popover consumer (T4.2), and
+    // `use_popover_anchor` degrades to `None` where no root provided the
+    // context — which would present as a ⋮ button that does nothing, in two of
+    // the three apps, with nothing in the log to say why.
+    let _popover = use_provide_popover();
 
     // Spell-check service (bundled English; dictionary cache shared across the
     // suite). Provided into context so this app's editor can query spelling and
@@ -171,6 +177,11 @@ pub fn App() -> Element {
 
             // Window-level dismiss backdrop; renders nothing while unused.
             AtBackdropHost {}
+
+            // **Must follow `AtBackdropHost`** — `z-index` cannot arbitrate
+            // between two children of one positioned root, so DOM order does.
+            // See `popover::RootLayer`.
+            AtPopoverHost {}
         }
     }
 }

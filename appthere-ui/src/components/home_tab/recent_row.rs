@@ -2,7 +2,15 @@
 // Copyright 2026 AppThere Loki contributors
 
 //! One row of [`super::recent_files::AtRecentFileList`]: the document info
-//! button, the ⋮ menu toggle, and the inline context menu.
+//! button and the ⋮ menu toggle.
+//!
+//! # The menu moved out (Spec 08 T4.2)
+//!
+//! It used to render **here**, inside the row, expanding it and pushing every
+//! row below it down. It is now a popover hosted at the app root — see
+//! `super::recent_menu` for what that fixes. What is left is the trigger, and a
+//! trigger's job for an anchored overlay is to report *where it is*: only the
+//! button knows its own rect.
 //!
 //! A `#[component]` (not a loop body) so it owns its hook scope — the hover
 //! signal used to be a `use_signal` inside the list's `for` loop, which made
@@ -11,11 +19,12 @@
 
 use dioxus::prelude::*;
 
+use crate::components::popover::Rect;
+
 use crate::tokens::colors::{
-    COLOR_STATUS_ERROR_TEXT, COLOR_SURFACE_PAGE, COLOR_TEXT_ON_CHROME_SECONDARY,
-    COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
+    COLOR_SURFACE_PAGE, COLOR_TEXT_ON_CHROME_SECONDARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
 };
-use crate::tokens::spacing::{RADIUS_MD, RADIUS_SM, SPACE_1, SPACE_2, SPACE_3, SPACE_4, TOUCH_MIN};
+use crate::tokens::spacing::{RADIUS_MD, RADIUS_SM, SPACE_1, SPACE_3, SPACE_4, TOUCH_MIN};
 use crate::tokens::typography::{FONT_SIZE_BODY, FONT_SIZE_LABEL, FONT_WEIGHT_SEMIBOLD};
 
 /// Props for [`RecentRow`]. The parent owns the open-menu state; the row
@@ -27,14 +36,10 @@ pub(super) struct RecentRowProps {
     pub modified: String,
     pub is_menu_open: bool,
     pub menu_aria_label: String,
-    pub remove_label: String,
-    pub delete_label: String,
-    pub open_copy_label: String,
     pub on_select: EventHandler<usize>,
-    pub on_toggle_menu: EventHandler<usize>,
-    pub on_remove: EventHandler<usize>,
-    pub on_delete: EventHandler<usize>,
-    pub on_open_copy: EventHandler<usize>,
+    /// Toggle, carrying the button's **window** rect so the parent can anchor a
+    /// popover to it. `None` when the rect could not be read.
+    pub on_toggle_menu: EventHandler<(usize, Option<Rect>)>,
 }
 
 /// A recent-document row with its inline context menu.
@@ -50,20 +55,11 @@ pub(super) fn RecentRow(props: RecentRowProps) -> Element {
         COLOR_SURFACE_PAGE
     };
     let idx = props.idx;
-    // Shared base style for context-menu action buttons; caller supplies `fg`.
-    let action_style = |fg: &'static str| {
-        format!(
-            "background: transparent; border: none; text-align: left; \
-             padding: {p}px {ph}px; min-height: {touch}px; cursor: pointer; \
-             font-size: {size}px; color: {fg}; border-radius: {r}px;",
-            p = SPACE_2,
-            ph = SPACE_3,
-            touch = TOUCH_MIN,
-            size = FONT_SIZE_BODY,
-            fg = fg,
-            r = RADIUS_SM,
-        )
-    };
+    // The button's `MountedData`, captured at mount so the click handler can read
+    // its rect. Read at click time rather than at mount: the rect changes with
+    // every scroll of the list, so the moment of the click is the only moment it
+    // is the answer.
+    let mut trigger = use_signal(|| Option::<MountedEvent>::None);
 
     rsx! {
         div {
@@ -125,38 +121,36 @@ pub(super) fn RecentRow(props: RecentRowProps) -> Element {
                         r     = RADIUS_SM,
                         fg    = COLOR_TEXT_ON_CHROME_SECONDARY,
                     ),
-                    onclick: move |_| { props.on_toggle_menu.call(idx); },
+                    onmounted: move |evt: MountedEvent| { trigger.set(Some(evt)); },
+                    onclick: move |_| {
+                        let on_toggle = props.on_toggle_menu;
+                        let Some(evt) = trigger.peek().clone() else {
+                            // No mounted handle: report the toggle with no rect
+                            // rather than swallowing the click. The parent
+                            // closes on `None`, so the button stays a toggle —
+                            // a trigger that silently does nothing is the dead
+                            // control this primitive exists to avoid.
+                            on_toggle.call((idx, None));
+                            return;
+                        };
+                        spawn(async move {
+                            // Async because `get_client_rect` round-trips to the
+                            // event loop; the rect is read here rather than kept
+                            // fresh because keeping it fresh would mean a second
+                            // scroll subscription per row.
+                            let rect = evt.get_client_rect().await.ok().map(|r| Rect {
+                                x: r.origin.x as f32,
+                                y: r.origin.y as f32,
+                                width: r.size.width as f32,
+                                height: r.size.height as f32,
+                            });
+                            on_toggle.call((idx, rect));
+                        });
+                    },
                     "⋮"
                 }
             }
 
-            // ── Inline context menu ───────────────────────────────────────────
-            if props.is_menu_open {
-                div {
-                    style: format!(
-                        "display: flex; flex-direction: column; \
-                         border-top: 1px solid #E0E0E0; \
-                         padding: {p}px; gap: {gap}px;",
-                        p   = SPACE_2,
-                        gap = SPACE_1,
-                    ),
-                    button {
-                        style: action_style(COLOR_TEXT_PRIMARY),
-                        onclick: move |_| { props.on_remove.call(idx); },
-                        "{props.remove_label}"
-                    }
-                    button {
-                        style: action_style(COLOR_STATUS_ERROR_TEXT),
-                        onclick: move |_| { props.on_delete.call(idx); },
-                        "{props.delete_label}"
-                    }
-                    button {
-                        style: action_style(COLOR_TEXT_PRIMARY),
-                        onclick: move |_| { props.on_open_copy.call(idx); },
-                        "{props.open_copy_label}"
-                    }
-                }
-            }
         }
     }
 }
