@@ -287,6 +287,10 @@ pub fn note_device_scale_factor(observed: f64) {
     profile.write().device_scale_factor = Some(observed);
 }
 
+#[path = "device_probe_display.rs"]
+mod display;
+pub use display::note_display_density;
+
 #[path = "device_probe_macos.rs"]
 mod macos;
 pub use macos::parse_memsize;

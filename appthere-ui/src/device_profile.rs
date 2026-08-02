@@ -98,10 +98,25 @@ impl PointerPrecision {
 /// Physical characteristics of the display a window is on.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct PhysicalDisplay {
-    /// Measured or calibrated pixels per inch. `None` while unknown — per D-04
-    /// the calibration prompt appears on first use of Actual Size, never at
-    /// first run, so an unknown value is a normal state and not an error.
-    pub px_per_inch: Option<f32>,
+    /// Measured or calibrated **CSS** pixels per inch. `None` while unknown —
+    /// per D-04 the calibration prompt appears on first use of Actual Size,
+    /// never at first run, so an unknown value is a normal state, not an error.
+    ///
+    /// # CSS pixels, not device pixels — and the rename that made that true
+    ///
+    /// This was `px_per_inch` on a struct called `PhysicalDisplay`, which reads
+    /// as *device* pixels per inch. Its only consumer is
+    /// `components::zoom::fit::actual_size_zoom_percent`, which needs CSS pixels
+    /// per inch, and the two differ by exactly the device scale factor. On the
+    /// 2× display named in T5.5's own acceptance criterion — "within 2% of a
+    /// physical sheet on the MacBook Air 2020" — the ambiguity is a **100%
+    /// error**, and the name would have been the only thing that said so.
+    ///
+    /// So it is named for the quantity it holds (evidence rule 4: rename rather
+    /// than fence). A platform query reports device pixels and millimetres;
+    /// dividing by the scale factor is the probe's job, and
+    /// `loki_app_shell::display_density` is where that happens once.
+    pub css_px_per_inch: Option<f32>,
 }
 
 /// How the window is presented.
@@ -177,6 +192,15 @@ pub struct DeviceProfile {
     pub device_scale_factor: Option<f64>,
     /// The current display's physical characteristics.
     pub display: Option<PhysicalDisplay>,
+
+    /// Whether [`Self::display`] came from a reader's calibration rather than a
+    /// platform query.
+    ///
+    /// Carried on the profile rather than inside `PhysicalDisplay` because it is
+    /// about the *provenance* of the number, and its one consumer —
+    /// `note_display_density`'s precedence rule — needs it even in the frame
+    /// where `display` is being replaced.
+    pub display_is_calibrated: bool,
     /// How the window is presented.
     pub window_mode: WindowMode,
     /// Whether the user or platform asked for reduced motion. Wired to

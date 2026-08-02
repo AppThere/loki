@@ -149,6 +149,7 @@ fn a_synthetic_profile_can_describe_an_android_desktop() {
         // since residency goes as the square of this (Spec 08 §3.2a).
         device_scale_factor: Some(2.0),
         display: None,
+        display_is_calibrated: false,
         window_mode: WindowMode::Windowed,
         reduced_motion: false,
     };

@@ -16,11 +16,11 @@ use crate::device_profile::{PointerPrecision, WindowMode};
 fn a_full_recipe_parses() {
     let o = parse("pointer=coarse,ppi=96,window=fullscreen,dsf=3");
     assert_eq!(o.pointer, Some(PointerPrecision::Coarse));
-    assert_eq!(o.px_per_inch, Some(96.0));
+    assert_eq!(o.css_px_per_inch, Some(96.0));
     assert_eq!(o.window_mode, Some(WindowMode::FullscreenSingle));
     assert_eq!(o.device_scale_factor, Some(3.0));
     assert_eq!(
-        o.display().and_then(|d| d.px_per_inch),
+        o.display().and_then(|d| d.css_px_per_inch),
         Some(96.0),
         "a ppi override must reach consumers as a PhysicalDisplay",
     );
@@ -32,7 +32,7 @@ fn a_full_recipe_parses() {
 fn one_field_leaves_the_rest_probed() {
     let o = parse("pointer=coarse");
     assert_eq!(o.pointer, Some(PointerPrecision::Coarse));
-    assert_eq!(o.px_per_inch, None);
+    assert_eq!(o.css_px_per_inch, None);
     assert_eq!(o.window_mode, None);
     assert_eq!(o.device_scale_factor, None);
 }
@@ -73,7 +73,7 @@ fn describe_is_silent_only_when_nothing_is_forced() {
 /// A zero or negative physical measurement is a typo, not a device.
 #[test]
 fn nonsensical_measurements_are_rejected() {
-    assert_eq!(parse("ppi=0").px_per_inch, None);
-    assert_eq!(parse("ppi=-96").px_per_inch, None);
+    assert_eq!(parse("ppi=0").css_px_per_inch, None);
+    assert_eq!(parse("ppi=-96").css_px_per_inch, None);
     assert_eq!(parse("dsf=0").device_scale_factor, None);
 }

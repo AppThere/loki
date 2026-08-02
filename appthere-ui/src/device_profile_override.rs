@@ -26,7 +26,7 @@
 //! | --- | --- | --- |
 //! | T4.3 tooltips | `pointer` | long-press / visible label on coarse pointers |
 //! | T4.4 breakpoints | `viewport width` (via the window) | Compact and Medium size classes on a large display |
-//! | T5.5 Actual Size | `display.px_per_inch` | the calibrated path, and the uncalibrated prompt |
+//! | T5.5 Actual Size | `display.css_px_per_inch` | the calibrated path, and the uncalibrated prompt |
 //! | T7.1 status bar | `pointer`, `window_mode` | compact status-bar posture |
 //!
 //! # It forces, it does not fake
@@ -66,8 +66,12 @@ pub const OVERRIDE_ENV: &str = "LOKI_DEVICE_PROFILE";
 pub struct ProfileOverride {
     /// Forces [`DeviceProfile::pointer`].
     pub pointer: Option<PointerPrecision>,
-    /// Forces [`DeviceProfile::display`]'s pixels-per-inch.
-    pub px_per_inch: Option<f32>,
+    /// Forces [`DeviceProfile::display`]'s **CSS** pixels-per-inch.
+    ///
+    /// The override is in the same units as the field it writes, so a recipe
+    /// that reproduces a display reproduces what Actual Size will do on it —
+    /// `ppi=110` is a 2× panel at 220 device ppi, not a 110-ppi monitor.
+    pub css_px_per_inch: Option<f32>,
     /// Forces [`DeviceProfile::window_mode`].
     pub window_mode: Option<WindowMode>,
     /// Forces [`DeviceProfile::device_scale_factor`].
@@ -89,8 +93,8 @@ impl ProfileOverride {
     /// The display override as a [`PhysicalDisplay`], if one was given.
     #[must_use]
     pub fn display(self) -> Option<PhysicalDisplay> {
-        self.px_per_inch.map(|ppi| PhysicalDisplay {
-            px_per_inch: Some(ppi),
+        self.css_px_per_inch.map(|ppi| PhysicalDisplay {
+            css_px_per_inch: Some(ppi),
         })
     }
 }
@@ -120,7 +124,7 @@ pub fn parse(raw: &str) -> ProfileOverride {
                     _ => out.pointer,
                 }
             }
-            "ppi" => out.px_per_inch = value.parse().ok().filter(|v: &f32| *v > 0.0),
+            "ppi" => out.css_px_per_inch = value.parse().ok().filter(|v: &f32| *v > 0.0),
             "window" => {
                 out.window_mode = match value.to_ascii_lowercase().as_str() {
                     "fullscreen" => Some(WindowMode::FullscreenSingle),
@@ -165,7 +169,7 @@ pub fn describe(o: ProfileOverride) -> Option<String> {
     if let Some(p) = o.pointer {
         parts.push(format!("pointer={p:?}"));
     }
-    if let Some(ppi) = o.px_per_inch {
+    if let Some(ppi) = o.css_px_per_inch {
         parts.push(format!("ppi={ppi}"));
     }
     if let Some(w) = o.window_mode {

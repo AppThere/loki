@@ -70,8 +70,8 @@ pub use components::{
     ZOOM_MAX_PERCENT, ZOOM_MIN_PERCENT, ZOOM_PRESETS_PERCENT,
 };
 pub use device_probe::{
-    note_device_scale_factor, note_gpu_class, note_system_memory, parse_meminfo,
-    probe_system_memory, SystemMemory,
+    note_device_scale_factor, note_display_density, note_gpu_class, note_system_memory,
+    parse_meminfo, probe_system_memory, SystemMemory,
 };
 pub use device_probe_memory::{
     quantise_bytes, quantised, use_memory_resampling, MEMORY_QUANTUM_BYTES, MEMORY_RESAMPLE_SECS,

@@ -129,7 +129,7 @@ zoom)
   # T5.4: the zoom control in the status bar — step out, open the preset menu,
   # walk it with the keyboard, and choose a preset.
   start_x || exit 1
-  start_app env LOKI_DEVICE_PROFILE=pointer=fine || exit 1
+  start_app env LOKI_DEVICE_PROFILE="${PROFILE:-pointer=fine}" || exit 1
   shot 40-home
   for i in $(seq 1 "${TABS:-7}"); do key Tab; done
   key Return
@@ -146,6 +146,11 @@ zoom)
   key Down;  shot 44-zoom-down2
   key Return; sleep 2
   shot 45-zoom-picked
+  # End: the last row, which is Actual Size when the density is known.
+  xdotool mousemove "${ZX:-1176}" "${ZY:-788}" click 1; sleep 2
+  key End; shot 46-zoom-end
+  key Return; sleep 2
+  shot 47-zoom-actual
   ;;
 
 esac

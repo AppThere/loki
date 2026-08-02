@@ -28,3 +28,10 @@ reqwest = { version = "0.12", default-features = false, features = [
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+# X11/RandR physical-display query for Actual Size (Spec 08 T5.5). Already in
+# the lockfile — winit's own X11 backend uses it — so this is a manifest line
+# and no new transitive weight, which is the same measurement that chose
+# `sysinfo` over an `unsafe_code` exception for the memory probe.
+[target.'cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))'.dependencies]
+x11rb = { version = "0.13", default-features = false, features = ["randr"] }

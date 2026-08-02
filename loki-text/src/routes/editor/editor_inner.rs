@@ -527,7 +527,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     // both are; each returns `None` until its input is real, so a fit or a cap
     // is never computed from a placeholder. See `editor_zoom`.
     let zoom_fit_inputs = move || super::editor_zoom::fit_inputs(&doc_state_zoom, scroll_metrics());
-    let display_ppi = move || use_device_profile().display.and_then(|d| d.px_per_inch);
+    let display_ppi = move || use_device_profile().display.and_then(|d| d.css_px_per_inch);
     let zoom_cap_permille = move || super::editor_zoom::capability_permille(&doc_state_cap);
 
     // Font substitutions reported by the layout engine (requested → substitute):
