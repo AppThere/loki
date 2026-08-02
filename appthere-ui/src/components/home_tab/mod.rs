@@ -9,6 +9,7 @@
 //! All user-visible strings are accepted as [`String`] props so translated
 //! strings from `loki_i18n::fl!()` can be passed directly.
 
+mod gallery_layout;
 mod open_button;
 mod recent_files;
 mod recent_menu;
