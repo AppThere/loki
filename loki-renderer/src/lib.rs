@@ -38,12 +38,14 @@ pub(crate) mod reflow_view;
 pub mod render_layout;
 pub mod renderer_state;
 pub mod revision;
+mod scale_resolve;
 pub mod spell;
 #[cfg(any(not(target_os = "android"), android_gpu))]
 pub(crate) mod tile_key;
 #[cfg(any(not(target_os = "android"), android_gpu))]
 pub(crate) mod tile_plan;
 pub(crate) mod vello_init;
+pub mod zoom_capability;
 
 pub use doc_page_source::DocPageSource;
 pub use document_view::{

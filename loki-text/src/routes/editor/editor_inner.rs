@@ -21,7 +21,7 @@
 
 use std::sync::Arc;
 
-use appthere_ui::{AtRibbon, AtStatusBar, tokens, use_breakpoint};
+use appthere_ui::{AtRibbon, tokens, use_breakpoint, use_device_profile};
 use dioxus::prelude::*;
 use loki_doc_model::document::Document;
 use loki_doc_model::get_mark_at;
@@ -69,7 +69,7 @@ pub(super) fn EditorInner(path: String) -> Element {
     // ── Font-substitution detail panel open state ────────────────────────────
     // Closed by default; the status-bar chip (shown whenever substitutions
     // exist) toggles it.
-    let mut font_panel_open = use_signal(|| false);
+    let font_panel_open = use_signal(|| false);
 
     // ── Ribbon collapse state ────────────────────────────────────────────────
     let mut ribbon_collapsed = use_signal(|| false);
@@ -91,8 +91,8 @@ pub(super) fn EditorInner(path: String) -> Element {
         hbar_drag,
         current_page,
         mut total_pages,
-        mut view_mode,
-        mut view_mode_user_set,
+        view_mode,
+        view_mode_user_set,
         mut bold_active,
         mut italic_active,
         mut underline_active,
@@ -105,7 +105,7 @@ pub(super) fn EditorInner(path: String) -> Element {
         can_redo,
         is_style_picker_open,
         editing_style_draft,
-        mut zoom_percent,
+        zoom_percent,
         is_dirty,
         save_message,
         save_request,
@@ -246,6 +246,8 @@ pub(super) fn EditorInner(path: String) -> Element {
     let doc_state_docked = Arc::clone(&doc_state);
     let doc_state_style_picker = Arc::clone(&doc_state);
     let doc_state_style_editor = Arc::clone(&doc_state);
+    let doc_state_zoom = Arc::clone(&doc_state);
+    let doc_state_cap = Arc::clone(&doc_state);
     let doc_state_spell_ctx = Arc::clone(&doc_state);
     let doc_state_seed = Arc::clone(&doc_state);
     let doc_state_render = Arc::clone(&doc_state);
@@ -520,6 +522,14 @@ pub(super) fn EditorInner(path: String) -> Element {
         )
     };
 
+    // ── Zoom measurements (Spec 08 T5.4 / T5.5) ───────────────────────────
+    // Read here because this is where the layout state and the measured canvas
+    // both are; each returns `None` until its input is real, so a fit or a cap
+    // is never computed from a placeholder. See `editor_zoom`.
+    let zoom_fit_inputs = move || super::editor_zoom::fit_inputs(&doc_state_zoom, scroll_metrics());
+    let display_ppi = move || use_device_profile().display.and_then(|d| d.px_per_inch);
+    let zoom_cap_permille = move || super::editor_zoom::capability_permille(&doc_state_cap);
+
     // Font substitutions reported by the layout engine (requested → substitute):
     // the status-bar chip is the indicator; the detail panel opens from it.
     let font_substitutions = super::editor_fonts::font_substitutions(&doc_state);
@@ -746,54 +756,21 @@ pub(super) fn EditorInner(path: String) -> Element {
             }
 
             // ── Status bar ────────────────────────────────────────────────────
-            AtStatusBar {
+            // Extracted to `editor_status_bar` when the zoom badge became the
+            // zoom control (Spec 08 T5.4): its props roughly doubled, and this
+            // file is baselined over the ceiling and may not grow.
+            super::editor_status_bar::EditorStatusBar {
                 page_label:         page_label,
                 word_count_label:   word_count_label(),
-                language_label:     fl!("editor-language"),
-                zoom_percent:       zoom_percent(),
-                collaborator_count: 0,
-                collaborator_label: String::new(),
-                zoom_aria_label:    fl!("editor-zoom-aria"),
-                on_zoom_click:      move |_| {
-                    let next = appthere_ui::next_zoom(*zoom_percent.peek());
-                    zoom_percent.set(next);
-                },
-                view_mode_label:    if view_mode() == ViewMode::Reflow {
-                    fl!("editor-view-reflowed")
-                } else {
-                    fl!("editor-view-paginated")
-                },
-                view_mode_aria_label: fl!("editor-view-toggle-aria"),
-                on_view_mode_click: move |_| {
-                    // User override freezes the width-based default.
-                    view_mode_user_set.set(true);
-                    let next = if *view_mode.peek() == ViewMode::Reflow {
-                        ViewMode::Paginated
-                    } else {
-                        ViewMode::Reflow
-                    };
-                    view_mode.set(next);
-                },
-                // Font-substitution indicator (Spec 03 M3, inverted): the chip
-                // is the always-on signal that fonts were substituted; clicking
-                // it toggles the detail panel above the ribbon.
-                notice_label: if font_sub_count > 0 {
-                    fl!("editor-font-substitution-chip", count = font_sub_count)
-                } else {
-                    String::new()
-                },
-                notice_aria_label: fl!("editor-font-substitution-title"),
-                on_notice_click:    move |_| {
-                    let v = *font_panel_open.peek();
-                    font_panel_open.set(!v);
-                },
-                // Transient success chip ("Document saved", …). Auto-clears
-                // (use_save_status_autoclear) and clears on dirty; click = dismiss.
-                status_note_label: super::editor_save_banner::save_status_chip_label(save_message),
-                on_status_note_click: {
-                    let mut save_message = save_message;
-                    move |_| save_message.set(None)
-                },
+                font_sub_count:     font_sub_count,
+                fit_inputs:         zoom_fit_inputs(),
+                css_px_per_inch:    display_ppi(),
+                zoom_capability_limit_permille: zoom_cap_permille(),
+                zoom_percent:       zoom_percent,
+                view_mode:          view_mode,
+                view_mode_user_set: view_mode_user_set,
+                font_panel_open:    font_panel_open,
+                save_message:       save_message,
             }
         }
     }

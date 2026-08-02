@@ -17,7 +17,7 @@ use dioxus::prelude::*;
 #[cfg(any(not(target_os = "android"), android_gpu))]
 use crate::page_tile::PageTile;
 #[cfg(any(not(target_os = "android"), android_gpu))]
-use crate::render_layout::{RenderMode, reflow_layout_tile_width_pt, reflow_type_scale};
+use crate::render_layout::RenderMode;
 use crate::renderer_state::RendererState;
 
 // The HTML-flow fallback is only used on the Android CPU path; GPU targets
@@ -69,39 +69,19 @@ pub fn DocumentView(props: DocumentViewProps) -> Element {
     // ── GPU / desktop ─────────────────────────────────────────────────────────
     #[cfg(any(not(target_os = "android"), android_gpu))]
     {
-        // Select the render mode before reading the generation: switching mode
-        // (or a reflow width change) invalidates the layout cache and advances
-        // the generation so every tile repaints against the new layout.
-        // Reflow runs the real layout engine at the viewport width (full
-        // formatting fidelity), presented as zero-gap virtual tiles.
-        let render_mode = if props.view_mode == ViewMode::Reflow && props.reflow_width_px > 1.0 {
-            RenderMode::Reflow {
-                available_width_pt: reflow_layout_tile_width_pt(props.reflow_width_px as f32),
-            }
-        } else {
-            RenderMode::Paginated
-        };
-        renderer.source.set_render_mode(render_mode);
-        // Paginated tiles zoom with the user's zoom control. Reflow tiles paint
-        // at the responsive type scale (Spec 03 M4): the layout width above is
-        // divided by the same factor, so the on-screen tile width is unchanged
-        // while Compact type renders larger.
-        let zoom = if render_mode == RenderMode::Paginated {
-            // No floor here: `set_zoom` clamps to the shared residency range, and
-            // a second literal 0.25 alongside `ZOOM_RANGE_MIN` is the duplication
-            // that renaming those constants was meant to discourage.
-            props.zoom
-        } else {
-            f64::from(reflow_type_scale(props.reflow_width_px as f32))
-        };
-        renderer.source.set_zoom(zoom as f32);
-        // Read back rather than reuse the local. `set_zoom` records what was
-        // *requested*; the source renders `min(requested, capability_limit)`, and
-        // the CSS tile boxes below must be sized from what is actually rendered.
-        // Sizing a box from a zoom the texture was not rendered at paints the
-        // page at the wrong size — inert today because nothing sets a capability
-        // limit, and the first thing Spec 08 T5.4 would trip over.
-        let zoom = f64::from(renderer.source.zoom());
+        // Render mode, zoom, and the residency capability cap — one cluster,
+        // because they must happen in that order and the read-back at the end
+        // only means anything after the cap is applied. See `scale_resolve`.
+        let (render_mode, zoom) = crate::scale_resolve::resolve(
+            &renderer.source,
+            crate::scale_resolve::ScaleInputs {
+                view_mode: props.view_mode,
+                reflow_width_px: props.reflow_width_px,
+                zoom: props.zoom,
+                device_scale_factor: props.device_scale_factor,
+                texture_budget: props.texture_budget,
+            },
+        );
         // Single canonical layout: in paginated mode reuse the layout the editor
         // already computed for this document instead of laying it out again.
         // Provided after set_render_mode so it is keyed to the current

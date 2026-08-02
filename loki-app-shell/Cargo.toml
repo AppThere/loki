@@ -9,6 +9,7 @@ keywords = ["document", "shell", "loki"]
 categories = ["gui"]
 
 [dependencies]
+appthere-ui = { path = "../appthere-ui" }
 loki-i18n = { path = "../loki-i18n" }
 loki-spell = { path = "../loki-spell" }
 serde = { version = "1", features = ["derive"] }

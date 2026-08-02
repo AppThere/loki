@@ -1002,11 +1002,11 @@ pub(super) fn EditorInner(path: String) -> Element {
                 zoom_percent:       zoom_percent(),
                 collaborator_count: 0,
                 collaborator_label: String::new(),
-                zoom_aria_label:    fl!("editor-zoom-aria"),
-                on_zoom_click:      move |_| {
-                    let next = appthere_ui::next_zoom(*zoom_percent.peek());
-                    zoom_percent.set(next);
-                },
+                zoom_labels: loki_app_shell::zoom_labels::zoom_labels(),
+                // Presets only: this app has no page geometry to fit to, and a
+                // row with nothing behind it is worse than an absent one.
+                zoom_commands: appthere_ui::ZoomCommands::default(),
+                on_zoom_change: move |p: u32| zoom_percent.set(p),
             }
         }
     }

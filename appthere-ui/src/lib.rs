@@ -56,15 +56,18 @@ pub use components::ribbon::{
     RibbonTabDesc, RibbonTabIndex,
 };
 pub use components::{
-    next_zoom, use_backdrop, use_provide_backdrop, AtBackdropContext, AtBackdropHost,
-    AtColorPickerLabels, AtColorPickerPanel, AtColorPickerTrigger, AtColorSwatch, AtConfirmDialog,
-    AtConfirmDialogProps, AtDocumentTab, AtDocumentTabData, AtDocumentTabProps, AtHomeTab,
-    AtHomeTabProps, AtInfobar, AtInfobarProps, AtMacroTrustDialog, AtMacroTrustDialogProps,
-    AtNetworkPrompt, AtNetworkPromptProps, AtPanelHost, AtPanelHostProps, AtPermissionPrompt,
+    actual_size_zoom_percent, clamp_zoom_percent, fit_page_zoom_percent, fit_width_zoom_percent,
+    next_zoom, parse_zoom_percent, prev_zoom, use_backdrop, use_provide_backdrop, zoom_is_capped,
+    zoom_percent_to_permille, AtBackdropContext, AtBackdropHost, AtColorPickerLabels,
+    AtColorPickerPanel, AtColorPickerTrigger, AtColorSwatch, AtConfirmDialog, AtConfirmDialogProps,
+    AtDocumentTab, AtDocumentTabData, AtDocumentTabProps, AtHomeTab, AtHomeTabProps, AtInfobar,
+    AtInfobarProps, AtMacroTrustDialog, AtMacroTrustDialogProps, AtNetworkPrompt,
+    AtNetworkPromptProps, AtPanelHost, AtPanelHostProps, AtPermissionPrompt,
     AtPermissionPromptProps, AtStatusBar, AtStatusBarProps, AtTabBar, AtTabBarProps,
-    AtTemplateBrowser, AtTemplateBrowserProps, AtTitleBar, AtTitleBarProps, BuiltinTemplate,
-    MacroDialogFrame, MacroDialogFrameProps, MacroGrantChoice, MacroTrustChoice, PanelPosture,
-    Platform, RecentDocument, BACKDROP_Z_INDEX,
+    AtTemplateBrowser, AtTemplateBrowserProps, AtTitleBar, AtTitleBarProps, AtZoomControl,
+    AtZoomLabels, BuiltinTemplate, MacroDialogFrame, MacroDialogFrameProps, MacroGrantChoice,
+    MacroTrustChoice, PanelPosture, Platform, RecentDocument, ZoomCommands, BACKDROP_Z_INDEX,
+    ZOOM_MAX_PERCENT, ZOOM_MIN_PERCENT, ZOOM_PRESETS_PERCENT,
 };
 pub use device_probe::{
     note_device_scale_factor, note_gpu_class, note_system_memory, parse_meminfo,

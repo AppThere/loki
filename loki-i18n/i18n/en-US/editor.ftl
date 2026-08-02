@@ -15,6 +15,13 @@ editor-word-count = { $count ->
 editor-word-count-pending = Counting words…
 editor-language = English (US)
 editor-zoom-aria = Zoom level
+editor-zoom-out = Zoom out
+editor-zoom-in = Zoom in
+editor-zoom-menu = Zoom level, opens preset list
+editor-zoom-fit-width = Fit width
+editor-zoom-fit-page = Fit page
+editor-zoom-actual-size = Actual size
+editor-zoom-reduced = Reduced to fit this device's memory
 
 # Document title for unsaved blank documents
 editor-untitled = Untitled

@@ -7,6 +7,7 @@
 
 use dioxus::prelude::*;
 
+use crate::components::zoom_control::AtZoomControl;
 use crate::responsive::use_breakpoint;
 use crate::theme::use_theme;
 use crate::tokens::layout::STATUS_BAR_HEIGHT;
@@ -34,12 +35,6 @@ mod chips;
 #[component]
 pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
     let palette = use_theme().palette();
-    let mut zoom_hovered = use_signal(|| false);
-    let zoom_bg = if zoom_hovered() {
-        "#444444"
-    } else {
-        palette.surface_3
-    };
     let mut view_hovered = use_signal(|| false);
     let view_bg = if view_hovered() {
         "#444444"
@@ -164,21 +159,19 @@ pub fn AtStatusBar(props: AtStatusBarProps) -> Element {
                 }
             }
 
-            // Zoom badge (clickable button).
-            // Hit area: full bar height × ≥ TOUCH_MIN wide (see component doc).
-            button {
-                "aria-label": props.zoom_aria_label,
-                style: format!(
-                    "{hit} background: transparent; border: none; cursor: pointer;",
-                    hit = hit_area_style(),
-                ),
-                onmouseenter: move |_| { zoom_hovered.set(true); },
-                onmouseleave: move |_| { zoom_hovered.set(false); },
-                onclick: move |_| { props.on_zoom_click.call(()); },
-                span {
-                    style: chip_style(zoom_bg, palette.text_on_chrome_secondary),
-                    "{props.zoom_percent}%"
-                }
+            // The zoom control (Spec 08 T5.4): out / readout / in, with the
+            // preset menu on the readout. It replaced a single badge that cycled
+            // through six values, which stopped being viable when the increment
+            // sequence had to stop wrapping — see `components::zoom`.
+            AtZoomControl {
+                percent: props.zoom_percent,
+                capability_limit_permille: props.zoom_capability_limit_permille,
+                commands: props.zoom_commands,
+                labels: props.zoom_labels.clone(),
+                on_change: props.on_zoom_change,
+                on_fit_width: props.on_zoom_fit_width,
+                on_fit_page: props.on_zoom_fit_page,
+                on_actual_size: props.on_zoom_actual_size,
             }
 
             // Collaborator badge (hidden when count is 0)
@@ -223,75 +216,6 @@ fn chip_style(bg: &str, fg: &str) -> String {
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 /// Props for [`AtStatusBar`].
-#[derive(Props, Clone, PartialEq)]
-pub struct AtStatusBarProps {
-    /// Pre-formatted page label, e.g. `"Page 1 of 4"`.
-    pub page_label: String,
-
-    /// Pre-formatted word count label, e.g. `"1,847 words"`.
-    pub word_count_label: String,
-
-    /// Active language label, e.g. `"English (US)"`.
-    pub language_label: String,
-
-    /// Zoom percentage value, e.g. `100` (rendered as `"100%"`).
-    pub zoom_percent: u32,
-
-    /// Number of active remote collaborators. `0` = hide the collaborator badge.
-    pub collaborator_count: u32,
-
-    /// Pre-formatted collaborator label, e.g. `"2 connected"`.
-    /// Only rendered when `collaborator_count > 0`.
-    pub collaborator_label: String,
-
-    /// Callback invoked when the zoom badge is clicked.
-    pub on_zoom_click: EventHandler<()>,
-
-    /// Aria label for the zoom button.
-    pub zoom_aria_label: String,
-
-    /// Label for the optional view-mode toggle (e.g. `"Paginated"`/`"Reflowed"`).
-    /// Empty (the default) hides the toggle, so apps that do not offer it are
-    /// unaffected.
-    #[props(default)]
-    pub view_mode_label: String,
-
-    /// Aria label for the view-mode toggle button.
-    #[props(default)]
-    pub view_mode_aria_label: String,
-
-    /// Callback invoked when the view-mode toggle is clicked. Defaults to a
-    /// no-op when not provided.
-    #[props(default)]
-    pub on_view_mode_click: Callback<()>,
-
-    /// Optional status-notice chip rendered on the left (e.g. the recovery
-    /// affordance for a dismissed font-substitution warning). Empty (the
-    /// default) hides it, so apps that do not use it are unaffected. Generic by
-    /// design — not font-specific.
-    ///
-    /// Touch target: ≥ `TOUCH_MIN` wide × full bar height (see the component
-    /// doc for the shared status-bar-height constraint).
-    #[props(default)]
-    pub notice_label: String,
-
-    /// Aria label for the notice chip.
-    #[props(default)]
-    pub notice_aria_label: String,
-
-    /// Callback invoked when the notice chip is clicked.
-    #[props(default)]
-    pub on_notice_click: Callback<()>,
-
-    /// Optional transient status chip (e.g. "Document saved"). Empty (the
-    /// default) hides it. The app owns the message's lifetime — auto-clearing
-    /// and clear-on-edit live in the caller; clicking the chip dismisses it.
-    ///
-    /// Touch target: ≥ `TOUCH_MIN` wide × full bar height.
-    #[props(default)]
-    pub status_note_label: String,
-
-    /// Callback invoked when the status chip is clicked (dismiss).
-    #[props(default)]
-    pub on_status_note_click: Callback<()>,
-}
+#[path = "status_bar_props.rs"]
+mod props;
+pub use props::AtStatusBarProps;

@@ -23,6 +23,23 @@ const PTS_TO_CSS_PX: f64 = 96.0 / 72.0;
 ///
 /// Both answers come off a single layout guard: taking two would let the
 /// generation change between them and pair a reflow flag with paginated boxes.
+/// Every page's size in points, for the current layout generation.
+///
+/// Separate from [`tile_boxes`] because the capability bound must be computed
+/// **before** the zoom it constrains is read back, and `tile_boxes` takes that
+/// zoom as an argument. Sharing one function would mean either computing tile
+/// geometry at a zoom about to be capped, or deriving the page list twice.
+pub(crate) fn page_sizes_pt(source: &Arc<DocPageSource>) -> Vec<(f64, f64)> {
+    let generation = source.current_generation();
+    let guard = source.layout_for_generation(generation);
+    let Some((_, layout)) = guard.as_ref() else {
+        return Vec::new();
+    };
+    (0..layout.page_count())
+        .filter_map(|i| layout.page_size_pts(i).map(|(w, h)| (w as f64, h as f64)))
+        .collect()
+}
+
 pub(crate) fn tile_boxes(
     source: &Arc<DocPageSource>,
     generation: u64,

@@ -29,6 +29,7 @@ pub mod spell;
 pub mod tabs;
 pub mod untitled;
 pub mod window_geometry;
+pub mod zoom_labels;
 
 pub use untitled::{
     NewDocSource, UNTITLED_SCHEME, import_path, is_untitled, parse_new_doc_source, template_path,

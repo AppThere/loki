@@ -19,6 +19,8 @@ scripts/sitting/run.sh smoke      # Home renders, fine pointer
 scripts/sitting/run.sh coarse     # the visible-label branch
 scripts/sitting/run.sh keyboard   # Tab walk, one shot per stop
 TABS=12 scripts/sitting/run.sh menu   # open a row menu, walk it, Escape
+scripts/sitting/run.sh editor         # open a document, click, type
+ZX=1176 ZY=788 scripts/sitting/run.sh zoom   # the status-bar zoom control
 ```
 
 Shots land in `target/sitting/`. `SETTLE` (default 10s) is how long to wait
@@ -46,15 +48,21 @@ subject):
    nothing. The app was fine. `run.sh` now sets input focus explicitly after
    the window maps.
 
-2. **A probe ordered so it could not lose.** Testing whether `:focus-visible`
+2. **A stale click coordinate.** The `zoom` scenario clicks the status-bar
+   readout by position. When the control's width changed, the click landed in
+   the gap beside it and the run read as "the menu does not open" — the app was
+   fine. Coordinates are parameters (`ZX`/`ZY`) for this reason; re-measure from
+   a screenshot after any layout change rather than trusting the default.
+
+3. **A probe ordered so it could not lose.** Testing whether `:focus-visible`
    is supported, the first attempt put `:focus` *after* it — equal specificity,
    so `:focus` won whether or not `:focus-visible` matched, and the result
    looked like "unsupported" without being evidence of it. Re-run with the
    order flipped, `:focus` still won: genuinely unsupported.
 
-## What the first sitting found (r79)
+## What the sittings have found
 
-Four defects, none of which any unit test could have reached:
+**r79 — four defects, none reachable by any unit test:**
 
 | finding | layer |
 | --- | --- |
@@ -62,3 +70,9 @@ Four defects, none of which any unit test could have reached:
 | Enter/Space never activated a focused control (WCAG 2.1.1) | `patches/blitz-dom` keyboard |
 | `tabindex="-1"` was not focusable, so `autofocus` never applied to an overlay | `patches/blitz-dom` element |
 | click-focus ran *after* the click handler, undoing that handler's `autofocus` | `patches/blitz-dom` mouse |
+
+**r80 — one:** the new zoom control's buttons carried `min-height: TOUCH_MIN`
+(44 px) in a 24 px status bar, so they overflowed **upward and painted over the
+ribbon**. Every unit test passed; the control was correct and in the wrong place.
+It now uses the bar's existing `height: 100%` convention, with the WCAG bound
+that forces stated on the component.

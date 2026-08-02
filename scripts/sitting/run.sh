@@ -125,5 +125,28 @@ editor)
   shot 33-typed
   ;;
 
+zoom)
+  # T5.4: the zoom control in the status bar — step out, open the preset menu,
+  # walk it with the keyboard, and choose a preset.
+  start_x || exit 1
+  start_app env LOKI_DEVICE_PROFILE=pointer=fine || exit 1
+  shot 40-home
+  for i in $(seq 1 "${TABS:-7}"); do key Tab; done
+  key Return
+  sleep "${OPEN_SETTLE:-12}"
+  shot 41-opened
+  # The status bar sits at the bottom; click the readout to raise the menu.
+  # The readout's position depends on what else the status bar holds, so it
+  # is a parameter rather than a constant — a stale coordinate silently
+  # clicks the gap beside the control and the run reads as "the menu does
+  # not open" (the harness's own lie, again).
+  xdotool mousemove "${ZX:-1176}" "${ZY:-788}" click 1; sleep 2
+  shot 42-zoom-menu
+  key Down;  shot 43-zoom-down
+  key Down;  shot 44-zoom-down2
+  key Return; sleep 2
+  shot 45-zoom-picked
+  ;;
+
 esac
 echo "DONE: $1"

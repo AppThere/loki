@@ -4535,6 +4535,7 @@ dependencies = [
 name = "loki-app-shell"
 version = "0.1.0"
 dependencies = [
+ "appthere-ui",
  "dirs",
  "loki-i18n",
  "loki-spell",
