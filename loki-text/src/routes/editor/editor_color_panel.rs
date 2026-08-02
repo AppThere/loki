@@ -88,10 +88,25 @@ pub(super) fn color_picker_panel(
         close: fl!("ribbon-color-close-aria"),
         clear: t.clear,
         recent_heading: fl!("ribbon-color-recent"),
+        document_heading: fl!("ribbon-color-document"),
         custom_heading: fl!("ribbon-color-custom"),
         apply: fl!("ribbon-color-apply"),
     };
     let recent_list = recent_swatches(&t.recent.read(), t.recent_fill);
+    // Colours this document's styles define (T5.2). Read from the live document
+    // rather than remembered, so it follows an edit that adds or removes one.
+    let document_list = {
+        let colors: Vec<String> = doc_state
+            .lock()
+            .ok()
+            .and_then(|st| {
+                st.document
+                    .as_ref()
+                    .map(|d| super::editor_doc_colors::document_colors(d))
+            })
+            .unwrap_or_default();
+        recent_swatches(&colors, t.recent_fill)
+    };
     let ds = Arc::clone(doc_state);
     let recent_sig = t.recent;
     let apply = t.apply;
@@ -101,6 +116,7 @@ pub(super) fn color_picker_panel(
             current_value: t.current,
             swatches: t.swatches,
             recent: recent_list,
+            document: document_list,
             show_custom: t.show_custom,
             labels: labels,
             on_pick: move |value: Option<String>| {

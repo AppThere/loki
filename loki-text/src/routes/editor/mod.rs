@@ -20,6 +20,7 @@ mod editor_caret_follow_geom;
 mod editor_color_panel;
 mod editor_compact;
 mod editor_dirty;
+mod editor_doc_colors;
 mod editor_docked_panels;
 mod editor_error_view;
 mod editor_font_warning;

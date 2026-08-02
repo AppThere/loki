@@ -34,38 +34,9 @@ use custom::CustomColorSection;
 /// Swatches per panel row (6 × 44 px buttons keeps the grid compact).
 const SWATCHES_PER_ROW: usize = 6;
 
-/// One selectable colour: the opaque `value` reported on pick, the CSS `fill`
-/// shown in the swatch square, and its accessible name.
-#[derive(Clone, PartialEq)]
-pub struct AtColorSwatch {
-    /// Opaque value reported to `on_pick` (e.g. a hex string or variant name).
-    pub value: String,
-    /// CSS colour painted in the swatch square.
-    pub fill: String,
-    /// Accessible name of the swatch button.
-    pub aria_label: String,
-}
-
-/// Translated prose labels for the panel's sections and actions.
-#[derive(Clone, PartialEq)]
-pub struct AtColorPickerLabels {
-    /// Panel heading (e.g. "Font colour").
-    pub title: String,
-    /// Accessible name of the panel's close button.
-    pub close: String,
-    /// The "clear / automatic / none" action label.
-    pub clear: String,
-    /// Heading of the recent-colours section.
-    pub recent_heading: String,
-    /// Heading of the custom-colour section.
-    pub custom_heading: String,
-    /// Apply button label of the custom-colour section.
-    pub apply: String,
-    /// Accessible name of the saturation/value square.
-    pub area: String,
-    /// Accessible name of the hue strip.
-    pub hue: String,
-}
+#[path = "types.rs"]
+mod types;
+pub use types::{AtColorPickerLabels, AtColorSwatch};
 
 /// A small filled square used inside swatch buttons.
 fn square(fill: &str) -> Element {
@@ -142,6 +113,9 @@ pub fn AtColorPickerPanel(
     swatches: Vec<AtColorSwatch>,
     /// The caller's recent colours, most recent first (section hidden if empty).
     recent: Vec<AtColorSwatch>,
+    /// Colours this document's styles already define (section hidden if empty).
+    #[props(default)]
+    document: Vec<AtColorSwatch>,
     /// Whether to render the custom-colour entry section.
     show_custom: bool,
     /// Translated section/action labels.
@@ -226,6 +200,21 @@ pub fn AtColorPickerPanel(
                         "{labels.clear}"
                     }
                     {swatch_rows(&swatches, &current_value, on_pick)}
+                }
+
+                // Colours this document already uses (T5.2). Above Recent
+                // because it is about *this* document, where Recent is about
+                // this session — and hidden when empty rather than shown as a
+                // heading with nothing under it.
+                if !document.is_empty() {
+                    div {
+                        style: format!(
+                            "display: flex; flex-direction: column; gap: {}px;",
+                            tokens::SPACE_2,
+                        ),
+                        span { style: "{heading_style}", "{labels.document_heading}" }
+                        {swatch_rows(&document, &current_value, on_pick)}
+                    }
                 }
 
                 // Recent colours.

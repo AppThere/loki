@@ -46,6 +46,7 @@ ribbon-highlight-picker-aria = Highlight colour
 ribbon-color-clear = Automatic
 ribbon-highlight-clear = No highlight
 ribbon-color-recent = Recent
+ribbon-color-document = In this document
 ribbon-color-custom = Custom
 ribbon-color-apply = Apply
 ribbon-color-close-aria = Close colour picker
