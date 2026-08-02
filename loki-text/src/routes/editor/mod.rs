@@ -91,6 +91,7 @@ mod editor_style;
 mod editor_style_catalog;
 mod editor_style_editor;
 mod editor_text_color;
+mod editor_wheel_zoom;
 mod editor_zoom;
 mod style_char_inspector;
 mod style_impact;

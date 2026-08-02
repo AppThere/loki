@@ -15,6 +15,10 @@ mod mounted;
 mod mutation_writer;
 pub use blitz_dom::DocumentConfig;
 pub use dioxus_document::DioxusDocument;
+// PATCH(loki): `NativeWheelData` carries a scrollport-relative position that
+// `WheelData`'s own accessors cannot express — see its docs. An embedder that
+// wants it has to be able to name the type, so it is exported.
+pub use events::NativeWheelData;
 pub use mounted::{MountedBackend, MountedElement, NodeGeometryData};
 
 use blitz_dom::{ns, LocalName, Namespace, QualName};

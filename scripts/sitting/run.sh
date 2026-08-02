@@ -243,5 +243,59 @@ typed)
   shot 83-applied
   ;;
 
+wheelzoom)
+  # T5.6: Ctrl+wheel zooms about the pointer, and a plain wheel still scrolls.
+  #
+  # The whole point of the sitting is that no unit test can see this: the
+  # question is whether a wheel gesture *reaches* Dioxus at all, which depends
+  # on three patched crates cooperating, and every one of them compiles fine
+  # while dropping the event.
+  #
+  # Ordered so the control comes first. A run that only showed Ctrl+wheel
+  # changing the zoom would not distinguish "Ctrl+wheel zooms" from "any wheel
+  # zooms" — and the second is a defect that would make the document
+  # unscrollable.
+  start_x || exit 1
+  start_app env LOKI_DEVICE_PROFILE="${PROFILE:-pointer=fine}" || exit 1
+  for i in $(seq 1 "${TABS:-7}"); do key Tab; done
+  key Return
+  sleep "${OPEN_SETTLE:-12}"
+  xdotool mousemove "${WX:-640}" "${WY:-400}"; sleep 1
+  shot 90-opened
+  # 1. Plain wheel down: the page must scroll, the zoom must not move.
+  for _ in 1 2 3 4 5 6; do xdotool click 5; done
+  sleep 2
+  shot 91-plain-scrolled
+  # 2. Ctrl+wheel up: the zoom must rise.
+  xdotool keydown ctrl
+  for _ in 1 2 3 4; do xdotool click 4; sleep 0.3; done
+  xdotool keyup ctrl
+  sleep 3
+  shot 92-ctrl-in
+  # 3. Ctrl+wheel down: and fall again.
+  xdotool keydown ctrl
+  for _ in 1 2 3 4 5 6 7 8; do xdotool click 5; sleep 0.3; done
+  xdotool keyup ctrl
+  sleep 3
+  shot 93-ctrl-out
+  # The status-bar readout is the instrument that reports the zoom as a number;
+  # crop it so the comparison is about the zoom and not about the page having
+  # also moved.
+  for s in 90-opened 91-plain-scrolled 92-ctrl-in 93-ctrl-out; do
+    convert "$SHOT_DIR/$s.png" -crop "${ZCROP:-120x24+1120+776}" +repage \
+      "$SHOT_DIR/$s-readout.png" 2>/dev/null
+  done
+  echo "== readout diffs (0 = the zoom did not change) =="
+  echo "  plain wheel:  $(compare -metric AE "$SHOT_DIR/90-opened-readout.png" \
+    "$SHOT_DIR/91-plain-scrolled-readout.png" null: 2>&1)"
+  echo "  ctrl wheel in:  $(compare -metric AE "$SHOT_DIR/91-plain-scrolled-readout.png" \
+    "$SHOT_DIR/92-ctrl-in-readout.png" null: 2>&1)"
+  echo "  ctrl wheel out: $(compare -metric AE "$SHOT_DIR/92-ctrl-in-readout.png" \
+    "$SHOT_DIR/93-ctrl-out-readout.png" null: 2>&1)"
+  echo "== canvas diffs (0 = the page did not move) =="
+  echo "  plain wheel:  $(compare -metric AE "$SHOT_DIR/90-opened.png" \
+    "$SHOT_DIR/91-plain-scrolled.png" null: 2>&1)"
+  ;;
+
 esac
 echo "DONE: $1"

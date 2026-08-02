@@ -93,6 +93,37 @@ programmatic scroll the scrollbar thumb-drag uses. If this patch is dropped, the
 content still scrolls (blitz-shell handles the wheel) but the thumb freezes and
 drag is a no-op.
 
+**Wheel-event dispatch (PATCH(loki), 2026-08-02).** `DioxusDocument::handle_wheel`
+dispatches a bubbling DOM `wheel` event, and `convert_wheel_data` is implemented
+against a new `NativeWheelData` (exported from the crate root). Before this,
+`onwheel` was `unimplemented!()` and no wheel gesture reached Dioxus at all —
+blitz-shell consumed the whole event. Three things in it are deliberate:
+
+- **It bubbles, and starts at the nearest Dioxus-mapped ancestor.** A wheel's
+  target is a hit-test result, routinely a text node with no `data-dioxus-id`;
+  dispatching only at mapped nodes (as the scroll path does) would make the hook
+  silent in the case it exists for. The nodes stepped over carry no Dioxus
+  listeners, so nothing is skipped.
+- **`NativeWheelData` carries a scrollport-relative position** as well as the
+  usual target-relative `element_*`. The two frames differ by however far the
+  target sits inside the scrolled content, and a consumer cannot convert between
+  them — recovering the scrollport frame needs the target's position within it,
+  which is exactly what the event does not carry. Pointer-anchored zoom needs the
+  scrollport frame; a sitting measured the gap at 135 px. It comes from
+  `BaseDocument::scrollport_origin`.
+- **`trigger_button()` is `None` and `held_buttons()` empty.** A wheel turn is
+  not a button press, and the shell tracks no button state on this path.
+
+If this patch is dropped, Ctrl+wheel zoom stops working (ordinary scrolling is
+unaffected — that is blitz-shell's).
+
+**Element-origin fix (PATCH(loki), 2026-08-02).** `element_*` coordinates now
+come from `Node::border_box_position` rather than `absolute_position`, which
+subtracts the node's *own* scroll offset and so places the origin at the top of
+the node's scrolled content. Invisible on the click path (a click targets a leaf,
+and a leaf scrolls nothing) and wrong by the full scroll offset the moment the
+target is a scroll container.
+
 **Fixes:** The upstream dioxus-native-dom 0.7.4 panics at runtime for any
 event type whose `HtmlEventConverter` implementation is a placeholder
 `unimplemented!()`. The affected methods include:
@@ -194,6 +225,26 @@ events are available without panicking.
 
 **Source:** `patches/blitz-shell/` (local, vendored from crates.io version 0.2.3,
 checksum `61ecda230035f39b13383f08e0cfc7159c92d194650ac8d57871a207ea0e52b7`).
+
+**Wheel reporting, and the modified-wheel policy (PATCH(loki), 2026-08-02).**
+The `MouseWheel` arm now reports every gesture to the embedder via
+`Document::handle_wheel` *before* deciding whether to scroll with it, and
+declines to scroll any wheel carrying a modifier.
+
+Two details are load-bearing. First, the report carries the **platform's own**
+delta and unit (`WheelUnit::Lines` / `Pixels`), not the `scroll_x`/`scroll_y`
+this handler computes — those have been through a line-to-pixel factor that is a
+scroll-speed tuning constant, not a measured line height, so forwarding them
+would answer "how far did the wheel turn" with a number meaning "how far should
+this scroll". Second, the decline test is **any** modifier rather than Control:
+which modifiers mean zoom is the embedder's choice (Ctrl on Windows/Linux, Cmd
+→ `SUPER` on macOS), and two modifier lists that have to agree across a crate
+boundary is how a wheel comes to zoom *and* scroll at once. The broader set
+cannot be narrower than whatever the embedder picks; the cost is that Shift and
+Alt no longer scroll, which is no loss — neither had a meaning here.
+
+Only the shell can honour this policy: by the time an embedder sees a
+notification, the scroll has already happened.
 
 **Fixes:** `WindowEvent::Touch` events are discarded in the upstream
 `handle_winit_event` match arm (the arm body is `{}` with a
@@ -601,6 +652,33 @@ is made synchronous (the `todo(jon)` comment in the original acknowledges this).
    the UI typeface on Android). `dioxus-native`'s `Config::with_fonts(..)` feeds
    this field; the Loki apps pass `loki_fonts::ui_font_blobs()`.
 
+10. **Wheel-gesture hook (PATCH(loki), 2026-08-02).** `Document::handle_wheel`
+    reports one `WheelGesture` (node, delta, `WheelUnit`, pointer position,
+    modifiers) to the embedder; the default is a no-op. A hook rather than a
+    `DomEventData` variant for the same reason `handle_scroll_changes` is one —
+    blitz-traits 0.2 has no wheel variant, and adding one means vendoring
+    blitz-traits, which cascades into blitz-dom, blitz-paint and blitz-shell:
+    four forks for one event.
+
+    The delta and its unit travel together in `WheelGesture` because there is no
+    honest conversion between them — turning lines into pixels needs a line
+    height, and picking one fabricates a number the platform never gave.
+
+11. **Scrollport geometry (PATCH(loki), 2026-08-02).**
+    `BaseDocument::scrollport_origin` returns the origin of the innermost
+    scrolling ancestor of a node, and `Node::border_box_position` returns a
+    node's own box origin — `absolute_position` subtracts the node's *own*
+    scroll offset, which places the origin at the top of its scrolled content.
+
+    Both exist because an embedder cannot compute either: a DOM event's
+    `offsetX`/`offsetY` are relative to its *target*, and recovering the
+    scrollport frame from them needs the target's position within the
+    scrollport, which is exactly what the event does not carry. The
+    scroll-container test is shared with `scroll_node_by_collect_inner` rather
+    than copied — two answers to "what counts as a scroll container" agree
+    everywhere except on `overflow: visible` on `html`/`body`, which scrolls
+    despite the value that normally means it does not.
+
 **Removal condition:** Upstream blitz-dom implements tabindex focus-on-click
 for non-input elements, dispatches scroll events to embedders, exposes an
 absolute node-scroll API, and stops treating a static canvas as perpetually
@@ -608,9 +686,10 @@ animating (e.g. a per-source "needs animation" signal).
 
 **Added:** 2026-05-18 (focus); extended 2026-06-10 (scroll events),
 2026-06-11 (absolute scroll), 2026-06-21 (`needs_animation_tick` — stop the
-idle canvas redraw loop, paired with the blitz-shell `redraw()` change), and
-2026-06-27 (`extra_fonts` — synchronous bundled-font registration), together
-with matching changes in the blitz-shell and dioxus-native(-dom) patches.
+idle canvas redraw loop, paired with the blitz-shell `redraw()` change),
+2026-06-27 (`extra_fonts` — synchronous bundled-font registration), and
+2026-08-02 (`handle_wheel` + scrollport geometry), together with matching
+changes in the blitz-shell and dioxus-native(-dom) patches.
 
 ---
 

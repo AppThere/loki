@@ -25,6 +25,7 @@ scripts/sitting/run.sh calibrate      # Actual Size -> measure-your-screen dialo
 CX=36 CY=740 scripts/sitting/run.sh picker   # the colour picker's SV square
 scripts/sitting/run.sh anchor         # zoom holds the middle of the page still
 ZX=1176 ZY=788 scripts/sitting/run.sh typed  # the typed zoom field
+scripts/sitting/run.sh wheelzoom      # Ctrl+wheel zooms, plain wheel scrolls
 ```
 
 Shots land in `target/sitting/`. `SETTLE` (default 10s) is how long to wait
@@ -69,7 +70,36 @@ subject):
    looked like "unsupported" without being evidence of it. Re-run with the
    order flipped, `:focus` still won: genuinely unsupported.
 
+**One wheel notch is two events on X11**, and it is winit's, not ours.
+`xinput2_button_input` routes both `XI_ButtonPress` and `XI_ButtonRelease` to
+the same arm and the `4..=7` case ignores the press/release state, so every
+notch emits two `MouseWheel` events (winit 0.30.13,
+`platform_impl/linux/x11/event_processor.rs`). One `xdotool click 4` therefore
+moves the zoom by 1.1², not 1.1. It is upstream behaviour on real X11 hardware
+too, and it affects the existing scroll path identically — do not "correct" for
+it in app code, which would halve the step everywhere else.
+
 ## What the sittings have found
+
+**r88 — three, and the third was in code four phases old.** Ctrl+wheel zoom was
+built, unit-tested, and wrong in two ways no test could see. `element_
+coordinates()` is relative to the event's *target* — a text run several levels
+below the element whose handler runs — so the anchor was out by 135 px, the
+distance the page's top sat above the window. And two wheel events 0.2 ms apart
+both read `scroll_top = 200.0`, because the metrics signal mirrors the DOM's
+`onscroll` and lags the command that caused it: the zoom advanced twice while the
+scroll moved once.
+
+Both were found by *printing what the code read*, not by inferring it from the
+picture — the picture said "the anchor drifts 16 px", which is consistent with
+half a dozen causes and identifies none.
+
+Fixing them left a 5 px residual, which turned out not to be a wheel problem at
+all: `anchored_scroll`'s model was `a = d·z − s`, and a scroll container's
+padding does not scale, so it is `a = p + d·z − s`. The model predicted −5.04 px,
+the screen showed −5, and the fix took it to 0. That affected **every** zoom
+taken since T5.6 landed, from the buttons and presets as much as the wheel — a
+defect the wheel only made visible.
 
 **r79 — four defects, none reachable by any unit test:**
 

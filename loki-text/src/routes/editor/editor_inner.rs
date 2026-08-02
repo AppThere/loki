@@ -589,6 +589,7 @@ pub(super) fn EditorInner(path: String) -> Element {
                 spell_menu,
                 doc_state_spell_ctx,
                 zoom_percent,
+                zoom_command,
                 macro_run_request,
             )}
 

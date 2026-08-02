@@ -94,6 +94,8 @@ pub(super) fn render_canvas_area(
     spell_menu: Signal<Option<SpellMenu>>,
     doc_state_context: Arc<std::sync::Mutex<DocumentState>>,
     zoom_percent: Signal<u32>,
+    // The only way the zoom changes, so Ctrl+wheel anchors (Spec 08 T5.6).
+    zoom_command: super::editor_zoom::ZoomCommand,
     // `macro_run_request`: set to the proc name when a MACROBUTTON (`loki-macro:`
     // link) is clicked, so `editor_macro_notice` dispatches a gated run (§6).
     macro_run_request: Signal<Option<String>>,
@@ -185,6 +187,10 @@ pub(super) fn render_canvas_area(
                     current_page.set(page);
                 }
             },
+
+            // Ctrl/Cmd+wheel zooms about the pointer, via the PATCH(loki) wheel
+            // chain — see `editor_wheel_zoom` for the chain and the policy.
+            onwheel: super::editor_wheel_zoom::make_wheel_handler(zoom_command),
 
             onmousedown: make_mousedown_handler(drag_origin),
 

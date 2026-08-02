@@ -42,6 +42,8 @@
 
 mod animate;
 mod controller;
+mod controller_animate;
+mod controller_offset;
 mod metrics;
 mod reveal;
 mod zoom_anchor;

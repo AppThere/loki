@@ -26,6 +26,7 @@ use appthere_ui::scroll::{ScrollMetrics, ViewportController, ZoomAnchor};
 use appthere_ui::{actual_size_zoom_percent, fit_page_zoom_percent, fit_width_zoom_percent};
 use dioxus::prelude::*;
 
+use super::editor_canvas_metrics::CANVAS_CONTENT_PADDING_PX;
 use crate::editing::state::DocumentState;
 
 /// Horizontal breathing room either side of the page when fitting, in CSS px.
@@ -201,8 +202,19 @@ impl ZoomCommand {
         }
         self.percent.set(next_percent);
 
-        self.viewport
-            .zoom_to(anchor, current as f32 / 100.0, next_percent as f32 / 100.0);
+        // The canvas's own top padding: content y = 0 is the scrollport's top
+        // edge and the first page starts one padding below, unscaled. Reading
+        // the same constant the CSS and the residency plan read keeps the three
+        // in step — the drift it removes is 5 px per wheel notch and 120 px
+        // across the control's range, which is small enough to look like
+        // imprecision and large enough to look like a bug.
+        let content_origin = (0.0, CANVAS_CONTENT_PADDING_PX);
+        self.viewport.zoom_to(
+            anchor,
+            content_origin,
+            current as f32 / 100.0,
+            next_percent as f32 / 100.0,
+        );
     }
 }
 
