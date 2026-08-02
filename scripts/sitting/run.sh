@@ -175,5 +175,32 @@ calibrate)
   shot 56-applied
   ;;
 
+picker)
+  # T5.2: the saturation/value square and hue strip. Format tab -> a colour
+  # trigger -> the panel docks above the ribbon.
+  start_x || exit 1
+  start_app env LOKI_DEVICE_PROFILE="${PROFILE:-pointer=fine}" || exit 1
+  shot 60-home
+  for i in $(seq 1 "${TABS:-7}"); do key Tab; done
+  key Return
+  sleep "${OPEN_SETTLE:-12}"
+  shot 61-opened
+  # Format tab, then the font-colour trigger.
+  xdotool mousemove "${FX:-98}" "${FY:-696}" click 1; sleep 2
+  shot 62-format
+  xdotool mousemove "${CX:-640}" "${CY:-740}" click 1; sleep 2
+  shot 63-picker
+  # Drag inside the saturation/value square: press at the middle, move down-left,
+  # release. The preview and the handle must follow.
+  xdotool mousemove "${SX:-511}" "${SY:-491}" mousedown 1; sleep 1
+  shot 64-sv-press
+  xdotool mousemove "${SX2:-470}" "${SY2:-530}"; sleep 1
+  xdotool mouseup 1; sleep 1
+  shot 65-sv-drag
+  # And the hue strip.
+  xdotool mousemove "${HX:-643}" "${HY:-520}" click 1; sleep 1
+  shot 66-hue
+  ;;
+
 esac
 echo "DONE: $1"

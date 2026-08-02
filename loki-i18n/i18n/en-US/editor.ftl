@@ -29,6 +29,9 @@ editor-calibrate-instructions = Hold a bank card or a ruler against the blue bar
 editor-calibrate-field = Measured width (mm)
 editor-calibrate-apply = Use this
 editor-calibrate-cancel = Cancel
+editor-color-area = Saturation and brightness
+editor-color-hue = Hue
+
 editor-calibrate-rejected = That doesn't look like a measurement of this bar. Check you're using millimetres and try again.
 
 # Document title for unsaved blank documents

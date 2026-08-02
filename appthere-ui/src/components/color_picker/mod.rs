@@ -22,8 +22,12 @@ use dioxus::prelude::*;
 use super::ribbon::AtRibbonIconButton;
 use crate::tokens;
 
+mod area;
+#[path = "area_geom.rs"]
+pub mod area_geom;
 pub mod convert;
 mod custom;
+mod custom_source;
 
 use custom::CustomColorSection;
 
@@ -57,6 +61,10 @@ pub struct AtColorPickerLabels {
     pub custom_heading: String,
     /// Apply button label of the custom-colour section.
     pub apply: String,
+    /// Accessible name of the saturation/value square.
+    pub area: String,
+    /// Accessible name of the hue strip.
+    pub hue: String,
 }
 
 /// A small filled square used inside swatch buttons.
@@ -237,6 +245,8 @@ pub fn AtColorPickerPanel(
                     CustomColorSection {
                         heading: labels.custom_heading.clone(),
                         apply_label: labels.apply.clone(),
+                        area_label: labels.area.clone(),
+                        hue_label: labels.hue.clone(),
                         on_apply: move |hex: String| on_pick.call(Some(hex)),
                     }
                 }

@@ -82,6 +82,8 @@ pub(super) fn color_picker_panel(
     };
 
     let labels = AtColorPickerLabels {
+        area: fl!("editor-color-area"),
+        hue: fl!("editor-color-hue"),
         title: t.title,
         close: fl!("ribbon-color-close-aria"),
         clear: t.clear,

@@ -22,6 +22,7 @@ TABS=12 scripts/sitting/run.sh menu   # open a row menu, walk it, Escape
 scripts/sitting/run.sh editor         # open a document, click, type
 ZX=1176 ZY=788 scripts/sitting/run.sh zoom   # the status-bar zoom control
 scripts/sitting/run.sh calibrate      # Actual Size -> measure-your-screen dialog
+CX=36 CY=740 scripts/sitting/run.sh picker   # the colour picker's SV square
 ```
 
 Shots land in `target/sitting/`. `SETTLE` (default 10s) is how long to wait
@@ -71,6 +72,13 @@ subject):
 | Enter/Space never activated a focused control (WCAG 2.1.1) | `patches/blitz-dom` keyboard |
 | `tabindex="-1"` was not focusable, so `autofocus` never applied to an overlay | `patches/blitz-dom` element |
 | click-focus ran *after* the click handler, undoing that handler's `autofocus` | `patches/blitz-dom` mouse |
+
+**r83 — one:** a colour dragged in the saturation/value square filled the
+preview swatch and left the `#` field blank, so the reader had nowhere to read
+or copy what they had picked. The same run also *confirmed* what the design
+rested on — `linear-gradient` really does paint in this engine — which is the
+cheaper thing a sitting does: settling a premise before the code built on it
+grows.
 
 **r82 — three, all in one dialog:** the instructions read "85.5999984741211 mm"
 (`f64::from(85.6f32)` — correct arithmetic, unreadable prose); the text field was
